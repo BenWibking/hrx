@@ -158,6 +158,9 @@ typedef enum __attribute__((annotate("HIP_nodiscard"))) hipError_t {
   hipErrorTbd = 9999 // Placeholder
 } hipError_t;
 
+typedef void (*hipStreamCallback_t)(hipStream_t stream, hipError_t status,
+                                    void *userData);
+
 typedef enum hipDeviceAttribute_t {
   hipDeviceAttributeCudaCompatibleBegin = 0,
   hipDeviceAttributeEccEnabled = 0,
@@ -1104,6 +1107,9 @@ HIPAPI hipError_t hipExtModuleLaunchKernel(
     hipEvent_t stopEvent, int flags);
 HIPAPI hipError_t hipLaunchHostFunc(hipStream_t hStream, hipHostFn_t fn,
                                     void *userData);
+HIPAPI hipError_t hipStreamAddCallback(hipStream_t hStream,
+                                       hipStreamCallback_t callback,
+                                       void *userData, unsigned int flags);
 
 // Occupancy functions
 HIPAPI hipError_t hipModuleOccupancyMaxActiveBlocksPerMultiprocessor(

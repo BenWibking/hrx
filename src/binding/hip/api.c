@@ -8295,6 +8295,62 @@ HIPAPI hipError_t hipLaunchHostFunc(hipStream_t stream, hipHostFn_t fn,
   return result;
 }
 
+typedef struct iree_hip_stream_callback_thunk_t {
+  hipStream_t stream;
+  hipStreamCallback_t callback;
+  void *userData;
+} iree_hip_stream_callback_thunk_t;
+
+static void iree_hip_stream_callback_host_fn(void *userData) {
+  iree_hip_stream_callback_thunk_t *thunk =
+      (iree_hip_stream_callback_thunk_t *)userData;
+  hipStream_t stream = thunk->stream;
+  hipStreamCallback_t callback = thunk->callback;
+  void *callback_userData = thunk->userData;
+  iree_allocator_free(iree_allocator_system(), thunk);
+  callback(stream, hipSuccess, callback_userData);
+}
+
+// Adds a host callback to a stream.
+//
+// This legacy HIP API is still used by AMReX for deferred resource cleanup.
+// It is semantically close to hipLaunchHostFunc, but the callback receives the
+// stream and status arguments expected by hipStreamAddCallback users.
+HIPAPI hipError_t hipStreamAddCallback(hipStream_t stream,
+                                       hipStreamCallback_t callback,
+                                       void *userData, unsigned int flags) {
+  IREE_TRACE_ZONE_BEGIN(z0);
+  HIP_DEBUG_LOG("[HIP_API] hipStreamAddCallback(stream=%p, callback=%p, "
+                "userData=%p, flags=%u)\n",
+                (void *)stream, (void *)callback, userData, flags);
+  if (!callback || flags != 0) {
+    IREE_TRACE_ZONE_END(z0);
+    HIP_RETURN_ERROR(hipErrorInvalidValue);
+  }
+
+  iree_hip_stream_callback_thunk_t *thunk = NULL;
+  iree_status_t status = iree_allocator_malloc(
+      iree_allocator_system(), sizeof(*thunk), (void **)&thunk);
+  if (!iree_status_is_ok(status)) {
+    hipError_t result = iree_status_to_hip_result(status);
+    IREE_TRACE_ZONE_END(z0);
+    HIP_RETURN_ERROR(result);
+  }
+
+  thunk->stream = stream;
+  thunk->callback = callback;
+  thunk->userData = userData;
+
+  hipError_t result =
+      hipLaunchHostFunc(stream, iree_hip_stream_callback_host_fn, thunk);
+  if (result != hipSuccess) {
+    iree_allocator_free(iree_allocator_system(), thunk);
+  }
+
+  IREE_TRACE_ZONE_END(z0);
+  HIP_RETURN_ERROR(result);
+}
+
 //===----------------------------------------------------------------------===//
 // Occupancy functions
 //===----------------------------------------------------------------------===//

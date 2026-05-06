@@ -27,6 +27,8 @@ option(HRX_ENABLE_TRACY
     "Build with IREE Tracy tracing integration" OFF)
 option(HRX_BUILD_CTS
     "Build conformance test suite" ON)
+option(HRX_BUILD_AMREX_POC
+    "Build the optional AMReX-on-HRX proof-of-concept executable" OFF)
 option(HRX_BUILD_CUDA_BINDING
     "Build CUDA runtime/driver API compatibility binding" OFF)
 option(IREE_BUILD_TESTS
@@ -190,6 +192,10 @@ add_subdirectory(src/streaming)
 add_subdirectory(src/binding/hip)
 if(HRX_BUILD_CUDA_BINDING)
   add_subdirectory(src/binding/cuda)
+endif()
+
+if(HRX_BUILD_AMREX_POC)
+  add_subdirectory(examples/amrex_poc)
 endif()
 
 #===------------------------------------------------------------------------===#
