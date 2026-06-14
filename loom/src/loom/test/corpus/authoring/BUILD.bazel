@@ -18,6 +18,7 @@ exports_files([
     "indexed_row_gather_f32.loom",
     "memset_i8.loom",
     "mlp_down_projection_residual_bf16.loom",
+    "robertson_alpha_qss.loom",
 ])
 
 _AMDGPU_ARTIFACTS_COMPATIBLE_WITH = loom_config_compatible_with([
@@ -79,6 +80,20 @@ iree_executable_test(
     ],
     data = [
         "mlp_down_projection_residual_bf16.loom",
+    ],
+    tags = ["hostonly"],
+    target_compatible_with = _AMDGPU_ARTIFACTS_COMPATIBLE_WITH,
+)
+
+iree_executable_test(
+    name = "robertson_alpha_qss_plan_test",
+    src = "//loom/src/loom/tools/iree-benchmark-loom",
+    args = [
+        "$(location robertson_alpha_qss.loom)",
+        "--dry-run",
+    ],
+    data = [
+        "robertson_alpha_qss.loom",
     ],
     tags = ["hostonly"],
     target_compatible_with = _AMDGPU_ARTIFACTS_COMPATIBLE_WITH,
@@ -181,6 +196,33 @@ iree_executable_test(
     ],
     data = [
         "mlp_down_projection_residual_bf16.loom",
+    ],
+    tags = [
+        "iree-run-requirement=runtime.resource.amd_gpu",
+        "manual",
+        "requires-gpu-amd",
+        "runtime-resource=amd-gpu",
+    ],
+    target_compatible_with = _AMDGPU_HAL_COMPATIBLE_WITH,
+)
+
+iree_executable_test(
+    name = "robertson_alpha_qss_amdgpu_test",
+    src = "//loom/src/loom/tools/iree-benchmark-loom",
+    args = [
+        "$(location robertson_alpha_qss.loom)",
+        "--device=amdgpu",
+        "--measure=dispatch_complete",
+        "--sample-compilation=per_sample",
+        "--iterations=1",
+        "--warmup-iterations=0",
+        "--batch-size=1",
+        "--min-time-ms=0",
+        "--max-batches=1",
+        "--input-ring-count=1",
+    ],
+    data = [
+        "robertson_alpha_qss.loom",
     ],
     tags = [
         "iree-run-requirement=runtime.resource.amd_gpu",

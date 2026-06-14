@@ -1,0 +1,443 @@
+// Integrate the stiff Robertson kinetics with a frozen-coefficient alpha-QSS
+// update. The kernel keeps the integration state in registers and writes the
+// final conserved mass so the checked benchmark can validate execution without
+// needing a host-side reference implementation.
+func.def inline @alpha_qss(%q: f64) -> (f64) {
+  %one = scalar.constant 1.0 : f64
+  %eps = scalar.constant 0.000000000001 : f64
+  %neg_one = scalar.constant -1.0 : f64
+  %large_q = scalar.cmpf ogt, %q, %eps : f64
+  %alpha = scf.if %large_q -> (f64) {
+    %neg_q = scalar.mulf %neg_one, %q : f64
+    %exp_neg_q = scalar.expf %neg_q : f64
+    %numerator = scalar.subf %one, %exp_neg_q : f64
+    %ratio = scalar.divf %numerator, %q : f64
+    scf.yield %ratio : f64
+  } else {
+    scf.yield %one : f64
+  }
+  func.return %alpha : f64
+}
+
+func.def inline @alpha_mott(%r: f64) -> (f64) {
+  %zero = scalar.constant 0.0 : f64
+  %one = scalar.constant 1.0 : f64
+  %half = scalar.constant 0.5 : f64
+  %small = scalar.constant 0.000000000000000000000000000001 : f64
+  %large = scalar.constant 1000000000000000000000000000000.0 : f64
+  %c11 = scalar.constant 11.0 : f64
+  %c12 = scalar.constant 12.0 : f64
+  %c60 = scalar.constant 60.0 : f64
+  %c180 = scalar.constant 180.0 : f64
+  %c360 = scalar.constant 360.0 : f64
+  %abs_r = scalar.absf %r : f64
+  %is_small = scalar.cmpf ole, %abs_r, %small : f64
+  %alpha = scf.if %is_small -> (f64) {
+    scf.yield %one : f64
+  } else {
+    %is_large = scalar.cmpf oge, %abs_r, %large : f64
+    %large_or_rational = scf.if %is_large -> (f64) {
+      scf.yield %half : f64
+    } else {
+      %r2 = scalar.mulf %r, %r : f64
+      %r3 = scalar.mulf %r2, %r : f64
+      %n0 = scalar.mulf %c180, %r3 : f64
+      %n1a = scalar.mulf %c60, %r2 : f64
+      %n1 = scalar.addf %n0, %n1a : f64
+      %n2a = scalar.mulf %c11, %r : f64
+      %n2 = scalar.addf %n1, %n2a : f64
+      %numerator = scalar.addf %n2, %one : f64
+      %d0 = scalar.mulf %c360, %r3 : f64
+      %d1a = scalar.mulf %c60, %r2 : f64
+      %d1 = scalar.addf %d0, %d1a : f64
+      %d2a = scalar.mulf %c12, %r : f64
+      %d2 = scalar.addf %d1, %d2a : f64
+      %denominator = scalar.addf %d2, %one : f64
+      %ratio = scalar.divf %numerator, %denominator : f64
+      scf.yield %ratio : f64
+    }
+    scf.yield %large_or_rational : f64
+  }
+  func.return %alpha : f64
+}
+
+func.def inline @qss_rate_coefficient(%f_minus: f64, %x: f64) -> (f64) {
+  %tiny = scalar.constant 0.000000000000000000000000000001 : f64
+  %abs_x = scalar.absf %x : f64
+  %safe_x = scalar.maximumf %abs_x, %tiny : f64
+  %k = scalar.divf %f_minus, %safe_x : f64
+  func.return %k : f64
+}
+
+func.def inline @qss_alpha_from_kdt(%k: f64, %dt: f64) -> (f64) {
+  %tiny = scalar.constant 0.000000000000000000000000000001 : f64
+  %one = scalar.constant 1.0 : f64
+  %kdt = scalar.mulf %k, %dt : f64
+  %safe_kdt = scalar.maximumf %kdt, %tiny : f64
+  %r = scalar.divf %one, %safe_kdt : f64
+  %alpha = func.call @alpha_mott(%r) : (f64) -> (f64)
+  func.return %alpha : f64
+}
+
+func.def inline @robertson_rates(%y1: f64, %y2: f64, %y3: f64) -> (f64, f64, f64, f64, f64, f64) {
+  %zero = scalar.constant 0.0 : f64
+  %k1 = scalar.constant 0.04 : f64
+  %k2 = scalar.constant 10000.0 : f64
+  %k3 = scalar.constant 30000000.0 : f64
+  %k1_y1 = scalar.mulf %k1, %y1 : f64
+  %y2_y3 = scalar.mulf %y2, %y3 : f64
+  %k2_y2_y3 = scalar.mulf %k2, %y2_y3 : f64
+  %y2_y2 = scalar.mulf %y2, %y2 : f64
+  %k3_y2_y2 = scalar.mulf %k3, %y2_y2 : f64
+  %fminus2 = scalar.addf %k2_y2_y3, %k3_y2_y2 : f64
+  func.return %k2_y2_y3, %k1_y1, %k1_y1, %fminus2, %k3_y2_y2, %zero : f64, f64, f64, f64, f64, f64
+}
+
+func.def inline @qss_predict_species(%x0: f64, %fplus0: f64, %fminus0: f64, %dt: f64) -> (f64) {
+  %one = scalar.constant 1.0 : f64
+  %k0 = func.call @qss_rate_coefficient(%fminus0, %x0) : (f64, f64) -> (f64)
+  %alpha0 = func.call @qss_alpha_from_kdt(%k0, %dt) : (f64, f64) -> (f64)
+  %loss = scalar.mulf %k0, %x0 : f64
+  %rhs = scalar.subf %fplus0, %loss : f64
+  %alpha_k = scalar.mulf %alpha0, %k0 : f64
+  %alpha_k_dt = scalar.mulf %alpha_k, %dt : f64
+  %denominator = scalar.addf %one, %alpha_k_dt : f64
+  %dxdt = scalar.divf %rhs, %denominator : f64
+  %dx = scalar.mulf %dt, %dxdt : f64
+  %xp = scalar.addf %x0, %dx : f64
+  func.return %xp : f64
+}
+
+func.def inline @qss_correct_species(%x0: f64, %xp: f64, %fplus0: f64, %fminus0: f64, %fplusp: f64, %fminusp: f64, %dt: f64) -> (f64) {
+  %one = scalar.constant 1.0 : f64
+  %half = scalar.constant 0.5 : f64
+  %k0 = func.call @qss_rate_coefficient(%fminus0, %x0) : (f64, f64) -> (f64)
+  %kp = func.call @qss_rate_coefficient(%fminusp, %xp) : (f64, f64) -> (f64)
+  %ksum = scalar.addf %k0, %kp : f64
+  %kbar = scalar.mulf %half, %ksum : f64
+  %alpha_bar = func.call @qss_alpha_from_kdt(%kbar, %dt) : (f64, f64) -> (f64)
+  %one_minus_alpha = scalar.subf %one, %alpha_bar : f64
+  %fplusp_weighted = scalar.mulf %alpha_bar, %fplusp : f64
+  %fplus0_weighted = scalar.mulf %one_minus_alpha, %fplus0 : f64
+  %fplus_tilde = scalar.addf %fplusp_weighted, %fplus0_weighted : f64
+  %loss = scalar.mulf %kbar, %x0 : f64
+  %rhs = scalar.subf %fplus_tilde, %loss : f64
+  %alpha_k = scalar.mulf %alpha_bar, %kbar : f64
+  %alpha_k_dt = scalar.mulf %alpha_k, %dt : f64
+  %denominator = scalar.addf %one, %alpha_k_dt : f64
+  %dxdt = scalar.divf %rhs, %denominator : f64
+  %dx = scalar.mulf %dt, %dxdt : f64
+  %xc = scalar.addf %x0, %dx : f64
+  func.return %xc : f64
+}
+
+func.def inline @qss_bound_penalty(%x0: f64, %x: f64, %atol_spec: f64, %species_tol: f64) -> (f64) {
+  %zero = scalar.constant 0.0 : f64
+  %one = scalar.constant 1.0 : f64
+  %neg_one = scalar.constant -1.0 : f64
+  %huge = scalar.constant 1000000000000.0 : f64
+  %lower = scalar.mulf %neg_one, %species_tol : f64
+  %upper = scalar.addf %one, %species_tol : f64
+  %significant = scalar.cmpf oge, %x0, %atol_spec : f64
+  %penalty = scf.if %significant -> (f64) {
+    %below = scalar.cmpf olt, %x, %lower : f64
+    %below_penalty = scf.if %below -> (f64) {
+      scf.yield %huge : f64
+    } else {
+      %above = scalar.cmpf ogt, %x, %upper : f64
+      %above_penalty = scf.if %above -> (f64) {
+        scf.yield %huge : f64
+      } else {
+        scf.yield %zero : f64
+      }
+      scf.yield %above_penalty : f64
+    }
+    scf.yield %below_penalty : f64
+  } else {
+    scf.yield %zero : f64
+  }
+  func.return %penalty : f64
+}
+
+func.def inline @qss_predictor_corrector_error(%x0: f64, %xp: f64, %xc: f64, %atol_spec: f64, %species_tol: f64) -> (f64) {
+  %zero = scalar.constant 0.0 : f64
+  %tiny = scalar.constant 0.000000000000000000000000000001 : f64
+  %significant = scalar.cmpf oge, %x0, %atol_spec : f64
+  %rel_error = scf.if %significant -> (f64) {
+    %diff_raw = scalar.subf %xc, %xp : f64
+    %diff = scalar.absf %diff_raw : f64
+    %abs_xc = scalar.absf %xc : f64
+    %denominator = scalar.maximumf %abs_xc, %tiny : f64
+    %relative = scalar.divf %diff, %denominator : f64
+    scf.yield %relative : f64
+  } else {
+    scf.yield %zero : f64
+  }
+  %predictor_penalty = func.call @qss_bound_penalty(%x0, %xp, %atol_spec, %species_tol) : (f64, f64, f64, f64) -> (f64)
+  %corrector_penalty = func.call @qss_bound_penalty(%x0, %xc, %atol_spec, %species_tol) : (f64, f64, f64, f64) -> (f64)
+  %penalty = scalar.maximumf %predictor_penalty, %corrector_penalty : f64
+  %error = scalar.maximumf %rel_error, %penalty : f64
+  func.return %error : f64
+}
+
+func.def inline @robertson_predictor_corrector_trial(%y1: f64, %y2: f64, %y3: f64, %dt: f64, %atol_spec: f64, %species_tol: f64) -> (f64, f64, f64, f64) {
+  %fplus10, %fminus10, %fplus20, %fminus20, %fplus30, %fminus30 = func.call @robertson_rates(%y1, %y2, %y3) : (f64, f64, f64) -> (f64, f64, f64, f64, f64, f64)
+  %yp1 = func.call @qss_predict_species(%y1, %fplus10, %fminus10, %dt) : (f64, f64, f64, f64) -> (f64)
+  %yp2 = func.call @qss_predict_species(%y2, %fplus20, %fminus20, %dt) : (f64, f64, f64, f64) -> (f64)
+  %yp3 = func.call @qss_predict_species(%y3, %fplus30, %fminus30, %dt) : (f64, f64, f64, f64) -> (f64)
+  %fplus1p, %fminus1p, %fplus2p, %fminus2p, %fplus3p, %fminus3p = func.call @robertson_rates(%yp1, %yp2, %yp3) : (f64, f64, f64) -> (f64, f64, f64, f64, f64, f64)
+  %yc1 = func.call @qss_correct_species(%y1, %yp1, %fplus10, %fminus10, %fplus1p, %fminus1p, %dt) : (f64, f64, f64, f64, f64, f64, f64) -> (f64)
+  %yc2 = func.call @qss_correct_species(%y2, %yp2, %fplus20, %fminus20, %fplus2p, %fminus2p, %dt) : (f64, f64, f64, f64, f64, f64, f64) -> (f64)
+  %yc3 = func.call @qss_correct_species(%y3, %yp3, %fplus30, %fminus30, %fplus3p, %fminus3p, %dt) : (f64, f64, f64, f64, f64, f64, f64) -> (f64)
+  %err1 = func.call @qss_predictor_corrector_error(%y1, %yp1, %yc1, %atol_spec, %species_tol) : (f64, f64, f64, f64, f64) -> (f64)
+  %err2 = func.call @qss_predictor_corrector_error(%y2, %yp2, %yc2, %atol_spec, %species_tol) : (f64, f64, f64, f64, f64) -> (f64)
+  %err3 = func.call @qss_predictor_corrector_error(%y3, %yp3, %yc3, %atol_spec, %species_tol) : (f64, f64, f64, f64, f64) -> (f64)
+  %err12 = scalar.maximumf %err1, %err2 : f64
+  %err = scalar.maximumf %err12, %err3 : f64
+  func.return %yc1, %yc2, %yc3, %err : f64, f64, f64, f64
+}
+
+kernel.def @robertson_alpha_qss(%steps: index) {
+  %one = index.constant 1 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%one, %one, %one) : index
+} launch(%steps: index, %dt: f64, %output: buffer) {
+  %base = index.constant 0 : offset
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %lane = kernel.workitem.id<x> : index
+  %is_lane0 = index.cmp eq, %lane, %zero : index
+  %output_view = buffer.view %output[%base] : buffer -> view<1xf64, #dense>
+
+  scf.if %is_lane0 {
+    %zero_f64 = scalar.constant 0.0 : f64
+    %one_f64 = scalar.constant 1.0 : f64
+    %k1 = scalar.constant 0.04 : f64
+    %k2 = scalar.constant 10000.0 : f64
+    %k3 = scalar.constant 30000000.0 : f64
+
+    %y1, %y2, %y3 = scf.for %step = [%zero to %steps step %one](%y1_acc = %one_f64 : f64, %y2_acc = %zero_f64 : f64, %y3_acc = %zero_f64 : f64) -> (f64, f64, f64) {
+      %k1_y1 = scalar.mulf %k1, %y1_acc : f64
+      %y2_y3 = scalar.mulf %y2_acc, %y3_acc : f64
+      %k2_y2_y3 = scalar.mulf %k2, %y2_y3 : f64
+      %y2_y2 = scalar.mulf %y2_acc, %y2_acc : f64
+      %k3_y2_y2 = scalar.mulf %k3, %y2_y2 : f64
+
+      %q1 = scalar.mulf %k1, %dt : f64
+      %alpha1 = func.call @alpha_qss(%q1) : (f64) -> (f64)
+      %loss1 = scalar.mulf %k1, %y1_acc : f64
+      %rhs1 = scalar.subf %k2_y2_y3, %loss1 : f64
+      %dt_alpha1 = scalar.mulf %dt, %alpha1 : f64
+      %dy1 = scalar.mulf %dt_alpha1, %rhs1 : f64
+      %y1_next = scalar.addf %y1_acc, %dy1 : f64
+
+      %d2a = scalar.mulf %k2, %y3_acc : f64
+      %d2b = scalar.mulf %k3, %y2_acc : f64
+      %d2 = scalar.addf %d2a, %d2b : f64
+      %q2 = scalar.mulf %d2, %dt : f64
+      %alpha2 = func.call @alpha_qss(%q2) : (f64) -> (f64)
+      %loss2 = scalar.mulf %d2, %y2_acc : f64
+      %rhs2 = scalar.subf %k1_y1, %loss2 : f64
+      %dt_alpha2 = scalar.mulf %dt, %alpha2 : f64
+      %dy2 = scalar.mulf %dt_alpha2, %rhs2 : f64
+      %y2_next = scalar.addf %y2_acc, %dy2 : f64
+
+      %dy3 = scalar.mulf %dt, %k3_y2_y2 : f64
+      %y3_next = scalar.addf %y3_acc, %dy3 : f64
+      scf.yield %y1_next, %y2_next, %y3_next : f64, f64, f64
+    }
+
+    %mass12 = scalar.addf %y1, %y2 : f64
+    %mass = scalar.addf %mass12, %y3 : f64
+    view.store %mass, %output_view[%zero] : f64, view<1xf64, #dense>
+  }
+  kernel.return
+}
+
+kernel.def @robertson_alpha_qss_wavefront(%steps: index) {
+  %one = index.constant 1 : index
+  %wavefront_size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%wavefront_size, %one, %one) : index
+} launch(%steps: index, %dt: f64, %output: buffer) {
+  %base = index.constant 0 : offset
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %lane = kernel.workitem.id<x> : index
+  %lane_i32 = index.cast %lane : index to i32
+  %lane_f64 = scalar.sitofp %lane_i32 : i32 to f64
+  %output_view = buffer.view %output[%base] : buffer -> view<64xf64, #dense>
+
+  %zero_f64 = scalar.constant 0.0 : f64
+  %one_f64 = scalar.constant 1.0 : f64
+  %lane_scale = scalar.constant 0.000001 : f64
+  %k1 = scalar.constant 0.04 : f64
+  %k2 = scalar.constant 10000.0 : f64
+  %k3 = scalar.constant 30000000.0 : f64
+
+  %y2_init = scalar.mulf %lane_f64, %lane_scale : f64
+  %y1_init = scalar.subf %one_f64, %y2_init : f64
+
+  %y1, %y2, %y3 = scf.for %step = [%zero to %steps step %one](%y1_acc = %y1_init : f64, %y2_acc = %y2_init : f64, %y3_acc = %zero_f64 : f64) -> (f64, f64, f64) {
+    %k1_y1 = scalar.mulf %k1, %y1_acc : f64
+    %y2_y3 = scalar.mulf %y2_acc, %y3_acc : f64
+    %k2_y2_y3 = scalar.mulf %k2, %y2_y3 : f64
+    %y2_y2 = scalar.mulf %y2_acc, %y2_acc : f64
+    %k3_y2_y2 = scalar.mulf %k3, %y2_y2 : f64
+
+    %q1 = scalar.mulf %k1, %dt : f64
+    %alpha1 = func.call @alpha_qss(%q1) : (f64) -> (f64)
+    %loss1 = scalar.mulf %k1, %y1_acc : f64
+    %rhs1 = scalar.subf %k2_y2_y3, %loss1 : f64
+    %dt_alpha1 = scalar.mulf %dt, %alpha1 : f64
+    %dy1 = scalar.mulf %dt_alpha1, %rhs1 : f64
+    %y1_next = scalar.addf %y1_acc, %dy1 : f64
+
+    %d2a = scalar.mulf %k2, %y3_acc : f64
+    %d2b = scalar.mulf %k3, %y2_acc : f64
+    %d2 = scalar.addf %d2a, %d2b : f64
+    %q2 = scalar.mulf %d2, %dt : f64
+    %alpha2 = func.call @alpha_qss(%q2) : (f64) -> (f64)
+    %loss2 = scalar.mulf %d2, %y2_acc : f64
+    %rhs2 = scalar.subf %k1_y1, %loss2 : f64
+    %dt_alpha2 = scalar.mulf %dt, %alpha2 : f64
+    %dy2 = scalar.mulf %dt_alpha2, %rhs2 : f64
+    %y2_next = scalar.addf %y2_acc, %dy2 : f64
+
+    %dy3 = scalar.mulf %dt, %k3_y2_y2 : f64
+    %y3_next = scalar.addf %y3_acc, %dy3 : f64
+    scf.yield %y1_next, %y2_next, %y3_next : f64, f64, f64
+  }
+
+  %mass12 = scalar.addf %y1, %y2 : f64
+  %mass = scalar.addf %mass12, %y3 : f64
+  view.store %mass, %output_view[%lane] : f64, view<64xf64, #dense>
+  kernel.return
+}
+
+kernel.def @robertson_alpha_qss_wavefront_adaptive(%max_steps: index) {
+  %one = index.constant 1 : index
+  %wavefront_size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%wavefront_size, %one, %one) : index
+} launch(%max_steps: index, %t_end: f64, %dt_initial: f64, %pc_tol: f64, %tol_safety: f64, %atol_spec: f64, %species_tol: f64, %mass_output: buffer, %accepted_output: buffer, %rejected_output: buffer) {
+  %base = index.constant 0 : offset
+  %zero = index.constant 0 : index
+  %one = index.constant 1 : index
+  %lane = kernel.workitem.id<x> : index
+  %lane_i32 = index.cast %lane : index to i32
+  %lane_f64 = scalar.sitofp %lane_i32 : i32 to f64
+  %mass_view = buffer.view %mass_output[%base] : buffer -> view<64xf64, #dense>
+  %accepted_view = buffer.view %accepted_output[%base] : buffer -> view<64xi32, #dense>
+  %rejected_view = buffer.view %rejected_output[%base] : buffer -> view<64xi32, #dense>
+
+  %zero_f64 = scalar.constant 0.0 : f64
+  %one_f64 = scalar.constant 1.0 : f64
+  %lane_scale = scalar.constant 0.000001 : f64
+  %dt_growth = scalar.constant 1.05 : f64
+  %dt_update_offset = scalar.constant 0.005 : f64
+  %dt_min = scalar.constant 0.000000000001 : f64
+  %dt_max = scalar.constant 0.000001 : f64
+  %err_floor = scalar.constant 0.000000000001 : f64
+
+  %y2_init = scalar.mulf %lane_f64, %lane_scale : f64
+  %y1_init = scalar.subf %one_f64, %y2_init : f64
+
+  %final_t, %final_dt, %final_y1, %final_y2, %final_y3, %accepted_count, %rejected_count = scf.while(%t_before = %zero_f64 : f64, %dt_before = %dt_initial : f64, %y1_before = %y1_init : f64, %y2_before = %y2_init : f64, %y3_before = %zero_f64 : f64, %accepted_before = %zero : index, %rejected_before = %zero : index) -> (f64, f64, f64, f64, f64, index, index) {
+    %time_remaining = scalar.subf %t_end, %t_before : f64
+    %time_positive = scalar.cmpf ogt, %time_remaining, %zero_f64 : f64
+    %step_count = index.add %accepted_before, %rejected_before : index
+    %steps_remaining = index.cmp slt, %step_count, %max_steps : index
+    %keep_going = scf.if %time_positive -> (i1) {
+      scf.yield %steps_remaining : i1
+    } else {
+      %false = index.cmp eq, %zero, %one : index
+      scf.yield %false : i1
+    }
+    scf.condition %keep_going, %t_before, %dt_before, %y1_before, %y2_before, %y3_before, %accepted_before, %rejected_before : i1, f64, f64, f64, f64, f64, index, index
+  } do(%t_body: f64, %dt_body: f64, %y1_body: f64, %y2_body: f64, %y3_body: f64, %accepted_body: index, %rejected_body: index) {
+    %remaining = scalar.subf %t_end, %t_body : f64
+    %dt_grown_raw = scalar.mulf %dt_body, %dt_growth : f64
+    %dt_grown = scalar.minimumf %dt_grown_raw, %dt_max : f64
+    %dt_trial = scalar.minimumf %dt_grown, %remaining : f64
+    %candidate_y1, %candidate_y2, %candidate_y3, %lane_error = func.call @robertson_predictor_corrector_trial(%y1_body, %y2_body, %y3_body, %dt_trial, %atol_spec, %species_tol) : (f64, f64, f64, f64, f64, f64) -> (f64, f64, f64, f64)
+    %wave_error = kernel.subgroup.reduce<maximumf> %lane_error : f64
+    %accept = scalar.cmpf ole, %wave_error, %pc_tol : f64
+
+    %next_t, %next_y1, %next_y2, %next_y3, %next_accepted, %next_rejected = scf.if %accept -> (f64, f64, f64, f64, index, index) {
+      %t_accepted = scalar.addf %t_body, %dt_trial : f64
+      %accepted_next = index.add %accepted_body, %one : index
+      scf.yield %t_accepted, %candidate_y1, %candidate_y2, %candidate_y3, %accepted_next, %rejected_body : f64, f64, f64, f64, index, index
+    } else {
+      %rejected_next = index.add %rejected_body, %one : index
+      scf.yield %t_body, %y1_body, %y2_body, %y3_body, %accepted_body, %rejected_next : f64, f64, f64, f64, index, index
+    }
+
+    %bounded_error = scalar.maximumf %wave_error, %err_floor : f64
+    %safe_tol = scalar.maximumf %pc_tol, %err_floor : f64
+    %target_error = scalar.divf %safe_tol, %tol_safety : f64
+    %sigma = scalar.divf %bounded_error, %target_error : f64
+    %sqrt_sigma = scalar.sqrtf %sigma : f64
+    %inv_sqrt_sigma = scalar.divf %one_f64, %sqrt_sigma : f64
+    %reject_factor = scalar.addf %inv_sqrt_sigma, %dt_update_offset : f64
+    %rejected_dt_raw = scalar.mulf %dt_trial, %reject_factor : f64
+    %rejected_dt = scalar.maximumf %rejected_dt_raw, %dt_min : f64
+    %next_dt = scf.if %accept -> (f64) {
+      scf.yield %dt_trial : f64
+    } else {
+      scf.yield %rejected_dt : f64
+    }
+    scf.yield %next_t, %next_dt, %next_y1, %next_y2, %next_y3, %next_accepted, %next_rejected : f64, f64, f64, f64, f64, index, index
+  }
+
+  %mass12 = scalar.addf %final_y1, %final_y2 : f64
+  %mass = scalar.addf %mass12, %final_y3 : f64
+  %accepted_i32 = index.cast %accepted_count : index to i32
+  %rejected_i32 = index.cast %rejected_count : index to i32
+  view.store %mass, %mass_view[%lane] : f64, view<64xf64, #dense>
+  view.store %accepted_i32, %accepted_view[%lane] : i32, view<64xi32, #dense>
+  view.store %rejected_i32, %rejected_view[%lane] : i32, view<64xi32, #dense>
+  kernel.return
+}
+
+check.case public @robertson_alpha_qss_mass_case {
+  %steps = check.param.choice values([16, 64]) name("steps") : index
+  %dt = check.literal value(0.000001) : f64
+  %output = check.generate.fill value(0.0) : tensor<1xf64>
+  %expected = check.generate.fill value(1.0) : tensor<1xf64>
+  func.call @robertson_alpha_qss(%steps, %dt, %output) : (index, f64, tensor<1xf64>)
+  check.expect.close actual(%output) expected(%expected) atol(0.0001) rtol(0.0001) nan(same) : tensor<1xf64>
+  check.return
+}
+
+check.case public @robertson_alpha_qss_wavefront_mass_case {
+  %steps = check.param.choice values([16, 64]) name("steps") : index
+  %dt = check.literal value(0.00000001) : f64
+  %output = check.generate.fill value(0.0) : tensor<64xf64>
+  %expected = check.generate.fill value(1.0) : tensor<64xf64>
+  func.call @robertson_alpha_qss_wavefront(%steps, %dt, %output) : (index, f64, tensor<64xf64>)
+  check.expect.close actual(%output) expected(%expected) atol(0.0001) rtol(0.0001) nan(same) : tensor<64xf64>
+  check.return
+}
+
+check.case public @robertson_alpha_qss_wavefront_adaptive_mass_case {
+  %max_steps = check.literal value(512) : index
+  %t_end = check.literal value(0.000001) : f64
+  %dt_initial = check.literal value(0.0000001) : f64
+  %pc_tol = check.literal value(0.01) : f64
+  %tol_safety = check.literal value(10.0) : f64
+  %atol_spec = check.literal value(0.00000001) : f64
+  %species_tol = check.literal value(0.01) : f64
+  %mass_output = check.generate.fill value(0.0) : tensor<64xf64>
+  %accepted_output = check.generate.fill value(0) : tensor<64xi32>
+  %rejected_output = check.generate.fill value(0) : tensor<64xi32>
+  %expected_mass = check.generate.fill value(1.0) : tensor<64xf64>
+  func.call @robertson_alpha_qss_wavefront_adaptive(%max_steps, %t_end, %dt_initial, %pc_tol, %tol_safety, %atol_spec, %species_tol, %mass_output, %accepted_output, %rejected_output) : (index, f64, f64, f64, f64, f64, f64, tensor<64xf64>, tensor<64xi32>, tensor<64xi32>)
+  check.expect.close actual(%mass_output) expected(%expected_mass) atol(0.0001) rtol(0.0001) nan(same) : tensor<64xf64>
+  check.return
+}
+
+check.benchmark<@robertson_alpha_qss_mass_case>
+check.benchmark<@robertson_alpha_qss_mass_case> @robertson_alpha_qss_16 {steps = 16}
+check.benchmark<@robertson_alpha_qss_mass_case> @robertson_alpha_qss_64 {steps = 64}
+check.benchmark<@robertson_alpha_qss_wavefront_mass_case>
+check.benchmark<@robertson_alpha_qss_wavefront_mass_case> @robertson_alpha_qss_wavefront_16 {steps = 16}
+check.benchmark<@robertson_alpha_qss_wavefront_mass_case> @robertson_alpha_qss_wavefront_64 {steps = 64}
+check.benchmark<@robertson_alpha_qss_wavefront_adaptive_mass_case>
