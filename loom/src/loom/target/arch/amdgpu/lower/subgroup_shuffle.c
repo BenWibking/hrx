@@ -36,12 +36,6 @@ static bool loom_amdgpu_subgroup_exact_i32_value(
 
   return loom_amdgpu_module_value_as_i32_constant(module, value_id, out_value);
 }
-static bool loom_amdgpu_descriptor_set_has_ref(
-    const loom_low_descriptor_set_t* descriptor_set,
-    loom_amdgpu_descriptor_ref_t descriptor_ref) {
-  return loom_amdgpu_descriptor_ref_ordinal(descriptor_set, descriptor_ref) !=
-         LOOM_LOW_DESCRIPTOR_ORDINAL_NONE;
-}
 iree_status_t loom_amdgpu_select_kernel_subgroup_shuffle_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_subgroup_shuffle_plan_t* out_plan, bool* out_selected) {
@@ -227,8 +221,9 @@ static iree_status_t loom_amdgpu_emit_subgroup_shuffle_source_byte_offset(
     }
     case LOOM_KERNEL_SUBGROUP_SHUFFLE_MODE_INDEX:
     case LOOM_KERNEL_SUBGROUP_SHUFFLE_MODE_COUNT_:
-      return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "AMDGPU subgroup shuffle has invalid mode");
+      IREE_ASSERT_UNREACHABLE(
+          "AMDGPU subgroup shuffle lowering requires a supported mode");
+      IREE_BUILTIN_UNREACHABLE();
   }
 
   return loom_amdgpu_emit_subgroup_lane_byte_offset(
@@ -279,17 +274,6 @@ static iree_status_t loom_amdgpu_low_legality_verify_subgroup_wavefront(
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_target_wavefront_size(bundle, out_wavefront_size));
   if (!loom_amdgpu_subgroup_wavefront_size_is_supported(*out_wavefront_size)) {
-    return loom_amdgpu_low_legality_reject(context, op, constraint_key);
-  }
-  return iree_ok_status();
-}
-
-static iree_status_t loom_amdgpu_low_legality_verify_subgroup_descriptor(
-    loom_target_low_legality_context_t* context, const loom_op_t* op,
-    loom_amdgpu_descriptor_ref_t descriptor_ref,
-    iree_string_view_t constraint_key) {
-  if (!loom_amdgpu_descriptor_set_has_ref(
-          loom_target_low_legality_descriptor_set(context), descriptor_ref)) {
     return loom_amdgpu_low_legality_reject(context, op, constraint_key);
   }
   return iree_ok_status();
@@ -348,15 +332,9 @@ iree_status_t loom_amdgpu_low_legality_verify_kernel_subgroup_shuffle(
         context, op, IREE_SV("subgroup_shuffle.lane_range"));
   }
 
-  const uint32_t descriptor_ordinal = loom_amdgpu_descriptor_ref_ordinal(
-      loom_target_low_legality_descriptor_set(context),
-      LOOM_AMDGPU_DESCRIPTOR_REF_DS_BPERMUTE_B32);
-  if (descriptor_ordinal == LOOM_LOW_DESCRIPTOR_ORDINAL_NONE) {
-    return loom_amdgpu_low_legality_reject(
-        context, op, IREE_SV("descriptor.ds_bpermute_b32"));
-  }
-
-  return iree_ok_status();
+  return loom_amdgpu_low_legality_verify_descriptor_requirement(
+      context, op, LOOM_AMDGPU_DESCRIPTOR_REF_DS_BPERMUTE_B32,
+      IREE_SV("descriptor.ds_bpermute_b32"));
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_kernel_subgroup_match(

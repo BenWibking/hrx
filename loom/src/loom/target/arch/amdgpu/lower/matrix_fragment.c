@@ -111,14 +111,6 @@ static bool loom_amdgpu_fragment_memory_reject(
   return false;
 }
 
-static bool loom_amdgpu_fragment_memory_descriptor_present(
-    const loom_low_descriptor_set_t* descriptor_set,
-    loom_amdgpu_descriptor_ref_t descriptor_ref) {
-  return descriptor_set != NULL &&
-         loom_amdgpu_descriptor_ref_ordinal(descriptor_set, descriptor_ref) !=
-             LOOM_LOW_DESCRIPTOR_ORDINAL_NONE;
-}
-
 static bool loom_amdgpu_fragment_memory_role_from_vector_role(
     loom_vector_role_t role, loom_contract_operand_role_t* out_role) {
   *out_role = LOOM_CONTRACT_OPERAND_ROLE_UNKNOWN;
@@ -350,8 +342,8 @@ static bool loom_amdgpu_fragment_memory_target_layout(
         loom_amdgpu_matrix_contract_descriptor_fragment_layout(descriptor);
     if (layout == NULL ||
         environment->bundle->snapshot->subgroup_size != layout->wave_size ||
-        !loom_amdgpu_fragment_memory_descriptor_present(
-            environment->descriptor_set, descriptor->low_descriptor_ref)) {
+        !loom_amdgpu_descriptor_set_has_ref(environment->descriptor_set,
+                                            descriptor->low_descriptor_ref)) {
       continue;
     }
     loom_scalar_type_t expected_element_type = LOOM_SCALAR_TYPE_COUNT_;
@@ -857,8 +849,8 @@ static bool loom_amdgpu_fragment_memory_analyze(
     return loom_amdgpu_fragment_memory_reject(
         diagnostic, IREE_SV("fragment_memory.memory_space"));
   }
-  if (!loom_amdgpu_fragment_memory_descriptor_present(
-          environment->descriptor_set, descriptor_ref)) {
+  if (!loom_amdgpu_descriptor_set_has_ref(environment->descriptor_set,
+                                          descriptor_ref)) {
     return loom_amdgpu_fragment_memory_reject(
         diagnostic, IREE_SV("fragment_memory.packet"));
   }
@@ -1302,8 +1294,7 @@ static bool loom_amdgpu_fragment_memory_select_packet(
     if (!loom_amdgpu_fragment_memory_descriptor_ref(
             plan->operation_kind, plan->memory_space, candidate,
             &descriptor_ref) ||
-        !loom_amdgpu_fragment_memory_descriptor_present(descriptor_set,
-                                                        descriptor_ref) ||
+        !loom_amdgpu_descriptor_set_has_ref(descriptor_set, descriptor_ref) ||
         !loom_amdgpu_fragment_memory_register_group_is_contiguous(
             layout, plan, register_index, candidate,
             LOOM_AMDGPU_FRAGMENT_REGISTER_BYTE_COUNT)) {
@@ -1368,8 +1359,7 @@ static bool loom_amdgpu_fragment_memory_select_narrowed_store_packet(
     if (!loom_amdgpu_fragment_memory_narrowed_store_descriptor_ref(
             plan->memory_space, candidate, &packet_register_count,
             &descriptor_ref) ||
-        !loom_amdgpu_fragment_memory_descriptor_present(descriptor_set,
-                                                        descriptor_ref) ||
+        !loom_amdgpu_descriptor_set_has_ref(descriptor_set, descriptor_ref) ||
         !loom_amdgpu_fragment_memory_register_group_is_contiguous(
             layout, plan, register_index, candidate,
             plan->element_byte_count)) {
@@ -1591,8 +1581,8 @@ static iree_status_t loom_amdgpu_emit_fragment_memory_vaddr(
   if (!loom_amdgpu_fragment_memory_register_terms(
           layout, plan, register_index, &lane_mod_stride, &lane_div_stride,
           &register_static_offset)) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "AMDGPU fragment memory register map is invalid");
+    IREE_ASSERT_UNREACHABLE("selected AMDGPU fragment register map");
+    IREE_BUILTIN_UNREACHABLE();
   }
   if (register_static_offset > INT64_MAX ||
       !iree_checked_add_i64(static_byte_offset_i64,
@@ -1854,8 +1844,8 @@ iree_status_t loom_amdgpu_lower_vector_fragment_load(
   const loom_amdgpu_matrix_fragment_layout_t* layout =
       loom_amdgpu_matrix_fragment_layout_for_kind(plan->layout_kind);
   if (layout == NULL) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "AMDGPU fragment memory plan has no layout");
+    IREE_ASSERT_UNREACHABLE("selected AMDGPU fragment memory layout");
+    IREE_BUILTIN_UNREACHABLE();
   }
 
   loom_type_t vgpr_type = loom_type_none();
@@ -1880,8 +1870,8 @@ iree_status_t loom_amdgpu_lower_vector_fragment_load(
     if (!loom_amdgpu_fragment_memory_select_packet(
             loom_low_lower_context_descriptor_set(context), layout, plan,
             register_index, &packet_register_count, &descriptor_ref)) {
-      return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "AMDGPU fragment memory has no packet");
+      IREE_ASSERT_UNREACHABLE("selected AMDGPU fragment memory packet");
+      IREE_BUILTIN_UNREACHABLE();
     }
     loom_type_t packet_type = loom_type_none();
     IREE_RETURN_IF_ERROR(loom_amdgpu_fragment_memory_packet_type(
@@ -1916,8 +1906,8 @@ iree_status_t loom_amdgpu_lower_vector_fragment_store(
   const loom_amdgpu_matrix_fragment_layout_t* layout =
       loom_amdgpu_matrix_fragment_layout_for_kind(plan->layout_kind);
   if (layout == NULL) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "AMDGPU fragment memory plan has no layout");
+    IREE_ASSERT_UNREACHABLE("selected AMDGPU fragment memory layout");
+    IREE_BUILTIN_UNREACHABLE();
   }
 
   loom_type_t vgpr_type = loom_type_none();
@@ -1951,8 +1941,9 @@ iree_status_t loom_amdgpu_lower_vector_fragment_store(
               loom_low_lower_context_descriptor_set(context), layout, plan,
               register_index, &result_register_count, &packet_register_count,
               &descriptor_ref)) {
-        return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                                "AMDGPU narrowed fragment store has no packet");
+        IREE_ASSERT_UNREACHABLE(
+            "selected AMDGPU narrowed fragment store packet");
+        IREE_BUILTIN_UNREACHABLE();
       }
       loom_value_id_t low_payload_packet = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_fragment_memory_packed_16bit_packet(
@@ -1983,8 +1974,8 @@ iree_status_t loom_amdgpu_lower_vector_fragment_store(
     if (!loom_amdgpu_fragment_memory_select_packet(
             loom_low_lower_context_descriptor_set(context), layout, plan,
             register_index, &packet_register_count, &descriptor_ref)) {
-      return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "AMDGPU fragment memory has no packet");
+      IREE_ASSERT_UNREACHABLE("selected AMDGPU fragment memory packet");
+      IREE_BUILTIN_UNREACHABLE();
     }
     loom_type_t packet_type = loom_type_none();
     IREE_RETURN_IF_ERROR(loom_amdgpu_fragment_memory_packet_type(

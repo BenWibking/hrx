@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "iree/base/api.h"
 #include "loom/analysis/contract_vector.h"
 #include "loom/ir/context.h"
 #include "loom/target/arch/amdgpu/error_catalog.h"
@@ -38,13 +39,12 @@ static iree_status_t loom_amdgpu_matrix_target_facts_from_environment(
                             "processor target record");
   }
   loom_amdgpu_matrix_feature_bits_t feature_bits = 0;
-  (void)loom_amdgpu_matrix_feature_bits_from_profile(
-      processor->matrix_feature_profile, &feature_bits);
+  (void)loom_amdgpu_matrix_feature_bits_from_profile(processor->features.matrix,
+                                                     &feature_bits);
   if (environment->bundle == NULL || environment->bundle->snapshot == NULL ||
       environment->bundle->snapshot->subgroup_size == 0) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "AMDGPU matrix lowering requires a fixed target "
-                            "subgroup size");
+    IREE_ASSERT_UNREACHABLE("selected AMDGPU matrix target subgroup size");
+    IREE_BUILTIN_UNREACHABLE();
   }
   const uint16_t wavefront_size =
       (uint16_t)environment->bundle->snapshot->subgroup_size;

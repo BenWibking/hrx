@@ -38,7 +38,6 @@
 #include "loom/target/emit/native/amdgpu/spill_lowering.h"
 #include "loom/target/entry_selection.h"
 #include "loom/target/function_contract.h"
-#include "loom/target/launch.h"
 #include "loom/target/provider.h"
 
 #define LOOM_AMDGPU_HAL_KERNEL_LIBRARY_DEFAULT_MAX_ERRORS 20u
@@ -141,8 +140,8 @@ loom_amdgpu_hal_kernel_library_emit_descriptor_set_mismatch(
     const loom_amdgpu_processor_info_t* processor,
     iree_string_view_t target_name) {
   const loom_diagnostic_param_t params[] = {
-      loom_param_string(processor->processor),
-      loom_param_string(processor->descriptor_set_key),
+      loom_param_string(processor->name),
+      loom_param_string(processor->descriptor_set.key),
       loom_param_string(target_name),
       loom_param_string(entry->bundle_storage.config.contract_set_key),
   };
@@ -165,13 +164,13 @@ static iree_status_t loom_amdgpu_hal_kernel_library_apply_processor(
     return loom_amdgpu_hal_kernel_library_emit_unknown_processor(
         entry, diagnostic_emitter, processor_name);
   }
-  if (processor->descriptor_set_ordinal ==
+  if (processor->descriptor_set.ordinal ==
           LOOM_AMDGPU_DESCRIPTOR_SET_ORDINAL_NONE ||
-      iree_string_view_is_empty(processor->descriptor_set_key)) {
+      iree_string_view_is_empty(processor->descriptor_set.key)) {
     return loom_amdgpu_hal_kernel_library_emit_no_descriptor_set(
-        entry, diagnostic_emitter, processor->processor);
+        entry, diagnostic_emitter, processor->name);
   }
-  if (!iree_string_view_equal(processor->descriptor_set_key,
+  if (!iree_string_view_equal(processor->descriptor_set.key,
                               entry->bundle_storage.config.contract_set_key)) {
     return loom_amdgpu_hal_kernel_library_emit_descriptor_set_mismatch(
         entry, diagnostic_emitter, processor,
@@ -415,11 +414,16 @@ typedef struct loom_amdgpu_hal_kernel_library_spill_lowering_context_t {
 
 static iree_status_t loom_amdgpu_hal_kernel_library_lower_spill_traffic(
     void* user_data, loom_module_t* module, loom_op_t* low_function_op,
-    iree_arena_allocator_t* table_arena) {
+    iree_diagnostic_emitter_t emitter, iree_arena_allocator_t* table_arena,
+    loom_low_emission_frame_lower_spill_traffic_result_t* out_result) {
   const loom_amdgpu_hal_kernel_library_spill_lowering_context_t* context =
       (const loom_amdgpu_hal_kernel_library_spill_lowering_context_t*)user_data;
-  return loom_amdgpu_lower_spill_traffic(module, low_function_op,
-                                         context->descriptor_set, table_arena);
+  loom_amdgpu_spill_lowering_result_t result = {0};
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lower_spill_traffic(
+      module, low_function_op, context->descriptor_set, emitter, &result,
+      table_arena));
+  out_result->error_count = result.error_count;
+  return iree_ok_status();
 }
 
 static iree_status_t loom_amdgpu_hal_kernel_library_materialize_address_state(
@@ -500,8 +504,14 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
   if (diagnostic_emitter->error_count != 0) {
     return iree_ok_status();
   }
+  const loom_amdgpu_native_preflight_options_t preflight_options = {
+      .emitter = frame_options.emitter,
+  };
   IREE_RETURN_IF_ERROR(loom_amdgpu_native_preflight_analyze(
-      &frame.schedule, &frame.allocation, &preflight));
+      &frame.schedule, &frame.allocation, &preflight_options, &preflight));
+  if (preflight.error_count != 0) {
+    return iree_ok_status();
+  }
   if (report != NULL) {
     IREE_RETURN_IF_ERROR(
         loom_target_compile_report_record_low_emission_frame(report, &frame));
@@ -519,11 +529,6 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
         report, out_contribution->summary.private_segment_fixed_size,
         out_contribution->summary.group_segment_fixed_size);
   }
-
-  const loom_target_hal_kernel_abi_t* hal_kernel =
-      &plan->entry->bundle_storage.bundle.export_plan->hal_kernel;
-  IREE_RETURN_IF_ERROR(loom_target_require_concrete_hal_kernel_launch(
-      hal_kernel, IREE_SV("AMDGPU HAL kernel-library entry")));
   return iree_ok_status();
 }
 
