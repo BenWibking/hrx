@@ -206,4 +206,22 @@ iree_cc_library(
   PUBLIC
 )
 
+iree_cc_test(
+  NAME
+    device_test
+  SRCS
+    "device_test.cc"
+  DEPS
+    ::device
+    iree::async
+    iree::async::util::proactor_pool
+    iree::base
+    iree::base::threading
+    iree::hal
+    iree::hal::drivers::task::queue
+    iree::task
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

@@ -471,7 +471,7 @@ typedef struct iree_hal_task_queue_create_params_t {
   // Executor retained by the queue.
   iree_task_executor_t* executor;
 
-  // NUMA-local proactor borrowed from the parent device's proactor pool.
+  // Local or explicitly unplaced proactor borrowed from the device's pool.
   iree_async_proactor_t* proactor;
 
   // Aggregate transfer payload length selecting direct or recorded execution.
@@ -528,9 +528,9 @@ struct iree_hal_task_queue_t {
   iree_task_executor_t* executor;
 
   // Proactor for async I/O operations on this queue. Borrowed from the
-  // device's proactor pool — selected at device creation time based on the
-  // executor's NUMA node for NUMA-correct I/O. Valid as long as the device
-  // (which retains the proactor pool) is alive.
+  // device's proactor pool. Device construction selects a local or explicitly
+  // unplaced service; dynamic queues reuse their executor's selected service.
+  // Valid as long as the device (which retains the proactor pool) is alive.
   iree_async_proactor_t* proactor;
 
   // Shared frontier tracker for cross-device causal ordering.

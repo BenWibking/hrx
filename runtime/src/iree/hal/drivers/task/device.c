@@ -339,6 +339,34 @@ static iree_status_t iree_hal_task_device_check_params(
   return iree_ok_status();
 }
 
+// A task executor can use an explicitly unplaced service when its caller has
+// provided one. A pool containing only bound services must include the
+// executor's physical node. This selection happens only during construction.
+static iree_status_t iree_hal_task_device_select_proactor(
+    iree_async_proactor_pool_t* pool, iree_numa_node_id_t node_id,
+    iree_async_proactor_t** out_proactor) {
+  if (node_id == IREE_NUMA_NODE_ANY) {
+    return iree_async_proactor_pool_get(pool, 0, out_proactor);
+  }
+  iree_host_size_t unspecified_index = IREE_HOST_SIZE_MAX;
+  for (iree_host_size_t i = 0; i < iree_async_proactor_pool_count(pool); ++i) {
+    uint32_t entry_node = iree_async_proactor_pool_node_id(pool, i);
+    if (entry_node == node_id) {
+      return iree_async_proactor_pool_get(pool, i, out_proactor);
+    }
+    if (entry_node == UINT32_MAX && unspecified_index == IREE_HOST_SIZE_MAX) {
+      unspecified_index = i;
+    }
+  }
+  if (unspecified_index != IREE_HOST_SIZE_MAX) {
+    return iree_async_proactor_pool_get(pool, unspecified_index, out_proactor);
+  }
+  *out_proactor = NULL;
+  return iree_make_status(IREE_STATUS_NOT_FOUND,
+                          "task executor NUMA node %u has no proactor service",
+                          node_id);
+}
+
 iree_status_t iree_hal_task_device_create(
     iree_string_view_t identifier, const iree_hal_task_device_params_t* params,
     iree_host_size_t queue_count, iree_task_executor_t* const* queue_executors,
@@ -391,8 +419,8 @@ iree_status_t iree_hal_task_device_create(
   iree_atomic_store(&device->next_profile_submission_id, 0,
                     iree_memory_order_relaxed);
 
-  // Retain the proactor pool. Each queue will get a NUMA-correct proactor
-  // borrowed from the pool based on its executor's node assignment.
+  // Retain the proactor pool. Queues borrow a local or explicitly unplaced
+  // service based on their executor's physical NUMA affinity.
   device->proactor_pool = create_params->proactor_pool;
   device->event_sink = create_params->event_sink;
   iree_async_proactor_pool_retain(device->proactor_pool);
@@ -401,7 +429,7 @@ iree_status_t iree_hal_task_device_create(
   // node. Used for device-owned pools, files, and semaphores.
   iree_numa_node_id_t default_node_id =
       iree_task_executor_numa_node(queue_executors[0]);
-  iree_status_t status = iree_async_proactor_pool_get_for_node(
+  iree_status_t status = iree_hal_task_device_select_proactor(
       device->proactor_pool, default_node_id, &device->proactor);
   if (iree_status_is_ok(status)) {
     iree_hal_task_device_spec_params_t spec_params = {
@@ -453,14 +481,13 @@ iree_status_t iree_hal_task_device_create(
     iree_hal_queue_params_t queue_params;
     iree_hal_queue_params_initialize(&queue_params);
     for (iree_host_size_t i = 0; i < queue_count; ++i) {
-      // Select a NUMA-correct proactor for this queue based on its executor's
-      // node assignment. Falls back to the first proactor in the pool if the
-      // executor's node doesn't have a dedicated proactor.
+      // Prefer the executor's local service, accepting an explicitly unplaced
+      // service when the caller provides one.
       iree_async_proactor_t* queue_proactor = NULL;
       iree_numa_node_id_t node_id =
           iree_task_executor_numa_node(queue_executors[i]);
-      status = iree_async_proactor_pool_get_for_node(device->proactor_pool,
-                                                     node_id, &queue_proactor);
+      status = iree_hal_task_device_select_proactor(device->proactor_pool,
+                                                    node_id, &queue_proactor);
       if (!iree_status_is_ok(status)) {
         break;
       }
@@ -644,36 +671,31 @@ static iree_status_t iree_hal_task_device_acquire_queue(
   IREE_RETURN_IF_ERROR(iree_hal_task_device_acquire_dynamic_queue_slot(
       device, &queue_index, &incarnation));
 
-  iree_task_executor_t* executor =
-      device->queues[queue_index % device->queue_count].executor;
-  iree_async_proactor_t* proactor = NULL;
-  iree_status_t status = iree_async_proactor_pool_get_for_node(
-      device->proactor_pool, iree_task_executor_numa_node(executor), &proactor);
+  // Reuse the executor/service pairing established for the provisioned queue.
+  const iree_hal_task_queue_t* provisioned_queue =
+      &device->queues[queue_index % device->queue_count];
+  const iree_hal_task_queue_create_params_t queue_create_params = {
+      .identifier = device->identifier,
+      .device = base_device,
+      .queue_family = queue_family,
+      .queue_params = *params,
+      .scope_flags = device->queue_scope_flags,
+      .executor = provisioned_queue->executor,
+      .proactor = provisioned_queue->proactor,
+      .inline_transfer_threshold = device->inline_transfer_threshold,
+      .small_block_pool = &device->small_block_pool,
+      .large_block_pool = &device->large_block_pool,
+      .device_allocator = device->device_allocator,
+  };
+  const iree_hal_task_queue_release_slot_callback_t release_slot = {
+      .fn = iree_hal_task_device_release_dynamic_queue_slot,
+      .user_data = device,
+      .queue_index = queue_index,
+  };
   iree_hal_task_queue_t* queue = NULL;
-  bool queue_owns_slot = false;
-  if (iree_status_is_ok(status)) {
-    const iree_hal_task_queue_create_params_t queue_create_params = {
-        .identifier = device->identifier,
-        .device = base_device,
-        .queue_family = queue_family,
-        .queue_params = *params,
-        .scope_flags = device->queue_scope_flags,
-        .executor = executor,
-        .proactor = proactor,
-        .inline_transfer_threshold = device->inline_transfer_threshold,
-        .small_block_pool = &device->small_block_pool,
-        .large_block_pool = &device->large_block_pool,
-        .device_allocator = device->device_allocator,
-    };
-    const iree_hal_task_queue_release_slot_callback_t release_slot = {
-        .fn = iree_hal_task_device_release_dynamic_queue_slot,
-        .user_data = device,
-        .queue_index = queue_index,
-    };
-    status = iree_hal_task_queue_create(&queue_create_params, release_slot,
-                                        device->host_allocator, &queue);
-    queue_owns_slot = iree_status_is_ok(status);
-  }
+  iree_status_t status = iree_hal_task_queue_create(
+      &queue_create_params, release_slot, device->host_allocator, &queue);
+  bool queue_owns_slot = iree_status_is_ok(status);
   if (iree_status_is_ok(status)) {
     const iree_async_axis_t base_axis =
         device->topology_info.frontier.base_axis;

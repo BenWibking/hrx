@@ -324,7 +324,8 @@ static int iree_async_posix_worker_thread_entry(void* entry_arg) {
 
 iree_status_t iree_async_posix_worker_initialize(
     iree_async_proactor_posix_t* proactor, iree_host_size_t worker_index,
-    iree_allocator_t allocator, iree_async_posix_worker_t* out_worker) {
+    iree_thread_affinity_t affinity, iree_allocator_t allocator,
+    iree_async_posix_worker_t* out_worker) {
   IREE_TRACE_ZONE_BEGIN(z0);
 
   // Zero-init the worker struct. This ensures cleanup in deinitialize works
@@ -348,11 +349,7 @@ iree_status_t iree_async_posix_worker_initialize(
   params.name = iree_make_cstring_view("async_worker");
   params.create_suspended = false;
 
-  // Set thread affinity to the proactor's NUMA node if specified.
-  if (proactor->numa_node != 0) {
-    iree_thread_affinity_set_group_any(proactor->numa_node,
-                                       &params.initial_affinity);
-  }
+  params.initial_affinity = affinity;
 
   // Create and start the worker thread.
   iree_status_t status =

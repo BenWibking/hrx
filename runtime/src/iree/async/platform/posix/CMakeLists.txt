@@ -131,6 +131,23 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 iree_cc_test(
   NAME
+    proactor_test
+  SRCS
+    "proactor_test.cc"
+  DEPS
+    ::posix
+    iree::async
+    iree::async::util::proactor_pool
+    iree::base
+    iree::base::threading::thread
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+iree_cc_test(
+  NAME
     timer_list_test
   SRCS
     "timer_list_test.cc"
