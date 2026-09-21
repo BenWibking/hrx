@@ -113,9 +113,10 @@ void iree_task_executor_retain(iree_task_executor_t* executor);
 void iree_task_executor_release(iree_task_executor_t* executor);
 
 // Returns the NUMA node this executor's workers are pinned to, or
-// IREE_TASK_TOPOLOGY_NODE_ID_ANY if the executor was created without a
-// specific NUMA node assignment.
-iree_task_topology_node_id_t iree_task_executor_node_id(
+// IREE_NUMA_NODE_ANY if placement is unknown or spans memory nodes. This is
+// resolved once at creation from worker affinities, not a task placement-domain
+// ordinal. Worker allocation placement is independent.
+iree_numa_node_id_t iree_task_executor_numa_node(
     iree_task_executor_t* executor);
 
 // Trims pools and caches used by the executor and its workers.
