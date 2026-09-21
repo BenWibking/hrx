@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <string.h>
+#include <sys/sysctl.h>
 
 #include "iree/base/internal/atomics.h"
 #include "iree/base/threading/thread.h"
@@ -62,8 +63,6 @@ static void iree_thread_set_name(const char* name) {
 }
 
 static void* iree_thread_start_routine(void* param) {
-  // NOTE: we own a reference to the thread handle so that the creation
-  // thread can't delete this out from under us.
   iree_thread_t* thread = (iree_thread_t*)param;
 
   // Set the thread name used by debuggers and tracy (which must be called on
@@ -80,7 +79,8 @@ static void* iree_thread_start_routine(void* param) {
   // Call the user thread entry point function.
   // Note that this can be a tail-call which saves a stack frame in all threads
   // (which is really just to make call stacks in debuggers much cleaner).
-  return (void*)((uintptr_t)entry(entry_arg));
+  // Failed startup resumes the native thread with no user entry to invoke.
+  return entry ? (void*)((uintptr_t)entry(entry_arg)) : NULL;
 }
 
 iree_status_t iree_thread_create(iree_thread_entry_t entry, void* entry_arg,
@@ -88,6 +88,7 @@ iree_status_t iree_thread_create(iree_thread_entry_t entry, void* entry_arg,
                                  iree_allocator_t allocator,
                                  iree_thread_t** out_thread) {
   IREE_TRACE_ZONE_BEGIN(z0);
+  *out_thread = NULL;
 
   // Allocate our thread struct; we'll use it to shuttle params into the thread
   // (including the user-specified entry_arg).
@@ -104,56 +105,51 @@ iree_status_t iree_thread_create(iree_thread_entry_t entry, void* entry_arg,
   thread->entry_arg = entry_arg;
   iree_strncpy_s(thread->name, IREE_ARRAYSIZE(thread->name), params.name.data,
                  iree_min(params.name.size, IREE_ARRAYSIZE(thread->name) - 1));
-  iree_atomic_store(&thread->is_suspended, params.create_suspended ? 1 : 0,
-                    iree_memory_order_relaxed);
+  iree_atomic_store(&thread->is_suspended, 1, iree_memory_order_relaxed);
 
   pthread_attr_t thread_attr;
-  pthread_attr_init(&thread_attr);
-  pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
-  if (params.stack_size) {
-    pthread_attr_setstacksize(&thread_attr, params.stack_size);
+  int rc = pthread_attr_init(&thread_attr);
+  bool thread_started = false;
+  if (rc == 0) {
+    if (params.stack_size) {
+      rc = pthread_attr_setstacksize(&thread_attr, params.stack_size);
+    }
+    if (rc == 0) {
+      qos_class_t qos_class =
+          params.initial_affinity.id_assigned && params.initial_affinity.smt
+              ? QOS_CLASS_BACKGROUND
+              : iree_thread_qos_class_for_priority_class(params.priority_class);
+      rc = pthread_attr_set_qos_class_np(&thread_attr, qos_class, 0);
+    }
+    if (rc == 0) {
+      rc = pthread_create_suspended_np(&thread->handle, &thread_attr,
+                                       &iree_thread_start_routine, thread);
+      thread_started = rc == 0;
+    }
+    pthread_attr_destroy(&thread_attr);
   }
-
-  // Ensure we start with the right QoS class.
-  qos_class_t qos_class;
-  if (params.initial_affinity.id_assigned && params.initial_affinity.smt) {
-    qos_class = QOS_CLASS_BACKGROUND;
-  } else {
-    qos_class = iree_thread_qos_class_for_priority_class(params.priority_class);
-  }
-  pthread_attr_set_qos_class_np(&thread_attr, qos_class, 0);
-
-  *out_thread = thread;
-
-  // Create the thread either suspended or running as the user requested.
-  int rc;
-  if (params.create_suspended) {
-    IREE_TRACE_ZONE_BEGIN_NAMED(z1, "pthread_create_suspended_np");
-    rc = pthread_create_suspended_np(&thread->handle, &thread_attr,
-                                     &iree_thread_start_routine, thread);
-    IREE_TRACE_ZONE_END(z1);
-  } else {
-    IREE_TRACE_ZONE_BEGIN_NAMED(z1, "pthread_create");
-    rc = pthread_create(&thread->handle, &thread_attr,
-                        &iree_thread_start_routine, thread);
-    IREE_TRACE_ZONE_END(z1);
-  }
-  pthread_attr_destroy(&thread_attr);
   if (rc != 0) {
-    iree_thread_release(thread);  // for caller
-    *out_thread = NULL;
-    IREE_TRACE_ZONE_END(z0);
-    return iree_make_status(IREE_STATUS_INTERNAL,
-                            "thread creation failed with %d", rc);
+    status = iree_make_status(iree_status_code_from_errno(rc),
+                              "thread creation failed: %s", strerror(rc));
+  } else {
+    thread->mach_port = pthread_mach_thread_np(thread->handle);
+    status = iree_thread_request_affinity(thread, params.initial_affinity);
   }
 
-  thread->mach_port = pthread_mach_thread_np(thread->handle);
-  if (!iree_thread_affinity_is_unspecified(params.initial_affinity)) {
-    iree_thread_request_affinity(thread, params.initial_affinity);
+  if (iree_status_is_ok(status)) {
+    *out_thread = thread;
+    if (!params.create_suspended) {
+      iree_thread_resume(thread);
+    }
+  } else if (thread_started) {
+    thread->entry = NULL;
+    thread->entry_arg = NULL;
+    iree_thread_release(thread);
+  } else {
+    iree_allocator_free(allocator, thread);
   }
-
   IREE_TRACE_ZONE_END(z0);
-  return iree_ok_status();
+  return status;
 }
 
 static void iree_thread_delete(iree_thread_t* thread) {
@@ -210,33 +206,43 @@ void iree_thread_override_end(iree_thread_override_t* override) {
   IREE_TRACE_ZONE_END(z0);
 }
 
-void iree_thread_request_affinity(iree_thread_t* thread,
-                                  iree_thread_affinity_t affinity) {
-  IREE_TRACE_ZONE_BEGIN(z0);
-
-  // NOTE: group affinity is not yet supported, only ID affinity.
-  // When the ID is not assigned we should really clear the policy but that
-  // doesn't seem possible. Today we don't migrate affinities in a way where
-  // we'd ever want to do anything but assign new ones so this is ok. The kernel
-  // is allowed to totally ignore the affinity request and interpret it however
-  // it likes so this is all not critical anyway.
-  if (affinity.id_assigned) {
-    // Use mach_task_self when the caller requesting the affinity change is the
-    // thread being changed.
-    mach_port_t thread_port =
-        thread->handle == pthread_self() ? mach_task_self() : thread->mach_port;
-
-    // See:
-    // https://gist.github.com/Coneko/4234842
-    // https://fergofrog.com/code/cbowser/xnu/osfmk/mach/thread_policy.h.html
-    // http://www.hybridkernel.com/2015/01/18/binding_threads_to_cores_osx.html
-    thread_affinity_policy_data_t policy_data = {affinity.id};
-    thread_policy_set(thread_port, THREAD_AFFINITY_POLICY,
-                      (thread_policy_t)(&policy_data),
-                      THREAD_AFFINITY_POLICY_COUNT);
+iree_status_t iree_thread_request_affinity(iree_thread_t* thread,
+                                           iree_thread_affinity_t affinity) {
+  if (iree_thread_affinity_is_unspecified(affinity)) {
+    return iree_ok_status();
+  }
+  if (affinity.group_any) {
+    // Darwin exposes no API for binding to an individual NUMA node. Node 0
+    // requires no binding when the machine has just one physical package.
+    int packages = 1;
+#if !defined(IREE_PLATFORM_IOS)
+    size_t size = sizeof(packages);
+    if (sysctlbyname("hw.packages", &packages, &size, NULL, 0) != 0) {
+      return iree_make_status(IREE_STATUS_UNAVAILABLE,
+                              "cannot establish the Darwin memory domain");
+    }
+#endif  // !IREE_PLATFORM_IOS
+    if (affinity.group != 0 || packages != 1) {
+      return iree_make_status(IREE_STATUS_UNAVAILABLE,
+                              "Darwin cannot bind threads to NUMA node %u",
+                              affinity.group);
+    }
+    return iree_ok_status();
   }
 
-  IREE_TRACE_ZONE_END(z0);
+#if defined(IREE_ARCH_X86_64)
+  // Intel Darwin supports advisory cache-affinity tags. Apple Silicon does
+  // not implement these tags; its placement hint is the creation-time QoS.
+  thread_affinity_policy_data_t policy_data = {affinity.id};
+  kern_return_t rc = thread_policy_set(
+      thread->mach_port, THREAD_AFFINITY_POLICY, (thread_policy_t)&policy_data,
+      THREAD_AFFINITY_POLICY_COUNT);
+  if (rc != KERN_SUCCESS) {
+    return iree_make_status(IREE_STATUS_UNAVAILABLE,
+                            "cannot apply Darwin affinity tag: %d", rc);
+  }
+#endif  // IREE_ARCH_X86_64
+  return iree_ok_status();
 }
 
 void iree_thread_resume(iree_thread_t* thread) {

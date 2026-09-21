@@ -13,6 +13,7 @@
 #include "iree/async/operations/scheduling.h"
 #include "iree/base/internal/atomics.h"
 #include "iree/base/threading/notification.h"
+#include "iree/base/threading/numa.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -231,15 +232,15 @@ TEST_F(ProactorPoolTest, OnDemandGet) {
 }
 
 TEST_F(ProactorPoolTest, CreateWithNodeIds) {
-  uint32_t node_ids[] = {0, 1};
+  uint32_t node_ids[] = {iree_numa_node_for_current_thread(), UINT32_MAX};
   iree_async_proactor_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_async_proactor_pool_create(
       2, node_ids, default_options(), iree_allocator_system(), &pool));
   ASSERT_NE(pool, nullptr);
 
   EXPECT_EQ(iree_async_proactor_pool_count(pool), 2u);
-  EXPECT_EQ(iree_async_proactor_pool_node_id(pool, 0), 0u);
-  EXPECT_EQ(iree_async_proactor_pool_node_id(pool, 1), 1u);
+  EXPECT_EQ(iree_async_proactor_pool_node_id(pool, 0), node_ids[0]);
+  EXPECT_EQ(iree_async_proactor_pool_node_id(pool, 1), node_ids[1]);
 
   // Each proactor is distinct (on-demand creation).
   iree_async_proactor_t* proactor_0 = nullptr;
@@ -260,50 +261,53 @@ TEST_F(ProactorPoolTest, CreateWithNodeIds) {
 }
 
 TEST_F(ProactorPoolTest, GetForNodeExactMatch) {
-  uint32_t node_ids[] = {3, 7};
+  uint32_t node_ids[] = {iree_numa_node_for_current_thread(), UINT32_MAX};
   iree_async_proactor_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_async_proactor_pool_create(
       2, node_ids, default_options(), iree_allocator_system(), &pool));
 
   // Exact match returns the right proactor.
-  iree_async_proactor_t* proactor_3 = nullptr;
-  iree_async_proactor_t* proactor_7 = nullptr;
+  iree_async_proactor_t* proactor_local = nullptr;
+  iree_async_proactor_t* proactor_any = nullptr;
   iree_status_t status =
-      iree_async_proactor_pool_get_for_node(pool, 3, &proactor_3);
+      iree_async_proactor_pool_get_for_node(pool, node_ids[0], &proactor_local);
   if (iree_status_is_unavailable(status)) {
     iree_status_free(status);
     iree_async_proactor_pool_release(pool);
     GTEST_SKIP() << "Platform proactor unavailable";
   }
   IREE_ASSERT_OK(status);
-  IREE_ASSERT_OK(iree_async_proactor_pool_get_for_node(pool, 7, &proactor_7));
+  IREE_ASSERT_OK(
+      iree_async_proactor_pool_get_for_node(pool, node_ids[1], &proactor_any));
 
   iree_async_proactor_t* proactor_0 = nullptr;
   iree_async_proactor_t* proactor_1 = nullptr;
   IREE_ASSERT_OK(iree_async_proactor_pool_get(pool, 0, &proactor_0));
   IREE_ASSERT_OK(iree_async_proactor_pool_get(pool, 1, &proactor_1));
-  EXPECT_EQ(proactor_3, proactor_0);
-  EXPECT_EQ(proactor_7, proactor_1);
+  EXPECT_EQ(proactor_local, proactor_0);
+  EXPECT_EQ(proactor_any, proactor_1);
 
   // No match falls back to the first proactor.
-  iree_async_proactor_t* proactor_99 = nullptr;
-  IREE_ASSERT_OK(iree_async_proactor_pool_get_for_node(pool, 99, &proactor_99));
-  EXPECT_EQ(proactor_99, proactor_0);
+  iree_async_proactor_t* proactor_missing = nullptr;
+  IREE_ASSERT_OK(iree_async_proactor_pool_get_for_node(pool, UINT32_MAX - 1,
+                                                       &proactor_missing));
+  EXPECT_EQ(proactor_missing, proactor_0);
 
   // Entry acquisition follows the same exact-match and fallback mapping while
   // retaining runner ownership for the caller.
-  iree_async_proactor_pool_entry_t* entry_7 = nullptr;
-  IREE_ASSERT_OK(iree_async_proactor_pool_acquire_for_node(pool, 7, &entry_7));
-  EXPECT_EQ(iree_async_proactor_pool_entry_node_id(entry_7), 7u);
-  EXPECT_EQ(iree_async_proactor_pool_entry_proactor(entry_7), proactor_7);
-  iree_async_proactor_pool_entry_release(entry_7);
-
-  iree_async_proactor_pool_entry_t* entry_99 = nullptr;
+  iree_async_proactor_pool_entry_t* entry_any = nullptr;
   IREE_ASSERT_OK(
-      iree_async_proactor_pool_acquire_for_node(pool, 99, &entry_99));
-  EXPECT_EQ(iree_async_proactor_pool_entry_node_id(entry_99), 3u);
-  EXPECT_EQ(iree_async_proactor_pool_entry_proactor(entry_99), proactor_0);
-  iree_async_proactor_pool_entry_release(entry_99);
+      iree_async_proactor_pool_acquire_for_node(pool, node_ids[1], &entry_any));
+  EXPECT_EQ(iree_async_proactor_pool_entry_node_id(entry_any), node_ids[1]);
+  EXPECT_EQ(iree_async_proactor_pool_entry_proactor(entry_any), proactor_any);
+  iree_async_proactor_pool_entry_release(entry_any);
+
+  iree_async_proactor_pool_entry_t* entry_missing = nullptr;
+  IREE_ASSERT_OK(iree_async_proactor_pool_acquire_for_node(pool, UINT32_MAX - 1,
+                                                           &entry_missing));
+  EXPECT_EQ(iree_async_proactor_pool_entry_node_id(entry_missing), node_ids[0]);
+  EXPECT_EQ(iree_async_proactor_pool_entry_proactor(entry_missing), proactor_0);
+  iree_async_proactor_pool_entry_release(entry_missing);
 
   iree_async_proactor_pool_release(pool);
 }
