@@ -106,9 +106,10 @@ iree_numa_node_id_t iree_task_topology_query_numa_node(
 
 iree_status_t iree_task_topology_fixup_constructive_sharing_masks(
     iree_task_topology_t* topology) {
-  return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                          "assignment to individual CPUs is not available on "
-                          "Apple platforms due to a lack of APIs");
+  // Darwin exposes no CPU-to-cache mapping for caller-provided affinities.
+  // Preserve the conservative sharing masks initialized with each group.
+  // Worker startup separately applies affinity tags and node constraints.
+  return iree_ok_status();
 }
 
 iree_status_t iree_task_topology_initialize_from_logical_cpu_set(
