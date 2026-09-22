@@ -25,7 +25,8 @@ LOOM_PASS_STATISTICS_DEFINE(loom_ownership_lifetime_statistics,
 static const loom_pass_info_t loom_ownership_lifetime_pass_info_storage = {
     .name = IREE_SVL("ownership-lifetime"),
     .description = IREE_SVL("Analyze descriptor-backed owned-resource "
-                            "lifetimes across function and CFG control flow."),
+                            "lifetimes across functions and CFG blocks; "
+                            "owned-resource functions require flat control."),
     .kind = LOOM_PASS_MODULE,
     .statistic_layout = &loom_ownership_lifetime_statistics_layout,
 };

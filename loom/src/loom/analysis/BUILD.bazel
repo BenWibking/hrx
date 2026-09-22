@@ -554,8 +554,14 @@ loom_cc_library(
 
 loom_cc_library(
     name = "ownership_lifetime",
-    srcs = ["ownership_lifetime.c"],
-    hdrs = ["ownership_lifetime.h"],
+    srcs = [
+        "ownership_callable.c",
+        "ownership_lifetime.c",
+    ],
+    hdrs = [
+        "ownership_callable.h",
+        "ownership_lifetime.h",
+    ],
     deps = [
         ":liveness",
         ":ownership",

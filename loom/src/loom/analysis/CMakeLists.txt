@@ -629,8 +629,10 @@ loom_cc_library(
   NAME
     ownership_lifetime
   HDRS
+    "ownership_callable.h"
     "ownership_lifetime.h"
   SRCS
+    "ownership_callable.c"
     "ownership_lifetime.c"
   DEPS
     ::liveness

@@ -10,6 +10,11 @@
 // function-local value domain. It checks that owned resources are consumed,
 // released, discarded, or escaped exactly once along every CFG path and that
 // path joins do not hide an owned obligation on only some predecessors.
+// Functions that create or transfer ownership require flat execution control:
+// straight-line operations or CFG blocks. Nested execution regions in those
+// functions produce a diagnostic; this analysis does not lower their control.
+// Ownership-neutral helpers may retain structured control, including calls to
+// functions that manage resources internally behind a borrowed-only ABI.
 
 #ifndef LOOM_ANALYSIS_OWNERSHIP_LIFETIME_H_
 #define LOOM_ANALYSIS_OWNERSHIP_LIFETIME_H_
@@ -85,6 +90,11 @@ typedef struct loom_ownership_lifetime_result_t {
 
 // Analyzes owned-resource lifetimes for all function-like bodies in a module.
 //
+// The module must be verified. Functions with owned effects or callable
+// ownership transfers must have their structured control lowered to CFG before
+// analysis. Descriptor effects and inferred callable summaries establish this
+// boundary, including ownership passed through non-inlined calls.
+//
 // User IR failures are emitted through |options->emitter| and counted in
 // |out_result|. The analysis returns OK for user IR failures so callers can use
 // it as a pass, a target-lowering gate, or an importer diagnostic source.
@@ -100,6 +110,9 @@ iree_status_t loom_ownership_lifetime_analyze_module(
 // This is the mutating production form of the lifetime stage. It runs the
 // same summary solver as the non-mutating analyzer, records cleanup actions
 // during the final stable transfer, and applies those actions after planning.
+// The same flat-control requirement applies to the selected resource families;
+// unsupported nested execution is diagnosed before planning that function's
+// cleanup.
 // User IR failures are emitted through |options->emitter| and counted in
 // |out_result|; infrastructure failures are returned as status failures.
 iree_status_t loom_ownership_lifetime_materialize_module(

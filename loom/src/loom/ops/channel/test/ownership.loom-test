@@ -191,3 +191,48 @@ func.def @same_backing_distinct_protocols(%storage: view<2x144xi32>) {
   channel.release %second_read : read<tile<144xi32>>
   func.return
 }
+
+// ====
+
+// RUN: pass ownership-lifetime
+
+// The bare pass cannot certify ownership it has not interpreted inside SCF.
+func.def @nested_read_requires_cfg(%channel: channel<tile<144xi32>>, %more: i1) {
+  // ERROR@+1: DOMINANCE/018 {phase_name="ownership-lifetime", op_name="scf.while"}
+  %last = scf.while(%active = %more : i1) -> (i1) {
+    scf.condition %active, %active : i1, i1
+  } do(%current: i1) {
+    %read = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+    scf.yield %current : i1
+  }
+  func.return
+}
+
+// ====
+
+// RUN: pass ownership-lifetime
+
+// A declaration's owned result contract participates in the same boundary.
+func.decl @next_record(%channel: channel<tile<144xi32>>) -> (read<tile<144xi32>>)
+
+func.def @nested_external_producer_requires_cfg(%condition: i1, %channel: channel<tile<144xi32>>) {
+  // ERROR@+1: DOMINANCE/018 {phase_name="ownership-lifetime", op_name="scf.if"}
+  scf.if %condition {
+    %read = func.call @next_record(%channel) : (channel<tile<144xi32>>) -> (read<tile<144xi32>>)
+  }
+  func.return
+}
+
+// ====
+
+// RUN: pass ownership-lifetime
+
+func.def @carried_access_requires_cfg(%condition: i1, %read: read<tile<144xi32>>) -> (read<tile<144xi32>>) {
+  // ERROR@+1: DOMINANCE/018 {phase_name="ownership-lifetime", op_name="scf.if"}
+  %forwarded = scf.if %condition -> (read<tile<144xi32>>) {
+    scf.yield %read : read<tile<144xi32>>
+  } else {
+    scf.yield %read : read<tile<144xi32>>
+  }
+  func.return %forwarded : read<tile<144xi32>>
+}

@@ -294,6 +294,26 @@ ERR_DOMINANCE_017 = ErrorDef(
     ),
 )
 
+# ERR_DOMINANCE_018: Owned-resource analysis requires flattened control flow.
+ERR_DOMINANCE_018 = ErrorDef(
+    domain=ErrorDomain.DOMINANCE,
+    code=18,
+    severity=Severity.ERROR,
+    summary="Owned-resource analysis requires flattened control flow.",
+    message=(
+        "{phase_name} requires CFG control flow in a function with owned "
+        "resources; '{op_name}' still contains nested execution regions"
+    ),
+    params=(
+        ErrorParam("phase_name", ParamKind.STRING),
+        ErrorParam("op_name", ParamKind.STRING),
+    ),
+    fix_hint=(
+        "Lower the function's structured control flow before ownership "
+        "analysis or cleanup; SCF operations use scf-to-cfg."
+    ),
+)
+
 ALL_DOMINANCE_ERRORS: tuple[ErrorDef, ...] = (
     ERR_DOMINANCE_001,
     ERR_DOMINANCE_002,
@@ -312,4 +332,5 @@ ALL_DOMINANCE_ERRORS: tuple[ErrorDef, ...] = (
     ERR_DOMINANCE_015,
     ERR_DOMINANCE_016,
     ERR_DOMINANCE_017,
+    ERR_DOMINANCE_018,
 )

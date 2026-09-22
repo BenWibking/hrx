@@ -14,6 +14,7 @@ loom_check_test_suite(
     test
   SRCS
     "ownership_lifetime.loom-test"
+    "ownership_regions.loom-test"
     "test_resource_lifetime.loom-test"
 )
 
