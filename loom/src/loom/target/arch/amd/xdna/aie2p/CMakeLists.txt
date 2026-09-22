@@ -798,6 +798,7 @@ loom_check_test_suite(
     "test/pipeline_rejection.loom-test"
     "test/source_low/bf16_vectors.loom-test"
     "test/source_low/buffer_selection.loom-test"
+    "test/source_low/callable_memory.loom-test"
     "test/source_low/callable_result_diagnostics.loom-test"
     "test/source_low/callable_values.loom-test"
     "test/source_low/carried_counter_store.loom-test"
