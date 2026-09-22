@@ -81,7 +81,7 @@ ERR_WASM_005 = ErrorDef(
         "Wasm target '{target_key}' export '{export_name}' config "
         "'{config_key}' rejected '{op_name}' source memory access in "
         "'@{function_name}': expected a scalar or contiguous SIMD "
-        "linear-memory access rooted at an ABI argument with a 32-bit byte offset"
+        "linear-memory access with a 32-bit byte offset"
     ),
     params=_TARGET_CONTEXT_PARAMS,
 )

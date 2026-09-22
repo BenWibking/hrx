@@ -328,6 +328,7 @@ loom_check_test_suite(
     "test/source_low/uniform_shifts.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/view_carrier.loom-test"
+    "test/source_low/view_carriers.loom-test"
     "test/source_low/view_transport.loom-test"
   TEST_NAME_PREFIX_TO_STRIP
     "test/source_low/"

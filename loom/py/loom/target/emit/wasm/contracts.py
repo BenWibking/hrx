@@ -1150,19 +1150,95 @@ def _shuffle_rule(type_pattern: TypePattern) -> DescriptorRule:
     )
 
 
-def _view_alias_rules() -> Iterable[ValueAliasRule]:
-    # The retained memory plan owns every byte origin; view values carry only
-    # the underlying resource identity.
-    for source_op, operand in (
-        (buffer.buffer_view, "buffer"),
-        (view.view_subview, "source"),
-        (view.view_refine, "source"),
-    ):
-        yield ValueAliasRule(
-            source_op=source_op,
-            source=ValueRef.operand(operand),
-            result=ValueRef.result("result"),
-        )
+def _byte_offset_materializer() -> SourceMemoryByteOffsetMaterializer:
+    return SourceMemoryByteOffsetMaterializer(
+        constant=_descriptor("wasm.i32.const"),
+        add=_descriptor("wasm.i32.add"),
+        multiply=_descriptor("wasm.i32.mul"),
+        shift_left=None,
+        constant_immediate="i32_value",
+        integer_conversions=(
+            SourceMemoryIntegerConversion("i64", _descriptor("wasm.i32.wrap_i64")),
+        ),
+    )
+
+
+def _view_carrier_rules() -> Iterable[DescriptorRule]:
+    # Views crossing control or callable boundaries carry complete addresses;
+    # direct memory accesses continue to consume their planned storage roots.
+    descriptor = _descriptor("wasm.i32.add")
+    for source_op in (buffer.buffer_view, view.view_subview):
+        for element_byte_count in (1, 2, 4, 8):
+            for dynamic in (False, True):
+                source_memory = SourceMemoryConstraint(
+                    operation=SourceMemoryOperation.VIEW_CARRIER,
+                    root_kind=SourceMemoryRootKind.ANY,
+                    memory_spaces=("unknown", "generic", "global"),
+                    element_byte_count=element_byte_count,
+                    vector_lane_count=1,
+                    vector_lane_byte_stride=element_byte_count,
+                    static_byte_offset_minimum=0,
+                    static_byte_offset_maximum=(1 << 32) - 1,
+                    dynamic_term_count=None if dynamic else 0,
+                    dynamic_term_count_minimum=1 if dynamic else 0,
+                    dynamic_view_base_term_count=None,
+                    allow_dynamic_stride_values=dynamic,
+                    byte_offset_unsigned_bit_count=32,
+                    # The complete root-relative byte offset must fit Wasm's
+                    # u32 address space, but an affine dynamic contribution
+                    # may be negative before its static bias is added.
+                    dynamic_offset_unsigned_bit_count=0,
+                    byte_offset_diagnostic=_WASM32_ADDRESS_DIAGNOSTIC,
+                    diagnostic=_SOURCE_MEMORY_DIAGNOSTIC,
+                )
+                static_offset = ValueRef.temporary("static_byte_offset")
+                byte_offset = static_offset
+                emits = [
+                    EmitDescriptorOp(
+                        descriptor=_descriptor("wasm.i32.const"),
+                        results={"dst": static_offset},
+                        result_types={"dst": _I32},
+                        immediates={
+                            "i32_value": SourceMemoryProject.static_byte_offset()
+                        },
+                        source_memory=source_memory,
+                        form=DescriptorEmitForm.CONST,
+                    )
+                ]
+                if dynamic:
+                    byte_offset = ValueRef.temporary("byte_offset")
+                    emits.append(
+                        EmitDescriptorOp(
+                            descriptor=descriptor,
+                            operands={
+                                "lhs": static_offset,
+                                "rhs": ValueRef.source_memory_dynamic_byte_offset(),
+                            },
+                            results={"dst": byte_offset},
+                            result_types={"dst": _I32},
+                            source_memory=source_memory,
+                            source_memory_byte_offset_materializer=(
+                                _byte_offset_materializer()
+                            ),
+                        )
+                    )
+                emits.append(
+                    EmitDescriptorOp(
+                        descriptor=descriptor,
+                        operands={
+                            "lhs": ValueRef.source_memory_root(),
+                            "rhs": byte_offset,
+                        },
+                        results={"dst": ValueRef.result("result")},
+                        source_memory=source_memory,
+                        form=DescriptorEmitForm.OP,
+                    )
+                )
+                yield DescriptorRule(
+                    source_op=source_op,
+                    descriptor=descriptor,
+                    emit=tuple(emits),
+                )
 
 
 def _buffer_byte_address_emits(
@@ -1250,7 +1326,7 @@ def _memory_rule(
     register_bias = address_form is _MemoryAddressForm.DYNAMIC_REGISTER
     source_memory = SourceMemoryConstraint(
         operation=operation,
-        root_kind=SourceMemoryRootKind.BLOCK_ARGUMENT,
+        root_kind=SourceMemoryRootKind.ANY,
         memory_spaces=("unknown", "generic", "global"),
         element_byte_count=element_byte_count,
         vector_lane_count=lane_count,
@@ -1268,19 +1344,10 @@ def _memory_rule(
         byte_offset_diagnostic=_WASM32_ADDRESS_DIAGNOSTIC,
         diagnostic=_SOURCE_MEMORY_DIAGNOSTIC,
     )
-    address = ValueRef.operand("view")
+    address = ValueRef.source_memory_root()
     emits = []
     if dynamic:
-        materializer = SourceMemoryByteOffsetMaterializer(
-            constant=_descriptor("wasm.i32.const"),
-            add=_descriptor("wasm.i32.add"),
-            multiply=_descriptor("wasm.i32.mul"),
-            shift_left=None,
-            constant_immediate="i32_value",
-            integer_conversions=(
-                SourceMemoryIntegerConversion("i64", _descriptor("wasm.i32.wrap_i64")),
-            ),
-        )
+        materializer = _byte_offset_materializer()
         byte_offset = ValueRef.source_memory_dynamic_byte_offset()
         if register_bias:
             # Wasm adds its memory immediate without i32 wrap. Keep the bias
@@ -1315,7 +1382,7 @@ def _memory_rule(
             EmitDescriptorOp(
                 descriptor=_descriptor("wasm.i32.add"),
                 operands={
-                    "lhs": ValueRef.operand("view"),
+                    "lhs": ValueRef.source_memory_root(),
                     "rhs": byte_offset,
                 },
                 results={"dst": address},
@@ -1369,7 +1436,12 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
     public_header="loom/target/emit/wasm/contracts/core_simd128.h",
     cases=(
         *uniform_shift_rules(),
-        *_view_alias_rules(),
+        *_view_carrier_rules(),
+        ValueAliasRule(
+            source_op=view.view_refine,
+            source=ValueRef.operand("source"),
+            result=ValueRef.result("result"),
+        ),
         _buffer_load_i8_u_rule(),
         _buffer_store_i8_rule(),
         *_integer_sign_rules(_I32, "i32", 31),

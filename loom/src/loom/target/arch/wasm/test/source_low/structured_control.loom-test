@@ -14,11 +14,11 @@ func.def target(@target) @if_without_results(%control: i32, %limit: i32, %lhs: v
 }
 
 // ----
-low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @if_without_results(%control: reg<wasm.i32>, %limit: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output_view: reg<wasm.i32>) asm {
+low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @if_without_results(%control: reg<wasm.i32>, %limit: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output: reg<wasm.i32>) asm {
   %cond = i32.lt_u %control, %limit
   low.scf.if %cond {
     %sum = i32x4.add %lhs, %rhs
-    v128.store %output_view, %sum
+    v128.store %output, %sum
   }
   return
 }
@@ -63,10 +63,10 @@ func.def target(@target) @for_without_iter_args(%lo: index, %hi: index, %step: i
 }
 
 // ----
-low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @for_without_iter_args(%lo: reg<wasm.i32>, %hi: reg<wasm.i32>, %step: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output_view: reg<wasm.i32>) asm {
+low.func.def target<wasm.core.simd128>(@target) abi(wasm_function) @for_without_iter_args(%lo: reg<wasm.i32>, %hi: reg<wasm.i32>, %step: reg<wasm.i32>, %lhs: reg<wasm.v128>, %rhs: reg<wasm.v128>, %output: reg<wasm.i32>) asm {
   low.scf.for signed [%lo to %hi step %step] do(%iv: reg<wasm.i32>) {
     %sum = i32x4.add %lhs, %rhs
-    v128.store %output_view, %sum
+    v128.store %output, %sum
   }
   return
 }

@@ -20,17 +20,17 @@ func.def @subview_nested_dynamic(%input: buffer, %output: buffer, %base: offset,
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_nested_dynamic(%source_refined: reg<wasm.i32>, %destination_inner: reg<wasm.i32>, %origin: reg<wasm.i32>, %row_bounded: reg<wasm.i32>, %column_bounded: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %26 = i32.const 32
-  %27 = i32.mul %row_bounded, %26
-  %28 = i32.add %origin, %27
-  %29 = i32.const 4
-  %30 = i32.mul %column_bounded, %29
-  %31 = i32.add %28, %30
-  %32 = i32.add %source_refined, %31
-  %value = i32.load %32 {offset = 76}
-  %40 = i32.add %destination_inner, %31
-  i32.store %40, %value {offset = 68}
+low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_nested_dynamic(%input_aligned: reg<wasm.i32>, %output_aligned: reg<wasm.i32>, %origin: reg<wasm.i32>, %row_bounded: reg<wasm.i32>, %column_bounded: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
+  %29 = i32.const 32
+  %30 = i32.mul %row_bounded, %29
+  %31 = i32.add %origin, %30
+  %32 = i32.const 4
+  %33 = i32.mul %column_bounded, %32
+  %34 = i32.add %31, %33
+  %35 = i32.add %input_aligned, %34
+  %value = i32.load %35 {offset = 76}
+  %43 = i32.add %output_aligned, %34
+  i32.store %43, %value {offset = 68}
   return %value
 }
 
@@ -52,9 +52,9 @@ func.def @subview_vector_strided(%input: buffer, %output: buffer) {
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_vector_strided(%source_crop: reg<wasm.i32>, %destination_crop: reg<wasm.i32>) asm {
-  %value = v128.load %source_crop {offset = 124}
-  v128.store %destination_crop, %value {offset = 88}
+low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_vector_strided(%input_aligned: reg<wasm.i32>, %output_aligned: reg<wasm.i32>) asm {
+  %value = v128.load %input_aligned {offset = 124}
+  v128.store %output_aligned, %value {offset = 88}
   return
 }
 
@@ -76,23 +76,23 @@ func.def @subview_vector_aligned(%input: buffer, %output: buffer) {
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_vector_aligned(%source_crop: reg<wasm.i32>, %destination_crop: reg<wasm.i32>) asm {
-  %39 = i32.load %source_crop {offset = 256}
-  %40 = i32.load %source_crop {offset = 260}
-  %41 = i32.load %source_crop {offset = 264}
-  %42 = i32.load %source_crop {offset = 268}
-  %43 = i32.load %source_crop {offset = 272}
-  %44 = i32.load %source_crop {offset = 276}
-  %45 = i32.load %source_crop {offset = 280}
-  %46 = i32.load %source_crop {offset = 284}
-  i32.store %destination_crop, %39 {offset = 192}
-  i32.store %destination_crop, %40 {offset = 196}
-  i32.store %destination_crop, %41 {offset = 200}
-  i32.store %destination_crop, %42 {offset = 204}
-  i32.store %destination_crop, %43 {offset = 208}
-  i32.store %destination_crop, %44 {offset = 212}
-  i32.store %destination_crop, %45 {offset = 216}
-  i32.store %destination_crop, %46 {offset = 220}
+low.func.def target<wasm.core.simd128> abi(wasm_function) @subview_vector_aligned(%input_aligned: reg<wasm.i32>, %output_aligned: reg<wasm.i32>) asm {
+  %30 = i32.load %input_aligned {offset = 256}
+  %31 = i32.load %input_aligned {offset = 260}
+  %32 = i32.load %input_aligned {offset = 264}
+  %33 = i32.load %input_aligned {offset = 268}
+  %34 = i32.load %input_aligned {offset = 272}
+  %35 = i32.load %input_aligned {offset = 276}
+  %36 = i32.load %input_aligned {offset = 280}
+  %37 = i32.load %input_aligned {offset = 284}
+  i32.store %output_aligned, %30 {offset = 192}
+  i32.store %output_aligned, %31 {offset = 196}
+  i32.store %output_aligned, %32 {offset = 200}
+  i32.store %output_aligned, %33 {offset = 204}
+  i32.store %output_aligned, %34 {offset = 208}
+  i32.store %output_aligned, %35 {offset = 212}
+  i32.store %output_aligned, %36 {offset = 216}
+  i32.store %output_aligned, %37 {offset = 220}
   return
 }
 
@@ -140,10 +140,10 @@ func.def @make_storage_crop(%input: buffer, %origin: offset, %columns: index) ->
   %schema = encoding.define #encoding.f32 : encoding<schema>
   %storage = encoding.define #encoding.storage {layout = %layout : encoding<layout>, schema = %schema : encoding<schema>} : encoding<storage>
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
+  // ERROR@+1: WASM/005 {op_name="buffer.view"}
   %source = buffer.view %input_aligned[%origin] : buffer -> view<4x[%columns]xf32, %storage>
+  // ERROR@+1: WASM/005 {op_name="view.subview"}
   %crop = view.subview %source[1, 2] : view<4x[%columns]xf32, %storage> -> view<2x3xf32, %storage>
-  // ERROR@+2: TARGET/033 {op_name="func.return", field_name="source", actual_type="encoding<storage>"}
-  // ERROR@+1: TARGET/033 {op_name="func.return", field_name="source", actual_type="view<2x3xf32, %storage>"}
   func.return %storage, %crop : encoding<storage>, view<2x3xf32, %storage>
 }
 
@@ -187,7 +187,7 @@ func.def public @subview_composed_refined_nested(%input: buffer, %output: buffer
 }
 
 // ----
-low.func.def public target<wasm.core.simd128> abi(wasm_function) @subview_composed_refined_nested(%inner: reg<wasm.i32>, %destination: reg<wasm.i32>, %origin: reg<wasm.i32>, %row_stride: reg<wasm.i32>, %column_stride: reg<wasm.i32>) asm {
+low.func.def public target<wasm.core.simd128> abi(wasm_function) @subview_composed_refined_nested(%input_aligned: reg<wasm.i32>, %output_aligned: reg<wasm.i32>, %origin: reg<wasm.i32>, %row_stride: reg<wasm.i32>, %column_stride: reg<wasm.i32>) asm {
   %25 = i32.const 8
   %26 = i32.mul %row_stride, %25
   %27 = i32.add %origin, %26
@@ -196,8 +196,8 @@ low.func.def public target<wasm.core.simd128> abi(wasm_function) @subview_compos
   %31 = i32.const 4
   %32 = i32.mul %row_stride, %31
   %33 = i32.add %30, %32
-  %34 = i32.add %inner, %33
+  %34 = i32.add %input_aligned, %33
   %value = f32.load %34
-  f32.store %destination, %value {offset = 4}
+  f32.store %output_aligned, %value {offset = 4}
   return
 }
