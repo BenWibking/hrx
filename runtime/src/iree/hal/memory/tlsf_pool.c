@@ -683,6 +683,17 @@ static iree_status_t iree_hal_tlsf_pool_return_allocation(
   out_reservation->slab_index = pool_allocation->slab_index;
 
   memset(out_info, 0, sizeof(*out_info));
+  if (allocation->death_frontier) {
+    // TLSF metadata may move during later acquisitions. The reservation's
+    // release node already provides stable frontier storage for its lifetime.
+    iree_async_frontier_t* reuse_frontier =
+        iree_hal_tlsf_pool_release_node_frontier(pool, release_node);
+    memcpy(reuse_frontier, allocation->death_frontier,
+           sizeof(*reuse_frontier) +
+               (iree_host_size_t)allocation->death_frontier->entry_count *
+                   sizeof(iree_async_frontier_entry_t));
+    out_info->reuse_frontier = reuse_frontier;
+  }
   out_info->result = result;
 
   iree_atomic_fetch_add(&pool->reservation_count, 1, iree_memory_order_relaxed);
@@ -1236,9 +1247,11 @@ static void iree_hal_tlsf_pool_release_one_reservation(
         IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED, &release_node->asan_layout);
   }
 
+  // Publication transfers the node to acquisition, which may recycle it.
+  const iree_device_size_t charged_length = release_node->charged_length;
   iree_hal_tlsf_pool_push_pending_release(pool, release_node);
 
-  iree_hal_tlsf_pool_uncharge_reservation(pool, release_node->charged_length);
+  iree_hal_tlsf_pool_uncharge_reservation(pool, charged_length);
   iree_atomic_fetch_add(&pool->reservation_count, -1,
                         iree_memory_order_relaxed);
   iree_atomic_fetch_add(&pool->release_count, 1, iree_memory_order_relaxed);

@@ -340,7 +340,7 @@ TEST_F(FixedBlockPoolTest, ReserveReleaseFresh) {
   EXPECT_EQ(reservation.byte_length, 128u);
   EXPECT_EQ(reservation.block_handle, 0u);
   EXPECT_EQ(reservation.slab_index, 0u);
-  EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 
   ReleaseOneReservation(pool_, &reservation, NULL);
@@ -457,7 +457,10 @@ TEST_F(FixedBlockPoolTest, ReserveReusesDominatedFrontier) {
                                        &reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
   EXPECT_EQ(reservation.offset, 0u);
-  EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+  ASSERT_NE(reserve_info.reuse_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier->entry_count, 1u);
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].axis, TestQueueAxis(0));
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].epoch, 10u);
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 
   iree_hal_pool_stats_t stats;
@@ -465,6 +468,15 @@ TEST_F(FixedBlockPoolTest, ReserveReusesDominatedFrontier) {
   EXPECT_EQ(stats.reuse_count, 1u);
   EXPECT_EQ(stats.fresh_count, 1u);
 
+  // Returning an unused reservation preserves the prerequisite even though
+  // this requester's frontier covered it.
+  ReleaseOneReservation(pool_, &reservation, reserve_info.reuse_frontier);
+  IREE_ASSERT_OK(AcquireOneReservation(pool_, 64, 16, requester,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &reservation, &reserve_info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+  ASSERT_NE(reserve_info.reuse_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].epoch, 10u);
   ReleaseOneReservation(pool_, &reservation, NULL);
 }
 
@@ -536,17 +548,17 @@ TEST_F(FixedBlockPoolTest, ReserveCanReturnStaleBlockWhenWaitAllowed) {
       pool_, 64, 16, requester, IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER,
       &reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT);
-  ASSERT_NE(reserve_info.wait_frontier, nullptr);
-  EXPECT_EQ(reserve_info.wait_frontier->entry_count, 1u);
-  EXPECT_EQ(reserve_info.wait_frontier->entries[0].axis, TestQueueAxis(0));
-  EXPECT_EQ(reserve_info.wait_frontier->entries[0].epoch, 20u);
+  ASSERT_NE(reserve_info.reuse_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier->entry_count, 1u);
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].axis, TestQueueAxis(0));
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].epoch, 20u);
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.reuse_miss_count, 1u);
   EXPECT_EQ(stats.wait_count, 1u);
 
-  ReleaseOneReservation(pool_, &reservation, reserve_info.wait_frontier);
+  ReleaseOneReservation(pool_, &reservation, reserve_info.reuse_frontier);
 }
 
 TEST(FixedBlockPool, ReserveRejectedTaintRemainsRejected) {

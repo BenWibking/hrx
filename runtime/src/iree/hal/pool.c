@@ -152,9 +152,10 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
               IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
               &buffer);
           if (!iree_status_is_ok(status)) {
-            // Wrapping failed; release the reservation to avoid leaking the
-            // offset back to the pool.
-            iree_hal_pool_release_reservations(pool, 1, &reservation, NULL);
+            // The reservation was never used. Preserve its prior-use
+            // prerequisite even if this requester already covered it.
+            iree_hal_pool_release_reservations(pool, 1, &reservation,
+                                               acquire_info.reuse_frontier);
           }
           retry = false;
           break;
@@ -166,7 +167,7 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
           // report a pool implementation bug, not a caller precondition
           // failure.
           iree_hal_pool_release_reservations(pool, 1, &reservation,
-                                             acquire_info.wait_frontier);
+                                             acquire_info.reuse_frontier);
           status = iree_make_status(
               IREE_STATUS_INTERNAL,
               "iree_hal_pool_allocate_buffer received an "

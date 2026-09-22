@@ -121,6 +121,9 @@ typedef struct iree_hal_test_opaque_slab_provider_t {
   // Number of wrap_buffer calls received by the provider.
   iree_atomic_int32_t wrap_count;
 
+  // Whether native buffer view creation fails during materialization.
+  bool fail_wrap;
+
   // Number of ASAN advice calls received by the provider.
   iree_atomic_int32_t asan_advice_count;
 
@@ -200,6 +203,10 @@ static iree_status_t iree_hal_test_opaque_slab_provider_wrap_buffer(
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)base_provider;
   iree_atomic_fetch_add(&provider->wrap_count, 1, iree_memory_order_relaxed);
+  if (provider->fail_wrap) {
+    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                            "native buffer view allocation failed");
+  }
   iree_byte_span_t data = iree_make_byte_span(
       (uint8_t*)(uintptr_t)slab->provider_handle + slab_offset,
       (iree_host_size_t)allocation_size);
@@ -392,7 +399,7 @@ TEST_F(TLSFPoolTest, ReserveReleaseFresh) {
   EXPECT_EQ(reservation.byte_length, 128u);
   EXPECT_NE(reservation.block_handle, 0u);
   EXPECT_EQ(reservation.slab_index, 0u);
-  EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 
   ReleaseOneReservation(pool_, &reservation, NULL);
@@ -779,14 +786,124 @@ TEST_F(TLSFPoolTest, ReserveReusesDominatedFrontier) {
                                        &reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
   EXPECT_EQ(reservation.offset, 0u);
-  EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+  ASSERT_NE(reserve_info.reuse_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier->entry_count, 1u);
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].axis, TestQueueAxis(0));
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].epoch, 10u);
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.reuse_count, 1u);
   EXPECT_EQ(stats.fresh_count, 1u);
 
+  ReleaseOneReservation(pool_, &reservation, reserve_info.reuse_frontier);
+  IREE_ASSERT_OK(AcquireOneReservation(pool_, 256, 16, requester,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &reservation, &reserve_info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+  ASSERT_NE(reserve_info.reuse_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier->entries[0].epoch, 10u);
   ReleaseOneReservation(pool_, &reservation, NULL);
+}
+
+TEST_F(TLSFPoolTest, ReuseFrontierSurvivesMetadataGrowth) {
+  iree_hal_pool_reservation_t whole_range;
+  iree_hal_pool_acquire_info_t whole_info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(AcquireOneReservation(
+      pool_, 4096, 16, /*requester_frontier=*/NULL,
+      IREE_HAL_POOL_RESERVE_FLAG_NONE, &whole_range, &whole_info, &result));
+  MAKE_FRONTIER(death, 2, E(TestQueueAxis(0), 10), E(TestQueueAxis(1), 20));
+  ReleaseOneReservation(pool_, &whole_range, death);
+
+  // More live ranges than the initial TLSF metadata capacity force metadata
+  // growth while previously returned reuse frontiers are still borrowed.
+  iree_hal_pool_reservation_t reservations[48];
+  iree_hal_pool_acquire_info_t infos[IREE_ARRAYSIZE(reservations)];
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(reservations); ++i) {
+    IREE_ASSERT_OK(AcquireOneReservation(
+        pool_, 64, 16, death, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+        &reservations[i], &infos[i], &result));
+    EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+    EXPECT_EQ(reservations[i].slab_index, whole_range.slab_index);
+  }
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(reservations); ++i) {
+    ASSERT_NE(infos[i].reuse_frontier, nullptr);
+    EXPECT_EQ(infos[i].reuse_frontier->entry_count, 2u);
+    EXPECT_EQ(infos[i].reuse_frontier->entries[0].axis, TestQueueAxis(0));
+    EXPECT_EQ(infos[i].reuse_frontier->entries[0].epoch, 10u);
+    EXPECT_EQ(infos[i].reuse_frontier->entries[1].axis, TestQueueAxis(1));
+    EXPECT_EQ(infos[i].reuse_frontier->entries[1].epoch, 20u);
+    ReleaseOneReservation(pool_, &reservations[i], infos[i].reuse_frontier);
+  }
+
+  IREE_ASSERT_OK(
+      AcquireOneReservation(pool_, 4096, 16, /*requester_frontier=*/NULL,
+                            IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+                            &whole_range, &whole_info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+  IREE_ASSERT_OK(AcquireOneReservation(
+      pool_, 4096, 16, death, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &whole_range, &whole_info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+  ReleaseOneReservation(pool_, &whole_range, NULL);
+}
+
+TEST(TLSFPool, MaterializationFailurePreservesReuseFrontier) {
+  iree_allocator_t allocator = iree_allocator_system();
+  iree_hal_slab_provider_t* slab_provider = NULL;
+  IREE_ASSERT_OK(
+      iree_hal_test_opaque_slab_provider_create(allocator, &slab_provider));
+  iree_async_notification_t* notification = NULL;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  iree_hal_pool_t* pool = NULL;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      DefaultOptions(), slab_provider, notification,
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
+
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(AcquireOneReservation(
+      pool, 4096, 16, /*requester_frontier=*/NULL,
+      IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation, &info, &result));
+  MAKE_FRONTIER(death, 1, E(TestQueueAxis(0), 10));
+  ReleaseOneReservation(pool, &reservation, death);
+
+  auto* provider = (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+  provider->fail_wrap = true;
+  iree_hal_buffer_params_t params = MakeReservationRequest(256, 16).params;
+  params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  iree_hal_buffer_t* buffer = NULL;
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_RESOURCE_EXHAUSTED,
+      iree_hal_pool_allocate_buffer(pool, params, 256, death,
+                                    iree_immediate_timeout(), &buffer));
+  EXPECT_EQ(buffer, nullptr);
+
+  // The failed allocation covered the prerequisite without completing it.
+  // A caller without that dependency must still be unable to reuse the range.
+  IREE_ASSERT_OK(
+      AcquireOneReservation(pool, 256, 16, /*requester_frontier=*/NULL,
+                            IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+                            &reservation, &info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+
+  provider->fail_wrap = false;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      pool, params, 256, death, iree_immediate_timeout(), &buffer));
+  iree_hal_buffer_mapping_t mapping;
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+                                           IREE_HAL_MEMORY_ACCESS_ALL, 0, 256,
+                                           &mapping));
+  memset(mapping.contents.data, 0x4D, mapping.contents.data_length);
+  EXPECT_EQ(mapping.contents.data[255], 0x4D);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  iree_hal_buffer_release(buffer);
+  iree_hal_pool_release(pool);
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(slab_provider);
 }
 
 TEST(TLSFPool, SplitRangesRetainReadinessUntilCompletion) {
@@ -963,7 +1080,7 @@ TEST(TLSFPool, ReserveGrowsInsteadOfWaitingForStaleBlock) {
       pool, 256, 16, requester, IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER,
       &grown_reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
-  EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
   EXPECT_NE(grown_reservation.slab_index, 0u);
 
   iree_hal_pool_stats_t stats;

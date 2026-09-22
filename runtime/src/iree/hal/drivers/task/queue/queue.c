@@ -1193,22 +1193,10 @@ static iree_status_t iree_hal_task_queue_alloca_memory_wait_ensure(
   return iree_ok_status();
 }
 
+// Returns unused reservations with their exact prerequisites, including those
+// already covered when acquired. Allocation failure does not complete prior
+// use.
 static void iree_hal_task_queue_alloca_release_reservations(
-    iree_hal_task_queue_op_t* operation,
-    const iree_async_frontier_t* death_frontier) {
-  if (!operation->alloca.reservations_held) {
-    return;
-  }
-  iree_hal_pool_release_reservations(
-      operation->alloca.pool, operation->alloca.request_count,
-      operation->alloca.reservations, death_frontier);
-  operation->alloca.reservations_held = false;
-}
-
-// Releases reservations with their original death frontiers when constructing
-// a common transaction frontier fails. This is an exceptional rollback path;
-// successful allocation transactions release the complete batch together.
-static void iree_hal_task_queue_alloca_release_reservations_individually(
     iree_hal_task_queue_op_t* operation) {
   if (!operation->alloca.reservations_held) {
     return;
@@ -1216,7 +1204,7 @@ static void iree_hal_task_queue_alloca_release_reservations_individually(
   for (iree_host_size_t i = 0; i < operation->alloca.request_count; ++i) {
     iree_hal_pool_release_reservations(
         operation->alloca.pool, 1, &operation->alloca.reservations[i],
-        operation->alloca.acquire_infos[i].wait_frontier);
+        operation->alloca.acquire_infos[i].reuse_frontier);
   }
   operation->alloca.reservations_held = false;
 }
@@ -1229,23 +1217,20 @@ static void iree_hal_task_queue_op_release_alloca_memory_wait(
   iree_hal_task_queue_alloca_memory_wait_t* wait =
       operation->alloca.memory_wait;
   if (!wait) {
-    iree_hal_task_queue_alloca_release_reservations(operation,
-                                                    /*death_frontier=*/NULL);
+    iree_hal_task_queue_alloca_release_reservations(operation);
     return;
   }
 
   switch (wait->kind) {
     case IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_FRONTIER:
-      iree_hal_task_queue_alloca_release_reservations(
-          operation, wait->frontier.wait_frontier);
+      iree_hal_task_queue_alloca_release_reservations(operation);
       wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
       break;
     case IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_POOL_NOTIFICATION:
       wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
       break;
     case IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE:
-      iree_hal_task_queue_alloca_release_reservations(operation,
-                                                      /*death_frontier=*/NULL);
+      iree_hal_task_queue_alloca_release_reservations(operation);
       break;
   }
 }
@@ -1309,7 +1294,7 @@ static iree_status_t iree_hal_task_queue_alloca_wait_for_frontier(
          i < operation->alloca.request_count && iree_status_is_ok(status);
          ++i) {
       const iree_async_frontier_t* request_frontier =
-          operation->alloca.acquire_infos[i].wait_frontier;
+          operation->alloca.acquire_infos[i].reuse_frontier;
       if (operation->alloca.acquire_infos[i].result !=
           IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
         continue;
@@ -1350,7 +1335,7 @@ static iree_status_t iree_hal_task_queue_alloca_wait_for_frontier(
         &wait->frontier.waiter);
   }
   if (!iree_status_is_ok(status)) {
-    iree_hal_task_queue_alloca_release_reservations_individually(operation);
+    iree_hal_task_queue_alloca_release_reservations(operation);
     if (wait) {
       wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
     }
@@ -1943,8 +1928,7 @@ static iree_status_t iree_hal_task_queue_drain_alloca_submit_reservations(
                                      : 0);
     iree_hal_task_queue_op_complete(operation);
   } else {
-    iree_hal_task_queue_alloca_release_reservations(
-        operation, reservation_failure_frontier);
+    iree_hal_task_queue_alloca_release_reservations(operation);
     iree_hal_task_queue_profile_record_memory_event(
         operation, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE,
         IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION,
@@ -1986,8 +1970,8 @@ static iree_status_t iree_hal_task_queue_drain_alloca_acquire(
                 *out_acquire_result == IREE_HAL_POOL_ACQUIRE_OVER_BUDGET
             ? NULL
             : &operation->alloca.reservations[0],
-        operation->alloca.acquire_infos[0].wait_frontier
-            ? operation->alloca.acquire_infos[0].wait_frontier->entry_count
+        operation->alloca.acquire_infos[0].reuse_frontier
+            ? operation->alloca.acquire_infos[0].reuse_frontier->entry_count
             : 0);
   }
   return status;

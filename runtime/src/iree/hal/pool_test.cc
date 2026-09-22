@@ -67,7 +67,7 @@ static iree_status_t iree_hal_needs_wait_test_pool_acquire_reservations(
   out_reservations[0].block_handle = 0xB10Cu;
   out_reservations[0].slab_index = 7;
   memset(out_infos, 0, sizeof(*out_infos));
-  out_infos[0].wait_frontier =
+  out_infos[0].reuse_frontier =
       iree_async_single_frontier_as_const_frontier(&pool->wait_frontier);
   out_infos[0].result = IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT;
   *out_result = IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT;

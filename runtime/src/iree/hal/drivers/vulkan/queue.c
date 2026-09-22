@@ -4082,14 +4082,12 @@ static void iree_hal_vulkan_queue_pending_submission_destroy(
         submission->alloca.reservations_held = true;
       }
       if (submission->alloca.reservations_held) {
-        const iree_async_frontier_t* death_frontier =
-            submission->alloca.wait_frontier &&
-                    submission->alloca.wait_frontier->entry_count != 0
-                ? submission->alloca.wait_frontier
-                : NULL;
-        iree_hal_pool_release_reservations(
-            submission->alloca.pool, submission->alloca.request_count,
-            submission->alloca.reservations, death_frontier);
+        for (iree_host_size_t i = 0; i < submission->alloca.request_count;
+             ++i) {
+          iree_hal_pool_release_reservations(
+              submission->alloca.pool, 1, &submission->alloca.reservations[i],
+              submission->alloca.acquire_infos[i].reuse_frontier);
+        }
         submission->alloca.reservations_held = false;
       }
       for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
@@ -4905,8 +4903,7 @@ static void iree_hal_vulkan_queue_profile_record_alloca_memory_events(
 }
 
 static void iree_hal_vulkan_queue_release_alloca_reservations(
-    iree_hal_vulkan_queue_pending_submission_t* submission,
-    const iree_async_frontier_t* death_frontier, uint32_t result) {
+    iree_hal_vulkan_queue_pending_submission_t* submission, uint32_t result) {
   if (submission->alloca.owns_attached_reservations) {
     for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
       iree_hal_pool_t* source_pool = NULL;
@@ -4921,18 +4918,27 @@ static void iree_hal_vulkan_queue_release_alloca_reservations(
   if (!submission->alloca.reservations_held) {
     return;
   }
-  iree_hal_pool_release_reservations(
-      submission->alloca.pool, submission->alloca.request_count,
-      submission->alloca.reservations, death_frontier);
-  iree_hal_profile_memory_event_flags_t flags =
-      IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION;
-  if (death_frontier && death_frontier->entry_count != 0) {
-    flags |= IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_WAIT_FRONTIER;
+  for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
+    const iree_async_frontier_t* reuse_frontier =
+        submission->alloca.acquire_infos[i].reuse_frontier;
+    iree_hal_profile_memory_event_flags_t flags =
+        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION;
+    if (reuse_frontier && reuse_frontier->entry_count != 0) {
+      flags |= IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_WAIT_FRONTIER;
+    }
+    iree_hal_vulkan_queue_profile_record_memory_event(
+        submission, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE, flags,
+        result,
+        iree_hal_vulkan_transient_buffer_profile_id(
+            submission->alloca.buffers[i]),
+        submission->alloca.pool, submission->alloca.requests[i].params,
+        &submission->alloca.reservations[i], /*backing_id=*/0,
+        submission->alloca.requests[i].allocation_size,
+        reuse_frontier ? reuse_frontier->entry_count : 0);
+    iree_hal_pool_release_reservations(submission->alloca.pool, 1,
+                                       &submission->alloca.reservations[i],
+                                       reuse_frontier);
   }
-  iree_hal_vulkan_queue_profile_record_alloca_memory_events(
-      submission, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE, flags,
-      result, submission->alloca.reservations,
-      death_frontier ? death_frontier->entry_count : 0);
   submission->alloca.reservations_held = false;
 }
 
@@ -4963,11 +4969,7 @@ static void iree_hal_vulkan_queue_complete_alloca(
         iree_status_code(completion_status), submission->alloca.reservations,
         submission->alloca.wait_frontier->entry_count);
     iree_hal_vulkan_queue_release_alloca_reservations(
-        submission,
-        submission->alloca.wait_frontier->entry_count != 0
-            ? submission->alloca.wait_frontier
-            : NULL,
-        iree_status_code(completion_status));
+        submission, iree_status_code(completion_status));
     iree_hal_vulkan_queue_fail_signal_list(
         signal_semaphore_list, iree_status_clone(completion_status));
   }
@@ -5278,35 +5280,6 @@ static bool iree_hal_vulkan_queue_alloca_has_staged_backing(
   return submission->alloca.owns_attached_reservations;
 }
 
-static void iree_hal_vulkan_queue_release_alloca_reservations_individually(
-    iree_hal_vulkan_queue_pending_submission_t* submission, uint32_t result) {
-  if (!submission->alloca.reservations_held) {
-    return;
-  }
-  for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
-    const iree_async_frontier_t* death_frontier =
-        submission->alloca.acquire_infos[i].wait_frontier;
-    iree_hal_pool_release_reservations(submission->alloca.pool, 1,
-                                       &submission->alloca.reservations[i],
-                                       death_frontier);
-    iree_hal_profile_memory_event_flags_t flags =
-        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION;
-    if (death_frontier && death_frontier->entry_count != 0) {
-      flags |= IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_WAIT_FRONTIER;
-    }
-    iree_hal_vulkan_queue_profile_record_memory_event(
-        submission, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE, flags,
-        result,
-        iree_hal_vulkan_transient_buffer_profile_id(
-            submission->alloca.buffers[i]),
-        submission->alloca.pool, submission->alloca.requests[i].params,
-        &submission->alloca.reservations[i], /*backing_id=*/0,
-        submission->alloca.requests[i].allocation_size,
-        death_frontier ? death_frontier->entry_count : 0);
-  }
-  submission->alloca.reservations_held = false;
-}
-
 static iree_status_t iree_hal_vulkan_queue_merge_alloca_wait_frontiers(
     iree_hal_vulkan_queue_pending_submission_t* submission,
     iree_hal_pool_acquire_result_t acquire_result) {
@@ -5316,7 +5289,7 @@ static iree_status_t iree_hal_vulkan_queue_merge_alloca_wait_frontiers(
   }
   for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
     const iree_async_frontier_t* item_frontier =
-        submission->alloca.acquire_infos[i].wait_frontier;
+        submission->alloca.acquire_infos[i].reuse_frontier;
     if (submission->alloca.acquire_infos[i].result !=
         IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
       continue;
@@ -5366,7 +5339,7 @@ static iree_status_t iree_hal_vulkan_queue_acquire_alloca_reservations(
       flags |= IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_WAIT_NOTIFICATION;
     }
     const iree_async_frontier_t* wait_frontier =
-        submission->alloca.acquire_infos[i].wait_frontier;
+        submission->alloca.acquire_infos[i].reuse_frontier;
     iree_hal_vulkan_queue_profile_record_memory_event(
         submission, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RESERVE, flags,
         item_result,
@@ -5388,8 +5361,8 @@ static iree_status_t iree_hal_vulkan_queue_stage_alloca_reservations(
   iree_status_t status = iree_hal_vulkan_queue_merge_alloca_wait_frontiers(
       submission, acquire_result);
   if (!iree_status_is_ok(status)) {
-    iree_hal_vulkan_queue_release_alloca_reservations_individually(
-        submission, iree_status_code(status));
+    iree_hal_vulkan_queue_release_alloca_reservations(submission,
+                                                      iree_status_code(status));
     return status;
   }
 
@@ -5419,12 +5392,8 @@ static iree_status_t iree_hal_vulkan_queue_stage_alloca_reservations(
         submission->alloca.reservations,
         submission->alloca.wait_frontier->entry_count);
   } else {
-    iree_hal_vulkan_queue_release_alloca_reservations(
-        submission,
-        submission->alloca.wait_frontier->entry_count != 0
-            ? submission->alloca.wait_frontier
-            : NULL,
-        iree_status_code(status));
+    iree_hal_vulkan_queue_release_alloca_reservations(submission,
+                                                      iree_status_code(status));
   }
   return status;
 }

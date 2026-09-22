@@ -728,8 +728,12 @@ static iree_status_t iree_hal_amdgpu_pending_op_grow_alloca_pool(
     case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT: {
       bool merged = true;
       for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
+        if (transaction->acquire_infos[i].result !=
+            IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
+          continue;
+        }
         const iree_async_frontier_t* item_frontier =
-            transaction->acquire_infos[i].wait_frontier;
+            transaction->acquire_infos[i].reuse_frontier;
         if (item_frontier &&
             !iree_async_frontier_merge(transaction->wait_frontier, UINT8_MAX,
                                        item_frontier)) {
@@ -739,16 +743,10 @@ static iree_status_t iree_hal_amdgpu_pending_op_grow_alloca_pool(
       }
       const bool has_wait_frontier =
           transaction->wait_frontier->entry_count != 0;
-      if (merged && has_wait_frontier) {
+      for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
         iree_hal_pool_release_reservations(
-            op->alloca_op.pool, transaction->request_count,
-            transaction->reservations, transaction->wait_frontier);
-      } else {
-        for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
-          iree_hal_pool_release_reservations(
-              op->alloca_op.pool, 1, &transaction->reservations[i],
-              transaction->acquire_infos[i].wait_frontier);
-        }
+            op->alloca_op.pool, 1, &transaction->reservations[i],
+            transaction->acquire_infos[i].reuse_frontier);
       }
       transaction->reservations_held = false;
       wait->kind = IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_NONE;

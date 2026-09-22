@@ -280,12 +280,10 @@ static iree_status_t iree_hal_fixed_block_pool_return_allocation(
 
   // Tainted blocks never reach this helper: frontier_is_satisfied rejects
   // them (so they never become OK/OK_FRESH) and can_wait_for_allocation
-  // excludes them (so they never become OK_NEEDS_WAIT). Only NEEDS_WAIT
-  // returns a wait_frontier here.
+  // excludes them (so they never become OK_NEEDS_WAIT). Preserve the exact
+  // prerequisite even when this requester already covers it.
   memset(out_info, 0, sizeof(*out_info));
-  if (result == IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
-    out_info->wait_frontier = allocation->death_frontier;
-  }
+  out_info->reuse_frontier = allocation->death_frontier;
   out_info->result = result;
 
   iree_atomic_fetch_add(&pool->reservation_count, 1, iree_memory_order_relaxed);

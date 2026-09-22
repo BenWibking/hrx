@@ -343,7 +343,7 @@ static void iree_hal_amdgpu_host_queue_record_alloca_pool_events(
     bool has_reservations) {
   for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
     const iree_async_frontier_t* item_frontier =
-        transaction->acquire_infos[i].wait_frontier;
+        transaction->acquire_infos[i].reuse_frontier;
     iree_hal_amdgpu_host_queue_record_memory_event(
         queue, type, flags, transaction->acquire_result, pool,
         transaction->requests[i].params, transaction->buffers[i],
@@ -401,7 +401,7 @@ iree_status_t iree_hal_amdgpu_host_queue_acquire_alloca_transaction(
     case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT: {
       for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
         const iree_async_frontier_t* wait_frontier =
-            transaction->acquire_infos[i].wait_frontier;
+            transaction->acquire_infos[i].reuse_frontier;
         if (transaction->acquire_infos[i].result !=
             IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
           continue;
@@ -412,7 +412,7 @@ iree_status_t iree_hal_amdgpu_host_queue_acquire_alloca_transaction(
           for (iree_host_size_t j = 0; j < transaction->request_count; ++j) {
             iree_hal_pool_release_reservations(
                 allocation_pool, 1, &transaction->reservations[j],
-                transaction->acquire_infos[j].wait_frontier);
+                transaction->acquire_infos[j].reuse_frontier);
           }
           transaction->reservations_held = false;
           return iree_make_status(IREE_STATUS_INTERNAL,
@@ -428,7 +428,7 @@ iree_status_t iree_hal_amdgpu_host_queue_acquire_alloca_transaction(
           for (iree_host_size_t j = 0; j < transaction->request_count; ++j) {
             iree_hal_pool_release_reservations(
                 allocation_pool, 1, &transaction->reservations[j],
-                transaction->acquire_infos[j].wait_frontier);
+                transaction->acquire_infos[j].reuse_frontier);
           }
           transaction->reservations_held = false;
           return iree_make_status(
@@ -507,13 +507,11 @@ void iree_hal_amdgpu_host_queue_release_alloca_transaction(
     transaction->backing_buffers_held = false;
   }
   if (transaction->reservations_held) {
-    const iree_async_frontier_t* failure_frontier =
-        transaction->acquire_result == IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT
-            ? transaction->wait_frontier
-            : NULL;
-    iree_hal_pool_release_reservations(
-        allocation_pool, transaction->request_count, transaction->reservations,
-        failure_frontier);
+    for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
+      iree_hal_pool_release_reservations(
+          allocation_pool, 1, &transaction->reservations[i],
+          transaction->acquire_infos[i].reuse_frontier);
+    }
     transaction->reservations_held = false;
   }
 }

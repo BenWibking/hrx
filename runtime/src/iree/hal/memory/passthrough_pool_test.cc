@@ -310,7 +310,7 @@ TEST_F(PassthroughPoolTest, ReserveRelease) {
   EXPECT_EQ(reservation.offset, 0u);
   EXPECT_EQ(reservation.byte_length, 4096u);
   EXPECT_NE(reservation.block_handle, 0u);
-  EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+  EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 
   ReleaseOneReservation(pool_, &reservation, NULL);
@@ -776,7 +776,7 @@ TEST_F(PassthroughPoolTest, MultipleReservations) {
         pool_, 1024 * (i + 1), 1, NULL, IREE_HAL_POOL_RESERVE_FLAG_NONE,
         &reservations[i], &reserve_info, &result));
     EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
-    EXPECT_EQ(reserve_info.wait_frontier, nullptr);
+    EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
     EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
   }
 

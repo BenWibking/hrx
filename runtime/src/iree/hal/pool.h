@@ -45,8 +45,9 @@ enum iree_hal_pool_acquire_result_e {
   IREE_HAL_POOL_ACQUIRE_NONE = 0,
 
   // Block reserved successfully. The death frontier from the recycled block
-  // was dominated by the requester's frontier; zero-sync reuse. The memory
-  // is safe for immediate use without any device synchronization.
+  // was dominated by the requester's frontier or proved complete by an epoch
+  // query; zero-sync reuse. No additional synchronization is required beyond
+  // this requester's dependencies.
   IREE_HAL_POOL_ACQUIRE_OK = 1,
 
   // Block reserved from previously unused offset space (first use of this
@@ -178,20 +179,23 @@ enum iree_hal_pool_acquire_flag_bits_e {
 
 // Generic metadata returned by a pool reservation acquisition.
 //
-// |wait_frontier| is a borrowed pointer to the selected block's death frontier
-// when |out_result| is IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT. The pointer remains
-// valid until the matching reservation is released. It is NULL for
-// IREE_HAL_POOL_ACQUIRE_OK and IREE_HAL_POOL_ACQUIRE_OK_FRESH.
+// |reuse_frontier| preserves the selected range's prior-use prerequisite
+// independently of whether this requester needs to wait. An OK reservation may
+// carry a frontier already covered by the requester or known to be complete.
+// Its presence alone does not require a wait; |result| determines that.
 //
-// If a caller declines an IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT reservation and
-// immediately releases it, passing |wait_frontier| back to
-// iree_hal_pool_release_reservations() must preserve the block's dependency
-// metadata. Concrete pools must therefore tolerate |death_frontier| aliasing
-// the reservation's own pool-owned frontier storage in that path.
+// A caller returning an unused reservation, including after materialization
+// failure, passes |reuse_frontier| to iree_hal_pool_release_reservations(). A
+// pool subdividing the reservation preserves this prerequisite for its unused
+// ranges: one requester's eligibility does not establish global completion.
+// Concrete pools tolerate |death_frontier| aliasing the reservation's own
+// frontier storage when returning an unused reservation.
 typedef struct iree_hal_pool_acquire_info_t {
-  // Borrowed dependency frontier for IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT.
-  // NULL for success paths that require no wait.
-  const iree_async_frontier_t* wait_frontier;
+  // Exact retained prior-use prerequisite, or NULL when there is none.
+  // Borrowed immutable storage remains valid until this reservation is
+  // released. OK_NEEDS_WAIT always has a nonempty frontier; OK may also have
+  // one. Fresh and unsuccessful acquisitions have no reuse prerequisite.
+  const iree_async_frontier_t* reuse_frontier;
 
   // Generic metadata bits describing the selected reservation.
   iree_hal_pool_acquire_flags_t flags;
@@ -425,9 +429,9 @@ IREE_API_EXPORT void iree_hal_pool_release(iree_hal_pool_t* pool);
 // record contains that request's successful result; the transaction result
 // summarizes them with OK_NEEDS_WAIT taking precedence over OK and OK taking
 // precedence over OK_FRESH. Each information record whose result is
-// OK_NEEDS_WAIT has a non-NULL, non-empty wait frontier. The frontier is
-// borrowed pool storage owned by its corresponding reservation and remains
-// valid until that reservation is released.
+// OK_NEEDS_WAIT has a non-NULL, non-empty reuse_frontier. OK may also retain a
+// reuse_frontier even though this requester needs no extra wait. Frontier
+// storage is borrowed and remains immutable until its reservation is released.
 //
 // On EXHAUSTED or OVER_BUDGET, every information record and |out_result| are
 // assigned while the reservation outputs remain untouched. One or more
