@@ -132,6 +132,12 @@ def _load_pipeline_generation() -> DialectGeneration:
     return DialectGeneration(pipeline_ops, list(ALL_PIPELINE_OPS), None)
 
 
+def _load_channel_generation() -> DialectGeneration:
+    from loom.dialect.channel import ALL_CHANNEL_OPS, channel_ops
+
+    return DialectGeneration(channel_ops, list(ALL_CHANNEL_OPS), None)
+
+
 def _load_buffer_generation() -> DialectGeneration:
     from loom.dialect.buffer import ALL_BUFFER_OPS, buffer_ops
 
@@ -256,6 +262,7 @@ _DIALECT_GENERATION_LOADERS: tuple[tuple[str, DialectGenerationLoader], ...] = (
     ("command", _load_command_generation),
     ("group", _load_group_generation),
     ("pipeline", _load_pipeline_generation),
+    ("channel", _load_channel_generation),
     ("buffer", _load_buffer_generation),
     ("view", _load_view_generation),
     ("vector", _load_vector_generation),

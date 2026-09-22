@@ -819,6 +819,7 @@ def default_ops() -> tuple[Op, ...]:
     """Return every op in the default Loom Python dialect registry."""
     from loom.dialect.buffer import ALL_BUFFER_OPS
     from loom.dialect.cfg import ALL_CFG_OPS
+    from loom.dialect.channel import ALL_CHANNEL_OPS
     from loom.dialect.check import ALL_CHECK_OPS
     from loom.dialect.command import ALL_COMMAND_OPS
     from loom.dialect.encoding import ALL_ENCODING_OPS
@@ -842,6 +843,7 @@ def default_ops() -> tuple[Op, ...]:
     return (
         *ALL_BUFFER_OPS,
         *ALL_CFG_OPS,
+        *ALL_CHANNEL_OPS,
         *ALL_CHECK_OPS,
         *ALL_COMMAND_OPS,
         *ALL_ENCODING_OPS,

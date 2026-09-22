@@ -1,0 +1,81 @@
+// RUN: with-checks pass scf-to-cfg,ownership-lifetime
+
+// These ordinary view helpers cannot close channel accesses. The preparer
+// reports whether the raw record needs another packet; raster reports whether
+// the raw result needs another packet. The loops retain outer ownership.
+func.decl @pack(%raw: view<6144xi32>, %packet: view<7168xi32>) -> (i1)
+
+func.decl @raster(%packet: view<7168xi32>, %output: view<144xi32>, %previous: view<144xi32>) -> (i1)
+
+func.def noinline @prepare_raw(%read: read<tile<6144xi32>, mutable>, %prepared: channel<tile<7168xi32>>, %start: i1) {
+  %raw = channel.wait %read : read<tile<6144xi32>, mutable> -> view<6144xi32>
+  %finished = scf.while(%more = %start : i1) -> (i1) {
+    scf.condition %more, %more : i1, i1
+  } do(%active: i1) {
+    %packet_write, %packet = channel.reserve %prepared : channel<tile<7168xi32>> -> (write<tile<7168xi32>>, view<7168xi32>)
+    %again = func.call @pack(%raw, %packet) : (view<6144xi32>, view<7168xi32>) -> (i1)
+    channel.publish %packet_write : write<tile<7168xi32>>
+    scf.yield %again : i1
+  }
+  channel.release %read : read<tile<6144xi32>, mutable>
+  func.return
+}
+
+func.def @prepare_column(%raw_channel: channel<tile<6144xi32>>, %prepared: channel<tile<7168xi32>>, %count: index, %start: i1) {
+  %record_begin = index.constant 0 : index
+  %record_step = index.constant 1 : index
+  scf.for %record = [%record_begin to %count step %record_step] {
+    %raw_read = channel.accept<mutable> %raw_channel : channel<tile<6144xi32>> -> read<tile<6144xi32>, mutable>
+    func.call @prepare_raw(%raw_read, %prepared, %start) : (read<tile<6144xi32>, mutable>, channel<tile<7168xi32>>, i1)
+  }
+  func.return
+}
+
+func.def noinline @raster_raw(%prepared: channel<tile<7168xi32>>, %output_write: write<tile<144xi32>>, %output: view<144xi32>, %previous: view<144xi32>, %start: i1) -> (write<tile<144xi32>>) {
+  %finished = scf.while(%more = %start : i1) -> (i1) {
+    scf.condition %more, %more : i1, i1
+  } do(%active: i1) {
+    %packet_read, %packet = channel.acquire<mutable> %prepared : channel<tile<7168xi32>> -> (read<tile<7168xi32>, mutable>, view<7168xi32>)
+    %again = func.call @raster(%packet, %output, %previous) : (view<7168xi32>, view<144xi32>, view<144xi32>) -> (i1)
+    channel.release %packet_read : read<tile<7168xi32>, mutable>
+    scf.yield %again : i1
+  }
+  func.return %output_write : write<tile<144xi32>>
+}
+
+func.def noinline @raster_and_send(%prepared: channel<tile<7168xi32>>, %outputs: channel<tile<144xi32>>, %destination: channel<tile<144xi32>>, %previous: view<144xi32>, %start: i1) -> (read<tile<144xi32>>) {
+  %output_write, %output = channel.reserve %outputs : channel<tile<144xi32>> -> (write<tile<144xi32>>, view<144xi32>)
+  %completed = func.call @raster_raw(%prepared, %output_write, %output, %previous, %start) : (channel<tile<7168xi32>>, write<tile<144xi32>>, view<144xi32>, view<144xi32>, i1) -> (write<tile<144xi32>>)
+  channel.publish %completed : write<tile<144xi32>>
+  %output_read = channel.accept %outputs : channel<tile<144xi32>> -> read<tile<144xi32>>
+  %dma, %history = channel.fanout %output_read : read<tile<144xi32>> -> (read<tile<144xi32>>, read<tile<144xi32>>)
+  %remote_write, %remote = channel.reserve %destination : channel<tile<144xi32>> -> (write<tile<144xi32>>, view<144xi32>)
+  channel.copy %dma -> %remote_write : read<tile<144xi32>>, write<tile<144xi32>>
+  func.return %history : read<tile<144xi32>>
+}
+
+// The frame supplies at least one raw record and seeds the first history view.
+// A subsequent raw result reads history while DMA independently owns a reader.
+func.def @raster_column(%prepared: channel<tile<7168xi32>>, %outputs: channel<tile<144xi32>>, %destination: channel<tile<144xi32>>, %seed: view<144xi32>, %count: index, %start: i1) {
+  %record_step = index.constant 1 : index
+  %first = func.call @raster_and_send(%prepared, %outputs, %destination, %seed, %start) : (channel<tile<7168xi32>>, channel<tile<144xi32>>, channel<tile<144xi32>>, view<144xi32>, i1) -> (read<tile<144xi32>>)
+  %last = scf.for %record = [%record_step to %count step %record_step](%previous_read = %first : read<tile<144xi32>>) -> (read<tile<144xi32>>) {
+    %previous = channel.wait %previous_read : read<tile<144xi32>> -> view<144xi32>
+    %next = func.call @raster_and_send(%prepared, %outputs, %destination, %previous, %start) : (channel<tile<7168xi32>>, channel<tile<144xi32>>, channel<tile<144xi32>>, view<144xi32>, i1) -> (read<tile<144xi32>>)
+    channel.release %previous_read : read<tile<144xi32>>
+    scf.yield %next : read<tile<144xi32>>
+  }
+  channel.release %last : read<tile<144xi32>>
+  func.return
+}
+
+// ----
+CHECK: func.def noinline @prepare_raw(*) {
+CHECK: func.def noinline @raster_raw(*) -> (write<tile<144xi32>>) {
+CHECK: func.def noinline @raster_and_send(*) -> (read<tile<144xi32>>) {
+CHECK: channel.release %read : read<tile<6144xi32>, mutable>
+CHECK: channel.publish %completed : write<tile<144xi32>>
+CHECK: channel.copy %dma -> %remote_write : read<tile<144xi32>>, write<tile<144xi32>>
+CHECK: channel.release %previous_read : read<tile<144xi32>>
+CHECK: channel.release %last : read<tile<144xi32>>
+CHECK-NOT: *scf.*

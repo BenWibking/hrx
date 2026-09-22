@@ -946,6 +946,22 @@ ERR_STRUCTURE_056 = ErrorDef(
     ),
 )
 
+# ERR_STRUCTURE_057: Variadic field has fewer values than its minimum.
+ERR_STRUCTURE_057 = ErrorDef(
+    domain=ErrorDomain.STRUCTURE,
+    code=57,
+    severity=Severity.ERROR,
+    summary="Variadic field has too few values.",
+    message="'{op_name}' field '{field_name}' has {actual_count} values, "
+    "expected at least {minimum_count}",
+    params=(
+        ErrorParam("op_name", ParamKind.STRING),
+        ErrorParam("field_name", ParamKind.STRING),
+        ErrorParam("actual_count", ParamKind.U32),
+        ErrorParam("minimum_count", ParamKind.U32),
+    ),
+)
+
 ALL_STRUCTURE_ERRORS: tuple[ErrorDef, ...] = (
     ERR_STRUCTURE_001,
     ERR_STRUCTURE_002,
@@ -1002,4 +1018,5 @@ ALL_STRUCTURE_ERRORS: tuple[ErrorDef, ...] = (
     ERR_STRUCTURE_054,
     ERR_STRUCTURE_055,
     ERR_STRUCTURE_056,
+    ERR_STRUCTURE_057,
 )

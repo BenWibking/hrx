@@ -1,0 +1,137 @@
+// RUN: pass ownership-lifetime
+
+// A declaration carries the owned callable ABI. Scheduling a call still needs
+// its protocol implementation; ownership classification does not infer one.
+func.decl @deferred_forward(%read: read<tile<144xi32>>) -> (read<tile<144xi32>>)
+
+func.def @declaration_transfers_ownership(%read: read<tile<144xi32>>) {
+  %returned = func.call @deferred_forward(%read) : (read<tile<144xi32>>) -> (read<tile<144xi32>>)
+  channel.release %returned : read<tile<144xi32>>
+  // ERROR@+1: DOMINANCE/012 {phase_name="ownership-lifetime", value_name="read", op_name="channel.wait"}
+  %invalid = channel.wait %read : read<tile<144xi32>> -> view<144xi32>
+  func.return
+}
+
+// ====
+
+func.def noinline @forward(%read: read<tile<144xi32>>) -> (read<tile<144xi32>>) {
+  func.return %read : read<tile<144xi32>>
+}
+
+func.def noinline @forward_again(%read: read<tile<144xi32>>) -> (read<tile<144xi32>>) {
+  %forwarded = func.call @forward(%read) : (read<tile<144xi32>>) -> (read<tile<144xi32>>)
+  func.return %forwarded : read<tile<144xi32>>
+}
+
+func.def @consume_forwarded(%channel: channel<tile<144xi32>>) {
+  %read = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+  %forwarded = func.call @forward_again(%read) : (read<tile<144xi32>>) -> (read<tile<144xi32>>)
+  %pixels = channel.wait %forwarded : read<tile<144xi32>> -> view<144xi32>
+  channel.release %forwarded : read<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+func.def noinline @publish(%write: write<tile<144xi32>>) {
+  channel.publish %write : write<tile<144xi32>>
+  func.return
+}
+
+func.def @write_transfers_to_helper(%channel: channel<tile<144xi32>>) {
+  %write, %payload = channel.reserve %channel : channel<tile<144xi32>> -> (write<tile<144xi32>>, view<144xi32>)
+  func.call @publish(%write) : (write<tile<144xi32>>)
+  // ERROR@+1: DOMINANCE/013 {phase_name="ownership-lifetime", value_name="write", op_name="channel.publish", effect_name="consume", state_name="not-owned"}
+  channel.publish %write : write<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+func.def @write_cannot_disappear(%write: write<tile<144xi32>>) {
+  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="write"}
+  func.return
+}
+
+// ====
+
+func.def @read_cannot_disappear(%read: read<tile<144xi32>>) {
+  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="read"}
+  func.return
+}
+
+// ====
+
+func.def @fanout_consumes_parent(%read: read<tile<144xi32>>) {
+  %dma, %history = channel.fanout %read : read<tile<144xi32>> -> (read<tile<144xi32>>, read<tile<144xi32>>)
+  channel.release %dma : read<tile<144xi32>>
+  channel.release %history : read<tile<144xi32>>
+  // ERROR@+1: DOMINANCE/012 {phase_name="ownership-lifetime", value_name="read", op_name="channel.wait"}
+  %invalid = channel.wait %read : read<tile<144xi32>> -> view<144xi32>
+  func.return
+}
+
+// ====
+
+func.def @fanout_requires_each_reader(%read: read<tile<144xi32>>) {
+  %dma, %history = channel.fanout %read : read<tile<144xi32>> -> (read<tile<144xi32>>, read<tile<144xi32>>)
+  channel.release %dma : read<tile<144xi32>>
+  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="history"}
+  func.return
+}
+
+// ====
+
+func.def @copy_owns_both_accesses(%read: read<tile<144xi32>>, %write: write<tile<144xi32>>) {
+  channel.copy %read -> %write : read<tile<144xi32>>, write<tile<144xi32>>
+  // ERROR@+1: DOMINANCE/013 {phase_name="ownership-lifetime", value_name="read", op_name="channel.release", effect_name="release", state_name="not-owned"}
+  channel.release %read : read<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+func.def @copy_publishes_destination(%read: read<tile<144xi32>>, %write: write<tile<144xi32>>) {
+  channel.copy %read -> %write : read<tile<144xi32>>, write<tile<144xi32>>
+  // ERROR@+1: DOMINANCE/013 {phase_name="ownership-lifetime", value_name="write", op_name="channel.publish", effect_name="consume", state_name="not-owned"}
+  channel.publish %write : write<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+// RUN: pass cse,dce,ownership-lifetime
+
+// The readiness wait remains observable even if its borrowed view is unused.
+func.def @unused_payload_keeps_readiness(%read: read<tile<144xi32>>) {
+  %ready = channel.wait %read : read<tile<144xi32>> -> view<144xi32>
+  channel.release %read : read<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+// RUN: pass cse,dce,ownership-lifetime
+
+func.def @unused_reservation_keeps_obligation(%channel: channel<tile<144xi32>>) {
+  %write, %payload = channel.reserve %channel : channel<tile<144xi32>> -> (write<tile<144xi32>>, view<144xi32>)
+  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="write"}
+  func.return
+}
+
+// ====
+
+// RUN: pass cse,dce,ownership-lifetime
+
+// Reusing an address does not identify a protocol. Both independent bindings
+// remain present after CSE even though their backing and capacity match.
+func.def @same_backing_distinct_protocols(%storage: view<2x144xi32>) {
+  %capacity = index.constant 2 : index
+  %first = channel.bind<fifo> %storage, %capacity : view<2x144xi32>, index -> channel<tile<144xi32>>
+  %second = channel.bind<fifo> %storage, %capacity : view<2x144xi32>, index -> channel<tile<144xi32>>
+  %first_read = channel.accept %first : channel<tile<144xi32>> -> read<tile<144xi32>>
+  channel.release %first_read : read<tile<144xi32>>
+  %second_read = channel.accept %second : channel<tile<144xi32>> -> read<tile<144xi32>>
+  channel.release %second_read : read<tile<144xi32>>
+  func.return
+}

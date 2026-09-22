@@ -262,6 +262,16 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    c_tables_channel_generator
+  MAIN_MODULE
+    "loom.gen.ops.c_tables"
+  DEPS
+    loom::py::loom::gen::ops::c_tables
+    loom::py::loom::dialect::channel::channel
+)
+
+iree_py_library(
+  NAME
     c_tables_pipeline_generator
   MAIN_MODULE
     "loom.gen.ops.c_tables"

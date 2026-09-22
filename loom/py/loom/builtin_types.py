@@ -53,6 +53,11 @@ __all__ = [
     "buffer_type",
     # Pool type.
     "pool_type",
+    # Communication identities and owned accesses.
+    "channel_type",
+    "read_type",
+    "write_type",
+    "ChannelReadMode",
     # Storage type.
     "storage_type",
 ]
@@ -223,6 +228,51 @@ pool_type = TypeDef(
 )
 
 # ============================================================================
+# channel<T>, read<T>, write<T> — communication and access ownership
+# ============================================================================
+
+ChannelReadMode = EnumDef(
+    "ChannelReadMode",
+    [EnumCase("mutable", 1, doc="Exclusive consumption with read/modify permission.")],
+    doc="Permission on an owned consuming access; absence means immutable reading.",
+)
+
+channel_type = TypeDef(
+    "channel",
+    params=[AttrDef("payload", "type")],
+    format=[Param("payload")],
+    doc=(
+        "Communication identity carrying records of one payload type. Storage, "
+        "capacity and transport belong to its binding, independently of its address."
+    ),
+)
+
+read_type = TypeDef(
+    "read",
+    params=[
+        AttrDef("payload", "type"),
+        AttrDef("mode", ATTR_TYPE_ENUM, enum_def=ChannelReadMode, optional=True),
+    ],
+    format=[Param("payload"), OptionalGroup([COMMA, Param("mode")], anchor="mode")],
+    doc=(
+        "Owned consumption of a channel record, possibly pending. Passing this "
+        "value to a callable transfers its obligation. Payload access requires "
+        "readiness; release retires the obligation. Mutable consumption is exclusive."
+    ),
+)
+
+write_type = TypeDef(
+    "write",
+    params=[AttrDef("payload", "type")],
+    format=[Param("payload")],
+    doc=(
+        "Owned producer reservation for one channel record. Passing this value "
+        "to a callable transfers its obligation. Publication is explicit and "
+        "cannot be inferred from the reservation's last use."
+    ),
+)
+
+# ============================================================================
 # low.storage<space> — function-local byte storage
 # ============================================================================
 
@@ -262,6 +312,9 @@ ALL_BUILTIN_TYPES: tuple[TypeDef, ...] = (
     view_type,
     buffer_type,
     pool_type,
+    channel_type,
+    read_type,
+    write_type,
     storage_type,
 )
 

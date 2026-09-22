@@ -263,6 +263,7 @@ loom_cc_library(
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/buffer",
         "//loom/src/loom/ops/cfg",
+        "//loom/src/loom/ops/channel",
         "//loom/src/loom/ops/check",
         "//loom/src/loom/ops/command",
         "//loom/src/loom/ops/config",
