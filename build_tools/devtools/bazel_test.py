@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -65,6 +66,32 @@ class BazelTest(unittest.TestCase):
         self.assertEqual(labels, ["//pkg:public"])
         self.assertEqual(query.call_count, 1)
         self.assertIn('attr("hdrs",', query.call_args.args[0][2])
+
+    def test_try_dependency_matches_complete_header_label(self):
+        headers = {
+            "//pkg:function_projection_reader": "[//pkg:function_projection_reader.h]",
+            "//pkg:reader": "[//pkg:index.h, //pkg:reader.h]",
+            "//pkg:reader_cpp": "[//pkg:reader.hpp]",
+            "//pkg:selected_reader": "[//pkg:selected_reader.h]",
+            "//pkg:sub_reader": "[//pkg:sub/reader.h]",
+        }
+
+        def query_rules(command, **_kwargs):
+            # Model Bazel's documented regexp match against a label-list value.
+            pattern = command[2].split('attr("hdrs", "', 1)[1].split('",', 1)[0]
+            owners = [
+                owner for owner, value in headers.items() if re.search(pattern, value)
+            ]
+            return subprocess.CompletedProcess(command, 0, stdout="\n".join(owners))
+
+        with mock.patch.object(bazel_dev, "run_captured", side_effect=query_rules):
+            labels = bazel_dev.query_rules_with_header(
+                "bazel",
+                header_label="//pkg:reader.h",
+                target_pattern="//pkg:*",
+                env=None,
+            )
+        self.assertEqual(labels, ["//pkg:reader"])
 
     def test_try_dependency_finds_private_source_header_owner(self):
         owner = "//loom/src/loom/target/arch/amd/xdna/aie2p:array_plan"
