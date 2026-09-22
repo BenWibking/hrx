@@ -202,16 +202,15 @@ enum iree_hal_memory_tlsf_block_flag_bits_e {
   // neighbor does not exist; coalescing to the right is not possible.
   IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_LAST = 1u << 1,
 
-  // Block's death frontier is tainted: a prior coalescing operation tried to
-  // JOIN two frontiers that together exceeded the inline capacity. The
-  // frontier data is zeroed and cannot be used for dominance checking. The
-  // async allocator must treat this block as conservatively "not yet safe
-  // for zero-sync reuse" and fall back to device-side confirmation.
+  // Block's death frontier is tainted: a release or coalescing operation
+  // exceeded the inline frontier capacity. The frontier data is zeroed and
+  // cannot be used for dominance checking. The async allocator must treat this
+  // block as conservatively "not yet safe for zero-sync reuse" and fall back
+  // to device-side confirmation.
   //
   // Taint is self-healing: when a tainted block is allocated and later freed
-  // with a new death frontier, the fresh frontier replaces the taint. The
-  // flag is cleared on allocation (the block leaves the free list and its
-  // frontier is no longer meaningful until the next free).
+  // with a new representable death frontier, that frontier replaces the taint.
+  // Allocation and splitting preserve the flag for the caller's reuse check.
   IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED = 1u << 2,
 };
 
@@ -313,10 +312,10 @@ typedef struct iree_hal_memory_tlsf_allocation_t {
 
   // The death frontier that was attached to this block when it was in the
   // free list. This is the causal snapshot from the block's previous
-  // deallocation. Points into the block's inline frontier storage (valid and
-  // stable while the block is allocated). NULL if the block had no frontier
-  // entries (e.g., the initial free block or a block freed with a NULL
-  // frontier).
+  // deallocation. Points into the block's inline frontier storage, which may
+  // move when a later allocation grows the block metadata. NULL if the block
+  // had no frontier entries (e.g., the initial free block or a block freed with
+  // a NULL frontier).
   //
   // The async allocator checks whether the requester's current frontier
   // dominates this death frontier. If yes, the memory is safe for zero-sync
@@ -476,6 +475,7 @@ iree_status_t iree_hal_memory_tlsf_try_allocate(
 // The allocation result includes the death frontier and flags from the free
 // block that was selected. The async allocator uses these for dominance
 // checking (see iree_hal_memory_tlsf_allocation_t documentation).
+// Any split remainder retains the same death frontier and taint state.
 //
 // Returns IREE_STATUS_INVALID_ARGUMENT if length is 0.
 // Returns IREE_STATUS_RESOURCE_EXHAUSTED if no free block is large enough.
@@ -545,8 +545,7 @@ iree_device_size_t iree_hal_memory_tlsf_largest_free_block(
 
 // Returns the death frontier of a block (free or allocated). The returned
 // pointer is into the block's inline frontier storage and remains valid until
-// the block is freed (if currently allocated) or allocated (if currently
-// free). Returns NULL if the frontier has zero entries.
+// the next allocator operation. Returns NULL if the frontier has zero entries.
 const iree_async_frontier_t* iree_hal_memory_tlsf_block_death_frontier(
     const iree_hal_memory_tlsf_t* tlsf,
     iree_hal_memory_tlsf_block_index_t block_index);

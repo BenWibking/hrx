@@ -591,6 +591,79 @@ TEST(TLSFTest, RestorePreservesFrontierMetadata) {
   iree_hal_memory_tlsf_deinitialize(&tlsf);
 }
 
+TEST(TLSFTest, SplitPreservesFrontierThroughMetadataGrowth) {
+  iree_hal_memory_tlsf_t tlsf;
+  auto options = DefaultOptions();
+  options.range_length = 1024;
+  options.initial_block_capacity = 1;
+  IREE_ASSERT_OK(
+      iree_hal_memory_tlsf_initialize(options, iree_allocator_system(), &tlsf));
+
+  iree_hal_memory_tlsf_allocation_t whole_range;
+  IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, 1024, &whole_range));
+  MAKE_FRONTIER(death, 2, E(TestQueueAxis(0), 10), E(TestQueueAxis(1), 20));
+  iree_hal_memory_tlsf_free(&tlsf, whole_range.block_index, death);
+
+  // Each subdivision inherits both dependencies, including when metadata grows.
+  iree_hal_memory_tlsf_allocation_t allocations[4];
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(allocations); ++i) {
+    IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, 256, &allocations[i]));
+    EXPECT_EQ(allocations[i].offset, i * 256);
+    EXPECT_EQ(allocations[i].length, 256u);
+    EXPECT_EQ(allocations[i].block_flags,
+              i + 1 == IREE_ARRAYSIZE(allocations)
+                  ? IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_LAST
+                  : IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_NONE);
+  }
+  EXPECT_GT(tlsf.block_capacity, options.initial_block_capacity);
+
+  // Resolve through the stable block indices after all metadata growth.
+  for (const auto& allocation : allocations) {
+    const iree_async_frontier_t* frontier =
+        iree_hal_memory_tlsf_block_death_frontier(&tlsf,
+                                                  allocation.block_index);
+    ASSERT_NE(frontier, nullptr);
+    ASSERT_EQ(frontier->entry_count, 2);
+    EXPECT_EQ(frontier->entries[0].axis, TestQueueAxis(0));
+    EXPECT_EQ(frontier->entries[0].epoch, 10u);
+    EXPECT_EQ(frontier->entries[1].axis, TestQueueAxis(1));
+    EXPECT_EQ(frontier->entries[1].epoch, 20u);
+  }
+
+  for (const auto& allocation : allocations) {
+    iree_hal_memory_tlsf_free(&tlsf, allocation.block_index, NULL);
+  }
+  iree_hal_memory_tlsf_deinitialize(&tlsf);
+}
+
+TEST(TLSFTest, SplitPreservesTaint) {
+  iree_hal_memory_tlsf_t tlsf;
+  auto options = DefaultOptions();
+  options.range_length = 1024;
+  options.frontier_capacity = 1;
+  IREE_ASSERT_OK(
+      iree_hal_memory_tlsf_initialize(options, iree_allocator_system(), &tlsf));
+
+  iree_hal_memory_tlsf_allocation_t whole_range;
+  IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, 1024, &whole_range));
+  MAKE_FRONTIER(oversized_death, 2, E(TestQueueAxis(0), 10),
+                E(TestQueueAxis(1), 20));
+  iree_hal_memory_tlsf_free(&tlsf, whole_range.block_index, oversized_death);
+
+  iree_hal_memory_tlsf_allocation_t allocations[4];
+  for (auto& allocation : allocations) {
+    IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, 256, &allocation));
+    EXPECT_NE(allocation.block_flags & IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED,
+              0u);
+    EXPECT_EQ(allocation.death_frontier, nullptr);
+  }
+
+  for (const auto& allocation : allocations) {
+    iree_hal_memory_tlsf_free(&tlsf, allocation.block_index, NULL);
+  }
+  iree_hal_memory_tlsf_deinitialize(&tlsf);
+}
+
 TEST(TLSFTest, FrontierMergeOnCoalesce) {
   iree_hal_memory_tlsf_t tlsf;
   IREE_ASSERT_OK(iree_hal_memory_tlsf_initialize(
@@ -796,11 +869,12 @@ TEST(TLSFTest, TaintPropagatesThroughLeftCoalesce) {
 TEST(TLSFTest, TaintClearedOnReuse) {
   iree_hal_memory_tlsf_t tlsf;
   auto options = DefaultOptions();
+  options.range_length = 512;
   options.frontier_capacity = 1;
   IREE_ASSERT_OK(
       iree_hal_memory_tlsf_initialize(options, iree_allocator_system(), &tlsf));
 
-  // Create a tainted block (same as above).
+  // Coalesce two releases into a tainted block spanning the entire range.
   iree_hal_memory_tlsf_allocation_t alloc1, alloc2;
   IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, 256, &alloc1));
   IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, 256, &alloc2));
@@ -816,7 +890,8 @@ TEST(TLSFTest, TaintClearedOnReuse) {
   EXPECT_NE(tainted_alloc.block_flags & IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED,
             0u);
 
-  // Free with a fresh frontier and re-allocate; taint should be cleared.
+  // Replace the frontier for the entire tainted range. Releasing only a prefix
+  // would coalesce with the untouched remainder and preserve its taint.
   MAKE_FRONTIER(fresh, 1, E(TestQueueAxis(0), 100));
   iree_hal_memory_tlsf_free(&tlsf, tainted_alloc.block_index, fresh);
 

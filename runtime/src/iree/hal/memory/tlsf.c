@@ -450,7 +450,9 @@ iree_status_t iree_hal_memory_tlsf_try_allocate(
     remainder_block->length = remainder;
     remainder_block->prev_physical = block_index;
     remainder_block->next_physical = block->next_physical;
-    remainder_block->flags = IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_FREE;
+    remainder_block->flags =
+        IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_FREE |
+        (block->flags & IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED);
 
     // Transfer LAST flag if the original block was last.
     if (block->flags & IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_LAST) {
@@ -469,11 +471,16 @@ iree_status_t iree_hal_memory_tlsf_try_allocate(
     block->next_physical = remainder_index;
     block->length = aligned_length;
 
-    // The remainder block gets an empty frontier (it was just split from a
-    // block being allocated; it has no independent usage history).
+    // Both subranges inherit the original block's reuse dependencies. Splitting
+    // changes geometry without establishing completion of any prior use.
+    const iree_async_frontier_t* block_frontier =
+        iree_hal_memory_tlsf_block_frontier(tlsf, block);
     iree_async_frontier_t* remainder_frontier =
         iree_hal_memory_tlsf_block_frontier(tlsf, remainder_block);
-    iree_async_frontier_initialize(remainder_frontier, 0);
+    memcpy(remainder_frontier, block_frontier,
+           sizeof(*block_frontier) +
+               (iree_host_size_t)block_frontier->entry_count *
+                   sizeof(iree_async_frontier_entry_t));
 
     // Insert the remainder into the free list.
     iree_hal_memory_tlsf_insert_free_block(tlsf, remainder_index);
