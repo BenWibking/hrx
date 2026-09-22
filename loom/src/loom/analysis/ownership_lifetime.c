@@ -174,6 +174,8 @@ typedef struct loom_ownership_lifetime_state_t {
   iree_host_size_t value_count;
   // Function argument index that a local value aliases, or NONE.
   uint16_t* value_origin_args;
+  // Pre-transfer argument origins, sized for the largest block argument list.
+  uint16_t* edge_origin_args;
   // Number of 64-bit words in local value bitsets.
   iree_host_size_t word_count;
   // Values matched by the active materialization policies.
@@ -1138,12 +1140,18 @@ static iree_status_t loom_ownership_lifetime_allocate_block_states(
       state->options->arena, block_count, sizeof(*state->blocks),
       (void**)&state->blocks));
   memset(state->blocks, 0, block_count * sizeof(*state->blocks));
+  uint16_t maximum_arg_count = 0;
   for (iree_host_size_t i = 0; i < block_count; ++i) {
+    uint16_t arg_count = loom_region_const_block(state->body, i)->arg_count;
+    maximum_arg_count = iree_max(maximum_arg_count, arg_count);
     IREE_RETURN_IF_ERROR(loom_ownership_lifetime_state_bits_allocate(
         state->options->arena, state->word_count, &state->blocks[i].in));
     IREE_RETURN_IF_ERROR(loom_ownership_lifetime_state_bits_allocate(
         state->options->arena, state->word_count, &state->blocks[i].out));
   }
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      state->options->arena, maximum_arg_count,
+      sizeof(*state->edge_origin_args), (void**)&state->edge_origin_args));
   state->queue_capacity = block_count > 0 ? block_count : 1;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(state->options->arena, state->queue_capacity,
@@ -1209,6 +1217,7 @@ static bool loom_ownership_lifetime_dequeue_block(
 
 static iree_status_t loom_ownership_lifetime_apply_cfg_br_payload(
     loom_ownership_lifetime_state_t* state,
+    loom_ownership_lifetime_state_bits_t source_bits,
     loom_ownership_lifetime_state_bits_t edge_state,
     const loom_cfg_edge_info_t* edge) {
   if (!loom_cfg_br_isa(edge->terminator)) {
@@ -1217,9 +1226,10 @@ static iree_status_t loom_ownership_lifetime_apply_cfg_br_payload(
   const loom_block_t* target =
       loom_region_const_block(state->body, edge->target_block_index);
   const loom_value_id_t* operands = loom_op_const_operands(edge->terminator);
-  iree_host_size_t count = edge->terminator->operand_count < target->arg_count
-                               ? edge->terminator->operand_count
-                               : target->arg_count;
+  iree_host_size_t count = target->arg_count;
+  // A branch transfers its arguments in parallel. Retire all source names
+  // before assigning destinations, preserving the original states and origins
+  // for backedges that permute their own block arguments.
   for (iree_host_size_t i = 0; i < count; ++i) {
     loom_value_ordinal_t source_ordinal =
         loom_ownership_lifetime_try_ordinal(state, operands[i]);
@@ -1230,20 +1240,49 @@ static iree_status_t loom_ownership_lifetime_apply_cfg_br_payload(
       continue;
     }
     loom_ownership_lifetime_value_state_t source_state =
-        loom_ownership_lifetime_state_bits_get(edge_state, source_ordinal);
+        loom_ownership_lifetime_state_bits_get(source_bits, source_ordinal);
     bool source_seen =
         loom_ownership_lifetime_value_ever_seen(state, source_ordinal);
-    if (source_state == LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN && source_seen) {
+    bool already_transferred =
+        source_state == LOOM_OWNERSHIP_LIFETIME_VALUE_OWNED &&
+        loom_ownership_lifetime_state_bits_get(edge_state, source_ordinal) !=
+            LOOM_OWNERSHIP_LIFETIME_VALUE_OWNED;
+    if ((source_state == LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN &&
+         source_seen) ||
+        already_transferred) {
       return loom_ownership_lifetime_emit_use_after_consume(
           state, edge->terminator, (uint16_t)i, operands[i]);
     }
+    state->edge_origin_args[i] =
+        loom_ownership_lifetime_origin_arg(state, source_ordinal);
     loom_ownership_lifetime_state_bits_set(
         edge_state, source_ordinal, LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN);
+  }
+  for (iree_host_size_t i = 0; i < count && !state->failed; ++i) {
+    loom_value_ordinal_t source_ordinal =
+        loom_ownership_lifetime_try_ordinal(state, operands[i]);
+    loom_value_ordinal_t target_ordinal = loom_ownership_lifetime_try_ordinal(
+        state, loom_block_arg_id(target, (uint16_t)i));
+    if (source_ordinal == LOOM_VALUE_ORDINAL_INVALID ||
+        target_ordinal == LOOM_VALUE_ORDINAL_INVALID) {
+      continue;
+    }
+    if (loom_ownership_lifetime_state_bits_get(edge_state, target_ordinal) ==
+        LOOM_OWNERSHIP_LIFETIME_VALUE_OWNED) {
+      IREE_RETURN_IF_ERROR(loom_ownership_lifetime_end_owned_value(
+          state, edge_state, edge->terminator->parent_block,
+          (loom_op_t*)edge->terminator, (loom_op_t*)edge->terminator,
+          edge->successor_index, target_ordinal, edge->terminator->location));
+      if (state->failed) {
+        return iree_ok_status();
+      }
+    }
+    loom_ownership_lifetime_value_state_t source_state =
+        loom_ownership_lifetime_state_bits_get(source_bits, source_ordinal);
     loom_ownership_lifetime_state_bits_set(edge_state, target_ordinal,
                                            source_state);
-    loom_ownership_lifetime_set_origin_arg(
-        state, target_ordinal,
-        loom_ownership_lifetime_origin_arg(state, source_ordinal));
+    loom_ownership_lifetime_set_origin_arg(state, target_ordinal,
+                                           state->edge_origin_args[i]);
     if (source_state != LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN) {
       loom_ownership_lifetime_mark_ever_seen(state, target_ordinal);
     }
@@ -1358,8 +1397,8 @@ static iree_status_t loom_ownership_lifetime_propagate_edge(
   loom_ownership_lifetime_block_state_t* target_state =
       &state->blocks[edge->target_block_index];
   loom_ownership_lifetime_state_bits_copy(scratch, source_state->out);
-  IREE_RETURN_IF_ERROR(
-      loom_ownership_lifetime_apply_cfg_br_payload(state, scratch, edge));
+  IREE_RETURN_IF_ERROR(loom_ownership_lifetime_apply_cfg_br_payload(
+      state, source_state->out, scratch, edge));
   IREE_RETURN_IF_ERROR(
       loom_ownership_lifetime_materialize_edge_lifetimes(state, scratch, edge));
   if (state->failed) {
@@ -1466,8 +1505,8 @@ static iree_status_t loom_ownership_lifetime_run_cfg(
         const loom_cfg_edge_info_t* edge =
             loom_cfg_graph_edge(graph, successor_edges.values[j]);
         loom_ownership_lifetime_state_bits_copy(scratch, state->blocks[i].out);
-        IREE_RETURN_IF_ERROR(
-            loom_ownership_lifetime_apply_cfg_br_payload(state, scratch, edge));
+        IREE_RETURN_IF_ERROR(loom_ownership_lifetime_apply_cfg_br_payload(
+            state, state->blocks[i].out, scratch, edge));
         IREE_RETURN_IF_ERROR(loom_ownership_lifetime_materialize_edge_lifetimes(
             state, scratch, edge));
       }

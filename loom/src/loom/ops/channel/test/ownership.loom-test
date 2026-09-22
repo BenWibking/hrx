@@ -62,6 +62,62 @@ func.def @read_cannot_disappear(%read: read<tile<144xi32>>) {
 
 // ====
 
+// RUN: pass scf-to-cfg,ownership-lifetime
+
+// Each firing retires the prior history and transfers a new read to the loop.
+func.def @carries_history_through_while(%channel: channel<tile<144xi32>>, %more: i1) {
+  %initial = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+  %last = scf.while(%previous = %initial : read<tile<144xi32>>) -> (read<tile<144xi32>>) {
+    scf.condition %more, %previous : i1, read<tile<144xi32>>
+  } do(%current: read<tile<144xi32>>) {
+    %pixels = channel.wait %current : read<tile<144xi32>> -> view<144xi32>
+    channel.release %current : read<tile<144xi32>>
+    %next = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+    scf.yield %next : read<tile<144xi32>>
+  }
+  channel.release %last : read<tile<144xi32>>
+  func.return
+}
+// ----
+func.def @carries_history_through_while(%channel: channel<tile<144xi32>>, %more: i1) {
+  %initial = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+  cfg.br ^_bb1(%initial: read<tile<144xi32>>)
+^_bb1(%previous: read<tile<144xi32>>):
+  cfg.cond_br %more, ^_bb2, ^_bb3
+^_bb2:
+  %pixels = channel.wait %previous : read<tile<144xi32>> -> view<144xi32>
+  channel.release %previous : read<tile<144xi32>>
+  %next = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+  cfg.br ^_bb1(%next: read<tile<144xi32>>)
+^_bb3:
+  cfg.br ^_bb4(%previous: read<tile<144xi32>>)
+^_bb4(%last: read<tile<144xi32>>):
+  channel.release %last : read<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+// RUN: pass scf-to-cfg,ownership-lifetime
+
+func.def @rejects_dropped_history_in_while(%channel: channel<tile<144xi32>>, %more: i1) {
+  %initial = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+  %last = scf.while(%previous = %initial : read<tile<144xi32>>) -> (read<tile<144xi32>>) {
+    scf.condition %more, %previous : i1, read<tile<144xi32>>
+  } do(%current: read<tile<144xi32>>) {
+    %pixels = channel.wait %current : read<tile<144xi32>> -> view<144xi32>
+    %next = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>
+    // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="previous"}
+    scf.yield %next : read<tile<144xi32>>
+  }
+  channel.release %last : read<tile<144xi32>>
+  func.return
+}
+
+// ====
+
+// RUN: pass ownership-lifetime
+
 func.def @fanout_consumes_parent(%read: read<tile<144xi32>>) {
   %dma, %history = channel.fanout %read : read<tile<144xi32>> -> (read<tile<144xi32>>, read<tile<144xi32>>)
   channel.release %dma : read<tile<144xi32>>

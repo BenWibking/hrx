@@ -110,3 +110,20 @@ func.def @materializes_dead_branch_payload(%size: index) {
   test.resource.release %unused : pool<16>
   func.return
 }
+
+// ====
+
+// RUN: with-checks pass test.resource-lifetime,ownership-lifetime
+
+func.def @materializes_replaced_loop_ownership(%size: index) {
+  %initial = test.resource.alloc %size : index -> pool<16>
+  cfg.br ^loop(%initial: pool<16>)
+^loop(%current: pool<16>):
+  test.resource.borrow %current : pool<16>
+  %replacement = test.resource.alloc %size : index -> pool<16>
+  cfg.br ^loop(%replacement: pool<16>)
+}
+
+// ----
+CHECK: test.resource.release %current : pool<16>
+CHECK: cfg.br ^loop(%replacement: pool<16>)

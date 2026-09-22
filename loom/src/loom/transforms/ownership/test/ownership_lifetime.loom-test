@@ -204,3 +204,72 @@ test.func @consume_test_resource(%size: index) {
   test.resource.release %resource : pool<16>
   test.yield
 }
+
+// ====
+
+// Both backedge operands must be read before either destination is rebound.
+func.def @rotates_owned_block_arguments(%size: index, %more: i1) {
+  %first = test.resource.alloc %size : index -> pool<16>
+  %second = test.resource.alloc %size : index -> pool<16>
+  cfg.br ^loop(%first: pool<16>, %second: pool<16>)
+^loop(%left: pool<16>, %right: pool<16>):
+  cfg.cond_br %more, ^rotate, ^done
+^rotate:
+  cfg.br ^loop(%right: pool<16>, %left: pool<16>)
+^done:
+  test.resource.release %left : pool<16>
+  test.resource.release %right : pool<16>
+  func.return
+}
+
+// ====
+
+func.def @retains_owned_block_argument(%size: index, %more: i1) {
+  %initial = test.resource.alloc %size : index -> pool<16>
+  cfg.br ^loop(%initial: pool<16>)
+^loop(%current: pool<16>):
+  cfg.cond_br %more, ^repeat, ^done
+^repeat:
+  cfg.br ^loop(%current: pool<16>)
+^done:
+  test.resource.release %current : pool<16>
+  func.return
+}
+
+// ====
+
+func.def @duplicates_borrowed_block_arguments(%resource: pool<16>) {
+  cfg.br ^join(%resource: pool<16>, %resource: pool<16>)
+^join(%left: pool<16>, %right: pool<16>):
+  test.resource.borrow %left : pool<16>
+  test.resource.borrow %right : pool<16>
+  func.return
+}
+
+// ====
+
+func.def @rejects_duplicate_owned_block_arguments(%size: index) {
+  %resource = test.resource.alloc %size : index -> pool<16>
+  // ERROR@+1: DOMINANCE/012 {phase_name="ownership-lifetime", value_name="resource", op_name="cfg.br"}
+  cfg.br ^join(%resource: pool<16>, %resource: pool<16>)
+^join(%left: pool<16>, %right: pool<16>):
+  test.resource.release %left : pool<16>
+  test.resource.release %right : pool<16>
+  func.return
+}
+
+// ====
+
+func.def @rejects_overwritten_loop_ownership(%size: index, %more: i1) {
+  %initial = test.resource.alloc %size : index -> pool<16>
+  cfg.br ^loop(%initial: pool<16>)
+^loop(%current: pool<16>):
+  cfg.cond_br %more, ^replace, ^done
+^replace:
+  %replacement = test.resource.alloc %size : index -> pool<16>
+  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="current"}
+  cfg.br ^loop(%replacement: pool<16>)
+^done:
+  test.resource.release %current : pool<16>
+  func.return
+}
