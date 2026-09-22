@@ -1660,7 +1660,11 @@ low_invoke = Op(
         "Source-typed call edge to an explicitly selected target-Low function. "
         "Source-to-Low lowering maps the source operands and results to the "
         "helper register signature, proves the helper argument predicates, and "
-        "normalizes the edge to low.func.call. Authored inline policy has the "
+        "normalizes the edge to low.func.call. Each source value maps to one "
+        "register-typed value. Views require storage and layout information "
+        "beyond that carrier and are not accepted as operands or results; use "
+        "a source helper taking views or pass buffers and offsets explicitly. "
+        "Authored inline policy has the "
         "same meaning as on low.func.call; targets without a Low call ABI may "
         "require the normalized edge to inline before emission."
     ),
