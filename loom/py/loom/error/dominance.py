@@ -211,14 +211,14 @@ ERR_DOMINANCE_013 = ErrorDef(
     ),
 )
 
-# ERR_DOMINANCE_014: Owned resource reaches function exit.
+# ERR_DOMINANCE_014: Owned resource is lost before retirement.
 ERR_DOMINANCE_014 = ErrorDef(
     domain=ErrorDomain.DOMINANCE,
     code=14,
     severity=Severity.ERROR,
-    summary="Owned resource reaches function exit.",
+    summary="Owned resource is lost before retirement.",
     message=(
-        "{phase_name} resource '%{value_name}' reaches function exit "
+        "{phase_name} resource '%{value_name}' is lost "
         "without consume, release, discard, or escape"
     ),
     params=(
@@ -226,8 +226,8 @@ ERR_DOMINANCE_014 = ErrorDef(
         ErrorParam("value_name", ParamKind.STRING),
     ),
     fix_hint=(
-        "Consume, release, discard, escape, or return the resource through an "
-        "owned result summary."
+        "Consume, release, discard, escape, or transfer the resource through "
+        "a block argument or owned result before replacing or leaving it."
     ),
 )
 
