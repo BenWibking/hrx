@@ -673,17 +673,20 @@ class CliTest(unittest.TestCase):
         with mock.patch.object(
             bazel_dev,
             "run_captured",
-            side_effect=(direct_query, recursive_query),
+            side_effect=(direct_query, direct_query, recursive_query),
         ) as run_captured:
             dep = bazel_dev.infer_dep_for_header(
                 "bazel", "loomc/target/amdgpu.h", env=None
             )
 
         self.assertEqual(dep, "//loom/binding/c/target/amdgpu:amdgpu")
-        self.assertEqual(run_captured.call_count, 2)
+        self.assertEqual(run_captured.call_count, 3)
         direct_expression = run_captured.call_args_list[0].args[0][2]
-        recursive_expression = run_captured.call_args_list[1].args[0][2]
+        private_expression = run_captured.call_args_list[1].args[0][2]
+        recursive_expression = run_captured.call_args_list[2].args[0][2]
         self.assertIn("//loom/binding/c:*", direct_expression)
+        self.assertIn('attr("srcs",', private_expression)
+        self.assertIn("//loom/binding/c:*", private_expression)
         self.assertIn("//loom/binding/c/...", recursive_expression)
 
     def test_bazel_fuzz_builds_with_fuzzer_config_before_running_binary(self):
