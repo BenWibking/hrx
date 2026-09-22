@@ -679,10 +679,14 @@ static void iree_hal_passthrough_pool_query_stats(
   out_stats->wait_count = 0;
 }
 
-static iree_status_t iree_hal_passthrough_pool_trim(
-    iree_hal_pool_t* base_pool) {
-  (void)base_pool;
-  return iree_ok_status();
+static void iree_hal_passthrough_pool_trim(
+    iree_hal_pool_t* base_pool, iree_hal_pool_trim_flags_t flags,
+    iree_device_size_t min_bytes_to_keep) {
+  iree_hal_passthrough_pool_t* pool = (iree_hal_passthrough_pool_t*)base_pool;
+  // Backing stays live until both its reservation and materialized views
+  // return.
+  (void)min_bytes_to_keep;
+  iree_hal_slab_provider_trim(pool->slab_provider, flags);
 }
 
 static iree_async_notification_t* iree_hal_passthrough_pool_notification(

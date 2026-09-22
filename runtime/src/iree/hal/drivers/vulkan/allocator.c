@@ -362,12 +362,11 @@ static iree_status_t iree_hal_vulkan_allocator_trim(
     iree_hal_allocator_t* IREE_RESTRICT base_allocator) {
   iree_hal_vulkan_allocator_t* allocator =
       iree_hal_vulkan_allocator_cast(base_allocator);
-  iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0;
-       i < allocator->pool_pair_count && iree_status_is_ok(status); ++i) {
-    status = iree_hal_pool_trim(allocator->pool_pairs[i].tlsf_pool);
+  for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
+    iree_hal_pool_trim(allocator->pool_pairs[i].tlsf_pool,
+                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
   }
-  return status;
+  return iree_ok_status();
 }
 
 iree_status_t iree_hal_vulkan_allocator_query_queue_pool_backend(

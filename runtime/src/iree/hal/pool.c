@@ -97,12 +97,13 @@ IREE_API_EXPORT void iree_hal_pool_query_stats(
   _VTABLE_DISPATCH(pool, query_stats)(pool, out_stats);
 }
 
-IREE_API_EXPORT iree_status_t iree_hal_pool_trim(iree_hal_pool_t* pool) {
+IREE_API_EXPORT void iree_hal_pool_trim(iree_hal_pool_t* pool,
+                                        iree_hal_pool_trim_flags_t flags,
+                                        iree_device_size_t min_bytes_to_keep) {
   IREE_ASSERT_ARGUMENT(pool);
   IREE_TRACE_ZONE_BEGIN(z0);
-  iree_status_t status = _VTABLE_DISPATCH(pool, trim)(pool);
+  _VTABLE_DISPATCH(pool, trim)(pool, flags, min_bytes_to_keep);
   IREE_TRACE_ZONE_END(z0);
-  return status;
 }
 
 IREE_API_EXPORT iree_async_notification_t* iree_hal_pool_notification(

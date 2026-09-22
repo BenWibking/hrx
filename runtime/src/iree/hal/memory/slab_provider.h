@@ -12,6 +12,7 @@
 #include "iree/hal/atomic.h"
 #include "iree/hal/buffer.h"
 #include "iree/hal/memory/asan.h"
+#include "iree/hal/pool.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,16 +24,6 @@ typedef struct iree_hal_slab_provider_vtable_t iree_hal_slab_provider_vtable_t;
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
-
-// Flags controlling trim behavior.
-typedef uint32_t iree_hal_slab_provider_trim_flags_t;
-enum iree_hal_slab_provider_trim_flag_bits_e {
-  IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_NONE = 0u,
-  // Release all cached/unused resources regardless of retention policy.
-  IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_ALL = 1u << 0,
-  // Release only resources above the target retention level.
-  IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_EXCESS = 1u << 1,
-};
 
 // Immutable properties of slabs acquired from a provider.
 typedef struct iree_hal_slab_provider_properties_t {
@@ -213,7 +204,7 @@ void iree_hal_slab_provider_prefault(iree_hal_slab_provider_t* provider,
 // Releases unused cached resources. Passes |flags| through to the provider
 // and any inner providers in the chain.
 void iree_hal_slab_provider_trim(iree_hal_slab_provider_t* provider,
-                                 iree_hal_slab_provider_trim_flags_t flags);
+                                 iree_hal_pool_trim_flags_t flags);
 
 // Accumulates statistics from the provider (and any inner providers).
 // |visited| prevents double-counting across shared provider chains.
@@ -304,7 +295,7 @@ struct iree_hal_slab_provider_vtable_t {
   // slabs back to their inner provider. Non-caching providers do nothing.
   // |flags| controls which resources are released (ALL vs EXCESS).
   void (*trim)(iree_hal_slab_provider_t* provider,
-               iree_hal_slab_provider_trim_flags_t flags);
+               iree_hal_pool_trim_flags_t flags);
 
   // Accumulates this provider's statistics into |out_stats|. Wrapping
   // providers call into their inner provider first, then add their own

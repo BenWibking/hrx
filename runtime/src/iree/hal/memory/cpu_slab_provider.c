@@ -148,8 +148,8 @@ static void iree_hal_cpu_slab_provider_prefault(
 
 // The CPU provider has no cache or freelist; nothing to trim.
 static void iree_hal_cpu_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {}
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
+}
 
 // The CPU provider tracks no statistics beyond what the allocator itself
 // provides. Leaf provider; no inner provider to recurse into.

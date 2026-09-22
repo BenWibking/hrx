@@ -138,7 +138,7 @@ void iree_hal_slab_provider_prefault(iree_hal_slab_provider_t* provider,
 }
 
 void iree_hal_slab_provider_trim(iree_hal_slab_provider_t* provider,
-                                 iree_hal_slab_provider_trim_flags_t flags) {
+                                 iree_hal_pool_trim_flags_t flags) {
   provider->vtable->trim(provider, flags);
 }
 

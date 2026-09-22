@@ -987,12 +987,13 @@ static void iree_hal_fixed_block_pool_query_stats(
       (uint64_t)iree_atomic_load(&pool->wait_count, iree_memory_order_relaxed);
 }
 
-static iree_status_t iree_hal_fixed_block_pool_trim(
-    iree_hal_pool_t* base_pool) {
+static void iree_hal_fixed_block_pool_trim(
+    iree_hal_pool_t* base_pool, iree_hal_pool_trim_flags_t flags,
+    iree_device_size_t min_bytes_to_keep) {
   iree_hal_fixed_block_pool_t* pool = (iree_hal_fixed_block_pool_t*)base_pool;
-  iree_hal_slab_provider_trim(pool->slab_provider,
-                              IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_EXCESS);
-  return iree_ok_status();
+  // The single slab supplies the pool's fixed capacity for its entire lifetime.
+  (void)min_bytes_to_keep;
+  iree_hal_slab_provider_trim(pool->slab_provider, flags);
 }
 
 static iree_async_notification_t* iree_hal_fixed_block_pool_notification(

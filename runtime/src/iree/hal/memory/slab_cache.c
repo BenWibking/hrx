@@ -502,15 +502,13 @@ static void iree_hal_slab_cache_prefault(
   // Oversized slabs that bypassed the cache were pre-faulted in acquire_slab.
 }
 
-static void iree_hal_slab_cache_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {
+static void iree_hal_slab_cache_trim(iree_hal_slab_provider_t* base_provider,
+                                     iree_hal_pool_trim_flags_t flags) {
   iree_hal_slab_cache_t* cache = (iree_hal_slab_cache_t*)base_provider;
   IREE_TRACE_ZONE_BEGIN(z0);
 
-  int32_t target = (flags & IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_ALL)
-                       ? 0
-                       : (int32_t)cache->target_count;
+  int32_t target =
+      (flags & IREE_HAL_POOL_TRIM_FLAG_ALL) ? 0 : (int32_t)cache->target_count;
 
   iree_hal_slab_cache_entry_t* entry = NULL;
   while (iree_atomic_load(&cache->ready_count, iree_memory_order_relaxed) >

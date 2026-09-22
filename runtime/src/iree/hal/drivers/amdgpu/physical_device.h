@@ -461,7 +461,7 @@ void iree_hal_amdgpu_physical_device_deinitialize(
     iree_hal_amdgpu_physical_device_t* physical_device);
 
 // Releases any unused pooled resources.
-iree_status_t iree_hal_amdgpu_physical_device_trim(
+void iree_hal_amdgpu_physical_device_trim(
     iree_hal_amdgpu_physical_device_t* physical_device);
 
 #ifdef __cplusplus

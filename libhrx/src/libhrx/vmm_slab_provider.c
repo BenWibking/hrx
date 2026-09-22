@@ -343,9 +343,8 @@ static void hrx_vmm_slab_provider_prefault(
   (void)slab;
 }
 
-static void hrx_vmm_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {
+static void hrx_vmm_slab_provider_trim(iree_hal_slab_provider_t* base_provider,
+                                       iree_hal_pool_trim_flags_t flags) {
   (void)flags;
   hrx_vmm_slab_provider_t* provider = hrx_vmm_slab_provider_cast(base_provider);
   iree_status_t status = hrx_vmm_slab_provider_retry_failed_releases(provider);

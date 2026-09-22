@@ -219,6 +219,21 @@ enum iree_hal_pool_materialize_flag_bits_e {
   IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP = 1u << 0,
 };
 
+// Controls which unused backing resources are eligible for trimming.
+// The explicit retained-byte floor applies independently of these flags.
+typedef uint32_t iree_hal_pool_trim_flags_t;
+enum iree_hal_pool_trim_flag_bits_e {
+  // Uses the implementation's normal retention policy.
+  IREE_HAL_POOL_TRIM_FLAG_NONE = 0u,
+
+  // Releases all eligible unused resources regardless of optional retention
+  // targets. Takes precedence over EXCESS when both flags are present.
+  IREE_HAL_POOL_TRIM_FLAG_ALL = 1u << 0,
+
+  // Releases only resources above the implementation's retention targets.
+  IREE_HAL_POOL_TRIM_FLAG_EXCESS = 1u << 1,
+};
+
 // Describes the memory capabilities of a pool. Computed at pool creation time
 // from the slab provider's properties and the pool's strategy constraints.
 // Used by iree_hal_pool_set_t for routing allocation requests to compatible
@@ -525,11 +540,25 @@ IREE_API_EXPORT void iree_hal_pool_query_capabilities(
 IREE_API_EXPORT void iree_hal_pool_query_stats(
     const iree_hal_pool_t* pool, iree_hal_pool_stats_t* out_stats);
 
-// Releases unused physical memory back to the slab provider.
-// VMM mode: decommit pages with no live reservations.
-// Slab mode: free slabs with no live reservations.
-// The pool remains valid after trimming; it can grow again on demand.
-IREE_API_EXPORT iree_status_t iree_hal_pool_trim(iree_hal_pool_t* pool);
+// Returns unused backing while retaining at least |min_bytes_to_keep| of the
+// pool's committed backing, subject to the retention policy selected by
+// |flags|. The floor applies to total committed backing, including live
+// allocations, not an additional reserve of free bytes. Whole-slab/page
+// granularity may retain more. A floor above current backing never grows the
+// pool.
+//
+// Only reclaimable resources are released: trimming does not wait for execution
+// completion, move live allocations, or invalidate outstanding reservations.
+// Pools backed by a fixed caller-supplied range retain that range. Growable
+// pools remain usable and can acquire backing again after trimming to zero.
+//
+// Returning backing to a caching source does not necessarily release it to the
+// system. Concrete implementations forward |flags| to their backing providers;
+// the byte floor describes this pool's backing, not a shared provider's cache.
+// Reclamation is best-effort and does not report unused capacity as an error.
+IREE_API_EXPORT void iree_hal_pool_trim(iree_hal_pool_t* pool,
+                                        iree_hal_pool_trim_flags_t flags,
+                                        iree_device_size_t min_bytes_to_keep);
 
 // Returns the pool's notification. Callers waiting for blocks to become
 // available can use this to sleep efficiently instead of polling.
@@ -613,8 +642,10 @@ typedef struct iree_hal_pool_vtable_t {
   void(IREE_API_PTR* query_stats)(const iree_hal_pool_t* pool,
                                   iree_hal_pool_stats_t* out_stats);
 
-  // Releases unused physical memory back to the concrete provider.
-  iree_status_t(IREE_API_PTR* trim)(iree_hal_pool_t* pool);
+  // Trims reclaimable backing subject to policy and the retained-byte floor.
+  void(IREE_API_PTR* trim)(iree_hal_pool_t* pool,
+                           iree_hal_pool_trim_flags_t flags,
+                           iree_device_size_t min_bytes_to_keep);
 
   // Returns the notification used for pool availability changes.
   iree_async_notification_t*(IREE_API_PTR* notification)(iree_hal_pool_t* pool);

@@ -101,7 +101,8 @@ TEST_F(VmmSlabProviderTest, OwnedRangeSurvivesUntilItsFinalSubspan) {
 
   EXPECT_EQ(1u, PoolStats().reservation_count);
   EXPECT_EQ(0u, PoolStats().release_count);
-  IREE_ASSERT_OK(iree_hal_pool_trim(pool_));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+                     /*min_bytes_to_keep=*/0);
   EXPECT_EQ(0u, ProviderStats().total_released);
   iree_hal_buffer_release(child);
   EXPECT_EQ(1u, PoolStats().reservation_count);
@@ -109,7 +110,8 @@ TEST_F(VmmSlabProviderTest, OwnedRangeSurvivesUntilItsFinalSubspan) {
   EXPECT_EQ(0u, PoolStats().reservation_count);
   EXPECT_EQ(1u, PoolStats().release_count);
 
-  IREE_ASSERT_OK(iree_hal_pool_trim(pool_));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+                     /*min_bytes_to_keep=*/0);
   EXPECT_EQ(0u, PoolStats().slab_count);
   EXPECT_EQ(0u, PoolStats().bytes_committed);
   EXPECT_EQ(1u, ProviderStats().total_acquired);
@@ -142,7 +144,8 @@ TEST_F(VmmSlabProviderTest, BorrowedSubspanDoesNotOwnTheReservation) {
   EXPECT_EQ(1u, PoolStats().release_count);
   iree_hal_buffer_release(child);
   EXPECT_EQ(1u, PoolStats().release_count);
-  IREE_ASSERT_OK(iree_hal_pool_trim(pool_));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+                     /*min_bytes_to_keep=*/0);
   EXPECT_EQ(1u, ProviderStats().total_released);
 }
 

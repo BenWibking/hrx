@@ -1517,12 +1517,9 @@ static void iree_hal_tlsf_pool_trim_unused_slabs_locked(
   pool->reuse_candidate_slab_cursor = 0;
 }
 
-IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_trim_to(
-    iree_hal_pool_t* base_pool, iree_device_size_t min_bytes_to_keep) {
-  if (!iree_hal_resource_is(base_pool, &iree_hal_tlsf_pool_vtable)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "pool is not a TLSF pool");
-  }
+static void iree_hal_tlsf_pool_trim(iree_hal_pool_t* base_pool,
+                                    iree_hal_pool_trim_flags_t flags,
+                                    iree_device_size_t min_bytes_to_keep) {
   iree_hal_tlsf_pool_t* pool = (iree_hal_tlsf_pool_t*)base_pool;
   iree_slim_mutex_lock(&pool->mutex);
   iree_hal_tlsf_pool_drain_pending_releases(pool);
@@ -1530,13 +1527,7 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_trim_to(
   iree_hal_tlsf_pool_trim_unused_slabs_locked(pool, min_bytes_to_keep);
   iree_hal_tlsf_pool_free_release_nodes(pool);
   iree_slim_mutex_unlock(&pool->mutex);
-  iree_hal_slab_provider_trim(pool->slab_provider,
-                              IREE_HAL_SLAB_PROVIDER_TRIM_FLAG_EXCESS);
-  return iree_ok_status();
-}
-
-static iree_status_t iree_hal_tlsf_pool_trim(iree_hal_pool_t* base_pool) {
-  return iree_hal_tlsf_pool_trim_to(base_pool, /*min_bytes_to_keep=*/0);
+  iree_hal_slab_provider_trim(pool->slab_provider, flags);
 }
 
 static iree_async_notification_t* iree_hal_tlsf_pool_notification(

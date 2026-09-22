@@ -393,8 +393,7 @@ static void iree_hal_vulkan_slab_provider_prefault(
 }
 
 static void iree_hal_vulkan_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
   (void)base_provider;
   (void)flags;
 }

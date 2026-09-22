@@ -67,12 +67,6 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create(
     iree_hal_pool_epoch_query_t epoch_query, iree_allocator_t host_allocator,
     iree_hal_pool_t** out_pool);
 
-// Releases fully idle slabs while retaining at least |min_bytes_to_keep| of
-// committed backing. |pool| must have been created by
-// iree_hal_tlsf_pool_create.
-IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_trim_to(
-    iree_hal_pool_t* pool, iree_device_size_t min_bytes_to_keep);
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

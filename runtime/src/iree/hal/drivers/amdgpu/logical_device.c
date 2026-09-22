@@ -2247,8 +2247,7 @@ static iree_status_t iree_hal_amdgpu_logical_device_trim(
   // Release pooled resources from each physical device. These may return items
   // back to the parent logical device pools.
   for (iree_host_size_t i = 0; i < logical_device->physical_device_count; ++i) {
-    IREE_RETURN_IF_ERROR(iree_hal_amdgpu_physical_device_trim(
-        logical_device->physical_devices[i]));
+    iree_hal_amdgpu_physical_device_trim(logical_device->physical_devices[i]);
   }
 
   // Trim the allocator pools, if any.

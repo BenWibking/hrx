@@ -118,6 +118,12 @@ typedef struct iree_hal_test_opaque_slab_provider_t {
   // Host allocator used for provider metadata and slab allocations.
   iree_allocator_t host_allocator;
 
+  // Number of trim calls received by the provider.
+  uint32_t trim_count;
+
+  // Retention policy from the most recent trim request.
+  iree_hal_pool_trim_flags_t last_trim_flags;
+
   // Number of wrap_buffer calls received by the provider.
   iree_atomic_int32_t wrap_count;
 
@@ -256,8 +262,11 @@ static void iree_hal_test_opaque_slab_provider_prefault(
     iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {}
 
 static void iree_hal_test_opaque_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {}
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
+  auto* provider = (iree_hal_test_opaque_slab_provider_t*)base_provider;
+  ++provider->trim_count;
+  provider->last_trim_flags = flags;
+}
 
 static void iree_hal_test_opaque_slab_provider_query_stats(
     const iree_hal_slab_provider_t* base_provider,
@@ -533,7 +542,7 @@ TEST_F(TLSFPoolTest, ReserveGrowsForLivePressure) {
   ReleaseOneReservation(pool_, &first_reservation, NULL);
 }
 
-TEST_F(TLSFPoolTest, TrimToPreservesLiveSlab) {
+TEST_F(TLSFPoolTest, TrimPreservesLiveSlab) {
   iree_hal_pool_reservation_t first_reservation;
   iree_hal_pool_acquire_info_t reserve_info;
   iree_hal_pool_acquire_result_t result;
@@ -552,7 +561,7 @@ TEST_F(TLSFPoolTest, TrimToPreservesLiveSlab) {
   EXPECT_NE(first_reservation.slab_index, second_reservation.slab_index);
 
   ReleaseOneReservation(pool_, &first_reservation, NULL);
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool_, 16));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 16);
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool_, &stats);
@@ -573,7 +582,7 @@ TEST_F(TLSFPoolTest, TrimToPreservesLiveSlab) {
   iree_hal_buffer_release(buffer);
 }
 
-TEST_F(TLSFPoolTest, TrimToRetainsByteThresholdForIdleSlabs) {
+TEST_F(TLSFPoolTest, TrimRetainsByteThresholdForIdleSlabs) {
   iree_hal_pool_acquire_info_t reserve_info;
   iree_hal_pool_acquire_result_t result;
   iree_hal_pool_reservation_t first_reservation;
@@ -594,23 +603,38 @@ TEST_F(TLSFPoolTest, TrimToRetainsByteThresholdForIdleSlabs) {
   ReleaseOneReservation(pool_, &second_reservation, NULL);
 
   iree_hal_pool_stats_t stats;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool_, 4097));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 16384);
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 2u);
   EXPECT_EQ(stats.bytes_committed, 8192u);
 
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool_, 4096));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 4097);
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.slab_count, 2u);
+  EXPECT_EQ(stats.bytes_committed, 8192u);
+
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 4096);
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 1u);
   EXPECT_EQ(stats.bytes_committed, 4096u);
 
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool_, 0));
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 0u);
   EXPECT_EQ(stats.bytes_committed, 0u);
+
+  const auto request = MakeReservationRequest(128, 16);
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      pool_, request.params, request.allocation_size,
+      /*requester_frontier=*/nullptr, iree_immediate_timeout(), &buffer));
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.slab_count, 1u);
+  EXPECT_EQ(stats.reservation_count, 1u);
+  iree_hal_buffer_release(buffer);
 }
 
-TEST(TLSFPool, TrimToRetainsSlabUntilDeathFrontierCompletes) {
+TEST(TLSFPool, TrimRetainsSlabUntilDeathFrontierCompletes) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
   IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
@@ -642,7 +666,7 @@ TEST(TLSFPool, TrimToRetainsSlabUntilDeathFrontierCompletes) {
 
   MAKE_FRONTIER(death_frontier, 1, E(query.axis, 42));
   ReleaseOneReservation(pool, &reservation, death_frontier);
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool, 0));
+  iree_hal_pool_trim(pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool, &stats);
@@ -651,7 +675,7 @@ TEST(TLSFPool, TrimToRetainsSlabUntilDeathFrontierCompletes) {
   EXPECT_EQ(query.query_count, 1u);
 
   query.completed_epoch = 42;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool, 0));
+  iree_hal_pool_trim(pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
   iree_hal_pool_query_stats(pool, &stats);
   EXPECT_EQ(stats.slab_count, 0u);
   EXPECT_EQ(stats.bytes_committed, 0u);
@@ -662,7 +686,7 @@ TEST(TLSFPool, TrimToRetainsSlabUntilDeathFrontierCompletes) {
   iree_hal_slab_provider_release(slab_provider);
 }
 
-TEST(TLSFPool, TrimToRetainsSlabWithTaintedDeathFrontier) {
+TEST(TLSFPool, TrimRetainsSlabWithTaintedDeathFrontier) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
   IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
@@ -700,7 +724,7 @@ TEST(TLSFPool, TrimToRetainsSlabWithTaintedDeathFrontier) {
   MAKE_FRONTIER(second_frontier, 1, E(TestQueueAxis(1), 1));
   ReleaseOneReservation(pool, &reservations[0], first_frontier);
   ReleaseOneReservation(pool, &reservations[1], second_frontier);
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_trim_to(pool, 0));
+  iree_hal_pool_trim(pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool, &stats);
@@ -760,7 +784,8 @@ TEST(TLSFPool, ReleaseNodeReuseAvoidsRepeatedHostAllocation) {
   ReleaseOneReservation(pool, &reservation, NULL);
   const iree_host_size_t free_call_count_before_trim =
       allocator_state.free_call_count;
-  IREE_ASSERT_OK(iree_hal_pool_trim(pool));
+  iree_hal_pool_trim(pool, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+                     /*min_bytes_to_keep=*/0);
   EXPECT_GT(allocator_state.free_call_count, free_call_count_before_trim);
 
   iree_hal_pool_release(pool);
@@ -1331,6 +1356,23 @@ TEST(TLSFPool, UsesProviderHooks) {
   IREE_ASSERT_OK(MaterializeOneReservation(
       pool, params, &reservation,
       IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP, &buffer));
+
+  // All trim modes preserve this live buffer and reach its native source.
+  auto* provider = (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+  const iree_hal_pool_trim_flags_t trim_flags[] = {
+      IREE_HAL_POOL_TRIM_FLAG_NONE,
+      IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+      IREE_HAL_POOL_TRIM_FLAG_ALL,
+      IREE_HAL_POOL_TRIM_FLAG_ALL | IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+  };
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(trim_flags); ++i) {
+    iree_hal_pool_trim(pool, trim_flags[i], /*min_bytes_to_keep=*/0);
+    EXPECT_EQ(provider->trim_count, i + 1);
+    EXPECT_EQ(provider->last_trim_flags, trim_flags[i]);
+    iree_hal_pool_stats_t stats;
+    iree_hal_pool_query_stats(pool, &stats);
+    EXPECT_EQ(stats.reservation_count, 1u);
+  }
 
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(

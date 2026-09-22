@@ -618,8 +618,10 @@ static iree_status_t iree_hal_task_device_trim(iree_hal_device_t* base_device) {
     iree_hal_task_queue_trim(&device->queues[i]);
   }
   IREE_RETURN_IF_ERROR(iree_hal_allocator_trim(device->device_allocator));
-  IREE_RETURN_IF_ERROR(iree_hal_pool_trim(device->default_tlsf_pool));
-  IREE_RETURN_IF_ERROR(iree_hal_pool_trim(device->default_oversized_pool));
+  iree_hal_pool_trim(device->default_tlsf_pool, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+                     /*min_bytes_to_keep=*/0);
+  iree_hal_pool_trim(device->default_oversized_pool,
+                     IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
 
   iree_arena_block_pool_trim(&device->small_block_pool);
   iree_arena_block_pool_trim(&device->large_block_pool);

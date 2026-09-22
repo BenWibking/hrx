@@ -259,9 +259,12 @@ static void hrx_iree_exact_pool_query_stats(const iree_hal_pool_t* base_pool,
   memset(out_stats, 0, sizeof(*out_stats));
 }
 
-static iree_status_t hrx_iree_exact_pool_trim(iree_hal_pool_t* base_pool) {
+static void hrx_iree_exact_pool_trim(iree_hal_pool_t* base_pool,
+                                     iree_hal_pool_trim_flags_t flags,
+                                     iree_device_size_t min_bytes_to_keep) {
   (void)base_pool;
-  return iree_ok_status();
+  (void)flags;
+  (void)min_bytes_to_keep;
 }
 
 static iree_async_notification_t* hrx_iree_exact_pool_notification(

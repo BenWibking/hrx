@@ -1678,7 +1678,7 @@ void iree_hal_amdgpu_physical_device_deinitialize(
   IREE_TRACE_ZONE_END(z0);
 }
 
-iree_status_t iree_hal_amdgpu_physical_device_trim(
+void iree_hal_amdgpu_physical_device_trim(
     iree_hal_amdgpu_physical_device_t* physical_device) {
   IREE_ASSERT_ARGUMENT(physical_device);
   IREE_TRACE_ZONE_BEGIN(z0);
@@ -1708,21 +1708,22 @@ iree_status_t iree_hal_amdgpu_physical_device_trim(
 
   iree_arena_block_pool_trim(&physical_device->fine_host_block_pool);
 
-  iree_status_t status = iree_ok_status();
   if (physical_device->default_pool) {
-    status = iree_hal_pool_trim(physical_device->default_pool);
+    iree_hal_pool_trim(physical_device->default_pool,
+                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
   }
-  if (iree_status_is_ok(status) && physical_device->default_oversized_pool) {
-    status = iree_hal_pool_trim(physical_device->default_oversized_pool);
+  if (physical_device->default_oversized_pool) {
+    iree_hal_pool_trim(physical_device->default_oversized_pool,
+                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
   }
-  if (iree_status_is_ok(status) && physical_device->default_host_pool) {
-    status = iree_hal_pool_trim(physical_device->default_host_pool);
+  if (physical_device->default_host_pool) {
+    iree_hal_pool_trim(physical_device->default_host_pool,
+                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
   }
-  if (iree_status_is_ok(status) &&
-      physical_device->default_host_oversized_pool) {
-    status = iree_hal_pool_trim(physical_device->default_host_oversized_pool);
+  if (physical_device->default_host_oversized_pool) {
+    iree_hal_pool_trim(physical_device->default_host_oversized_pool,
+                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
   }
 
   IREE_TRACE_ZONE_END(z0);
-  return status;
 }

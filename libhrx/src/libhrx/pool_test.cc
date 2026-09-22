@@ -1,13 +1,15 @@
 // Copyright 2026 The HRX Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstring>
+
 #include "hrx_internal.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
 namespace {
 
-class ExactPoolTest : public ::testing::Test {
+class CpuPoolTest : public ::testing::Test {
  protected:
   void SetUp() override {
     IREE_ASSERT_OK(hrx_status_to_iree(hrx_cpu_initialize(/*flags=*/0)));
@@ -29,10 +31,11 @@ class ExactPoolTest : public ::testing::Test {
     };
   }
 
+  // CPU device supplying backing storage for the pools under test.
   hrx_device_t device_ = nullptr;
 };
 
-TEST_F(ExactPoolTest, BatchedReservationsRetainPoolUntilRelease) {
+TEST_F(CpuPoolTest, BatchedReservationsRetainPoolUntilRelease) {
   const iree_hal_buffer_params_t params = BufferParams();
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(hrx_iree_exact_pool_create(device_->allocator.hal_allocator,
@@ -71,7 +74,7 @@ TEST_F(ExactPoolTest, BatchedReservationsRetainPoolUntilRelease) {
                                      /*death_frontier=*/nullptr);
 }
 
-TEST_F(ExactPoolTest, TransferredReservationOwnsBackingBuffer) {
+TEST_F(CpuPoolTest, TransferredReservationOwnsBackingBuffer) {
   const iree_hal_buffer_params_t params = BufferParams();
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(hrx_iree_exact_pool_create(device_->allocator.hal_allocator,
@@ -86,7 +89,7 @@ TEST_F(ExactPoolTest, TransferredReservationOwnsBackingBuffer) {
   iree_hal_pool_release(pool);
 }
 
-TEST_F(ExactPoolTest, AcceptsWeakerAndRejectsInvalidOrStrongerAlignment) {
+TEST_F(CpuPoolTest, AcceptsWeakerAndRejectsInvalidOrStrongerAlignment) {
   iree_hal_buffer_params_t params = BufferParams();
   params.min_alignment = 8;
   iree_hal_pool_t* pool = nullptr;
@@ -130,6 +133,69 @@ TEST_F(ExactPoolTest, AcceptsWeakerAndRejectsInvalidOrStrongerAlignment) {
   iree_hal_pool_release_reservations(pool, 1, &reservation,
                                      /*death_frontier=*/nullptr);
   iree_hal_pool_release(pool);
+}
+
+TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
+  const hrx_mem_pool_props_t properties = {};
+  hrx_mem_pool_t pool = nullptr;
+  IREE_ASSERT_OK(
+      hrx_status_to_iree(hrx_mem_pool_create(device_, &properties, &pool)));
+
+  const hrx_buffer_params_t params = {
+      /*.type=*/HRX_MEMORY_TYPE_HOST_LOCAL,
+      /*.access=*/HRX_MEMORY_ACCESS_ALL,
+      /*.usage=*/HRX_BUFFER_USAGE_TRANSFER | HRX_BUFFER_USAGE_MAPPING_SCOPED,
+      /*.queue_affinity=*/0,
+  };
+  hrx_buffer_t buffer = nullptr;
+  IREE_ASSERT_OK(hrx_status_to_iree(
+      hrx_mem_pool_allocate_buffer(pool, params, 1024, &buffer)));
+
+  uint64_t committed_bytes = 0;
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
+      pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &committed_bytes)));
+  ASSERT_GE(committed_bytes, 1024u);
+
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_trim(pool, 0)));
+  iree_hal_buffer_mapping_t mapping;
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer->hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      /*byte_offset=*/0, /*byte_length=*/1024, &mapping));
+  memset(mapping.contents.data, 0x3C, mapping.contents.data_length);
+  EXPECT_EQ(mapping.contents.data[1023], 0x3C);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  hrx_buffer_release(buffer);
+
+  IREE_ASSERT_OK(hrx_status_to_iree(
+      hrx_mem_pool_trim(pool, static_cast<size_t>(committed_bytes))));
+  uint64_t retained_bytes = 0;
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
+      pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
+  EXPECT_EQ(retained_bytes, committed_bytes);
+
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
+      pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, committed_bytes)));
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_release_unused(pool)));
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
+      pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
+  EXPECT_EQ(retained_bytes, committed_bytes);
+
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
+      pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, 0)));
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_release_unused(pool)));
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
+      pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
+  EXPECT_EQ(retained_bytes, 0u);
+
+  IREE_ASSERT_OK(hrx_status_to_iree(
+      hrx_mem_pool_allocate_buffer(pool, params, 1024, &buffer)));
+  hrx_buffer_release(buffer);
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_trim(pool, 0)));
+  IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
+      pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
+  EXPECT_EQ(retained_bytes, 0u);
+  hrx_mem_pool_release(pool);
 }
 
 }  // namespace

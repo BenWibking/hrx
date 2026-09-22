@@ -37,6 +37,12 @@ typedef struct iree_hal_test_opaque_slab_provider_t {
   // Host allocator used for provider metadata and slab allocations.
   iree_allocator_t host_allocator;
 
+  // Number of trim calls received by the provider.
+  uint32_t trim_count;
+
+  // Retention policy from the most recent trim request.
+  iree_hal_pool_trim_flags_t last_trim_flags;
+
   // Number of wrap_buffer calls received by the provider.
   iree_atomic_int32_t wrap_count;
 
@@ -177,8 +183,11 @@ static void iree_hal_test_opaque_slab_provider_prefault(
     iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {}
 
 static void iree_hal_test_opaque_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {}
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
+  auto* provider = (iree_hal_test_opaque_slab_provider_t*)base_provider;
+  ++provider->trim_count;
+  provider->last_trim_flags = flags;
+}
 
 static void iree_hal_test_opaque_slab_provider_query_stats(
     const iree_hal_slab_provider_t* base_provider,
@@ -587,6 +596,23 @@ TEST(PassthroughPool, UsesProviderHooks) {
       pool, params, &reservation,
       IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP, &buffer));
 
+  // All trim modes preserve this live buffer and reach its native source.
+  auto* provider = (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+  const iree_hal_pool_trim_flags_t trim_flags[] = {
+      IREE_HAL_POOL_TRIM_FLAG_NONE,
+      IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+      IREE_HAL_POOL_TRIM_FLAG_ALL,
+      IREE_HAL_POOL_TRIM_FLAG_ALL | IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+  };
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(trim_flags); ++i) {
+    iree_hal_pool_trim(pool, trim_flags[i], /*min_bytes_to_keep=*/0);
+    EXPECT_EQ(provider->trim_count, i + 1);
+    EXPECT_EQ(provider->last_trim_flags, trim_flags[i]);
+    iree_hal_pool_stats_t stats;
+    iree_hal_pool_query_stats(pool, &stats);
+    EXPECT_EQ(stats.reservation_count, 1u);
+  }
+
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
@@ -763,8 +789,9 @@ TEST_F(PassthroughPoolTest, Capabilities) {
                                 IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED));
 }
 
-TEST_F(PassthroughPoolTest, TrimIsNoOp) {
-  IREE_EXPECT_OK(iree_hal_pool_trim(pool_));
+TEST_F(PassthroughPoolTest, TrimWithNoCachedBacking) {
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+                     /*min_bytes_to_keep=*/0);
 }
 
 TEST_F(PassthroughPoolTest, MultipleReservations) {
