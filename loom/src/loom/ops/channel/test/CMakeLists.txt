@@ -13,6 +13,8 @@ loom_check_test_suite(
   NAME
     test
   SRCS
+    "attention_control.loom-test"
+    "collective_control.loom-test"
     "ownership.loom-test"
     "roundtrip.loom-test"
     "verify.loom-test"
