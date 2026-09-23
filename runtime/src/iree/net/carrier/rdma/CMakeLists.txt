@@ -12,6 +12,68 @@ iree_add_all_subdirs()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_library(
   NAME
+    factory
+  HDRS
+    "factory.h"
+  SRCS
+    "factory.c"
+  DEPS
+    ::connection
+    ::listener
+    iree::async
+    iree::base
+    iree::net::rdma::context
+    iree::net::transport_factory
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    listener
+  HDRS
+    "listener.h"
+  SRCS
+    "listener.c"
+  DEPS
+    ::connection
+    ::connection_events
+    iree::async
+    iree::base
+    iree::base::core_headers
+    iree::base::threading
+    iree::net::connection
+    iree::net::rdma::context
+    iree::net::rdma::library
+    iree::net::transport_factory
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_test(
+  NAME
+    factory_test
+  SRCS
+    "factory_test.cc"
+  DEPS
+    ::factory
+    iree::async
+    iree::async::platform::io_uring
+    iree::async::platform::posix
+    iree::base
+    iree::net::connection
+    iree::net::rdma::context
+    iree::net::transport_factory
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
     connection
   HDRS
     "connection.h"
