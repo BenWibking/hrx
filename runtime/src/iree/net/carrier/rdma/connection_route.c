@@ -37,6 +37,11 @@ iree_status_t iree_net_rdma_connection_route_initialize(
       iree_net_rdma_context_library(context);
   IREE_RETURN_IF_ERROR(iree_net_rdma_connection_route_query_step(
       library, id, IBV_QPS_INIT, &out_route->initialize));
+  if (out_route->initialize.attributes.port_num !=
+      iree_net_rdma_context_port_number(context)) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "RDMA route uses a different native port");
+  }
   IREE_RETURN_IF_ERROR(iree_net_rdma_connection_route_query_step(
       library, id, IBV_QPS_RTR, &out_route->receive));
   IREE_RETURN_IF_ERROR(iree_net_rdma_connection_route_query_step(

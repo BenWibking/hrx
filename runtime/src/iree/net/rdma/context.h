@@ -36,8 +36,9 @@ iree_net_rdma_context_options_default(void) {
 }
 
 // Creates a shared native owner from the canonical rdma_cm device inventory.
-// CM connections must match the exact returned native device identity, not
-// merely its name. No connection-specific PD or memory registration is made.
+// CM connections must match the exact returned native device identity and
+// selected port, not merely a device name. No connection-specific PD or memory
+// registration is made.
 // Missing requested devices return NOT_FOUND; no active port returns
 // UNAVAILABLE. Native/library/allocation failures propagate. Output is NULL
 // on failure. Device and port properties are a creation-time snapshot.

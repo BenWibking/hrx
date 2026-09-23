@@ -142,6 +142,7 @@ iree_cc_library(
   HDRS
     "connection.h"
   DEPS
+    ::direct_endpoint
     ::message_endpoint
     iree::async
     iree::base
