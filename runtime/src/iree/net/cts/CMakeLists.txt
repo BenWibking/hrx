@@ -125,10 +125,12 @@ iree_cc_library(
     "collective_trial_test.cc"
     "expert_trial_test.cc"
     "gather_trial_test.cc"
+    "pipeline_round_trip_test.cc"
   DEPS
     ::collective_trial
     ::expert_trial
     ::gather_trial
+    ::pipeline_round_trip
     ::transport_backend
     iree::async::cts::util::registry
     iree::testing::gtest
@@ -144,6 +146,41 @@ iree_cc_library(
     "gather_trial.h"
   SRCS
     "gather_trial.cc"
+  DEPS
+    ::collective_transport
+    ::transfer_trial
+    ::transport_backend
+    iree::async
+    iree::async::cts::util::registry
+    iree::base
+    iree::base::core_headers
+  TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    pipeline_round_trip_benchmarks
+  SRCS
+    "pipeline_round_trip_benchmark.cc"
+  DEPS
+    ::pipeline_round_trip
+    ::transfer_trial
+    ::transport_backend
+    iree::async::cts::util::registry
+    iree::third_party::google_benchmark
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    pipeline_round_trip
+  HDRS
+    "pipeline_round_trip.h"
+  SRCS
+    "pipeline_round_trip.cc"
   DEPS
     ::collective_transport
     ::transfer_trial

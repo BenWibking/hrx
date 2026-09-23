@@ -159,6 +159,31 @@ and control callbacks before measurement ends. `pipeline_high_water` reports
 the observed global microbatch occupancy. Host transforms and result checking
 are timed; this does not model GPU compute or promise a distributed-model rate.
 
+### Bidirectional Pipeline
+
+`runtime/src/iree/net/cts/pipeline_round_trip.h` adds upstream contribution
+traffic to the forward activation chain. The final stage produces a
+different-sized reverse payload; every preceding stage transforms that payload
+using its retained forward activation. Rank zero checks the complete analytic
+result. This dependency catches premature activation reuse as wrong output,
+rather than modeling the reverse leg as an unrelated echo or completion notice.
+
+Each neighboring direction has independent source callbacks, placement slots
+and consumption credit. Microbatch depth bounds both live activations and
+reverse outputs. A slot cannot be reused until its backward consumer has read
+the activation and exact outgoing sources have returned. Whole-input readiness
+is explicit in both directions; message receive leases are not retained through
+compute. The application poll owner advances either direction whenever its
+dependencies and budgets permit, without a helper worker or synthetic delay.
+
+The carrier's `pipeline_round_trip_benchmarks` target and smoke test contain
+`BidirectionalPipeline` rows with separate activation and gradient byte extents.
+Payload rates include `(stages - 1) * (activation_bytes + gradient_bytes)` per
+completed microbatch. `first_completion_us` ends at rank zero checking its first
+reverse result; `amortized_us_per_microbatch` includes all results and ownership
+joins. Both include deterministic host transforms, not simulated GPU execution
+or a claim of compute/communication overlap on an accelerator.
+
 ## Routed Expert Transport
 
 `runtime/src/iree/net/cts/expert_trial.h` exercises a full dispatch/combine

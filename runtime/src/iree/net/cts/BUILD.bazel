@@ -113,11 +113,13 @@ iree_runtime_cc_library(
         "collective_trial_test.cc",
         "expert_trial_test.cc",
         "gather_trial_test.cc",
+        "pipeline_round_trip_test.cc",
     ],
     deps = [
         ":collective_trial",
         ":expert_trial",
         ":gather_trial",
+        ":pipeline_round_trip",
         ":transport_backend",
         "//runtime/src/iree/async/cts/util:registry",
         "//runtime/src/iree/testing:gtest",
@@ -130,6 +132,36 @@ iree_runtime_cc_library(
     testonly = True,
     srcs = ["gather_trial.cc"],
     hdrs = ["gather_trial.h"],
+    deps = [
+        ":collective_transport",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+    ],
+)
+
+iree_runtime_cc_library(
+    name = "pipeline_round_trip_benchmarks",
+    testonly = True,
+    srcs = ["pipeline_round_trip_benchmark.cc"],
+    deps = [
+        ":pipeline_round_trip",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//third_party:google_benchmark",
+    ],
+    alwayslink = True,
+)
+
+iree_runtime_cc_library(
+    name = "pipeline_round_trip",
+    testonly = True,
+    srcs = ["pipeline_round_trip.cc"],
+    hdrs = ["pipeline_round_trip.h"],
     deps = [
         ":collective_transport",
         ":transfer_trial",
