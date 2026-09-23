@@ -86,3 +86,17 @@ away from their listener, destroys the listener, and checks bidirectional
 registered-memory transfers before completing the disconnect handshake. It
 also rejects connections and retires their IDs directly from event callbacks.
 Both io_uring and POSIX polling exercise these paths with bounded event batches.
+
+`runtime/src/iree/net/carrier/rdma/connection_route.h` captures an established
+IB/RoCE connection's native route for independently owned SEND/WRITE data QPs.
+Each data QP uses its own exchanged queue number and packet sequence numbers;
+the control QP's identity and READ/atomic resources are not inherited. Native
+context/registration ownership remains separate from this host setup policy.
+
+The native integration test exchanges those identities over the actual control
+QP, checks data and transformed results on two derived QPs, and retires one
+while retaining its target bytes. It also removes both control CM owners before
+probing data liveness: the data QPs still work and require explicit retirement.
+This is a teardown test, not permission for a public connection to keep accepting
+work after control failure. Control disconnect alone never returns outstanding
+data ownership.

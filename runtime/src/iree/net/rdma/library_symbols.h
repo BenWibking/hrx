@@ -46,6 +46,9 @@ IREE_NET_RDMA_SYMBOL(cm, int, rdma_resolve_route, (struct rdma_cm_id*, int))
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_create_qp,
                      (struct rdma_cm_id*, struct ibv_pd*,
                       struct ibv_qp_init_attr*))
+// Queries state-specific route attributes without transferring QP ownership.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_init_qp_attr,
+                     (struct rdma_cm_id*, struct ibv_qp_attr*, int*))
 // Starts the active connection handshake.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_connect,
                      (struct rdma_cm_id*, struct rdma_conn_param*))

@@ -19,6 +19,7 @@
 #include "iree/async/platform/posix/api.h"
 #include "iree/base/alignment.h"
 #include "iree/net/carrier/rdma/completion_queue.h"
+#include "iree/net/carrier/rdma/connection_route.h"
 #include "iree/net/rdma/region.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -98,7 +99,7 @@ class NativeConnection {
          +[](void*, iree_status_t status) { iree_status_abort(status); }, this},
         iree_allocator_system(), &events_));
     iree_net_rdma_completion_queue_options_t queue_options = {};
-    queue_options.capacity = 8;
+    queue_options.capacity = 24;
     queue_options.service_batch_size = service_batch_size;
     IREE_CHECK_OK(iree_net_rdma_completion_queue_create(
         context, proactor, queue_options,
@@ -108,7 +109,8 @@ class NativeConnection {
            for (iree_host_size_t i = 0; i < count; ++i) {
              ASSERT_GT(self->pending_, 0u);
              --self->pending_;
-             EXPECT_EQ(completions[i].status, IBV_WC_SUCCESS);
+             EXPECT_EQ(completions[i].status,
+                       self->expected_completion_status_);
              EXPECT_EQ(completions[i].wr_id, self->expected_completion_id_);
            }
          },
@@ -129,10 +131,25 @@ class NativeConnection {
     iree_async_slab_release(slab);
     iree_unaligned_store_le_u64(hello_.data(), address + 4096);
     iree_unaligned_store_le_u32(hello_.data() + 8, region_->handles.rdma.rkey);
-    iree_unaligned_store_le_u32(hello_.data() + 12, 256);
+    iree_unaligned_store_le_u32(hello_.data() + 12, 4096);
   }
 
   ~NativeConnection() {
+    EXPECT_EQ(pending_, 0u);
+    for (uint32_t i = 0; i < data_queues_.size(); ++i) {
+      RetireDataQueue(i);
+    }
+    RetireControl();
+    bool joined = false;
+    iree_net_rdma_completion_queue_deactivate(
+        completions_,
+        {+[](void* value) { *static_cast<bool*>(value) = true; }, &joined});
+    PollUntil(proactor_, [&] { return joined; });
+    iree_net_rdma_completion_queue_destroy(completions_);
+    iree_async_region_release(region_);
+  }
+
+  void RetireControl() {
     EXPECT_EQ(pending_, 0u);
     if (id_) {
       if (id_->qp) {
@@ -146,15 +163,12 @@ class NativeConnection {
         id_->qp = nullptr;
       }
       CheckCM(library_->rdma_destroy_id(id_));
+      id_ = nullptr;
     }
-    StopEvents(proactor_, events_);
-    bool joined = false;
-    iree_net_rdma_completion_queue_deactivate(
-        completions_,
-        {+[](void* value) { *static_cast<bool*>(value) = true; }, &joined});
-    PollUntil(proactor_, [&] { return joined; });
-    iree_net_rdma_completion_queue_destroy(completions_);
-    iree_async_region_release(region_);
+    if (events_) {
+      StopEvents(proactor_, events_);
+      events_ = nullptr;
+    }
   }
 
   void Connect(iree_async_address_t address) {
@@ -193,13 +207,16 @@ class NativeConnection {
   uint8_t* source() { return static_cast<uint8_t*>(region_->base_ptr); }
   uint8_t* target() { return source() + 4096; }
 
-  void Write(NativeConnection& peer) {
+  void Write(NativeConnection& peer, uint32_t queue_index = UINT32_MAX) {
     ASSERT_EQ(pending_, 0u);
     ASSERT_EQ(peer.pending_, 0u);
     ibv_recv_wr receive = {};
     receive.wr_id = 2;
     ibv_recv_wr* rejected_receive = nullptr;
-    CheckVerbs(ibv_post_recv(peer.id_->qp, &receive, &rejected_receive));
+    CheckVerbs(ibv_post_recv(queue_index == UINT32_MAX
+                                 ? peer.id_->qp
+                                 : peer.data_queues_[queue_index].handle,
+                             &receive, &rejected_receive));
     peer.pending_ = 1;
     peer.expected_completion_id_ = 2;
     ibv_sge span = {region_->handles.rdma.address, 256,
@@ -210,13 +227,95 @@ class NativeConnection {
     request.num_sge = 1;
     request.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
     request.send_flags = IBV_SEND_SIGNALED;
-    request.wr.rdma.remote_addr = remote_target_.address;
+    request.wr.rdma.remote_addr =
+        remote_target_.address +
+        (queue_index == UINT32_MAX ? 0 : (queue_index + 1) * 256);
     request.wr.rdma.rkey = remote_target_.key;
     ibv_send_wr* rejected_send = nullptr;
-    CheckVerbs(ibv_post_send(id_->qp, &request, &rejected_send));
+    CheckVerbs(ibv_post_send(
+        queue_index == UINT32_MAX ? id_->qp : data_queues_[queue_index].handle,
+        &request, &rejected_send));
     pending_ = 1;
     expected_completion_id_ = 1;
     PollUntil(proactor_, [&] { return !pending_ && !peer.pending_; });
+  }
+
+  void PrepareDataQueues() {
+    IREE_ASSERT_OK(
+        iree_net_rdma_connection_route_initialize(context_, id_, &route_));
+    for (uint32_t i = 0; i < data_queues_.size(); ++i) {
+      auto& queue = data_queues_[i];
+      ibv_qp_init_attr options = {};
+      options.qp_type = IBV_QPT_RC;
+      options.send_cq = iree_net_rdma_completion_queue_handle(completions_);
+      options.recv_cq = options.send_cq;
+      options.cap.max_send_wr = 4;
+      options.cap.max_recv_wr = 4;
+      options.cap.max_send_sge = 1;
+      options.cap.max_recv_sge = 1;
+      queue.handle = library_->ibv_create_qp(
+          iree_net_rdma_context_protection_domain(context_), &options);
+      ASSERT_NE(queue.handle, nullptr);
+      queue.sequence_number = 0x123400 + i * 17 + (queue.handle->qp_num & 0xff);
+      iree_unaligned_store_le_u32(source() + i * 8, queue.handle->qp_num);
+      iree_unaligned_store_le_u32(source() + i * 8 + 4, queue.sequence_number);
+    }
+  }
+
+  void RetireBlockedDataWrite(uint32_t queue_index) {
+    ASSERT_EQ(pending_, 0u);
+    // Every preceding receive was consumed. This notification has no receive
+    // credit and remains native-owned until the explicit local QP error.
+    ibv_sge span = {region_->handles.rdma.address, 256,
+                    region_->handles.rdma.lkey};
+    ibv_send_wr request = {};
+    request.wr_id = 1;
+    request.sg_list = &span;
+    request.num_sge = 1;
+    request.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+    request.send_flags = IBV_SEND_SIGNALED;
+    request.wr.rdma.remote_addr =
+        remote_target_.address + (queue_index + 1) * 256;
+    request.wr.rdma.rkey = remote_target_.key;
+    ibv_send_wr* rejected = nullptr;
+    CheckVerbs(
+        ibv_post_send(data_queues_[queue_index].handle, &request, &rejected));
+    pending_ = 1;
+    expected_completion_id_ = 1;
+    expected_completion_status_ = IBV_WC_WR_FLUSH_ERR;
+    ibv_qp_attr attributes = {};
+    attributes.qp_state = IBV_QPS_ERR;
+    CheckVerbs(library_->ibv_modify_qp(data_queues_[queue_index].handle,
+                                       &attributes, IBV_QP_STATE));
+    PollUntil(proactor_, [&] { return pending_ == 0; });
+    RetireDataQueue(queue_index);
+  }
+
+  void ConnectDataQueues() {
+    for (uint32_t i = 0; i < data_queues_.size(); ++i) {
+      const uint32_t remote_queue_number =
+          iree_unaligned_load_le_u32(target() + i * 8);
+      const uint32_t remote_sequence_number =
+          iree_unaligned_load_le_u32(target() + i * 8 + 4);
+      IREE_ASSERT_OK(iree_net_rdma_connection_route_connect_queue(
+          context_, &route_, data_queues_[i].handle,
+          data_queues_[i].sequence_number, remote_queue_number,
+          remote_sequence_number));
+    }
+  }
+
+  void RetireDataQueue(uint32_t index) {
+    auto& queue = data_queues_[index];
+    if (!queue.handle) {
+      return;
+    }
+    EXPECT_EQ(pending_, 0u);
+    ibv_qp_attr attributes = {};
+    attributes.qp_state = IBV_QPS_ERR;
+    CheckVerbs(
+        library_->ibv_modify_qp(queue.handle, &attributes, IBV_QP_STATE));
+    CheckVerbs(library_->ibv_destroy_qp(queue.handle));
+    queue.handle = nullptr;
   }
 
  private:
@@ -250,7 +349,7 @@ class NativeConnection {
     auto* data = static_cast<const uint8_t*>(options.private_data);
     remote_target_.address = iree_unaligned_load_le_u64(data);
     remote_target_.key = iree_unaligned_load_le_u32(data + 8);
-    ASSERT_EQ(iree_unaligned_load_le_u32(data + 12), 256u);
+    ASSERT_EQ(iree_unaligned_load_le_u32(data + 12), 4096u);
   }
 
   void OnEvent(const rdma_cm_event& event) {
@@ -293,6 +392,18 @@ class NativeConnection {
     }
   }
 
+  // Native route reused only during independent data-QP setup.
+  iree_net_rdma_connection_route_t route_ = {};
+  // Independently owned data queue resources sharing the explicit PD and CQ.
+  struct DataQueue {
+    // Native handle, never attached to the CM ID.
+    ibv_qp* handle = nullptr;
+    // Local initial packet sequence, exchanged through actual control bytes.
+    uint32_t sequence_number = 0;
+  };
+  // Two data QPs independent of the existing control QP.
+  std::array<DataQueue, 2> data_queues_ = {};
+
   // Borrowed explicit owner retained by the production service/registration.
   iree_net_rdma_context_t* context_;
   // Borrowed caller-owned poll loop retained by each service.
@@ -322,6 +433,8 @@ class NativeConnection {
   uint32_t pending_ = 0;
   // The one WR identity submitted in this test phase.
   uint64_t expected_completion_id_ = 0;
+  // Exact terminal outcome required for the current owned native request.
+  ibv_wc_status expected_completion_status_ = IBV_WC_SUCCESS;
 };
 
 class ConnectionEventsTest
@@ -517,6 +630,76 @@ TEST_P(ConnectionEventsTest, ListenerRetiresUndeliveredNativeRequest) {
     EXPECT_EQ(received_request_count_, 0u);
   }
   iree_async_proactor_release(connect_proactor);
+}
+
+TEST_P(ConnectionEventsTest,
+       DerivedQueuesUseExchangedIdentityAndIndependentLifetime) {
+  NativeConnection first(context_, proactor_, std::get<1>(GetParam()),
+                         0x10000000);
+  NativeConnection second(context_, proactor_, std::get<1>(GetParam()),
+                          0x20000000);
+  accept_target_ = &second;
+  first.Connect(address_);
+  PollUntil(proactor_, [&] {
+    return first.has_state(NativeConnection::kEstablished) &&
+           second.has_state(NativeConnection::kEstablished);
+  });
+  StopListener();
+  ASSERT_NO_FATAL_FAILURE(first.PrepareDataQueues());
+  ASSERT_NO_FATAL_FAILURE(second.PrepareDataQueues());
+  ASSERT_NO_FATAL_FAILURE(first.Write(second));
+  ASSERT_NO_FATAL_FAILURE(second.Write(first));
+  ASSERT_NO_FATAL_FAILURE(first.ConnectDataQueues());
+  ASSERT_NO_FATAL_FAILURE(second.ConnectDataQueues());
+
+  auto exchange = [&](uint32_t queue_index, uint32_t round) {
+    const uint32_t offset =
+        queue_index == UINT32_MAX ? 0 : (queue_index + 1) * 256;
+    for (uint32_t i = 0; i < 256; ++i) {
+      first.source()[i] = uint8_t(i + round);
+    }
+    ASSERT_NO_FATAL_FAILURE(first.Write(second, queue_index));
+    for (uint32_t i = 0; i < 256; ++i) {
+      ASSERT_EQ(second.target()[offset + i], uint8_t(i + round));
+      second.source()[i] = second.target()[offset + i] ^ 0x5a;
+    }
+    ASSERT_NO_FATAL_FAILURE(second.Write(first, queue_index));
+    for (uint32_t i = 0; i < 256; ++i) {
+      ASSERT_EQ(first.target()[offset + i], (uint8_t(i + round) ^ 0x5a));
+    }
+  };
+  for (uint32_t round = 0; round < 16; ++round) {
+    ASSERT_NO_FATAL_FAILURE(exchange(0, round));
+    ASSERT_NO_FATAL_FAILURE(exchange(1, round));
+  }
+  first.RetireDataQueue(0);
+  second.RetireDataQueue(0);
+  for (uint32_t round = 16; round < 32; ++round) {
+    ASSERT_NO_FATAL_FAILURE(exchange(UINT32_MAX, round));
+    ASSERT_NO_FATAL_FAILURE(exchange(1, round));
+    for (uint32_t i = 0; i < 256; ++i) {
+      ASSERT_EQ(second.target()[256 + i], uint8_t(i + 15));
+      ASSERT_EQ(first.target()[256 + i], (uint8_t(i + 15) ^ 0x5a));
+    }
+  }
+  first.Disconnect();
+  PollUntil(proactor_, [&] {
+    return first.has_state(NativeConnection::kDisconnected) &&
+           second.has_state(NativeConnection::kDisconnected);
+  });
+  first.RetireControl();
+  second.RetireControl();
+  // Native data queues are not children of the control CM ID or its QP.
+  // A production connection must stop them explicitly upon control failure.
+  for (uint32_t round = 32; round < 40; ++round) {
+    ASSERT_NO_FATAL_FAILURE(exchange(1, round));
+  }
+  ASSERT_NO_FATAL_FAILURE(first.RetireBlockedDataWrite(1));
+  second.RetireDataQueue(1);
+  for (uint32_t i = 0; i < 256; ++i) {
+    ASSERT_EQ(second.target()[256 + i], uint8_t(i + 15));
+    ASSERT_EQ(first.target()[256 + i], (uint8_t(i + 15) ^ 0x5a));
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(Backends, ConnectionEventsTest,

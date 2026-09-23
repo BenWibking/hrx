@@ -64,6 +64,22 @@ iree_cc_test(
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    connection_route
+  HDRS
+    "connection_route.h"
+  SRCS
+    "connection_route.c"
+  DEPS
+    iree::base
+    iree::net::rdma::context
+    iree::net::rdma::library
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_test(
   NAME
     connection_events_test
@@ -72,6 +88,7 @@ iree_cc_test(
   DEPS
     ::completion_queue
     ::connection_events
+    ::connection_route
     iree::async
     iree::async::platform::io_uring
     iree::async::platform::posix
