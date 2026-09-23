@@ -1,29 +1,30 @@
-// Retain an output record as history and copy its pixels after a packet header.
-func.def inline @restore_pixels(%previous: view<144xi32>, %packet: view<7168xi32>) {
+// Selecting views from different roots preserves their nonzero byte origins
+// through an inlined vector-copy helper. The destination has a record header.
+func.def inline @copy_record_payload(%source: view<16xi32>, %destination: view<32xi32>) {
   %begin = index.constant 0 : index
-  %end = index.constant 128 : index
-  %step = index.constant 16 : index
-  %unroll = index.constant 8 : index
+  %end = index.constant 8 : index
+  %step = index.constant 4 : index
+  %unroll = index.constant 2 : index
   scf.for %position = [%begin to %end step %step] unroll(%unroll) {
-    %destination = index.add %position, %step : index
-    %pixels = vector.load %previous[%position] : view<144xi32> -> vector<16xi32>
-    vector.store %pixels, %packet[%destination] : vector<16xi32>, view<7168xi32>
+    %output_position = index.add %position, %step : index
+    %values = vector.load %source[%position] : view<16xi32> -> vector<4xi32>
+    vector.store %values, %destination[%output_position] : vector<4xi32>, view<32xi32>
   }
   func.return
 }
 
-func.def public @restore_selected(%history_input: buffer, %current_input: buffer, %packet_input: buffer, %use_history: i1) {
-  %history_storage = buffer.assume.alignment %history_input {minimum_alignment = 64} : buffer
-  %current_storage = buffer.assume.alignment %current_input {minimum_alignment = 64} : buffer
-  %packet_storage = buffer.assume.alignment %packet_input {minimum_alignment = 64} : buffer
-  %history_origin = index.constant 64 : offset
-  %current_origin = index.constant 128 : offset
-  %packet_origin = index.constant 192 : offset
-  %history = buffer.view %history_storage[%history_origin] : buffer -> view<144xi32>
-  %current = buffer.view %current_storage[%current_origin] : buffer -> view<144xi32>
-  %packet = buffer.view %packet_storage[%packet_origin] : buffer -> view<7168xi32>
-  %previous = scf.select %use_history, %history, %current : view<144xi32>
-  func.call @restore_pixels(%previous, %packet) : (view<144xi32>, view<7168xi32>)
+func.def public @copy_selected_record(%first_input: buffer, %second_input: buffer, %output_input: buffer, %use_first: i1) {
+  %first_storage = buffer.assume.alignment %first_input {minimum_alignment = 16} : buffer
+  %second_storage = buffer.assume.alignment %second_input {minimum_alignment = 16} : buffer
+  %output_storage = buffer.assume.alignment %output_input {minimum_alignment = 16} : buffer
+  %first_origin = index.constant 16 : offset
+  %second_origin = index.constant 32 : offset
+  %output_origin = index.constant 48 : offset
+  %first = buffer.view %first_storage[%first_origin] : buffer -> view<16xi32>
+  %second = buffer.view %second_storage[%second_origin] : buffer -> view<16xi32>
+  %output = buffer.view %output_storage[%output_origin] : buffer -> view<32xi32>
+  %selected = scf.select %use_first, %first, %second : view<16xi32>
+  func.call @copy_record_payload(%selected, %output) : (view<16xi32>, view<32xi32>)
   func.return
 }
 

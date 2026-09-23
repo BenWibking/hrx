@@ -2,429 +2,52 @@
 // TEMPLATE-EXCLUDE: @read_called_view The x86 object-function policy requires inlined calls.
 // RUN: emit source-low target=x86:avx2 output=low
 
-// Retain an output record as history and copy its pixels after a packet header.
-func.def inline @restore_pixels(%previous: view<144xi32>, %packet: view<7168xi32>) {
+// Selecting views from different roots preserves their nonzero byte origins
+// through an inlined vector-copy helper. The destination has a record header.
+func.def inline @copy_record_payload(%source: view<16xi32>, %destination: view<32xi32>) {
   %begin = index.constant 0 : index
-  %end = index.constant 128 : index
-  %step = index.constant 16 : index
-  %unroll = index.constant 8 : index
+  %end = index.constant 8 : index
+  %step = index.constant 4 : index
+  %unroll = index.constant 2 : index
   scf.for %position = [%begin to %end step %step] unroll(%unroll) {
-    %destination = index.add %position, %step : index
-    %pixels = vector.load %previous[%position] : view<144xi32> -> vector<16xi32>
-    vector.store %pixels, %packet[%destination] : vector<16xi32>, view<7168xi32>
+    %output_position = index.add %position, %step : index
+    %values = vector.load %source[%position] : view<16xi32> -> vector<4xi32>
+    vector.store %values, %destination[%output_position] : vector<4xi32>, view<32xi32>
   }
   func.return
 }
 
-func.def public @restore_selected(%history_input: buffer, %current_input: buffer, %packet_input: buffer, %use_history: i1) {
-  %history_storage = buffer.assume.alignment %history_input {minimum_alignment = 64} : buffer
-  %current_storage = buffer.assume.alignment %current_input {minimum_alignment = 64} : buffer
-  %packet_storage = buffer.assume.alignment %packet_input {minimum_alignment = 64} : buffer
-  %history_origin = index.constant 64 : offset
-  %current_origin = index.constant 128 : offset
-  %packet_origin = index.constant 192 : offset
-  %history = buffer.view %history_storage[%history_origin] : buffer -> view<144xi32>
-  %current = buffer.view %current_storage[%current_origin] : buffer -> view<144xi32>
-  %packet = buffer.view %packet_storage[%packet_origin] : buffer -> view<7168xi32>
-  %previous = scf.select %use_history, %history, %current : view<144xi32>
-  func.call @restore_pixels(%previous, %packet) : (view<144xi32>, view<7168xi32>)
+func.def public @copy_selected_record(%first_input: buffer, %second_input: buffer, %output_input: buffer, %use_first: i1) {
+  %first_storage = buffer.assume.alignment %first_input {minimum_alignment = 16} : buffer
+  %second_storage = buffer.assume.alignment %second_input {minimum_alignment = 16} : buffer
+  %output_storage = buffer.assume.alignment %output_input {minimum_alignment = 16} : buffer
+  %first_origin = index.constant 16 : offset
+  %second_origin = index.constant 32 : offset
+  %output_origin = index.constant 48 : offset
+  %first = buffer.view %first_storage[%first_origin] : buffer -> view<16xi32>
+  %second = buffer.view %second_storage[%second_origin] : buffer -> view<16xi32>
+  %output = buffer.view %output_storage[%output_origin] : buffer -> view<32xi32>
+  %selected = scf.select %use_first, %first, %second : view<16xi32>
+  func.call @copy_record_payload(%selected, %output) : (view<16xi32>, view<32xi32>)
   func.return
 }
 
 // ----
-low.func.def public target<x86.avx2.core> abi(object_function) @restore_selected(%history_storage: reg<x86.gpr64>, %current_storage: reg<x86.gpr64>, %packet_storage: reg<x86.gpr64>, %use_history: reg<x86.gpr32>) asm {
-  %history_origin = mov.imm64 64
-  %current_origin = mov.imm64 128
-  low.cond_br %use_history, ^_bb1, ^_bb2 : reg<x86.gpr32>
+low.func.def public target<x86.avx2.core> abi(object_function) @copy_selected_record(%first_storage: reg<x86.gpr64>, %second_storage: reg<x86.gpr64>, %output_storage: reg<x86.gpr64>, %use_first: reg<x86.gpr32>) asm {
+  %first_origin = mov.imm64 16
+  %second_origin = mov.imm64 32
+  low.cond_br %use_first, ^_bb1, ^_bb2 : reg<x86.gpr32>
 ^_bb1:
-  low.br ^_bb3(%history_storage: reg<x86.gpr64>, %history_origin: reg<x86.gpr64>)
+  low.br ^_bb3(%first_storage: reg<x86.gpr64>, %first_origin: reg<x86.gpr64>)
 ^_bb2:
-  low.br ^_bb3(%current_storage: reg<x86.gpr64>, %current_origin: reg<x86.gpr64>)
-^_bb3(%previous_root: reg<x86.gpr64>, %previous_offset: reg<x86.gpr64>):
-  %889 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 0, scale = 1}
-  %890 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 4, scale = 1}
-  %891 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 8, scale = 1}
-  %892 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 12, scale = 1}
-  %893 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 16, scale = 1}
-  %894 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 20, scale = 1}
-  %895 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 24, scale = 1}
-  %896 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 28, scale = 1}
-  %897 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 32, scale = 1}
-  %898 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 36, scale = 1}
-  %899 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 40, scale = 1}
-  %900 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 44, scale = 1}
-  %901 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 48, scale = 1}
-  %902 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 52, scale = 1}
-  %903 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 56, scale = 1}
-  %904 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 60, scale = 1}
-  %905 = mov.imm64 256
-  mov.store.indexed.gpr32 %889, %packet_storage, %905 {disp32 = 0, scale = 1}
-  %906 = mov.imm64 260
-  mov.store.indexed.gpr32 %890, %packet_storage, %906 {disp32 = 0, scale = 1}
-  %907 = mov.imm64 264
-  mov.store.indexed.gpr32 %891, %packet_storage, %907 {disp32 = 0, scale = 1}
-  %908 = mov.imm64 268
-  mov.store.indexed.gpr32 %892, %packet_storage, %908 {disp32 = 0, scale = 1}
-  %909 = mov.imm64 272
-  mov.store.indexed.gpr32 %893, %packet_storage, %909 {disp32 = 0, scale = 1}
-  %910 = mov.imm64 276
-  mov.store.indexed.gpr32 %894, %packet_storage, %910 {disp32 = 0, scale = 1}
-  %911 = mov.imm64 280
-  mov.store.indexed.gpr32 %895, %packet_storage, %911 {disp32 = 0, scale = 1}
-  %912 = mov.imm64 284
-  mov.store.indexed.gpr32 %896, %packet_storage, %912 {disp32 = 0, scale = 1}
-  %913 = mov.imm64 288
-  mov.store.indexed.gpr32 %897, %packet_storage, %913 {disp32 = 0, scale = 1}
-  %914 = mov.imm64 292
-  mov.store.indexed.gpr32 %898, %packet_storage, %914 {disp32 = 0, scale = 1}
-  %915 = mov.imm64 296
-  mov.store.indexed.gpr32 %899, %packet_storage, %915 {disp32 = 0, scale = 1}
-  %916 = mov.imm64 300
-  mov.store.indexed.gpr32 %900, %packet_storage, %916 {disp32 = 0, scale = 1}
-  %917 = mov.imm64 304
-  mov.store.indexed.gpr32 %901, %packet_storage, %917 {disp32 = 0, scale = 1}
-  %918 = mov.imm64 308
-  mov.store.indexed.gpr32 %902, %packet_storage, %918 {disp32 = 0, scale = 1}
-  %919 = mov.imm64 312
-  mov.store.indexed.gpr32 %903, %packet_storage, %919 {disp32 = 0, scale = 1}
-  %920 = mov.imm64 316
-  mov.store.indexed.gpr32 %904, %packet_storage, %920 {disp32 = 0, scale = 1}
-  %921 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 64, scale = 1}
-  %922 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 68, scale = 1}
-  %923 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 72, scale = 1}
-  %924 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 76, scale = 1}
-  %925 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 80, scale = 1}
-  %926 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 84, scale = 1}
-  %927 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 88, scale = 1}
-  %928 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 92, scale = 1}
-  %929 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 96, scale = 1}
-  %930 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 100, scale = 1}
-  %931 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 104, scale = 1}
-  %932 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 108, scale = 1}
-  %933 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 112, scale = 1}
-  %934 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 116, scale = 1}
-  %935 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 120, scale = 1}
-  %936 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 124, scale = 1}
-  %937 = mov.imm64 320
-  mov.store.indexed.gpr32 %921, %packet_storage, %937 {disp32 = 0, scale = 1}
-  %938 = mov.imm64 324
-  mov.store.indexed.gpr32 %922, %packet_storage, %938 {disp32 = 0, scale = 1}
-  %939 = mov.imm64 328
-  mov.store.indexed.gpr32 %923, %packet_storage, %939 {disp32 = 0, scale = 1}
-  %940 = mov.imm64 332
-  mov.store.indexed.gpr32 %924, %packet_storage, %940 {disp32 = 0, scale = 1}
-  %941 = mov.imm64 336
-  mov.store.indexed.gpr32 %925, %packet_storage, %941 {disp32 = 0, scale = 1}
-  %942 = mov.imm64 340
-  mov.store.indexed.gpr32 %926, %packet_storage, %942 {disp32 = 0, scale = 1}
-  %943 = mov.imm64 344
-  mov.store.indexed.gpr32 %927, %packet_storage, %943 {disp32 = 0, scale = 1}
-  %944 = mov.imm64 348
-  mov.store.indexed.gpr32 %928, %packet_storage, %944 {disp32 = 0, scale = 1}
-  %945 = mov.imm64 352
-  mov.store.indexed.gpr32 %929, %packet_storage, %945 {disp32 = 0, scale = 1}
-  %946 = mov.imm64 356
-  mov.store.indexed.gpr32 %930, %packet_storage, %946 {disp32 = 0, scale = 1}
-  %947 = mov.imm64 360
-  mov.store.indexed.gpr32 %931, %packet_storage, %947 {disp32 = 0, scale = 1}
-  %948 = mov.imm64 364
-  mov.store.indexed.gpr32 %932, %packet_storage, %948 {disp32 = 0, scale = 1}
-  %949 = mov.imm64 368
-  mov.store.indexed.gpr32 %933, %packet_storage, %949 {disp32 = 0, scale = 1}
-  %950 = mov.imm64 372
-  mov.store.indexed.gpr32 %934, %packet_storage, %950 {disp32 = 0, scale = 1}
-  %951 = mov.imm64 376
-  mov.store.indexed.gpr32 %935, %packet_storage, %951 {disp32 = 0, scale = 1}
-  %952 = mov.imm64 380
-  mov.store.indexed.gpr32 %936, %packet_storage, %952 {disp32 = 0, scale = 1}
-  %953 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 128, scale = 1}
-  %954 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 132, scale = 1}
-  %955 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 136, scale = 1}
-  %956 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 140, scale = 1}
-  %957 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 144, scale = 1}
-  %958 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 148, scale = 1}
-  %959 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 152, scale = 1}
-  %960 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 156, scale = 1}
-  %961 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 160, scale = 1}
-  %962 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 164, scale = 1}
-  %963 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 168, scale = 1}
-  %964 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 172, scale = 1}
-  %965 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 176, scale = 1}
-  %966 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 180, scale = 1}
-  %967 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 184, scale = 1}
-  %968 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 188, scale = 1}
-  %969 = mov.imm64 384
-  mov.store.indexed.gpr32 %953, %packet_storage, %969 {disp32 = 0, scale = 1}
-  %970 = mov.imm64 388
-  mov.store.indexed.gpr32 %954, %packet_storage, %970 {disp32 = 0, scale = 1}
-  %971 = mov.imm64 392
-  mov.store.indexed.gpr32 %955, %packet_storage, %971 {disp32 = 0, scale = 1}
-  %972 = mov.imm64 396
-  mov.store.indexed.gpr32 %956, %packet_storage, %972 {disp32 = 0, scale = 1}
-  %973 = mov.imm64 400
-  mov.store.indexed.gpr32 %957, %packet_storage, %973 {disp32 = 0, scale = 1}
-  %974 = mov.imm64 404
-  mov.store.indexed.gpr32 %958, %packet_storage, %974 {disp32 = 0, scale = 1}
-  %975 = mov.imm64 408
-  mov.store.indexed.gpr32 %959, %packet_storage, %975 {disp32 = 0, scale = 1}
-  %976 = mov.imm64 412
-  mov.store.indexed.gpr32 %960, %packet_storage, %976 {disp32 = 0, scale = 1}
-  %977 = mov.imm64 416
-  mov.store.indexed.gpr32 %961, %packet_storage, %977 {disp32 = 0, scale = 1}
-  %978 = mov.imm64 420
-  mov.store.indexed.gpr32 %962, %packet_storage, %978 {disp32 = 0, scale = 1}
-  %979 = mov.imm64 424
-  mov.store.indexed.gpr32 %963, %packet_storage, %979 {disp32 = 0, scale = 1}
-  %980 = mov.imm64 428
-  mov.store.indexed.gpr32 %964, %packet_storage, %980 {disp32 = 0, scale = 1}
-  %981 = mov.imm64 432
-  mov.store.indexed.gpr32 %965, %packet_storage, %981 {disp32 = 0, scale = 1}
-  %982 = mov.imm64 436
-  mov.store.indexed.gpr32 %966, %packet_storage, %982 {disp32 = 0, scale = 1}
-  %983 = mov.imm64 440
-  mov.store.indexed.gpr32 %967, %packet_storage, %983 {disp32 = 0, scale = 1}
-  %984 = mov.imm64 444
-  mov.store.indexed.gpr32 %968, %packet_storage, %984 {disp32 = 0, scale = 1}
-  %985 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 192, scale = 1}
-  %986 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 196, scale = 1}
-  %987 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 200, scale = 1}
-  %988 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 204, scale = 1}
-  %989 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 208, scale = 1}
-  %990 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 212, scale = 1}
-  %991 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 216, scale = 1}
-  %992 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 220, scale = 1}
-  %993 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 224, scale = 1}
-  %994 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 228, scale = 1}
-  %995 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 232, scale = 1}
-  %996 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 236, scale = 1}
-  %997 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 240, scale = 1}
-  %998 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 244, scale = 1}
-  %999 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 248, scale = 1}
-  %1000 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 252, scale = 1}
-  %1001 = mov.imm64 448
-  mov.store.indexed.gpr32 %985, %packet_storage, %1001 {disp32 = 0, scale = 1}
-  %1002 = mov.imm64 452
-  mov.store.indexed.gpr32 %986, %packet_storage, %1002 {disp32 = 0, scale = 1}
-  %1003 = mov.imm64 456
-  mov.store.indexed.gpr32 %987, %packet_storage, %1003 {disp32 = 0, scale = 1}
-  %1004 = mov.imm64 460
-  mov.store.indexed.gpr32 %988, %packet_storage, %1004 {disp32 = 0, scale = 1}
-  %1005 = mov.imm64 464
-  mov.store.indexed.gpr32 %989, %packet_storage, %1005 {disp32 = 0, scale = 1}
-  %1006 = mov.imm64 468
-  mov.store.indexed.gpr32 %990, %packet_storage, %1006 {disp32 = 0, scale = 1}
-  %1007 = mov.imm64 472
-  mov.store.indexed.gpr32 %991, %packet_storage, %1007 {disp32 = 0, scale = 1}
-  %1008 = mov.imm64 476
-  mov.store.indexed.gpr32 %992, %packet_storage, %1008 {disp32 = 0, scale = 1}
-  %1009 = mov.imm64 480
-  mov.store.indexed.gpr32 %993, %packet_storage, %1009 {disp32 = 0, scale = 1}
-  %1010 = mov.imm64 484
-  mov.store.indexed.gpr32 %994, %packet_storage, %1010 {disp32 = 0, scale = 1}
-  %1011 = mov.imm64 488
-  mov.store.indexed.gpr32 %995, %packet_storage, %1011 {disp32 = 0, scale = 1}
-  %1012 = mov.imm64 492
-  mov.store.indexed.gpr32 %996, %packet_storage, %1012 {disp32 = 0, scale = 1}
-  %1013 = mov.imm64 496
-  mov.store.indexed.gpr32 %997, %packet_storage, %1013 {disp32 = 0, scale = 1}
-  %1014 = mov.imm64 500
-  mov.store.indexed.gpr32 %998, %packet_storage, %1014 {disp32 = 0, scale = 1}
-  %1015 = mov.imm64 504
-  mov.store.indexed.gpr32 %999, %packet_storage, %1015 {disp32 = 0, scale = 1}
-  %1016 = mov.imm64 508
-  mov.store.indexed.gpr32 %1000, %packet_storage, %1016 {disp32 = 0, scale = 1}
-  %1017 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 256, scale = 1}
-  %1018 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 260, scale = 1}
-  %1019 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 264, scale = 1}
-  %1020 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 268, scale = 1}
-  %1021 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 272, scale = 1}
-  %1022 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 276, scale = 1}
-  %1023 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 280, scale = 1}
-  %1024 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 284, scale = 1}
-  %1025 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 288, scale = 1}
-  %1026 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 292, scale = 1}
-  %1027 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 296, scale = 1}
-  %1028 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 300, scale = 1}
-  %1029 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 304, scale = 1}
-  %1030 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 308, scale = 1}
-  %1031 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 312, scale = 1}
-  %1032 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 316, scale = 1}
-  %1033 = mov.imm64 512
-  mov.store.indexed.gpr32 %1017, %packet_storage, %1033 {disp32 = 0, scale = 1}
-  %1034 = mov.imm64 516
-  mov.store.indexed.gpr32 %1018, %packet_storage, %1034 {disp32 = 0, scale = 1}
-  %1035 = mov.imm64 520
-  mov.store.indexed.gpr32 %1019, %packet_storage, %1035 {disp32 = 0, scale = 1}
-  %1036 = mov.imm64 524
-  mov.store.indexed.gpr32 %1020, %packet_storage, %1036 {disp32 = 0, scale = 1}
-  %1037 = mov.imm64 528
-  mov.store.indexed.gpr32 %1021, %packet_storage, %1037 {disp32 = 0, scale = 1}
-  %1038 = mov.imm64 532
-  mov.store.indexed.gpr32 %1022, %packet_storage, %1038 {disp32 = 0, scale = 1}
-  %1039 = mov.imm64 536
-  mov.store.indexed.gpr32 %1023, %packet_storage, %1039 {disp32 = 0, scale = 1}
-  %1040 = mov.imm64 540
-  mov.store.indexed.gpr32 %1024, %packet_storage, %1040 {disp32 = 0, scale = 1}
-  %1041 = mov.imm64 544
-  mov.store.indexed.gpr32 %1025, %packet_storage, %1041 {disp32 = 0, scale = 1}
-  %1042 = mov.imm64 548
-  mov.store.indexed.gpr32 %1026, %packet_storage, %1042 {disp32 = 0, scale = 1}
-  %1043 = mov.imm64 552
-  mov.store.indexed.gpr32 %1027, %packet_storage, %1043 {disp32 = 0, scale = 1}
-  %1044 = mov.imm64 556
-  mov.store.indexed.gpr32 %1028, %packet_storage, %1044 {disp32 = 0, scale = 1}
-  %1045 = mov.imm64 560
-  mov.store.indexed.gpr32 %1029, %packet_storage, %1045 {disp32 = 0, scale = 1}
-  %1046 = mov.imm64 564
-  mov.store.indexed.gpr32 %1030, %packet_storage, %1046 {disp32 = 0, scale = 1}
-  %1047 = mov.imm64 568
-  mov.store.indexed.gpr32 %1031, %packet_storage, %1047 {disp32 = 0, scale = 1}
-  %1048 = mov.imm64 572
-  mov.store.indexed.gpr32 %1032, %packet_storage, %1048 {disp32 = 0, scale = 1}
-  %1049 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 320, scale = 1}
-  %1050 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 324, scale = 1}
-  %1051 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 328, scale = 1}
-  %1052 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 332, scale = 1}
-  %1053 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 336, scale = 1}
-  %1054 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 340, scale = 1}
-  %1055 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 344, scale = 1}
-  %1056 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 348, scale = 1}
-  %1057 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 352, scale = 1}
-  %1058 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 356, scale = 1}
-  %1059 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 360, scale = 1}
-  %1060 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 364, scale = 1}
-  %1061 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 368, scale = 1}
-  %1062 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 372, scale = 1}
-  %1063 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 376, scale = 1}
-  %1064 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 380, scale = 1}
-  %1065 = mov.imm64 576
-  mov.store.indexed.gpr32 %1049, %packet_storage, %1065 {disp32 = 0, scale = 1}
-  %1066 = mov.imm64 580
-  mov.store.indexed.gpr32 %1050, %packet_storage, %1066 {disp32 = 0, scale = 1}
-  %1067 = mov.imm64 584
-  mov.store.indexed.gpr32 %1051, %packet_storage, %1067 {disp32 = 0, scale = 1}
-  %1068 = mov.imm64 588
-  mov.store.indexed.gpr32 %1052, %packet_storage, %1068 {disp32 = 0, scale = 1}
-  %1069 = mov.imm64 592
-  mov.store.indexed.gpr32 %1053, %packet_storage, %1069 {disp32 = 0, scale = 1}
-  %1070 = mov.imm64 596
-  mov.store.indexed.gpr32 %1054, %packet_storage, %1070 {disp32 = 0, scale = 1}
-  %1071 = mov.imm64 600
-  mov.store.indexed.gpr32 %1055, %packet_storage, %1071 {disp32 = 0, scale = 1}
-  %1072 = mov.imm64 604
-  mov.store.indexed.gpr32 %1056, %packet_storage, %1072 {disp32 = 0, scale = 1}
-  %1073 = mov.imm64 608
-  mov.store.indexed.gpr32 %1057, %packet_storage, %1073 {disp32 = 0, scale = 1}
-  %1074 = mov.imm64 612
-  mov.store.indexed.gpr32 %1058, %packet_storage, %1074 {disp32 = 0, scale = 1}
-  %1075 = mov.imm64 616
-  mov.store.indexed.gpr32 %1059, %packet_storage, %1075 {disp32 = 0, scale = 1}
-  %1076 = mov.imm64 620
-  mov.store.indexed.gpr32 %1060, %packet_storage, %1076 {disp32 = 0, scale = 1}
-  %1077 = mov.imm64 624
-  mov.store.indexed.gpr32 %1061, %packet_storage, %1077 {disp32 = 0, scale = 1}
-  %1078 = mov.imm64 628
-  mov.store.indexed.gpr32 %1062, %packet_storage, %1078 {disp32 = 0, scale = 1}
-  %1079 = mov.imm64 632
-  mov.store.indexed.gpr32 %1063, %packet_storage, %1079 {disp32 = 0, scale = 1}
-  %1080 = mov.imm64 636
-  mov.store.indexed.gpr32 %1064, %packet_storage, %1080 {disp32 = 0, scale = 1}
-  %1081 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 384, scale = 1}
-  %1082 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 388, scale = 1}
-  %1083 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 392, scale = 1}
-  %1084 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 396, scale = 1}
-  %1085 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 400, scale = 1}
-  %1086 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 404, scale = 1}
-  %1087 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 408, scale = 1}
-  %1088 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 412, scale = 1}
-  %1089 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 416, scale = 1}
-  %1090 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 420, scale = 1}
-  %1091 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 424, scale = 1}
-  %1092 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 428, scale = 1}
-  %1093 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 432, scale = 1}
-  %1094 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 436, scale = 1}
-  %1095 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 440, scale = 1}
-  %1096 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 444, scale = 1}
-  %1097 = mov.imm64 640
-  mov.store.indexed.gpr32 %1081, %packet_storage, %1097 {disp32 = 0, scale = 1}
-  %1098 = mov.imm64 644
-  mov.store.indexed.gpr32 %1082, %packet_storage, %1098 {disp32 = 0, scale = 1}
-  %1099 = mov.imm64 648
-  mov.store.indexed.gpr32 %1083, %packet_storage, %1099 {disp32 = 0, scale = 1}
-  %1100 = mov.imm64 652
-  mov.store.indexed.gpr32 %1084, %packet_storage, %1100 {disp32 = 0, scale = 1}
-  %1101 = mov.imm64 656
-  mov.store.indexed.gpr32 %1085, %packet_storage, %1101 {disp32 = 0, scale = 1}
-  %1102 = mov.imm64 660
-  mov.store.indexed.gpr32 %1086, %packet_storage, %1102 {disp32 = 0, scale = 1}
-  %1103 = mov.imm64 664
-  mov.store.indexed.gpr32 %1087, %packet_storage, %1103 {disp32 = 0, scale = 1}
-  %1104 = mov.imm64 668
-  mov.store.indexed.gpr32 %1088, %packet_storage, %1104 {disp32 = 0, scale = 1}
-  %1105 = mov.imm64 672
-  mov.store.indexed.gpr32 %1089, %packet_storage, %1105 {disp32 = 0, scale = 1}
-  %1106 = mov.imm64 676
-  mov.store.indexed.gpr32 %1090, %packet_storage, %1106 {disp32 = 0, scale = 1}
-  %1107 = mov.imm64 680
-  mov.store.indexed.gpr32 %1091, %packet_storage, %1107 {disp32 = 0, scale = 1}
-  %1108 = mov.imm64 684
-  mov.store.indexed.gpr32 %1092, %packet_storage, %1108 {disp32 = 0, scale = 1}
-  %1109 = mov.imm64 688
-  mov.store.indexed.gpr32 %1093, %packet_storage, %1109 {disp32 = 0, scale = 1}
-  %1110 = mov.imm64 692
-  mov.store.indexed.gpr32 %1094, %packet_storage, %1110 {disp32 = 0, scale = 1}
-  %1111 = mov.imm64 696
-  mov.store.indexed.gpr32 %1095, %packet_storage, %1111 {disp32 = 0, scale = 1}
-  %1112 = mov.imm64 700
-  mov.store.indexed.gpr32 %1096, %packet_storage, %1112 {disp32 = 0, scale = 1}
-  %1113 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 448, scale = 1}
-  %1114 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 452, scale = 1}
-  %1115 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 456, scale = 1}
-  %1116 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 460, scale = 1}
-  %1117 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 464, scale = 1}
-  %1118 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 468, scale = 1}
-  %1119 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 472, scale = 1}
-  %1120 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 476, scale = 1}
-  %1121 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 480, scale = 1}
-  %1122 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 484, scale = 1}
-  %1123 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 488, scale = 1}
-  %1124 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 492, scale = 1}
-  %1125 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 496, scale = 1}
-  %1126 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 500, scale = 1}
-  %1127 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 504, scale = 1}
-  %1128 = mov.load.indexed.gpr32 %previous_root, %previous_offset {disp32 = 508, scale = 1}
-  %1129 = mov.imm64 704
-  mov.store.indexed.gpr32 %1113, %packet_storage, %1129 {disp32 = 0, scale = 1}
-  %1130 = mov.imm64 708
-  mov.store.indexed.gpr32 %1114, %packet_storage, %1130 {disp32 = 0, scale = 1}
-  %1131 = mov.imm64 712
-  mov.store.indexed.gpr32 %1115, %packet_storage, %1131 {disp32 = 0, scale = 1}
-  %1132 = mov.imm64 716
-  mov.store.indexed.gpr32 %1116, %packet_storage, %1132 {disp32 = 0, scale = 1}
-  %1133 = mov.imm64 720
-  mov.store.indexed.gpr32 %1117, %packet_storage, %1133 {disp32 = 0, scale = 1}
-  %1134 = mov.imm64 724
-  mov.store.indexed.gpr32 %1118, %packet_storage, %1134 {disp32 = 0, scale = 1}
-  %1135 = mov.imm64 728
-  mov.store.indexed.gpr32 %1119, %packet_storage, %1135 {disp32 = 0, scale = 1}
-  %1136 = mov.imm64 732
-  mov.store.indexed.gpr32 %1120, %packet_storage, %1136 {disp32 = 0, scale = 1}
-  %1137 = mov.imm64 736
-  mov.store.indexed.gpr32 %1121, %packet_storage, %1137 {disp32 = 0, scale = 1}
-  %1138 = mov.imm64 740
-  mov.store.indexed.gpr32 %1122, %packet_storage, %1138 {disp32 = 0, scale = 1}
-  %1139 = mov.imm64 744
-  mov.store.indexed.gpr32 %1123, %packet_storage, %1139 {disp32 = 0, scale = 1}
-  %1140 = mov.imm64 748
-  mov.store.indexed.gpr32 %1124, %packet_storage, %1140 {disp32 = 0, scale = 1}
-  %1141 = mov.imm64 752
-  mov.store.indexed.gpr32 %1125, %packet_storage, %1141 {disp32 = 0, scale = 1}
-  %1142 = mov.imm64 756
-  mov.store.indexed.gpr32 %1126, %packet_storage, %1142 {disp32 = 0, scale = 1}
-  %1143 = mov.imm64 760
-  mov.store.indexed.gpr32 %1127, %packet_storage, %1143 {disp32 = 0, scale = 1}
-  %1144 = mov.imm64 764
-  mov.store.indexed.gpr32 %1128, %packet_storage, %1144 {disp32 = 0, scale = 1}
+  low.br ^_bb3(%second_storage: reg<x86.gpr64>, %second_origin: reg<x86.gpr64>)
+^_bb3(%selected_root: reg<x86.gpr64>, %selected_offset: reg<x86.gpr64>):
+  %values = vmovdqu32.load.indexed.xmm %selected_root, %selected_offset {disp32 = 0, scale = 1}
+  %45 = mov.imm64 64
+  vmovdqu32.store.indexed.xmm %values, %output_storage, %45 {disp32 = 0, scale = 1}
+  %values_1 = vmovdqu32.load.indexed.xmm %selected_root, %selected_offset {disp32 = 16, scale = 1}
+  %47 = mov.imm64 80
+  vmovdqu32.store.indexed.xmm %values_1, %output_storage, %47 {disp32 = 0, scale = 1}
   return
 }
 
