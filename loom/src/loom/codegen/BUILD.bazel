@@ -30,6 +30,7 @@ loom_cc_library(
         "//loom/src/loom/pass:environment",
         "//loom/src/loom/target:math_policy",
         "//loom/src/loom/target:pass_environment",
+        "//loom/src/loom/transforms/cleanup:pass_environment",
         "//runtime/src/iree/base",
     ],
 )

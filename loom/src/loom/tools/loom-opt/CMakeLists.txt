@@ -43,6 +43,8 @@ loom_cc_binary(
     loom::tooling::execution::session
     loom::tooling::io::file
     loom::tooling::pass::trace_cli
+    loom::transforms::cleanup::configured
+    loom::transforms::cleanup::patterns
     loom::util::json
     loom::util::stream
     loom::verify

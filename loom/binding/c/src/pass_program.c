@@ -194,22 +194,24 @@ static loomc_status_t loomc_pass_program_compile_state_initialize(
       .compile_options =
           {
               .registry = pass_program->registry,
-              .environment = loom_pass_environment_empty(),
           },
   };
 
   loomc_target_environment_t* target_environment =
       loomc_context_target_environment(pass_program->context);
+  const loomc_target_pass_environment_t* target_pass_environment =
+      target_environment != NULL
+          ? loomc_target_environment_pass_environment(target_environment)
+          : NULL;
+  out_state->compile_options.environment =
+      loomc_codegen_pass_environment_storage_initialize(
+          target_pass_environment,
+          loomc_context_cleanup_pattern_registry(pass_program->context),
+          /*function_version_owner=*/NULL,
+          &out_state->codegen_environment_storage);
   if (target_environment == NULL) {
     return loomc_ok_status();
   }
-
-  const loomc_target_pass_environment_t* target_pass_environment =
-      loomc_target_environment_pass_environment(target_environment);
-  out_state->compile_options.environment =
-      loomc_target_pass_environment_make_loom_pass_environment(
-          target_pass_environment, /*function_versions=*/NULL,
-          &out_state->codegen_environment_storage);
   loom_target_pass_predicate_provider_storage_initialize(
       &pass_program->block_pool, &out_state->predicate_storage);
   out_state->compile_options.predicate_provider =

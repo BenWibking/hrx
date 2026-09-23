@@ -109,17 +109,14 @@ loom_cc_library(
     "canonicalize.c"
   DEPS
     ::canonicalizer
+    ::pass_environment
     iree::base
     iree::base::internal::arena
-    loom::ops::scf
-    loom::ops::vector
-    loom::ops::view
     loom::pass::pipeline
     loom::pass::registry
     loom::pass::types
     loom::target::math_policy
     loom::target::pass_environment
-    loom::transforms::view::load_coalescing
   PUBLIC
 )
 
@@ -132,6 +129,7 @@ loom_cc_library(
     "canonicalizer.c"
   DEPS
     ::branch_facts
+    ::patterns
     iree::base
     iree::base::internal
     loom::analysis::condition_facts
@@ -147,6 +145,7 @@ loom_cc_library(
     loom::pass::types
     loom::pass::value_facts
     loom::rewrite::greedy
+    loom::rewrite::pattern_registry
     loom::rewrite::rewriter
     loom::rewrite::type_propagation
     loom::util::fact_table

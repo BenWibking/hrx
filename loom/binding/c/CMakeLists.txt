@@ -153,6 +153,8 @@ loom_cc_library(
     loom::target::types
     loom::tooling::compile::pipeline
     loom::tooling::config
+    loom::transforms::cleanup::configured
+    loom::transforms::cleanup::patterns
     loom::util::json
     loom::util::stream
     loom::verify

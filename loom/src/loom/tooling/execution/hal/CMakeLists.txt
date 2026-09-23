@@ -363,6 +363,7 @@ loom_cc_test(
     loom::testing::module_ptr
     loom::tooling::execution::session
     loom::tooling::testbench
+    loom::transforms::cleanup::configured
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

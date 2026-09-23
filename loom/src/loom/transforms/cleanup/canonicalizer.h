@@ -9,6 +9,7 @@
 
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/pass/types.h"
+#include "loom/rewrite/pattern_registry.h"
 #include "loom/rewrite/type_propagation.h"
 #include "loom/util/fact_table.h"
 
@@ -25,13 +26,17 @@ typedef struct loom_canonicalizer_state_t loom_canonicalizer_state_t;
 // Default maximum number of canonicalizer fixed-point iterations.
 #define LOOM_CANONICALIZER_DEFAULT_MAX_ITERATIONS 10
 
-// Applies a caller-selected pattern set after ordinary op canonicalization.
-// Both contexts are borrowed from the current rewrite session. Patterns mutate
-// through |rewriter|, report whether they changed the op, and retain no context
-// pointers. The driver revisits affected ops and invalidates symbolic state.
-typedef iree_status_t (*loom_canonicalizer_patterns_fn_t)(
-    loom_op_t* op, loom_rewriter_t* rewriter,
-    loom_symbolic_expr_context_t* expression_context, bool* out_changed);
+// Indexed pattern registries selected for one canonicalizer run. Each registry
+// is optional and runs at the named ordering point in the shared fixed-point
+// driver.
+typedef struct loom_canonicalizer_pattern_registries_t {
+  // Patterns applied after mini-DCE and before built-in poison/fold rules.
+  const loom_rewrite_pattern_registry_t* pre_fold;
+  // Patterns applied after type propagation and before symbolic cleanup.
+  const loom_rewrite_pattern_registry_t* post_type;
+  // Patterns applied after structural op canonicalization.
+  const loom_rewrite_pattern_registry_t* post_canonicalization;
+} loom_canonicalizer_pattern_registries_t;
 
 // Canonicalizer driver options. Zero-initialized options use defaults.
 typedef struct loom_canonicalizer_options_t {
@@ -39,9 +44,7 @@ typedef struct loom_canonicalizer_options_t {
   uint32_t max_iterations;
 
   // Optional phase-specific patterns sharing the ordinary fixed-point driver.
-  // NULL applies only universal canonicalization rules. The caller's pipeline
-  // owns the phase contract of any additional patterns.
-  loom_canonicalizer_patterns_fn_t additional_patterns;
+  loom_canonicalizer_pattern_registries_t patterns;
 
   // Optional immutable target facts used by target-sensitive fact inference.
   const loom_target_facts_t* target_facts;

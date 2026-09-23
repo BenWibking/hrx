@@ -26,6 +26,7 @@
 #include "loom/rewrite/rewriter.h"
 #include "loom/rewrite/type_propagation.h"
 #include "loom/transforms/cleanup/branch_facts.h"
+#include "loom/transforms/cleanup/patterns.h"
 
 static iree_status_t loom_canonicalize_replace_single_result_with_value(
     loom_rewriter_t* rewriter, loom_op_t* op, loom_value_id_t replacement) {
@@ -606,8 +607,11 @@ typedef struct loom_canonicalize_rewrite_state_t {
   // Borrowed whole-module owner permitting callable boundary type changes.
   loom_type_propagator_boundary_callback_t refine_boundary;
 
-  // Optional phase-specific patterns sharing this rewrite session.
-  loom_canonicalizer_patterns_fn_t additional_patterns;
+  // Optional phase-specific pattern registries sharing this rewrite session.
+  loom_canonicalizer_pattern_registries_t patterns;
+
+  // Invocation-local context shared by indexed cleanup patterns.
+  loom_cleanup_pattern_context_t pattern_context;
 
   // True after expression_context has been initialized.
   bool expression_context_initialized;
@@ -627,6 +631,8 @@ static iree_status_t loom_canonicalize_prepare_region(
       driver->module, loom_type_propagator_value_domain(state->type_propagator),
       driver->rewriter.fact_table, driver->scratch_arena,
       &state->expression_context);
+  state->pattern_context.symbolic_expression_context =
+      &state->expression_context;
   state->expression_context_initialized = true;
   return iree_ok_status();
 }
@@ -639,7 +645,28 @@ static void loom_canonicalize_cleanup_region(
       loom_type_propagator_statistics(state->type_propagator);
   loom_type_propagator_deinitialize(state->type_propagator);
   state->type_propagator = NULL;
+  state->pattern_context.symbolic_expression_context = NULL;
   state->expression_context_initialized = false;
+}
+
+static iree_status_t loom_canonicalize_apply_patterns(
+    loom_canonicalize_rewrite_state_t* state,
+    const loom_rewrite_pattern_registry_t* registry, loom_op_t* op,
+    loom_rewriter_t* rewriter, loom_greedy_rewrite_result_t* result,
+    bool* out_changed) {
+  *out_changed = false;
+  if (registry == NULL) {
+    return iree_ok_status();
+  }
+  rewriter->flags = 0;
+  IREE_RETURN_IF_ERROR(loom_rewrite_pattern_registry_apply(
+      registry, &state->pattern_context, op, rewriter, out_changed));
+  loom_greedy_rewrite_result_record_rewriter_flags(result, rewriter);
+  if (*out_changed) {
+    loom_greedy_rewrite_result_record_change(
+        result, rewriter, LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
+  }
+  return iree_ok_status();
 }
 
 static void loom_canonicalize_reset_symbolic_context(
@@ -679,6 +706,14 @@ static iree_status_t loom_canonicalize_rewrite_op(
   if (erased) {
     loom_greedy_rewrite_result_record_change(
         result, rewriter, LOOM_GREEDY_REWRITE_CHANGE_FLAG_NONE);
+    *out_changed = true;
+    return iree_ok_status();
+  }
+
+  bool pattern_changed = false;
+  IREE_RETURN_IF_ERROR(loom_canonicalize_apply_patterns(
+      state, state->patterns.pre_fold, op, rewriter, result, &pattern_changed));
+  if (pattern_changed) {
     *out_changed = true;
     return iree_ok_status();
   }
@@ -742,6 +777,15 @@ static iree_status_t loom_canonicalize_rewrite_op(
     }
   }
 
+  loom_greedy_rewrite_result_record_rewriter_flags(result, rewriter);
+  IREE_RETURN_IF_ERROR(
+      loom_canonicalize_apply_patterns(state, state->patterns.post_type, op,
+                                       rewriter, result, &pattern_changed));
+  if (pattern_changed) {
+    *out_changed = true;
+    return iree_ok_status();
+  }
+
   // Symbolic address-domain cleanup uses the generic expression analysis
   // for exact linear cancellation and relation proofs that are awkward as
   // op-local patterns.
@@ -767,20 +811,14 @@ static iree_status_t loom_canonicalize_rewrite_op(
       return iree_ok_status();
     }
   }
-  if (state->additional_patterns) {
-    bool changed = false;
-    loom_greedy_rewrite_result_record_rewriter_flags(result, rewriter);
-    rewriter->flags = 0;
-    IREE_RETURN_IF_ERROR(state->additional_patterns(
-        op, rewriter, &state->expression_context, &changed));
-    if (changed) {
-      loom_greedy_rewrite_result_record_change(
-          result, rewriter, LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
-      *out_changed = true;
-      return iree_ok_status();
-    }
-  }
   loom_greedy_rewrite_result_record_rewriter_flags(result, rewriter);
+  IREE_RETURN_IF_ERROR(loom_canonicalize_apply_patterns(
+      state, state->patterns.post_canonicalization, op, rewriter, result,
+      &pattern_changed));
+  if (pattern_changed) {
+    *out_changed = true;
+    return iree_ok_status();
+  }
   return iree_ok_status();
 }
 
@@ -808,7 +846,8 @@ static iree_status_t loom_canonicalizer_run_precomputed_region(
     memset(out_result, 0, sizeof(*out_result));
   }
   loom_canonicalize_rewrite_state_t state = {
-      .additional_patterns = options ? options->additional_patterns : NULL,
+      .patterns = options ? options->patterns
+                          : (loom_canonicalizer_pattern_registries_t){0},
       .refine_boundary = options
                              ? options->refine_boundary
                              : (loom_type_propagator_boundary_callback_t){0},

@@ -18,9 +18,12 @@ loom_codegen_pass_environment_storage_initialize_with_target(
       options->compile_report);
   out_storage->math_capability = loom_target_math_pass_capability_make(
       options->math_policy_registry, options->compile_report);
+  out_storage->cleanup_capability =
+      loom_cleanup_pass_capability_make(options->cleanup_pattern_registry);
   out_storage->capabilities[0] = &out_storage->target_capability.base;
   out_storage->capabilities[1] = &out_storage->low_capability.base;
   out_storage->capabilities[2] = &out_storage->math_capability.base;
+  out_storage->capabilities[3] = &out_storage->cleanup_capability.base;
   out_storage->environment = loom_pass_environment_make(
       out_storage->capabilities, IREE_ARRAYSIZE(out_storage->capabilities));
   return out_storage->environment;

@@ -148,6 +148,8 @@ static iree_status_t loom_run_hal_execution_backend_run_pipeline(
       };
   pipeline_options.low_descriptor_registry =
       loom_run_session_low_descriptor_registry(request->session);
+  pipeline_options.cleanup_pattern_provider_set =
+      loom_run_session_cleanup_pattern_provider_set(request->session);
   pipeline_options.source_resolver =
       loom_run_module_source_resolver(compile_module);
   pipeline_options.report = compile_options->report;

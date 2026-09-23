@@ -201,6 +201,8 @@ iree_status_t loom_check_execute_compile(
   pipeline_options.target_environment =
       options->environment->target_environment;
   pipeline_options.low_descriptor_registry = &low_registry;
+  pipeline_options.cleanup_pattern_provider_set =
+      options->environment->cleanup_pattern_provider_set;
   pipeline_options.diagnostic_sink = parse_options.diagnostic_sink;
   pipeline_options.source_resolver = loom_input_module_source_resolver(&input);
   pipeline_options.max_errors = parse_options.max_errors;

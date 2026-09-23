@@ -144,6 +144,7 @@ loom_cc_library(
     loom::target::arch::cmd::provider
     loom::target::configured::provider_set
     loom::target::provider
+    loom::transforms::cleanup::configured
     ${_configured_platform_deps}
   PUBLIC
 )
@@ -237,6 +238,7 @@ loom_cc_library(
     loom::target::reporting::report
     loom::target::specialization
     loom::target::types
+    loom::transforms::cleanup::patterns
     loom::verify
   PUBLIC
 )

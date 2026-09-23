@@ -686,13 +686,8 @@ TEST_F(CanonicalizerTest, DriverAcceptsSeedFacts) {
   IREE_ASSERT_OK(loom_canonicalizer_initialize(module_, &pass_arena,
                                                &value_facts, &canonicalizer));
   loom_canonicalizer_result_t result;
-  loom_canonicalizer_options_t options = {
-      /*.max_iterations=*/{},
-      /*.flags=*/0,
-      /*.target_facts=*/NULL,
-      /*.math_policy=*/NULL,
-      /*.seed_facts=*/{&seed_facts, &arg, 1},
-  };
+  loom_canonicalizer_options_t options = {};
+  options.seed_facts = {&seed_facts, &arg, 1};
   IREE_ASSERT_OK(loom_canonicalizer_run_function(&canonicalizer, func_like_,
                                                  &options, &result));
 
@@ -775,13 +770,9 @@ TEST_F(CanonicalizerTest, DriverPreservesExplicitTargetFactsAcrossSideRegions) {
   IREE_ASSERT_OK(loom_canonicalizer_initialize(module_, &pass_arena,
                                                &value_facts, &canonicalizer));
   loom_canonicalizer_result_t result;
-  loom_canonicalizer_options_t options = {
-      /*.max_iterations=*/{},
-      /*.flags=*/0,
-      /*.target_facts=*/&target_facts,
-      /*.math_policy=*/NULL,
-      /*.seed_facts=*/{&seed_facts, nullptr, 0},
-  };
+  loom_canonicalizer_options_t options = {};
+  options.target_facts = &target_facts;
+  options.seed_facts = {&seed_facts, nullptr, 0};
   IREE_ASSERT_OK(loom_canonicalizer_run_function(&canonicalizer, split_func,
                                                  &options, &result));
 
@@ -847,13 +838,8 @@ TEST_F(CanonicalizerTest, RegionDriverAcceptsSeedFacts) {
   IREE_ASSERT_OK(loom_canonicalizer_initialize(module_, &pass_arena,
                                                &value_facts, &canonicalizer));
   loom_canonicalizer_result_t result;
-  loom_canonicalizer_options_t options = {
-      /*.max_iterations=*/{},
-      /*.flags=*/0,
-      /*.target_facts=*/NULL,
-      /*.math_policy=*/NULL,
-      /*.seed_facts=*/{&seed_facts, &config_arg, 1},
-  };
+  loom_canonicalizer_options_t options = {};
+  options.seed_facts = {&seed_facts, &config_arg, 1};
   IREE_ASSERT_OK(loom_canonicalizer_run_region(
       &canonicalizer, split_func, config, split_op, &options, &result));
 

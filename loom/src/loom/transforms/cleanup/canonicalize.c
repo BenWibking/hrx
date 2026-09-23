@@ -6,18 +6,12 @@
 
 #include "loom/transforms/cleanup/canonicalize.h"
 
-#include "loom/ops/scf/canonicalize.h"
-#include "loom/ops/scf/ops.h"
-#include "loom/ops/vector/construction.h"
-#include "loom/ops/vector/ops.h"
-#include "loom/ops/vector/table.h"
-#include "loom/ops/view/ops.h"
 #include "loom/pass/pipeline.h"
 #include "loom/pass/registry.h"
 #include "loom/target/math_policy.h"
 #include "loom/target/pass_environment.h"
 #include "loom/transforms/cleanup/canonicalizer.h"
-#include "loom/transforms/view/load_coalescing.h"
+#include "loom/transforms/cleanup/pass_environment.h"
 
 static const loom_pass_option_def_t kCanonicalizeOptions[] = {
     {IREE_SVL("max-iterations"),
@@ -121,36 +115,11 @@ iree_status_t loom_canonicalizer_pass_create(
                                  });
 }
 
-static iree_status_t loom_combine_patterns(
-    loom_op_t* op, loom_rewriter_t* rewriter,
-    loom_symbolic_expr_context_t* expression_context, bool* out_changed) {
-  *out_changed = false;
-  if (loom_scf_select_isa(op)) {
-    return loom_scf_select_combine_integer_extremum(op, rewriter, out_changed);
-  }
-  if (loom_view_load_isa(op)) {
-    return loom_view_load_coalescing_rewrite(rewriter, expression_context, op,
-                                             out_changed);
-  }
-  if (loom_vector_from_elements_isa(op)) {
-    IREE_RETURN_IF_ERROR(
-        loom_vector_from_elements_combine_lanes(op, rewriter, out_changed));
-    if (*out_changed) {
-      return iree_ok_status();
-    }
-    return loom_vector_from_elements_to_table_lookup(op, rewriter, out_changed);
-  }
-  if (loom_vector_table_lookup_isa(op)) {
-    return loom_vector_table_lookup_simplify_indices(op, rewriter, out_changed);
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_canonicalizer_run_pass(
     loom_pass_t* pass, loom_module_t* module, loom_func_like_t function,
-    loom_canonicalizer_patterns_fn_t additional_patterns) {
+    loom_canonicalizer_pattern_registries_t patterns) {
   loom_canonicalizer_options_t run_options = {
-      .additional_patterns = additional_patterns,
+      .patterns = patterns,
   };
   if (pass->state) {
     run_options.max_iterations =
@@ -192,11 +161,28 @@ static iree_status_t loom_canonicalizer_run_pass(
 
 iree_status_t loom_canonicalize_run(loom_pass_t* pass, loom_module_t* module,
                                     loom_func_like_t function) {
-  return loom_canonicalizer_run_pass(pass, module, function, NULL);
+  loom_canonicalizer_pattern_registries_t patterns = {0};
+  const loom_cleanup_pattern_registry_t* registry =
+      loom_cleanup_pass_capability_pattern_registry(
+          loom_cleanup_pass_capability_from_pass(pass));
+  if (registry != NULL) {
+    patterns.pre_fold = registry->universal_pre_fold;
+    patterns.post_type = registry->universal_post_type;
+  }
+  return loom_canonicalizer_run_pass(pass, module, function, patterns);
 }
 
 iree_status_t loom_combine_run(loom_pass_t* pass, loom_module_t* module,
                                loom_func_like_t function) {
-  return loom_canonicalizer_run_pass(pass, module, function,
-                                     loom_combine_patterns);
+  const loom_cleanup_pattern_registry_t* registry =
+      loom_cleanup_pass_capability_pattern_registry(
+          loom_cleanup_pass_capability_from_pass(pass));
+  IREE_ASSERT(registry != NULL);
+  IREE_ASSERT(registry->source_combine != NULL);
+  const loom_canonicalizer_pattern_registries_t patterns = {
+      .pre_fold = registry->universal_pre_fold,
+      .post_type = registry->universal_post_type,
+      .post_canonicalization = registry->source_combine,
+  };
+  return loom_canonicalizer_run_pass(pass, module, function, patterns);
 }

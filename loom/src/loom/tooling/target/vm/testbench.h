@@ -18,6 +18,9 @@
 extern "C" {
 #endif
 
+typedef struct loom_cleanup_pattern_provider_set_t
+    loom_cleanup_pattern_provider_set_t;
+
 // Executes ordinary check.case function calls through the VM. One instance
 // serves all cases in one parsed module. Its first call compiles an independent
 // IR copy specialized to the Core profile with the normal pipeline, verifies
@@ -29,6 +32,8 @@ extern "C" {
 typedef struct loom_vm_testbench_t {
   // Borrowed compiler capabilities, live through deinitialization.
   const loom_target_environment_t* target_environment;
+  // Borrowed cleanup rewrite providers, live through deinitialization.
+  const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
   // Borrowed selected cases identifying the functions crossing the host ABI.
   loom_testbench_case_plan_list_t cases;
   // Borrowed admitted source snapshots, live through the final invocation.
@@ -52,6 +57,7 @@ typedef struct loom_vm_testbench_t {
 // Initializes a lazy function provider without compiling or allocating.
 void loom_vm_testbench_initialize(
     const loom_target_environment_t* target_environment,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_allocator_t host_allocator, loom_vm_testbench_t* out_testbench);
 
 // Releases runtime objects. Safe for a zero-initialized or failed provider.

@@ -240,6 +240,8 @@ loom_cc_library(
         "//loom/src/loom/target/reporting:report",
         "//loom/src/loom/tooling/compile:pipeline",
         "//loom/src/loom/tooling/config",
+        "//loom/src/loom/transforms/cleanup:configured",
+        "//loom/src/loom/transforms/cleanup:patterns",
         "//loom/src/loom/util:json",
         "//loom/src/loom/util:stream",
         "//loom/src/loom/verify",

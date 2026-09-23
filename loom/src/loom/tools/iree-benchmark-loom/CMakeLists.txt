@@ -264,6 +264,7 @@ loom_cc_binary(
     loom::tooling::execution::hal::artifact
     loom::tooling::execution::hal::device_provider
     loom::tooling::input::configured
+    loom::transforms::cleanup::configured
     ${_iree_benchmark_loom_platform_deps}
 )
 

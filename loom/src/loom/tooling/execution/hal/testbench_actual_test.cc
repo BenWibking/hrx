@@ -22,6 +22,7 @@
 #include "loom/target/provider.h"
 #include "loom/tooling/execution/session.h"
 #include "loom/tooling/testbench/testbench.h"
+#include "loom/transforms/cleanup/configured.h"
 
 namespace loom {
 namespace {
@@ -72,6 +73,8 @@ class HalTestbenchActualTest : public ::testing::Test {
         (loom_run_initialize_low_descriptor_registry_callback_t){
             /*.fn=*/InitializeLowDescriptorRegistry,
         };
+    options.cleanup_pattern_provider_set =
+        loom_cleanup_configured_pattern_provider_set();
     IREE_ASSERT_OK(loom_run_session_initialize(&options, &session_));
   }
 

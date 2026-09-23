@@ -29,6 +29,7 @@ TEST(ConfiguredCompileTest, ReturnsStableCompleteEnvironment) {
   ASSERT_NE(environment->target_environment, nullptr);
   ASSERT_NE(environment->target_environment->provider_set, nullptr);
   EXPECT_GT(environment->target_environment->provider_set->provider_count, 0u);
+  EXPECT_NE(environment->cleanup_pattern_provider_set, nullptr);
 
   const loom_artifact_provider_registry_t* artifact_registry =
       environment->artifact_provider_registry;

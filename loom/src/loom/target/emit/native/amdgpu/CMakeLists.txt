@@ -378,6 +378,7 @@ loom_cc_benchmark(
     loom::target::low_descriptor_registry
     loom::target::provider
     loom::tooling::compile::pipeline
+    loom::transforms::cleanup::configured
   TESTONLY
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
@@ -722,6 +723,7 @@ loom_cc_test(
     loom::target::profile
     loom::testing::diagnostic_matchers
     loom::tooling::compile::pipeline
+    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
     "iree-build-requirement=loom.emit.amdgpu"

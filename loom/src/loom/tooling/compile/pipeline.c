@@ -17,6 +17,7 @@
 #include "loom/target/pipeline.h"
 #include "loom/target/predicate.h"
 #include "loom/target/provider.h"
+#include "loom/transforms/cleanup/patterns.h"
 #include "loom/verify/verify.h"
 
 enum {
@@ -207,6 +208,12 @@ iree_status_t loom_compile_run_pipeline(
                             "Loom compile pass pipelines require a target-low "
                             "descriptor registry");
   }
+  if (!loom_compile_pipeline_is_disabled(pipeline) &&
+      options->cleanup_pattern_provider_set == NULL) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "Loom compile pass pipelines require cleanup pattern providers");
+  }
 
   const loom_target_entry_options_t entry_options = {
       .diagnostic_sink = options->diagnostic_sink,
@@ -292,6 +299,14 @@ iree_status_t loom_compile_run_pipeline(
         iree_arena_allocator(&out_result->version_arena),
         &legalizer_registry_storage);
   }
+  loom_cleanup_pattern_registry_storage_t cleanup_pattern_registry_storage = {
+      0};
+  if (iree_status_is_ok(status)) {
+    status = loom_cleanup_pattern_registry_storage_initialize(
+        options->cleanup_pattern_provider_set,
+        iree_arena_allocator(&out_result->version_arena),
+        &cleanup_pattern_registry_storage);
+  }
 
   loom_codegen_pass_environment_storage_t codegen_environment_storage = {0};
   loom_target_pass_predicate_provider_storage_t predicate_storage = {0};
@@ -329,6 +344,9 @@ iree_status_t loom_compile_run_pipeline(
       .math_policy_registry = &math_policy_registry,
       .compile_report = options->report,
       .target_environment = options->target_environment,
+      .cleanup_pattern_registry =
+          loom_cleanup_pattern_registry_storage_registry(
+              &cleanup_pattern_registry_storage),
   };
   loom_pass_tool_run_options_t run_options = {
       .registry = pass_registry,
@@ -361,6 +379,8 @@ iree_status_t loom_compile_run_pipeline(
         options->report, module, &out_result->function_versions.list);
   }
   out_result->pass.warning_count += input_warning_count;
+  loom_cleanup_pattern_registry_storage_deinitialize(
+      &cleanup_pattern_registry_storage);
   loom_target_legalizer_registry_storage_deinitialize(
       &legalizer_registry_storage);
   return status;

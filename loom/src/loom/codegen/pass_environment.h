@@ -19,6 +19,7 @@
 #include "loom/pass/environment.h"
 #include "loom/target/math_policy.h"
 #include "loom/target/pass_environment.h"
+#include "loom/transforms/cleanup/pass_environment.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,8 @@ typedef struct loom_codegen_pass_environment_options_t {
   loom_target_compile_report_t* compile_report;
   // Target providers linked into the compiler session.
   const loom_target_environment_t* target_environment;
+  // Cleanup pattern registries prepared for this compiler invocation.
+  const loom_cleanup_pattern_registry_t* cleanup_pattern_registry;
 } loom_codegen_pass_environment_options_t;
 
 typedef struct loom_codegen_pass_environment_storage_t {
@@ -48,8 +51,10 @@ typedef struct loom_codegen_pass_environment_storage_t {
   loom_low_pass_capability_t low_capability;
   // Target math capability entry stored for the borrowed environment view.
   loom_target_math_pass_capability_t math_capability;
+  // Cleanup capability entry stored for the borrowed environment view.
+  loom_cleanup_pass_capability_t cleanup_capability;
   // Pointer table borrowed by |environment|.
-  const loom_pass_environment_capability_t* capabilities[3];
+  const loom_pass_environment_capability_t* capabilities[4];
   // Pass environment view over |capabilities|.
   loom_pass_environment_t environment;
 } loom_codegen_pass_environment_storage_t;

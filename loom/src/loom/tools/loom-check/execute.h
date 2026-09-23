@@ -53,6 +53,8 @@ extern "C" {
 
 typedef struct loom_low_lower_policy_registry_t
     loom_low_lower_policy_registry_t;
+typedef struct loom_cleanup_pattern_provider_set_t
+    loom_cleanup_pattern_provider_set_t;
 typedef struct loom_target_environment_t loom_target_environment_t;
 typedef struct loom_check_diagnostic_collector_t
     loom_check_diagnostic_collector_t;
@@ -311,6 +313,8 @@ struct loom_check_environment_t {
   loom_check_register_context_callback_t register_context;
   // Optional composed target environment used by compile-pipeline-backed modes.
   const loom_target_environment_t* target_environment;
+  // Cleanup rewrite providers linked into this runner.
+  const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
   // Target-low registry callback for descriptor-backed low IR operations.
   loom_check_initialize_low_descriptor_registry_callback_t
       initialize_low_descriptor_registry;

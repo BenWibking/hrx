@@ -115,6 +115,7 @@ loom_cc_library(
     loom::tooling::compile::pipeline
     loom::tooling::input
     loom::tools::loom-format::convert
+    loom::transforms::cleanup::patterns
     loom::util::diff
     loom::util::fact_table
     loom::util::json
@@ -175,6 +176,7 @@ loom_cc_test(
     loom::target::test::lower
     loom::testing::context
     loom::testing::test_file
+    loom::transforms::cleanup::configured
 )
 
 loom_cc_library(
@@ -386,6 +388,7 @@ loom_cc_library(
     loom::target::provider
     loom::tooling::context
     loom::tooling::input
+    loom::transforms::cleanup::configured
   PUBLIC
 )
 

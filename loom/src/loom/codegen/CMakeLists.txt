@@ -22,6 +22,7 @@ loom_cc_library(
     loom::pass::environment
     loom::target::math_policy
     loom::target::pass_environment
+    loom::transforms::cleanup::pass_environment
   PUBLIC
 )
 
