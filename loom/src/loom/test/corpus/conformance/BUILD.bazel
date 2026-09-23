@@ -19,6 +19,42 @@ _CASES = glob(["*.loom"])
 
 exports_files(_CASES)
 
+loom_generated_file_family(
+    name = "predicate_select_gen",
+    testonly = True,
+    generator = "//loom/py/loom/gen/test:predicate_select",
+    output_directories = ["predicate_select_arrays"],
+    output_flags = [
+        "--output",
+        "--arrays",
+    ],
+    outputs = [
+        "predicate_select_cases.loom",
+        "predicate_select_arrays",
+    ],
+)
+
+loom_test(
+    name = "predicate_select_test",
+    srcs = [
+        "predicate_select.loom",
+        ":predicate_select_cases.loom",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx950",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1170",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/amdgpu:gfx1250",
+    ],
+    data = [":predicate_select_gen"],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
 loom_test(
     name = "predicate_extract_test",
     srcs = ["predicate_extract.loom"],

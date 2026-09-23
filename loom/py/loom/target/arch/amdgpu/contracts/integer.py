@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""AMDGPU scalar integer and index arithmetic source-to-low contracts."""
+"""AMDGPU integer arithmetic and predicate mask source-to-low contracts."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from loom.dialect.index import defs as index
 from loom.dialect.scalar import ALL_SCALAR_OPS
 from loom.dialect.scalar import arithmetic as scalar_arithmetic
 from loom.dialect.scalar import bitwise as scalar_bitwise
+from loom.dialect.vector import ALL_VECTOR_OPS
+from loom.dialect.vector import defs as vector
 from loom.dsl import Op
 from loom.target.arch.amdgpu.contracts.integer_division import integer_division_rules
 from loom.target.arch.amdgpu.contracts.materializers import (
@@ -36,6 +38,7 @@ from loom.target.contracts import (
     ValueMaterializer,
     ValueProject,
     ValueRef,
+    Vector,
     descriptor_by_key,
 )
 from loom.target.low_descriptors import Descriptor
@@ -104,6 +107,11 @@ _DESCRIPTOR_SET = build_amdgpu_contract_descriptor_set(
 )
 
 _I1 = Scalar("i1")
+_VECTOR_I1 = Vector(
+    "i1",
+    minimum_static_elements=1,
+    maximum_static_elements="LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES",
+)
 _I32 = Scalar("i32")
 _I64 = Scalar("i64")
 _INDEX = Scalar("index")
@@ -611,6 +619,55 @@ def _i1_sgpr_mask_rule(
                     "rhs": _materialized_operand("rhs", I1_NATIVE_MASK_MATERIALIZER),
                 },
                 results={"dst": _RESULT},
+            ),
+        ),
+    )
+
+
+def _vector_predicate_select_rule() -> DescriptorRule:
+    bit_xor = _descriptor("amdgpu.s_xor_b64")
+    bit_and = _descriptor("amdgpu.s_and_b64")
+    return DescriptorRule(
+        source_op=vector.vector_select,
+        descriptor=bit_xor,
+        guards=(
+            *(
+                Guard.value_type(field, _VECTOR_I1)
+                for field in ("condition", "true_value", "false_value", "result")
+            ),
+            *_descriptor_available_guards(bit_xor, bit_and),
+        ),
+        # Each logical element is a complete two-SGPR subgroup mask. Per-lane
+        # emission slices by the descriptor's two-unit width, including wave32.
+        emit=(
+            EmitDescriptorOp(
+                descriptor=bit_xor,
+                operands={
+                    "lhs": ValueRef.operand("true_value"),
+                    "rhs": ValueRef.operand("false_value"),
+                },
+                results={"dst": ValueRef.temporary("difference")},
+                result_types={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE,
+            ),
+            EmitDescriptorOp(
+                descriptor=bit_and,
+                operands={
+                    "lhs": ValueRef.operand("condition"),
+                    "rhs": ValueRef.temporary("difference"),
+                },
+                results={"dst": ValueRef.temporary("changes")},
+                result_types={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE,
+            ),
+            EmitDescriptorOp(
+                descriptor=bit_xor,
+                operands={
+                    "lhs": ValueRef.operand("false_value"),
+                    "rhs": ValueRef.temporary("changes"),
+                },
+                results={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE,
             ),
         ),
     )
@@ -1650,12 +1707,14 @@ def _rules() -> tuple[DescriptorRule, ...]:
     )
     rules.append(_index_madd_sgpr_rule())
     rules.extend(_scalar_ctpopi_i32_rules())
+    rules.append(_vector_predicate_select_rule())
     return tuple(rules)
 
 
 AMDGPU_INTEGER_CONTRACT_DIALECT_OPS = {
     "index": ALL_INDEX_OPS,
     "scalar": ALL_SCALAR_OPS,
+    "vector": ALL_VECTOR_OPS,
 }
 
 AMDGPU_INTEGER_CONTRACT_FRAGMENT = ContractFragment(

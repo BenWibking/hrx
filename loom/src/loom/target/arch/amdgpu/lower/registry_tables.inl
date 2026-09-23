@@ -504,11 +504,12 @@ static const loom_amdgpu_lower_dispatch_row_t
                 loom_amdgpu_low_legality_verify_atomic,
                 LOOM_AMDGPU_STORAGE_ATOMIC),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_VECTOR_SELECT)] =
-            LOOM_AMDGPU_RECIPE_DATA_SOURCE_ROW(
+            LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
                 LOOM_OP_VECTOR_SELECT, loom_amdgpu_vector_select_plan_t,
                 loom_amdgpu_select_vector_select_dispatch,
                 loom_amdgpu_emit_vector_select_dispatch,
-                loom_amdgpu_low_legality_verify_vector_select, 3),
+                loom_amdgpu_low_legality_verify_vector_select, 3,
+                LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_VECTOR_CLAMPF)] =
             LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
                 LOOM_OP_VECTOR_CLAMPF, loom_amdgpu_clampf_plan_t,
