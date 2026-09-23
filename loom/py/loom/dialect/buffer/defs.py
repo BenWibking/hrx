@@ -46,6 +46,7 @@ from loom.dsl import (
     SAFE_TO_SPECULATE,
     VIEW,
     AttrDef,
+    BorrowedResult,
     CachePolicyInterface,
     Dialect,
     LegacyFormat,
@@ -85,7 +86,9 @@ buffer_alloca = Op(
         "count for the execution. Targets requiring a static frame reserve its "
         "proven finite non-negative maximum. base_alignment is the minimum byte "
         "alignment of the root storage base. Target lowering determines which "
-        "allocatable spaces are legal for the containing program kind."
+        "allocatable spaces are legal for the containing program kind. The "
+        "execution frame owns the allocation; the result borrows that storage "
+        "and has no explicit release obligation."
     ),
     operands=[
         Operand(
@@ -116,6 +119,7 @@ buffer_alloca = Op(
         ),
     ],
     verify="loom_buffer_alloca_verify",
+    ownership_effects=[BorrowedResult("result")],
     facts="loom_buffer_alloca_facts",
     format=[
         TemplateParam("memory_space"),

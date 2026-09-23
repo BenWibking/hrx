@@ -544,7 +544,7 @@ iree_status_t loom_low_invoke_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_LOW_STORAGE_RESERVE: Reserve target-low function-local storage and preserve its segment footprint.
+// LOOM_OP_LOW_STORAGE_RESERVE: Reserve target-low function-local storage and preserve its segment footprint. The result borrows storage owned by the execution frame and requires no explicit release.
 // %slot = low.storage.reserve {byte_alignment = 4, byte_length = 16} : low.storage<private>
 LOOM_DEFINE_ISA(loom_low_storage_reserve_isa, LOOM_OP_LOW_STORAGE_RESERVE)
 LOOM_DEFINE_RESULT(loom_low_storage_reserve_storage, 0)
