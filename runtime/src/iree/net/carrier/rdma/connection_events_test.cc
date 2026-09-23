@@ -8,9 +8,11 @@
 
 #include <limits.h>
 #include <netinet/in.h>
+#include <poll.h>
 
 #include <array>
 #include <cstdlib>
+#include <memory>
 #include <tuple>
 
 #include "iree/async/platform/io_uring/api.h"
@@ -48,6 +50,18 @@ static void PollUntil(iree_async_proactor_t* proactor, Predicate ready) {
   }
 }
 
+// Observes native readiness without consuming its record or dispatching the
+// service. This establishes unread-event ownership before cancellation.
+static void WaitReadable(int fd) {
+  pollfd event = {fd, POLLIN, 0};
+  int result = 0;
+  do {
+    result = poll(&event, 1, -1);
+  } while (result < 0 && errno == EINTR);
+  ASSERT_EQ(result, 1);
+  ASSERT_TRUE(event.revents & POLLIN);
+}
+
 static void StopEvents(iree_async_proactor_t* proactor,
                        iree_net_rdma_connection_events_t* events) {
   bool joined = false;
@@ -68,6 +82,7 @@ class NativeConnection {
     kDisconnected = 1u << 1,
     kRejected = 1u << 2,
     kDisconnectRequested = 1u << 3,
+    kRequestSent = 1u << 4,
   };
 
   NativeConnection(iree_net_rdma_context_t* context,
@@ -168,6 +183,11 @@ class NativeConnection {
     CheckCM(library_->rdma_disconnect(id_));
   }
 
+  void WaitForPendingEvent() {
+    ASSERT_NO_FATAL_FAILURE(
+        WaitReadable(iree_net_rdma_connection_events_handle(events_)->fd));
+  }
+
   bool has_state(StateBits state) const { return (state_ & state) != 0; }
 
   uint8_t* source() { return static_cast<uint8_t*>(region_->base_ptr); }
@@ -246,6 +266,7 @@ class NativeConnection {
         CreateQueue();
         auto options = ConnectOptions();
         CheckCM(library_->rdma_connect(id_, &options));
+        state_ |= kRequestSent;
         break;
       }
       case RDMA_CM_EVENT_ESTABLISHED:
@@ -320,20 +341,14 @@ class ConnectionEventsTest
     IREE_ASSERT_OK(iree_net_rdma_context_create(
         context_options, iree_allocator_system(), &context_));
     library_ = iree_net_rdma_context_library(context_);
-    auto options = iree_async_proactor_options_default();
-    if (strcmp(std::get<0>(GetParam()), "io_uring") == 0) {
-      IREE_ASSERT_OK(iree_async_proactor_create_io_uring(
-          options, iree_allocator_system(), &proactor_));
-    } else {
-      IREE_ASSERT_OK(iree_async_proactor_create_posix(
-          options, iree_allocator_system(), &proactor_));
-    }
+    CreateProactor(&proactor_);
     IREE_ASSERT_OK(iree_net_rdma_connection_events_create(
         context_, proactor_, std::get<1>(GetParam()),
         {+[](void* user_data, const rdma_cm_event* event) {
            auto* self = static_cast<ConnectionEventsTest*>(user_data);
            ASSERT_EQ(event->event, RDMA_CM_EVENT_CONNECT_REQUEST);
            EXPECT_EQ(event->listen_id, self->listener_id_);
+           ++self->received_request_count_;
            if (self->accept_target_) {
              self->accept_target_->Accept(*event);
            } else {
@@ -348,7 +363,7 @@ class ConnectionEventsTest
         this, RDMA_PS_TCP));
     CheckCM(library_->rdma_bind_addr(
         listener_id_, reinterpret_cast<sockaddr*>(address_.storage)));
-    CheckCM(library_->rdma_listen(listener_id_, 8));
+    CheckCM(library_->rdma_listen(listener_id_, 32));
     auto* bound = rdma_get_local_addr(listener_id_);
     address_.length = bound->sa_family == AF_INET ? sizeof(sockaddr_in)
                                                   : sizeof(sockaddr_in6);
@@ -359,6 +374,17 @@ class ConnectionEventsTest
     StopListener();
     iree_async_proactor_release(proactor_);
     iree_net_rdma_context_release(context_);
+  }
+
+  void CreateProactor(iree_async_proactor_t** out_proactor) {
+    auto options = iree_async_proactor_options_default();
+    if (strcmp(std::get<0>(GetParam()), "io_uring") == 0) {
+      IREE_CHECK_OK(iree_async_proactor_create_io_uring(
+          options, iree_allocator_system(), out_proactor));
+    } else {
+      IREE_CHECK_OK(iree_async_proactor_create_posix(
+          options, iree_allocator_system(), out_proactor));
+    }
   }
 
   void StopListener() {
@@ -386,6 +412,8 @@ class ConnectionEventsTest
   iree_async_address_t address_ = {};
   // Borrowed accepted-connection owner, or NULL to reject incoming requests.
   NativeConnection* accept_target_ = nullptr;
+  // Native requests actually delivered to this owner, not merely initiated.
+  uint32_t received_request_count_ = 0;
 };
 
 TEST_P(ConnectionEventsTest, AcceptedConnectionOutlivesListenerAndTransfers) {
@@ -427,6 +455,68 @@ TEST_P(ConnectionEventsTest, RejectedRequestRetiresItsIdInsideCallback) {
   connection.Connect(address_);
   PollUntil(proactor_,
             [&] { return connection.has_state(NativeConnection::kRejected); });
+}
+
+TEST_P(ConnectionEventsTest, RequestBurstMakesProgressAcrossBoundedVisits) {
+  std::array<std::unique_ptr<NativeConnection>, 16> connections;
+  for (uint32_t i = 0; i < connections.size(); ++i) {
+    connections[i] = std::make_unique<NativeConnection>(
+        context_, proactor_, std::get<1>(GetParam()),
+        UINT64_C(0x50000000) + i * 65536);
+    connections[i]->Connect(address_);
+  }
+  PollUntil(proactor_, [&] {
+    for (const auto& connection : connections) {
+      if (!connection->has_state(NativeConnection::kRejected)) {
+        return false;
+      }
+    }
+    return true;
+  });
+  EXPECT_EQ(received_request_count_, connections.size());
+  // A final full batch may leave one continuation visit to observe EAGAIN.
+  // Once that visit runs, idle CM channels must not keep the poll loop busy.
+  iree_status_t status =
+      iree_async_proactor_poll(proactor_, iree_immediate_timeout(), nullptr);
+  if (iree_status_is_deadline_exceeded(status)) {
+    iree_status_free(status);
+  } else {
+    IREE_ASSERT_OK(status);
+  }
+  EXPECT_EQ(proactor_->progress_list, nullptr);
+}
+
+TEST_P(ConnectionEventsTest, CancelWithUnreadResolutionEvent) {
+  {
+    NativeConnection connection(context_, proactor_, std::get<1>(GetParam()),
+                                0x50000000);
+    connection.Connect(address_);
+    ASSERT_NO_FATAL_FAILURE(connection.WaitForPendingEvent());
+    EXPECT_FALSE(connection.has_state(NativeConnection::kRequestSent));
+    // The native ID owns the unread event; destruction disposes it before
+    // the service joins its monitor. No callback needs to be counted or run.
+  }
+  EXPECT_EQ(received_request_count_, 0u);
+}
+
+TEST_P(ConnectionEventsTest, ListenerRetiresUndeliveredNativeRequest) {
+  iree_async_proactor_t* connect_proactor = nullptr;
+  CreateProactor(&connect_proactor);
+  {
+    NativeConnection connection(context_, connect_proactor,
+                                std::get<1>(GetParam()), 0x50000000);
+    connection.Connect(address_);
+    PollUntil(connect_proactor, [&] {
+      return connection.has_state(NativeConnection::kRequestSent);
+    });
+    // The independent listener poll owner has not run. Readiness proves the
+    // kernel queued a request, but no userspace child ID has been handed out.
+    ASSERT_NO_FATAL_FAILURE(WaitReadable(
+        iree_net_rdma_connection_events_handle(listener_events_)->fd));
+    StopListener();
+    EXPECT_EQ(received_request_count_, 0u);
+  }
+  iree_async_proactor_release(connect_proactor);
 }
 
 INSTANTIATE_TEST_SUITE_P(Backends, ConnectionEventsTest,

@@ -17,6 +17,8 @@ extern "C" {
 // Host CM channel service for reliable-connected RDMA_PS_TCP IDs. Owns only
 // native event records and monitoring, never the IDs carried by those records.
 // All calls are serialized with the caller's proactor poll owner.
+// A full service visit retains bounded ready progress until native records
+// are exhausted. Idle channels have no progress-list entry.
 typedef struct iree_net_rdma_connection_events_t
     iree_net_rdma_connection_events_t;
 
@@ -52,9 +54,9 @@ iree_net_rdma_connection_events_handle(
     iree_net_rdma_connection_events_t* events);
 
 // Stops event callback admission and joins monitoring. Call exactly once from
-// the poll owner, outside this service's callbacks. Completion may run inline
-// and destroy the service. The caller keeps its poll owner alive through that
-// completion, as required by native event-source unregistration.
+// the poll owner, outside this service's event/progress callbacks. Completion
+// may run inline and destroy the service. The caller keeps its poll owner
+// alive through that completion, as required by event-source unregistration.
 IREE_API_EXPORT void iree_net_rdma_connection_events_deactivate(
     iree_net_rdma_connection_events_t* events,
     iree_async_event_source_unregistered_callback_t callback);

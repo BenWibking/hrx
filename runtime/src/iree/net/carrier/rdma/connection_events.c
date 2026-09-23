@@ -12,6 +12,7 @@ typedef enum iree_net_rdma_connection_events_flag_bits_e {
   IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_FAILED = 1u << 0,
   IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_STOPPING = 1u << 1,
   IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_STOPPED = 1u << 2,
+  IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_PROGRESS = 1u << 3,
 } iree_net_rdma_connection_events_flag_bits_t;
 typedef uint32_t iree_net_rdma_connection_events_flags_t;
 
@@ -26,9 +27,11 @@ struct iree_net_rdma_connection_events_t {
   struct rdma_event_channel* channel;
   // Native fd monitor, joined before channel destruction.
   iree_async_event_source_t* monitor;
+  // Ready-only continuation while a bounded visit leaves possible records.
+  iree_async_progress_entry_t progress;
   // Poll-owner-only terminal and monitor lifetime state.
   iree_net_rdma_connection_events_flags_t flags;
-  // Maximum events dispatched per native readiness callback.
+  // Maximum native attempts per event/progress service visit.
   uint32_t service_batch_size;
   // Borrowed owner callbacks, valid through deactivation completion.
   iree_net_rdma_connection_events_callbacks_t callbacks;
@@ -42,26 +45,18 @@ static void iree_net_rdma_connection_events_fail(
   events->callbacks.on_error(events->callbacks.user_data, status);
 }
 
-static void iree_net_rdma_connection_events_ready(
-    void* user_data, iree_async_event_source_t* source,
-    iree_async_poll_events_t ready) {
-  (void)source;
-  iree_net_rdma_connection_events_t* events = user_data;
-  if (iree_any_bit_set(events->flags,
-                       IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_FAILED)) {
-    return;
-  }
-  if (iree_async_poll_has_error(ready)) {
-    iree_net_rdma_connection_events_fail(
-        events, iree_make_status(IREE_STATUS_UNAVAILABLE,
-                                 "RDMA connection event channel failed"));
-    return;
-  }
+// Returns true only when the visit budget was exhausted before EAGAIN. Native
+// readiness may be edge-triggered, so unread records require ready progress.
+static bool iree_net_rdma_connection_events_dispatch(
+    iree_net_rdma_connection_events_t* events, uint32_t* out_completed_count) {
+  *out_completed_count = 0;
   const iree_net_rdma_library_t* library =
       iree_net_rdma_context_library(events->context);
   iree_status_t status = iree_ok_status();
-  for (uint32_t i = 0;
-       i < events->service_batch_size && iree_status_is_ok(status); ++i) {
+  uint32_t attempt_count = 0;
+  for (;
+       attempt_count < events->service_batch_size && iree_status_is_ok(status);
+       ++attempt_count) {
     struct rdma_cm_event* native_event = NULL;
     if (library->rdma_get_cm_event(events->channel, &native_event)) {
       int error = errno;
@@ -89,9 +84,56 @@ static void iree_net_rdma_connection_events_ready(
     IREE_ASSERT(error == 0, "CM event acknowledgment violated ownership");
     (void)error;
     events->callbacks.on_event(events->callbacks.user_data, &snapshot);
+    ++*out_completed_count;
   }
+  bool has_more =
+      attempt_count == events->service_batch_size && iree_status_is_ok(status);
   if (!iree_status_is_ok(status)) {
     iree_net_rdma_connection_events_fail(events, status);
+  }
+  return has_more;
+}
+
+static void iree_net_rdma_connection_events_progress_removed(void* user_data) {
+  iree_net_rdma_connection_events_t* events = user_data;
+  events->flags &= ~IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_PROGRESS;
+}
+
+static iree_status_t iree_net_rdma_connection_events_progress(
+    void* user_data, iree_host_size_t* out_completed_count) {
+  iree_net_rdma_connection_events_t* events = user_data;
+  uint32_t count = 0;
+  bool has_more = false;
+  if (!iree_any_bit_set(events->flags,
+                        IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_FAILED)) {
+    has_more = iree_net_rdma_connection_events_dispatch(events, &count);
+  }
+  *out_completed_count = count;
+  events->progress.remove_requested = !has_more;
+  return iree_ok_status();
+}
+
+static void iree_net_rdma_connection_events_ready(
+    void* user_data, iree_async_event_source_t* source,
+    iree_async_poll_events_t ready) {
+  (void)source;
+  iree_net_rdma_connection_events_t* events = user_data;
+  if (iree_any_bit_set(events->flags,
+                       IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_FAILED)) {
+    return;
+  }
+  if (iree_async_poll_has_error(ready)) {
+    iree_net_rdma_connection_events_fail(
+        events, iree_make_status(IREE_STATUS_UNAVAILABLE,
+                                 "RDMA connection event channel failed"));
+    return;
+  }
+  uint32_t count = 0;
+  if (iree_net_rdma_connection_events_dispatch(events, &count) &&
+      !iree_any_bit_set(events->flags,
+                        IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_PROGRESS)) {
+    events->flags |= IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_PROGRESS;
+    iree_async_proactor_register_progress(events->proactor, &events->progress);
   }
 }
 
@@ -128,6 +170,9 @@ iree_status_t iree_net_rdma_connection_events_create(
   iree_async_proactor_retain(proactor);
   events->service_batch_size = service_batch_size;
   events->callbacks = callbacks;
+  events->progress.fn = iree_net_rdma_connection_events_progress;
+  events->progress.on_remove = iree_net_rdma_connection_events_progress_removed;
+  events->progress.user_data = events;
   events->channel =
       iree_net_rdma_context_library(context)->rdma_create_event_channel();
   iree_status_t status = iree_ok_status();
@@ -187,6 +232,12 @@ void iree_net_rdma_connection_events_deactivate(
                          IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_STOPPED));
   events->flags |= IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_STOPPING;
   events->deactivated_callback = callback;
+  if (iree_any_bit_set(events->flags,
+                       IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_PROGRESS)) {
+    iree_async_proactor_unregister_progress(events->proactor,
+                                            &events->progress);
+    events->flags &= ~IREE_NET_RDMA_CONNECTION_EVENTS_FLAG_PROGRESS;
+  }
   iree_async_proactor_unregister_event_source(
       events->proactor, events->monitor,
       (iree_async_event_source_unregistered_callback_t){
