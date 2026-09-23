@@ -34,6 +34,8 @@ class CollectiveTrialTest
         GTEST_SKIP() << reason;
       }
       IREE_ASSERT_OK(status);
+      EXPECT_GT(result.control_sends, 0u);
+      EXPECT_EQ(result.control_completions, result.control_sends);
       EXPECT_GT(result.source_window_high_water, 0u);
       EXPECT_LE(result.source_window_high_water, options.window_size);
       if (options.schedule == CollectiveSchedule::kPipeline) {

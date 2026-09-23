@@ -114,6 +114,13 @@ including CPU work, not isolated network latency. `source_completions` must matc
 `window_high_water` bounds outstanding peer consumption. These are independent
 observations. `payload_storage_bytes` excludes carrier/native resources.
 
+All collective benchmark families also report `control_sends` and
+`control_completions`: consumption-feedback and final-result messages, excluding
+setup target grants and warm-up. Their equality checks control retirement;
+the send count makes feedback coalescing visible without assuming a particular
+poll schedule. These count queue-protocol messages, not native packets or bytes,
+and remain separate from useful payload rates.
+
 These are transport schedules, not a selected production collective algorithm,
 GPU-kernel simulation, or substitute for multi-host NIC qualification. The
 large-tensor rows compare transfer geometry within an otherwise identical

@@ -34,6 +34,8 @@ class ExpertTrialTest
         GTEST_SKIP() << reason;
       }
       IREE_ASSERT_OK(status);
+      EXPECT_GT(result.control_sends, 0u);
+      EXPECT_EQ(result.control_completions, result.control_sends);
       EXPECT_EQ(result.rounds, options.measured_rounds);
       EXPECT_EQ(result.sends, result.source_completions);
       EXPECT_GT(result.sends, 0u);

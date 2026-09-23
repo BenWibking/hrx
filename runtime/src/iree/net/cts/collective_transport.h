@@ -52,6 +52,10 @@ struct CollectiveTransportResult {
   uint64_t sends = 0;
   // Exact terminal data callbacks across all directed edges.
   uint64_t source_completions = 0;
+  // Accepted consumption/final-result messages, excluding setup and warm-up.
+  uint64_t control_sends = 0;
+  // Terminal callbacks for those control messages, joined before phase end.
+  uint64_t control_completions = 0;
   // Peak source callbacks outstanding on one edge.
   uint64_t source_window_high_water = 0;
   // Peak admitted-minus-consumed blocks on one edge.

@@ -56,6 +56,8 @@ void RunBenchmark(::benchmark::State& state,
     total.payload_bytes += result.payload_bytes;
     total.sends += result.sends;
     total.source_completions += result.source_completions;
+    total.control_sends += result.control_sends;
+    total.control_completions += result.control_completions;
     total.pipeline_high_water =
         std::max(total.pipeline_high_water, result.pipeline_high_water);
     total.source_window_high_water = std::max(total.source_window_high_water,
@@ -75,6 +77,10 @@ void RunBenchmark(::benchmark::State& state,
   state.counters["data_sends"] = Counter(total.sends, Counter::kAvgIterations);
   state.counters["source_completions"] =
       Counter(total.source_completions, Counter::kAvgIterations);
+  state.counters["control_sends"] =
+      Counter(total.control_sends, Counter::kAvgIterations);
+  state.counters["control_completions"] =
+      Counter(total.control_completions, Counter::kAvgIterations);
   state.counters["pipeline_high_water"] = total.pipeline_high_water;
   state.counters["source_window_high_water"] = total.source_window_high_water;
   state.counters["payload_storage_bytes"] = total.payload_storage_bytes;

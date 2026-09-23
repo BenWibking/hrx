@@ -36,6 +36,8 @@ class PipelineRoundTripTest
         GTEST_SKIP() << reason;
       }
       IREE_ASSERT_OK(status);
+      EXPECT_GT(result.control_sends, 0u);
+      EXPECT_EQ(result.control_completions, result.control_sends);
       size_t forward_chunks =
           1 + (options.activation_size - 1) / options.block_size;
       size_t backward_chunks =

@@ -67,6 +67,8 @@ void RunBenchmark(::benchmark::State& state,
     total.header_bytes += result.header_bytes;
     total.sends += result.sends;
     total.source_completions += result.source_completions;
+    total.control_sends += result.control_sends;
+    total.control_completions += result.control_completions;
     total.retained_handles += result.retained_handles;
     total.dispatch_seconds += result.dispatch_seconds;
     total.combine_seconds += result.combine_seconds;
@@ -107,6 +109,10 @@ void RunBenchmark(::benchmark::State& state,
   state.counters["data_sends"] = Counter(total.sends, Counter::kAvgIterations);
   state.counters["source_completions"] =
       Counter(total.source_completions, Counter::kAvgIterations);
+  state.counters["control_sends"] =
+      Counter(total.control_sends, Counter::kAvgIterations);
+  state.counters["control_completions"] =
+      Counter(total.control_completions, Counter::kAvgIterations);
   state.counters["retained_handles"] =
       Counter(total.retained_handles, Counter::kAvgIterations);
   state.counters["max_receiver_tokens"] = total.maximum_receiver_tokens;

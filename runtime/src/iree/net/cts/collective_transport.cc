@@ -797,7 +797,13 @@ void CollectiveRank::Run(
     Drain();
     auto& result = transport_results[phase - 1];
     result.payload_storage_bytes = storage_size_;
+    for (const auto& receiver : receivers_) {
+      result.control_sends += receiver->link.control_sends;
+      result.control_completions += receiver->link.control_completions;
+    }
     for (const auto& sender : senders_) {
+      result.control_sends += sender->link.control_sends;
+      result.control_completions += sender->link.control_completions;
       result.sends += sender->link.submitted;
       result.source_completions += sender->link.completions;
       result.payload_bytes += sender->link.payload_bytes;
@@ -867,6 +873,9 @@ iree_status_t RunCollectiveGroup(
       out_result->sends += after.sends - before.sends;
       out_result->source_completions +=
           after.source_completions - before.source_completions;
+      out_result->control_sends += after.control_sends - before.control_sends;
+      out_result->control_completions +=
+          after.control_completions - before.control_completions;
       out_result->payload_bytes += after.payload_bytes - before.payload_bytes;
       out_result->window_high_water =
           std::max(out_result->window_high_water, after.window_high_water);

@@ -36,6 +36,8 @@ class GatherTrialTest
         GTEST_SKIP() << reason;
       }
       IREE_ASSERT_OK(status);
+      EXPECT_GT(result.control_sends, 0u);
+      EXPECT_EQ(result.control_completions, result.control_sends);
       size_t chunks = 1 + (options.shard_size - 1) / options.block_size;
       uint64_t edges = uint64_t(options.rank_count) * (options.rank_count - 1);
       EXPECT_EQ(result.gathers, options.measured_rounds);
