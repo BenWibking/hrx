@@ -54,6 +54,31 @@ iree_status_t loom_view_region_table_initialize(
   memset(out_table, 0, sizeof(*out_table));
   out_table->expression_context = expression_context;
   out_table->value_domain = value_domain;
+  // Captured views can name backing roots absent from the source operands.
+  // Retain those fact-owned identities before allocating ordinal-keyed tables
+  // so read/write aggregation covers the captured storage as well as its views.
+  const loom_value_fact_table_t* fact_table = expression_context->fact_table;
+  for (loom_value_ordinal_t i = 0; i < value_domain->value_count; ++i) {
+    const loom_value_id_t value_id = value_domain->value_ids[i];
+    const loom_value_facts_t facts =
+        loom_value_fact_table_lookup(fact_table, value_id);
+    loom_value_id_t root = LOOM_VALUE_ID_INVALID;
+    loom_value_fact_buffer_reference_t buffer;
+    loom_value_fact_view_reference_t view;
+    if (loom_value_facts_query_buffer_reference(&fact_table->context, facts,
+                                                &buffer)) {
+      root =
+          loom_value_fact_buffer_reference_resolve_root_value(buffer, value_id);
+    } else if (loom_value_facts_query_view_reference(&fact_table->context,
+                                                     facts, &view)) {
+      root = view.root_value_id;
+    }
+    if (root != LOOM_VALUE_ID_INVALID) {
+      loom_value_ordinal_t root_ordinal;
+      IREE_RETURN_IF_ERROR(loom_local_value_domain_register_value(
+          value_domain, expression_context->arena, root, &root_ordinal));
+    }
+  }
   const iree_host_size_t value_count = value_domain->value_count;
   if (value_count == 0) {
     return iree_ok_status();

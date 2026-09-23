@@ -38,6 +38,7 @@ loom_check_test_suite(
     "scf_unroll_payload.loom-test"
     "scf_unroll_regions.loom-test"
     "scf_unroll_report.loom-test"
+    "scf_unroll_scope.loom-test"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

@@ -138,6 +138,18 @@ loom_cc_test(
 )
 
 loom_cc_test(
+    name = "local_value_domain_test",
+    srcs = ["local_value_domain_test.cc"],
+    deps = [
+        ":ir",
+        "//loom/src/loom/ops/test",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
     name = "function_version_test",
     srcs = ["function_version_test.cc"],
     deps = [

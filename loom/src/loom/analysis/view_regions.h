@@ -157,7 +157,8 @@ typedef struct loom_view_region_table_t {
 
 // Initializes a view-region table from a caller-owned active local value
 // domain and its matching symbolic expression context. The value domain and
-// expression context must remain active until the table is dead.
+// expression context must remain active until the table is dead. Captured
+// reference backing roots are registered before allocating ordinal tables.
 iree_status_t loom_view_region_table_initialize(
     loom_local_value_domain_t* value_domain,
     loom_symbolic_expr_context_t* expression_context,
@@ -218,7 +219,10 @@ bool loom_view_memory_spaces_are_disjoint(loom_value_fact_memory_space_t left,
 // Attempts to prove that two view regions cannot overlap. Same-root regions
 // use symbolic byte intervals. Distinct roots are disjoint when their concrete
 // memory spaces cannot alias or both carry comparable and different alias
-// scopes.
+// scopes. These identities and symbolic terms describe one execution. A caller
+// comparing different executions establishes root/term correspondence before
+// applying this proof; equal SSA IDs alone do not establish that
+// correspondence.
 iree_status_t loom_view_regions_prove_no_overlap(
     loom_view_region_table_t* table, const loom_view_region_t* left_region,
     const loom_view_region_t* right_region, bool* out_no_overlap);

@@ -323,6 +323,18 @@ const EmbeddedSource kI32MemoryChainSource = FindEmbeddedSource(
       },
       {8, 16, 32, 64, 128, 256, 512, 1024}, {8, 32, 128, 512, 1024});
   RegisterInputScalingCompileBenchmarks(
+      kAmdgpuWorkloadTarget, "ScfUnrollScopedWrites",
+      {
+          /*.source=*/FindEmbeddedSource(
+              loomc_benchmark_synthetic_unroll_smoke_create(),
+              loomc_benchmark_synthetic_unroll_smoke_size(),
+              "unroll_recurrence.loom"),
+          /*.function_symbol=*/"unroll_scoped_writes",
+          /*.artifact_identifier=*/"unroll_scoped_writes.hsaco",
+          /*.input_size_config_symbol=*/"benchmark.unroll_count",
+      },
+      {8, 16, 32, 64, 128, 256, 512, 1024}, {8, 32, 128, 512, 1024});
+  RegisterInputScalingCompileBenchmarks(
       kAmdgpuWorkloadTarget, "PackedTableLookupU4",
       {
           /*.source=*/FindEmbeddedSource(

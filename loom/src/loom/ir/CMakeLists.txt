@@ -136,6 +136,19 @@ loom_cc_test(
 
 loom_cc_test(
   NAME
+    local_value_domain_test
+  SRCS
+    "local_value_domain_test.cc"
+  DEPS
+    ::ir
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ops::test
+)
+
+loom_cc_test(
+  NAME
     function_version_test
   SRCS
     "function_version_test.cc"
