@@ -64,10 +64,11 @@ iree_cc_test(
     iree::async::platform::posix
     iree::base
     iree::net::connection
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
+    iree::net::rdma::test_context
     iree::net::transport_factory
     iree::testing::gtest
-    iree::testing::gtest_main
 )
 endif()
 
@@ -115,13 +116,14 @@ iree_cc_test(
     iree::net::connection
     iree::net::direct_endpoint
     iree::net::message_endpoint
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::library
     iree::net::rdma::region
     iree::net::rdma::target
+    iree::net::rdma::test_context
     iree::net::transport_factory
     iree::testing::gtest
-    iree::testing::gtest_main
 )
 endif()
 
@@ -174,8 +176,9 @@ iree_cc_test(
     iree::net::rdma::context
     iree::net::rdma::library
     iree::net::rdma::region
+    iree::net::rdma::test_context
+    iree::net::rdma::test_main
     iree::testing::gtest
-    iree::testing::gtest_main
 )
 endif()
 
@@ -236,12 +239,13 @@ iree_cc_test(
     iree::net::endpoint_lifecycle
     iree::net::framed_endpoint
     iree::net::message_endpoint
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::library
     iree::net::rdma::region
     iree::net::rdma::target
+    iree::net::rdma::test_context
     iree::testing::gtest
-    iree::testing::gtest_main
 )
 endif()
 
@@ -307,11 +311,12 @@ iree_cc_test(
     iree::async::platform::posix
     iree::base
     iree::base::core_headers
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::library
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::testing::gtest
-    iree::testing::gtest_main
 )
 endif()
 

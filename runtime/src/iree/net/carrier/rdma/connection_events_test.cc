@@ -22,6 +22,7 @@
 #include "iree/net/carrier/rdma/completion_queue.h"
 #include "iree/net/carrier/rdma/connection_route.h"
 #include "iree/net/rdma/region.h"
+#include "iree/net/rdma/test_context.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -451,11 +452,7 @@ class ConnectionEventsTest
     }
     IREE_ASSERT_OK(iree_async_address_from_string(
         iree_make_cstring_view(address), &address_));
-    auto context_options = iree_net_rdma_context_options_default();
-    context_options.device_name =
-        iree_make_cstring_view(std::getenv("IREE_NET_RDMA_CM_TEST_DEVICE"));
-    IREE_ASSERT_OK(iree_net_rdma_context_create(
-        context_options, iree_allocator_system(), &context_));
+    IREE_ASSERT_OK(TestContextEnvironment::Acquire(0, &context_));
     library_ = iree_net_rdma_context_library(context_);
     CreateProactor(&proactor_);
     IREE_ASSERT_OK(iree_net_rdma_connection_events_create(

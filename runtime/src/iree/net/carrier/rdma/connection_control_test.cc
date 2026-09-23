@@ -26,6 +26,7 @@
 #include "iree/net/framed_endpoint.h"
 #include "iree/net/rdma/region.h"
 #include "iree/net/rdma/target.h"
+#include "iree/net/rdma/test_context.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -691,11 +692,7 @@ class ConnectionControlTest
     }
     IREE_ASSERT_OK(iree_async_address_from_string(
         iree_make_cstring_view(address), &address_));
-    auto context_options = iree_net_rdma_context_options_default();
-    context_options.device_name =
-        iree_make_cstring_view(std::getenv("IREE_NET_RDMA_CM_TEST_DEVICE"));
-    IREE_ASSERT_OK(iree_net_rdma_context_create(
-        context_options, iree_allocator_system(), &context_));
+    IREE_ASSERT_OK(TestContextEnvironment::Acquire(0, &context_));
     library_ = iree_net_rdma_context_library(context_);
     auto options = iree_async_proactor_options_default();
     if (strcmp(std::get<0>(GetParam()), "io_uring") == 0) {
@@ -1138,12 +1135,8 @@ TEST_P(ConnectionControlTest, DirectRejectsDifferentProtectionDomainAndAccess) {
   ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
   ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
   ASSERT_NO_FATAL_FAILURE(ConnectData(first, second));
-  auto options = iree_net_rdma_context_options_default();
-  options.device_name =
-      iree_make_cstring_view(std::getenv("IREE_NET_RDMA_CM_TEST_DEVICE"));
   iree_net_rdma_context_t* other_context = nullptr;
-  IREE_ASSERT_OK(iree_net_rdma_context_create(options, iree_allocator_system(),
-                                              &other_context));
+  IREE_ASSERT_OK(TestContextEnvironment::Acquire(1, &other_context));
   iree_async_region_t* other_region = nullptr;
   IREE_ASSERT_OK(iree_net_rdma_region_register_slab(
       other_context, first.data_region()->slab, UINT64_C(0x50000000000),

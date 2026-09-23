@@ -16,6 +16,7 @@
 
 #include "iree/async/platform/io_uring/api.h"
 #include "iree/async/platform/posix/api.h"
+#include "iree/net/rdma/test_context.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -103,11 +104,7 @@ class FactoryTest : public ::testing::TestWithParam<const char*> {
       GTEST_SKIP() << "Native RDMA CM test address required";
     }
     bind_address_ = address;
-    auto context_options = iree_net_rdma_context_options_default();
-    context_options.device_name =
-        iree_make_cstring_view(std::getenv("IREE_NET_RDMA_CM_TEST_DEVICE"));
-    IREE_ASSERT_OK(iree_net_rdma_context_create(
-        context_options, iree_allocator_system(), &context_));
+    IREE_ASSERT_OK(TestContextEnvironment::Acquire(0, &context_));
     for (auto& proactor : proactors_) {
       auto options = iree_async_proactor_options_default();
       if (strcmp(GetParam(), "io_uring") == 0) {

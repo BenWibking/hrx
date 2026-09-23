@@ -167,6 +167,15 @@ itself has no dependency on that service or its proactor.
 Those checks establish software ownership, not physical NIC throughput or GPU
 visibility.
 
+Each native test and RDMA benchmark executable owns fixed device contexts from
+its main-scoped setup through final teardown, including all test repetitions.
+Cases borrow retained references; they never close and reopen the device between
+trials. Two protection domains remain available for isolation checks. Factories,
+connections, registrations, and proactors still retire per case, after their
+exact completion and callback joins. Device setup is outside benchmark timing.
+Direct-transfer smoke tests partition linear and paged profiles into separate
+invocations of the same benchmark binary; both retain the full proactor matrix.
+
 The host adapter's CM service in
 `runtime/src/iree/net/carrier/rdma/connection_events.h` owns a native event
 channel and its proactor monitor, while callers own the connection IDs.

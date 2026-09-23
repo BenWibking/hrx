@@ -12,6 +12,7 @@
 #include "iree/base/alignment.h"
 #include "iree/net/rdma/context.h"
 #include "iree/net/rdma/region.h"
+#include "iree/net/rdma/test_context.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -132,10 +133,7 @@ class RegisteredTargetTest : public ::testing::Test {
     if (!device) {
       GTEST_SKIP() << "Set IREE_NET_RDMA_TEST_DEVICE for native export tests.";
     }
-    auto options = iree_net_rdma_context_options_default();
-    options.device_name = iree_make_cstring_view(device);
-    IREE_ASSERT_OK(iree_net_rdma_context_create(
-        options, iree_allocator_system(), &context_));
+    IREE_ASSERT_OK(TestContextEnvironment::Acquire(0, &context_));
     auto slab_options = iree_async_slab_options_default();
     slab_options.buffer_size = 4096;
     slab_options.buffer_count = 2;

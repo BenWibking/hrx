@@ -86,11 +86,76 @@ iree_cc_test(
     ::context
     ::region
     ::target
+    ::test_context
+    ::test_main
     iree::async
     iree::base
     iree::base::core_headers
     iree::testing::gtest
-    iree::testing::gtest_main
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    test_context
+  HDRS
+    "test_context.h"
+  SRCS
+    "test_context.cc"
+  DEPS
+    ::context
+    iree::base
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    test_main
+  SRCS
+    "test_main.cc"
+  DEPS
+    ::test_context
+    iree::async::cts::util::registry
+    iree::testing::gtest
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    connection_test_main
+  SRCS
+    "test_main.cc"
+  DEPS
+    ::test_context
+    iree::async::cts::util::registry
+    iree::testing::gtest
+  DEFINES
+    "IREE_NET_RDMA_TEST_CONNECTION=1"
+  TESTONLY
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    benchmark_main
+  SRCS
+    "benchmark_main.cc"
+  DEPS
+    ::test_context
+    iree::async::cts::util::registry
+    iree::testing::benchmark
+    iree::third_party::google_benchmark
+  TESTONLY
+  PUBLIC
 )
 endif()
 

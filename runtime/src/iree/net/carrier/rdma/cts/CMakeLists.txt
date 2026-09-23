@@ -17,14 +17,15 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::collective_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
   TESTONLY
 )
@@ -38,14 +39,15 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::expert_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
   TESTONLY
 )
@@ -59,14 +61,15 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::gather_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
   TESTONLY
 )
@@ -80,14 +83,15 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::pipeline_round_trip_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
   TESTONLY
 )
@@ -101,15 +105,18 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::direct_transfer_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
+  ARGS
+    "--benchmark_filter=^CheckedDirectTransfer/"
   TESTONLY
 )
 endif()
@@ -122,18 +129,49 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::direct_transfer_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
   DEFINES
     "IREE_NET_RDMA_CTS_POST_BATCH_SIZE=1"
+  ARGS
+    "--benchmark_filter=^CheckedDirectTransfer/"
   TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_native_test(
+  NAME
+    "direct_transfer_paged_benchmarks_test"
+  ARGS
+    "--benchmark_min_time=0s"
+    "--benchmark_filter=^CheckedPagedTransfer/"
+  SRC
+    ::direct_transfer_benchmarks
+  TIMEOUT
+    60
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_native_test(
+  NAME
+    "direct_transfer_unbatched_paged_benchmarks_test"
+  ARGS
+    "--benchmark_min_time=0s"
+    "--benchmark_filter=^CheckedPagedTransfer/"
+  SRC
+    ::direct_transfer_unbatched_benchmarks
+  TIMEOUT
+    60
 )
 endif()
 
@@ -145,14 +183,15 @@ iree_cc_binary_benchmark(
     "backend.cc"
   DEPS
     iree::async
-    iree::async::cts::util::benchmark_main
     iree::async::cts::util::platform_backends
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::transfer_benchmarks
     iree::net::cts::transport_backend
+    iree::net::rdma::benchmark_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
     iree::third_party::google_benchmark
   TESTONLY
 )
@@ -167,13 +206,14 @@ iree_cc_test(
   DEPS
     iree::async
     iree::async::cts::util::platform_backends
-    iree::async::cts::util::test_main
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::collective_trial_tests
     iree::net::cts::transport_backend
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
 )
 endif()
 
@@ -186,13 +226,14 @@ iree_cc_test(
   DEPS
     iree::async
     iree::async::cts::util::platform_backends
-    iree::async::cts::util::test_main
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::direct_transfer_trial_tests
     iree::net::cts::transport_backend
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
 )
 endif()
 
@@ -207,13 +248,14 @@ iree_cc_test(
   DEPS
     iree::async
     iree::async::cts::util::platform_backends
-    iree::async::cts::util::test_main
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::direct_transfer_trial_tests
     iree::net::cts::transport_backend
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
 )
 endif()
 
@@ -226,13 +268,14 @@ iree_cc_test(
   DEPS
     iree::async
     iree::async::cts::util::platform_backends
-    iree::async::cts::util::test_main
     iree::base
     iree::net::carrier::rdma::factory
     iree::net::cts::transfer_trial_tests
     iree::net::cts::transport_backend
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::region
+    iree::net::rdma::test_context
 )
 endif()
 
@@ -248,9 +291,10 @@ iree_cc_test(
     iree::net::carrier::rdma::factory
     iree::net::cts::transport_backend
     iree::net::cts::transport_tests
+    iree::net::rdma::connection_test_main
     iree::net::rdma::context
     iree::net::rdma::region
-    iree::testing::gtest_main
+    iree::net::rdma::test_context
 )
 endif()
 

@@ -18,6 +18,7 @@
 #include "iree/async/platform/io_uring/api.h"
 #include "iree/async/platform/posix/api.h"
 #include "iree/net/rdma/region.h"
+#include "iree/net/rdma/test_context.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -373,11 +374,8 @@ class CompletionQueueTest
     : public ::testing::TestWithParam<std::tuple<const char*, uint32_t>> {
  protected:
   void SetUp() override {
-    options_ = iree_net_rdma_context_options_default();
     const char* device_name = std::getenv("IREE_NET_RDMA_TEST_DEVICE");
-    options_.device_name = iree_make_cstring_view(device_name);
-    iree_status_t status = iree_net_rdma_context_create(
-        options_, iree_allocator_system(), &contexts_[0]);
+    iree_status_t status = TestContextEnvironment::Acquire(0, &contexts_[0]);
     if (!device_name && (iree_status_is_unavailable(status) ||
                          iree_status_is_not_found(status))) {
       iree_status_free(status);
@@ -385,8 +383,7 @@ class CompletionQueueTest
                       "to require a particular provider.";
     }
     IREE_ASSERT_OK(status);
-    IREE_ASSERT_OK(iree_net_rdma_context_create(
-        options_, iree_allocator_system(), &contexts_[1]));
+    IREE_ASSERT_OK(TestContextEnvironment::Acquire(1, &contexts_[1]));
     for (uint32_t side = 0; side < 2; ++side) {
       auto slab_options = iree_async_slab_options_default();
       slab_options.buffer_size = 16384;
@@ -433,9 +430,8 @@ class CompletionQueueTest
     }
   }
 
-  // Explicit selection reused for independent owners of one canonical device.
-  iree_net_rdma_context_options_t options_ = {};
-  // Creation references dropped separately from retained region ownership.
+  // Test-owned references to the process owner's independent protection
+  // domains.
   std::array<iree_net_rdma_context_t*, 2> contexts_ = {};
   // Long-lived registered caller storage shared by both native connections.
   std::array<iree_async_region_t*, 2> regions_ = {};
