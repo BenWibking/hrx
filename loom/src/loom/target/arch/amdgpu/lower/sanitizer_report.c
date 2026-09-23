@@ -200,10 +200,10 @@ static iree_status_t loom_amdgpu_sanitizer_define_access_report_island_args(
     loom_amdgpu_sanitizer_report_flags_t flags,
     loom_amdgpu_sanitizer_access_report_island_t* island) {
   IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_define_register_block_arg(
-      builder, descriptor_set, entry_block, LOOM_AMDGPU_REG_CLASS_ID_SGPR, 2,
+      builder, descriptor_set, entry_block, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 2,
       &island->source_args.dispatch_ptr));
   IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_define_register_block_arg(
-      builder, descriptor_set, entry_block, LOOM_AMDGPU_REG_CLASS_ID_SGPR, 1,
+      builder, descriptor_set, entry_block, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 1,
       &island->source_args.workgroup_id_x));
   IREE_RETURN_IF_ERROR(loom_amdgpu_sanitizer_define_register_block_arg(
       builder, descriptor_set, entry_block, LOOM_AMDGPU_REG_CLASS_ID_VGPR, 1,
@@ -282,28 +282,18 @@ iree_status_t loom_amdgpu_build_sanitizer_access_report_branch(
   IREE_ASSERT(builder->ip.before_op == NULL,
               "AMDGPU sanitizer report branch must be built at the end of a "
               "low block");
-  loom_amdgpu_sanitizer_require_register_class(builder, descriptor_set,
-                                               source->dispatch_ptr, 2,
-                                               LOOM_AMDGPU_REG_CLASS_ID_SGPR);
-  loom_amdgpu_sanitizer_require_register_class(builder, descriptor_set,
-                                               source->workgroup_id_x, 1,
-                                               LOOM_AMDGPU_REG_CLASS_ID_SGPR);
-
-  loom_value_id_t args[8] = {0};
-  args[0] = source->dispatch_ptr;
-  args[1] = source->workgroup_id_x;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
-      builder, descriptor_set, source->workitem_id_x, 1, location, &args[2]));
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
-      builder, descriptor_set, report->fault_address, 2, location, &args[3]));
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
-      builder, descriptor_set, report->access_size, 2, location, &args[4]));
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
-      builder, descriptor_set, report->site_id, 2, location, &args[5]));
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
-      builder, descriptor_set, report->shadow_address, 2, location, &args[6]));
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
-      builder, descriptor_set, report->shadow_value, 2, location, &args[7]));
+  const loom_value_id_t args[] = {
+      source->dispatch_ptr,   source->workgroup_id_x, source->workitem_id_x,
+      report->fault_address,  report->access_size,    report->site_id,
+      report->shadow_address, report->shadow_value,
+  };
+  static const uint8_t arg_unit_counts[] = {2, 1, 1, 2, 2, 2, 2, 2};
+  IREE_ASSERT_EQ(IREE_ARRAYSIZE(args), IREE_ARRAYSIZE(arg_unit_counts));
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(args); ++i) {
+    loom_amdgpu_sanitizer_require_register_class(builder, descriptor_set,
+                                                 args[i], arg_unit_counts[i],
+                                                 LOOM_AMDGPU_REG_CLASS_ID_VGPR);
+  }
   loom_op_t* branch_op = NULL;
   return loom_low_br_build(builder, island->entry_block, args,
                            IREE_ARRAYSIZE(args), location, &branch_op);
