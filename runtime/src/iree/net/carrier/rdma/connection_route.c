@@ -41,13 +41,11 @@ iree_status_t iree_net_rdma_connection_route_initialize(
       library, id, IBV_QPS_RTR, &out_route->receive));
   IREE_RETURN_IF_ERROR(iree_net_rdma_connection_route_query_step(
       library, id, IBV_QPS_RTS, &out_route->send));
-  // Data uses SEND/WRITE, not the control QP's identity or READ/atomic
-  // resources.
+  // The host protocol uses SEND/WRITE, not READ/atomic resources. Keep the
+  // resolved identities for initial control setup; independent data queues
+  // replace them with their own exchanged identities when applying the route.
   out_route->initialize.attributes.qp_access_flags = IBV_ACCESS_REMOTE_WRITE;
-  out_route->receive.attributes.dest_qp_num = 0;
-  out_route->receive.attributes.rq_psn = 0;
   out_route->receive.attributes.max_dest_rd_atomic = 0;
-  out_route->send.attributes.sq_psn = 0;
   out_route->send.attributes.max_rd_atomic = 0;
   return iree_ok_status();
 }

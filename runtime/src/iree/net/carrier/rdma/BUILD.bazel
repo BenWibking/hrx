@@ -74,6 +74,44 @@ iree_runtime_cc_library(
     ],
 )
 
+iree_runtime_cc_library(
+    name = "connection_control",
+    srcs = ["connection_control.c"],
+    hdrs = ["connection_control.h"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":completion_queue",
+        ":connection_events",
+        ":connection_route",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:library",
+        "//runtime/src/iree/net/rdma:region",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "connection_control_test",
+    srcs = ["connection_control_test.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":connection_control",
+        ":connection_events",
+        ":connection_route",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/platform/io_uring",
+        "//runtime/src/iree/async/platform/posix",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:library",
+        "//runtime/src/iree/net/rdma:region",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 iree_runtime_cc_test(
     name = "connection_events_test",
     srcs = ["connection_events_test.cc"],

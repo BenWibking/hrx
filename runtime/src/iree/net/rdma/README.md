@@ -100,3 +100,33 @@ probing data liveness: the data QPs still work and require explicit retirement.
 This is a teardown test, not permission for a public connection to keep accepting
 work after control failure. Control disconnect alone never returns outstanding
 data ownership.
+
+## Host Connection Control
+
+`runtime/src/iree/net/carrier/rdma/connection_control.h` composes those services
+for one host connection. It owns a private control QP and registered record
+storage, and supplies a CQ shared with the connection's independently owned
+data QPs. Control receives are consumed and replenished internally; application
+leases and retained targets cannot hold that capacity. CQ and CM readiness may
+arrive in either order, so records received during setup remain in their original
+registered storage until the establishment callback has returned.
+
+The control QP is explicitly configured using CM-resolved attributes before
+the peer can use it. This permits an explicit RNR retry delay instead of the
+CM default encoding zero, which means about 655 ms. Retry spacing controls
+native backpressure, not connection failure detection or a teardown deadline.
+The shared native context and registration layer impose no host retry policy.
+
+Cold construction allocates and registers storage without starting callbacks.
+Connect/accept then begins native setup on the caller's poll owner. A failure
+after one monitor is armed follows the same asynchronous drain as a connected
+peer: retire independent data QPs, destroy native control access, join both
+monitors and the retirement callback, then release ownership. Native destruction
+establishes quiescence without waiting for a guessed number of flush completions.
+No private worker or synchronous polling loop participates in this lifecycle.
+
+`runtime/src/iree/net/carrier/rdma/connection_control_test.cc` uses the same CM
+qualification environment above. It checks bounded bilateral control pressure,
+an isolated final record, actual independent data placement and transformed
+results through the shared CQ, retained target bytes after control retirement,
+and cancellation/allocation failure on both sides of connection setup.

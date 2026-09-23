@@ -16,16 +16,17 @@ extern "C" {
 // One state-specific native QP configuration returned by the connection
 // manager.
 typedef struct iree_net_rdma_connection_route_step_t {
-  // Resolved native path and policy attributes, excluding QP identity.
+  // Resolved native path, policy and negotiated connection QP identity.
   struct ibv_qp_attr attributes;
   // Native fields present in |attributes|.
   int mask;
 } iree_net_rdma_connection_route_step_t;
 
-// Cold setup snapshot for independent SEND/WRITE RC QPs on an established
-// IB/RoCE control connection. Contains no owned resources, borrowed CM ID, or
-// host progress state. QPNs and packet sequence numbers are supplied separately
-// for each data QP. The context must outlive every QP using the route.
+// Cold setup snapshot for independent SEND/WRITE RC QPs after an IB/RoCE peer's
+// connection request/response resolves its native route. Contains no owned
+// resources, borrowed CM ID, or host progress state. Initial control setup uses
+// the negotiated identity; independent data QPs supply their own QPNs and
+// packet sequence numbers. The context must outlive every QP using the route.
 typedef struct iree_net_rdma_connection_route_t {
   // INIT port and protection-key configuration.
   iree_net_rdma_connection_route_step_t initialize;
@@ -35,8 +36,9 @@ typedef struct iree_net_rdma_connection_route_t {
   iree_net_rdma_connection_route_step_t send;
 } iree_net_rdma_connection_route_t;
 
-// Captures the route of an established |id| belonging to the context's exact
-// native device. Called on its poll owner before connection shutdown begins.
+// Captures the route of |id| after CONNECT_REQUEST, CONNECT_RESPONSE, or
+// ESTABLISHED, using the context's exact native device. Called on its poll
+// owner before connection shutdown begins.
 // The snapshot is valid only on success. Native query failures propagate;
 // device mismatch returns FAILED_PRECONDITION and non-IB/RoCE devices return
 // UNIMPLEMENTED. This does not transfer or retain the ID or its QP.

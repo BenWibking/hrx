@@ -52,6 +52,8 @@ IREE_NET_RDMA_SYMBOL(cm, int, rdma_init_qp_attr,
 // Starts the active connection handshake.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_connect,
                      (struct rdma_cm_id*, struct rdma_conn_param*))
+// Completes an active handshake after configuring an independently owned QP.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_establish, (struct rdma_cm_id*))
 // Accepts a pending connection request.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_accept,
                      (struct rdma_cm_id*, struct rdma_conn_param*))
