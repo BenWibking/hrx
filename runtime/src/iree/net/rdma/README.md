@@ -155,6 +155,10 @@ The corresponding CMake option is `IREE_NET_RDMA=ON`. Both builds use the
 third-party header facade; disabled builds do not fetch RDMA headers. The
 runtime loads `libibverbs.so.1` and `librdmacm.so.1` through the platform loader's
 normal search path. There is no link-time dependency on those libraries.
+CM and its verbs dependency remain loaded for the process lifetime because CM
+retains its canonical live-device inventory after inventory references are
+released. IREE context teardown still releases its own protection domain and
+inventory reference after all registrations and connections retire.
 
 The native test requires an active IB or IPv4 RoCE v2 port. A configured
 SoftRoCE device suffices for ownership qualification. Without an explicit device

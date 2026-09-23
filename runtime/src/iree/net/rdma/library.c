@@ -13,8 +13,11 @@ static iree_status_t iree_net_rdma_library_load(
   IREE_RETURN_IF_ERROR(iree_dynamic_library_load_from_file(
       "libibverbs.so.1", IREE_DYNAMIC_LIBRARY_FLAG_NONE, host_allocator,
       &library->verbs_library));
+  // CM retains its canonical live-device inventory after rdma_free_devices and
+  // has no unload cleanup. Preserve those roots along with its verbs
+  // dependency.
   IREE_RETURN_IF_ERROR(iree_dynamic_library_load_from_file(
-      "librdmacm.so.1", IREE_DYNAMIC_LIBRARY_FLAG_NONE, host_allocator,
+      "librdmacm.so.1", IREE_DYNAMIC_LIBRARY_FLAG_NODELETE, host_allocator,
       &library->cm_library));
 #define IREE_NET_RDMA_SYMBOL(owner, result, name, arguments) \
   IREE_RETURN_IF_ERROR(iree_dynamic_library_lookup_symbol(   \

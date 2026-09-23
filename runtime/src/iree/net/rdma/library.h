@@ -24,7 +24,7 @@ typedef struct iree_dynamic_library_t iree_dynamic_library_t;
 typedef struct iree_net_rdma_library_t {
   // Loaded libibverbs, retained until all provider resources have retired.
   iree_dynamic_library_t* verbs_library;
-  // Loaded librdmacm, retained through release of its device inventory.
+  // Wrapper for process-resident librdmacm and its canonical device inventory.
   iree_dynamic_library_t* cm_library;
 
   // Native entry points used by device, memory and queue resource owners.
@@ -34,12 +34,15 @@ typedef struct iree_net_rdma_library_t {
 } iree_net_rdma_library_t;
 
 // Loads the canonical Linux rdma-core libraries using the platform library
-// search path. Failure leaves a deinitialized object. No process-global cache
-// is installed; every native resource must keep its library owner alive.
+// search path. Failure leaves a deinitialized object. CM and its verbs
+// dependency remain resident because CM owns a process-lifetime live-device
+// inventory. No IREE process-global cache is installed; every native resource
+// must keep its symbol-table owner alive.
 IREE_API_EXPORT iree_status_t iree_net_rdma_library_initialize(
     iree_allocator_t host_allocator, iree_net_rdma_library_t* out_library);
 
-// Releases the libraries after all native resources have been destroyed.
+// Releases library wrappers after their owned native resources are destroyed.
+// The native CM module and its canonical live-device inventory remain resident.
 // Safe on a zero-initialized or unsuccessfully initialized object.
 IREE_API_EXPORT void iree_net_rdma_library_deinitialize(
     iree_net_rdma_library_t* library);

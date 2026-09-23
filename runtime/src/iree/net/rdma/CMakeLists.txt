@@ -27,6 +27,20 @@ iree_cc_library(
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_test(
+  NAME
+    library_test
+  SRCS
+    "library_test.cc"
+  DEPS
+    ::library
+    iree::base
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_library(
   NAME
     context
