@@ -26,6 +26,44 @@ namespace {
 using Positions = std::array<uint32_t, 2>;
 enum class Role { kProducer, kConsumer };
 
+// Shared immutable page geometry, prepared outside the measured interval.
+struct StorageLayout {
+  struct Fragment {
+    // Byte position in the logical record, independent of physical placement.
+    size_t position;
+    // Payload bytes in this fragment, excluding unused storage gaps.
+    size_t length;
+  };
+  // Nonzero for permuted pages, including one unwritten gap byte per page.
+  size_t page_stride;
+  // Physical bytes reserved for one logical source or target record.
+  size_t record_extent;
+  // Logical partition reused by both application owners and all connections.
+  std::vector<Fragment> fragments;
+
+  StorageLayout(const DirectTransferTrialOptions& options, size_t page_stride,
+                size_t record_extent)
+      : page_stride(page_stride), record_extent(record_extent) {
+    size_t position = 0;
+    for (size_t i = 0; i < options.fragment_count; ++i) {
+      size_t length =
+          (options.record_size - position) / (options.fragment_count - i);
+      fragments.push_back({position, length});
+      position += length;
+    }
+  }
+  size_t Offset(size_t index, uint32_t epoch, Role role) const {
+    if (!page_stride) {
+      return fragments[index].position;
+    }
+    size_t page = (index + epoch % fragments.size()) % fragments.size();
+    if (role == Role::kConsumer) {
+      page = fragments.size() - 1 - page;
+    }
+    return page * page_stride;
+  }
+};
+
 // Only phase/error communication crosses owners. Transfer observations and
 // source-slot retirement are private to the application's corresponding owner.
 struct Control {
@@ -95,6 +133,8 @@ struct Peer {
 
   // Immutable workload geometry shared with both application owners.
   const DirectTransferTrialOptions& options;
+  // Shared logical partition and physical source/target page geometry.
+  const StorageLayout& layout;
   // Cross-owner phase and terminal failure channel.
   Control& control;
   // Direction of this connection's application payload.
@@ -155,9 +195,10 @@ struct Peer {
   // Records checked after placement callback return.
   uint64_t retained_records = 0;
 
-  Peer(const DirectTransferTrialOptions& options, Control& control, Role role,
-       iree_async_span_t storage, size_t identity)
+  Peer(const DirectTransferTrialOptions& options, const StorageLayout& layout,
+       Control& control, Role role, iree_async_span_t storage, size_t identity)
       : options(options),
+        layout(layout),
         control(control),
         role(role),
         storage(storage),
@@ -179,7 +220,7 @@ struct Peer {
   bool Has(Flag flag) const { return (flags & flag) != 0; }
   size_t Offset(size_t axis, uint32_t epoch) const {
     return (axis * options.window_size + (epoch - 1) % options.window_size) *
-           options.record_size;
+           layout.record_extent;
   }
   Slot& Record(size_t axis, uint32_t epoch) {
     return slots[axis][(epoch - 1) % options.window_size];
@@ -195,10 +236,20 @@ struct Peer {
   }
   iree_status_t Consume(size_t axis, uint32_t epoch) {
     const auto* bytes = Bytes(axis, epoch);
-    for (size_t i = 0; i < options.record_size; ++i) {
-      if (bytes[i] != Pattern(identity, axis, epoch, i)) {
+    for (size_t index = 0; index < layout.fragments.size(); ++index) {
+      const auto& fragment = layout.fragments[index];
+      size_t offset = layout.Offset(index, epoch, Role::kConsumer);
+      for (size_t i = 0; i < fragment.length; ++i) {
+        if (bytes[offset + i] !=
+            Pattern(identity, axis, epoch, fragment.position + i)) {
+          return iree_make_status(IREE_STATUS_DATA_LOSS,
+                                  "registered target record changed");
+        }
+      }
+      if (layout.page_stride &&
+          bytes[offset + layout.page_stride - 1] != 0xA5) {
         return iree_make_status(IREE_STATUS_DATA_LOSS,
-                                "registered target record changed");
+                                "registered target page gap changed");
       }
     }
     Record(axis, epoch).state = SlotState::kConsumed;
@@ -454,17 +505,20 @@ struct Peer {
       }
       stalled_axes = 0;
       auto* bytes = Bytes(axis, epoch);
-      for (size_t i = 0; i < options.record_size; ++i) {
-        bytes[i] = Pattern(target_identity, axis, epoch, i);
-      }
-      size_t position = 0;
-      for (size_t i = 0; i < entries.size(); ++i) {
-        size_t length = (options.record_size - position) / (entries.size() - i);
-        size_t offset = Offset(axis, epoch) + position;
-        entries[i] = {iree_async_span_make(storage.region,
-                                           storage.offset + offset, length),
-                      &target, offset};
-        position += length;
+      for (size_t index = 0; index < entries.size(); ++index) {
+        const auto& fragment = layout.fragments[index];
+        size_t source_offset = layout.Offset(index, epoch, Role::kProducer);
+        size_t target_offset = layout.Offset(index, epoch, Role::kConsumer);
+        for (size_t i = 0; i < fragment.length; ++i) {
+          bytes[source_offset + i] =
+              Pattern(target_identity, axis, epoch, fragment.position + i);
+        }
+        entries[index] = {
+            iree_async_span_make(
+                storage.region,
+                storage.offset + Offset(axis, epoch) + source_offset,
+                fragment.length),
+            &target, Offset(axis, epoch) + target_offset};
       }
       iree_net_direct_write_params_t params = {};
       params.flags = IREE_NET_DIRECT_WRITE_FLAG_NOTIFY;
@@ -544,6 +598,8 @@ struct Peer {
 struct Side {
   // Immutable application geometry.
   const DirectTransferTrialOptions& options;
+  // Shared page partition and per-record storage extent.
+  const StorageLayout& layout;
   // Shared phase/error channel, not data-path progress.
   Control& control;
   // Producer or consumer lifetime owner.
@@ -567,8 +623,9 @@ struct Side {
   // Unexpected accepted connections still owing a local deactivation join.
   size_t pending_rejections = 0;
 
-  Side(const DirectTransferTrialOptions& options, Control& control, Role role)
-      : options(options), control(control), role(role) {}
+  Side(const DirectTransferTrialOptions& options, const StorageLayout& layout,
+       Control& control, Role role)
+      : options(options), layout(layout), control(control), role(role) {}
   ~Side() {
     peers.clear();
     iree_net_transport_factory_release(factory);
@@ -589,7 +646,7 @@ struct Side {
     }
     proactor = *created;
     auto slab_options = iree_async_slab_options_default();
-    slab_options.buffer_size = 2 * options.window_size * options.record_size;
+    slab_options.buffer_size = 2 * options.window_size * layout.record_extent;
     slab_options.buffer_count = options.connection_count;
     IREE_RETURN_IF_ERROR(
         iree_async_slab_create(slab_options, iree_allocator_system(), &slab));
@@ -597,10 +654,14 @@ struct Side {
         slab, iree_allocator_system(), &factory, &region));
     for (size_t i = 0; i < options.connection_count; ++i) {
       peers.push_back(std::make_unique<Peer>(
-          options, control, role,
+          options, layout, control, role,
           iree_async_span_make(region, i * slab_options.buffer_size,
                                slab_options.buffer_size),
           i));
+      if (layout.page_stride) {
+        memset(iree_async_span_ptr(peers.back()->storage), 0xA5,
+               slab_options.buffer_size);
+      }
     }
     return iree_ok_status();
   }
@@ -752,15 +813,28 @@ iree_status_t RunDirectTransferTrial(
       options.warmup_records > (UINT32_MAX >> 1) - options.measured_records ||
       options.window_size > UINT32_MAX ||
       options.record_size >
-          SIZE_MAX / 2 / options.window_size / options.connection_count ||
+          SIZE_MAX / 4 / options.window_size / options.connection_count ||
       options.record_size > UINT64_MAX / 2 / options.measured_records /
                                 options.connection_count) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "invalid registered-transfer dimensions");
   }
+  size_t page_stride = 0;
+  size_t record_extent = options.record_size;
+  if (options.layout == DirectTransferLayout::kPermutedPages) {
+    page_stride = options.record_size / options.fragment_count +
+                  (options.record_size % options.fragment_count != 0) + 1;
+    if (page_stride > SIZE_MAX / 4 / options.window_size /
+                          options.connection_count / options.fragment_count) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "registered page storage is too large");
+    }
+    record_extent = page_stride * options.fragment_count;
+  }
+  StorageLayout layout(options, page_stride, record_extent);
   Control control;
-  Side producer(options, control, Role::kProducer);
-  Side consumer(options, control, Role::kConsumer);
+  Side producer(options, layout, control, Role::kProducer);
+  Side consumer(options, layout, control, Role::kConsumer);
   IREE_RETURN_IF_ERROR(producer.Initialize(transport, create_proactor));
   IREE_RETURN_IF_ERROR(consumer.Initialize(transport, create_proactor));
   out_result->available = true;
@@ -825,6 +899,8 @@ iree_status_t RunDirectTransferTrial(
   result.progress_messages -= warmup.progress_messages;
   result.independent_progress_messages -= warmup.independent_progress_messages;
   result.payload_bytes = result.records * options.record_size;
+  result.payload_storage_bytes =
+      4 * options.connection_count * options.window_size * layout.record_extent;
   while (!control.Has(Control::kMeasuredDrained) &&
          !control.Has(Control::kFailed)) {
     producer.Poll();

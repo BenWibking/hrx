@@ -16,16 +16,18 @@ namespace {
 void RunBenchmark(::benchmark::State& state,
                   const iree::async::cts::ProactorFactory& create_proactor,
                   TransferConsumerMode consumer_mode,
-                  TransferProgressPolicy progress_policy) {
+                  TransferProgressPolicy progress_policy,
+                  DirectTransferLayout layout, uint32_t warmup_records) {
   DirectTransferTrialOptions options;
   options.connection_count = state.range(0);
   options.record_size = state.range(1);
   options.window_size = state.range(2);
   options.fragment_count = state.range(3);
   options.measured_records = state.range(4);
-  options.warmup_records = 256;
+  options.warmup_records = warmup_records;
   options.consumer_mode = consumer_mode;
   options.progress_policy = progress_policy;
+  options.layout = layout;
   DirectTransferTrialResult total;
   const TransferTrialMeasurement measurement = {
       +[](void* value) {
@@ -58,6 +60,7 @@ void RunBenchmark(::benchmark::State& state,
     total.progress_messages += result.progress_messages;
     total.independent_progress_messages += result.independent_progress_messages;
     total.retained_records += result.retained_records;
+    total.payload_storage_bytes = result.payload_storage_bytes;
     total.window_high_water =
         std::max(total.window_high_water, result.window_high_water);
   }
@@ -80,8 +83,7 @@ void RunBenchmark(::benchmark::State& state,
       static_cast<double>(total.records) / total.progress_messages;
   state.counters["amortized_ns_per_record"] =
       total.elapsed_seconds * 1e9 / total.records;
-  state.counters["payload_storage_bytes"] =
-      4 * options.connection_count * options.window_size * options.record_size;
+  state.counters["payload_storage_bytes"] = total.payload_storage_bytes;
 }
 
 class DirectTransferBenchmarks {
@@ -104,7 +106,8 @@ class DirectTransferBenchmarks {
         ::benchmark::RegisterBenchmark(
             name.c_str(),
             [create_proactor, mode, policy](::benchmark::State& state) {
-              RunBenchmark(state, create_proactor, mode, policy);
+              RunBenchmark(state, create_proactor, mode, policy,
+                           DirectTransferLayout::kContiguous, 256);
             })
             ->ArgNames({"peers", "bytes", "window", "sg", "records"})
             ->Args({1, 64, 1, 1, 512})
@@ -120,6 +123,32 @@ class DirectTransferBenchmarks {
             ->MeasureProcessCPUTime()
             ->Unit(::benchmark::kMicrosecond);
       }
+    }
+    for (auto layout : {DirectTransferLayout::kContiguous,
+                        DirectTransferLayout::kPermutedPages}) {
+      std::string name =
+          std::string("CheckedPagedTransfer/") + GetTransportBackend().name +
+          "/" + proactor_name + "/same_process/" +
+          (layout == DirectTransferLayout::kContiguous ? "contiguous"
+                                                       : "permuted");
+      ::benchmark::RegisterBenchmark(
+          name.c_str(),
+          [create_proactor, layout](::benchmark::State& state) {
+            RunBenchmark(state, create_proactor,
+                         TransferConsumerMode::kRetainedWindow,
+                         TransferProgressPolicy::kPollTurn, layout, 3);
+          })
+          ->ArgNames({"peers", "bytes", "window", "sg", "records"})
+          ->Args({1, 16384, 1, 4, 32})
+          ->Args({1, 262144, 4, 64, 17})
+          ->Args({1, 266240, 4, 65, 17})
+          ->Args({1, 528384, 4, 129, 17})
+          ->Args({1, 1048576, 4, 16, 17})
+          ->Args({4, 65536, 4, 16, 17})
+          ->Iterations(1)
+          ->UseManualTime()
+          ->MeasureProcessCPUTime()
+          ->Unit(::benchmark::kMicrosecond);
     }
   }
 };

@@ -314,6 +314,23 @@ teardown are outside measurement; payload generation/checking, feedback, and
 source returns are inside. `payload_storage_bytes` counts both sides' final
 payload rings, not native queue metadata or copied control storage.
 
+`CheckedPagedTransfer` rows model batched writes between independently laid out
+page pools, as used by paged-cache transfers. The `contiguous` control and
+`permuted` layout move the same payload with the same descriptor count and
+ownership joins. Permuted layout rotates source pages and reverses target pages
+each round, leaving a checked gap byte after each physical page. Reusing a slot
+therefore changes both the data and its page mapping. The consumer checks all
+logical bytes and fixed page gaps before publishing reuse permission.
+
+The paged rows use three warm-up records and retained-window consumption with
+poll-turn feedback. Profiles cover 4 KiB pages in 64/65/129-entry batches,
+64 KiB pages, unit windows, and multiple connections sharing a registration.
+`bytes` is the whole logical batch, not one page; `sg` is its page count.
+`payload_storage_bytes` includes gaps, while processed payload bytes exclude
+them. These are checked whole-batch transfers, not page latency, a complete KV
+cache protocol, or evidence of GPU-accessible registration. Both contiguous
+and permuted rows include host page generation and validation in timing.
+
 `direct_transfer_unbatched_benchmarks` changes only the direct endpoint's
 native posting batch limit to one, producing one provider post and signaled
 source completion per native request. It retains identical logical admission,

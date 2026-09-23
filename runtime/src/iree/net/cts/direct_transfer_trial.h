@@ -11,6 +11,9 @@
 
 namespace iree::net::cts {
 
+// Physical layout of the same logical payload and descriptor batch.
+enum class DirectTransferLayout { kContiguous, kPermutedPages };
+
 // Fixed registered-placement application shared by CTS and benchmarks.
 struct DirectTransferTrialOptions {
   // Connections sharing one registration and poll owner on each side.
@@ -21,6 +24,8 @@ struct DirectTransferTrialOptions {
   size_t window_size = 32;
   // Registered fragments per logical write; descriptors are transient.
   size_t fragment_count = 1;
+  // Contiguous slices or independently remapped source and destination pages.
+  DirectTransferLayout layout = DirectTransferLayout::kContiguous;
   // Records per connection and timeline before measurement.
   uint32_t warmup_records = 7;
   // Records per connection and timeline during measurement.
@@ -50,6 +55,8 @@ struct DirectTransferTrialResult {
   uint64_t window_high_water = 0;
   // Registered targets checked after their placement callback returned.
   uint64_t retained_records = 0;
+  // Source and target ring storage, including unused page gaps.
+  uint64_t payload_storage_bytes = 0;
 };
 
 // Runs two application-owned poll threads with explicit, reusable
@@ -60,6 +67,12 @@ struct DirectTransferTrialResult {
 // callback order is never interpreted as a completed prefix. Retained
 // consumption waits for a full window or phase tail and publication of the
 // other timeline's progress.
+//
+// Permuted-page layout rotates source pages and reverses their destination
+// positions each round. Each physical page has a checked, unwritten gap byte.
+// Payload generation and checking use logical offsets independent of physical
+// placement. This models paged-cache scatter/gather without copying through a
+// contiguous staging buffer or changing registration on reuse.
 //
 // Setup, registration and teardown are outside measurement. Payload generation,
 // checking and feedback are inside. All accepted callbacks and native accesses
