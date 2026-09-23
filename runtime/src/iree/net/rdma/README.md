@@ -60,3 +60,29 @@ The host adapter's completion service drives these checks; native ownership
 itself has no dependency on that service or its proactor.
 Those checks establish software ownership, not physical NIC throughput or GPU
 visibility.
+
+The host adapter's CM service in
+`runtime/src/iree/net/carrier/rdma/connection_events.h` owns a native event
+channel and its proactor monitor, while callers own the connection IDs. It
+acknowledges native records before dispatching borrowed snapshots so an owner
+can migrate an accepted ID or destroy a rejected ID inside its callback.
+Channel deactivation joins monitoring separately from native connection
+retirement; observing a disconnect event alone does not establish DMA
+retirement.
+
+CM qualification requires a local IP address routed through the selected RDMA
+device. Port zero selects an available listening port:
+
+```sh
+iree-bazel-test --config=asan \
+  --test_env=IREE_NET_RDMA_CM_TEST_DEVICE=<device-name> \
+  --test_env=IREE_NET_RDMA_CM_TEST_ADDRESS=<local-IP>:0 \
+  //runtime/src/iree/net/carrier/rdma:connection_events_test
+```
+
+Without the address, this test skips. With it, connection or device failures
+fail the test. The test establishes real connections, migrates accepted IDs
+away from their listener, destroys the listener, and checks bidirectional
+registered-memory transfers before completing the disconnect handshake. It
+also rejects connections and retires their IDs directly from event callbacks.
+Both io_uring and POSIX polling exercise these paths with bounded event batches.

@@ -11,6 +11,53 @@ IREE_NET_RDMA_SYMBOL(cm, struct ibv_context**, rdma_get_devices, (int*))
 // Releases one canonical inventory reference.
 IREE_NET_RDMA_SYMBOL(cm, void, rdma_free_devices, (struct ibv_context**))
 
+// Creates an independently monitored asynchronous CM channel.
+IREE_NET_RDMA_SYMBOL(cm, struct rdma_event_channel*, rdma_create_event_channel,
+                     (void))
+// Closes a channel after its IDs and monitor have retired.
+IREE_NET_RDMA_SYMBOL(cm, void, rdma_destroy_event_channel,
+                     (struct rdma_event_channel*))
+// Obtains one owned native CM event record.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_get_cm_event,
+                     (struct rdma_event_channel*, struct rdma_cm_event**))
+// Acknowledges and frees an obtained event before owner callback dispatch.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_ack_cm_event, (struct rdma_cm_event*))
+// Creates a caller-owned connection identifier on an explicit event channel.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_create_id,
+                     (struct rdma_event_channel*, struct rdma_cm_id**, void*,
+                      enum rdma_port_space))
+// Destroys an ID after its QP and delivered events have retired.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_destroy_id, (struct rdma_cm_id*))
+// Transfers an accepted ID to its connection's own event channel.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_migrate_id,
+                     (struct rdma_cm_id*, struct rdma_event_channel*))
+// Binds a numeric local address during listener setup.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_bind_addr,
+                     (struct rdma_cm_id*, struct sockaddr*))
+// Starts accepting asynchronous connection requests.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_listen, (struct rdma_cm_id*, int))
+// Starts native asynchronous address resolution.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_resolve_addr,
+                     (struct rdma_cm_id*, struct sockaddr*, struct sockaddr*,
+                      int))
+// Starts native asynchronous route resolution after address selection.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_resolve_route, (struct rdma_cm_id*, int))
+// Creates a CM-managed QP using the caller's explicit protection domain/CQs.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_create_qp,
+                     (struct rdma_cm_id*, struct ibv_pd*,
+                      struct ibv_qp_init_attr*))
+// Starts the active connection handshake.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_connect,
+                     (struct rdma_cm_id*, struct rdma_conn_param*))
+// Accepts a pending connection request.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_accept,
+                     (struct rdma_cm_id*, struct rdma_conn_param*))
+// Rejects a pending request without creating a data connection.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_reject,
+                     (struct rdma_cm_id*, const void*, uint8_t))
+// Initiates or replies to the native disconnect handshake and stops the QP.
+IREE_NET_RDMA_SYMBOL(cm, int, rdma_disconnect, (struct rdma_cm_id*))
+
 // Returns a borrowed device name for explicit selection.
 IREE_NET_RDMA_SYMBOL(verbs, const char*, ibv_get_device_name,
                      (struct ibv_device*))
