@@ -11,6 +11,23 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    cleanup_patterns
+  HDRS
+    "cleanup_patterns.h"
+  SRCS
+    "cleanup_patterns.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::special_values
+    loom::ops::vector
+    loom::rewrite::pattern_registry
+    loom::rewrite::rewriter
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     combine_patterns
   HDRS
     "combine_patterns.h"

@@ -56,7 +56,10 @@ loom_cc_library(
     "configured.c"
   DEPS
     ::patterns
+    loom::transforms::index::cleanup_patterns
+    loom::transforms::scalar::cleanup_patterns
     loom::transforms::scf::combine_patterns
+    loom::transforms::vector::cleanup_patterns
     loom::transforms::vector::combine_patterns
     loom::transforms::view::combine_patterns
   PUBLIC
@@ -74,6 +77,8 @@ loom_cc_test(
     ::patterns
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::ops::index
+    loom::ops::scalar
     loom::ops::scf
     loom::ops::vector
     loom::ops::view
@@ -132,16 +137,12 @@ loom_cc_library(
     ::patterns
     iree::base
     iree::base::internal
-    loom::analysis::condition_facts
     loom::analysis::symbolic_expr
     loom::ir
     loom::ir::facts
-    loom::ops::index
     loom::ops::op_defs
-    loom::ops::scalar
     loom::ops::special_values
     loom::ops::type_registry
-    loom::ops::vector
     loom::pass::types
     loom::pass::value_facts
     loom::rewrite::greedy

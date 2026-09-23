@@ -8,48 +8,19 @@
 
 #include <string.h>
 
-#include "loom/analysis/condition_facts.h"
 #include "loom/analysis/symbolic_expr.h"
-#include "loom/analysis/symbolic_expr_proof.h"
 #include "loom/ir/context.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/module.h"
-#include "loom/ops/index/compare.h"
-#include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
-#include "loom/ops/scalar/ops.h"
 #include "loom/ops/special_values.h"
 #include "loom/ops/type_registry.h"
-#include "loom/ops/vector/ops.h"
 #include "loom/pass/value_facts.h"
 #include "loom/rewrite/greedy.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/rewrite/type_propagation.h"
 #include "loom/transforms/cleanup/branch_facts.h"
 #include "loom/transforms/cleanup/patterns.h"
-
-static iree_status_t loom_canonicalize_replace_single_result_with_value(
-    loom_rewriter_t* rewriter, loom_op_t* op, loom_value_id_t replacement) {
-  return loom_rewriter_replace_all_uses_and_erase(rewriter, op, &replacement,
-                                                  1);
-}
-
-static iree_status_t loom_canonicalize_replace_single_result_with_exact_i64(
-    loom_rewriter_t* rewriter, loom_op_t* op, int64_t value) {
-  loom_builder_set_before(&rewriter->builder, op);
-  loom_value_id_t value_checkpoint = loom_rewriter_value_checkpoint(rewriter);
-  loom_value_id_t result = loom_op_const_results(op)[0];
-  loom_type_t result_type = loom_module_value_type(rewriter->module, result);
-
-  loom_value_id_t replacement = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_rewriter_build_constant(rewriter, loom_value_facts_exact_i64(value),
-                                   result_type, op->location, &replacement));
-  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
-      rewriter, op, &replacement, 1, value_checkpoint));
-  return loom_canonicalize_replace_single_result_with_value(rewriter, op,
-                                                            replacement);
-}
 
 //===----------------------------------------------------------------------===//
 // Implementation
@@ -141,89 +112,6 @@ static iree_status_t loom_canonicalize_try_propagate_poison(
       loom_rewriter_replace_results_with_materialized_values_and_erase(
           rewriter, op, loom_poison_build));
   *out_propagated = true;
-  return iree_ok_status();
-}
-
-static bool loom_canonicalize_extract_consumes_static_empty_axis(
-    const loom_module_t* module, const loom_op_t* op) {
-  if (!loom_vector_extract_isa(op)) {
-    return false;
-  }
-  loom_type_t source_type =
-      loom_module_value_type(module, loom_vector_extract_source(op));
-  if (!loom_type_is_vector(source_type)) {
-    return false;
-  }
-
-  loom_attribute_t static_indices = loom_vector_extract_static_indices(op);
-  if (static_indices.kind != LOOM_ATTR_I64_ARRAY) {
-    return false;
-  }
-
-  uint8_t source_rank = loom_type_rank(source_type);
-  uint16_t consumed_rank = static_indices.count;
-  if (consumed_rank > source_rank) {
-    consumed_rank = source_rank;
-  }
-  for (uint16_t axis = 0; axis < consumed_rank; ++axis) {
-    if (loom_type_dim_is_dynamic_at(source_type, axis)) {
-      continue;
-    }
-    if (loom_type_dim_static_size_at(source_type, axis) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static iree_status_t loom_canonicalize_try_replace_empty_extract_with_poison(
-    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_replaced) {
-  *out_replaced = false;
-  if (!loom_canonicalize_extract_consumes_static_empty_axis(rewriter->module,
-                                                            op)) {
-    return iree_ok_status();
-  }
-  loom_value_id_t result = loom_vector_extract_result(op);
-  if (result == LOOM_VALUE_ID_INVALID) {
-    return iree_ok_status();
-  }
-  loom_type_t result_type = loom_module_value_type(rewriter->module, result);
-  if (!loom_canonicalize_value_type_has_poison(result_type)) {
-    return iree_ok_status();
-  }
-
-  IREE_RETURN_IF_ERROR(
-      loom_rewriter_replace_results_with_materialized_values_and_erase(
-          rewriter, op, loom_poison_build));
-  *out_replaced = true;
-  return iree_ok_status();
-}
-
-static iree_status_t loom_canonicalize_try_fold_empty_accumulator_op(
-    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_folded) {
-  *out_folded = false;
-
-  loom_value_id_t input = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t init = LOOM_VALUE_ID_INVALID;
-  if (loom_vector_reduce_isa(op)) {
-    input = loom_vector_reduce_input(op);
-    init = loom_vector_reduce_init(op);
-  } else if (loom_vector_dotf_isa(op)) {
-    input = loom_vector_dotf_lhs(op);
-    init = loom_vector_dotf_init(op);
-  } else {
-    return iree_ok_status();
-  }
-
-  if (!loom_canonicalize_value_is_static_empty_vector(rewriter->module,
-                                                      input)) {
-    return iree_ok_status();
-  }
-
-  loom_value_id_t replacement = init;
-  IREE_RETURN_IF_ERROR(
-      loom_rewriter_replace_all_uses_and_erase(rewriter, op, &replacement, 1));
-  *out_folded = true;
   return iree_ok_status();
 }
 
@@ -363,21 +251,9 @@ static iree_status_t loom_canonicalize_try_elide_empty_memory_effect(
   return iree_ok_status();
 }
 
-static iree_status_t loom_canonicalize_try_elide_empty_vector_op(
+static iree_status_t loom_canonicalize_try_elide_empty_op(
     loom_rewriter_t* rewriter, loom_op_t* op, bool* out_elided) {
   *out_elided = false;
-
-  IREE_RETURN_IF_ERROR(loom_canonicalize_try_replace_empty_extract_with_poison(
-      rewriter, op, out_elided));
-  if (*out_elided) {
-    return iree_ok_status();
-  }
-
-  IREE_RETURN_IF_ERROR(loom_canonicalize_try_fold_empty_accumulator_op(
-      rewriter, op, out_elided));
-  if (*out_elided) {
-    return iree_ok_status();
-  }
 
   IREE_RETURN_IF_ERROR(loom_canonicalize_try_elide_empty_memory_effect(
       rewriter, op, out_elided));
@@ -393,131 +269,6 @@ static iree_status_t loom_canonicalize_try_elide_empty_vector_op(
           rewriter, op, loom_empty_build));
   *out_elided = true;
   return iree_ok_status();
-}
-
-static iree_status_t loom_canonicalize_try_symbolic_index_sub(
-    loom_rewriter_t* rewriter, loom_symbolic_expr_context_t* expression_context,
-    loom_op_t* op, bool* out_changed) {
-  *out_changed = false;
-  if (!loom_index_sub_isa(op)) {
-    return iree_ok_status();
-  }
-
-  loom_symbolic_value_difference_t difference = {0};
-  IREE_RETURN_IF_ERROR(loom_symbolic_expr_simplify_value_difference(
-      expression_context, loom_index_sub_lhs(op), loom_index_sub_rhs(op),
-      &difference));
-  switch (difference.kind) {
-    case LOOM_SYMBOLIC_VALUE_DIFFERENCE_CONSTANT: {
-      IREE_RETURN_IF_ERROR(
-          loom_canonicalize_replace_single_result_with_exact_i64(
-              rewriter, op, difference.constant));
-      *out_changed = true;
-      return iree_ok_status();
-    }
-    case LOOM_SYMBOLIC_VALUE_DIFFERENCE_VALUE: {
-      loom_type_t result_type = loom_module_value_type(
-          rewriter->module, loom_op_const_results(op)[0]);
-      loom_type_t replacement_type =
-          loom_module_value_type(rewriter->module, difference.value_id);
-      if (!loom_type_equal(result_type, replacement_type)) {
-        return iree_ok_status();
-      }
-      IREE_RETURN_IF_ERROR(loom_canonicalize_replace_single_result_with_value(
-          rewriter, op, difference.value_id));
-      *out_changed = true;
-      return iree_ok_status();
-    }
-    case LOOM_SYMBOLIC_VALUE_DIFFERENCE_UNKNOWN:
-    default:
-      return iree_ok_status();
-  }
-}
-
-static iree_status_t loom_canonicalize_try_symbolic_integer_cmp(
-    loom_rewriter_t* rewriter, loom_symbolic_expr_context_t* expression_context,
-    loom_op_t* op, bool* out_changed) {
-  *out_changed = false;
-  if (!loom_index_cmp_isa(op) && !loom_scalar_cmpi_isa(op)) {
-    return iree_ok_status();
-  }
-  if (loom_index_cmp_isa(op)) {
-    loom_value_id_t lhs = loom_index_cmp_lhs(op);
-    loom_value_id_t rhs = loom_index_cmp_rhs(op);
-    loom_type_t operand_type = loom_module_value_type(rewriter->module, lhs);
-    if (!loom_type_is_scalar(operand_type)) {
-      return iree_ok_status();
-    }
-    loom_value_facts_t lhs_facts = loom_rewriter_value_facts(rewriter, lhs);
-    loom_value_facts_t rhs_facts = loom_rewriter_value_facts(rewriter, rhs);
-    const loom_fact_context_t* fact_context =
-        rewriter->fact_table ? &rewriter->fact_table->context : NULL;
-    if (!loom_index_cmp_facts_fit_target_carrier(
-            fact_context, loom_type_element_type(operand_type),
-            loom_index_cmp_predicate(op), &lhs_facts, &rhs_facts)) {
-      return iree_ok_status();
-    }
-  }
-
-  loom_condition_integer_relation_t relation_storage[1];
-  loom_condition_fact_set_t condition_facts;
-  loom_condition_fact_set_initialize(
-      relation_storage, IREE_ARRAYSIZE(relation_storage), &condition_facts);
-  bool complete = false;
-  IREE_RETURN_IF_ERROR(loom_condition_facts_query(
-      &expression_context->condition_query, rewriter->fact_table,
-      loom_op_const_results(op)[0], /*assumed_truth=*/true, &condition_facts,
-      &complete));
-  if (!complete) {
-    return iree_ok_status();
-  }
-  if (condition_facts.integer_relation_count != 1) {
-    return iree_ok_status();
-  }
-  const loom_condition_integer_relation_t* relation =
-      &condition_facts.integer_relations[0];
-  if (relation->left.kind != LOOM_CONDITION_INTEGER_OPERAND_VALUE ||
-      relation->right.kind != LOOM_CONDITION_INTEGER_OPERAND_VALUE) {
-    return iree_ok_status();
-  }
-
-  loom_symbolic_proof_result_t proof = LOOM_SYMBOLIC_PROOF_UNKNOWN;
-  if (loom_scalar_cmpi_isa(op)) {
-    // Scalar comparisons describe data-path predicates. Use facts already
-    // established by surrounding control flow instead of speculating through
-    // every select in an unrolled data graph.
-    IREE_RETURN_IF_ERROR(
-        loom_symbolic_expr_prove_value_relation_with_active_facts(
-            expression_context, relation->relation, relation->left.value_id,
-            relation->right.value_id, &proof));
-  } else {
-    IREE_RETURN_IF_ERROR(loom_symbolic_expr_prove_value_relation(
-        expression_context, relation->relation, relation->left.value_id,
-        relation->right.value_id, &proof));
-  }
-  if (proof == LOOM_SYMBOLIC_PROOF_UNKNOWN) {
-    return iree_ok_status();
-  }
-
-  IREE_RETURN_IF_ERROR(loom_canonicalize_replace_single_result_with_exact_i64(
-      rewriter, op, proof == LOOM_SYMBOLIC_PROOF_TRUE ? 1 : 0));
-  *out_changed = true;
-  return iree_ok_status();
-}
-
-static iree_status_t loom_canonicalize_try_symbolic_integer_cleanup(
-    loom_rewriter_t* rewriter, loom_symbolic_expr_context_t* expression_context,
-    loom_op_t* op, bool* out_changed) {
-  *out_changed = false;
-
-  IREE_RETURN_IF_ERROR(loom_canonicalize_try_symbolic_index_sub(
-      rewriter, expression_context, op, out_changed));
-  if (*out_changed) {
-    return iree_ok_status();
-  }
-
-  return loom_canonicalize_try_symbolic_integer_cmp(
-      rewriter, expression_context, op, out_changed);
 }
 
 struct loom_canonicalizer_state_t {
@@ -718,13 +469,14 @@ static iree_status_t loom_canonicalize_rewrite_op(
     return iree_ok_status();
   }
 
-  // Static empty vectors have a valid empty aggregate value, not poison.
-  // Handle them before poison propagation so zero-lane computations and
-  // zero-footprint memory effects disappear without observing operands.
+  // Static empty aggregates have valid empty values, not poison. Handle them
+  // before poison propagation so zero-footprint effects disappear without
+  // observing operands. Dialect-specific empty rules run in the pre-fold
+  // registry immediately above.
   bool empty_elided = false;
   rewriter->flags = 0;
   IREE_RETURN_IF_ERROR(
-      loom_canonicalize_try_elide_empty_vector_op(rewriter, op, &empty_elided));
+      loom_canonicalize_try_elide_empty_op(rewriter, op, &empty_elided));
   if (empty_elided) {
     loom_greedy_rewrite_result_record_change(
         result, rewriter, LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
@@ -782,20 +534,6 @@ static iree_status_t loom_canonicalize_rewrite_op(
       loom_canonicalize_apply_patterns(state, state->patterns.post_type, op,
                                        rewriter, result, &pattern_changed));
   if (pattern_changed) {
-    *out_changed = true;
-    return iree_ok_status();
-  }
-
-  // Symbolic address-domain cleanup uses the generic expression analysis
-  // for exact linear cancellation and relation proofs that are awkward as
-  // op-local patterns.
-  bool symbolic_changed = false;
-  rewriter->flags = 0;
-  IREE_RETURN_IF_ERROR(loom_canonicalize_try_symbolic_integer_cleanup(
-      rewriter, &state->expression_context, op, &symbolic_changed));
-  if (symbolic_changed) {
-    loom_greedy_rewrite_result_record_change(
-        result, rewriter, LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
     *out_changed = true;
     return iree_ok_status();
   }
