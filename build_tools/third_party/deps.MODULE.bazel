@@ -90,6 +90,14 @@ http_archive(
 
 rocm_repository = use_repo_rule("//build_tools/third_party/rocm:repository.bzl", "rocm_repository")
 
+http_archive(
+    name = "rdma_core_headers",
+    build_file = "//build_tools/third_party/rdma_core_headers:rdma_core_headers.BUILD.bazel",
+    sha256 = "42aaf7129fab9fee0bdd1e94fe74d3b75038055d86e164d8c153f9091cd5ab90",
+    strip_prefix = "rdma-core-headers-2d587c653b5b4b48ad1df0d74f0a6bac18c1c9b7",
+    url = "https://github.com/iree-org/rdma-core-headers/archive/2d587c653b5b4b48ad1df0d74f0a6bac18c1c9b7.tar.gz",
+)
+
 # Narrow syscall-header snapshots; no kernel or driver runtime is built.
 
 http_archive(

@@ -1,0 +1,76 @@
+# Copyright 2026 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+load("//runtime/build_tools/bazel:cc.bzl", "iree_runtime_cc_library")
+load("//runtime/build_tools/bazel:cc_test.bzl", "iree_runtime_cc_test")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],
+)
+
+RDMA_COMPATIBILITY = ["@platforms//os:linux"] + select({
+    "//runtime/config/net:rdma_enabled": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+iree_runtime_cc_library(
+    name = "library",
+    srcs = ["library.c"],
+    hdrs = [
+        "library.h",
+        "library_symbols.h",
+    ],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:dynamic_library",
+        "//third_party:rdma_core_headers",
+    ],
+)
+
+iree_runtime_cc_library(
+    name = "context",
+    srcs = ["context.c"],
+    hdrs = ["context.h"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":library",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
+    ],
+)
+
+iree_runtime_cc_library(
+    name = "region",
+    srcs = ["region.c"],
+    hdrs = ["region.h"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":context",
+        ":library",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "region_test",
+    srcs = ["region_test.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":context",
+        ":library",
+        ":region",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/platform/io_uring",
+        "//runtime/src/iree/async/platform/posix",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
