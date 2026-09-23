@@ -110,13 +110,54 @@ rank-local completions. `bytes_per_second` counts the actual payload sent over
 all edges: `2 * (ranks - 1) * tensor_bytes` per all-reduce. It is not single-link
 bandwidth. `amortized_us_per_collective` measures the dependent checked schedule,
 including CPU work, not isolated network latency. `source_completions` must match
-`data_sends`; `payload_storage_bytes` excludes carrier/native resources.
+`data_sends`; `source_window_high_water` bounds outstanding local callbacks and
+`window_high_water` bounds outstanding peer consumption. These are independent
+observations. `payload_storage_bytes` excludes carrier/native resources.
 
 These are transport schedules, not a selected production collective algorithm,
 GPU-kernel simulation, or substitute for multi-host NIC qualification. The
 large-tensor rows compare transfer geometry within an otherwise identical
 schedule; small-tensor rows expose dependency-sensitive work that cannot hide
 behind a large stream of independent transfers.
+
+## Pipeline-Parallel Transport
+
+The same trial owner runs a chain of stages over actual connections. Each
+stage waits for a complete input activation, applies a deterministic host
+transform, and sends its output to the next stage. The final stage checks
+every output element and returns a completion coordinate over a control-only
+connection to rank zero. It does not send the activation back. Shared process
+state is not used to communicate microbatch readiness or completion.
+
+Pipeline depth bounds the number of microbatches admitted but not yet observed
+complete at rank zero. Each stage owns that many input and output activation
+slots. Output reuse joins the exact source callbacks borrowing that slot;
+receiver consumption separately returns the input target credit. Blocks can
+complete out of order, but a stage only runs after all blocks of its next input
+are present. No block cut-through or artificial compute delay substitutes for
+the whole-activation dependency.
+
+Activation extent, transfer block extent, source callback window, and pipeline
+depth are independent. A one-block source window can deliver a much larger
+activation without deadlocking. Message delivery assembles received blocks
+into bounded application storage and releases the transport leases promptly;
+an activation does not need to fit the carrier's receive pool. Registered
+delivery writes directly into those input slots. Neither path registers memory
+per block or microbatch. The short final block retains its exact byte count.
+
+Benchmark names begin with `Pipeline/<carrier>/<proactor>/same_process/` and
+identify delivery, stages, activation bytes, block bytes, source window,
+measured microbatches, and depth. Depth-one rows expose a dependency-sensitive
+stage chain; larger depths measure overlap with the same stage semantics.
+`items_per_second` counts complete microbatches, while `bytes_per_second` counts
+`(stages - 1) * activation_bytes` per microbatch across all data edges.
+`amortized_us_per_microbatch` is phase throughput, not individual latency.
+`first_completion_us` runs from rank zero beginning the measured phase until
+it observes the first checked final-stage result; it includes host transforms
+and any bounded admission ahead of that observation. Every phase joins its data
+and control callbacks before measurement ends. `pipeline_high_water` reports
+the observed global microbatch occupancy. Host transforms and result checking
+are timed; this does not model GPU compute or promise a distributed-model rate.
 
 ## Correctness Runs
 

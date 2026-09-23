@@ -97,14 +97,17 @@ struct Control {
 };
 
 enum class Direction { kIncoming, kOutgoing };
+enum class LinkPurpose { kData, kResult };
 
-// One directed data edge and its reverse consumed-coordinate control path.
+// One directed data/credit edge or a pipeline's final-result control edge.
 struct Link {
   struct Source {
     // Stable callback owner, retained through connection deactivation.
     Link* link = nullptr;
     // Exact source completion byte count, including message framing above net.
     size_t expected_length = 0;
+    // Optional rank-local activation owner; remains alive through retirement.
+    uint32_t* pending_sources = nullptr;
     // This slot cannot capture another source until its callback returns.
     bool pending = false;
   };
@@ -123,6 +126,8 @@ struct Link {
   Control& control;
   // Whether this connection sends data or receives it.
   Direction direction;
+  // Data edges exchange payload and credits; the result edge only completes PP.
+  LinkPurpose purpose;
   // Reusable target storage owned by the rank, not this borrowed view.
   iree_async_span_t storage;
   // Caller-owned connect operation joined before destruction.
@@ -160,8 +165,11 @@ struct Link {
   uint32_t remote_consumed = 0;
   // Application-consumed local prefix, never inferred from placement order.
   uint32_t consumed = 0;
-  // Last consumed coordinate admitted to the control channel.
+  // Last consumed or final-result coordinate admitted to the control channel.
   uint32_t published = 0;
+  // Final-stage microbatch coordinate, published or received on the result
+  // edge.
+  uint32_t result_coordinate = 0;
   // Exact accepted data-source returns.
   uint64_t completions = 0;
   // Accepted control messages requiring terminal callbacks.
@@ -172,15 +180,24 @@ struct Link {
   uint64_t payload_bytes = 0;
   // Maximum admitted but not yet consumed blocks.
   uint64_t high_water = 0;
+  // Maximum data-source callbacks outstanding, independent of peer consumption.
+  uint64_t source_high_water = 0;
 
   Link(const CollectiveTrialOptions& options, Control& control,
-       Direction direction, iree_async_span_t storage)
+       Direction direction, LinkPurpose purpose, iree_async_span_t storage)
       : options(options),
         control(control),
         direction(direction),
+        purpose(purpose),
         storage(storage),
-        sources(options.window_size),
-        inputs(options.window_size) {
+        sources(purpose == LinkPurpose::kData &&
+                        direction == Direction::kOutgoing
+                    ? options.window_size
+                    : 0),
+        inputs(purpose == LinkPurpose::kData &&
+                       direction == Direction::kIncoming
+                   ? storage.length / options.block_size
+                   : 0) {
     iree_net_transport_connect_operation_initialize(&connect_operation);
     for (auto& source : sources) {
       source.link = this;
@@ -196,7 +213,8 @@ struct Link {
   }
   bool Has(Flag flag) const { return (flags & flag) != 0; }
   bool Registered() const {
-    return options.delivery == CollectiveDelivery::kRegistered;
+    return purpose == LinkPurpose::kData &&
+           options.delivery == CollectiveDelivery::kRegistered;
   }
   bool Ready() const {
     return Has(kMessageReady) &&
@@ -217,6 +235,9 @@ struct Link {
                                size_t transferred) {
     auto& source = *static_cast<Source*>(value);
     source.pending = false;
+    if (source.pending_sources) {
+      --*source.pending_sources;
+    }
     ++source.link->completions;
     if (iree_status_is_ok(status) && transferred != source.expected_length) {
       status = iree_make_status(IREE_STATUS_DATA_LOSS,
@@ -227,7 +248,7 @@ struct Link {
   iree_status_t Receive(uint32_t sequence, iree_const_byte_span_t bytes,
                         iree_async_buffer_lease_t* lease) {
     if (!sequence || sequence <= consumed ||
-        sequence - consumed > options.window_size) {
+        sequence - consumed > inputs.size()) {
       return iree_make_status(IREE_STATUS_DATA_LOSS,
                               "collective input exceeds its reuse window");
     }
@@ -237,8 +258,17 @@ struct Link {
                               "collective input overwrote an unconsumed slot");
     }
     input.sequence = sequence;
-    input.bytes = bytes;
-    if (lease) {
+    if (lease && options.schedule == CollectiveSchedule::kPipeline) {
+      // Whole-activation readiness cannot retain the transport's entire receive
+      // pool. Stage message inputs in the same bounded layout as direct writes.
+      uint8_t* target = iree_async_span_ptr(storage) +
+                        ((sequence - 1) % inputs.size()) * options.block_size;
+      memcpy(target, bytes.data, bytes.data_length);
+      input.bytes = iree_make_const_byte_span(target, bytes.data_length);
+    } else {
+      input.bytes = bytes;
+    }
+    if (lease && options.schedule != CollectiveSchedule::kPipeline) {
       input.lease = *lease;
       memset(lease, 0, sizeof(*lease));
     }
@@ -256,8 +286,9 @@ struct Link {
       link.description.assign(payload.data, payload.data + payload.data_length);
       return iree_ok_status();
     }
-    if (queue_id != 1 || link.direction != Direction::kIncoming ||
-        link.Registered() || waits->count || signals->count != 1 ||
+    if (queue_id != 1 || link.purpose != LinkPurpose::kData ||
+        link.direction != Direction::kIncoming || link.Registered() ||
+        waits->count || signals->count != 1 ||
         payload.data_length > link.options.block_size) {
       return iree_make_status(IREE_STATUS_DATA_LOSS,
                               "unexpected collective data message");
@@ -275,7 +306,22 @@ struct Link {
                                  iree_const_byte_span_t payload,
                                  iree_async_buffer_lease_t*) {
     auto& link = *static_cast<Link*>(value);
-    if (link.direction != Direction::kOutgoing || signals->count != 1 ||
+    if (link.purpose == LinkPurpose::kResult &&
+        link.direction == Direction::kIncoming && signals->count == 1 &&
+        !payload.data_length) {
+      auto coordinate = iree_net_queue_frontier_view_get(signals, 0);
+      if (coordinate.axis != 2 ||
+          coordinate.epoch > static_cast<uint64_t>(link.options.warmup_rounds) +
+                                 link.options.measured_rounds) {
+        return iree_make_status(IREE_STATUS_DATA_LOSS,
+                                "unexpected pipeline result coordinate");
+      }
+      link.result_coordinate = std::max(
+          link.result_coordinate, static_cast<uint32_t>(coordinate.epoch));
+      return iree_ok_status();
+    }
+    if (link.purpose != LinkPurpose::kData ||
+        link.direction != Direction::kOutgoing || signals->count != 1 ||
         payload.data_length) {
       return iree_make_status(IREE_STATUS_DATA_LOSS,
                               "unexpected collective consumed message");
@@ -404,15 +450,23 @@ struct Link {
         control.Fail(status);
       }
     }
-    if (direction == Direction::kIncoming && consumed != published &&
+    bool publishes = purpose == LinkPurpose::kResult
+                         ? direction == Direction::kOutgoing
+                         : direction == Direction::kIncoming;
+    uint32_t progress =
+        purpose == LinkPurpose::kResult ? result_coordinate : consumed;
+    if (publishes && progress != published &&
         iree_net_queue_channel_query_send_budget(channel).slots) {
       iree_net_queue_channel_send_params_t params = {};
       params.signal_frontier_count = 1;
       params.build =
           +[](void* value, const iree_net_queue_message_builder_t* builder) {
             auto& link = *static_cast<Link*>(value);
-            iree_net_queue_frontier_builder_set(&builder->signal_frontier, 0,
-                                                {1, link.consumed});
+            iree_net_queue_frontier_builder_set(
+                &builder->signal_frontier, 0,
+                link.purpose == LinkPurpose::kResult
+                    ? iree_async_frontier_entry_t{2, link.result_coordinate}
+                    : iree_async_frontier_entry_t{1, link.consumed});
             return iree_ok_status();
           };
       params.build_user_data = this;
@@ -420,14 +474,15 @@ struct Link {
       iree_status_t status =
           iree_net_queue_channel_send_advance(channel, &params);
       if (iree_status_is_ok(status)) {
-        published = consumed;
+        published = progress;
         ++control_sends;
       }
       control.Fail(status);
     }
   }
   bool CanSend() const {
-    if (!Ready() || submitted - remote_consumed == options.window_size ||
+    if (!Ready() ||
+        submitted - remote_consumed == storage.length / options.block_size ||
         sources[submitted % sources.size()].pending) {
       return false;
     }
@@ -435,15 +490,21 @@ struct Link {
                ? iree_net_direct_endpoint_query_write_budget(direct).slots != 0
                : iree_net_queue_channel_query_send_budget(channel).slots != 0;
   }
-  void Send(iree_async_span_t data) {
+  void Send(iree_async_span_t data, uint32_t* pending_sources = nullptr) {
     uint32_t sequence = submitted + 1;
     auto& source = sources[submitted % sources.size()];
     source.pending = true;
     source.expected_length = data.length;
+    source.pending_sources = pending_sources;
+    if (pending_sources) {
+      ++*pending_sources;
+    }
     iree_status_t status = iree_ok_status();
     if (Registered()) {
       iree_net_direct_write_entry_t entry = {
-          data, &target, (submitted % sources.size()) * options.block_size};
+          data, &target,
+          (submitted % (storage.length / options.block_size)) *
+              options.block_size};
       iree_net_direct_write_params_t params = {};
       params.flags = IREE_NET_DIRECT_WRITE_FLAG_NOTIFY;
       params.notification_cookie = sequence;
@@ -471,15 +532,21 @@ struct Link {
       submitted = sequence;
       payload_bytes += data.length;
       high_water = std::max<uint64_t>(high_water, submitted - remote_consumed);
+      source_high_water =
+          std::max<uint64_t>(source_high_water, submitted - completions);
     } else {
       source.pending = false;
+      if (pending_sources) {
+        --*pending_sources;
+      }
     }
     control.Fail(status);
   }
-  const Input* NextInput() const {
-    const auto& input = inputs[consumed % inputs.size()];
-    return input.sequence == consumed + 1 ? &input : nullptr;
+  const Input* InputAt(uint32_t sequence) const {
+    const auto& input = inputs[(sequence - 1) % inputs.size()];
+    return input.sequence == sequence ? &input : nullptr;
   }
+  const Input* NextInput() const { return InputAt(consumed + 1); }
   void Consume() {
     auto& input = inputs[consumed % inputs.size()];
     iree_async_buffer_lease_release(&input.lease);
@@ -487,21 +554,38 @@ struct Link {
     ++consumed;
   }
   bool Idle() const {
+    if (purpose == LinkPurpose::kResult) {
+      return control_sends == control_completions &&
+             (direction == Direction::kIncoming ||
+              result_coordinate == published);
+    }
     return submitted == completions && submitted == remote_consumed &&
            consumed == published && control_sends == control_completions;
   }
 };
 
+// Validated, immutable application storage geometry shared by all ranks.
+struct StorageLayout {
+  // Output tensor slots, reused only after their exact source callbacks.
+  size_t output_size;
+  // Application input slots, independently sized from source callback records.
+  size_t target_slots;
+  // Output tensors followed by padded input blocks in one reusable slab.
+  size_t total_size;
+};
+
 struct Rank {
   // Shared immutable schedule dimensions.
   const CollectiveTrialOptions& options;
+  // Checked application storage dimensions established before any allocation.
+  const StorageLayout& layout;
   // Bootstrap/phase/error owner, not collective progress.
   Control& control;
   // Position in the ring, independent of connection arrival order.
   uint32_t index;
   // Application-owned executor, polled only by this rank's thread.
   iree_async_proactor_t* proactor = nullptr;
-  // Tensor followed by the fixed incoming block window.
+  // Output tensors followed by the bounded incoming block storage.
   iree_async_slab_t* slab = nullptr;
   // Optional registration shared by both rank edges.
   iree_async_region_t* region = nullptr;
@@ -521,9 +605,16 @@ struct Rank {
   std::unique_ptr<Link> outgoing;
   // Rank-local cumulative counters captured after each phase.
   std::array<CollectiveTrialResult, 2> results;
+  // Exact outstanding block sources for each pipeline output activation slot.
+  std::vector<uint32_t> pending_sources;
 
-  Rank(const CollectiveTrialOptions& options, Control& control, uint32_t index)
-      : options(options), control(control), index(index) {}
+  Rank(const CollectiveTrialOptions& options, const StorageLayout& layout,
+       Control& control, uint32_t index)
+      : options(options),
+        layout(layout),
+        control(control),
+        index(index),
+        pending_sources(options.pipeline_depth, 0) {}
   ~Rank() {
     outgoing.reset();
     incoming.reset();
@@ -551,8 +642,7 @@ struct Rank {
     }
     proactor = *created;
     auto slab_options = iree_async_slab_options_default();
-    slab_options.buffer_size =
-        options.tensor_size + options.block_size * options.window_size;
+    slab_options.buffer_size = layout.total_size;
     slab_options.buffer_count = 1;
     IREE_RETURN_IF_ERROR(
         iree_async_slab_create(slab_options, iree_allocator_system(), &slab));
@@ -564,11 +654,17 @@ struct Rank {
           transport.create_factory(iree_allocator_system(), &factory));
     }
     auto target =
-        Span(options.tensor_size, options.block_size * options.window_size);
-    incoming =
-        std::make_unique<Link>(options, control, Direction::kIncoming, target);
-    outgoing =
-        std::make_unique<Link>(options, control, Direction::kOutgoing, target);
+        Span(layout.output_size, options.block_size * layout.target_slots);
+    bool pipeline = options.schedule == CollectiveSchedule::kPipeline;
+    incoming = std::make_unique<Link>(
+        options, control, Direction::kIncoming,
+        pipeline && index == 0 ? LinkPurpose::kResult : LinkPurpose::kData,
+        target);
+    outgoing = std::make_unique<Link>(
+        options, control, Direction::kOutgoing,
+        pipeline && index + 1 == options.rank_count ? LinkPurpose::kResult
+                                                    : LinkPurpose::kData,
+        target);
     return iree_ok_status();
   }
   static void Accepted(void* value, iree_status_t status,
@@ -701,6 +797,134 @@ struct Rank {
       }
     }
   }
+  void Pipeline(uint32_t first, uint32_t count, CollectiveTrialResult& result) {
+    const uint32_t goal = first + count;
+    const size_t chunks = 1 + (options.tensor_size - 1) / options.block_size;
+    const bool last = index + 1 == options.rank_count;
+    uint32_t prepared = first;
+    uint32_t sent = first;
+    size_t sent_blocks = 0;
+    size_t arrived_blocks = 0;
+    bool first_observed = false;
+    const auto start = std::chrono::steady_clock::now();
+    while (!control.failed.load(std::memory_order_acquire)) {
+      Pump();
+      if (index == 0 && !first_observed &&
+          incoming->result_coordinate > first) {
+        first_observed = true;
+        result.first_completion_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                          start)
+                .count();
+      }
+      bool progressed = false;
+      while (prepared < goal &&
+             (last || prepared - sent < options.pipeline_depth) &&
+             pending_sources[prepared % options.pipeline_depth] == 0 &&
+             !control.failed.load(std::memory_order_acquire)) {
+        if (index == 0) {
+          if (prepared - incoming->result_coordinate ==
+              options.pipeline_depth) {
+            break;
+          }
+        } else {
+          while (arrived_blocks < chunks &&
+                 incoming->InputAt(incoming->consumed + arrived_blocks + 1)) {
+            ++arrived_blocks;
+          }
+          if (arrived_blocks != chunks) {
+            break;
+          }
+        }
+        // A stage runs only after every input block is available. Its output is
+        // distinct application storage, not a transport packing buffer.
+        auto* output = reinterpret_cast<uint32_t*>(iree_async_span_ptr(
+            Span((prepared % options.pipeline_depth) * options.tensor_size,
+                 options.tensor_size)));
+        for (size_t block = 0;
+             block < chunks && !control.failed.load(std::memory_order_acquire);
+             ++block) {
+          size_t offset = block * options.block_size;
+          size_t length =
+              std::min(options.block_size, options.tensor_size - offset);
+          const Link::Input* input =
+              index == 0 ? nullptr : incoming->NextInput();
+          if (input && !incoming->Registered() &&
+              input->bytes.data_length != length) {
+            control.Fail(iree_make_status(IREE_STATUS_DATA_LOSS,
+                                          "pipeline block length differs"));
+            break;
+          }
+          for (size_t i = 0; i < length / sizeof(uint32_t); ++i) {
+            size_t element = offset / sizeof(uint32_t) + i;
+            uint32_t value = input
+                                 ? iree_unaligned_load_le_u32(
+                                       input->bytes.data + i * sizeof(uint32_t))
+                                 : Value(0, prepared + 1, element);
+            output[element] = value + index + 1;
+          }
+          if (input) {
+            incoming->Consume();
+          }
+        }
+        if (last && !control.failed.load(std::memory_order_acquire)) {
+          for (size_t i = 0; i < options.tensor_size / sizeof(uint32_t); ++i) {
+            uint32_t expected = Value(0, prepared + 1, i) +
+                                static_cast<uint32_t>(
+                                    static_cast<uint64_t>(options.rank_count) *
+                                    (options.rank_count + 1ull) / 2);
+            if (output[i] != expected) {
+              control.Fail(iree_make_status(
+                  IREE_STATUS_DATA_LOSS,
+                  "pipeline result differs in microbatch %u element %zu",
+                  prepared + 1, i));
+              break;
+            }
+          }
+        }
+        ++prepared;
+        arrived_blocks = 0;
+        progressed = true;
+        if (last) {
+          outgoing->result_coordinate = prepared;
+        } else if (index == 0) {
+          result.pipeline_high_water =
+              std::max<uint64_t>(result.pipeline_high_water,
+                                 prepared - incoming->result_coordinate);
+        }
+      }
+      while (!last && sent < prepared && outgoing->CanSend() &&
+             !control.failed.load(std::memory_order_acquire)) {
+        size_t offset = sent_blocks * options.block_size;
+        size_t length =
+            std::min(options.block_size, options.tensor_size - offset);
+        size_t slot = sent % options.pipeline_depth;
+        outgoing->Send(Span(slot * options.tensor_size + offset, length),
+                       &pending_sources[slot]);
+        if (++sent_blocks == chunks) {
+          sent_blocks = 0;
+          ++sent;
+        }
+        progressed = true;
+      }
+      Pump();
+      if (prepared == goal && (last || sent == goal) &&
+          (index != 0 || incoming->result_coordinate == goal)) {
+        // Observe the first result even if one poll turn delivered the entire
+        // measured phase. Source/control joins remain in the phase drain.
+        if (index == 0 && !first_observed) {
+          result.first_completion_seconds =
+              std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                            start)
+                  .count();
+        }
+        break;
+      }
+      if (!progressed && !control.failed.load(std::memory_order_acquire)) {
+        Poll();
+      }
+    }
+  }
   void Shutdown() {
     if (listener) {
       control.Fail(iree_net_listener_stop(
@@ -771,9 +995,16 @@ struct Rank {
       uint32_t count =
           phase == 1 ? options.warmup_rounds : options.measured_rounds;
       outgoing->high_water = 0;
-      for (uint32_t i = 0;
-           i < count && !control.failed.load(std::memory_order_acquire); ++i) {
-        Reduce(++round);
+      outgoing->source_high_water = 0;
+      if (options.schedule == CollectiveSchedule::kPipeline) {
+        Pipeline(round, count, results[phase - 1]);
+        round += count;
+      } else {
+        for (uint32_t i = 0;
+             i < count && !control.failed.load(std::memory_order_acquire);
+             ++i) {
+          Reduce(++round);
+        }
       }
       // Phase timing includes every source return and consumed observation,
       // without imposing a control-message barrier between collective steps.
@@ -788,6 +1019,7 @@ struct Rank {
       results[phase - 1].source_completions = outgoing->completions;
       results[phase - 1].payload_bytes = outgoing->payload_bytes;
       results[phase - 1].window_high_water = outgoing->high_water;
+      results[phase - 1].source_window_high_water = outgoing->source_high_water;
       control.Arrive();
     }
     while (!control.closing.load(std::memory_order_acquire)) {
@@ -810,32 +1042,56 @@ iree_status_t RunCollectiveTrial(
     return iree_make_status(IREE_STATUS_UNAVAILABLE,
                             "transport has no registered collective setup");
   }
+  const bool pipeline = options.schedule == CollectiveSchedule::kPipeline;
   if (options.rank_count < 2 || !options.tensor_size ||
-      options.tensor_size % options.rank_count ||
-      (options.tensor_size / options.rank_count) % sizeof(uint32_t) ||
-      !options.block_size || options.block_size % sizeof(uint32_t) ||
-      !options.window_size || !options.warmup_rounds ||
+      options.tensor_size % sizeof(uint32_t) || !options.block_size ||
+      options.block_size % sizeof(uint32_t) || !options.window_size ||
+      !options.pipeline_depth || !options.warmup_rounds ||
       !options.measured_rounds ||
-      options.block_size >
-          (SIZE_MAX - options.tensor_size) / options.window_size) {
+      (!pipeline &&
+       (options.pipeline_depth != 1 ||
+        options.tensor_size % options.rank_count ||
+        (options.tensor_size / options.rank_count) % sizeof(uint32_t)))) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "invalid collective trial dimensions");
   }
-  uint64_t chunks =
-      1 + (options.tensor_size / options.rank_count - 1) / options.block_size;
+  uint64_t extent =
+      pipeline ? options.tensor_size : options.tensor_size / options.rank_count;
+  uint64_t chunks = 1 + (extent - 1) / options.block_size;
   uint64_t rounds =
       static_cast<uint64_t>(options.warmup_rounds) + options.measured_rounds;
-  if (rounds > UINT32_MAX ||
-      chunks > UINT32_MAX / rounds / 2 / (options.rank_count - 1) ||
-      options.tensor_size >
-          UINT64_MAX / options.measured_rounds / 2 / (options.rank_count - 1)) {
+  uint64_t edge_count =
+      static_cast<uint64_t>(options.rank_count - 1) * (pipeline ? 1 : 2);
+  uint64_t steps = pipeline ? 1 : edge_count;
+  if (rounds > UINT32_MAX || chunks > UINT32_MAX / rounds / steps ||
+      options.tensor_size > UINT64_MAX / options.measured_rounds / edge_count) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                             "collective trial work extent overflow");
+  }
+  uint64_t target_slots =
+      pipeline ? chunks * options.pipeline_depth : options.window_size;
+  if (options.tensor_size > SIZE_MAX / options.pipeline_depth ||
+      target_slots > UINT32_MAX ||
+      options.block_size >
+          (SIZE_MAX - options.tensor_size * options.pipeline_depth) /
+              target_slots) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "collective trial storage extent overflow");
+  }
+  StorageLayout layout = {
+      options.tensor_size * options.pipeline_depth,
+      static_cast<size_t>(target_slots),
+      options.tensor_size * options.pipeline_depth +
+          options.block_size * static_cast<size_t>(target_slots),
+  };
+  if (layout.total_size > UINT64_MAX / options.rank_count) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "collective trial aggregate storage overflow");
   }
   Control control;
   std::vector<std::unique_ptr<Rank>> ranks;
   for (uint32_t i = 0; i < options.rank_count; ++i) {
-    auto rank = std::make_unique<Rank>(options, control, i);
+    auto rank = std::make_unique<Rank>(options, layout, control, i);
     IREE_RETURN_IF_ERROR(rank->Initialize(transport, create_proactor));
     control.proactors.push_back(rank->proactor);
     ranks.push_back(std::move(rank));
@@ -878,10 +1134,17 @@ iree_status_t RunCollectiveTrial(
   }
   if (!control.failed.load(std::memory_order_acquire)) {
     out_result->elapsed_seconds = elapsed_seconds;
-    out_result->collectives = options.measured_rounds;
+    if (pipeline) {
+      out_result->microbatches = options.measured_rounds;
+      out_result->first_completion_seconds =
+          ranks[0]->results[1].first_completion_seconds;
+      out_result->pipeline_high_water =
+          ranks[0]->results[1].pipeline_high_water;
+    } else {
+      out_result->collectives = options.measured_rounds;
+    }
     out_result->payload_storage_bytes =
-        options.rank_count *
-        (options.tensor_size + options.block_size * options.window_size);
+        options.rank_count * static_cast<uint64_t>(layout.total_size);
     for (const auto& rank : ranks) {
       out_result->sends += rank->results[1].sends - rank->results[0].sends;
       out_result->source_completions += rank->results[1].source_completions -
@@ -890,6 +1153,9 @@ iree_status_t RunCollectiveTrial(
           rank->results[1].payload_bytes - rank->results[0].payload_bytes;
       out_result->window_high_water = std::max(
           out_result->window_high_water, rank->results[1].window_high_water);
+      out_result->source_window_high_water =
+          std::max(out_result->source_window_high_water,
+                   rank->results[1].source_window_high_water);
     }
   }
   return control.error.release();
