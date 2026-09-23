@@ -487,7 +487,7 @@ check.case @custom {
 TEST_F(ExpectationTest, EvaluatesDeviceEventExpectations) {
   loom_module_t* module = ParseModule(R"(
 check.case @device_event {
-  check.expect.event<device> {type = "tsan_report", severity = "error", count = 1, driver = "amdgpu", tsan = {check = "data_race", memory = "workgroup", current_access = "write", prior_access = "read", access_length = 4, current_atomic = false, prior_atomic = false}}
+  check.expect.event<device> {type = "tsan_report", severity = "error", count = 1, driver = "amdgpu", tsan = {check = "data_race", memory = "workgroup", current_access = "write", prior_access = "read", access_length = 4, memory_address = 12, current_atomic = false, prior_atomic = false}}
   check.expect.event<device> {type = "asan_report", count = 0}
   check.return
 }
@@ -517,6 +517,7 @@ check.case @device_event {
   tsan_report.current_access_kind = IREE_HAL_DEVICE_TSAN_ACCESS_KIND_WRITE;
   tsan_report.prior_access_kind = IREE_HAL_DEVICE_TSAN_ACCESS_KIND_READ;
   tsan_report.access_length = 4;
+  tsan_report.memory_address = 12;
   iree_hal_device_event_t event = iree_hal_device_event_default();
   event.type = IREE_HAL_DEVICE_EVENT_TYPE_TSAN_REPORT;
   event.severity = IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR;

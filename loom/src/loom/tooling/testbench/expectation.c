@@ -1239,6 +1239,7 @@ static iree_status_t loom_testbench_event_match_tsan(
       IREE_SV("current_access"),
       IREE_SV("prior_access"),
       IREE_SV("access_length"),
+      IREE_SV("memory_address"),
       IREE_SV("current_site_id"),
       IREE_SV("prior_site_id"),
       IREE_SV("current_atomic"),
@@ -1282,6 +1283,11 @@ static iree_status_t loom_testbench_event_match_tsan(
   IREE_RETURN_IF_ERROR(loom_testbench_event_optional_i64(
       module, attrs, IREE_SV("access_length"), &access_length_present,
       &access_length));
+  bool memory_address_present = false;
+  int64_t memory_address = 0;
+  IREE_RETURN_IF_ERROR(loom_testbench_event_optional_i64(
+      module, attrs, IREE_SV("memory_address"), &memory_address_present,
+      &memory_address));
   bool current_site_id_present = false;
   int64_t current_site_id = 0;
   IREE_RETURN_IF_ERROR(loom_testbench_event_optional_i64(
@@ -1330,6 +1336,8 @@ static iree_status_t loom_testbench_event_match_tsan(
       (!prior_access_present || report.prior_access_kind == prior_access) &&
       loom_testbench_event_match_optional_u32(
           report.access_length, access_length_present, access_length) &&
+      loom_testbench_event_match_optional_u64(
+          report.memory_address, memory_address_present, memory_address) &&
       loom_testbench_event_match_optional_u64(
           report.current_site_id, current_site_id_present, current_site_id) &&
       loom_testbench_event_match_optional_u64(

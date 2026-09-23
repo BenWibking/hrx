@@ -18,6 +18,7 @@ load(
     "AMDGPU_ACCESS_PROFILE",
     "AMDGPU_ASAN_PROFILE",
     "AMDGPU_HARDWARE_PROFILE",
+    "AMDGPU_TSAN_BYTE_GRANULE_PROFILE",
     "AMDGPU_TSAN_PROFILE",
 )
 
@@ -413,7 +414,10 @@ loom_test(
 loom_test(
     name = "tsan_test",
     srcs = ["//loom/src/loom/test/corpus/sanitizer:amdgpu_tsan_actual.loom"],
-    execution_profiles = [AMDGPU_TSAN_PROFILE],
+    execution_profiles = [
+        AMDGPU_TSAN_BYTE_GRANULE_PROFILE,
+        AMDGPU_TSAN_PROFILE,
+    ],
 )
 
 iree_execution_test_suite(
