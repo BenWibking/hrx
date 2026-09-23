@@ -17,6 +17,17 @@ package(
 )
 
 loom_cc_library(
+    name = "combine_patterns",
+    srcs = ["combine_patterns.c"],
+    hdrs = ["combine_patterns.h"],
+    deps = [
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/rewrite:pattern_registry",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "bank_sroa",
     srcs = [
         "bank_sroa.c",

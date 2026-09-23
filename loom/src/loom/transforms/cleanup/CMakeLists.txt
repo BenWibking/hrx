@@ -11,6 +11,77 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    patterns
+  HDRS
+    "patterns.h"
+  SRCS
+    "patterns.c"
+  DEPS
+    iree::base
+    loom::rewrite::pattern_registry
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    pass_requirements
+  HDRS
+    "pass_requirements.h"
+  DEPS
+
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    pass_environment
+  HDRS
+    "pass_environment.h"
+  SRCS
+    "pass_environment.c"
+  DEPS
+    ::pass_requirements
+    ::patterns
+    loom::pass::environment
+    loom::pass::types
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    configured
+  HDRS
+    "configured.h"
+  SRCS
+    "configured.c"
+  DEPS
+    ::patterns
+    loom::transforms::scf::combine_patterns
+    loom::transforms::vector::combine_patterns
+    loom::transforms::view::combine_patterns
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    patterns_test
+  SRCS
+    "patterns_test.cc"
+  DEPS
+    ::configured
+    ::pass_environment
+    ::pass_requirements
+    ::patterns
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ops::scf
+    loom::ops::vector
+    loom::ops::view
+    loom::pass::environment
+)
+
+loom_cc_library(
+  NAME
     branch_facts
   HDRS
     "branch_facts.h"

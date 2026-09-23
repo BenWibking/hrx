@@ -13,6 +13,63 @@ package(
 )
 
 loom_cc_library(
+    name = "patterns",
+    srcs = ["patterns.c"],
+    hdrs = ["patterns.h"],
+    deps = [
+        "//loom/src/loom/rewrite:pattern_registry",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "pass_requirements",
+    hdrs = ["pass_requirements.h"],
+    visibility = ["//loom/src/loom/pass:__pkg__"],
+)
+
+loom_cc_library(
+    name = "pass_environment",
+    srcs = ["pass_environment.c"],
+    hdrs = ["pass_environment.h"],
+    deps = [
+        ":pass_requirements",
+        ":patterns",
+        "//loom/src/loom/pass:environment",
+        "//loom/src/loom/pass:types",
+    ],
+)
+
+loom_cc_library(
+    name = "configured",
+    srcs = ["configured.c"],
+    hdrs = ["configured.h"],
+    deps = [
+        ":patterns",
+        "//loom/src/loom/transforms/scf:combine_patterns",
+        "//loom/src/loom/transforms/vector:combine_patterns",
+        "//loom/src/loom/transforms/view:combine_patterns",
+    ],
+)
+
+loom_cc_test(
+    name = "patterns_test",
+    srcs = ["patterns_test.cc"],
+    deps = [
+        ":configured",
+        ":pass_environment",
+        ":pass_requirements",
+        ":patterns",
+        "//loom/src/loom/ops/scf",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/ops/view",
+        "//loom/src/loom/pass:environment",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "branch_facts",
     srcs = ["branch_facts.c"],
     hdrs = ["branch_facts.h"],

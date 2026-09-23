@@ -13,6 +13,17 @@ package(
 )
 
 loom_cc_library(
+    name = "combine_patterns",
+    srcs = ["combine_patterns.c"],
+    hdrs = ["combine_patterns.h"],
+    deps = [
+        "//loom/src/loom/ops/scf",
+        "//loom/src/loom/rewrite:pattern_registry",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "scf_memory",
     srcs = ["scf_memory.c"],
     hdrs = ["scf_memory.h"],
