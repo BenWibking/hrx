@@ -18,6 +18,7 @@
 #include "loom/ir/module.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
+#include "loom/ops/sanitizer/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/scf/ops.h"
 #include "loom/util/fact_table.h"
@@ -360,6 +361,72 @@ TEST_F(SymbolicExprTest, AssumedValueRelationPredicatesProveRelations) {
       &expression_context_, LOOM_SYMBOLIC_INTEGER_RELATION_NE,
       assumed_induction, upper_bound, &proof));
   EXPECT_EQ(proof, LOOM_SYMBOLIC_PROOF_TRUE);
+}
+
+TEST_F(SymbolicExprTest, CheckedIdentityPredicateProvesDynamicExtent) {
+  const loom_value_id_t row = DefineIndexValue();
+  const loom_value_id_t row_count = DefineIndexValue();
+  const loom_value_id_t values[] = {row, row_count};
+  const loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  const loom_type_t result_types[] = {index_type, index_type};
+  const loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{row, row_count},
+  };
+  loom_op_t* assertion_op = nullptr;
+  IREE_ASSERT_OK(loom_sanitizer_assert_value_build(
+      &builder_, values, IREE_ARRAYSIZE(values), &predicate, 1, result_types,
+      IREE_ARRAYSIZE(result_types), LOOM_LOCATION_UNKNOWN, &assertion_op));
+  const loom_value_slice_t checked_values =
+      loom_sanitizer_assert_value_results(assertion_op);
+
+  const loom_value_id_t one = loom_index_constant_result(BuildIndexConstant(1));
+  loom_op_t* row_end_op = nullptr;
+  IREE_ASSERT_OK(loom_index_add_build(&builder_, checked_values.values[0], one,
+                                      index_type, LOOM_LOCATION_UNKNOWN,
+                                      &row_end_op));
+
+  loom_symbolic_proof_result_t proof = LOOM_SYMBOLIC_PROOF_UNKNOWN;
+  IREE_ASSERT_OK(loom_symbolic_expr_prove_value_relation(
+      &expression_context_, LOOM_SYMBOLIC_INTEGER_RELATION_LE,
+      loom_index_add_result(row_end_op), checked_values.values[1], &proof));
+  EXPECT_EQ(proof, LOOM_SYMBOLIC_PROOF_TRUE);
+}
+
+TEST_F(SymbolicExprTest, CheckedIdentityNonStrictPredicateDoesNotProveExtent) {
+  const loom_value_id_t row = DefineIndexValue();
+  const loom_value_id_t row_count = DefineIndexValue();
+  const loom_value_id_t values[] = {row, row_count};
+  const loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  const loom_type_t result_types[] = {index_type, index_type};
+  const loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LE,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{row, row_count},
+  };
+  loom_op_t* assertion_op = nullptr;
+  IREE_ASSERT_OK(loom_sanitizer_assert_value_build(
+      &builder_, values, IREE_ARRAYSIZE(values), &predicate, 1, result_types,
+      IREE_ARRAYSIZE(result_types), LOOM_LOCATION_UNKNOWN, &assertion_op));
+  const loom_value_slice_t checked_values =
+      loom_sanitizer_assert_value_results(assertion_op);
+
+  const loom_value_id_t one = loom_index_constant_result(BuildIndexConstant(1));
+  loom_op_t* row_end_op = nullptr;
+  IREE_ASSERT_OK(loom_index_add_build(&builder_, checked_values.values[0], one,
+                                      index_type, LOOM_LOCATION_UNKNOWN,
+                                      &row_end_op));
+
+  loom_symbolic_proof_result_t proof = LOOM_SYMBOLIC_PROOF_UNKNOWN;
+  IREE_ASSERT_OK(loom_symbolic_expr_prove_value_relation(
+      &expression_context_, LOOM_SYMBOLIC_INTEGER_RELATION_LE,
+      loom_index_add_result(row_end_op), checked_values.values[1], &proof));
+  EXPECT_EQ(proof, LOOM_SYMBOLIC_PROOF_UNKNOWN);
 }
 
 TEST_F(SymbolicExprTest, ScaledStrictRelationProvesLessEqualWithUnitExtent) {

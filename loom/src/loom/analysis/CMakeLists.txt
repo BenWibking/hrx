@@ -1311,6 +1311,7 @@ loom_cc_library(
     iree::testing::gtest
     loom::ir
     loom::ops::index
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
     loom::util::fact_table
@@ -1411,6 +1412,7 @@ loom_cc_test(
     loom::ir
     loom::ops::index
     loom::ops::op_defs
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
 )
@@ -1431,6 +1433,7 @@ loom_cc_test(
     loom::ops::index
     loom::ops::kernel
     loom::ops::op_defs
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
     loom::util::fact_table

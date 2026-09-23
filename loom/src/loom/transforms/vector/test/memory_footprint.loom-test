@@ -694,6 +694,27 @@ func.def @dynamic_unit_axis_proven_by_assume_relation(%buffer: buffer, %base: of
 
 // ====
 
+func.def @dynamic_unit_axis_proven_by_checked_relation(%buffer: buffer, %base: offset, %row: index, %n: index) {
+  %layout = encoding.layout.dense : encoding<layout>
+  %checked_row, %checked_n = sanitizer.assert.value %row, %n [ge(%row, 0), lt(%row, %n)] : index, index
+  %view = buffer.view %buffer[%base] : buffer -> view<[%checked_n]x4xf32, %layout>
+  %loaded = vector.load %view[%checked_row, 0] : view<[%checked_n]x4xf32, %layout> -> vector<4xf32>
+  func.return
+}
+
+// ====
+
+func.def @dynamic_unit_axis_rejects_non_strict_checked_relation(%buffer: buffer, %base: offset, %row: index, %n: index) {
+  %layout = encoding.layout.dense : encoding<layout>
+  %checked_row, %checked_n = sanitizer.assert.value %row, %n [ge(%row, 0), le(%row, %n)] : index, index
+  %view = buffer.view %buffer[%base] : buffer -> view<[%checked_n]x4xf32, %layout>
+  // ERROR@+1: SUBRANGE/011 {op_name="vector.load", vector_extent="1", constraint_key="vector_footprint.scalar_axis_upper_bound"}
+  %loaded = vector.load %view[%checked_row, 0] : view<[%checked_n]x4xf32, %layout> -> vector<4xf32>
+  func.return
+}
+
+// ====
+
 func.def @dynamic_unit_axis_proven_by_remainder_relation(%buffer: buffer, %base: offset, %lane0: index, %columns0: index) {
   %layout = encoding.layout.dense : encoding<layout>
   %lane = index.assume %lane0 [range(%lane0, 0, 4095)] : index
