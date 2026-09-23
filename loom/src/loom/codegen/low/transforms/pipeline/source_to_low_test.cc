@@ -26,6 +26,7 @@
 #include "loom/ops/func/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/pass/ops.h"
+#include "loom/ops/sanitizer/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/target/facts.h"
 #include "loom/ops/target/ops.h"
@@ -104,6 +105,7 @@ class LowLowerPassTest : public ::testing::Test {
                                      &block_pool_);
     loom_context_initialize(iree_allocator_system(), &context_);
     RegisterDialect(LOOM_DIALECT_PASS, loom_pass_dialect_vtables);
+    RegisterDialect(LOOM_DIALECT_SANITIZER, loom_sanitizer_dialect_vtables);
     RegisterDialect(LOOM_DIALECT_TARGET, loom_target_dialect_vtables);
     RegisterDialect(LOOM_DIALECT_FUNC, loom_func_dialect_vtables);
     RegisterDialect(LOOM_DIALECT_LOW, loom_low_dialect_vtables);
@@ -692,6 +694,27 @@ TEST_F(LowLowerPassTest,
       RunSourceToLow(&policy_registry, module.get(), &collector);
   EXPECT_EQ(collector.count, 0);
   IREE_ASSERT_OK(status);
+}
+
+TEST_F(LowLowerPassTest, EffectfulFactIdentityRequiresTargetContract) {
+  ModulePtr module = Parse(IREE_SV(
+      "test.target<low_core> @test_target\n"
+      "func.def target(@test_target) @assert_nonzero(%value: i32) -> (i32) {\n"
+      "  %checked = sanitizer.assert.value %value [ne(%value, 0)] : i32\n"
+      "  func.return %checked : i32\n"
+      "}\n"));
+
+  DiagnosticEmissionCollector collector;
+  IREE_ASSERT_OK(RunSourceToLow(&policy_registry_, module.get(), &collector));
+  ASSERT_EQ(collector.count, 1);
+  EXPECT_EQ(collector.last_error, LOOM_ERR_TARGET_001);
+
+  const loom_symbol_ref_t function_ref =
+      FindSymbolRef(module.get(), IREE_SV("assert_nonzero"));
+  const loom_op_t* function_op =
+      module->symbols.entries[function_ref.symbol_id].defining_op;
+  ASSERT_NE(function_op, nullptr);
+  EXPECT_TRUE(loom_func_def_isa(function_op));
 }
 
 TEST_F(LowLowerPassTest, InvokeNormalizesToDirectLowCallWithPolicyPreserved) {

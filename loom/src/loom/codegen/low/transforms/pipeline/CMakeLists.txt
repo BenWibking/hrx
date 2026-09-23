@@ -94,6 +94,7 @@ loom_cc_test(
     loom::ops::func
     loom::ops::low
     loom::ops::pass
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::target
     loom::ops::template
