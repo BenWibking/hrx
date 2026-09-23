@@ -2,7 +2,7 @@
 
 func.decl @copy(%input: buffer, %output: buffer)
 
-pipeline.def<kernel> @matching_records() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @matching_records() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 2 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -11,7 +11,7 @@ pipeline.def<kernel> @matching_records() launch(%input: buffer, %output: buffer)
   %input_flow = pipeline.scatter %input_view across %workers : view<2x1x3x4xi32>, group -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x3x4xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -20,9 +20,9 @@ pipeline.def<kernel> @matching_records() launch(%input: buffer, %output: buffer)
 
 // Verification rejects invalid input before the planner consumes it.
 
-// ERROR@+1: TYPE/003 {operand_name="launch binding 0", actual_type="i32", expected_constraint="buffer"}
-pipeline.def @non_buffer_binding() launch(%binding: i32) {
-  pipeline.return
+// ERROR@+1: TYPE/003 {operand_name="run binding 0", actual_type="i32", expected_constraint="buffer"}
+pipeline.def @non_buffer_binding() run(%binding: i32) {
+  pipeline.finish
 }
 
 // ====

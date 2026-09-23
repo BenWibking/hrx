@@ -36,18 +36,18 @@ typedef struct loom_pipeline_plan_view_binding_t {
   // Source view SSA identity.
   loom_value_id_t source_value;
 
-  // Launch binding ordinal referenced by the view.
+  // Run binding ordinal referenced by the view.
   uint32_t binding_index;
 
-  // Exact byte offset from the launch binding base.
+  // Exact byte offset from the run binding base.
   uint64_t byte_offset;
 } loom_pipeline_plan_view_binding_t;
 
 typedef struct loom_pipeline_plan_write_t {
-  // Logical flow written to the launch binding.
+  // Logical flow written to the run binding.
   uint32_t flow_index;
 
-  // Destination launch binding ordinal.
+  // Destination run binding ordinal.
   uint32_t binding_index;
 
   // Typed destination binding view.
@@ -70,17 +70,17 @@ typedef struct loom_pipeline_plan_builder_t {
   // Scratch arena owning plan and builder storage.
   iree_arena_allocator_t* arena;
 
-  // Launch binding table.
+  // Run binding table.
   loom_pipeline_plan_binding_t* bindings;
 
-  // Number of launch binding slots.
+  // Number of run binding slots.
   uint32_t binding_count;
 
   // Next unclaimed endpoint port for each binding. Each port consumes one
   // binding view, so the measured binding-view capacity bounds every ordinal.
   uint32_t* binding_next_ports;
 
-  // Typed launch-binding views used by external flows.
+  // Typed run-binding views used by external flows.
   loom_pipeline_plan_binding_view_t* binding_views;
 
   // Number of defined binding views.
@@ -155,22 +155,22 @@ typedef struct loom_pipeline_plan_builder_t {
   // Maximum concrete edges allocated.
   uint32_t edge_capacity;
 
-  // Deferred launch-binding writes.
+  // Deferred run-binding writes.
   loom_pipeline_plan_write_t* writes;
 
-  // Number of deferred launch-binding writes.
+  // Number of deferred run-binding writes.
   uint32_t write_count;
 
-  // Maximum deferred launch-binding writes allocated.
+  // Maximum deferred run-binding writes allocated.
   uint32_t write_capacity;
 
-  // Source launch views and their binding ordinals.
+  // Source run views and their binding ordinals.
   loom_pipeline_plan_view_binding_t* view_bindings;
 
-  // Number of source launch views recorded.
+  // Number of source run views recorded.
   uint32_t view_binding_count;
 
-  // Maximum source launch views allocated.
+  // Maximum source run views allocated.
   uint32_t view_binding_capacity;
 } loom_pipeline_plan_builder_t;
 
@@ -487,7 +487,7 @@ static iree_status_t loom_pipeline_plan_binding_for_view(
   }
   return iree_make_status(
       IREE_STATUS_INVALID_ARGUMENT,
-      "pipeline external flow must use a direct launch-binding view");
+      "pipeline external flow must use a direct run-binding view");
 }
 
 static iree_status_t loom_pipeline_plan_parse_view(
@@ -499,14 +499,13 @@ static iree_status_t loom_pipeline_plan_parse_view(
       loom_value_def_block(buffer) != entry_block) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
-        "pipeline views must be formed directly from launch bindings");
+        "pipeline views must be formed directly from run bindings");
   }
   const uint32_t argument_index = loom_value_def_index(buffer);
   if (argument_index < specialization_count ||
       argument_index - specialization_count >= builder->binding_count) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "pipeline view does not reference a launch binding");
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "pipeline view does not reference a run binding");
   }
   uint64_t byte_offset = 0;
   IREE_RETURN_IF_ERROR(
@@ -1499,7 +1498,7 @@ static iree_status_t loom_pipeline_plan_parse_graph(
     } else if (loom_pipeline_write_isa(op)) {
       IREE_RETURN_IF_ERROR(loom_pipeline_plan_parse_write(
           builder, op, diagnostic_emitter, &valid));
-    } else if (loom_pipeline_return_isa(op)) {
+    } else if (loom_pipeline_finish_isa(op)) {
       continue;
     } else if (!loom_pipeline_plan_op_is_compile_time(builder, op)) {
       const iree_string_view_t name =

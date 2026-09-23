@@ -675,13 +675,13 @@ TEST_F(TemplateSyncTest, CopiesScopedDefinitionsAndSourceComments) {
   std::string target_source =
       std::string(preamble) +
       "func.decl @local_target()\n"
-      "pipeline.def retain target(@local_target) @entry() launch() {\n"
-      "  pipeline.return\n}\n";
+      "pipeline.def retain target(@local_target) @entry() run() {\n"
+      "  pipeline.finish\n}\n";
   const char* template_source =
       "// A scoped pipeline owns this source contract.\n"
-      "pipeline.def <kernel> public retain @entry() launch() {\n"
+      "pipeline.def <kernel> public retain @entry() run() {\n"
       "  // The body is copied without rewriting its header.\n"
-      "  pipeline.return\n}\n";
+      "  pipeline.finish\n}\n";
   std::string result;
   bool changed = false;
   IREE_ASSERT_OK(

@@ -108,7 +108,7 @@ _PIPELINE_SIGNATURE_FORMAT = [
                 group="specializations",
                 end_attr="specialization_count",
             ),
-            kw("launch"),
+            kw("run"),
             FuncArgs(
                 "args",
                 group="bindings",
@@ -147,7 +147,7 @@ pipeline_def = Op(
     phase=OpPhase.EXECUTABLE,
     doc=(
         "Persistent dataflow program. Leading specialization arguments remain "
-        "ordinary SSA values and launch bindings are supplied when the "
+        "ordinary SSA values and run bindings are supplied when the "
         "materialized pipeline is issued. The optional scope fixes the artifact "
         "boundary that lowering must satisfy."
     ),
@@ -166,7 +166,7 @@ pipeline_def = Op(
         RegionDef(
             "body",
             doc="Portable scheduling groups, flows, and stage graph.",
-            terminator="pipeline.return",
+            terminator="pipeline.finish",
             buffer_arg_memory_space="global",
         )
     ],
@@ -187,8 +187,8 @@ pipeline_def = Op(
         Region("body"),
     ],
     examples=[
-        "pipeline.def<kernel> target(@array) @resident() launch(%input: buffer, %output: buffer) {\n  pipeline.return\n}",
-        "pipeline.def @heterogeneous(%batch: index) launch(%input: buffer) {\n  pipeline.return\n}",
+        "pipeline.def<kernel> target(@array) @resident() run(%input: buffer, %output: buffer) {\n  pipeline.finish\n}",
+        "pipeline.def @heterogeneous(%batch: index) run(%input: buffer) {\n  pipeline.finish\n}",
     ],
 )
 
@@ -439,12 +439,12 @@ pipeline_write = Op(
     examples=["pipeline.write %result to %output : pipeline.flow<tile<8x8xi32>>, view<8x8xi32>"],
 )
 
-pipeline_return = Op(
-    "pipeline.return",
+pipeline_finish = Op(
+    "pipeline.finish",
     group=pipeline_ops,
-    doc="Terminate a pipeline definition.",
+    doc=("Complete the pipeline body. Invocation completion follows the execution and communication obligations of the materialized program."),
     traits=[TERMINATOR, HasParent("pipeline.def")],
-    examples=["pipeline.return"],
+    examples=["pipeline.finish"],
 )
 
 ALL_PIPELINE_TYPES: tuple[TypeDef, ...] = (pipeline_flow_type,)
@@ -457,5 +457,5 @@ ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_fold,
     pipeline_reduce,
     pipeline_write,
-    pipeline_return,
+    pipeline_finish,
 )

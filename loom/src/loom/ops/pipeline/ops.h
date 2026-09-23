@@ -28,7 +28,7 @@ enum {
   LOOM_OP_PIPELINE_FOLD = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 5),
   LOOM_OP_PIPELINE_REDUCE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 6),
   LOOM_OP_PIPELINE_WRITE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 7),
-  LOOM_OP_PIPELINE_RETURN = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 8),
+  LOOM_OP_PIPELINE_FINISH = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 8),
   LOOM_OP_PIPELINE_COUNT_ = 9,
 };
 
@@ -60,9 +60,9 @@ typedef enum loom_pipeline_def_retain_e {
   LOOM_PIPELINE_DEF_RETAIN_COUNT_ = 2,
 } loom_pipeline_def_retain_t;
 
-// LOOM_OP_PIPELINE_DEF: Persistent dataflow program. Leading specialization arguments remain ordinary SSA values and launch bindings are supplied when the materialized pipeline is issued. The optional scope fixes the artifact boundary that lowering must satisfy.
-// pipeline.def<kernel> target(@array) @resident() launch(%input: buffer, %output: buffer) {
-//   pipeline.return
+// LOOM_OP_PIPELINE_DEF: Persistent dataflow program. Leading specialization arguments remain ordinary SSA values and run bindings are supplied when the materialized pipeline is issued. The optional scope fixes the artifact boundary that lowering must satisfy.
+// pipeline.def<kernel> target(@array) @resident() run(%input: buffer, %output: buffer) {
+//   pipeline.finish
 // }
 LOOM_DEFINE_ISA(loom_pipeline_def_isa, LOOM_OP_PIPELINE_DEF)
 LOOM_DEFINE_ATTR_SYMBOL(loom_pipeline_def_callee, 0)
@@ -237,10 +237,10 @@ iree_status_t loom_pipeline_write_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_PIPELINE_RETURN: Terminate a pipeline definition.
-// pipeline.return
-LOOM_DEFINE_ISA(loom_pipeline_return_isa, LOOM_OP_PIPELINE_RETURN)
-iree_status_t loom_pipeline_return_build(
+// LOOM_OP_PIPELINE_FINISH: Complete the pipeline body. Invocation completion follows the execution and communication obligations of the materialized program.
+// pipeline.finish
+LOOM_DEFINE_ISA(loom_pipeline_finish_isa, LOOM_OP_PIPELINE_FINISH)
+iree_status_t loom_pipeline_finish_build(
     loom_builder_t* builder,
     loom_location_id_t location,
     loom_op_t** out_op);

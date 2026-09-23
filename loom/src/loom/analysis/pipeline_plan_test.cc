@@ -97,7 +97,7 @@ func.def @reduce(%partial0: buffer, %partial1: buffer, %bias: buffer, %output: b
   func.return
 }
 
-pipeline.def<kernel> @split_k() launch(%lhs: buffer, %rhs: buffer, %bias: buffer, %output: buffer) {
+pipeline.def<kernel> @split_k() run(%lhs: buffer, %rhs: buffer, %bias: buffer, %output: buffer) {
   %product_lanes = index.constant 2 : index
   %reducer_lanes = index.constant 1 : index
   %ring_capacity = index.constant 2 : index
@@ -119,7 +119,7 @@ pipeline.def<kernel> @split_k() launch(%lhs: buffer, %rhs: buffer, %bias: buffer
   %buffered_partials = pipeline.buffer %folded_partials capacity %ring_capacity : (pipeline.flow<tile<[%tile_extent]x[%tile_extent]xi32>>, index) -> pipeline.flow<tile<[%tile_extent]x[%tile_extent]xi32>>
   %result = pipeline.reduce @reduce from %products(%buffered_partials) to %reducers(%bias_tile) : (group, pipeline.flow<tile<[%tile_extent]x[%tile_extent]xi32>>) to (group, pipeline.flow<tile<[%tile_extent]x[%tile_extent]xi32>>) -> (pipeline.flow<tile<[%tile_extent]x[%tile_extent]xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<[%tile_extent]x[%tile_extent]xi32>>, view<[%record_rows]x[%tile_extent]x[%tile_extent]xi32>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -233,7 +233,7 @@ func.def @add(%lhs: buffer, %rhs: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @parallel_folds() launch(%left: buffer, %right: buffer, %shared: buffer, %left_output: buffer, %right_output: buffer) {
+pipeline.def<kernel> @parallel_folds() run(%left: buffer, %right: buffer, %shared: buffer, %left_output: buffer, %right_output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -251,7 +251,7 @@ pipeline.def<kernel> @parallel_folds() launch(%left: buffer, %right: buffer, %sh
   %right_sum = pipeline.fold<addf> %right_records : pipeline.flow<tile<1xf32>>
   pipeline.write %left_sum to %left_output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
   pipeline.write %right_sum to %right_output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -284,7 +284,7 @@ func.def @copy(%input: buffer, %output: buffer) {
 func.def @join(%lhs: buffer, %rhs: buffer, %output: buffer) {
   func.return
 }
-pipeline.def<kernel> @frames() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @frames() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -299,7 +299,7 @@ pipeline.def<kernel> @frames() launch(%input: buffer, %output: buffer) {
   %right_sum = pipeline.fold<addf> %right : pipeline.flow<tile<1xf32>>
   %result = pipeline.stage @join on %workers(%finished, %right_sum) : (group, pipeline.flow<tile<1xf32>>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xf32>>, view<3x1xf32>
-  pipeline.return
+  pipeline.finish
 }
 )");
   loom_pipeline_plan_t plan = {};
@@ -337,7 +337,7 @@ TEST_F(PipelinePlanTest, PreservesCompletionDependencyForOneRecordFold) {
 func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
-pipeline.def<kernel> @one_record() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @one_record() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -349,7 +349,7 @@ pipeline.def<kernel> @one_record() launch(%input: buffer, %output: buffer) {
   %sum = pipeline.fold<addf> %records : pipeline.flow<tile<1xf32>>
   %result = pipeline.stage @copy on %workers(%sum) : (group, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
-  pipeline.return
+  pipeline.finish
 }
 )");
   loom_pipeline_plan_t plan = {};
@@ -376,7 +376,7 @@ func.def @consume(%weight: buffer, %activation: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @encoded() launch(%weight: buffer, %activation: buffer) {
+pipeline.def<kernel> @encoded() run(%weight: buffer, %activation: buffer) {
   %lane_count = index.constant 2 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -385,7 +385,7 @@ pipeline.def<kernel> @encoded() launch(%weight: buffer, %activation: buffer) {
   %weight_records = pipeline.scatter %weight_view across %workers : view<2x3x176xi8, #encoding.storage<layout=#encoding.layout.dense, schema=#ggml.q5_k>>, group -> pipeline.flow<tile<176xi8>>
   %activation_records = pipeline.scatter %activation_view across %workers : view<2x3x2x144xi8, #encoding.storage<layout=#encoding.layout.dense, schema=#ggml.q8_1_x4>>, group -> pipeline.flow<tile<2x144xi8>>
   pipeline.stage @consume on %workers(%weight_records, %activation_records) : (group, pipeline.flow<tile<176xi8>>, pipeline.flow<tile<2x144xi8>>) -> ()
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -430,14 +430,14 @@ func.def @consume(%weight: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @partial_record() launch(%weight: buffer) {
+pipeline.def<kernel> @partial_record() run(%weight: buffer) {
   %lane_count = index.constant 2 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
   %weight_view = buffer.view %weight[%base] : buffer -> view<2x3x175xi8, #encoding.storage<layout=#encoding.layout.dense, schema=#ggml.q5_k>>
   %weight_records = pipeline.scatter %weight_view across %workers : view<2x3x175xi8, #encoding.storage<layout=#encoding.layout.dense, schema=#ggml.q5_k>>, group -> pipeline.flow<tile<175xi8>>
   pipeline.stage @consume on %workers(%weight_records) : (group, pipeline.flow<tile<175xi8>>) -> ()
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -458,7 +458,7 @@ func.def @second(%intermediate: buffer, %shared_input: buffer, %output: buffer) 
   func.return
 }
 
-pipeline.def<kernel> @chain() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @chain() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %first_group = group.create %lane_count : index -> group
@@ -469,7 +469,7 @@ pipeline.def<kernel> @chain() launch(%input: buffer, %output: buffer) {
   %intermediate_flow = pipeline.stage @first on %first_group(%input_flow) : (group, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   %output_flow = pipeline.stage @second on %second_group(%intermediate_flow, %input_flow) : (group, pipeline.flow<tile<16xi8>>, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi8>>, view<16xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -523,7 +523,7 @@ func.def @second(%intermediate: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @chain() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @chain() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -533,7 +533,7 @@ pipeline.def<kernel> @chain() launch(%input: buffer, %output: buffer) {
   %intermediate_flow = pipeline.stage @first on %workers(%input_flow) : (group, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   %output_flow = pipeline.stage @second on %workers(%intermediate_flow) : (group, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi8>>, view<16xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -588,7 +588,7 @@ func.def @join(%lhs: buffer, %rhs: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @fanout() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @fanout() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -599,7 +599,7 @@ pipeline.def<kernel> @fanout() launch(%input: buffer, %output: buffer) {
   %rhs_flow = pipeline.stage @branch on %workers(%input_flow) : (group, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   %output_flow = pipeline.stage @join on %workers(%lhs_flow, %rhs_flow) : (group, pipeline.flow<tile<16xi8>>, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi8>>, view<16xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -634,14 +634,14 @@ func.def @consume(%input: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @broadcast() launch(%input: buffer) {
+pipeline.def<kernel> @broadcast() run(%input: buffer) {
   %lane_count = index.constant 2 : index
   %base = index.constant 4294967360 : offset
   %workers = group.create %lane_count : index -> group
   %input_view = buffer.view %input[%base] : buffer -> view<3x4xi8>
   %input_records = pipeline.read %input_view on %workers : view<3x4xi8>, group -> pipeline.flow<tile<4xi8>>
   pipeline.stage @consume on %workers(%input_records) : (group, pipeline.flow<tile<4xi8>>) -> ()
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -683,7 +683,7 @@ func.def @consumer(%intermediate: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @fanout() launch(%input: buffer, %output0: buffer, %output1: buffer) {
+pipeline.def<kernel> @fanout() run(%input: buffer, %output0: buffer, %output1: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %producers = group.create %lane_count : index -> group
@@ -698,7 +698,7 @@ pipeline.def<kernel> @fanout() launch(%input: buffer, %output0: buffer, %output1
   %output_flow1 = pipeline.stage @consumer on %consumers1(%shared_flow) : (group, pipeline.flow<tile<16xi8>>) -> (pipeline.flow<tile<16xi8>>)
   pipeline.write %output_flow0 to %output_view0 : pipeline.flow<tile<16xi8>>, view<16xi8>
   pipeline.write %output_flow1 to %output_view1 : pipeline.flow<tile<16xi8>>, view<16xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -737,7 +737,7 @@ func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @distributed_copy() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @distributed_copy() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 2 : index
   %input_base = index.constant 32 : offset
   %output_base = index.constant 64 : offset
@@ -747,7 +747,7 @@ pipeline.def<kernel> @distributed_copy() launch(%input: buffer, %output: buffer)
   %input_records = pipeline.scatter %input_view across %workers : view<2x3x4xi8>, group -> pipeline.flow<tile<4xi8>>
   %output_records = pipeline.stage @copy on %workers(%input_records) : (group, pipeline.flow<tile<4xi8>>) -> (pipeline.flow<tile<4xi8>>)
   pipeline.write %output_records to %output_view : pipeline.flow<tile<4xi8>>, view<2x3x4xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -793,7 +793,7 @@ func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @mismatch() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @mismatch() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 2 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -802,7 +802,7 @@ pipeline.def<kernel> @mismatch() launch(%input: buffer, %output: buffer) {
   %input_records = pipeline.scatter %input_view across %workers : view<2x3x4xi8>, group -> pipeline.flow<tile<4xi8>>
   %output_records = pipeline.stage @copy on %workers(%input_records) : (group, pipeline.flow<tile<4xi8>>) -> (pipeline.flow<tile<4xi8>>)
   pipeline.write %output_records to %output_view : pipeline.flow<tile<4xi8>>, view<3x3x4xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -847,10 +847,10 @@ func.def @stage() {
   func.return
 }
 
-pipeline.def<kernel> @dynamic(%lanes: index) launch() {
+pipeline.def<kernel> @dynamic(%lanes: index) run() {
   %workers = group.create %lanes : index -> group
   pipeline.stage @stage on %workers() : (group) -> ()
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -878,7 +878,7 @@ func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @dynamic(%extent: index) launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @dynamic(%extent: index) run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -887,7 +887,7 @@ pipeline.def<kernel> @dynamic(%extent: index) launch(%input: buffer, %output: bu
   %input_tile = pipeline.read %input_view on %workers : view<[%extent]xi8>, group -> pipeline.flow<tile<[%extent]xi8>>
   %output_tile = pipeline.stage @copy on %workers(%input_tile) : (group, pipeline.flow<tile<[%extent]xi8>>) -> (pipeline.flow<tile<[%extent]xi8>>)
   pipeline.write %output_tile to %output_view : pipeline.flow<tile<[%extent]xi8>>, view<[%extent]xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -915,7 +915,7 @@ func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @mismatch() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> @mismatch() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -924,7 +924,7 @@ pipeline.def<kernel> @mismatch() launch(%input: buffer, %output: buffer) {
   %input_records = pipeline.read %input_view on %workers : view<4x8xi8>, group -> pipeline.flow<tile<8xi8>>
   %output_records = pipeline.stage @copy on %workers(%input_records) : (group, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
   pipeline.write %output_records to %output_view : pipeline.flow<tile<8xi8>>, view<2x8xi8>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -963,14 +963,14 @@ func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @empty() launch(%input: buffer) {
+pipeline.def<kernel> @empty() run(%input: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
   %input_view = buffer.view %input[%base] : buffer -> view<0x8xi8>
   %input_records = pipeline.read %input_view on %workers : view<0x8xi8>, group -> pipeline.flow<tile<8xi8>>
   %output_records = pipeline.stage @copy on %workers(%input_records) : (group, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -983,13 +983,13 @@ pipeline.def<kernel> @empty() launch(%input: buffer) {
 
 TEST_F(PipelinePlanTest, RejectsRecordCountOverflow) {
   ModulePtr module = Parse(R"(
-pipeline.def<kernel> @overflow() launch(%input: buffer) {
+pipeline.def<kernel> @overflow() run(%input: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
   %input_view = buffer.view %input[%base] : buffer -> view<65536x65536x8xi8>
   %input_records = pipeline.read %input_view on %workers : view<65536x65536x8xi8>, group -> pipeline.flow<tile<8xi8>>
-  pipeline.return
+  pipeline.finish
 }
 )");
 
@@ -1006,7 +1006,7 @@ func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> @fanout() launch(%input: buffer) {
+pipeline.def<kernel> @fanout() run(%input: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %producers = group.create %lanes : index -> group
@@ -1016,7 +1016,7 @@ pipeline.def<kernel> @fanout() launch(%input: buffer) {
   %produced = pipeline.stage @copy on %producers(%input_records) : (group, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
   %consumed = pipeline.stage @copy on %consumers(%produced) : (group, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
   %folded = pipeline.fold<addi> %produced : pipeline.flow<tile<8xi8>>
-  pipeline.return
+  pipeline.finish
 }
 )");
 

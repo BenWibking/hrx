@@ -27,7 +27,7 @@ constexpr char kSource[] = R"(
 aie2p.target<array> @array_target
 aie2p.target<core> @core_target
 
-pipeline.def<kernel> public retain target(@array_target) @first() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @first() run(%input: buffer, %output: buffer) {
   %one = index.constant 1 : index
   %zero = index.constant 0 : offset
   %workers = group.create %one : index -> group
@@ -36,10 +36,10 @@ pipeline.def<kernel> public retain target(@array_target) @first() launch(%input:
   %records = pipeline.scatter %input_view across %workers : view<1x1xi32>, group -> pipeline.flow<tile<1xi32>>
   %result = pipeline.stage @double_value on %workers(%records) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
-pipeline.def<kernel> public retain target(@array_target) @second() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @second() run(%input: buffer, %output: buffer) {
   %two = index.constant 2 : index
   %zero = index.constant 0 : offset
   %workers = group.create %two : index -> group
@@ -48,7 +48,7 @@ pipeline.def<kernel> public retain target(@array_target) @second() launch(%input
   %records = pipeline.scatter %input_view across %workers : view<2x1xi32>, group -> pipeline.flow<tile<1xi32>>
   %result = pipeline.stage @double_value on %workers(%records) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<2x1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 func.def target(@core_target) @double_value(%input: buffer, %output: buffer) {

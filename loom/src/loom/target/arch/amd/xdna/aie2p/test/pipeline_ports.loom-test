@@ -29,7 +29,7 @@ func.def target(@core_target) @add(%lhs: buffer, %rhs: buffer, %output: buffer) 
   func.return
 }
 
-pipeline.def<kernel> public retain target(@array_target) @interleaved_aliases() launch(%input: buffer, %copy_output: buffer, %sum_output: buffer, %alias_output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @interleaved_aliases() run(%input: buffer, %copy_output: buffer, %sum_output: buffer, %alias_output: buffer) {
   %c1 = index.constant 1 : index
   %base = index.constant 0 : offset
   %producer = group.create %c1 : index -> group
@@ -47,7 +47,7 @@ pipeline.def<kernel> public retain target(@array_target) @interleaved_aliases() 
   pipeline.write %copied to %copy_view : pipeline.flow<tile<1xi32>>, view<1xi32>
   pipeline.write %sum to %sum_view : pipeline.flow<tile<1xi32>>, view<1xi32>
   pipeline.write %buffered to %alias_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ----
@@ -168,7 +168,7 @@ low.func.def public retain target<amd.xdna.aie2p.array>(@array_target) abi(array
 
 // A single-stage callable retains both input arguments even when they carry
 // the same flow. Writes of the result and its buffer alias share output port 2
-// and remain separate edges to the two launch bindings.
+// and remain separate edges to the two run bindings.
 aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
@@ -185,7 +185,7 @@ func.def target(@core_target) @add(%lhs: buffer, %rhs: buffer, %output: buffer) 
   func.return
 }
 
-pipeline.def<kernel> public retain target(@array_target) @single_stage_aliases() launch(%input: buffer, %output: buffer, %alias_output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @single_stage_aliases() run(%input: buffer, %output: buffer, %alias_output: buffer) {
   %c1 = index.constant 1 : index
   %base = index.constant 0 : offset
   %worker = group.create %c1 : index -> group
@@ -197,7 +197,7 @@ pipeline.def<kernel> public retain target(@array_target) @single_stage_aliases()
   %buffered = pipeline.buffer %result capacity %c1 : (pipeline.flow<tile<1xi32>>, index) -> pipeline.flow<tile<1xi32>>
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
   pipeline.write %buffered to %alias_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ----

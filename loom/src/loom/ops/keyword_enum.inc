@@ -94,3 +94,4 @@
   LOOM_KW_LANGLE = 85,  // "<"
   LOOM_KW_RANGLE = 86,  // ">"
   LOOM_KW_CONFLICTS = 87,  // "conflicts"
+  LOOM_KW_RUN = 88,  // "run"

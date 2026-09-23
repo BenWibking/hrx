@@ -64,7 +64,7 @@ func.def @reduce(%partial0: buffer, %partial1: buffer, %bias: buffer, %output: b
   func.return
 }
 
-pipeline.def<kernel> public target(@array) @split_k() launch(%lhs: buffer, %rhs: buffer, %bias: buffer, %output: buffer) {
+pipeline.def<kernel> public target(@array) @split_k() run(%lhs: buffer, %rhs: buffer, %bias: buffer, %output: buffer) {
   %product_lanes = index.constant 2 : index
   %reducer_lanes = index.constant 1 : index
   %ring_capacity = index.constant 2 : index
@@ -83,7 +83,7 @@ pipeline.def<kernel> public target(@array) @split_k() launch(%lhs: buffer, %rhs:
   %buffered = pipeline.buffer %folded capacity %ring_capacity : (pipeline.flow<tile<8x8xi32>>, index) -> pipeline.flow<tile<8x8xi32>>
   %result = pipeline.reduce @reduce from %products(%buffered) to %reducers(%bias_tiles) : (group, pipeline.flow<tile<8x8xi32>>) to (group, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<8x8xi32>>, view<8x8xi32>
-  pipeline.return
+  pipeline.finish
 }
 """
     module = _parse_module(text)
@@ -94,9 +94,9 @@ pipeline.def<kernel> public target(@array) @split_k() launch(%lhs: buffer, %rhs:
 
 
 def test_generic_pipeline_roundtrip() -> None:
-    _roundtrip("pipeline.def @generic(%batch: index) launch(%input: buffer) {\n  pipeline.return\n}\n")
+    _roundtrip("pipeline.def @generic(%batch: index) run(%input: buffer) {\n  pipeline.finish\n}\n")
 
 
 def test_command_pipeline_scope_is_not_a_language_state() -> None:
     with pytest.raises(ParseError, match="invalid enum value 'command'"):
-        _parse_module("pipeline.def<command> @unsupported() launch() {\n  pipeline.return\n}\n")
+        _parse_module("pipeline.def<command> @unsupported() run() {\n  pipeline.finish\n}\n")

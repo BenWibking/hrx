@@ -5,7 +5,7 @@ aie2p.target<array> @array_target
 aie2p.target<core> @core_target
 
 // ERROR@+1: XDNA/004 {group="0", flow="2", capacity="2"}
-pipeline.def<kernel> public retain target(@array_target) @buffered_composite_array() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @buffered_composite_array() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %ring_capacity = index.constant 2 : index
   %base = index.constant 0 : offset
@@ -17,7 +17,7 @@ pipeline.def<kernel> public retain target(@array_target) @buffered_composite_arr
   %buffered_flow = pipeline.buffer %intermediate_flow capacity %ring_capacity : (pipeline.flow<tile<16xi32>>, index) -> pipeline.flow<tile<16xi32>>
   %output_flow = pipeline.stage @copy_i32x16 on %workers(%buffered_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi32>>, view<2x16xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 func.def target(@core_target) @copy_i32x16(%input: buffer, %output: buffer) {
@@ -38,7 +38,7 @@ aie2p.target<array> @array_target
 aie2p.target<core> @core_target
 
 // ERROR@+1: XDNA/002 {group="0"}
-pipeline.def<kernel> public retain target(@array_target) @folded_composite_array() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @folded_composite_array() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -49,7 +49,7 @@ pipeline.def<kernel> public retain target(@array_target) @folded_composite_array
   %folded_flow = pipeline.fold<addi> %record_flow : pipeline.flow<tile<16xi32>>
   %output_flow = pipeline.stage @copy_i32x16 on %workers(%folded_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi32>>, view<16xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 func.def target(@core_target) @copy_i32x16(%input: buffer, %output: buffer) {
@@ -70,7 +70,7 @@ aie2p.target<array> @array_target
 aie2p.target<core> @core_target
 
 // ERROR@+1: LOWERING/057 {group="0", stage="1"}
-pipeline.def<kernel> public retain target(@array_target) @rate_changed_composite_array() launch(%short_input: buffer, %long_input: buffer, %short_output: buffer, %long_output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @rate_changed_composite_array() run(%short_input: buffer, %long_input: buffer, %short_output: buffer, %long_output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -84,7 +84,7 @@ pipeline.def<kernel> public retain target(@array_target) @rate_changed_composite
   %long_output_flow = pipeline.stage @copy_i32x16 on %workers(%long_input_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %short_output_flow to %short_output_view : pipeline.flow<tile<16xi32>>, view<2x16xi32>
   pipeline.write %long_output_flow to %long_output_view : pipeline.flow<tile<16xi32>>, view<3x16xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 func.def target(@core_target) @copy_i32x16(%input: buffer, %output: buffer) {
@@ -117,7 +117,7 @@ func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
 }
 
 // ERROR@+1: LOWERING/056 {group="0", stage="1"}
-pipeline.def<kernel> public retain target(@array_target) @cadences() launch(%lhs: buffer, %rhs: buffer, %lhs_output: buffer, %rhs_output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @cadences() run(%lhs: buffer, %rhs: buffer, %lhs_output: buffer, %rhs_output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -133,7 +133,7 @@ pipeline.def<kernel> public retain target(@array_target) @cadences() launch(%lhs
   %right_sum = pipeline.fold<addf> %right_records : pipeline.flow<tile<1xf32>>
   pipeline.write %left_sum to %lhs_output_view : pipeline.flow<tile<1xf32>>, view<2x1xf32>
   pipeline.write %right_sum to %rhs_output_view : pipeline.flow<tile<1xf32>>, view<4x1xf32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -154,7 +154,7 @@ func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
 }
 
 // ERROR@+1: LOWERING/058 {group="0", stage="1"}
-pipeline.def<kernel> public retain target(@array_target) @nested_frame() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @nested_frame() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -166,7 +166,7 @@ pipeline.def<kernel> public retain target(@array_target) @nested_frame() launch(
   %second = pipeline.stage @copy on %workers(%first_sum) : (group, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   %second_sum = pipeline.fold<addf> %second : pipeline.flow<tile<1xf32>>
   pipeline.write %second_sum to %output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -187,7 +187,7 @@ func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
 }
 
 // ERROR@+1: XDNA/003 {group="0"}
-pipeline.def<kernel> public retain target(@array_target) @mixed_outputs() launch(%input: buffer, %records_output: buffer, %sum_output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @mixed_outputs() run(%input: buffer, %records_output: buffer, %sum_output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lanes : index -> group
@@ -200,7 +200,7 @@ pipeline.def<kernel> public retain target(@array_target) @mixed_outputs() launch
   %sum = pipeline.fold<addf> %right : pipeline.flow<tile<1xf32>>
   pipeline.write %left to %records_view : pipeline.flow<tile<1xf32>>, view<2x1xf32>
   pipeline.write %sum to %sum_view : pipeline.flow<tile<1xf32>>, view<1xf32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -219,7 +219,7 @@ func.def @copy_record(%input: buffer, %output: buffer) {
   func.return
 }
 
-pipeline.def<kernel> target(@array_target) @missing_stage_target() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> target(@array_target) @missing_stage_target() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -229,7 +229,7 @@ pipeline.def<kernel> target(@array_target) @missing_stage_target() launch(%input
   %intermediate = pipeline.stage @copy_record on %workers(%source) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   %result = pipeline.stage @copy_record on %workers(%intermediate) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -260,7 +260,7 @@ func.def target(@second_core) @second_copy(%input: buffer, %output: buffer) {
 
 // Equal target attributes do not replace the exact target identity contract.
 // ERROR@+1: XDNA/010 {group="0", entry="second_copy", actual_target="second_core", expected_target="first_core"}
-pipeline.def<kernel> target(@array_target) @different_stage_targets() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> target(@array_target) @different_stage_targets() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -270,7 +270,7 @@ pipeline.def<kernel> target(@array_target) @different_stage_targets() launch(%in
   %intermediate = pipeline.stage @first_copy on %workers(%source) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   %result = pipeline.stage @second_copy on %workers(%intermediate) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -289,7 +289,7 @@ func.def target(@core_target) @consume_private(%input: buffer, %output: buffer) 
 
 // The private record has a fractional byte; external records remain i32.
 // ERROR@+1: XDNA/011 {group="0", flow="1", tile_type="tile<1xi1>"}
-pipeline.def<kernel> target(@array_target) @fractional_private_record() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> target(@array_target) @fractional_private_record() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -299,7 +299,7 @@ pipeline.def<kernel> target(@array_target) @fractional_private_record() launch(%
   %intermediate = pipeline.stage @produce_private on %workers(%source) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi1>>)
   %result = pipeline.stage @consume_private on %workers(%intermediate) : (group, pipeline.flow<tile<1xi1>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -318,7 +318,7 @@ func.def target(@core_target) @consume_private(%input: buffer, %output: buffer) 
 
 // Static dimensions fit individually; their record bit count does not.
 // ERROR@+1: XDNA/011 {group="0", flow="1", tile_type="tile<2147483647x2147483647xi64>"}
-pipeline.def<kernel> target(@array_target) @overflowing_private_record() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> target(@array_target) @overflowing_private_record() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %workers = group.create %lane_count : index -> group
@@ -328,7 +328,7 @@ pipeline.def<kernel> target(@array_target) @overflowing_private_record() launch(
   %intermediate = pipeline.stage @produce_private on %workers(%source) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<2147483647x2147483647xi64>>)
   %result = pipeline.stage @consume_private on %workers(%intermediate) : (group, pipeline.flow<tile<2147483647x2147483647xi64>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 // ====
@@ -356,7 +356,7 @@ func.def target(@core_target) @consume_private(%input: buffer, %output: buffer) 
 
 // The first composite is constructed before the later private record fails.
 // ERROR@+1: XDNA/011 {group="1", flow="3", tile_type="tile<1xi1>"}
-pipeline.def<kernel> target(@array_target) @late_private_record_rejection() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> target(@array_target) @late_private_record_rejection() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %first_workers = group.create %lane_count : index -> group
@@ -369,5 +369,5 @@ pipeline.def<kernel> target(@array_target) @late_private_record_rejection() laun
   %later_intermediate = pipeline.stage @produce_private on %later_workers(%first_result) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi1>>)
   %result = pipeline.stage @consume_private on %later_workers(%later_intermediate) : (group, pipeline.flow<tile<1xi1>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.return
+  pipeline.finish
 }

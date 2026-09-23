@@ -41,7 +41,7 @@ typedef enum loom_pipeline_binding_access_flag_bits_e {
 typedef uint32_t loom_pipeline_binding_access_flags_t;
 
 typedef enum loom_pipeline_endpoint_kind_e {
-  // An external launch binding endpoint.
+  // An external run binding endpoint.
   LOOM_PIPELINE_ENDPOINT_KIND_BINDING = 0,
 
   // A resident callable lane instance endpoint.
@@ -57,7 +57,7 @@ typedef struct loom_pipeline_plan_binding_view_t {
   // Full refined binding tile type before selecting record dimensions.
   loom_type_t binding_type;
 
-  // Exact byte offset from the launch binding base.
+  // Exact byte offset from the run binding base.
   uint64_t byte_offset;
 
   // Whether the leading dimension selects a group lane. A unit lane axis is
@@ -291,13 +291,13 @@ typedef struct loom_pipeline_plan_t {
   // Source pipeline function represented by this plan.
   loom_func_like_t pipeline;
 
-  // Launch bindings indexed by source ABI ordinal.
+  // Run bindings indexed by source ABI ordinal.
   const loom_pipeline_plan_binding_t* bindings;
 
-  // Number of launch binding slots.
+  // Number of run binding slots.
   uint32_t binding_count;
 
-  // Typed launch-binding views referenced by concrete edges.
+  // Typed run-binding views referenced by concrete edges.
   const loom_pipeline_plan_binding_view_t* binding_views;
 
   // Number of binding view records.

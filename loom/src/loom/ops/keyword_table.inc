@@ -94,3 +94,4 @@
     [LOOM_KW_LANGLE] = (const uint8_t*)"\x01" "<",
     [LOOM_KW_RANGLE] = (const uint8_t*)"\x01" ">",
     [LOOM_KW_CONFLICTS] = (const uint8_t*)"\x09" "conflicts",
+    [LOOM_KW_RUN] = (const uint8_t*)"\x03" "run",

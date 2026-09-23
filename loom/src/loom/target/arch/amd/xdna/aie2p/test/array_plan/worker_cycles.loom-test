@@ -8,7 +8,7 @@ aie2p.target<core> @core_target
 // creates a worker cycle. Each resident worker waits for all of its inputs
 // before publishing any output, so this grouping cannot make progress.
 // ERROR@+1: XDNA/005 {worker="1", group="1", lane="0"}
-pipeline.def<kernel> public retain target(@array_target) @cyclic_worker_array() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @cyclic_worker_array() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
   %outer_workers = group.create %lane_count : index -> group
@@ -20,7 +20,7 @@ pipeline.def<kernel> public retain target(@array_target) @cyclic_worker_array() 
   %middle_flow = pipeline.stage @copy_i32x16 on %middle_workers(%first_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   %output_flow = pipeline.stage @copy_i32x16 on %outer_workers(%middle_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi32>>, view<16xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 func.def target(@core_target) @copy_i32x16(%input: buffer, %output: buffer) {

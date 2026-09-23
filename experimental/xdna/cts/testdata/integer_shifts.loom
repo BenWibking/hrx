@@ -1,7 +1,7 @@
 aie2p.target<array> @array_target
 aie2p.target<core> @core_target
 
-pipeline.def<kernel> public retain target(@array_target) @shift_packets() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @shift_packets() run(%input: buffer, %output: buffer) {
   %count = index.constant 1 : index
   %base_offset = index.constant 0 : offset
   %workers = group.create %count : index -> group
@@ -10,7 +10,7 @@ pipeline.def<kernel> public retain target(@array_target) @shift_packets() launch
   %packets = pipeline.scatter %input_view across %workers : view<1x16x768xi32>, group -> pipeline.flow<tile<768xi32>>
   %results = pipeline.stage @shift_entry on %workers(%packets) : (group, pipeline.flow<tile<768xi32>>) -> (pipeline.flow<tile<4736xi32>>)
   pipeline.write %results to %output_view : pipeline.flow<tile<4736xi32>>, view<1x16x4736xi32>
-  pipeline.return
+  pipeline.finish
 }
 
 func.def target(@core_target) @shift_entry(%input: buffer, %output: buffer) {

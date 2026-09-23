@@ -103,7 +103,7 @@ class PipelineBuilder(DialectBuilder):
         target: ValueRef,
         location_id: int | None = ...,
     ) -> None: ...
-    def return_(
+    def finish(
         self,
         *,
         location_id: int | None = ...,

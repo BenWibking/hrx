@@ -257,7 +257,7 @@ iree_status_t loom_pipeline_def_verify(const loom_module_t* module,
       continue;
     }
     char name[40];
-    iree_snprintf(name, sizeof(name), "launch binding %u",
+    iree_snprintf(name, sizeof(name), "run binding %u",
                   i - (uint16_t)specialization_count);
     return loom_pipeline_emit_operand_constraint(
         emitter, op, iree_make_cstring_view(name), type, IREE_SV("buffer"));

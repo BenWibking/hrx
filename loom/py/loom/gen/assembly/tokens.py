@@ -101,6 +101,7 @@ KEYWORD_MAP: dict[str, str] = {
     "<": "LOOM_KW_LANGLE",
     ">": "LOOM_KW_RANGLE",
     "conflicts": "LOOM_KW_CONFLICTS",
+    "run": "LOOM_KW_RUN",
 }
 
 # Maps Region(..., syntax=...) names to C parser/printer selector IDs. The
