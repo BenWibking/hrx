@@ -43,43 +43,43 @@ low.func.def public target<wasm.core.simd128> abi(wasm_function) @restore_select
   %step = i32.const 16
   %unroll = i32.const 8
   low.scf.for signed [%begin to %current_origin step %step] unroll(%unroll) do(%position: reg<wasm.i32>) {
-    %131 = i32.const 4
-    %132 = i32.mul %position, %131
-    %133 = i32.add %previous_offset, %132
-    %134 = i32.add %previous_root, %133
-    %135 = i32.load %134
-    %140 = i32.load %134 {offset = 4}
-    %145 = i32.load %134 {offset = 8}
-    %150 = i32.load %134 {offset = 12}
-    %155 = i32.load %134 {offset = 16}
-    %160 = i32.load %134 {offset = 20}
-    %165 = i32.load %134 {offset = 24}
-    %170 = i32.load %134 {offset = 28}
-    %175 = i32.load %134 {offset = 32}
-    %180 = i32.load %134 {offset = 36}
-    %185 = i32.load %134 {offset = 40}
-    %190 = i32.load %134 {offset = 44}
-    %195 = i32.load %134 {offset = 48}
-    %200 = i32.load %134 {offset = 52}
-    %205 = i32.load %134 {offset = 56}
-    %210 = i32.load %134 {offset = 60}
-    %213 = i32.add %packet_storage, %132
-    i32.store %213, %135 {offset = 256}
-    i32.store %213, %140 {offset = 260}
-    i32.store %213, %145 {offset = 264}
-    i32.store %213, %150 {offset = 268}
-    i32.store %213, %155 {offset = 272}
-    i32.store %213, %160 {offset = 276}
-    i32.store %213, %165 {offset = 280}
-    i32.store %213, %170 {offset = 284}
-    i32.store %213, %175 {offset = 288}
-    i32.store %213, %180 {offset = 292}
-    i32.store %213, %185 {offset = 296}
-    i32.store %213, %190 {offset = 300}
-    i32.store %213, %195 {offset = 304}
-    i32.store %213, %200 {offset = 308}
-    i32.store %213, %205 {offset = 312}
-    i32.store %213, %210 {offset = 316}
+    %148 = i32.const 4
+    %149 = i32.mul %position, %148
+    %150 = i32.add %previous_offset, %149
+    %151 = i32.add %previous_root, %150
+    %152 = i32.load %151
+    %157 = i32.load %151 {offset = 4}
+    %162 = i32.load %151 {offset = 8}
+    %167 = i32.load %151 {offset = 12}
+    %172 = i32.load %151 {offset = 16}
+    %177 = i32.load %151 {offset = 20}
+    %182 = i32.load %151 {offset = 24}
+    %187 = i32.load %151 {offset = 28}
+    %192 = i32.load %151 {offset = 32}
+    %197 = i32.load %151 {offset = 36}
+    %202 = i32.load %151 {offset = 40}
+    %207 = i32.load %151 {offset = 44}
+    %212 = i32.load %151 {offset = 48}
+    %217 = i32.load %151 {offset = 52}
+    %222 = i32.load %151 {offset = 56}
+    %227 = i32.load %151 {offset = 60}
+    %230 = i32.add %packet_storage, %149
+    i32.store %230, %152 {offset = 256}
+    i32.store %230, %157 {offset = 260}
+    i32.store %230, %162 {offset = 264}
+    i32.store %230, %167 {offset = 268}
+    i32.store %230, %172 {offset = 272}
+    i32.store %230, %177 {offset = 276}
+    i32.store %230, %182 {offset = 280}
+    i32.store %230, %187 {offset = 284}
+    i32.store %230, %192 {offset = 288}
+    i32.store %230, %197 {offset = 292}
+    i32.store %230, %202 {offset = 296}
+    i32.store %230, %207 {offset = 300}
+    i32.store %230, %212 {offset = 304}
+    i32.store %230, %217 {offset = 308}
+    i32.store %230, %222 {offset = 312}
+    i32.store %230, %227 {offset = 316}
   }
   return
 }
