@@ -161,9 +161,11 @@ loom_cc_library(
     legalization
   HDRS
     "legalization.h"
+    "legalization_compare.h"
     "legalization_table.h"
   SRCS
     "legalization.c"
+    "legalization_compare.c"
     "legalization_table.c"
   DEPS
     ::core_descriptors
@@ -647,6 +649,7 @@ loom_check_test_suite(
     "test/source_low/vector_comparison.loom-test"
     "test/source_low/vector_concat.loom-test"
     "test/source_low/vector_dot_interleave.loom-test"
+    "test/source_low/vector_float_comparison.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/vector_mask_select.loom-test"
     "test/source_low/vector_memory.loom-test"
