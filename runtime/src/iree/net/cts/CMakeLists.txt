@@ -56,8 +56,10 @@ iree_cc_library(
     collective_benchmarks
   SRCS
     "collective_benchmark.cc"
+    "expert_benchmark.cc"
   DEPS
     ::collective_trial
+    ::expert_trial
     ::transfer_trial
     ::transport_backend
     iree::async::cts::util::registry
@@ -69,11 +71,32 @@ iree_cc_library(
 
 iree_cc_library(
   NAME
+    expert_trial
+  HDRS
+    "expert_trial.h"
+  SRCS
+    "expert_trial.cc"
+  DEPS
+    ::collective_transport
+    ::transfer_trial
+    ::transport_backend
+    iree::async
+    iree::async::cts::util::registry
+    iree::base
+    iree::base::core_headers
+  TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     collective_trial_tests
   SRCS
     "collective_trial_test.cc"
+    "expert_trial_test.cc"
   DEPS
     ::collective_trial
+    ::expert_trial
     ::transport_backend
     iree::async::cts::util::registry
     iree::testing::gtest

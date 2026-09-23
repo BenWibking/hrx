@@ -159,6 +159,51 @@ and control callbacks before measurement ends. `pipeline_high_water` reports
 the observed global microbatch occupancy. Host transforms and result checking
 are timed; this does not model GPU compute or promise a distributed-model rate.
 
+## Routed Expert Transport
+
+`runtime/src/iree/net/cts/expert_trial.h` exercises a full dispatch/combine
+round trip across a directed peer mesh. A rank privately selects distinct
+experts and retains its weighted route plan. It sends each token only once per
+destination rank, with that destination's expert IDs and weights, activation
+bytes, and separate scale bytes. The receiver computes contributions from those
+received facts. Returned token indices route wider combine values back into the
+caller's output, which is checked against the original private plan.
+
+Actual counts cross the connection even when zero. Uneven profiles rotate idle
+producers; the hotspot profile concentrates every route on a rank with no local
+input. Local expert contributions bypass the network. Repeated rounds reuse
+private routes while changing payloads, then change the routes as well.
+Neither a shared peer matrix nor a regenerated remote route plan supplies the
+receiver with information missing from the protocol.
+
+Each rank reserves one slab and optional registration for bounded source,
+receive, and result storage. Setup grants cover capacity; actual frame counts
+determine transferred bytes. Message inputs assemble into application storage
+without retaining transport receive leases. Registered inputs land directly in
+that storage. Source callbacks join before the outgoing dispatch arena is
+overwritten with combine values. Incoming placement alone never returns reuse
+permission.
+
+Depth is a bounded batch of independent round handles. All batch inputs can
+arrive while the oldest handle is retained; expert consumption and inverse
+returns then run newest first. Each batch joins before reusing its storage.
+This models a retained communication session, not independently reclaimable
+transport slots or arbitrary rolling out-of-order reuse. The integer transform
+checks ownership and routing; byte profiles do not simulate FP4/FP8 arithmetic.
+
+`ExpertRoundTrip/<carrier>/<proactor>/same_process/` rows name traffic shape,
+rank count, token capacity, dispatch/scale/combine bytes, block extent, source
+window, depth, and measured rounds. `amortized_us_per_round_trip` includes route
+preparation, packing, host expert work, result checking, and all ownership joins.
+The two `max_rank_*_us_per_round` counters are maxima of rank-local accumulated
+leg times; their maxima may belong to different ranks and need not add to the
+whole-round measurement. Payload rates count actual remote activation, scale
+and return bytes, excluding local work and separately reported route/header
+bytes. `max_receiver_tokens` exposes skew, and `payload_storage_bytes` reports
+the reserved application slabs rather than carrier resources or total memory.
+These host trials establish communication baselines, not MoE kernel throughput
+or GPU/NIC compute overlap.
+
 ## Correctness Runs
 
 From the repository root:

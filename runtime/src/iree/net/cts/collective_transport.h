@@ -208,6 +208,11 @@ struct CollectiveLink {
   void Send(iree_async_span_t data, uint32_t* pending_sources = nullptr);
   const Input* InputAt(uint32_t sequence) const;
   const Input* NextInput() const;
+  // Advances a rank-local placement scan without rescanning completed blocks.
+  // This establishes readiness only; it neither consumes nor releases inputs.
+  bool ReadyBlocks(uint32_t first, uint32_t count, uint32_t& arrived) const;
+  // Reads an aligned word from a fully placed frame, including ring wrap.
+  uint32_t Load32(uint32_t first, size_t offset) const;
   void Consume();
   bool Idle() const;
 };

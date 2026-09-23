@@ -10,6 +10,8 @@
 #include <chrono>
 #include <thread>
 
+#include "iree/base/alignment.h"
+
 namespace iree::net::cts {
 
 void CollectiveControl::Wake() {
@@ -445,6 +447,20 @@ const CollectiveLink::Input* CollectiveLink::InputAt(uint32_t sequence) const {
 
 const CollectiveLink::Input* CollectiveLink::NextInput() const {
   return InputAt(consumed + 1);
+}
+
+bool CollectiveLink::ReadyBlocks(uint32_t first, uint32_t count,
+                                 uint32_t& arrived) const {
+  while (arrived < count && InputAt(first + arrived)) {
+    ++arrived;
+  }
+  return arrived == count;
+}
+
+uint32_t CollectiveLink::Load32(uint32_t first, size_t offset) const {
+  return iree_unaligned_load_le_u32(
+      InputAt(first + offset / options.block_size)->bytes.data +
+      offset % options.block_size);
 }
 
 void CollectiveLink::Consume() {
