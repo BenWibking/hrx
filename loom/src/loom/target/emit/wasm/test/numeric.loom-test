@@ -1,3 +1,31 @@
+// RUN: emit wasm-dis
+// REQUIRES: wasm-objdump
+
+wasm.target<simd128> @target
+
+low.func.def public target<wasm.core.simd128>(@target) abi(wasm_function) @subtract_f32(%lhs: reg<wasm.f32>, %rhs: reg<wasm.f32>) -> (reg<wasm.f32>) asm {
+  %difference = f32.sub %lhs, %rhs
+  return %difference
+}
+
+// ----
+Disassembly of section CODE:
+
+<CODE>:
+        # 1 functions in section.
+
+<subtract_f32>:
+
+  local.get  0
+  local.get  1
+  f32.sub
+  local.set  0
+  local.get  0
+  return
+  end
+
+// ====
+
 // RUN: with-checks emit wasm-dis
 // REQUIRES: wasm-objdump
 
