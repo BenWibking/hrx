@@ -11,6 +11,20 @@ iree_add_all_subdirs()
 
 iree_cc_test(
   NAME
+    collective_trial_tests
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async::cts::util::platform_backends
+    iree::async::cts::util::test_main
+    iree::net::carrier::shm::factory
+    iree::net::cts::collective_trial_tests
+    iree::net::cts::transport_backend
+    iree::testing::temp_file
+)
+
+iree_cc_test(
+  NAME
     transfer_trial_tests
   SRCS
     "backend.cc"
@@ -34,6 +48,22 @@ iree_cc_test(
     iree::net::cts::transport_tests
     iree::testing::gtest_main
     iree::testing::temp_file
+)
+
+iree_cc_binary_benchmark(
+  NAME
+    collective_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::net::carrier::shm::factory
+    iree::net::cts::collective_benchmarks
+    iree::net::cts::transport_backend
+    iree::testing::temp_file
+    iree::third_party::google_benchmark
+  TESTONLY
 )
 
 iree_cc_binary_benchmark(

@@ -11,6 +11,60 @@ iree_add_all_subdirs()
 
 iree_cc_library(
   NAME
+    collective_trial
+  HDRS
+    "collective_trial.h"
+  SRCS
+    "collective_trial.cc"
+  DEPS
+    ::transfer_trial
+    ::transport_backend
+    iree::async
+    iree::async::cts::util::registry
+    iree::base
+    iree::base::core_headers
+    iree::net::channel::queue::queue_channel
+    iree::net::connection
+    iree::net::direct_endpoint
+    iree::net::message_endpoint
+    iree::net::transport_factory
+  TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    collective_benchmarks
+  SRCS
+    "collective_benchmark.cc"
+  DEPS
+    ::collective_trial
+    ::transfer_trial
+    ::transport_backend
+    iree::async::cts::util::registry
+    iree::third_party::google_benchmark
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    collective_trial_tests
+  SRCS
+    "collective_trial_test.cc"
+  DEPS
+    ::collective_trial
+    ::transport_backend
+    iree::async::cts::util::registry
+    iree::testing::gtest
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     transport_backend
   HDRS
     "transport_backend.h"

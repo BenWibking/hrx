@@ -14,6 +14,18 @@ package(
 )
 
 iree_runtime_cc_test(
+    name = "collective_trial_tests",
+    srcs = ["backend.cc"],
+    deps = [
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/async/cts/util:test_main",
+        "//runtime/src/iree/net/carrier/tcp:factory",
+        "//runtime/src/iree/net/cts:collective_trial_tests",
+        "//runtime/src/iree/net/cts:transport_backend",
+    ],
+)
+
+iree_runtime_cc_test(
     name = "transfer_trial_tests",
     srcs = ["backend.cc"],
     deps = [
@@ -33,6 +45,18 @@ iree_runtime_cc_test(
         "//runtime/src/iree/net/cts:transport_backend",
         "//runtime/src/iree/net/cts:transport_tests",
         "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+iree_runtime_cc_benchmark(
+    name = "collective_benchmarks",
+    srcs = ["backend.cc"],
+    deps = [
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/net/carrier/tcp:factory",
+        "//runtime/src/iree/net/cts:collective_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
     ],
 )
 

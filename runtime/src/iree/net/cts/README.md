@@ -69,6 +69,55 @@ fixed. Thread scheduling, completion grouping, actual batch tails, feedback
 counts, and timings may vary. CTS assertions cover payload, progress, source
 completion, and bounds, not a particular completion schedule.
 
+## Tensor-Parallel Transport
+
+`runtime/src/iree/net/cts/collective_trial.h` runs a checked ring reduce-scatter
+followed by all-gather. Each rank has its own application thread and proactor,
+tensor, and bounded incoming block window. Rank data and consumed-coordinate
+feedback travel through real connections; shared process state coordinates only
+setup, measurement phases, and failure. Every rank checks the complete integer
+sum after every round before starting the next dependent round.
+
+Tensor extent, transfer block extent, and outstanding block window are separate
+dimensions. Blocks partition each rank's shard and preserve an exact short tail;
+neither the protocol nor its storage requires a 4-KiB or power-of-two block.
+Outgoing source callbacks join before tensor storage is modified. Incoming
+placement and application consumption remain distinct, and credit messages can
+overlap subsequent ring steps rather than imposing extra step barriers.
+
+The `message` strategy uses ordinary queue messages and their received leases.
+The `registered` strategy uses one reusable registration per rank, exchanges
+target descriptions over the message channel, and places directly into that
+rank's reduction/gather inputs. It never substitutes a copied-message path.
+The subsequent host reduction or gather copy is application work, not transport
+staging. Both strategies include reduction, validation, feedback, and source
+returns in timing; allocation, setup, warm-up, and teardown are excluded.
+
+TCP, SHM, and RDMA provide `collective_trial_tests`, `collective_benchmarks`, and
+`collective_benchmarks_test` targets alongside their transfer workloads. RDMA
+includes both delivery strategies. For example:
+
+```sh
+iree-bazel-test --config=asan \
+  //runtime/src/iree/net/carrier/tcp/cts:collective_trial_tests \
+  //runtime/src/iree/net/carrier/shm/cts:collective_trial_tests
+```
+
+Benchmark names begin with `TensorAllReduce/<carrier>/<proactor>/same_process/`
+and identify delivery, ranks, tensor bytes, block bytes, window, and measured
+rounds. `items_per_second` counts complete group all-reduces, not transfers or
+rank-local completions. `bytes_per_second` counts the actual payload sent over
+all edges: `2 * (ranks - 1) * tensor_bytes` per all-reduce. It is not single-link
+bandwidth. `amortized_us_per_collective` measures the dependent checked schedule,
+including CPU work, not isolated network latency. `source_completions` must match
+`data_sends`; `payload_storage_bytes` excludes carrier/native resources.
+
+These are transport schedules, not a selected production collective algorithm,
+GPU-kernel simulation, or substitute for multi-host NIC qualification. The
+large-tensor rows compare transfer geometry within an otherwise identical
+schedule; small-tensor rows expose dependency-sensitive work that cannot hide
+behind a large stream of independent transfers.
+
 ## Correctness Runs
 
 From the repository root:
