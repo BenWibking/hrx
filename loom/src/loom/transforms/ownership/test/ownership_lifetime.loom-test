@@ -241,9 +241,32 @@ func.def @retains_owned_block_argument(%size: index, %more: i1) {
 func.def @duplicates_borrowed_block_arguments(%resource: pool<16>) {
   cfg.br ^join(%resource: pool<16>, %resource: pool<16>)
 ^join(%left: pool<16>, %right: pool<16>):
+  test.resource.borrow %resource : pool<16>
   test.resource.borrow %left : pool<16>
   test.resource.borrow %right : pool<16>
   func.return
+}
+
+// ====
+
+func.decl @update_accumulator(%value: f32) -> (f32)
+
+// A constant and a borrowed call result are both available scalar values at
+// the loop header, including the exit before the first body execution.
+func.def @carries_scalar_with_owned_resource(%size: index, %more: i1) -> (f32) {
+  %resource = test.resource.alloc %size : index -> pool<16>
+  %initial = scalar.constant 0.0 : f32
+  cfg.br ^loop(%resource: pool<16>, %initial: f32)
+^loop(%current: pool<16>, %partial: f32):
+  cfg.cond_br %more, ^step, ^done
+^step:
+  %next = func.call @update_accumulator(%partial) : (f32) -> (f32)
+  cfg.br ^loop(%current: pool<16>, %next: f32)
+^done:
+  cfg.br ^exit(%current: pool<16>, %partial: f32)
+^exit(%last: pool<16>, %result: f32):
+  test.resource.release %last : pool<16>
+  func.return %result : f32
 }
 
 // ====

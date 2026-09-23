@@ -1123,9 +1123,10 @@ static iree_status_t loom_ownership_lifetime_apply_cfg_br_payload(
       loom_region_const_block(state->body, edge->target_block_index);
   const loom_value_id_t* operands = loom_op_const_operands(edge->terminator);
   iree_host_size_t count = target->arg_count;
-  // A branch transfers its arguments in parallel. Retire all source names
+  // A branch transfers its arguments in parallel. Retire owned source names
   // before assigning destinations, preserving the original states and origins
-  // for backedges that permute their own block arguments.
+  // for backedges that permute their own block arguments. Borrowed sources
+  // remain available under their dominating SSA names.
   for (iree_host_size_t i = 0; i < count; ++i) {
     loom_value_ordinal_t source_ordinal =
         loom_ownership_lifetime_try_ordinal(state, operands[i]);
@@ -1151,8 +1152,10 @@ static iree_status_t loom_ownership_lifetime_apply_cfg_br_payload(
     }
     state->edge_origin_args[i] =
         loom_ownership_lifetime_origin_arg(state, source_ordinal);
-    loom_ownership_lifetime_state_bits_set(
-        edge_state, source_ordinal, LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN);
+    if (source_state == LOOM_OWNERSHIP_LIFETIME_VALUE_OWNED) {
+      loom_ownership_lifetime_state_bits_set(
+          edge_state, source_ordinal, LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN);
+    }
   }
   for (iree_host_size_t i = 0; i < count && !state->failed; ++i) {
     loom_value_ordinal_t source_ordinal =
@@ -1175,13 +1178,19 @@ static iree_status_t loom_ownership_lifetime_apply_cfg_br_payload(
     }
     loom_ownership_lifetime_value_state_t source_state =
         loom_ownership_lifetime_state_bits_get(source_bits, source_ordinal);
+    // The source check above distinguishes consumed values from ordinary
+    // values without ownership effects. Forward the latter as available
+    // borrows, just like callable arguments. Otherwise a scalar initialized
+    // by a constant and updated by a call can appear consumed on the first
+    // exit path after its backedge establishes borrowed state.
+    if (source_state == LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN) {
+      source_state = LOOM_OWNERSHIP_LIFETIME_VALUE_BORROWED;
+    }
     loom_ownership_lifetime_state_bits_set(edge_state, target_ordinal,
                                            source_state);
     loom_ownership_lifetime_set_origin_arg(state, target_ordinal,
                                            state->edge_origin_args[i]);
-    if (source_state != LOOM_OWNERSHIP_LIFETIME_VALUE_UNKNOWN) {
-      loom_ownership_lifetime_mark_ever_seen(state, target_ordinal);
-    }
+    loom_ownership_lifetime_mark_ever_seen(state, target_ordinal);
   }
   return iree_ok_status();
 }

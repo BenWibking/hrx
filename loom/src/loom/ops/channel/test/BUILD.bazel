@@ -17,6 +17,7 @@ loom_check_test_suite(
         "attention_control.loom-test",
         "collective_control.loom-test",
         "ownership.loom-test",
+        "read_ahead.loom-test",
         "roundtrip.loom-test",
         "verify.loom-test",
         "worker_control.loom-test",
