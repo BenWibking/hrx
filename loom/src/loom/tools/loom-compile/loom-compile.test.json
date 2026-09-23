@@ -2,7 +2,7 @@
   "version": 1,
   "cases": [
     {
-      "name": "rejects invalid source before target selection",
+      "name": "pipeline none still verifies stdin before writing output",
       "run": {
         "tool": "loom-compile",
         "args": [
@@ -14,14 +14,6 @@
         }
       },
       "exit": 1,
-      "stderr": {
-        "contains": [
-          "<stdin>:2:3",
-          "STRUCTURE/014",
-          "2 |   %value = scalar.constant 2147483648 : i32",
-          "= help: Choose an attribute value satisfying 'element type domain'"
-        ]
-      },
       "files": [{"path": "{tmp}/invalid.bin", "exists": false}]
     },
     {

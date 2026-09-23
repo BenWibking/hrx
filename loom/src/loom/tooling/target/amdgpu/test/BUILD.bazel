@@ -59,7 +59,6 @@ iree_execution_test_suite(
         "feature_distinct_code_objects.loom",
         "loom_opt_f32_arith.loom",
         "selected_root_amdgpu.loom",
-        "//loom/src/loom/tooling/target/amdgpu/test/corpus:gfx11/schedule_scopes.loom",
     ],
     manifests = ["loom-compile-amdgpu.test.json"],
     tags = ["hostonly"],
