@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+load("//runtime/build_tools/bazel:cc_benchmark.bzl", "iree_runtime_cc_benchmark")
 load("//runtime/build_tools/bazel:cc_test.bzl", "iree_runtime_cc_test")
 
 package(
@@ -16,6 +17,58 @@ RDMA_COMPATIBILITY = ["@platforms//os:linux"] + select({
     "//runtime/config/net:rdma_enabled": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
+
+iree_runtime_cc_benchmark(
+    name = "direct_transfer_benchmarks",
+    srcs = ["backend.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/carrier/rdma:factory",
+        "//runtime/src/iree/net/cts:direct_transfer_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:region",
+    ],
+)
+
+iree_runtime_cc_benchmark(
+    name = "direct_transfer_unbatched_benchmarks",
+    srcs = ["backend.cc"],
+    defines = ["IREE_NET_RDMA_CTS_POST_BATCH_SIZE=1"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/carrier/rdma:factory",
+        "//runtime/src/iree/net/cts:direct_transfer_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:region",
+    ],
+)
+
+iree_runtime_cc_benchmark(
+    name = "transfer_benchmarks",
+    srcs = ["backend.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/carrier/rdma:factory",
+        "//runtime/src/iree/net/cts:transfer_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:region",
+    ],
+)
 
 iree_runtime_cc_test(
     name = "direct_transfer_trial_tests",

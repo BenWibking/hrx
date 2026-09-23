@@ -44,6 +44,20 @@ iree_runtime_cc_library(
 )
 
 iree_runtime_cc_library(
+    name = "direct_transfer_benchmarks",
+    testonly = True,
+    srcs = ["direct_transfer_benchmark.cc"],
+    deps = [
+        ":direct_transfer_trial",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//third_party:google_benchmark",
+    ],
+    alwayslink = True,
+)
+
+iree_runtime_cc_library(
     name = "direct_transfer_trial_tests",
     testonly = True,
     srcs = ["direct_transfer_trial_test.cc"],

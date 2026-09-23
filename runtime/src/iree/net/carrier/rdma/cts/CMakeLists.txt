@@ -10,6 +10,71 @@
 iree_add_all_subdirs()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_binary_benchmark(
+  NAME
+    direct_transfer_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::base
+    iree::net::carrier::rdma::factory
+    iree::net::cts::direct_transfer_benchmarks
+    iree::net::cts::transport_backend
+    iree::net::rdma::context
+    iree::net::rdma::region
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_binary_benchmark(
+  NAME
+    direct_transfer_unbatched_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::base
+    iree::net::carrier::rdma::factory
+    iree::net::cts::direct_transfer_benchmarks
+    iree::net::cts::transport_backend
+    iree::net::rdma::context
+    iree::net::rdma::region
+    iree::third_party::google_benchmark
+  DEFINES
+    "IREE_NET_RDMA_CTS_POST_BATCH_SIZE=1"
+  TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_binary_benchmark(
+  NAME
+    transfer_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::base
+    iree::net::carrier::rdma::factory
+    iree::net::cts::transfer_benchmarks
+    iree::net::cts::transport_backend
+    iree::net::rdma::context
+    iree::net::rdma::region
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_test(
   NAME
     direct_transfer_trial_tests

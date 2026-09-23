@@ -1,4 +1,19 @@
-# Native RDMA Resources
+# RDMA Networking
+
+The Linux RDMA transport provides ordinary framed messages and explicit
+registered-memory placement through the net connection APIs. Applications can
+reuse registrations across connections, place payloads directly into final peer
+targets, and report consumer progress independently of local source completion.
+This supports communication patterns for collectives and remote execution
+without depending on a HAL driver.
+
+There are two layers. `runtime/src/iree/net/rdma/` owns native resources;
+`runtime/src/iree/net/carrier/rdma/` supplies host connection management,
+bounded posting and caller-owned proactor progress. Native ownership does not
+require the host adapter. Host progress creates no private worker or persistent
+idle polling loop.
+
+## Native Ownership
 
 This layer owns Linux rdma-core resources independently of a connection or an
 async proactor. An explicit context retains the canonical device inventory,
@@ -12,6 +27,67 @@ selection. `runtime/src/iree/net/rdma/region.h` adapts slab registration to the
 existing `iree_async_region_t` and span model. Native queues borrow the context's
 handles while retaining their owner. This layer installs no worker, address
 registry, proactor callback or host transfer scheduler.
+
+## Connecting An Application
+
+`runtime/src/iree/net/carrier/rdma/factory.h` constructs a transport factory from
+an explicit context and connection geometry. Numeric IPv4 `host:port` and IPv6
+`[host]:port` addresses use native asynchronous CM routing. The chosen device
+and port must match that route. A listener may use port zero and query its actual
+bound address. The factory plugs into the normal transport registry when an
+application supplies one; enabling RDMA does not install a process-global
+factory or select a device implicitly for that application.
+
+A registered-transfer caller has the following ownership flow:
+
+1. Create a native context, allocate or wrap a slab, and register it with
+   `iree_net_rdma_region_register_slab`. Select its NIC IOVA explicitly.
+   Create a factory using the same context. Regions and factories retain the
+   context independently; one registration can serve many connections.
+2. Listen or connect using `runtime/src/iree/net/transport_factory.h`. Each
+   connection's callbacks run on its caller-supplied proactor. Outbound connect
+   operation storage remains alive until its terminal callback. Listener
+   admission bounds unfinished handshakes, not already published connections.
+3. Both peers open matching endpoint ordinals through
+   `runtime/src/iree/net/connection.h`. Use a message endpoint for descriptions
+   and results and a direct endpoint for registered payloads. Opens complete
+   asynchronously after both sides supply their geometry; independent endpoint
+   readiness callbacks need not arrive together. Install handlers before
+   activating each returned borrowed endpoint.
+4. The target owner exports a registered span, sends the description as a
+   message, and retains its registration and backing. The peer imports that
+   description once through `iree_net_direct_endpoint_import_target`. An
+   imported target is a borrowed value for that connection, not a remote memory
+   owner or an implicit transfer of application access.
+5. Submit registered source spans with `iree_net_direct_endpoint_write`.
+   Temporary span/target descriptors may be reused as soon as admission
+   returns. Source bytes remain borrowed until the terminal source callback.
+   `query_write_budget` exposes logical capacity; its return is advisory, and
+   successful admission owes exactly one completion while rejection owes none.
+6. A placement notification lets the consumer examine its final target. Actual
+   consumer completion determines when that target may be reused. For example,
+   queue-channel ADVANCE messages can report explicitly witnessed coordinates.
+   Source callbacks, notification receive credits and unrelated submissions
+   cannot substitute for that witness.
+7. Stop issuing work and establish the application's peer-access/consumer joins.
+   Connection deactivation joins accepted operations, native access and callback
+   bodies. Release connection metadata after that callback. Release exported
+   regions only after all peers using their grants and all local consumers have
+   finished; closing one of several connections does not satisfy those other
+   obligations. Listener stop joins unpublished handshakes locally and leaves
+   published connections independent.
+
+`runtime/src/iree/net/cts/direct_transfer_trial.cc` is an executable example of
+this flow. It exchanges descriptions through a queue channel, uses a registration
+across sixteen connections, and joins source return with checked consumer
+frontiers before reusing bounded slots. The application owns both polling
+threads; the transport does not create them.
+
+RDMA peers and their fabric are trusted. This transport supplies no peer
+authentication or encryption. Application admission and network isolation
+establish that boundary. An exported subrange is a software access contract,
+not a hardware-isolated capability for just that subrange: the native remote
+key authorizes its containing registration.
 
 ## Addresses And Lifetime
 
@@ -51,6 +127,29 @@ iree-bazel-test --config=asan \
   --test_env=IREE_NET_RDMA_TEST_DEVICE=<device-name> \
   //runtime/src/iree/net/carrier/rdma:completion_queue_test
 ```
+
+The direct Bazel setting is `--//runtime/config/net:rdma=true`. The full public
+factory and registered-transfer workload runs with the CM environment:
+
+```sh
+iree-bazel-test --config=asan --//runtime/config/net:rdma=true \
+  --test_env=IREE_NET_RDMA_CM_TEST_DEVICE=<device-name> \
+  --test_env=IREE_NET_RDMA_CM_TEST_ADDRESS=<local-IP>:0 \
+  //runtime/src/iree/net/carrier/rdma/cts:transport_tests \
+  //runtime/src/iree/net/carrier/rdma/cts:direct_transfer_trial_tests \
+  //runtime/src/iree/net/carrier/rdma/cts:direct_transfer_segmented_tests
+```
+
+The segmented runner lowers the native request extent to 257 bytes without
+changing logical record sizes. The ordinary message workload and benchmark
+targets live in the same package. `runtime/src/iree/net/cts/README.md` describes
+the measured ownership boundary and the native-post-one comparison.
+
+The CTS address is an explicit request to use RDMA: an unavailable requested
+native context fails instead of silently falling back to another carrier.
+Missing address configuration permits a skip. An active provider alone does
+not establish CM routing; the local address must belong to the selected device's
+route. Native setup errors preserve their provider/OS cause.
 
 The corresponding CMake option is `IREE_NET_RDMA=ON`. Both builds use the
 third-party header facade; disabled builds do not fetch RDMA headers. The
@@ -197,3 +296,29 @@ source callback. Closing joins concurrent prefix writers, admitted messages,
 native access and callback handoffs before the containing connection joins its
 shared CQ. Directional shutdown sends an ordered EOF after all admitted bytes
 while preserving the opposite send direction.
+
+## Geometry And Device Consumers
+
+`iree_net_rdma_connection_options_t` configures logical write slots, captured
+entries per write, native SQ/RQ bounds, posting and CQ service batches, control
+headroom, and copied-message slot geometry separately. Large logical spans
+stream through native windows; the native request limit is not a payload-size
+ceiling. Descriptor-count capacity is a distinct admission limit. Endpoint
+resources are constructed on open, and CQ capacity reserves the complete
+configured send/receive error burst rather than only successful sparse CQEs.
+
+Batching signals the last native request of each actual post, including a
+partially filled post. It does not wait for a full batch or a subsequent
+application operation. The defaults in
+`runtime/src/iree/net/carrier/rdma/connection.c` are explicit host geometry,
+not a hardware-specific optimum. The CTS compares those defaults with an
+otherwise identical one-request-per-post configuration.
+
+Native resource ownership is separate so device-initiated consumers can share
+device/registration lifetime without acquiring a host operation scheduler.
+This host transport does not implement GPU queue mappings, device-side posting
+or GPU/NIC visibility. Those require qualification of a concrete provider's
+queue/doorbell mappings and the GPU's memory access/coherence contract. A future
+device consumer owns stopping its kernels and waiting for their completion
+before native resources retire; context release cannot terminate an arbitrary
+persistent kernel.

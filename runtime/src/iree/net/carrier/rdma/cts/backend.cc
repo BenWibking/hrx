@@ -58,6 +58,9 @@ iree_status_t CreateRegisteredFactory(
   options.connection.direct.max_request_length =
       IREE_NET_RDMA_CTS_MAX_REQUEST_LENGTH;
 #endif
+#if defined(IREE_NET_RDMA_CTS_POST_BATCH_SIZE)
+  options.connection.direct.post_batch_size = IREE_NET_RDMA_CTS_POST_BATCH_SIZE;
+#endif
   iree_status_t status = iree_net_rdma_factory_create(
       context, &options, host_allocator, out_factory);
   if (iree_status_is_ok(status)) {

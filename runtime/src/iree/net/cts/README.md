@@ -6,7 +6,8 @@ and fixed-work benchmarks, so timing a transport also checks its output and
 ownership joins. These workloads model communication useful to remoting and
 collectives without depending on the HAL or a device driver.
 
-Carrier runners live under `runtime/src/iree/net/carrier/{loopback,tcp,shm}/cts/`.
+Carrier runners live under
+`runtime/src/iree/net/carrier/{loopback,tcp,shm,rdma}/cts/`.
 Each links one `TransportBackend` from
 `runtime/src/iree/net/cts/transport_backend.h` with explicit async CTS proactor
 configurations. Linux runners include io_uring and its capability-masked variants,
@@ -159,12 +160,79 @@ tracing, concurrent builds, and uncontrolled CPU scheduling change the result.
 
 ## Qualification Boundary
 
-These are same-process host-memory trials using raw, unregistered SG sources and
+The copied-message trials use raw, unregistered SG sources and
 inline or poll-owner-deferred receive consumption. TCP uses the local network
-stack; SHM and loopback use their real carriers. This measures checked-transfer
+stack; SHM, loopback and RDMA use their real message carriers. RDMA messages copy
+through registered windows; they are not direct-placement measurements. These
+are same-process host-memory workloads measuring checked-transfer
 application work, not pure link bandwidth or device execution latency.
 
 Process isolation, independently executing device consumers, registered
 opaque/device memory, RDMA placement, and native DMA visibility require trials
 crossing those specific ownership boundaries. An enabled zero-copy capability
 or a fast host result alone establishes none of them.
+
+## Registered Target Transfer
+
+`runtime/src/iree/net/cts/direct_transfer_trial.h` declares a separate workload
+for final-target placement. Its linked backend creates an explicit registration
+and compatible factory once per side. That registration is reused across all
+connections on the side. Both application poll owners open real message/direct
+endpoints; target descriptions cross the queue channel as COMMAND messages,
+not in-process pointer handoffs.
+
+Each direct write places a changing record into its final registered target.
+The sender overwrites temporary descriptors after admission and keeps the
+registered source bytes until its terminal source callback. A slot is reusable
+only when that source has returned and the consumer reports a covering consumed
+coordinate. Placement notification is not target-reuse permission. The consumer
+constructs a prefix from individually checked slots, without inferring completion
+from callback order.
+
+The same `inline`, `retained_window`, `immediate` and `poll_turn` modes apply.
+Retained targets use application storage, not native receive leases. Holding a
+window larger than the native notification RQ verifies that receive replenishment
+and independent timeline progress continue without recycling those targets.
+The payload encodes peer identity, timeline and epoch so repeated slot reuse
+checks fresh data rather than repeatedly comparing an unchanged image.
+
+The RDMA runners require an active native device and a routable local CM address.
+See `runtime/src/iree/net/rdma/README.md` for setup and lifetime contracts. Correctness
+targets `direct_transfer_trial_tests` and `direct_transfer_segmented_tests`
+exercise ordinary and deliberately small native request extents. Their descriptor
+counts cross 31/32/33, 63/64/65 and 127/128/129 independently of logical payload
+length and native queue depth.
+
+For optimized measurements, build
+`//runtime/src/iree/net/carrier/rdma/cts:direct_transfer_benchmarks` with the same
+optimization flags shown above, then run with the device/address environment:
+
+```sh
+IREE_NET_RDMA_CM_TEST_DEVICE=<device-name> \
+IREE_NET_RDMA_CM_TEST_ADDRESS=<local-IP>:0 \
+  bazel-bin/runtime/src/iree/net/carrier/rdma/cts/direct_transfer_benchmarks \
+  '--benchmark_filter=^CheckedDirectTransfer/rdma/io_uring/same_process/' \
+  --benchmark_repetitions=5 \
+  --benchmark_out=direct-results.json --benchmark_out_format=json
+```
+
+Rows name `peers`, `bytes`, `window`, `sg` and `records`. Each record is one
+logical write divided into `sg` registered fragments. Fixed iteration count,
+256 warm-up records per timeline, wall-time and process-CPU accounting follow
+the copied workload conventions. Registration, connection setup, warm-up and
+teardown are outside measurement; payload generation/checking, feedback, and
+source returns are inside. `payload_storage_bytes` counts both sides' final
+payload rings, not native queue metadata or copied control storage.
+
+`direct_transfer_unbatched_benchmarks` changes only the direct endpoint's
+native posting batch limit to one, producing one provider post and signaled
+source completion per native request. It retains identical logical admission,
+SQ/RQ capacity, payloads, registrations, application windows and completion
+definition. Compare matching rows to isolate posting/signaling policy; this
+is not a raw-verbs measurement with all framework work removed. Source callback
+counts remain one per logical record in both configurations, independently of
+native CQE counts. Every benchmark target has a correctness smoke test.
+
+These trials qualify registered host placement and source/consumer ownership.
+SoftRoCE performance includes software packet processing and does not establish
+physical NIC throughput, GPU memory visibility, or device-initiated progress.
