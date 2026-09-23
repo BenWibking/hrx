@@ -36,16 +36,24 @@ typedef struct iree_net_rdma_connection_events_callbacks_t {
   void* user_data;
 } iree_net_rdma_connection_events_callbacks_t;
 
-// Creates a nonblocking native event channel and begins bounded dispatch on the
-// caller-owned proactor. Context and proactor are retained. Both callbacks and
-// a nonzero service batch size are required. Failure leaves output NULL and no
-// live monitor. No native IDs, workers, or connection registry are created.
+// Creates an inactive nonblocking native event channel, retaining context and
+// proactor. Both callbacks and a nonzero service batch size are required.
+// Failure leaves output NULL. No native IDs, monitors or workers are created;
+// native ID setup can fail and unwind synchronously before activation.
 IREE_API_EXPORT iree_status_t iree_net_rdma_connection_events_create(
     iree_net_rdma_context_t* context, iree_async_proactor_t* proactor,
     uint32_t service_batch_size,
     iree_net_rdma_connection_events_callbacks_t callbacks,
     iree_allocator_t host_allocator,
     iree_net_rdma_connection_events_t** out_events);
+
+// Begins bounded dispatch on the caller-owned proactor after native ID setup.
+// Records already queued on the channel are delivered by subsequent polling.
+// Failure leaves the service inactive and immediately destroyable. A successful
+// activation requires deactivation before destruction; retired services cannot
+// be reactivated. No callback runs inline.
+IREE_API_EXPORT iree_status_t iree_net_rdma_connection_events_activate(
+    iree_net_rdma_connection_events_t* events);
 
 // Borrows the channel for explicit ID creation/migration. Only RDMA_PS_TCP IDs
 // may use this service; their ownership stays with the caller.
@@ -57,13 +65,14 @@ iree_net_rdma_connection_events_handle(
 // the poll owner, outside this service's event/progress callbacks. Completion
 // may run inline and destroy the service. The caller keeps its poll owner
 // alive through that completion, as required by event-source unregistration.
+// An inactive service completes inline without submitting any work.
 IREE_API_EXPORT void iree_net_rdma_connection_events_deactivate(
     iree_net_rdma_connection_events_t* events,
     iree_async_event_source_unregistered_callback_t callback);
 
-// Destroys a deactivated service after all IDs have been destroyed or migrated
-// away. Native ID destruction disposes unread events and undelivered listener
-// requests; every event obtained by this service was already acknowledged.
+// Destroys an inactive or deactivated service after all IDs have been destroyed
+// or migrated away. Native ID destruction disposes unread events and
+// undelivered listener requests; every obtained event was already acknowledged.
 IREE_API_EXPORT void iree_net_rdma_connection_events_destroy(
     iree_net_rdma_connection_events_t* events);
 

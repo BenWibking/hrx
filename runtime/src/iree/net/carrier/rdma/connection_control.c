@@ -455,6 +455,9 @@ void iree_net_rdma_connection_control_connect(
     status = iree_net_rdma_connection_control_native_error("rdma_resolve_addr",
                                                            errno);
   }
+  if (iree_status_is_ok(status)) {
+    status = iree_net_rdma_connection_events_activate(control->events);
+  }
   if (!iree_status_is_ok(status)) {
     iree_net_rdma_connection_control_fail(control, status);
   }
@@ -491,6 +494,9 @@ void iree_net_rdma_connection_control_accept(
       status =
           iree_net_rdma_connection_control_native_error("rdma_accept", errno);
     }
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_net_rdma_connection_events_activate(control->events);
   }
   if (!iree_status_is_ok(status)) {
     iree_net_rdma_connection_control_fail(control, status);

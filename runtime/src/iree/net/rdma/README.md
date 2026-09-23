@@ -70,7 +70,9 @@ visibility.
 
 The host adapter's CM service in
 `runtime/src/iree/net/carrier/rdma/connection_events.h` owns a native event
-channel and its proactor monitor, while callers own the connection IDs. It
+channel and its proactor monitor, while callers own the connection IDs.
+Construction is inactive: a listener can bind before explicitly activating
+dispatch, and setup failure can unwind without asynchronous cleanup. It
 acknowledges native records before dispatching borrowed snapshots so an owner
 can migrate an accepted ID or destroy a rejected ID inside its callback.
 Channel deactivation joins monitoring separately from native connection

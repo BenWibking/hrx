@@ -725,6 +725,7 @@ class ConnectionControlTest
     CheckCM(library_->rdma_bind_addr(
         listener_id_, reinterpret_cast<sockaddr*>(address_.storage)));
     CheckCM(library_->rdma_listen(listener_id_, 32));
+    IREE_ASSERT_OK(iree_net_rdma_connection_events_activate(listener_events_));
     auto* bound = rdma_get_local_addr(listener_id_);
     address_.length = bound->sa_family == AF_INET ? sizeof(sockaddr_in)
                                                   : sizeof(sockaddr_in6);

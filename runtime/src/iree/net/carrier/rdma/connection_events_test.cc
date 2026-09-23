@@ -15,6 +15,7 @@
 #include <memory>
 #include <tuple>
 
+#include "iree/async/operations/scheduling.h"
 #include "iree/async/platform/io_uring/api.h"
 #include "iree/async/platform/posix/api.h"
 #include "iree/base/alignment.h"
@@ -179,6 +180,7 @@ class NativeConnection {
     // test harness, not an in-test deadline, diagnoses a stuck local route.
     CheckCM(library_->rdma_resolve_addr(
         id_, nullptr, reinterpret_cast<sockaddr*>(address.storage), INT_MAX));
+    IREE_CHECK_OK(iree_net_rdma_connection_events_activate(events_));
   }
 
   void Accept(const rdma_cm_event& event) {
@@ -190,6 +192,7 @@ class NativeConnection {
     CreateQueue();
     auto options = ConnectOptions();
     CheckCM(library_->rdma_accept(id_, &options));
+    IREE_CHECK_OK(iree_net_rdma_connection_events_activate(events_));
   }
 
   void Disconnect() {
@@ -477,6 +480,7 @@ class ConnectionEventsTest
     CheckCM(library_->rdma_bind_addr(
         listener_id_, reinterpret_cast<sockaddr*>(address_.storage)));
     CheckCM(library_->rdma_listen(listener_id_, 32));
+    IREE_ASSERT_OK(iree_net_rdma_connection_events_activate(listener_events_));
     auto* bound = rdma_get_local_addr(listener_id_);
     address_.length = bound->sa_family == AF_INET ? sizeof(sockaddr_in)
                                                   : sizeof(sockaddr_in6);
@@ -489,14 +493,15 @@ class ConnectionEventsTest
     iree_net_rdma_context_release(context_);
   }
 
-  void CreateProactor(iree_async_proactor_t** out_proactor) {
+  void CreateProactor(iree_async_proactor_t** out_proactor,
+                      iree_allocator_t allocator = iree_allocator_system()) {
     auto options = iree_async_proactor_options_default();
     if (strcmp(std::get<0>(GetParam()), "io_uring") == 0) {
-      IREE_CHECK_OK(iree_async_proactor_create_io_uring(
-          options, iree_allocator_system(), out_proactor));
+      IREE_CHECK_OK(iree_async_proactor_create_io_uring(options, allocator,
+                                                        out_proactor));
     } else {
-      IREE_CHECK_OK(iree_async_proactor_create_posix(
-          options, iree_allocator_system(), out_proactor));
+      IREE_CHECK_OK(
+          iree_async_proactor_create_posix(options, allocator, out_proactor));
     }
   }
 
@@ -509,6 +514,20 @@ class ConnectionEventsTest
       StopEvents(proactor_, listener_events_);
       listener_events_ = nullptr;
     }
+  }
+
+  void CreateColdEvents(iree_async_proactor_t* proactor,
+                        uint32_t* resolved_count,
+                        iree_net_rdma_connection_events_t** out_events) {
+    IREE_CHECK_OK(iree_net_rdma_connection_events_create(
+        context_, proactor, std::get<1>(GetParam()),
+        {+[](void* user_data, const rdma_cm_event* event) {
+           EXPECT_EQ(event->event, RDMA_CM_EVENT_ADDR_RESOLVED);
+           ++*static_cast<uint32_t*>(user_data);
+         },
+         +[](void*, iree_status_t status) { iree_status_abort(status); },
+         resolved_count},
+        iree_allocator_system(), out_events));
   }
 
   // Explicit selected native resources for the qualification device.
@@ -528,6 +547,112 @@ class ConnectionEventsTest
   // Native requests actually delivered to this owner, not merely initiated.
   uint32_t received_request_count_ = 0;
 };
+
+TEST_P(ConnectionEventsTest, BindCollisionUnwindsWithoutDispatch) {
+  uint32_t resolved_count = 0;
+  iree_net_rdma_connection_events_t* events = nullptr;
+  CreateColdEvents(proactor_, &resolved_count, &events);
+  rdma_cm_id* id = nullptr;
+  CheckCM(
+      library_->rdma_create_id(iree_net_rdma_connection_events_handle(events),
+                               &id, nullptr, RDMA_PS_TCP));
+  int result = library_->rdma_bind_addr(
+      id, reinterpret_cast<sockaddr*>(address_.storage));
+  EXPECT_NE(result, 0);
+  EXPECT_EQ(errno, EADDRINUSE);
+  CheckCM(library_->rdma_destroy_id(id));
+  iree_net_rdma_connection_events_destroy(events);
+  EXPECT_EQ(resolved_count, 0u);
+}
+
+TEST_P(ConnectionEventsTest, QueuedResolutionWaitsForActivation) {
+  uint32_t resolved_count = 0;
+  iree_net_rdma_connection_events_t* events = nullptr;
+  CreateColdEvents(proactor_, &resolved_count, &events);
+  rdma_cm_id* id = nullptr;
+  CheckCM(
+      library_->rdma_create_id(iree_net_rdma_connection_events_handle(events),
+                               &id, nullptr, RDMA_PS_TCP));
+  CheckCM(library_->rdma_resolve_addr(
+      id, nullptr, reinterpret_cast<sockaddr*>(address_.storage), INT_MAX));
+  ASSERT_NO_FATAL_FAILURE(
+      WaitReadable(iree_net_rdma_connection_events_handle(events)->fd));
+  bool visited = false;
+  iree_async_nop_operation_t marker = {};
+  iree_async_operation_initialize(
+      &marker.base, IREE_ASYNC_OPERATION_TYPE_NOP, 0,
+      +[](void* user_data, iree_async_operation_t*, iree_status_t status,
+          iree_async_completion_flags_t) {
+        IREE_CHECK_OK(status);
+        *static_cast<bool*>(user_data) = true;
+      },
+      &visited);
+  IREE_CHECK_OK(iree_async_proactor_submit_one(proactor_, &marker.base));
+  PollUntil(proactor_, [&] { return visited; });
+  EXPECT_EQ(resolved_count, 0u);
+  IREE_ASSERT_OK(iree_net_rdma_connection_events_activate(events));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_FAILED_PRECONDITION,
+                        iree_net_rdma_connection_events_activate(events));
+  PollUntil(proactor_, [&] { return resolved_count == 1; });
+  CheckCM(library_->rdma_destroy_id(id));
+  StopEvents(proactor_, events);
+  EXPECT_EQ(resolved_count, 1u);
+}
+
+TEST_P(ConnectionEventsTest, MonitorAllocationFailureLeavesColdOwner) {
+  struct Allocator {
+    // Enabled only after native channel and proactor construction succeeds.
+    bool fail = false;
+
+    static iree_status_t Control(void* user_data,
+                                 iree_allocator_command_t command,
+                                 const void* params, void** inout_ptr) {
+      if (static_cast<Allocator*>(user_data)->fail &&
+          (command == IREE_ALLOCATOR_COMMAND_MALLOC ||
+           command == IREE_ALLOCATOR_COMMAND_CALLOC)) {
+        return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                                "intentional monitor allocation failure");
+      }
+      auto system = iree_allocator_system();
+      return system.ctl(system.self, command, params, inout_ptr);
+    }
+  } allocator;
+  for (bool retry : {false, true}) {
+    SCOPED_TRACE(retry);
+    iree_async_proactor_t* proactor = nullptr;
+    CreateProactor(&proactor, {&allocator, Allocator::Control});
+    uint32_t resolved_count = 0;
+    iree_net_rdma_connection_events_t* events = nullptr;
+    CreateColdEvents(proactor, &resolved_count, &events);
+    allocator.fail = true;
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_RESOURCE_EXHAUSTED,
+                          iree_net_rdma_connection_events_activate(events));
+    allocator.fail = false;
+    if (retry) {
+      IREE_ASSERT_OK(iree_net_rdma_connection_events_activate(events));
+      StopEvents(proactor, events);
+    } else {
+      iree_net_rdma_connection_events_destroy(events);
+    }
+    iree_async_proactor_release(proactor);
+    EXPECT_EQ(resolved_count, 0u);
+  }
+}
+
+TEST_P(ConnectionEventsTest, ColdDeactivationCompletesInline) {
+  uint32_t resolved_count = 0;
+  iree_net_rdma_connection_events_t* events = nullptr;
+  CreateColdEvents(proactor_, &resolved_count, &events);
+  bool joined = false;
+  iree_net_rdma_connection_events_deactivate(
+      events, {+[](void* user_data) { *static_cast<bool*>(user_data) = true; },
+               &joined});
+  EXPECT_TRUE(joined);
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_FAILED_PRECONDITION,
+                        iree_net_rdma_connection_events_activate(events));
+  iree_net_rdma_connection_events_destroy(events);
+  EXPECT_EQ(resolved_count, 0u);
+}
 
 TEST_P(ConnectionEventsTest, AcceptedConnectionOutlivesListenerAndTransfers) {
   NativeConnection first(context_, proactor_, std::get<1>(GetParam()),
