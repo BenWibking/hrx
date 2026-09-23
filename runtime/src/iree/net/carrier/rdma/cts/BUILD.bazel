@@ -36,6 +36,40 @@ iree_runtime_cc_benchmark(
 )
 
 iree_runtime_cc_benchmark(
+    name = "expert_benchmarks",
+    srcs = ["backend.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/carrier/rdma:factory",
+        "//runtime/src/iree/net/cts:expert_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:region",
+    ],
+)
+
+iree_runtime_cc_benchmark(
+    name = "gather_benchmarks",
+    srcs = ["backend.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/carrier/rdma:factory",
+        "//runtime/src/iree/net/cts:gather_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:region",
+    ],
+)
+
+iree_runtime_cc_benchmark(
     name = "direct_transfer_benchmarks",
     srcs = ["backend.cc"],
     target_compatible_with = RDMA_COMPATIBILITY,

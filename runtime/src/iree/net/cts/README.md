@@ -191,7 +191,8 @@ This models a retained communication session, not independently reclaimable
 transport slots or arbitrary rolling out-of-order reuse. The integer transform
 checks ownership and routing; byte profiles do not simulate FP4/FP8 arithmetic.
 
-`ExpertRoundTrip/<carrier>/<proactor>/same_process/` rows name traffic shape,
+The carrier's `expert_benchmarks` target and matching smoke test contain
+`ExpertRoundTrip/<carrier>/<proactor>/same_process/` rows naming traffic shape,
 rank count, token capacity, dispatch/scale/combine bytes, block extent, source
 window, depth, and measured rounds. `amortized_us_per_round_trip` includes route
 preparation, packing, host expert work, result checking, and all ownership joins.
@@ -203,6 +204,33 @@ bytes. `max_receiver_tokens` exposes skew, and `payload_storage_bytes` reports
 the reserved application slabs rather than carrier resources or total memory.
 These host trials establish communication baselines, not MoE kernel throughput
 or GPU/NIC compute overlap.
+
+## Retained Gather Sessions
+
+`runtime/src/iree/net/cts/gather_trial.h` models multiple independently consumed
+all-gather handles. Each rank contributes a different shard to each handle over
+real peer connections. Newer handles are read and checked before older ones;
+the older views remain live while all the newer payloads arrive. Every rank
+checks every contributed shard, including its own local contribution. No shared
+application matrix supplies values or readiness.
+
+Session depth bounds all live source and gather storage. Source callbacks and
+application reads join before the next session reuses it. Target credit follows
+actual consumption, not placement or the completion of a newer handle. Message
+inputs release transport leases after assembling into owned slots; registered
+writes land directly in the final gather inputs. As with the expert workload,
+the session joins as a bounded batch rather than providing rolling slot reuse.
+
+The carrier's `gather_benchmarks` target and matching smoke test contain
+`RetainedGather` rows identifying ranks, per-rank shard extent, transfer blocks,
+source window, retained depth and measured group gathers. The full gathered
+result is `ranks * shard_bytes`; actual remote payload is
+`ranks * (ranks - 1) * shard_bytes` per group gather. Counters distinguish
+`out_of_order_reads`, retained handle occupancy, source callbacks and reserved
+payload storage. `amortized_us_per_gather` includes source generation and checked
+application reads and is not a per-shard or individual-handle latency. This
+establishes independent progress under retention, not GPU compute interference
+or a choice of production all-gather algorithm.
 
 ## Correctness Runs
 

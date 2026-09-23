@@ -61,6 +61,30 @@ iree_runtime_cc_benchmark(
 )
 
 iree_runtime_cc_benchmark(
+    name = "expert_benchmarks",
+    srcs = ["backend.cc"],
+    deps = [
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/net/carrier/tcp:factory",
+        "//runtime/src/iree/net/cts:expert_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+    ],
+)
+
+iree_runtime_cc_benchmark(
+    name = "gather_benchmarks",
+    srcs = ["backend.cc"],
+    deps = [
+        "//runtime/src/iree/async/cts/util:benchmark_main",
+        "//runtime/src/iree/async/cts/util:platform_backends",
+        "//runtime/src/iree/net/carrier/tcp:factory",
+        "//runtime/src/iree/net/cts:gather_benchmarks",
+        "//runtime/src/iree/net/cts:transport_backend",
+    ],
+)
+
+iree_runtime_cc_benchmark(
     name = "transfer_benchmarks",
     srcs = ["backend.cc"],
     deps = [

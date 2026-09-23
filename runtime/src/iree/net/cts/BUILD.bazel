@@ -51,13 +51,37 @@ iree_runtime_cc_library(
 iree_runtime_cc_library(
     name = "collective_benchmarks",
     testonly = True,
-    srcs = [
-        "collective_benchmark.cc",
-        "expert_benchmark.cc",
-    ],
+    srcs = ["collective_benchmark.cc"],
     deps = [
         ":collective_trial",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//third_party:google_benchmark",
+    ],
+    alwayslink = True,
+)
+
+iree_runtime_cc_library(
+    name = "expert_benchmarks",
+    testonly = True,
+    srcs = ["expert_benchmark.cc"],
+    deps = [
         ":expert_trial",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//third_party:google_benchmark",
+    ],
+    alwayslink = True,
+)
+
+iree_runtime_cc_library(
+    name = "gather_benchmarks",
+    testonly = True,
+    srcs = ["gather_benchmark.cc"],
+    deps = [
+        ":gather_trial",
         ":transfer_trial",
         ":transport_backend",
         "//runtime/src/iree/async/cts/util:registry",
@@ -88,15 +112,33 @@ iree_runtime_cc_library(
     srcs = [
         "collective_trial_test.cc",
         "expert_trial_test.cc",
+        "gather_trial_test.cc",
     ],
     deps = [
         ":collective_trial",
         ":expert_trial",
+        ":gather_trial",
         ":transport_backend",
         "//runtime/src/iree/async/cts/util:registry",
         "//runtime/src/iree/testing:gtest",
     ],
     alwayslink = True,
+)
+
+iree_runtime_cc_library(
+    name = "gather_trial",
+    testonly = True,
+    srcs = ["gather_trial.cc"],
+    hdrs = ["gather_trial.h"],
+    deps = [
+        ":collective_transport",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+    ],
 )
 
 iree_runtime_cc_library(

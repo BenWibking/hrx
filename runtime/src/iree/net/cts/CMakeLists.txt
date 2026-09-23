@@ -56,10 +56,40 @@ iree_cc_library(
     collective_benchmarks
   SRCS
     "collective_benchmark.cc"
-    "expert_benchmark.cc"
   DEPS
     ::collective_trial
+    ::transfer_trial
+    ::transport_backend
+    iree::async::cts::util::registry
+    iree::third_party::google_benchmark
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    expert_benchmarks
+  SRCS
+    "expert_benchmark.cc"
+  DEPS
     ::expert_trial
+    ::transfer_trial
+    ::transport_backend
+    iree::async::cts::util::registry
+    iree::third_party::google_benchmark
+  TESTONLY
+  ALWAYSLINK
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    gather_benchmarks
+  SRCS
+    "gather_benchmark.cc"
+  DEPS
+    ::gather_trial
     ::transfer_trial
     ::transport_backend
     iree::async::cts::util::registry
@@ -94,14 +124,35 @@ iree_cc_library(
   SRCS
     "collective_trial_test.cc"
     "expert_trial_test.cc"
+    "gather_trial_test.cc"
   DEPS
     ::collective_trial
     ::expert_trial
+    ::gather_trial
     ::transport_backend
     iree::async::cts::util::registry
     iree::testing::gtest
   TESTONLY
   ALWAYSLINK
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    gather_trial
+  HDRS
+    "gather_trial.h"
+  SRCS
+    "gather_trial.cc"
+  DEPS
+    ::collective_transport
+    ::transfer_trial
+    ::transport_backend
+    iree::async
+    iree::async::cts::util::registry
+    iree::base
+    iree::base::core_headers
+  TESTONLY
   PUBLIC
 )
 

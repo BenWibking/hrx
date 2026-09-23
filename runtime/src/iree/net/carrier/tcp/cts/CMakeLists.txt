@@ -64,6 +64,36 @@ iree_cc_binary_benchmark(
 
 iree_cc_binary_benchmark(
   NAME
+    expert_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::net::carrier::tcp::factory
+    iree::net::cts::expert_benchmarks
+    iree::net::cts::transport_backend
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+
+iree_cc_binary_benchmark(
+  NAME
+    gather_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::net::carrier::tcp::factory
+    iree::net::cts::gather_benchmarks
+    iree::net::cts::transport_backend
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+
+iree_cc_binary_benchmark(
+  NAME
     transfer_benchmarks
   SRCS
     "backend.cc"

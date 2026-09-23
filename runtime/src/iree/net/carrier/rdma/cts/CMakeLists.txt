@@ -33,6 +33,48 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_binary_benchmark(
   NAME
+    expert_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::base
+    iree::net::carrier::rdma::factory
+    iree::net::cts::expert_benchmarks
+    iree::net::cts::transport_backend
+    iree::net::rdma::context
+    iree::net::rdma::region
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_binary_benchmark(
+  NAME
+    gather_benchmarks
+  SRCS
+    "backend.cc"
+  DEPS
+    iree::async
+    iree::async::cts::util::benchmark_main
+    iree::async::cts::util::platform_backends
+    iree::base
+    iree::net::carrier::rdma::factory
+    iree::net::cts::gather_benchmarks
+    iree::net::cts::transport_backend
+    iree::net::rdma::context
+    iree::net::rdma::region
+    iree::third_party::google_benchmark
+  TESTONLY
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_binary_benchmark(
+  NAME
     direct_transfer_benchmarks
   SRCS
     "backend.cc"
