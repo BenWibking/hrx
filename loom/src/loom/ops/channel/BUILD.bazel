@@ -14,7 +14,10 @@ package(
 
 loom_generated_cc_library(
     name = "channel",
-    srcs = ["verify.c"],
+    srcs = [
+        "facts.c",
+        "verify.c",
+    ],
     hdrs = ["ops.h"],
     args = ["--dialect=channel"],
     extra_output_flags = ["--ops-include"],
@@ -35,6 +38,7 @@ loom_generated_cc_library(
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/ops/view",
         "//runtime/src/iree/base",
     ],
 )

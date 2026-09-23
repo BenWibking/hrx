@@ -239,6 +239,7 @@ ChannelReadMode = EnumDef(
 
 channel_type = TypeDef(
     "channel",
+    fact_domain="loom_view_fact_domain",
     params=[AttrDef("payload", "type")],
     format=[Param("payload")],
     doc=(
@@ -249,6 +250,7 @@ channel_type = TypeDef(
 
 read_type = TypeDef(
     "read",
+    fact_domain="loom_view_fact_domain",
     params=[
         AttrDef("payload", "type"),
         AttrDef("mode", ATTR_TYPE_ENUM, enum_def=ChannelReadMode, optional=True),
@@ -263,6 +265,7 @@ read_type = TypeDef(
 
 write_type = TypeDef(
     "write",
+    fact_domain="loom_view_fact_domain",
     params=[AttrDef("payload", "type")],
     format=[Param("payload")],
     doc=(

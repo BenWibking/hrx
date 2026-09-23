@@ -207,6 +207,7 @@ TEST_F(TypeIndexTest, ParameterAttributesRetainTypeDependencyIdentity) {
   static const loom_parameterized_type_descriptor_t descriptor = {
       /*.name=*/LOOM_BSTRING_REF(13, "test.metadata"),
       /*.parameter_descriptors=*/parameters,
+      /*.fact_domain=*/nullptr,
       /*.ir_kind=*/LOOM_TYPE_PARAMETERIZED,
       /*.type_flags=*/0,
       /*.parameter_count=*/1,

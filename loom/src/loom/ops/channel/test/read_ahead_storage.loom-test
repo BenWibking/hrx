@@ -1,0 +1,54 @@
+// RUN: with-checks pass-report pipeline-scf-for,unroll-scf-for,scf-to-cfg,ownership-lifetime
+
+// A complete worker retains its channel accesses around an ordinary pipelined
+// loop. Global reads advance while the workgroup record stays in the consumer.
+// Admission and publication remain outside the local load schedule.
+kernel.def @bound_channel_workgroup_consumer() {
+  %unit = index.constant 1 : index
+  %width = index.constant 64 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
+} launch(%input: buffer, %output: buffer) {
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c4 = index.constant 4 : index
+  %width = index.constant 64 : index
+  %last = index.constant 63 : index
+  %origin = index.constant 0 : offset
+  %stage_bytes = index.constant 512 : offset
+  %lane = kernel.workitem.id<x> : index
+  %peer = index.sub %last, %lane : index
+  %input_slots = buffer.view %input[%origin] : buffer -> view<2x256xi32>
+  %input_channel = channel.bind<fifo> %input_slots, %c2 : view<2x256xi32>, index -> channel<tile<256xi32>>
+  %input_read, %source = channel.acquire %input_channel : channel<tile<256xi32>> -> (read<tile<256xi32>>, view<256xi32>)
+  %destination = buffer.view %output[%origin] : buffer -> view<64xi32>
+  %scratch = buffer.alloca<workgroup> align(4) %stage_bytes : buffer
+  %output_slots = buffer.view %scratch[%origin] : buffer -> view<2x64xi32>
+  %output_channel = channel.bind<fifo> %output_slots, %c2 : view<2x64xi32>, index -> channel<tile<64xi32>>
+  %output_write, %published = channel.reserve %output_channel : channel<tile<64xi32>> -> (write<tile<64xi32>>, view<64xi32>)
+  %identity = scalar.constant 0 : i32
+  %result = scf.for %row = [%c0 to %c4 step %c1](%sum = %identity : i32) -> (i32) pipeline(%c2) {
+    %address = index.madd %row, %width, %lane : index
+    %value = view.load %source[%address] : view<256xi32> -> i32
+    view.store %value, %published[%lane] : i32, view<64xi32>
+    kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
+    %observed = view.load %published[%peer] : view<64xi32> -> i32
+    %next = scalar.addi %sum, %observed : i32
+    kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
+    scf.yield %next : i32
+  }
+  view.store %result, %destination[%lane] : i32, view<64xi32>
+  channel.publish %output_write : write<tile<64xi32>>
+  channel.release %input_read : read<tile<256xi32>>
+  kernel.return
+}
+
+// ----
+CHECK: *"loops-pipelined":1,"policies-cleared":0*
+CHECK: *"values_per_record":1,"read_count":1*
+CHECK: *"op":"view.load","stage":"producer"*
+CHECK: *"op":"view.load","stage":"consumer"*
+CHECK: *"op":"view.store","stage":"consumer"*
+CHECK: *"op":"kernel.barrier","stage":"consumer"*
+CHECK-NOT: *"op":"view.store","stage":"producer"*
+CHECK-NOT: *"op":"kernel.barrier","stage":"producer"*

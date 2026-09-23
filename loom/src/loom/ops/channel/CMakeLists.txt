@@ -15,6 +15,7 @@ loom_generated_cc_library(
   GENERATOR
     loom::py::loom::gen::ops::c_tables_channel_generator
   SRCS
+    "facts.c"
     "verify.c"
   TEXTUAL_HDRS
     "ops.inc"
@@ -39,6 +40,7 @@ loom_generated_cc_library(
     loom::ir
     loom::ops::op_defs
     loom::ops::type_registry
+    loom::ops::view
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

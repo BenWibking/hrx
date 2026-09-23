@@ -265,6 +265,8 @@ def generate_metadata_lines(types: Sequence[TypeDef]) -> list[str]:
                 lines.append(f"        .reference.parameterized_attr_kind = {expected_family},")
             lines.append("    },")
         lines.append("};")
+        if type_def.fact_domain:
+            lines.append(f"extern const struct loom_value_fact_domain_t {type_def.fact_domain};")
         lines.append(f"const loom_parameterized_type_descriptor_t {type_descriptor_symbol(type_def)} = {{")
         lines.append(f"    .name = {_bstring(type_def.name)},")
         lines.append(f"    .ir_kind = {type_ir_kind_c_name(type_def)},")
@@ -275,6 +277,8 @@ def generate_metadata_lines(types: Sequence[TypeDef]) -> list[str]:
         if type_def.omits_empty_parameter_list:
             lines.append("    .flags = LOOM_PARAMETERIZED_TYPE_OMIT_EMPTY_PARAMETER_LIST,")
         lines.append(f"    .parameter_descriptors = {prefix}_parameter_desc,")
+        if type_def.fact_domain:
+            lines.append(f"    .fact_domain = &{type_def.fact_domain},")
         lines.append("};")
         lines.append("")
     return lines

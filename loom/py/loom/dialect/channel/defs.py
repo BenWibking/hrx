@@ -69,6 +69,7 @@ channel_bind = Op(
     results=[Result("result", ANY)],
     traits=[UNIQUE_IDENTITY],
     verify="loom_channel_bind_verify",
+    facts="loom_channel_bind_facts",
     format=[TemplateParam("discipline"), Ref("storage"), COMMA, Ref("capacity"), COLON, TypeOf("storage"), COMMA, TypeOf("capacity"), ARROW, ResultType("result")],
     examples=["%channel = channel.bind<fifo> %storage, %capacity : view<2x144xi32>, index -> channel<tile<144xi32>>"],
 )
@@ -83,6 +84,7 @@ channel_reserve = Op(
     ownership_effects=[Borrow("channel"), FreshResult("write"), BorrowedResult("view")],
     traits=[MEMORY_FENCE],
     verify="loom_channel_reserve_verify",
+    facts="loom_channel_access_facts",
     format=[Ref("channel"), COLON, TypeOf("channel"), ARROW, LPAREN, ResultType("write"), COMMA, ResultType("view"), RPAREN],
     examples=["%write, %view = channel.reserve %channel : channel<tile<144xi32>> -> (write<tile<144xi32>>, view<144xi32>)"],
 )
@@ -97,6 +99,7 @@ channel_accept = Op(
     effects=[ReadWrites("channel")],
     ownership_effects=[Borrow("channel"), FreshResult("read")],
     verify="loom_channel_accept_verify",
+    facts="loom_channel_access_facts",
     format=[OptionalGroup([TemplateParam("mode")], anchor="mode"), Ref("channel"), COLON, TypeOf("channel"), ARROW, ResultType("read")],
     examples=["%read = channel.accept %channel : channel<tile<144xi32>> -> read<tile<144xi32>>"],
 )
@@ -111,6 +114,7 @@ channel_wait = Op(
     ownership_effects=[Borrow("read"), AliasResult("view", "read")],
     traits=[MEMORY_FENCE],
     verify="loom_channel_wait_verify",
+    facts="loom_channel_access_facts",
     format=[Ref("read"), COLON, TypeOf("read"), ARROW, ResultType("view")],
     examples=["%view = channel.wait %read : read<tile<144xi32>> -> view<144xi32>"],
 )
@@ -128,6 +132,7 @@ channel_acquire = Op(
     ownership_effects=[Borrow("channel"), FreshResult("read"), BorrowedResult("view")],
     traits=[MEMORY_FENCE],
     verify="loom_channel_acquire_verify",
+    facts="loom_channel_access_facts",
     format=[OptionalGroup([TemplateParam("mode")], anchor="mode"), Ref("channel"), COLON, TypeOf("channel"), ARROW, LPAREN, ResultType("read"), COMMA, ResultType("view"), RPAREN],
     examples=["%read, %view = channel.acquire<mutable> %channel : channel<tile<144xi32>> -> (read<tile<144xi32>, mutable>, view<144xi32>)"],
 )
@@ -170,6 +175,7 @@ channel_fanout = Op(
     results=[Result("reads", ANY, variadic=True)],
     ownership_effects=[Consume("read"), FreshResult("reads")],
     verify="loom_channel_fanout_verify",
+    facts="loom_channel_access_facts",
     format=[Ref("read"), COLON, TypeOf("read"), ARROW, ResultTypeList("reads")],
     examples=["%dma, %history = channel.fanout %read : read<tile<144xi32>> -> (read<tile<144xi32>>, read<tile<144xi32>>)"],
 )
