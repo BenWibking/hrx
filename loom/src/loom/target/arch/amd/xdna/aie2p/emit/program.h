@@ -59,7 +59,7 @@ typedef struct loom_aie2p_program_tile_program_load_t {
   uint32_t tile_program_index;
 } loom_aie2p_program_tile_program_load_t;
 
-// One firmware task-completion-token wait for a shim DMA task.
+// One firmware task-completion-token wait for an array DMA task.
 typedef struct loom_aie2p_program_dma_task_wait_t {
   // First physical tile in the waited range.
   loom_xdna_tile_coordinate_t coordinate;

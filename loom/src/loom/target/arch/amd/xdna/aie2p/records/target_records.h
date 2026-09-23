@@ -21,6 +21,9 @@ extern const loom_target_bundle_table_t loom_aie2p_target_bundles;
 // AIE2P logical-array program target bundle.
 extern const loom_target_bundle_t loom_aie2p_array_target_bundle;
 
+// AIE2P physical configuration and invocation program target bundle.
+extern const loom_target_bundle_t loom_aie2p_configuration_target_bundle;
+
 // AIE2P standalone compute-tile target bundle.
 extern const loom_target_bundle_t loom_aie2p_core_target_bundle;
 

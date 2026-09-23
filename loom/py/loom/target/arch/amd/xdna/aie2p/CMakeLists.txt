@@ -66,6 +66,7 @@ iree_py_library(
     descriptors
   SRCS
     "array_descriptors.py"
+    "configuration_descriptors.py"
     "core_address_descriptors.py"
     "core_comparison_descriptors.py"
     "core_descriptor_constraints.py"

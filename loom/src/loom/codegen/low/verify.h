@@ -156,6 +156,13 @@ iree_arena_allocator_t* loom_low_verify_module_context_arena(
 bool loom_low_verify_module_context_should_stop(
     const loom_low_verify_module_context_t* context);
 
+// Emits a diagnostic from a module-level provider through shared accounting.
+// This permits deferred checks over facts retained during the function walk.
+iree_status_t loom_low_verify_module_context_emit(
+    loom_low_verify_module_context_t* context, const loom_op_t* op,
+    const loom_error_def_t* error, const loom_diagnostic_param_t* params,
+    iree_host_size_t param_count);
+
 // Returns the module being verified.
 const loom_module_t* loom_low_verify_context_module(
     const loom_low_verify_context_t* context);

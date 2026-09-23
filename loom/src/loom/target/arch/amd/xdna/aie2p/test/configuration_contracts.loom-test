@@ -1,0 +1,336 @@
+// RUN: format bytecode
+
+// The worker owns the complete acquire/consume/release loop. Configuration
+// only places its image and initializes the physical resources it addresses.
+aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+aie2p.target<core> @core_target
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @stream() asm {
+  %columns = constant 2 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %one = constant 1 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  %control = constant 2293760 : reg<aie2p.config.scalar : i64>
+  write32 %control, %zero
+  program.load %zero, %row, @worker
+  program.load %one, %row, @worker
+  write.mask32 %control, %one, %one
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %one = constant 1 : reg<aie2p.config.scalar : i64>
+  %alignment = constant 64 : reg<aie2p.config.scalar : i64>
+  %header_length = constant 256 : reg<aie2p.config.scalar : i64>
+  %payload_length = constant 4096 : reg<aie2p.config.scalar : i64>
+  %binding_length = constant 4352 : reg<aie2p.config.scalar : i64>
+  %words = constant 1024 : reg<aie2p.config.scalar : i64>
+  %binding = binding %zero, %one, %binding_length, %alignment
+  %payload = range %binding, %header_length, %payload_length
+  %header = range %binding, %zero, %header_length
+  %header_address = constant 2588608 : reg<aie2p.config.scalar : i64>
+  write.address %header_address, %header
+  %descriptor_address = constant 118784 : reg<aie2p.config.scalar : i64>
+  shim.descriptor %descriptor_address, %payload, %words, %zero, %zero, %zero, %zero, %zero, %one
+  %queue = constant 119316 : reg<aie2p.config.scalar : i64>
+  write.block32 (%queue) [%zero, %one]
+  dma.wait %zero, %zero, %one, %zero, %one, %one
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @worker() asm {
+  %one = mova.i32 1
+  %header = mov.local-address 458752
+  %count = lda %header, 0
+  low.br ^next(%count: reg<aie2p.er>)
+^next(%remaining: reg<aie2p.er>):
+  low.cond_br %remaining, ^consume, ^done : reg<aie2p.er>
+^consume:
+  acq %one, 0
+  %record = lda %header, 4
+  st %record, %header, 8
+  rel %one, 1
+  %decremented = sub %remaining, %one
+  low.br ^next(%decremented: reg<aie2p.er>)
+^done:
+  return
+}
+
+// ----
+aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+
+aie2p.target<core> @core_target
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @stream() asm {
+  %columns = constant 2 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %one = constant 1 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  %control = constant 2293760 : reg<aie2p.config.scalar : i64>
+  write32 %control, %zero
+  program.load %zero, %row, @worker
+  program.load %one, %row, @worker
+  write.mask32 %control, %one, %one
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %one = constant 1 : reg<aie2p.config.scalar : i64>
+  %alignment = constant 64 : reg<aie2p.config.scalar : i64>
+  %header_length = constant 256 : reg<aie2p.config.scalar : i64>
+  %payload_length = constant 4096 : reg<aie2p.config.scalar : i64>
+  %binding_length = constant 4352 : reg<aie2p.config.scalar : i64>
+  %words = constant 1024 : reg<aie2p.config.scalar : i64>
+  %binding = binding %zero, %one, %binding_length, %alignment
+  %payload = range %binding, %header_length, %payload_length
+  %header = range %binding, %zero, %header_length
+  %header_address = constant 2588608 : reg<aie2p.config.scalar : i64>
+  write.address %header_address, %header
+  %descriptor_address = constant 118784 : reg<aie2p.config.scalar : i64>
+  shim.descriptor %descriptor_address, %payload, %words, %zero, %zero, %zero, %zero, %zero, %one
+  %queue = constant 119316 : reg<aie2p.config.scalar : i64>
+  write.block32(%queue)[%zero, %one]
+  dma.wait %zero, %zero, %one, %zero, %one, %one
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) abi(object_function) @worker() asm {
+  %one = mova.i32 1
+  %header = mov.local-address 458752
+  %count = lda %header, 0
+  low.br ^next(%count: reg<aie2p.er>)
+^next(%remaining: reg<aie2p.er>):
+  low.cond_br %remaining, ^consume, ^done : reg<aie2p.er>
+^consume:
+  acq %one, 0
+  %record = lda %header, 4
+  st %record, %header, 8
+  rel %one, 1
+  %decremented = sub %remaining, %one
+  low.br ^next(%decremented: reg<aie2p.er>)
+^done:
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @core() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @entry() asm {
+  %one = constant 1 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: TARGET/079 {function_name="entry", descriptor_key="amd.xdna.aie2p.configuration.entry", immediate_name="initialize", symbol_name="core", actual_contract="amd.xdna.aie2p.core", expected_contract="amd.xdna.aie2p.configuration"}
+  entry %one, @core, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: TARGET/079 {function_name="initialize", descriptor_key="amd.xdna.aie2p.configuration.program.load", immediate_name="program", symbol_name="initialize", actual_contract="amd.xdna.aie2p.configuration", expected_contract="amd.xdna.aie2p.core"}
+  program.load %zero, %row, @initialize
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: SYMBOL/002 {symbol_name="missing_worker"}
+  program.load %zero, %row, @missing_worker
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+// ERROR@+1: XDNA/037 {function_name="entry", expected_count="1", actual_count="0"}
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @entry() asm {
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+// ERROR@+1: XDNA/032 {function_name="configure", argument_count="1", result_count="0"}
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @configure(%runtime: reg<aie2p.config.scalar : i64>) asm {
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+// ERROR@+1: XDNA/033 {function_name="configure", op_name="low.func.def"}
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @configure() asm {
+  low.br ^next
+^next:
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/035 {field_name="program", symbol_name="worker", argument_count="1", result_count="0"}
+  program.load %zero, %row, @worker
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker(%argument: reg<aie2p.er>) asm {
+  return
+}
+
+// ====
+// RUN: verify
+
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.decl target<amd.xdna.aie2p.core>(@core_target) @worker()
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/050 {field_name="program", symbol_name="worker"}
+  program.load %zero, %row, @worker
+  return
+}
+
+// ====
+// RUN: verify
+
+// Reference admission is independent of function definition order.
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  program.load %zero, %row, @worker
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
+  // ERROR@+1: XDNA/038 {function_name="worker", op_name="low.storage.reserve"}
+  %scratch = storage {byte_alignment = 16, byte_length = 64} : low.storage<private>
+  return
+}
+
+// ====
+// RUN: verify
+
+// A helper can serve either phase only when all of its commands can.
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/036 {function_name="invoke", phase="invocation", command="amd.xdna.aie2p.configuration.program.load"}
+  program.load %zero, %row, @worker
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @entry() asm {
+  %one = constant 1 : reg<aie2p.config.scalar : i64>
+  entry %one, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  return
+}
+
+// ====
+// RUN: verify
+
+// Physical placement consumes a materialized Low worker definition.
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+func.def target(@core_target) @worker() {
+  func.return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/050 {field_name="program", symbol_name="worker"}
+  program.load %zero, %row, @worker
+  return
+}
+
+// ====
+// RUN: verify
+
+// A complete image has no call edges awaiting materialization.
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @helper() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
+  // ERROR@+1: XDNA/047 {function_name="worker", op_name="low.func.call"}
+  low.func.call @helper() : ()
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  program.load %zero, %row, @worker
+  return
+}

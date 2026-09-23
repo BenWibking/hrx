@@ -19,6 +19,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/array/program.h"
 #include "loom/target/arch/amd/xdna/aie2p/array/resident.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/array_report.h"
+#include "loom/target/arch/amd/xdna/aie2p/emit/configuration.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/leaf_compile.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/tile_link.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/xdna_product.h"
@@ -63,8 +64,11 @@ static iree_status_t loom_aie2p_xdna_collect_array_entries(
   loom_module_for_each_symbol(request->module, symbol) {
     if (symbol->defining_op == NULL ||
         !loom_low_func_def_isa(symbol->defining_op) ||
-        !loom_aie2p_xdna_has_contract(request->module, symbol->defining_op,
-                                      IREE_SV("amd.xdna.aie2p.array"))) {
+        !(loom_aie2p_xdna_has_contract(request->module, symbol->defining_op,
+                                       IREE_SV("amd.xdna.aie2p.array")) ||
+          loom_aie2p_xdna_has_contract(
+              request->module, symbol->defining_op,
+              IREE_SV("amd.xdna.aie2p.configuration")))) {
       continue;
     }
     const loom_func_like_t function =
@@ -94,8 +98,11 @@ static iree_status_t loom_aie2p_xdna_collect_array_entries(
   loom_module_for_each_symbol(request->module, symbol) {
     if (symbol->defining_op == NULL ||
         !loom_low_func_def_isa(symbol->defining_op) ||
-        !loom_aie2p_xdna_has_contract(request->module, symbol->defining_op,
-                                      IREE_SV("amd.xdna.aie2p.array"))) {
+        !(loom_aie2p_xdna_has_contract(request->module, symbol->defining_op,
+                                       IREE_SV("amd.xdna.aie2p.array")) ||
+          loom_aie2p_xdna_has_contract(
+              request->module, symbol->defining_op,
+              IREE_SV("amd.xdna.aie2p.configuration")))) {
       continue;
     }
     const loom_func_like_t function =
@@ -177,6 +184,11 @@ static iree_status_t loom_aie2p_xdna_collect_source_leaves(
       ++leaf_count;
     }
   }
+  if (leaf_count == 0) {
+    return iree_make_status(IREE_STATUS_NOT_FOUND,
+                            "AIE2P array program has no core workers");
+  }
+
   loom_aie2p_array_leaf_t* leaves = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       request->scratch_arena, leaf_count, sizeof(*leaves), (void**)&leaves));
@@ -461,6 +473,7 @@ static void loom_aie2p_xdna_build_binding_records(
         .usage = IREE_XDNA_ELF_BINDING_USAGE_DEVICE_VISIBLE |
                  IREE_XDNA_ELF_BINDING_USAGE_COHERENT,
         .minimum_alignment = 1,
+        .maximum_byte_offset = UINT64_MAX,
     };
   }
   for (iree_host_size_t i = 0; i < plan->binding_plan_count; ++i) {
@@ -491,6 +504,7 @@ static iree_status_t loom_aie2p_xdna_compile_resident_entries(
       request->module, resident_module, array_plans, entry_count,
       request->scratch_arena, resident_programs));
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
+    if (array_plans[i].function_op == NULL) continue;
     const loom_aie2p_array_resident_program_t* resident_program =
         &resident_programs[i];
     loom_aie2p_xdna_tile_t* tiles = NULL;
@@ -614,6 +628,7 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(request->scratch_arena, entry_count,
                                 sizeof(*array_plans), (void**)&array_plans));
+  memset(array_plans, 0, entry_count * sizeof(*array_plans));
   loom_aie2p_array_program_t* array_programs = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       request->scratch_arena, entry_count, sizeof(*array_programs),
@@ -624,6 +639,17 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
       (void**)&product_entries));
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
     const loom_aie2p_xdna_source_entry_t* source_entry = &source_entries[i];
+    if (loom_aie2p_xdna_has_contract(request->module, source_entry->function_op,
+                                     IREE_SV("amd.xdna.aie2p.configuration"))) {
+      bool valid = false;
+      IREE_RETURN_IF_ERROR(loom_aie2p_configuration_emit(
+          request, source_entry->function_op, device_profile,
+          &product_entries[i], &valid));
+      if (!valid) {
+        return iree_ok_status();
+      }
+      continue;
+    }
     if (request->compile_report != NULL) {
       loom_target_compile_report_record_low_kernel_workload(
           request->compile_report, source_entry->function_op);
@@ -686,6 +712,7 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
   }
 
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
+    if (array_plans[i].function_op == NULL) continue;
     IREE_RETURN_IF_ERROR(loom_aie2p_array_report_record(
         request->module, product_entries[i].name, &array_plans[i],
         product_entries[i].tiles, request->compile_report,
@@ -707,13 +734,6 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
     status =
         loom_aie2p_xdna_product_write(&product, stream, request->scratch_arena);
   }
-  const iree_io_stream_pos_t stream_length =
-      stream != NULL ? iree_io_stream_length(stream) : 0;
-  if (iree_status_is_ok(status) && stream_length <= 0) {
-    status =
-        iree_make_status(IREE_STATUS_INTERNAL, "AIE2P XDNA output is empty");
-  }
-
   iree_byte_sequence_t* contents = NULL;
   if (iree_status_is_ok(status)) {
     status = iree_io_vec_stream_move_contents(stream, &contents);

@@ -136,6 +136,14 @@ bool loom_low_verify_module_context_should_stop(
   return loom_low_verify_should_stop(context->state);
 }
 
+iree_status_t loom_low_verify_module_context_emit(
+    loom_low_verify_module_context_t* context, const loom_op_t* op,
+    const loom_error_def_t* error, const loom_diagnostic_param_t* params,
+    iree_host_size_t param_count) {
+  return loom_low_verify_emit(context->state, op, error, params, param_count,
+                              NULL, 0);
+}
+
 const loom_op_t* loom_low_verify_context_function_op(
     const loom_low_verify_context_t* context) {
   return context->function_state->function_op;

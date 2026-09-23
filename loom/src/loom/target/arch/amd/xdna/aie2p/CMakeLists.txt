@@ -18,6 +18,8 @@ loom_generated_file_family(
   OUTPUTS
     "descriptors/array_descriptors.c"
     "descriptors/array_descriptors.h"
+    "descriptors/configuration_descriptors.c"
+    "descriptors/configuration_descriptors.h"
     "descriptors/core_descriptors.c"
     "descriptors/core_descriptors.h"
     "encoding/encoding_tables.inl"
@@ -26,6 +28,8 @@ loom_generated_file_family(
   OUTPUT_FLAGS
     "--array-descriptor-source-output"
     "--array-descriptor-header-output"
+    "--configuration-descriptor-source-output"
+    "--configuration-descriptor-header-output"
     "--descriptor-source-output"
     "--descriptor-header-output"
     "--encoding-output"
@@ -100,6 +104,20 @@ loom_cc_library(
     iree::schemas::xdna_executable
     loom::ir
     loom::ops::low
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
+    configuration_descriptors
+  HDRS
+    "descriptors/configuration_descriptors.h"
+  SRCS
+    "descriptors/configuration_descriptors.c"
+  DEPS
+    loom::codegen::low::descriptors
   PUBLIC
 )
 endif()
@@ -268,6 +286,7 @@ loom_cc_library(
     "descriptors/low_registry.c"
   DEPS
     ::array_descriptors
+    ::configuration_descriptors
     ::core_descriptors
     iree::base
     loom::codegen::low::schedule
@@ -288,6 +307,7 @@ loom_cc_library(
   DEPS
     ::array_abi_layout
     ::array_descriptors
+    ::configuration_descriptors
     ::core_descriptors
     ::core_structure
     iree::base
@@ -581,21 +601,25 @@ loom_cc_library(
     check_provider
   HDRS
     "check/array_plan.h"
+    "check/artifact.h"
     "check/leaf.h"
     "check/provider.h"
   SRCS
     "check/array_plan.c"
+    "check/artifact.c"
     "check/leaf.c"
     "check/provider.c"
   DEPS
     ::array_plan
     ::array_program
     ::array_resident
+    ::artifact
     ::core_descriptors
     ::leaf_compile
     ::machine
     ::provider
     iree::base
+    iree::schemas::xdna_executable
     loom::analysis::symbol_facts
     loom::codegen::low::diagnostics
     loom::codegen::low::function_requirements
@@ -760,6 +784,9 @@ loom_check_test_suite(
     "test/array_plan/worker_rate_admission.loom-test"
     "test/array_plan/worker_storage_admission.loom-test"
     "test/canonicalize/adjacent_add.loom-test"
+    "test/configuration.loom-test"
+    "test/configuration_contracts.loom-test"
+    "test/configuration_limits.loom-test"
     "test/descriptors/bf16_comparison.loom-test"
     "test/descriptors/bfp_move.loom-test"
     "test/descriptors/cascade.loom-test"
@@ -1110,10 +1137,13 @@ loom_cc_library(
     "emit/array_report.c"
     "emit/array_report.h"
     "emit/artifact.c"
+    "emit/configuration.c"
+    "emit/configuration.h"
   DEPS
     ::array_plan
     ::array_program
     ::array_resident
+    ::configuration_descriptors
     ::leaf_compile
     ::provider
     ::target_facts
@@ -1127,7 +1157,10 @@ loom_cc_library(
     loom::analysis::symbol_facts
     loom::codegen::low::descriptors
     loom::codegen::low::diagnostics
+    loom::codegen::low::function_model
     loom::codegen::low::function_requirements
+    loom::codegen::low::packet
+    loom::codegen::low::schedule
     loom::codegen::low::target_binding
     loom::ir
     loom::ir::facts
@@ -1135,6 +1168,7 @@ loom_cc_library(
     loom::ops::low
     loom::ops::op_defs
     loom::target::arch::amd::xdna::device_profile
+    loom::target::arch::amd::xdna::error_defs
     loom::target::function_version
     loom::target::provider
     loom::target::reporting::low

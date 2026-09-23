@@ -653,6 +653,248 @@ ERR_XDNA_034 = ErrorDef(
     ),
 )
 
+ERR_XDNA_050 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=50,
+    severity=Severity.ERROR,
+    summary="Configuration function has a runtime signature.",
+    message=(
+        "configuration function '@{function_name}' has {argument_count} arguments "
+        "and {result_count} results; configuration functions have neither"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("argument_count", ParamKind.U32),
+        ErrorParam("result_count", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_035 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=35,
+    severity=Severity.ERROR,
+    summary="Configuration function contains runtime control or storage.",
+    message=(
+        "configuration function '@{function_name}' requires a single sequence "
+        "of configuration commands; '{op_name}' requires core execution"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("op_name", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_036 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=36,
+    severity=Severity.ERROR,
+    summary="Configuration references an undefined function body.",
+    message=(
+        "configuration reference '{field_name}' to '@{symbol_name}' "
+        "requires a Low function definition"
+    ),
+    params=(
+        ErrorParam("field_name", ParamKind.STRING),
+        ErrorParam("symbol_name", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_037 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=37,
+    severity=Severity.ERROR,
+    summary="Configuration reference requires a closed function signature.",
+    message=(
+        "configuration reference '{field_name}' to '@{symbol_name}' supplies "
+        "no arguments or return continuation, but the function has "
+        "{argument_count} arguments and {result_count} results"
+    ),
+    params=(
+        ErrorParam("field_name", ParamKind.STRING),
+        ErrorParam("symbol_name", ParamKind.STRING),
+        ErrorParam("argument_count", ParamKind.U32),
+        ErrorParam("result_count", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_038 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=38,
+    severity=Severity.ERROR,
+    summary="Configuration command is unavailable in the selected phase.",
+    message=(
+        "configuration function '@{function_name}' is used for {phase}, "
+        "which cannot execute '{command}'"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("phase", ParamKind.STRING),
+        ErrorParam("command", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_039 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=39,
+    severity=Severity.ERROR,
+    summary="Configuration entry count does not match its function role.",
+    message=(
+        "configuration function '@{function_name}' requires {expected_count} "
+        "entry commands, but has {actual_count}"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("expected_count", ParamKind.U32),
+        ErrorParam("actual_count", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_040 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=40,
+    severity=Severity.ERROR,
+    summary="Loaded tile program requires an unbound physical resource.",
+    message=(
+        "loaded tile program '@{function_name}' contains '{op_name}'; "
+        "program.load requires its resource addresses and storage placement "
+        "to be explicit in the core program"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("op_name", ParamKind.STRING),
+    ),
+)
+
+ERR_XDNA_041 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=41,
+    severity=Severity.ERROR,
+    summary="Configuration operand is outside its physical range.",
+    message=(
+        "configuration operand '{operand_name}' is {value}; "
+        "its physical range is [{minimum}, {maximum}]"
+    ),
+    params=(
+        ErrorParam("operand_name", ParamKind.STRING),
+        ErrorParam("value", ParamKind.U64),
+        ErrorParam("minimum", ParamKind.U64),
+        ErrorParam("maximum", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_042 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=42,
+    severity=Severity.ERROR,
+    summary="Configuration operand violates an alignment contract.",
+    message=(
+        "configuration operand '{operand_name}' is {value}; "
+        "it must be a multiple of {alignment}"
+    ),
+    params=(
+        ErrorParam("operand_name", ParamKind.STRING),
+        ErrorParam("value", ParamKind.U64),
+        ErrorParam("alignment", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_043 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=43,
+    severity=Severity.ERROR,
+    summary="Invocation binding ordinal is not dense.",
+    message=(
+        "invocation binding ordinal is {actual}; "
+        "the next declared binding is {expected}"
+    ),
+    params=(ErrorParam("actual", ParamKind.U64), ErrorParam("expected", ParamKind.U64)),
+)
+
+ERR_XDNA_044 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=44,
+    severity=Severity.ERROR,
+    summary="Invocation range exceeds the declared binding extent.",
+    message=(
+        "binding {binding} has {extent} bytes; "
+        "range offset {offset} and length {length} exceed that extent"
+    ),
+    params=(
+        ErrorParam("binding", ParamKind.U32),
+        ErrorParam("extent", ParamKind.U64),
+        ErrorParam("offset", ParamKind.U64),
+        ErrorParam("length", ParamKind.U64),
+    ),
+)
+
+ERR_XDNA_045 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=45,
+    severity=Severity.ERROR,
+    summary="Configuration write crosses a physical tile aperture.",
+    message=(
+        "configuration write at address {address} has {word_count} words "
+        "and exceeds one tile in the {columns}-column partition"
+    ),
+    params=(
+        ErrorParam("address", ParamKind.U32),
+        ErrorParam("word_count", ParamKind.U64),
+        ErrorParam("columns", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_046 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=46,
+    severity=Severity.ERROR,
+    summary="Program load does not select a compute tile.",
+    message=(
+        "program.load coordinate ({column}, {row}) is not a compute tile "
+        "in the {columns}-column partition"
+    ),
+    params=(
+        ErrorParam("column", ParamKind.U64),
+        ErrorParam("row", ParamKind.U64),
+        ErrorParam("columns", ParamKind.U32),
+    ),
+)
+
+ERR_XDNA_047 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=47,
+    severity=Severity.ERROR,
+    summary="Shim descriptor flags overlap its relocated address.",
+    message=(
+        "shim descriptor flags {flags} set low address bits "
+        "reserved for the range operand"
+    ),
+    params=(ErrorParam("flags", ParamKind.U32),),
+)
+
+ERR_XDNA_048 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=48,
+    severity=Severity.ERROR,
+    summary="Binding alignment is not a power of two.",
+    message="invocation binding alignment {alignment} must be a nonzero power of two",
+    params=(ErrorParam("alignment", ParamKind.U64),),
+)
+
+ERR_XDNA_049 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=49,
+    severity=Severity.ERROR,
+    summary="Loaded tile program contains an unexpanded function call.",
+    message=(
+        "loaded tile program '@{function_name}' contains '{op_name}'; "
+        "function calls must be materialized before placing the complete program"
+    ),
+    params=(
+        ErrorParam("function_name", ParamKind.STRING),
+        ErrorParam("op_name", ParamKind.STRING),
+    ),
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_002,
@@ -688,4 +930,20 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_032,
     ERR_XDNA_033,
     ERR_XDNA_034,
+    ERR_XDNA_050,
+    ERR_XDNA_035,
+    ERR_XDNA_036,
+    ERR_XDNA_037,
+    ERR_XDNA_038,
+    ERR_XDNA_039,
+    ERR_XDNA_040,
+    ERR_XDNA_041,
+    ERR_XDNA_042,
+    ERR_XDNA_043,
+    ERR_XDNA_044,
+    ERR_XDNA_045,
+    ERR_XDNA_046,
+    ERR_XDNA_047,
+    ERR_XDNA_048,
+    ERR_XDNA_049,
 )
