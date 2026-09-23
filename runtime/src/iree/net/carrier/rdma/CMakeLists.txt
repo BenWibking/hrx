@@ -107,6 +107,7 @@ iree_cc_test(
   SRCS
     "connection_control_test.cc"
   DEPS
+    ::carrier
     ::connection_control
     ::connection_events
     ::direct_endpoint
@@ -117,12 +118,36 @@ iree_cc_test(
     iree::base::core_headers
     iree::net::direct_endpoint
     iree::net::endpoint_lifecycle
+    iree::net::framed_endpoint
+    iree::net::message_endpoint
     iree::net::rdma::context
     iree::net::rdma::library
     iree::net::rdma::region
     iree::net::rdma::target
     iree::testing::gtest
     iree::testing::gtest_main
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    carrier
+  HDRS
+    "carrier.h"
+  SRCS
+    "carrier.c"
+  DEPS
+    ::connection_control
+    ::direct_endpoint
+    iree::async
+    iree::base
+    iree::base::threading
+    iree::net::carrier
+    iree::net::direct_endpoint
+    iree::net::rdma::context
+    iree::net::rdma::region
+  PUBLIC
 )
 endif()
 

@@ -89,6 +89,8 @@ void iree_net_rdma_direct_endpoint_fail(
 // Joins this endpoint's consumer drain to the containing connection barrier.
 // Also retires an unactivated QP; the connection must not deactivate its shared
 // control before every independent QP has been retired.
+// Created or fully drained owners need no bound connection barrier. An active
+// standalone owner must first drain through its direct view instead.
 void iree_net_rdma_direct_endpoint_join_deactivation(
     iree_net_rdma_direct_endpoint_t* endpoint);
 

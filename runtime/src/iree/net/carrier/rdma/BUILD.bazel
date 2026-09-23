@@ -96,6 +96,7 @@ iree_runtime_cc_test(
     srcs = ["connection_control_test.cc"],
     target_compatible_with = RDMA_COMPATIBILITY,
     deps = [
+        ":carrier",
         ":connection_control",
         ":connection_events",
         ":direct_endpoint",
@@ -106,12 +107,32 @@ iree_runtime_cc_test(
         "//runtime/src/iree/base:core_headers",
         "//runtime/src/iree/net:direct_endpoint",
         "//runtime/src/iree/net:endpoint_lifecycle",
+        "//runtime/src/iree/net:framed_endpoint",
+        "//runtime/src/iree/net:message_endpoint",
         "//runtime/src/iree/net/rdma:context",
         "//runtime/src/iree/net/rdma:library",
         "//runtime/src/iree/net/rdma:region",
         "//runtime/src/iree/net/rdma:target",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+iree_runtime_cc_library(
+    name = "carrier",
+    srcs = ["carrier.c"],
+    hdrs = ["carrier.h"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":connection_control",
+        ":direct_endpoint",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+        "//runtime/src/iree/net:carrier",
+        "//runtime/src/iree/net:direct_endpoint",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:region",
     ],
 )
 

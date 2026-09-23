@@ -171,3 +171,27 @@ Cancellation or a native posting/completion error retires the QP before
 returning pending sources; shared-CQ and host callback joins then permit the
 containing owner to free endpoint metadata. This path has no per-transfer
 registration, staging fallback, private worker or per-native-request ledger.
+
+## Message Compatibility
+
+`runtime/src/iree/net/carrier/rdma/carrier.h` supplies an ordered byte stream
+over the same direct posting and credit engine. This is the CPU-readable
+message path for bootstrap descriptions, results and other ordinary messages,
+not the registered direct-payload path. It copies sources through fixed TX
+slots registered at construction. A generated prefix uses preallocated storage
+or completion-scoped overflow storage; large messages stream through successive
+slots instead of requiring payload-sized resident staging.
+
+Incoming chunks are borrowed only until the receive callback returns. The
+existing `runtime/src/iree/net/framed_endpoint.h` gives fragmented or retained
+messages independent storage. For these private copied chunks, returning
+notification credit also authorizes reuse of the corresponding RX slot. That
+rule does not apply to application-owned direct targets. Retained messages
+therefore survive connection teardown without holding native receive capacity,
+and this compatibility carrier advertises neither zero-copy TX nor zero-copy RX.
+
+The adapter retains logical source ownership through the final native chunk's
+source callback. Closing joins concurrent prefix writers, admitted messages,
+native access and callback handoffs before the containing connection joins its
+shared CQ. Directional shutdown sends an ordered EOF after all admitted bytes
+while preserving the opposite send direction.

@@ -536,17 +536,18 @@ static iree_status_t iree_net_rdma_direct_deactivate(
 void iree_net_rdma_direct_endpoint_join_deactivation(
     iree_net_rdma_direct_endpoint_t* endpoint) {
   iree_slim_mutex_lock(&endpoint->mutex);
-  iree_net_endpoint_lifecycle_actions_t actions =
-      iree_net_endpoint_lifecycle_join_deactivation(&endpoint->lifecycle);
-  if (iree_any_bit_set(actions,
-                       IREE_NET_ENDPOINT_LIFECYCLE_ACTION_BEGIN_DEACTIVATION)) {
-    endpoint->state = IREE_NET_ENDPOINT_LIFECYCLE_STATE_DRAINING;
-    iree_net_rdma_direct_schedule_locked(endpoint);
-  }
   bool unactivated =
       endpoint->state == IREE_NET_ENDPOINT_LIFECYCLE_STATE_CREATED;
   if (unactivated) {
     endpoint->state = IREE_NET_ENDPOINT_LIFECYCLE_STATE_DEACTIVATED;
+  } else if (endpoint->state != IREE_NET_ENDPOINT_LIFECYCLE_STATE_DEACTIVATED) {
+    iree_net_endpoint_lifecycle_actions_t actions =
+        iree_net_endpoint_lifecycle_join_deactivation(&endpoint->lifecycle);
+    if (iree_any_bit_set(
+            actions, IREE_NET_ENDPOINT_LIFECYCLE_ACTION_BEGIN_DEACTIVATION)) {
+      endpoint->state = IREE_NET_ENDPOINT_LIFECYCLE_STATE_DRAINING;
+      iree_net_rdma_direct_schedule_locked(endpoint);
+    }
   }
   iree_slim_mutex_unlock(&endpoint->mutex);
   if (unactivated) {

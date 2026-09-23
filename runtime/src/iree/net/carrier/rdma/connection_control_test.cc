@@ -20,8 +20,10 @@
 #include "iree/async/platform/io_uring/api.h"
 #include "iree/async/platform/posix/api.h"
 #include "iree/base/alignment.h"
+#include "iree/net/carrier/rdma/carrier.h"
 #include "iree/net/carrier/rdma/connection_events.h"
 #include "iree/net/carrier/rdma/direct_endpoint.h"
+#include "iree/net/framed_endpoint.h"
 #include "iree/net/rdma/region.h"
 #include "iree/net/rdma/target.h"
 #include "iree/testing/gtest.h"
@@ -98,6 +100,8 @@ class ControlPeer {
     kHoldCredit = 1u << 10,
     kStopOnWrite = 1u << 11,
     kFailOnNotification = 1u << 12,
+    kStopOnMessage = 1u << 13,
+    kRawMessage = 1u << 14,
   };
 
   ControlPeer(iree_net_rdma_context_t* context, iree_async_proactor_t* proactor,
@@ -110,7 +114,7 @@ class ControlPeer {
     iree_net_rdma_connection_control_options_t options = {};
     options.send_count = 3;
     options.receive_count = 2;
-    options.data_work_capacity = 4;
+    options.data_work_capacity = 6;
     options.service_batch_size = service_batch_size;
     options.resolution_timeout_ms = INT_MAX;
     options.minimum_rnr_timer = 1;
@@ -146,6 +150,18 @@ class ControlPeer {
                  iree_make_const_byte_span(bytes + 16,
                                            IREE_NET_RDMA_TARGET_WIRE_SIZE),
                  &self->remote_data_.target));
+             self->flags_ |= kRemoteDataReady;
+           } else if (iree_unaligned_load_le_u32(bytes) == 4) {
+             self->remote_data_.queue_number =
+                 iree_unaligned_load_le_u32(bytes + 4);
+             self->remote_data_.sequence_number =
+                 iree_unaligned_load_le_u32(bytes + 8);
+             self->remote_data_.receive_count =
+                 iree_unaligned_load_le_u32(bytes + 12);
+             self->remote_data_.chunk_capacity =
+                 iree_unaligned_load_le_u32(bytes + 16);
+             memcpy(self->remote_data_.message_target.data(), bytes + 24,
+                    IREE_NET_RDMA_TARGET_WIRE_SIZE);
              self->flags_ |= kRemoteDataReady;
            } else if (iree_unaligned_load_le_u32(bytes) == 3) {
              IREE_RETURN_IF_ERROR(iree_net_rdma_direct_endpoint_update_credit(
@@ -191,8 +207,11 @@ class ControlPeer {
       PollUntil(proactor_, [&] { return has(kStopped); });
     }
     iree_net_rdma_connection_control_destroy(control_);
-    iree_net_rdma_direct_endpoint_destroy(data_endpoint_);
+    DestroyData();
     iree_async_region_release(data_region_);
+    for (auto& message : messages_) {
+      iree_async_buffer_lease_release(&message.lease);
+    }
   }
 
   void Connect(const iree_async_address_t& address) {
@@ -216,8 +235,21 @@ class ControlPeer {
       return;
     }
     flags_ |= kStopping;
+    if (message_carrier_ && !message_endpoint_) {
+      iree_net_carrier_deactivate(
+          message_carrier_,
+          +[](void* user_data) {
+            static_cast<ControlPeer*>(user_data)->StopControl();
+          },
+          this);
+      return;
+    }
     if (data_endpoint_) {
-      iree_net_rdma_direct_endpoint_join_deactivation(data_endpoint_);
+      if (message_endpoint_) {
+        iree_net_framed_endpoint_join_deactivation(message_endpoint_);
+      } else {
+        iree_net_rdma_direct_endpoint_join_deactivation(data_endpoint_);
+      }
       iree_net_endpoint_deactivation_barrier_commit(
           &data_barrier_,
           {+[](void* user_data) {
@@ -230,19 +262,36 @@ class ControlPeer {
   }
 
   void StopControl() {
+    if (data_endpoint_) {
+      // A framed endpoint that was never activated contributes no drain hold,
+      // but its independently created native QP still needs retirement.
+      iree_net_rdma_direct_endpoint_join_deactivation(data_endpoint_);
+    }
     iree_net_rdma_connection_control_deactivate(
-        control_,
-        {+[](void* user_data) {
-           auto* self = static_cast<ControlPeer*>(user_data);
-           self->flags_ |= kStopped;
-           if (self->has(kDestroyOnStop)) {
-             iree_net_rdma_connection_control_destroy(self->control_);
-             self->control_ = nullptr;
-             iree_net_rdma_direct_endpoint_destroy(self->data_endpoint_);
-             self->data_endpoint_ = nullptr;
-           }
-         },
-         this});
+        control_, {+[](void* user_data) {
+                     auto* self = static_cast<ControlPeer*>(user_data);
+                     self->flags_ |= kStopped;
+                     if (self->has(kDestroyOnStop)) {
+                       iree_net_rdma_connection_control_destroy(self->control_);
+                       self->control_ = nullptr;
+                       self->DestroyData();
+                     }
+                   },
+                   this});
+  }
+
+  void DestroyData() {
+    if (message_endpoint_) {
+      iree_net_framed_endpoint_free(message_endpoint_);
+      message_endpoint_ = nullptr;
+      message_carrier_ = nullptr;
+    } else if (message_carrier_) {
+      iree_net_carrier_release(message_carrier_);
+      message_carrier_ = nullptr;
+    } else {
+      iree_net_rdma_direct_endpoint_destroy(data_endpoint_);
+    }
+    data_endpoint_ = nullptr;
   }
 
   void Pump() {
@@ -343,6 +392,135 @@ class ControlPeer {
     IREE_ASSERT_OK(iree_net_direct_endpoint_activate(data_view_));
   }
 
+  void PrepareMessage(uint32_t chunk_capacity, uint32_t slot_count = 2) {
+    iree_net_rdma_direct_endpoint_options_t direct_options = {};
+    direct_options.max_write_operations = slot_count;
+    direct_options.max_write_entries = 1;
+    direct_options.send_work_count = 2;
+    direct_options.receive_work_count = slot_count;
+    direct_options.post_batch_size = 2;
+    direct_options.max_request_length = 17;
+    direct_options.minimum_rnr_timer = 1;
+    iree_net_rdma_carrier_options_t options = {4, 16, chunk_capacity};
+    IREE_ASSERT_OK(iree_net_rdma_carrier_create(
+        context_, proactor_, control_, 0, 0x123400 + identity_, direct_options,
+        options,
+        {+[](void* user_data, uint64_t posted_count) {
+           auto* self = static_cast<ControlPeer*>(user_data);
+           self->pending_credit_ = posted_count;
+           self->flags_ |= kCreditPending;
+           self->Pump();
+         },
+         this},
+        iree_allocator_system(), &message_carrier_));
+    data_endpoint_ = iree_net_rdma_carrier_direct_endpoint(message_carrier_);
+    if (has(kRawMessage)) {
+      IREE_ASSERT_OK(iree_net_carrier_set_handlers(
+          message_carrier_,
+          {+[](void* user_data, iree_async_span_t data,
+               iree_async_buffer_lease_t* lease) -> iree_status_t {
+             auto* self = static_cast<ControlPeer*>(user_data);
+             EXPECT_EQ(lease, nullptr);
+             if (!data.length) {
+               ++self->stream_eof_count_;
+             } else {
+               const auto* bytes = iree_async_span_ptr(data);
+               self->stream_bytes_.insert(self->stream_bytes_.end(), bytes,
+                                          bytes + data.length);
+             }
+             return iree_ok_status();
+           },
+           +[](void* user_data, iree_status_t status) {
+             auto* self = static_cast<ControlPeer*>(user_data);
+             self->direct_errors_.push_back(iree_status_code(status));
+             iree_status_free(status);
+             self->Stop();
+           },
+           this}));
+    } else {
+      IREE_ASSERT_OK(iree_net_framed_endpoint_allocate(
+          message_carrier_, proactor_, options.max_send_operations,
+          &data_barrier_, iree_allocator_system(), &message_endpoint_));
+      message_view_ =
+          iree_net_framed_endpoint_as_message_endpoint(message_endpoint_);
+      iree_net_message_endpoint_set_callbacks(
+          message_view_,
+          {+[](void* user_data, iree_const_byte_span_t bytes,
+               iree_async_buffer_lease_t* lease) -> iree_status_t {
+             auto* self = static_cast<ControlPeer*>(user_data);
+             self->messages_.push_back({bytes, *lease});
+             *lease = {};
+             if (self->has(kStopOnMessage)) {
+               self->Stop();
+             }
+             return iree_ok_status();
+           },
+           +[](void* user_data, iree_status_t status) {
+             auto* self = static_cast<ControlPeer*>(user_data);
+             self->direct_errors_.push_back(iree_status_code(status));
+             iree_status_free(status);
+             self->Stop();
+           },
+           this});
+    }
+    std::array<uint8_t, IREE_NET_RDMA_CONTROL_RECORD_SIZE> record = {};
+    iree_unaligned_store_le_u32(record.data(), 4);
+    iree_unaligned_store_le_u32(
+        record.data() + 4,
+        iree_net_rdma_direct_endpoint_queue_number(data_endpoint_));
+    iree_unaligned_store_le_u32(record.data() + 8, 0x123400 + identity_);
+    iree_unaligned_store_le_u32(record.data() + 12,
+                                direct_options.receive_work_count);
+    iree_unaligned_store_le_u32(record.data() + 16, chunk_capacity);
+    iree_host_size_t target_length = 0;
+    IREE_ASSERT_OK(iree_net_rdma_carrier_export_receive(
+        message_carrier_,
+        iree_make_byte_span(record.data() + 24, IREE_NET_RDMA_TARGET_WIRE_SIZE),
+        &target_length));
+    EXPECT_EQ(target_length, IREE_NET_RDMA_TARGET_WIRE_SIZE);
+    ASSERT_TRUE(
+        iree_net_rdma_connection_control_try_send(control_, record.data()));
+  }
+
+  void ConnectMessage() {
+    ASSERT_TRUE(has(kRemoteDataReady));
+    IREE_ASSERT_OK(iree_net_rdma_carrier_connect(
+        message_carrier_, remote_data_.queue_number,
+        remote_data_.sequence_number, remote_data_.receive_count,
+        remote_data_.chunk_capacity,
+        iree_make_const_byte_span(remote_data_.message_target.data(),
+                                  remote_data_.message_target.size())));
+    if (message_endpoint_) {
+      IREE_ASSERT_OK(iree_net_message_endpoint_activate(message_view_));
+    } else {
+      IREE_ASSERT_OK(iree_net_carrier_activate(message_carrier_));
+    }
+  }
+
+  iree_status_t SendMessage(iree_net_send_prefix_t prefix,
+                            std::vector<iree_async_span_t> spans = {}) {
+    iree_net_message_endpoint_send_params_t params = {};
+    params.generated_prefix = prefix;
+    params.data = iree_async_span_list_make(spans.data(), spans.size());
+    params.completion_callback = {
+        +[](void* user_data, iree_status_t status, iree_host_size_t length) {
+          auto* self = static_cast<ControlPeer*>(user_data);
+          self->write_statuses_.push_back(iree_status_code(status));
+          self->write_lengths_.push_back(length);
+          iree_status_free(status);
+          if (self->has(kStopOnWrite)) {
+            self->Stop();
+          }
+        },
+        this};
+    if (message_endpoint_) {
+      return iree_net_message_endpoint_send(message_view_, &params);
+    }
+    iree_net_send_params_t raw_params = {params.generated_prefix, params.data,
+                                         params.completion_callback};
+    return iree_net_carrier_send(message_carrier_, &raw_params);
+  }
+
   iree_status_t Submit(
       const std::vector<iree_net_direct_write_entry_t>& entries,
       uint32_t cookie,
@@ -414,6 +592,15 @@ class ControlPeer {
   }
   uint64_t observed_credit() const { return observed_credit_; }
   uint64_t pending_credit() const { return pending_credit_; }
+  iree_net_message_endpoint_t message_view() { return message_view_; }
+  iree_net_carrier_t* message_carrier() { return message_carrier_; }
+  iree_net_rdma_connection_control_t* control() { return control_; }
+  size_t message_count() const { return messages_.size(); }
+  const std::vector<uint8_t>& stream_bytes() const { return stream_bytes_; }
+  uint32_t stream_eof_count() const { return stream_eof_count_; }
+  iree_const_byte_span_t message(size_t index) {
+    return messages_[index].bytes;
+  }
 
  private:
   // Borrowed fixture owners outlive the control's joined native work.
@@ -441,6 +628,12 @@ class ControlPeer {
   iree_net_rdma_direct_endpoint_t* data_endpoint_ = nullptr;
   // Borrowed public direct view used by the actual placement caller.
   iree_net_direct_endpoint_t data_view_ = {};
+  // Optional framed message owner, which owns the carrier and data endpoint.
+  iree_net_framed_endpoint_t* message_endpoint_ = nullptr;
+  // Borrowed native compatibility carrier for connection setup.
+  iree_net_carrier_t* message_carrier_ = nullptr;
+  // Borrowed framed message interface used by compatibility tests.
+  iree_net_message_endpoint_t message_view_ = {};
   // Joins independent data ownership before private control retirement.
   iree_net_endpoint_deactivation_barrier_t data_barrier_ = {};
   // Latest cumulative native receive grant, coalesced until control accepts it.
@@ -460,6 +653,10 @@ class ControlPeer {
     uint32_t receive_count = 0;
     // Checked remote registered subrange, borrowed from the advertising peer.
     iree_net_direct_target_t target = {};
+    // Peer message slot stride, independent of this side's geometry.
+    uint32_t chunk_capacity = 0;
+    // Captured message receive-window description from private control.
+    std::array<uint8_t, IREE_NET_RDMA_TARGET_WIRE_SIZE> message_target = {};
   } remote_data_;
   // Delivered immediate cookies, separate from source-return observations.
   std::vector<uint32_t> notifications_;
@@ -469,6 +666,18 @@ class ControlPeer {
   std::vector<iree_host_size_t> write_lengths_;
   // Endpoint failures observed independently of operation completion.
   std::vector<iree_status_code_t> direct_errors_;
+  struct ReceivedMessage {
+    // Borrowed bytes kept live by the moved framing lease.
+    iree_const_byte_span_t bytes;
+    // Independent message backing retained across further native traffic.
+    iree_async_buffer_lease_t lease;
+  };
+  // Application-retained messages, released after native connection teardown.
+  std::vector<ReceivedMessage> messages_;
+  // Borrowed raw receive chunks copied by the actual byte-stream consumer.
+  std::vector<uint8_t> stream_bytes_;
+  // Directional EOF observations, independent of the remaining send direction.
+  uint32_t stream_eof_count_ = 0;
 };
 
 class ConnectionControlTest
@@ -568,6 +777,21 @@ class ConnectionControlTest
     ASSERT_NO_FATAL_FAILURE(second.ConnectData());
     PollUntil(proactor_, [&] {
       return first.observed_credit() == 2 && second.observed_credit() == 2;
+    });
+  }
+
+  void ConnectMessages(ControlPeer& first, ControlPeer& second) {
+    ASSERT_NO_FATAL_FAILURE(Connect(first, second));
+    ASSERT_NO_FATAL_FAILURE(first.PrepareMessage(37, 3));
+    ASSERT_NO_FATAL_FAILURE(second.PrepareMessage(53));
+    PollUntil(proactor_, [&] {
+      return first.has(ControlPeer::kRemoteDataReady) &&
+             second.has(ControlPeer::kRemoteDataReady);
+    });
+    ASSERT_NO_FATAL_FAILURE(first.ConnectMessage());
+    ASSERT_NO_FATAL_FAILURE(second.ConnectMessage());
+    PollUntil(proactor_, [&] {
+      return first.observed_credit() == 2 && second.observed_credit() == 3;
     });
   }
 
@@ -1224,6 +1448,351 @@ TEST_P(ConnectionControlTest, RejectionJoinsSetupAndDestroysInCallback) {
   EXPECT_EQ(first.error_count(), 1u);
   EXPECT_EQ(first.error_code(), IREE_STATUS_UNAVAILABLE);
   EXPECT_FALSE(first.has(ControlPeer::kReady));
+}
+
+TEST_P(ConnectionControlTest, MessagesStreamAndRetainAcrossCreditWindows) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(ConnectMessages(first, second));
+  first.add_flags(ControlPeer::kHoldCredit);
+  second.add_flags(ControlPeer::kHoldCredit);
+  std::array<std::array<uint8_t, 1197>, 4> sources;
+  for (uint32_t i = 0; i < sources.size(); ++i) {
+    sources[i].fill(uint8_t(i + 17));
+    std::array<uint8_t, 257> prefix;
+    prefix.fill(uint8_t(i + 1));
+    std::vector<iree_async_span_t> spans = {iree_async_span_empty()};
+    for (uint32_t j = 0; j < 63; ++j) {
+      spans.push_back(iree_async_span_from_ptr(sources[i].data() + j * 19, 19));
+    }
+    auto generated = iree_net_send_prefix_from_bytes(
+        iree_make_const_byte_span(prefix.data(), prefix.size()));
+    IREE_ASSERT_OK(first.SendMessage(generated, spans));
+    IREE_ASSERT_OK(second.SendMessage(generated, spans));
+    spans.clear();
+    spans.shrink_to_fit();
+    prefix.fill(0);
+  }
+  EXPECT_EQ(
+      iree_net_message_endpoint_query_send_budget(first.message_view()).slots,
+      0u);
+  PollUntil(proactor_, [&] {
+    return first.pending_credit() == 6 && second.pending_credit() == 4;
+  });
+  EXPECT_TRUE(first.write_statuses().empty());
+  EXPECT_TRUE(second.write_statuses().empty());
+  EXPECT_EQ(first.message_count(), 0u);
+  EXPECT_EQ(second.message_count(), 0u);
+  first.set_send_goal(129);
+  second.set_send_goal(129);
+  first.clear_flags(ControlPeer::kHoldCredit);
+  second.clear_flags(ControlPeer::kHoldCredit);
+  first.Pump();
+  second.Pump();
+  PollUntil(proactor_, [&] {
+    return first.write_statuses().size() == 4 &&
+           second.write_statuses().size() == 4 && first.message_count() == 4 &&
+           second.message_count() == 4 && first.received() == 129 &&
+           second.received() == 129;
+  });
+  // All earlier messages are still retained while the isolated tail progresses.
+  std::array<uint8_t, 1> tail = {0x5a};
+  IREE_ASSERT_OK(first.SendMessage(iree_net_send_prefix_from_bytes(
+      iree_make_const_byte_span(tail.data(), tail.size()))));
+  PollUntil(proactor_, [&] {
+    return first.write_statuses().size() == 5 && second.message_count() == 5;
+  });
+  EXPECT_EQ(second.message(4).data[0], 0x5a);
+  first.add_flags(ControlPeer::kDestroyOnStop);
+  second.add_flags(ControlPeer::kDestroyOnStop);
+  first.Stop();
+  PollUntil(proactor_, [&] {
+    return first.has(ControlPeer::kStopped) &&
+           second.has(ControlPeer::kStopped);
+  });
+  for (auto* peer : {&first, &second}) {
+    for (uint32_t i = 0; i < 4; ++i) {
+      EXPECT_EQ(peer->write_statuses()[i], IREE_STATUS_OK);
+      EXPECT_EQ(peer->write_lengths()[i], 1454u);
+      auto message = peer->message(i);
+      ASSERT_EQ(message.data_length, 1454u);
+      for (uint32_t j = 0; j < message.data_length; ++j) {
+        EXPECT_EQ(message.data[j], j < 257 ? i + 1 : i + 17);
+      }
+    }
+  }
+}
+
+TEST_P(ConnectionControlTest, MessageSourceReturnCanReuseAdmissionReentrantly) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(ConnectMessages(first, second));
+  struct Chain {
+    // Borrowed message endpoint kept active throughout the source chain.
+    iree_net_message_endpoint_t endpoint;
+    // Number of messages admitted in stream order.
+    uint32_t submitted = 0;
+    // Number of native-retired sources whose callbacks have run.
+    uint32_t completed = 0;
+
+    void Submit() {
+      std::array<uint8_t, 17> payload;
+      payload.fill(uint8_t(submitted++));
+      iree_net_message_endpoint_send_params_t params = {};
+      params.generated_prefix = iree_net_send_prefix_from_bytes(
+          iree_make_const_byte_span(payload.data(), payload.size()));
+      params.completion_callback = {
+          +[](void* user_data, iree_status_t status, iree_host_size_t length) {
+            auto* self = static_cast<Chain*>(user_data);
+            IREE_CHECK_OK(status);
+            EXPECT_EQ(length, 17u);
+            ++self->completed;
+            if (self->submitted < 129) {
+              EXPECT_EQ(
+                  iree_net_message_endpoint_query_send_budget(self->endpoint)
+                      .slots,
+                  1u);
+              self->Submit();
+            }
+          },
+          this};
+      IREE_CHECK_OK(iree_net_message_endpoint_send(endpoint, &params));
+    }
+  } chain{first.message_view()};
+  for (uint32_t i = 0; i < 4; ++i) {
+    chain.Submit();
+  }
+  PollUntil(proactor_, [&] {
+    return chain.completed == 129 && second.message_count() == 129;
+  });
+  EXPECT_EQ(iree_net_message_endpoint_query_send_budget(chain.endpoint).slots,
+            4u);
+  for (uint32_t i = 0; i < 129; ++i) {
+    auto message = second.message(i);
+    ASSERT_EQ(message.data_length, 17u);
+    for (iree_host_size_t j = 0; j < message.data_length; ++j) {
+      EXPECT_EQ(message.data[j], i);
+    }
+  }
+}
+
+TEST_P(ConnectionControlTest, MessagePrefixFailurePreservesFollowingStream) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(ConnectMessages(first, second));
+  uint32_t calls = 0;
+  IREE_ASSERT_OK(first.SendMessage(
+      {129,
+       +[](void* user_data, iree_byte_span_t) -> iree_status_t {
+         ++*static_cast<uint32_t*>(user_data);
+         return iree_status_from_code(IREE_STATUS_ABORTED);
+       },
+       &calls}));
+  EXPECT_EQ(calls, 1u);
+  std::array<uint8_t, 129> payload;
+  payload.fill(0x7a);
+  IREE_ASSERT_OK(first.SendMessage(iree_net_send_prefix_from_bytes(
+      iree_make_const_byte_span(payload.data(), payload.size()))));
+  PollUntil(proactor_, [&] {
+    return first.write_statuses().size() == 2 && second.message_count() == 1;
+  });
+  EXPECT_EQ(first.write_statuses(), (std::vector<iree_status_code_t>{
+                                        IREE_STATUS_ABORTED, IREE_STATUS_OK}));
+  EXPECT_EQ(first.write_lengths(), (std::vector<iree_host_size_t>{0, 129}));
+  ASSERT_EQ(second.message(0).data_length, payload.size());
+  EXPECT_EQ(memcmp(second.message(0).data, payload.data(), payload.size()), 0);
+  EXPECT_TRUE(first.direct_errors().empty());
+  EXPECT_TRUE(second.direct_errors().empty());
+}
+
+TEST_P(ConnectionControlTest, MessageDirectionalShutdownKeepsReplyDirection) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  first.add_flags(ControlPeer::kRawMessage);
+  second.add_flags(ControlPeer::kRawMessage);
+  ASSERT_NO_FATAL_FAILURE(ConnectMessages(first, second));
+  std::array<uint8_t, 513> payload;
+  payload.fill(0x5d);
+  for (uint32_t i = 0; i < 2; ++i) {
+    IREE_ASSERT_OK(first.SendMessage(iree_net_send_prefix_from_bytes(
+        iree_make_const_byte_span(payload.data(), payload.size()))));
+  }
+  IREE_ASSERT_OK(iree_net_carrier_shutdown(first.message_carrier()));
+  PollUntil(proactor_, [&] {
+    return first.write_statuses().size() == 2 && second.stream_eof_count() == 1;
+  });
+  EXPECT_EQ(second.stream_bytes(), std::vector<uint8_t>(1026, 0x5d));
+  EXPECT_TRUE(second.direct_errors().empty());
+  EXPECT_EQ(first.write_statuses(),
+            (std::vector<iree_status_code_t>{IREE_STATUS_OK, IREE_STATUS_OK}));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_FAILED_PRECONDITION,
+      first.SendMessage(iree_net_send_prefix_from_bytes(
+          iree_make_const_byte_span(payload.data(), payload.size()))));
+  payload.fill(0x7a);
+  IREE_ASSERT_OK(second.SendMessage(iree_net_send_prefix_from_bytes(
+      iree_make_const_byte_span(payload.data(), payload.size()))));
+  IREE_ASSERT_OK(iree_net_carrier_shutdown(second.message_carrier()));
+  PollUntil(proactor_, [&] {
+    return second.write_statuses().size() == 1 && first.stream_eof_count() == 1;
+  });
+  EXPECT_EQ(first.stream_bytes(), std::vector<uint8_t>(513, 0x7a));
+  EXPECT_TRUE(first.direct_errors().empty());
+  EXPECT_EQ(first.stream_eof_count(), 1u);
+  EXPECT_EQ(second.stream_eof_count(), 1u);
+}
+
+TEST_P(ConnectionControlTest, MessageCloseBeforeActivationRetiresPrivateQueue) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(Connect(first, second));
+  ASSERT_NO_FATAL_FAILURE(first.PrepareMessage(37));
+  ASSERT_NO_FATAL_FAILURE(second.PrepareMessage(53));
+  first.add_flags(ControlPeer::kDestroyOnStop);
+  second.add_flags(ControlPeer::kDestroyOnStop);
+  first.Stop();
+  PollUntil(proactor_, [&] {
+    return first.has(ControlPeer::kStopped) &&
+           second.has(ControlPeer::kStopped);
+  });
+  EXPECT_TRUE(first.write_statuses().empty());
+  EXPECT_TRUE(second.write_statuses().empty());
+}
+
+TEST_P(ConnectionControlTest, MessageConstructionFailureReleasesNativeOwners) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(Connect(first, second));
+  iree_net_rdma_direct_endpoint_options_t direct_options = {};
+  direct_options.max_write_operations = 3;
+  direct_options.max_write_entries = 1;
+  direct_options.send_work_count = 2;
+  direct_options.receive_work_count = 3;
+  direct_options.post_batch_size = 2;
+  direct_options.max_request_length = 17;
+  direct_options.minimum_rnr_timer = 1;
+  bool created = false;
+  // The cold path has four host allocations plus native resources. Fail each
+  // host allocation in order; a successful construction ends the sweep.
+  for (int budget = 0; budget <= 4; ++budget) {
+    SCOPED_TRACE(budget);
+    ControlledAllocator allocator;
+    allocator.allocations_before_failure = budget;
+    iree_net_carrier_t* carrier = nullptr;
+    iree_status_t status = iree_net_rdma_carrier_create(
+        context_, proactor_, first.control(), 0, 0x123400, direct_options,
+        {4, 16, 37}, {+[](void*, uint64_t) {}, nullptr}, allocator.value(),
+        &carrier);
+    if (iree_status_is_ok(status)) {
+      created = true;
+      iree_net_carrier_release(carrier);
+    } else {
+      IREE_EXPECT_STATUS_IS(IREE_STATUS_RESOURCE_EXHAUSTED, status);
+      EXPECT_EQ(carrier, nullptr);
+    }
+    EXPECT_EQ(allocator.live_allocations, 0u);
+    if (created) {
+      break;
+    }
+  }
+  EXPECT_TRUE(created);
+}
+
+TEST_P(ConnectionControlTest, MessageFailureBeforeActivationIsTransactional) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(Connect(first, second));
+  ASSERT_NO_FATAL_FAILURE(first.PrepareMessage(37));
+  ASSERT_NO_FATAL_FAILURE(second.PrepareMessage(53));
+  iree_net_rdma_carrier_fail(first.message_carrier(),
+                             iree_status_from_code(IREE_STATUS_ABORTED));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_ABORTED, iree_net_message_endpoint_activate(
+                                                 first.message_view()));
+  EXPECT_TRUE(first.direct_errors().empty());
+  EXPECT_EQ(iree_net_carrier_state(first.message_carrier()),
+            IREE_NET_CARRIER_STATE_CREATED);
+  first.Stop();
+  PollUntil(proactor_, [&] {
+    return first.has(ControlPeer::kStopped) &&
+           second.has(ControlPeer::kStopped);
+  });
+  EXPECT_TRUE(first.write_statuses().empty());
+}
+
+TEST_P(ConnectionControlTest, MessageCloseJoinsConcurrentPrefixWriter) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(ConnectMessages(first, second));
+  struct Prefix {
+    // Explicit writer-entry witness consumed by the closing thread.
+    std::promise<void> entered;
+    // Release edge allowing generation to finish after drain admission.
+    std::future<void> release;
+  } prefix;
+  std::promise<void> release;
+  prefix.release = release.get_future();
+  auto entered = prefix.entered.get_future();
+  std::thread submitter([&] {
+    IREE_CHECK_OK(first.SendMessage(
+        {4097,
+         +[](void* user_data, iree_byte_span_t target) -> iree_status_t {
+           auto* self = static_cast<Prefix*>(user_data);
+           self->entered.set_value();
+           self->release.wait();
+           memset(target.data, 0x4d, target.data_length);
+           return iree_ok_status();
+         },
+         &prefix}));
+  });
+  entered.wait();
+  first.Stop();
+  bool visited = false;
+  iree_async_nop_operation_t marker = {};
+  iree_async_operation_initialize(
+      &marker.base, IREE_ASYNC_OPERATION_TYPE_NOP, 0,
+      +[](void* user_data, iree_async_operation_t*, iree_status_t status,
+          iree_async_completion_flags_t) {
+        IREE_CHECK_OK(status);
+        *static_cast<bool*>(user_data) = true;
+      },
+      &visited);
+  IREE_CHECK_OK(iree_async_proactor_submit_one(proactor_, &marker.base));
+  PollUntil(proactor_, [&] { return visited; });
+  EXPECT_FALSE(first.has(ControlPeer::kStopped));
+  EXPECT_TRUE(first.write_statuses().empty());
+  release.set_value();
+  submitter.join();
+  PollUntil(proactor_, [&] {
+    return first.has(ControlPeer::kStopped) &&
+           second.has(ControlPeer::kStopped);
+  });
+  EXPECT_EQ(first.write_statuses(),
+            (std::vector<iree_status_code_t>{IREE_STATUS_CANCELLED}));
+  EXPECT_EQ(first.write_lengths(), (std::vector<iree_host_size_t>{0}));
+  EXPECT_EQ(second.message_count(), 0u);
+}
+
+TEST_P(ConnectionControlTest, MessageCallbackClosesWithLaterSourcesPending) {
+  ControlPeer first(context_, proactor_, std::get<1>(GetParam()), 0);
+  ControlPeer second(context_, proactor_, std::get<1>(GetParam()), 1);
+  ASSERT_NO_FATAL_FAILURE(ConnectMessages(first, second));
+  first.add_flags(ControlPeer::kDestroyOnStop);
+  second.add_flags(ControlPeer::kDestroyOnStop | ControlPeer::kStopOnMessage);
+  std::array<uint8_t, 513> payload;
+  payload.fill(0x5d);
+  for (uint32_t i = 0; i < 4; ++i) {
+    IREE_ASSERT_OK(first.SendMessage(iree_net_send_prefix_from_bytes(
+        iree_make_const_byte_span(payload.data(), payload.size()))));
+  }
+  PollUntil(proactor_, [&] {
+    return first.has(ControlPeer::kStopped) &&
+           second.has(ControlPeer::kStopped);
+  });
+  ASSERT_EQ(first.write_statuses().size(), 4u);
+  EXPECT_NE(first.write_statuses().back(), IREE_STATUS_OK);
+  ASSERT_EQ(second.message_count(), 1u);
+  ASSERT_EQ(second.message(0).data_length, payload.size());
+  EXPECT_EQ(memcmp(second.message(0).data, payload.data(), payload.size()), 0);
 }
 
 TEST_P(ConnectionControlTest, CloseFromReadyWithNativeReceivesPosted) {
