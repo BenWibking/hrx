@@ -64,6 +64,8 @@ IREE_API_EXPORT uint8_t
 iree_net_rdma_context_port_number(const iree_net_rdma_context_t* context);
 IREE_API_EXPORT const struct ibv_device_attr*
 iree_net_rdma_context_device_attributes(const iree_net_rdma_context_t* context);
+IREE_API_EXPORT const struct ibv_port_attr*
+iree_net_rdma_context_port_attributes(const iree_net_rdma_context_t* context);
 
 #ifdef __cplusplus
 }  // extern "C"

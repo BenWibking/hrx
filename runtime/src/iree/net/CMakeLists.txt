@@ -76,6 +76,18 @@ iree_cc_library(
 
 iree_cc_library(
   NAME
+    direct_endpoint
+  HDRS
+    "direct_endpoint.h"
+  DEPS
+    ::carrier
+    iree::async
+    iree::base
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     session_bootstrap
   HDRS
     "session_bootstrap.h"

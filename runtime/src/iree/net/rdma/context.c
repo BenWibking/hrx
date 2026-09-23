@@ -23,6 +23,8 @@ struct iree_net_rdma_context_t {
   struct ibv_pd* protection_domain;
   // Immutable creation-time device capabilities.
   struct ibv_device_attr device_attributes;
+  // Immutable creation-time selected port capabilities, including message size.
+  struct ibv_port_attr port_attributes;
   // Selected one-based active port.
   uint8_t port_number;
 };
@@ -65,6 +67,7 @@ static iree_status_t iree_net_rdma_context_select_device(
       } else if (attributes.state == IBV_PORT_ACTIVE) {
         context->device = device;
         context->port_number = (uint8_t)port;
+        context->port_attributes = attributes;
       }
     }
   }
@@ -170,4 +173,9 @@ uint8_t iree_net_rdma_context_port_number(
 const struct ibv_device_attr* iree_net_rdma_context_device_attributes(
     const iree_net_rdma_context_t* context) {
   return &context->device_attributes;
+}
+
+const struct ibv_port_attr* iree_net_rdma_context_port_attributes(
+    const iree_net_rdma_context_t* context) {
+  return &context->port_attributes;
 }

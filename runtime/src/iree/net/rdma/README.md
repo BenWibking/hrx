@@ -137,3 +137,37 @@ qualification environment above. It checks bounded bilateral control pressure,
 an isolated final record, actual independent data placement and transformed
 results through the shared CQ, retained target bytes after control retirement,
 and cancellation/allocation failure on both sides of connection setup.
+
+## Registered Host Placement
+
+`runtime/src/iree/net/direct_endpoint.h` is the borrowed host interface for
+writing registered source spans directly into peer-advertised targets. The
+RDMA implementation in `runtime/src/iree/net/carrier/rdma/direct_endpoint.h`
+uses independent RC data QPs and the control owner's shared CQ. Target import
+binds the checked description to its connection without a remote-object table.
+The shared native target format remains independent of host callback machinery.
+
+Admission captures temporary source/target descriptors and retains their source
+registrations. Native requests use resolved IOVAs and keys, without mapping or
+copying payload bytes. Logical extents are segmented using bounded posting
+scratch; native message size, SQ capacity, captured descriptor capacity and
+logical admission capacity are separate dimensions. Each posting batch has a
+signaled tail, so a partly posted logical write or an isolated final operation
+can progress without later application traffic. A successful tail covers only
+the preceding writes on that exact RC QP, not unrelated endpoint or HAL work.
+
+Optional immediate notifications observe target placement, not target-consumer
+completion. Their empty receives are replenished independently of application
+target ownership. A notified batch reserves one receive credit before posting
+any payload; cumulative credit returns travel over the private control path.
+This credit controls notification storage, not permission to reuse a target.
+The target owner keeps its registration and backing alive through both peer
+access and consumption, and coordinates reuse at the application layer.
+
+An accepted write returns its source storage exactly once. Native access and
+the endpoint's registration references end before this callback begins. A
+failed write may have altered part of the target and is not transactional.
+Cancellation or a native posting/completion error retires the QP before
+returning pending sources; shared-CQ and host callback joins then permit the
+containing owner to free endpoint metadata. This path has no per-transfer
+registration, staging fallback, private worker or per-native-request ledger.
