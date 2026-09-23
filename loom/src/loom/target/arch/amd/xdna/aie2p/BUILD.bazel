@@ -329,6 +329,7 @@ loom_cc_library(
     hdrs = ["array/program.h"],
     deps = [
         ":array_plan",
+        ":executable_program",
         "//loom/src/loom/target/arch/amd/xdna:array_facts",
         "//loom/src/loom/target/arch/amd/xdna:array_registers",
         "//runtime/src/iree/base",
@@ -908,11 +909,20 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "executable_program",
+    hdrs = ["emit/program.h"],
+    deps = [
+        "//loom/src/loom/target/arch/amd/xdna:array_facts",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "xdna_product",
     srcs = ["emit/xdna_product.c"],
     hdrs = ["emit/xdna_product.h"],
     deps = [
-        ":array_program",
+        ":executable_program",
         ":tile_link",
         "//loom/src/loom/target/arch/amd/xdna:device_profile",
         "//loom/src/loom/target/emit/native:elf",
@@ -965,6 +975,23 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/io:stream",
+        "//runtime/src/iree/schemas:xdna_executable",
+    ],
+)
+
+loom_cc_test(
+    name = "xdna_product_test",
+    srcs = ["emit/xdna_product_test.cc"],
+    deps = [
+        ":executable_program",
+        ":xdna_product",
+        "//loom/src/loom/target/arch/amd/xdna:device_profile",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/io:stream",
+        "//runtime/src/iree/schemas:xdna_executable",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -1098,15 +1125,3 @@ loom_cc_test(
     ],
 )
 
-loom_cc_test(
-    name = "xdna_product_test",
-    srcs = ["emit/xdna_product_test.cc"],
-    deps = [
-        ":xdna_product",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/io:stream",
-        "//runtime/src/iree/schemas:xdna_executable",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-    ],
-)

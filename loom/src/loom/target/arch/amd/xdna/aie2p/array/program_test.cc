@@ -91,7 +91,7 @@ TEST(Aie2pArrayProgramTest, ResetsComputeDmaBeforePlannedQueueStarts) {
   const loom_aie2p_array_dma_plan_t dma = {
       /*.channel_index=*/0,
       /*.coordinate=*/{0, 2},
-      /*.direction=*/LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY,
+      /*.direction=*/LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
       /*.dma_channel=*/0,
       /*.flags=*/0,
       /*.buffer_descriptor_start=*/0,
@@ -217,7 +217,7 @@ TEST(Aie2pArrayProgramTest, KeepsDmaServiceCoreReset) {
   const loom_aie2p_array_dma_plan_t dma = {
       /*.channel_index=*/0,
       /*.coordinate=*/{0, 3},
-      /*.direction=*/LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY,
+      /*.direction=*/LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
       /*.dma_channel=*/0,
       /*.flags=*/LOOM_AIE2P_ARRAY_DMA_FLAG_SERVICE_TILE_LIFECYCLE,
       /*.buffer_descriptor_start=*/0,
@@ -327,7 +327,7 @@ TEST_P(Aie2pCompletionRouteTest, EmitsSelectedPacketResources) {
   const loom_aie2p_array_dma_plan_t dma = {
       /*.channel_index=*/0,
       /*.coordinate=*/{0, 0},
-      /*.direction=*/LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY,
+      /*.direction=*/LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
       /*.dma_channel=*/0,
       /*.flags=*/LOOM_AIE2P_ARRAY_DMA_FLAG_SHIM,
       /*.buffer_descriptor_start=*/0,

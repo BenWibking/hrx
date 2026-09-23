@@ -154,8 +154,8 @@ static const char* loom_aie2p_array_plan_check_direction_name(
 }
 
 static const char* loom_aie2p_array_plan_check_dma_direction_name(
-    loom_aie2p_array_dma_direction_t direction) {
-  return direction == LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM
+    loom_xdna_dma_direction_t direction) {
+  return direction == LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM
              ? "memory-to-stream"
              : "stream-to-memory";
 }

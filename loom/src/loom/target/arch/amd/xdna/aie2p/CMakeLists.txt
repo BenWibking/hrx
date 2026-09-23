@@ -389,6 +389,7 @@ loom_cc_library(
     "array/program.c"
   DEPS
     ::array_plan
+    ::executable_program
     iree::base
     iree::base::internal::arena
     loom::target::arch::amd::xdna::array_facts
@@ -1067,13 +1068,26 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    executable_program
+  HDRS
+    "emit/program.h"
+  DEPS
+    iree::base
+    loom::target::arch::amd::xdna::array_facts
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     xdna_product
   HDRS
     "emit/xdna_product.h"
   SRCS
     "emit/xdna_product.c"
   DEPS
-    ::array_program
+    ::executable_program
     ::tile_link
     iree::base
     iree::base::internal::arena
@@ -1109,6 +1123,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::io::stream
+    iree::schemas::xdna_executable
     loom::analysis::symbol_facts
     loom::codegen::low::descriptors
     loom::codegen::low::diagnostics
@@ -1152,6 +1167,27 @@ loom_cc_test(
     loom::testing::module_ptr
   LABELS
     "iree-build-requirement=libamdf"
+    "iree-build-requirement=loom.target.arch.xdna"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_test(
+  NAME
+    xdna_product_test
+  SRCS
+    "emit/xdna_product_test.cc"
+  DEPS
+    ::executable_program
+    ::xdna_product
+    iree::base
+    iree::base::internal::arena
+    iree::io::stream
+    iree::schemas::xdna_executable
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::amd::xdna::device_profile
+  LABELS
     "iree-build-requirement=loom.target.arch.xdna"
 )
 endif()
@@ -1303,24 +1339,6 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::target::emit::native::object
-  LABELS
-    "iree-build-requirement=loom.target.arch.xdna"
-)
-endif()
-
-if(LOOM_TARGET_ARCH_XDNA)
-loom_cc_test(
-  NAME
-    xdna_product_test
-  SRCS
-    "emit/xdna_product_test.cc"
-  DEPS
-    ::xdna_product
-    iree::base::internal::arena
-    iree::io::stream
-    iree::schemas::xdna_executable
-    iree::testing::gtest
-    iree::testing::gtest_main
   LABELS
     "iree-build-requirement=loom.target.arch.xdna"
 )

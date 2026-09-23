@@ -70,12 +70,6 @@ enum loom_aie2p_array_channel_resource_flag_bits_e {
   LOOM_AIE2P_ARRAY_CHANNEL_RESOURCE_FLAG_OWNS_NEIGHBOR_RING = 1u << 4,
 };
 
-// DMA transfer direction relative to local memory.
-typedef enum loom_aie2p_array_dma_direction_e {
-  LOOM_AIE2P_ARRAY_DMA_DIRECTION_MEMORY_TO_STREAM = 1,
-  LOOM_AIE2P_ARRAY_DMA_DIRECTION_STREAM_TO_MEMORY = 2,
-} loom_aie2p_array_dma_direction_t;
-
 typedef uint8_t loom_aie2p_array_dma_flags_t;
 enum loom_aie2p_array_dma_flag_bits_e {
   // The DMA engine resides on a shim tile instead of a compute tile.
@@ -365,7 +359,7 @@ typedef struct loom_aie2p_array_dma_plan_t {
   // Physical tile containing the DMA engine.
   loom_xdna_tile_coordinate_t coordinate;
   // Transfer direction relative to local memory.
-  loom_aie2p_array_dma_direction_t direction;
+  loom_xdna_dma_direction_t direction;
   // Direction-local DMA channel ordinal.
   uint8_t dma_channel;
   // Engine placement and lifecycle ownership flags.

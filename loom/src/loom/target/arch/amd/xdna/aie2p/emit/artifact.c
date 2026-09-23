@@ -7,6 +7,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/emit/artifact.h"
 
 #include "iree/io/vec_stream.h"
+#include "iree/schemas/xdna_executable.h"
 #include "loom/analysis/symbol_facts.h"
 #include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/function_requirements.h"
@@ -396,6 +397,86 @@ static iree_status_t loom_aie2p_xdna_compile_resident_tiles(
   return iree_ok_status();
 }
 
+static uint16_t loom_aie2p_xdna_measure_partition(
+    const loom_aie2p_array_plan_t* plan) {
+  uint16_t column_count = 0;
+#define LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(coordinate_value)         \
+  do {                                                                  \
+    const loom_xdna_tile_coordinate_t coordinate_ = (coordinate_value); \
+    const uint16_t end_ = (uint16_t)coordinate_.column + 1u;            \
+    if (end_ > column_count) column_count = end_;                       \
+  } while (0)
+  for (iree_host_size_t i = 0; i < plan->worker_plan_count; ++i) {
+    LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(plan->worker_plans[i].coordinate);
+  }
+  for (iree_host_size_t i = 0; i < plan->channel_slot_count; ++i) {
+    const loom_aie2p_array_channel_slot_t* slot = &plan->channel_slots[i];
+    if (slot->sender_storage.owner.column != UINT16_MAX) {
+      LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(slot->sender_storage.owner);
+    }
+    if (slot->receiver_storage.owner.column != UINT16_MAX) {
+      LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(slot->receiver_storage.owner);
+    }
+  }
+  for (iree_host_size_t i = 0; i < plan->lock_count; ++i) {
+    LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(plan->locks[i].coordinate);
+  }
+  for (iree_host_size_t i = 0; i < plan->dma_channel_count; ++i) {
+    LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(plan->dma_channels[i].coordinate);
+  }
+  for (iree_host_size_t i = 0; i < plan->route_count; ++i) {
+    LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE(plan->routes[i].coordinate);
+  }
+#undef LOOM_AIE2P_XDNA_ACCUMULATE_COORDINATE
+  return column_count;
+}
+
+static iree_xdna_elf_binding_access_t loom_aie2p_xdna_binding_access(
+    loom_aie2p_array_binding_access_t access) {
+  iree_xdna_elf_binding_access_t result = 0;
+  if (access == LOOM_AIE2P_ARRAY_BINDING_ACCESS_READ ||
+      access == LOOM_AIE2P_ARRAY_BINDING_ACCESS_READ_WRITE) {
+    result |= IREE_XDNA_ELF_BINDING_ACCESS_READ;
+  }
+  if (access == LOOM_AIE2P_ARRAY_BINDING_ACCESS_WRITE ||
+      access == LOOM_AIE2P_ARRAY_BINDING_ACCESS_READ_WRITE) {
+    result |= IREE_XDNA_ELF_BINDING_ACCESS_WRITE;
+  }
+  return result;
+}
+
+static void loom_aie2p_xdna_build_binding_records(
+    const loom_aie2p_array_plan_t* plan, uint32_t address_alignment,
+    iree_xdna_elf_binding_record_t* records) {
+  if (plan->binding_slot_count == 0) {
+    return;
+  }
+  memset(records, 0, plan->binding_slot_count * sizeof(*records));
+  for (iree_host_size_t i = 0; i < plan->binding_count; ++i) {
+    const loom_aie2p_array_binding_t* binding = &plan->bindings[i];
+    records[binding->ordinal] = (iree_xdna_elf_binding_record_t){
+        .kind = IREE_XDNA_ELF_BINDING_KIND_BUFFER,
+        .address_space = IREE_XDNA_ELF_BINDING_ADDRESS_SPACE_GLOBAL,
+        .access = loom_aie2p_xdna_binding_access(binding->access),
+        .usage = IREE_XDNA_ELF_BINDING_USAGE_DEVICE_VISIBLE |
+                 IREE_XDNA_ELF_BINDING_USAGE_COHERENT,
+        .minimum_alignment = 1,
+    };
+  }
+  for (iree_host_size_t i = 0; i < plan->binding_plan_count; ++i) {
+    const loom_aie2p_array_binding_plan_t* binding_plan =
+        &plan->binding_plans[i];
+    const uint64_t minimum_byte_length = binding_plan->binding_byte_offset +
+                                         binding_plan->binding_span_byte_length;
+    const uint32_t binding_ordinal =
+        plan->bindings[binding_plan->binding_index].ordinal;
+    iree_xdna_elf_binding_record_t* record = &records[binding_ordinal];
+    record->minimum_byte_length =
+        iree_max(record->minimum_byte_length, minimum_byte_length);
+    record->minimum_alignment = address_alignment;
+  }
+}
+
 static iree_status_t loom_aie2p_xdna_compile_resident_entries(
     const loom_aie2p_xdna_artifact_request_t* request,
     loom_module_t* resident_module, const loom_aie2p_array_plan_t* array_plans,
@@ -509,6 +590,16 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
         iree_make_cstring_view(device_profile->key);
   }
 
+  const loom_xdna_array_family_t* family =
+      loom_xdna_device_profile_array_family(device_profile);
+  uint32_t binding_alignment = 1;
+  for (uint8_t i = 0; i < family->tile_count; ++i) {
+    const loom_xdna_tile_facts_t* tile = &family->tiles[i];
+    if (tile->kind == LOOM_XDNA_TILE_KIND_SHIM_NOC) {
+      binding_alignment = tile->dma.address_alignment;
+    }
+  }
+
   loom_aie2p_array_leaf_t* source_leaves = NULL;
   iree_host_size_t source_leaf_count = 0;
   bool source_leaves_valid = false;
@@ -547,9 +638,17 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
     }
     IREE_RETURN_IF_ERROR(loom_aie2p_array_program_build(
         &array_plans[i], request->scratch_arena, &array_programs[i]));
+    iree_xdna_elf_binding_record_t* bindings = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        request->scratch_arena, array_plans[i].binding_slot_count,
+        sizeof(*bindings), (void**)&bindings));
+    loom_aie2p_xdna_build_binding_records(&array_plans[i], binding_alignment,
+                                          bindings);
     product_entries[i] = (loom_aie2p_xdna_entry_t){
         .name = source_entry->name,
-        .array_plan = &array_plans[i],
+        .column_count = loom_aie2p_xdna_measure_partition(&array_plans[i]),
+        .bindings = bindings,
+        .binding_count = array_plans[i].binding_slot_count,
         .array_program = &array_programs[i],
     };
   }
@@ -588,7 +687,7 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
 
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
     IREE_RETURN_IF_ERROR(loom_aie2p_array_report_record(
-        request->module, product_entries[i].name, product_entries[i].array_plan,
+        request->module, product_entries[i].name, &array_plans[i],
         product_entries[i].tiles, request->compile_report,
         request->scratch_arena));
   }

@@ -103,7 +103,7 @@ typedef struct loom_aie2p_array_compute_endpoint_request_t {
   // Byte length of each ring record.
   uint32_t record_byte_length;
   // DMA transfer direction relative to local memory.
-  loom_aie2p_array_dma_direction_t direction;
+  loom_xdna_dma_direction_t direction;
   // Source DMA channel required by a direct loopback request.
   uint8_t loopback_source_dma_channel;
   // Optional loopback relationship required by the request.
@@ -121,7 +121,7 @@ typedef struct loom_aie2p_array_compute_endpoint_proposal_t {
   // Ring storage and synchronization selected for the endpoint.
   loom_aie2p_array_ring_resource_proposal_t ring;
   // DMA transfer direction relative to local memory.
-  loom_aie2p_array_dma_direction_t direction;
+  loom_xdna_dma_direction_t direction;
   // Direction-local physical DMA channel ordinal.
   uint8_t dma_channel;
   // First tile-local buffer descriptor selected for the ring.
@@ -137,7 +137,7 @@ typedef struct loom_aie2p_array_shim_endpoint_proposal_t {
   // Physical shim tile owning the endpoint.
   loom_xdna_tile_coordinate_t coordinate;
   // DMA transfer direction relative to external memory.
-  loom_aie2p_array_dma_direction_t direction;
+  loom_xdna_dma_direction_t direction;
   // Direction-local physical DMA channel ordinal.
   uint8_t dma_channel;
   // First tile-local buffer descriptor selected for the endpoint.
@@ -171,7 +171,7 @@ loom_aie2p_array_channel_resource_failure_t
 loom_aie2p_array_channel_resources_propose_shim(
     const loom_aie2p_array_tile_resources_t* resources,
     loom_xdna_tile_coordinate_t coordinate,
-    loom_aie2p_array_dma_direction_t direction, uint16_t descriptor_count,
+    loom_xdna_dma_direction_t direction, uint16_t descriptor_count,
     loom_aie2p_array_shim_endpoint_proposal_t* out_proposal);
 
 // Applies a previously selected ring transition without placement work.
