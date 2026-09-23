@@ -17,6 +17,7 @@ loom_check_test_suite(
     "output_record_shapes.loom-test"
     "plan.loom-test"
     "roundtrip.loom-test"
+    "runtime_arguments.loom-test"
     "verify.loom-test"
 )
 

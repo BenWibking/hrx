@@ -18,9 +18,10 @@ pipeline.def<kernel> @matching_records() run(%input: buffer, %output: buffer) {
 
 // RUN: emit pipeline-plan @non_buffer_binding max-instances=2
 
-// Verification rejects invalid input before the planner consumes it.
+// The source signature is valid. This flow-graph realization requires buffer
+// endpoints and cannot reinterpret a typed argument as a runtime buffer.
 
-// ERROR@+1: TYPE/003 {operand_name="run binding 0", actual_type="i32", expected_constraint="buffer"}
+// ERROR@+1: TYPE/003 {operand_name="run argument 0", actual_type="i32", expected_constraint="buffer for the flow-graph ABI"}
 pipeline.def @non_buffer_binding() run(%binding: i32) {
   pipeline.finish
 }

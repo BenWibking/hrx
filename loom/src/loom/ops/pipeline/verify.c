@@ -238,8 +238,7 @@ iree_status_t loom_pipeline_def_verify(const loom_module_t* module,
   IREE_RETURN_IF_ERROR(loom_function_contract_verify(module, op, emitter));
   const loom_func_like_t pipeline = loom_func_like_const_cast(module, op);
   uint16_t argument_count = 0;
-  const loom_value_id_t* argument_ids =
-      loom_func_like_arg_ids(pipeline, &argument_count);
+  loom_func_like_arg_ids(pipeline, &argument_count);
   const int64_t specialization_count =
       loom_func_like_specialization_count(pipeline);
   if (specialization_count < 0 || specialization_count > argument_count) {
@@ -250,17 +249,6 @@ iree_status_t loom_pipeline_def_verify(const loom_module_t* module,
     };
     return loom_pipeline_emit(emitter, op, LOOM_ERR_STRUCTURE_014, params,
                               IREE_ARRAYSIZE(params));
-  }
-  for (uint16_t i = (uint16_t)specialization_count; i < argument_count; ++i) {
-    const loom_type_t type = loom_module_value_type(module, argument_ids[i]);
-    if (loom_type_satisfies_constraint(type, LOOM_TYPE_CONSTRAINT_BUFFER)) {
-      continue;
-    }
-    char name[40];
-    iree_snprintf(name, sizeof(name), "run binding %u",
-                  i - (uint16_t)specialization_count);
-    return loom_pipeline_emit_operand_constraint(
-        emitter, op, iree_make_cstring_view(name), type, IREE_SV("buffer"));
   }
   return iree_ok_status();
 }

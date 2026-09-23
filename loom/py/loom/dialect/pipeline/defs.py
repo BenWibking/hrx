@@ -147,9 +147,10 @@ pipeline_def = Op(
     phase=OpPhase.EXECUTABLE,
     doc=(
         "Persistent dataflow program. Leading specialization arguments remain "
-        "ordinary SSA values and run bindings are supplied when the "
-        "materialized pipeline is issued. The optional scope fixes the artifact "
-        "boundary that lowering must satisfy."
+        "ordinary SSA values and typed run arguments are supplied by each "
+        "invocation. Their source types are independent of the eventual target "
+        "export ABI. The optional scope fixes the artifact boundary that "
+        "lowering must satisfy."
     ),
     traits=[SYMBOL_DEFINE, ISOLATED_FROM_ABOVE],
     attrs=list(_PIPELINE_ATTRS),

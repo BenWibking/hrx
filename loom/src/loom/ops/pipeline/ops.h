@@ -60,7 +60,7 @@ typedef enum loom_pipeline_def_retain_e {
   LOOM_PIPELINE_DEF_RETAIN_COUNT_ = 2,
 } loom_pipeline_def_retain_t;
 
-// LOOM_OP_PIPELINE_DEF: Persistent dataflow program. Leading specialization arguments remain ordinary SSA values and run bindings are supplied when the materialized pipeline is issued. The optional scope fixes the artifact boundary that lowering must satisfy.
+// LOOM_OP_PIPELINE_DEF: Persistent dataflow program. Leading specialization arguments remain ordinary SSA values and typed run arguments are supplied by each invocation. Their source types are independent of the eventual target export ABI. The optional scope fixes the artifact boundary that lowering must satisfy.
 // pipeline.def<kernel> target(@array) @resident() run(%input: buffer, %output: buffer) {
 //   pipeline.finish
 // }

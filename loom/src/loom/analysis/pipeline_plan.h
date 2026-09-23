@@ -11,6 +11,8 @@
 // flow graph once. Multiple uses of one flow become edges sharing the same
 // producer endpoint. Target materializers consume the immutable result without
 // rescanning pipeline IR or rediscovering SSA relationships.
+// This flow-graph realization requires buffer invocation arguments. Richer
+// source arguments need a different realization before entering this planner.
 
 #ifndef LOOM_ANALYSIS_PIPELINE_PLAN_H_
 #define LOOM_ANALYSIS_PIPELINE_PLAN_H_

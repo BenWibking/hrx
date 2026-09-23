@@ -1717,6 +1717,36 @@ iree_status_t loom_pipeline_plan_build(
   *out_valid = false;
   IREE_ASSERT(loom_pipeline_def_isa(pipeline.op));
 
+  // This realization maps every invocation argument to a buffer endpoint.
+  // Typed invocation arguments remain valid source IR; their realization must
+  // be selected before constructing this buffer-based flow graph.
+  uint16_t argument_count = 0;
+  const loom_value_id_t* argument_ids =
+      loom_func_like_arg_ids(pipeline, &argument_count);
+  const uint16_t specialization_count =
+      (uint16_t)loom_func_like_specialization_count(pipeline);
+  for (uint16_t i = specialization_count; i < argument_count; ++i) {
+    const loom_type_t type = loom_module_value_type(module, argument_ids[i]);
+    if (loom_type_satisfies_constraint(type, LOOM_TYPE_CONSTRAINT_BUFFER)) {
+      continue;
+    }
+    char name[40];
+    iree_snprintf(name, sizeof(name), "run argument %u",
+                  i - specialization_count);
+    const loom_diagnostic_param_t params[] = {
+        loom_param_string(iree_make_cstring_view(name)),
+        loom_param_type(type),
+        loom_param_string(IREE_SV("buffer for the flow-graph ABI")),
+    };
+    const loom_diagnostic_emission_t emission = {
+        .op = pipeline.op,
+        .error = LOOM_ERR_TYPE_003,
+        .params = params,
+        .param_count = IREE_ARRAYSIZE(params),
+    };
+    return iree_diagnostic_emit(diagnostic_emitter, &emission);
+  }
+
   loom_pipeline_plan_builder_t builder = {0};
   IREE_RETURN_IF_ERROR(loom_pipeline_plan_builder_initialize(
       module, pipeline, facts, limits, arena, &builder));

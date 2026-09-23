@@ -21,6 +21,17 @@ pipeline.def<kernel> public retain target(@array_target) @missing_lane_axis() ru
 
 aie2p.target<array> @array_target
 
+// A source channel must have a selected physical realization. The flow-graph
+// materializer cannot treat it as a buffer-valued native argument.
+// ERROR@+1: TYPE/003 {operand_name="run argument 0", actual_type="channel<tile<256xf32>>", expected_constraint="buffer for the flow-graph ABI"}
+pipeline.def<kernel> public retain target(@array_target) @bound_channel() run(%input: channel<tile<256xf32>>) {
+  pipeline.finish
+}
+
+// ====
+
+aie2p.target<array> @array_target
+
 func.decl @copy(%input: buffer, %output: buffer)
 
 pipeline.def<kernel> public retain target(@array_target) @unit_lane_extent() run(%input: buffer, %output: buffer) {

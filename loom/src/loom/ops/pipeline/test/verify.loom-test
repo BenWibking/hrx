@@ -19,8 +19,7 @@ pipeline.def<kernel> @valid() run(%input: buffer, %output: buffer) {
 
 // ====
 
-pipeline.def @non_buffer_binding() run(%binding: i32) {
-  // ERROR@-1: TYPE/003 {operand_name="run binding 0", actual_type="i32", expected_constraint="buffer"}
+pipeline.def @typed_arguments(%width: index) run(%input: channel<tile<[%width]xf32>>, %scratch: view<[%width]xf32>, %count: index) {
   pipeline.finish
 }
 

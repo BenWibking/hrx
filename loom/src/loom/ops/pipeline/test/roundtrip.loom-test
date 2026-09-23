@@ -29,3 +29,18 @@ pipeline.def<kernel> public @split_k() run(%lhs: buffer, %rhs: buffer, %bias: bu
   pipeline.write %result to %output_view : pipeline.flow<tile<8x8xi32>>, view<8x8xi32>
   pipeline.finish
 }
+
+// ====
+
+// Specialization fixes record tiling independently of runtime work count.
+pipeline.def @stream(%width: index) run(%input: channel<tile<[%width]xf32>>, %output: channel<tile<[%width]xf32>>, %scratch: view<[%width]xf32>, %count: index) {
+  pipeline.finish
+}
+
+// ====
+
+// Owned invocation arguments are capabilities, not encoded buffer pointers.
+pipeline.def @transfer() run(%source: read<tile<256xf32>>, %destination: write<tile<256xf32>>) {
+  channel.copy %source -> %destination : read<tile<256xf32>>, write<tile<256xf32>>
+  pipeline.finish
+}
