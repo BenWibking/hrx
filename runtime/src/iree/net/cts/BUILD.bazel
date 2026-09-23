@@ -17,9 +17,44 @@ iree_runtime_cc_library(
     testonly = True,
     hdrs = ["transport_backend.h"],
     deps = [
+        "//runtime/src/iree/async",
         "//runtime/src/iree/base",
         "//runtime/src/iree/net:transport_factory",
     ],
+)
+
+iree_runtime_cc_library(
+    name = "direct_transfer_trial",
+    testonly = True,
+    srcs = ["direct_transfer_trial.cc"],
+    hdrs = ["direct_transfer_trial.h"],
+    deps = [
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+        "//runtime/src/iree/net:connection",
+        "//runtime/src/iree/net:direct_endpoint",
+        "//runtime/src/iree/net:message_endpoint",
+        "//runtime/src/iree/net:transport_factory",
+        "//runtime/src/iree/net/channel/queue:queue_channel",
+    ],
+)
+
+iree_runtime_cc_library(
+    name = "direct_transfer_trial_tests",
+    testonly = True,
+    srcs = ["direct_transfer_trial_test.cc"],
+    deps = [
+        ":direct_transfer_trial",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//runtime/src/iree/testing:gtest",
+    ],
+    alwayslink = True,
 )
 
 iree_runtime_cc_library(

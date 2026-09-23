@@ -15,9 +15,49 @@ iree_cc_library(
   HDRS
     "transport_backend.h"
   DEPS
+    iree::async
     iree::base
     iree::net::transport_factory
   TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    direct_transfer_trial
+  HDRS
+    "direct_transfer_trial.h"
+  SRCS
+    "direct_transfer_trial.cc"
+  DEPS
+    ::transfer_trial
+    ::transport_backend
+    iree::async
+    iree::async::cts::util::registry
+    iree::base
+    iree::base::core_headers
+    iree::net::channel::queue::queue_channel
+    iree::net::connection
+    iree::net::direct_endpoint
+    iree::net::message_endpoint
+    iree::net::transport_factory
+  TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    direct_transfer_trial_tests
+  SRCS
+    "direct_transfer_trial_test.cc"
+  DEPS
+    ::direct_transfer_trial
+    ::transfer_trial
+    ::transport_backend
+    iree::async::cts::util::registry
+    iree::testing::gtest
+  TESTONLY
+  ALWAYSLINK
   PUBLIC
 )
 
