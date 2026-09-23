@@ -11,11 +11,11 @@ iree_add_all_subdirs()
 
 iree_cc_library(
   NAME
-    collective_trial
+    collective_transport
   HDRS
-    "collective_trial.h"
+    "collective_transport.h"
   SRCS
-    "collective_trial.cc"
+    "collective_transport.cc"
   DEPS
     ::transfer_trial
     ::transport_backend
@@ -28,6 +28,25 @@ iree_cc_library(
     iree::net::direct_endpoint
     iree::net::message_endpoint
     iree::net::transport_factory
+  TESTONLY
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    collective_trial
+  HDRS
+    "collective_trial.h"
+  SRCS
+    "collective_trial.cc"
+  DEPS
+    ::collective_transport
+    ::transfer_trial
+    ::transport_backend
+    iree::async
+    iree::async::cts::util::registry
+    iree::base
+    iree::base::core_headers
   TESTONLY
   PUBLIC
 )

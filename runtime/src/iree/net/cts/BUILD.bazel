@@ -13,10 +13,10 @@ package(
 )
 
 iree_runtime_cc_library(
-    name = "collective_trial",
+    name = "collective_transport",
     testonly = True,
-    srcs = ["collective_trial.cc"],
-    hdrs = ["collective_trial.h"],
+    srcs = ["collective_transport.cc"],
+    hdrs = ["collective_transport.h"],
     deps = [
         ":transfer_trial",
         ":transport_backend",
@@ -29,6 +29,22 @@ iree_runtime_cc_library(
         "//runtime/src/iree/net:message_endpoint",
         "//runtime/src/iree/net:transport_factory",
         "//runtime/src/iree/net/channel/queue:queue_channel",
+    ],
+)
+
+iree_runtime_cc_library(
+    name = "collective_trial",
+    testonly = True,
+    srcs = ["collective_trial.cc"],
+    hdrs = ["collective_trial.h"],
+    deps = [
+        ":collective_transport",
+        ":transfer_trial",
+        ":transport_backend",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/cts/util:registry",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
     ],
 )
 

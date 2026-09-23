@@ -7,12 +7,9 @@
 #ifndef IREE_NET_CTS_COLLECTIVE_TRIAL_H_
 #define IREE_NET_CTS_COLLECTIVE_TRIAL_H_
 
-#include "iree/net/cts/transfer_trial.h"
+#include "iree/net/cts/collective_transport.h"
 
 namespace iree::net::cts {
-
-// Explicit payload strategy; registered placement never falls back to messages.
-enum class CollectiveDelivery { kMessage, kRegistered };
 
 // Distinct dependency shapes, not interchangeable collective algorithms.
 enum class CollectiveSchedule { kTensorAllReduce, kPipeline };
@@ -41,11 +38,7 @@ struct CollectiveTrialOptions {
   CollectiveDelivery delivery = CollectiveDelivery::kMessage;
 };
 
-struct CollectiveTrialResult {
-  // All listeners were created; subsequent transport failures are not skips.
-  bool available = false;
-  // Wall time through all ranks checking results and joining accepted sources.
-  double elapsed_seconds = 0;
+struct CollectiveTrialResult : CollectiveTransportResult {
   // Whole all-reduces completed by the rank group, not multiplied by ranks.
   uint64_t collectives = 0;
   // Pipeline microbatches checked at the final stage and observed by rank zero.
@@ -54,18 +47,6 @@ struct CollectiveTrialResult {
   double first_completion_seconds = 0;
   // Maximum pipeline microbatches admitted but not yet observed complete.
   uint64_t pipeline_high_water = 0;
-  // Payload bytes sent across all edges, excluding control and framing.
-  uint64_t payload_bytes = 0;
-  // Accepted data sends across all ranks.
-  uint64_t sends = 0;
-  // Exact terminal data-source callbacks across all ranks.
-  uint64_t source_completions = 0;
-  // Maximum accepted sources awaiting their callbacks on one rank edge.
-  uint64_t source_window_high_water = 0;
-  // Maximum admitted-minus-consumed blocks on any one rank edge.
-  uint64_t window_high_water = 0;
-  // Application tensor and receive-slot storage across all ranks.
-  uint64_t payload_storage_bytes = 0;
 };
 
 // Runs a ring reduce-scatter/all-gather or pipeline over actual connections.
