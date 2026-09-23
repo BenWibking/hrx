@@ -441,7 +441,8 @@ typedef struct loom_aie2p_array_binding_plan_t {
   uint32_t completion_route_index;
   // Byte offset added to the runtime binding base address.
   uint64_t binding_byte_offset;
-  // Physical byte span reachable from binding_byte_offset.
+  // Physical byte span reachable from binding_byte_offset. Transfer planning
+  // proves that the offset plus this span fits the shim DMA address space.
   uint64_t binding_span_byte_length;
   // Number of bytes transferred by each shim DMA task execution.
   uint32_t transfer_byte_length;
