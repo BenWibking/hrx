@@ -1,0 +1,50 @@
+# Copyright 2026 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+load("//runtime/build_tools/bazel:cc.bzl", "iree_runtime_cc_library")
+load("//runtime/build_tools/bazel:cc_test.bzl", "iree_runtime_cc_test")
+
+package(
+    default_visibility = ["//runtime/src/iree/net/carrier/rdma:__subpackages__"],
+    features = ["layering_check"],
+    licenses = ["notice"],
+)
+
+RDMA_COMPATIBILITY = ["@platforms//os:linux"] + select({
+    "//runtime/config/net:rdma_enabled": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+iree_runtime_cc_library(
+    name = "completion_queue",
+    srcs = ["completion_queue.c"],
+    hdrs = ["completion_queue.h"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:library",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "completion_queue_test",
+    srcs = ["completion_queue_test.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":completion_queue",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/platform/io_uring",
+        "//runtime/src/iree/async/platform/posix",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/net/rdma:context",
+        "//runtime/src/iree/net/rdma:library",
+        "//runtime/src/iree/net/rdma:region",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)

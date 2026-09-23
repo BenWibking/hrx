@@ -42,7 +42,7 @@ Native RDMA is opt-in and does not register a host transport factory:
 iree-bazel-configure -DIREE_NET_RDMA=ON
 iree-bazel-test --config=asan \
   --test_env=IREE_NET_RDMA_TEST_DEVICE=<device-name> \
-  //runtime/src/iree/net/rdma:region_test
+  //runtime/src/iree/net/carrier/rdma:completion_queue_test
 ```
 
 The corresponding CMake option is `IREE_NET_RDMA=ON`. Both builds use the
@@ -56,5 +56,7 @@ requirement, absence of the runtime or an active device skips native tests;
 setting `IREE_NET_RDMA_TEST_DEVICE` makes that absence a failure. Tests use real
 registered memory and native writes, checked transformed results, and independent
 connection/proactor retirement while another connection reuses unchanged MRs.
+The host adapter's completion service drives these checks; native ownership
+itself has no dependency on that service or its proactor.
 Those checks establish software ownership, not physical NIC throughput or GPU
 visibility.

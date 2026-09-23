@@ -5,7 +5,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 load("//runtime/build_tools/bazel:cc.bzl", "iree_runtime_cc_library")
-load("//runtime/build_tools/bazel:cc_test.bzl", "iree_runtime_cc_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -55,22 +54,5 @@ iree_runtime_cc_library(
         ":library",
         "//runtime/src/iree/async",
         "//runtime/src/iree/base",
-    ],
-)
-
-iree_runtime_cc_test(
-    name = "region_test",
-    srcs = ["region_test.cc"],
-    target_compatible_with = RDMA_COMPATIBILITY,
-    deps = [
-        ":context",
-        ":library",
-        ":region",
-        "//runtime/src/iree/async",
-        "//runtime/src/iree/async/platform/io_uring",
-        "//runtime/src/iree/async/platform/posix",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
     ],
 )

@@ -4,19 +4,20 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "iree/net/rdma/region.h"
+#include "iree/net/carrier/rdma/completion_queue.h"
 
-#include <fcntl.h>
 #include <netinet/in.h>
 
 #include <array>
 #include <cstdlib>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
 #include "iree/async/platform/io_uring/api.h"
 #include "iree/async/platform/posix/api.h"
+#include "iree/net/rdma/region.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -51,7 +52,8 @@ static void PollUntil(iree_async_proactor_t* proactor, Predicate ready) {
 class NativePair {
  public:
   NativePair(iree_async_region_t* first, iree_async_region_t* second,
-             const char* backend, uint32_t source_offset)
+             const char* backend, uint32_t service_batch_size,
+             uint32_t source_offset)
       : regions_{first, second}, source_offset_(source_offset) {
     for (auto* region : regions_) {
       iree_async_region_retain(region);
@@ -69,21 +71,26 @@ class NativePair {
       IREE_CHECK_OK(iree_async_proactor_create_posix(
           options, iree_allocator_system(), &proactor_));
     }
-    channel_ = library_->ibv_create_comp_channel(device);
-    if (!channel_) {
-      CheckNative(errno);
-    }
-    int flags = fcntl(channel_->fd, F_GETFL);
-    if (flags < 0) {
-      CheckNative(errno);
-    }
-    if (fcntl(channel_->fd, F_SETFL, flags | O_NONBLOCK) != 0) {
-      CheckNative(errno);
-    }
-    queue_ = library_->ibv_create_cq(device, 32, this, channel_, 0);
-    if (!queue_) {
-      CheckNative(errno);
-    }
+    iree_net_rdma_completion_queue_options_t queue_options = {};
+    queue_options.capacity = 32;
+    queue_options.service_batch_size = service_batch_size;
+    service_batch_size_ = service_batch_size;
+    IREE_CHECK_OK(iree_net_rdma_completion_queue_create(
+        context_, proactor_, queue_options,
+        {+[](void* user_data, iree_host_size_t count,
+             const ibv_wc* completions) {
+           auto* self = static_cast<NativePair*>(user_data);
+           ASSERT_LE(count, self->service_batch_size_);
+           for (iree_host_size_t i = 0; i < count; ++i) {
+             ASSERT_GT(self->pending_, 0u);
+             --self->pending_;
+             ASSERT_LT(self->completed_count_, self->completed_.size());
+             self->completed_[self->completed_count_++] = completions[i];
+           }
+         },
+         +[](void*, iree_status_t status) { iree_status_abort(status); }, this},
+        iree_allocator_system(), &completion_queue_));
+    auto* queue = iree_net_rdma_completion_queue_handle(completion_queue_);
 
     uint8_t port = iree_net_rdma_context_port_number(context_);
     struct ibv_port_attr port_attributes = {};
@@ -126,8 +133,8 @@ class NativePair {
 
     for (uint32_t side = 0; side < 2; ++side) {
       ibv_qp_init_attr options = {};
-      options.send_cq = queue_;
-      options.recv_cq = queue_;
+      options.send_cq = queue;
+      options.recv_cq = queue;
       options.qp_type = IBV_QPT_RC;
       options.cap.max_send_wr = 4;
       options.cap.max_recv_wr = 4;
@@ -178,16 +185,6 @@ class NativePair {
           IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY |
               IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
     }
-    CheckNative(ibv_req_notify_cq(queue_, 0));
-    IREE_CHECK_OK(iree_async_proactor_register_event_source(
-        proactor_, iree_async_primitive_from_fd(channel_->fd),
-        {+[](void* user_data, iree_async_event_source_t*,
-             iree_async_poll_events_t events) {
-           EXPECT_FALSE(iree_async_poll_has_error(events));
-           static_cast<NativePair*>(user_data)->Service();
-         },
-         this},
-        &monitor_));
   }
 
   ~NativePair() {
@@ -208,14 +205,13 @@ class NativePair {
       CheckNative(library_->ibv_destroy_qp(queue));
     }
     bool joined = false;
-    iree_async_proactor_unregister_event_source(
-        proactor_, monitor_,
+    iree_net_rdma_completion_queue_deactivate(
+        completion_queue_,
         {+[](void* user_data) { *static_cast<bool*>(user_data) = true; },
          &joined});
     PollUntil(proactor_, [&] { return joined; });
-    ConsumeEvents();
-    CheckNative(library_->ibv_destroy_cq(queue_));
-    CheckNative(library_->ibv_destroy_comp_channel(channel_));
+    EXPECT_EQ(proactor_->progress_list, nullptr);
+    iree_net_rdma_completion_queue_destroy(completion_queue_);
     iree_async_proactor_release(proactor_);
     for (auto* region : regions_) {
       iree_async_region_release(region);
@@ -254,12 +250,88 @@ class NativePair {
     EXPECT_EQ(pending_, 1u);
   }
 
+  void CheckIdleProgress() {
+    // Inspect one ready-service turn without asking an idle proactor to wait
+    // for nonexistent traffic. Immediate timeout is an expected idle result.
+    iree_status_t status =
+        iree_async_proactor_poll(proactor_, iree_immediate_timeout(), nullptr);
+    if (iree_status_is_deadline_exceeded(status)) {
+      iree_status_free(status);
+    } else {
+      IREE_ASSERT_OK(status);
+    }
+    EXPECT_EQ(proactor_->progress_list, nullptr);
+  }
+
+  void TransferBatch(uint32_t target_offset) {
+    completed_count_ = 0;
+    for (uint32_t i = 0; i < 4; ++i) {
+      ibv_recv_wr receive = {};
+      receive.wr_id = 100 + i;
+      ibv_recv_wr* rejected = nullptr;
+      CheckNative(ibv_post_recv(queues_[1], &receive, &rejected));
+      ++pending_;
+    }
+    for (uint32_t i = 0; i < 4; ++i) {
+      PostWrite(0, target_offset + i * 256, 256, 200 + i);
+    }
+    PollUntil(proactor_, [&] { return pending_ == 0; });
+    CheckWindowCompletions(IBV_WC_SUCCESS);
+  }
+
+  void FlushFullWindow() {
+    completed_count_ = 0;
+    // Receives on the sender do not provide notification credits to its own
+    // writes. Both native windows remain owned until the error transition.
+    for (uint32_t i = 0; i < 4; ++i) {
+      ibv_recv_wr receive = {};
+      receive.wr_id = 100 + i;
+      ibv_recv_wr* rejected = nullptr;
+      CheckNative(ibv_post_recv(queues_[0], &receive, &rejected));
+      ++pending_;
+    }
+    for (uint32_t i = 0; i < 4; ++i) {
+      PostWrite(0, 12288 + i * 256, 256, 200 + i);
+    }
+    for (auto* queue : queues_) {
+      ibv_qp_attr attributes = {};
+      attributes.qp_state = IBV_QPS_ERR;
+      CheckNative(library_->ibv_modify_qp(queue, &attributes, IBV_QP_STATE));
+    }
+    PollUntil(proactor_, [&] { return pending_ == 0; });
+    CheckWindowCompletions(IBV_WC_WR_FLUSH_ERR);
+  }
+
  private:
-  void PostWrite(uint32_t side, uint32_t target_offset, uint32_t length) {
+  void CheckWindowCompletions(ibv_wc_status expected_status) {
+    ASSERT_EQ(completed_count_, 8u);
+    uint32_t seen = 0;
+    for (uint32_t i = 0; i < completed_count_; ++i) {
+      const auto& completion = completed_[i];
+      EXPECT_EQ(completion.status, expected_status);
+      uint32_t index = 0;
+      if (completion.wr_id >= 200) {
+        index = completion.wr_id - 200 + 4;
+      } else {
+        index = completion.wr_id - 100;
+        if (expected_status == IBV_WC_SUCCESS) {
+          EXPECT_TRUE(completion.wc_flags & IBV_WC_WITH_IMM);
+          EXPECT_EQ(completion.byte_len, 256u);
+        }
+      }
+      ASSERT_LT(index, 8u);
+      EXPECT_EQ(seen & (1u << index), 0u);
+      seen |= 1u << index;
+    }
+    EXPECT_EQ(seen, 255u);
+  }
+
+  void PostWrite(uint32_t side, uint32_t target_offset, uint32_t length,
+                 uint64_t id = 1) {
     ibv_sge span = {regions_[side]->handles.rdma.address + source_offset_,
                     length, regions_[side]->handles.rdma.lkey};
     ibv_send_wr request = {};
-    request.wr_id = 1;
+    request.wr_id = id;
     request.sg_list = &span;
     request.num_sge = 1;
     request.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -273,33 +345,6 @@ class NativePair {
     ++pending_;
   }
 
-  void ConsumeEvents() {
-    ibv_cq* queue = nullptr;
-    void* owner = nullptr;
-    while (library_->ibv_get_cq_event(channel_, &queue, &owner) == 0) {
-      EXPECT_EQ(queue, queue_);
-      EXPECT_EQ(owner, this);
-      library_->ibv_ack_cq_events(queue, 1);
-    }
-    CheckNative(errno == EAGAIN ? 0 : errno);
-  }
-
-  void Service() {
-    ConsumeEvents();
-    CheckNative(ibv_req_notify_cq(queue_, 0));
-    ibv_wc completion = {};
-    int count = 0;
-    while ((count = ibv_poll_cq(queue_, 1, &completion)) > 0) {
-      ASSERT_GT(pending_, 0u);
-      --pending_;
-      ASSERT_LT(completed_count_, completed_.size());
-      completed_[completed_count_++] = completion;
-    }
-    if (count < 0) {
-      CheckNative(-count);
-    }
-  }
-
   // Retained registrations keep native domains/libraries and backing alive.
   std::array<iree_async_region_t*, 2> regions_;
   // Disjoint source range held exclusively by this pair until completion.
@@ -310,14 +355,12 @@ class NativePair {
   const iree_net_rdma_library_t* library_ = nullptr;
   // Independently owned polling lifetime for this native pair.
   iree_async_proactor_t* proactor_ = nullptr;
-  // Native notification channel, closed only after monitor retirement.
-  ibv_comp_channel* channel_ = nullptr;
-  // CQ sized for all enforced work on both QPs, including errors.
-  ibv_cq* queue_ = nullptr;
+  // Production CQ service, sized for the complete error burst from both QPs.
+  iree_net_rdma_completion_queue_t* completion_queue_ = nullptr;
+  // Maximum allowed native completions per service visit.
+  uint32_t service_batch_size_ = 0;
   // Native peer QPs; no global lookup associates them with registrations.
   std::array<ibv_qp*, 2> queues_ = {};
-  // Native monitor whose unregister completion joins channel ownership.
-  iree_async_event_source_t* monitor_ = nullptr;
   // Accepted native WRs not yet observed through their exact CQEs.
   uint32_t pending_ = 0;
   // Fixed result capture for a single bounded transfer or shutdown phase.
@@ -326,7 +369,8 @@ class NativePair {
   uint32_t completed_count_ = 0;
 };
 
-class RegionTest : public ::testing::TestWithParam<const char*> {
+class CompletionQueueTest
+    : public ::testing::TestWithParam<std::tuple<const char*, uint32_t>> {
  protected:
   void SetUp() override {
     options_ = iree_net_rdma_context_options_default();
@@ -397,11 +441,14 @@ class RegionTest : public ::testing::TestWithParam<const char*> {
   std::array<iree_async_region_t*, 2> regions_ = {};
 };
 
-TEST_P(RegionTest, SharedRegistrationSurvivesConnectionAndProactorRetirement) {
-  auto first =
-      std::make_unique<NativePair>(regions_[0], regions_[1], GetParam(), 0);
-  auto second =
-      std::make_unique<NativePair>(regions_[0], regions_[1], GetParam(), 512);
+TEST_P(CompletionQueueTest,
+       SharedRegistrationSurvivesConnectionAndProactorRetirement) {
+  auto first = std::make_unique<NativePair>(regions_[0], regions_[1],
+                                            std::get<0>(GetParam()),
+                                            std::get<1>(GetParam()), 0);
+  auto second = std::make_unique<NativePair>(regions_[0], regions_[1],
+                                             std::get<0>(GetParam()),
+                                             std::get<1>(GetParam()), 512);
   for (auto*& context : contexts_) {
     iree_net_rdma_context_release(context);
     context = nullptr;
@@ -427,7 +474,8 @@ TEST_P(RegionTest, SharedRegistrationSurvivesConnectionAndProactorRetirement) {
   }
 }
 
-TEST_P(RegionTest, RejectsUnsupportedAccessWithoutTakingSlabOwnership) {
+TEST_P(CompletionQueueTest,
+       RejectsUnsupportedAccessWithoutTakingSlabOwnership) {
   auto* slab = regions_[0]->slab;
   iree_async_region_t* rejected = nullptr;
   IREE_EXPECT_STATUS_IS(
@@ -437,11 +485,13 @@ TEST_P(RegionTest, RejectsUnsupportedAccessWithoutTakingSlabOwnership) {
           IREE_ASYNC_BUFFER_ACCESS_FLAG_REMOTE_WRITE, iree_allocator_system(),
           &rejected));
   EXPECT_EQ(rejected, nullptr);
-  NativePair pair(regions_[0], regions_[1], GetParam(), 0);
+  NativePair pair(regions_[0], regions_[1], std::get<0>(GetParam()),
+                  std::get<1>(GetParam()), 0);
   ASSERT_NO_FATAL_FAILURE(CheckRoundTrip(pair, 4096, 71));
 }
 
-TEST_P(RegionTest, FailedContextSelectionPreservesSharedNativeInventory) {
+TEST_P(CompletionQueueTest,
+       FailedContextSelectionPreservesSharedNativeInventory) {
   auto options = iree_net_rdma_context_options_default();
   options.device_name = IREE_SV("iree_nonexistent_rdma_device");
   iree_net_rdma_context_t* rejected = nullptr;
@@ -449,12 +499,49 @@ TEST_P(RegionTest, FailedContextSelectionPreservesSharedNativeInventory) {
                         iree_net_rdma_context_create(
                             options, iree_allocator_system(), &rejected));
   EXPECT_EQ(rejected, nullptr);
-  NativePair pair(regions_[0], regions_[1], GetParam(), 0);
+  NativePair pair(regions_[0], regions_[1], std::get<0>(GetParam()),
+                  std::get<1>(GetParam()), 0);
   ASSERT_NO_FATAL_FAILURE(CheckRoundTrip(pair, 4096, 91));
 }
 
-INSTANTIATE_TEST_SUITE_P(Backends, RegionTest,
-                         ::testing::Values("io_uring", "posix"));
+TEST_P(CompletionQueueTest, BoundedBatchesAndIsolatedTailBecomeIdle) {
+  NativePair pair(regions_[0], regions_[1], std::get<0>(GetParam()),
+                  std::get<1>(GetParam()), 0);
+  auto* source = static_cast<uint8_t*>(regions_[0]->base_ptr);
+  auto* target = static_cast<uint8_t*>(regions_[1]->base_ptr);
+  for (uint32_t round = 0; round < 16; ++round) {
+    for (uint32_t i = 0; i < 256; ++i) {
+      source[i] = uint8_t(i + 42 + round);
+    }
+    ASSERT_NO_FATAL_FAILURE(pair.TransferBatch(4096));
+    for (uint32_t i = 0; i < 1024; ++i) {
+      ASSERT_EQ(target[4096 + i], uint8_t(i + 42 + round));
+    }
+    ASSERT_NO_FATAL_FAILURE(pair.CheckIdleProgress());
+  }
+  ASSERT_NO_FATAL_FAILURE(CheckRoundTrip(pair, 8192, 77));
+  ASSERT_NO_FATAL_FAILURE(pair.CheckIdleProgress());
+}
+
+TEST_P(CompletionQueueTest, FullSendAndReceiveWindowsFlushByIdentity) {
+  NativePair pair(regions_[0], regions_[1], std::get<0>(GetParam()),
+                  std::get<1>(GetParam()), 0);
+  ASSERT_NO_FATAL_FAILURE(CheckRoundTrip(pair, 4096, 98));
+  ASSERT_NO_FATAL_FAILURE(pair.FlushFullWindow());
+  ASSERT_NO_FATAL_FAILURE(pair.CheckIdleProgress());
+  for (uint32_t side = 0; side < 2; ++side) {
+    auto* bytes = static_cast<uint8_t*>(regions_[side]->base_ptr);
+    for (uint32_t i = 0; i < 256; ++i) {
+      EXPECT_EQ(bytes[4096 + i],
+                side ? uint8_t(98 + i) : (uint8_t(98 + i) ^ 0x5a));
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(Backends, CompletionQueueTest,
+                         ::testing::Combine(::testing::Values("io_uring",
+                                                              "posix"),
+                                            ::testing::Values(1u, 8u)));
 
 }  // namespace
 }  // namespace iree::net::rdma
