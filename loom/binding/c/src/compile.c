@@ -173,7 +173,7 @@ static loomc_status_t loomc_compile_run_pass_program(
   loomc_compile_diagnostic_capture_t capture = {
       .result = result,
   };
-  loom_low_pass_environment_storage_t low_environment_storage = {0};
+  loom_codegen_pass_environment_storage_t codegen_environment_storage = {0};
   loom_pass_environment_t pass_environment = loom_pass_environment_empty();
   loom_target_pass_predicate_provider_storage_t predicate_storage = {0};
   loom_pass_predicate_provider_t predicate_provider = {0};
@@ -181,14 +181,15 @@ static loomc_status_t loomc_compile_run_pass_program(
       loomc_context_target_pass_environment(compiler->context);
   if (target_environment != NULL) {
     pass_environment = loomc_target_pass_environment_make_loom_pass_environment(
-        target_environment, function_version_owner, &low_environment_storage);
+        target_environment, function_version_owner,
+        &codegen_environment_storage);
     loom_target_pass_predicate_provider_storage_initialize(
         loomc_workspace_block_pool(workspace), &predicate_storage);
     predicate_provider =
         loom_target_pass_predicate_provider(&predicate_storage);
   }
   const loom_pass_environment_capability_t* extended_capabilities
-      [IREE_ARRAYSIZE(low_environment_storage.capabilities) + 1];
+      [IREE_ARRAYSIZE(codegen_environment_storage.capabilities) + 1];
   if (launch_config_program != NULL) {
     for (iree_host_size_t i = 0; i < pass_environment.capability_count; ++i) {
       extended_capabilities[i] = pass_environment.capabilities[i];

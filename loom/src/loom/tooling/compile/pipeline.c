@@ -7,7 +7,7 @@
 #include "loom/tooling/compile/pipeline.h"
 
 #include "loom/codegen/low/pipeline/legalizer_registry.h"
-#include "loom/codegen/low/pipeline/pass_environment.h"
+#include "loom/codegen/pass_environment.h"
 #include "loom/error/diagnostic.h"
 #include "loom/pass/builtin_registry.h"
 #include "loom/pass/registry.h"
@@ -293,7 +293,7 @@ iree_status_t loom_compile_run_pipeline(
         &legalizer_registry_storage);
   }
 
-  loom_low_pass_environment_storage_t low_pass_environment_storage = {0};
+  loom_codegen_pass_environment_storage_t codegen_environment_storage = {0};
   loom_target_pass_predicate_provider_storage_t predicate_storage = {0};
   loom_target_pass_predicate_provider_storage_initialize(block_pool,
                                                          &predicate_storage);
@@ -320,15 +320,21 @@ iree_status_t loom_compile_run_pipeline(
                 });
     trace_ptr = &trace;
   }
+  const loom_codegen_pass_environment_options_t environment_options = {
+      .descriptor_registry = &options->low_descriptor_registry->registry,
+      .lower_policy_registry = &low_lower_policy_registry,
+      .legality_provider_list = &low_legality_provider_list,
+      .legalizer_registry = loom_target_legalizer_registry_storage_registry(
+          &legalizer_registry_storage),
+      .math_policy_registry = &math_policy_registry,
+      .compile_report = options->report,
+      .target_environment = options->target_environment,
+  };
   loom_pass_tool_run_options_t run_options = {
       .registry = pass_registry,
-      .environment = loom_low_pass_environment_storage_initialize_mutable(
-          &options->low_descriptor_registry->registry,
-          &low_lower_policy_registry, &low_legality_provider_list,
-          loom_target_legalizer_registry_storage_registry(
-              &legalizer_registry_storage),
-          &math_policy_registry, options->report, options->target_environment,
-          &out_result->function_versions, &low_pass_environment_storage),
+      .environment = loom_codegen_pass_environment_storage_initialize_mutable(
+          &environment_options, &out_result->function_versions,
+          &codegen_environment_storage),
       .function_versions = &out_result->function_versions.list,
       .predicate_provider =
           loom_target_pass_predicate_provider(&predicate_storage),

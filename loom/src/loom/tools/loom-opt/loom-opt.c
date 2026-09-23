@@ -12,9 +12,9 @@
 #include "iree/base/api.h"
 #include "iree/base/tooling/flags.h"
 #include "loom/codegen/low/pipeline/legalizer_registry.h"
-#include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/text_asm.h"
 #include "loom/codegen/low/verify.h"
+#include "loom/codegen/pass_environment.h"
 #include "loom/error/diagnostic.h"
 #include "loom/error/json_sink.h"
 #include "loom/error/source.h"
@@ -893,7 +893,7 @@ static iree_status_t loom_opt_run_passes(
       loom_target_environment_low_legality_provider_list(target_environment);
   const loom_target_legalizer_provider_list_t legalizer_provider_list =
       loom_target_environment_legalizer_provider_list(target_environment);
-  loom_low_pass_environment_storage_t low_pass_environment_storage;
+  loom_codegen_pass_environment_storage_t codegen_environment_storage;
   loom_target_pass_predicate_provider_storage_t predicate_storage;
   loom_target_pass_predicate_provider_storage_initialize(block_pool,
                                                          &predicate_storage);
@@ -915,15 +915,21 @@ static iree_status_t loom_opt_run_passes(
   iree_status_t status = loom_low_legalizer_registry_storage_initialize(
       legalizer_provider_list, iree_arena_allocator(&function_version_arena),
       &legalizer_registry_storage);
+  const loom_codegen_pass_environment_options_t environment_options = {
+      .descriptor_registry = &low_registry->registry,
+      .lower_policy_registry = &low_lower_policy_registry,
+      .legality_provider_list = &low_legality_provider_list,
+      .legalizer_registry = loom_target_legalizer_registry_storage_registry(
+          &legalizer_registry_storage),
+      .math_policy_registry = &math_policy_registry,
+      .compile_report = NULL,
+      .target_environment = target_environment,
+  };
   loom_pass_tool_run_options_t run_options = {
       .registry = pass_registry,
-      .environment = loom_low_pass_environment_storage_initialize_mutable(
-          &low_registry->registry, &low_lower_policy_registry,
-          &low_legality_provider_list,
-          loom_target_legalizer_registry_storage_registry(
-              &legalizer_registry_storage),
-          &math_policy_registry, /*compile_report=*/NULL, target_environment,
-          &function_versions, &low_pass_environment_storage),
+      .environment = loom_codegen_pass_environment_storage_initialize_mutable(
+          &environment_options, &function_versions,
+          &codegen_environment_storage),
       .function_versions = &function_versions.list,
       .predicate_provider =
           loom_target_pass_predicate_provider(&predicate_storage),

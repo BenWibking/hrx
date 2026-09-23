@@ -15,10 +15,10 @@
 #include "loom/codegen/low/lower/representation_projection.h"
 #include "loom/codegen/low/lower/rules.h"
 #include "loom/codegen/low/lower/source_selection.h"
-#include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/text_asm.h"
 #include "loom/codegen/low/transforms/allocation.h"
 #include "loom/codegen/low/transforms/dce.h"
+#include "loom/codegen/pass_environment.h"
 #include "loom/error/error_catalog.h"
 #include "loom/format/text/parser.h"
 #include "loom/ir/context.h"
@@ -166,12 +166,20 @@ class LowLowerPassTest : public ::testing::Test {
     const loom_pass_info_t* pass_info = loom_low_source_to_low_pass_info();
     std::vector<uint8_t> statistic_storage(
         pass_info->statistic_layout->storage_size, 0);
-    loom_low_pass_environment_storage_t low_pass_environment_storage;
+    const loom_codegen_pass_environment_options_t environment_options = {
+        /*.descriptor_registry=*/&registry_.registry,
+        /*.lower_policy_registry=*/policy_registry,
+        /*.legality_provider_list=*/nullptr,
+        /*.legalizer_registry=*/nullptr,
+        /*.math_policy_registry=*/nullptr,
+        /*.compile_report=*/nullptr,
+        /*.target_environment=*/nullptr,
+    };
+    loom_codegen_pass_environment_storage_t codegen_environment_storage;
     loom_pass_environment_t environment =
-        loom_low_pass_environment_storage_initialize(
-            &registry_.registry, policy_registry, nullptr, nullptr, nullptr,
-            nullptr, /*target_environment=*/nullptr, function_versions,
-            &low_pass_environment_storage);
+        loom_codegen_pass_environment_storage_initialize(
+            &environment_options, function_versions,
+            &codegen_environment_storage);
     loom_pass_t pass = {};
     pass.info = pass_info;
     pass.module_run = loom_low_source_to_low_run;
@@ -279,12 +287,20 @@ class LowLowerPassTest : public ::testing::Test {
         /*.descriptor_count=*/IREE_ARRAYSIZE(kPassDescriptors),
     };
 
-    loom_low_pass_environment_storage_t low_pass_environment_storage;
+    const loom_codegen_pass_environment_options_t environment_options = {
+        /*.descriptor_registry=*/&registry_.registry,
+        /*.lower_policy_registry=*/&policy_registry_,
+        /*.legality_provider_list=*/nullptr,
+        /*.legalizer_registry=*/nullptr,
+        /*.math_policy_registry=*/nullptr,
+        /*.compile_report=*/nullptr,
+        /*.target_environment=*/nullptr,
+    };
+    loom_codegen_pass_environment_storage_t codegen_environment_storage;
     loom_pass_environment_t environment =
-        loom_low_pass_environment_storage_initialize(
-            &registry_.registry, &policy_registry_, nullptr, nullptr, nullptr,
-            nullptr, /*target_environment=*/nullptr, function_versions,
-            &low_pass_environment_storage);
+        loom_codegen_pass_environment_storage_initialize(
+            &environment_options, function_versions,
+            &codegen_environment_storage);
     loom_pass_tool_run_options_t run_options = {
         /*.registry=*/&kPassRegistry,
         /*.environment=*/environment,
@@ -317,12 +333,20 @@ class LowLowerPassTest : public ::testing::Test {
     const loom_pass_info_t* pass_info = loom_inline_callables_pass_info();
     std::vector<uint8_t> statistic_storage(
         pass_info->statistic_layout->storage_size, 0);
-    loom_low_pass_environment_storage_t low_pass_environment_storage;
+    const loom_codegen_pass_environment_options_t environment_options = {
+        /*.descriptor_registry=*/&registry_.registry,
+        /*.lower_policy_registry=*/&policy_registry_,
+        /*.legality_provider_list=*/nullptr,
+        /*.legalizer_registry=*/nullptr,
+        /*.math_policy_registry=*/nullptr,
+        /*.compile_report=*/nullptr,
+        /*.target_environment=*/nullptr,
+    };
+    loom_codegen_pass_environment_storage_t codegen_environment_storage;
     loom_pass_environment_t environment =
-        loom_low_pass_environment_storage_initialize(
-            &registry_.registry, &policy_registry_, nullptr, nullptr, nullptr,
-            nullptr, /*target_environment=*/nullptr, function_versions,
-            &low_pass_environment_storage);
+        loom_codegen_pass_environment_storage_initialize(
+            &environment_options, function_versions,
+            &codegen_environment_storage);
     loom_pass_t pass = {};
     pass.info = pass_info;
     pass.module_run = loom_inline_callables_run;

@@ -458,7 +458,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::analysis::symbol_facts
-    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::pass_environment
     loom::format::bytecode::reader
     loom::format::bytecode::writer
     loom::format::text::parser
@@ -498,7 +498,7 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::pass_environment
     loom::format::text::parser
     loom::ir
     loom::ops::global

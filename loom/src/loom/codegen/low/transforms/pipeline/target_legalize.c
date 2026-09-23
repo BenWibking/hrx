@@ -27,6 +27,7 @@
 #include "loom/target/low_descriptor_registry.h"
 #include "loom/target/low_legality.h"
 #include "loom/target/math_policy.h"
+#include "loom/target/pass_environment.h"
 #include "loom/target/reporting/report.h"
 #include "loom/util/adaptive_sort.h"
 #include "loom/util/walk.h"

@@ -463,7 +463,7 @@ loom_cc_test(
         ":profile",
         ":provider",
         "//loom/src/loom/analysis:symbol_facts",
-        "//loom/src/loom/codegen/low/pipeline:pass_environment",
+        "//loom/src/loom/codegen:pass_environment",
         "//loom/src/loom/format/bytecode:reader",
         "//loom/src/loom/format/bytecode:writer",
         "//loom/src/loom/format/text:parser",
@@ -498,7 +498,7 @@ loom_cc_test(
     name = "sanitizer_site_table_test",
     srcs = ["sanitizer_site_table_test.cc"],
     deps = [
-        "//loom/src/loom/codegen/low/pipeline:pass_environment",
+        "//loom/src/loom/codegen:pass_environment",
         "//loom/src/loom/format/text:parser",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_registry",

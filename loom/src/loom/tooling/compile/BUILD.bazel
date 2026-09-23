@@ -224,8 +224,8 @@ loom_cc_library(
     srcs = ["pipeline.c"],
     hdrs = ["pipeline.h"],
     deps = [
+        "//loom/src/loom/codegen:pass_environment",
         "//loom/src/loom/codegen/low/pipeline:legalizer_registry",
-        "//loom/src/loom/codegen/low/pipeline:pass_environment",
         "//loom/src/loom/error:diagnostic",
         "//loom/src/loom/error:source",
         "//loom/src/loom/ir",

@@ -218,7 +218,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::codegen::low::pipeline::legalizer_registry
-    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::pass_environment
     loom::error::diagnostic
     loom::error::source
     loom::ir

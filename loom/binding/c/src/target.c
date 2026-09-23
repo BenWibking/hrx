@@ -466,15 +466,19 @@ loom_pass_environment_t
 loomc_target_pass_environment_make_loom_pass_environment(
     const loomc_target_pass_environment_t* environment,
     loom_function_version_owner_t* function_version_owner,
-    loom_low_pass_environment_storage_t* out_storage) {
-  return loom_low_pass_environment_storage_initialize_mutable(
-      &environment->low_descriptor_registry.registry,
-      &environment->low_lower_policy_registry,
-      &environment->low_legality_provider_list,
-      loom_target_legalizer_registry_storage_registry(
+    loom_codegen_pass_environment_storage_t* out_storage) {
+  const loom_codegen_pass_environment_options_t options = {
+      .descriptor_registry = &environment->low_descriptor_registry.registry,
+      .lower_policy_registry = &environment->low_lower_policy_registry,
+      .legality_provider_list = &environment->low_legality_provider_list,
+      .legalizer_registry = loom_target_legalizer_registry_storage_registry(
           &environment->legalizer_registry_storage),
-      &environment->math_policy_registry, /*compile_report=*/NULL,
-      environment->target_environment, function_version_owner, out_storage);
+      .math_policy_registry = &environment->math_policy_registry,
+      .compile_report = NULL,
+      .target_environment = environment->target_environment,
+  };
+  return loom_codegen_pass_environment_storage_initialize_mutable(
+      &options, function_version_owner, out_storage);
 }
 
 void loomc_target_pass_environment_initialize_text_asm_environment(

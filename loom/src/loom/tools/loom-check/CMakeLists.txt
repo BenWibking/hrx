@@ -70,11 +70,11 @@ loom_cc_library(
     loom::codegen::low::lower
     loom::codegen::low::packet_json
     loom::codegen::low::pipeline::legalizer_registry
-    loom::codegen::low::pipeline::pass_environment
     loom::codegen::low::schedule
     loom::codegen::low::target_binding
     loom::codegen::low::text_asm
     loom::codegen::low::verify
+    loom::codegen::pass_environment
     loom::error::diagnostic
     loom::error::emitter
     loom::error::error_defs

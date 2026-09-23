@@ -19,9 +19,9 @@ loom_cc_binary(
     iree::base::tooling::flags
     iree::io::file_handle
     loom::codegen::low::pipeline::legalizer_registry
-    loom::codegen::low::pipeline::pass_environment
     loom::codegen::low::text_asm
     loom::codegen::low::verify
+    loom::codegen::pass_environment
     loom::error::diagnostic
     loom::error::json_sink
     loom::error::source

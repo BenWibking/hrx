@@ -60,7 +60,7 @@ struct loomc_pass_program_t {
 
 typedef struct loomc_pass_program_compile_state_t {
   // Borrowed pass environment storage over context target tables.
-  loom_low_pass_environment_storage_t low_environment_storage;
+  loom_codegen_pass_environment_storage_t codegen_environment_storage;
 
   // Target-aware pass.where predicate provider storage.
   loom_target_pass_predicate_provider_storage_t predicate_storage;
@@ -209,7 +209,7 @@ static loomc_status_t loomc_pass_program_compile_state_initialize(
   out_state->compile_options.environment =
       loomc_target_pass_environment_make_loom_pass_environment(
           target_pass_environment, /*function_versions=*/NULL,
-          &out_state->low_environment_storage);
+          &out_state->codegen_environment_storage);
   loom_target_pass_predicate_provider_storage_initialize(
       &pass_program->block_pool, &out_state->predicate_storage);
   out_state->compile_options.predicate_provider =

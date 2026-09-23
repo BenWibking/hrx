@@ -14,6 +14,7 @@ package(
 
 _LOW_PASS_ENVIRONMENT_VISIBILITY = [
     "//loom/binding/c:__pkg__",
+    "//loom/src/loom/codegen:__pkg__",
     "//loom/src/loom/codegen/low/testing:__pkg__",
     "//loom/src/loom/codegen/low/transforms:__pkg__",
     "//loom/src/loom/codegen/low/transforms/pipeline:__pkg__",
@@ -84,9 +85,6 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/pass:environment",
         "//loom/src/loom/pass:types",
-        "//loom/src/loom/target:math_policy",
-        "//loom/src/loom/target:pass_environment",
-        "//loom/src/loom/target:types",
         "//runtime/src/iree/base",
     ],
 )
