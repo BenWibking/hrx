@@ -118,6 +118,7 @@ iree_cc_test(
     iree::net::rdma::context
     iree::net::rdma::library
     iree::net::rdma::region
+    iree::net::rdma::target
     iree::testing::gtest
     iree::testing::gtest_main
 )

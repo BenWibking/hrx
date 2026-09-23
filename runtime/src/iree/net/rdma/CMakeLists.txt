@@ -59,4 +59,39 @@ iree_cc_library(
 )
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
+    target
+  HDRS
+    "target.h"
+  SRCS
+    "target.c"
+  DEPS
+    ::region
+    iree::async
+    iree::base
+    iree::base::core_headers
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_test(
+  NAME
+    target_test
+  SRCS
+    "target_test.cc"
+  DEPS
+    ::context
+    ::region
+    ::target
+    iree::async
+    iree::base
+    iree::base::core_headers
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+endif()
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

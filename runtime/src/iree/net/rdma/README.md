@@ -34,6 +34,13 @@ destruction is infallible under this lifetime contract; an inability to retire
 native ownership is fatal, not a successful release. Context release performs
 no implicit queue or GPU execution wait.
 
+`runtime/src/iree/net/rdma/target.h` exports and imports reusable registered
+subranges. Its versioned 32-byte description carries remote permissions, the
+native key, and a 64-bit NIC address and byte extent. Export and import make no
+native calls or allocations. The checked value is associated with its peer by
+the caller; it is neither a memory owner nor a revocable hardware window.
+Logical target size is independent of the request sizes used to access it.
+
 ## Build And Qualification
 
 Native RDMA is opt-in and does not register a host transport factory:

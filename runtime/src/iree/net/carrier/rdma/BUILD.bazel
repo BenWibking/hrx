@@ -107,6 +107,7 @@ iree_runtime_cc_test(
         "//runtime/src/iree/net/rdma:context",
         "//runtime/src/iree/net/rdma:library",
         "//runtime/src/iree/net/rdma:region",
+        "//runtime/src/iree/net/rdma:target",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],

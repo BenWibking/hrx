@@ -19,6 +19,7 @@
 #include "iree/base/alignment.h"
 #include "iree/net/carrier/rdma/connection_events.h"
 #include "iree/net/rdma/region.h"
+#include "iree/net/rdma/target.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -138,9 +139,10 @@ class ControlPeer {
                  iree_unaligned_load_le_u32(bytes + 4);
              self->remote_data_.sequence_number =
                  iree_unaligned_load_le_u32(bytes + 8);
-             self->remote_data_.address =
-                 iree_unaligned_load_le_u64(bytes + 16);
-             self->remote_data_.key = iree_unaligned_load_le_u32(bytes + 24);
+             IREE_RETURN_IF_ERROR(iree_net_rdma_target_import(
+                 iree_make_const_byte_span(bytes + 16,
+                                           IREE_NET_RDMA_TARGET_WIRE_SIZE),
+                 &self->remote_data_.target));
              self->flags_ |= kRemoteDataReady;
            } else {
              EXPECT_EQ(iree_unaligned_load_le_u32(bytes), 1u);
@@ -264,10 +266,11 @@ class ControlPeer {
     iree_unaligned_store_le_u32(record.data(), 2);
     iree_unaligned_store_le_u32(record.data() + 4, data_queue_->qp_num);
     iree_unaligned_store_le_u32(record.data() + 8, 0x123400 + identity_);
-    iree_unaligned_store_le_u64(record.data() + 16,
-                                data_region_->handles.rdma.address + 4096);
-    iree_unaligned_store_le_u32(record.data() + 24,
-                                data_region_->handles.rdma.rkey);
+    IREE_ASSERT_OK(iree_net_rdma_target_export(
+        iree_async_span_make(data_region_, 4096, 256),
+        IREE_ASYNC_BUFFER_ACCESS_FLAG_REMOTE_WRITE,
+        iree_make_byte_span(record.data() + 16,
+                            IREE_NET_RDMA_TARGET_WIRE_SIZE)));
     ASSERT_TRUE(
         iree_net_rdma_connection_control_try_send(control_, record.data()));
   }
@@ -281,6 +284,9 @@ class ControlPeer {
   }
 
   void WriteData(ControlPeer& peer) {
+    ASSERT_EQ(remote_data_.target.length, 256u);
+    ASSERT_EQ(remote_data_.target.access_flags,
+              IREE_ASYNC_BUFFER_ACCESS_FLAG_REMOTE_WRITE);
     ibv_recv_wr receive = {};
     receive.wr_id = 2;
     ibv_recv_wr* rejected_receive = nullptr;
@@ -293,8 +299,8 @@ class ControlPeer {
     request.num_sge = 1;
     request.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
     request.send_flags = IBV_SEND_SIGNALED;
-    request.wr.rdma.remote_addr = remote_data_.address;
-    request.wr.rdma.rkey = remote_data_.key;
+    request.wr.rdma.remote_addr = remote_data_.target.address;
+    request.wr.rdma.rkey = remote_data_.target.key;
     ibv_send_wr* rejected_send = nullptr;
     size_t local_goal = data_completions_.size() + 1;
     size_t peer_goal = peer.data_completions_.size() + 1;
@@ -363,10 +369,8 @@ class ControlPeer {
     uint32_t queue_number = 0;
     // Remote data QP initial packet sequence.
     uint32_t sequence_number = 0;
-    // Remote registered target IOVA, distinct from its CPU address.
-    uint64_t address = 0;
-    // Key for the peer's actual retained registration.
-    uint32_t key = 0;
+    // Checked remote registered subrange, borrowed from the advertising peer.
+    iree_net_rdma_target_t target = {};
   } remote_data_;
   // Native data completion identities forwarded by the shared control service.
   std::vector<ibv_wc> data_completions_;
