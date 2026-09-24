@@ -93,6 +93,9 @@ class SourceMemoryPlanBenchmark {
       }
     }
     benchmark::DoNotOptimize(last_plan_);
+    symbolic_memo_capacity_ = expression_context.memo_capacity;
+    symbolic_memo_populated_entries_ =
+        expression_context.touched_memo_ordinal_count;
     analysis_arena_used_bytes_ = analysis_arena.used_allocation_size;
     analysis_arena_owned_bytes_ = analysis_arena.total_allocation_size;
     loom_local_value_domain_release(&value_domain);
@@ -102,6 +105,10 @@ class SourceMemoryPlanBenchmark {
   void SetCounters(benchmark::State& state) const {
     state.counters["producer_depth"] = (double)producer_depth_;
     state.counters["memory_access_count"] = (double)memory_ops_.size();
+    state.counters["ssa_value_count"] = (double)module_->values.count;
+    state.counters["symbolic_memo_capacity"] = (double)symbolic_memo_capacity_;
+    state.counters["symbolic_memo_populated_entries"] =
+        (double)symbolic_memo_populated_entries_;
     state.counters["analysis_arena_used_bytes"] =
         (double)analysis_arena_used_bytes_;
     state.counters["analysis_arena_owned_bytes"] =
@@ -236,6 +243,10 @@ class SourceMemoryPlanBenchmark {
   std::vector<const loom_op_t*> memory_ops_;
   // Last plan retained to validate and observe benchmark results.
   loom_low_source_memory_access_plan_t last_plan_ = {};
+  // Allocated expression memo slots in the most recent analysis.
+  iree_host_size_t symbolic_memo_capacity_ = 0;
+  // Expression memo slots populated in the most recent analysis.
+  iree_host_size_t symbolic_memo_populated_entries_ = 0;
   // Live analysis storage used by the most recent run.
   iree_host_size_t analysis_arena_used_bytes_ = 0;
   // Block-pool storage owned by the most recent run.
@@ -243,7 +254,7 @@ class SourceMemoryPlanBenchmark {
 };
 
 static void SymbolicMemoryShapes(::benchmark::Benchmark* benchmark) {
-  for (int64_t producer_depth : {1, 16, 40, 4096}) {
+  for (int64_t producer_depth : {1, 16, 40, 4096, 20000}) {
     for (int64_t memory_access_count : {1, 16, 256, 1024}) {
       benchmark->Args({producer_depth, memory_access_count});
     }
