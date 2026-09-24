@@ -101,8 +101,6 @@ loom_cc_library(
     loom::pass::pipeline
     loom::pass::registry
     loom::pass::types
-    loom::target::math_policy
-    loom::target::pass_environment
   PUBLIC
 )
 

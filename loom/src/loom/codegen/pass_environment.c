@@ -6,6 +6,25 @@
 
 #include "loom/codegen/pass_environment.h"
 
+static iree_status_t loom_codegen_resolve_cleanup_canonicalizer_context(
+    void* user_data, const loom_pass_t* pass, const loom_module_t* module,
+    loom_func_like_t function,
+    loom_cleanup_canonicalizer_context_t* out_context) {
+  (void)user_data;
+  bool target_resolved = false;
+  IREE_RETURN_IF_ERROR(loom_target_pass_resolve_function_facts(
+      pass, module, function, &target_resolved, &out_context->target_facts));
+  if (!target_resolved) {
+    out_context->target_facts = NULL;
+  }
+  const loom_target_math_pass_capability_t* math_capability =
+      loom_target_math_pass_capability_from_pass(pass);
+  out_context->math_policy = loom_target_math_policy_registry_lookup_for_bundle(
+      loom_target_math_pass_capability_policy_registry(math_capability),
+      loom_target_facts_bundle(out_context->target_facts));
+  return iree_ok_status();
+}
+
 static loom_pass_environment_t
 loom_codegen_pass_environment_storage_initialize_with_target(
     const loom_codegen_pass_environment_options_t* options,
@@ -18,8 +37,11 @@ loom_codegen_pass_environment_storage_initialize_with_target(
       options->compile_report);
   out_storage->math_capability = loom_target_math_pass_capability_make(
       options->math_policy_registry, options->compile_report);
-  out_storage->cleanup_capability =
-      loom_cleanup_pass_capability_make(options->cleanup_pattern_registry);
+  out_storage->cleanup_capability = loom_cleanup_pass_capability_make(
+      options->cleanup_pattern_registry,
+      (loom_cleanup_canonicalizer_context_resolver_t){
+          .fn = loom_codegen_resolve_cleanup_canonicalizer_context,
+      });
   out_storage->capabilities[0] = &out_storage->target_capability.base;
   out_storage->capabilities[1] = &out_storage->low_capability.base;
   out_storage->capabilities[2] = &out_storage->math_capability.base;

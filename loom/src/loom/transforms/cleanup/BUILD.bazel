@@ -86,8 +86,6 @@ loom_cc_library(
         "//loom/src/loom/pass:pipeline",
         "//loom/src/loom/pass:registry",
         "//loom/src/loom/pass:types",
-        "//loom/src/loom/target:math_policy",
-        "//loom/src/loom/target:pass_environment",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],

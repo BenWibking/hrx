@@ -30,13 +30,15 @@ const loom_pass_environment_capability_type_t
 };
 
 loom_cleanup_pass_capability_t loom_cleanup_pass_capability_make(
-    const loom_cleanup_pattern_registry_t* pattern_registry) {
+    const loom_cleanup_pattern_registry_t* pattern_registry,
+    loom_cleanup_canonicalizer_context_resolver_t context_resolver) {
   return (loom_cleanup_pass_capability_t){
       .base =
           {
               .type = &loom_cleanup_pass_capability_type,
           },
       .pattern_registry = pattern_registry,
+      .context_resolver = context_resolver,
   };
 }
 
@@ -61,4 +63,16 @@ const loom_cleanup_pattern_registry_t*
 loom_cleanup_pass_capability_pattern_registry(
     const loom_cleanup_pass_capability_t* capability) {
   return capability ? capability->pattern_registry : NULL;
+}
+
+iree_status_t loom_cleanup_pass_capability_resolve_canonicalizer_context(
+    const loom_cleanup_pass_capability_t* capability, const loom_pass_t* pass,
+    const loom_module_t* module, loom_func_like_t function,
+    loom_cleanup_canonicalizer_context_t* out_context) {
+  *out_context = (loom_cleanup_canonicalizer_context_t){0};
+  if (capability == NULL || capability->context_resolver.fn == NULL) {
+    return iree_ok_status();
+  }
+  return capability->context_resolver.fn(capability->context_resolver.user_data,
+                                         pass, module, function, out_context);
 }

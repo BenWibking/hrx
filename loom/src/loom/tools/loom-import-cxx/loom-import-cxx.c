@@ -166,7 +166,9 @@ static iree_status_t loom_cxx_cli_import(
   }
   if (iree_status_is_ok(status) && module && FLAG_cleanup) {
     const loom_cleanup_pass_capability_t cleanup_capability =
-        loom_cleanup_pass_capability_make(cleanup_pattern_registry);
+        loom_cleanup_pass_capability_make(
+            cleanup_pattern_registry,
+            (loom_cleanup_canonicalizer_context_resolver_t){0});
     const loom_pass_environment_capability_t* capabilities[] = {
         &cleanup_capability.base,
     };

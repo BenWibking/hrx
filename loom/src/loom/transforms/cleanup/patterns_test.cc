@@ -28,6 +28,29 @@ static iree_status_t IgnorePattern(const loom_rewrite_pattern_t*, void*,
   return iree_ok_status();
 }
 
+typedef struct CanonicalizerContextResolverState {
+  // Target facts returned by the test resolver.
+  const loom_target_facts_t* target_facts;
+  // Math policy returned by the test resolver.
+  const loom_target_math_policy_t* math_policy;
+  // Pass received by the test resolver.
+  const loom_pass_t* pass;
+  // True when the resolver was invoked.
+  bool called;
+} CanonicalizerContextResolverState;
+
+static iree_status_t ResolveCanonicalizerContext(
+    void* user_data, const loom_pass_t* pass, const loom_module_t*,
+    loom_func_like_t, loom_cleanup_canonicalizer_context_t* out_context) {
+  CanonicalizerContextResolverState* state =
+      static_cast<CanonicalizerContextResolverState*>(user_data);
+  state->pass = pass;
+  state->called = true;
+  out_context->target_facts = state->target_facts;
+  out_context->math_policy = state->math_policy;
+  return iree_ok_status();
+}
+
 TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
   const loom_op_kind_t region_initialization_kind =
       LOOM_OP_KIND(LOOM_DIALECT_SCF, 0);
@@ -126,7 +149,8 @@ TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
             1u);
 
   const loom_cleanup_pass_capability_t capability =
-      loom_cleanup_pass_capability_make(registry);
+      loom_cleanup_pass_capability_make(
+          registry, (loom_cleanup_canonicalizer_context_resolver_t){});
   const loom_pass_environment_capability_t* capabilities[] = {
       &capability.base,
   };
@@ -155,17 +179,50 @@ TEST(CleanupPatternsTest, ExplicitEmptyProviderSetSatisfiesComposition) {
   EXPECT_EQ(registry->source_combine->pattern_count, 0u);
 
   const loom_cleanup_pass_capability_t capability =
-      loom_cleanup_pass_capability_make(registry);
+      loom_cleanup_pass_capability_make(
+          registry, (loom_cleanup_canonicalizer_context_resolver_t){});
   EXPECT_TRUE(loom_pass_environment_capability_satisfies_requirement(
       &capability.base,
       IREE_SV(LOOM_CLEANUP_PASS_REQUIREMENT_SOURCE_COMBINE_PATTERNS)));
   const loom_cleanup_pass_capability_t missing_capability =
-      loom_cleanup_pass_capability_make(nullptr);
+      loom_cleanup_pass_capability_make(
+          nullptr, (loom_cleanup_canonicalizer_context_resolver_t){});
   EXPECT_FALSE(loom_pass_environment_capability_satisfies_requirement(
       &missing_capability.base,
       IREE_SV(LOOM_CLEANUP_PASS_REQUIREMENT_SOURCE_COMBINE_PATTERNS)));
 
   loom_cleanup_pattern_registry_storage_deinitialize(&storage);
+}
+
+TEST(CleanupPatternsTest, ResolvesCanonicalizerContextThroughCapability) {
+  CanonicalizerContextResolverState state = {};
+  state.target_facts =
+      reinterpret_cast<const loom_target_facts_t*>(&state.target_facts);
+  state.math_policy =
+      reinterpret_cast<const loom_target_math_policy_t*>(&state.math_policy);
+  const loom_cleanup_pass_capability_t capability =
+      loom_cleanup_pass_capability_make(
+          /*pattern_registry=*/nullptr,
+          (loom_cleanup_canonicalizer_context_resolver_t){
+              /*.fn=*/ResolveCanonicalizerContext,
+              /*.user_data=*/&state,
+          });
+  const loom_pass_t pass = {};
+  loom_cleanup_canonicalizer_context_t context = {};
+  IREE_EXPECT_OK(loom_cleanup_pass_capability_resolve_canonicalizer_context(
+      &capability, &pass, /*module=*/nullptr, /*function=*/{}, &context));
+  EXPECT_TRUE(state.called);
+  EXPECT_EQ(state.pass, &pass);
+  EXPECT_EQ(context.target_facts, state.target_facts);
+  EXPECT_EQ(context.math_policy, state.math_policy);
+
+  context.target_facts = state.target_facts;
+  context.math_policy = state.math_policy;
+  IREE_EXPECT_OK(loom_cleanup_pass_capability_resolve_canonicalizer_context(
+      /*capability=*/nullptr, &pass, /*module=*/nullptr, /*function=*/{},
+      &context));
+  EXPECT_EQ(context.target_facts, nullptr);
+  EXPECT_EQ(context.math_policy, nullptr);
 }
 
 TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {

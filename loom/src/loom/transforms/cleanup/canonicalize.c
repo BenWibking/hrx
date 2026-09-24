@@ -8,8 +8,6 @@
 
 #include "loom/pass/pipeline.h"
 #include "loom/pass/registry.h"
-#include "loom/target/math_policy.h"
-#include "loom/target/pass_environment.h"
 #include "loom/transforms/cleanup/canonicalizer.h"
 #include "loom/transforms/cleanup/pass_environment.h"
 
@@ -117,6 +115,7 @@ iree_status_t loom_canonicalizer_pass_create(
 
 static iree_status_t loom_canonicalizer_run_pass(
     loom_pass_t* pass, loom_module_t* module, loom_func_like_t function,
+    const loom_cleanup_pass_capability_t* cleanup_capability,
     loom_canonicalizer_pattern_registries_t patterns) {
   loom_canonicalizer_options_t run_options = {
       .patterns = patterns,
@@ -125,17 +124,12 @@ static iree_status_t loom_canonicalizer_run_pass(
     run_options.max_iterations =
         ((const loom_canonicalize_pass_options_t*)pass->state)->max_iterations;
   }
-  bool target_resolved = false;
-  IREE_RETURN_IF_ERROR(loom_target_pass_resolve_function_facts(
-      pass, module, function, &target_resolved, &run_options.target_facts));
-  if (!target_resolved) {
-    run_options.target_facts = NULL;
-  }
-  const loom_target_math_pass_capability_t* math_capability =
-      loom_target_math_pass_capability_from_pass(pass);
-  run_options.math_policy = loom_target_math_policy_registry_lookup_for_bundle(
-      loom_target_math_pass_capability_policy_registry(math_capability),
-      loom_target_facts_bundle(run_options.target_facts));
+  loom_cleanup_canonicalizer_context_t context = {0};
+  IREE_RETURN_IF_ERROR(
+      loom_cleanup_pass_capability_resolve_canonicalizer_context(
+          cleanup_capability, pass, module, function, &context));
+  run_options.target_facts = context.target_facts;
+  run_options.math_policy = context.math_policy;
 
   loom_canonicalizer_t canonicalizer;
   IREE_RETURN_IF_ERROR(loom_canonicalizer_initialize(
@@ -161,23 +155,27 @@ static iree_status_t loom_canonicalizer_run_pass(
 
 iree_status_t loom_canonicalize_run(loom_pass_t* pass, loom_module_t* module,
                                     loom_func_like_t function) {
+  const loom_cleanup_pass_capability_t* cleanup_capability =
+      loom_cleanup_pass_capability_from_pass(pass);
   const loom_cleanup_pattern_registry_t* registry =
-      loom_cleanup_pass_capability_pattern_registry(
-          loom_cleanup_pass_capability_from_pass(pass));
+      loom_cleanup_pass_capability_pattern_registry(cleanup_capability);
   const loom_canonicalizer_pattern_registries_t patterns =
       loom_canonicalizer_pattern_registries_from_cleanup_registry(registry);
-  return loom_canonicalizer_run_pass(pass, module, function, patterns);
+  return loom_canonicalizer_run_pass(pass, module, function, cleanup_capability,
+                                     patterns);
 }
 
 iree_status_t loom_combine_run(loom_pass_t* pass, loom_module_t* module,
                                loom_func_like_t function) {
+  const loom_cleanup_pass_capability_t* cleanup_capability =
+      loom_cleanup_pass_capability_from_pass(pass);
   const loom_cleanup_pattern_registry_t* registry =
-      loom_cleanup_pass_capability_pattern_registry(
-          loom_cleanup_pass_capability_from_pass(pass));
+      loom_cleanup_pass_capability_pattern_registry(cleanup_capability);
   IREE_ASSERT(registry != NULL);
   IREE_ASSERT(registry->source_combine != NULL);
   loom_canonicalizer_pattern_registries_t patterns =
       loom_canonicalizer_pattern_registries_from_cleanup_registry(registry);
   patterns.post_canonicalization = registry->source_combine;
-  return loom_canonicalizer_run_pass(pass, module, function, patterns);
+  return loom_canonicalizer_run_pass(pass, module, function, cleanup_capability,
+                                     patterns);
 }
