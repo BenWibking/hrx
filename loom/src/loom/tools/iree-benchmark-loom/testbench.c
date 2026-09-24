@@ -43,7 +43,7 @@ void iree_benchmark_loom_configure_reference_oracles(
     iree_benchmark_loom_reference_oracles_t* out_oracles,
     loom_testbench_case_execution_options_t* inout_execution_options) {
   *out_oracles = (iree_benchmark_loom_reference_oracles_t){0};
-  out_oracles->options = (loom_testbench_reference_oracle_options_t){
+  out_oracles->options = (loom_testbench_reference_matmul_oracle_options_t){
       .device_allocator = iree_hal_device_allocator(context->runtime.device),
       .result_buffer_params =
           loom_run_hal_testbench_host_visible_buffer_params(),
@@ -53,8 +53,6 @@ void iree_benchmark_loom_configure_reference_oracles(
       &out_oracles->options, &out_oracles->providers[0]);
   loom_testbench_reference_tiled_matmul_oracle_provider_initialize(
       &out_oracles->options, &out_oracles->providers[1]);
-  loom_testbench_reference_mxfp8_paged_attention_oracle_provider_initialize(
-      &out_oracles->options, &out_oracles->providers[2]);
   inout_execution_options->invocation.oracle_providers =
       loom_make_testbench_oracle_provider_list(
           out_oracles->providers,

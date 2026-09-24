@@ -202,7 +202,7 @@ class ReferenceTest : public ::testing::Test {
   loom_context_t context_ = {};
   loom_module_t* module_ = nullptr;
   iree_hal_allocator_t* device_allocator_ = nullptr;
-  loom_testbench_reference_oracle_options_t reference_options_ = {};
+  loom_testbench_reference_matmul_oracle_options_t reference_options_ = {};
 };
 
 TEST_F(ReferenceTest, ComputesF16MatmulWithF32Accumulator) {

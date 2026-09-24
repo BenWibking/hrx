@@ -13,7 +13,6 @@
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/testbench/executor.h"
 #include "loom/tooling/testbench/reference.h"
-#include "loom/tooling/testbench/reference_attention.h"
 #include "loom/tooling/testbench/requirements.h"
 #include "loom/tools/iree-benchmark-loom/configuration.h"
 
@@ -23,12 +22,12 @@ extern "C" {
 
 enum {
   // Reference oracles linked into HAL-backed tuning correctness checks.
-  IREE_BENCHMARK_LOOM_REFERENCE_ORACLE_PROVIDER_COUNT = 3,
+  IREE_BENCHMARK_LOOM_REFERENCE_ORACLE_PROVIDER_COUNT = 2,
 };
 
 typedef struct iree_benchmark_loom_reference_oracles_t {
   // Shared options borrowed by every provider in |providers|.
-  loom_testbench_reference_oracle_options_t options;
+  loom_testbench_reference_matmul_oracle_options_t options;
   // Reference oracle providers exposed to check.oracle.call.
   loom_testbench_oracle_provider_t
       providers[IREE_BENCHMARK_LOOM_REFERENCE_ORACLE_PROVIDER_COUNT];

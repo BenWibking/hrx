@@ -115,7 +115,6 @@ loom_cc_library(
     loom::tooling::testbench::invocation
     loom::tooling::testbench::issue_report
     loom::tooling::testbench::reference
-    loom::tooling::testbench::reference_attention
     loom::tooling::testbench::requirements
     loom::tooling::testbench::value_materializer
     loom::util::json
