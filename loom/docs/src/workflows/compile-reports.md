@@ -193,11 +193,12 @@ It separates three coverage counts:
   size. A missing model is not evidence of conflict-free access.
 
 Model selection respects the function's execution width. The qualified b128
-coverage includes documented CDNA3 wave64 models for gfx940/gfx941/gfx942 and
-silicon-calibrated gfx1151 models for wave32 and wave64. The gfx1250 wave32 model
-is explicitly an unvalidated vendor software model. Other gfx11 processors,
-gfx1200/gfx1201, unsupported wave modes, and other packet widths report unmodeled
-coverage. A shared bank count alone does not establish shared service rules.
+coverage includes silicon-calibrated gfx1100/gfx1151 models for wave32 and
+wave64, silicon-calibrated gfx942 wave64 models, and documented CDNA3 wave64
+models for gfx940/gfx941. The gfx1250 wave32 model is explicitly an unvalidated
+vendor software model. Other gfx11 processors, gfx1200/gfx1201, unsupported wave
+modes, and other packet widths report unmodeled coverage. A shared bank count
+alone does not establish shared service rules.
 
 Reads and writes can have different lane-service groups, and repeated reads
 can broadcast. AMD's [LDS bank-conflict explanation](https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html)

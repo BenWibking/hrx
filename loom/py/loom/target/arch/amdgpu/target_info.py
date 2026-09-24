@@ -20,6 +20,8 @@ from typing import Protocol
 from loom.dialect.cache import CacheScope, CacheTemporal
 from loom.target.arch.amdgpu.lds_bank_service import (
     AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100,
     AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151,
     AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES,
     amdgpu_lds_bank_service_model_info_by_key,
@@ -1116,6 +1118,7 @@ def rdna3_processor_info(
     elf_generic_version: int = 0,
     scheduling_bits: int = 0,
     occupancy: AmdgpuProcessorOccupancyInfo = AMDGPU_OCCUPANCY_RDNA_1024,
+    lds_bank_service_models: tuple[str, ...] = (),
 ) -> AmdgpuProcessorInfo:
     return processor_info(
         processor=processor,
@@ -1134,6 +1137,7 @@ def rdna3_processor_info(
             | AMDGPU_PROCESSOR_SCHEDULING_VMEM_RESULT_WRITES_IN_ORDER
         ),
         occupancy=occupancy,
+        lds_bank_service_models=lds_bank_service_models,
     )
 
 
@@ -1143,6 +1147,7 @@ def cdna3_processor_info(
     *,
     flags: int = AMDGPU_PROCESSOR_INFO_FLAG_HSACO_EMISSION,
     matrix_feature_profile: str = AMDGPU_MATRIX_FEATURE_PROFILE_MFMA_GFX940,
+    lds_bank_service_models: tuple[str, ...] = AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
 ) -> AmdgpuProcessorInfo:
     return processor_info(
         processor,
@@ -1155,7 +1160,7 @@ def cdna3_processor_info(
         scheduling_bits=AMDGPU_PROCESSOR_SCHEDULING_CDNA_FIXED_WAIT_STATES,
         max_workgroup_storage_bytes=AMDGPU_DEFAULT_MAX_WORKGROUP_STORAGE_BYTES,
         occupancy=AMDGPU_OCCUPANCY_CDNA3,
-        lds_bank_service_models=AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
+        lds_bank_service_models=lds_bank_service_models,
     )
 
 
@@ -1532,7 +1537,9 @@ AMDGPU_PROCESSOR_INFOS: tuple[AmdgpuProcessorInfo, ...] = (
     ),
     cdna3_processor_info("gfx940", 0x040),
     cdna3_processor_info("gfx941", 0x04B),
-    cdna3_processor_info("gfx942", 0x04C),
+    cdna3_processor_info(
+        "gfx942", 0x04C, lds_bank_service_models=AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942
+    ),
     processor_info(
         "gfx950",
         0x04F,
@@ -1581,6 +1588,7 @@ AMDGPU_PROCESSOR_INFOS: tuple[AmdgpuProcessorInfo, ...] = (
         elf_machine_flags=0x041,
         scheduling_bits=AMDGPU_PROCESSOR_SCHEDULING_VALU_TRANS_USE_DEPCTR,
         occupancy=AMDGPU_OCCUPANCY_RDNA_1536,
+        lds_bank_service_models=AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100,
     ),
     rdna3_processor_info(
         processor="gfx1101",

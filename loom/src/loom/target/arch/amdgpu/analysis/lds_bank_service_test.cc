@@ -120,14 +120,16 @@ TEST(AmdgpuLdsBankServiceTest, LookupRequiresModelAndDescriptorBinding) {
 // The permutations distinguish the read and write service groups. A stride
 // sweep alone cannot distinguish octets made from different lane quads.
 TEST(AmdgpuLdsBankServiceTest, QualifiedOctetsDistinguishReadsAndWrites) {
-  for (const auto processor_name : {IREE_SV("gfx1151"), IREE_SV("gfx942")}) {
+  for (const auto processor_name : {IREE_SV("gfx940"), IREE_SV("gfx942"),
+                                    IREE_SV("gfx1100"), IREE_SV("gfx1151")}) {
     for (uint8_t wave_size : {32, 64}) {
       const auto* read_model = LookupB128Model(
           LOOM_AMDGPU_DESCRIPTOR_REF_DS_READ_B128, processor_name, wave_size);
       const auto* write_model = LookupB128Model(
           LOOM_AMDGPU_DESCRIPTOR_REF_DS_WRITE_B128, processor_name, wave_size);
-      if (iree_string_view_equal(processor_name, IREE_SV("gfx942")) &&
-          wave_size == 32) {
+      if (wave_size == 32 &&
+          (iree_string_view_equal(processor_name, IREE_SV("gfx940")) ||
+           iree_string_view_equal(processor_name, IREE_SV("gfx942")))) {
         EXPECT_EQ(read_model, nullptr);
         EXPECT_EQ(write_model, nullptr);
         continue;

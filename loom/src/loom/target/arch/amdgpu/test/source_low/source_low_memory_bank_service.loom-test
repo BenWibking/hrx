@@ -1,8 +1,8 @@
 // RUN: emit amdgpu-bank-service
 
-amdgpu.target<gfx1151> @target_gfx1151_32 {subgroup_size = 32}
+amdgpu.target<gfx1100> @target_gfx1100_32 {subgroup_size = 32}
 
-kernel.def target(@target_gfx1151_32) @strided_gfx1151_wave32() {
+kernel.def target(@target_gfx1100_32) @strided_gfx1100_wave32() {
   %unit = index.constant 1 : index
   %threads = index.constant 64 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
@@ -91,8 +91,8 @@ kernel.def target(@unmodeled_gfx1151) @coverage_gfx1151() {
 }
 
 // ----
-bank-service function=strided_gfx1151_wave32 source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.gfx1151.wave32.b128.write.count-each proof=exact lane-address=affine-workitem-x-byte-stride active-lanes=subgroup-uniform-control-full-wave base-residue=all-bank-word-residues-common-translation classification=conflicted required-rounds=8 uncontended-rounds=4 extra-rounds=4 maximum-multiplicity=2
+bank-service function=strided_gfx1100_wave32 source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.gfx1100.wave32.b128.write.count-each proof=exact lane-address=affine-workitem-x-byte-stride active-lanes=subgroup-uniform-control-full-wave base-residue=all-bank-word-residues-common-translation classification=conflicted required-rounds=8 uncontended-rounds=4 extra-rounds=4 maximum-multiplicity=2
 bank-service function=strided_gfx1151_wave64 source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.gfx1151.wave64.b128.write.count-each proof=exact lane-address=affine-workitem-x-byte-stride active-lanes=subgroup-uniform-control-full-wave base-residue=all-bank-word-residues-common-translation classification=conflicted required-rounds=16 uncontended-rounds=8 extra-rounds=8 maximum-multiplicity=2
-bank-service function=strided_gfx942_wave64 source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.cdna3.wave64.b128.write.count-each proof=exact lane-address=affine-workitem-x-byte-stride active-lanes=subgroup-uniform-control-full-wave base-residue=all-bank-word-residues-common-translation classification=conflicted required-rounds=16 uncontended-rounds=8 extra-rounds=8 maximum-multiplicity=2
+bank-service function=strided_gfx942_wave64 source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.gfx942.wave64.b128.write.count-each proof=exact lane-address=affine-workitem-x-byte-stride active-lanes=subgroup-uniform-control-full-wave base-residue=all-bank-word-residues-common-translation classification=conflicted required-rounds=16 uncontended-rounds=8 extra-rounds=8 maximum-multiplicity=2
 bank-service function=coverage_gfx1200 source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 proof=unmodeled wave-size=32 unknown-reason=target-model-unavailable
 bank-service function=coverage_gfx1151 source-op=vector.store root=scratch packet=amdgpu.ds_write_b32 proof=unmodeled wave-size=32 unknown-reason=packet-wave-model-unavailable

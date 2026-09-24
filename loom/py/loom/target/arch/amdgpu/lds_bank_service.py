@@ -78,8 +78,10 @@ def _b128_octet_model(
     # AMD CK documents distinct read/write octets:
     # https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html
     # Read broadcast semantics: AMD ROCm Programming Guide 7.2.3, section 6.3.3.
-    # gfx1151 qualification distinguishes the two phase maps with permutations
-    # that conflict only on reads or only on writes, in both wave modes.
+    # Native gfx1100/gfx1151 controls in both wave modes and gfx942 wave64
+    # distinguish the phase maps with read-only and write-only conflicts.
+    # Broadcast reads match contiguous cost. These controls qualify service
+    # structure, not a cycle prediction.
     read = direction == AMDGPU_LDS_BANK_SERVICE_DIRECTION_READ
     request_policy = (
         AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS
@@ -114,6 +116,16 @@ _B128_OCTET_MODELS = tuple(
     _b128_octet_model(family, wave_size, direction, evidence)
     for family, wave_sizes, evidence in (
         ("cdna3", (64,), AMDGPU_LDS_BANK_SERVICE_EVIDENCE_PUBLIC_VENDOR_DOCUMENTATION),
+        (
+            "gfx942",
+            (64,),
+            AMDGPU_LDS_BANK_SERVICE_EVIDENCE_SILICON_CALIBRATED_VENDOR_MODEL,
+        ),
+        (
+            "gfx1100",
+            (32, 64),
+            AMDGPU_LDS_BANK_SERVICE_EVIDENCE_SILICON_CALIBRATED_VENDOR_MODEL,
+        ),
         (
             "gfx1151",
             (32, 64),
@@ -184,6 +196,12 @@ AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] =
 
 AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3 = tuple(
     info.key for info in _B128_OCTET_MODELS if ".cdna3." in info.key
+)
+AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942 = tuple(
+    info.key for info in _B128_OCTET_MODELS if ".gfx942." in info.key
+)
+AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100 = tuple(
+    info.key for info in _B128_OCTET_MODELS if ".gfx1100." in info.key
 )
 AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151 = tuple(
     info.key for info in _B128_OCTET_MODELS if ".gfx1151." in info.key
