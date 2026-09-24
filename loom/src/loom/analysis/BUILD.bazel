@@ -78,6 +78,44 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "storage_interference",
+    srcs = ["storage_interference.c"],
+    hdrs = ["storage_interference.h"],
+    deps = [
+        ":control_uniformity",
+        ":value_relation",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/buffer",
+        "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/util:cfg_postdominance",
+        "//loom/src/loom/util:fact_table",
+        "//loom/src/loom/util:walk",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "storage_interference_test",
+    srcs = ["storage_interference_test.cc"],
+    deps = [
+        ":storage_interference",
+        "//loom/src/loom/format/text:parser",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/ops/buffer",
+        "//loom/src/loom/testing:context",
+        "//loom/src/loom/testing:module_ptr",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "value_relation",
     srcs = ["value_relation.c"],
     hdrs = ["value_relation.h"],

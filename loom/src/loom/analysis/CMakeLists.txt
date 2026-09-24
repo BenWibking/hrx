@@ -87,6 +87,48 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    storage_interference
+  HDRS
+    "storage_interference.h"
+  SRCS
+    "storage_interference.c"
+  DEPS
+    ::control_uniformity
+    ::value_relation
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::buffer
+    loom::ops::kernel
+    loom::ops::op_defs
+    loom::util::cfg_postdominance
+    loom::util::fact_table
+    loom::util::walk
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    storage_interference_test
+  SRCS
+    "storage_interference_test.cc"
+  DEPS
+    ::storage_interference
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::ops::buffer
+    loom::ops::op_defs
+    loom::ops::type_registry
+    loom::testing::context
+    loom::testing::module_ptr
+    loom::util::fact_table
+)
+
+loom_cc_library(
+  NAME
     value_relation
   HDRS
     "value_relation.h"

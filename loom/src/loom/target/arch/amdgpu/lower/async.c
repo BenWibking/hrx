@@ -305,7 +305,7 @@ static bool loom_amdgpu_async_gather_select_dest(
     return false;
   }
   uint64_t lds_root_byte_offset = 0;
-  if (!loom_amdgpu_source_alloca_layout_lookup_root(
+  if (!loom_amdgpu_source_alloca_layout_lookup_byte_offset(
           alloca_layout, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
           dest.root_value_id, &lds_root_byte_offset)) {
     diagnostic->rejection_bits |=

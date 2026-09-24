@@ -1393,7 +1393,7 @@ static bool loom_amdgpu_fragment_memory_prepare(
   if (out_prepared->source_access.memory_space ==
       LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
     uint64_t root_byte_offset = 0;
-    if (!loom_amdgpu_source_alloca_layout_lookup_root(
+    if (!loom_amdgpu_source_alloca_layout_lookup_byte_offset(
             environment->alloca_layout, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
             out_prepared->source_access.root_value_id, &root_byte_offset) ||
         root_byte_offset > INT64_MAX) {

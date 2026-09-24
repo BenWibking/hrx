@@ -912,7 +912,7 @@ static bool loom_amdgpu_atomic_select(
     case LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP:
       out_selection->address_form = LOOM_AMDGPU_MEMORY_ADDRESS_FORM_DEFAULT;
       uint64_t root_byte_offset = 0;
-      if (!loom_amdgpu_source_alloca_layout_lookup_root(
+      if (!loom_amdgpu_source_alloca_layout_lookup_byte_offset(
               alloca_layout, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
               out_selection->source.root_value_id, &root_byte_offset)) {
         memory_diagnostic->rejection_bits |=

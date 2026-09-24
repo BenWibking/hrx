@@ -63,7 +63,7 @@ bool loom_amdgpu_memory_access_include_alloca_root_byte_offset(
   }
 
   uint64_t root_byte_offset = 0;
-  if (!loom_amdgpu_source_alloca_layout_lookup_root(
+  if (!loom_amdgpu_source_alloca_layout_lookup_byte_offset(
           alloca_layout, access->source.memory_space,
           access->source.root_value_id, &root_byte_offset) ||
       root_byte_offset > INT64_MAX) {
