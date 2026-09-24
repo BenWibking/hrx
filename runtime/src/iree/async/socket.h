@@ -106,6 +106,15 @@ enum iree_async_socket_option_bits_e {
   // - Avoiding TIME_WAIT accumulation in high-churn scenarios
   // - Testing RST handling paths
   IREE_ASYNC_SOCKET_OPTION_LINGER_ZERO = 1u << 5,
+
+  // Hint to reduce delayed TCP acknowledgement latency, independently of
+  // NO_DELAY's control over sending. Linux requests a persistent 2-ms ACK cap,
+  // rounded to kernel timer ticks and widened to the two-tick minimum. Accepted
+  // sockets inherit the listener's policy. Unsupported platforms/kernels and
+  // non-TCP sockets retain their normal policy; unexpected setup errors fail
+  // creation. This is neither an immediate-ACK nor a completion-time guarantee.
+  // No per-message socket option calls are required.
+  IREE_ASYNC_SOCKET_OPTION_LOW_LATENCY_ACK = 1u << 6,
 };
 typedef uint32_t iree_async_socket_options_t;
 
