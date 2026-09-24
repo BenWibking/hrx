@@ -202,8 +202,7 @@ loom_cc_library(
     loom::analysis::ownership
     loom::ir
     loom::ops::op_defs
-    loom::util::cfg_dominance
-    loom::util::cfg_graph
+    loom::util::dominance
   PUBLIC
 )
 
