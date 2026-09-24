@@ -43,9 +43,13 @@ AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH = "count-each"
 AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS = (
     "coalesce-identical-reads"
 )
+AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES = (
+    "combine-disjoint-writes"
+)
 AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICIES = (
     AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
     AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS,
+    AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES,
 )
 
 AMDGPU_LDS_BANK_SERVICE_MAX_WAVE_SIZE = 64
@@ -65,7 +69,7 @@ class AmdgpuLdsBankServiceModelInfo:
     wave_size: int
     bank_count: int
     bank_word_byte_count: int
-    packet_word_count: int
+    packet_byte_count: int
     phase_lane_masks: tuple[int, ...]
 
 
@@ -103,7 +107,7 @@ def _b128_octet_model(
         wave_size=wave_size,
         bank_count=32,
         bank_word_byte_count=4,
-        packet_word_count=4,
+        packet_byte_count=16,
         phase_lane_masks=tuple(
             mask << half_wave_start
             for half_wave_start in range(0, wave_size, 32)
@@ -137,10 +141,61 @@ _B128_OCTET_MODELS = tuple(
 )
 
 
+def _narrow_model(
+    processor: str, wave_size: int, byte_count: int, direction: str
+) -> AmdgpuLdsBankServiceModelInfo:
+    # Native gfx1100/gfx1151 wave32/wave64 and gfx942 wave64 controls qualify
+    # contiguous 32-lane phases. Amplified conflicts distinguish 16-lane phases
+    # from 32-lane phases, and separate bank sets distinguish the two halves of
+    # wave64. Same-word reads and disjoint halfword writes combine; a two-byte
+    # base shift can change conflicts. These are service rules, not cycle costs.
+    read = direction == AMDGPU_LDS_BANK_SERVICE_DIRECTION_READ
+    policy = (
+        AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS
+        if read
+        else AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES
+        if byte_count == 2
+        else AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH
+    )
+    packet = "u16" if read and byte_count == 2 else f"b{byte_count * 8}"
+    return AmdgpuLdsBankServiceModelInfo(
+        key=(
+            f"amdgpu.lds.{processor}.wave{wave_size}.b{byte_count * 8}."
+            f"{direction}.{policy}"
+        ),
+        revision="AMD:ROCm-guide-7.2.3:6.3.3;native-narrow-2026-09-24",
+        descriptor_key=f"amdgpu.ds_{direction}_{packet}",
+        evidence_class=AMDGPU_LDS_BANK_SERVICE_EVIDENCE_SILICON_CALIBRATED_VENDOR_MODEL,
+        direction=direction,
+        request_policy=policy,
+        wave_size=wave_size,
+        bank_count=32,
+        bank_word_byte_count=4,
+        packet_byte_count=byte_count,
+        phase_lane_masks=tuple(
+            0xFFFFFFFF << start for start in range(0, wave_size, 32)
+        ),
+    )
+
+
+_NATIVE_NARROW_MODELS = tuple(
+    _narrow_model(processor, wave_size, byte_count, direction)
+    for processor, wave_sizes in (
+        ("gfx1100", (32, 64)),
+        ("gfx1151", (32, 64)),
+        ("gfx942", (64,)),
+    )
+    for byte_count in (2, 4)
+    for direction in AMDGPU_LDS_BANK_SERVICE_DIRECTIONS
+    for wave_size in wave_sizes
+)
+
+
 AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] = tuple(
     sorted(
         (
             *_B128_OCTET_MODELS,
+            *_NATIVE_NARROW_MODELS,
             AmdgpuLdsBankServiceModelInfo(
                 key="amdgpu.lds.wave32.b128.quad-phases.read.count-each",
                 revision="ROCm/rocm-libraries@a7e3879c8847:LDSModel.cpp",
@@ -153,7 +208,7 @@ AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] =
                 wave_size=32,
                 bank_count=32,
                 bank_word_byte_count=4,
-                packet_word_count=4,
+                packet_byte_count=16,
                 phase_lane_masks=(
                     0x0000000F,
                     0x000000F0,
@@ -177,7 +232,7 @@ AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] =
                 wave_size=32,
                 bank_count=32,
                 bank_word_byte_count=4,
-                packet_word_count=4,
+                packet_byte_count=16,
                 phase_lane_masks=(
                     0x0000000F,
                     0x000000F0,
@@ -194,18 +249,25 @@ AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] =
     )
 )
 
-AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3 = tuple(
-    info.key for info in _B128_OCTET_MODELS if ".cdna3." in info.key
-)
-AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942 = tuple(
-    info.key for info in _B128_OCTET_MODELS if ".gfx942." in info.key
-)
-AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100 = tuple(
-    info.key for info in _B128_OCTET_MODELS if ".gfx1100." in info.key
-)
-AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151 = tuple(
-    info.key for info in _B128_OCTET_MODELS if ".gfx1151." in info.key
-)
+
+def _family_model_keys(family: str) -> tuple[str, ...]:
+    return tuple(
+        info.key
+        for info in sorted(
+            (
+                info
+                for info in AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS
+                if f".{family}." in info.key
+            ),
+            key=lambda info: (info.descriptor_key, info.wave_size),
+        )
+    )
+
+
+AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3 = _family_model_keys("cdna3")
+AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942 = _family_model_keys("gfx942")
+AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100 = _family_model_keys("gfx1100")
+AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151 = _family_model_keys("gfx1151")
 
 # Structural service model shared by every target selecting these rows.
 AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES = (
@@ -262,6 +324,12 @@ def validate_amdgpu_lds_bank_service_model_infos(
         ):
             raise ValueError(f"{owner} coalesces identical requests on a write model")
         if (
+            info.request_policy
+            == AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES
+            and info.direction != AMDGPU_LDS_BANK_SERVICE_DIRECTION_WRITE
+        ):
+            raise ValueError(f"{owner} combines disjoint writes on a read model")
+        if (
             info.wave_size <= 0
             or info.wave_size > AMDGPU_LDS_BANK_SERVICE_MAX_WAVE_SIZE
         ):
@@ -271,13 +339,21 @@ def validate_amdgpu_lds_bank_service_model_infos(
             or info.bank_count > AMDGPU_LDS_BANK_SERVICE_MAX_BANK_COUNT
         ):
             raise ValueError(f"{owner} bank count must be in 1..64")
-        if info.bank_word_byte_count <= 0:
-            raise ValueError(f"{owner} bank-word byte count must be positive")
+        if info.bank_word_byte_count not in (1, 2, 4, 8, 16, 32, 64):
+            raise ValueError(
+                f"{owner} bank-word byte count must be a power of two in 1..64"
+            )
         if (
-            info.packet_word_count <= 0
-            or info.packet_word_count > AMDGPU_LDS_BANK_SERVICE_MAX_PACKET_WORD_COUNT
+            info.packet_byte_count <= 0
+            or info.packet_byte_count
+            > info.bank_word_byte_count * AMDGPU_LDS_BANK_SERVICE_MAX_PACKET_WORD_COUNT
+            or info.packet_byte_count & (info.packet_byte_count - 1)
+            or info.packet_byte_count > 16
         ):
-            raise ValueError(f"{owner} packet word count must be in 1..4")
+            raise ValueError(
+                f"{owner} packet byte count must be a power of two in 1..16 "
+                "spanning at most four bank words"
+            )
         if (
             not info.phase_lane_masks
             or len(info.phase_lane_masks) > AMDGPU_LDS_BANK_SERVICE_MAX_PHASE_COUNT

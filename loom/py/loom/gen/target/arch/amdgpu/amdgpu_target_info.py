@@ -49,6 +49,7 @@ from loom.target.arch.amdgpu.lds_bank_service import (  # noqa: E402
     AMDGPU_LDS_BANK_SERVICE_EVIDENCE_SILICON_CALIBRATED_VENDOR_MODEL,
     AMDGPU_LDS_BANK_SERVICE_EVIDENCE_VENDOR_SOFTWARE_MODEL_UNVALIDATED,
     AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS,
+    AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES,
     AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
     AmdgpuLdsBankServiceModelInfo,
     amdgpu_lds_bank_service_model_info_by_key,
@@ -264,6 +265,7 @@ _LDS_BANK_SERVICE_DIRECTION_EXPRS = {
 }
 
 _LDS_BANK_SERVICE_REQUEST_POLICY_EXPRS = {
+    AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES: "LOOM_AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COMBINE_DISJOINT_WRITES",
     AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH: ("LOOM_AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH"),
     AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS: ("LOOM_AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS"),
 }
@@ -748,7 +750,7 @@ def _lds_bank_service_model_initializer(
         f"        .wave_size = {info.wave_size},",
         f"        .bank_count = {info.bank_count},",
         f"        .bank_word_byte_count = {info.bank_word_byte_count},",
-        f"        .packet_word_count = {info.packet_word_count},",
+        f"        .packet_byte_count = {info.packet_byte_count},",
         f"        .phase_count = {len(info.phase_lane_masks)},",
         "        .phase_lane_masks = {",
     ]

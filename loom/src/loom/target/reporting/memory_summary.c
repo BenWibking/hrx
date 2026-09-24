@@ -854,7 +854,7 @@ static bool loom_target_compile_report_source_low_bank_service_summaries_match(
          lhs->wave_size == rhs->wave_size &&
          lhs->bank_count == rhs->bank_count &&
          lhs->bank_word_byte_count == rhs->bank_word_byte_count &&
-         lhs->packet_word_count == rhs->packet_word_count;
+         lhs->packet_byte_count == rhs->packet_byte_count;
 }
 
 static loom_target_compile_report_source_low_bank_service_summary_t*
@@ -1006,7 +1006,7 @@ loom_target_compile_report_source_low_bank_service_summary_from_row(
       .wave_size = bank_service->wave_size,
       .bank_count = bank_service->bank_count,
       .bank_word_byte_count = bank_service->bank_word_byte_count,
-      .packet_word_count = bank_service->packet_word_count,
+      .packet_byte_count = bank_service->packet_byte_count,
   };
 }
 

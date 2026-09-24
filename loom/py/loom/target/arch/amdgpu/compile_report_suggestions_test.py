@@ -131,7 +131,7 @@ def _add_bank_service_group(
                         "wave_size": 32,
                         "bank_count": 32,
                         "bank_word_bytes": 4,
-                        "packet_bank_words": 4,
+                        "packet_bytes": 16,
                     },
                     "summary": {
                         "modeled_packet_count": (

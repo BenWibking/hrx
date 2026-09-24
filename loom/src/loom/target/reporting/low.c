@@ -99,7 +99,7 @@ loom_target_compile_report_bank_service(
       .wave_size = source->wave_size,
       .bank_count = source->bank_count,
       .bank_word_byte_count = source->bank_word_byte_count,
-      .packet_word_count = source->packet_word_count,
+      .packet_byte_count = source->packet_byte_count,
       .phase_count = source->phase_count,
       .base_residue_count = source->base_residue_count,
       .required_rounds = source->required_rounds,

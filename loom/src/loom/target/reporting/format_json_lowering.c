@@ -828,7 +828,7 @@ loom_target_compile_report_format_source_low_memory_bank_service_json(
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
       &model, IREE_SV("bank_word_bytes"), bank_service->bank_word_byte_count));
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
-      &model, IREE_SV("packet_bank_words"), bank_service->packet_word_count));
+      &model, IREE_SV("packet_bytes"), bank_service->packet_byte_count));
   IREE_RETURN_IF_ERROR(
       loom_target_compile_report_format_source_low_memory_bank_service_u8_array_json(
           IREE_SV("phase_lane_counts"), bank_service->phase_lane_counts,
@@ -1233,7 +1233,7 @@ loom_target_compile_report_format_source_low_bank_service_summary_json(
     IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
         &model, IREE_SV("bank_word_bytes"), row->bank_word_byte_count));
     IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
-        &model, IREE_SV("packet_bank_words"), row->packet_word_count));
+        &model, IREE_SV("packet_bytes"), row->packet_byte_count));
     IREE_RETURN_IF_ERROR(loom_json_object_end(&model));
   }
 

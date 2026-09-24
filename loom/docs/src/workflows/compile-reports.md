@@ -192,13 +192,13 @@ It separates three coverage counts:
 - **Unmodeled** packets have no model for the selected target, packet, and wave
   size. A missing model is not evidence of conflict-free access.
 
-Model selection respects the function's execution width. The qualified b128
-coverage includes silicon-calibrated gfx1100/gfx1151 models for wave32 and
-wave64, silicon-calibrated gfx942 wave64 models, and documented CDNA3 wave64
-models for gfx940/gfx941. The gfx1250 wave32 model is explicitly an unvalidated
-vendor software model. Other gfx11 processors, gfx1200/gfx1201, unsupported wave
-modes, and other packet widths report unmodeled coverage. A shared bank count
-alone does not establish shared service rules.
+Model selection respects the function's execution width. Silicon-calibrated
+models cover `ds_read_u16`, `ds_write_b16`, and b32/b128 reads and writes on
+gfx1100/gfx1151 in wave32 and wave64, and gfx942 in wave64. Documented CDNA3
+b128 wave64 models cover gfx940/gfx941. The gfx1250 wave32 model is explicitly an
+unvalidated vendor software model. Other gfx11 processors, gfx1200/gfx1201,
+unsupported wave modes, and other packet widths report unmodeled coverage. A
+shared bank count alone does not establish shared service rules.
 
 Reads and writes can have different lane-service groups, and repeated reads
 can broadcast. AMD's [LDS bank-conflict explanation](https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html)
@@ -207,6 +207,20 @@ describes the CDNA3 b128 groups; the
 describes identical-address broadcast. Wide-packet analysis requires packet
 alignment and full-subgroup participation. Fragment accesses use their compiled
 lane/register layout, including repeated lane addresses.
+
+Narrow packets use contiguous 32-lane service groups on the qualified devices.
+Halfword reads to either half of a bank word share a request; writes to disjoint
+halves also combine. Distinct words mapping to the same bank still conflict.
+The model reports `packet_bytes` separately from `bank_word_bytes` so a two-byte
+access retains its subword identity.
+
+Subword placement matters even with a fixed lane layout. For example, two
+16-halfword spans separated by 96 bytes are conflict-free at a four-byte-aligned
+base. Moving the base by two bytes makes the spans touch distinct words of bank
+zero. The report retains static offsets and dynamic divisibility, evaluates
+compatible byte-base residues, and reports `address-base-residue-unproven` when
+the possible placements have different phase profiles. Full-word translations
+only rotate bank indices and need no enumeration.
 
 Required and extra **service rounds** describe proven static packets under the
 reported model. They are not measured cycles, wall-clock time, or a predicted

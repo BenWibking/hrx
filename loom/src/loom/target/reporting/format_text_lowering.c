@@ -94,14 +94,14 @@ loom_target_compile_report_append_source_low_memory_bank_service_text(
       builder,
       " bank_service={proof:%.*s,model:%.*s,revision:%.*s,evidence:%.*s,"
       "request_policy:%.*s,wave_size:%u,bank_count:%u,bank_word_bytes:%u,"
-      "packet_bank_words:%u,phase_lane_counts:[",
+      "packet_bytes:%u,phase_lane_counts:[",
       (int)bank_service->proof.size, bank_service->proof.data,
       (int)bank_service->model_key.size, bank_service->model_key.data,
       (int)bank_service->model_revision.size, bank_service->model_revision.data,
       (int)bank_service->model_evidence.size, bank_service->model_evidence.data,
       (int)bank_service->request_policy.size, bank_service->request_policy.data,
       bank_service->wave_size, bank_service->bank_count,
-      bank_service->bank_word_byte_count, bank_service->packet_word_count));
+      bank_service->bank_word_byte_count, bank_service->packet_byte_count));
   for (uint8_t phase = 0; phase < bank_service->phase_count; ++phase) {
     IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
         builder, "%s%u", phase == 0 ? "" : ",",
@@ -1264,9 +1264,9 @@ loom_target_compile_report_format_source_low_bank_service_summaries(
         IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
             builder,
             " wave_size=%" PRIu8 " banks=%" PRIu8 " bank_word_bytes=%" PRIu8
-            " packet_bank_words=%" PRIu8,
+            " packet_bytes=%" PRIu8,
             row->wave_size, row->bank_count, row->bank_word_byte_count,
-            row->packet_word_count));
+            row->packet_byte_count));
       }
       if (row->summary.unknown_packet_count != 0 ||
           row->summary.unmodeled_packet_count != 0) {
