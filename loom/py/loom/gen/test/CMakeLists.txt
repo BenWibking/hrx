@@ -88,6 +88,17 @@ iree_py_library(
     loom::py::loom::gen::support::support
 )
 
+iree_py_library(
+  NAME
+    scalar_float_conversion
+  MAIN
+    "scalar_float_conversion.py"
+  SRCS
+    "scalar_float_conversion.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
 iree_py_test(
   NAME
     numeric_conversion_matrix_test

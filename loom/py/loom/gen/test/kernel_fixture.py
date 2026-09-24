@@ -10,7 +10,7 @@ import os
 import struct
 from pathlib import Path
 
-ELEMENTS = {"f16": ("e", "<f2", 2), "f32": ("f", "<f4", 4), "i8": ("b", "|i1", 1), "i16": ("h", "<i2", 2), "i32": ("i", "<i4", 4), "i64": ("q", "<i8", 8)}
+ELEMENTS = {"f16": ("e", "<f2", 2), "f32": ("f", "<f4", 4), "f64": ("d", "<f8", 8), "i8": ("b", "|i1", 1), "i16": ("h", "<i2", 2), "i32": ("i", "<i4", 4), "i64": ("q", "<i8", 8)}
 
 
 def signed_bits(value, width):

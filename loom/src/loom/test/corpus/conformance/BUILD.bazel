@@ -26,6 +26,44 @@ _CASES = glob(
 
 exports_files(_CASES + _CONFIGURED_CASES)
 
+loom_generated_file_family(
+    name = "scalar_float_conversion_gen",
+    testonly = True,
+    generator = "//loom/py/loom/gen/test:scalar_float_conversion",
+    output_directories = ["scalar_float_conversion_arrays"],
+    output_flags = [
+        "--output",
+        "--arrays",
+    ],
+    outputs = [
+        "scalar_float_conversion_cases.loom",
+        "scalar_float_conversion_arrays",
+    ],
+)
+
+loom_test(
+    name = "scalar_float_conversion_test",
+    srcs = [
+        "scalar_float_conversion.loom",
+        ":scalar_float_conversion_cases.loom",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx950",
+        "//loom/target/amdgpu:gfx1100",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1170",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/amdgpu:gfx1250",
+        "//loom/target/spirv:vulkan1.3+bda+extended-types",
+    ],
+    data = [":scalar_float_conversion_gen"],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
 loom_test(
     name = "vector_integer_widening_test",
     srcs = ["vector_integer_widening.loom"],

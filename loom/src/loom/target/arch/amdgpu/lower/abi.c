@@ -170,9 +170,12 @@ iree_status_t loom_amdgpu_map_argument(
   if (bundle->export_plan->abi_kind == LOOM_TARGET_ABI_HAL_KERNEL &&
       loom_kernel_def_isa(source_function_op) &&
       (loom_amdgpu_type_is_f32(source_type) ||
+       loom_amdgpu_type_is_f64(source_type) ||
        loom_amdgpu_type_is_i8(source_type) ||
        loom_amdgpu_type_is_i16(source_type))) {
-    return loom_amdgpu_make_sgpr_type(context, &out_argument->abi_type);
+    const uint32_t unit_count = loom_amdgpu_type_is_f64(source_type) ? 2 : 1;
+    return loom_amdgpu_make_sgpr_range_type(context, unit_count,
+                                            &out_argument->abi_type);
   }
   return loom_amdgpu_map_value(user_data, context, source_function_op,
                                source_argument_id, source_type,
