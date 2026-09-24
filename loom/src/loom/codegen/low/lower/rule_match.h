@@ -64,6 +64,21 @@ typedef struct loom_low_lower_rule_match_descriptor_ref_callback_t {
   void* user_data;
 } loom_low_lower_rule_match_descriptor_ref_callback_t;
 
+typedef uint64_t (
+    *loom_low_lower_rule_match_source_memory_root_byte_offset_fn_t)(
+    void* user_data,
+    const loom_low_source_memory_access_plan_t* source_memory_access);
+
+typedef struct
+    loom_low_lower_rule_match_source_memory_root_byte_offset_callback_t {
+  // Optional physical allocation-root offset query. Mutable lowering installs
+  // an adapter to its target policy; read-only contract queries leave this
+  // empty because they test source semantic support, not selected placement.
+  loom_low_lower_rule_match_source_memory_root_byte_offset_fn_t fn;
+  // Caller-owned payload passed to |fn|.
+  void* user_data;
+} loom_low_lower_rule_match_source_memory_root_byte_offset_callback_t;
+
 typedef uint16_t loom_low_lower_rule_match_flags_t;
 
 // Match contract-only rule rows that are visible to read-only legality queries
@@ -89,6 +104,9 @@ struct loom_low_lower_rule_match_context_t {
   // Optional rule-local descriptor-ref resolver. Missing uses descriptor keys
   // directly and is intended for tests and cold standalone queries.
   loom_low_lower_rule_match_descriptor_ref_callback_t descriptor_ref;
+  // Optional target physical allocation-root placement query.
+  loom_low_lower_rule_match_source_memory_root_byte_offset_callback_t
+      source_memory_root_byte_offset;
   // Optional dense source value facts used by fact-backed guard rows.
   const loom_value_fact_table_t* fact_table;
   // Optional precomputed view summaries used by source-memory guard rows.

@@ -1453,6 +1453,18 @@ static iree_status_t loom_low_lower_rule_match_map_value_from_lowering(
   return iree_ok_status();
 }
 
+static uint64_t
+loom_low_lower_rule_match_source_memory_root_byte_offset_from_lowering(
+    void* user_data,
+    const loom_low_source_memory_access_plan_t* source_memory_access) {
+  const loom_low_lower_context_t* context =
+      (const loom_low_lower_context_t*)user_data;
+  const loom_low_lower_source_memory_root_byte_offset_callback_t callback =
+      context->policy->source_memory_root_byte_offset;
+  IREE_ASSERT(callback.fn != NULL);
+  return callback.fn(callback.user_data, context, source_memory_access);
+}
+
 static iree_status_t loom_low_lower_rule_match_can_materialize_from_lowering(
     void* user_data, const loom_low_lower_rule_match_context_t* match_context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
@@ -1596,6 +1608,14 @@ void loom_low_lower_rule_match_context_initialize_from_lowering(
       .descriptor_ref =
           {
               .fn = loom_low_lower_rule_match_descriptor_ref_from_lowering,
+              .user_data = context,
+          },
+      .source_memory_root_byte_offset =
+          {
+              .fn =
+                  context->policy->source_memory_root_byte_offset.fn != NULL
+                      ? loom_low_lower_rule_match_source_memory_root_byte_offset_from_lowering
+                      : NULL,
               .user_data = context,
           },
       .fact_table = loom_low_lower_context_fact_table(context),

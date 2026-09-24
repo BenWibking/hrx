@@ -456,10 +456,10 @@ kernel.def @workgroup_negative_vector_coefficient() {
 
 // ----
 low.kernel.def target<spirv.logical.core> workgroup_size(32, 1, 1) workgroup_count(1, 1, 1) @workgroup_negative_vector_coefficient() asm {
-  %lane = OpLoadBuiltin.local_invocation_id.x
-  %27 = OpConstant.i32 1 : reg<spirv.id : index>
-  %bank = OpBitwiseAnd %lane, %27 : reg<spirv.id : index>
   %scratch = storage {byte_alignment = 16, byte_length = 32} : low.storage<workgroup>
+  %lane = OpLoadBuiltin.local_invocation_id.x
+  %28 = OpConstant.i32 1 : reg<spirv.id : index>
+  %bank = OpBitwiseAnd %lane, %28 : reg<spirv.id : index>
   %view = storage_address %scratch : low.storage<workgroup> -> reg<spirv.ptr.workgroup.array.i32>
   %31 = OpConstant.i32 1
   %32 = OpConstant.i32 -4 : reg<spirv.id : index>

@@ -505,6 +505,24 @@ iree_status_t loom_low_lower_get_or_allocate_target_state(
   return iree_ok_status();
 }
 
+const void* loom_low_lower_lookup_target_state(
+    const loom_low_lower_context_t* context, const void* key,
+    iree_host_size_t data_length) {
+  IREE_ASSERT(key != NULL);
+  IREE_ASSERT_GT(data_length, 0);
+  for (iree_host_size_t i = 0; i < context->lowering.target_state_record_count;
+       ++i) {
+    const loom_low_lower_target_state_record_t* record =
+        &context->lowering.target_state_records[i];
+    if (record->key != key) {
+      continue;
+    }
+    IREE_ASSERT_EQ(record->data_length, data_length);
+    return record->data;
+  }
+  return NULL;
+}
+
 iree_status_t loom_low_lower_get_or_allocate_module_target_state(
     loom_low_lower_context_t* context, const void* key,
     iree_host_size_t data_length, void** out_data) {
