@@ -435,8 +435,7 @@ loom_type_propagator_statistics_t loom_type_propagator_statistics(
 }
 
 static bool loom_type_propagator_type_has_refinement_surface(loom_type_t type) {
-  if ((loom_type_is_shaped(type) || loom_type_is_pool(type)) &&
-      !loom_type_is_all_static(type)) {
+  if (loom_type_has_dimensions(type) && !loom_type_is_all_static(type)) {
     return true;
   }
   if (loom_type_has_ssa_encoding(type)) {

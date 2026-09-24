@@ -40,6 +40,27 @@ static iree_status_t loom_bytecode_emit_complete_type(
       }
       return loom_bytecode_emit_uvarint(sink, reference);
     }
+    case LOOM_TYPE_GROUP: {
+      IREE_RETURN_IF_ERROR(
+          loom_bytecode_emit_uvarint(sink, loom_type_rank(type)));
+      for (uint8_t i = 0; i < loom_type_rank(type); ++i) {
+        const uint64_t dimension = loom_type_dim(type, i);
+        const bool dynamic = loom_dim_is_dynamic(dimension);
+        IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(sink, dynamic));
+        uint64_t payload = dimension;
+        if (dynamic) {
+          payload = 0;
+          if (loom_dim_value_id(dimension) != LOOM_VALUE_ID_INVALID) {
+            uint32_t number = 0;
+            IREE_RETURN_IF_ERROR(loom_bytecode_resolve_value_number(
+                values, loom_dim_value_id(dimension), &number));
+            payload = (uint64_t)number + 1;
+          }
+        }
+        IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(sink, payload));
+      }
+      return iree_ok_status();
+    }
     case LOOM_TYPE_TILE:
     case LOOM_TYPE_TENSOR:
     case LOOM_TYPE_VECTOR:

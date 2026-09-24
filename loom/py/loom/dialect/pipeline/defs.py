@@ -221,7 +221,7 @@ pipeline_scatter = Op(
         ARROW,
         ResultType("result"),
     ],
-    examples=["%tiles = pipeline.scatter %source across %workers : view<2x8x8xi8>, group -> pipeline.flow<tile<8x8xi8>>"],
+    examples=["%tiles = pipeline.scatter %source across %workers : view<2x8x8xi8>, group<2> -> pipeline.flow<tile<8x8xi8>>"],
 )
 
 pipeline_read = Op(
@@ -246,7 +246,7 @@ pipeline_read = Op(
         ARROW,
         ResultType("result"),
     ],
-    examples=["%bias = pipeline.read %source on %reducers : view<8x8xi32>, group -> pipeline.flow<tile<8x8xi32>>"],
+    examples=["%bias = pipeline.read %source on %reducers : view<8x8xi32>, group<1> -> pipeline.flow<tile<8x8xi32>>"],
 )
 
 pipeline_stage = Op(
@@ -283,7 +283,7 @@ pipeline_stage = Op(
         ARROW,
         ResultTypeList("outputs"),
     ],
-    examples=["%partials = pipeline.stage @product on %workers(%lhs, %rhs) : (group, pipeline.flow<tile<8x8xi8>>, pipeline.flow<tile<8x8xi8>>) -> (pipeline.flow<tile<8x8xi32>>)"],
+    examples=["%partials = pipeline.stage @product on %workers(%lhs, %rhs) : (group<2>, pipeline.flow<tile<8x8xi8>>, pipeline.flow<tile<8x8xi8>>) -> (pipeline.flow<tile<8x8xi32>>)"],
 )
 
 pipeline_buffer = Op(
@@ -408,7 +408,7 @@ pipeline_reduce = Op(
         ResultTypeList("outputs"),
     ],
     examples=[
-        "%result = pipeline.reduce @sum from %products(%partials) to %reducers(%bias) : (group, pipeline.flow<tile<8x8xi32>>) to (group, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)"
+        "%result = pipeline.reduce @sum from %products(%partials) to %reducers(%bias) : (group<2>, pipeline.flow<tile<8x8xi32>>) to (group<1>, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)"
     ],
 )
 

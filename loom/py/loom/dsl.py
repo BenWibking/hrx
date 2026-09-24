@@ -87,6 +87,7 @@ __all__ = [
     "ENCODING_STORAGE",
     "ENCODING_TRANSFORM",
     "POOL",
+    "GROUP",
     "REGISTER",
     "STORAGE",
     "I1",
@@ -348,6 +349,7 @@ class TypeConstraint(Enum):
       ENCODING_STORAGE → EncodingType with role=storage
       ENCODING_TRANSFORM → EncodingType with role=transform
       POOL     → PoolType
+      GROUP    → GroupType
       REGISTER → RegisterType
       STORAGE  → StorageType
       I1       → ScalarType with kind=I1
@@ -396,6 +398,7 @@ class TypeConstraint(Enum):
     ENCODING_STORAGE = "encoding<storage>"
     ENCODING_TRANSFORM = "encoding<transform>"
     POOL = "pool"
+    GROUP = "group"
     REGISTER = "register"
     STORAGE = "storage"
     I1 = "i1"
@@ -438,6 +441,7 @@ ENCODING_SCHEMA = TypeConstraint.ENCODING_SCHEMA
 ENCODING_STORAGE = TypeConstraint.ENCODING_STORAGE
 ENCODING_TRANSFORM = TypeConstraint.ENCODING_TRANSFORM
 POOL = TypeConstraint.POOL
+GROUP = TypeConstraint.GROUP
 REGISTER = TypeConstraint.REGISTER
 STORAGE = TypeConstraint.STORAGE
 I1 = TypeConstraint.I1
@@ -4209,7 +4213,9 @@ type TypeParamDef = (
 )
 
 
-_COMPACT_SHAPE_IR_KINDS = frozenset(("pool", "tile", "tensor", "vector", "view"))
+_COMPACT_SHAPE_IR_KINDS = frozenset(
+    ("group", "pool", "tile", "tensor", "vector", "view")
+)
 
 
 def _validate_compact_shape_format(
@@ -4234,10 +4240,11 @@ def _validate_compact_shape_format(
         kw,
     )
 
-    if ir_kind == "pool":
+    if ir_kind in ("group", "pool"):
         if len(params) != 1 or not isinstance(params[0], ShapeParam):
             raise ValueError(
-                f"TypeDef '{name}': pool representation requires one shape parameter"
+                f"TypeDef '{name}': {ir_kind} representation requires one "
+                "shape parameter"
             )
         expected_format: tuple[FormatElement, ...] = (ShapeOf(params[0].name),)
     elif ir_kind == "vector":

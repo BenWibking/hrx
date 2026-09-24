@@ -270,6 +270,23 @@ iree_status_t loom_bytecode_write_types_section(
         }
         break;
       }
+      case LOOM_TYPE_GROUP: {
+        const uint8_t rank = loom_type_rank(type);
+        IREE_RETURN_IF_ERROR(
+            loom_bytecode_page_writer_write_u8(page_writer, rank));
+        for (uint8_t i = 0; i < rank; ++i) {
+          if (loom_type_dim_is_dynamic_at(type, i)) {
+            IREE_RETURN_IF_ERROR(
+                loom_bytecode_page_writer_write_u8(page_writer, 1));
+          } else {
+            IREE_RETURN_IF_ERROR(
+                loom_bytecode_page_writer_write_u8(page_writer, 0));
+            IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_uvarint(
+                page_writer, (uint64_t)loom_type_dim_static_size_at(type, i)));
+          }
+        }
+        break;
+      }
       default:
         IREE_ASSERT_UNREACHABLE("verified native type kind");
         IREE_BUILTIN_UNREACHABLE();

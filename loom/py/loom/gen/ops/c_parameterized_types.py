@@ -33,6 +33,7 @@ TYPE_IR_KIND_MAP: dict[str, str] = {
     "encoding": "LOOM_TYPE_ENCODING",
     "storage": "LOOM_TYPE_STORAGE",
     "pool": "LOOM_TYPE_POOL",
+    "group": "LOOM_TYPE_GROUP",
     "dialect": "LOOM_TYPE_DIALECT",
 }
 

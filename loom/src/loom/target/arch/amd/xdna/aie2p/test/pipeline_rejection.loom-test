@@ -7,11 +7,11 @@ func.decl @copy(%input: buffer, %output: buffer)
 pipeline.def<kernel> public retain target(@array_target) @missing_lane_axis() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 2 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<2x1x4xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x4xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<2x1x4xi32>, group -> pipeline.flow<tile<4xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<2x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/060 {lane_count="2"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
   pipeline.finish
@@ -37,11 +37,11 @@ func.decl @copy(%input: buffer, %output: buffer)
 pipeline.def<kernel> public retain target(@array_target) @unit_lane_extent() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x1x4xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<2x1x4xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32>, group -> pipeline.flow<tile<4xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/061 {extent="2", lane_count="1"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x4xi32>
   pipeline.finish
@@ -56,11 +56,11 @@ func.decl @copy(%input: buffer, %output: buffer)
 pipeline.def<kernel> public retain target(@array_target) @missing_temporal_axis() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x1x1x4xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x4xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x1x4xi32>, group -> pipeline.flow<tile<4xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/062 {rank="1", expected_rank="2"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
   pipeline.finish
@@ -75,11 +75,11 @@ func.decl @copy(%input: buffer, %output: buffer)
 pipeline.def<kernel> public retain target(@array_target) @extra_temporal_axis() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x1x4xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x1x1x4xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32>, group -> pipeline.flow<tile<4xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/062 {rank="3", expected_rank="1"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x1x1x4xi32>
   pipeline.finish
@@ -94,11 +94,11 @@ func.decl @copy(%input: buffer, %output: buffer)
 pipeline.def<kernel> public retain target(@array_target) @equal_count_different_shape() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x2x3x4xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x3x2x4xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x2x3x4xi32>, group -> pipeline.flow<tile<4xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x2x3x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/063 {dimension="0", extent="3", expected_extent="2"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x3x2x4xi32>
   pipeline.finish
@@ -142,11 +142,11 @@ func.def target(@core_target) @copy_record(%input: buffer, %output: buffer) {
 pipeline.def<kernel> target(@array_target) @too_many_resident_workers() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 33 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lane_count : index -> group
+  %workers = group.create %lane_count : index -> group<[%lane_count]>
   %input_view = buffer.view %input[%base] : buffer -> view<33x1xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<33x1xi32>
-  %source = pipeline.scatter %input_view across %workers : view<33x1xi32>, group -> pipeline.flow<tile<1xi32>>
-  %result = pipeline.stage @copy_record on %workers(%source) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
+  %source = pipeline.scatter %input_view across %workers : view<33x1xi32>, group<[%lane_count]> -> pipeline.flow<tile<1xi32>>
+  %result = pipeline.stage @copy_record on %workers(%source) : (group<[%lane_count]>, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<33x1xi32>
   pipeline.finish
 }

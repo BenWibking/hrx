@@ -10,18 +10,18 @@ aie2p.target<core> @core_target
 pipeline.def<kernel> public retain target(@array_target) @parallel_folded_composite_array() run(%left: buffer, %right: buffer, %shared: buffer, %left_output: buffer, %right_output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lane_count : index -> group
+  %workers = group.create %lane_count : index -> group<[%lane_count]>
   %left_view = buffer.view %left[%base] : buffer -> view<2x1xf32>
   %right_view = buffer.view %right[%base] : buffer -> view<2x1xf32>
   %shared_view = buffer.view %shared[%base] : buffer -> view<2x1xf32>
   %left_output_view = buffer.view %left_output[%base] : buffer -> view<1xf32>
   %right_output_view = buffer.view %right_output[%base] : buffer -> view<1xf32>
-  %left_flow = pipeline.read %left_view on %workers : view<2x1xf32>, group -> pipeline.flow<tile<1xf32>>
-  %right_flow = pipeline.read %right_view on %workers : view<2x1xf32>, group -> pipeline.flow<tile<1xf32>>
-  %shared_flow = pipeline.read %shared_view on %workers : view<2x1xf32>, group -> pipeline.flow<tile<1xf32>>
-  %mapped_shared = pipeline.stage @copy_f32_record on %workers(%shared_flow) : (group, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
-  %left_records = pipeline.stage @add_f32_record on %workers(%left_flow, %mapped_shared) : (group, pipeline.flow<tile<1xf32>>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
-  %right_records = pipeline.stage @add_f32_record on %workers(%right_flow, %mapped_shared) : (group, pipeline.flow<tile<1xf32>>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
+  %left_flow = pipeline.read %left_view on %workers : view<2x1xf32>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
+  %right_flow = pipeline.read %right_view on %workers : view<2x1xf32>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
+  %shared_flow = pipeline.read %shared_view on %workers : view<2x1xf32>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
+  %mapped_shared = pipeline.stage @copy_f32_record on %workers(%shared_flow) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
+  %left_records = pipeline.stage @add_f32_record on %workers(%left_flow, %mapped_shared) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
+  %right_records = pipeline.stage @add_f32_record on %workers(%right_flow, %mapped_shared) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   %left_sum = pipeline.fold<addf> %left_records : pipeline.flow<tile<1xf32>>
   %right_sum = pipeline.fold<addf> %right_records : pipeline.flow<tile<1xf32>>
   pipeline.write %left_sum to %left_output_view : pipeline.flow<tile<1xf32>>, view<1xf32>

@@ -11,14 +11,14 @@ aie2p.target<core> @core_target
 pipeline.def<kernel> public retain target(@array_target) @cyclic_worker_array() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
-  %outer_workers = group.create %lane_count : index -> group
-  %middle_workers = group.create %lane_count : index -> group
+  %outer_workers = group.create %lane_count : index -> group<[%lane_count]>
+  %middle_workers = group.create %lane_count : index -> group<[%lane_count]>
   %input_view = buffer.view %input[%base] : buffer -> view<16xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<16xi32>
-  %input_flow = pipeline.read %input_view on %outer_workers : view<16xi32>, group -> pipeline.flow<tile<16xi32>>
-  %first_flow = pipeline.stage @copy_i32x16 on %outer_workers(%input_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
-  %middle_flow = pipeline.stage @copy_i32x16 on %middle_workers(%first_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
-  %output_flow = pipeline.stage @copy_i32x16 on %outer_workers(%middle_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
+  %input_flow = pipeline.read %input_view on %outer_workers : view<16xi32>, group<[%lane_count]> -> pipeline.flow<tile<16xi32>>
+  %first_flow = pipeline.stage @copy_i32x16 on %outer_workers(%input_flow) : (group<[%lane_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
+  %middle_flow = pipeline.stage @copy_i32x16 on %middle_workers(%first_flow) : (group<[%lane_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
+  %output_flow = pipeline.stage @copy_i32x16 on %outer_workers(%middle_flow) : (group<[%lane_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi32>>, view<16xi32>
   pipeline.finish
 }

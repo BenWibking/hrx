@@ -31,13 +31,13 @@ func.def target(@core_target) @following(%input_arg: buffer, %output_arg: buffer
 pipeline.def<kernel> public retain target(@array_target) @discard_then_increment() run(%input: buffer, %output: buffer) {
   %worker_count = index.constant 1 : index
   %base = index.constant 0 : offset
-  %first_workers = group.create %worker_count : index -> group
-  %second_workers = group.create %worker_count : index -> group
+  %first_workers = group.create %worker_count : index -> group<[%worker_count]>
+  %second_workers = group.create %worker_count : index -> group<[%worker_count]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x4x16xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x4x16xi32>
-  %flow = pipeline.scatter %input_view across %first_workers : view<1x4x16xi32>, group -> pipeline.flow<tile<16xi32>>
-  %first = pipeline.stage @replace on %first_workers(%flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
-  %second = pipeline.stage @following on %second_workers(%first) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
+  %flow = pipeline.scatter %input_view across %first_workers : view<1x4x16xi32>, group<[%worker_count]> -> pipeline.flow<tile<16xi32>>
+  %first = pipeline.stage @replace on %first_workers(%flow) : (group<[%worker_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
+  %second = pipeline.stage @following on %second_workers(%first) : (group<[%worker_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %second to %output_view : pipeline.flow<tile<16xi32>>, view<1x4x16xi32>
   pipeline.finish
 }

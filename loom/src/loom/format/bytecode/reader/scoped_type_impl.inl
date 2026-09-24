@@ -74,6 +74,48 @@ static iree_status_t loom_bytecode_read_complete_type(
     return loom_module_intern_topological_type_id(materializer->output_module,
                                                   type, NULL, 0, out_type);
   }
+  if (kind == LOOM_TYPE_GROUP) {
+    uint64_t rank = 0;
+    IREE_RETURN_IF_ERROR(loom_bytecode_reader_read_uvarint(
+        materializer->decoder, cursor, &rank));
+    if (rank == 0 || rank > LOOM_TYPE_MAX_RANK) {
+      return loom_bytecode_complete_type_invalid(materializer, cursor,
+                                                 IREE_SV("group_rank"));
+    }
+    uint64_t dimensions[LOOM_TYPE_MAX_RANK] = {0};
+    bool all_static = true;
+    for (uint64_t i = 0; i < rank; ++i) {
+      uint64_t dynamic = 0, payload = 0;
+      IREE_RETURN_IF_ERROR(loom_bytecode_reader_read_uvarint(
+          materializer->decoder, cursor, &dynamic));
+      IREE_RETURN_IF_ERROR(loom_bytecode_reader_read_uvarint(
+          materializer->decoder, cursor, &payload));
+      if (dynamic > 1 || (dynamic && payload > scope->value_count) ||
+          (!dynamic && loom_dim_is_dynamic(payload))) {
+        return loom_bytecode_complete_type_invalid(materializer, cursor,
+                                                   IREE_SV("group_dimension"));
+      }
+      dimensions[i] =
+          dynamic ? loom_dim_pack_dynamic(payload ? scope->values[payload - 1]
+                                                  : LOOM_VALUE_ID_INVALID)
+                  : payload;
+      all_static &= dynamic == 0;
+    }
+    loom_type_t type = {0};
+    type.header = loom_type_make_raw_header(
+        LOOM_TYPE_GROUP, 0, (uint8_t)rank,
+        (rank <= 2 ? LOOM_TYPE_FLAG_INLINE_DIMS : 0) |
+            (all_static ? LOOM_TYPE_FLAG_ALL_STATIC : 0));
+    if (rank > 2) {
+      type.dims[0] = (uint64_t)(uintptr_t)dimensions;
+    } else {
+      for (uint64_t i = 0; i < rank; ++i) {
+        type.dims[i] = dimensions[i];
+      }
+    }
+    return loom_module_intern_topological_type_id(materializer->output_module,
+                                                  type, NULL, 0, out_type);
+  }
   if (kind == LOOM_TYPE_TILE || kind == LOOM_TYPE_TENSOR ||
       kind == LOOM_TYPE_VECTOR || kind == LOOM_TYPE_VIEW) {
     uint64_t element = 0, rank = 0, attachment = 0, encoding = 0;

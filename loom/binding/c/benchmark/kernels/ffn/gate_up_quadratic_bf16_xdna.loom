@@ -75,13 +75,13 @@ pipeline.def<kernel> public retain target(@array_target) @ffn_gate_up_quadratic_
   %input_size = config.get @ffn_gate_up.input_size : index
   %c1 = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %c1 : index -> group
+  %workers = group.create %c1 : index -> group<[%c1]>
   %input_view = buffer.view %input[%base] : buffer -> view<[%input_size]xbf16>
   %weights_view = buffer.view %weights[%base] : buffer -> view<2x[%input_size]xbf16>
   %output_view = buffer.view %output[%base] : buffer -> view<1xf32>
-  %input_flow = pipeline.read %input_view on %workers : view<[%input_size]xbf16>, group -> pipeline.flow<tile<[%input_size]xbf16>>
-  %weights_flow = pipeline.read %weights_view on %workers : view<2x[%input_size]xbf16>, group -> pipeline.flow<tile<2x[%input_size]xbf16>>
-  %result = pipeline.stage @gate_up_tile on %workers(%input_flow, %weights_flow) : (group, pipeline.flow<tile<[%input_size]xbf16>>, pipeline.flow<tile<2x[%input_size]xbf16>>) -> (pipeline.flow<tile<1xf32>>)
+  %input_flow = pipeline.read %input_view on %workers : view<[%input_size]xbf16>, group<[%c1]> -> pipeline.flow<tile<[%input_size]xbf16>>
+  %weights_flow = pipeline.read %weights_view on %workers : view<2x[%input_size]xbf16>, group<[%c1]> -> pipeline.flow<tile<2x[%input_size]xbf16>>
+  %result = pipeline.stage @gate_up_tile on %workers(%input_flow, %weights_flow) : (group<[%c1]>, pipeline.flow<tile<[%input_size]xbf16>>, pipeline.flow<tile<2x[%input_size]xbf16>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
   pipeline.finish
 }

@@ -108,6 +108,7 @@ from loom.ir import (
     FileLocation,
     FunctionType,
     FusedLocation,
+    GroupType,
     Module,
     OpaqueLocation,
     Operation,
@@ -1799,8 +1800,8 @@ def _parse_compact_shape_type_from_tokens(
     scope: NameScope,
     module: Module,
     mode: TypeParseMode,
-) -> ShapedType | PoolType:
-    """Parse a shaped type (tile, tensor, vector, view, pool) from the token stream.
+) -> ShapedType | PoolType | GroupType:
+    """Parse a compact shape type from the token stream.
 
     Called after LANGLE has been consumed. Consumes tokens through
     RANGLE. Uses in_dim_list on the tokenizer to handle 'x' as a
@@ -1821,6 +1822,37 @@ def _parse_compact_shape_type_from_tokens(
         dim = _parse_dim_from_tokens(tokenizer, scope, module, mode, filename)
         tokenizer.expect(TokenKind.RANGLE)
         return PoolType(block_size=dim)
+
+    # Group: one or more dimensions, no element type or encoding.
+    if type_def.ir_kind == "group":
+        dims: list[StaticDim | DynamicDim] = []
+        tokenizer.in_dim_list = True
+        try:
+            token = tokenizer.peek()
+            if token.kind not in (TokenKind.INTEGER, TokenKind.LBRACKET):
+                raise ParseError(
+                    "expected group dimension",
+                    token.location,
+                    filename,
+                )
+            dims.append(
+                _parse_dim_from_tokens(tokenizer, scope, module, mode, filename)
+            )
+            while tokenizer.try_consume(TokenKind.DIM_X):
+                token = tokenizer.peek()
+                if token.kind not in (TokenKind.INTEGER, TokenKind.LBRACKET):
+                    raise ParseError(
+                        "expected group dimension after 'x'",
+                        token.location,
+                        filename,
+                    )
+                dims.append(
+                    _parse_dim_from_tokens(tokenizer, scope, module, mode, filename)
+                )
+        finally:
+            tokenizer.in_dim_list = False
+        tokenizer.expect(TokenKind.RANGLE)
+        return GroupType(tuple(dims))
 
     # TypeDef construction validates the compact representation kind.
     type_kind = TypeKind[type_def.ir_kind.upper()]

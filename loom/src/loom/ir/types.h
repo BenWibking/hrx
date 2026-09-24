@@ -16,6 +16,7 @@
 //   Register types:  reg<amdgpu.vgpr x4> (target-owned low payload)
 //   Buffer types:    buffer               (opaque storage identity)
 //   View types:      view<[%M]xf32, %layout> (typed buffer projection)
+//   Group types:     group<[%N]x4>        (communication participants)
 //   Storage types:   low.storage<workgroup> (function-local byte storage)
 //   Function types:  (f32, i32) -> (f64)  (callable signatures)
 //
@@ -265,6 +266,7 @@ enum loom_type_kind_e {
   LOOM_TYPE_REGISTER = 12,  // reg<amdgpu.vgpr x4> (target-owned low payload)
   LOOM_TYPE_STORAGE = 13,   // low.storage<workgroup> (function-local storage)
   LOOM_TYPE_PARAMETERIZED = 14,  // Generic descriptor-backed type.
+  LOOM_TYPE_GROUP = 15,          // group<[%M]x4> (communication participants)
   LOOM_TYPE_COUNT_,
 };
 
@@ -360,7 +362,7 @@ typedef struct loom_type_t {
   //   [0:7]   loom_type_kind_t
   //   [8:15]  loom_scalar_type_t (shaped types), loom_encoding_role_t
   //           (encoding), or loom_storage_space_t (storage)
-  //   [16:19] rank (0-LOOM_TYPE_MAX_RANK for shaped types, 0 otherwise)
+  //   [16:19] rank (0-LOOM_TYPE_MAX_RANK for dimensioned types, 0 otherwise)
   //   [20:23] loom_type_flags_e (inline_dims, all_static)
   //   [24:31] view access alignment override in bytes (0 = natural)
   uint32_t header;
@@ -655,12 +657,24 @@ static inline bool loom_type_is_parameterized(loom_type_t type) {
   return loom_type_kind(type) == LOOM_TYPE_PARAMETERIZED;
 }
 
+static inline bool loom_type_is_group(loom_type_t type) {
+  return loom_type_kind(type) == LOOM_TYPE_GROUP;
+}
+
 // Returns true if the type is shaped (has rank, dims, element type):
 // tile, tensor, vector, or view. Scalar types are NOT shaped.
 static inline bool loom_type_is_shaped(loom_type_t type) {
   loom_type_kind_t kind = loom_type_kind(type);
   return kind == LOOM_TYPE_TILE || kind == LOOM_TYPE_TENSOR ||
          kind == LOOM_TYPE_VECTOR || kind == LOOM_TYPE_VIEW;
+}
+
+// Returns true if the type carries rank and dimensions. Element-bearing shaped
+// values, pools, and communication groups all use the same packed dimension
+// representation while retaining distinct semantics.
+static inline bool loom_type_has_dimensions(loom_type_t type) {
+  return loom_type_is_shaped(type) || loom_type_is_pool(type) ||
+         loom_type_is_group(type);
 }
 
 // Returns true if the type kind can carry the shared encoding/layout
@@ -956,7 +970,7 @@ static inline bool loom_type_may_reference_values(loom_type_t type) {
     case LOOM_TYPE_REGISTER:
       return loom_type_register_has_value_type(type);
     default:
-      return ((loom_type_is_shaped(type) || loom_type_is_pool(type)) &&
+      return (loom_type_has_dimensions(type) &&
               !loom_type_is_all_static(type)) ||
              loom_type_has_ssa_encoding(type);
   }
@@ -973,6 +987,31 @@ static inline loom_type_t loom_type_pool(uint64_t block_size_dim) {
   loom_type_t type = {0};
   type.header = loom_type_make_raw_header(LOOM_TYPE_POOL, 0, 1, flags);
   type.dims[0] = block_size_dim;
+  return type;
+}
+
+// Creates a rank-1 communication group with one inline dimension.
+static inline loom_type_t loom_type_group_1d(uint64_t dim0) {
+  uint8_t flags = LOOM_TYPE_FLAG_INLINE_DIMS;
+  if (!loom_dim_is_dynamic(dim0)) {
+    flags |= LOOM_TYPE_FLAG_ALL_STATIC;
+  }
+  loom_type_t type = {0};
+  type.header = loom_type_make_raw_header(LOOM_TYPE_GROUP, 0, 1, flags);
+  type.dims[0] = dim0;
+  return type;
+}
+
+// Creates a rank-2 communication group with two inline dimensions.
+static inline loom_type_t loom_type_group_2d(uint64_t dim0, uint64_t dim1) {
+  uint8_t flags = LOOM_TYPE_FLAG_INLINE_DIMS;
+  if (!loom_dim_is_dynamic(dim0) && !loom_dim_is_dynamic(dim1)) {
+    flags |= LOOM_TYPE_FLAG_ALL_STATIC;
+  }
+  loom_type_t type = {0};
+  type.header = loom_type_make_raw_header(LOOM_TYPE_GROUP, 0, 2, flags);
+  type.dims[0] = dim0;
+  type.dims[1] = dim1;
   return type;
 }
 

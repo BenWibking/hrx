@@ -5,11 +5,11 @@ func.decl @copy(%input: buffer, %output: buffer)
 pipeline.def<kernel> @matching_records() run(%input: buffer, %output: buffer) {
   %lanes = index.constant 2 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<2x1x3x4xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<2x1x3x4xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<2x1x3x4xi32>, group -> pipeline.flow<tile<4xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<2x1x3x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x3x4xi32>
   pipeline.finish
 }

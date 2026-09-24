@@ -60,6 +60,7 @@ from loom.ir import (
     FileLocation,
     FunctionType,
     FusedLocation,
+    GroupType,
     LocationTable,
     Module,
     OpaqueLocation,
@@ -469,6 +470,30 @@ class TestPoolType:
         a = PoolType(block_size=DynamicDim())
         b = PoolType(block_size=StaticDim(4096))
         assert a != b
+
+
+# ============================================================================
+# Group type
+# ============================================================================
+
+
+class TestGroupType:
+    def test_static_shape(self) -> None:
+        group = GroupType((StaticDim(2), StaticDim(4)))
+        assert group.type_kind == TypeKind.GROUP
+        assert group.rank == 2
+        assert group.is_all_static
+        assert repr(group) == "group<2x4>"
+
+    def test_dynamic_shape(self) -> None:
+        group = GroupType((DynamicDim(7), StaticDim(4)))
+        assert group.rank == 2
+        assert not group.is_all_static
+        assert repr(group) == "group<[%7]x4>"
+
+    def test_requires_participants(self) -> None:
+        with pytest.raises(ValueError, match="rank >= 1"):
+            GroupType(())
 
 
 # ============================================================================

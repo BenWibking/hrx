@@ -578,6 +578,47 @@ static iree_status_t loom_intern_shaped_type(
   return loom_assign_type_binding_types(parser, *out_type);
 }
 
+// Constructs and interns a dimension-only type. Groups share the compact
+// dimension representation with shaped values without acquiring an element
+// type or encoding attachment.
+static iree_status_t loom_intern_dimension_type(loom_parser_t* parser,
+                                                loom_type_kind_t kind,
+                                                const uint64_t* dims,
+                                                uint8_t rank,
+                                                loom_type_t* out_type) {
+  IREE_ASSERT(rank > 0 && rank <= LOOM_TYPE_MAX_RANK);
+  uint8_t flags = rank <= 2 ? LOOM_TYPE_FLAG_INLINE_DIMS : 0;
+  bool all_static = true;
+  for (uint8_t i = 0; i < rank; ++i) {
+    if (loom_dim_is_dynamic(dims[i])) {
+      all_static = false;
+      break;
+    }
+  }
+  if (all_static) {
+    flags |= LOOM_TYPE_FLAG_ALL_STATIC;
+  }
+
+  loom_type_t type = {0};
+  type.header = loom_type_make_raw_header(kind, 0, rank, flags);
+  if (rank <= 2) {
+    memcpy(type.dims, dims, rank * sizeof(*dims));
+  } else {
+    loom_overflow_dim_t* overflow = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        &parser->module->arena, rank, sizeof(*overflow), (void**)&overflow));
+    memcpy(overflow, dims, rank * sizeof(*dims));
+    type.dims[0] = (uint64_t)(uintptr_t)overflow;
+    uint64_t hash = 0;
+    for (uint8_t i = 0; i < rank; ++i) {
+      hash = hash * 31 + dims[i];
+    }
+    type.dims[1] = hash;
+  }
+  IREE_RETURN_IF_ERROR(loom_module_intern_type(parser->module, type, out_type));
+  return loom_assign_type_binding_types(parser, *out_type);
+}
+
 //===----------------------------------------------------------------------===//
 // Shaped type parsing
 //===----------------------------------------------------------------------===//
@@ -611,7 +652,7 @@ static iree_status_t loom_parse_shaped_dims(loom_parser_t* parser,
           token.kind != LOOM_TOKEN_LBRACKET) {
         break;  // element type follows
       }
-      if (rank >= 16) {
+      if (rank >= LOOM_TYPE_MAX_RANK) {
         status = loom_parser_emit_token_text_error(parser, LOOM_ERR_PARSE_004,
                                                    token);
         break;
@@ -636,7 +677,7 @@ static iree_status_t loom_parse_shaped_type(
     loom_parser_t* parser, const loom_type_descriptor_t* descriptor,
     loom_type_parse_mode_t mode, loom_type_t* out_type) {
   const loom_type_kind_t kind = descriptor->ir_kind;
-  uint64_t dims[16];
+  uint64_t dims[LOOM_TYPE_MAX_RANK];
   uint8_t rank = 0;
   const uint32_t errors_before = parser->error_count;
   IREE_RETURN_IF_ERROR(loom_parse_shaped_dims(parser, mode, dims, &rank));
@@ -740,6 +781,28 @@ static iree_status_t loom_parse_pool_type(loom_parser_t* parser,
 
   *out_type = loom_type_pool(dim);
   return loom_assign_type_binding_types(parser, *out_type);
+}
+
+// Parses a shaped communication group with one or more dimensions and no
+// element type or encoding attachment.
+static iree_status_t loom_parse_group_type(loom_parser_t* parser,
+                                           loom_type_parse_mode_t mode,
+                                           loom_type_t* out_type) {
+  uint64_t dims[LOOM_TYPE_MAX_RANK];
+  uint8_t rank = 0;
+  const uint32_t errors_before = parser->error_count;
+  IREE_RETURN_IF_ERROR(loom_parse_shaped_dims(parser, mode, dims, &rank));
+  if (parser->error_count > errors_before) {
+    return iree_ok_status();
+  }
+  if (rank == 0) {
+    return loom_parser_emit_unexpected_token(
+        parser, loom_tokenizer_peek(&parser->tokenizer),
+        IREE_SV("group dimension"));
+  }
+  LOOM_PARSE_EXPECT(parser, LOOM_TOKEN_RANGLE, NULL);
+  return loom_intern_dimension_type(parser, LOOM_TYPE_GROUP, dims, rank,
+                                    out_type);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1006,7 +1069,9 @@ static iree_status_t loom_parse_compact_shape_type(
     return loom_parser_emit_unexpected_token(parser, peek, IREE_SV("'<'"));
   }
   iree_status_t status;
-  if (descriptor->param_count == 1) {
+  if (descriptor->ir_kind == LOOM_TYPE_GROUP) {
+    status = loom_parse_group_type(parser, mode, out_type);
+  } else if (descriptor->ir_kind == LOOM_TYPE_POOL) {
     status = loom_parse_pool_type(parser, mode, out_type);
   } else {
     status = loom_parse_shaped_type(parser, descriptor, mode, out_type);

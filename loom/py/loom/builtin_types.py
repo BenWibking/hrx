@@ -38,7 +38,13 @@ from loom.dsl import (
     ShapeParam,
     TypeDef,
 )
-from loom.ir import EncodingRole, EncodingType, StorageSpace, StorageType, TypeKind
+from loom.ir import (
+    EncodingRole,
+    EncodingType,
+    StorageSpace,
+    StorageType,
+    TypeKind,
+)
 
 __all__ = [
     "ALL_BUILTIN_TYPES",
@@ -53,6 +59,8 @@ __all__ = [
     "buffer_type",
     # Pool type.
     "pool_type",
+    # Communication domain type.
+    "group_type",
     # Communication identities and owned accesses.
     "channel_type",
     "read_type",
@@ -228,6 +236,21 @@ pool_type = TypeDef(
 )
 
 # ============================================================================
+# group<...> — shaped communication domain
+# ============================================================================
+
+group_type = TypeDef(
+    name="group",
+    doc=(
+        "Shaped communication domain identifying participants without "
+        "containing participant values or physical resources."
+    ),
+    ir_kind="group",
+    params=[ShapeParam("dims")],
+    format=[ShapeOf("dims")],
+)
+
+# ============================================================================
 # channel<T>, read<T>, write<T> — communication and access ownership
 # ============================================================================
 
@@ -315,6 +338,7 @@ ALL_BUILTIN_TYPES: tuple[TypeDef, ...] = (
     view_type,
     buffer_type,
     pool_type,
+    group_type,
     channel_type,
     read_type,
     write_type,

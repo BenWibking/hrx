@@ -76,6 +76,7 @@ from loom.ir import (
     EncodingType,
     EnumArrayAttr,
     FunctionType,
+    GroupType,
     Module,
     Operation,
     ParameterizedAttr,
@@ -2696,6 +2697,39 @@ class TestParsePoolType:
         assert printed == text, (
             f"Round-trip failed.\nInput:\n{text}\nOutput:\n{printed}"
         )
+
+
+# ============================================================================
+# Group type parsing
+# ============================================================================
+
+
+class TestParseGroupType:
+    def test_static_group(self) -> None:
+        group_type = _parse_type("group<2x4>")
+        assert group_type == GroupType((StaticDim(2), StaticDim(4)))
+
+    def test_dynamic_group(self) -> None:
+        module = Module()
+        scope = NameScope()
+        worker_count = module.add_value(Value(name="workers", type=INDEX))
+        scope.define("workers", worker_count)
+        group_type = _parse_type("group<[%workers]>", scope=scope, module=module)
+        assert group_type == GroupType((DynamicDim(worker_count),))
+
+    def test_group_requires_at_least_one_dimension(self) -> None:
+        with pytest.raises(ParseError, match="group dimension"):
+            _parse_type("group<>")
+
+    def test_group_roundtrip(self) -> None:
+        text = (
+            "test.func @use_group(%workers: index, "
+            "%group: group<[%workers]>) -> (group<[%workers]>) {\n"
+            "  test.yield %group : group<[%workers]>\n"
+            "}\n"
+        )
+        module = _op_parser().parse(text)
+        assert _op_printer().print_module(module) == text
 
 
 # ============================================================================

@@ -101,6 +101,7 @@ from loom.ir import (
     EnumArrayAttr,
     FileLocation,
     FunctionType,
+    GroupType,
     LocationTable,
     Module,
     Operation,
@@ -992,6 +993,17 @@ class TestTypesSection:
 
     def test_pool_dynamic(self) -> None:
         self._roundtrip_type(PoolType(DynamicDim(0)), bindings=(INDEX,))
+
+    def test_group_static(self) -> None:
+        self._roundtrip_type(GroupType((StaticDim(8),)))
+
+    def test_group_static_overflow_dimensions(self) -> None:
+        self._roundtrip_type(GroupType((StaticDim(2), StaticDim(2), StaticDim(2))))
+
+    def test_group_dynamic(self) -> None:
+        self._roundtrip_type(
+            GroupType((DynamicDim(0), StaticDim(4))), bindings=(INDEX,)
+        )
 
     def test_buffer_type(self) -> None:
         self._roundtrip_type(BUFFER_TYPE)

@@ -10,13 +10,13 @@ pipeline.def<kernel> public retain target(@array_target) @broadcast_read_array()
   %lane_count = index.constant 2 : index
   %input_base = index.constant 64 : offset
   %output_base = index.constant 128 : offset
-  %workers = group.create %lane_count : index -> group
+  %workers = group.create %lane_count : index -> group<[%lane_count]>
 
   %input_view = buffer.view %input[%input_base] : buffer -> view<3x1xf32, #encoding.layout.strided<strides=[2, 1]>>
   %output_view = buffer.view %output[%output_base] : buffer -> view<2x3x1xf32>
 
-  %input_flow = pipeline.read %input_view on %workers : view<3x1xf32, #encoding.layout.strided<strides=[2, 1]>>, group -> pipeline.flow<tile<1xf32>>
-  %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
+  %input_flow = pipeline.read %input_view on %workers : view<3x1xf32, #encoding.layout.strided<strides=[2, 1]>>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
+  %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<1xf32>>, view<2x3x1xf32>
   pipeline.finish
 }
@@ -182,13 +182,13 @@ aie2p.target<core> @core_target
 pipeline.def<kernel> public retain target(@array_target) @partitioned_write_array() run(%input: buffer, %output: buffer) {
   %lane_count = index.constant 2 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lane_count : index -> group
+  %workers = group.create %lane_count : index -> group<[%lane_count]>
 
   %input_view = buffer.view %input[%base] : buffer -> view<2x3x1xf32>
   %output_view = buffer.view %output[%base] : buffer -> view<2x3x1xf32>
 
-  %input_flow = pipeline.scatter %input_view across %workers : view<2x3x1xf32>, group -> pipeline.flow<tile<1xf32>>
-  %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<2x3x1xf32>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
+  %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<1xf32>>, view<2x3x1xf32>
   pipeline.finish
 }

@@ -86,7 +86,8 @@ static bool loom_pipeline_type_is_opaque(const loom_module_t* module,
 
 static bool loom_pipeline_type_is_group(const loom_module_t* module,
                                         loom_type_t type) {
-  return loom_pipeline_type_is_opaque(module, type, IREE_SV("group"));
+  (void)module;
+  return loom_type_is_group(type);
 }
 
 static bool loom_pipeline_type_is_flow_tile(const loom_module_t* module,

@@ -51,6 +51,7 @@ from loom.ir import (
     FileLocation,
     FunctionType,
     FusedLocation,
+    GroupType,
     Module,
     OpaqueLocation,
     Operation,
@@ -1464,6 +1465,29 @@ class TestPoolTypePrinting:
         )
         text = _printer().print_operation(op, module)
         assert text == "%result = test.attrs %pool : pool<[%BS]>"
+
+
+# ============================================================================
+# Group type printing
+# ============================================================================
+
+
+class TestGroupTypePrinting:
+    def test_static_group(self) -> None:
+        group_type = GroupType((StaticDim(2), StaticDim(4)))
+        assert print_type(group_type) == "group<2x4>"
+
+    def test_dynamic_group_no_context(self) -> None:
+        assert print_type(GroupType((DynamicDim(),))) == "group<?>"
+
+    def test_dynamic_group_with_context(self) -> None:
+        from loom.format.text.printer import TypePrintContext
+
+        module = Module(name="test")
+        module.add_value(Value(name="workers", type=INDEX))
+        context = TypePrintContext(module)
+        group_type = GroupType((DynamicDim(0), StaticDim(4)))
+        assert print_type(group_type, context) == "group<[%workers]x4>"
 
 
 # ============================================================================

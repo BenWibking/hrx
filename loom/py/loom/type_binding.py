@@ -16,6 +16,7 @@ from loom.ir import (
     DynamicDim,
     DynamicEncoding,
     FunctionType,
+    GroupType,
     ParameterizedAttr,
     ParameterizedAttrArray,
     ParameterizedType,
@@ -35,6 +36,8 @@ def binding_children(value: Any) -> Iterable[Any]:
             return (*dims, encoding)
         case PoolType(block_size=dimension):
             return (dimension,)
+        case GroupType(dims=dimensions):
+            return dimensions
         case FunctionType(arg_types=args, result_types=results):
             return (*args, *results)
         case DialectType(params=parameters):
@@ -131,6 +134,8 @@ def remap_value_bindings(
                 result = replace(value, dims=mapped[:-1], encoding=mapped[-1])
             case PoolType():
                 result = replace(value, block_size=mapped[0])
+            case GroupType():
+                result = replace(value, dims=mapped)
             case FunctionType(arg_types=args):
                 result = FunctionType(mapped[: len(args)], mapped[len(args) :])
             case DialectType(name=name):

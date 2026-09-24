@@ -102,7 +102,7 @@ iree_status_t loom_pipeline_def_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_PIPELINE_SCATTER: Partition the leading dimension of a source view across a scheduling group. The flow tile matches a trailing record suffix; intervening dimensions form a finite ordered record sequence for each lane.
-// %tiles = pipeline.scatter %source across %workers : view<2x8x8xi8>, group -> pipeline.flow<tile<8x8xi8>>
+// %tiles = pipeline.scatter %source across %workers : view<2x8x8xi8>, group<2> -> pipeline.flow<tile<8x8xi8>>
 LOOM_DEFINE_ISA(loom_pipeline_scatter_isa, LOOM_OP_PIPELINE_SCATTER)
 LOOM_DEFINE_OPERAND(loom_pipeline_scatter_source, 0)
 LOOM_DEFINE_OPERAND(loom_pipeline_scatter_group, 1)
@@ -119,7 +119,7 @@ iree_status_t loom_pipeline_scatter_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_PIPELINE_READ: Read the same finite source-view record sequence for each destination lane. The flow tile matches a trailing record suffix and preceding dimensions form the ordered sequence.
-// %bias = pipeline.read %source on %reducers : view<8x8xi32>, group -> pipeline.flow<tile<8x8xi32>>
+// %bias = pipeline.read %source on %reducers : view<8x8xi32>, group<1> -> pipeline.flow<tile<8x8xi32>>
 LOOM_DEFINE_ISA(loom_pipeline_read_isa, LOOM_OP_PIPELINE_READ)
 LOOM_DEFINE_OPERAND(loom_pipeline_read_source, 0)
 LOOM_DEFINE_OPERAND(loom_pipeline_read_group, 1)
@@ -136,7 +136,7 @@ iree_status_t loom_pipeline_read_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_PIPELINE_STAGE: Instantiate one stage invocation per group lane. Inputs and outputs are lane-wise typed flows; the referenced callable supplies one record-firing implementation.
-// %partials = pipeline.stage @product on %workers(%lhs, %rhs) : (group, pipeline.flow<tile<8x8xi8>>, pipeline.flow<tile<8x8xi8>>) -> (pipeline.flow<tile<8x8xi32>>)
+// %partials = pipeline.stage @product on %workers(%lhs, %rhs) : (group<2>, pipeline.flow<tile<8x8xi8>>, pipeline.flow<tile<8x8xi8>>) -> (pipeline.flow<tile<8x8xi32>>)
 LOOM_DEFINE_ISA(loom_pipeline_stage_isa, LOOM_OP_PIPELINE_STAGE)
 LOOM_DEFINE_OPERAND(loom_pipeline_stage_group, 0)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_pipeline_stage_inputs, 1)
@@ -195,7 +195,7 @@ iree_status_t loom_pipeline_fold_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_PIPELINE_REDUCE: Gather each source-group lane record into one target-group stage firing. Target inputs remain pointwise with the target group.
-// %result = pipeline.reduce @sum from %products(%partials) to %reducers(%bias) : (group, pipeline.flow<tile<8x8xi32>>) to (group, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)
+// %result = pipeline.reduce @sum from %products(%partials) to %reducers(%bias) : (group<2>, pipeline.flow<tile<8x8xi32>>) to (group<1>, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)
 LOOM_DEFINE_ISA(loom_pipeline_reduce_isa, LOOM_OP_PIPELINE_REDUCE)
 LOOM_DEFINE_SEGMENTED_OPERAND(loom_pipeline_reduce_source_group, 0)
 LOOM_DEFINE_SEGMENTED_OPERANDS(loom_pipeline_reduce_source_inputs, 1)

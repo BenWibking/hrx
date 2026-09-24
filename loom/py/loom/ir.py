@@ -68,6 +68,7 @@ __all__ = [
     "StorageSpace",
     "StorageType",
     "PoolType",
+    "GroupType",
     "FunctionType",
     "NoneType",
     "RegisterType",
@@ -215,7 +216,8 @@ class TypeKind(IntEnum):
     REGISTER = 12
     STORAGE = 13
     PARAMETERIZED = 14
-    PLACEHOLDER = 15
+    GROUP = 15
+    PLACEHOLDER = 16
 
 
 # ============================================================================
@@ -703,6 +705,38 @@ class PoolType:
 
 
 @dataclass(frozen=True, slots=True)
+class GroupType:
+    """A shaped communication domain: group<8>, group<2x4>, or group<[%n]>.
+
+    The shape identifies participants and their rank coordinates. It does not
+    contain participant values, channels, or physical resources. Placement and
+    topology facts relate a group value to concrete execution resources.
+    """
+
+    dims: tuple[Dim, ...]
+
+    def __post_init__(self) -> None:
+        if not self.dims:
+            raise ValueError("group types must have rank >= 1")
+
+    @property
+    def type_kind(self) -> TypeKind:
+        return TypeKind.GROUP
+
+    @property
+    def rank(self) -> int:
+        return len(self.dims)
+
+    @property
+    def is_all_static(self) -> bool:
+        return all(isinstance(dimension, StaticDim) for dimension in self.dims)
+
+    def __repr__(self) -> str:
+        dimensions = "x".join(repr(dimension) for dimension in self.dims)
+        return f"group<{dimensions}>"
+
+
+@dataclass(frozen=True, slots=True)
 class PlaceholderType:
     """A placeholder type for forward references in signatures.
 
@@ -731,6 +765,7 @@ type Type = (
     | ParameterizedType
     | EncodingType
     | PoolType
+    | GroupType
     | PlaceholderType
     | NoneType
 )
