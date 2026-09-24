@@ -56,6 +56,38 @@ loom_test(
 )
 
 loom_test(
+    name = "storage_stability_test",
+    srcs = [
+        "storage_stability.loom",
+        "//loom/src/loom/test/corpus/source_low:storage_stability.loom-test",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/spirv:vulkan1.3+bda+extended-types",
+    ],
+    execution_profiles = GPU_HARDWARE_PROFILES + [AMDGPU_ACCESS_PROFILE],
+)
+
+loom_test(
+    name = "storage_stability_cfg_test",
+    srcs = [
+        "storage_stability_cfg.loom",
+        "//loom/src/loom/test/corpus/source_low:storage_stability_cfg.loom-test",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1200",
+    ],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
+loom_test(
     name = "byte_memory_banks_test",
     srcs = [
         "byte_memory_banks.loom",
