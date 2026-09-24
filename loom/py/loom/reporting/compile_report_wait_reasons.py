@@ -404,12 +404,12 @@ def _count_change(baseline: int, candidate: int) -> dict[str, object]:
 
 def _format_reason_counts(reason: dict[str, object]) -> str:
     return (
-        f"{reason['action_count']} actions "
+        f"{_format_counted(reason['action_count'], 'action')} "
         f"({reason['explicit_action_count']} explicit, "
         f"{reason['planned_action_count']} planned); "
-        f"{reason['full_drain_count']} full drains, "
-        f"{reason['partial_wait_count']} partial waits; "
-        f"{reason['drained_count']} packets drained; maxima "
+        f"{_format_counted(reason['full_drain_count'], 'full drain')}, "
+        f"{_format_counted(reason['partial_wait_count'], 'partial wait')}; "
+        f"{_format_counted(reason['drained_count'], 'packet')} drained; maxima "
         f"{reason['max_drained_count']} drained, "
         f"{reason['max_outstanding_before']} block-local outstanding, "
         f"{reason['max_full_drain_outstanding_before']} before a full drain"
@@ -425,6 +425,12 @@ def _format_count_change(change: dict[str, object]) -> str:
 
 def _format_field_name(field: str) -> str:
     return _COUNT_LABELS[field]
+
+
+def _format_counted(value: object, singular: str) -> str:
+    count = int(value)
+    suffix = "" if count == 1 else "s"
+    return f"{count} {singular}{suffix}"
 
 
 def _require_object(value: object, source: str) -> dict[str, object]:

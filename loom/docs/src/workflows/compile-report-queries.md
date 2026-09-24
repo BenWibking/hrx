@@ -447,6 +447,10 @@ jq '[.wait_reason_summary_rows.rows[]?] |
     with_entries(select(.value != null))' report.json
 ```
 
+`loom-compile-report show` renders the same groups without requiring raw JSON.
+`diff` compares their counts by entry, counter, and reason, so a reason shift is
+visible even when an entry's total wait-action count does not change.
+
 Detail mode connects each action to scheduled producer and consumer semantics:
 
 ```shell
@@ -464,6 +468,13 @@ jq '.wait_action_rows.rows[]? |
      drained_count} |
     with_entries(select(.value != null))' report.details.json
 ```
+
+The `outstanding_before`, `outstanding_after`, and `drained_count` fields are
+counts for the scheduled block represented by that row. They are not a global
+inventory of the hardware counter. A planned wait with
+`outstanding_before: 0` can still be required when a residual counter epoch
+crosses a control-flow edge. Read zero as no packet counted in that local block,
+not as proof that the hardware wait is redundant.
 
 ## Account for memory traffic
 

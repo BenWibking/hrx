@@ -154,7 +154,7 @@ def test_show_groups_wait_reasons_by_entry_in_both_report_modes(mode: str) -> No
                 4,
                 "amdgpu.loop_entry_conservative_ssa_use",
                 13,
-                _summary(actions=3, full=3, drained=0, max_drained=0),
+                _summary(),
             ),
         ],
         mode=mode,
@@ -171,6 +171,10 @@ def test_show_groups_wait_reasons_by_entry_in_both_report_modes(mode: str) -> No
     text = format_compile_report_show_text(show)
     assert "Wait reasons (compiler analysis)" in text
     assert "5 actions (0 explicit, 5 planned)" in text
+    assert (
+        "1 action (0 explicit, 1 planned); 1 full drain, 0 partial waits; "
+        "1 packet drained"
+    ) in text
     assert "2 block-local outstanding" in text
 
 

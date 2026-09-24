@@ -321,7 +321,8 @@ branch-payload copies. Check whether those blocks are steady backedges before
 changing the schedule. An explicit larger unroll factor with
 `schedule(recurrence)` can expose register reuse that carries pending loads
 across the backedge; confirm the native moves and wait counts as well as the
-source schedule.
+source schedule. The cited outstanding count is block-local; zero can still
+represent a required residual counter-epoch or control-flow hazard.
 
 The [loop-tuning walkthrough](tune-loop-schedules.md) supplies a vector-row motif
 with per-instance policies, checked row-sum and packed-dot experiment harnesses,

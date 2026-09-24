@@ -188,6 +188,7 @@ def _suggest_pipeline_copy_waits(
         if not waits:
             continue
         evidence = list(policy_evidence[index])
+        has_zero_block_local_outstanding = False
         for path, row in waits:
             for key in (
                 "block_index",
@@ -195,22 +196,31 @@ def _suggest_pipeline_copy_waits(
                 "target_count",
                 "outstanding_before",
             ):
-                evidence.append(
-                    CompileReportSuggestionEvidence(
-                        f"{path}.{key}", _report_integer(row.get(key), f"{path}.{key}")
-                    )
-                )
+                value = _report_integer(row.get(key), f"{path}.{key}")
+                if key == "outstanding_before" and value == 0:
+                    has_zero_block_local_outstanding = True
+                evidence.append(CompileReportSuggestionEvidence(f"{path}.{key}", value))
+        zero_outstanding_explanation = ""
+        if has_zero_block_local_outstanding:
+            zero_outstanding_explanation = (
+                " A zero block-local count still denotes a planned residual "
+                "counter-epoch or control-flow hazard; it does not mean the "
+                "hardware wait is redundant."
+            )
         suggestions.append(
             CompileReportSuggestion(
                 suggestion_id="amdgpu.pipeline_copy_waits",
                 entry_name=compile_report_entry_identity(entry).display_name(),
                 action=(
                     "Full global-load waits precede branch-payload copies in this "
-                    "read-ahead entry. Inspect the cited blocks "
+                    "read-ahead entry. Each cited outstanding_before value counts "
+                    "packets in its scheduled block, not the whole hardware "
+                    "counter."
+                    f"{zero_outstanding_explanation} Inspect the cited blocks "
                     "to distinguish steady backedges from startup and tail edges. "
                     "For steady backedges, compare explicit unroll factors with "
                     "schedule(recurrence) at fixed pipeline depth. Check for fewer "
-                    "queue moves and loads still pending at the backedge, then "
+                    "queue moves and useful loads still pending at the backedge, then "
                     "compare registers, occupancy, code size, and measured runtime."
                 ),
                 evidence=tuple(evidence),
