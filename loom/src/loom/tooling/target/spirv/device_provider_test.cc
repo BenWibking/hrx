@@ -23,6 +23,7 @@ namespace {
 
 static constexpr iree_hal_queue_priority_t kNormalQueuePriority =
     IREE_HAL_QUEUE_PRIORITY_NORMAL;
+static constexpr uint64_t kMaximumWorkgroupLocalMemorySize = 32 * 1024;
 
 struct DeviceSpecDeleter {
   void operator()(iree_hal_device_spec_t* device_spec) const {
@@ -103,6 +104,15 @@ static iree_status_t CreateDeviceSpec(
       {
           /*.unit_count=*/1,
           /*.group_count=*/1,
+          /*.maximum_resident_workgroup_count=*/0,
+          /*.maximum_resident_invocation_count=*/0,
+          /*.maximum_resident_subgroup_count=*/0,
+          /*.maximum_register_count=*/0,
+          /*.maximum_workgroup_register_count=*/0,
+          /*.maximum_local_memory_size=*/0,
+          /*.maximum_workgroup_local_memory_size=*/
+          kMaximumWorkgroupLocalMemorySize,
+          /*.maximum_workgroup_local_memory_size_optin=*/0,
       },
       /*.addressing=*/
       {
@@ -263,6 +273,8 @@ TEST_F(SpirvDeviceProviderTest, SelectsRawBdaTarget) {
             LOOM_TARGET_ARTIFACT_FORMAT_SPIRV_BINARY);
   EXPECT_EQ(target_bundle->snapshot->default_pointer_bitwidth, 64u);
   EXPECT_EQ(target_bundle->snapshot->offset_bitwidth, 64u);
+  EXPECT_EQ(target_bundle->snapshot->max_workgroup_storage_bytes,
+            kMaximumWorkgroupLocalMemorySize);
   EXPECT_EQ(target_bundle->export_plan->abi_kind, LOOM_TARGET_ABI_HAL_KERNEL);
 }
 

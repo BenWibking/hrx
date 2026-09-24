@@ -748,6 +748,21 @@ bool loom_low_source_memory_dynamic_offset_fits_unsigned_bit_count(
       bit_count);
 }
 
+bool loom_low_source_memory_access_plan_include_root_byte_offset(
+    loom_low_source_memory_access_plan_t* plan, uint64_t root_byte_offset) {
+  IREE_ASSERT_ARGUMENT(plan);
+  if (root_byte_offset > INT64_MAX) {
+    return false;
+  }
+  int64_t static_byte_offset = 0;
+  if (!iree_checked_add_i64(plan->static_byte_offset, (int64_t)root_byte_offset,
+                            &static_byte_offset)) {
+    return false;
+  }
+  plan->static_byte_offset = static_byte_offset;
+  return true;
+}
+
 static bool loom_low_source_memory_access_exact_positive_i64(
     const loom_value_fact_table_t* fact_table, loom_value_id_t value_id,
     int64_t* out_value) {

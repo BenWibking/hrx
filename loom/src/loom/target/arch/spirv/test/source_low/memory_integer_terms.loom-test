@@ -224,10 +224,10 @@ func.def @workgroup_negative_static_bias(%input: i32, %value: i32) -> (i32) {
 
 // ----
 low.func.def target<spirv.logical.core> abi(shader_entry_point) @workgroup_negative_static_bias(%bounded: reg<spirv.id : i32>, %value: reg<spirv.id : i32>) -> (reg<spirv.id : i32>) asm {
+  %scratch = storage {byte_alignment = 4, byte_length = 512} : low.storage<workgroup>
   %coordinate = OpCopyObject.i32 %bounded : reg<spirv.id : index>
   %bias = OpConstant.i32 -128 : reg<spirv.id : index>
   %position = OpIAdd %coordinate, %bias : reg<spirv.id : index>
-  %scratch = storage {byte_alignment = 4, byte_length = 512} : low.storage<workgroup>
   %view = storage_address %scratch : low.storage<workgroup> -> reg<spirv.ptr.workgroup.array.i32>
   %20 = OpAccessChain.workgroup.i32.element_index %view, %position
   OpStore.workgroup.i32 %20, %value

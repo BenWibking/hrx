@@ -73,14 +73,12 @@ bool loom_amdgpu_memory_access_include_alloca_root_byte_offset(
     return false;
   }
 
-  int64_t static_byte_offset = 0;
-  if (!iree_checked_add_i64(access->source.static_byte_offset,
-                            (int64_t)root_byte_offset, &static_byte_offset)) {
+  if (!loom_low_source_memory_access_plan_include_root_byte_offset(
+          &access->source, root_byte_offset)) {
     diagnostic->rejection_bits |=
         LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_STATIC_OFFSET_RANGE;
     return false;
   }
-  access->source.static_byte_offset = static_byte_offset;
   return true;
 }
 

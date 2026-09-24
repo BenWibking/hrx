@@ -208,7 +208,9 @@ loom_cc_test(
     loom::ir
     loom::ops::cfg
     loom::ops::func
+    loom::ops::index
     loom::ops::scalar
+    loom::ops::scf
     loom::ops::test
     loom::testing::module_ptr
 )

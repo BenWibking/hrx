@@ -155,9 +155,15 @@ static iree_status_t loom_spirv_emit_low_function_into_module(
       .type_context = &state->type_context,
       .shared_bda_root = &state->shared_bda_root,
       .builtin_variable_ids = state->builtin_variable_ids,
+      .diagnostic_emitter = state->diagnostic_emitter,
   };
-  IREE_RETURN_IF_ERROR(loom_spirv_emit_low_function(&function_context,
-                                                    low_function_op, &target));
+  bool function_valid = false;
+  IREE_RETURN_IF_ERROR(loom_spirv_emit_low_function(
+      &function_context, low_function_op, &target, &function_valid));
+  if (!function_valid) {
+    state->flags |= LOOM_SPIRV_EMIT_MODULE_STATE_FLAG_INVALID_ENTRY;
+    return iree_ok_status();
+  }
   ++state->function_count;
   return iree_ok_status();
 }

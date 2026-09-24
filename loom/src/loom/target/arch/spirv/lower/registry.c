@@ -13,6 +13,7 @@
 #include "loom/target/arch/spirv/lower/lower.h"
 #include "loom/target/arch/spirv/lower/matrix.h"
 #include "loom/target/arch/spirv/lower/workgroup.h"
+#include "loom/target/arch/spirv/lower/workgroup_layout.h"
 #include "loom/target/arch/spirv/ops/types.h"
 #include "loom/target/arch/spirv/value_types.h"
 #include "loom/target/registers.h"
@@ -343,6 +344,12 @@ static iree_status_t loom_spirv_emit_op(void* user_data,
   return loom_spirv_lower_workgroup_op(context, source_op, plan);
 }
 
+static iree_status_t loom_spirv_emit_entry_setup(
+    void* user_data, loom_low_lower_context_t* context) {
+  (void)user_data;
+  return loom_spirv_workgroup_layout_emit_storage_roots(context);
+}
+
 static void loom_spirv_mark_plan_storage_demands(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_op, loom_low_lower_plan_t plan) {
@@ -360,7 +367,13 @@ static const loom_low_lower_policy_t kSpirvLowLowerPolicy = {
     .map_argument = {.fn = loom_spirv_map_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_spirv_source_type_supported,
                               .user_data = NULL},
+    .emit_entry_setup = {.fn = loom_spirv_emit_entry_setup, .user_data = NULL},
     .contract = LOOM_SPIRV_LOGICAL_CONTRACT,
+    .source_memory_root_byte_offset =
+        {
+            .fn = loom_spirv_workgroup_layout_source_memory_root_byte_offset,
+            .user_data = NULL,
+        },
     .descriptor_matrix =
         {
             .options = loom_spirv_descriptor_matrix_options,

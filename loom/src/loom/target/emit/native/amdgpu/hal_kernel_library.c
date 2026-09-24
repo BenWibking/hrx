@@ -18,7 +18,6 @@
 #include "loom/codegen/low/frame.h"
 #include "loom/codegen/low/storage_layout.h"
 #include "loom/codegen/low/target_binding.h"
-#include "loom/error/error_catalog.h"
 #include "loom/error/source.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -596,34 +595,13 @@ loom_amdgpu_hal_kernel_library_validate_final_workgroup_storage(
     void* user_data, const loom_low_emission_frame_t* frame,
     iree_arena_allocator_t* table_arena) {
   (void)table_arena;
-  const uint64_t limit = loom_low_resolved_target_bundle(&frame->target)
-                             ->snapshot->max_workgroup_storage_bytes;
-  if (limit == 0) {
-    return iree_ok_status();
-  }
-
   const uint64_t workgroup_bytes =
       frame->schedule.requirements.storage_layout.space_sizes.workgroup_bytes;
-  if (workgroup_bytes <= limit) {
-    return iree_ok_status();
-  }
-
   const iree_diagnostic_emitter_t* emitter =
       (const iree_diagnostic_emitter_t*)user_data;
-  const loom_diagnostic_param_t params[] = {
-      loom_param_string(
-          loom_low_diagnostic_function_name(frame->module, frame->function_op)),
-      loom_param_string(loom_low_diagnostic_target_key(&frame->target)),
-      loom_param_u64(workgroup_bytes),
-      loom_param_u64(limit),
-  };
-  const loom_diagnostic_emission_t emission = {
-      .op = frame->function_op,
-      .error = LOOM_ERR_TARGET_051,
-      .params = params,
-      .param_count = IREE_ARRAYSIZE(params),
-  };
-  return iree_diagnostic_emit(*emitter, &emission);
+  return loom_low_diagnostic_validate_workgroup_storage_limit(
+      frame->module, frame->function_op, &frame->target, workgroup_bytes,
+      *emitter, /*out_valid=*/NULL);
 }
 
 static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(

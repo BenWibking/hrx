@@ -389,6 +389,8 @@ loom_cc_library(
         ":function",
         ":target_binding",
         "//loom/src/loom/analysis:liveness",
+        "//loom/src/loom/error:emitter",
+        "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
         "//runtime/src/iree/base",
@@ -1052,6 +1054,7 @@ loom_cc_library(
     hdrs = ["verify.h"],
     deps = [
         ":call_context",
+        ":diagnostics",
         ":function",
         ":packet",
         ":register_parts",

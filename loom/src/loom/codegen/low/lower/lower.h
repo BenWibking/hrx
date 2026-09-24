@@ -222,6 +222,20 @@ typedef struct loom_low_lower_source_plan_observer_t {
   void* user_data;
 } loom_low_lower_source_plan_observer_t;
 
+typedef uint64_t (*loom_low_lower_source_memory_root_byte_offset_fn_t)(
+    void* user_data, const loom_low_lower_context_t* context,
+    const loom_low_source_memory_access_plan_t* source_memory_access);
+
+typedef struct loom_low_lower_source_memory_root_byte_offset_callback_t {
+  // Optional target physical-layout query applied to canonical source-memory
+  // plans before generated rule matching. The callback must answer from
+  // retained indexed state and must not traverse source IR. An absent callback
+  // contributes a zero root offset.
+  loom_low_lower_source_memory_root_byte_offset_fn_t fn;
+  // Caller-owned payload passed to |fn|.
+  void* user_data;
+} loom_low_lower_source_memory_root_byte_offset_callback_t;
+
 typedef iree_status_t (*loom_low_lower_emit_preamble_fn_t)(
     void* user_data, loom_low_lower_context_t* context);
 
@@ -851,6 +865,10 @@ typedef struct loom_low_lower_policy_t {
   // observer sees the current op only and must not recursively inspect the
   // source function.
   const loom_low_lower_source_plan_observer_t* source_plan_observer;
+  // Optional target physical allocation-root placement applied before
+  // generated source-memory rule matching.
+  loom_low_lower_source_memory_root_byte_offset_callback_t
+      source_memory_root_byte_offset;
   // Optional capability/cost query for the common acquire visibility planner.
   // It supplies target facts without traversing source operations.
   loom_low_lower_visibility_model_t (*visibility_model)(
@@ -1224,6 +1242,13 @@ iree_status_t loom_low_lower_allocate_plan_data(
 iree_status_t loom_low_lower_get_or_allocate_target_state(
     loom_low_lower_context_t* context, const void* key,
     iree_host_size_t data_length, void** out_data);
+
+// Returns existing function-local target state for |key|, or NULL when no
+// state has been allocated. A matching record is asserted to have
+// |data_length| bytes.
+const void* loom_low_lower_lookup_target_state(
+    const loom_low_lower_context_t* context, const void* key,
+    iree_host_size_t data_length);
 
 // Returns module-scope target state from the active source-to-low module pass.
 iree_status_t loom_low_lower_get_or_allocate_module_target_state(

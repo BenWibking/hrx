@@ -1400,10 +1400,8 @@ static bool loom_amdgpu_fragment_memory_prepare(
       return loom_amdgpu_fragment_memory_reject(
           diagnostic, IREE_SV("fragment_memory.workgroup_root"));
     }
-    if (!iree_checked_add_i64(
-            out_prepared->source_access.static_byte_offset,
-            (int64_t)root_byte_offset,
-            &out_prepared->source_access.static_byte_offset)) {
+    if (!loom_low_source_memory_access_plan_include_root_byte_offset(
+            &out_prepared->source_access, root_byte_offset)) {
       return loom_amdgpu_fragment_memory_reject(
           diagnostic, IREE_SV("fragment_memory.base_offset"));
     }

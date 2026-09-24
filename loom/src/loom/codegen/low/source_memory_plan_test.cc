@@ -9,6 +9,22 @@
 namespace loom {
 namespace {
 
+TEST(SourceMemoryAccessPlanTest, IncludesPhysicalRootByteOffset) {
+  loom_low_source_memory_access_plan_t plan = {};
+  plan.static_byte_offset = 12;
+  EXPECT_TRUE(
+      loom_low_source_memory_access_plan_include_root_byte_offset(&plan, 20));
+  EXPECT_EQ(plan.static_byte_offset, 32);
+}
+
+TEST(SourceMemoryAccessPlanTest, RejectsPhysicalRootByteOffsetOverflow) {
+  loom_low_source_memory_access_plan_t plan = {};
+  plan.static_byte_offset = INT64_MAX - 4;
+  EXPECT_FALSE(
+      loom_low_source_memory_access_plan_include_root_byte_offset(&plan, 8));
+  EXPECT_EQ(plan.static_byte_offset, INT64_MAX - 4);
+}
+
 TEST_F(SourceMemoryPlanTest, DynamicViewOriginRetainsCompleteAddress) {
   const loom_value_id_t buffer = DefineBufferArg();
   const loom_value_id_t extent = DefineIndexArg();
