@@ -302,3 +302,38 @@ iree_status_t loom_channel_copy_verify(const loom_module_t* module,
   }
   return iree_ok_status();
 }
+
+iree_status_t loom_channel_select_verify(const loom_module_t* module,
+                                         const loom_op_t* op,
+                                         iree_diagnostic_emitter_t emitter) {
+  const loom_type_t channel =
+      loom_module_value_type(module, loom_channel_select_channel(op));
+  loom_type_t payload;
+  if (!loom_channel_payload(module, channel, LOOM_CHANNEL_HANDLE_CHANNEL,
+                            &payload)) {
+    return loom_channel_emit_type_constraint(
+        emitter, op, LOOM_CHANNEL_FIELD_OPERAND, IREE_SV("channel"), channel,
+        loom_channel_handle_constraint(LOOM_CHANNEL_HANDLE_CHANNEL));
+  }
+
+  const loom_type_t source_rank =
+      loom_module_value_type(module, loom_channel_select_source_rank(op));
+  if (!loom_type_equal(source_rank, loom_type_scalar(LOOM_SCALAR_TYPE_INDEX))) {
+    return loom_channel_emit_type_constraint(
+        emitter, op, LOOM_CHANNEL_FIELD_RESULT, IREE_SV("source_rank"),
+        source_rank, IREE_SV("index"));
+  }
+
+  const loom_type_t read =
+      loom_module_value_type(module, loom_channel_select_read(op));
+  loom_type_t read_payload;
+  if (!loom_channel_payload(module, read, LOOM_CHANNEL_HANDLE_READ,
+                            &read_payload) ||
+      !loom_type_equal(payload, read_payload) ||
+      loom_read_type_has_mode(read)) {
+    return loom_channel_emit_type_constraint(
+        emitter, op, LOOM_CHANNEL_FIELD_RESULT, IREE_SV("read"), read,
+        IREE_SV("immutable read matching the channel payload"));
+  }
+  return iree_ok_status();
+}

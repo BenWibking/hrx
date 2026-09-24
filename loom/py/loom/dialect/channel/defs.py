@@ -197,6 +197,39 @@ channel_copy = Op(
     examples=["channel.copy %read -> %write : read<tile<144xi32>>, write<tile<144xi32>>"],
 )
 
+channel_select = Op(
+    "channel.select",
+    group=channel_ops,
+    doc=(
+        "Wait for any ready incoming endpoint of a relation-bound channel and "
+        "accept one record. The source rank identifies the producer in the "
+        "channel's source group; the returned read owns that record until it "
+        "is released or transferred."
+    ),
+    operands=[Operand("channel", ANY)],
+    results=[
+        Result("source_rank", INDEX),
+        Result("read", ANY),
+    ],
+    effects=[ReadWrites("channel")],
+    ownership_effects=[Borrow("channel"), FreshResult("read")],
+    traits=[MEMORY_FENCE],
+    verify="loom_channel_select_verify",
+    facts="loom_channel_select_facts",
+    format=[
+        Ref("channel"),
+        COLON,
+        TypeOf("channel"),
+        ARROW,
+        LPAREN,
+        ResultType("source_rank"),
+        COMMA,
+        ResultType("read"),
+        RPAREN,
+    ],
+    examples=["%source_rank, %read = channel.select %progress : channel<tile<1xi32>> -> (index, read<tile<1xi32>>)"],
+)
+
 ALL_CHANNEL_OPS = (
     channel_bind,
     channel_reserve,
@@ -207,4 +240,5 @@ ALL_CHANNEL_OPS = (
     channel_release,
     channel_fanout,
     channel_copy,
+    channel_select,
 )

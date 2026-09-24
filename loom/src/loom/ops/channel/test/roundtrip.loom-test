@@ -44,3 +44,14 @@ func.def @specialized_shape(%width: index, %storage: view<2x[%width]xbf16>) {
   channel.release %read : read<tile<[%width]xbf16>>
   func.return
 }
+
+// ====
+
+// A relation-bound channel may expose several incoming endpoints while
+// retaining the ordinary scalar channel type.
+func.def @consume_ready(%progress: channel<tile<1xi32>>) -> (index) {
+  %source_rank, %read = channel.select %progress : channel<tile<1xi32>> -> (index, read<tile<1xi32>>)
+  %notice = channel.wait %read : read<tile<1xi32>> -> view<1xi32>
+  channel.release %read : read<tile<1xi32>>
+  func.return %source_rank : index
+}

@@ -28,7 +28,8 @@ enum {
   LOOM_OP_CHANNEL_RELEASE = LOOM_OP_KIND(LOOM_DIALECT_CHANNEL, 6),
   LOOM_OP_CHANNEL_FANOUT = LOOM_OP_KIND(LOOM_DIALECT_CHANNEL, 7),
   LOOM_OP_CHANNEL_COPY = LOOM_OP_KIND(LOOM_DIALECT_CHANNEL, 8),
-  LOOM_OP_CHANNEL_COUNT_ = 9,
+  LOOM_OP_CHANNEL_SELECT = LOOM_OP_KIND(LOOM_DIALECT_CHANNEL, 9),
+  LOOM_OP_CHANNEL_COUNT_ = 10,
 };
 
 // Permission on an owned consuming access; absence means immutable reading.
@@ -226,6 +227,28 @@ iree_status_t loom_channel_copy_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_channel_copy_verify(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter);
+
+// LOOM_OP_CHANNEL_SELECT: Wait for any ready incoming endpoint of a relation-bound channel and accept one record. The source rank identifies the producer in the channel's source group; the returned read owns that record until it is released or transferred.
+// %source_rank, %read = channel.select %progress : channel<tile<1xi32>> -> (index, read<tile<1xi32>>)
+LOOM_DEFINE_ISA(loom_channel_select_isa, LOOM_OP_CHANNEL_SELECT)
+LOOM_DEFINE_OPERAND(loom_channel_select_channel, 0)
+LOOM_DEFINE_RESULT(loom_channel_select_source_rank, 0)
+LOOM_DEFINE_RESULT(loom_channel_select_read, 1)
+iree_status_t loom_channel_select_build(
+    loom_builder_t* builder,
+    loom_may_consume loom_value_id_t channel,
+    loom_type_t source_rank_type,
+    loom_type_t read_type,
+    loom_location_id_t location,
+    loom_op_t** out_op);
+iree_status_t loom_channel_select_facts(
+    loom_fact_context_t* context,
+    const loom_module_t* module, const loom_op_t* op,
+    const loom_value_facts_t* operand_facts,
+    loom_value_facts_t* result_facts);
+iree_status_t loom_channel_select_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 

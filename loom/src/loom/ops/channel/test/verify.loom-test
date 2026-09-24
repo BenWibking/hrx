@@ -85,3 +85,19 @@ func.def @record_requires_tile(%channel: channel<i32>) {
   %read = channel.accept %channel : channel<i32> -> read<i32>
   func.return
 }
+
+// ====
+
+func.def @select_requires_index_rank(%channel: channel<tile<1xi32>>) {
+  // ERROR@+1: TYPE/004 {result_name="source_rank", actual_type="i32", expected_constraint="index"}
+  %source_rank, %read = channel.select %channel : channel<tile<1xi32>> -> (i32, read<tile<1xi32>>)
+  func.return
+}
+
+// ====
+
+func.def @select_preserves_payload(%channel: channel<tile<1xi32>>) {
+  // ERROR@+1: TYPE/004 {result_name="read", actual_type="read<tile<2xi32>>", expected_constraint="immutable read matching the channel payload"}
+  %source_rank, %read = channel.select %channel : channel<tile<1xi32>> -> (index, read<tile<2xi32>>)
+  func.return
+}

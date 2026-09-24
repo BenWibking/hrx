@@ -62,6 +62,14 @@ func.def @read_cannot_disappear(%read: read<tile<144xi32>>) {
 
 // ====
 
+func.def @selected_read_cannot_disappear(%channel: channel<tile<1xi32>>) {
+  %source_rank, %read = channel.select %channel : channel<tile<1xi32>> -> (index, read<tile<1xi32>>)
+  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="read"}
+  func.return
+}
+
+// ====
+
 // RUN: pass scf-to-cfg,ownership-lifetime
 
 // Each firing retires the prior history and transfers a new read to the loop.

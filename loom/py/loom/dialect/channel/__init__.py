@@ -18,6 +18,7 @@ from loom.dialect.channel.defs import (
     channel_publish,
     channel_release,
     channel_reserve,
+    channel_select,
     channel_wait,
 )
 
@@ -27,6 +28,7 @@ __all__ = [
     "channel_ops",
     "channel_bind",
     "channel_reserve",
+    "channel_select",
     "channel_accept",
     "channel_wait",
     "channel_acquire",

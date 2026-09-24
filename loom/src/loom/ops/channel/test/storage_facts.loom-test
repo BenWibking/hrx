@@ -100,6 +100,30 @@ CHECK: %body_space = scalar.constant 2 : i64
 
 // RUN: with-checks pass canonicalize
 
+// Endpoint selection changes protocol ownership, not record placement.
+func.def @selected_record_storage() -> (i64, i64) {
+  %bytes = index.constant 128 : offset
+  %origin = index.constant 0 : offset
+  %capacity = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> align(64) %bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<2x16xi32>
+  %channel = channel.bind<fifo> %slots, %capacity : view<2x16xi32>, index -> channel<tile<16xi32>>
+  %source_rank, %read = channel.select %channel : channel<tile<16xi32>> -> (index, read<tile<16xi32>>)
+  %payload = channel.wait %read : read<tile<16xi32>> -> view<16xi32>
+  %space = test.fact_view_memory_space %payload : view<16xi32> -> i64
+  %length = test.fact_view_byte_length_hi %payload : view<16xi32> -> i64
+  channel.release %read : read<tile<16xi32>>
+  func.return %space, %length : i64, i64
+}
+
+// ----
+CHECK: %space = scalar.constant 2 : i64
+CHECK: %length = scalar.constant 64 : i64
+
+// ====
+
+// RUN: with-checks pass canonicalize
+
 // A pending read can come from different channels. A join preserves only
 // common spatial facts, and never equates their protocol identities.
 func.def @mixed_spaces(%condition: i1, %input: buffer) -> (i64) {

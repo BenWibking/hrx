@@ -29,6 +29,8 @@ def test_owned_accesses_and_dynamic_payload_roundtrip() -> None:
   channel.release %mutable : read<tile<[%width]xbf16>, mutable>
   %write, %output = channel.reserve %channel : channel<tile<[%width]xbf16>> -> (write<tile<[%width]xbf16>>, view<[%width]xbf16>)
   channel.publish %write : write<tile<[%width]xbf16>>
+  %source_rank, %selected = channel.select %channel : channel<tile<[%width]xbf16>> -> (index, read<tile<[%width]xbf16>>)
+  channel.release %selected : read<tile<[%width]xbf16>>
   func.return
 }
 """
