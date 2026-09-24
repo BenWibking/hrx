@@ -11,6 +11,7 @@
 
 #include "iree/base/internal/arena.h"
 #include "loom/codegen/low/call_context.h"
+#include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/packet.h"
 #include "loom/codegen/low/register_parts.h"
@@ -170,36 +171,6 @@ iree_status_t loom_low_verify_context_emit(
     iree_host_size_t param_count) {
   return loom_low_verify_emit(context->function_state->state, op, error, params,
                               param_count, NULL, 0);
-}
-
-static iree_string_view_t loom_low_verify_symbol_name(
-    const loom_module_t* module, loom_symbol_ref_t ref) {
-  if (!loom_symbol_ref_is_valid(ref) || ref.module_id != 0 ||
-      ref.symbol_id >= module->symbols.count) {
-    return IREE_SV("<unnamed>");
-  }
-  const loom_symbol_t* symbol = &module->symbols.entries[ref.symbol_id];
-  if (symbol->name_id < module->strings.count) {
-    return loom_string_table_get(&module->strings, symbol->name_id);
-  }
-  return IREE_SV("<unnamed>");
-}
-
-static iree_string_view_t loom_low_verify_function_name(
-    const loom_module_t* module, const loom_op_t* low_func_op) {
-  if (loom_low_func_def_isa(low_func_op)) {
-    return loom_low_verify_symbol_name(module,
-                                       loom_low_func_def_callee(low_func_op));
-  }
-  if (loom_low_kernel_def_isa(low_func_op)) {
-    return loom_low_verify_symbol_name(module,
-                                       loom_low_kernel_def_callee(low_func_op));
-  }
-  if (loom_low_func_decl_isa(low_func_op)) {
-    return loom_low_verify_symbol_name(module,
-                                       loom_low_func_decl_callee(low_func_op));
-  }
-  return IREE_SV("<unnamed>");
 }
 
 static loom_region_t* loom_low_verify_function_body(
@@ -1256,28 +1227,19 @@ static iree_status_t loom_low_verify_function_register_values(
 
 static iree_status_t loom_low_verify_workgroup_storage_limit(
     loom_low_function_verify_state_t* function_state) {
-  const loom_target_bundle_t* bundle =
-      loom_low_resolved_target_bundle(function_state->target);
-  if (bundle == NULL) {
-    return iree_ok_status();
-  }
-  const uint64_t limit = bundle->snapshot->max_workgroup_storage_bytes;
-  if (limit == 0 || function_state->body == NULL ||
+  if (function_state->body == NULL ||
       loom_low_verify_should_stop(function_state->state)) {
     return iree_ok_status();
   }
-  if (function_state->storage_space_sizes.workgroup_bytes <= limit) {
-    return iree_ok_status();
-  }
-  const loom_diagnostic_param_t params[] = {
-      loom_param_string(function_state->function_name),
-      loom_param_string(bundle->name),
-      loom_param_u64(function_state->storage_space_sizes.workgroup_bytes),
-      loom_param_u64(limit),
+  const iree_diagnostic_emitter_t counting_emitter = {
+      .fn = loom_low_verify_counting_emitter,
+      .user_data = function_state->state,
   };
-  return loom_low_verify_emit(function_state->state,
-                              function_state->function_op, LOOM_ERR_TARGET_051,
-                              params, IREE_ARRAYSIZE(params), NULL, 0);
+  return loom_low_diagnostic_validate_workgroup_storage_limit(
+      function_state->state->module, function_state->function_op,
+      function_state->target,
+      function_state->storage_space_sizes.workgroup_bytes, counting_emitter,
+      /*out_valid=*/NULL);
 }
 
 static iree_status_t loom_low_verify_descriptor_register_field(
@@ -2147,7 +2109,7 @@ static iree_status_t loom_low_verify_function(loom_low_verify_state_t* state,
               .arena = &state->walk_arena,
           },
       .function_name =
-          loom_low_verify_function_name(state->module, low_func_op),
+          loom_low_diagnostic_function_name(state->module, low_func_op),
   };
   if (body &&
       (body->block_count != 1 ||

@@ -10,6 +10,7 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/analysis/symbol_facts.h"
 #include "loom/codegen/low/text_asm.h"
+#include "loom/error/error_catalog.h"
 #include "loom/format/text/parser.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -25,12 +26,15 @@
 #include "loom/target/function_contract.h"
 #include "loom/target/function_version.h"
 #include "loom/target/profile.h"
+#include "loom/testing/diagnostic_matchers.h"
 #include "loom/testing/module_ptr.h"
 #include "loom/tooling/target/spirv/vulkan_profile.h"
 
 namespace loom {
 namespace {
 
+using ::loom::testing::CapturedDiagnosticEmission;
+using ::loom::testing::DiagnosticEmissionCapture;
 using ::loom::testing::ModulePtr;
 
 static constexpr iree_host_size_t kSpirvHeaderWordCount = 5;
@@ -155,6 +159,7 @@ low.func.def target<spirv.logical.core>(@generic) abi(shader_entry_point) @kerne
   device_facts.max_compute_workgroup_count.x = 65535;
   device_facts.max_compute_workgroup_count.y = 65535;
   device_facts.max_compute_workgroup_count.z = 65535;
+  device_facts.max_compute_shared_memory_size = 32 * 1024;
   loom_spirv_vulkan_hal_target_profile_storage_t exact_profile = {};
   IREE_ASSERT_OK(loom_spirv_vulkan_hal_target_profile_storage_initialize(
       &device_facts, /*cooperative_matrix_properties=*/nullptr,
@@ -223,6 +228,41 @@ low.func.def target<spirv.logical.core>(@generic) abi(shader_entry_point) @kerne
   const loom_symbol_ref_t emitted_target = loom_func_like_target(function);
   EXPECT_EQ(emitted_target.module_id, authored_target.module_id);
   EXPECT_EQ(emitted_target.symbol_id, authored_target.symbol_id);
+}
+
+TEST_F(SpirvModuleEmitterTest,
+       RejectsAggregateFinalWorkgroupStorageAboveTargetLimit) {
+  ModulePtr module = ParseModule(IREE_SV(R"(
+spirv.target<vulkan1_3> @limited {max_workgroup_storage_bytes = 64}
+
+low.func.def target<spirv.logical.core>(@limited) abi(shader_entry_point) @too_large() asm {
+  %storage_a = storage {byte_alignment = 16, byte_length = 48} : low.storage<workgroup>
+  %base_a = storage_address %storage_a : low.storage<workgroup> -> reg<spirv.ptr.workgroup.array.i32>
+  %storage_b = storage {byte_alignment = 16, byte_length = 32} : low.storage<workgroup>
+  %base_b = storage_address %storage_b : low.storage<workgroup> -> reg<spirv.ptr.workgroup.array.i32>
+  return
+}
+)"));
+
+  DiagnosticEmissionCapture capture;
+  loom_spirv_module_binary_t binary = {};
+  IREE_ASSERT_OK(loom_spirv_emit_low_module(
+      module.get(), &low_registry_.registry, capture.emitter(), &arena_,
+      /*options=*/nullptr, &binary, iree_allocator_system()));
+
+  EXPECT_EQ(binary.words, nullptr);
+  EXPECT_EQ(binary.word_count, 0u);
+  ASSERT_EQ(capture.emissions.size(), 1u);
+  const CapturedDiagnosticEmission& emission = capture.emissions[0];
+  EXPECT_EQ(emission.error, LOOM_ERR_TARGET_051);
+  ASSERT_EQ(emission.string_params.size(), 2u);
+  EXPECT_EQ(emission.string_params[0], "too_large");
+  EXPECT_EQ(emission.string_params[1], "limited");
+  ASSERT_EQ(emission.u64_params.size(), 2u);
+  EXPECT_EQ(emission.u64_params[0], 80u);
+  EXPECT_EQ(emission.u64_params[1], 64u);
+
+  loom_spirv_module_binary_deinitialize(&binary, iree_allocator_system());
 }
 
 }  // namespace

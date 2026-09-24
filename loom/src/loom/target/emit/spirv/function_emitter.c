@@ -8,6 +8,7 @@
 
 #include <inttypes.h>
 
+#include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/function.h"
 #include "loom/ir/context.h"
 #include "loom/ir/local_value_domain.h"
@@ -1267,7 +1268,8 @@ static iree_status_t loom_spirv_emit_function_state_initialize(
 
 iree_status_t loom_spirv_emit_low_function(
     loom_spirv_function_emission_context_t* context, loom_op_t* low_function_op,
-    const loom_low_resolved_target_t* target) {
+    const loom_low_resolved_target_t* target, bool* out_valid) {
+  *out_valid = false;
   if (!loom_low_function_def_isa(low_function_op)) {
     return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
                             "SPIR-V emission requires a low function "
@@ -1279,6 +1281,12 @@ iree_status_t loom_spirv_emit_low_function(
       context, low_function_op, target, &function_state);
   if (iree_status_is_ok(status)) {
     status = loom_spirv_emit_function_contents(&function_state);
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_low_diagnostic_validate_workgroup_storage_limit(
+        context->module, low_function_op, target,
+        function_state.workgroup_storage.layout_sizes.workgroup_bytes,
+        context->diagnostic_emitter, out_valid);
   }
   loom_spirv_emit_function_state_deinitialize(&function_state);
   return status;

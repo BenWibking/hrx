@@ -660,7 +660,6 @@ loom_cc_library(
     loom::codegen::low::storage_layout
     loom::codegen::low::target_binding
     loom::error::diagnostic
-    loom::error::error_defs
     loom::error::source
     loom::ir
     loom::ops::global

@@ -16,6 +16,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
+#include "loom/codegen/low/storage_layout.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/ir/module.h"
 #include "loom/target/arch/spirv/value_types.h"
@@ -35,6 +36,8 @@ typedef struct loom_spirv_module_workgroup_storage_state_t {
   loom_spirv_module_workgroup_storage_entry_t* entries;
   // Number of entries addressable through entries.
   iree_host_size_t entry_count;
+  // Packed storage sizes accumulated from function-local reservations.
+  loom_low_storage_layout_space_sizes_t layout_sizes;
 } loom_spirv_module_workgroup_storage_state_t;
 
 // Initializes function-local Workgroup storage state over |value_domain|.
