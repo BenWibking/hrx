@@ -19,6 +19,8 @@ struct iree_net_rdma_context_t {
   struct ibv_context* device;
   // Explicit domain shared by compatible native queues and registrations.
   struct ibv_pd* protection_domain;
+  // Exclusive async event consumer, independent of connection poll owners.
+  iree_net_rdma_device_events_t* events;
   // Immutable creation-time device capabilities.
   struct ibv_device_attr device_attributes;
   // Immutable creation-time selected port capabilities, including message size.
@@ -100,6 +102,7 @@ static iree_status_t iree_net_rdma_context_select_device(
 }
 
 static void iree_net_rdma_context_destroy(iree_net_rdma_context_t* context) {
+  iree_net_rdma_device_events_destroy(context->events);
   if (context->protection_domain) {
     int error = context->library.ibv_dealloc_pd(context->protection_domain);
     if (error) {
@@ -152,6 +155,11 @@ iree_status_t iree_net_rdma_context_create(
     }
   }
   if (iree_status_is_ok(status)) {
+    status = iree_net_rdma_device_events_create(
+        &context->library, context->device, context->port_number,
+        host_allocator, &context->events);
+  }
+  if (iree_status_is_ok(status)) {
     *out_context = context;
   } else {
     iree_net_rdma_context_destroy(context);
@@ -184,6 +192,11 @@ struct ibv_context* iree_net_rdma_context_device(
 struct ibv_pd* iree_net_rdma_context_protection_domain(
     const iree_net_rdma_context_t* context) {
   return context->protection_domain;
+}
+
+iree_net_rdma_device_events_t* iree_net_rdma_context_device_events(
+    const iree_net_rdma_context_t* context) {
+  return context->events;
 }
 
 uint8_t iree_net_rdma_context_port_number(

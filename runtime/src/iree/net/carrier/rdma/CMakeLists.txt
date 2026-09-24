@@ -108,6 +108,7 @@ iree_cc_test(
   DEPS
     ::connection
     ::connection_events
+    ::device_failure
     iree::async
     iree::async::platform::io_uring
     iree::async::platform::posix
@@ -118,6 +119,7 @@ iree_cc_test(
     iree::net::message_endpoint
     iree::net::rdma::connection_test_main
     iree::net::rdma::context
+    iree::net::rdma::device_events
     iree::net::rdma::library
     iree::net::rdma::region
     iree::net::rdma::target
@@ -201,6 +203,24 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_library(
   NAME
+    device_failure
+  HDRS
+    "device_failure.h"
+  SRCS
+    "device_failure.c"
+  DEPS
+    iree::async
+    iree::base
+    iree::net::rdma::context
+    iree::net::rdma::device_events
+    iree::net::rdma::library
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
     connection_control
   HDRS
     "connection_control.h"
@@ -210,6 +230,7 @@ iree_cc_library(
     ::completion_queue
     ::connection_events
     ::connection_route
+    ::device_failure
     iree::async
     iree::base
     iree::net::rdma::context

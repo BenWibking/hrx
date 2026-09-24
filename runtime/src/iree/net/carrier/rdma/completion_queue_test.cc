@@ -7,6 +7,7 @@
 #include "iree/net/carrier/rdma/completion_queue.h"
 
 #include <netinet/in.h>
+#include <poll.h>
 
 #include <array>
 #include <cstdlib>
@@ -479,6 +480,68 @@ TEST_P(CompletionQueueTest,
   }
 }
 
+TEST_P(CompletionQueueTest, DestructionDiscardsUnreadNativeNotification) {
+  iree_async_proactor_t* proactor = nullptr;
+  auto options = iree_async_proactor_options_default();
+  if (strcmp(std::get<0>(GetParam()), "io_uring") == 0) {
+    IREE_ASSERT_OK(iree_async_proactor_create_io_uring(
+        options, iree_allocator_system(), &proactor));
+  } else {
+    IREE_ASSERT_OK(iree_async_proactor_create_posix(
+        options, iree_allocator_system(), &proactor));
+  }
+  iree_net_rdma_completion_queue_t* completions = nullptr;
+  IREE_ASSERT_OK(iree_net_rdma_completion_queue_create(
+      contexts_[0], proactor, {32, std::get<1>(GetParam()), 0},
+      {+[](void*, iree_host_size_t, const ibv_wc*) {
+         ADD_FAILURE() << "The retired CQ must not dispatch unread work.";
+       },
+       +[](void*, iree_status_t status) { IREE_ASSERT_OK(status); }, nullptr},
+      iree_allocator_system(), &completions));
+  auto* handle = iree_net_rdma_completion_queue_handle(completions);
+  const auto* library = iree_net_rdma_context_library(contexts_[0]);
+  ibv_qp_init_attr queue_options = {};
+  queue_options.send_cq = handle;
+  queue_options.recv_cq = handle;
+  queue_options.qp_type = IBV_QPT_RC;
+  queue_options.cap.max_send_wr = 1;
+  queue_options.cap.max_recv_wr = 1;
+  queue_options.cap.max_send_sge = 1;
+  queue_options.cap.max_recv_sge = 1;
+  auto* queue = library->ibv_create_qp(
+      iree_net_rdma_context_protection_domain(contexts_[0]), &queue_options);
+  ASSERT_NE(queue, nullptr);
+  ibv_qp_attr attributes = {};
+  attributes.qp_state = IBV_QPS_INIT;
+  attributes.port_num = iree_net_rdma_context_port_number(contexts_[0]);
+  CheckNative(library->ibv_modify_qp(
+      queue, &attributes,
+      IBV_QP_STATE | IBV_QP_PORT | IBV_QP_PKEY_INDEX | IBV_QP_ACCESS_FLAGS));
+  ibv_recv_wr receive = {};
+  ibv_recv_wr* rejected = nullptr;
+  CheckNative(ibv_post_recv(queue, &receive, &rejected));
+  attributes = {};
+  attributes.qp_state = IBV_QPS_ERR;
+  CheckNative(library->ibv_modify_qp(queue, &attributes, IBV_QP_STATE));
+  // Readiness proves a native notification exists without consuming it.
+  pollfd ready = {handle->channel->fd, POLLIN, 0};
+  int result = 0;
+  do {
+    result = poll(&ready, 1, -1);
+  } while (result < 0 && errno == EINTR);
+  ASSERT_EQ(result, 1);
+  ASSERT_TRUE(ready.revents & POLLIN);
+  CheckNative(library->ibv_destroy_qp(queue));
+  bool joined = false;
+  iree_net_rdma_completion_queue_deactivate(
+      completions,
+      {+[](void* user_data) { *static_cast<bool*>(user_data) = true; },
+       &joined});
+  PollUntil(proactor, [&] { return joined; });
+  iree_net_rdma_completion_queue_destroy(completions);
+  iree_async_proactor_release(proactor);
+}
+
 TEST_P(CompletionQueueTest,
        RejectsUnsupportedAccessWithoutTakingSlabOwnership) {
   auto* slab = regions_[0]->slab;
@@ -495,8 +558,7 @@ TEST_P(CompletionQueueTest,
   ASSERT_NO_FATAL_FAILURE(CheckRoundTrip(pair, 4096, 71));
 }
 
-TEST_P(CompletionQueueTest,
-       FailedContextSelectionPreservesSharedNativeInventory) {
+TEST_P(CompletionQueueTest, FailedContextSelectionPreservesLiveRegistrations) {
   auto options = iree_net_rdma_context_options_default();
   options.device_name = IREE_SV("iree_nonexistent_rdma_device");
   iree_net_rdma_context_t* rejected = nullptr;

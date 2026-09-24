@@ -69,7 +69,8 @@ IREE_API_EXPORT void iree_net_rdma_completion_queue_deactivate(
     iree_async_event_source_unregistered_callback_t callback);
 
 // Destroys a deactivated service after all attached QPs have been destroyed.
-// Notification ownership is acknowledged before native CQ/channel release.
+// Consumed notifications are acknowledged by service visits; native destruction
+// discards unread notifications without requiring a working event channel.
 IREE_API_EXPORT void iree_net_rdma_completion_queue_destroy(
     iree_net_rdma_completion_queue_t* queue);
 

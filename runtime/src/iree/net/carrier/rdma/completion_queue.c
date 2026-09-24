@@ -313,10 +313,8 @@ void iree_net_rdma_completion_queue_destroy(
   }
   IREE_ASSERT(iree_any_bit_set(queue->flags,
                                IREE_NET_RDMA_COMPLETION_QUEUE_FLAG_STOPPED));
-  uint32_t count = 0;
-  do {
-    IREE_CHECK_OK(iree_net_rdma_completion_queue_consume_notifications(
-        queue, queue->service_batch_size, &count));
-  } while (count == queue->service_batch_size);
+  // Consumed notifications were acknowledged before their callbacks. Native
+  // destruction discards unread notifications; it does not require reading a
+  // channel that may itself have failed along with the device.
   iree_net_rdma_completion_queue_free(queue);
 }

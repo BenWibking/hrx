@@ -64,6 +64,12 @@ IREE_NET_RDMA_SYMBOL(verbs, struct ibv_context*, ibv_open_device,
                      (struct ibv_device*))
 // Closes the device after its native resources have retired.
 IREE_NET_RDMA_SYMBOL(verbs, int, ibv_close_device, (struct ibv_context*))
+// Obtains one owned native device/object event from the async stream.
+IREE_NET_RDMA_SYMBOL(verbs, int, ibv_get_async_event,
+                     (struct ibv_context*, struct ibv_async_event*))
+// Releases native object lifetime before dispatching an owner failure.
+IREE_NET_RDMA_SYMBOL(verbs, void, ibv_ack_async_event,
+                     (struct ibv_async_event*))
 // Returns a borrowed device name for explicit selection.
 IREE_NET_RDMA_SYMBOL(verbs, const char*, ibv_get_device_name,
                      (struct ibv_device*))

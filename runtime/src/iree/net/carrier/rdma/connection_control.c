@@ -10,6 +10,7 @@
 
 #include "iree/async/operations/scheduling.h"
 #include "iree/net/carrier/rdma/connection_events.h"
+#include "iree/net/carrier/rdma/device_failure.h"
 #include "iree/net/rdma/region.h"
 
 #define IREE_NET_RDMA_CONTROL_RECEIVE_ID_BIT (UINT64_C(1) << 62)
@@ -52,6 +53,8 @@ struct iree_net_rdma_connection_control_t {
   iree_net_rdma_completion_queue_t* completions;
   // CM channel with callbacks bound to this stable owner from its creation.
   iree_net_rdma_connection_events_t* events;
+  // Native CQ/QP/device error subscription and owner-thread handoff.
+  iree_net_rdma_device_failure_t* device_failure;
   // Owned CM identity, never implicitly owning or modifying a native QP.
   struct rdma_cm_id* id;
   // Independently owned private control QP, configured before CM publication.
@@ -430,6 +433,12 @@ static iree_status_t iree_net_rdma_connection_control_start(
           .user_data = control,
       },
       control->host_allocator, &control->completions));
+  IREE_RETURN_IF_ERROR(iree_net_rdma_device_failure_create(
+      control->context, control->proactor,
+      iree_net_rdma_completion_queue_handle(control->completions),
+      control->options.service_batch_size,
+      iree_net_rdma_connection_control_service_failed, control,
+      control->host_allocator, &control->device_failure));
   return iree_net_rdma_connection_events_create(
       control->context, control->proactor, control->options.service_batch_size,
       (iree_net_rdma_connection_events_callbacks_t){
@@ -597,8 +606,9 @@ static void iree_net_rdma_connection_control_deactivate_complete(
   }
   // Count every join before starting any: POSIX monitor retirement can invoke
   // its callback inline. The NOP body itself holds the final count.
-  control->pending_joins =
-      1 + (control->events != NULL) + (control->completions != NULL);
+  control->pending_joins = 1 + (control->events != NULL) +
+                           (control->completions != NULL) +
+                           (control->device_failure != NULL);
   iree_async_event_source_unregistered_callback_t callback = {
       .fn = iree_net_rdma_connection_control_joined,
       .user_data = control,
@@ -608,6 +618,9 @@ static void iree_net_rdma_connection_control_deactivate_complete(
   }
   if (control->completions) {
     iree_net_rdma_completion_queue_deactivate(control->completions, callback);
+  }
+  if (control->device_failure) {
+    iree_net_rdma_device_failure_deactivate(control->device_failure, callback);
   }
   iree_net_rdma_connection_control_joined(control);
 }
@@ -635,6 +648,7 @@ void iree_net_rdma_connection_control_destroy(
           control->state == IREE_NET_RDMA_CONNECTION_CONTROL_STATE_DEACTIVATED,
       "started RDMA control must join deactivation before destruction");
   iree_net_rdma_connection_events_destroy(control->events);
+  iree_net_rdma_device_failure_destroy(control->device_failure);
   iree_net_rdma_completion_queue_destroy(control->completions);
   iree_async_region_release(control->region);
   iree_status_free(control->failure);

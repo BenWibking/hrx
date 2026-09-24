@@ -30,6 +30,24 @@ existing `iree_async_region_t` and span model. Native queues borrow the context'
 handles while retaining their owner. This layer installs no worker, address
 registry, proactor callback or host transfer scheduler.
 
+Each context also owns its native asynchronous error stream through
+`runtime/src/iree/net/rdma/device_events.h`. CQ and QP errors reach the
+subscriptions for their native completion queues; device and selected-port
+failures reach every affected subscriber. Event consumption and acknowledgment
+are serialized independently of posting and completion. Subscriptions join
+before their CQ or callback owner can be destroyed. Native users service the
+context's async descriptor through this owner instead of consuming its events
+independently.
+
+Host connections install a dormant error monitor on their own proactor. Any
+of those monitors may read a shared context's event, but acknowledgment precedes
+a one-shot handoff to the affected connection's executor. That executor uses
+the same failure and native-quiescence path as other connection errors; an
+error event alone never returns a source or registration while a QP may still
+access it. Monitoring adds one descriptor per connection and no per-transfer
+registry, allocation, lock, or extra completion-channel read. Retirement joins
+both the descriptor monitor and any published error handoff.
+
 ## Connecting An Application
 
 `runtime/src/iree/net/carrier/rdma/factory.h` constructs a transport factory from

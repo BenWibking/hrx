@@ -8,6 +8,7 @@
 #define IREE_NET_RDMA_CONTEXT_H_
 
 #include "iree/base/api.h"
+#include "iree/net/rdma/device_events.h"
 #include "iree/net/rdma/library.h"
 
 #ifdef __cplusplus
@@ -62,6 +63,11 @@ IREE_API_EXPORT struct ibv_context* iree_net_rdma_context_device(
     const iree_net_rdma_context_t* context);
 IREE_API_EXPORT struct ibv_pd* iree_net_rdma_context_protection_domain(
     const iree_net_rdma_context_t* context);
+// Borrowed exclusive consumer of this context's native async event stream.
+// Native users subscribe before starting queues and join before destroying CQs;
+// they must not consume or acknowledge events independently of this owner.
+IREE_API_EXPORT iree_net_rdma_device_events_t*
+iree_net_rdma_context_device_events(const iree_net_rdma_context_t* context);
 IREE_API_EXPORT uint8_t
 iree_net_rdma_context_port_number(const iree_net_rdma_context_t* context);
 IREE_API_EXPORT const struct ibv_device_attr*

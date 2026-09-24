@@ -46,14 +46,40 @@ iree_runtime_cc_test(
 )
 
 iree_runtime_cc_library(
+    name = "device_events",
+    srcs = ["device_events.c"],
+    hdrs = ["device_events.h"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":library",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+    ],
+)
+
+iree_runtime_cc_library(
     name = "context",
     srcs = ["context.c"],
     hdrs = ["context.h"],
     target_compatible_with = RDMA_COMPATIBILITY,
     deps = [
+        ":device_events",
         ":library",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "device_events_test",
+    srcs = ["device_events_test.cc"],
+    target_compatible_with = RDMA_COMPATIBILITY,
+    deps = [
+        ":device_events",
+        ":library",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 

@@ -6,7 +6,9 @@
 
 #include "iree/net/carrier/rdma/connection.h"
 
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <unistd.h>
 
 #include <array>
 #include <atomic>
@@ -23,6 +25,7 @@
 #include "iree/async/platform/posix/api.h"
 #include "iree/base/alignment.h"
 #include "iree/net/carrier/rdma/connection_events.h"
+#include "iree/net/carrier/rdma/device_failure.h"
 #include "iree/net/rdma/region.h"
 #include "iree/net/rdma/target.h"
 #include "iree/net/rdma/test_context.h"
@@ -62,6 +65,134 @@ static void PollMarker(iree_async_proactor_t* proactor) {
   IREE_CHECK_OK(iree_async_proactor_submit_one(proactor, &marker.base));
   PollUntil(proactor, [&] { return visited; });
 }
+
+// Substitutes native error delivery without damaging a device or replacing any
+// connection/retirement behavior. All queues, registrations and transfers stay
+// native. Install before starting test threads and restore after their joins.
+class NativeEventInjection {
+ public:
+  explicit NativeEventInjection(iree_net_rdma_context_t* context)
+      : context_(context),
+        library_(const_cast<iree_net_rdma_library_t*>(
+            iree_net_rdma_context_library(context))),
+        original_(*library_) {
+    IREE_ASSERT(!active_);
+    EXPECT_EQ(pipe2(descriptors_.data(), O_NONBLOCK | O_CLOEXEC), 0);
+    active_ = this;
+    library_->ibv_get_async_event = Get;
+    library_->ibv_ack_async_event = Ack;
+    library_->ibv_create_cq = CreateQueue;
+    library_->ibv_destroy_qp = DestroyPair;
+  }
+  ~NativeEventInjection() {
+    library_->ibv_get_async_event = original_.ibv_get_async_event;
+    library_->ibv_ack_async_event = original_.ibv_ack_async_event;
+    library_->ibv_create_cq = original_.ibv_create_cq;
+    library_->ibv_destroy_qp = original_.ibv_destroy_qp;
+    active_ = nullptr;
+    for (int descriptor : descriptors_) {
+      EXPECT_EQ(close(descriptor), 0);
+    }
+  }
+  void SetQueueError(ibv_cq* queue) {
+    event_ = {};
+    event_.event_type = IBV_EVENT_CQ_ERR;
+    event_.element.cq = queue;
+    pending_ = true;
+    uint8_t ready = 1;
+    EXPECT_EQ(write(descriptors_[1], &ready, sizeof(ready)), sizeof(ready));
+  }
+  iree_status_t CreateFailureMonitor(
+      iree_async_proactor_t* proactor, ibv_cq* queue, uint32_t batch_size,
+      void (*on_failure)(void*, iree_status_t), void* user_data,
+      iree_net_rdma_device_failure_t** out_monitor) {
+    // Only readiness acquisition sees the pipe. Native QP/CQ creation always
+    // sees its real device descriptor; no poll thread runs during substitution.
+    auto* device = iree_net_rdma_context_device(context_);
+    int native_descriptor = device->async_fd;
+    device->async_fd = descriptors_[0];
+    iree_status_t status = iree_net_rdma_device_failure_create(
+        context_, proactor, queue, batch_size, on_failure, user_data,
+        iree_allocator_system(), out_monitor);
+    device->async_fd = native_descriptor;
+    return status;
+  }
+  void Dispatch() {
+    uint32_t count = 0;
+    while (iree_net_rdma_device_events_poll(
+        iree_net_rdma_context_device_events(context_), 8, &count)) {
+    }
+  }
+  const std::vector<ibv_cq*>& queues() const { return queues_; }
+  uint32_t acknowledged() const { return acknowledged_; }
+  uint32_t destroyed_pairs() const { return destroyed_pairs_; }
+
+ private:
+  static int Get(ibv_context* device, ibv_async_event* event) {
+    if (active_->pending_) {
+      uint8_t ready = 0;
+      EXPECT_EQ(read(active_->descriptors_[0], &ready, sizeof(ready)),
+                sizeof(ready));
+      *event = active_->event_;
+      active_->pending_ = false;
+      synthetic_ = true;
+      return 0;
+    }
+    return active_->original_.ibv_get_async_event(device, event);
+  }
+  static void Ack(ibv_async_event* event) {
+    if (synthetic_) {
+      ++active_->acknowledged_;
+      synthetic_ = false;
+    } else {
+      active_->original_.ibv_ack_async_event(event);
+    }
+  }
+  static ibv_cq* CreateQueue(ibv_context* device, int capacity, void* user_data,
+                             ibv_comp_channel* channel, int vector) {
+    auto* queue = active_->original_.ibv_create_cq(device, capacity, user_data,
+                                                   channel, vector);
+    if (queue) {
+      active_->queues_.push_back(queue);
+    }
+    return queue;
+  }
+  static int DestroyPair(ibv_qp* queue) {
+    bool observed = queue->send_cq == active_->event_.element.cq;
+    if (observed) {
+      EXPECT_EQ(active_->acknowledged_, 1u);
+    }
+    int result = active_->original_.ibv_destroy_qp(queue);
+    if (!result && observed) {
+      ++active_->destroyed_pairs_;
+    }
+    return result;
+  }
+  // One scoped native dependency replacement; tests run one case at a time.
+  static NativeEventInjection* active_;
+  // Native read and acknowledgment execute on the same servicing thread.
+  static thread_local bool synthetic_;
+  // Borrowed explicit context whose subscriptions remain production-owned.
+  iree_net_rdma_context_t* context_;
+  // Mutable native function table installed only while no caller is running.
+  iree_net_rdma_library_t* library_;
+  // Original functions used for every operation other than the injected event.
+  iree_net_rdma_library_t original_;
+  // Readiness injection for tests exercising the actual proactor monitor.
+  std::array<int, 2> descriptors_ = {-1, -1};
+  // One terminal notification, armed before servicing the native stream.
+  ibv_async_event event_ = {};
+  // Whether the injected record remains unread.
+  bool pending_ = false;
+  // Exact synthetic native acknowledgments.
+  uint32_t acknowledged_ = 0;
+  // Successful real QP destruction on the affected connection's CQ.
+  uint32_t destroyed_pairs_ = 0;
+  // Actual native CQ identities captured during connection construction.
+  std::vector<ibv_cq*> queues_;
+};
+NativeEventInjection* NativeEventInjection::active_ = nullptr;
+thread_local bool NativeEventInjection::synthetic_ = false;
 
 // Real generic connection consumer. Only native listener admission is supplied
 // by the fixture; bootstrap, endpoint setup, payload and teardown are
@@ -289,6 +420,8 @@ class Peer {
   std::function<iree_status_t(iree_const_byte_span_t)> on_message;
   // Placement consumer, independent of source-return callback order.
   std::function<iree_status_t(uint32_t)> on_notification;
+  // Source ownership boundary, also permitting close from its callback.
+  std::function<void()> on_source;
 
  private:
   static void SetupDone(void* user_data, iree_status_t status,
@@ -309,6 +442,9 @@ class Peer {
     self->source_statuses_.push_back(iree_status_code(status));
     self->source_lengths_.push_back(length);
     iree_status_free(status);
+    if (self->on_source) {
+      self->on_source();
+    }
   }
   static void Error(void* user_data, iree_status_t status) {
     auto* self = static_cast<Peer*>(user_data);
@@ -787,6 +923,145 @@ TEST_P(ConnectionTest, EndpointAllocationFailureRetiresPartialNativeOwners) {
     EXPECT_EQ(allocator.live, 0u);
   }
   EXPECT_TRUE(succeeded);
+}
+
+TEST_P(ConnectionTest, NativeQueueFailureReturnsSourcesAfterQuiescence) {
+  NativeEventInjection native(context_);
+  Peer first(context_, proactor_, Options(0), 0);
+  Peer second(context_, proactor_, Options(1), 1);
+  second.add_flags(Peer::kHoldActivation);
+  ASSERT_NO_FATAL_FAILURE(Connect(first, second));
+  ASSERT_NO_FATAL_FAILURE(OpenBoth(first, second));
+  ASSERT_EQ(native.queues().size(), 2u);
+  // This spans more than the receiver's complete ring. With its consumer held,
+  // successful source retirement cannot occur before the injected failure.
+  std::array<uint8_t, 4097> payload;
+  payload.fill(0x7b);
+  IREE_ASSERT_OK(
+      first.Send(iree_make_const_byte_span(payload.data(), payload.size())));
+  // A registered write uses the same connection failure path but retains an
+  // application-owned source. Its notification cannot finish until the held
+  // receiver posts receive credits, so source return requires quiescence too.
+  std::array<uint8_t, IREE_NET_RDMA_TARGET_WIRE_SIZE> description;
+  iree_host_size_t length = 0;
+  IREE_ASSERT_OK(iree_net_direct_endpoint_export_target(
+      second.direct_endpoint(),
+      iree_async_span_make(second.region(), 8192, 4096),
+      IREE_ASYNC_BUFFER_ACCESS_FLAG_REMOTE_WRITE,
+      iree_make_byte_span(description.data(), description.size()), &length));
+  iree_net_direct_target_t target = {};
+  IREE_ASSERT_OK(iree_net_direct_endpoint_import_target(
+      first.direct_endpoint(),
+      iree_make_const_byte_span(description.data(), length), &target));
+  memset(first.source(), 0x36, 65);
+  IREE_ASSERT_OK(first.Write(0, 65, target, 0, 77));
+  PollMarker(proactor_);
+  ASSERT_TRUE(first.source_statuses().empty());
+  first.on_source = [&] {
+    EXPECT_EQ(native.acknowledged(), 1u);
+    EXPECT_GT(native.destroyed_pairs(), 0u);
+    first.Close();
+  };
+  native.SetQueueError(native.queues()[0]);
+  // The native event reader need not be this connection's poll owner. No CM
+  // disconnect or failing CQE is submitted to initiate the failure path.
+  std::thread reader([&] { native.Dispatch(); });
+  reader.join();
+  EXPECT_TRUE(first.source_statuses().empty());
+  PollUntil(proactor_, [&] { return first.has(Peer::kClosed); });
+  EXPECT_EQ(first.source_statuses(),
+            (std::vector<iree_status_code_t>{IREE_STATUS_UNAVAILABLE,
+                                             IREE_STATUS_UNAVAILABLE}));
+  EXPECT_EQ(second.message_count(), 0u);
+  EXPECT_TRUE(second.notifications().empty());
+  EXPECT_EQ(native.acknowledged(), 1u);
+}
+
+TEST_P(ConnectionTest, NativeFailureHandoffJoinsIndependentPollOwners) {
+  for (bool retire_concurrently : {false, true}) {
+    SCOPED_TRACE(retire_concurrently ? "concurrent retirement"
+                                     : "published handoff retirement");
+    NativeEventInjection native(context_);
+    iree_async_proactor_t* other_proactor = nullptr;
+    auto options = iree_async_proactor_options_default();
+    // The existing io_uring owner remains on its single issuer thread. A
+    // separate POSIX reader permits construction here and polling below.
+    IREE_ASSERT_OK(iree_async_proactor_create_posix(
+        options, iree_allocator_system(), &other_proactor));
+    std::array<iree_async_proactor_t*, 3> proactors = {
+        other_proactor, other_proactor, proactor_};
+    struct Owner {
+      // Exactly-once callback witness, delivered only on its own poll owner.
+      uint32_t errors = 0;
+      // Monitor/handoff join, independent of callback delivery.
+      bool stopped = false;
+    };
+    std::array<Owner, 3> owners = {};
+    std::array<ibv_cq*, 3> queues = {};
+    std::array<iree_net_rdma_device_failure_t*, 3> monitors = {};
+    for (uint32_t i = 0; i < queues.size(); ++i) {
+      queues[i] = library_->ibv_create_cq(
+          iree_net_rdma_context_device(context_), 1, nullptr, nullptr, 0);
+      ASSERT_NE(queues[i], nullptr);
+      IREE_ASSERT_OK(native.CreateFailureMonitor(
+          proactors[i], queues[i], std::get<1>(GetParam()),
+          +[](void* user_data, iree_status_t status) {
+            auto* owner = static_cast<Owner*>(user_data);
+            EXPECT_FALSE(owner->stopped);
+            ++owner->errors;
+            IREE_EXPECT_STATUS_IS(IREE_STATUS_UNAVAILABLE, status);
+          },
+          &owners[i], &monitors[i]));
+    }
+    native.SetQueueError(queues[2]);
+    // An unrelated connection's actual readiness monitor consumes the event and
+    // publishes a handoff to the other poll owner. No direct dispatch helper.
+    std::thread reader;
+    if (retire_concurrently) {
+      reader = std::thread([&] {
+        PollUntil(other_proactor, [&] { return native.acknowledged() == 1; });
+      });
+    } else {
+      PollUntil(other_proactor, [&] { return native.acknowledged() == 1; });
+    }
+    // Stop with a published callback still queued. Synchronous unsubscription
+    // cannot authorize releasing the owner until that callback has run.
+    iree_net_rdma_device_failure_deactivate(
+        monitors[2], {+[](void* user_data) {
+                        static_cast<Owner*>(user_data)->stopped = true;
+                      },
+                      &owners[2]});
+    if (!retire_concurrently) {
+      EXPECT_FALSE(owners[2].stopped);
+      PollMarker(other_proactor);
+      EXPECT_EQ(owners[2].errors, 0u);
+    }
+    PollUntil(proactor_, [&] { return owners[2].stopped; });
+    if (reader.joinable()) {
+      reader.join();
+    }
+    if (retire_concurrently) {
+      // Unsubscribe may precede consumption, or may join a published handoff.
+      EXPECT_LE(owners[2].errors, 1u);
+    } else {
+      EXPECT_EQ(owners[2].errors, 1u);
+    }
+    EXPECT_EQ(owners[0].errors, 0u);
+    EXPECT_EQ(owners[1].errors, 0u);
+    for (uint32_t i = 0; i < monitors.size(); ++i) {
+      if (!owners[i].stopped) {
+        iree_net_rdma_device_failure_deactivate(
+            monitors[i], {+[](void* user_data) {
+                            static_cast<Owner*>(user_data)->stopped = true;
+                          },
+                          &owners[i]});
+        PollUntil(proactors[i], [&] { return owners[i].stopped; });
+      }
+      iree_net_rdma_device_failure_destroy(monitors[i]);
+      EXPECT_EQ(library_->ibv_destroy_cq(queues[i]), 0);
+    }
+    iree_async_proactor_release(other_proactor);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(Native, ConnectionTest,

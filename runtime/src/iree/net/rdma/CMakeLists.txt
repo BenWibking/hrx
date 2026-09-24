@@ -43,16 +43,48 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
 iree_cc_library(
   NAME
+    device_events
+  HDRS
+    "device_events.h"
+  SRCS
+    "device_events.c"
+  DEPS
+    ::library
+    iree::base
+    iree::base::threading
+  PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_library(
+  NAME
     context
   HDRS
     "context.h"
   SRCS
     "context.c"
   DEPS
+    ::device_events
     ::library
     iree::base
     iree::base::internal
   PUBLIC
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_cc_test(
+  NAME
+    device_events_test
+  SRCS
+    "device_events_test.cc"
+  DEPS
+    ::device_events
+    ::library
+    iree::base
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 endif()
 
