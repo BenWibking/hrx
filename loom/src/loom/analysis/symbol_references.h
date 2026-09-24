@@ -37,11 +37,6 @@ typedef uint32_t loom_symbol_reference_occurrence_id_t;
 typedef uint32_t loom_template_demand_id_t;
 #define LOOM_TEMPLATE_DEMAND_ID_INVALID ((loom_template_demand_id_t)UINT32_MAX)
 
-// Index into a symbol reference table's template-provider array.
-typedef uint32_t loom_template_provider_reference_id_t;
-#define LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID \
-  ((loom_template_provider_reference_id_t)UINT32_MAX)
-
 // Sentinel for occurrences not attached to a concrete op attribute.
 #define LOOM_SYMBOL_REFERENCE_ATTR_INDEX_NONE ((uint8_t)UINT8_MAX)
 
@@ -135,18 +130,6 @@ typedef struct loom_template_demand_t {
 static_assert(sizeof(loom_template_demand_t) == 24,
               "template demands must remain 24 bytes");
 
-// One available template provider indexed by its implemented family.
-typedef struct loom_template_provider_reference_t {
-  // Module-local provider symbol.
-  loom_symbol_id_t symbol_id;
-
-  // Next provider implementing the same family.
-  loom_template_provider_reference_id_t next_family_provider_id;
-} loom_template_provider_reference_t;
-
-static_assert(sizeof(loom_template_provider_reference_t) == 8,
-              "template provider references must remain 8 bytes");
-
 // Incoming/outgoing occurrence-list heads for one referenced symbol.
 typedef struct loom_symbol_reference_symbol_occurrences_t {
   // First occurrence whose source_symbol_id is this symbol.
@@ -196,6 +179,8 @@ typedef struct loom_symbol_reference_table_t {
   uint32_t module_occurrence_count;
   // Call counts retained by the reference producer for plan sizing.
   loom_symbol_reference_call_counts_t calls;
+  // Number of valid module-local template providers.
+  uint32_t template_provider_count;
   // Abstract template.apply provider demands owned by module symbols.
   struct {
     // Demand records owned by the caller-provided arena.
@@ -214,17 +199,6 @@ typedef struct loom_symbol_reference_table_t {
     const uint64_t* family_bits;
   } template_demands;
 
-  // Available template providers indexed by implemented family.
-  struct {
-    // Provider records owned by the caller-provided arena.
-    const loom_template_provider_reference_t* values;
-
-    // Number of entries in values.
-    iree_host_size_t count;
-
-    // First provider record for each module-local family symbol.
-    const loom_template_provider_reference_id_t* first_by_family_symbol_id;
-  } template_providers;
 } loom_symbol_reference_table_t;
 
 // Returns occurrence heads for a valid module symbol ID. Symbols with no

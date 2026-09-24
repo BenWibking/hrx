@@ -341,6 +341,45 @@ TEST_F(SymbolReferencesTest, EmptyRowsNeedNoAnalysisStorage) {
   }
 }
 
+TEST_F(SymbolReferencesTest, LargeProviderModuleNeedsNoDenseIndex) {
+  constexpr iree_host_size_t kSymbolCount = 32768;
+  ModulePtr module = AllocateModule();
+  const loom_symbol_ref_t family = AddSymbol(module.get(), IREE_SV("family"));
+  const loom_symbol_ref_t provider =
+      AddSymbol(module.get(), IREE_SV("provider"));
+  loom_string_id_t padding_name_id = LOOM_STRING_ID_INVALID;
+  IREE_ASSERT_OK(loom_module_intern_string(module.get(), IREE_SV("padding"),
+                                           &padding_name_id));
+  while (module->symbols.count < kSymbolCount) {
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(
+        loom_module_add_symbol(module.get(), padding_name_id, &symbol_id));
+  }
+
+  loom_builder_t builder = {};
+  loom_builder_initialize(module.get(), &module->arena,
+                          loom_module_block(module.get()), &builder);
+  loom_op_t* definition = nullptr;
+  IREE_ASSERT_OK(loom_template_def_build(
+      &builder, 0, family, 0, 0, 0, 0, 0, loom_symbol_ref_null(),
+      loom_parameterized_attr_array_empty(), 0, provider, nullptr, 0, nullptr,
+      0, nullptr, 0, nullptr, 0, LOOM_LOCATION_UNKNOWN, &definition));
+  loom_builder_enter_region(&builder, definition,
+                            loom_template_def_body(definition));
+  loom_op_t* terminator = nullptr;
+  IREE_ASSERT_OK(loom_template_return_build(
+      &builder, nullptr, 0, LOOM_LOCATION_UNKNOWN, &terminator));
+
+  ObservedReferenceArena storage(4096);
+  loom_symbol_reference_table_t table = {};
+  IREE_ASSERT_OK(
+      loom_symbol_reference_table_build(module.get(), &storage.arena, &table));
+  EXPECT_EQ(table.template_provider_count, 1u);
+  EXPECT_EQ(table.symbol_count, kSymbolCount);
+  EXPECT_EQ(storage.arena.allocation_head, nullptr);
+  EXPECT_LE(storage.largest_allocation, 4096u);
+}
+
 TEST_F(SymbolReferencesTest, SparseRowsSkipUntouchedSegments) {
   constexpr iree_host_size_t kTargetCount =
       2 * LOOM_SYMBOL_REFERENCE_SYMBOL_SEGMENT_CAPACITY + 1;
@@ -761,26 +800,7 @@ func.def public @entry(%arg: i32) -> (i32) {
     EXPECT_EQ(demand.next_source_demand_id, LOOM_TEMPLATE_DEMAND_ID_INVALID);
   }
 
-  ASSERT_EQ(table.template_providers.count, 2u);
-  ASSERT_NE(table.template_providers.first_by_family_symbol_id, nullptr);
-  loom_template_provider_reference_id_t provider_id =
-      table.template_providers
-          .first_by_family_symbol_id[undemanded_family_symbol_id];
-  ASSERT_NE(provider_id, LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID);
-  EXPECT_EQ(table.template_providers.values[provider_id].symbol_id,
-            outer_provider);
-  EXPECT_EQ(
-      table.template_providers.values[provider_id].next_family_provider_id,
-      LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID);
-
-  provider_id =
-      table.template_providers.first_by_family_symbol_id[family_symbol_id];
-  ASSERT_NE(provider_id, LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID);
-  EXPECT_EQ(table.template_providers.values[provider_id].symbol_id,
-            FindSymbol(module.get(), IREE_SV("demo_provider")));
-  EXPECT_EQ(
-      table.template_providers.values[provider_id].next_family_provider_id,
-      LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID);
+  EXPECT_EQ(table.template_provider_count, 2u);
 }
 
 TEST_F(SymbolReferencesTest, TemplateDemandFamiliesAreUniqueAndSorted) {

@@ -68,20 +68,8 @@ typedef struct loom_symbol_reference_builder_t {
     uint64_t* family_bits;
   } template_demands;
 
-  // Mutable template-provider storage indexed by implemented family.
-  struct {
-    // Provider entries.
-    loom_template_provider_reference_t* values;
-
-    // Number of live entries.
-    iree_host_size_t count;
-
-    // Number of allocated entries.
-    iree_host_size_t capacity;
-
-    // First provider record for each module-local family symbol.
-    loom_template_provider_reference_id_t* first_by_family_symbol_id;
-  } template_providers;
+  // Number of valid module-local template providers.
+  uint32_t template_provider_count;
 } loom_symbol_reference_builder_t;
 
 // Symbol definition and root region currently owning a reference occurrence.
@@ -335,12 +323,11 @@ static iree_status_t loom_symbol_reference_append_template_demand(
   return iree_ok_status();
 }
 
-static iree_status_t loom_symbol_reference_append_template_provider(
-    loom_symbol_reference_builder_t* builder, loom_symbol_id_t symbol_id,
-    const loom_symbol_t* symbol) {
+static void loom_symbol_reference_count_template_provider(
+    loom_symbol_reference_builder_t* builder, const loom_symbol_t* symbol) {
   if (!loom_symbol_implements(symbol,
                               LOOM_SYMBOL_INTERFACE_TEMPLATE_PROVIDER)) {
-    return iree_ok_status();
+    return;
   }
   const loom_func_like_t provider =
       loom_func_like_cast(builder->module, symbol->defining_op);
@@ -348,48 +335,9 @@ static iree_status_t loom_symbol_reference_append_template_provider(
   const loom_symbol_ref_t family = loom_func_like_template_family(provider);
   if (!loom_symbol_ref_is_valid(family) || family.module_id != 0 ||
       family.symbol_id >= builder->module->symbols.count) {
-    return iree_ok_status();
+    return;
   }
-
-  if (!builder->template_providers.first_by_family_symbol_id) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        builder->arena, builder->module->symbols.count,
-        sizeof(*builder->template_providers.first_by_family_symbol_id),
-        (void**)&builder->template_providers.first_by_family_symbol_id));
-    for (iree_host_size_t i = 0; i < builder->module->symbols.count; ++i) {
-      builder->template_providers.first_by_family_symbol_id[i] =
-          LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID;
-    }
-  }
-  if (builder->template_providers.count >= UINT32_MAX) {
-    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                            "symbol reference table exceeds %u template "
-                            "providers",
-                            (unsigned)UINT32_MAX);
-  }
-  if (builder->template_providers.count >=
-      builder->template_providers.capacity) {
-    IREE_RETURN_IF_ERROR(
-        iree_arena_grow_array(builder->arena, builder->template_providers.count,
-                              builder->template_providers.count + 1,
-                              sizeof(*builder->template_providers.values),
-                              &builder->template_providers.capacity,
-                              (void**)&builder->template_providers.values));
-  }
-
-  const loom_template_provider_reference_id_t provider_id =
-      (loom_template_provider_reference_id_t)
-          builder->template_providers.count++;
-  builder->template_providers.values[provider_id] =
-      (loom_template_provider_reference_t){
-          .symbol_id = symbol_id,
-          .next_family_provider_id =
-              builder->template_providers
-                  .first_by_family_symbol_id[family.symbol_id],
-      };
-  builder->template_providers.first_by_family_symbol_id[family.symbol_id] =
-      provider_id;
-  return iree_ok_status();
+  ++builder->template_provider_count;
 }
 
 static_assert(LOOM_ATTR_COUNT_ == 21,
@@ -595,9 +543,8 @@ static iree_status_t loom_symbol_reference_visit_region(
         nested_source_scope = (loom_symbol_reference_source_scope_t){
             .symbol_id = op_symbol_id,
         };
-        IREE_RETURN_IF_ERROR(loom_symbol_reference_append_template_provider(
-            builder, op_symbol_id,
-            &builder->module->symbols.entries[op_symbol_id]));
+        loom_symbol_reference_count_template_provider(
+            builder, &builder->module->symbols.entries[op_symbol_id]);
       }
       if (loom_template_apply_isa(op)) {
         IREE_RETURN_IF_ERROR(loom_symbol_reference_append_template_demand(
@@ -686,6 +633,7 @@ iree_status_t loom_symbol_reference_table_build(
       .first_module_occurrence_id = builder.first_module_occurrence_id,
       .module_occurrence_count = builder.module_occurrence_count,
       .calls = builder.calls,
+      .template_provider_count = builder.template_provider_count,
       .template_demands =
           {
               .values = builder.template_demands.values,
@@ -693,13 +641,6 @@ iree_status_t loom_symbol_reference_table_build(
               .family_symbol_ids = builder.template_demands.family_symbol_ids,
               .family_count = builder.template_demands.family_count,
               .family_bits = builder.template_demands.family_bits,
-          },
-      .template_providers =
-          {
-              .values = builder.template_providers.values,
-              .count = builder.template_providers.count,
-              .first_by_family_symbol_id =
-                  builder.template_providers.first_by_family_symbol_id,
           },
   };
   return iree_ok_status();
