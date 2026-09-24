@@ -378,8 +378,11 @@ lanes does not introduce a new copy consumer. Entry and exit transfers still
 have costs; the final report exposes those along with registers and code size.
 
 Detailed AMDGPU reports retain each wait's block, producer, consumer, and
-outstanding counts. `suggest` identifies full load waits whose actual consumers
-are branch-payload copies. For the packed-dot example below it reports:
+block-local outstanding counts. `suggest` identifies full load waits whose
+actual consumers are branch-payload copies. A zero local count still denotes a
+planned residual counter-epoch or control-flow hazard when the producer crosses
+an edge; it does not prove that the hardware wait is redundant. For the
+packed-dot example below it reports:
 
 ```text
 --8<-- "generated/examples/guide/functions-and-control/pipeline-copy-waits.txt"

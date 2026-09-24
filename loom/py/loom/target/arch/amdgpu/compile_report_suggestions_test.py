@@ -431,10 +431,18 @@ def _add_vmem_source_reuse_evidence(
                 "index": 0,
                 "function": "routed_linear",
                 "counter": "vmem_load",
+                "counter_id": 1,
                 "reason": "amdgpu.memory_source_reuse",
+                "reason_id": 10,
                 "summary": {
                     "action_count": action_count,
+                    "explicit_action_count": 0,
+                    "planned_action_count": action_count,
                     "full_drain_count": source_reuse_full_drain_count,
+                    "partial_wait_count": action_count - source_reuse_full_drain_count,
+                    "drained_count": source_reuse_full_drain_count * 3,
+                    "max_drained_count": 3,
+                    "max_outstanding_before": 3,
                     "max_full_drain_outstanding_before": 3,
                 },
             }
@@ -460,12 +468,21 @@ def _add_lds_ssa_use_evidence(
                 "index": 0,
                 "function": "routed_linear",
                 "counter": "lds",
+                "counter_id": 3,
                 "reason": "amdgpu.ssa_use",
+                "reason_id": 2,
                 "summary": {
                     "action_count": action_count,
+                    "explicit_action_count": 0,
+                    "planned_action_count": action_count,
                     "full_drain_count": ssa_use_full_drain_count,
                     "partial_wait_count": ssa_use_partial_wait_count,
+                    "drained_count": max_outstanding_before,
+                    "max_drained_count": max_outstanding_before,
                     "max_outstanding_before": max_outstanding_before,
+                    "max_full_drain_outstanding_before": (
+                        max_outstanding_before if ssa_use_full_drain_count else 0
+                    ),
                 },
             }
         ],
@@ -1150,6 +1167,10 @@ def test_pipeline_copy_waits_cite_native_consumers_and_source_policy() -> None:
     (finding,) = _pipeline_copy_suggestions(_pipeline_copy_report())
     assert finding.entry_name == "stream"
     assert "Full global-load waits precede branch-payload copies" in finding.action
+    assert "outstanding_before value counts packets in its scheduled block" in (
+        finding.action
+    )
+    assert "zero block-local count" not in finding.action
     assert "steady backedges from startup and tail edges" in finding.action
     assert "explicit unroll factors" in finding.action
     evidence = {row.path: row.value for row in finding.evidence}
@@ -1158,6 +1179,19 @@ def test_pipeline_copy_waits_cite_native_consumers_and_source_policy() -> None:
     assert evidence["wait_action_rows.rows[0].node_index"] == 146
     assert evidence["wait_action_rows.rows[0].target_count"] == 0
     assert evidence["wait_action_rows.rows[0].outstanding_before"] == 6
+
+
+def test_pipeline_copy_waits_explain_zero_block_local_outstanding() -> None:
+    report = _pipeline_copy_report()
+    report["wait_action_rows"]["rows"][0]["outstanding_before"] = 0
+
+    (finding,) = _pipeline_copy_suggestions(report)
+
+    assert "zero block-local count" in finding.action
+    assert "residual counter-epoch or control-flow hazard" in finding.action
+    assert "does not mean the hardware wait is redundant" in finding.action
+    evidence = {row.path: row.value for row in finding.evidence}
+    assert evidence["wait_action_rows.rows[0].outstanding_before"] == 0
 
 
 @pytest.mark.parametrize(
@@ -1206,8 +1240,9 @@ def test_pipeline_copy_waits_ignore_serial_controls_and_failed_compilations() ->
     assert _pipeline_copy_suggestions(report) == ()
 
 
-def test_pipeline_copy_waits_reject_malformed_native_evidence() -> None:
+@pytest.mark.parametrize("key", ["target_count", "outstanding_before"])
+def test_pipeline_copy_waits_reject_malformed_native_evidence(key: str) -> None:
     report = _pipeline_copy_report()
-    report["wait_action_rows"]["rows"][0]["target_count"] = False
-    with pytest.raises(CompileReportError, match="target_count: expected integer"):
+    report["wait_action_rows"]["rows"][0][key] = False
+    with pytest.raises(CompileReportError, match=rf"{key}: expected integer"):
         _pipeline_copy_suggestions(report)

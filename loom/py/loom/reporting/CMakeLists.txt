@@ -26,6 +26,7 @@ iree_py_library(
     "compile_report_subgroup_access.py"
     "compile_report_suggestions.py"
     "compile_report_view.py"
+    "compile_report_wait_reasons.py"
     "compile_report_workload.py"
   IMPORTS
     "../.."
@@ -45,6 +46,7 @@ iree_py_test(
     "compile_report_subgroup_access_test.py"
     "compile_report_suggestions_test.py"
     "compile_report_test.py"
+    "compile_report_wait_reasons_test.py"
     "../tools/pytest_style_runner.py"
   ARGS
     "loom.reporting.compile_report_bank_service_test"
@@ -54,6 +56,7 @@ iree_py_test(
     "loom.reporting.compile_report_residency_test"
     "loom.reporting.compile_report_suggestions_test"
     "loom.reporting.compile_report_subgroup_access_test"
+    "loom.reporting.compile_report_wait_reasons_test"
     "loom.reporting.compile_report_test"
   DEPS
     loom::py::loom::reporting::reporting

@@ -243,6 +243,11 @@ fields directly; recipe-key spelling is reported as a separate selection
 change. If an edit shifts or removes the source row, the evidence appears as
 removed and added instead of being paired heuristically with another operation.
 
+Wait-reason diffs compare counter/reason groups independently of the aggregate
+entry totals. A schedule change can therefore keep the same number of wait
+actions while replacing full drains with partial waits or moving a dependency
+between ordinary, loop-entry, and loop-carried reasons.
+
 ## Compare target specialization
 
 Target comparison deliberately relaxes only the selected target specialization
@@ -282,6 +287,13 @@ counts SSA values, which can occupy several physical registers or share storage;
 it is not a physical register count. A single report establishes pipeline use
 and final resource consumption. A matched compilation and runtime comparison
 establishes the change in cost and performance.
+
+On AMDGPU, `amdgpu.pipeline_copy_waits` identifies full global-load waits whose
+native consumers are materialized branch-payload copies. Its cited
+`outstanding_before` values count packets in each scheduled block rather than
+the whole hardware counter. A zero local count can still represent a required
+residual counter-epoch or control-flow hazard; it does not establish that the
+wait is redundant.
 
 Rejected vector-bank projections produce source experiments only when the
 reason identifies a concrete rewrite:
