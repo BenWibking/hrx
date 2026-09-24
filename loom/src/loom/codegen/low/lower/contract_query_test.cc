@@ -552,7 +552,7 @@ TEST_F(LowContractQuerySourceMemoryTest,
   source_memory.dynamic_byte_stride = 4;
   const loom_low_lower_source_memory_diagnostics_t source_memory_diagnostics = {
       /*.constraint_diagnostic_index=*/LOOM_LOW_LOWER_DIAGNOSTIC_NONE,
-      /*.dynamic_offset_diagnostic_index=*/LOOM_LOW_LOWER_DIAGNOSTIC_NONE,
+      /*.byte_offset_diagnostic_index=*/LOOM_LOW_LOWER_DIAGNOSTIC_NONE,
       /*.address_layout_diagnostic_index=*/LOOM_LOW_LOWER_DIAGNOSTIC_NONE,
       /*.address_diagnostic_index=*/LOOM_LOW_LOWER_DIAGNOSTIC_NONE,
   };

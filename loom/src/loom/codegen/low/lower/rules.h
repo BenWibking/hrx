@@ -466,20 +466,21 @@ typedef enum loom_low_lower_source_memory_address_coordinate_e {
 #define LOOM_LOW_LOWER_SOURCE_MEMORY_DYNAMIC_TERM_COUNT_ANY UINT8_MAX
 #define LOOM_LOW_LOWER_SOURCE_MEMORY_DYNAMIC_VIEW_BASE_TERM_COUNT_ANY UINT8_MAX
 
-typedef uint16_t loom_low_lower_source_memory_flags_t;
+typedef uint8_t loom_low_lower_source_memory_flags_t;
 
 // Accept any byte stride for selected dynamic source-memory terms.
 #define LOOM_LOW_LOWER_SOURCE_MEMORY_FLAG_DYNAMIC_BYTE_STRIDE_ANY \
-  ((uint16_t)1u << 0)
+  ((loom_low_lower_source_memory_flags_t)1u << 0)
 // Accept selected dynamic source-memory terms with dynamic stride values.
 #define LOOM_LOW_LOWER_SOURCE_MEMORY_FLAG_DYNAMIC_STRIDE_VALUES \
-  ((uint16_t)1u << 1)
+  ((loom_low_lower_source_memory_flags_t)1u << 1)
 // Consume an original source index only while canonicalization has not moved a
 // static contribution from it into the source-memory static byte offset.
 #define LOOM_LOW_LOWER_SOURCE_MEMORY_FLAG_PRESERVE_SOURCE_INDEX \
-  ((uint16_t)1u << 2)
+  ((loom_low_lower_source_memory_flags_t)1u << 2)
 // Accept any advisory source cache policy.
-#define LOOM_LOW_LOWER_SOURCE_MEMORY_FLAG_CACHE_POLICY_ANY ((uint16_t)1u << 3)
+#define LOOM_LOW_LOWER_SOURCE_MEMORY_FLAG_CACHE_POLICY_ANY \
+  ((loom_low_lower_source_memory_flags_t)1u << 3)
 
 // Converts a fixed-width canonical integer term to the address carrier.
 // Symbolic analysis preserves signed numeric values (zero/one for i1), even
@@ -568,8 +569,8 @@ static_assert(sizeof(loom_low_lower_source_memory_address_materializer_t) ==
 typedef struct loom_low_lower_source_memory_diagnostics_t {
   // Diagnostic emitted when the base source-memory constraint rejects.
   uint16_t constraint_diagnostic_index;
-  // Diagnostic emitted when the dynamic byte-offset width check rejects.
-  uint16_t dynamic_offset_diagnostic_index;
+  // Diagnostic emitted when either byte-offset width check rejects.
+  uint16_t byte_offset_diagnostic_index;
   // Diagnostic emitted when the address-layout classification rejects.
   uint16_t address_layout_diagnostic_index;
   // Diagnostic emitted when complete address materialization rejects.
@@ -593,16 +594,20 @@ typedef struct loom_low_lower_source_memory_t {
   uint8_t dynamic_view_base_term_count;
   // Required provenance for each dynamic address term.
   uint8_t dynamic_index_source;
-  // Required unsigned dynamic byte offset bit width, or zero if unconstrained.
+  // Required unsigned width of the complete byte offset, or zero if
+  // unconstrained.
+  uint8_t byte_offset_unsigned_bit_count;
+  // Required unsigned width excluding the static bias, or zero if
+  // unconstrained.
   uint8_t dynamic_offset_unsigned_bit_count;
   // One-based dynamic byte-offset materializer row, or zero when unused.
   uint8_t byte_offset_materializer_ordinal;
   // One-based complete-address materializer row, or zero when unused.
   uint8_t address_materializer_ordinal;
-  // Rule-set source-memory diagnostic row index.
-  uint16_t diagnostics_index;
   // Bitfield of source-memory row option bits.
   loom_low_lower_source_memory_flags_t flags;
+  // Rule-set source-memory diagnostic row index.
+  uint16_t diagnostics_index;
   // Accepted target-independent source memory spaces.
   loom_low_lower_memory_space_mask_t memory_space_mask;
   // Required byte count of one addressed view element.

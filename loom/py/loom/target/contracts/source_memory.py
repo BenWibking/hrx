@@ -211,8 +211,11 @@ class SourceMemoryConstraint:
     dynamic_byte_stride: int | None = 0
     allow_dynamic_stride_values: bool = False
     preserve_source_index: bool = False
+    # Unsigned width of the complete byte offset, or zero if unconstrained.
+    byte_offset_unsigned_bit_count: int = 0
+    # Unsigned width excluding the static bias, or zero if unconstrained.
     dynamic_offset_unsigned_bit_count: int = 0
-    dynamic_offset_diagnostic: GuardDiagnostic | None = None
+    byte_offset_diagnostic: GuardDiagnostic | None = None
     address_layout_diagnostic: GuardDiagnostic | None = None
     cache_policy_build_flags: int | None = 0
     diagnostic: GuardDiagnostic | None = None
@@ -240,8 +243,9 @@ class SourceMemoryConstraint:
         dynamic_byte_stride: int | None = 0,
         allow_dynamic_stride_values: bool = False,
         preserve_source_index: bool = False,
+        byte_offset_unsigned_bit_count: int = 0,
         dynamic_offset_unsigned_bit_count: int = 0,
-        dynamic_offset_diagnostic: GuardDiagnostic | None = None,
+        byte_offset_diagnostic: GuardDiagnostic | None = None,
         address_layout_diagnostic: GuardDiagnostic | None = None,
         cache_policy_build_flags: int | None = 0,
         diagnostic: GuardDiagnostic | None = None,
@@ -282,13 +286,18 @@ class SourceMemoryConstraint:
         object.__setattr__(self, "preserve_source_index", preserve_source_index)
         object.__setattr__(
             self,
+            "byte_offset_unsigned_bit_count",
+            byte_offset_unsigned_bit_count,
+        )
+        object.__setattr__(
+            self,
             "dynamic_offset_unsigned_bit_count",
             dynamic_offset_unsigned_bit_count,
         )
         object.__setattr__(
             self,
-            "dynamic_offset_diagnostic",
-            dynamic_offset_diagnostic,
+            "byte_offset_diagnostic",
+            byte_offset_diagnostic,
         )
         object.__setattr__(
             self,
@@ -330,12 +339,7 @@ class SourceMemoryConstraint:
             raise ValueError("source memory vector lane byte stride must fit in i64")
         if self.vector_lane_byte_stride == 0:
             raise ValueError("source memory vector lane byte stride must be non-zero")
-        if not _I64_MIN <= self.static_byte_offset_minimum <= _I64_MAX:
-            raise ValueError("source memory minimum static byte offset must fit in i64")
-        if not _I64_MIN <= self.static_byte_offset_maximum <= _I64_MAX:
-            raise ValueError("source memory maximum static byte offset must fit in i64")
-        if self.static_byte_offset_minimum > self.static_byte_offset_maximum:
-            raise ValueError("source memory static byte offset range is empty")
+        self._validate_byte_offsets()
         if not 0 <= self.minimum_alignment <= _U32_MAX:
             raise ValueError("source memory minimum alignment must fit in u32")
         if self.minimum_alignment != 0 and (
@@ -398,18 +402,28 @@ class SourceMemoryConstraint:
                 raise ValueError(
                     "source-index preservation requires zero dynamic view-base terms"
                 )
-        if self.dynamic_byte_stride is not None and not (
-            _I64_MIN <= self.dynamic_byte_stride <= _I64_MAX
-        ):
-            raise ValueError("source memory dynamic byte stride must fit in i64")
-        if not 0 <= self.dynamic_offset_unsigned_bit_count <= 64:
-            raise ValueError(
-                "source memory dynamic offset unsigned bit count must fit in u8"
-            )
         if self.cache_policy_build_flags is not None and not (
             0 <= self.cache_policy_build_flags <= _U32_MAX
         ):
             raise ValueError("source memory cache policy flags must fit in u32")
+
+    def _validate_byte_offsets(self) -> None:
+        if not _I64_MIN <= self.static_byte_offset_minimum <= _I64_MAX:
+            raise ValueError("source memory minimum static byte offset must fit in i64")
+        if not _I64_MIN <= self.static_byte_offset_maximum <= _I64_MAX:
+            raise ValueError("source memory maximum static byte offset must fit in i64")
+        if self.static_byte_offset_minimum > self.static_byte_offset_maximum:
+            raise ValueError("source memory static byte offset range is empty")
+        if self.dynamic_byte_stride is not None and not (
+            _I64_MIN <= self.dynamic_byte_stride <= _I64_MAX
+        ):
+            raise ValueError("source memory dynamic byte stride must fit in i64")
+        if not 0 <= self.byte_offset_unsigned_bit_count <= 64:
+            raise ValueError("source memory byte offset width must be in [0, 64]")
+        if not 0 <= self.dynamic_offset_unsigned_bit_count <= 64:
+            raise ValueError(
+                "source memory dynamic byte offset width must be in [0, 64]"
+            )
 
     def validate(self, source_op: Op) -> None:
         if not self.preserve_source_index:

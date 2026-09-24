@@ -84,8 +84,8 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _register_unit_count_exact_diagnostic,
     _source_memory_address_diagnostic,
     _source_memory_address_layout_diagnostic,
+    _source_memory_byte_offset_diagnostic,
     _source_memory_diagnostic,
-    _source_memory_dynamic_offset_diagnostic,
     _static_dim0_multiple_diagnostic,
     _static_element_count_relation_diagnostic,
     _storage_element_format_diagnostic,
@@ -1589,9 +1589,9 @@ class _LowerRuleSetCompiler:
                 source_op,
                 _source_memory_diagnostic(constraint),
             ),
-            dynamic_offset_diagnostic_index=self._append_diagnostic_ref(
+            byte_offset_diagnostic_index=self._append_diagnostic_ref(
                 source_op,
-                _source_memory_dynamic_offset_diagnostic(constraint),
+                _source_memory_byte_offset_diagnostic(constraint),
             ),
             address_layout_diagnostic_index=(
                 0xFFFF

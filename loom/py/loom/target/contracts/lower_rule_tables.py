@@ -180,7 +180,7 @@ class LowerSourceMemory:
 
     constraint: SourceMemoryConstraint
     diagnostic_index: int
-    dynamic_offset_diagnostic_index: int
+    byte_offset_diagnostic_index: int
     address_layout_diagnostic_index: int = 0xFFFF
     address_diagnostic_index: int = 0xFFFF
     byte_offset_materializer: SourceMemoryByteOffsetMaterializer | None = None

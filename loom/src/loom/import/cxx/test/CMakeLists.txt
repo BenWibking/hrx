@@ -53,6 +53,7 @@ loom_check_test_suite(
     "functions.cxx-test"
     "initializer_dependencies.cxx-test"
     "integer_intrinsics.cxx-test"
+    "integer_widening.cxx-test"
     "intrinsics_invalid.cxx-test"
     "kernel_intrinsics.cxx-test"
     "kernel_intrinsics_invalid.cxx-test"

@@ -166,15 +166,29 @@ static bool loom_low_lower_rule_source_memory_address_layout_matches(
   return false;
 }
 
-static bool loom_low_lower_rule_source_memory_dynamic_offset_matches(
+static bool loom_low_lower_rule_source_memory_byte_offset_matches(
     const loom_low_lower_source_memory_t* source_memory,
     const loom_low_source_memory_access_plan_t* access) {
-  const uint8_t bit_count = source_memory->dynamic_offset_unsigned_bit_count;
-  if (bit_count == 0) {
+  const uint8_t complete_bit_count =
+      source_memory->byte_offset_unsigned_bit_count;
+  const uint8_t dynamic_bit_count =
+      source_memory->dynamic_offset_unsigned_bit_count;
+  if (complete_bit_count == 0 && dynamic_bit_count == 0) {
     return true;
   }
-  return loom_low_source_memory_dynamic_offset_fits_unsigned_bit_count(
-      access, access->static_byte_offset, bit_count);
+  loom_value_facts_t byte_facts = loom_low_source_memory_dynamic_offset_facts(
+      access, access->static_byte_offset);
+  if (complete_bit_count != 0 && !loom_value_facts_fit_unsigned_bit_count(
+                                     byte_facts, complete_bit_count)) {
+    return false;
+  }
+  if (dynamic_bit_count == 0) {
+    return true;
+  }
+  const loom_value_facts_t bias =
+      loom_value_facts_exact_i64(access->static_byte_offset);
+  loom_value_facts_subi(&byte_facts, &bias, &byte_facts);
+  return loom_value_facts_fit_unsigned_bit_count(byte_facts, dynamic_bit_count);
 }
 
 static bool loom_low_lower_rule_source_memory_address_input_matches(
@@ -376,10 +390,10 @@ bool loom_low_lower_rule_source_memory_matches(
     return loom_low_lower_rule_source_memory_reject(
         diagnostics->address_layout_diagnostic_index, out_diagnostic_index);
   }
-  if (!loom_low_lower_rule_source_memory_dynamic_offset_matches(source_memory,
-                                                                access)) {
+  if (!loom_low_lower_rule_source_memory_byte_offset_matches(source_memory,
+                                                             access)) {
     return loom_low_lower_rule_source_memory_reject(
-        diagnostics->dynamic_offset_diagnostic_index, out_diagnostic_index);
+        diagnostics->byte_offset_diagnostic_index, out_diagnostic_index);
   }
   return true;
 }

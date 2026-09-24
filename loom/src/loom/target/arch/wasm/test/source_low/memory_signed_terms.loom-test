@@ -19,10 +19,12 @@ func.def @signed_uniform_word(%input: i32, %table: buffer) -> (i32) {
 
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_uniform_word(%signed: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %13 = i32.const 4
-  %14 = i32.mul %signed, %13
-  %15 = i32.add %view, %14
-  %value = i32.load %15 {offset = 512}
+  %13 = i32.const 512
+  %14 = i32.const 4
+  %15 = i32.mul %signed, %14
+  %16 = i32.add %15, %13
+  %17 = i32.add %view, %16
+  %value = i32.load %17
   return %value
 }
 
@@ -45,10 +47,12 @@ func.def @signed_varying_word(%input: buffer, %table: buffer) -> (i32) {
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_varying_word(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
   %signed = i32.load %source
-  %17 = i32.const 4
-  %18 = i32.mul %signed, %17
-  %19 = i32.add %view, %18
-  %value = i32.load %19 {offset = 512}
+  %17 = i32.const 512
+  %18 = i32.const 4
+  %19 = i32.mul %signed, %18
+  %20 = i32.add %19, %17
+  %21 = i32.add %view, %20
+  %value = i32.load %21
   return %value
 }
 
@@ -72,10 +76,12 @@ func.def @signed_factored_word(%input: buffer, %table: buffer) -> (i32) {
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_factored_word(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
   %signed = i32.load %source
-  %18 = i32.const 8
-  %19 = i32.mul %signed, %18
-  %20 = i32.add %view, %19
-  %value = i32.load %20 {offset = 512}
+  %18 = i32.const 512
+  %19 = i32.const 8
+  %20 = i32.mul %signed, %19
+  %21 = i32.add %20, %18
+  %22 = i32.add %view, %21
+  %value = i32.load %22
   return %value
 }
 
@@ -98,8 +104,10 @@ func.def @signed_varying_byte(%input: buffer, %table: buffer) -> (i8) {
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_varying_byte(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
   %signed = i32.load %source
-  %17 = i32.add %view, %signed
-  %value = i32.load8_u %17 {offset = 256}
+  %17 = i32.const 256
+  %18 = i32.add %signed, %17
+  %19 = i32.add %view, %18
+  %value = i32.load8_u %19
   return %value
 }
 
@@ -123,10 +131,12 @@ func.def @signed_irregular_stride(%input: buffer, %table: buffer) -> (i32) {
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_irregular_stride(%source: reg<wasm.i32>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
   %signed = i32.load %source
-  %18 = i32.const 12
-  %19 = i32.mul %signed, %18
-  %20 = i32.add %view, %19
-  %value = i32.load %20 {offset = 1536}
+  %18 = i32.const 1536
+  %19 = i32.const 12
+  %20 = i32.mul %signed, %19
+  %21 = i32.add %20, %18
+  %22 = i32.add %view, %21
+  %value = i32.load %22
   return %value
 }
 
@@ -197,11 +207,13 @@ func.def @signed_wide_source(%input: i64, %table: buffer) -> (i32) {
 
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_wide_source(%signed: reg<wasm.i64>, %view: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %13 = i32.wrap_i64 %signed
-  %14 = i32.const 4
-  %15 = i32.mul %13, %14
-  %16 = i32.add %view, %15
-  %value = i32.load %16 {offset = 512}
+  %13 = i32.const 512
+  %14 = i32.wrap_i64 %signed
+  %15 = i32.const 4
+  %16 = i32.mul %14, %15
+  %17 = i32.add %16, %13
+  %18 = i32.add %view, %17
+  %value = i32.load %18
   return %value
 }
 
@@ -221,10 +233,12 @@ func.def @negative_uniform_coefficient(%selector0: i32, %value: i32, %table: buf
 
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @negative_uniform_coefficient(%selector: reg<wasm.i32>, %value: reg<wasm.i32>, %view: reg<wasm.i32>) asm {
-  %13 = i32.const -4
-  %14 = i32.mul %selector, %13
-  %15 = i32.add %view, %14
-  i32.store %15, %value {offset = 4}
+  %13 = i32.const 4
+  %14 = i32.const -4
+  %15 = i32.mul %selector, %14
+  %16 = i32.add %15, %13
+  %17 = i32.add %view, %16
+  i32.store %17, %value
   return
 }
 

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from enum import Enum
 
 from loom.dialect.buffer import ALL_BUFFER_OPS
 from loom.dialect.buffer import defs as buffer
@@ -785,6 +786,12 @@ def _buffer_store_i8_rule() -> DescriptorRule:
     )
 
 
+class _MemoryAddressForm(Enum):
+    DYNAMIC_IMMEDIATE = "dynamic_immediate"
+    DYNAMIC_REGISTER = "dynamic_register"
+    STATIC = "static"
+
+
 def _memory_rule(
     source_op: Op,
     operation: SourceMemoryOperation,
@@ -793,9 +800,11 @@ def _memory_rule(
     *,
     element_byte_count: int,
     lane_count: int,
-    dynamic: bool,
+    address_form: _MemoryAddressForm,
 ) -> DescriptorRule:
     descriptor = _descriptor(descriptor_key)
+    dynamic = address_form is not _MemoryAddressForm.STATIC
+    register_bias = address_form is _MemoryAddressForm.DYNAMIC_REGISTER
     source_memory = SourceMemoryConstraint(
         operation=operation,
         root_kind=SourceMemoryRootKind.BLOCK_ARGUMENT,
@@ -803,41 +812,74 @@ def _memory_rule(
         element_byte_count=element_byte_count,
         vector_lane_count=lane_count,
         vector_lane_byte_stride=element_byte_count,
-        static_byte_offset_minimum=0,
+        static_byte_offset_minimum=1 if register_bias else 0,
         static_byte_offset_maximum=(1 << 32) - 1,
         dynamic_term_count=None if dynamic else 0,
         dynamic_term_count_minimum=1 if dynamic else 0,
         dynamic_view_base_term_count=None,
         allow_dynamic_stride_values=dynamic,
-        dynamic_offset_unsigned_bit_count=32,
-        dynamic_offset_diagnostic=_WASM32_ADDRESS_DIAGNOSTIC,
+        byte_offset_unsigned_bit_count=32,
+        dynamic_offset_unsigned_bit_count=(
+            32 if address_form is _MemoryAddressForm.DYNAMIC_IMMEDIATE else 0
+        ),
+        byte_offset_diagnostic=_WASM32_ADDRESS_DIAGNOSTIC,
         diagnostic=_SOURCE_MEMORY_DIAGNOSTIC,
     )
     address = ValueRef.operand("view")
     emits = []
     if dynamic:
+        materializer = SourceMemoryByteOffsetMaterializer(
+            constant=_descriptor("wasm.i32.const"),
+            add=_descriptor("wasm.i32.add"),
+            multiply=_descriptor("wasm.i32.mul"),
+            shift_left=None,
+            constant_immediate="i32_value",
+            integer_conversions=(
+                SourceMemoryIntegerConversion("i64", _descriptor("wasm.i32.wrap_i64")),
+            ),
+        )
+        byte_offset = ValueRef.source_memory_dynamic_byte_offset()
+        if register_bias:
+            # Wasm adds its memory immediate without i32 wrap. Keep the bias
+            # in modular arithmetic when the dynamic part can be negative.
+            bias = ValueRef.temporary("bias")
+            biased_offset = ValueRef.temporary("biased_offset")
+            emits.extend(
+                (
+                    EmitDescriptorOp(
+                        descriptor=_descriptor("wasm.i32.const"),
+                        results={"dst": bias},
+                        result_types={"dst": _I32},
+                        immediates={
+                            "i32_value": SourceMemoryProject.static_byte_offset()
+                        },
+                        source_memory=source_memory,
+                        form=DescriptorEmitForm.CONST,
+                    ),
+                    EmitDescriptorOp(
+                        descriptor=_descriptor("wasm.i32.add"),
+                        operands={"lhs": byte_offset, "rhs": bias},
+                        results={"dst": biased_offset},
+                        result_types={"dst": _I32},
+                        source_memory=source_memory,
+                        source_memory_byte_offset_materializer=materializer,
+                    ),
+                )
+            )
+            byte_offset = biased_offset
         address = ValueRef.temporary("address")
         emits.append(
             EmitDescriptorOp(
                 descriptor=_descriptor("wasm.i32.add"),
                 operands={
                     "lhs": ValueRef.operand("view"),
-                    "rhs": ValueRef.source_memory_dynamic_byte_offset(),
+                    "rhs": byte_offset,
                 },
                 results={"dst": address},
                 result_types={"dst": _I32},
                 source_memory=source_memory,
-                source_memory_byte_offset_materializer=SourceMemoryByteOffsetMaterializer(
-                    constant=_descriptor("wasm.i32.const"),
-                    add=_descriptor("wasm.i32.add"),
-                    multiply=_descriptor("wasm.i32.mul"),
-                    shift_left=None,
-                    constant_immediate="i32_value",
-                    integer_conversions=(
-                        SourceMemoryIntegerConversion(
-                            "i64", _descriptor("wasm.i32.wrap_i64")
-                        ),
-                    ),
+                source_memory_byte_offset_materializer=(
+                    None if register_bias else materializer
                 ),
             )
         )
@@ -852,7 +894,11 @@ def _memory_rule(
                 "value": ValueRef.operand("value"),
             },
             results={"dst": ValueRef.result("result")} if is_load else {},
-            immediates={"offset": SourceMemoryProject.static_byte_offset()},
+            immediates={
+                "offset": 0
+                if register_bias
+                else SourceMemoryProject.static_byte_offset()
+            },
             source_memory=source_memory,
             form=DescriptorEmitForm.OP,
         )
@@ -960,6 +1006,18 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _conversion_alias_rule(scalar_conversion.scalar_extui, _I1, _I32),
         _masked_extui_rule(_I8, 0xFF),
         _masked_extui_rule(_I16, 0xFFFF),
+        _conversion_rule(
+            scalar_conversion.scalar_extsi,
+            _I32,
+            _I64,
+            "wasm.i64.extend_i32_s",
+        ),
+        _conversion_rule(
+            scalar_conversion.scalar_extui,
+            _I32,
+            _I64,
+            "wasm.i64.extend_i32_u",
+        ),
         _const_i32_rule(scalar_conversion.scalar_constant, _I32),
         _const_i1_rule(),
         _const_i64_rule(scalar_conversion.scalar_constant, _I64),
@@ -1130,7 +1188,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 ),
                 element_byte_count=element_byte_count,
                 lane_count=lane_count,
-                dynamic=dynamic,
+                address_form=address_form,
             )
             for (
                 value_type,
@@ -1192,7 +1250,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 ),
             )
             for operation in (SourceMemoryOperation.LOAD, SourceMemoryOperation.STORE)
-            for dynamic in (True, False)
+            for address_form in _MemoryAddressForm
         ),
         *reduction_descriptor_rules(
             vector.vector_reduce,
