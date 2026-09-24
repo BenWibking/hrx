@@ -22,8 +22,10 @@ class ExtendedMathOperation:
     """One source math operation and its GLSL.std.450 instruction."""
 
     source_op_key: str
+    operand_names: tuple[str, ...]
     instruction_name: str
     instruction_c_enum: str
+    required_fastmath_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,23 +53,45 @@ class ExtendedMathInstruction:
 EXTENDED_MATH_OPERATIONS = (
     ExtendedMathOperation(
         source_op_key="expf",
+        operand_names=("input",),
         instruction_name="Exp",
         instruction_c_enum="LOOM_SPIRV_GLSL_STD_450_EXP",
+        required_fastmath_flags=("afn",),
     ),
     ExtendedMathOperation(
         source_op_key="logf",
+        operand_names=("input",),
         instruction_name="Log",
         instruction_c_enum="LOOM_SPIRV_GLSL_STD_450_LOG",
+        required_fastmath_flags=("afn",),
     ),
     ExtendedMathOperation(
         source_op_key="exp2f",
+        operand_names=("input",),
         instruction_name="Exp2",
         instruction_c_enum="LOOM_SPIRV_GLSL_STD_450_EXP2",
+        required_fastmath_flags=("afn",),
     ),
     ExtendedMathOperation(
         source_op_key="log2f",
+        operand_names=("input",),
         instruction_name="Log2",
         instruction_c_enum="LOOM_SPIRV_GLSL_STD_450_LOG2",
+        required_fastmath_flags=("afn",),
+    ),
+    ExtendedMathOperation(
+        source_op_key="minnumf",
+        operand_names=("lhs", "rhs"),
+        instruction_name="NMin",
+        instruction_c_enum="LOOM_SPIRV_GLSL_STD_450_NMIN",
+        required_fastmath_flags=("nsz",),
+    ),
+    ExtendedMathOperation(
+        source_op_key="maxnumf",
+        operand_names=("lhs", "rhs"),
+        instruction_name="NMax",
+        instruction_c_enum="LOOM_SPIRV_GLSL_STD_450_NMAX",
+        required_fastmath_flags=("nsz",),
     ),
 )
 

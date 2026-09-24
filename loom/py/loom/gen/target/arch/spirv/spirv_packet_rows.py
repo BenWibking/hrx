@@ -977,7 +977,7 @@ def _extended_math_rows() -> list[_PacketRow]:
             opcode="LOOM_SPIRV_OP_EXT_INST",
             form="LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION",
             result_type=_ordinary_vector_instruction_value(row.value_type),
-            operand_types=(_ordinary_vector_instruction_value(row.value_type),),
+            operand_types=tuple(_ordinary_vector_instruction_value(row.value_type) for _ in row.operation.operand_names),
             result_count=1,
             extended_instruction_set=("LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450"),
             extended_instruction=row.operation.instruction_c_enum,

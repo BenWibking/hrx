@@ -723,7 +723,7 @@ def test_generation_emits_complete_ordinary_vector_bit_layout_rows() -> None:
 
 
 def test_generation_emits_complete_extended_math_matrix() -> None:
-    assert len(EXTENDED_MATH_INSTRUCTIONS) == 16
+    assert len(EXTENDED_MATH_INSTRUCTIONS) == 24
     rows = {row.descriptor_key: row for row in _packet_rows()}
     descriptors = {descriptor.key: descriptor for descriptor in SPIRV_LOGICAL_CORE_DESCRIPTOR_SET.descriptors}
     for instruction in EXTENDED_MATH_INSTRUCTIONS:
@@ -732,7 +732,7 @@ def test_generation_emits_complete_extended_math_matrix() -> None:
         assert row.opcode == "LOOM_SPIRV_OP_EXT_INST"
         assert row.form == "LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION"
         assert row.result_type == expected_value_type
-        assert row.operand_types == (expected_value_type,)
+        assert row.operand_types == tuple(expected_value_type for _ in instruction.operation.operand_names)
         assert row.result_count == 1
         assert row.extended_instruction_set == "LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450"
         assert row.extended_instruction == instruction.operation.instruction_c_enum

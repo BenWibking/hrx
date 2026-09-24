@@ -638,16 +638,30 @@ def _ordinary_vector_descriptor(row: OrdinaryVectorInstruction) -> Descriptor:
 
 
 def _extended_math_descriptor(row: ExtendedMathInstruction) -> Descriptor:
-    return _unary_typed_descriptor(
+    result_value_type = _ordinary_vector_result_value_type(row.value_type)
+    return Descriptor(
         key=row.descriptor_key,
         mnemonic=row.mnemonic,
         semantic_tag=row.descriptor_key,
         operands=(
             _ordinary_vector_result(row.value_type),
-            _ordinary_vector_operand("input", row.value_type),
+            *(
+                _ordinary_vector_operand(operand_name, row.value_type)
+                for operand_name in row.operation.operand_names
+            ),
         ),
-        result_value_type=_ordinary_vector_result_value_type(row.value_type),
-        feature_bits=row.value_type.feature_bits,
+        feature_mask_words=(
+            (row.value_type.feature_bits,) if row.value_type.feature_bits else ()
+        ),
+        asm_forms=_asm(
+            results=("dst",),
+            operands=row.operation.operand_names,
+            result_value_types=(
+                (result_value_type,) if result_value_type is not None else ()
+            ),
+        ),
+        schedule_class=_SCHEDULE_ALU,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
     )
 
 
