@@ -15,9 +15,16 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
-_CASES = glob(["*.loom"])
+_CONFIGURED_CASES = [
+    "pipelined_guarded_recurrence.loom",
+]
 
-exports_files(_CASES)
+_CASES = glob(
+    ["*.loom"],
+    exclude = _CONFIGURED_CASES,
+)
+
+exports_files(_CASES + _CONFIGURED_CASES)
 
 loom_generated_file_family(
     name = "vector_i64_bitwise_gen",
@@ -200,6 +207,40 @@ loom_test(
         "//loom/target/spirv:vulkan1.3+bda+extended-types",
     ],
     execution_profiles = GPU_HARDWARE_PROFILES + [AMDGPU_ACCESS_PROFILE],
+)
+
+loom_test(
+    name = "pipelined_guarded_recurrence_test",
+    srcs = [
+        "pipelined_guarded_recurrence.loom",
+        "//loom/binding/c/benchmark/kernels:synthetic/segmented_guarded_read_ahead.loom",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1250",
+        "//loom/target/spirv:vulkan1.3+bda",
+    ],
+    configs = {
+        "benchmark.loop_count": "8",
+        "test.factor": "1",
+    },
+    execution_profiles = GPU_HARDWARE_PROFILES + [AMDGPU_ACCESS_PROFILE],
+    variants = {
+        "depth_three": {"configs": {
+            "benchmark.pipeline_depth": "3",
+            "test.depth": "3",
+        }},
+        "serial": {"configs": {
+            "benchmark.pipeline_depth": "1",
+            "test.depth": "1",
+        }},
+        "unrolled": {"configs": {
+            "benchmark.pipeline_depth": "4",
+            "test.depth": "4",
+            "test.factor": "2",
+        }},
+    },
 )
 
 loom_test(

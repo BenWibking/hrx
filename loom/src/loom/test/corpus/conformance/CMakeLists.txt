@@ -9,7 +9,9 @@
 
 iree_add_all_subdirs()
 
-file(GLOB _GLOB_X_LOOM LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS *.loom)
+file(GLOB _GLOB_X_LOOM_0B029767 LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS *.loom)
+file(GLOB _GLOB_PIPELINED_GUARDED_RECURRENCE_LOOM_0B029767 LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS pipelined_guarded_recurrence.loom)
+list(REMOVE_ITEM _GLOB_X_LOOM_0B029767 ${_GLOB_PIPELINED_GUARDED_RECURRENCE_LOOM_0B029767})
 loom_generated_file_family(
   NAME
     vector_i64_bitwise_gen
@@ -696,6 +698,326 @@ loom_check_compile_tests(
     loom::target::amdgpu::gfx1151
     loom::target::amdgpu::gfx942
     loom::target::spirv::vulkan1.3+bda+extended-types
+)
+
+loom_test_module(
+  NAME
+    pipelined_guarded_recurrence_test_module
+  SRCS
+    "pipelined_guarded_recurrence.loom"
+    "${PROJECT_SOURCE_DIR}/loom/binding/c/benchmark/kernels/synthetic/segmented_guarded_read_ahead.loom"
+)
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_depth_three_execute_amdgpu_hardware_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=3"
+    "--config=test.depth=3"
+    "--config=test.factor=1"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_depth_three_execute_spirv_vulkan_hardware_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=vulkan"
+    "--vulkan_validation_layers=false"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=3"
+    "--config=test.depth=3"
+    "--config=test.factor=1"
+  LABELS
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.vulkan"
+    "iree-run-requirement=vulkan.resource.device"
+    "runtime-resource=vulkan-device"
+    "loom-execution-profile=spirv_vulkan_hardware"
+    "loom-target-family=spirv"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_depth_three_execute_amdgpu_access_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=3"
+    "--config=test.depth=3"
+    "--config=test.factor=1"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "pipelined_guarded_recurrence_test_depth_three"
+  SRC
+    "::pipelined_guarded_recurrence_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+    loom::target::spirv::vulkan1.3+bda
+  ARGS
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=3"
+    "--config=test.depth=3"
+    "--config=test.factor=1"
+)
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_serial_execute_amdgpu_hardware_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=1"
+    "--config=test.depth=1"
+    "--config=test.factor=1"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_serial_execute_spirv_vulkan_hardware_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=vulkan"
+    "--vulkan_validation_layers=false"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=1"
+    "--config=test.depth=1"
+    "--config=test.factor=1"
+  LABELS
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.vulkan"
+    "iree-run-requirement=vulkan.resource.device"
+    "runtime-resource=vulkan-device"
+    "loom-execution-profile=spirv_vulkan_hardware"
+    "loom-target-family=spirv"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_serial_execute_amdgpu_access_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=1"
+    "--config=test.depth=1"
+    "--config=test.factor=1"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "pipelined_guarded_recurrence_test_serial"
+  SRC
+    "::pipelined_guarded_recurrence_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+    loom::target::spirv::vulkan1.3+bda
+  ARGS
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=1"
+    "--config=test.depth=1"
+    "--config=test.factor=1"
+)
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_unrolled_execute_amdgpu_hardware_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=4"
+    "--config=test.depth=4"
+    "--config=test.factor=2"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_unrolled_execute_spirv_vulkan_hardware_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=vulkan"
+    "--vulkan_validation_layers=false"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=4"
+    "--config=test.depth=4"
+    "--config=test.factor=2"
+  LABELS
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.vulkan"
+    "iree-run-requirement=vulkan.resource.device"
+    "runtime-resource=vulkan-device"
+    "loom-execution-profile=spirv_vulkan_hardware"
+    "loom-target-family=spirv"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    pipelined_guarded_recurrence_test_unrolled_execute_amdgpu_access_test
+  MODULE
+    "::pipelined_guarded_recurrence_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=4"
+    "--config=test.depth=4"
+    "--config=test.factor=2"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "pipelined_guarded_recurrence_test_unrolled"
+  SRC
+    "::pipelined_guarded_recurrence_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+    loom::target::spirv::vulkan1.3+bda
+  ARGS
+    "--config=benchmark.loop_count=8"
+    "--config=benchmark.pipeline_depth=4"
+    "--config=test.depth=4"
+    "--config=test.factor=2"
 )
 
 loom_test_module(
@@ -1582,7 +1904,7 @@ loom_module(
   NAME
     conformance_cases
   SRCS
-    "${_GLOB_X_LOOM}"
+    "${_GLOB_X_LOOM_0B029767}"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/byte_memory_banks.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_atomic_i64.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/storage_stability.loom-test"
