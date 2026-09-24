@@ -501,14 +501,14 @@ typedef struct loom_low_lower_memory_bank_service_report_t {
   uint8_t bank_count;
   // Byte width of one LDS bank word.
   uint8_t bank_word_byte_count;
-  // Number of consecutive bank words requested by each active lane.
-  uint8_t packet_word_count;
+  // Number of bytes accessed by each active lane.
+  uint8_t packet_byte_count;
   // Number of populated phase entries.
   uint8_t phase_count;
   // Number of active model lanes in each service phase.
   uint8_t phase_lane_counts[LOOM_LOW_LOWER_MEMORY_BANK_SERVICE_PHASE_CAPACITY];
-  // Number of common bank-word base residues covered by the result.
-  uint8_t base_residue_count;
+  // Number of common byte-base residues covered by the result.
+  uint16_t base_residue_count;
   // Required bank service rounds for each model phase.
   uint16_t
       phase_required_rounds[LOOM_LOW_LOWER_MEMORY_BANK_SERVICE_PHASE_CAPACITY];

@@ -199,7 +199,7 @@ TEST(CompileReportFormatTest, FormatsSourceToLowSelectionAndMemory) {
   memory.bank_service.wave_size = 32;
   memory.bank_service.bank_count = 32;
   memory.bank_service.bank_word_byte_count = 4;
-  memory.bank_service.packet_word_count = 4;
+  memory.bank_service.packet_byte_count = 16;
   memory.bank_service.phase_count = 2;
   memory.bank_service.phase_lane_counts[0] = 4;
   memory.bank_service.phase_lane_counts[1] = 4;

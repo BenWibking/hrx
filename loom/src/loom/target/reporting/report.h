@@ -1400,15 +1400,15 @@ typedef struct loom_target_compile_report_bank_service_t {
   uint8_t bank_count;
   // Byte width of one LDS bank word.
   uint8_t bank_word_byte_count;
-  // Number of consecutive bank words requested by each active lane.
-  uint8_t packet_word_count;
+  // Number of bytes accessed by each active lane.
+  uint8_t packet_byte_count;
   // Number of populated phase entries.
   uint8_t phase_count;
   // Number of active model lanes in each service phase.
   uint8_t
       phase_lane_counts[LOOM_TARGET_COMPILE_REPORT_BANK_SERVICE_PHASE_CAPACITY];
-  // Number of common bank-word base residues covered by the result.
-  uint8_t base_residue_count;
+  // Number of common byte-base residues covered by the result.
+  uint16_t base_residue_count;
   // Required bank service rounds for each model phase.
   uint16_t phase_required_rounds
       [LOOM_TARGET_COMPILE_REPORT_BANK_SERVICE_PHASE_CAPACITY];
@@ -1588,8 +1588,8 @@ typedef struct loom_target_compile_report_source_low_bank_service_summary_t {
   uint8_t bank_count;
   // Byte width of one bank word.
   uint8_t bank_word_byte_count;
-  // Number of consecutive bank words requested by each active lane.
-  uint8_t packet_word_count;
+  // Number of bytes accessed by each active lane.
+  uint8_t packet_byte_count;
   // Accumulated structural service evidence for the packet group.
   loom_target_compile_report_bank_service_summary_t summary;
 } loom_target_compile_report_source_low_bank_service_summary_t;

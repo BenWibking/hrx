@@ -30,7 +30,7 @@ static void loom_amdgpu_memory_bank_service_initialize_report(
       .wave_size = model->wave_size,
       .bank_count = model->bank_count,
       .bank_word_byte_count = model->bank_word_byte_count,
-      .packet_word_count = model->packet_word_count,
+      .packet_byte_count = model->packet_byte_count,
       .phase_count = model->phase_count,
   };
   for (uint8_t phase = 0; phase < model->phase_count; ++phase) {
@@ -76,17 +76,77 @@ static void loom_amdgpu_memory_bank_service_mark_unknown(
   out_report->unknown_reason = reason;
 }
 
+// A common word-sized translation only rotates bank indices. Retain the
+// subword residue using root alignment, exact offsets, and dynamic
+// divisibility. The source access alignment also constrains the combined origin
+// address.
+static uint64_t loom_amdgpu_memory_bank_service_source_residues(
+    const loom_low_source_memory_access_plan_t* source,
+    loom_value_facts_t dynamic_offset, uint8_t bank_word_byte_count) {
+  uint64_t translation = (uint64_t)source->static_byte_offset;
+  uint64_t step = iree_math_gcd_i64(
+      bank_word_byte_count, iree_max(source->root_minimum_alignment, 1u));
+  if (dynamic_offset.range_lo == dynamic_offset.range_hi) {
+    translation += (uint64_t)dynamic_offset.range_lo;
+  } else {
+    step = iree_math_gcd_i64((int64_t)step, dynamic_offset.known_divisor);
+  }
+  const uint64_t access_alignment = iree_math_gcd_i64(
+      bank_word_byte_count, iree_max(source->minimum_alignment, 1u));
+  uint64_t residues = 0;
+  for (uint64_t residue = 0; residue < bank_word_byte_count; residue += step) {
+    const uint64_t origin = (residue + translation) % bank_word_byte_count;
+    if (origin % access_alignment == 0) {
+      residues |= UINT64_C(1) << origin;
+    }
+  }
+  return residues;
+}
+
+static uint64_t loom_amdgpu_memory_bank_service_add_offset_residues(
+    uint64_t source_residues, loom_value_facts_t offset,
+    uint8_t bank_word_byte_count) {
+  const bool exact = offset.range_lo == offset.range_hi;
+  const uint64_t first =
+      exact ? (uint64_t)offset.range_lo % bank_word_byte_count : 0;
+  const uint64_t step =
+      exact ? bank_word_byte_count
+            : iree_math_gcd_i64(bank_word_byte_count, offset.known_divisor);
+  uint64_t residues = 0;
+  for (uint8_t source = 0; source < bank_word_byte_count; ++source) {
+    if ((source_residues & (UINT64_C(1) << source)) == 0) {
+      continue;
+    }
+    for (uint64_t added = first; added < bank_word_byte_count; added += step) {
+      residues |= UINT64_C(1) << ((source + added) % bank_word_byte_count);
+    }
+  }
+  return residues;
+}
+
 static void loom_amdgpu_memory_bank_service_evaluate_full_wave(
     const loom_amdgpu_lds_bank_service_model_t* model,
     const uint64_t
         lane_base_byte_offsets[LOOM_AMDGPU_LDS_BANK_SERVICE_MAX_WAVE_SIZE],
+    uint64_t common_base_byte_residues,
     loom_low_lower_memory_bank_service_report_t* out_report) {
   const uint64_t active_lane_mask =
       model->wave_size == 64 ? UINT64_MAX
                              : (UINT64_C(1) << model->wave_size) - UINT64_C(1);
   loom_amdgpu_lds_bank_service_result_t result = {0};
-  loom_amdgpu_lds_bank_service_evaluate(model, active_lane_mask,
-                                        lane_base_byte_offsets, &result);
+  if (!loom_amdgpu_lds_bank_service_evaluate(
+          model, active_lane_mask, lane_base_byte_offsets,
+          common_base_byte_residues, &result)) {
+    out_report->base_residue_proof = IREE_SV("unproven");
+    loom_amdgpu_memory_bank_service_mark_unknown(
+        IREE_SV("address-base-residue-unproven"), out_report);
+    return;
+  }
+  out_report->base_residue_count = result.base_residue_count;
+  if (result.base_residue_count > model->bank_count) {
+    out_report->base_residue_proof =
+        IREE_SV("all-compatible-byte-residues-common-translation");
+  }
 
   out_report->proof = IREE_SV("exact");
   out_report->classification = result.extra_rounds == 0
@@ -145,8 +205,7 @@ iree_status_t loom_amdgpu_memory_report_bank_service(
     return iree_ok_status();
   }
   const uint64_t byte_stride = (uint64_t)term->byte_stride;
-  const uint32_t packet_alignment =
-      model->bank_word_byte_count * model->packet_word_count;
+  const uint32_t packet_alignment = model->packet_byte_count;
   if (source->minimum_alignment < packet_alignment ||
       byte_stride % packet_alignment != 0) {
     loom_amdgpu_memory_bank_service_mark_unknown(
@@ -156,7 +215,6 @@ iree_status_t loom_amdgpu_memory_report_bank_service(
   out_report->lane_address_proof = IREE_SV("affine-workitem-x-byte-stride");
   out_report->base_residue_proof =
       IREE_SV("all-bank-word-residues-common-translation");
-  out_report->base_residue_count = model->bank_count;
 
   loom_amdgpu_memory_full_subgroup_proof_t active_lane_proof = {0};
   IREE_RETURN_IF_ERROR(loom_amdgpu_memory_prove_full_subgroup(
@@ -177,8 +235,11 @@ iree_status_t loom_amdgpu_memory_report_bank_service(
   for (uint8_t lane = 0; lane < model->wave_size; ++lane) {
     lane_base_byte_offsets[lane] = (uint64_t)lane * byte_stride;
   }
+  const uint64_t common_base_byte_residues =
+      loom_amdgpu_memory_bank_service_source_residues(
+          source, loom_value_facts_exact_i64(0), model->bank_word_byte_count);
   loom_amdgpu_memory_bank_service_evaluate_full_wave(
-      model, lane_base_byte_offsets, out_report);
+      model, lane_base_byte_offsets, common_base_byte_residues, out_report);
   return iree_ok_status();
 }
 
@@ -229,9 +290,12 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
     packet_byte_offset += (uint64_t)element_index *
                           plan->address_layout.packed_element_byte_stride;
   }
-  const uint32_t packet_alignment =
-      model->bank_word_byte_count * model->packet_word_count;
-  if (plan->source.minimum_alignment < packet_alignment) {
+  const uint32_t packet_alignment = model->packet_byte_count;
+  if (plan->source.minimum_alignment < packet_alignment ||
+      !((runtime_offset->byte_facts.range_lo == 0 &&
+         runtime_offset->byte_facts.range_hi == 0) ||
+        loom_value_facts_divisible_by(runtime_offset->byte_facts,
+                                      packet_alignment))) {
     loom_amdgpu_memory_bank_service_mark_unknown(
         IREE_SV("address-packet-alignment-unproven"), out_report);
     return iree_ok_status();
@@ -254,7 +318,6 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
       IREE_SV("compiled-fragment-lane-register-layout");
   out_report->base_residue_proof =
       IREE_SV("subgroup-uniform-common-translation-all-bank-word-residues");
-  out_report->base_residue_count = model->bank_count;
 
   loom_amdgpu_memory_full_subgroup_proof_t active_lane_proof = {0};
   IREE_RETURN_IF_ERROR(loom_amdgpu_memory_prove_full_subgroup(
@@ -267,7 +330,16 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
   }
   out_report->active_lane_proof = active_lane_proof.proof;
 
+  const loom_value_facts_t source_offset =
+      loom_low_source_memory_dynamic_offset_facts(&plan->source, 0);
+  const uint64_t source_residues =
+      loom_amdgpu_memory_bank_service_source_residues(
+          &plan->source, source_offset, model->bank_word_byte_count);
+  const uint64_t common_base_byte_residues =
+      loom_amdgpu_memory_bank_service_add_offset_residues(
+          source_residues, runtime_offset->byte_facts,
+          model->bank_word_byte_count);
   loom_amdgpu_memory_bank_service_evaluate_full_wave(
-      model, lane_base_byte_offsets, out_report);
+      model, lane_base_byte_offsets, common_base_byte_residues, out_report);
   return iree_ok_status();
 }

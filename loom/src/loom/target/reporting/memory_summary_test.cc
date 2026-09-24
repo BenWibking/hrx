@@ -98,7 +98,7 @@ static void SetBankService(
   row->bank_service.wave_size = 32;
   row->bank_service.bank_count = 32;
   row->bank_service.bank_word_byte_count = 4;
-  row->bank_service.packet_word_count = 1;
+  row->bank_service.packet_byte_count = 4;
   row->bank_service.required_rounds = required_rounds;
   row->bank_service.uncontended_rounds = uncontended_rounds;
   row->bank_service.extra_rounds = required_rounds - uncontended_rounds;

@@ -113,7 +113,7 @@ _MODEL_FIELDS = (
     "wave_size",
     "bank_count",
     "bank_word_bytes",
-    "packet_bank_words",
+    "packet_bytes",
 )
 
 
