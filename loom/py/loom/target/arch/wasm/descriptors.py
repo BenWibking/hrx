@@ -308,6 +308,9 @@ _OP_F32X4_LT = _simd_encoding_id(0x43)
 _OP_F32X4_GT = _simd_encoding_id(0x44)
 _OP_F32X4_LE = _simd_encoding_id(0x45)
 _OP_F32X4_GE = _simd_encoding_id(0x46)
+_OP_V128_AND = _simd_encoding_id(0x4E)
+_OP_V128_OR = _simd_encoding_id(0x50)
+_OP_V128_XOR = _simd_encoding_id(0x51)
 _OP_V128_BITSELECT = _simd_encoding_id(0x52)
 _OP_I32X4_ADD = _simd_encoding_id(0xAE)
 _OP_I32X4_SUB = _simd_encoding_id(0xB1)
@@ -1099,6 +1102,27 @@ WASM_CORE_SIMD128_DESCRIPTOR_SET = DescriptorSet(
             asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
             schedule_class=_SCHEDULE_SIMD_F32X4,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        *(
+            Descriptor(
+                key=f"wasm.v128.{operation}",
+                mnemonic=f"v128.{operation}",
+                semantic_tag=f"vector.{operation}.v128",
+                encoding_id=encoding_id,
+                operands=(
+                    _v128_result(),
+                    _v128_operand("lhs"),
+                    _v128_operand("rhs"),
+                ),
+                asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
+                schedule_class=_SCHEDULE_SIMD_I32X4,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            )
+            for operation, encoding_id in (
+                ("and", _OP_V128_AND),
+                ("or", _OP_V128_OR),
+                ("xor", _OP_V128_XOR),
+            )
         ),
         Descriptor(
             key="wasm.v128.bitselect",

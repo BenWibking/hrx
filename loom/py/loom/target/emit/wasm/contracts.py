@@ -951,6 +951,15 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _select_rule(_V4I1),
         _select_rule(_V4I32),
         _select_rule(_V4F32),
+        *(
+            _binary_rule(source_op, value_type, f"wasm.v128.{operation}")
+            for source_op, operation in (
+                (vector.vector_andi, "and"),
+                (vector.vector_ori, "or"),
+                (vector.vector_xori, "xor"),
+            )
+            for value_type in (_V4I1, _V4I32, _V2I64)
+        ),
         _compare_rule(vector.vector_cmpi, "eq", _V4I32, "wasm.i32x4.eq"),
         _compare_rule(vector.vector_cmpi, "ne", _V4I32, "wasm.i32x4.ne"),
         _compare_rule(vector.vector_cmpi, "slt", _V4I32, "wasm.i32x4.lt_s"),
@@ -1130,6 +1139,15 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                     "v128.store",
                     4,
                     4,
+                    vector.vector_load,
+                    vector.vector_store,
+                ),
+                (
+                    _V2I64,
+                    "v128.load",
+                    "v128.store",
+                    8,
+                    2,
                     vector.vector_load,
                     vector.vector_store,
                 ),

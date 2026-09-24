@@ -57,6 +57,11 @@ iree_py_test(
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/predicate_select_values.loom}}"
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/byte_access.loom}}"
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/predicate_select.mjs}}"
+    "--corpus"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_vector_bitwise_values.loom}}"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/predicate_bitwise_values.loom}}"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/byte_access.loom}}"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/vector_bitwise.mjs}}"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/address_widening.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/boolean.mjs"
@@ -77,6 +82,7 @@ iree_py_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/sum.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/typed_addresses.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/typed_addresses.mjs"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/vector_bitwise.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/word_memory.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/buffer_selection.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_access_flags.loom-test"
@@ -87,6 +93,8 @@ iree_py_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_boolean_comparison.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_index_operands.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64_shift_counts.loom-test"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_vector_bitwise_values.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/predicate_bitwise_values.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/predicate_select_values.loom"
     "loom::tools::loom-compile::loom-compile"
   PACKAGE_DIRS
