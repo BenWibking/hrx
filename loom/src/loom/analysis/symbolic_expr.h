@@ -22,7 +22,9 @@
 // result domain or an explicit no-signed-wrap contract permits the relation.
 // Left shifts additionally require a valid exact shift amount.
 // Potentially wrapping results remain independent symbols, so integer-order
-// proofs cannot cancel arithmetic across a modular boundary.
+// proofs cannot cancel arithmetic across a modular boundary. A separate
+// optional congruence retains periodic relationships for disjointness queries
+// without weakening these exact-expression and materialization contracts.
 //
 // Storage is caller-owned. The context memoizes value-to-expression queries and
 // owns a reusable scratch term buffer so fixed-point analyses can query without
@@ -48,6 +50,7 @@ extern "C" {
 #define LOOM_SYMBOLIC_EXPR_DEFAULT_TERM_LIMIT 64
 
 typedef struct loom_symbolic_expr_memo_entry_t loom_symbolic_expr_memo_entry_t;
+typedef struct loom_symbolic_congruence_t loom_symbolic_congruence_t;
 typedef struct loom_cfg_value_identity_table_t loom_cfg_value_identity_table_t;
 // A single coefficient times an SSA value.
 typedef struct loom_symbolic_term_t {
@@ -85,6 +88,10 @@ typedef struct loom_symbolic_expr_t {
 
   // Bitfield of loom_symbolic_expr_flag_bits_e.
   loom_symbolic_expr_flags_t flags;
+
+  // Optional producer-owned modular guarantee in addition to the exact terms.
+  // This never substitutes for an exact address or integer-order expression.
+  const loom_symbolic_congruence_t* congruence;
 } loom_symbolic_expr_t;
 
 // Stable summary for one analyzed SSA value.

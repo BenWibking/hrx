@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "iree/base/internal/math.h"
+#include "loom/analysis/symbolic_congruence.h"
 #include "loom/analysis/symbolic_expr_proof.h"
 #include "loom/ir/attribute.h"
 #include "loom/ir/context.h"
@@ -1564,6 +1565,17 @@ iree_status_t loom_view_regions_prove_no_overlap(
       &left_region->begin_byte_offset, &proof));
   if (proof == LOOM_SYMBOLIC_PROOF_TRUE) {
     *out_no_overlap = true;
+  } else if (loom_symbolic_expr_is_constant(&left_region->byte_length) &&
+             loom_symbolic_expr_is_constant(&right_region->byte_length) &&
+             left_region->byte_length.constant > 0 &&
+             right_region->byte_length.constant > 0) {
+    // Periodic placement can separate intervals without fixing their order:
+    // complementary banks exchange positions on each iteration. Overlap would
+    // require right.begin-left.begin in [1-right.length, left.length-1].
+    *out_no_overlap = loom_symbolic_congruence_excludes_difference(
+        &right_region->begin_byte_offset, &left_region->begin_byte_offset,
+        1 - right_region->byte_length.constant,
+        left_region->byte_length.constant - 1);
   }
   return iree_ok_status();
 }

@@ -1274,9 +1274,11 @@ loom_cc_library(
   NAME
     symbolic_expr
   HDRS
+    "symbolic_congruence.h"
     "symbolic_expr.h"
     "symbolic_expr_proof.h"
   SRCS
+    "symbolic_congruence.c"
     "symbolic_expr.c"
     "symbolic_expr_proof.c"
     "symbolic_value.c"
@@ -1298,6 +1300,18 @@ loom_cc_library(
     loom::util::adaptive_sort
     loom::util::fact_table
   PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    symbolic_congruence_test
+  SRCS
+    "symbolic_congruence_test.cc"
+  DEPS
+    ::symbolic_expr
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 loom_cc_library(
