@@ -988,7 +988,12 @@ static void loom_view_region_analyze_interference(
 
 // Access bits share the existing byte with the value's execution
 // correspondence.
-enum { LOOM_VIEW_STORAGE_INVARIANT = 1u << 2 };
+enum {
+  LOOM_VIEW_STORAGE_INVARIANT = 1u << 2,
+  // Temporary incoming-payload proof, consumed before type dependencies refine
+  // it.
+  LOOM_VIEW_STORAGE_JOIN_INVARIANT = 1u << 3,
+};
 
 typedef enum loom_view_region_analysis_phase_e {
   LOOM_VIEW_REGION_ANALYZE_MEMORY,
@@ -1234,21 +1239,67 @@ static void loom_view_region_classify_repeated_value(
   }
 }
 
-// A retained single-entry branch region with one exit per alternative names
-// the complete choice at a join. Its selector, rather than an enclosing loop's
-// termination condition, determines which incoming value the join observes.
-static bool loom_view_region_join_selector_is_invariant(
-    const loom_view_region_table_t* table,
-    const loom_value_fact_cfg_region_t* structure, uint16_t block_index) {
-  const loom_cfg_graph_t* graph = &structure->graph;
-  const loom_cfg_edge_index_span_t incoming =
-      loom_cfg_graph_predecessor_edges(graph, block_index);
-  if (incoming.count <= 1) {
-    return incoming.count == 1;
+// Refines the temporary proof for each argument over a contiguous incoming
+// range. A varying choice is harmless when every alternative carries the same
+// invariant value. Fixed choices may carry distinct invariant values.
+static void loom_view_region_refine_join_arguments(
+    loom_view_region_table_t* table, const loom_cfg_graph_t* graph,
+    const loom_block_t* block, loom_cfg_edge_index_span_t incoming) {
+  const loom_value_id_t* first_arguments = NULL;
+  uint16_t first_argument_count = 0;
+  const bool first_known = loom_cfg_terminator_payload_for_successor(
+      graph->edges[incoming.values[0]].terminator, block, &first_arguments,
+      &first_argument_count);
+  for (uint16_t i = 0; i < block->arg_count; ++i) {
+    uint8_t* flags =
+        &table->storage_flags_by_value_ordinal[loom_local_value_domain_ordinal(
+            table->value_domain, loom_block_arg_id(block, i))];
+    if (!iree_any_bit_set(*flags, LOOM_VIEW_STORAGE_JOIN_INVARIANT)) {
+      continue;
+    }
+    bool invariant = first_known;
+    loom_value_id_t first_identity = LOOM_VALUE_ID_INVALID;
+    for (iree_host_size_t j = 0; invariant && j < incoming.count; ++j) {
+      const loom_value_id_t* arguments = first_arguments;
+      uint16_t argument_count = first_argument_count;
+      if (j && !loom_cfg_terminator_payload_for_successor(
+                   graph->edges[incoming.values[j]].terminator, block,
+                   &arguments, &argument_count)) {
+        invariant = false;
+        break;
+      }
+      invariant = loom_view_region_value_is_invariant(table, arguments[i]);
+      if (invariant && incoming.count > 1) {
+        const loom_value_id_t identity = loom_value_fact_table_query_identity(
+            table->expression_context->fact_table, arguments[i]);
+        if (!j) {
+          first_identity = identity;
+        } else {
+          invariant = identity == first_identity;
+        }
+      }
+    }
+    if (!invariant) {
+      *flags &= ~LOOM_VIEW_STORAGE_JOIN_INVARIANT;
+    }
   }
-  // A feedback edge can introduce a different fixed payload on later visits.
-  // The single forward sweep never proves an invariant recurrence.
-  if (graph->blocks[block_index].is_dfs_backedge_target) {
+}
+
+// Incoming sources are ordered by dominance preorder. Regions on their paths
+// to the common dominator belong to this join's proof only when it is their
+// unique continuation. Already checked prefixes and complete varying-choice
+// groups are skipped, so qualifying regions and incoming edges are visited
+// once.
+static bool loom_view_region_classify_join_arguments(
+    loom_view_region_table_t* table,
+    const loom_value_fact_cfg_region_t* structure, const loom_block_t* block) {
+  const loom_cfg_graph_t* graph = &structure->graph;
+  const uint16_t block_index = block->region_index;
+  const iree_host_size_t incoming_start =
+      structure->regions.incoming_offsets[block_index];
+  const iree_host_size_t incoming_count =
+      structure->regions.incoming_offsets[block_index + 1] - incoming_start;
+  if (!incoming_count || graph->blocks[block_index].is_dfs_backedge_target) {
     return false;
   }
   const uint16_t dominator =
@@ -1256,39 +1307,72 @@ static bool loom_view_region_join_selector_is_invariant(
   if (dominator == LOOM_CFG_DOMINATOR_INVALID || dominator == block_index) {
     return false;
   }
-  const loom_cfg_edge_index_span_t alternatives =
-      loom_cfg_graph_successor_edges(graph, dominator);
-  if (alternatives.count != incoming.count) {
-    return false;
+  const loom_cfg_edge_index_t* incoming_edges =
+      structure->regions.incoming_edges + incoming_start;
+  for (uint16_t i = 0; i < block->arg_count; ++i) {
+    table->storage_flags_by_value_ordinal[loom_local_value_domain_ordinal(
+        table->value_domain, loom_block_arg_id(block, i))] |=
+        LOOM_VIEW_STORAGE_JOIN_INVARIANT;
   }
-  for (iree_host_size_t i = 0; i < alternatives.count; ++i) {
-    const loom_cfg_edge_info_t* edge = &graph->edges[alternatives.values[i]];
-    const loom_cfg_region_t* arm =
-        &structure->regions.blocks[edge->target_block_index];
-    if (edge->selector_value_id == LOOM_VALUE_ID_INVALID ||
-        !loom_view_region_value_is_invariant(table, edge->selector_value_id) ||
-        arm->continuation_index != block_index || arm->exit_count != 1) {
-      return false;
+  uint16_t previous_source = LOOM_CFG_DOMINATOR_INVALID;
+  for (iree_host_size_t i = 0; i < incoming_count;) {
+    const loom_cfg_edge_info_t* edge = &graph->edges[incoming_edges[i]];
+    uint16_t varying_choice =
+        edge->selector_value_id != LOOM_VALUE_ID_INVALID &&
+                !loom_view_region_value_is_invariant(table,
+                                                     edge->selector_value_id)
+            ? edge->source_block_index
+            : LOOM_CFG_DOMINATOR_INVALID;
+    uint16_t current = edge->source_block_index;
+    while (current != dominator &&
+           (previous_source == LOOM_CFG_DOMINATOR_INVALID ||
+            !loom_cfg_dominance_block_dominates(&structure->dominance, current,
+                                                previous_source))) {
+      if (structure->regions.blocks[current].continuation_index !=
+          block_index) {
+        return false;
+      }
+      const uint16_t parent =
+          structure->dominance.immediate_dominators[current];
+      // Reconvergence executes after either parent alternative. Otherwise the
+      // unique entry predecessor owns the decision to enter this subtree.
+      if (structure->control_structure.postdominance.nodes[parent]
+              .immediate_postdominator != current) {
+        if (structure->dominance.entry_predecessors[current] != parent) {
+          varying_choice = parent;
+        } else {
+          const loom_cfg_edge_index_span_t entries =
+              loom_cfg_graph_predecessor_edges(graph, current);
+          for (iree_host_size_t j = 0; j < entries.count; ++j) {
+            const loom_cfg_edge_info_t* entry =
+                &graph->edges[entries.values[j]];
+            if (entry->source_block_index == parent &&
+                entry->selector_value_id != LOOM_VALUE_ID_INVALID &&
+                !loom_view_region_value_is_invariant(
+                    table, entry->selector_value_id)) {
+              varying_choice = parent;
+            }
+          }
+        }
+      }
+      current = parent;
     }
-  }
-  return true;
-}
-
-static bool loom_view_region_incoming_value_is_invariant(
-    const loom_view_region_table_t* table, const loom_cfg_graph_t* graph,
-    const loom_block_t* block, uint16_t argument_index) {
-  const loom_cfg_edge_index_span_t incoming =
-      loom_cfg_graph_predecessor_edges(graph, block->region_index);
-  for (iree_host_size_t i = 0; i < incoming.count; ++i) {
-    const loom_cfg_edge_info_t* edge = &graph->edges[incoming.values[i]];
-    const loom_value_id_t* arguments = NULL;
-    uint16_t argument_count = 0;
-    if (!loom_cfg_terminator_payload_for_successor(
-            edge->terminator, block, &arguments, &argument_count) ||
-        !loom_view_region_value_is_invariant(table,
-                                             arguments[argument_index])) {
-      return false;
+    loom_cfg_edge_index_span_t group = {
+        .values = incoming_edges + i,
+        .count = 1,
+    };
+    if (varying_choice != LOOM_CFG_DOMINATOR_INVALID) {
+      group = varying_choice == dominator
+                  ? (loom_cfg_edge_index_span_t){.values = incoming_edges,
+                                                 .count = incoming_count}
+                  : structure->regions.blocks[varying_choice].exit_edges;
+      if (group.values != incoming_edges + i) {
+        return false;
+      }
     }
+    loom_view_region_refine_join_arguments(table, graph, block, group);
+    i += group.count;
+    previous_source = graph->edges[incoming_edges[i - 1]].source_block_index;
   }
   return true;
 }
@@ -1359,19 +1443,23 @@ static iree_status_t loom_view_region_table_analyze_region(
     const bool block_repeated =
         repeated || (graph && (!graph->blocks[block_index].reachable ||
                                graph->blocks[block_index].component_is_cyclic));
-    const bool fixed_choice = block_repeated && block->arg_count && structure &&
-                              phase == LOOM_VIEW_REGION_ANALYZE_STABILITY &&
-                              loom_view_region_join_selector_is_invariant(
-                                  table, structure, block_index);
+    const bool join_analyzed =
+        block_repeated && block->arg_count && structure &&
+        phase == LOOM_VIEW_REGION_ANALYZE_STABILITY &&
+        loom_view_region_classify_join_arguments(table, structure, block);
     for (uint16_t j = 0; j < block->arg_count; ++j) {
       const loom_value_id_t argument = loom_block_arg_id(block, j);
       if (!block_repeated) {
         loom_view_region_mark_invariant(table, argument);
       } else if (phase == LOOM_VIEW_REGION_ANALYZE_STABILITY) {
-        loom_view_region_classify_repeated_value(
-            table, argument,
-            fixed_choice && loom_view_region_incoming_value_is_invariant(
-                                table, graph, block, j));
+        uint8_t* flags = &table->storage_flags_by_value_ordinal
+                              [loom_local_value_domain_ordinal(
+                                  table->value_domain, argument)];
+        const bool invariant =
+            join_analyzed &&
+            iree_any_bit_set(*flags, LOOM_VIEW_STORAGE_JOIN_INVARIANT);
+        *flags &= ~LOOM_VIEW_STORAGE_JOIN_INVARIANT;
+        loom_view_region_classify_repeated_value(table, argument, invariant);
       }
       if (phase == LOOM_VIEW_REGION_ANALYZE_MEMORY) {
         const loom_view_region_t* view_region = NULL;

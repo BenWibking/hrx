@@ -331,3 +331,47 @@ kernel.def @nested_varying_storage_choice() {
   }
   kernel.return
 }
+
+// ====
+
+// Varying inner decisions cannot change identical incoming buffer payloads.
+kernel.def @reconverged_storage_choice() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%input_a: buffer, %input_b: buffer, %control: buffer, %scratch: buffer) {
+  %a = buffer.assume.alignment %input_a {minimum_alignment = 16} : buffer
+  %b = buffer.assume.alignment %input_b {minimum_alignment = 16} : buffer
+  %start = index.constant 0 : index
+  %end = index.constant 3 : index
+  %step = index.constant 1 : index
+  %base = index.constant 0 : offset
+  %c0 = scalar.constant 0 : i32
+  %c1 = scalar.constant 1 : i32
+  %control_unique = buffer.assume.noalias %control : buffer
+  %control_view = buffer.view %control_unique[%base] : buffer -> view<1xi32>
+  %scratch_unique = buffer.assume.noalias %scratch : buffer
+  %scratch_view = buffer.view %scratch_unique[%base] : buffer -> view<1xi32>
+  scf.for %i = [%start to %end step %step] {
+    %choice = view.load %control_view[0] : view<1xi32> -> i32
+    %middle = scalar.cmpi eq, %choice, %c1 : i32
+    %read_buffer, %write_buffer = scf.if %middle -> (buffer, buffer) {
+      %inner = index.cmp eq, %i, %step : index
+      scf.if %inner {
+        view.store %c1, %scratch_view[0] : i32, view<1xi32>
+      } else {
+        view.store %c0, %scratch_view[0] : i32, view<1xi32>
+      }
+      scf.yield %b, %a : buffer, buffer
+    } else {
+      view.store %choice, %scratch_view[0] : i32, view<1xi32>
+      scf.yield %a, %b : buffer, buffer
+    }
+    %read_unique, %write_unique = buffer.assume.noalias %read_buffer, %write_buffer : buffer, buffer
+    %source = buffer.view %read_unique[%base] : buffer -> view<1xi32>
+    %dest = buffer.view %write_unique[%base] : buffer -> view<1xi32>
+    %value = view.load %source[0] : view<1xi32> -> i32
+    %next = scalar.addi %value, %c1 : i32
+    view.store %next, %dest[0] : i32, view<1xi32>
+  }
+  kernel.return
+}

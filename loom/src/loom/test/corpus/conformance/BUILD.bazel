@@ -71,6 +71,23 @@ loom_test(
 )
 
 loom_test(
+    name = "storage_stability_switch_test",
+    srcs = [
+        "storage_stability_switch.loom",
+        "//loom/src/loom/test/corpus/source_low:storage_stability_switch.loom-test",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1200",
+    ],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
+loom_test(
     name = "storage_stability_cfg_test",
     srcs = [
         "storage_stability_cfg.loom",
