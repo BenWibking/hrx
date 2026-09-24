@@ -31,6 +31,7 @@ loom_test_module(
     subgroup_transport_test_module
   SRCS
     "${CMAKE_CURRENT_BINARY_DIR}/subgroup_transport_cases.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/subgroup_shuffle_participation.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/subgroup_transport.loom-test"
   DATA
     "${CMAKE_CURRENT_BINARY_DIR}/subgroup_transport_arrays"

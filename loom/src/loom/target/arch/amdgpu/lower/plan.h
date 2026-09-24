@@ -1082,7 +1082,7 @@ typedef struct loom_amdgpu_subgroup_shuffle_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Result value receiving the moved payload.
   loom_value_id_t result;
-  // Per-lane mask reporting whether the selected source lane is valid.
+  // Used per-lane participation result, or INVALID when the result is unused.
   loom_value_id_t valid;
   // Number of 32-bit registers in the shuffled payload.
   uint32_t register_count;

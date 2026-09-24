@@ -45,6 +45,7 @@ loom_test(
     name = "subgroup_transport_test",
     srcs = [
         ":subgroup_transport_cases.loom",
+        "//loom/src/loom/test/corpus/source_low:subgroup_shuffle_participation.loom-test",
         "//loom/src/loom/test/corpus/source_low:subgroup_transport.loom-test",
     ],
     compile_targets = [

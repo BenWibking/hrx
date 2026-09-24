@@ -68,6 +68,41 @@ def uniform_case(arrays):
     return declaration + case.finish(expected * 32)
 
 
+def participation_cases(arrays, mode):
+    kernel = f"subgroup_participation_{mode}"
+    arguments = "%input: buffer, %output: buffer"
+    if mode != "xor_one":
+        arguments = "%distance: index, " + arguments
+    results = [f"kernel.decl @{kernel}() launch({arguments})\n"]
+    inputs = [signed_bits(0x87654321 + item * 0x1234567, 32) for item in range(54)]
+    for distance in [1] if mode == "xor_one" else range(16):
+        case = Case(arrays, f"{kernel}_{distance}", "i32", 108)
+        case.array("input", inputs)
+        arguments = "%input, %output"
+        types = "tensor<54xi32>, tensor<108xi32>"
+        if mode != "xor_one":
+            case.scalar("distance", distance, "index")
+            arguments = "%distance, " + arguments
+            types = "index, " + types
+        case.launch(kernel, arguments, types)
+        expected = []
+        for item in range(54):
+            if item % 4 == 3:
+                expected.extend([-123, -123])
+                continue
+            cluster = item // 16
+            if mode == "index":
+                source = cluster * 16 + distance
+            elif mode in ("xor", "xor_one"):
+                source = item ^ distance
+            else:
+                source = item + (distance if mode == "down" else -distance)
+            valid = 0 <= source < 54 and source // 16 == cluster and source % 4 != 3
+            expected.extend([inputs[source] if valid else -123, int(valid)])
+        results.append(case.finish(expected))
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -78,6 +113,8 @@ def main():
     for element, width, count in [("i64", 64, 1), ("i8", 8, 7), ("f16", 16, 3), ("bf16", 16, 4), ("f8E4M3", 8, 8), ("f8E5M2", 8, 8), ("f64", 64, 2)]:
         cases.extend(transport_cases(arrays, element, width, count))
     cases.append(uniform_case(arrays))
+    for mode in ["index", "xor", "up", "down", "xor_one"]:
+        cases.extend(participation_cases(arrays, mode))
     args.output.write_text("\n".join(cases))
 
 
