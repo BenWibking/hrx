@@ -11,6 +11,61 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    combine_patterns
+  HDRS
+    "combine_patterns.h"
+  SRCS
+    "combine_patterns.c"
+  DEPS
+    ::load_coalescing
+    iree::base
+    loom::ops::view
+    loom::rewrite::pattern_registry
+    loom::transforms::cleanup::patterns
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    boundary_projection
+  HDRS
+    "boundary_projection.h"
+  SRCS
+    "boundary_projection.c"
+  DEPS
+    ::offset_expression
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::symbolic_expr
+    loom::analysis::view_regions
+    loom::ir
+    loom::ir::facts
+    loom::ops::buffer
+    loom::ops::scf
+    loom::rewrite::rewriter
+    loom::target::provider
+    loom::transforms::boundary::projection_core
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    boundary_transport
+  HDRS
+    "boundary_transport.h"
+  SRCS
+    "boundary_transport.c"
+  DEPS
+    ::boundary_projection
+    iree::base
+    loom::pass::types
+    loom::target::pass_environment
+    loom::transforms::boundary::projection_core
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     linearize_view_accesses
   HDRS
     "linearize_view_accesses.h"
@@ -55,12 +110,30 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    offset_expression
+  HDRS
+    "offset_expression.h"
+  SRCS
+    "offset_expression.c"
+  DEPS
+    iree::base
+    loom::analysis::symbolic_expr
+    loom::ir
+    loom::ops::index
+    loom::ops::op_defs
+    loom::ops::scalar
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     transport
   HDRS
     "transport.h"
   SRCS
     "transport.c"
   DEPS
+    ::offset_expression
     iree::base
     iree::base::internal
     loom::analysis::symbolic_expr
@@ -68,9 +141,7 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::buffer
-    loom::ops::index
     loom::ops::op_defs
-    loom::ops::scalar
     loom::ops::scf
     loom::pass::types
     loom::pass::value_facts

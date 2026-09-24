@@ -42,19 +42,23 @@ loom_cc_library(
 
 loom_cc_library(
     name = "cfg_tuple_decomposition",
-    srcs = ["cfg_tuple_decomposition.c"],
-    hdrs = ["cfg_tuple_decomposition.h"],
+    srcs = [
+        "cfg_tuple_decomposition.c",
+        "cfg_tuple_projection.c",
+    ],
+    hdrs = [
+        "cfg_tuple_decomposition.h",
+        "cfg_tuple_projection.h",
+    ],
     deps = [
         "//loom/src/loom/codegen/low:function",
         "//loom/src/loom/ir",
-        "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/pass:types",
-        "//loom/src/loom/pass:value_facts",
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/target:registers",
+        "//loom/src/loom/transforms/boundary:projection_core",
         "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal:arena",
     ],
 )
 
@@ -108,6 +112,7 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:diagnostics",
         "//loom/src/loom/codegen/low:function",
+        "//loom/src/loom/codegen/low:memory_access",
         "//loom/src/loom/codegen/low:storage_relation",
         "//loom/src/loom/codegen/low:target_binding",
         "//loom/src/loom/codegen/low/pipeline:pass_environment",

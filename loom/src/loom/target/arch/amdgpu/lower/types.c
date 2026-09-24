@@ -158,8 +158,7 @@ static const loom_amdgpu_vector_storage_rule_t
     kAmdgpuVectorStorageRules[LOOM_SCALAR_TYPE_COUNT_] = {
         [LOOM_SCALAR_TYPE_I1] = LOOM_AMDGPU_VECTOR_STORAGE_RULE_LANE_MULTIPLE(
             LOOM_AMDGPU_VECTOR_STORAGE_KIND_I1_MASK,
-            LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES, 1, 2,
-            LOOM_AMDGPU_VECTOR_STORAGE_RULE_FLAG_RANK1_ONLY),
+            LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES, 1, 2, 0),
         [LOOM_SCALAR_TYPE_I8] = LOOM_AMDGPU_VECTOR_STORAGE_RULE_PACKED_32BIT(
             LOOM_AMDGPU_VECTOR_STORAGE_KIND_PACKED_INTEGER,
             LOOM_AMDGPU_MAX_PACKED_I8_LANES, 8,
@@ -212,11 +211,14 @@ static const loom_amdgpu_vector_storage_kind_flags_t
         [LOOM_AMDGPU_VECTOR_STORAGE_KIND_I1_MASK] =
             LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_SGPR_MASK,
         [LOOM_AMDGPU_VECTOR_STORAGE_KIND_PACKED_16BIT_FLOAT] =
-            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD,
+            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD |
+            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_ANALYZE_REGISTER_BANK,
         [LOOM_AMDGPU_VECTOR_STORAGE_KIND_PACKED_INTEGER] =
-            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD,
+            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD |
+            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_ANALYZE_REGISTER_BANK,
         [LOOM_AMDGPU_VECTOR_STORAGE_KIND_PACKED_8BIT_FLOAT] =
-            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD,
+            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD |
+            LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_ANALYZE_REGISTER_BANK,
 };
 
 loom_amdgpu_vector_storage_kind_flags_t loom_amdgpu_vector_storage_kind_flags(
@@ -341,14 +343,16 @@ static uint32_t loom_amdgpu_vector_register_count(
       type, element_type, LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES);
 }
 
-bool loom_amdgpu_type_is_32bit_memory_payload(loom_type_t type) {
-  return loom_amdgpu_type_is_i32(type) || loom_amdgpu_type_is_f32(type) ||
-         loom_amdgpu_static_vector_lane_count(
-             type, LOOM_SCALAR_TYPE_I32, LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES) !=
-             0 ||
-         loom_amdgpu_static_vector_lane_count(
-             type, LOOM_SCALAR_TYPE_F32, LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES) !=
-             0;
+bool loom_amdgpu_type_is_word_memory_payload(loom_type_t type) {
+  if (loom_amdgpu_type_is_i32(type) || loom_amdgpu_type_is_f32(type)) {
+    return true;
+  }
+  loom_amdgpu_vector_storage_t storage;
+  return loom_type_rank(type) == 1 &&
+         loom_amdgpu_type_vector_storage(type, &storage) &&
+         storage.register_count <= LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES &&
+         storage.element_count * storage.element_bit_count ==
+             storage.register_count * 32u;
 }
 
 uint32_t loom_amdgpu_vector_32bit_lane_count(loom_type_t type) {
@@ -402,7 +406,7 @@ uint32_t loom_amdgpu_vector_f32_register_count(loom_type_t type) {
 }
 
 uint32_t loom_amdgpu_vector_i1_lane_count(loom_type_t type) {
-  return loom_amdgpu_static_vector_lane_count(
+  return loom_amdgpu_static_vector_register_count(
       type, LOOM_SCALAR_TYPE_I1, LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES);
 }
 

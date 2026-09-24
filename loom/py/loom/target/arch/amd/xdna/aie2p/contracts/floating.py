@@ -47,14 +47,15 @@ from loom.target.low_descriptors import Descriptor
 
 _F32 = Scalar("f32")
 _F16 = Scalar("f16")
+_BF16 = Scalar("bf16")
 _BF16X8_VECTOR = Vector("bf16", lanes=8)
+_BF16X16_VECTOR = Vector("bf16", lanes=16)
 _BF16_DOT2_VECTOR = Vector(
     "bf16", minimum_static_elements=2, maximum_static_elements=32
 )
 _BF16X32_VECTOR = Vector("bf16", lanes=32)
 _BF16X64_VECTOR = Vector("bf16", lanes=64)
 _F32_VECTOR = Vector("f32", minimum_static_elements=1, maximum_static_elements=16)
-_F32X4_VECTOR = Vector("f32", lanes=4)
 _F32X16_VECTOR = Vector("f32", lanes=16)
 _F32X64_ACCUMULATOR = Vector("f32", lanes=64)
 
@@ -162,17 +163,95 @@ def _scalar_multiply_f16_rule() -> DescriptorRule:
     )
 
 
+def _bf16_maximum_guards(type_pattern: TypePattern) -> tuple[Guard, ...]:
+    # VMAX_LT preserves its first operand on unordered inputs and orders the
+    # signed zeros. Both source maximum operations agree with it when NaNs and
+    # zero signs are explicitly outside the source contract.
+    return (
+        *_typed_guards(("lhs", "rhs", "result"), type_pattern),
+        Guard.instance_flags_has_all("fastmath", "nnan"),
+        Guard.instance_flags_has_all("fastmath", "nsz"),
+    )
+
+
+def _vector_maximum_bf16_rule(
+    source_op: Op, type_pattern: TypePattern
+) -> DescriptorRule:
+    maximum = _descriptor("amd.xdna.aie2p.max.lt.bf16x32.native")
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=maximum,
+        guards=_bf16_maximum_guards(type_pattern),
+        emit=(
+            _op_emit(
+                maximum,
+                operands={"s1": ValueRef.operand("lhs"), "s2": ValueRef.operand("rhs")},
+                results={
+                    "d": ValueRef.result("result"),
+                    "cmp": ValueRef.temporary("comparison"),
+                },
+                result_types={
+                    "d": DescriptorResultType(),
+                    "cmp": DescriptorResultType(),
+                },
+            ),
+        ),
+    )
+
+
+def _scalar_maximum_bf16_rule(source_op: Op) -> DescriptorRule:
+    broadcast = _descriptor("amd.xdna.aie2p.splat.i16x32")
+    maximum = _descriptor("amd.xdna.aie2p.max.lt.bf16x32.native")
+    extract = _descriptor("amd.xdna.aie2p.extract.i16.immediate")
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=maximum,
+        guards=_bf16_maximum_guards(_BF16),
+        emit=(
+            *(
+                _op_emit(
+                    broadcast,
+                    operands={"src": ValueRef.operand(operand)},
+                    results={"dst": ValueRef.temporary(f"{operand}_vector")},
+                    result_types={"dst": DescriptorResultType()},
+                )
+                for operand in ("lhs", "rhs")
+            ),
+            _op_emit(
+                maximum,
+                operands={
+                    "s1": ValueRef.temporary("lhs_vector"),
+                    "s2": ValueRef.temporary("rhs_vector"),
+                },
+                results={
+                    "d": ValueRef.temporary("maximum_vector"),
+                    "cmp": ValueRef.temporary("comparison"),
+                },
+                result_types={
+                    "d": DescriptorResultType(),
+                    "cmp": DescriptorResultType(),
+                },
+            ),
+            EmitDescriptorOp(
+                descriptor=extract,
+                operands={"s1": ValueRef.temporary("maximum_vector")},
+                results={"dst": ValueRef.result("result")},
+                immediates={"idx": 0},
+                form=DescriptorEmitForm.OP,
+            ),
+        ),
+    )
+
+
 def _vector_dot2f_bf16_rule(
     input_type: TypePattern,
     result_type: TypePattern,
     *,
-    broadcast_inputs: bool,
     initial_accumulator: Literal["source", "zero"],
     report_key: str,
     rhs_form: Literal["packed", "interleaved"] = "packed",
 ) -> DescriptorRule:
     config_constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    broadcast = _descriptor("amd.xdna.aie2p.broadcast.bf16x8.to.bf16x32")
     shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
     clear = _descriptor("amd.xdna.aie2p.accumulator.clear.f32x64")
     move_to_accumulator = _descriptor("amd.xdna.aie2p.move.vector512.to.accumulator512")
@@ -185,20 +264,6 @@ def _vector_dot2f_bf16_rule(
     input_values = {
         operand_name: ValueRef.operand(operand_name) for operand_name in ("lhs", "rhs")
     }
-    if broadcast_inputs:
-        for operand_name in ("lhs", "rhs"):
-            broadcast_value = ValueRef.temporary(f"{operand_name}_broadcast")
-            emits.append(
-                EmitDescriptorOp(
-                    descriptor=broadcast,
-                    operands={"s1": ValueRef.operand(operand_name)},
-                    results={"dst": broadcast_value},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"idx": 0},
-                    form=DescriptorEmitForm.OP,
-                )
-            )
-            input_values[operand_name] = broadcast_value
     for lane_group, control in zip(
         ("even", "odd"), _BF16_DOT2_DEINTERLEAVE_CONTROLS, strict=True
     ):
@@ -682,6 +747,18 @@ AIE2P_BF16_MATRIX_RULES = (_matrix_multiply_bf16bf16_m8n8k1_rule(),)
 
 AIE2P_FLOATING_RULES = (
     _scalar_multiply_f16_rule(),
+    *(
+        _vector_maximum_bf16_rule(source_op, type_pattern)
+        for source_op in (vector.vector_maxnumf, vector.vector_maximumf)
+        for type_pattern in (_BF16X16_VECTOR, _BF16X32_VECTOR)
+    ),
+    *(
+        _scalar_maximum_bf16_rule(source_op)
+        for source_op in (
+            scalar_arithmetic.scalar_maxnumf,
+            scalar_arithmetic.scalar_maximumf,
+        )
+    ),
     _float_matrix_accumulator_zero_rule(),
     _float_matrix_accumulator_add_rule(),
     *(
@@ -704,28 +781,9 @@ AIE2P_FLOATING_RULES = (
             ),
         )
     ),
-    # A vector<8xbf16> is the native outer-product operand type and therefore
-    # uses the narrow EWL carrier. Broadcast it into the ordinary X carrier
-    # before using the same VMAC realization. Specialized rules precede ranged
-    # rules.
-    _vector_dot2f_bf16_rule(
-        _BF16X8_VECTOR,
-        _F32X4_VECTOR,
-        broadcast_inputs=True,
-        initial_accumulator="zero",
-        report_key="bf16_dot2_x8_zero",
-    ),
-    _vector_dot2f_bf16_rule(
-        _BF16X8_VECTOR,
-        _F32X4_VECTOR,
-        broadcast_inputs=True,
-        initial_accumulator="source",
-        report_key="bf16_dot2_x8_broadcast",
-    ),
     _vector_dot2f_bf16_rule(
         _BF16X32_VECTOR,
         _F32X16_VECTOR,
-        broadcast_inputs=False,
         initial_accumulator="zero",
         rhs_form="interleaved",
         report_key="bf16_dot2_interleaved_rhs_zero",
@@ -733,7 +791,6 @@ AIE2P_FLOATING_RULES = (
     _vector_dot2f_bf16_rule(
         _BF16X32_VECTOR,
         _F32X16_VECTOR,
-        broadcast_inputs=False,
         initial_accumulator="source",
         rhs_form="interleaved",
         report_key="bf16_dot2_interleaved_rhs",
@@ -741,14 +798,12 @@ AIE2P_FLOATING_RULES = (
     _vector_dot2f_bf16_rule(
         _BF16_DOT2_VECTOR,
         _F32_VECTOR,
-        broadcast_inputs=False,
         initial_accumulator="zero",
         report_key="bf16_dot2_zero",
     ),
     _vector_dot2f_bf16_rule(
         _BF16_DOT2_VECTOR,
         _F32_VECTOR,
-        broadcast_inputs=False,
         initial_accumulator="source",
         report_key="bf16_dot2",
     ),

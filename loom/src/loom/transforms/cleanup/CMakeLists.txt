@@ -11,36 +11,123 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    patterns
+  HDRS
+    "patterns.h"
+    "special_value_policy.h"
+  SRCS
+    "patterns.c"
+  DEPS
+    iree::base
+    loom::rewrite::pattern_registry
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    pass_requirements
+  HDRS
+    "pass_requirements.h"
+  DEPS
+
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    pass_environment
+  HDRS
+    "pass_environment.h"
+  SRCS
+    "pass_environment.c"
+  DEPS
+    ::pass_requirements
+    ::patterns
+    loom::pass::environment
+    loom::pass::types
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    configured
+  HDRS
+    "configured.h"
+  SRCS
+    "configured.c"
+  DEPS
+    ::patterns
+    loom::ops::special_values
+    loom::transforms::index::cleanup_patterns
+    loom::transforms::scalar::cleanup_patterns
+    loom::transforms::scalar::combine_patterns
+    loom::transforms::scf::branch_fact_patterns
+    loom::transforms::scf::combine_patterns
+    loom::transforms::vector::cleanup_patterns
+    loom::transforms::vector::combine_patterns
+    loom::transforms::view::combine_patterns
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    patterns_test
+  SRCS
+    "patterns_test.cc"
+  DEPS
+    ::configured
+    ::pass_environment
+    ::pass_requirements
+    ::patterns
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ops::index
+    loom::ops::scalar
+    loom::ops::scf
+    loom::ops::vector
+    loom::ops::view
+    loom::pass::environment
+)
+
+loom_cc_library(
+  NAME
     canonicalize
   HDRS
     "canonicalize.h"
   SRCS
     "canonicalize.c"
   DEPS
+    ::canonicalizer
+    ::pass_environment
     iree::base
-    iree::base::internal
-    loom::analysis::condition_facts
-    loom::analysis::symbolic_expr
-    loom::ir
-    loom::ir::facts
-    loom::ops::index
-    loom::ops::op_defs
-    loom::ops::scalar
-    loom::ops::scf
-    loom::ops::special_values
-    loom::ops::type_registry
-    loom::ops::vector
-    loom::ops::view
+    iree::base::internal::arena
     loom::pass::pipeline
     loom::pass::registry
     loom::pass::types
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    canonicalizer
+  HDRS
+    "canonicalizer.h"
+  SRCS
+    "canonicalizer.c"
+  DEPS
+    ::patterns
+    iree::base
+    iree::base::internal
+    loom::analysis::symbolic_expr
+    loom::ir
+    loom::ir::facts
+    loom::ops::op_defs
+    loom::pass::types
     loom::pass::value_facts
     loom::rewrite::greedy
+    loom::rewrite::pattern_registry
     loom::rewrite::rewriter
     loom::rewrite::type_propagation
-    loom::target::math_policy
-    loom::target::pass_environment
-    loom::transforms::view::load_coalescing
     loom::util::fact_table
     loom::util::walk
   PUBLIC
@@ -48,17 +135,18 @@ loom_cc_library(
 
 loom_cc_test(
   NAME
-    canonicalize_test
+    canonicalizer_test
   SRCS
-    "canonicalize_test.cc"
+    "canonicalizer_test.cc"
   DEPS
-    ::canonicalize
+    ::canonicalizer
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
     loom::ir
     loom::ops::op_defs
     loom::ops::scalar
+    loom::ops::special_values
     loom::ops::test
     loom::ops::vector
     loom::pass::types

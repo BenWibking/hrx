@@ -355,6 +355,36 @@ TEST(CompileTest, CompileModuleRunsPreparedPassProgram) {
   EXPECT_EQ(loomc_result_artifact_count(result_ptr.get()), 0u);
 }
 
+TEST(CompileTest, CompileModuleRunsConfiguredCombineWithoutTarget) {
+  ContextPtr context = CreateContext();
+  WorkspacePtr workspace = CreateWorkspace();
+  CompilerPtr compiler = CreateCompiler(context.get());
+  PassProgramPtr pass_program =
+      CreatePassProgramFromPipelineText(context.get(), "combine");
+  SourcePtr source = CreateTextSource("combine.loom", R"(
+func.def public @entry(%table: vector<16xf32>, %left: index, %right: index) -> (vector<2xf32>) {
+  %a = vector.extract %table[%left] : vector<16xf32> -> f32
+  %b = vector.extract %table[%right] : vector<16xf32> -> f32
+  %result = vector.from_elements %a, %b : vector<2xf32>
+  func.return %result : vector<2xf32>
+}
+)");
+  ModulePtr module =
+      DeserializeModule(context.get(), workspace.get(), source.get());
+
+  loomc_result_t* result = nullptr;
+  loomc_status_t status = loomc_compile_module(
+      compiler.get(), workspace.get(), pass_program.get(), module.get(),
+      /*options=*/nullptr, loomc_allocator_system(), &result);
+  LOOMC_EXPECT_OK(status);
+  ResultPtr result_ptr(result);
+  ExpectSucceededResult(result_ptr.get());
+
+  const std::string text = SerializeModuleToText(module.get());
+  EXPECT_NE(text.find("vector.table.lookup"), std::string::npos) << text;
+  EXPECT_EQ(text.find("vector.extract"), std::string::npos) << text;
+}
+
 TEST(CompileTest, CompileModuleRunsPassProgramFromReleasedModuleSymbol) {
   ContextPtr context = CreateContext();
   WorkspacePtr workspace = CreateWorkspace();

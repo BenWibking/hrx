@@ -56,7 +56,7 @@ from .rdna4m import (
 )
 from .sets import *
 from .tensor import _gfx125x_tensor_descriptors
-from .timing import _with_valu_sgpr_timing
+from .timing import _with_lds_service_timing, _with_valu_sgpr_timing
 
 
 def _descriptor_has_memory_effect(descriptor: Descriptor) -> bool:
@@ -1464,6 +1464,8 @@ class _AmdgpuCoreDescriptorSetBuilder:
     flags: int = 0
     # Estimated VALU-to-SGPR separation; zero uses schedule-class timing.
     valu_sgpr_separation_cycles: int = 0
+    # LDS bandwidth per lane of one SIMD issue pass; zero keeps the base model.
+    lds_bits_per_lane_per_cycle: int = 0
 
 
 _GFX125X_EXTRA_DESCRIPTORS = (
@@ -1494,6 +1496,8 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
     # Use that estimate for VALU-produced SGPRs independently of class latency.
     "rdna3": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
+        # RDNA's 32 banks serve 32 dwords per cycle for a SIMD32 issue pass.
+        lds_bits_per_lane_per_cycle=32,
         base=_AMDGPU_RDNA3_CORE_DESCRIPTOR_SET_BASE,
         overlay_rows=_gfx11_core_overlays,
         overlay_descriptors=_gfx11_core_overlay_descriptors,
@@ -1501,6 +1505,7 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
     ),
     "gfx11_generic": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
+        lds_bits_per_lane_per_cycle=32,
         base=_AMDGPU_GFX11_GENERIC_CORE_DESCRIPTOR_SET_BASE,
         overlay_rows=_gfx11_core_overlays,
         overlay_descriptors=_gfx11_core_overlay_descriptors,
@@ -1523,6 +1528,7 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
     ),
     "rdna3_5": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
+        lds_bits_per_lane_per_cycle=32,
         base=_AMDGPU_RDNA3_5_CORE_DESCRIPTOR_SET_BASE,
         overlay_rows=_gfx115x_core_overlays,
         overlay_descriptors=_gfx115x_core_overlay_descriptors,
@@ -1646,6 +1652,10 @@ def _build_amdgpu_core_descriptor_set_from_spec(
     if builder.valu_sgpr_separation_cycles:
         descriptor_set = _with_valu_sgpr_timing(
             descriptor_set, builder.valu_sgpr_separation_cycles
+        )
+    if builder.lds_bits_per_lane_per_cycle:
+        descriptor_set = _with_lds_service_timing(
+            descriptor_set, builder.lds_bits_per_lane_per_cycle
         )
     # Execution pipelines overlap, but a wave issues one encoded instruction
     # at a time. A VOPD packet still occupies one instruction issue slot.

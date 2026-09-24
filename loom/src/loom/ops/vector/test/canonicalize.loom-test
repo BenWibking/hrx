@@ -1,5 +1,44 @@
 // RUN: pass canonicalize
 
+// A unary concat is the input value itself.
+func.def @concat_unary(%value: vector<4xi8>) -> (vector<4xi8>) {
+  %result = vector.concat<0> %value : vector<4xi8> -> vector<4xi8>
+  func.return %result : vector<4xi8>
+}
+// ----
+func.def @concat_unary(%value: vector<4xi8>) -> (vector<4xi8>) {
+  func.return %value : vector<4xi8>
+}
+
+// ====
+
+// Empty concat-axis operands do not participate in the aggregate.
+func.def @concat_ignores_empty_inputs(%empty0: vector<0xi8>, %lhs: vector<4xi8>, %empty1: vector<0xi8>, %rhs: vector<3xi8>) -> (vector<7xi8>) {
+  %result = vector.concat<0> %empty0, %lhs, %empty1, %rhs : vector<0xi8>, vector<4xi8>, vector<0xi8>, vector<3xi8> -> vector<7xi8>
+  func.return %result : vector<7xi8>
+}
+// ----
+func.def @concat_ignores_empty_inputs(%empty0: vector<0xi8>, %lhs: vector<4xi8>, %empty1: vector<0xi8>, %rhs: vector<3xi8>) -> (vector<7xi8>) {
+  %result = vector.concat<0> %lhs, %rhs : vector<4xi8>, vector<3xi8> -> vector<7xi8>
+  func.return %result : vector<7xi8>
+}
+
+// ====
+
+// Static variadic concats become a left-associated binary chain.
+func.def @concat_variadic(%lhs: vector<2x3x1xi16>, %middle: vector<2x3x2xi16>, %rhs: vector<2x3x3xi16>) -> (vector<2x3x6xi16>) {
+  %result = vector.concat<2> %lhs, %middle, %rhs : vector<2x3x1xi16>, vector<2x3x2xi16>, vector<2x3x3xi16> -> vector<2x3x6xi16>
+  func.return %result : vector<2x3x6xi16>
+}
+// ----
+func.def @concat_variadic(%lhs: vector<2x3x1xi16>, %middle: vector<2x3x2xi16>, %rhs: vector<2x3x3xi16>) -> (vector<2x3x6xi16>) {
+  %5 = vector.concat<2> %lhs, %middle : vector<2x3x1xi16>, vector<2x3x2xi16> -> vector<2x3x3xi16>
+  %result = vector.concat<2> %5, %rhs : vector<2x3x3xi16>, vector<2x3x3xi16> -> vector<2x3x6xi16>
+  func.return %result : vector<2x3x6xi16>
+}
+
+// ====
+
 // Extracting exactly the leading axes introduced by a broadcast returns the
 // original trailing vector.
 func.def @extract_broadcast_leading_axes(%value: vector<4xf32>) -> (vector<4xf32>) {
@@ -37,6 +76,66 @@ func.def @extract_insert_disjoint_slot(%dest: vector<2x2x4xf32>, %value: vector<
 func.def @extract_insert_disjoint_slot(%dest: vector<2x2x4xf32>, %value: vector<4xf32>) -> (vector<4xf32>) {
   %result = vector.extract %dest[0, 1] : vector<2x2x4xf32> -> vector<4xf32>
   func.return %result : vector<4xf32>
+}
+
+// ====
+
+// Extracting below an inserted prefix continues from the inserted payload.
+func.def @extract_insert_nested_slot(%dest: vector<2x2x4xf32>, %value: vector<2x4xf32>) -> (f32) {
+  %updated = vector.insert %value into %dest[1] : vector<2x4xf32>, vector<2x2x4xf32>
+  %result = vector.extract %updated[1, 0, 3] : vector<2x2x4xf32> -> f32
+  func.return %result : f32
+}
+// ----
+func.def @extract_insert_nested_slot(%dest: vector<2x2x4xf32>, %value: vector<2x4xf32>) -> (f32) {
+  %result = vector.extract %value[0, 3] : vector<2x4xf32> -> f32
+  func.return %result : f32
+}
+
+// ====
+
+// Different leading coordinates are disjoint even when the extract continues
+// below the inserted prefix.
+func.def @extract_insert_disjoint_nested_slot(%dest: vector<2x2x4xf32>, %value: vector<2x4xf32>) -> (f32) {
+  %updated = vector.insert %value into %dest[1] : vector<2x4xf32>, vector<2x2x4xf32>
+  %result = vector.extract %updated[0, 1, 2] : vector<2x2x4xf32> -> f32
+  func.return %result : f32
+}
+// ----
+func.def @extract_insert_disjoint_nested_slot(%dest: vector<2x2x4xf32>, %value: vector<2x4xf32>) -> (f32) {
+  %result = vector.extract %dest[0, 1, 2] : vector<2x2x4xf32> -> f32
+  func.return %result : f32
+}
+
+// ====
+
+// Extracting an aggregate that contains the inserted slot must retain the
+// update.
+func.def @extract_contains_inserted_slot(%dest: vector<2x2x4xf32>, %value: vector<4xf32>) -> (vector<2x4xf32>) {
+  %updated = vector.insert %value into %dest[1, 0] : vector<4xf32>, vector<2x2x4xf32>
+  %result = vector.extract %updated[1] : vector<2x2x4xf32> -> vector<2x4xf32>
+  func.return %result : vector<2x4xf32>
+}
+// ----
+func.def @extract_contains_inserted_slot(%dest: vector<2x2x4xf32>, %value: vector<4xf32>) -> (vector<2x4xf32>) {
+  %updated = vector.insert %value into %dest[1, 0] : vector<4xf32>, vector<2x2x4xf32>
+  %result = vector.extract %updated[1] : vector<2x2x4xf32> -> vector<2x4xf32>
+  func.return %result : vector<2x4xf32>
+}
+
+// ====
+
+// A dynamic insert coordinate does not establish a prefix relationship.
+func.def @extract_insert_dynamic_prefix(%dest: vector<2x2x4xf32>, %value: vector<2x4xf32>, %row: index) -> (f32) {
+  %updated = vector.insert %value into %dest[%row] : vector<2x4xf32>, vector<2x2x4xf32>
+  %result = vector.extract %updated[1, 0, 3] : vector<2x2x4xf32> -> f32
+  func.return %result : f32
+}
+// ----
+func.def @extract_insert_dynamic_prefix(%dest: vector<2x2x4xf32>, %value: vector<2x4xf32>, %row: index) -> (f32) {
+  %updated = vector.insert %value into %dest[%row] : vector<2x4xf32>, vector<2x2x4xf32>
+  %result = vector.extract %updated[1, 0, 3] : vector<2x2x4xf32> -> f32
+  func.return %result : f32
 }
 
 // ====
@@ -83,34 +182,6 @@ func.def @insert_dynamic_exact_indices(%dest: vector<2x2x4xf32>, %value: vector<
 
 // ====
 
-// Extension chains collapse to the final width.
-func.def @float_extension_chain(%x: vector<4xf8E4M3>) -> (vector<4xf32>) {
-  %bf16 = vector.extf %x : vector<4xf8E4M3> to vector<4xbf16>
-  %f32 = vector.extf %bf16 : vector<4xbf16> to vector<4xf32>
-  func.return %f32 : vector<4xf32>
-}
-// ----
-func.def @float_extension_chain(%x: vector<4xf8E4M3>) -> (vector<4xf32>) {
-  %f32 = vector.extf %x : vector<4xf8E4M3> to vector<4xf32>
-  func.return %f32 : vector<4xf32>
-}
-
-// ====
-
-// Truncating an exact extension collapses to the direct resize.
-func.def @float_trunc_after_extension(%x: vector<4xf8E4M3>) -> (vector<4xbf16>) {
-  %f32 = vector.extf %x : vector<4xf8E4M3> to vector<4xf32>
-  %bf16 = vector.fptrunc %f32 : vector<4xf32> to vector<4xbf16>
-  func.return %bf16 : vector<4xbf16>
-}
-// ----
-func.def @float_trunc_after_extension(%x: vector<4xf8E4M3>) -> (vector<4xbf16>) {
-  %bf16 = vector.extf %x : vector<4xf8E4M3> to vector<4xbf16>
-  func.return %bf16 : vector<4xbf16>
-}
-
-// ====
-
 // Truncating an extension back to the original type returns the source.
 func.def @float_resize_roundtrip(%x: vector<4xf16>) -> (vector<4xf16>) {
   %f32 = vector.extf %x : vector<4xf16> to vector<4xf32>
@@ -120,35 +191,6 @@ func.def @float_resize_roundtrip(%x: vector<4xf16>) -> (vector<4xf16>) {
 // ----
 func.def @float_resize_roundtrip(%x: vector<4xf16>) -> (vector<4xf16>) {
   func.return %x : vector<4xf16>
-}
-
-// ====
-
-// Casting a splat casts the scalar once and then splats the result.
-func.def @float_extf_splat(%x: bf16) -> (vector<4xf32>) {
-  %splat = vector.splat %x : vector<4xbf16>
-  %wide = vector.extf %splat : vector<4xbf16> to vector<4xf32>
-  func.return %wide : vector<4xf32>
-}
-// ----
-func.def @float_extf_splat(%x: bf16) -> (vector<4xf32>) {
-  %4 = scalar.extf %x : bf16 to f32
-  %wide = vector.splat %4 : vector<4xf32>
-  func.return %wide : vector<4xf32>
-}
-
-// ====
-
-func.def @float_fptrunc_splat(%x: f32) -> (vector<4xbf16>) {
-  %splat = vector.splat %x : vector<4xf32>
-  %narrow = vector.fptrunc %splat : vector<4xf32> to vector<4xbf16>
-  func.return %narrow : vector<4xbf16>
-}
-// ----
-func.def @float_fptrunc_splat(%x: f32) -> (vector<4xbf16>) {
-  %4 = scalar.fptrunc %x : f32 to bf16
-  %narrow = vector.splat %4 : vector<4xbf16>
-  func.return %narrow : vector<4xbf16>
 }
 
 // ====
@@ -341,73 +383,6 @@ func.def @from_elements_of_ordered_extracts_to_source(%values: vector<4xi32>) ->
 // ----
 func.def @from_elements_of_ordered_extracts_to_source(%values: vector<4xi32>) -> (vector<4xi32>) {
   func.return %values : vector<4xi32>
-}
-
-// ====
-
-// Scalar lane chains produced by importers fold back to the equivalent vector
-// operations before target lowering has to rediscover the vector intent.
-func.def @from_elements_of_scalarized_quantizer_chain(%values: vector<4xf32>) -> (vector<4xi8>) {
-  %lane0 = vector.extract %values[0] : vector<4xf32> -> f32
-  %rounded0 = scalar.roundevenf %lane0 : f32
-  %i32_0 = scalar.fptosi %rounded0 : f32 to i32
-  %i8_0 = scalar.trunci %i32_0 : i32 to i8
-  %lane1 = vector.extract %values[1] : vector<4xf32> -> f32
-  %rounded1 = scalar.roundevenf %lane1 : f32
-  %i32_1 = scalar.fptosi %rounded1 : f32 to i32
-  %i8_1 = scalar.trunci %i32_1 : i32 to i8
-  %lane2 = vector.extract %values[2] : vector<4xf32> -> f32
-  %rounded2 = scalar.roundevenf %lane2 : f32
-  %i32_2 = scalar.fptosi %rounded2 : f32 to i32
-  %i8_2 = scalar.trunci %i32_2 : i32 to i8
-  %lane3 = vector.extract %values[3] : vector<4xf32> -> f32
-  %rounded3 = scalar.roundevenf %lane3 : f32
-  %i32_3 = scalar.fptosi %rounded3 : f32 to i32
-  %i8_3 = scalar.trunci %i32_3 : i32 to i8
-  %packed = vector.from_elements %i8_0, %i8_1, %i8_2, %i8_3 : vector<4xi8>
-  func.return %packed : vector<4xi8>
-}
-// ----
-func.def @from_elements_of_scalarized_quantizer_chain(%values: vector<4xf32>) -> (vector<4xi8>) {
-  %19 = vector.roundevenf %values : vector<4xf32>
-  %20 = vector.fptosi %19 : vector<4xf32> to vector<4xi32>
-  %packed = vector.trunci %20 : vector<4xi32> to vector<4xi8>
-  func.return %packed : vector<4xi8>
-}
-
-// ====
-
-// The same scalar integer conversion can feed a floating-point q-sum path and
-// a packed-byte path. Canonicalization reconstructs both vector chains; CSE in
-// the normal cleanup pipeline merges the duplicated vector.fptosi.
-func.def @from_elements_of_scalarized_quantizer_dual_use(%values: vector<4xf32>) -> (vector<4xf32>, vector<4xi8>) {
-  %lane0 = vector.extract %values[0] : vector<4xf32> -> f32
-  %i32_0 = scalar.fptosi %lane0 : f32 to i32
-  %f32_0 = scalar.sitofp %i32_0 : i32 to f32
-  %i8_0 = scalar.trunci %i32_0 : i32 to i8
-  %lane1 = vector.extract %values[1] : vector<4xf32> -> f32
-  %i32_1 = scalar.fptosi %lane1 : f32 to i32
-  %f32_1 = scalar.sitofp %i32_1 : i32 to f32
-  %i8_1 = scalar.trunci %i32_1 : i32 to i8
-  %lane2 = vector.extract %values[2] : vector<4xf32> -> f32
-  %i32_2 = scalar.fptosi %lane2 : f32 to i32
-  %f32_2 = scalar.sitofp %i32_2 : i32 to f32
-  %i8_2 = scalar.trunci %i32_2 : i32 to i8
-  %lane3 = vector.extract %values[3] : vector<4xf32> -> f32
-  %i32_3 = scalar.fptosi %lane3 : f32 to i32
-  %f32_3 = scalar.sitofp %i32_3 : i32 to f32
-  %i8_3 = scalar.trunci %i32_3 : i32 to i8
-  %q_f32 = vector.from_elements %f32_0, %f32_1, %f32_2, %f32_3 : vector<4xf32>
-  %q_i8 = vector.from_elements %i8_0, %i8_1, %i8_2, %i8_3 : vector<4xi8>
-  func.return %q_f32, %q_i8 : vector<4xf32>, vector<4xi8>
-}
-// ----
-func.def @from_elements_of_scalarized_quantizer_dual_use(%values: vector<4xf32>) -> (vector<4xf32>, vector<4xi8>) {
-  %23 = vector.fptosi %values : vector<4xf32> to vector<4xi32>
-  %q_f32 = vector.sitofp %23 : vector<4xi32> to vector<4xf32>
-  %21 = vector.fptosi %values : vector<4xf32> to vector<4xi32>
-  %q_i8 = vector.trunci %21 : vector<4xi32> to vector<4xi8>
-  func.return %q_f32, %q_i8 : vector<4xf32>, vector<4xi8>
 }
 
 // ====
@@ -930,6 +905,50 @@ func.def @addi_dynamic_zero_identity(%n: index, %x: vector<[%n]xi32>) -> (vector
 // ----
 func.def @addi_dynamic_zero_identity(%n: index, %x: vector<[%n]xi32>) -> (vector<[%n]xi32>) {
   func.return %x : vector<[%n]xi32>
+}
+
+// ====
+
+// Zero shift counts preserve every bit in either direction.
+func.def @shift_zero_identities(%values: vector<4xi8>) -> (vector<4xi8>, vector<4xi8>, vector<4xi8>) {
+  %c0 = vector.constant 0 : vector<4xi8>
+  %left = vector.shli %values, %c0 : vector<4xi8>
+  %arithmetic = vector.shrsi %values, %c0 : vector<4xi8>
+  %logical = vector.shrui %values, %c0 : vector<4xi8>
+  func.return %left, %arithmetic, %logical : vector<4xi8>, vector<4xi8>, vector<4xi8>
+}
+// ----
+func.def @shift_zero_identities(%values: vector<4xi8>) -> (vector<4xi8>, vector<4xi8>, vector<4xi8>) {
+  func.return %values, %values, %values : vector<4xi8>, vector<4xi8>, vector<4xi8>
+}
+
+// ====
+
+// The identity also holds for dynamic shapes, wide elements, and explicit NSW.
+func.def @shift_dynamic_zero_identities(%count: index, %values: vector<[%count]xi64>) -> (vector<[%count]xi64>, vector<[%count]xi64>, vector<[%count]xi64>) {
+  %identity_count = scalar.constant 0 : i64
+  %c0 = vector.splat %identity_count : vector<[%count]xi64>
+  %left = vector.shli<nsw> %values, %c0 : vector<[%count]xi64>
+  %arithmetic = vector.shrsi %values, %c0 : vector<[%count]xi64>
+  %logical = vector.shrui %values, %c0 : vector<[%count]xi64>
+  func.return %left, %arithmetic, %logical : vector<[%count]xi64>, vector<[%count]xi64>, vector<[%count]xi64>
+}
+// ----
+func.def @shift_dynamic_zero_identities(%count: index, %values: vector<[%count]xi64>) -> (vector<[%count]xi64>, vector<[%count]xi64>, vector<[%count]xi64>) {
+  func.return %values, %values, %values : vector<[%count]xi64>, vector<[%count]xi64>, vector<[%count]xi64>
+}
+
+// ====
+
+// Zero in only some lanes does not make a whole-vector identity.
+func.def @shift_mixed_counts(%values: vector<4xi8>) -> (vector<4xi8>, vector<4xi8>, vector<4xi8>) {
+  %c0 = scalar.constant 0 : i8
+  %c1 = scalar.constant 1 : i8
+  %counts = vector.from_elements %c0, %c1, %c0, %c1 : vector<4xi8>
+  %left = vector.shli %values, %counts : vector<4xi8>
+  %arithmetic = vector.shrsi %values, %counts : vector<4xi8>
+  %logical = vector.shrui %values, %counts : vector<4xi8>
+  func.return %left, %arithmetic, %logical : vector<4xi8>, vector<4xi8>, vector<4xi8>
 }
 
 // ====
@@ -1501,33 +1520,33 @@ func.def @scatter_mask_all_true_to_scatter(%buffer: buffer, %offset: offset, %of
 // ====
 
 // All-true atomic RMW masks are ordinary vector atomic RMWs.
-func.def @atomic_rmw_mask_all_true_to_atomic_rmw(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xi32>, %old: vector<4xi32>) -> (vector<4xi32>) {
+func.def @atomic_rmw_mask_all_true_to_atomic_rmw(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xf32>, %old: vector<4xf32>) -> (vector<4xf32>) {
   %layout = encoding.layout.dense : encoding<layout>
-  %view = buffer.view %buffer[%offset] : buffer -> view<16xi32, %layout>
+  %view = buffer.view %buffer[%offset] : buffer -> view<16xf32, %layout>
   %mask = vector.constant true : vector<4xi1>
-  %r = vector.atomic.rmw.mask<addi> %value, %view[0][%offsets], %mask, %old {ordering = relaxed, scope = workgroup} : vector<4xi32>, view<16xi32, %layout>, vector<4xindex>, vector<4xi1>, vector<4xi32>
-  func.return %r : vector<4xi32>
+  %r = vector.atomic.rmw.mask<addf, noftz> %value, %view[0][%offsets], %mask, %old {ordering = relaxed, scope = workgroup} : vector<4xf32>, view<16xf32, %layout>, vector<4xindex>, vector<4xi1>, vector<4xf32>
+  func.return %r : vector<4xf32>
 }
 // ----
-func.def @atomic_rmw_mask_all_true_to_atomic_rmw(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xi32>, %old: vector<4xi32>) -> (vector<4xi32>) {
-  %view = buffer.view %buffer[%offset] : buffer -> view<16xi32>
-  %r = vector.atomic.rmw<addi> %value, %view[0][%offsets] {ordering = relaxed, scope = workgroup} : vector<4xi32>, view<16xi32>, vector<4xindex>
-  func.return %r : vector<4xi32>
+func.def @atomic_rmw_mask_all_true_to_atomic_rmw(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xf32>, %old: vector<4xf32>) -> (vector<4xf32>) {
+  %view = buffer.view %buffer[%offset] : buffer -> view<16xf32>
+  %r = vector.atomic.rmw<addf, noftz> %value, %view[0][%offsets] {ordering = relaxed, scope = workgroup} : vector<4xf32>, view<16xf32>, vector<4xindex>
+  func.return %r : vector<4xf32>
 }
 
 // ====
 
 // All-true atomic reductions are ordinary vector atomic reductions.
-func.def @atomic_reduce_mask_all_true_to_atomic_reduce(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xi32>) {
+func.def @atomic_reduce_mask_all_true_to_atomic_reduce(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xf32>) {
   %layout = encoding.layout.dense : encoding<layout>
-  %view = buffer.view %buffer[%offset] : buffer -> view<16xi32, %layout>
+  %view = buffer.view %buffer[%offset] : buffer -> view<16xf32, %layout>
   %mask = vector.constant true : vector<4xi1>
-  vector.atomic.reduce.mask<addi> %value, %view[0][%offsets], %mask {cache_scope = device, cache_temporal = non_temporal, ordering = relaxed, scope = workgroup} : vector<4xi32>, view<16xi32, %layout>, vector<4xindex>, vector<4xi1>
+  vector.atomic.reduce.mask<addf, noftz> %value, %view[0][%offsets], %mask {cache_scope = device, cache_temporal = non_temporal, ordering = relaxed, scope = workgroup} : vector<4xf32>, view<16xf32, %layout>, vector<4xindex>, vector<4xi1>
   func.return
 }
 // ----
-func.def @atomic_reduce_mask_all_true_to_atomic_reduce(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xi32>) {
-  %view = buffer.view %buffer[%offset] : buffer -> view<16xi32>
-  vector.atomic.reduce<addi> %value, %view[0][%offsets] {cache_scope = device, cache_temporal = non_temporal, ordering = relaxed, scope = workgroup} : vector<4xi32>, view<16xi32>, vector<4xindex>
+func.def @atomic_reduce_mask_all_true_to_atomic_reduce(%buffer: buffer, %offset: offset, %offsets: vector<4xindex>, %value: vector<4xf32>) {
+  %view = buffer.view %buffer[%offset] : buffer -> view<16xf32>
+  vector.atomic.reduce<addf, noftz> %value, %view[0][%offsets] {cache_scope = device, cache_temporal = non_temporal, ordering = relaxed, scope = workgroup} : vector<4xf32>, view<16xf32>, vector<4xindex>
   func.return
 }

@@ -168,6 +168,7 @@ loom_cc_library(
     loom::import::cxx::source
     loom::import::cxx::source::error
     loom::import::cxx::value::representation
+    loom::import::cxx::value::storage
     loom::import::cxx::value::types
     loom::ir
     loom::ops::buffer
@@ -278,6 +279,33 @@ loom_cc_library(
     loom::ops::config
     loom::ops::index
     loom::ops::kernel
+    loom::ops::op_defs
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    parameter_contracts
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "parameter_contracts.h"
+  SRCS
+    "parameter_contracts.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::constants
+    loom::import::cxx::source::error
+    loom::import::cxx::source::locations
+    loom::ir
+    loom::ops::buffer
     loom::ops::op_defs
   PUBLIC
 )

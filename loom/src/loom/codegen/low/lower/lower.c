@@ -28,7 +28,6 @@
 #include "loom/ops/buffer/ops.h"
 #include "loom/ops/cfg/ops.h"
 #include "loom/ops/encoding/ops.h"
-#include "loom/ops/func/ops.h"
 #include "loom/ops/kernel/launch_config.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/low/ops.h"
@@ -50,8 +49,7 @@ static void loom_low_lower_assert_options(
   IREE_ASSERT(module != NULL);
   IREE_ASSERT(loom_func_like_isa(source_function));
   IREE_ASSERT(options != NULL);
-  IREE_ASSERT(source_function.op->kind == LOOM_OP_FUNC_DEF ||
-              source_function.op->kind == LOOM_OP_KERNEL_DEF);
+  IREE_ASSERT(loom_func_like_body(source_function) != NULL);
   if (loom_symbol_ref_is_valid(options->target_ref)) {
     IREE_ASSERT_EQ(options->target_ref.module_id, 0);
     IREE_ASSERT_LT(options->target_ref.symbol_id, module->symbols.count);
@@ -227,10 +225,12 @@ static iree_status_t loom_low_lower_prepare_branches(
   return status;
 }
 
-static iree_status_t loom_low_lower_remap_values(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    const loom_value_id_t* source_values, iree_host_size_t value_count,
-    loom_value_id_t** out_low_values) {
+iree_status_t loom_low_lower_remap_values(loom_low_lower_context_t* context,
+                                          const loom_op_t* source_op,
+                                          const loom_value_id_t* source_values,
+                                          iree_host_size_t value_count,
+                                          const loom_type_t* required_types,
+                                          loom_value_id_t** out_low_values) {
   *out_low_values = NULL;
   if (value_count == 0) {
     return iree_ok_status();
@@ -242,7 +242,8 @@ static iree_status_t loom_low_lower_remap_values(
     IREE_RETURN_IF_ERROR(
         loom_low_lower_lookup_value(context, source_values[i], &low_values[i]));
     const loom_type_t required_low_type =
-        loom_module_value_type(context->module, low_values[i]);
+        required_types ? required_types[i]
+                       : loom_module_value_type(context->module, low_values[i]);
     IREE_RETURN_IF_ERROR(loom_low_lower_materialize_structural_operand(
         context, source_op, i, source_values[i], required_low_type,
         &low_values[i]));
@@ -323,7 +324,8 @@ static iree_status_t loom_low_lower_emit_scf_yield(
   loom_value_slice_t values = loom_scf_yield_values(source_op);
   loom_value_id_t* low_values = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-      context, source_op, values.values, values.count, &low_values));
+      context, source_op, values.values, values.count, /*required_types=*/NULL,
+      &low_values));
   loom_op_t* low_yield_op = NULL;
   return loom_low_scf_yield_build(&context->builder, low_values, values.count,
                                   source_op->location, &low_yield_op);
@@ -337,7 +339,8 @@ static iree_status_t loom_low_lower_emit_scf_condition(
   const loom_value_slice_t forwarded = loom_scf_condition_forwarded(source_op);
   loom_value_id_t* low_forwarded = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-      context, source_op, forwarded.values, forwarded.count, &low_forwarded));
+      context, source_op, forwarded.values, forwarded.count,
+      /*required_types=*/NULL, &low_forwarded));
   loom_op_t* low_condition_op = NULL;
   return loom_low_scf_condition_build(&context->builder, low_condition,
                                       low_forwarded, forwarded.count,
@@ -429,7 +432,8 @@ static iree_status_t loom_low_lower_emit_scf_for(
   loom_value_slice_t iter_args = loom_scf_for_iter_args(source_op);
   loom_value_id_t* low_iter_args = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-      context, source_op, iter_args.values, iter_args.count, &low_iter_args));
+      context, source_op, iter_args.values, iter_args.count,
+      /*required_types=*/NULL, &low_iter_args));
 
   loom_value_id_t low_unroll_factor = LOOM_VALUE_ID_INVALID;
   loom_low_scf_for_build_flags_t build_flags = 0;
@@ -479,7 +483,8 @@ static iree_status_t loom_low_lower_emit_scf_while(
   const loom_value_slice_t iter_args = loom_scf_while_iter_args(source_op);
   loom_value_id_t* low_iter_args = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-      context, source_op, iter_args.values, iter_args.count, &low_iter_args));
+      context, source_op, iter_args.values, iter_args.count,
+      /*required_types=*/NULL, &low_iter_args));
 
   loom_op_t* low_while_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_scf_while_build(
@@ -530,76 +535,28 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
         context, loom_op_const_operands(source_op)[0],
         loom_op_const_results(source_op)[0]);
   }
+  if (loom_low_lower_source_op_is_callable_exit(context, source_op)) {
+    const loom_value_id_t* values = loom_op_const_operands(source_op);
+    loom_value_id_t* low_values = NULL;
+    IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
+        context, source_op, values, source_op->operand_count,
+        context->lowering.result_types, &low_values));
+    loom_op_t* low_return_op = NULL;
+    return loom_low_return_build(&context->builder, low_values,
+                                 source_op->operand_count, source_op->location,
+                                 &low_return_op);
+  }
+  if (loom_low_lower_source_call_is_structural(context->module, source_op)) {
+    return loom_low_lower_source_call(context, source_op);
+  }
   switch (source_op->kind) {
     case LOOM_OP_BUFFER_ASSUME_SAME_ROOT: {
       return loom_low_lower_bind_or_elide_alias(
           context, loom_buffer_assume_same_root_buffer(source_op),
           loom_buffer_assume_same_root_result(source_op));
     }
-    case LOOM_OP_FUNC_RETURN: {
-      loom_value_slice_t values = loom_func_return_operands(source_op);
-      loom_value_id_t* low_values = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-          context, source_op, values.values, values.count, &low_values));
-      loom_op_t* low_return_op = NULL;
-      return loom_low_return_build(&context->builder, low_values, values.count,
-                                   source_op->location, &low_return_op);
-    }
-    case LOOM_OP_FUNC_CALL: {
-      loom_value_slice_t operands = loom_func_call_operands(source_op);
-      loom_value_id_t* low_operands = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-          context, source_op, operands.values, operands.count, &low_operands));
-
-      const loom_value_id_t* source_results = loom_op_const_results(source_op);
-      loom_type_t* result_types = NULL;
-      bool has_unmapped_result = false;
-      if (source_op->result_count != 0) {
-        IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-            context, source_op->result_count, sizeof(*result_types),
-            (void**)&result_types));
-        for (uint16_t i = 0; i < source_op->result_count; ++i) {
-          IREE_RETURN_IF_ERROR(loom_low_lower_map_value(
-              context, source_op, source_results[i], &result_types[i]));
-          has_unmapped_result |=
-              loom_type_kind(result_types[i]) == LOOM_TYPE_NONE;
-        }
-      }
-      if (has_unmapped_result) {
-        return iree_ok_status();
-      }
-
-      loom_low_func_call_build_flags_t build_flags = 0;
-      uint8_t purity = loom_func_call_purity(source_op);
-      uint8_t inline_policy = loom_func_call_inline_policy(source_op);
-      if (purity != 0) {
-        build_flags |= LOOM_LOW_FUNC_CALL_BUILD_FLAG_HAS_PURITY;
-      }
-      if (inline_policy != 0) {
-        build_flags |= LOOM_LOW_FUNC_CALL_BUILD_FLAG_HAS_INLINE_POLICY;
-      }
-      loom_op_t* low_call_op = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_func_call_build(
-          &context->builder, build_flags, purity, inline_policy,
-          loom_func_call_callee(source_op), low_operands, operands.count,
-          result_types, source_op->result_count,
-          /*tied_results=*/NULL, /*tied_result_count=*/0, source_op->location,
-          &low_call_op));
-
-      const loom_value_id_t* low_results = loom_op_const_results(low_call_op);
-      for (uint16_t i = 0; i < source_op->result_count; ++i) {
-        IREE_RETURN_IF_ERROR(loom_low_lower_bind_value(
-            context, source_results[i], low_results[i]));
-      }
-      return iree_ok_status();
-    }
     case LOOM_OP_LOW_INVOKE:
       return loom_low_lower_source_invoke(context, source_op);
-    case LOOM_OP_KERNEL_RETURN: {
-      loom_op_t* low_return_op = NULL;
-      return loom_low_return_build(&context->builder, NULL, 0,
-                                   source_op->location, &low_return_op);
-    }
     case LOOM_OP_SCF_SCHEDULE_FENCE: {
       loom_op_t* low_fence_op = NULL;
       return loom_low_schedule_fence_build(&context->builder,
@@ -1264,6 +1221,11 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
   }
   loom_region_t* source_body = loom_func_like_body(source_function);
   IREE_ASSERT(source_body != NULL);
+  const loom_region_descriptor_t* source_body_descriptor =
+      loom_func_like_body_region_descriptor(module, source_function);
+  IREE_ASSERT(source_body_descriptor != NULL &&
+                  source_body_descriptor->terminator != LOOM_OP_KIND_UNKNOWN,
+              "source callable body must declare an exit terminator");
 
   loom_low_lower_context_t context = {
       .module = module,
@@ -1274,6 +1236,8 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
       .module_state = options->module_state,
   };
   context.lowering.fact_table = options->fact_table;
+  context.lowering.source_callable_exit_kind =
+      source_body_descriptor->terminator;
   iree_arena_initialize(module->arena.block_pool, &context.function_arena);
 
   iree_status_t status =
@@ -1391,7 +1355,7 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     }
   }
   if (iree_status_is_ok(status)) {
-    status = loom_low_lower_function_boundary_validate(&context, source_body);
+    status = loom_low_lower_function_boundary_validate(&context);
   }
   if (iree_status_is_ok(status) &&
       !loom_low_lower_context_should_stop(&context)) {

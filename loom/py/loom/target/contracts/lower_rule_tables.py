@@ -74,6 +74,10 @@ class LowerAttrCopyKind(Enum):
     VALUE_FLOAT_BITS = "value_float_bits"
     VALUE_FLOAT_AS_F32_I32 = "value_float_as_f32_i32"
     VALUE_FLOAT_AS_F64_I32_WORD = "value_float_as_f64_i32_word"
+    VALUE_TYPE_STATIC_DIM_SCALED = "value_type_static_dim_scaled"
+    VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED = (
+        "value_type_literal_minus_static_dim_scaled"
+    )
     I64_ARRAY_LANE_BYTE = "i64_array_lane_byte"
     SOURCE_MEMORY_STATIC_BYTE_OFFSET = "source_memory_static_byte_offset"
     SOURCE_MEMORY_STATIC_BYTE_OFFSET_PLUS_LITERAL = (
@@ -176,7 +180,7 @@ class LowerSourceMemory:
 
     constraint: SourceMemoryConstraint
     diagnostic_index: int
-    dynamic_offset_diagnostic_index: int
+    byte_offset_diagnostic_index: int
     address_layout_diagnostic_index: int = 0xFFFF
     address_diagnostic_index: int = 0xFFFF
     byte_offset_materializer: SourceMemoryByteOffsetMaterializer | None = None

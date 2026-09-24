@@ -155,6 +155,80 @@ vector casts and `__builtin_bit_cast` continue to reinterpret equal-sized
 objects. The importer leaves vector legalization and instruction selection to
 the target compiler.
 
+## Packed scalar and vector bit casts
+
+`__builtin_bit_cast(DestinationType, value)` reinterprets equal-width scalar
+and vector payloads. A packed word can become byte, FP8, or FP16 lanes for
+vector computation, then return to a scalar word for storage:
+
+```cpp
+using Bytes4 = unsigned char __attribute__((ext_vector_type(4)));
+
+unsigned increment_bytes(unsigned word) {
+  auto bytes = __builtin_bit_cast(Bytes4, word);
+  return __builtin_bit_cast(unsigned, bytes + Bytes4{1, 2, 3, 4});
+}
+```
+
+Lane zero occupies the least-significant bits. Each byte addition wraps in its
+own lane. The imported value stays in SSA: a scalar endpoint uses a one-lane
+`vector.from_elements` or `vector.extract` around `vector.bitcast`. The target
+compiler can realize those representation changes as register aliases. Floating
+bit casts preserve the payload, including signed zero and NaN encodings; use
+`__builtin_convertvector` for numeric conversion.
+
+The same operation supports scalar-to-scalar and vector-to-vector values.
+Pointers, aggregates and padded vectors produce source diagnostics. Runtime
+casts between `bool` and byte-sized values are also rejected: Loom represents
+`bool` as an `i1` predicate rather than its C++ object byte.
+
+### Constant bit casts
+
+Bit casts also work in `constexpr` initializers and `static_assert`. Packed
+weights, scales and codebooks can retain their published object encodings in
+source while supplying typed values to ordinary arithmetic:
+
+```cpp
+using Fp8x4 = __float8_e4m3fn __attribute__((ext_vector_type(4)));
+using Float4 = float __attribute__((ext_vector_type(4)));
+constexpr Fp8x4 kScale = __builtin_bit_cast(Fp8x4, 0x403c3830u);
+static_assert(kScale[0] == 0.5f && kScale[3] == 2.0f);
+
+void apply_scale(const Float4* input, Float4* output) {
+  *output = *input * __builtin_convertvector(kScale, Float4);
+}
+```
+
+The direct import retains typed FP8 constants, a vector extension and a vector
+multiply. Ordinary cleanup folds the extension to F32 constants; there is no
+runtime decoding of the packed word. Fixed unpadded vectors can also regroup
+larger constant vectors, such as four integer words into a sixteen-element FP8
+table.
+
+Constant evaluation retains object bits for FP16, BF16, both FP8 formats, F32
+and F64. Copies, same-type conversions, unary sign changes and template
+arguments preserve signed zero and NaN payloads. Numeric arithmetic and
+conversion apply the destination format's rounding rules.
+
+```cpp
+constexpr float kPayload = __builtin_bit_cast(float, 0x7f812345u);
+static_assert(__builtin_bit_cast(unsigned, +kPayload) == 0x7f812345u);
+static_assert(__builtin_bit_cast(unsigned, -kPayload) == 0xff812345u);
+float payload() { return kPayload; }
+```
+
+Finite values import as ordinary numeric constants. Exact NaN values import as
+integer constants followed by `scalar.bitcast`, retaining their representation
+through Loom transformations. Numeric-only config and check metadata cannot
+carry NaN payloads and diagnose such values; an integer configuration value
+can carry the encoding for a bit cast in the function body.
+
+The constant evaluator admits integral and enum scalars up to 64 bits and
+unpadded vectors of those integers or supported floats. Scalar `bool` object
+bytes must encode zero or one. Pointer, aggregate, long-double, padded-vector
+and packed-Boolean-vector representations are rejected during constant
+evaluation because their object layout is outside this encoding contract.
+
 ## Compiler tests
 
 When the importer is enabled, `loom-check` accepts `.cxx-test` files through the
@@ -290,6 +364,80 @@ no function symbol to rename. Names contain ASCII letters, digits, `_`, `$`, `.`
 or `-`, with no leading `@`. Functions and configuration values share one Loom
 namespace; conflicting exact names diagnose instead of receiving an automatic
 suffix.
+
+## Kernel pointer contracts
+
+Kernel pointer parameters can state the byte alignment supplied by their caller:
+
+```cpp
+using Words = unsigned __attribute__((vector_size(64)));
+
+[[loom::kernel, loom::workgroup_size(1, 1, 1), loom::workgroup_count(1, 1, 1)]]
+void copy_block([[loom::assume_aligned(64)]] const unsigned* input,
+                [[loom::assume_aligned(64)]] unsigned* output) {
+  *reinterpret_cast<Words*>(output) =
+      *reinterpret_cast<const Words*>(input + 16);
+}
+```
+
+The annotation promises alignment of the incoming pointer's address. Its
+argument is a positive power-of-two integer constant, and the attribute goes
+before the parameter type. Consistent declarations may repeat the contract;
+the definition inherits it even when parameter names differ. The importer
+emits `buffer.assume.alignment` at kernel entry, where the pointer has zero
+byte offset into its buffer binding.
+
+The sixteen-word displacement above preserves 64-byte alignment. Advancing one
+word instead guarantees only four-byte alignment, and assigning a different
+pointer to the parameter does not transfer the entry promise to that value.
+The annotation performs no allocation, realignment, or runtime check. Its
+guarantee must match the caller's buffers; the
+[memory guide](../../../../docs/src/guide/buffers-views-memory.md#aligned-bases-enable-wide-transfers)
+shows the corresponding High IR contract.
+
+Ordinary helper pointers carry an additional byte origin. Their parameter
+annotations currently diagnose because alignment of the combined address
+requires an origin-aware contract; strengthening the backing buffer alone would
+be incorrect for an aligned interior pointer.
+
+Kernel pointers can also mark their incoming buffer roots as mutually
+non-overlapping with `[[loom::noalias]]`:
+
+```cpp
+#include <loomcxx/kernel.h>
+
+[[loom::kernel, loom::workgroup_size(256, 1, 1),
+  loom::workgroup_count(3, 64, 1)]]
+void gather_rows([[loom::noalias]] const float* weights,
+                 [[loom::noalias]] const unsigned* row_ids,
+                 [[loom::noalias]] float* output) {
+  unsigned row = loom::workgroup_id.y;
+  unsigned column = loom::workgroup_id.x * 256u + loom::workitem_id.x;
+  unsigned source_row = row_ids[row];
+  loom::assume(source_row < 65536u);
+  output[row * 768u + column] = weights[source_row * 768u + column];
+}
+```
+
+Each marked parameter produces `buffer.assume.noalias` at kernel entry. Distinct
+marked roots promise disjoint storage; unmarked parameters can still alias
+them. Aliases and interior pointers derived from a root retain its identity.
+Reassigning a parameter does not attach the entry promise to its replacement.
+This enables existing memory-dependence analysis and, when the address and
+memory-stability facts permit it, uniform loads such as the row-ID read above.
+
+The attribute has no arguments and composes with alignment, for example
+`[[loom::noalias, loom::assume_aligned(64)]] const float* input`. It introduces
+no runtime check, allocation, alignment or nonnull guarantee. Declarations and
+definitions reconcile contracts by parameter position, including concrete
+kernel template instances.
+
+This is Loom's buffer-root contract. C `restrict` and C++ `__restrict__` describe
+accesses during a lexical scope and can permit two read-only pointers to share
+storage. They currently contribute no alias facts during import. Applying
+`loom::noalias` to ordinary helper parameters diagnoses: helper calls need
+invocation-scoped alias contracts, including when a helper receives two
+non-overlapping slices of one backing buffer.
 
 ## Named configuration values
 
@@ -507,6 +655,26 @@ float read_view(View source) {
 `make_view<true>` returns a dynamic-row view with an explicit row stride. Each
 specialization deduces its own return type. The generic reader accepts either
 type, and Loom retains the shape and layout facts through the helper calls.
+
+## Integer bit counts
+
+`<loomcxx/scalar.h>` exposes `ctlzi`, `cttzi`, and `ctpopi` for non-boolean
+integer types. These count leading zeros, trailing zeros, and set bits in the
+source type's representation. The result keeps the input type; narrow operands
+are not implicitly widened before counting. For zero input, the zero counts
+return the type's bit width, and the population count returns zero.
+
+```cpp
+#include <loomcxx/scalar.h>
+
+unsigned first_ready_lane(unsigned mask) {
+  return loom::scalar::cttzi(mask);
+}
+```
+
+This imports as `scalar.cttzi ... : i32`, using the same shared target lowering
+as authored High. Signed values count representation bits. Floating-point math
+permissions do not apply to these integer operations.
 
 ## Integer atomics
 
@@ -1021,8 +1189,9 @@ Fixed underlying types are checked for representability, including implicit
 enumerator increments. Inferred enums select the first type in the integer
 promotion order that contains their complete value range; values above 32 bits
 and the full unsigned 64-bit range remain intact. Template-dependent definitions
-are resolved when instantiated. Boolean enums use `i1` values; pointers to them
-require a byte-storage projection and receive the same diagnostic as `bool*`.
+are resolved when instantiated. Boolean enums use `i1` values. Accessing their
+memory requires a byte-storage projection and receives the same diagnostic as
+accessing storage through `bool*`; carrying either pointer is supported.
 
 GNU `packed` enums select their smallest signed or unsigned storage while
 retaining the promotion selected from their enumerator range. An enum containing
@@ -1153,7 +1322,9 @@ The block pointer advances by 136 bytes; `scales_low` and `quants` start at
 offsets 4 and 8. Their elements use byte loads, the base scale uses an FP16
 load, and the codebook uses signed integer-to-float conversion. No record or
 array is copied or allocated. Arrays in by-value records and addresses of
-automatic objects still require a separate value/storage representation.
+automatic records require aggregate object initialization and copy projections.
+Automatic scalars, vectors, and fixed scalar arrays use the storage contract
+below.
 
 Packed fields use the same typed memory operations, with their exact byte
 origins and record strides:
@@ -1437,6 +1608,32 @@ products to its accumulator, wrapping to 32 bits. The `s8s8`, `u8s8`, `s8u8`,
 and `u8u8` kinds must match the declared byte signedness. Input vectors have
 equal lane counts, with four input lanes per accumulator/result lane.
 
+Ordinary vector subscripting can reach the same register-table operation through
+the shared `combine` pass. For example, a four-byte code vector can select from a
+16-byte codebook without an operation binding:
+
+```cpp
+using Bytes4 = unsigned char __attribute__((ext_vector_type(4)));
+using Codes4 = signed char __attribute__((ext_vector_type(4)));
+using Codebook16 = signed char __attribute__((ext_vector_type(16)));
+
+Codes4 decode(Codebook16 table, Bytes4 packed) {
+  Bytes4 indices = packed & 15;
+  return {table[indices[0]], table[indices[1]], table[indices[2]],
+          table[indices[3]]};
+}
+```
+
+The importer CLI and source-lowering pipeline run `combine` before target
+legalization. This pass includes ordinary canonicalization and source
+representation combines; later `canonicalize` cleanup preserves the legalized
+representation. After source cleanup, the body is a byte-vector mask and one
+`vector.table.lookup` using that byte vector. On supported AMDGPU targets this
+selects three byte permutes. The rewrite preserves C++ promotions when removing
+them would change the numeric indices, and also applies to directly authored
+Loom extracts and vector construction. Reordered and repeated selectors keep
+their original lane mapping.
+
 Lookup supports integer or floating-point tables and integer index vectors.
 Its result has the table's C++ element type and the index vector's lane count;
 each index must be in the table's range. Calls retain the shared register-table
@@ -1453,24 +1650,45 @@ running the importer.
 
 The current translation surface covers scalar and explicit vector arithmetic,
 conversions, typed-pointer indexing and arithmetic, aggregate record values,
-record field storage, local SSA values, conditional regions, short-circuit `&&`
-and `||`, counted and general `for` loops, `while` and `do/while` loops, fixed
-workgroup arrays, and direct calls. Unsupported reachable types and statements
-produce source diagnostics. Integral subscripts preserve
-their source width and signedness. Interior pointers carry a buffer root and an
+record field storage, local SSA values, automatic scalar, vector, and array storage,
+conditional regions, short-circuit `&&` and `||`, counted and general `for`
+loops, `while` and `do/while` loops, fixed workgroup arrays, and direct calls.
+Unsupported reachable types and statements produce source diagnostics. Integral
+subscripts preserve their source width and signedness. Interior pointers carry a
+buffer root and an
 object-relative byte offset through helper arguments, returns, conditional
 regions, and loop-carried values. Kernel pointer parameters retain their
 single-buffer binding ABI. Signed displacements are combined with the current
 origin before entering the nonnegative offset domain, so an interior pointer
 can move backward within its allocation.
 
+`void*`, qualified void pointers, and pointers to forward-declared objects use
+the same representation. Copies, casts, helpers, branches, loops, and SSA record
+fields preserve the buffer and byte origin without requiring a pointee layout.
+Recovering a supported object type enables ordinary memory access:
+
+```cpp
+unsigned read_erased(const void* storage, unsigned byte_offset) {
+  auto* bytes = static_cast<const unsigned char*>(storage);
+  auto* element = reinterpret_cast<const unsigned*>(bytes + byte_offset);
+  return *element;
+}
+```
+
+Typed object projection and scaled pointer arithmetic require an admitted
+storage layout. Carrying an opaque pointer does not enable loads or stores of
+unsupported object formats. Builtin `&*pointer` preserves the pointer without
+projecting an object, so its pointee may remain incomplete. Function pointers
+have no object-pointer representation and produce a source diagnostic.
+
 Pointer addition, subtraction by an integer, unary plus, dereference, address-of
-an existing storage element, and prefix/postfix increments are admitted.
+storage elements and automatic scalar/vector/array objects, and prefix/postfix
+increments are admitted.
 Integer increments update automatic bindings or storage-backed elements and
 return the previous or updated value. Pointer increments update automatic
 bindings; `*output++ = *input++` preserves both pointer origins. Compound
-assignment supports scalar and vector storage through pointers, record fields
-and workgroup arrays. The right operand executes before the destination is
+assignment supports scalar and vector storage through pointers, record fields,
+and array elements. The right operand executes before the destination is
 resolved, and one resolved address supplies both the load and store. Arithmetic
 uses the source promotions and converts back to the element type before storing
 or returning:
@@ -1485,19 +1703,74 @@ unsigned advance(unsigned char* counts) {
 }
 ```
 
+An automatic object's address identifies the same storage seen by its direct
+reads, writes, and aliases. Ordinary helpers can update local state through
+pointers, including across branches and loops:
+
+```cpp
+[[loom::force_inline]] void increment(unsigned* value) { ++*value; }
+
+unsigned update(unsigned input, bool enabled) {
+  unsigned value = input;
+  if (enabled) increment(&value);
+  return value;
+}
+```
+
+Automatic storage supports the same non-boolean scalar and vector types as
+typed pointer storage. The importer emits `buffer.alloca<private>` at the
+object's declaration, using its source size and alignment, and initializes it
+with a store preserving its access qualifiers. A declaration without an
+initializer leaves storage uninitialized for an output-only helper to write.
+Addressed by-value parameters receive a private copy of their incoming value.
+Pointers retain the same buffer and byte origin
+through copies and borrowed helper returns. Automatic objects retain their C++
+lifetimes; returning a pointer does not extend the pointee's lifetime. Taking an
+address in an unevaluated operand or a discarded `if constexpr` arm does not
+create storage.
+
+Inlining and private-storage promotion belong to the shared compiler. For the
+example above they replace the allocation, accesses, and helper call with a
+conditional SSA result. Volatile and atomic observations retain memory effects;
+addressing an object does not promise promotion. Scalars that need no storage
+continue to import directly as SSA values. An aliased loop bound or induction
+object uses a general loop so indirect mutations cannot be lost by counted-loop
+lowering.
+
+Fixed one-dimensional arrays of non-boolean scalars use the same private storage
+contract. Braced and parenthesized element initializers execute in order, with
+each element stored before evaluating the next clause. Omitted elements are
+value-initialized; a declaration without an initializer emits no stores.
+Array bounds can be deduced from the initializer. Decay, element addresses, and
+whole-array addresses preserve the same allocation:
+
+```cpp
+unsigned guarded_update(unsigned input, bool enabled) {
+  unsigned values[3] = {37, input, 41};
+  if (enabled) increment(&values[1]);
+  return values[0] + values[1] + values[2];
+}
+```
+
+After inlining, shared promotion can carry these three scalar cells through the
+branch without temporary memory. Dynamic indexing and atomic or volatile
+observations retain storage where needed. Direct indexing into a declared array
+publishes the C++ in-bounds precondition using its fixed extent. This is a source
+precondition, not a runtime bounds check.
+
 Conditional expressions and short-circuit operands carry binding updates only
 along the executed path. Incrementing vectors or floating-point values requires
 additional type projections and produces a source diagnostic. Pointer
-differences, comparisons, truth conversions, and addresses of automatic scalar
-locals also produce source diagnostics.
+differences, comparisons, and truth conversions also produce source diagnostics.
 Distinct-root choices import as ordinary buffer values; executing them requires
 the selected Loom target to support buffer transport through those control-flow
-edges. Objects with constructors, exceptions and indirect calls need additional
+edges. Objects with constructors, exceptions, and indirect calls need additional
 storage and control-flow projections before they can be imported.
 
-Volatile scalar and vector accesses through pointers and workgroup arrays
-become `view.load/store<volatile>` and `vector.load/store<volatile>`. The
-qualifier belongs to the accessed object: a copied pointer or a pointer member
+Volatile scalar and vector accesses through pointers, automatic objects, and
+workgroup arrays become `view.load/store<volatile>` and
+`vector.load/store<volatile>`. The qualifier belongs to the accessed object:
+a copied pointer or a pointer member
 retains its pointee's observation semantics. Discarded reads, including explicit
 casts to `void`, remain observable, and repeated accesses stay distinct through
 optimization. Ordinary reads retain their usual optimization.
@@ -1518,10 +1791,14 @@ preserves its element qualifier through copies, helpers and subviews;
 `loom::view::load` returns an ordinary scalar and `loom::view::store` accepts
 one. A `const volatile` element permits observations but rejects stores.
 Volatile supplies observable accesses, without atomicity, synchronization or a
-cache-coherence guarantee. Automatic scalar objects and automatic record values
-use SSA transport and cannot represent volatile object storage; those
-declarations produce an explicit source diagnostic. Namespace-scope volatile
-objects require global-storage projection and cannot fold to their initializer.
+cache-coherence guarantee. Volatile scalar and vector local declarations receive
+private storage even when their address is never taken. Volatile by-value
+parameters require separating the incoming SSA signature from the qualified
+parameter object and produce a source diagnostic. Stored pointer objects
+need an object representation for their buffer and byte origin, and automatic
+record values need aggregate memory copies; those declarations produce source
+diagnostics. Namespace-scope volatile objects require global-storage projection
+and cannot fold to their initializer.
 
 `continue` skips the remaining body of the innermost `for`, `while`, or
 `do/while`. Updates before the exit survive; a `for` increment and a `do/while`

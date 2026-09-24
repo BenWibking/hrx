@@ -108,7 +108,9 @@ loom_cc_library(
     iree::base::threading
     iree::hal
     iree::tooling::device_util
+    loom::ir
     loom::sanitizer::options
+    loom::sanitizer::runtime_requirements
   PUBLIC
 )
 
@@ -148,6 +150,20 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    testbench_staging
+  HDRS
+    "testbench_staging.h"
+  SRCS
+    "testbench_staging.c"
+  DEPS
+    ::runtime
+    iree::base
+    iree::hal
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     testbench_actual
   HDRS
     "testbench_actual.h"
@@ -159,6 +175,7 @@ loom_cc_library(
     ::device_provider
     ::invocation
     ::runtime
+    ::testbench_staging
     iree::base
     iree::hal
     iree::tooling::device_util
@@ -348,6 +365,7 @@ loom_cc_test(
     loom::testing::module_ptr
     loom::tooling::execution::session
     loom::tooling::testbench
+    loom::transforms::cleanup::configured
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

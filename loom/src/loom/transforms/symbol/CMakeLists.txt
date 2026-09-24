@@ -235,6 +235,7 @@ loom_cc_library(
     loom::analysis::availability
     loom::analysis::scc
     loom::analysis::symbol_references
+    loom::codegen::low::memory_access
     loom::error::error_defs
     loom::ir
     loom::ops::cfg
@@ -307,7 +308,8 @@ loom_cc_library(
     loom::pass::types
     loom::rewrite::materialize
     loom::rewrite::remap
-    loom::transforms::cleanup::canonicalize
+    loom::transforms::cleanup::canonicalizer
+    loom::transforms::cleanup::pass_environment
     loom::util::fact_table
     loom::util::walk
   PUBLIC

@@ -1294,6 +1294,7 @@ def test_pure_integer_valu_results_are_rematerializable() -> None:
         "amdgpu.v_sub_u32",
         "amdgpu.v_mul_lo_u32",
         "amdgpu.v_mul_hi_u32",
+        "amdgpu.v_mul_hi_i32",
         "amdgpu.v_mul_u32_u24",
         "amdgpu.v_mul_u32_u24.src0_inline",
         "amdgpu.v_mul_u32_u24.lit",
@@ -1411,6 +1412,7 @@ def test_integer_binary_src0_accepts_scalar_or_vector_registers() -> None:
     descriptor_keys = (
         "amdgpu.v_mul_lo_u32",
         "amdgpu.v_mul_hi_u32",
+        "amdgpu.v_mul_hi_i32",
         "amdgpu.v_mul_u32_u24",
         "amdgpu.v_min_i32",
         "amdgpu.v_max_i32",
@@ -2664,7 +2666,7 @@ def test_feedback_atomic64_descriptors_cover_execution_families() -> None:
         )
         _assert_feedback_atomic64_overlay(
             descriptors["amdgpu.global_atomic_swap_u64_rtn_saddr"],
-            mnemonic=f"global_atomic_swap_{wide_mnemonic_suffix}",
+            mnemonic=f"global_atomic_swap_{'x2' if wide_mnemonic_suffix == 'x2' else 'b64'}",
             semantic_tag="memory.global.atomic.exchange.u64.return",
             memory_space=MemorySpace.GLOBAL,
             payload_field_name="value",
@@ -2681,6 +2683,42 @@ def test_feedback_atomic64_descriptors_cover_execution_families() -> None:
             payload_field_name="value",
             payload_units=4,
         )
+
+
+def test_buffer_atomic64_payloads_preserve_ties_and_memory_width() -> None:
+    for overlays in (
+        _gfx11_core_overlays(),
+        _gfx12_core_overlays(),
+        _gfx125x_core_overlays(),
+    ):
+        for descriptor in overlays:
+            if not descriptor.descriptor_key.startswith("amdgpu.buffer_atomic_"):
+                continue
+            if "64" not in descriptor.semantic_tag:
+                continue
+            compare_exchange = "compare_exchange" in descriptor.semantic_tag
+            returned = descriptor.semantic_tag.endswith(".return")
+            payload_units = 4 if compare_exchange else 2
+            payloads = tuple(
+                operand.descriptor_operand
+                for operand in descriptor.operands
+                if operand.xml_field_name == "VDATA"
+            )
+            assert tuple(operand.unit_count for operand in payloads) == (
+                (payload_units, payload_units) if returned else (payload_units,)
+            )
+            assert tuple(effect.width_bits for effect in descriptor.effects) == (64, 64)
+            assert all(
+                operand.size_bits == 64 for operand in descriptor.implicit_operands
+            )
+            if returned:
+                assert Constraint(ConstraintKind.TIED, 0, 1) in descriptor.constraints
+                assert (
+                    Constraint(ConstraintKind.DESTRUCTIVE, 0, 1)
+                    in descriptor.constraints
+                )
+            else:
+                assert descriptor.constraints == ()
 
 
 def test_feedback_atomic64_descriptors_expand_source_atomic_candidates() -> None:
@@ -2739,7 +2777,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
         load_mnemonics,
         store_mnemonics,
         uses_flat_scratch,
-        uses_m0,
+        xml_has_m0,
         expected_saddr_fields,
         expected_asm_immediates,
     ) in (
@@ -2776,7 +2814,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
             rdna_store_mnemonics,
             False,
             False,
-            (),
+            (("SADDR", _predefined("NULL", "OPR_SREG")),),
             ("offset", "nv", "scope", "th"),
         ),
         (
@@ -2785,7 +2823,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
             rdna_store_mnemonics,
             False,
             False,
-            (),
+            (("SADDR", _predefined("NULL", "OPR_SREG")),),
             ("offset", "nv", "scope", "th"),
         ),
     ):
@@ -2877,7 +2915,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
             asm_form = descriptor.asm_forms[0]
             assert asm_form.mnemonic == mnemonic
             assert asm_form.results == ("dst",)
-            expected_asm_operands = ("addr", "m0") if uses_m0 else ("addr",)
+            expected_asm_operands = ("addr",)
             assert asm_form.operands == expected_asm_operands
             assert (
                 tuple(immediate.field_name for immediate in asm_form.immediates)
@@ -2900,7 +2938,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
                     operand.operand_type == "OPR_SDST_M0"
                     for operand in descriptor.implicit_operands
                 )
-                == uses_m0
+                == xml_has_m0
             )
 
         for (width_bits, operand_units), mnemonic in zip(
@@ -2927,9 +2965,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
             asm_form = descriptor.asm_forms[0]
             assert asm_form.mnemonic == mnemonic
             assert asm_form.results == ()
-            expected_asm_operands = (
-                ("addr", "value", "m0") if uses_m0 else ("addr", "value")
-            )
+            expected_asm_operands = ("addr", "value")
             assert asm_form.operands == expected_asm_operands
             assert (
                 tuple(immediate.name for immediate in asm_form.immediates)
@@ -2948,7 +2984,7 @@ def test_flat_memory_descriptors_cover_execution_families() -> None:
                     operand.operand_type == "OPR_SDST_M0"
                     for operand in descriptor.implicit_operands
                 )
-                == uses_m0
+                == xml_has_m0
             )
 
 
@@ -4762,7 +4798,7 @@ def test_global_vaddr_memory_forms_have_unique_low_asm_mnemonics() -> None:
     )
 
 
-def test_gfx950_global_saddr_memory_asm_forms_include_m0() -> None:
+def test_gfx950_global_saddr_memory_asm_forms_omit_unused_m0() -> None:
     descriptors = {
         descriptor.descriptor_key: descriptor for descriptor in _gfx950_core_overlays()
     }
@@ -4772,7 +4808,7 @@ def test_gfx950_global_saddr_memory_asm_forms_include_m0() -> None:
     load_form = load_forms[0]
     assert load_form.mnemonic == "global_load_dwordx4_saddr"
     assert load_form.results == ("dst",)
-    assert load_form.operands == ("addr", "saddr", "m0")
+    assert load_form.operands == ("addr", "saddr")
     assert tuple(immediate.name for immediate in load_form.immediates) == (
         "offset",
         "nt",
@@ -4785,7 +4821,7 @@ def test_gfx950_global_saddr_memory_asm_forms_include_m0() -> None:
     store_form = store_forms[0]
     assert store_form.mnemonic == "global_store_dwordx4_saddr"
     assert store_form.results == ()
-    assert store_form.operands == ("addr", "value", "saddr", "m0")
+    assert store_form.operands == ("addr", "value", "saddr")
     assert tuple(immediate.name for immediate in store_form.immediates) == (
         "offset",
         "nt",
@@ -6087,28 +6123,32 @@ def test_cdna_smem_dwordx4_store_and_scratch_descriptors_cover_xml() -> None:
             assert descriptors[buffer_store_key].schedule_class == _SCHEDULE_SMEM_STORE
 
 
-def test_cdna_scratch_m0_operands_are_state_reads() -> None:
+def test_cdna_register_memory_ignores_conditional_m0() -> None:
     for overlay_builder in (_gfx940_core_overlays, _gfx950_core_overlays):
-        m0_rows = [
-            (descriptor, implicit_operand)
-            for descriptor in overlay_builder()
-            if descriptor.semantic_tag is not None
-            and descriptor.semantic_tag.startswith("memory.stack.")
-            for implicit_operand in descriptor.implicit_operands
-            if implicit_operand.operand_type == "OPR_SDST_M0"
-        ]
-
-        assert m0_rows
-        for _, implicit_operand in m0_rows:
-            assert implicit_operand.is_input
-            assert not implicit_operand.is_output
-            operand = implicit_operand.descriptor_operand
-            assert operand is not None
-            assert operand.field_name == "m0"
-            assert operand.role is OperandRole.RESOURCE
-            assert OperandFlag.IMPLICIT in operand.flags
-            assert OperandFlag.STATE_READ in operand.flags
-            assert OperandFlag.STATE_WRITE not in operand.flags
+        overlays = overlay_builder()
+        for prefix in ("amdgpu.global_", "amdgpu.scratch_", "amdgpu.flat_"):
+            descriptors = [
+                descriptor
+                for descriptor in overlays
+                if descriptor.descriptor_key.startswith(prefix)
+                and descriptor.schedule_class != _SCHEDULE_VMEM_LOAD_LDS
+            ]
+            assert descriptors
+            for descriptor in descriptors:
+                m0_operands = [
+                    operand
+                    for operand in descriptor.implicit_operands
+                    if operand.operand_type == "OPR_SDST_M0"
+                ]
+                assert len(m0_operands) == 1
+                operand = m0_operands[0]
+                assert operand.xml_operand_required
+                assert operand.descriptor_operand is None
+                assert operand.ignore_reason == (
+                    "register-memory-access-does-not-use-lds-offset"
+                )
+                assert descriptor.asm_forms is not None
+                assert all("m0" not in form.operands for form in descriptor.asm_forms)
 
 
 def test_gfx940_scratch_memory_forms_cover_spill_packets() -> None:

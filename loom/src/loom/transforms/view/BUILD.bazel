@@ -13,6 +13,52 @@ package(
 )
 
 loom_cc_library(
+    name = "combine_patterns",
+    srcs = ["combine_patterns.c"],
+    hdrs = ["combine_patterns.h"],
+    deps = [
+        ":load_coalescing",
+        "//loom/src/loom/ops/view",
+        "//loom/src/loom/rewrite:pattern_registry",
+        "//loom/src/loom/transforms/cleanup:patterns",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "boundary_projection",
+    srcs = ["boundary_projection.c"],
+    hdrs = ["boundary_projection.h"],
+    deps = [
+        ":offset_expression",
+        "//loom/src/loom/analysis:symbolic_expr",
+        "//loom/src/loom/analysis:view_regions",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ir:facts",
+        "//loom/src/loom/ops/buffer",
+        "//loom/src/loom/ops/scf",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/target:provider",
+        "//loom/src/loom/transforms/boundary:projection_core",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "boundary_transport",
+    srcs = ["boundary_transport.c"],
+    hdrs = ["boundary_transport.h"],
+    deps = [
+        ":boundary_projection",
+        "//loom/src/loom/pass:types",
+        "//loom/src/loom/target:pass_environment",
+        "//loom/src/loom/transforms/boundary:projection_core",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "linearize_view_accesses",
     srcs = ["linearize_view_accesses.c"],
     hdrs = ["linearize_view_accesses.h"],
@@ -51,18 +97,31 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "offset_expression",
+    srcs = ["offset_expression.c"],
+    hdrs = ["offset_expression.h"],
+    deps = [
+        "//loom/src/loom/analysis:symbolic_expr",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/scalar",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "transport",
     srcs = ["transport.c"],
     hdrs = ["transport.h"],
     deps = [
+        ":offset_expression",
         "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/analysis:view_regions",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/buffer",
-        "//loom/src/loom/ops/index",
-        "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/scf",
         "//loom/src/loom/pass:types",
         "//loom/src/loom/pass:value_facts",

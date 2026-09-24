@@ -21,7 +21,11 @@ from loom.target.low_descriptors import (
     IssueUse,
     IssueUseKind,
     LatencyKind,
+    MemorySpace,
     ModelQuality,
+    OperandForm,
+    OperandFormMatch,
+    OperandFormMatchKind,
     Resource,
     ResourceKind,
     ScheduleClass,
@@ -31,6 +35,7 @@ from loom.target.test.descriptors import (
     TEST_LOW_ADD_I32_DESCRIPTOR,
     TEST_LOW_CONST_I32_DESCRIPTOR,
     TEST_LOW_CORE_DESCRIPTOR_SET,
+    TEST_LOW_LOAD_V4I32_DESCRIPTOR,
 )
 
 
@@ -305,3 +310,33 @@ def test_physical_view_lookup_preserves_exact_class_and_unit_relations() -> None
             offset = class_id - lookup.class_base
             actual = ordinals[offset] if 0 <= offset < lookup.class_count else 0xFFFFFFFF
             assert actual == expected.get((physical_id, class_id), 0xFFFFFFFF)
+
+
+@pytest.mark.parametrize("change", ["none", "width", "space", "order"])
+def test_operand_form_preserves_effect_identity(change: str) -> None:
+    base = TEST_LOW_LOAD_V4I32_DESCRIPTOR
+    effects = (base.effects[0], replace(base.effects[0], memory_space=MemorySpace.WORKGROUP))
+    replacement_effects = effects
+    if change == "width":
+        replacement_effects = (replace(effects[0], width_bits=256), effects[1])
+    elif change == "space":
+        replacement_effects = (replace(effects[0], memory_space=MemorySpace.GLOBAL), effects[1])
+    elif change == "order":
+        replacement_effects = tuple(reversed(effects))
+    replacement = replace(base, key="test.load.variant", mnemonic="test.load.variant", operands=base.operands[:1], asm_forms=(), effects=replacement_effects)
+    source = replace(
+        base,
+        effects=effects,
+        operand_forms=(
+            OperandForm(
+                replacement_descriptor=replacement.key,
+                matches=(OperandFormMatch(source_operand="address", match_kind=OperandFormMatchKind.ALL_EQUAL_I64, match_i64=0),),
+            ),
+        ),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(source, replacement))
+    if change == "none":
+        compiler.compile_descriptor_set(descriptor_set)
+    else:
+        with pytest.raises(ValueError, match="must preserve semantic effect ordinals"):
+            compiler.compile_descriptor_set(descriptor_set)

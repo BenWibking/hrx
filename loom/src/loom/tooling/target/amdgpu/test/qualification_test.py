@@ -25,15 +25,16 @@ class QualificationTest(unittest.TestCase):
         self.fixture = self.root / "fixture.loom-test"
         source = Path(_ARGS.fixture).read_text()
         source = "// TEMPLATE: corpus.loom-test\n" + source.split("\n", 1)[1]
-        # TEMPLATE synchronization requires the formatter's canonical LF output.
+        # Keep the copied fixture in its canonical LF form.
         self.fixture.write_text(source, newline="\n")
+        self.rejected = self.root / "rejected.loom-test"
+        self.rejected.write_bytes(Path(_ARGS.rejected).read_bytes())
 
     def check(self, source, *arguments):
         return subprocess.run(
             [
                 _ARGS.checker,
                 "--target=amdgpu:gfx942",
-                f"--template-root={self.root}",
                 "--json=all",
                 *arguments,
                 str(source),
@@ -42,52 +43,79 @@ class QualificationTest(unittest.TestCase):
             text=True,
         )
 
-    def test_native_diagnostics_are_independent_of_low_goldens(self):
+    def test_native_compilation_is_independent_of_low_goldens(self):
         result = self.check(self.fixture)
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
         self.assertEqual(
-            report["summary"], {"total": 13, "passed": 13, "failed": 0, "skipped": 0}
+            report["summary"], {"total": 14, "passed": 14, "failed": 0, "skipped": 0}
         )
         self.assertTrue(all(case["mode"] == "compile" for case in report["cases"]))
 
+    def test_expected_target_diagnostic_passes(self):
+        result = self.check(self.rejected)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(
+            report["summary"], {"total": 1, "passed": 1, "failed": 0, "skipped": 0}
+        )
+
     def test_wrong_diagnostic_identity_fails(self):
-        self.fixture.write_text(
-            self.fixture.read_text().replace("AMDGPU/023", "AMDGPU/022"),
+        self.rejected.write_text(
+            self.rejected.read_text().replace("AMDGPU/026", "AMDGPU/025"),
             newline="\n",
         )
-        result = self.check(self.fixture)
+        result = self.check(self.rejected)
         self.assertNotEqual(result.returncode, 0)
         report = json.loads(result.stdout)
-        self.assertEqual(report["summary"]["failed"], 2)
+        self.assertEqual(report["summary"]["failed"], 1)
         self.assertEqual(report["summary"]["skipped"], 0)
 
     def test_unannotated_unsupported_source_fails(self):
-        result = self.check(self.corpus)
+        self.rejected.write_text(
+            "\n".join(
+                line
+                for line in self.rejected.read_text().splitlines()
+                if not line.startswith("// ERROR")
+            )
+            + "\n",
+            newline="\n",
+        )
+        result = self.check(self.rejected)
         self.assertNotEqual(result.returncode, 0)
         report = json.loads(result.stdout)
-        self.assertEqual(report["summary"]["passed"], 11)
-        self.assertEqual(report["summary"]["failed"], 2)
+        self.assertEqual(report["summary"]["passed"], 0)
+        self.assertEqual(report["summary"]["failed"], 1)
 
-    def test_missing_template_case_fails_before_compilation(self):
+    def test_compilation_uses_concrete_cases_without_template_synchronization(self):
         self.fixture.write_text(
             self.fixture.read_text().split("// ====", 1)[0], newline="\n"
         )
         result = self.check(self.fixture)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("stale relative to", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(
+            report["summary"], {"total": 1, "passed": 1, "failed": 0, "skipped": 0}
+        )
 
-    def test_missing_template_source_fails(self):
+    def test_compilation_needs_no_template_source(self):
         self.corpus.unlink()
+        original = self.fixture.read_bytes()
         result = self.check(self.fixture)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("reading TEMPLATE", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(
+            report["summary"], {"total": 14, "passed": 14, "failed": 0, "skipped": 0}
+        )
+        self.assertEqual(self.fixture.read_bytes(), original)
 
     def test_update_does_not_rewrite_goldens(self):
         original = self.fixture.read_bytes()
         result = self.check(self.fixture, "--update")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("does not update RUN goldens", result.stderr)
+        self.assertIn(
+            "cannot maintain template sources or update RUN goldens", result.stderr
+        )
         self.assertEqual(self.fixture.read_bytes(), original)
 
     def test_unknown_profile_is_not_a_skip(self):
@@ -119,11 +147,13 @@ class QualificationTest(unittest.TestCase):
         output = self.root / "module.hal"
         native_output = self.root / "module.hsaco"
         report_path = self.root / "report.json"
+        roots = ["address_guarded_rows", "address_materialized_wide_offset"]
         result = subprocess.run(
             [
                 _ARGS.compiler,
                 _ARGS.realizations,
                 "--target=amdgpu:gfx942",
+                *[f"--root=@{root}" for root in roots],
                 f"--output={output}",
                 f"--emit-target-artifact={native_output}",
                 "--compile-report=summary",
@@ -137,8 +167,10 @@ class QualificationTest(unittest.TestCase):
         self.assertGreater(native_output.stat().st_size, 0)
         report = json.loads(report_path.read_text())
         self.assertEqual(report["target_key"], "gfx942")
-        self.assertEqual(report["entries"]["count"], 8)
-        self.assertEqual(len(report["entries"]["rows"]), 8)
+        self.assertEqual(report["entries"]["count"], len(roots))
+        self.assertCountEqual(
+            [row["source_function"] for row in report["entries"]["rows"]], roots
+        )
         self.assertTrue(
             all(row["code_byte_count"] > 0 for row in report["entries"]["rows"])
         )
@@ -154,9 +186,9 @@ class QualificationTest(unittest.TestCase):
                 result = subprocess.run(
                     [
                         _ARGS.compiler,
-                        str(self.corpus),
+                        str(self.rejected),
                         "--target=amdgpu:gfx942",
-                        "--root=@global_atomic_minnum_maxnum_f32",
+                        "--root=@unsupported_wave_size",
                         f"--output={output}",
                         f"--emit-target-artifact={native_output}",
                     ],
@@ -164,8 +196,7 @@ class QualificationTest(unittest.TestCase):
                     text=True,
                 )
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("AMDGPU/023", result.stderr)
-                self.assertIn("atomic.descriptor_missing", result.stderr)
+                self.assertIn("AMDGPU/026", result.stderr)
                 self.assertEqual(result.stdout, "")
                 for artifact in (output, native_output):
                     if contents is None:
@@ -181,5 +212,6 @@ if __name__ == "__main__":
     parser.add_argument("fixture")
     parser.add_argument("compiler")
     parser.add_argument("realizations")
+    parser.add_argument("rejected")
     _ARGS = parser.parse_args()
     unittest.main(argv=[sys.argv[0]])

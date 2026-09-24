@@ -76,6 +76,7 @@ from loom.dsl import (
     NoAncestor,
     Op,
     Operand,
+    OperandRole,
     OpPhase,
     Reads,
     RegionDef,
@@ -516,7 +517,14 @@ kernel_assert = Op(
         "kernel when assertions cannot be represented. This is not an "
         "optimization assume."
     ),
-    operands=[Operand("condition", I1, doc="Predicate that must hold.")],
+    operands=[
+        Operand(
+            "condition",
+            I1,
+            role=OperandRole.CONTROL_CONDITION,
+            doc="Predicate that must hold.",
+        )
+    ],
     attrs=[
         AttrDef(
             "message",

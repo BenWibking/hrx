@@ -17,6 +17,7 @@ iree_py_library(
         "__init__.py",
         "atomic.py",
         "descriptor_rule.py",
+        "extended_math.py",
         "index.py",
         "logical_core.py",
         "memory.py",
@@ -36,6 +37,7 @@ iree_py_library(
         "//loom/py/loom/target/arch/spirv:builtins",
         "//loom/py/loom/target/arch/spirv:cooperative_matrix",
         "//loom/py/loom/target/arch/spirv:descriptors",
+        "//loom/py/loom/target/arch/spirv:extended_math",
         "//loom/py/loom/target/arch/spirv:ordinary_vector",
         "//loom/py/loom/target/arch/spirv:scalar_alu",
         "//loom/py/loom/target/arch/spirv:scalar_constant",
@@ -85,5 +87,20 @@ iree_py_test(
     main = "pytest_style_runner.py",
     deps = [
         ":contracts",
+    ],
+)
+
+iree_py_test(
+    name = "extended_math_test",
+    srcs = [
+        "extended_math_test.py",
+        "//loom/py/loom/tools:pytest_style_runner.py",
+    ],
+    args = ["loom.target.arch.spirv.contracts.extended_math_test"],
+    main = "pytest_style_runner.py",
+    deps = [
+        ":contracts",
+        "//loom/py/loom/target/arch/spirv:extended_math",
+        "//loom/py/loom/target/contracts",
     ],
 )

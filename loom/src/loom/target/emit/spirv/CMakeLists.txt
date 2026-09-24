@@ -47,6 +47,7 @@ loom_cc_library(
     ::binary_format
     ::binary_writer
     iree::base
+    loom::target::arch::spirv::extended_instruction
     loom::target::arch::spirv::features
     loom::target::types
   PUBLIC
@@ -187,9 +188,11 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::analysis::symbol_facts
+    loom::codegen::low::diagnostics
     loom::codegen::low::function
     loom::codegen::low::target_binding
     loom::error::emitter
+    loom::error::error_defs
     loom::ir
     loom::ops::low
     loom::target::arch::spirv::descriptors::descriptors_ids
@@ -292,6 +295,7 @@ loom_check_test_suite(
     "test/buffer_raw.loom-test"
     "test/cooperative_matrix.loom-test"
     "test/entry_point.loom-test"
+    "test/extended_math.loom-test"
     "test/immediate_enums.loom-test"
     "test/index_conversion.loom-test"
     "test/integer_boolean.loom-test"
@@ -305,9 +309,12 @@ loom_check_test_suite(
     "test/scalar_abi.loom-test"
     "test/scalar_operations.loom-test"
     "test/schedule_scopes.loom-test"
+    "test/source_low/buffer_selection.loom-test"
     "test/source_low/index_numeric.loom-test"
+    "test/source_low/memory_integer_terms.loom-test"
     "test/source_low/memory_scalar_addressing.loom-test"
     "test/source_low/memory_workgroup_scalar_addressing.loom-test"
+    "test/source_low/numeric_bfloat_widen.loom-test"
     "test/source_low/source_ordinary_vector_structure.loom-test"
     "test/source_structured_control.loom-test"
     "test/storage_buffer_abi.loom-test"
@@ -315,10 +322,6 @@ loom_check_test_suite(
     "test/workgroup_byte_offsets.loom-test"
     "test/workgroup_storage.loom-test"
   DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_scalar_addressing.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_scalar_addressing.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_index.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/ordinary_vector_structure.loom-test"
     "iree::third_party::spirv_dis"
     "iree::third_party::spirv_val"
   ENV

@@ -70,11 +70,11 @@ loom_cc_library(
     loom::codegen::low::lower
     loom::codegen::low::packet_json
     loom::codegen::low::pipeline::legalizer_registry
-    loom::codegen::low::pipeline::pass_environment
     loom::codegen::low::schedule
     loom::codegen::low::target_binding
     loom::codegen::low::text_asm
     loom::codegen::low::verify
+    loom::codegen::pass_environment
     loom::error::diagnostic
     loom::error::emitter
     loom::error::error_defs
@@ -115,6 +115,7 @@ loom_cc_library(
     loom::tooling::compile::pipeline
     loom::tooling::input
     loom::tools::loom-format::convert
+    loom::transforms::cleanup::patterns
     loom::util::diff
     loom::util::fact_table
     loom::util::json
@@ -175,6 +176,7 @@ loom_cc_test(
     loom::target::test::lower
     loom::testing::context
     loom::testing::test_file
+    loom::transforms::cleanup::configured
 )
 
 loom_cc_library(
@@ -339,6 +341,17 @@ loom_cc_test(
     loom::testing::context
 )
 
+iree_execution_test_suite(
+  NAME
+    execution_test
+  MANIFESTS
+    "loom-check.test.json"
+  TOOLS
+    "loom-check=::loom-check"
+  LABELS
+    "hostonly"
+)
+
 loom_cc_library(
   NAME
     main
@@ -375,6 +388,7 @@ loom_cc_library(
     loom::target::provider
     loom::tooling::context
     loom::tooling::input
+    loom::transforms::cleanup::configured
   PUBLIC
 )
 

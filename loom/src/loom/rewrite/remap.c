@@ -141,6 +141,7 @@ iree_status_t loom_ir_remap_initialize(const loom_module_t* source_module,
           options ? options->remap_same_module_symbols : false,
   };
   if (options != NULL) {
+    remap.clone_observer = options->clone_observer;
     remap.op_projection.entries = options->op_projection.entries;
     remap.op_projection.count = options->op_projection.count;
   }

@@ -29,6 +29,7 @@ from loom.gen.target.contracts.lower_rule_rows import (
     source_memory_diagnostics_row,
     source_memory_row,
     source_node_row,
+    type_pattern_row,
     value_ref_row,
 )
 from loom.gen.target.contracts.lower_rules import (
@@ -41,6 +42,7 @@ from loom.gen.target.contracts.lower_rules import (
 from loom.target.contracts import (
     LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS,
     LOWER_EMIT_FLAG_RESULT_TYPE_PATTERN,
+    Buffer,
     CompiledLowerRuleSet,
     ContractFragment,
     DescriptorAccumulatorSeed,
@@ -105,6 +107,13 @@ def _expect_value_error(callable_obj: Callable[[], object], message: str) -> Non
         error = exc
     assert error is not None
     assert message in str(error)
+
+
+def test_buffer_type_guard_matches_kind_without_scalar_element_bits() -> None:
+    assert type_pattern_row(Buffer()) == [
+        ".flags = LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND",
+        ".type_kind = LOOM_TYPE_BUFFER",
+    ]
 
 
 def test_intern_optional_rows_returns_one_based_refs() -> None:
@@ -450,7 +459,7 @@ def test_validate_c_table_shape_rejects_source_memory_diagnostic_indices_oob() -
             static_byte_offset=0,
         ),
         diagnostic_index=0xFFFF,
-        dynamic_offset_diagnostic_index=0xFFFF,
+        byte_offset_diagnostic_index=0xFFFF,
     )
 
     for row, diagnostic_name in (
@@ -966,10 +975,10 @@ def test_generate_lower_rule_set_emits_report_key_ordinals() -> None:
 
     generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
 
-    assert 'LOOM_BSTRING_LITERAL(32, "test.scalar_mulf.strategy.native")' in generated.source
-    assert "static const loom_bstring_table_offset_t" in generated.source
+    assert "test.scalar_mulf.strategy.native" in generated.source
+    assert "static const loom_string_ref_t" in generated.source
     assert ".report_key_ordinal = 1," in generated.source
-    assert ".report_key_string_offsets = " in generated.source
+    assert ".report_key_string_refs = " in generated.source
     assert ".report_key_count = IREE_ARRAYSIZE(" in generated.source
     assert "static const loom_low_lower_emit_ref_t" in generated.source
     assert ".emit_refs = " in generated.source
@@ -1183,10 +1192,10 @@ def test_attr_copy_row_emits_portable_signed_i64_literal() -> None:
             target_name="value",
             literal_i64=-(1 << 31),
         ),
-        target_name_string_offset="TEST_STRING_VALUE",
+        target_name_string_ref="TEST_STRING_VALUE",
     )
 
-    assert ".target_name_string_offset = TEST_STRING_VALUE" in fields
+    assert ".target_name_string_ref = TEST_STRING_VALUE" in fields
     assert ".literal_i64 = (-INT64_C(2147483648))" in fields
 
 
@@ -1198,10 +1207,10 @@ def test_attr_copy_row_emits_attr_minus_literal_payload() -> None:
             source_attr_index=2,
             literal_i64=32,
         ),
-        target_name_string_offset="TEST_STRING_SHIFT",
+        target_name_string_ref="TEST_STRING_SHIFT",
     )
 
-    assert ".target_name_string_offset = TEST_STRING_SHIFT" in fields
+    assert ".target_name_string_ref = TEST_STRING_SHIFT" in fields
     assert ".source_attr_index = 2" in fields
     assert ".literal_i64 = INT64_C(32)" in fields
 
@@ -1213,11 +1222,32 @@ def test_attr_copy_row_emits_source_memory_offset_literal_payload() -> None:
             target_name="offset",
             literal_i64=192,
         ),
-        target_name_string_offset="TEST_STRING_OFFSET",
+        target_name_string_ref="TEST_STRING_OFFSET",
     )
 
-    assert ".target_name_string_offset = TEST_STRING_OFFSET" in fields
+    assert ".target_name_string_ref = TEST_STRING_OFFSET" in fields
     assert ".literal_i64 = INT64_C(192)" in fields
+
+
+def test_attr_copy_row_emits_static_dimension_projection_payload() -> None:
+    fields = attr_copy_row(
+        LowerAttrCopy(
+            kind=LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
+            target_name="shift",
+            value_ref_index=3,
+            source_element_index=1,
+            source_element_count=8,
+            literal_i64=64,
+        ),
+        target_name_string_ref="TEST_STRING_SHIFT",
+    )
+
+    assert ".kind = LOOM_LOW_LOWER_ATTR_COPY_VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED" in fields
+    assert ".value_ref_index = 3" in fields
+    assert ".source_element_index = 1" in fields
+    assert ".source_element_count = 8" in fields
+    assert ".literal_i64 = INT64_C(64)" in fields
+    assert not any("source_attr_index" in field for field in fields)
 
 
 def test_diagnostic_param_row_emits_portable_signed_i64_literal() -> None:
@@ -1445,8 +1475,8 @@ def test_generate_lower_rule_set_emits_source_instance_flags_projection() -> Non
     generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
 
     assert "LOOM_LOW_LOWER_ATTR_COPY_SOURCE_OP_INSTANCE_FLAGS" in generated.source
-    assert 'LOOM_BSTRING_LITERAL(15, "fast_math_flags")' in generated.source
-    assert ".target_name_string_offset = " in generated.source
+    assert "fast_math_flags" in generated.source
+    assert ".target_name_string_ref = " in generated.source
 
 
 def test_generate_lower_rule_set_emits_balanced_accumulator_flag() -> None:
@@ -1596,7 +1626,7 @@ def test_source_memory_row_emits_dynamic_byte_stride_any_flag() -> None:
             dynamic_byte_stride=None,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1624,7 +1654,7 @@ def test_source_memory_row_emits_cache_policy_any_flag() -> None:
             cache_policy_build_flags=None,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1650,7 +1680,7 @@ def test_source_memory_row_emits_compact_address_layout() -> None:
             static_byte_offset=0,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
         address_layout_diagnostic_index=5,
     )
 
@@ -1683,7 +1713,7 @@ def test_source_memory_row_emits_preserve_source_index_flag() -> None:
             preserve_source_index=True,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1710,7 +1740,7 @@ def test_source_memory_row_emits_any_positive_dynamic_term_count() -> None:
             dynamic_term_count_minimum=1,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1740,7 +1770,7 @@ def test_source_memory_row_emits_portable_signed_i64_values() -> None:
             dynamic_byte_stride=-(1 << 31),
         ),
         diagnostic_index=0xFFFF,
-        dynamic_offset_diagnostic_index=0xFFFF,
+        byte_offset_diagnostic_index=0xFFFF,
     )
 
     fields = source_memory_row(
@@ -1772,7 +1802,7 @@ def test_source_memory_row_emits_dynamic_stride_values_flag() -> None:
             allow_dynamic_stride_values=True,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1812,7 +1842,7 @@ def test_source_memory_rows_split_complete_address_materializer() -> None:
             dynamic_term_count=None,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
         address_diagnostic_index=5,
         address_materializer=materializer,
     )
@@ -1832,7 +1862,8 @@ def test_source_memory_rows_split_complete_address_materializer() -> None:
     materializer_fields = source_memory_address_materializer_row(
         descriptor_refs,
         materializer,
-        immediate_string_offset="TEST_STRING_I32_VALUE",
+        immediate_string_ref="TEST_STRING_I32_VALUE",
+        conversion_immediate_string_refs={},
     )
 
     assert ".diagnostics_index = 0" in fields
@@ -1845,10 +1876,9 @@ def test_source_memory_rows_split_complete_address_materializer() -> None:
     assert ".coordinate_minimum = INT64_C(0)" in materializer_fields
     assert ".coordinate_maximum = INT64_C(2147483647)" in materializer_fields
     assert ".const_coordinate_descriptor_ref = 0" in materializer_fields
-    assert (".const_coordinate_immediate_string_offset = TEST_STRING_I32_VALUE") in materializer_fields
+    assert (".const_coordinate_immediate_string_ref = TEST_STRING_I32_VALUE") in materializer_fields
     assert ".add_coordinate_descriptor_ref = 1" in materializer_fields
     assert ".shl_coordinate_descriptor_ref = 65535" in materializer_fields
-    assert ".index_to_coordinate_input_descriptor_ref = 65535" in materializer_fields
     assert ".index_to_coordinate_descriptor_ref = 65535" in materializer_fields
     assert ".address_descriptor_ref = 1" in materializer_fields
 
@@ -1874,11 +1904,11 @@ def test_source_memory_rows_split_byte_offset_materializer() -> None:
     materializer_fields = source_memory_byte_offset_materializer_row(
         descriptor_refs,
         materializer,
-        immediate_string_offset="TEST_STRING_I32_VALUE",
-        conversion_immediate_string_offsets={},
+        immediate_string_ref="TEST_STRING_I32_VALUE",
+        conversion_immediate_string_refs={},
     )
 
-    assert ".constant_immediate_string_offset = TEST_STRING_I32_VALUE" in materializer_fields
+    assert ".constant_immediate_string_ref = TEST_STRING_I32_VALUE" in materializer_fields
     assert ".constant_descriptor_ref = 0" in materializer_fields
     assert ".add_descriptor_ref = 1" in materializer_fields
     assert ".multiply_descriptor_ref = 2" in materializer_fields
@@ -1890,6 +1920,7 @@ def test_source_memory_conversion_rows_keep_source_kind_and_selector() -> None:
         TEST_LOW_REMATERIALIZE_I32_DESCRIPTOR,
         key="test.convert.selected",
         immediates=(Immediate("selector", ImmediateKind.UNSIGNED, bit_width=8, unsigned_max=255),),
+        feature_mask_words=(16,),
     )
     materializer = SourceMemoryByteOffsetMaterializer(
         constant=TEST_LOW_CONST_I32_DESCRIPTOR,
@@ -1913,15 +1944,33 @@ def test_source_memory_conversion_rows_keep_source_kind_and_selector() -> None:
     fields = source_memory_byte_offset_materializer_row(
         references,
         materializer,
-        immediate_string_offset="VALUE",
-        conversion_immediate_string_offsets={"i8": "SELECTOR"},
+        immediate_string_ref="VALUE",
+        conversion_immediate_string_refs={"i8": "SELECTOR"},
     )
     conversions = fields[0].removeprefix(".integer_conversions = {").removesuffix("}").split("}, {")
     assert len(conversions) == 5
     assert ".descriptor_ref = 3" in conversions[1]
     assert ".immediate_value = INT64_C(18)" in conversions[1]
-    assert ".immediate_string_offset = SELECTOR" in conversions[1]
+    assert ".immediate_string_ref = SELECTOR" in conversions[1]
+    assert ".required_features = UINT64_C(16)" in conversions[1]
+    assert ".input_count = 1" in conversions[1]
     assert all(".descriptor_ref = 65535" in conversions[index] for index in (0, 2, 3, 4))
+    address_materializer = SourceMemoryAddressMaterializer(
+        const_coordinate=TEST_LOW_CONST_I32_DESCRIPTOR,
+        add_coordinate=TEST_LOW_ADD_I32_DESCRIPTOR,
+        mul_coordinate=TEST_LOW_MUL_I32_DESCRIPTOR,
+        address=TEST_LOW_ADD_I32_DESCRIPTOR,
+        index_to_coordinate=TEST_LOW_REMATERIALIZE_I32_DESCRIPTOR,
+        const_coordinate_immediate="i32_value",
+        integer_conversions=materializer.integer_conversions,
+    )
+    address_fields = source_memory_address_materializer_row(
+        {**references, TEST_LOW_REMATERIALIZE_I32_DESCRIPTOR.key: 4},
+        address_materializer,
+        immediate_string_ref="VALUE",
+        conversion_immediate_string_refs={"i8": "SELECTOR"},
+    )
+    assert address_fields[0] == fields[0]
     row = LowerSourceMemory(
         constraint=SourceMemoryConstraint(
             operation=SourceMemoryOperation.LOAD,
@@ -1934,7 +1983,7 @@ def test_source_memory_conversion_rows_keep_source_kind_and_selector() -> None:
             dynamic_term_count_minimum=1,
         ),
         diagnostic_index=0xFFFF,
-        dynamic_offset_diagnostic_index=0xFFFF,
+        byte_offset_diagnostic_index=0xFFFF,
         byte_offset_materializer=materializer,
     )
     table = _compiled_lower_rule_set(source_memories=(row,))

@@ -1070,7 +1070,17 @@ TEST(FactsApplyPredicate, NotNan) {
   loom_value_facts_t f = loom_value_facts_unknown();
   loom_predicate_t pred = make_predicate_not_nan();
   loom_value_facts_apply_predicate(&f, &pred);
+  EXPECT_TRUE(loom_value_facts_is_float(f));
   EXPECT_TRUE(loom_value_facts_is_not_nan(f));
+  EXPECT_FALSE(loom_value_facts_is_finite(f));
+}
+
+TEST(FactsApplyPredicate, NotInf) {
+  loom_value_facts_t f = loom_value_facts_unknown();
+  loom_predicate_t pred = make_predicate_not_inf();
+  loom_value_facts_apply_predicate(&f, &pred);
+  EXPECT_TRUE(loom_value_facts_is_float(f));
+  EXPECT_TRUE(loom_value_facts_is_not_inf(f));
   EXPECT_FALSE(loom_value_facts_is_finite(f));
 }
 
@@ -1078,7 +1088,9 @@ TEST(FactsApplyPredicate, Finite) {
   loom_value_facts_t f = loom_value_facts_unknown();
   loom_predicate_t pred = make_predicate_finite();
   loom_value_facts_apply_predicate(&f, &pred);
+  EXPECT_TRUE(loom_value_facts_is_float(f));
   EXPECT_TRUE(loom_value_facts_is_not_nan(f));
+  EXPECT_TRUE(loom_value_facts_is_not_inf(f));
   EXPECT_TRUE(loom_value_facts_is_finite(f));
 }
 
@@ -1619,114 +1631,6 @@ TEST(RemsiTransfer, MinimumDivisorHasRepresentableRemainderBounds) {
 }
 
 //===----------------------------------------------------------------------===//
-// Transfer functions: shifts
-//===----------------------------------------------------------------------===//
-
-TEST(ShliTransfer, ExactShift) {
-  loom_value_facts_t a = loom_value_facts_exact_i64(5);
-  loom_value_facts_t b = loom_value_facts_exact_i64(3);
-  loom_value_facts_t out;
-  loom_value_facts_shli(&a, &b, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 40);
-}
-
-TEST(ShliTransfer, DivisorMultiplied) {
-  // Shift left by 4: divisor *= 16.
-  loom_value_facts_t a = loom_value_facts_make(1, 10, 2);
-  loom_value_facts_t b = loom_value_facts_exact_i64(4);
-  loom_value_facts_t out;
-  loom_value_facts_shli(&a, &b, &out);
-  EXPECT_EQ(out.range_lo, 16);
-  EXPECT_EQ(out.range_hi, 160);
-  EXPECT_EQ(out.known_divisor, 32);  // 2 * 16 = 32.
-}
-
-TEST(ShliTransfer, NonExactShiftAmount) {
-  // Non-exact shift amount → unknown.
-  loom_value_facts_t a = loom_value_facts_exact_i64(5);
-  loom_value_facts_t b = loom_value_facts_make(1, 3, 1);
-  loom_value_facts_t out;
-  loom_value_facts_shli(&a, &b, &out);
-  EXPECT_TRUE(loom_value_facts_is_unknown(out));
-}
-
-TEST(ShliTransfer, SignBitShift) {
-  loom_value_facts_t shift = loom_value_facts_exact_i64(63);
-  loom_value_facts_t out;
-
-  loom_value_facts_t odd = loom_value_facts_exact_i64(1);
-  loom_value_facts_shli(&odd, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, INT64_MIN);
-
-  loom_value_facts_t even = loom_value_facts_exact_i64(2);
-  loom_value_facts_shli(&even, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 0);
-}
-
-TEST(ShruiTransfer, SignBitShift) {
-  loom_value_facts_t shift = loom_value_facts_exact_i64(63);
-  loom_value_facts_t out;
-
-  loom_value_facts_t non_negative = loom_value_facts_make(0, INT64_MAX, 1);
-  loom_value_facts_shrui(&non_negative, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 0);
-
-  loom_value_facts_t negative = loom_value_facts_make(INT64_MIN, -1, 1);
-  loom_value_facts_shrui(&negative, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 1);
-
-  loom_value_facts_t unknown = loom_value_facts_unknown();
-  loom_value_facts_shrui(&unknown, &shift, &out);
-  EXPECT_EQ(out.range_lo, 0);
-  EXPECT_EQ(out.range_hi, 1);
-}
-
-TEST(ShrsiTransfer, SignBitShift) {
-  loom_value_facts_t shift = loom_value_facts_exact_i64(63);
-  loom_value_facts_t out;
-
-  loom_value_facts_t non_negative = loom_value_facts_make(0, INT64_MAX, 1);
-  loom_value_facts_shrsi(&non_negative, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 0);
-
-  loom_value_facts_t negative = loom_value_facts_make(INT64_MIN, -1, 1);
-  loom_value_facts_shrsi(&negative, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, -1);
-
-  loom_value_facts_t unknown = loom_value_facts_unknown();
-  loom_value_facts_shrsi(&unknown, &shift, &out);
-  EXPECT_EQ(out.range_lo, -1);
-  EXPECT_EQ(out.range_hi, 0);
-}
-
-TEST(ShrsiTransfer, NegativeValuesUseArithmeticSemantics) {
-  loom_value_facts_t shift = loom_value_facts_exact_i64(1);
-  loom_value_facts_t out;
-
-  loom_value_facts_t exact = loom_value_facts_exact_i64(-5);
-  loom_value_facts_shrsi(&exact, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, -3);
-
-  loom_value_facts_t minimum = loom_value_facts_exact_i64(INT64_MIN);
-  loom_value_facts_shrsi(&minimum, &shift, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, INT64_MIN / 2);
-
-  loom_value_facts_t range = loom_value_facts_make(-9, -5, 1);
-  loom_value_facts_shrsi(&range, &shift, &out);
-  EXPECT_EQ(out.range_lo, -5);
-  EXPECT_EQ(out.range_hi, -3);
-}
-
-//===----------------------------------------------------------------------===//
 // Transfer functions: negi / absi
 //===----------------------------------------------------------------------===//
 
@@ -1796,7 +1700,7 @@ TEST(MinsiTransfer, ExactValues) {
   loom_value_facts_t a = loom_value_facts_exact_i64(5);
   loom_value_facts_t b = loom_value_facts_exact_i64(3);
   loom_value_facts_t out;
-  loom_value_facts_minsi(&a, &b, &out);
+  loom_value_facts_minsi(&a, &b, 64, &out);
   EXPECT_TRUE(loom_value_facts_is_exact(out));
   EXPECT_EQ(out.range_lo, 3);
 }
@@ -1805,142 +1709,92 @@ TEST(MaxsiTransfer, Ranges) {
   loom_value_facts_t a = loom_value_facts_make(1, 10, 1);
   loom_value_facts_t b = loom_value_facts_make(5, 20, 1);
   loom_value_facts_t out;
-  loom_value_facts_maxsi(&a, &b, &out);
+  loom_value_facts_maxsi(&a, &b, 64, &out);
   EXPECT_EQ(out.range_lo, 5);
   EXPECT_EQ(out.range_hi, 20);
 }
 
-//===----------------------------------------------------------------------===//
-// Transfer functions: bitwise
-//===----------------------------------------------------------------------===//
-
-TEST(AndiTransfer, ExactValues) {
-  loom_value_facts_t a = loom_value_facts_exact_i64(0xFF);
-  loom_value_facts_t b = loom_value_facts_exact_i64(0x0F);
-  loom_value_facts_t out;
-  loom_value_facts_andi(&a, &b, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 0x0F);
-}
-
-TEST(AndiTransfer, MaskBounds) {
-  // AND with a non-negative mask bounds the result.
-  loom_value_facts_t a = loom_value_facts_make(0, 1000, 1);
-  loom_value_facts_t b = loom_value_facts_exact_i64(0xFF);
-  loom_value_facts_t out;
-  loom_value_facts_andi(&a, &b, &out);
-  EXPECT_EQ(out.range_lo, 0);
-  EXPECT_EQ(out.range_hi, 0xFF);
-}
-
-TEST(AndiTransfer, MaskPreservesOnlyPowerOfTwoDivisibility) {
-  loom_value_facts_t input = loom_value_facts_make(3, 9, 3);
-  loom_value_facts_t mask = loom_value_facts_exact_i64(6);
-  loom_value_facts_t output;
-  loom_value_facts_andi(&input, &mask, &output);
-  // Three is a possible input and 3 & 6 is two, not a multiple of three.
-  EXPECT_EQ(output.known_divisor, 2);
-
-  input = loom_value_facts_make(0, 96, 24);
-  mask = loom_value_facts_make(0, 96, 12);
-  loom_value_facts_andi(&input, &mask, &output);
-  EXPECT_EQ(output.known_divisor, 8);
-}
-
-TEST(AndiTransfer, NegativeMaskPreservesNonnegativeBound) {
-  loom_value_facts_t input = loom_value_facts_make(0, 31, 1);
-  loom_value_facts_t mask = loom_value_facts_exact_i64(-8);
-  loom_value_facts_t output;
-  loom_value_facts_andi(&input, &mask, &output);
-  EXPECT_EQ(output.range_lo, 0);
-  EXPECT_LE(output.range_hi, 31);
-  EXPECT_EQ(output.known_divisor, 8);
-}
-
-TEST(AndiTransfer, BoundedConcreteValuesSatisfyResultFacts) {
-  std::vector<loom_value_facts_t> inputs;
-  for (int64_t value = -16; value <= 16; ++value) {
-    inputs.push_back(loom_value_facts_exact_i64(value));
-  }
-  for (int64_t lower : {-16, 0, 4}) {
-    for (int64_t upper : {-1, 0, 16}) {
-      if (lower > upper) {
-        continue;
-      }
-      for (int64_t divisor : {1, 2, 3, 4, 6, 8}) {
-        inputs.push_back(loom_value_facts_make(lower, upper, divisor));
-      }
-    }
-  }
-  for (const auto& left : inputs) {
-    for (const auto& right : inputs) {
-      loom_value_facts_t output;
-      loom_value_facts_andi(&left, &right, &output);
-      ASSERT_GE(output.known_divisor, 1);
-      for (int64_t lhs = left.range_lo; lhs <= left.range_hi; ++lhs) {
-        if (lhs % left.known_divisor != 0) {
-          continue;
-        }
-        for (int64_t rhs = right.range_lo; rhs <= right.range_hi; ++rhs) {
-          if (rhs % right.known_divisor != 0) {
-            continue;
-          }
-          const int64_t result = lhs & rhs;
-          ASSERT_LE(output.range_lo, result) << lhs << " & " << rhs;
-          ASSERT_GE(output.range_hi, result) << lhs << " & " << rhs;
-          ASSERT_EQ(result % output.known_divisor, 0) << lhs << " & " << rhs;
-        }
+TEST(IntegerExtremaTransfer, DeclaredWidthAndAliasing) {
+  struct Case {
+    // Declared integer storage width.
+    int32_t bit_count;
+    // Left input in its declared signed or Boolean fact representation.
+    int64_t lhs;
+    // Right input in the same declared width.
+    int64_t rhs;
+    // Signed min/max followed by unsigned min/max, in fact representation.
+    int64_t expected[4];
+  };
+  const Case cases[] = {
+      {1, 0, 1, {1, 0, 0, 1}},
+      {1, 1, 0, {1, 0, 0, 1}},
+      {1, 1, 1, {1, 1, 1, 1}},
+      {8, -128, 127, {-128, 127, 127, -128}},
+      {8, -128, -1, {-128, -1, -128, -1}},
+      {16, -1, 0, {-1, 0, 0, -1}},
+      {32, INT32_MIN, INT32_MAX, {INT32_MIN, INT32_MAX, INT32_MAX, INT32_MIN}},
+      {64, INT64_MIN, INT64_MAX, {INT64_MIN, INT64_MAX, INT64_MAX, INT64_MIN}},
+      {64, 0, -1, {-1, 0, 0, -1}},
+      {64, INT64_MIN, -1, {INT64_MIN, -1, INT64_MIN, -1}},
+  };
+  using Transfer =
+      void (*)(const loom_value_facts_t*, const loom_value_facts_t*, int32_t,
+               loom_value_facts_t*);
+  const Transfer transfers[] = {
+      loom_value_facts_minsi,
+      loom_value_facts_maxsi,
+      [](const loom_value_facts_t* lhs, const loom_value_facts_t* rhs, int32_t,
+         loom_value_facts_t* out) { loom_value_facts_minui(lhs, rhs, out); },
+      [](const loom_value_facts_t* lhs, const loom_value_facts_t* rhs, int32_t,
+         loom_value_facts_t* out) { loom_value_facts_maxui(lhs, rhs, out); },
+  };
+  for (const auto& test_case : cases) {
+    SCOPED_TRACE(test_case.bit_count);
+    SCOPED_TRACE(test_case.lhs);
+    SCOPED_TRACE(test_case.rhs);
+    for (size_t operation = 0; operation < IREE_ARRAYSIZE(transfers);
+         ++operation) {
+      SCOPED_TRACE(operation);
+      for (int output_index = 0; output_index < 3; ++output_index) {
+        loom_value_facts_t facts[] = {
+            loom_value_facts_exact_i64(test_case.lhs),
+            loom_value_facts_exact_i64(test_case.rhs),
+            loom_value_facts_unknown(),
+        };
+        transfers[operation](&facts[0], &facts[1], test_case.bit_count,
+                             &facts[output_index]);
+        EXPECT_TRUE(loom_value_facts_is_exact(facts[output_index]));
+        EXPECT_EQ(facts[output_index].range_lo, test_case.expected[operation]);
       }
     }
   }
 }
 
-TEST(AndiTransfer, SignedBoundaryMasksSupportInPlaceTransfer) {
-  for (int64_t mask : {INT64_MIN, INT64_MIN + 1, INT64_MAX, INT64_C(-1),
-                       INT64_C(0), INT64_C(1) << 62}) {
-    const loom_value_facts_t mask_facts = loom_value_facts_exact_i64(mask);
-    const loom_value_facts_t input_facts = loom_value_facts_unknown();
-    loom_value_facts_t output;
-    loom_value_facts_andi(&input_facts, &mask_facts, &output);
-    ASSERT_GE(output.known_divisor, 1);
-    for (int64_t value : {INT64_MIN, INT64_MIN + 1, INT64_C(-9), INT64_C(-1),
-                          INT64_C(0), INT64_C(8), INT64_MAX}) {
-      const int64_t result = value & mask;
-      ASSERT_LE(output.range_lo, result);
-      ASSERT_GE(output.range_hi, result);
-      ASSERT_EQ(result % output.known_divisor, 0);
-    }
-    loom_value_facts_t in_place_input = input_facts;
-    loom_value_facts_andi(&in_place_input, &mask_facts, &in_place_input);
-    EXPECT_EQ(in_place_input.range_lo, output.range_lo);
-    EXPECT_EQ(in_place_input.range_hi, output.range_hi);
-    EXPECT_EQ(in_place_input.known_divisor, output.known_divisor);
-    EXPECT_EQ(in_place_input.flags, output.flags);
-    loom_value_facts_t in_place_mask = mask_facts;
-    loom_value_facts_andi(&input_facts, &in_place_mask, &in_place_mask);
-    EXPECT_EQ(in_place_mask.range_lo, output.range_lo);
-    EXPECT_EQ(in_place_mask.range_hi, output.range_hi);
-    EXPECT_EQ(in_place_mask.known_divisor, output.known_divisor);
-    EXPECT_EQ(in_place_mask.flags, output.flags);
-  }
-}
+TEST(IntegerExtremaTransfer, BooleanAndNarrowRanges) {
+  loom_value_facts_t boolean = loom_value_facts_make(0, 1, 1);
+  loom_value_facts_mark_lane_varying(&boolean);
+  loom_value_facts_t zero = loom_value_facts_exact_i64(0);
+  loom_value_facts_t one = loom_value_facts_exact_i64(1);
+  loom_value_facts_t result;
+  loom_value_facts_minsi(&boolean, &zero, 1, &result);
+  EXPECT_EQ(result.range_lo, 0);
+  EXPECT_EQ(result.range_hi, 1);
+  EXPECT_TRUE(loom_value_facts_is_lane_varying(result));
+  loom_value_facts_maxsi(&boolean, &one, 1, &result);
+  EXPECT_EQ(result.range_lo, 0);
+  EXPECT_EQ(result.range_hi, 1);
+  EXPECT_TRUE(loom_value_facts_is_lane_varying(result));
 
-TEST(XoriTransfer, SelfCancel) {
-  loom_value_facts_t a = loom_value_facts_exact_i64(42);
-  loom_value_facts_t out;
-  loom_value_facts_xori(&a, &a, &out);
-  EXPECT_TRUE(loom_value_facts_is_exact(out));
-  EXPECT_EQ(out.range_lo, 0);
-}
-
-TEST(XoriTransfer, NonNegativeRangeStaysWithinOperandBitWidth) {
-  loom_value_facts_t a = loom_value_facts_make(0, 63, 1);
-  loom_value_facts_t b = loom_value_facts_make(0, 3, 1);
-  loom_value_facts_t out;
-  loom_value_facts_xori(&a, &b, &out);
-  EXPECT_EQ(out.range_lo, 0);
-  EXPECT_EQ(out.range_hi, 63);
-  EXPECT_TRUE(loom_value_facts_fit_unsigned_bit_count(out, 6));
+  loom_value_facts_t negative = loom_value_facts_make(-128, -124, 2);
+  loom_value_facts_t positive = loom_value_facts_make(2, 10, 2);
+  loom_value_facts_minsi(&negative, &positive, 8, &result);
+  EXPECT_EQ(result.range_lo, -128);
+  EXPECT_EQ(result.range_hi, -124);
+  EXPECT_EQ(result.known_divisor, 2);
+  loom_value_facts_maxsi(&negative, &positive, 8, &result);
+  EXPECT_EQ(result.range_lo, 2);
+  EXPECT_EQ(result.range_hi, 10);
+  EXPECT_EQ(result.known_divisor, 2);
 }
 
 //===----------------------------------------------------------------------===//

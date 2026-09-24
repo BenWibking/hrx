@@ -16,6 +16,61 @@ iree_py_library(
     "cxx_kernel_cases.py"
   SRCS
     "cxx_kernel_cases.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
+    kernel_fixture
+  SRCS
+    "kernel_fixture.py"
+  DEPS
+    loom::py::loom::gen::package
+)
+
+iree_py_library(
+  NAME
+    packed_vector_select
+  MAIN
+    "packed_vector_select.py"
+  SRCS
+    "packed_vector_select.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
+    predicate_bitwise
+  MAIN
+    "predicate_bitwise.py"
+  SRCS
+    "predicate_bitwise.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
+    predicate_select
+  MAIN
+    "predicate_select.py"
+  SRCS
+    "predicate_select.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
+    vector_i64_bitwise
+  MAIN
+    "vector_i64_bitwise.py"
+  SRCS
+    "vector_i64_bitwise.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
 )
 
 iree_py_library(

@@ -19,17 +19,14 @@
 #include "iree/base/string_builder.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/target/types.h"
-#include "loom/util/bstring.h"
+#include "loom/util/string_pool.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 // ABI version for descriptor sets consumed by this header.
-#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 42u
-
-// Sentinel for absent string-table offsets.
-#define LOOM_LOW_STRING_OFFSET_NONE LOOM_BSTRING_TABLE_OFFSET_NONE
+#define LOOM_LOW_DESCRIPTOR_SET_ABI_VERSION 44u
 
 // Sentinel for absent target-family or descriptor-set stable IDs.
 #define LOOM_LOW_STABLE_ID_NONE UINT64_C(0)
@@ -149,6 +146,15 @@ typedef uint16_t loom_low_operand_flags_t;
 // Operand row describes zero or more trailing packet operands. Variadic rows
 // are explicit packet operands and must terminate the descriptor operand list.
 #define LOOM_LOW_OPERAND_FLAG_VARIADIC ((uint16_t)1u << 9)
+// State only masks independent lane execution. Widening the mask preserves
+// results in previously active lanes; added lanes cannot influence those
+// results. Unlike SCHEDULE_ONLY_STATE, this excludes rounding modes and
+// cross-lane value dependencies.
+#define LOOM_LOW_OPERAND_FLAG_EXECUTION_MASK ((uint16_t)1u << 10)
+// State write only removes lanes from its incoming execution mask. The same
+// descriptor also reads that mask. This licenses widening lane-local work
+// across this write, not across arbitrary mask replacement or restoration.
+#define LOOM_LOW_OPERAND_FLAG_NARROWS_EXECUTION_MASK ((uint16_t)1u << 11)
 
 // Bitset of register-class alternative flags.
 typedef uint16_t loom_low_reg_class_alt_flags_t;
@@ -180,6 +186,8 @@ typedef uint32_t loom_low_register_part_mask_t;
 // explicit candidate slice. Each physical register owns an arbitrary set of
 // atomic storage units used for overlap checks.
 #define LOOM_LOW_REG_CLASS_FLAG_EXPLICIT_PHYSICAL_REGISTERS ((uint16_t)1u << 4)
+// Values spanning multiple units require an even base register ordinal.
+#define LOOM_LOW_REG_CLASS_FLAG_EVEN_ALIGNED_TUPLES ((uint16_t)1u << 5)
 
 typedef enum loom_low_spill_slot_space_e {
   // Unknown or uninitialized spill storage space.
@@ -226,7 +234,9 @@ typedef enum loom_low_effect_kind_e {
   LOOM_LOW_EFFECT_KIND_WRITE = 2,
   // Descriptor may call outside the current low region.
   LOOM_LOW_EFFECT_KIND_CALL = 3,
-  // Descriptor is a scheduling or memory barrier.
+  // Descriptor orders memory or protocol dependencies. This is a compiler
+  // scheduling constraint, not an instruction classification or execution
+  // scope.
   LOOM_LOW_EFFECT_KIND_BARRIER = 4,
   // Descriptor observes or mutates a target counter.
   LOOM_LOW_EFFECT_KIND_COUNTER = 5,
@@ -255,7 +265,8 @@ typedef enum loom_low_memory_space_e {
 typedef uint16_t loom_low_effect_flags_t;
 
 // Effect preserves its source-relative order during scheduling. Each execution
-// of an ordered memory effect is also independently observable.
+// of an ordered memory effect is also independently observable. Issue ordering
+// does not imply completion of preceding asynchronous memory effects.
 #define LOOM_LOW_EFFECT_FLAG_ORDERED ((uint16_t)1u << 0)
 // Effect participates in alias-like dependency construction.
 #define LOOM_LOW_EFFECT_FLAG_DEPENDENCY ((uint16_t)1u << 1)
@@ -457,7 +468,10 @@ typedef uint16_t loom_low_descriptor_flags_t;
 #define LOOM_LOW_DESCRIPTOR_FLAG_DEAD_REMOVABLE ((uint16_t)1u << 2)
 // Descriptor is a Loom pseudo packet that requires target lowering.
 #define LOOM_LOW_DESCRIPTOR_FLAG_PSEUDO ((uint16_t)1u << 3)
-// Descriptor carries a barrier effect and fences source-order scheduling.
+// Descriptor fences source-order scheduling in addition to its barrier effect.
+// Barrier effects alone order memory and protocol dependencies; this flag also
+// prevents independent instructions from crossing the descriptor in source
+// order.
 #define LOOM_LOW_DESCRIPTOR_FLAG_BARRIER ((uint16_t)1u << 4)
 // Descriptor has at least one result whose storage begins in the packet Pre
 // phase before untied input reads end.
@@ -471,6 +485,11 @@ typedef uint16_t loom_low_descriptor_flags_t;
 #define LOOM_LOW_DESCRIPTOR_FLAG_UNIQUE_IDENTITY ((uint16_t)1u << 8)
 // Descriptor has enum immediates whose named input values require resolution.
 #define LOOM_LOW_DESCRIPTOR_FLAG_ENUM_IMMEDIATES ((uint16_t)1u << 9)
+// Total, effect-free execution for every bit pattern of the explicit inputs.
+// No traps, memory accesses, architectural state writes, or collective lane
+// behavior are permitted. Implicit execution-mask reads still constrain where
+// this operation can move; this flag alone does not authorize state crossings.
+#define LOOM_LOW_DESCRIPTOR_FLAG_SAFE_TO_SPECULATE ((uint16_t)1u << 10)
 
 // Target-neutral semantic classes attached to generated low descriptors.
 // Multiple classes may be present when a packet contributes to several
@@ -519,8 +538,11 @@ typedef uint32_t loom_low_instruction_class_flags_t;
 #define LOOM_LOW_INSTRUCTION_CLASS_FLAG_ATOMIC ((uint32_t)1u << 19)
 // Descriptor contributes a branch, return, or call control transfer.
 #define LOOM_LOW_INSTRUCTION_CLASS_FLAG_BRANCH ((uint32_t)1u << 20)
-// Descriptor contributes barrier or synchronization work.
-#define LOOM_LOW_INSTRUCTION_CLASS_FLAG_BARRIER ((uint32_t)1u << 21)
+// Descriptor participates in an execution barrier: a collective rendezvous
+// (including separate arrival or wait packets) or command-stream execution
+// ordering. Memory fences and compiler scheduling constraints alone do not
+// establish this class.
+#define LOOM_LOW_INSTRUCTION_CLASS_FLAG_EXECUTION_BARRIER ((uint32_t)1u << 21)
 // Descriptor contributes control-flow or other control work.
 #define LOOM_LOW_INSTRUCTION_CLASS_FLAG_CONTROL ((uint32_t)1u << 22)
 // Descriptor contributes numeric conversion work.
@@ -534,10 +556,10 @@ typedef uint32_t loom_low_instruction_class_flags_t;
 #define LOOM_LOW_INSTRUCTION_CLASS_FLAG_LDSDMA ((uint32_t)1u << 26)
 
 typedef struct loom_low_reg_class_t {
-  // String-table offset for the stable register-class name, or
-  // LOOM_LOW_STRING_OFFSET_NONE for a storage slot absent from this view.
+  // String-pool reference for the stable register-class name, or
+  // LOOM_STRING_REF_NONE for a storage slot absent from this view.
   // Absent slots have spill_class_id NONE and all other fields zero.
-  loom_bstring_table_offset_t name_string_offset;
+  loom_string_ref_t name_string_ref;
   // Target bank identifier used by allocators and pressure reporting.
   uint16_t target_bank_id;
   // Register-class behavioral flags.
@@ -580,11 +602,28 @@ typedef struct loom_low_reg_class_t {
   uint16_t physical_atomic_unit_count;
 } loom_low_reg_class_t;
 
+// Returns the allocation base alignment in register units. Power-of-two spans
+// retain the packet-width placement preference; other multi-unit spans obey
+// the class's tuple alignment. Single registers remain independently usable.
+static inline uint32_t loom_low_reg_class_unit_alignment(
+    const loom_low_reg_class_t* reg_class, uint32_t unit_count) {
+  if (unit_count <= 1) {
+    return 1u;
+  }
+  if ((unit_count & (unit_count - 1u)) == 0) {
+    return unit_count;
+  }
+  return iree_any_bit_set(reg_class->flags,
+                          LOOM_LOW_REG_CLASS_FLAG_EVEN_ALIGNED_TUPLES)
+             ? 2u
+             : 1u;
+}
+
 // One named physical register and the atomic storage units it occupies.
 // Physical-register IDs are dense descriptor-set-local row ordinals.
 typedef struct loom_low_physical_register_t {
-  // String-table offset for the stable physical-register name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable physical-register name.
+  loom_string_ref_t name_string_ref;
   // First row in the descriptor set's packed atomic-unit table.
   uint32_t atomic_unit_start;
   // Number of sorted unique atomic storage units occupied by this register.
@@ -622,8 +661,8 @@ typedef struct loom_low_physical_register_view_t {
 // Scheduling scores this independently of whole-function residency high-water
 // resources so capacity returns as soon as live values die.
 typedef struct loom_low_register_packing_resource_t {
-  // String-table offset for the stable resource name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable resource name.
+  loom_string_ref_t name_string_ref;
   // Maximum simultaneously occupied resource units.
   uint32_t capacity;
   // First row in the descriptor set's packed member table.
@@ -658,8 +697,8 @@ static inline bool loom_low_reg_class_fixed_location_range_contains(
 }
 
 typedef struct loom_low_register_part_t {
-  // String-table offset for the stable register-part name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable register-part name.
+  loom_string_ref_t name_string_ref;
   // Register-class table identifier this part belongs to.
   uint16_t reg_class_id;
   // Reserved for future register-part flags.
@@ -676,8 +715,8 @@ typedef struct loom_low_reg_class_alt_t {
 } loom_low_reg_class_alt_t;
 
 typedef struct loom_low_operand_t {
-  // String-table offset for the descriptor field name.
-  loom_bstring_table_offset_t field_name_string_offset;
+  // String-pool reference for the descriptor field name.
+  loom_string_ref_t field_name_string_ref;
   // Target-owned encoding field identifier, or zero when this operand does not
   // directly populate a binary encoding field.
   uint16_t encoding_field_id;
@@ -738,8 +777,8 @@ static_assert(offsetof(loom_low_operand_t, flags) == 12,
 // the descriptor declaration; canonical packet dictionaries follow field name
 // order. Generated field accessors bind the two through immediate_fields.h.
 typedef struct loom_low_immediate_t {
-  // String-table offset for the immediate field name.
-  loom_bstring_table_offset_t field_name_string_offset;
+  // String-pool reference for the immediate field name.
+  loom_string_ref_t field_name_string_ref;
   // First encoding-slice row used to derive binary fields from this immediate.
   uint32_t encoding_slice_start;
   // Target-owned encoding field identifier, or zero when this immediate does
@@ -795,8 +834,8 @@ typedef struct loom_low_encoding_field_value_t {
 } loom_low_encoding_field_value_t;
 
 typedef struct loom_low_enum_domain_t {
-  // String-table offset for the stable enum-domain name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable enum-domain name.
+  loom_string_ref_t name_string_ref;
   // First enum-value row for this domain.
   uint32_t value_start;
   // Number of enum-value rows for this domain.
@@ -806,8 +845,8 @@ typedef struct loom_low_enum_domain_t {
 } loom_low_enum_domain_t;
 
 typedef struct loom_low_enum_value_t {
-  // String-table offset for the stable enum token.
-  loom_bstring_table_offset_t token_string_offset;
+  // String-pool reference for the stable enum token.
+  loom_string_ref_t token_string_ref;
   // Numeric value encoded for this token.
   int64_t value;
 } loom_low_enum_value_t;
@@ -859,17 +898,17 @@ typedef struct loom_low_descriptor_storage_lease_t {
   loom_low_storage_lease_release_scope_t release_scope;
   // Target-owned release class identifier.
   uint16_t release_class_id;
-  // String-table offset for the stable release-class name.
-  loom_bstring_table_offset_t release_class_name_string_offset;
+  // String-pool reference for the stable release-class name.
+  loom_string_ref_t release_class_name_string_ref;
   // Target-owned residual action identifier used when allocation requests a
   // release.
   uint16_t release_action_id;
-  // String-table offset for the stable residual action name.
-  loom_bstring_table_offset_t release_action_name_string_offset;
+  // String-pool reference for the stable residual action name.
+  loom_string_ref_t release_action_name_string_ref;
   // Target-owned hazard reason identifier used for release diagnostics.
   uint16_t release_reason_id;
-  // String-table offset for the stable release reason name.
-  loom_bstring_table_offset_t release_reason_name_string_offset;
+  // String-pool reference for the stable release reason name.
+  loom_string_ref_t release_reason_name_string_ref;
   // Lease flags.
   loom_low_storage_lease_flags_t flags;
 } loom_low_descriptor_storage_lease_t;
@@ -906,8 +945,8 @@ typedef struct loom_low_pressure_delta_t {
 } loom_low_pressure_delta_t;
 
 typedef struct loom_low_resource_t {
-  // String-table offset for the stable resource name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable resource name.
+  loom_string_ref_t name_string_ref;
   // Number of resource units available per cycle.
   uint16_t capacity_per_cycle;
   // Resource flags for target-owned refinements.
@@ -932,8 +971,8 @@ typedef struct loom_low_resource_t {
 
 // Named target event used as an endpoint in dependency timing rules.
 typedef struct loom_low_timing_event_t {
-  // String-table offset for the stable timing-event name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable timing-event name.
+  loom_string_ref_t name_string_ref;
   // First positive outgoing row in the complete event-separation table, or
   // zero when this event cannot advance the physical timing frontier.
   uint32_t separation_start;
@@ -977,8 +1016,8 @@ typedef struct loom_low_hazard_t {
 } loom_low_hazard_t;
 
 typedef struct loom_low_schedule_class_t {
-  // String-table offset for the stable schedule-class name.
-  loom_bstring_table_offset_t name_string_offset;
+  // String-pool reference for the stable schedule-class name.
+  loom_string_ref_t name_string_ref;
   // Latency in cycles when latency_kind is exact or estimated.
   uint16_t latency_cycles;
   // Scheduler dependency distance in cycles, or zero to use latency_cycles.
@@ -1040,12 +1079,12 @@ typedef struct loom_low_descriptor_t {
   // stable across descriptor table reordering and unrelated descriptor
   // additions; descriptor-set ordinals are only transient row addresses.
   uint64_t stable_id;
-  // String-table offset for the stable descriptor key.
-  loom_bstring_table_offset_t key_string_offset;
-  // String-table offset for the target mnemonic or packet name.
-  loom_bstring_table_offset_t mnemonic_string_offset;
-  // String-table offset for the primary semantic tag.
-  loom_bstring_table_offset_t semantic_tag_string_offset;
+  // String-pool reference for the stable descriptor key.
+  loom_string_ref_t key_string_ref;
+  // String-pool reference for the target mnemonic or packet name.
+  loom_string_ref_t mnemonic_string_ref;
+  // String-pool reference for the primary semantic tag.
+  loom_string_ref_t semantic_tag_string_ref;
   // First feature-mask word required by this descriptor.
   uint16_t feature_mask_word_start;
   // First target-owned fixed encoding field value for this descriptor.
@@ -1150,8 +1189,8 @@ typedef struct loom_low_operand_form_t {
 } loom_low_operand_form_t;
 
 typedef struct loom_low_descriptor_ref_t {
-  // String-table offset for the stable symbolic descriptor key.
-  loom_bstring_table_offset_t key_string_offset;
+  // String-pool reference for the stable symbolic descriptor key.
+  loom_string_ref_t key_string_ref;
   // Ordinal of the referenced descriptor row.
   uint32_t descriptor_ordinal;
 } loom_low_descriptor_ref_t;
@@ -1171,8 +1210,8 @@ static_assert(sizeof(loom_low_schedule_alternative_t) == 8,
 typedef struct loom_low_asm_immediate_t {
   // Descriptor-local immediate index printed or parsed by this asm field.
   uint16_t immediate_index;
-  // Optional string-table offset for a named immediate spelling.
-  loom_bstring_table_offset_t name_string_offset;
+  // Optional string-pool reference for a named immediate spelling.
+  loom_string_ref_t name_string_ref;
 } loom_low_asm_immediate_t;
 
 typedef enum loom_low_native_asm_value_kind_e {
@@ -1207,8 +1246,8 @@ typedef struct loom_low_native_asm_value_t {
   uint8_t bit_width;
   // Target-owned format ID for IMMEDIATE_TARGET_FORMAT values.
   uint8_t target_format_id;
-  // String-table offset for literal native assembly tokens.
-  loom_bstring_table_offset_t literal_string_offset;
+  // String-pool reference for literal native assembly tokens.
+  loom_string_ref_t literal_string_ref;
 } loom_low_native_asm_value_t;
 
 enum loom_low_asm_result_value_type_kind_e {
@@ -1267,10 +1306,10 @@ static_assert(sizeof(loom_low_asm_operand_segment_t) == 4,
               "loom_low_asm_operand_segment_t must be 4 bytes");
 
 typedef struct loom_low_asm_form_t {
-  // String-table offset for the unqualified asm mnemonic.
-  loom_bstring_table_offset_t mnemonic_string_offset;
-  // Optional string-table offset for the native assembly mnemonic.
-  loom_bstring_table_offset_t native_assembly_mnemonic_string_offset;
+  // String-pool reference for the unqualified asm mnemonic.
+  loom_string_ref_t mnemonic_string_ref;
+  // Optional string-pool reference for the native assembly mnemonic.
+  loom_string_ref_t native_assembly_mnemonic_string_ref;
   // Descriptor ordinal selected by this asm form.
   uint16_t descriptor_ordinal;
   // First descriptor-local result operand index in asm_operand_indices.
@@ -1333,14 +1372,14 @@ typedef struct loom_low_descriptor_set_t {
   // Target-generated dense descriptor-set ordinal, or NONE when this set is not
   // part of a target-owned dense descriptor-set table.
   uint16_t descriptor_set_ordinal;
-  // String-table offset for the descriptor-set key.
-  loom_bstring_table_offset_t key_string_offset;
-  // String-table offset for the target-family key.
-  loom_bstring_table_offset_t target_key_string_offset;
-  // String-table offset for the feature namespace key.
-  loom_bstring_table_offset_t feature_key_string_offset;
-  // Packed B-string table used by all string offsets.
-  loom_bstring_table_t string_table;
+  // String-pool reference for the descriptor-set key.
+  loom_string_ref_t key_string_ref;
+  // String-pool reference for the target-family key.
+  loom_string_ref_t target_key_string_ref;
+  // String-pool reference for the feature namespace key.
+  loom_string_ref_t feature_key_string_ref;
+  // Shared immutable byte pool used by all compact string references.
+  loom_string_pool_t string_pool;
   // Dense structural descriptor rows owned or shared by this set.
   const loom_low_descriptor_t* descriptors;
   // Dense view-owned descriptor rows corresponding to |descriptors|.
@@ -1669,12 +1708,12 @@ const loom_low_descriptor_set_t* loom_low_descriptor_registry_lookup(
 const loom_low_descriptor_set_t* loom_low_descriptor_registry_lookup_by_id(
     const loom_low_descriptor_registry_t* registry, uint64_t stable_id);
 
-// Returns the B-string view at |string_offset|. A NONE offset returns an empty
-// string. The descriptor set and offset must have passed descriptor-table
+// Returns the static view for |string_ref|. A NONE reference returns an empty
+// string. The descriptor set and reference must have passed descriptor-table
 // verification.
 iree_string_view_t loom_low_descriptor_set_string(
     const loom_low_descriptor_set_t* descriptor_set,
-    loom_bstring_table_offset_t string_offset);
+    loom_string_ref_t string_ref);
 
 // Looks up a descriptor-set-local register class by stable register-class name.
 // |out_descriptor_register_class| may be NULL when only the dense descriptor ID

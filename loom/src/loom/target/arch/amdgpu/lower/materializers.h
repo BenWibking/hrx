@@ -50,8 +50,9 @@ iree_status_t loom_amdgpu_value_can_materialize_as_sgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value_id, bool* out_can_materialize);
 
-// Returns true when a source scalar i1 value can be materialized as an
-// EXEC-width SGPR mask for divergent predicate arithmetic.
+// Returns true when a source scalar i1 value can be materialized in one of the
+// native AMDGPU predicate representations: SCC, a durable SGPR word, or an
+// EXEC-width SGPR mask.
 iree_status_t loom_amdgpu_value_can_materialize_as_native_i1_mask(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value_id, bool* out_can_materialize);
@@ -81,16 +82,26 @@ iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_f64(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value);
 
-// Looks up a lowered address scalar and returns its low 32 bits in one VGPR,
-// materializing constants and uniform values when required.
+// Looks up an address scalar or canonical integer term and returns its low
+// 32 bits in one VGPR, projecting predicates to zero/one and materializing
+// constants and uniform values when required.
 iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value);
 
-// Looks up a lowered address scalar and returns its low 32-bit SGPR unit.
+// Looks up a uniform address scalar or canonical integer term and returns its
+// low 32-bit SGPR unit, projecting predicates to zero/one.
 iree_status_t loom_amdgpu_lookup_or_materialize_sgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value);
+
+// Projects an i1 predicate to the numeric value zero or one in the requested
+// SGPR or VGPR bank. Native lane masks require a VGPR result; uniform SCC and
+// durable SGPR predicates can be represented in either bank.
+iree_status_t loom_amdgpu_lookup_or_materialize_i1_integer(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value, uint32_t register_class_id,
+    loom_value_id_t* out_low_value);
 
 // Looks up a lowered i1 value and materializes subgroup-uniform SCC predicates
 // as EXEC-width SGPR masks for divergent predicate arithmetic.

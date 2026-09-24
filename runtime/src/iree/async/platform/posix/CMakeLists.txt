@@ -13,8 +13,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
 set(_posix_platform_deps "")
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
   list(APPEND _posix_platform_deps iree::async::platform::linux::signal)
+  list(APPEND _posix_platform_deps iree::async::platform::linux::socket_options)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND _posix_platform_deps iree::async::platform::linux::signal)
+  list(APPEND _posix_platform_deps iree::async::platform::linux::socket_options)
 endif()
 iree_cc_library(
   NAME
@@ -90,6 +92,20 @@ iree_cc_test(
     "notification_wake_test.cc"
   LINKOPTS
     "-Wl,--wrap=write"
+  DEPS
+    ::posix
+    iree::async
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+iree_cc_test(
+  NAME
+    proactor_poll_test
+  SRCS
+    "proactor_poll_test.cc"
   DEPS
     ::posix
     iree::async

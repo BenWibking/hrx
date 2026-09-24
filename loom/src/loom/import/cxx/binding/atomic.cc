@@ -339,8 +339,9 @@ std::optional<Value> AtomicIntrinsic::call(std::span<const Value> arguments,
                                            Storage& storage, cxx::AST* owner,
                                            loom_builder_t* builder,
                                            loom_location_id_t location) const {
-  auto access =
-      storage.dereference(arguments.back().pointer(), element_type_, owner);
+  auto access = storage.dereference(
+      storage.project(arguments.back().pointer(), element_type_, owner),
+      element_type_, owner);
   const int64_t index = 0;
   loom_op_t* op;
   switch (operation_) {
@@ -355,14 +356,16 @@ std::optional<Value> AtomicIntrinsic::call(std::span<const Value> arguments,
           ordering_, scope_, 0, 0, location, &op));
       return std::nullopt;
     case Operation::Rmw:
-      check(loom_view_atomic_rmw_build(
-          builder, 0, kind_, arguments[0].ssa(), access.view, nullptr, 0,
-          &index, 1, ordering_, scope_, 0, 0, type_, location, &op));
+      check(loom_view_atomic_rmw_build(builder, 0, kind_, /*instance_flags=*/0,
+                                       arguments[0].ssa(), access.view, nullptr,
+                                       0, &index, 1, ordering_, scope_, 0, 0,
+                                       type_, location, &op));
       return Value(loom_op_results(op)[0]);
     case Operation::Reduce:
       check(loom_view_atomic_reduce_build(
-          builder, 0, kind_, arguments[0].ssa(), access.view, nullptr, 0,
-          &index, 1, ordering_, scope_, 0, 0, location, &op));
+          builder, 0, kind_, /*instance_flags=*/0, arguments[0].ssa(),
+          access.view, nullptr, 0, &index, 1, ordering_, scope_, 0, 0, location,
+          &op));
       return std::nullopt;
     case Operation::CompareExchange:
       check(loom_view_atomic_cmpxchg_build(
@@ -390,8 +393,9 @@ std::optional<Value> AtomicBuiltin::call(std::span<const Value> arguments,
     return intrinsic_.call(arguments, storage, owner, builder, location);
   }
   if (result_ == Result::Success) {
-    auto access =
-        storage.dereference(arguments[1].pointer(), expected_type_, owner);
+    auto access = storage.dereference(
+        storage.project(arguments[1].pointer(), expected_type_, owner),
+        expected_type_, owner);
     auto expected = storage.load(access, expected_type_, owner);
     std::array<Value, 3> normalized = {Value(expected), arguments[2],
                                        arguments[0]};

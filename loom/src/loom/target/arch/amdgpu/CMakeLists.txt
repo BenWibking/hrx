@@ -298,8 +298,10 @@ loom_cc_library(
     "runtime_requirements.c"
   DEPS
     iree::base
-    loom::sanitizer::options
-    loom::target::pipeline_options
+    loom::ir
+    loom::target::arch::amdgpu::abi::asan
+    loom::target::arch::amdgpu::abi::feedback
+    loom::target::arch::amdgpu::abi::tsan
   PUBLIC
 )
 endif()
@@ -312,9 +314,10 @@ loom_cc_test(
     "runtime_requirements_test.cc"
   DEPS
     ::runtime_requirements
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::sanitizer::options
+    loom::ir
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
 )
@@ -458,7 +461,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::analysis::symbol_facts
-    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::pass_environment
     loom::format::bytecode::reader
     loom::format::bytecode::writer
     loom::format::text::parser
@@ -498,7 +501,7 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::pass_environment
     loom::format::text::parser
     loom::ir
     loom::ops::global
@@ -538,6 +541,7 @@ if(LOOM_TARGET_ARCH_AMDGPU)
 iree_native_test(
   NAME
     "memory_stability"
+  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
   ARGS
     "{{${CMAKE_CURRENT_SOURCE_DIR}/test/source_low/memory_stability.loom-test}}"
   SRC
@@ -559,92 +563,154 @@ loom_check_compile_tests(
 )
 endif()
 
-file(GLOB _GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_BE73FC6D LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS test/source_low/*.loom-test)
-file(GLOB _GLOB_TEST/SOURCE_LOW/MEMORY_STABILITY_LOOM-TEST_BE73FC6D LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS test/source_low/memory_stability.loom-test)
-list(REMOVE_ITEM _GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_BE73FC6D ${_GLOB_TEST/SOURCE_LOW/MEMORY_STABILITY_LOOM-TEST_BE73FC6D})
+file(GLOB _GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS test/source_low/*.loom-test)
+file(GLOB _GLOB_TEST/SOURCE_LOW/MEMORY_STABILITY_LOOM-TEST_49E0437B LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS test/source_low/memory_stability.loom-test)
+list(REMOVE_ITEM _GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B ${_GLOB_TEST/SOURCE_LOW/MEMORY_STABILITY_LOOM-TEST_49E0437B})
+file(GLOB _GLOB_TEST/SOURCE_LOW/SOURCE_LOW_MEMORY_FLOAT64_LOOM-TEST_49E0437B LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS test/source_low/source_low_memory_float64.loom-test)
+list(REMOVE_ITEM _GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B ${_GLOB_TEST/SOURCE_LOW/SOURCE_LOW_MEMORY_FLOAT64_LOOM-TEST_49E0437B})
 if(LOOM_TARGET_ARCH_AMDGPU)
 loom_check_test_suite(
   NAME
     loom_check_file_test
   SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_BE73FC6D}"
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/async_empty.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/async_gather.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/callable_values.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/carried_counter_store.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/index_addressing.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/lookup_table.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/loop_counter_offset.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/math_contraction.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_access_flags.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_address_realizations.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_cache_policy_non_temporal.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_cache_policy_scopes.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_generic_atomic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_global.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_global_atomic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_global_atomic_ordering.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_prefetch.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_scalar_wide_offsets.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_subview.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_wide_carriers.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_wide_offsets.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_atomic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_b128.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_indexed.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_packed16.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/ml_attention.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/ml_contraction.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/nested_view_selection.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_address_widening.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_boolean_comparison.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_constant_remainder.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_conversion.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_conversion_float8.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_conversion_wide.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_f32_memory.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float8_constants.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float8_widen.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float_comparison_flags.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float_signs.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_i32_memory.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_index_operands.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_minmax.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_offset_wide.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_reciprocal.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_reduce.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i32.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64_shift_counts.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64_subtract.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_unsigned_constant_division.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_unsigned_remainder.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_bitfield.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_bitpack.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_bitunpack.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_float8.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_i4_mixed.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_integer.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_wide.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_i8_arithmetic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_integer_arithmetic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_payload_offsets.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_q8_dequant_dot.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/selected_payload_transport.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/shared_conditional_values.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/sync_barrier.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/uniform_predicate_control.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_bitcast.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_dot.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_large_insert.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_mask_select.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_slice.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/view_transport.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/workgroup_reduce_publication.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/workgroup_reduce_tree.loom-test"
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
   TEST_NAME_PREFIX_TO_STRIP
     "test/source_low/"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_observations_gfx1200"
+  SRC
+    "test/source_low/source_low_memory_atomic_observations_gfx1200.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_observations_gfx1250"
+  SRC
+    "test/source_low/source_low_memory_atomic_observations_gfx1250.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1251
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_observations_gfx9_4_generic"
+  SRC
+    "test/source_low/source_low_memory_atomic_observations_gfx9_4_generic.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_publication_gfx1200"
+  SRC
+    "test/source_low/source_low_memory_atomic_publication_gfx1200.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_publication_gfx1250"
+  SRC
+    "test/source_low/source_low_memory_atomic_publication_gfx1250.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1251
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_publication_gfx9_4_generic"
+  SRC
+    "test/source_low/source_low_memory_atomic_publication_gfx9_4_generic.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_scopes_gfx1200"
+  SRC
+    "test/source_low/source_low_memory_atomic_scopes_gfx1200.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_scopes_gfx1250"
+  SRC
+    "test/source_low/source_low_memory_atomic_scopes_gfx1250.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1251
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_atomic_scopes_gfx9_4_generic"
+  SRC
+    "test/source_low/source_low_memory_atomic_scopes_gfx9_4_generic.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
 )
 endif()
 
@@ -655,86 +721,95 @@ loom_check_compile_tests(
   SRC
     "test/source_low/source_low_memory_global_atomic_gfx9_4_generic.loom-test"
   REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_BE73FC6D}"
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
   TARGETS
     loom::target::amdgpu::gfx9-4-generic
     loom::target::amdgpu::gfx942
     loom::target::amdgpu::gfx950
-  DATA
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/async_empty.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/async_gather.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/callable_values.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/carried_counter_store.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/index_addressing.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/lookup_table.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/loop_counter_offset.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/math_contraction.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_access_flags.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_address_realizations.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_cache_policy_non_temporal.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_cache_policy_scopes.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_generic_atomic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_global.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_global_atomic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_global_atomic_ordering.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_prefetch.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_scalar_wide_offsets.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_subview.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_wide_carriers.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_wide_offsets.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_atomic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_b128.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_indexed.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/memory_workgroup_packed16.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/ml_attention.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/ml_contraction.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/nested_view_selection.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_address_widening.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_boolean_comparison.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_constant_remainder.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_conversion.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_conversion_float8.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_conversion_wide.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_f32_memory.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float8_constants.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float8_widen.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float_comparison_flags.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_float_signs.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_i32_memory.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_index_operands.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_minmax.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_offset_wide.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_reciprocal.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_reduce.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i32.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64_shift_counts.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64_subtract.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_unsigned_constant_division.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_unsigned_remainder.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_bitfield.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_bitpack.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_bitunpack.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_float8.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_i4_mixed.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_integer.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_dot_wide.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_i8_arithmetic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_integer_arithmetic.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_payload_offsets.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/packed_q8_dequant_dot.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/selected_payload_transport.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/shared_conditional_values.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/sync_barrier.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/uniform_predicate_control.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_bitcast.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_dot.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_large_insert.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_mask_select.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/vector_slice.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/view_transport.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/workgroup_reduce_publication.loom-test"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/workgroup_reduce_tree.loom-test"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "uniform_packed_memory"
+  SRC
+    "test/source_low/uniform_packed_memory.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx11-generic
+    loom::target::amdgpu::gfx1100
+    loom::target::amdgpu::gfx1101
+    loom::target::amdgpu::gfx1102
+    loom::target::amdgpu::gfx1103
+    loom::target::amdgpu::gfx1150
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1152
+    loom::target::amdgpu::gfx1153
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1171
+    loom::target::amdgpu::gfx1172
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1250-a0
+    loom::target::amdgpu::gfx1251
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx940
+    loom::target::amdgpu::gfx941
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+iree_native_test(
+  NAME
+    "source_low_memory_float64"
+  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
+  ARGS
+    "{{${CMAKE_CURRENT_SOURCE_DIR}/test/source_low/source_low_memory_float64.loom-test}}"
+  SRC
+    loom::tools::loom-check::loom-check-test
+  LABELS
+    "loom-check"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "source_low_memory_float64"
+  SRC
+    "test/source_low/source_low_memory_float64.loom-test"
+  TARGETS
+    loom::target::amdgpu::gfx11-generic
+    loom::target::amdgpu::gfx1100
+    loom::target::amdgpu::gfx1101
+    loom::target::amdgpu::gfx1102
+    loom::target::amdgpu::gfx1103
+    loom::target::amdgpu::gfx1150
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1152
+    loom::target::amdgpu::gfx1153
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1171
+    loom::target::amdgpu::gfx1172
+    loom::target::amdgpu::gfx12-5-generic
+    loom::target::amdgpu::gfx12-generic
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1201
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx1250-a0
+    loom::target::amdgpu::gfx1251
+    loom::target::amdgpu::gfx9-4-generic
+    loom::target::amdgpu::gfx940
+    loom::target::amdgpu::gfx941
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
 )
 endif()
 

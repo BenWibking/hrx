@@ -27,6 +27,7 @@
 #include "loom/target/low_descriptor_registry.h"
 #include "loom/target/low_legality.h"
 #include "loom/target/math_policy.h"
+#include "loom/target/pass_environment.h"
 #include "loom/target/reporting/report.h"
 #include "loom/util/adaptive_sort.h"
 #include "loom/util/walk.h"
@@ -836,11 +837,11 @@ static iree_string_view_t loom_low_target_legalize_report_descriptor_key(
     const loom_target_contract_query_result_t* query_result) {
   const loom_low_descriptor_t* descriptor = query_result->selected_descriptor;
   if (descriptor == NULL ||
-      descriptor->key_string_offset == LOOM_LOW_STRING_OFFSET_NONE) {
+      descriptor->key_string_ref == LOOM_STRING_REF_NONE) {
     return iree_string_view_empty();
   }
   return loom_low_descriptor_set_string(state->descriptor_set,
-                                        descriptor->key_string_offset);
+                                        descriptor->key_string_ref);
 }
 
 static bool loom_low_target_legalize_report_wants_rows(
@@ -1143,10 +1144,17 @@ static bool loom_low_target_legalize_should_accept_legal_contract(
 
 static bool loom_low_target_legalize_should_skip_entry(
     const loom_low_target_legalize_function_state_t* state,
-    const loom_target_legalizer_entry_t* entry) {
-  return state->legalization_context.policy ==
-             LOOM_TARGET_LEGALIZATION_POLICY_REFERENCE_ONLY &&
-         entry->provider_strategy == LOOM_TARGET_LEGALIZER_STRATEGY_TARGET;
+    const loom_target_legalizer_entry_t* entry,
+    const loom_target_contract_query_result_t* query_result) {
+  if (state->legalization_context.policy ==
+      LOOM_TARGET_LEGALIZATION_POLICY_REFERENCE_ONLY) {
+    return entry->provider_strategy == LOOM_TARGET_LEGALIZER_STRATEGY_TARGET;
+  }
+  // An opted-in legal rewrite may decline an op for another target. That does
+  // not make ordinary fallback entries eligible to rewrite an accepted op.
+  return query_result->outcome == LOOM_TARGET_CONTRACT_QUERY_LEGAL &&
+         !iree_any_bit_set(entry->flags,
+                           LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL);
 }
 
 static bool loom_low_target_legalize_should_reject_reference_entry(
@@ -1478,7 +1486,8 @@ static iree_status_t loom_low_target_legalize_rewrite_op(
     if (i != 0 && !loom_low_target_legalize_entry_matches(state, entry, op)) {
       continue;
     }
-    if (loom_low_target_legalize_should_skip_entry(state, entry)) {
+    if (loom_low_target_legalize_should_skip_entry(state, entry,
+                                                   &query_result)) {
       continue;
     }
     if (iree_any_bit_set(

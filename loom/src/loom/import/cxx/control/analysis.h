@@ -36,10 +36,16 @@ struct Destination {
 // Retained proof that a source loop has a stable, nonwrapping unsigned
 // interval.
 struct CountedLoop {
+  struct Bound {
+    // Resolved identifier supplying the loop-invariant bound.
+    cxx::Symbol* binding;
+    // Evaluated source expression, including its integer promotions.
+    cxx::ExpressionAST* expression;
+  };
   // Source binding replaced by the structured loop's induction argument.
   cxx::Symbol* induction;
   // Proven constant or stable runtime bound evaluated once by translation.
-  std::variant<unsigned, cxx::ExpressionAST*> upper;
+  std::variant<unsigned, Bound> upper;
   // Positive constant step in the source's unsigned-int width.
   unsigned step;
 };
@@ -59,14 +65,17 @@ enum class ExitFlow { None, Some, All };
 // and every returned reference.
 class ControlFlow final : private cxx::ASTVisitor {
  public:
-  ControlFlow(cxx::TranslationUnit& unit, Types& types,
-              cxx::StatementAST* body);
+  ControlFlow(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
+              Types& types, cxx::StatementAST* body);
   ControlFlow(const ControlFlow&) = delete;
   ControlFlow& operator=(const ControlFlow&) = delete;
 
   // Unique bindings mutated under a structured statement or conditional value
   // expression, in encounter order. Includes mutations in conditions.
   std::span<cxx::Symbol* const> written(cxx::AST* owner) const;
+  // Whether an evaluated address expression requires this binding's object
+  // identity. The complete function is classified before translation begins.
+  bool addressed(cxx::Symbol* binding) const;
   // Retained automatic-object destination, or no value for a memory access or
   // unsupported lvalue. Whole identifiers need no indexed projection record.
   std::optional<Destination> destination(cxx::ExpressionAST* expression) const;
@@ -108,12 +117,16 @@ class ControlFlow final : private cxx::ASTVisitor {
 
   // Resolved source types and literal interpretation for loop admission.
   cxx::TranslationUnit& unit_;
+  // Statement annotation admission during the existing source body walk.
+  Diagnostics& diagnostics_;
   // Admitted source member partitions outlive all retained destination slices.
   Types& types_;
   // Active structured ancestors during construction only.
   std::vector<cxx::AST*> owners_;
   // Stable encounter order determines region argument/result order.
   std::unordered_map<cxx::AST*, std::vector<cxx::Symbol*>> writes_;
+  // Automatic bindings whose addresses occur in evaluated source expressions.
+  std::unordered_set<cxx::Symbol*> addressed_;
   // Nested lvalue ownership and transitive component offsets computed once.
   std::unordered_map<cxx::ExpressionAST*, Destination> destinations_;
   // Memory record objects and member projections, including nested fields.

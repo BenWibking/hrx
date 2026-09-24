@@ -188,6 +188,7 @@ def _suggest_pipeline_copy_waits(
         if not waits:
             continue
         evidence = list(policy_evidence[index])
+        has_zero_block_local_outstanding = False
         for path, row in waits:
             for key in (
                 "block_index",
@@ -195,22 +196,31 @@ def _suggest_pipeline_copy_waits(
                 "target_count",
                 "outstanding_before",
             ):
-                evidence.append(
-                    CompileReportSuggestionEvidence(
-                        f"{path}.{key}", _report_integer(row.get(key), f"{path}.{key}")
-                    )
-                )
+                value = _report_integer(row.get(key), f"{path}.{key}")
+                if key == "outstanding_before" and value == 0:
+                    has_zero_block_local_outstanding = True
+                evidence.append(CompileReportSuggestionEvidence(f"{path}.{key}", value))
+        zero_outstanding_explanation = ""
+        if has_zero_block_local_outstanding:
+            zero_outstanding_explanation = (
+                " A zero block-local count still denotes a planned residual "
+                "counter-epoch or control-flow hazard; it does not mean the "
+                "hardware wait is redundant."
+            )
         suggestions.append(
             CompileReportSuggestion(
                 suggestion_id="amdgpu.pipeline_copy_waits",
                 entry_name=compile_report_entry_identity(entry).display_name(),
                 action=(
                     "Full global-load waits precede branch-payload copies in this "
-                    "read-ahead entry. Inspect the cited blocks "
+                    "read-ahead entry. Each cited outstanding_before value counts "
+                    "packets in its scheduled block, not the whole hardware "
+                    "counter."
+                    f"{zero_outstanding_explanation} Inspect the cited blocks "
                     "to distinguish steady backedges from startup and tail edges. "
                     "For steady backedges, compare explicit unroll factors with "
                     "schedule(recurrence) at fixed pipeline depth. Check for fewer "
-                    "queue moves and loads still pending at the backedge, then "
+                    "queue moves and useful loads still pending at the backedge, then "
                     "compare registers, occupancy, code size, and measured runtime."
                 ),
                 evidence=tuple(evidence),
@@ -509,15 +519,15 @@ def _suggest_single_subgroup_communication(
         return None
     flat_workgroup_size = _integer(workgroup_size.get("flat"))
     subgroup_size = _integer(target_resources.get("subgroup_size"))
-    barrier_count = _integer(instruction_mix.get("barrier_count"))
+    execution_barrier_count = _integer(instruction_mix.get("execution_barrier_count"))
     if (
         flat_workgroup_size is None
         or flat_workgroup_size == 0
         or subgroup_size is None
         or subgroup_size == 0
         or flat_workgroup_size > subgroup_size
-        or barrier_count is None
-        or barrier_count == 0
+        or execution_barrier_count is None
+        or execution_barrier_count == 0
     ):
         return None
 
@@ -531,8 +541,8 @@ def _suggest_single_subgroup_communication(
             value=subgroup_size,
         ),
         CompileReportSuggestionEvidence(
-            path=f"{path_prefix}.static_instruction_mix.barrier_count",
-            value=barrier_count,
+            path=f"{path_prefix}.static_instruction_mix.execution_barrier_count",
+            value=execution_barrier_count,
         ),
     ]
     local_memory_instruction_count = _integer(instruction_mix.get("local_memory_count"))
@@ -558,7 +568,8 @@ def _suggest_single_subgroup_communication(
             "The workgroup fits within one subgroup but still emits workgroup "
             "barriers. Inspect whether workgroup exchange or reduction can use "
             "subgroup operations, or whether the barriers are redundant; then "
-            "require barrier and local-memory traffic to fall before "
+            "require fewer execution-barrier packets or less local-memory "
+            "traffic before "
             "benchmarking."
         ),
         evidence=tuple(evidence),

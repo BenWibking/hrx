@@ -9,6 +9,15 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
+py_test(
+    name = "change_scope_test",
+    size = "small",
+    srcs = [
+        "change_scope.py",
+        "change_scope_test.py",
+    ],
+)
+
 py_library(
     name = "windows_file_access",
     srcs = ["windows_file_access.py"],

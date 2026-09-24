@@ -98,6 +98,15 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    extended_math
+  SRCS
+    "extended_math.py"
+  DEPS
+    loom::py::loom::target::arch::spirv::ordinary_vector
+)
+
+iree_py_library(
+  NAME
     descriptors
   SRCS
     "__init__.py"
@@ -106,6 +115,7 @@ iree_py_library(
     loom::py::loom::target::arch::spirv::atomic
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
+    loom::py::loom::target::arch::spirv::extended_math
     loom::py::loom::target::arch::spirv::features
     loom::py::loom::target::arch::spirv::ordinary_vector
     loom::py::loom::target::arch::spirv::ordinary_vector_bit_layout
@@ -146,6 +156,7 @@ iree_py_test(
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
     loom::py::loom::target::arch::spirv::descriptors
+    loom::py::loom::target::arch::spirv::extended_math
     loom::py::loom::target::arch::spirv::ordinary_vector
     loom::py::loom::target::arch::spirv::ordinary_vector_bit_layout
     loom::py::loom::target::arch::spirv::ordinary_vector_float

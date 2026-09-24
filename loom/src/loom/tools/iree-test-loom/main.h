@@ -22,6 +22,8 @@ extern "C" {
 
 typedef struct loom_run_hal_testbench_context_t
     loom_run_hal_testbench_context_t;
+typedef struct loom_cleanup_pattern_provider_set_t
+    loom_cleanup_pattern_provider_set_t;
 
 // Appends target-linked requirement providers to |providers|.
 typedef iree_status_t (*iree_test_loom_populate_requirement_providers_fn_t)(
@@ -46,6 +48,8 @@ typedef struct iree_test_loom_configuration_t {
   loom_run_register_context_callback_t register_context;
   // Target environment composed from linked execution providers.
   const loom_target_environment_t* target_environment;
+  // Cleanup rewrite providers linked into this runner.
+  const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
   // Linked device providers available to kernel launches.
   const loom_device_provider_registry_t* device_provider_registry;
   // Binds ordinary function calls once for all cases in the parsed module.

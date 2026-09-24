@@ -80,7 +80,7 @@ loom_low_lower_rule_source_memory_emit_dynamic_byte_offset_const(
   return loom_low_lower_rule_source_memory_emit_resolved_integer_const(
       context, &descriptor,
       loom_low_lower_rule_set_string(
-          rule_set, materializer->constant_immediate_string_offset),
+          rule_set, materializer->constant_immediate_string_ref),
       value, result_type, location, out_value_id);
 }
 
@@ -99,6 +99,16 @@ loom_low_lower_rule_source_memory_emit_address_coordinate_const(
   if (materializer->coordinate_type ==
       LOOM_LOW_LOWER_SOURCE_MEMORY_ADDRESS_COORDINATE_INDEX) {
     source_scalar_type = LOOM_SCALAR_TYPE_INDEX;
+    // The complete coordinate is representable, but a factored constant may
+    // not be. Project it into the same modular carrier as the dynamic terms.
+    const uint32_t bitwidth =
+        loom_low_lower_context_bundle(context)->snapshot->index_bitwidth;
+    if (bitwidth < 64) {
+      const uint64_t sign_bit = UINT64_C(1) << (bitwidth - 1);
+      const uint64_t bits =
+          iree_math_mask_low_bits_u64((uint64_t)value, bitwidth);
+      value = (int64_t)(bits ^ sign_bit) - (int64_t)sign_bit;
+    }
   } else {
     IREE_ASSERT_EQ(materializer->coordinate_type,
                    LOOM_LOW_LOWER_SOURCE_MEMORY_ADDRESS_COORDINATE_OFFSET);
@@ -109,7 +119,7 @@ loom_low_lower_rule_source_memory_emit_address_coordinate_const(
   return loom_low_lower_rule_source_memory_emit_resolved_integer_const(
       context, &descriptor,
       loom_low_lower_rule_set_string(
-          rule_set, materializer->const_coordinate_immediate_string_offset),
+          rule_set, materializer->const_coordinate_immediate_string_ref),
       value, result_type, source_op->location, out_value_id);
 }
 
@@ -257,36 +267,79 @@ static iree_status_t loom_low_lower_rule_source_memory_emit_binary_op(
   return iree_ok_status();
 }
 
-static iree_status_t loom_low_lower_rule_source_memory_emit_unary_op(
+static iree_status_t loom_low_lower_rule_source_memory_emit_conversion_op(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set,
-    loom_low_lower_descriptor_ref_t descriptor_ref, loom_value_id_t input,
-    loom_named_attr_slice_t attributes, loom_location_id_t location,
-    loom_value_id_t* out_value_id) {
+    loom_low_lower_descriptor_ref_t descriptor_ref, loom_value_id_t* operands,
+    uint16_t operand_count, loom_named_attr_slice_t attributes,
+    loom_location_id_t location, loom_value_id_t* out_value_id) {
   *out_value_id = LOOM_VALUE_ID_INVALID;
   loom_low_lower_resolved_descriptor_t descriptor = {0};
   IREE_RETURN_IF_ERROR(
       loom_low_lower_rule_source_memory_resolve_materializer_descriptor(
           context, rule_set, descriptor_ref, &descriptor));
 
-  loom_value_id_t materializer_operand = input;
   const loom_tied_result_t* tied_results = NULL;
   iree_host_size_t tied_result_count = 0;
   IREE_RETURN_IF_ERROR(
       loom_low_lower_rule_source_memory_materializer_tied_results(
-          context, &descriptor, 1, &materializer_operand, location,
+          context, &descriptor, operand_count, operands, location,
           &tied_results, &tied_result_count));
   loom_type_t result_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_result_type(
       context, descriptor.descriptor, 0, &result_type));
   loom_op_t* low_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_emit_resolved_descriptor_op(
-      context, &descriptor, &materializer_operand, 1, attributes, &result_type,
+      context, &descriptor, operands, operand_count, attributes, &result_type,
       1, tied_results, tied_result_count, location, &low_op));
   const loom_value_slice_t results = loom_low_op_results(low_op);
   IREE_ASSERT_EQ(results.count, 1u);
   *out_value_id = results.values[0];
   return iree_ok_status();
+}
+
+static iree_status_t loom_low_lower_rule_source_memory_convert_integer(
+    loom_low_lower_context_t* context,
+    const loom_low_lower_rule_set_t* rule_set,
+    const loom_low_lower_source_memory_integer_conversion_t* conversion,
+    loom_low_lower_descriptor_ref_t constant_descriptor_ref,
+    loom_string_ref_t constant_immediate_string_ref, loom_value_id_t input,
+    loom_location_id_t location, loom_value_id_t* out_value_id) {
+  loom_named_attr_t attribute = {0};
+  loom_named_attr_slice_t attributes = loom_named_attr_slice_empty();
+  if (conversion->immediate_string_ref != LOOM_STRING_REF_NONE) {
+    IREE_RETURN_IF_ERROR(loom_module_intern_string(
+        loom_low_lower_context_module(context),
+        loom_low_lower_rule_set_string(rule_set,
+                                       conversion->immediate_string_ref),
+        &attribute.name_id));
+    attribute.value = loom_attr_i64(conversion->immediate_value);
+    attributes = loom_make_named_attr_slice(&attribute, 1);
+  }
+  loom_value_id_t operands[3] = {input, LOOM_VALUE_ID_INVALID,
+                                 LOOM_VALUE_ID_INVALID};
+  if (conversion->input_count == 3) {
+    loom_low_lower_resolved_descriptor_t constant = {0};
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_rule_source_memory_resolve_materializer_descriptor(
+            context, rule_set, constant_descriptor_ref, &constant));
+    loom_type_t carrier_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_result_type(
+        context, constant.descriptor, 0, &carrier_type));
+    const iree_string_view_t immediate_name =
+        loom_low_lower_rule_set_string(rule_set, constant_immediate_string_ref);
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_rule_source_memory_emit_resolved_integer_const(
+            context, &constant, immediate_name, 1, carrier_type, location,
+            &operands[1]));
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_rule_source_memory_emit_resolved_integer_const(
+            context, &constant, immediate_name, 0, carrier_type, location,
+            &operands[2]));
+  }
+  return loom_low_lower_rule_source_memory_emit_conversion_op(
+      context, rule_set, conversion->descriptor_ref, operands,
+      conversion->input_count, attributes, location, out_value_id);
 }
 
 // Canonical terms retain their numeric source domain after index casts have
@@ -308,21 +361,10 @@ static iree_status_t loom_low_lower_rule_source_memory_lookup_byte_offset(
     const loom_low_lower_source_memory_integer_conversion_t* conversion =
         &materializer->integer_conversions[scalar_type - LOOM_SCALAR_TYPE_I1];
     if (conversion->descriptor_ref != LOOM_LOW_LOWER_DESCRIPTOR_REF_NONE) {
-      loom_named_attr_t attribute = {0};
-      loom_named_attr_slice_t attributes = loom_named_attr_slice_empty();
-      if (conversion->immediate_string_offset !=
-          LOOM_BSTRING_TABLE_OFFSET_NONE) {
-        IREE_RETURN_IF_ERROR(loom_module_intern_string(
-            loom_low_lower_context_module(context),
-            loom_low_lower_rule_set_string(rule_set,
-                                           conversion->immediate_string_offset),
-            &attribute.name_id));
-        attribute.value = loom_attr_i64(conversion->immediate_value);
-        attributes = loom_make_named_attr_slice(&attribute, 1);
-      }
-      return loom_low_lower_rule_source_memory_emit_unary_op(
-          context, rule_set, conversion->descriptor_ref, *out_value_id,
-          attributes, location, out_value_id);
+      return loom_low_lower_rule_source_memory_convert_integer(
+          context, rule_set, conversion, materializer->constant_descriptor_ref,
+          materializer->constant_immediate_string_ref, *out_value_id, location,
+          out_value_id);
     }
   }
   const loom_type_t source_type = loom_module_value_type(
@@ -340,6 +382,49 @@ static iree_status_t loom_low_lower_rule_source_memory_lookup_byte_offset(
                            *out_value_id, 0, offset_type, location, &slice_op));
   *out_value_id = loom_low_slice_result(slice_op);
   return iree_ok_status();
+}
+
+iree_status_t loom_low_lower_rule_materialize_source_memory_dynamic_term(
+    loom_low_lower_context_t* context,
+    const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
+    const loom_low_lower_source_memory_t* source_memory,
+    const loom_low_source_memory_access_plan_t* source_memory_access,
+    uint8_t term_ordinal, loom_value_id_t* out_value_id) {
+  IREE_ASSERT_NE(source_memory->byte_offset_materializer_ordinal,
+                 LOOM_LOW_LOWER_SOURCE_MEMORY_MATERIALIZER_NONE);
+  IREE_ASSERT_LT(term_ordinal, source_memory_access->dynamic_term_count);
+  const loom_low_lower_source_memory_byte_offset_materializer_t* materializer =
+      loom_low_lower_rule_set_source_memory_byte_offset_materializer(
+          rule_set, source_memory);
+  const loom_value_id_t source_value_id =
+      source_memory_access->dynamic_terms[term_ordinal].index;
+  const loom_scalar_type_t scalar_type =
+      loom_type_element_type(loom_module_value_type(
+          loom_low_lower_context_module(context), source_value_id));
+  if (!loom_scalar_type_is_integer(scalar_type)) {
+    return loom_low_lower_lookup_value(context, source_value_id, out_value_id);
+  }
+  const loom_low_lower_source_memory_integer_conversion_t* conversion =
+      &materializer->integer_conversions[scalar_type - LOOM_SCALAR_TYPE_I1];
+  if (conversion->descriptor_ref != LOOM_LOW_LOWER_DESCRIPTOR_REF_NONE) {
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_lookup_value(context, source_value_id, out_value_id));
+    return loom_low_lower_rule_source_memory_convert_integer(
+        context, rule_set, conversion, materializer->constant_descriptor_ref,
+        materializer->constant_immediate_string_ref, *out_value_id,
+        source_op->location, out_value_id);
+  }
+  loom_low_lower_resolved_descriptor_t constant_descriptor = {0};
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_rule_source_memory_resolve_materializer_descriptor(
+          context, rule_set, materializer->constant_descriptor_ref,
+          &constant_descriptor));
+  loom_type_t carrier_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_low_lower_rule_descriptor_result_type(
+      context, constant_descriptor.descriptor, 0, &carrier_type));
+  return loom_low_lower_rule_source_memory_lookup_byte_offset(
+      context, rule_set, materializer, source_value_id, carrier_type,
+      source_op->location, out_value_id);
 }
 
 static iree_status_t loom_low_lower_rule_materialize_source_memory_term(
@@ -473,6 +558,15 @@ loom_low_lower_rule_materialize_source_memory_address_coordinate_value(
   loom_value_id_t low_value_id = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(
       loom_low_lower_lookup_value(context, source_value_id, &low_value_id));
+  const loom_scalar_type_t scalar_type = loom_type_element_type(source_type);
+  if (loom_scalar_type_is_integer(scalar_type)) {
+    return loom_low_lower_rule_source_memory_convert_integer(
+        context, rule_set,
+        &materializer->integer_conversions[scalar_type - LOOM_SCALAR_TYPE_I1],
+        materializer->const_coordinate_descriptor_ref,
+        materializer->const_coordinate_immediate_string_ref, low_value_id,
+        source_op->location, out_value_id);
+  }
   if (materializer->coordinate_type ==
       LOOM_LOW_LOWER_SOURCE_MEMORY_ADDRESS_COORDINATE_INDEX) {
     IREE_ASSERT(
@@ -490,16 +584,9 @@ loom_low_lower_rule_materialize_source_memory_address_coordinate_value(
 
   IREE_ASSERT(
       loom_type_equal(source_type, loom_type_scalar(LOOM_SCALAR_TYPE_INDEX)));
-  if (materializer->index_to_coordinate_input_descriptor_ref !=
-      LOOM_LOW_LOWER_DESCRIPTOR_REF_NONE) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_rule_source_memory_emit_unary_op(
-        context, rule_set,
-        materializer->index_to_coordinate_input_descriptor_ref, low_value_id,
-        loom_named_attr_slice_empty(), source_op->location, &low_value_id));
-  }
-  return loom_low_lower_rule_source_memory_emit_unary_op(
+  return loom_low_lower_rule_source_memory_emit_conversion_op(
       context, rule_set, materializer->index_to_coordinate_descriptor_ref,
-      low_value_id, loom_named_attr_slice_empty(), source_op->location,
+      &low_value_id, 1, loom_named_attr_slice_empty(), source_op->location,
       out_value_id);
 }
 

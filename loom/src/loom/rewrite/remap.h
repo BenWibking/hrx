@@ -82,6 +82,22 @@ typedef struct loom_ir_remap_op_projection_t {
   loom_op_t* target_op;
 } loom_ir_remap_op_projection_t;
 
+// Observes an operation after its local payload is cloned and before its
+// child regions are materialized. Compiler owners translate retained products
+// using this exact correspondence, without a second IR walk. The target's
+// child operations and finalization are not yet available to the observer.
+typedef struct loom_ir_clone_observer_t {
+  // Optional callback; only allocation or output transport may fail.
+  iree_status_t (*fn)(void* user_data, const loom_op_t* source_op,
+                      loom_op_t* target_op);
+  // Optional matching notification after children and finalization succeed.
+  // Failed cloning abandons the observer state without unwinding callbacks.
+  void (*finish_fn)(void* user_data, const loom_op_t* source_op,
+                    loom_op_t* target_op);
+  // Borrowed state for the complete clone invocation.
+  void* user_data;
+} loom_ir_clone_observer_t;
+
 // Remap behavior knobs supplied at initialization.
 typedef struct loom_ir_remap_options_t {
   // Allows unmapped SSA value references to remain unchanged when source and
@@ -95,6 +111,9 @@ typedef struct loom_ir_remap_options_t {
   bool remap_same_module_symbols;
   // Storage strategy for SSA value correspondence.
   loom_ir_remap_value_map_kind_t value_map_kind;
+
+  // Compiler product translation at the operation construction boundary.
+  loom_ir_clone_observer_t clone_observer;
 
   // Optional source operations to project while cloning. Entries must follow
   // clone visitation order. Target pointers are populated as those operations
@@ -152,6 +171,9 @@ typedef struct loom_ir_remap_t {
   loom_ir_remap_symbol_callback_t remap_symbol;
   // Invokes |remap_symbol| for same-module symbol refs.
   bool remap_same_module_symbols;
+
+  // Compiler product translation at the operation construction boundary.
+  loom_ir_clone_observer_t clone_observer;
 
   // Sparse source-to-target operation projection used only during cloning.
   struct {

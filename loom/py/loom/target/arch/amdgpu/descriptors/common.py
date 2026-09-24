@@ -210,6 +210,9 @@ _SCHEDULE_SWMMAC = "amdgpu.swmmac"
 _SCHEDULE_TENSOR_LOAD_LDS = "amdgpu.tensor.load.lds"
 _SCHEDULE_CLUSTER_LOAD_LDS = "amdgpu.cluster.load.lds"
 _SCHEDULE_CACHE_CONTROL = "amdgpu.cache.control"
+_SCHEDULE_SMEM_CACHE_CONTROL = "amdgpu.smem.cache.control"
+_SCHEDULE_VMEM_CACHE_INVALIDATE = "amdgpu.vmem.cache.invalidate"
+_SCHEDULE_VMEM_CACHE_WRITEBACK = "amdgpu.vmem.cache.writeback"
 _SCHEDULE_MODE_CONTROL = "amdgpu.mode.control"
 _SCHEDULE_MESSAGE = "amdgpu.message"
 _SCHEDULE_WAIT_MEMORY = "amdgpu.wait.memory"
@@ -1161,6 +1164,33 @@ def _common_scalar_vector_memory_schedule_classes(
             model_quality=ModelQuality.FALLBACK,
         ),
         ScheduleClass(
+            _SCHEDULE_SMEM_CACHE_CONTROL,
+            latency_kind=LatencyKind.VARIABLE,
+            latency_cycles=1,
+            issue_uses=(IssueUse(_RESOURCE_SMEM, cycles=1, units=1),),
+            hazards=_SMEM_WAIT_HAZARDS,
+            flags=(ScheduleClassFlag.CONTROL, ScheduleClassFlag.MAY_STORE),
+            model_quality=ModelQuality.FALLBACK,
+        ),
+        ScheduleClass(
+            _SCHEDULE_VMEM_CACHE_INVALIDATE,
+            latency_kind=LatencyKind.VARIABLE,
+            latency_cycles=1,
+            issue_uses=(IssueUse(_RESOURCE_VMEM_LOAD, cycles=1, units=1),),
+            hazards=_VMEM_LOAD_WAIT_HAZARDS,
+            flags=(ScheduleClassFlag.CONTROL, ScheduleClassFlag.MAY_LOAD),
+            model_quality=ModelQuality.FALLBACK,
+        ),
+        ScheduleClass(
+            _SCHEDULE_VMEM_CACHE_WRITEBACK,
+            latency_kind=LatencyKind.VARIABLE,
+            latency_cycles=1,
+            issue_uses=(IssueUse(_RESOURCE_VMEM_STORE, cycles=1, units=1),),
+            hazards=_VMEM_STORE_WAIT_HAZARDS,
+            flags=(ScheduleClassFlag.CONTROL, ScheduleClassFlag.MAY_STORE),
+            model_quality=ModelQuality.FALLBACK,
+        ),
+        ScheduleClass(
             _SCHEDULE_MODE_CONTROL,
             latency_kind=LatencyKind.VARIABLE,
             latency_cycles=1,
@@ -1665,7 +1695,10 @@ def _with_execution_mask_state_read(descriptor: Descriptor) -> Descriptor:
         return descriptor
     if any(_is_exec_state_read(operand) for operand in descriptor.operands):
         return descriptor
-    return replace(descriptor, operands=(*descriptor.operands, _exec_state_read()))
+    operand = _exec_state_read()
+    if DescriptorFlag.SAFE_TO_SPECULATE in descriptor.flags:
+        operand = replace(operand, flags=(*operand.flags, OperandFlag.EXECUTION_MASK))
+    return replace(descriptor, operands=(*descriptor.operands, operand))
 
 
 def _with_execution_mask_state_reads(
@@ -1881,6 +1914,26 @@ def _s_mov_b32_contract_overlay() -> AmdgpuDescriptorOverlay:
         asm_forms=_asm(results=("dst",), immediates=("imm32",)),
         immediates=(_U32_IMMEDIATE,),
         constraints=(Constraint(ConstraintKind.REMATERIALIZABLE, 0),),
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _s_mov_b64_exec_read_contract_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.s_mov_b64_exec_read",
+        instruction_name="S_MOV_B64",
+        mnemonic="s_mov_b64",
+        encoding_name="ENC_SOP1",
+        semantic_tag="control.exec.read",
+        schedule_class=_SCHEDULE_SALU,
+        operands=(AmdgpuOperandOverlay("SDST", _sgpr_result(units=2)),),
+        implicit_operands=(
+            AmdgpuImplicitOperandOverlay(
+                "OPR_SSRC",
+                descriptor_operand=_exec_value_read(),
+                xml_operand_required=False,
+            ),
+        ),
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
     )
 
@@ -3183,6 +3236,19 @@ def _global_to_lds_effects(
     )
 
 
+# CDNA XML lists M0 for the whole flat/global/scratch instruction family. Only
+# transfers into LDS consume it; ordinary register loads, stores and atomics do
+# not. Keep the XML operand accounted for without adding a machine dependency.
+_IGNORE_REGISTER_MEMORY_M0 = AmdgpuImplicitOperandOverlay(
+    operand_type="OPR_SDST_M0",
+    data_format_name="FMT_NUM_B32",
+    size_bits=32,
+    is_input=True,
+    is_output=False,
+    ignore_reason="register-memory-access-does-not-use-lds-offset",
+)
+
+
 def _implicit_m0_input(
     *, xml_operand_required: bool = True
 ) -> AmdgpuImplicitOperandOverlay:
@@ -3431,6 +3497,7 @@ __all__ = (
     "_IGNORE_GLOBAL_WRITE_MEMORY_B8",
     "_IGNORE_GLOBAL_WRITE_MEMORY_B64",
     "_IGNORE_GLOBAL_WRITE_MEMORY_B96",
+    "_IGNORE_REGISTER_MEMORY_M0",
     "_INSTRUCTION_PREFETCH_EFFECT",
     "_KMCNT_IMMEDIATE",
     "_LDS_COUNTER_HAZARD",
@@ -3506,6 +3573,7 @@ __all__ = (
     "_SCHEDULE_PACKED_DOT",
     "_SCHEDULE_SALU",
     "_SCHEDULE_SALU_COMPARE",
+    "_SCHEDULE_SMEM_CACHE_CONTROL",
     "_SCHEDULE_SMEM_LOAD",
     "_SCHEDULE_SMEM_STORE",
     "_SCHEDULE_SWMMAC",
@@ -3518,6 +3586,8 @@ __all__ = (
     "_SCHEDULE_FLAT_ATOMIC_NO_RETURN",
     "_SCHEDULE_VMEM_ATOMIC_NO_RETURN",
     "_SCHEDULE_VMEM_ATOMIC_RETURN",
+    "_SCHEDULE_VMEM_CACHE_INVALIDATE",
+    "_SCHEDULE_VMEM_CACHE_WRITEBACK",
     "_SCHEDULE_VMEM_LOAD",
     "_SCHEDULE_VMEM_LOAD_LDS",
     "_SCHEDULE_VMEM_STORE",
@@ -3664,6 +3734,7 @@ __all__ = (
     "_offset_immediate",
     "_predefined",
     "_s_mov_b32_contract_overlay",
+    "_s_mov_b64_exec_read_contract_overlay",
     "_scc_clobber",
     "_scc_input",
     "_scc_output",

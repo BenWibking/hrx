@@ -39,6 +39,7 @@ from loom.target.arch.spirv.atomic import (  # noqa: E402
     AtomicScope,
     AtomicStorageClass,
     atomic_descriptor_key,
+    float_atomic_cas_strategies,
     float_atomic_descriptor_key,
 )
 from loom.target.arch.spirv.builtins import (  # noqa: E402
@@ -50,6 +51,9 @@ from loom.target.arch.spirv.cooperative_matrix import (  # noqa: E402
     CooperativeMatrixCase,
 )
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET  # noqa: E402
+from loom.target.arch.spirv.extended_math import (  # noqa: E402
+    EXTENDED_MATH_INSTRUCTIONS,
+)
 from loom.target.arch.spirv.ordinary_vector import (  # noqa: E402
     ORDINARY_VECTOR_INSTRUCTIONS,
     OrdinaryVectorComponentType,
@@ -233,6 +237,8 @@ class _PacketRow:
     atomic_success_ordering: int | None = None
     atomic_integer_scalar: str | None = None
     atomic_float_operation: int | None = None
+    extended_instruction_set: str | None = None
+    extended_instruction: str | None = None
 
     def encoded_operand_types(self) -> tuple[str, ...]:
         if len(self.operand_types) <= _PACKET_OPERAND_TYPE_CAPACITY:
@@ -295,6 +301,10 @@ class _PacketRow:
             lines.append(f"            .payload.atomic.integer_scalar = {self.atomic_integer_scalar},")
         if self.atomic_float_operation is not None:
             lines.append(f"            .payload.atomic.float_operation = {self.atomic_float_operation},")
+        if self.extended_instruction_set is not None:
+            lines.append(f"            .payload.extended_instruction.instruction_set = {self.extended_instruction_set},")
+        if self.extended_instruction is not None:
+            lines.append(f"            .payload.extended_instruction.instruction = {self.extended_instruction},")
         lines.append("        },")
         return "\n".join(lines)
 
@@ -500,7 +510,7 @@ def _float_atomic_rows_for_scope(
             _PacketRow(
                 float_atomic_descriptor_key(
                     form,
-                    "cas",
+                    strategy,
                     scalar,
                     storage_class,
                     scope,
@@ -515,6 +525,7 @@ def _float_atomic_rows_for_scope(
                 atomic_float_operation=operation.cas_operation,
                 **integer_common,
             )
+            for strategy in float_atomic_cas_strategies(scalar, operation)
             for form in (("reduce", "rmw") if operation.supports_reduce else ("rmw",))
         )
     if scalar.integer_scalar_enum is not None:
@@ -913,6 +924,17 @@ def _conversion_rows() -> list[_PacketRow]:
                 result_count=1,
             )
         )
+        if scalar_pair.bit_width < 64:
+            rows.append(
+                _PacketRow(
+                    f"spirv.op_s_convert.{scalar_pair.signed.suffix}.offset64",
+                    opcode="LOOM_SPIRV_OP_S_CONVERT",
+                    form="LOOM_SPIRV_PACKET_FORM_UNARY_TYPED",
+                    result_type=_offset64_value(),
+                    operand_types=(_alu_scalar_value(scalar_pair.signed),),
+                    result_count=1,
+                )
+            )
         rows.append(
             _PacketRow(
                 f"spirv.op_{descriptor_opcode}.offset64.{suffix}",
@@ -945,6 +967,22 @@ def _ordinary_vector_rows() -> list[_PacketRow]:
             *ORDINARY_VECTOR_INTEGER_CONVERSION_INSTRUCTIONS,
             *ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS,
         )
+    ]
+
+
+def _extended_math_rows() -> list[_PacketRow]:
+    return [
+        _PacketRow(
+            row.descriptor_key,
+            opcode="LOOM_SPIRV_OP_EXT_INST",
+            form="LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION",
+            result_type=_ordinary_vector_instruction_value(row.value_type),
+            operand_types=tuple(_ordinary_vector_instruction_value(row.value_type) for _ in row.operation.operand_names),
+            result_count=1,
+            extended_instruction_set=("LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450"),
+            extended_instruction=row.operation.instruction_c_enum,
+        )
+        for row in EXTENDED_MATH_INSTRUCTIONS
     ]
 
 
@@ -1087,6 +1125,7 @@ def _integer_compare_rows() -> list[_PacketRow]:
 
 def _select_rows() -> list[_PacketRow]:
     offset64_value = _offset64_value()
+    buffer_address = _storage_buffer_address_value()
     bool_value = _bool_value()
     rows = [
         _PacketRow(
@@ -1137,6 +1176,16 @@ def _select_rows() -> list[_PacketRow]:
             result_count=1,
         )
     )
+    rows.append(
+        _PacketRow(
+            "spirv.op_select.storage_buffer",
+            opcode="LOOM_SPIRV_OP_SELECT",
+            form="LOOM_SPIRV_PACKET_FORM_SELECT",
+            result_type=buffer_address,
+            operand_types=(bool_value, buffer_address, buffer_address),
+            result_count=1,
+        )
+    )
     return rows
 
 
@@ -1165,6 +1214,7 @@ def _packet_rows() -> tuple[_PacketRow, ...]:
         *_scalar_binary_rows(),
         *_conversion_rows(),
         *_ordinary_vector_rows(),
+        *_extended_math_rows(),
         *_builtin_index_rows(),
         *_coordinate_binary_rows(),
         *_coordinate_unary_rows(),

@@ -3,7 +3,7 @@
 // mixups visible.
 
 func.def noinline @derived_selection(%first: buffer, %second: buffer, %third: buffer, %position_input: index, %select_first: i1, %select_pair: i1) -> (i32) {
-  %position = index.assume %position_input [range(%position_input, 1, 2)] : index
+  %position = index.assume %position_input [range(%position_input, -1, 2)] : index
   %base0 = index.constant 4 : offset
   %base1 = index.constant 8 : offset
   %base2 = index.constant 12 : offset
@@ -209,6 +209,34 @@ check.case @early_exit {
   %enter = check.literal value(false) : i1
   %side = check.literal value(true) : i1
   %expected_derived = check.literal value(102) : i32
+  %expected_ordered = check.literal value(99) : i32
+  %derived, %ordered = func.call @read_nested_selections(%position, %select_first, %select_pair, %enter, %side) : (index, i1, i1, i1, i1) -> (i32, i32)
+  check.expect.equal actual(%derived) expected(%expected_derived) : i32
+  check.expect.equal actual(%ordered) expected(%expected_ordered) : i32
+  check.return
+}
+
+check.case @first_before_base {
+  %position = check.literal value(-1) : index
+  %select_first = check.literal value(true) : i1
+  %select_pair = check.literal value(true) : i1
+  %enter = check.literal value(false) : i1
+  %side = check.literal value(false) : i1
+  %expected_derived = check.literal value(100) : i32
+  %expected_ordered = check.literal value(99) : i32
+  %derived, %ordered = func.call @read_nested_selections(%position, %select_first, %select_pair, %enter, %side) : (index, i1, i1, i1, i1) -> (i32, i32)
+  check.expect.equal actual(%derived) expected(%expected_derived) : i32
+  check.expect.equal actual(%ordered) expected(%expected_ordered) : i32
+  check.return
+}
+
+check.case @second_before_base {
+  %position = check.literal value(-1) : index
+  %select_first = check.literal value(false) : i1
+  %select_pair = check.literal value(true) : i1
+  %enter = check.literal value(false) : i1
+  %side = check.literal value(false) : i1
+  %expected_derived = check.literal value(201) : i32
   %expected_ordered = check.literal value(99) : i32
   %derived, %ordered = func.call @read_nested_selections(%position, %select_first, %select_pair, %enter, %side) : (index, i1, i1, i1, i1) -> (i32, i32)
   check.expect.equal actual(%derived) expected(%expected_derived) : i32

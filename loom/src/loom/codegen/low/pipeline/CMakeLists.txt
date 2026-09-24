@@ -65,9 +65,6 @@ loom_cc_library(
     loom::codegen::low::descriptors
     loom::pass::environment
     loom::pass::types
-    loom::target::math_policy
-    loom::target::pass_environment
-    loom::target::types
   PUBLIC
 )
 

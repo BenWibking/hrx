@@ -17,11 +17,13 @@
 #include "loom/codegen/low/transforms/operand_forms.h"
 #include "loom/codegen/low/transforms/pipeline/source_to_low.h"
 #include "loom/codegen/low/transforms/pipeline/target_legalize.h"
+#include "loom/sanitizer/materialize_assertions.h"
 #include "loom/sanitizer/pipeline_passes.h"
 #include "loom/sanitizer/race_insertion.h"
 #include "loom/target/callgraph_specialization.h"
 #include "loom/target/pass_environment.h"
 #include "loom/target/pass_requirements.h"
+#include "loom/transforms/boundary/projection.h"
 #include "loom/transforms/cfg/branch_fusion.h"
 #include "loom/transforms/cfg/branch_sink.h"
 #include "loom/transforms/cfg/cfg_converge.h"
@@ -29,6 +31,8 @@
 #include "loom/transforms/cleanup/canonicalize.h"
 #include "loom/transforms/cleanup/cse.h"
 #include "loom/transforms/cleanup/dce.h"
+#include "loom/transforms/cleanup/pass_environment.h"
+#include "loom/transforms/cleanup/pass_requirements.h"
 #include "loom/transforms/cleanup/strip_hints.h"
 #include "loom/transforms/encoding/layout_transport.h"
 #include "loom/transforms/func/locations.h"
@@ -51,13 +55,9 @@
 #include "loom/transforms/vector/memory_footprint.h"
 #include "loom/transforms/vector/sink_single_use_reads.h"
 #include "loom/transforms/vector/to_scalar.h"
+#include "loom/transforms/view/boundary_transport.h"
 #include "loom/transforms/view/linearize_view_accesses.h"
 #include "loom/transforms/view/transport.h"
-
-static const loom_pass_option_enum_value_t kCanonicalizeViewLoadValues[] = {
-    {.value = IREE_SVL("coalesce")},
-    {.value = IREE_SVL("preserve")},
-};
 
 static const loom_pass_option_schema_t kCanonicalizeOptionSchema[] = {
     {
@@ -65,12 +65,6 @@ static const loom_pass_option_schema_t kCanonicalizeOptionSchema[] = {
         .kind = LOOM_PASS_OPTION_SCHEMA_UINT32,
         .minimum_uint32 = 1,
         .maximum_uint32 = UINT32_MAX,
-    },
-    {
-        .name = IREE_SVL("view-loads"),
-        .kind = LOOM_PASS_OPTION_SCHEMA_ENUM,
-        .enum_values = kCanonicalizeViewLoadValues,
-        .enum_value_count = IREE_ARRAYSIZE(kCanonicalizeViewLoadValues),
     },
 };
 
@@ -332,8 +326,8 @@ static const loom_pass_option_schema_t kTemplateSelectionOptionSchema[] = {
     },
 };
 
-static const loom_pass_requirement_def_t
-    kTargetCallgraphSpecializationRequirements[] = {
+static const loom_pass_requirement_def_t kMutableFunctionVersionRequirements[] =
+    {
         {
             .capability_type = &loom_target_pass_capability_type,
             .key = IREE_SVL(
@@ -342,6 +336,15 @@ static const loom_pass_requirement_def_t
                 IREE_SVL("Requires mutable invocation-local concrete "
                          "function versions."),
         },
+};
+
+static const loom_pass_requirement_def_t kSourceCombineRequirements[] = {
+    {
+        .capability_type = &loom_cleanup_pass_capability_type,
+        .key = IREE_SVL(LOOM_CLEANUP_PASS_REQUIREMENT_SOURCE_COMBINE_PATTERNS),
+        .description = IREE_SVL(
+            "Requires explicitly composed source-combine rewrite patterns."),
+    },
 };
 
 static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
@@ -359,7 +362,7 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
         .key = IREE_SVL("canonicalize"),
         .info = loom_canonicalize_pass_info,
         .function_run = loom_canonicalize_run,
-        .create = loom_canonicalize_create,
+        .create = loom_canonicalizer_pass_create,
         .option_schema = kCanonicalizeOptionSchema,
         .option_schema_count = IREE_ARRAYSIZE(kCanonicalizeOptionSchema),
     },
@@ -374,6 +377,16 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
         .function_run = loom_cfg_simplify_run,
     },
     {
+        .key = IREE_SVL("combine"),
+        .info = loom_combine_pass_info,
+        .function_run = loom_combine_run,
+        .create = loom_canonicalizer_pass_create,
+        .option_schema = kCanonicalizeOptionSchema,
+        .option_schema_count = IREE_ARRAYSIZE(kCanonicalizeOptionSchema),
+        .requirement_defs = kSourceCombineRequirements,
+        .requirement_count = IREE_ARRAYSIZE(kSourceCombineRequirements),
+    },
+    {
         .key = IREE_SVL("cse"),
         .info = loom_cse_pass_info,
         .function_run = loom_cse_run,
@@ -386,12 +399,20 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
     {
         .key = IREE_SVL("decompose-cfg-layout-transports"),
         .info = loom_decompose_cfg_layout_transports_pass_info,
-        .function_run = loom_decompose_cfg_layout_transports_run,
+        .module_run = loom_decompose_cfg_layout_transports_run,
     },
     {
         .key = IREE_SVL("decompose-scf-layout-transports"),
         .info = loom_decompose_scf_layout_transports_pass_info,
         .function_run = loom_decompose_scf_layout_transports_run,
+    },
+    {
+        .key = IREE_SVL("decompose-view-boundaries"),
+        .info = loom_decompose_view_boundaries_pass_info,
+        .module_run = loom_decompose_view_boundaries_run,
+        .requirement_defs = kMutableFunctionVersionRequirements,
+        .requirement_count =
+            IREE_ARRAYSIZE(kMutableFunctionVersionRequirements),
     },
     {
         .key = IREE_SVL("decompose-view-root-selections"),
@@ -456,7 +477,7 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
     {
         .key = IREE_SVL("low-decompose-cfg-tuples"),
         .info = loom_low_decompose_cfg_tuples_pass_info,
-        .function_run = loom_low_decompose_cfg_tuples_run,
+        .module_run = loom_low_decompose_cfg_tuples_run,
     },
     {
         .key = IREE_SVL("low-materialize-allocation"),
@@ -499,6 +520,14 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
         .key = IREE_SVL("pipeline-scf-for"),
         .info = loom_scf_pipeline_pass_info,
         .function_run = loom_scf_pipeline_run,
+    },
+    {
+        .key = IREE_SVL("project-boundary-representations"),
+        .info = loom_project_boundary_representations_pass_info,
+        .module_run = loom_project_boundary_representations_run,
+        .requirement_defs = kMutableFunctionVersionRequirements,
+        .requirement_count =
+            IREE_ARRAYSIZE(kMutableFunctionVersionRequirements),
     },
     {
         .key = IREE_SVL("promote-private-fragments"),
@@ -568,14 +597,14 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
         .key = IREE_SVL("specialize-target-callgraph"),
         .info = loom_target_callgraph_specialization_pass_info,
         .module_run = loom_target_callgraph_specialization_run,
-        .requirement_defs = kTargetCallgraphSpecializationRequirements,
+        .requirement_defs = kMutableFunctionVersionRequirements,
         .requirement_count =
-            IREE_ARRAYSIZE(kTargetCallgraphSpecializationRequirements),
+            IREE_ARRAYSIZE(kMutableFunctionVersionRequirements),
     },
     {
         .key = IREE_SVL("sroa-vector-banks"),
         .info = loom_vector_bank_sroa_pass_info,
-        .function_run = loom_vector_bank_sroa_run,
+        .module_run = loom_vector_bank_sroa_run,
     },
     {
         .key = IREE_SVL("stage-loop-carried-fragments"),

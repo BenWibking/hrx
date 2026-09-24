@@ -38,7 +38,7 @@ static iree_status_t loom_target_specialize_module_with_arena(
       specialization.function_versions.list.count != 0) {
     status = loom_target_function_versions_project_module(
         *inout_module, &specialization.function_versions.list, block_pool,
-        allocator, &projected_module);
+        allocator, NULL, &projected_module);
   }
   if (iree_status_is_ok(status) && projected_module != NULL) {
     loom_module_free(*inout_module);

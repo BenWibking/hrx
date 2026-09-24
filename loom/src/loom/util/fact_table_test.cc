@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #include "iree/base/internal/arena.h"
 #include "iree/testing/gtest.h"
@@ -1069,6 +1070,90 @@ TEST_F(FactTableTest, ClonedPayloadOutlivesSourceArena) {
   EXPECT_EQ(result.lanes[1].known_divisor, 16);
 }
 
+TEST_F(FactTableTest, CrossTableClonesReuseOwnedArrayAndRawPayloads) {
+  loom_value_fact_table_t target = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&target, &arena_, 0));
+  // Destination IDs differ from source IDs, even for identical payloads.
+  loom_value_facts_t padding;
+  IREE_ASSERT_OK(loom_value_facts_make_uniform_element(
+      &target.context, loom_value_facts_exact_i64(99), &padding));
+  loom_value_facts_t copied[3];
+  uint8_t payload[LOOM_VALUE_FACT_RAW_PAYLOAD_LENGTH_LIMIT];
+  for (size_t i = 0; i < IREE_ARRAYSIZE(payload); ++i) {
+    payload[i] = static_cast<uint8_t>(i);
+  }
+  {
+    iree_arena_allocator_t source_arena;
+    iree_arena_initialize(&block_pool_, &source_arena);
+    loom_value_fact_table_t source = {0};
+    IREE_ASSERT_OK(loom_value_fact_table_initialize(&source, &source_arena, 0));
+    loom_value_facts_t elements[LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT];
+    for (size_t i = 0; i < IREE_ARRAYSIZE(elements); ++i) {
+      elements[i] = loom_value_facts_make(i, i + 16, 1);
+    }
+    loom_value_facts_t original[3];
+    IREE_ASSERT_OK(loom_value_facts_make_extension_payload(
+        &source.context, kTestRawPayloadTag, payload, sizeof(payload),
+        &original[2]));
+    // Type-owned lane extensions must be imported before interning the array.
+    elements[0].extension_id = original[2].extension_id;
+    IREE_ASSERT_OK(loom_value_facts_make_small_static_lanes(
+        &source.context, {elements, IREE_ARRAYSIZE(elements)}, &original[0]));
+    elements[0].extension_id = LOOM_VALUE_FACT_EXTENSION_ID_NONE;
+    loom_value_fact_encoding_summary_t summary = {};
+    summary.role = LOOM_ENCODING_ROLE_ADDRESS_LAYOUT;
+    summary.address_layout = {LOOM_VALUE_FACT_ADDRESS_LAYOUT_STRIDED,
+                              LOOM_TYPE_MAX_RANK, elements};
+    IREE_ASSERT_OK(loom_value_facts_make_encoding_summary(
+        &source.context, summary, &original[1]));
+    for (size_t i = 0; i < IREE_ARRAYSIZE(original); ++i) {
+      IREE_ASSERT_OK(loom_value_fact_table_clone_fact(&target, &source,
+                                                      original[i], &copied[i]));
+      EXPECT_NE(copied[i].extension_id, original[i].extension_id);
+      EXPECT_TRUE(loom_value_fact_table_facts_equal(&source, original[i],
+                                                    &target, copied[i]));
+    }
+    const auto used_bytes = arena_.used_allocation_size;
+    const auto extension_count = target.extensions.count;
+    for (int iteration = 0; iteration < 16; ++iteration) {
+      for (size_t i = 0; i < IREE_ARRAYSIZE(original); ++i) {
+        loom_value_facts_t repeated;
+        IREE_ASSERT_OK(loom_value_fact_table_clone_fact(
+            &target, &source, original[i], &repeated));
+        EXPECT_TRUE(loom_value_facts_equal(repeated, copied[i]));
+        EXPECT_EQ(arena_.used_allocation_size, used_bytes);
+        EXPECT_EQ(target.extensions.count, extension_count);
+      }
+    }
+    iree_arena_deinitialize(&source_arena);
+    iree_arena_block_pool_trim(&block_pool_);
+  }
+  loom_value_fact_small_static_lanes_t lanes;
+  ASSERT_TRUE(loom_value_facts_query_small_static_lanes(&target.context,
+                                                        copied[0], &lanes));
+  ASSERT_EQ(lanes.count, LOOM_VALUE_FACT_SMALL_STATIC_LANE_LIMIT);
+  for (size_t i = 0; i < lanes.count; ++i) {
+    EXPECT_EQ(lanes.lanes[i].range_lo, i);
+    EXPECT_EQ(lanes.lanes[i].range_hi, i + 16);
+  }
+  EXPECT_EQ(lanes.lanes[0].extension_id, copied[2].extension_id);
+  loom_value_fact_encoding_summary_t summary;
+  ASSERT_TRUE(loom_value_facts_query_encoding_summary(&target.context,
+                                                      copied[1], &summary));
+  ASSERT_EQ(summary.address_layout.rank, LOOM_TYPE_MAX_RANK);
+  for (size_t i = 0; i < summary.address_layout.rank; ++i) {
+    EXPECT_EQ(summary.address_layout.strides[i].range_lo, i);
+    EXPECT_EQ(summary.address_layout.strides[i].range_hi, i + 16);
+  }
+  const void* copied_payload = nullptr;
+  iree_host_size_t copied_length = 0;
+  ASSERT_TRUE(loom_value_facts_query_extension_payload(
+      &target.context, copied[2], kTestRawPayloadTag, &copied_payload,
+      &copied_length));
+  ASSERT_EQ(copied_length, sizeof(payload));
+  EXPECT_EQ(std::memcmp(copied_payload, payload, sizeof(payload)), 0);
+}
+
 TEST_F(FactTableTest, TypeOwnedRawPayloadClonesAndMeetsThroughDomain) {
   loom_value_fact_table_t source = {0};
   IREE_ASSERT_OK(loom_value_fact_table_initialize(&source, &arena_, 0));
@@ -1190,6 +1275,114 @@ TEST_F(FactTableTest, TypedMeetPreservesStableExtension) {
   EXPECT_TRUE(
       loom_value_facts_query_uniform_element(&table.context, joined, &uniform));
   EXPECT_EQ(uniform.element.range_lo, 7);
+}
+
+TEST_F(FactTableTest, TypedMeetPreservesFloatingClassesAcrossTables) {
+  loom_value_fact_table_t source = {0};
+  loom_value_fact_table_t target = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&source, &arena_, 0));
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&target, &arena_, 0));
+  const double infinity = std::numeric_limits<double>::infinity();
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  for (loom_scalar_type_t scalar_type :
+       {LOOM_SCALAR_TYPE_F8E5M2, LOOM_SCALAR_TYPE_F16, LOOM_SCALAR_TYPE_BF16,
+        LOOM_SCALAR_TYPE_F32, LOOM_SCALAR_TYPE_F64}) {
+    const double subnormal = scalar_type == LOOM_SCALAR_TYPE_F8E5M2 ? 0x1p-16
+                             : scalar_type == LOOM_SCALAR_TYPE_F16  ? 0x1p-24
+                             : scalar_type == LOOM_SCALAR_TYPE_BF16 ? 0x1p-133
+                             : scalar_type == LOOM_SCALAR_TYPE_F32  ? 0x1p-149
+                                                                    : 0x1p-1074;
+    const double values[] = {0.0,       -0.0,     1.0,       2.0,
+                             subnormal, infinity, -infinity, nan};
+    const loom_type_t type = loom_type_scalar(scalar_type);
+    for (size_t i = 0; i < IREE_ARRAYSIZE(values); ++i) {
+      for (size_t j = 0; j < IREE_ARRAYSIZE(values); ++j) {
+        SCOPED_TRACE(::testing::Message()
+                     << "type=" << scalar_type << " lhs=" << i << " rhs=" << j);
+        const auto lhs = loom_value_facts_exact_float(scalar_type, values[i]);
+        const auto rhs = loom_value_facts_exact_float(scalar_type, values[j]);
+        loom_value_facts_t joined;
+        IREE_ASSERT_OK(loom_value_fact_table_meet_for_type(
+            &target, nullptr, type, &source, lhs, &target, rhs, &joined));
+        EXPECT_TRUE(loom_value_facts_is_float(joined));
+        EXPECT_EQ(loom_value_facts_is_finite(joined), i < 5 && j < 5);
+        EXPECT_EQ(loom_value_facts_is_nan(joined), i == 7 && j == 7);
+        EXPECT_EQ(loom_value_facts_is_inf(joined),
+                  (i == 5 || i == 6) && (j == 5 || j == 6));
+        EXPECT_EQ(loom_value_facts_is_not_nan(joined), i != 7 && j != 7);
+        EXPECT_EQ(loom_value_facts_is_not_inf(joined),
+                  i != 5 && i != 6 && j != 5 && j != 6);
+        EXPECT_EQ(loom_value_facts_is_exact(joined), i == j);
+        EXPECT_EQ(loom_value_facts_is_not_subnormal(joined),
+                  scalar_type == LOOM_SCALAR_TYPE_F64 && i != 4 && j != 4);
+        EXPECT_TRUE(loom_value_facts_is_cluster_uniform(joined));
+      }
+    }
+  }
+}
+
+TEST_F(FactTableTest, TypedMeetPreservesFloatDistributionWithoutExactness) {
+  loom_value_fact_table_t table = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 0));
+  const auto type = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
+  auto finite = loom_value_facts_unknown();
+  finite.flags = LOOM_VALUE_FACT_FLOAT | LOOM_VALUE_FACT_FINITE |
+                 LOOM_VALUE_FACT_NOT_NAN | LOOM_VALUE_FACT_NOT_INF;
+  loom_value_facts_mark_workgroup_uniform(&finite);
+  const auto exact = loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F32, 1.0);
+  loom_value_facts_t joined;
+  IREE_ASSERT_OK(loom_value_fact_table_meet_for_type(
+      &table, nullptr, type, &table, finite, &table, exact, &joined));
+  EXPECT_TRUE(loom_value_facts_is_finite(joined));
+  EXPECT_FALSE(loom_value_facts_is_exact(joined));
+  EXPECT_EQ(loom_value_facts_uniform_scope(joined),
+            LOOM_VALUE_FACT_UNIFORM_SCOPE_WORKGROUP);
+
+  loom_value_facts_mark_lane_varying(&finite);
+  IREE_ASSERT_OK(loom_value_fact_table_meet_for_type(
+      &table, nullptr, type, &table, finite, &table, exact, &joined));
+  EXPECT_TRUE(loom_value_facts_is_finite(joined));
+  EXPECT_TRUE(loom_value_facts_is_lane_varying(joined));
+  EXPECT_FALSE(loom_value_facts_is_subgroup_uniform(joined));
+
+  IREE_ASSERT_OK(loom_value_fact_table_meet_for_type(
+      &table, nullptr, type, &table, finite, &table, loom_value_facts_unknown(),
+      &joined));
+  EXPECT_FALSE(loom_value_facts_is_finite(joined));
+  EXPECT_FALSE(loom_value_facts_is_not_nan(joined));
+  EXPECT_FALSE(loom_value_facts_is_not_inf(joined));
+  EXPECT_TRUE(loom_value_facts_is_lane_varying(joined));
+}
+
+TEST_F(FactTableTest, TypedWidenPreservesFloatingClasses) {
+  loom_value_fact_table_t table = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 0));
+  const auto type = loom_type_scalar(LOOM_SCALAR_TYPE_F64);
+  const auto previous = loom_value_facts_exact_float(LOOM_SCALAR_TYPE_F64, 1.0);
+  for (const uint32_t iteration : {0u, 2u, 7u}) {
+    loom_value_facts_t widened;
+    const auto subnormal = loom_value_facts_exact_float(
+        LOOM_SCALAR_TYPE_F64, std::numeric_limits<double>::denorm_min());
+    IREE_ASSERT_OK(loom_value_fact_table_widen_for_type(
+        &table, nullptr, type, &table, previous, &table, subnormal, iteration,
+        &widened));
+    EXPECT_TRUE(loom_value_facts_is_finite(widened));
+    EXPECT_FALSE(loom_value_facts_is_exact(widened));
+    EXPECT_FALSE(loom_value_facts_is_not_subnormal(widened));
+    EXPECT_TRUE(loom_value_facts_is_cluster_uniform(widened));
+
+    IREE_ASSERT_OK(loom_value_fact_table_widen_for_type(
+        &table, nullptr, type, &table, previous, &table,
+        loom_value_facts_known_nan(), iteration, &widened));
+    EXPECT_FALSE(loom_value_facts_is_finite(widened));
+    EXPECT_FALSE(loom_value_facts_is_not_nan(widened));
+    EXPECT_TRUE(loom_value_facts_is_not_inf(widened));
+
+    IREE_ASSERT_OK(loom_value_fact_table_widen_for_type(
+        &table, nullptr, type, &table, previous, &table,
+        loom_value_facts_unknown(), iteration, &widened));
+    EXPECT_TRUE(loom_value_facts_is_unknown(widened));
+  }
 }
 
 TEST_F(FactTableTest, TypedWidenJoinsDivisibilityIndependentlyOfRange) {

@@ -106,7 +106,7 @@ static iree_string_view_t loom_low_allocation_target_constraints_reg_class_name(
       loom_low_allocation_target_constraints_reg_class_at(descriptor_set,
                                                           reg_class_id);
   return loom_low_descriptor_set_string(descriptor_set,
-                                        reg_class->name_string_offset);
+                                        reg_class->name_string_ref);
 }
 
 static iree_status_t loom_low_allocation_target_constraints_emit(
@@ -496,7 +496,7 @@ loom_low_allocation_target_constraints_emit_capacity_failure(
       loom_low_allocation_target_constraints_reg_class_at(descriptor_set,
                                                           reg_class_id);
   const iree_string_view_t register_class = loom_low_descriptor_set_string(
-      descriptor_set, reg_class->name_string_offset);
+      descriptor_set, reg_class->name_string_ref);
   loom_diagnostic_param_t params[] = {
       loom_param_string(loom_low_diagnostic_target_key(constraints->target)),
       loom_param_string(loom_low_diagnostic_export_name(constraints->target)),
@@ -1222,7 +1222,8 @@ iree_status_t loom_low_allocation_target_constraints_resolve_fixed_values(
         loom_low_allocation_target_constraints_resolve_reg_class(
             constraints, interval->value_class, &reg_class_id, &reg_class));
     const uint32_t alignment =
-        loom_low_allocation_live_range_interval_alignment(interval);
+        loom_low_allocation_live_range_interval_alignment(
+            constraints->target->descriptor_set, interval);
     // Explicit physical IDs name declared register views, not linear storage
     // offsets. The capacity check below validates the view's unit layout.
     if (!loom_low_reg_class_uses_explicit_physical_registers(reg_class) &&

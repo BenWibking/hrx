@@ -304,11 +304,13 @@ loom_cc_library(
     loom::codegen::low::transforms::operand_forms
     loom::codegen::low::transforms::pipeline::source_to_low
     loom::codegen::low::transforms::pipeline::target_legalize
+    loom::sanitizer::materialize_assertions
     loom::sanitizer::pipeline_passes
     loom::sanitizer::race_insertion
     loom::target::callgraph_specialization
     loom::target::pass_environment
     loom::target::pass_requirements
+    loom::transforms::boundary::projection
     loom::transforms::cfg::branch_fusion
     loom::transforms::cfg::branch_sink
     loom::transforms::cfg::cfg_converge
@@ -316,6 +318,8 @@ loom_cc_library(
     loom::transforms::cleanup::canonicalize
     loom::transforms::cleanup::cse
     loom::transforms::cleanup::dce
+    loom::transforms::cleanup::pass_environment
+    loom::transforms::cleanup::pass_requirements
     loom::transforms::cleanup::strip_hints
     loom::transforms::encoding::layout_transport
     loom::transforms::func::locations
@@ -338,6 +342,7 @@ loom_cc_library(
     loom::transforms::vector::memory_footprint
     loom::transforms::vector::sink_single_use_reads
     loom::transforms::vector::to_scalar
+    loom::transforms::view::boundary_transport
     loom::transforms::view::linearize_view_accesses
     loom::transforms::view::transport
   PUBLIC
@@ -460,6 +465,8 @@ loom_cc_test(
     loom::target::legalization
     loom::target::pass_environment
     loom::target::pass_requirements
+    loom::transforms::cleanup::pass_environment
+    loom::transforms::cleanup::pass_requirements
 )
 
 loom_cc_test(

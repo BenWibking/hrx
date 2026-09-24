@@ -192,7 +192,7 @@ static iree_status_t loom_amdgpu_legalize_vector_transform(
   return iree_ok_status();
 }
 
-static iree_status_t loom_amdgpu_legalize_atomic_addf(
+static iree_status_t loom_amdgpu_legalize_atomic_float(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
     loom_target_legalizer_result_t* out_result) {
@@ -207,8 +207,10 @@ static iree_status_t loom_amdgpu_legalize_atomic_addf(
 
   const loom_memory_access_t access =
       loom_memory_access_cast(context->module, op);
-  if (loom_attr_as_enum(loom_memory_access_atomic_kind(access)) !=
-      LOOM_ATOMIC_KIND_ADDF) {
+  const uint8_t atomic_kind =
+      loom_attr_as_enum(loom_memory_access_atomic_kind(access));
+  if (!loom_atomic_kind_accepts_float(atomic_kind) ||
+      loom_atomic_kind_is_exchange(atomic_kind)) {
     return iree_ok_status();
   }
   const loom_type_t value_type =
@@ -228,22 +230,24 @@ static iree_status_t loom_amdgpu_legalize_atomic_addf(
   const loom_amdgpu_atomic_operation_kind_t operation_kind =
       loom_view_atomic_reduce_isa(op) ? LOOM_AMDGPU_ATOMIC_OPERATION_REDUCE
                                       : LOOM_AMDGPU_ATOMIC_OPERATION_RMW;
-  if (loom_amdgpu_atomic_has_descriptor_candidate(
+  const uint8_t scope =
+      loom_attr_as_enum(loom_memory_access_atomic_scope(access));
+  if (loom_amdgpu_atomic_has_native_candidate(
           context->descriptor_set, view_reference.memory_space, operation_kind,
-          LOOM_ATOMIC_KIND_ADDF, value_type)) {
+          atomic_kind, scope, loom_memory_access_flags(access), value_type)) {
     *out_result = (loom_target_legalizer_result_t){
         .action = LOOM_TARGET_LEGALIZER_ACTION_DEFER,
     };
     return iree_ok_status();
   }
-  if (!loom_amdgpu_atomic_has_descriptor_candidate(
+  if (!loom_amdgpu_atomic_has_native_candidate(
           context->descriptor_set, view_reference.memory_space,
-          LOOM_AMDGPU_ATOMIC_OPERATION_CMPXCHG, LOOM_ATOMIC_KIND_ADDF,
-          value_type)) {
+          LOOM_AMDGPU_ATOMIC_OPERATION_CMPXCHG, atomic_kind, scope,
+          /*access_flags=*/0, value_type)) {
     return iree_ok_status();
   }
-  return loom_view_target_legalize_atomic_addf_reference(context, op,
-                                                         out_result);
+  return loom_view_target_legalize_atomic_float_reference(context, op,
+                                                          out_result);
 }
 
 static bool loom_amdgpu_match_value_type_is_supported(loom_type_t type) {
@@ -493,13 +497,27 @@ static iree_status_t loom_amdgpu_legalize_kernel_subgroup_match_all(
 }
 
 static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
+    // Half-precision atomics require packed instructions. Preserve the vector
+    // footprint for native selection and its alignment/scope diagnostics.
+    {
+        .root_kind = LOOM_OP_VECTOR_ATOMIC_REDUCE,
+        .first_operand_element_types =
+            LOOM_SCALAR_TYPE_SET_F16 | LOOM_SCALAR_TYPE_SET_BF16,
+        .legalize = loom_amdgpu_retain_native_vector_op,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_ATOMIC_RMW,
+        .first_operand_element_types =
+            LOOM_SCALAR_TYPE_SET_F16 | LOOM_SCALAR_TYPE_SET_BF16,
+        .legalize = loom_amdgpu_retain_native_vector_op,
+    },
     {
         .root_kind = LOOM_OP_VIEW_ATOMIC_REDUCE,
-        .legalize = loom_amdgpu_legalize_atomic_addf,
+        .legalize = loom_amdgpu_legalize_atomic_float,
     },
     {
         .root_kind = LOOM_OP_VIEW_ATOMIC_RMW,
-        .legalize = loom_amdgpu_legalize_atomic_addf,
+        .legalize = loom_amdgpu_legalize_atomic_float,
     },
     {
         .root_kind = LOOM_OP_VECTOR_STORE,

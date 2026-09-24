@@ -22,8 +22,8 @@ loom_cc_library(
     iree::base
     loom::ir
     loom::target::types
-    loom::util::bstring
     loom::util::stable_id
+    loom::util::string_pool
   PUBLIC
 )
 
@@ -126,7 +126,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::ir
-    loom::util::bstring
+    loom::util::string_pool
 )
 
 loom_cc_test(
@@ -274,6 +274,7 @@ loom_cc_library(
     ::target_binding
     iree::base
     iree::base::internal::arena
+    loom::analysis::liveness_dataflow
     loom::error::emitter
     loom::ir
     loom::util::cfg_graph
@@ -315,6 +316,32 @@ loom_cc_library(
     loom::ops::type_registry
     loom::rewrite::rewriter
   PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    source_storage_packing
+  HDRS
+    "source_storage_packing.h"
+  SRCS
+    "source_storage_packing.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    source_storage_packing_test
+  SRCS
+    "source_storage_packing_test.cc"
+  DEPS
+    ::source_storage_packing
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 loom_cc_library(
@@ -387,6 +414,9 @@ loom_cc_library(
   DEPS
     ::descriptors
     iree::base
+    iree::base::internal::arena
+    loom::analysis::symbolic_expr
+    loom::ir
     loom::ir::facts
   PUBLIC
 )
@@ -398,8 +428,10 @@ loom_cc_test(
     "memory_access_test.cc"
   DEPS
     ::memory_access
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::analysis::symbolic_expr
 )
 
 loom_cc_library(
@@ -640,7 +672,6 @@ loom_cc_library(
     ::target_binding
     iree::base
     iree::base::internal::arena
-    loom::analysis::availability
     loom::codegen::low::allocation::live_range
     loom::codegen::low::allocation::storage
     loom::error::emitter
@@ -650,6 +681,7 @@ loom_cc_library(
     loom::rewrite::materialize
     loom::rewrite::remap
     loom::rewrite::rewriter
+    loom::util::adaptive_sort
   PUBLIC
 )
 
@@ -853,6 +885,26 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    guarded_motion
+  HDRS
+    "guarded_motion.h"
+  SRCS
+    "guarded_motion.c"
+  DEPS
+    ::descriptors
+    ::function
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::schedule
+    loom::ir
+    loom::ops::low
+    loom::rewrite::rewriter
+    loom::util::cfg_graph
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     frame
   HDRS
     "frame.h"
@@ -866,6 +918,7 @@ loom_cc_library(
     ::diagnostics
     ::function
     ::function_model
+    ::guarded_motion
     ::memory_access
     ::packet
     ::planning_statistics
@@ -879,6 +932,7 @@ loom_cc_library(
     loom::error::error_defs
     loom::ir
     loom::ops::low
+    loom::rewrite::rewriter
     loom::target::facts
     loom::target::residency
   PUBLIC

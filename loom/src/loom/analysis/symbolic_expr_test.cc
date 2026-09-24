@@ -8,9 +8,11 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/analysis/symbolic_congruence.h"
 #include "loom/analysis/symbolic_expr_test_fixture.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
+#include "loom/ops/sanitizer/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/scf/ops.h"
 
@@ -90,6 +92,38 @@ TEST_F(SymbolicExprTest, ExactIntegerFactsFoldToConstant) {
   EXPECT_EQ(expression.term_count, 0);
 }
 
+TEST_F(SymbolicExprTest, FactIdentityExpansionPreservesOrdinalRelations) {
+  const loom_value_id_t left = DefineIndexValue();
+  const loom_value_id_t right = DefineIndexValue();
+  const loom_value_id_t values[] = {left, right};
+  const loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  const loom_type_t result_types[] = {index_type, index_type};
+  const loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{left, right},
+  };
+  loom_op_t* assertion_op = nullptr;
+  IREE_ASSERT_OK(loom_sanitizer_assert_value_build(
+      &builder_, values, IREE_ARRAYSIZE(values), &predicate, 1, result_types,
+      IREE_ARRAYSIZE(result_types), LOOM_LOCATION_UNKNOWN, &assertion_op));
+  const loom_value_slice_t checked_values =
+      loom_sanitizer_assert_value_results(assertion_op);
+
+  for (iree_host_size_t i = 0; i < checked_values.count; ++i) {
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+        &expression_context_, checked_values.values[i], &expression));
+    ASSERT_TRUE(loom_symbolic_expr_is_linear(&expression));
+    ASSERT_EQ(expression.term_count, 1);
+    EXPECT_EQ(expression.terms[0].coefficient, 1);
+    EXPECT_EQ(expression.terms[0].value_id, values[i]);
+    EXPECT_EQ(expression.terms[0].relation_value_id, checked_values.values[i]);
+  }
+}
+
 TEST_F(SymbolicExprTest, IndexCastsExpandOnlyWhenTheyPreserveNumericValue) {
   struct {
     // Source representation interpreted by the cast.
@@ -131,6 +165,69 @@ TEST_F(SymbolicExprTest, IndexCastsExpandOnlyWhenTheyPreserveNumericValue) {
         &builder_, input, input_type, loom_type_scalar(test_case.result_type),
         LOOM_LOCATION_UNKNOWN, &cast));
     loom_value_id_t result = loom_index_cast_result(cast);
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    ASSERT_TRUE(loom_symbolic_expr_is_linear(&expression));
+    ASSERT_EQ(expression.term_count, 1);
+    EXPECT_EQ(expression.constant, 0);
+    EXPECT_EQ(expression.terms[0].coefficient, 1);
+    EXPECT_EQ(expression.terms[0].value_id,
+              test_case.preserves_value ? input : result);
+  }
+}
+
+TEST_F(SymbolicExprTest, ScalarCastsExpandOnlyWhenTheyPreserveNumericValue) {
+  struct {
+    // Cast operation whose numeric interpretation is under test.
+    decltype(&loom_scalar_extsi_build) build;
+    // Source integer representation.
+    loom_scalar_type_t input_type;
+    // Destination integer representation.
+    loom_scalar_type_t result_type;
+    // Inclusive lower bound of the proven source range.
+    int64_t lower_bound;
+    // Inclusive upper bound of the proven source range.
+    int64_t upper_bound;
+    // Whether the cast is a numeric identity over that range.
+    bool preserves_value;
+  } cases[] = {
+      {loom_scalar_extsi_build, LOOM_SCALAR_TYPE_I8, LOOM_SCALAR_TYPE_I32, -128,
+       127, true},
+      {loom_scalar_extsi_build, LOOM_SCALAR_TYPE_I1, LOOM_SCALAR_TYPE_I32, 0, 1,
+       false},
+      {loom_scalar_extui_build, LOOM_SCALAR_TYPE_I1, LOOM_SCALAR_TYPE_I32, 0, 1,
+       true},
+      {loom_scalar_extui_build, LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I64, 0,
+       INT32_MAX, true},
+      {loom_scalar_extui_build, LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I64, -1,
+       1, false},
+      {loom_scalar_extui_build, LOOM_SCALAR_TYPE_I8, LOOM_SCALAR_TYPE_I32, -128,
+       -1, false},
+      {loom_scalar_trunci_build, LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I8,
+       -128, 127, true},
+      {loom_scalar_trunci_build, LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I8,
+       -128, 128, false},
+      {loom_scalar_trunci_build, LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I1, 0,
+       1, true},
+      {loom_scalar_trunci_build, LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I1, -1,
+       0, false},
+  };
+  for (const auto& test_case : cases) {
+    SCOPED_TRACE(static_cast<int>(test_case.input_type));
+    SCOPED_TRACE(static_cast<int>(test_case.result_type));
+    SCOPED_TRACE(test_case.lower_bound);
+    const loom_type_t input_type = loom_type_scalar(test_case.input_type);
+    loom_value_id_t input = LOOM_VALUE_ID_INVALID;
+    IREE_ASSERT_OK(loom_builder_define_value(&builder_, input_type, &input));
+    DefineFacts(input, loom_value_facts_make(test_case.lower_bound,
+                                             test_case.upper_bound, 1));
+    loom_op_t* cast = nullptr;
+    IREE_ASSERT_OK(test_case.build(&builder_, input, input_type,
+                                   loom_type_scalar(test_case.result_type),
+                                   LOOM_LOCATION_UNKNOWN, &cast));
+    ComputeFacts(cast);
+    const loom_value_id_t result = loom_op_const_results(cast)[0];
     loom_symbolic_expr_t expression = {};
     IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
                                                  &expression));
@@ -394,6 +491,68 @@ TEST_F(SymbolicExprTest, ExpandsShiftWithExactAmount) {
   EXPECT_EQ(expression.terms[0].value_id, value);
 }
 
+TEST_F(SymbolicExprTest, ScalarShiftRequiresExactAmountAndNonwrappingRange) {
+  struct {
+    // Fixed-width representation of both operands and the result.
+    loom_scalar_type_t type;
+    // Inclusive lower bound of the unshifted value.
+    int64_t lower_bound;
+    // Inclusive upper bound of the unshifted value.
+    int64_t upper_bound;
+    // Inclusive lower bound of the shift amount.
+    int64_t shift_lower_bound;
+    // Inclusive upper bound of the shift amount.
+    int64_t shift_upper_bound;
+    // Whether mathematical multiplication preserves the fixed-width result.
+    bool preserves_value;
+  } cases[] = {
+      {LOOM_SCALAR_TYPE_I8, 0, 31, 2, 2, true},
+      {LOOM_SCALAR_TYPE_I8, 0, 32, 2, 2, false},
+      {LOOM_SCALAR_TYPE_I8, -32, -1, 2, 2, true},
+      {LOOM_SCALAR_TYPE_I8, -33, -1, 2, 2, false},
+      {LOOM_SCALAR_TYPE_I32, 0, 255, 2, 2, true},
+      {LOOM_SCALAR_TYPE_I32, 0, 255, 1, 2, false},
+      {LOOM_SCALAR_TYPE_I64, 0, 1, 62, 62, true},
+      {LOOM_SCALAR_TYPE_I64, 0, 2, 62, 62, false},
+      {LOOM_SCALAR_TYPE_I64, 0, 1, 63, 63, false},
+      {LOOM_SCALAR_TYPE_I8, 0, 1, 8, 8, false},
+      {LOOM_SCALAR_TYPE_I8, 0, 1, -1, -1, false},
+  };
+  for (const auto& test_case : cases) {
+    SCOPED_TRACE(static_cast<int>(test_case.type));
+    SCOPED_TRACE(test_case.lower_bound);
+    SCOPED_TRACE(test_case.upper_bound);
+    SCOPED_TRACE(test_case.shift_lower_bound);
+    const loom_type_t type = loom_type_scalar(test_case.type);
+    loom_value_id_t input = LOOM_VALUE_ID_INVALID;
+    loom_value_id_t shift = LOOM_VALUE_ID_INVALID;
+    IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &input));
+    IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &shift));
+    DefineFacts(input, loom_value_facts_make(test_case.lower_bound,
+                                             test_case.upper_bound, 1));
+    DefineFacts(shift, loom_value_facts_make(test_case.shift_lower_bound,
+                                             test_case.shift_upper_bound, 1));
+    loom_op_t* shift_op = nullptr;
+    IREE_ASSERT_OK(loom_scalar_shli_build(&builder_, /*instance_flags=*/0,
+                                          input, shift, type,
+                                          LOOM_LOCATION_UNKNOWN, &shift_op));
+    ComputeFacts(shift_op);
+    const loom_value_id_t result = loom_scalar_shli_result(shift_op);
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    ASSERT_TRUE(loom_symbolic_expr_is_linear(&expression));
+    ASSERT_EQ(expression.term_count, 1);
+    EXPECT_EQ(expression.constant, 0);
+    EXPECT_EQ(expression.terms[0].coefficient,
+              test_case.preserves_value
+                  ? (int64_t{1} << test_case.shift_lower_bound)
+                  : 1);
+    EXPECT_EQ(expression.terms[0].value_id,
+              test_case.preserves_value ? input : result);
+  }
+}
+
 TEST_F(SymbolicExprTest, DynamicShiftFallsBackToResultSymbol) {
   loom_value_id_t value = DefineIndexValue();
   loom_value_id_t shift = DefineIndexValue();
@@ -487,6 +646,76 @@ TEST_F(SymbolicExprTest, SelectUsesScopedComparisonTruth) {
   }
   expression_context_.condition_scope = nullptr;
   loom_symbolic_expr_context_reset(&expression_context_);
+}
+
+TEST_F(SymbolicExprTest, SignedAndUnsignedRemaindersHaveDifferentPeriods) {
+  const loom_type_t type = loom_type_scalar(LOOM_SCALAR_TYPE_I8);
+  loom_value_id_t input;
+  IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &input));
+  DefineFacts(input, loom_value_facts_make(-128, 127, 1));
+  loom_op_t* divisor;
+  IREE_ASSERT_OK(loom_scalar_constant_build(&builder_, loom_attr_i64(3), type,
+                                            LOOM_LOCATION_UNKNOWN, &divisor));
+  ComputeFacts(divisor);
+  const auto divisor_value = loom_scalar_constant_result(divisor);
+  loom_op_t* signed_remainder;
+  loom_op_t* unsigned_remainder;
+  IREE_ASSERT_OK(loom_scalar_remsi_build(&builder_, input, divisor_value, type,
+                                         LOOM_LOCATION_UNKNOWN,
+                                         &signed_remainder));
+  IREE_ASSERT_OK(loom_scalar_remui_build(&builder_, input, divisor_value, type,
+                                         LOOM_LOCATION_UNKNOWN,
+                                         &unsigned_remainder));
+  ComputeFacts(signed_remainder);
+  ComputeFacts(unsigned_remainder);
+  loom_symbolic_expr_t original, signed_expression, unsigned_expression;
+  IREE_ASSERT_OK(
+      loom_symbolic_expr_from_value(&expression_context_, input, &original));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_scalar_remsi_result(signed_remainder),
+      &signed_expression));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_scalar_remui_result(unsigned_remainder),
+      &unsigned_expression));
+  // Exact addressing retains the remainder itself, never the dividend.
+  ASSERT_EQ(signed_expression.term_count, 1u);
+  EXPECT_EQ(signed_expression.terms[0].value_id,
+            loom_scalar_remsi_result(signed_remainder));
+  EXPECT_TRUE(loom_symbolic_congruence_excludes_difference(&signed_expression,
+                                                           &original, 1, 1));
+  // At input -1, unsigned i8 remainder is 255%3 = 0, so the difference is 1.
+  EXPECT_FALSE(loom_symbolic_congruence_excludes_difference(
+      &unsigned_expression, &original, 1, 1));
+}
+
+TEST_F(SymbolicExprTest, WrappedAdditionRetainsOnlyAModularGuarantee) {
+  const loom_type_t type = loom_type_scalar(LOOM_SCALAR_TYPE_I8);
+  loom_value_id_t input;
+  IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &input));
+  DefineFacts(input, loom_value_facts_make(-128, 127, 1));
+  loom_op_t* one;
+  IREE_ASSERT_OK(loom_scalar_constant_build(&builder_, loom_attr_i64(1), type,
+                                            LOOM_LOCATION_UNKNOWN, &one));
+  ComputeFacts(one);
+  loom_op_t* added;
+  IREE_ASSERT_OK(loom_scalar_addi_build(&builder_, 0, input,
+                                        loom_scalar_constant_result(one), type,
+                                        LOOM_LOCATION_UNKNOWN, &added));
+  ComputeFacts(added);
+  loom_symbolic_expr_t original, wrapped;
+  IREE_ASSERT_OK(
+      loom_symbolic_expr_from_value(&expression_context_, input, &original));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_scalar_addi_result(added), &wrapped));
+  ASSERT_EQ(wrapped.term_count, 1u);
+  EXPECT_EQ(wrapped.terms[0].value_id, loom_scalar_addi_result(added));
+  EXPECT_TRUE(
+      loom_symbolic_congruence_excludes_difference(&wrapped, &original, 0, 0));
+  // 127+1 wraps to -128: the difference can be -255, as well as 1.
+  EXPECT_FALSE(loom_symbolic_congruence_excludes_difference(&wrapped, &original,
+                                                            -255, -255));
+  EXPECT_FALSE(
+      loom_symbolic_congruence_excludes_difference(&wrapped, &original, 1, 1));
 }
 
 }  // namespace

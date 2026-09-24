@@ -1535,20 +1535,6 @@ static bool loom_amdgpu_wait_plan_descriptor_has_xcnt_source_lease(
   return false;
 }
 
-static bool loom_amdgpu_wait_plan_node_is_smem_schedule_class(
-    const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_schedule_node_t* node) {
-  if (node->schedule_class == NULL) {
-    return false;
-  }
-  const iree_string_view_t schedule_class_name = loom_low_descriptor_set_string(
-      descriptor_set, node->schedule_class->name_string_offset);
-  return iree_string_view_equal(schedule_class_name,
-                                IREE_SV("amdgpu.smem.load")) ||
-         iree_string_view_equal(schedule_class_name,
-                                IREE_SV("amdgpu.smem.store"));
-}
-
 static bool loom_amdgpu_wait_plan_descriptor_writes_exec(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_descriptor_t* descriptor) {
@@ -1573,14 +1559,7 @@ static bool loom_amdgpu_wait_plan_descriptor_writes_exec(
       const uint16_t reg_class_id =
           descriptor_set->reg_class_alts[operand->reg_class_alt_start + j]
               .reg_class_id;
-      if (reg_class_id == LOOM_LOW_REG_CLASS_NONE ||
-          reg_class_id >= descriptor_set->reg_class_count) {
-        continue;
-      }
-      const iree_string_view_t reg_class_name = loom_low_descriptor_set_string(
-          descriptor_set,
-          descriptor_set->reg_classes[reg_class_id].name_string_offset);
-      if (iree_string_view_equal(reg_class_name, IREE_SV("amdgpu.exec"))) {
+      if (reg_class_id == LOOM_AMDGPU_REG_CLASS_ID_EXEC) {
         return true;
       }
     }
@@ -1671,11 +1650,27 @@ static iree_status_t loom_amdgpu_wait_plan_finish_node_classification(
     }
     const loom_amdgpu_descriptor_traits_t descriptor_traits =
         loom_amdgpu_descriptor_traits(descriptor_set, node->descriptor);
+    if (supports_xcnt &&
+        iree_any_bit_set(descriptor_traits,
+                         LOOM_AMDGPU_DESCRIPTOR_TRAIT_VECTOR_MEMORY)) {
+      const loom_low_descriptor_view_t* descriptor_view =
+          loom_low_descriptor_set_descriptor_view(descriptor_set,
+                                                  node->descriptor);
+      if (iree_any_bit_set(descriptor_view->instruction_class_flags,
+                           LOOM_LOW_INSTRUCTION_CLASS_FLAG_ATOMIC) ||
+          iree_any_bit_set(node->op->instance_flags,
+                           LOOM_MEMORY_ACCESS_FLAG_VOLATILE)) {
+        // These accesses cannot be repeated after a Gfx125x page-fault replay.
+        // Ordinary dependency waits may already drain translations; the barrier
+        // consumes their progress before deciding whether XCNT needs a wait.
+        node_state->barrier_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
+      }
+    }
     if (loom_amdgpu_wait_plan_descriptor_has_xcnt_source_lease(
             descriptor_set, node->descriptor)) {
       node_state->source_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
-      node_state->flags |= loom_amdgpu_wait_plan_node_is_smem_schedule_class(
-                               descriptor_set, node)
+      node_state->flags |= iree_any_bit_set(node_state->hazard_counter_mask,
+                                            LOOM_AMDGPU_WAIT_COUNTER_MASK_SMEM)
                                ? LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_SMEM_PRODUCER
                                : LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_PRODUCER;
       frontier_node->xcnt_group_flags =
@@ -1699,8 +1694,8 @@ static iree_status_t loom_amdgpu_wait_plan_finish_node_classification(
     frontier_node->vmem_result_order_class =
         loom_amdgpu_descriptor_vmem_result_order_class(descriptor_set,
                                                        node->descriptor);
-    if (frontier_node->vmem_result_order_class !=
-        LOOM_AMDGPU_VMEM_RESULT_ORDER_NONE) {
+    if (node->result_count != 0 && frontier_node->vmem_result_order_class !=
+                                       LOOM_AMDGPU_VMEM_RESULT_ORDER_NONE) {
       ++builder->vmem_result_node_count;
     }
     if (node->descriptor != NULL && node->result_count != 0) {
@@ -2256,10 +2251,13 @@ static uint16_t loom_amdgpu_wait_plan_normalize_target_count(
     // Only a full drain identifies completion of a particular request.
     target_count = 0;
   }
-  if (counter_id == LOOM_AMDGPU_WAIT_COUNTER_X && target_count != 0 &&
-      builder->xcnt_group == LOOM_AMDGPU_WAIT_XCNT_GROUP_SMEM) {
-    // Scalar-memory translations may complete out of order. A nonzero XCNT
-    // threshold cannot prove that any particular SMEM source was released.
+  const bool is_smem_counter =
+      counter_id == LOOM_AMDGPU_WAIT_COUNTER_SMEM ||
+      (counter_id == LOOM_AMDGPU_WAIT_COUNTER_X &&
+       builder->xcnt_group == LOOM_AMDGPU_WAIT_XCNT_GROUP_SMEM);
+  if (is_smem_counter && target_count != 0) {
+    // Scalar-memory requests may complete out of order. A nonzero logical SMEM
+    // or XCNT threshold cannot prove completion of any particular request.
     target_count = 0;
   }
   return target_count;
@@ -2849,12 +2847,17 @@ static iree_status_t loom_amdgpu_wait_plan_handle_storage_release_action(
   if (action->release_class_id == LOOM_AMDGPU_WAIT_COUNTER_X &&
       loom_amdgpu_wait_plan_node_xcnt_group(
           &builder->node_states[action->insertion_node_index]) ==
-          LOOM_AMDGPU_WAIT_XCNT_GROUP_VMEM) {
+          LOOM_AMDGPU_WAIT_XCNT_GROUP_VMEM &&
+      !iree_any_bit_set(builder->node_states[action->insertion_node_index]
+                            .barrier_counter_mask,
+                        LOOM_AMDGPU_WAIT_COUNTER_MASK_X)) {
     // VMEM translations are ordered. A VMEM packet that overwrites an older
     // VMEM source makes the hardware internally progress XCNT just far enough
     // to release that source. No wait instruction is required. Cross-block
     // counts are deliberately not reconstructed; the per-block marker records
     // the specific producer proven retired on this path.
+    // A replay barrier needs completion before the memory effect itself, so
+    // that packet's later result write cannot satisfy the barrier.
     if (producer_block == action->block_index) {
       target_count = loom_amdgpu_wait_plan_normalize_target_count(
           builder, LOOM_AMDGPU_WAIT_COUNTER_X, target_count);
@@ -3242,14 +3245,6 @@ static iree_status_t loom_amdgpu_wait_plan_handle_consumer(
                 builder, link->producer_node, slot, &target_count)) {
           continue;
         }
-        if (counter_mask == LOOM_AMDGPU_WAIT_COUNTER_MASK_SMEM) {
-          // Scalar-memory result dependencies require the producing SMEM
-          // packet to be fully drained before a later packet consumes the
-          // SGPR. Partial lgkmcnt waits are insufficient for SMEM data or
-          // address dependencies even when the producer is oldest among
-          // several outstanding scalar-memory packets.
-          target_count = 0;
-        }
       } else if (producer_block == consumer_block) {
         // The producer has not reissued in this block yet. Incoming completion
         // therefore describes the older instance carried by this use.
@@ -3483,6 +3478,14 @@ static iree_status_t loom_amdgpu_wait_plan_handle_barrier(
   uint32_t outstanding_counter_mask =
       loom_amdgpu_wait_plan_outstanding_counter_mask(
           builder->outstanding_counts, node_state->barrier_counter_mask);
+  if (iree_any_bit_set(node_state->barrier_counter_mask,
+                       LOOM_AMDGPU_WAIT_COUNTER_MASK_X) &&
+      loom_amdgpu_wait_frontier_active_xcnt_groups(&builder->frontier) != 0) {
+    // Translation leases may enter through a fallthrough block without a
+    // hardware branch to drain them. Memory completion frontiers do not carry
+    // this independently tracked source lifetime.
+    outstanding_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
+  }
   outstanding_counter_mask |=
       loom_amdgpu_wait_frontier_memory_query(
           &builder->frontier, generic_space,

@@ -86,10 +86,10 @@ iree_status_t loom_bytecode_count_serialized_bodies(
         bytecode_kind == LOOM_SYMBOL_RECORD;
     if (!is_function_like || !symbol->defining_op) {
       if (is_global && symbol->defining_op) {
-        loom_bytecode_global_value_list_t local_values = {0};
-        IREE_RETURN_IF_ERROR(loom_bytecode_collect_global_values(
-            numbering->arena, module, symbol->defining_op, &local_values));
-        counts->value_count += local_values.count;
+        const loom_bytecode_global_value_list_t* local_values = NULL;
+        IREE_RETURN_IF_ERROR(loom_bytecode_prepare_global_values(
+            numbering, module_symbol_id, symbol->defining_op, &local_values));
+        counts->value_count += local_values->count;
       } else if (is_record && symbol->defining_op &&
                  symbol->defining_op->region_count == 1) {
         loom_region_t* body = loom_op_regions(symbol->defining_op)[0];
@@ -124,7 +124,7 @@ static iree_status_t loom_bytecode_write_region(
     loom_bytecode_value_numbering_t* value_numbering,
     const loom_region_t* region, uint32_t depth);
 
-static iree_status_t loom_bytecode_write_value_def(
+iree_status_t loom_bytecode_write_value_def(
     loom_bytecode_page_writer_t* writer, loom_bytecode_numbering_t* numbering,
     loom_bytecode_value_numbering_t* value_numbering,
     const loom_value_t* value) {
@@ -147,31 +147,6 @@ static iree_status_t loom_bytecode_write_value_def(
 
   return loom_bytecode_write_type_bindings(writer, numbering, value_numbering,
                                            storage_node);
-}
-
-iree_status_t loom_bytecode_emit_value_def(
-    iree_string_builder_t* builder, loom_bytecode_numbering_t* numbering,
-    loom_bytecode_value_numbering_t* value_numbering,
-    const loom_value_t* value) {
-  uint32_t name_writer_id = 0;
-  if (value->name_id != LOOM_STRING_ID_INVALID) {
-    IREE_RETURN_IF_ERROR(loom_bytecode_numbering_intern_module_string(
-        numbering, value->name_id, &name_writer_id));
-  }
-  IREE_RETURN_IF_ERROR(
-      loom_bytecode_emit_uvarint(builder, (uint64_t)name_writer_id));
-
-  uint32_t type_writer_id = 0;
-  uint32_t storage_node = 0;
-  IREE_RETURN_IF_ERROR(loom_bytecode_numbering_intern_type(
-      numbering, value->type, &type_writer_id, &storage_node));
-  IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(
-      builder, numbering->types.index.nodes[storage_node].has_bindings
-                   ? 1
-                   : ((uint64_t)type_writer_id << 1)));
-
-  return loom_bytecode_emit_type_bindings(builder, numbering, value_numbering,
-                                          storage_node);
 }
 
 static iree_status_t loom_bytecode_find_successor_block_index(
@@ -510,8 +485,6 @@ iree_status_t loom_bytecode_write_ir_section(
 
       loom_bytecode_value_numbering_t value_numbering;
       loom_bytecode_value_numbering_initialize(&value_numbering, numbering);
-      IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_ensure_capacity(
-          &value_numbering, region_counts.value_count));
       IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_assign_region(
           &value_numbering, regions[i]));
 

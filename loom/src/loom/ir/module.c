@@ -158,17 +158,6 @@ static iree_status_t loom_symbol_table_ensure_capacity(
   return iree_ok_status();
 }
 
-static iree_status_t loom_source_table_ensure_capacity(
-    iree_arena_allocator_t* arena, loom_source_table_t* table) {
-  if (table->count < table->capacity) {
-    return iree_ok_status();
-  }
-  IREE_RETURN_IF_ERROR(iree_arena_grow_array(
-      arena, table->count, /*minimum_capacity=*/4, sizeof(iree_string_view_t),
-      &table->capacity, (void**)&table->entries));
-  return iree_ok_status();
-}
-
 static iree_status_t loom_comment_table_ensure_capacity(
     iree_arena_allocator_t* arena, loom_comment_table_t* table) {
   if (table->count < table->capacity) {
@@ -1506,52 +1495,6 @@ iree_status_t loom_module_compact_symbols(loom_module_t* module,
 //===----------------------------------------------------------------------===//
 // Location table
 //===----------------------------------------------------------------------===//
-
-iree_status_t loom_module_register_source(loom_module_t* module,
-                                          iree_string_view_t name,
-                                          loom_source_id_t* out_source_id) {
-  *out_source_id = LOOM_SOURCE_ID_INVALID;
-
-  // Check for existing entry with matching name.
-  for (iree_host_size_t i = 0; i < module->sources.count; ++i) {
-    if (iree_string_view_equal(module->sources.entries[i], name)) {
-      *out_source_id = (loom_source_id_t)i;
-      return iree_ok_status();
-    }
-  }
-
-  return loom_module_append_source(module, name, out_source_id);
-}
-
-iree_status_t loom_module_append_source(loom_module_t* module,
-                                        iree_string_view_t name,
-                                        loom_source_id_t* out_source_id) {
-  *out_source_id = LOOM_SOURCE_ID_INVALID;
-
-  // Source IDs are 0-based uint16_t. LOOM_SOURCE_ID_INVALID is the null
-  // sentinel, so the maximum valid ID is LOOM_SOURCE_ID_INVALID - 1.
-  if (module->sources.count >= LOOM_SOURCE_ID_INVALID) {
-    return iree_make_status(
-        IREE_STATUS_RESOURCE_EXHAUSTED,
-        "module source table full (%" PRIhsz " entries, max id %u)",
-        module->sources.count, (unsigned)(LOOM_SOURCE_ID_INVALID - 1));
-  }
-
-  IREE_RETURN_IF_ERROR(
-      loom_source_table_ensure_capacity(&module->arena, &module->sources));
-
-  char* interned = NULL;
-  if (!iree_string_view_is_empty(name)) {
-    IREE_RETURN_IF_ERROR(
-        iree_arena_allocate(&module->arena, name.size, (void**)&interned));
-    memcpy(interned, name.data, name.size);
-  }
-
-  iree_host_size_t index = module->sources.count++;
-  module->sources.entries[index] = iree_make_string_view(interned, name.size);
-  *out_source_id = (loom_source_id_t)index;
-  return iree_ok_status();
-}
 
 iree_status_t loom_module_add_location(loom_module_t* module,
                                        loom_location_entry_t entry,
@@ -3922,6 +3865,55 @@ static loom_type_t loom_module_canonicalize_shaped_type_attachment(
   type.encoding_id = 0;
   type.encoding_flags = 0;
   return type;
+}
+
+loom_type_id_t loom_module_lookup_type_id(const loom_module_t* module,
+                                          loom_type_t type) {
+  if (loom_type_has_static_encoding(type)) {
+    const loom_encoding_t* encoding =
+        loom_module_encoding(module, type.encoding_id);
+    if (!encoding) {
+      return LOOM_TYPE_ID_INVALID;
+    }
+    type = loom_module_canonicalize_shaped_type_attachment(type, encoding);
+  }
+  loom_type_id_t type_id = loom_module_find_recent_exact_type(module, type);
+  if (type_id == LOOM_TYPE_ID_INVALID) {
+    type_id = loom_type_identity_find(module, type);
+  }
+  if (type_id != LOOM_TYPE_ID_INVALID) {
+    return type_id;
+  }
+  const loom_type_equal_context_t context = {module, type};
+  const loom_intern_probe_t probe = loom_intern_table_probe(
+      &module->type_intern, loom_type_hash(type), loom_type_equal_fn, &context);
+  return probe.index == UINT32_MAX ? LOOM_TYPE_ID_INVALID
+                                   : (loom_type_id_t)probe.index;
+}
+
+loom_type_id_t loom_module_lookup_topological_type_id(
+    const loom_module_t* module, loom_type_t type,
+    const loom_type_id_t* structural_dependency_ids,
+    iree_host_size_t structural_dependency_count) {
+  if (loom_type_has_static_encoding(type)) {
+    const loom_encoding_t* encoding =
+        loom_module_encoding(module, type.encoding_id);
+    if (!encoding) {
+      return LOOM_TYPE_ID_INVALID;
+    }
+    type = loom_module_canonicalize_shaped_type_attachment(type, encoding);
+  }
+  const loom_topological_type_context_t context = {
+      .module = module,
+      .type = type,
+      .dependency_ids = structural_dependency_ids,
+      .dependency_count = structural_dependency_count,
+  };
+  const loom_intern_probe_t probe = loom_intern_table_probe(
+      &module->type_intern, loom_topological_type_hash(&context),
+      loom_topological_type_equal_fn, &context);
+  return probe.index == UINT32_MAX ? LOOM_TYPE_ID_INVALID
+                                   : (loom_type_id_t)probe.index;
 }
 
 // Retains each shaped scalar dependency once without repeating hash-table

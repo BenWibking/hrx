@@ -61,8 +61,7 @@ static iree_string_view_t loom_low_schedule_reg_class_name(
   IREE_ASSERT_LT(reg_class_id, state->target.descriptor_set->reg_class_count);
   return loom_low_descriptor_set_string(
       state->target.descriptor_set,
-      state->target.descriptor_set->reg_classes[reg_class_id]
-          .name_string_offset);
+      state->target.descriptor_set->reg_classes[reg_class_id].name_string_ref);
 }
 
 iree_string_view_t loom_low_schedule_pressure_source_name(
@@ -82,7 +81,7 @@ iree_string_view_t loom_low_schedule_pressure_source_name(
       return loom_low_descriptor_set_string(
           state->target.descriptor_set,
           state->target.descriptor_set->register_packing_resources[source_id]
-              .name_string_offset);
+              .name_string_ref);
     default:
       return iree_string_view_empty();
   }
@@ -94,6 +93,18 @@ iree_status_t loom_low_schedule_pressure_initialize(
   *out_pressure_state = (loom_low_schedule_pressure_state_t){0};
   if (!loom_low_schedule_strategy_uses_pressure(state->options->strategy)) {
     return iree_ok_status();
+  }
+  if (state->pressure_resources != NULL && state->body->block_count != 0 &&
+      iree_any_bit_set(state->options->flags,
+                       LOOM_LOW_SCHEDULE_FLAG_RETAIN_BLOCK_PRESSURE)) {
+    const iree_host_size_t entry_count =
+        (iree_host_size_t)state->body->block_count *
+        state->target.descriptor_set->reg_class_count;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        state->arena, entry_count, sizeof(*state->block_pressure_peaks),
+        (void**)&state->block_pressure_peaks));
+    memset(state->block_pressure_peaks, 0,
+           entry_count * sizeof(*state->block_pressure_peaks));
   }
   const loom_value_ordinal_t value_count = state->value_domain->value_count;
   if (value_count != 0) {
@@ -411,15 +422,14 @@ static void loom_low_schedule_advance_resource_cliffs(
   }
 }
 
-static void loom_low_schedule_note_resource_high_water(
+static void loom_low_schedule_update_resource_high_water(
     const loom_low_schedule_build_state_t* state,
     loom_low_schedule_pressure_state_t* pressure_state, uint16_t reg_class_id,
+    uint64_t current_live_units,
     loom_low_schedule_resource_high_water_mode_t mode) {
   if (state->pressure_resources == NULL) {
     return;
   }
-  const uint64_t current_live_units =
-      pressure_state->current_live_units_by_reg_class[reg_class_id];
   uint64_t* peak_live_units =
       &pressure_state->resources.peak_live_units_by_reg_class[reg_class_id];
   if (current_live_units <= *peak_live_units) {
@@ -450,6 +460,48 @@ static void loom_low_schedule_note_resource_high_water(
         current_contribution - previous_contribution);
     loom_low_schedule_advance_resource_cliffs(state, pressure_state,
                                               member->resource_id, mode);
+  }
+}
+
+static void loom_low_schedule_note_resource_high_water(
+    const loom_low_schedule_build_state_t* state,
+    loom_low_schedule_pressure_state_t* pressure_state, uint16_t reg_class_id,
+    loom_low_schedule_resource_high_water_mode_t mode) {
+  const uint64_t live_units =
+      pressure_state->current_live_units_by_reg_class[reg_class_id];
+  if (state->block_pressure_peaks != NULL &&
+      mode == LOOM_LOW_SCHEDULE_RESOURCE_HIGH_WATER_SCHEDULED) {
+    uint64_t* peak = &state->block_pressure_peaks
+                          [(iree_host_size_t)state->current_block_index *
+                               state->target.descriptor_set->reg_class_count +
+                           reg_class_id];
+    *peak = iree_max(*peak, live_units);
+  }
+  loom_low_schedule_update_resource_high_water(state, pressure_state,
+                                               reg_class_id, live_units, mode);
+}
+
+void loom_low_schedule_pressure_retain_block(
+    loom_low_schedule_build_state_t* state,
+    loom_low_schedule_pressure_state_t* pressure_state,
+    const loom_low_schedule_table_t* previous, uint32_t block_index) {
+  if (state->pressure_resources == NULL) {
+    return;
+  }
+  const uint16_t class_count = state->target.descriptor_set->reg_class_count;
+  const uint64_t* peaks = previous->block_pressure_peaks +
+                          (iree_host_size_t)block_index * class_count;
+  if (state->block_pressure_peaks != NULL) {
+    memcpy(state->block_pressure_peaks +
+               (iree_host_size_t)block_index * class_count,
+           peaks, class_count * sizeof(*peaks));
+  }
+  // Resource contributions and crossed-cliff penalties grow monotonically.
+  // Merging each class maximum has the same final effect as its node updates.
+  for (uint16_t class_id = 0; class_id < class_count; ++class_id) {
+    loom_low_schedule_update_resource_high_water(
+        state, pressure_state, class_id, peaks[class_id],
+        LOOM_LOW_SCHEDULE_RESOURCE_HIGH_WATER_SCHEDULED);
   }
 }
 
@@ -664,7 +716,10 @@ static void loom_low_schedule_note_block_pressure_use(
     const uint16_t reg_class_id = value->register_class_id;
     if (reg_class_id != LOOM_LOW_REG_CLASS_NONE) {
       const uint32_t packing_reserve_units =
-          loom_low_register_unit_alignment(value->unit_count) - 1u;
+          loom_low_reg_class_unit_alignment(
+              &state->target.descriptor_set->reg_classes[reg_class_id],
+              value->unit_count) -
+          1u;
       loom_low_schedule_note_block_pressure_reg_class(pressure_state,
                                                       reg_class_id);
       uint32_t* reg_class_reserve =
@@ -1494,6 +1549,7 @@ void loom_low_schedule_pressure_score_candidate(
   uint32_t killed_live_value_count = 0;
   uint64_t produced_live_units = 0;
   uint32_t produced_live_value_count = 0;
+  bool is_per_user_rematerialization = false;
   bool rematerializable_leaf =
       node->descriptor != NULL && node->operand_count == 0 &&
       !iree_any_bit_set(node->traits, LOOM_TRAIT_OBSERVABLE_EFFECT);
@@ -1537,6 +1593,8 @@ void loom_low_schedule_pressure_score_candidate(
   }
   const loom_value_ordinal_t* result_ordinals =
       loom_low_schedule_node_const_result_ordinals(node);
+  const iree_bitmap_t per_user_rematerialized_values =
+      state->options->per_user_rematerialized_values;
   for (uint16_t result_index = 0; result_index < node->result_count;
        ++result_index) {
     const loom_low_schedule_value_record_t* value =
@@ -1553,6 +1611,12 @@ void loom_low_schedule_pressure_score_candidate(
     const uint32_t unit_count = value->unit_count - alias_units;
     produced_live_units += unit_count;
     if (unit_count != 0) {
+      // Repair shortened this result's lifetime by placing it next to its
+      // consumer. Keep that placement for input-free clones too; the ready
+      // policy can still advance them to complete live storage groups.
+      is_per_user_rematerialization |=
+          value->value_id < per_user_rematerialized_values.bit_count &&
+          iree_bitmap_test(per_user_rematerialized_values, value->value_id);
       ++produced_live_value_count;
       rematerializable_leaf =
           rematerializable_leaf &&
@@ -1576,7 +1640,6 @@ void loom_low_schedule_pressure_score_candidate(
       loom_low_schedule_score_candidate_pressure_demand(
           state, pressure_state, ready_policy, indegrees, node_index,
           storage_relation_count, killed_live_units, produced_live_units);
-  loom_low_schedule_reset_candidate_operand_uses(state, pressure_state);
   const uint16_t dependency_latency_cycles =
       state->node_dependency_latency_cycles != NULL
           ? state->node_dependency_latency_cycles[node_index]
@@ -1641,16 +1704,16 @@ void loom_low_schedule_pressure_score_candidate(
       .active_unspillable_completion_capacity = UINT32_MAX,
       .active_register_packing_completion_capacity = UINT32_MAX,
       .source_ordinal = node->source_ordinal,
-      .flags =
-          (uint16_t)pressure_demand.candidate_flags |
-          (uint16_t)((node->flags &
-                      LOOM_LOW_SCHEDULE_NODE_FLAG_PAIR_TRANSPARENT)
-                     << 1u) |
-          (is_storage_setup ? LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_STORAGE_SETUP
-                            : 0) |
-          (rematerializable_leaf && produced_live_value_count != 0
-               ? LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_REMATERIALIZABLE_LEAF
-               : 0),
+      .flags = (uint16_t)pressure_demand.candidate_flags |
+               (uint16_t)((node->flags &
+                           LOOM_LOW_SCHEDULE_NODE_FLAG_PAIR_TRANSPARENT)
+                          << 1u) |
+               ((is_storage_setup || is_per_user_rematerialization)
+                    ? LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_STORAGE_SETUP
+                    : 0) |
+               (rematerializable_leaf && produced_live_value_count != 0
+                    ? LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_REMATERIALIZABLE_LEAF
+                    : 0),
   };
   loom_low_schedule_target_pressure_score_candidate(state, pressure_state,
                                                     node_index, out_score);
@@ -1686,6 +1749,7 @@ void loom_low_schedule_pressure_score_candidate(
   }
   loom_low_schedule_select_candidate_schedule_class(state, node, node_index,
                                                     out_score);
+  loom_low_schedule_reset_candidate_operand_uses(state, pressure_state);
 }
 
 void loom_low_schedule_pressure_note_node_scheduled(

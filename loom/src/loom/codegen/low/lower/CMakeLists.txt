@@ -39,6 +39,7 @@ loom_cc_library(
     "execution.c"
     "function_boundary.c"
     "lower.c"
+    "memory_effects.c"
     "module_state.c"
     "policy.c"
     "report.c"
@@ -82,7 +83,6 @@ loom_cc_library(
     loom::ops::callable_effects
     loom::ops::cfg
     loom::ops::encoding
-    loom::ops::func
     loom::ops::func_symbol_facts
     loom::ops::index
     loom::ops::kernel
@@ -102,10 +102,10 @@ loom_cc_library(
     loom::target::low_legality
     loom::target::registers
     loom::target::types
-    loom::util::bstring
     loom::util::cfg_graph
     loom::util::cfg_loop_nest
     loom::util::fact_table
+    loom::util::string_pool
   PUBLIC
 )
 
@@ -266,7 +266,9 @@ loom_cc_test(
     loom::codegen::low::testing::source_workload
     loom::ir
     loom::ops::func
+    loom::ops::low
     loom::ops::scalar
+    loom::ops::test
     loom::target::low_descriptor_registry
     loom::target::test::low_registry
     loom::target::test::lower
@@ -292,6 +294,7 @@ loom_cc_test(
     loom::ops::index
     loom::ops::scalar
     loom::ops::scf
+    loom::ops::test
     loom::ops::vector
     loom::target::test::low_registry
     loom::target::test::lower

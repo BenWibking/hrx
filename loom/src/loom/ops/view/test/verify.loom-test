@@ -131,6 +131,33 @@ func.def @refine_static_dimension_mismatch(%buffer: buffer, %offset: offset) {
 
 // ====
 
+// Subviews preserve the source access contract in both directions.
+func.def @subview_cannot_strengthen_alignment(%source: view<4xi32, align(1)>) {
+  // ERROR@+1: TYPE/003 "the same element-access alignment as the result view"
+  %result = view.subview %source[1] : view<4xi32, align(1)> -> view<2xi32>
+  func.return
+}
+
+// ====
+
+func.def @subview_cannot_weaken_alignment(%source: view<4xi32>) {
+  // ERROR@+1: TYPE/003 "the same element-access alignment as the result view"
+  %result = view.subview %source[1] : view<4xi32> -> view<2xi32, align(1)>
+  func.return
+}
+
+// ====
+
+// Explicit qualification changes requirements without changing the address.
+func.def @refine_access_alignment(%source: view<4xi32, align(1)>) {
+  %natural = view.refine %source : view<4xi32, align(1)> -> view<4xi32>
+  %packed = view.refine %natural : view<4xi32> -> view<4xi32, align(2)>
+  %sub = view.subview %packed[1] : view<4xi32, align(2)> -> view<2xi32, align(2)>
+  func.return
+}
+
+// ====
+
 // view.refine can strengthen a dynamic layout known to be dense to the native
 // dense representation.
 func.def @refine_native_dense_result_layout(%buffer: buffer, %offset: offset, %m: index) {
@@ -316,5 +343,13 @@ func.def @atomic_rmw_index_count_mismatch(%buffer: buffer, %offset: offset, %row
   %view = buffer.view %buffer[%offset] : buffer -> view<4x4xi32, %layout>
   // ERROR@+1: SUBRANGE/001 "view" "1" "2"
   %old = view.atomic.rmw<addi> %value, %view[%row] {ordering = relaxed, scope = workgroup} : i32, view<4x4xi32, %layout> -> i32
+  func.return
+}
+
+// ====
+
+func.def @preservation_requires_floating_add(%view: view<1xi32>, %value: i32) {
+  // ERROR@+1: STRUCTURE/014 "noftz requires floating-point atomic addition"
+  view.atomic.reduce<addi, noftz> %value, %view[0] {ordering = relaxed, scope = workgroup} : i32, view<1xi32>
   func.return
 }

@@ -124,6 +124,14 @@ static iree_status_t loom_target_pipeline_build_sanitizer_assertion_selection(
       checks_value);
 }
 
+static iree_status_t
+loom_target_pipeline_build_sanitizer_assertion_materialization(
+    loom_builder_t* builder, void* user_data) {
+  (void)user_data;
+  return loom_target_pipeline_build_run(
+      builder, IREE_SV("sanitizer-materialize-assertions"));
+}
+
 static iree_status_t loom_target_pipeline_build_sanitizer_race_observations(
     loom_builder_t* builder, void* user_data) {
   const loom_target_pipeline_build_context_t* context =
@@ -171,12 +179,10 @@ static iree_status_t loom_target_pipeline_build_canonicalize_body(
   return loom_target_pipeline_build_run(builder, IREE_SV("canonicalize"));
 }
 
-static iree_status_t loom_target_pipeline_build_coalescing_canonicalize_body(
+static iree_status_t loom_target_pipeline_build_combine_body(
     loom_builder_t* builder, void* user_data) {
   (void)user_data;
-  return loom_target_pipeline_build_run_with_string_option(
-      builder, IREE_SV("canonicalize"), IREE_SV("view-loads"),
-      IREE_SV("coalesce"));
+  return loom_target_pipeline_build_run(builder, IREE_SV("combine"));
 }
 
 static iree_status_t
@@ -185,8 +191,7 @@ loom_target_pipeline_build_cleanup_expanded_target_functions(
   (void)user_data;
   loom_op_t* for_op = NULL;
   return loom_target_pipeline_build_for_target_functions(
-      builder, loom_target_pipeline_build_coalescing_canonicalize_body, NULL,
-      &for_op);
+      builder, loom_target_pipeline_build_combine_body, NULL, &for_op);
 }
 
 static iree_status_t loom_target_pipeline_build_source_to_low(
@@ -306,8 +311,7 @@ loom_target_pipeline_build_source_normalization_before_authoring_expansion(
       builder, IREE_SV("normalize-kernel-resources")));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("promote-private-fragments")));
-  IREE_RETURN_IF_ERROR(
-      loom_target_pipeline_build_coalescing_canonicalize_body(builder, NULL));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_combine_body(builder, NULL));
   return loom_target_pipeline_build_run(builder, IREE_SV("cse"));
 }
 
@@ -368,16 +372,18 @@ loom_target_pipeline_build_view_root_selection_decomposition(
       builder, loom_target_pipeline_build_dce_body, NULL, &if_changed_op);
 }
 
-static iree_status_t
-loom_target_pipeline_build_cfg_source_finalization_after_legalize(
+static iree_status_t loom_target_pipeline_build_source_unroll_before_bank_sroa(
     loom_builder_t* builder, void* user_data) {
   (void)user_data;
   IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_run(builder, IREE_SV("unroll-scf-for")));
-  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup_if_changed(builder));
-  IREE_RETURN_IF_ERROR(
-      loom_target_pipeline_build_run(builder, IREE_SV("sroa-vector-banks")));
-  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup_if_changed(builder));
+  return loom_target_pipeline_build_cleanup_if_changed(builder);
+}
+
+static iree_status_t
+loom_target_pipeline_build_cfg_source_finalization_after_bank_sroa(
+    loom_builder_t* builder, void* user_data) {
+  (void)user_data;
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("sink-single-use-reads")));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup_if_changed(builder));
@@ -391,8 +397,6 @@ loom_target_pipeline_build_cfg_source_finalization_after_legalize(
       loom_target_pipeline_build_run(builder, IREE_SV("scf-to-cfg")));
   IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_run(builder, IREE_SV("cfg-simplify")));
-  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
-      builder, IREE_SV("decompose-cfg-layout-transports")));
   // This is the final source canonicalization boundary before lowering. Run it
   // even when CFG simplification made no change because canonicalization may
   // have independent pending work, such as propagating callee purity.
@@ -400,7 +404,23 @@ loom_target_pipeline_build_cfg_source_finalization_after_legalize(
   return loom_target_pipeline_build_run(builder, IREE_SV("branch-sink"));
 }
 
+static iree_status_t loom_target_pipeline_build_cfg_simplification_body(
+    loom_builder_t* builder, void* user_data) {
+  (void)user_data;
+  return loom_target_pipeline_build_run(builder, IREE_SV("cfg-simplify"));
+}
+
 static iree_status_t loom_target_pipeline_build_low_cleanup_body(
+    loom_builder_t* builder, void* user_data) {
+  (void)user_data;
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_run(builder, IREE_SV("canonicalize")));
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_run(builder, IREE_SV("low-cse")));
+  return loom_target_pipeline_build_run(builder, IREE_SV("low-dce"));
+}
+
+static iree_status_t loom_target_pipeline_build_low_cleanup(
     loom_builder_t* builder, void* user_data) {
   const loom_target_pipeline_build_context_t* context =
       (const loom_target_pipeline_build_context_t*)user_data;
@@ -408,17 +428,19 @@ static iree_status_t loom_target_pipeline_build_low_cleanup_body(
       LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG;
   IREE_RETURN_IF_ERROR(loom_target_pipeline_resolve_control_flow_lowering(
       context->options, &control_flow_lowering));
+
+  loom_op_t* for_op = NULL;
   if (control_flow_lowering == LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG) {
-    IREE_RETURN_IF_ERROR(
-        loom_target_pipeline_build_run(builder, IREE_SV("cfg-simplify")));
+    IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
+        builder, loom_target_pipeline_build_cfg_simplification_body, NULL,
+        &for_op));
   }
+  // Compose every eligible Low function in one boundary-projection plan. The
+  // surrounding simplification and cleanup remain target-function local.
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("low-decompose-cfg-tuples")));
-  IREE_RETURN_IF_ERROR(
-      loom_target_pipeline_build_run(builder, IREE_SV("canonicalize")));
-  IREE_RETURN_IF_ERROR(
-      loom_target_pipeline_build_run(builder, IREE_SV("low-cse")));
-  return loom_target_pipeline_build_run(builder, IREE_SV("low-dce"));
+  return loom_target_pipeline_build_for_target_functions(
+      builder, loom_target_pipeline_build_low_cleanup_body, NULL, &for_op);
 }
 
 static iree_status_t loom_target_pipeline_build_inlined_source_cleanup_body(
@@ -433,7 +455,8 @@ static iree_status_t loom_target_pipeline_build_inlined_source_cleanup_body(
     IREE_RETURN_IF_ERROR(
         loom_target_pipeline_build_run(builder, IREE_SV("cfg-simplify")));
   }
-  return loom_target_pipeline_build_cleanup(builder);
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_combine_body(builder, NULL));
+  return loom_target_pipeline_build_run(builder, IREE_SV("cse"));
 }
 
 static iree_status_t loom_target_pipeline_build_inlined_source_cleanup(
@@ -446,9 +469,9 @@ static iree_status_t loom_target_pipeline_build_inlined_source_cleanup(
 
 static iree_status_t loom_target_pipeline_build_required_source_inlining(
     loom_builder_t* builder, void* user_data) {
-  // Remove boundaries without a target ABI before physical representation
-  // selection. Inlining CFG bodies introduces entry and return forwarding
-  // blocks, so restore source normal form before lowering the merged function.
+  // Remove boundaries without a target ABI before target legalization so
+  // caller facts guide representation selection. Inlining CFG bodies introduces
+  // entry and return forwarding blocks; restore source normal form afterward.
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run_with_string_option(
       builder, IREE_SV("inline-callables"), IREE_SV("policy"),
       IREE_SV("target")));
@@ -456,6 +479,50 @@ static iree_status_t loom_target_pipeline_build_required_source_inlining(
   return loom_pass_ir_build_if_changed(
       builder, loom_target_pipeline_build_inlined_source_cleanup, user_data,
       &if_changed_op);
+}
+
+static iree_status_t
+loom_target_pipeline_build_boundary_projection_cleanup_body(
+    loom_builder_t* builder, void* user_data) {
+  const loom_target_pipeline_build_context_t* context =
+      (const loom_target_pipeline_build_context_t*)user_data;
+  loom_target_control_flow_lowering_t control_flow_lowering =
+      LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG;
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_resolve_control_flow_lowering(
+      context->options, &control_flow_lowering));
+
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(builder, IREE_SV("dce")));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
+      builder, IREE_SV("decompose-view-root-selections")));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(builder, IREE_SV("dce")));
+  if (control_flow_lowering == LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG) {
+    IREE_RETURN_IF_ERROR(
+        loom_target_pipeline_build_run(builder, IREE_SV("scf-to-cfg")));
+    IREE_RETURN_IF_ERROR(
+        loom_target_pipeline_build_run(builder, IREE_SV("cfg-simplify")));
+  }
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup(builder));
+  return control_flow_lowering == LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG
+             ? loom_target_pipeline_build_run(builder, IREE_SV("branch-sink"))
+             : iree_ok_status();
+}
+
+static iree_status_t loom_target_pipeline_build_boundary_projection_cleanup(
+    loom_builder_t* builder, void* user_data) {
+  loom_op_t* for_op = NULL;
+  return loom_target_pipeline_build_for_target_functions(
+      builder, loom_target_pipeline_build_boundary_projection_cleanup_body,
+      user_data, &for_op);
+}
+
+static iree_status_t loom_target_pipeline_build_boundary_projection(
+    loom_builder_t* builder, void* user_data) {
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
+      builder, IREE_SV("project-boundary-representations")));
+  loom_op_t* if_changed_op = NULL;
+  return loom_pass_ir_build_if_changed(
+      builder, loom_target_pipeline_build_boundary_projection_cleanup,
+      user_data, &if_changed_op);
 }
 
 static iree_status_t loom_target_pipeline_build_source_low_artifact_preparation(
@@ -473,12 +540,6 @@ static iree_status_t loom_target_pipeline_build_low_preparation(
       (const loom_target_pipeline_build_context_t*)user_data;
   IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
       builder, context, LOOM_TARGET_PIPELINE_PHASE_TARGET_LOW_MATERIALIZATION));
-  if (loom_target_pipeline_sanitizer_has_checks(
-          context, LOOM_SANITIZER_CHECK_ACCESS | LOOM_SANITIZER_CHECK_VALUE |
-                       LOOM_SANITIZER_CHECK_OPERATION)) {
-    IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
-        builder, IREE_SV("sanitizer-materialize-assertions")));
-  }
   IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
       builder, context, LOOM_TARGET_PIPELINE_PHASE_TARGET_LOW_PREPARATION));
   return loom_low_pipeline_build_packetization_preparation(builder);
@@ -514,6 +575,8 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
   // any target-aware function pass observes those callees.
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("specialize-target-callgraph")));
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_required_source_inlining(builder, user_data));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
       builder,
       loom_target_pipeline_build_math_legalization_after_authoring_expansion,
@@ -539,8 +602,17 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
       &for_op));
   if (control_flow_lowering == LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG) {
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
+        builder, loom_target_pipeline_build_source_unroll_before_bank_sroa,
+        user_data, &for_op));
+    IREE_RETURN_IF_ERROR(
+        loom_target_pipeline_build_run(builder, IREE_SV("sroa-vector-banks")));
+    loom_op_t* bank_sroa_changed_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_pass_ir_build_if_changed(
+        builder, loom_target_pipeline_build_cleanup_target_functions, NULL,
+        &bank_sroa_changed_op));
+    IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
         builder,
-        loom_target_pipeline_build_cfg_source_finalization_after_legalize,
+        loom_target_pipeline_build_cfg_source_finalization_after_bank_sroa,
         user_data, &for_op));
   }
   if (loom_target_pipeline_sanitizer_has_checks(
@@ -550,6 +622,12 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
         builder, loom_target_pipeline_build_sanitizer_assertion_selection,
         user_data, &for_op));
   }
+  // Authored semantic assertions are executable independently of insertion
+  // policy. Collapse both authored and inserted forms to kernel.assert before
+  // source-to-low asks the selected target to execute or reject the boundary.
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
+      builder, loom_target_pipeline_build_sanitizer_assertion_materialization,
+      user_data, &for_op));
   if (loom_target_pipeline_sanitizer_has_checks(context,
                                                 LOOM_SANITIZER_CHECK_RACE)) {
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
@@ -562,7 +640,7 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
         &for_op));
   }
   IREE_RETURN_IF_ERROR(
-      loom_target_pipeline_build_required_source_inlining(builder, user_data));
+      loom_target_pipeline_build_boundary_projection(builder, user_data));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
       builder, context, LOOM_TARGET_PIPELINE_PHASE_SOURCE_TO_LOW));
   if (control_flow_lowering ==
@@ -577,15 +655,13 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
       builder, IREE_SV("inline-callables"), IREE_SV("policy"),
       IREE_SV("target")));
   if (context->source_low_artifact_preparation) {
-    IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
-        builder, loom_target_pipeline_build_low_cleanup_body, user_data,
-        &for_op));
+    IREE_RETURN_IF_ERROR(
+        loom_target_pipeline_build_low_cleanup(builder, user_data));
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
         builder, loom_target_pipeline_build_source_low_artifact_preparation,
         user_data, &for_op));
   }
-  return loom_target_pipeline_build_for_target_functions(
-      builder, loom_target_pipeline_build_low_cleanup_body, user_data, &for_op);
+  return loom_target_pipeline_build_low_cleanup(builder, user_data);
 }
 
 static iree_status_t
@@ -608,6 +684,8 @@ loom_target_pipeline_build_source_low_diagnostic_artifacts_body(
   IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_required_source_inlining(builder, user_data));
   IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_boundary_projection(builder, user_data));
+  IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_source_to_low(builder, context->options));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run_with_string_option(
       builder, IREE_SV("inline-callables"), IREE_SV("policy"),
@@ -615,8 +693,7 @@ loom_target_pipeline_build_source_low_diagnostic_artifacts_body(
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
       builder, loom_target_pipeline_build_source_low_artifact_preparation,
       user_data, &for_op));
-  return loom_target_pipeline_build_for_target_functions(
-      builder, loom_target_pipeline_build_low_cleanup_body, user_data, &for_op);
+  return loom_target_pipeline_build_low_cleanup(builder, user_data);
 }
 
 static iree_status_t loom_target_pipeline_build_prepared_low_body(

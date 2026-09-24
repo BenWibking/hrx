@@ -30,6 +30,7 @@ from loom.target.arch.spirv.atomic import (
     atomic_feature_bits,
     cmpxchg_failure_orderings,
     float_atomic_cas_feature_bits,
+    float_atomic_cas_strategies,
     float_atomic_descriptor_key,
     float_atomic_native_feature_bits,
 )
@@ -42,6 +43,11 @@ from loom.target.arch.spirv.cooperative_matrix import (
     CooperativeMatrixCase,
     cooperative_matrix_descriptor_key,
 )
+from loom.target.arch.spirv.extended_math import (
+    EXTENDED_MATH_INSTRUCTIONS,
+    ExtendedMathInstruction,
+)
+from loom.target.arch.spirv.features import feature_bit_value
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
     OrdinaryVectorComponentKind,
@@ -631,6 +637,34 @@ def _ordinary_vector_descriptor(row: OrdinaryVectorInstruction) -> Descriptor:
     )
 
 
+def _extended_math_descriptor(row: ExtendedMathInstruction) -> Descriptor:
+    result_value_type = _ordinary_vector_result_value_type(row.value_type)
+    return Descriptor(
+        key=row.descriptor_key,
+        mnemonic=row.mnemonic,
+        semantic_tag=row.descriptor_key,
+        operands=(
+            _ordinary_vector_result(row.value_type),
+            *(
+                _ordinary_vector_operand(operand_name, row.value_type)
+                for operand_name in row.operation.operand_names
+            ),
+        ),
+        feature_mask_words=(
+            (row.value_type.feature_bits,) if row.value_type.feature_bits else ()
+        ),
+        asm_forms=_asm(
+            results=("dst",),
+            operands=row.operation.operand_names,
+            result_value_types=(
+                (result_value_type,) if result_value_type is not None else ()
+            ),
+        ),
+        schedule_class=_SCHEDULE_ALU,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
 def _address_conversion_descriptors() -> tuple[Descriptor, ...]:
     descriptors: list[Descriptor] = []
     for scalar_pair in INTEGER_SCALAR_ALU_TYPE_PAIRS:
@@ -655,6 +689,18 @@ def _address_conversion_descriptors() -> tuple[Descriptor, ...]:
                 feature_bits=feature_bits,
             )
         )
+        if scalar_pair.bit_width < 64:
+            signed_suffix = scalar_pair.signed.suffix
+            descriptors.append(
+                _unary_typed_descriptor(
+                    key=f"spirv.op_s_convert.{signed_suffix}.offset64",
+                    mnemonic=f"OpSConvert.{signed_suffix}.offset64",
+                    semantic_tag=f"spirv.op_s_convert.{signed_suffix}.offset64",
+                    operands=(_offset64_result(), _id_operand("input")),
+                    result_value_type=None,
+                    feature_bits=feature_bits,
+                )
+            )
 
         if scalar_pair.bit_width == 64:
             from_offset_opcode = "bitcast"
@@ -914,10 +960,12 @@ def _float_atomic_descriptor(
             if operation.source_kind != "xchgf":
                 raise ValueError("only floating exchange has a direct bitcast form")
             mnemonic = "OpAtomicExchange.bitcast"
-        elif strategy == "cas":
+        elif strategy in ("cas", "cas_preserve"):
             if operation.source_kind == "xchgf":
                 raise ValueError("floating exchange uses the direct bitcast form")
             mnemonic = f"OpAtomicCompareExchange.loop.{operation.suffix}"
+            if strategy == "cas_preserve":
+                mnemonic += ".noftz"
         else:
             raise ValueError(f"unknown floating atomic strategy '{strategy}'")
         operands = (
@@ -934,6 +982,8 @@ def _float_atomic_descriptor(
         if strategy == "native" and operation is not None
         else float_atomic_cas_feature_bits(scalar, storage_class, scope)
     )
+    if strategy == "cas_preserve":
+        feature_bits |= feature_bit_value("float32_denorm_preserve")
     return Descriptor(
         key=key,
         mnemonic=(
@@ -1000,25 +1050,18 @@ def _float_atomic_descriptors() -> tuple[Descriptor, ...]:
                             )
                         )
                         continue
-                    if operation.supports_reduce:
-                        descriptors.append(
-                            _float_atomic_descriptor(
-                                "reduce",
-                                "cas",
-                                scalar,
-                                storage_class,
-                                scope,
-                                operation=operation,
-                            )
-                        )
-                    descriptors.append(
+                    descriptors.extend(
                         _float_atomic_descriptor(
-                            "rmw",
-                            "cas",
+                            form,
+                            strategy,
                             scalar,
                             storage_class,
                             scope,
                             operation=operation,
+                        )
+                        for strategy in float_atomic_cas_strategies(scalar, operation)
+                        for form in (
+                            ("reduce", "rmw") if operation.supports_reduce else ("rmw",)
                         )
                     )
                 if scalar.integer_scalar_enum is None:
@@ -1211,6 +1254,7 @@ def _control_barrier_descriptor(execution_scope: str) -> Descriptor:
         key=key,
         mnemonic=f"OpControlBarrier.{execution_scope}.workgroup.acq_rel",
         semantic_tag=key,
+        instruction_classes=(InstructionClass.EXECUTION_BARRIER,),
         operands=(),
         effects=(
             Effect(
@@ -1225,7 +1269,7 @@ def _control_barrier_descriptor(execution_scope: str) -> Descriptor:
         ),
         asm_forms=_asm(),
         schedule_class=_SCHEDULE_VARIABLE,
-        flags=(DescriptorFlag.SIDE_EFFECTING,),
+        flags=(DescriptorFlag.SIDE_EFFECTING, DescriptorFlag.BARRIER),
     )
 
 
@@ -1628,6 +1672,19 @@ def _select_descriptors() -> tuple[Descriptor, ...]:
             result_value_type=None,
         )
     )
+    descriptors.append(
+        _select_descriptor(
+            key="spirv.op_select.storage_buffer",
+            mnemonic="OpSelect.storage_buffer",
+            operands=(
+                _ptr_storage_buffer_result("dst"),
+                _id_operand("condition"),
+                _ptr_storage_buffer_operand("true_value"),
+                _ptr_storage_buffer_operand("false_value"),
+            ),
+            result_value_type=None,
+        )
+    )
     return tuple(descriptors)
 
 
@@ -1787,6 +1844,7 @@ SPIRV_LOGICAL_CORE_DESCRIPTOR_SET = DescriptorSet(
             _ordinary_vector_descriptor(row)
             for row in ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS
         ),
+        *(_extended_math_descriptor(row) for row in EXTENDED_MATH_INSTRUCTIONS),
         _coordinate_copy_descriptor(),
         _ternary_same_type_descriptor(
             key="spirv.op_imul_add.i32",

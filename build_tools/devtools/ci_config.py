@@ -20,19 +20,15 @@ from build_tools.devtools import run_requirements
 
 IREE_TARGET_DIRECTORIES = ("runtime", "loom")
 
-# ASAN, UBSAN, and TSAN run tests. MSAN builds stay useful, but running tests
-# requires an instrumented host dependency stack that the CI images do not yet
-# provide.
+# Aggregate sanitizer commands run configurations with executable test coverage.
 SANITIZER_TEST_CONFIGS = ("asan", "ubsan", "tsan")
+# Explicit MSAN commands support local build checks. CI images lack the
+# instrumented host dependencies needed to run these tests.
 SANITIZER_BUILD_CONFIGS = ("msan",)
 # Tests whose production resource layout conflicts with host TSAN use this
 # conventional Bazel tag and CTest label.
 HOST_TSAN_INCOMPATIBLE_TEST_LABEL = "notsan"
 
-CMAKE_SANITIZER_SMOKE_LIBRARY_BUILD_TARGETS = (
-    "iree::base",
-    "loom::format::bytecode::varint",
-)
 CMAKE_SANITIZER_SMOKE_CTEST_REGEXES = (
     "^iree/base/status_test$",
     "^loom/format/bytecode/varint_test$",
@@ -196,9 +192,6 @@ AMD_CLIENT_WINDOWS_RESOURCES = (
         "d3d12.resource.device",
     )
 )
-# Preserve case-level execution and skips: a successful hardware test target
-# can contain only skipped cases when its runner lacks an admitted device.
-AMD_CLIENT_BAZEL_TEST_OPTIONS = ("--test_output=all",)
 AMDGPU_CMAKE_DRIVER_TARGETS = ("runtime/src/iree/hal/drivers/amdgpu/all",)
 DEFAULT_AMDGPU_TARGET_SELECTOR = "gfx942"
 AMDGPU_BUILD_REQUIREMENT_TAG = "iree-build-requirement=runtime.hal.amdgpu"
@@ -237,7 +230,23 @@ LOOM_AMDGPU_CMAKE_COMPILE_CTEST_REGEXES = tuple(
     bazel_pattern_to_ctest_regex(target)
     for target in LOOM_AMDGPU_BAZEL_COMPILE_TEST_TARGETS
 )
-AMDGPU_XFAILS = ()
+AMDGPU_XFAILS = tuple(
+    bazel_xfail(f"//loom/src/loom/tooling/target/amdgpu/test/cxx:{target}")
+    for target in (
+        # Low assembly parsing requires a function representation contract that
+        # the CXX import path does not provide before lowering.
+        "assembly_invalid",
+        "assembly_lowering",
+        # These CXX modules exercise scalar or vector FP narrowing forms for
+        # which the AMDGPU target has no legalization.
+        "bfloat16_test_execute_amdgpu_access_test",
+        "bfloat16_test_execute_amdgpu_test",
+        "float8_test_execute_amdgpu_access_test",
+        "float8_test_execute_amdgpu_test",
+        "vector_conversion_test_execute_amdgpu_access_test",
+        "vector_conversion_test_execute_amdgpu_test",
+    )
+)
 AMDGPU_SANITIZERS_XFAILS = ()
 AMDGPU_TSAN_XFAILS = ()
 AMDGPU_BAZEL_XFAILS_BY_TARGET_SELECTOR = {

@@ -144,6 +144,7 @@ loom_cc_library(
     loom::target::arch::cmd::provider
     loom::target::configured::provider_set
     loom::target::provider
+    loom::transforms::cleanup::configured
     ${_configured_platform_deps}
   PUBLIC
 )
@@ -218,7 +219,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::codegen::low::pipeline::legalizer_registry
-    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::pass_environment
     loom::error::diagnostic
     loom::error::source
     loom::ir
@@ -237,6 +238,7 @@ loom_cc_library(
     loom::target::reporting::report
     loom::target::specialization
     loom::target::types
+    loom::transforms::cleanup::patterns
     loom::verify
   PUBLIC
 )

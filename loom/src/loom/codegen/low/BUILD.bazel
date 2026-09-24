@@ -56,8 +56,8 @@ loom_cc_library(
     deps = [
         "//loom/src/loom/ir",
         "//loom/src/loom/target:types",
-        "//loom/src/loom/util:bstring",
         "//loom/src/loom/util:stable_id",
+        "//loom/src/loom/util:string_pool",
         "//runtime/src/iree/base",
     ],
 )
@@ -143,7 +143,7 @@ loom_cc_test(
         ":descriptors",
         ":immediates",
         "//loom/src/loom/ir",
-        "//loom/src/loom/util:bstring",
+        "//loom/src/loom/util:string_pool",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
@@ -278,6 +278,7 @@ loom_cc_library(
         ":function",
         ":function_requirements",
         ":target_binding",
+        "//loom/src/loom/analysis:liveness_dataflow",
         "//loom/src/loom/error:emitter",
         "//loom/src/loom/ir",
         "//loom/src/loom/util:cfg_graph",
@@ -316,6 +317,28 @@ loom_cc_library(
         "//loom/src/loom/rewrite:rewriter",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "source_storage_packing",
+    srcs = ["source_storage_packing.c"],
+    hdrs = ["source_storage_packing.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "source_storage_packing_test",
+    srcs = ["source_storage_packing_test.cc"],
+    deps = [
+        ":source_storage_packing",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -378,8 +401,11 @@ loom_cc_library(
     hdrs = ["memory_access.h"],
     deps = [
         ":descriptors",
+        "//loom/src/loom/analysis:symbolic_expr",
+        "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
     ],
 )
 
@@ -388,6 +414,8 @@ loom_cc_test(
     srcs = ["memory_access_test.cc"],
     deps = [
         ":memory_access",
+        "//loom/src/loom/analysis:symbolic_expr",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
@@ -601,7 +629,6 @@ loom_cc_library(
         ":descriptor_traits",
         ":diagnostics",
         ":target_binding",
-        "//loom/src/loom/analysis:availability",
         "//loom/src/loom/codegen/low/allocation:live_range",
         "//loom/src/loom/codegen/low/allocation:storage",
         "//loom/src/loom/error:emitter",
@@ -611,6 +638,7 @@ loom_cc_library(
         "//loom/src/loom/rewrite:materialize",
         "//loom/src/loom/rewrite:remap",
         "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/util:adaptive_sort",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],
@@ -784,6 +812,23 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "guarded_motion",
+    srcs = ["guarded_motion.c"],
+    hdrs = ["guarded_motion.h"],
+    deps = [
+        ":descriptors",
+        ":function",
+        "//loom/src/loom/codegen/low/schedule",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/util:cfg_graph",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "frame",
     srcs = ["frame.c"],
     hdrs = ["frame.h"],
@@ -795,6 +840,7 @@ loom_cc_library(
         ":diagnostics",
         ":function",
         ":function_model",
+        ":guarded_motion",
         ":memory_access",
         ":packet",
         ":planning_statistics",
@@ -806,6 +852,7 @@ loom_cc_library(
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
+        "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/target:facts",
         "//loom/src/loom/target:residency",
         "//runtime/src/iree/base",

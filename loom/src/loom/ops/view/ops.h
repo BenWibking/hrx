@@ -34,9 +34,6 @@ enum {
   LOOM_OP_VIEW_COUNT_ = 10,
 };
 
-// Execution-semantics modifiers shared by scalar and vector memory accesses.
-#define LOOM_VIEW_MEMORYACCESSFLAGS_VOLATILE ((uint8_t)1)
-
 // Intended future access kind for a prefetch hint.
 typedef enum loom_view_prefetch_intent_e {
   LOOM_VIEW_PREFETCH_INTENT_READ = 0,
@@ -53,7 +50,7 @@ typedef enum loom_view_prefetch_locality_e {
   LOOM_VIEW_PREFETCH_LOCALITY_COUNT_ = 4,
 } loom_view_prefetch_locality_t;
 
-// LOOM_OP_VIEW_SUBVIEW: Form a logical subview from an existing view. Offsets select the logical origin; result type dimensions provide the subview extents.
+// LOOM_OP_VIEW_SUBVIEW: Form a logical subview from an existing view. Offsets select the logical origin; result type dimensions provide the subview extents. The element-access alignment requirement is preserved; forming a subview makes no memory access or address-alignment promise.
 // %sub = view.subview %source[%row, 0] : view<[%M]x[%N]xf32, %layout> -> view<16x[%N]xf32, %layout>
 LOOM_DEFINE_ISA(loom_view_subview_isa, LOOM_OP_VIEW_SUBVIEW)
 LOOM_DEFINE_OPERAND(loom_view_subview_source, 0)
@@ -79,7 +76,7 @@ iree_status_t loom_view_subview_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_VIEW_REFINE: Refine the static type information attached to an existing view while preserving the same storage root and byte base. This is an explicit SSA assertion point for layout, shape, and encoding facts discovered or required by earlier analysis.
+// LOOM_OP_VIEW_REFINE: Refine the static type information attached to an existing view while preserving the same storage root and byte base. This is an explicit SSA assertion point for layout, shape, encoding, and element-access requirements. An alignment qualifier changes the requirement of subsequent executed accesses, not an unconditional address fact.
 // %refined = view.refine %view : view<[%M]xf32, %layout> -> view<16xf32>
 LOOM_DEFINE_ISA(loom_view_refine_isa, LOOM_OP_VIEW_REFINE)
 LOOM_DEFINE_OPERAND(loom_view_refine_source, 0)
@@ -182,6 +179,7 @@ LOOM_DEFINE_OPERAND(loom_view_atomic_reduce_value, 0)
 LOOM_DEFINE_OPERAND(loom_view_atomic_reduce_view, 1)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_view_atomic_reduce_indices, 2)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_reduce_kind, 0, loom_atomic_kind_t)
+LOOM_DEFINE_INSTANCE_FLAGS(loom_view_atomic_reduce_memory_flags)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_reduce_ordering, 1, loom_atomic_ordering_t)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_reduce_scope, 2, loom_atomic_scope_t)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_reduce_cache_scope, 3, loom_cache_scope_t)
@@ -196,6 +194,7 @@ iree_status_t loom_view_atomic_reduce_build(
     loom_builder_t* builder,
     loom_view_atomic_reduce_build_flags_t build_flags,
     loom_atomic_kind_t kind,
+    uint8_t instance_flags,
     loom_value_id_t value,
     loom_value_id_t view,
     const loom_value_id_t* indices,
@@ -220,6 +219,7 @@ LOOM_DEFINE_OPERAND(loom_view_atomic_rmw_view, 1)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_view_atomic_rmw_indices, 2)
 LOOM_DEFINE_RESULT(loom_view_atomic_rmw_result, 0)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_rmw_kind, 0, loom_atomic_kind_t)
+LOOM_DEFINE_INSTANCE_FLAGS(loom_view_atomic_rmw_memory_flags)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_rmw_ordering, 1, loom_atomic_ordering_t)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_rmw_scope, 2, loom_atomic_scope_t)
 LOOM_DEFINE_ATTR_ENUM_TYPED(loom_view_atomic_rmw_cache_scope, 3, loom_cache_scope_t)
@@ -234,6 +234,7 @@ iree_status_t loom_view_atomic_rmw_build(
     loom_builder_t* builder,
     loom_view_atomic_rmw_build_flags_t build_flags,
     loom_atomic_kind_t kind,
+    uint8_t instance_flags,
     loom_may_consume loom_value_id_t value,
     loom_may_consume loom_value_id_t view,
     const loom_value_id_t* indices,

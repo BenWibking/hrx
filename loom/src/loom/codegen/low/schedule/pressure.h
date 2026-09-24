@@ -67,7 +67,8 @@ struct loom_low_schedule_pressure_state_t {
   uint8_t* block_reg_class_touched_flags;
   // Value ordinals with pressure state to reset before list reuse.
   loom_value_ordinal_t* block_value_ordinals;
-  // Candidate operand multiplicity by local value ordinal.
+  // Candidate operand multiplicity by local value ordinal, retained through
+  // target scoring so packing completion can distinguish final uses.
   uint16_t* candidate_operand_use_counts;
   // Per-candidate counters reused for alias units and unlocked operand uses.
   uint32_t* candidate_scratch_counts;
@@ -344,6 +345,13 @@ static inline bool loom_low_schedule_strategy_uses_pressure(
 iree_status_t loom_low_schedule_pressure_initialize(
     loom_low_schedule_build_state_t* state, iree_host_size_t node_count,
     loom_low_schedule_pressure_state_t* out_pressure_state);
+
+// Merges a retained block's producer-owned pressure contributions into the
+// current function's derived-resource high-water state.
+void loom_low_schedule_pressure_retain_block(
+    loom_low_schedule_build_state_t* state,
+    loom_low_schedule_pressure_state_t* pressure_state,
+    const loom_low_schedule_table_t* previous, uint32_t block_index);
 
 loom_low_schedule_ready_keys_t loom_low_schedule_pressure_ready_keys(
     const loom_low_schedule_build_state_t* state,

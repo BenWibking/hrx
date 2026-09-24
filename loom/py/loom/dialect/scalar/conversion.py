@@ -21,6 +21,7 @@ from loom.dsl import (
     PAYLOAD_SCALAR,
     POISON,
     PURE,
+    SAFE_TO_SPECULATE,
     SCALAR,
     AttrDef,
     AttrMatchesElementType,
@@ -94,7 +95,6 @@ scalar_extf = cast_op(
     doc="Float precision extension to a strictly wider format: e.g. f16 to f32.",
     constraints=[ElementWidthGreaterThan("result", "input")],
     input_role=OperandRole.FLOAT_EXTENSION_SOURCE,
-    canonicalize="loom_scalar_extf_canonicalize",
     facts="loom_scalar_extf_facts",
     examples=["%result = scalar.extf %input : f16 to f32"],
 )
@@ -129,9 +129,8 @@ scalar_extsi = cast_op(
     to_constraint=INTEGER,
     doc="Signed integer extension to a strictly wider type: e.g. i8 to i32.",
     constraints=[ElementWidthGreaterThan("result", "input")],
-    canonicalize="loom_scalar_extsi_canonicalize",
     facts="loom_scalar_extsi_facts",
-    traits=[DISTRIBUTION_TRANSFER],
+    traits=[DISTRIBUTION_TRANSFER, SAFE_TO_SPECULATE],
     examples=["%result = scalar.extsi %input : i8 to i32"],
 )
 scalar_extui = cast_op(
@@ -142,9 +141,8 @@ scalar_extui = cast_op(
     to_constraint=INTEGER,
     doc="Unsigned integer extension to a strictly wider type: e.g. i8 to i32.",
     constraints=[ElementWidthGreaterThan("result", "input")],
-    canonicalize="loom_scalar_extui_canonicalize",
     facts="loom_scalar_extui_facts",
-    traits=[DISTRIBUTION_TRANSFER],
+    traits=[DISTRIBUTION_TRANSFER, SAFE_TO_SPECULATE],
     examples=["%result = scalar.extui %input : i8 to i32"],
 )
 scalar_trunci = cast_op(
@@ -157,7 +155,7 @@ scalar_trunci = cast_op(
     constraints=[ElementWidthLessThan("result", "input")],
     canonicalize="loom_scalar_trunci_canonicalize",
     facts="loom_scalar_trunci_facts",
-    traits=[DISTRIBUTION_TRANSFER],
+    traits=[DISTRIBUTION_TRANSFER, SAFE_TO_SPECULATE],
     examples=["%result = scalar.trunci %input : i32 to i8"],
 )
 
@@ -175,6 +173,7 @@ scalar_bitcast = cast_op(
     constraints=[TotalBitCountEqual("input", "result")],
     canonicalize="loom_scalar_bitcast_canonicalize",
     facts="loom_scalar_bitcast_facts",
+    traits=[SAFE_TO_SPECULATE],
     examples=["%result = scalar.bitcast %input : f32 to i32"],
 )
 

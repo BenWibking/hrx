@@ -39,6 +39,7 @@ from loom.target.arch.amd.xdna.aie2p.core_stream_descriptors import (
     _scalar_stream_descriptor_specs,
 )
 from loom.target.low_descriptors import (
+    DescriptorFlag,
     DescriptorOpKind,
     Effect,
     EffectKind,
@@ -61,12 +62,10 @@ _LOCK_EFFECT = Effect(
 )
 _VEC256_LOW128_PART = "aie2p.vec256.low128"
 _VEC256_HIGH128_PART = "aie2p.vec256.high128"
-_EWL_LOW128_PART = "aie2p.ewl.low128"
 _REGISTER_PARTS = (
     *PREDICATE_REGISTER_PARTS,
     RegisterPart(_VEC256_LOW128_PART, "aie2p.vec256", 0x1),
     RegisterPart(_VEC256_HIGH128_PART, "aie2p.vec256", 0x2),
-    RegisterPart(_EWL_LOW128_PART, "aie2p.ewl", 0x1),
     *FIFO_REGISTER_PARTS,
     *DIMENSION_REGISTER_PARTS,
 )
@@ -112,12 +111,13 @@ AIE2P_VECTOR_MEMORY_ELEMENT_TYPES = (
     ("bf16", 16),
     ("i32", 32),
     ("f32", 32),
+    ("i64", 64),
+    ("f64", 64),
 )
 
 
 def _vector_memory_operand_overrides(
     width_bits: int,
-    element_type: str,
     operand_name: str,
     native_adapter: str | None,
 ) -> tuple[
@@ -133,14 +133,7 @@ def _vector_memory_operand_overrides(
         raise ValueError("128-bit vector memory forms need an encoding adapter")
     # Native loads define fresh W storage without preserving a destination
     # input. Stores consume only the low 128 bits of their source register.
-    part = _EWL_LOW128_PART if element_type == "bf16" else _VEC256_LOW128_PART
-    parts = ((operand_name, part),) if operand_name == "src" else ()
-    if element_type == "bf16":
-        return (
-            ((operand_name, "eWL"),),
-            parts,
-            ((operand_name, f"LOOM_eWL_{native_adapter}"),),
-        )
+    parts = ((operand_name, _VEC256_LOW128_PART),) if operand_name == "src" else ()
     return (
         (),
         parts,
@@ -163,7 +156,6 @@ def _vector_memory_descriptor_specs() -> tuple[_DescriptorSpec, ...]:
                 operation = "store" if family == "store" else "load"
                 overrides = _vector_memory_operand_overrides(
                     width_bits,
-                    element_type,
                     "src" if family == "store" else "dst",
                     forms[2],
                 )
@@ -810,6 +802,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_ACQ_mLockId_imm",
         asm_mnemonic="acq",
         effects=(_LOCK_EFFECT,),
+        flags=(DescriptorFlag.BARRIER,),
     ),
     _DescriptorSpec(
         "ACQ_mLockId_reg",
@@ -818,6 +811,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_ACQ_mLockId_reg",
         asm_mnemonic="acq.reg",
         effects=(_LOCK_EFFECT,),
+        flags=(DescriptorFlag.BARRIER,),
     ),
     _DescriptorSpec(
         "ACQ_COND_mLockId_imm",
@@ -826,6 +820,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_ACQ_COND_mLockId_imm",
         asm_mnemonic="acq.cond",
         effects=(_LOCK_EFFECT,),
+        flags=(DescriptorFlag.BARRIER,),
     ),
     _DescriptorSpec(
         "ACQ_COND_mLockId_reg",
@@ -834,7 +829,10 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_ACQ_COND_mLockId_reg",
         asm_mnemonic="acq.cond.reg",
         effects=(_LOCK_EFFECT,),
+        flags=(DescriptorFlag.BARRIER,),
     ),
+    # Releases retain memory and lock ordering without fencing independent
+    # register work. Acquires above retain their full source-order fences.
     _DescriptorSpec(
         "REL_mLockId_imm",
         f"{_TARGET_KEY}.lock.release.immediate",
@@ -959,10 +957,7 @@ _BASE_DESCRIPTOR_SPECS = (
         f"{_TARGET_KEY}.broadcast.bf16x8.to.bf16x32",
         "floating.broadcast.bf16x8.to.bf16x32",
         "II_VEXTBCST_128_vec_extract_broadcast_imm",
-        storage_overrides=(("s1", "eWL"),),
         asm_mnemonic="vbroadcast.bf16x8.to.bf16x32",
-        operand_register_parts=(("s1", _EWL_LOW128_PART),),
-        encoding_adapter_overrides=(("s1", "LOOM_eWL_OP_mXm"),),
     ),
     _DescriptorSpec(
         "VSHUFFLE_vec_shuffle_x",
@@ -1007,6 +1002,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_VMOV_alu_mv_mv_x",
         storage_overrides=(("dst", "mBMs"), ("src", "VEC256")),
         asm_mnemonic="vmov.vector512.to.accumulator512",
+        rematerializable=True,
         encoding_adapter_overrides=(
             ("dst", "LOOM_mBMs_OP_mMvBMXDst"),
             ("src", "LOOM_mXm_OP_mMvBMXSrc"),
@@ -1162,6 +1158,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_VCLR",
         storage_overrides=(("dst", "mBMs"),),
         asm_mnemonic="acc.clear.i32x64",
+        rematerializable=True,
     ),
     _DescriptorSpec(
         "VCLR",
@@ -1170,6 +1167,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_VCLR",
         storage_overrides=(("dst", "mBMs"),),
         asm_mnemonic="acc.clear.f32x64",
+        rematerializable=True,
     ),
     *_integer_matrix_descriptor_specs(),
     *_DENSE_MATRIX_DESCRIPTOR_SPECS,
@@ -1272,12 +1270,14 @@ _BASE_DESCRIPTOR_SPECS = (
         f"{_TARGET_KEY}.splat.i16x32",
         "integer.splat.i16x32",
         "II_VBCST_16",
+        rematerializable=True,
     ),
     _DescriptorSpec(
         "VBCST_32",
         f"{_TARGET_KEY}.splat.i32x16",
         "integer.splat.i32x16",
         "II_VBCST_32",
+        rematerializable=True,
     ),
     _DescriptorSpec(
         "VBCST_64",
@@ -1305,6 +1305,12 @@ _BASE_DESCRIPTOR_SPECS = (
         f"{_TARGET_KEY}.broadcast.i32x16.from-vector",
         "integer.broadcast.i32x16.from-vector",
         "II_VEXTBCST_32_vec_extract_broadcast_imm",
+    ),
+    _DescriptorSpec(
+        "VEXTBCST_64_vec_extract_broadcast_imm",
+        f"{_TARGET_KEY}.broadcast.i64x8.from-vector",
+        "integer.broadcast.i64x8.from-vector",
+        "II_VEXTBCST_64_vec_extract_broadcast_imm",
     ),
     _DescriptorSpec(
         "VEXTRACT_8_vec_extract_imm_vaddSign0",
@@ -1383,34 +1389,10 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_VINSERT_16_mIdxImm0",
     ),
     _DescriptorSpec(
-        "VINSERT_16_mIdxImm0",
-        f"{_TARGET_KEY}.insert.bf16x8.zero",
-        "integer.insert.bf16x8",
-        "II_VINSERT_16_mIdxImm0",
-        storage_overrides=(("dst", "eWL"), ("s1", "eWL")),
-        asm_mnemonic="vinsert.16.ewl.zero",
-        encoding_adapter_overrides=(
-            ("dst", "LOOM_eWL_OP_mXm"),
-            ("s1", "LOOM_eWL_OP_mXm"),
-        ),
-    ),
-    _DescriptorSpec(
         "VINSERT_16_mR29_insert",
         f"{_TARGET_KEY}.insert.i16.register",
         "integer.insert.i16",
         "II_VINSERT_16_mR29_insert",
-    ),
-    _DescriptorSpec(
-        "VINSERT_16_mR29_insert",
-        f"{_TARGET_KEY}.insert.bf16x8.register",
-        "integer.insert.bf16x8",
-        "II_VINSERT_16_mR29_insert",
-        storage_overrides=(("dst", "eWL"), ("s1", "eWL")),
-        asm_mnemonic="vinsert.16.ewl.reg",
-        encoding_adapter_overrides=(
-            ("dst", "LOOM_eWL_OP_mXm"),
-            ("s1", "LOOM_eWL_OP_mXm"),
-        ),
     ),
     _DescriptorSpec(
         "VINSERT_32_mIdxImm0",
@@ -1593,6 +1575,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_MOVXM_eR",
         (("dst", "eR"),),
         DescriptorOpKind.CONST,
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOVXM",
@@ -1602,6 +1585,7 @@ _BASE_DESCRIPTOR_SPECS = (
         (("dst", "eR"),),
         asm_mnemonic="mov.static-byte-offset",
         rematerializable=True,
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOVXM",
@@ -1610,6 +1594,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_MOVXM_eP",
         (("dst", "eP"),),
         asm_mnemonic="mov.local-address",
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOV_alu_mv_mv_mv_scl",
@@ -1618,6 +1603,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_MOV_alu_mv_mv_mv_scl_eR_eR",
         (("dst", "eR"), ("src", "eR")),
         allocation_move=True,
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOVS",
@@ -1626,6 +1612,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_MOVS_eP_eP",
         (("dst", "eP"), ("src", "eP")),
         allocation_move=True,
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOV_alu_mv_mv_mv_scl",
@@ -1634,6 +1621,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_MOV_alu_mv_mv_mv_scl_eR_eP",
         (("dst", "eR"), ("src", "eP")),
         asm_mnemonic="mov.address-to-scalar",
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOV_alu_mv_mv_mv_scl",
@@ -1642,6 +1630,7 @@ _BASE_DESCRIPTOR_SPECS = (
         "II_MOV_alu_mv_mv_mv_scl_eP_eR",
         (("dst", "eP"), ("src", "eR")),
         asm_mnemonic="mov.scalar-to-address",
+        flags=(DescriptorFlag.SAFE_TO_SPECULATE,),
     ),
     _DescriptorSpec(
         "MOV_alu_mv_mv_mv_scl",
@@ -1883,5 +1872,6 @@ _DESCRIPTOR_SPECS = (
         # Each observation is distinct and ordered with memory/protocol
         # effects. This does not impose a hardware completion fence.
         effects=(Effect(EffectKind.BARRIER),),
+        flags=(DescriptorFlag.BARRIER,),
     ),
 )

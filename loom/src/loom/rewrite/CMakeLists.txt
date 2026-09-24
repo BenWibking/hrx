@@ -29,12 +29,38 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    pattern_registry
+  HDRS
+    "pattern_registry.h"
+  SRCS
+    "pattern_registry.c"
+  DEPS
+    iree::base
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    pattern_registry_test
+  SRCS
+    "pattern_registry_test.cc"
+  DEPS
+    ::pattern_registry
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+)
+
+loom_cc_library(
+  NAME
     greedy
   HDRS
     "greedy.h"
   SRCS
     "greedy.c"
   DEPS
+    ::pattern_registry
     ::rewriter
     iree::base
     iree::base::internal::arena
@@ -112,6 +138,39 @@ loom_cc_library(
     loom::ir
     loom::ops::op_defs
   PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    loop_like
+  HDRS
+    "loop_like.h"
+  SRCS
+    "loop_like.c"
+  DEPS
+    ::remap
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::op_defs
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    loop_like_test
+  SRCS
+    "loop_like_test.cc"
+  DEPS
+    ::loop_like
+    ::rewriter
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::scf
+    loom::ops::test
+    loom::verify
 )
 
 loom_cc_test(

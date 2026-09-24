@@ -197,10 +197,7 @@ def test_core_descriptor_closure_is_complete() -> None:
         (
             "amd.xdna.aie2p.register.x.pairs",
             12,
-            (
-                ("aie2p.ewl", 1, 1),
-                ("aie2p.vec256", 2, 1),
-            ),
+            (("aie2p.vec256", 2, 1),),
         ),
         (
             "amd.xdna.aie2p.register.scalar.units",
@@ -440,6 +437,7 @@ def test_lock_forms_retain_counting_semaphore_contracts() -> None:
         assert descriptor.effects == (_LOCK_EFFECT,)
         assert DescriptorFlag.SIDE_EFFECTING in descriptor.flags
         assert DescriptorFlag.DEAD_REMOVABLE not in descriptor.flags
+        assert (DescriptorFlag.BARRIER in descriptor.flags) == (".acquire." in key)
         if immediate_count:
             lock_id = descriptor.immediates[0]
             assert lock_id.field_name == "id"
@@ -822,13 +820,6 @@ def test_low_register_classes_retain_machine_candidate_order() -> None:
     )
     assert vec256_class.alloc_unit_bits == 256
     assert vec256_class.full_register_part_mask == 0x3
-    ewl_class = next(
-        register_class
-        for register_class in AIE2P_CORE_DESCRIPTOR_SET.reg_classes
-        if register_class.name == "aie2p.ewl"
-    )
-    assert ewl_class.alloc_unit_bits == 256
-    assert ewl_class.full_register_part_mask == 0x3
     parts = {
         (part.name, part.reg_class, part.mask)
         for part in AIE2P_CORE_DESCRIPTOR_SET.register_parts
@@ -838,7 +829,6 @@ def test_low_register_classes_retain_machine_candidate_order() -> None:
         ("aie2p.elpredicate.high32", "aie2p.elpredicate", 0x2),
         ("aie2p.vec256.low128", "aie2p.vec256", 0x1),
         ("aie2p.vec256.high128", "aie2p.vec256", 0x2),
-        ("aie2p.ewl.low128", "aie2p.ewl", 0x1),
         ("aie2p.eldfiforeg.low512", "aie2p.eldfiforeg", 0x1),
         ("aie2p.eldfiforeg.high512", "aie2p.eldfiforeg", 0x2),
         ("aie2p.mstfifo.low512", "aie2p.mstfifo", 0x1),
@@ -1002,6 +992,16 @@ def test_descriptor_encoding_ids_and_adapters_are_materialized() -> None:
     assert static_offset.asm_forms[0].mnemonic == "mov.static-byte-offset"
     assert static_offset.operands[0].reg_alts[0].reg_class == "aie2p.er"
     assert Constraint(ConstraintKind.REMATERIALIZABLE, 0) in static_offset.constraints
+
+    for name in (
+        "splat.i16x32",
+        "splat.i32x16",
+        "accumulator.clear.i32x64",
+        "accumulator.clear.f32x64",
+        "move.vector512.to.accumulator512",
+    ):
+        descriptor = descriptors[f"amd.xdna.aie2p.{name}"]
+        assert Constraint(ConstraintKind.REMATERIALIZABLE, 0) in descriptor.constraints
 
     local_address = descriptors["amd.xdna.aie2p.materialize.local-address.i32"]
     assert local_address.semantic_tag == "memory.materialize.local-address.i32"
@@ -1595,23 +1595,9 @@ def test_vector_multiply_descriptors_own_configuration_state() -> None:
     bf16_broadcast = descriptors["amd.xdna.aie2p.broadcast.bf16x8.to.bf16x32"]
     assert [operand.reg_alts[0].reg_class for operand in bf16_broadcast.operands] == [
         "aie2p.vec256",
-        "aie2p.ewl",
+        "aie2p.vec256",
     ]
-    assert [operand.unit_count for operand in bf16_broadcast.operands] == [2, 1]
-    assert bf16_broadcast.operands[1].register_part == "aie2p.ewl.low128"
-
-    for key in (
-        "amd.xdna.aie2p.insert.bf16x8.zero",
-        "amd.xdna.aie2p.insert.bf16x8.register",
-    ):
-        insert = descriptors[key]
-        operands = {operand.field_name: operand for operand in insert.operands}
-        for field_name in ("dst", "s1"):
-            operand = operands[field_name]
-            assert operand.reg_alts[0].reg_class == "aie2p.ewl"
-            assert operand.unit_count == 1
-            assert operand.register_part is None
-            assert operand.encoding_adapter_id != 0
+    assert [operand.unit_count for operand in bf16_broadcast.operands] == [2, 2]
 
     vector512_move = descriptors["amd.xdna.aie2p.move.vector512"]
     assert [operand.reg_alts[0].reg_class for operand in vector512_move.operands] == [

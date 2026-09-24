@@ -11,8 +11,10 @@
 // the arena-owned frame that packet emitters consume. Its nested tables are
 // compiler-owned state from that single construction. It assumes ordinary pass
 // pipelines have already prepared the low IR. This layer does not run
-// optimization passes, emit bytes, text, JSON, or target artifacts; each target
-// emitter owns those artifact decisions.
+// source optimization passes, emit bytes, text, JSON, or target artifacts.
+// Native placement trials use the scheduler and allocator's retained costs
+// and restore the accepted frame when a proposed movement is unprofitable.
+// Each target emitter owns artifact decisions.
 
 #ifndef LOOM_CODEGEN_LOW_FRAME_H_
 #define LOOM_CODEGEN_LOW_FRAME_H_
@@ -42,7 +44,7 @@ typedef struct loom_low_emission_frame_options_t {
   // When omitted, frame construction resolves the target from authored IR.
   const loom_target_facts_t* function_target_facts;
   // Optional analysis-derived memory summaries for the scheduled low function.
-  loom_low_memory_access_table_t memory_access_table;
+  const loom_low_memory_access_map_t* memory_accesses;
   // Optional immutable target residency policy.
   const loom_target_residency_model_t* residency_model;
   // Optional target-provided descriptor pair-affinity table.
@@ -58,6 +60,8 @@ typedef struct loom_low_emission_frame_options_t {
   loom_low_schedule_strategy_t schedule_strategy;
   // Optional structured scheduler feedback to emit.
   loom_low_schedule_diagnostic_flags_t schedule_diagnostic_flags;
+  // Schedule retention requested by the final instruction emitter.
+  loom_low_schedule_flags_t schedule_flags;
   // Explicit per-class register budgets passed to scheduling and allocation.
   const loom_low_allocation_budget_t* allocation_budgets;
   // Number of entries in |allocation_budgets|.

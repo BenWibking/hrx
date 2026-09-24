@@ -48,6 +48,7 @@ from loom.target.low_descriptors import (
     InstructionClass,
     IssueUse,
     IssueUseKind,
+    MemorySpace,
     ModelQuality,
     NativeAsmValue,
     NativeAsmValueKind,
@@ -393,10 +394,10 @@ def test_allowlist_closes_over_referenced_descriptor_tables() -> None:
         DescriptorAllowlist(keys=("test.add.i32",)),
     )
 
-    assert '"test.add.i32"' in generated.source
-    assert '"test.i32"' in generated.source
-    assert '"test.scalar.alu"' in generated.source
-    assert '"test.scalar"' in generated.source
+    assert "test.add.i32" in generated.source
+    assert "test.i32" in generated.source
+    assert "test.scalar.alu" in generated.source
+    assert "test.scalar" in generated.source
     assert "test.call.i32" not in generated.source
 
 
@@ -650,10 +651,10 @@ def test_compiler_emits_explicit_physical_register_candidates() -> None:
         5,
     ]
     assert ".allocatable_count = 2," in generated.source
-    physical_class_source = generated.source.split(f".name_string_offset = {compiled.string_pool.ref('reg_test.phys')},", 1)[1].split("\n  }", 1)[0]
+    physical_class_source = generated.source.split(f".name_string_ref = {compiled.string_pool.ref('reg_test.phys')},", 1)[1].split("\n  }", 1)[0]
     # The pair occupies four atoms but is not a candidate of this class.
     assert ".physical_atomic_unit_count = 2," in physical_class_source
-    linear_class_source = generated.source.split(f".name_string_offset = {compiled.string_pool.ref('reg_test.i32')},", 1)[1].split("\n  }", 1)[0]
+    linear_class_source = generated.source.split(f".name_string_ref = {compiled.string_pool.ref('reg_test.i32')},", 1)[1].split("\n  }", 1)[0]
     assert ".physical_atomic_unit_count = 0," in linear_class_source
     assert "kTestLowCorePhysicalRegisterCandidates" in generated.source
     assert "kTestLowCorePhysicalRegisterAtomicUnits" in generated.source
@@ -870,15 +871,21 @@ def test_compiler_emits_ordered_multiunit_explicit_register_view() -> None:
     assert "kTestLowCorePhysicalRegisterViewUnitCandidateOrdinals" in generated.source
 
 
-def test_compiler_derives_barrier_descriptor_flag() -> None:
+@pytest.mark.parametrize("source_fence", [False, True])
+def test_compiler_preserves_barrier_source_fence_policy(source_fence: bool) -> None:
+    flags = (DescriptorFlag.SIDE_EFFECTING,)
+    if source_fence:
+        flags += (DescriptorFlag.BARRIER,)
+    descriptor = replace(TEST_LOW_BARRIER_DESCRIPTOR, flags=flags)
     descriptor_set = replace(
         TEST_LOW_CORE_DESCRIPTOR_SET,
-        descriptors=(TEST_LOW_BARRIER_DESCRIPTOR,),
+        descriptors=(descriptor,),
     )
 
     compiled = compiler.compile_descriptor_set(descriptor_set)
 
-    assert DescriptorFlag.BARRIER in compiled.descriptors[0].flags
+    assert (DescriptorFlag.BARRIER in compiled.descriptors[0].flags) == source_fence
+    assert compiled.descriptors[0].effects == descriptor.effects
 
 
 def test_compiler_rejects_barrier_flag_without_effect() -> None:
@@ -1164,6 +1171,33 @@ def test_compiler_closes_instruction_class_hierarchies() -> None:
             InstructionClass.SMFMAC,
         )
     ]
+
+
+@pytest.mark.parametrize(
+    ("semantic_tag", "execution_barrier"),
+    [
+        ("control.barrier.workgroup", True),
+        ("control.barrier.workgroup.signal.all", True),
+        ("control.barrier.workgroup.wait.all", True),
+        ("control.barrier.subgroup", True),
+        ("control.message.send.return.u32", False),
+        ("memory.barrier", False),
+        ("memory.cache.invalidate", False),
+        ("stream.read", False),
+    ],
+)
+def test_execution_barrier_class_requires_instruction_semantics(semantic_tag: str, execution_barrier: bool) -> None:
+    # Identical ordering effects and source fences do not establish the
+    # instruction's execution semantics.
+    descriptor = replace(
+        TEST_LOW_BARRIER_DESCRIPTOR,
+        semantic_tag=semantic_tag,
+        effects=(Effect(EffectKind.BARRIER, memory_space=MemorySpace.WORKGROUP),),
+    )
+    compiled = compiler.compile_descriptor_set(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,)))
+    classes = compiled.instruction_classes[0]
+    assert (InstructionClass.EXECUTION_BARRIER in classes) == execution_barrier
+    assert InstructionClass.CONTROL in classes
 
 
 def test_compiler_requires_explicit_other_instruction_class() -> None:
@@ -1712,7 +1746,7 @@ def test_descriptor_set_family_emits_prefix_view_local_asm_forms() -> None:
     ).source
 
     assert "storage.add.i32" in source
-    assert '"add.i32"' in source
+    assert "add.i32" in source
     assert "static const loom_low_descriptor_t kTestLowViewCoreDescriptors[]" not in source
     assert "kTestLowViewCoreDescriptorViews" not in source
     assert "static const loom_low_asm_form_t kTestLowViewCoreAsmForms[]" in source
@@ -1914,10 +1948,9 @@ def test_descriptor_set_family_shares_exact_sibling_view_tables() -> None:
 def test_generate_test_low_core_descriptor_set() -> None:
     generated = generate_descriptor_set(TEST_LOW_CORE_DESCRIPTOR_SET)
 
-    assert '"test.low.core"' in generated.source
-    assert '"test.low"' in generated.source
-    assert '"test.spv.op_iadd.i32"' in generated.source
-    assert '"OpIAdd"' in generated.source
+    assert "test.low.core" in generated.source
+    assert "test.low" in generated.source
+    assert "OpIAdd" in generated.source
     assert ".op_kind = LOOM_LOW_DESCRIPTOR_OP_KIND_CONST," in generated.source
     assert (".instruction_class_flags = LOOM_LOW_INSTRUCTION_CLASS_FLAG_SCALAR_ALU") in generated.source
     assert ".kind = LOOM_LOW_ISSUE_USE_KIND_REQUIRED," in generated.source
@@ -2539,10 +2572,10 @@ def test_generator_emits_asm_form_native_assembly_mnemonic() -> None:
 
     generated = generate_descriptor_set(descriptor_set)
 
-    assert '"test.add.i32_low"' in generated.source
-    assert '"test.add.i32"' in generated.source
-    assert ".native_assembly_mnemonic_string_offset = " in generated.source
-    assert ".native_assembly_mnemonic_string_offset = LOOM_LOW_STRING_OFFSET_NONE" not in generated.source
+    assert "test.add.i32_low" in generated.source
+    assert "test.add.i32" in generated.source
+    assert ".native_assembly_mnemonic_string_ref = " in generated.source
+    assert ".native_assembly_mnemonic_string_ref = LOOM_STRING_REF_NONE" not in generated.source
 
 
 def test_generator_emits_asm_form_native_assembly_values() -> None:
@@ -2577,8 +2610,8 @@ def test_generator_emits_asm_form_native_assembly_values() -> None:
     assert "LOOM_LOW_NATIVE_ASM_VALUE_KIND_RESULT" in generated.source
     assert "LOOM_LOW_NATIVE_ASM_VALUE_KIND_LITERAL" in generated.source
     assert "LOOM_LOW_NATIVE_ASM_VALUE_KIND_MODIFIER_LITERAL" in generated.source
-    assert '"literal"' in generated.source
-    assert '"modifier:1"' in generated.source
+    assert "literal" in generated.source
+    assert "modifier:1" in generated.source
 
 
 def test_generator_emits_native_register_part_values() -> None:
@@ -2641,7 +2674,7 @@ def test_generator_emits_target_native_asm_immediate_values() -> None:
     assert ".index = 0," in generated.source
     assert ".bit_width = 16," in generated.source
     assert ".target_format_id = 1," in generated.source
-    assert '"delay_bits"' in generated.source
+    assert "delay_bits" in generated.source
 
 
 def test_generator_rejects_target_native_asm_immediate_oversized_bit_width() -> None:

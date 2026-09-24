@@ -478,8 +478,8 @@ typedef struct loom_symbolic_expr_identity_chain_step_t {
   // Next value in the identity chain.
   loom_value_id_t next_value;
 
-  // Optional predicate list carried by the current assume op.
-  loom_attribute_t predicates_attr;
+  // Optional fact identity operation carrying predicate attributes.
+  const loom_op_t* identity_op;
 } loom_symbolic_expr_identity_chain_step_t;
 
 static bool loom_symbolic_expr_identity_chain_step(
@@ -488,7 +488,7 @@ static bool loom_symbolic_expr_identity_chain_step(
     loom_symbolic_expr_identity_chain_step_t* out_step) {
   *out_step = (loom_symbolic_expr_identity_chain_step_t){
       .next_value = LOOM_VALUE_ID_INVALID,
-      .predicates_attr = {0},
+      .identity_op = NULL,
   };
   if (!context->module || value_id >= context->module->values.count) {
     return false;
@@ -511,24 +511,18 @@ static bool loom_symbolic_expr_identity_chain_step(
     return true;
   }
 
-  loom_value_slice_t values = {.values = NULL, .count = 0};
-  loom_attribute_t predicates;
-  if (loom_index_assume_isa(defining_op)) {
-    values = loom_index_assume_values(defining_op);
-    predicates = loom_index_assume_predicates(defining_op);
-  } else if (loom_scalar_assume_isa(defining_op)) {
-    values = loom_scalar_assume_values(defining_op);
-    predicates = loom_scalar_assume_predicates(defining_op);
-  } else {
+  if (!loom_traits_are_fact_identity(
+          loom_op_effective_traits(context->module, defining_op))) {
     return false;
   }
 
   const uint16_t result_index = loom_value_def_index(value);
-  if (result_index >= values.count) {
-    return false;
-  }
-  out_step->next_value = values.values[result_index];
-  out_step->predicates_attr = predicates;
+  IREE_ASSERT_EQ(defining_op->operand_count, defining_op->result_count,
+                 "verified fact identity fields must have equal arity");
+  IREE_ASSERT(result_index < defining_op->result_count,
+              "fact identity result index must be in range");
+  out_step->next_value = loom_op_const_operands(defining_op)[result_index];
+  out_step->identity_op = defining_op;
   return true;
 }
 
@@ -548,11 +542,20 @@ iree_status_t loom_symbolic_value_apply_identity_chain_predicates_to_facts(
             LOOM_SYMBOLIC_EXPR_IDENTITY_CHAIN_FOLLOW_INDEX_CASTS, &step)) {
       return iree_ok_status();
     }
-    const loom_attribute_t predicates_attr = step.predicates_attr;
-    for (uint16_t i = 0; i < predicates_attr.count; ++i) {
-      IREE_RETURN_IF_ERROR(loom_symbolic_expr_predicate_apply_to_value_facts(
-          context, &predicates_attr.predicate_list[i], current_value,
-          inout_facts));
+    if (step.identity_op) {
+      const loom_attribute_t* attributes =
+          loom_op_const_attrs(step.identity_op);
+      for (uint8_t i = 0; i < step.identity_op->attribute_count; ++i) {
+        if (attributes[i].kind != LOOM_ATTR_PREDICATE_LIST) {
+          continue;
+        }
+        for (uint16_t j = 0; j < attributes[i].count; ++j) {
+          IREE_RETURN_IF_ERROR(
+              loom_symbolic_expr_predicate_apply_to_value_facts(
+                  context, &attributes[i].predicate_list[j], current_value,
+                  inout_facts));
+        }
+      }
     }
     current_value = step.next_value;
   }
@@ -1671,12 +1674,21 @@ static iree_status_t loom_symbolic_expr_prove_identity_chain_predicates(
             LOOM_SYMBOLIC_EXPR_IDENTITY_CHAIN_FOLLOW_INDEX_CASTS, &step)) {
       return iree_ok_status();
     }
-    const loom_attribute_t predicates_attr = step.predicates_attr;
-    for (uint16_t i = 0; i < predicates_attr.count; ++i) {
-      IREE_RETURN_IF_ERROR(proof_fn(context, &predicates_attr.predicate_list[i],
-                                    proof_user_data, out_matched, out_result));
-      if (*out_matched) {
-        return iree_ok_status();
+    if (step.identity_op) {
+      const loom_attribute_t* attributes =
+          loom_op_const_attrs(step.identity_op);
+      for (uint8_t i = 0; i < step.identity_op->attribute_count; ++i) {
+        if (attributes[i].kind != LOOM_ATTR_PREDICATE_LIST) {
+          continue;
+        }
+        for (uint16_t j = 0; j < attributes[i].count; ++j) {
+          IREE_RETURN_IF_ERROR(
+              proof_fn(context, &attributes[i].predicate_list[j],
+                       proof_user_data, out_matched, out_result));
+          if (*out_matched) {
+            return iree_ok_status();
+          }
+        }
       }
     }
     current_value = step.next_value;

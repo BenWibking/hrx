@@ -237,8 +237,8 @@ static iree_status_t loom_low_allocation_interval_assignment_record_failure(
     return iree_ok_status();
   }
 
-  const uint32_t alignment = iree_max(
-      (uint32_t)1, loom_low_allocation_live_range_interval_alignment(interval));
+  const uint32_t alignment = loom_low_allocation_live_range_interval_alignment(
+      state->context->target->descriptor_set, interval);
   const loom_low_reg_class_t* reg_class =
       &state->context->target->descriptor_set
            ->reg_classes[capacity->descriptor_reg_class_id];
@@ -897,7 +897,8 @@ static iree_status_t loom_low_allocation_interval_assignment_finalize_spills(
         state->context->module, state->context->function_cfg_graph, assignment,
         decision->assignment_index, reg_class->alloc_unit_bits,
         (loom_low_spill_slot_space_t)reg_class->spill_slot_space,
-        result->spill_plans, &result->spill_plan_count));
+        result->spill_plans, &result->spill_plan_count,
+        &result->spill_traffic_bytes));
     loom_low_allocation_spill_remark_record(
         result->remarks, &result->remark_count, decision->assignment_index,
         decision->budget_units, assignment->unit_count);

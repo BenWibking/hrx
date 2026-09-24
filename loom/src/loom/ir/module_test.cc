@@ -124,88 +124,6 @@ TEST_F(ModuleTest, ModuleName) {
   loom_module_free(module);
 }
 
-TEST_F(ModuleTest, RegisterSourceDeduplicatesBySpelling) {
-  loom_module_t* module = NULL;
-  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("test"), &block_pool_,
-                                      NULL, iree_allocator_system(), &module));
-
-  loom_source_id_t first_id = LOOM_SOURCE_ID_INVALID;
-  loom_source_id_t second_id = LOOM_SOURCE_ID_INVALID;
-  IREE_ASSERT_OK(
-      loom_module_register_source(module, IREE_SV("model.loom"), &first_id));
-  IREE_ASSERT_OK(
-      loom_module_register_source(module, IREE_SV("model.loom"), &second_id));
-
-  EXPECT_EQ(first_id, 0u);
-  EXPECT_EQ(second_id, first_id);
-  ASSERT_EQ(module->sources.count, 1u);
-  EXPECT_TRUE(iree_string_view_equal(module->sources.entries[0],
-                                     IREE_SV("model.loom")));
-  loom_module_free(module);
-}
-
-TEST_F(ModuleTest, RegisterEmptySource) {
-  loom_module_t* module = NULL;
-  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("test"), &block_pool_,
-                                      NULL, iree_allocator_system(), &module));
-
-  loom_source_id_t source_id = LOOM_SOURCE_ID_INVALID;
-  IREE_ASSERT_OK(loom_module_register_source(module, iree_string_view_empty(),
-                                             &source_id));
-
-  EXPECT_EQ(source_id, 0u);
-  ASSERT_EQ(module->sources.count, 1u);
-  EXPECT_EQ(module->sources.entries[0].size, 0u);
-  loom_module_free(module);
-}
-
-TEST_F(ModuleTest, AppendSourcePreservesInsertionOrder) {
-  loom_module_size_hints_t hints = {};
-  hints.source_count = 2;
-  loom_module_t* module = NULL;
-  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("test"), &block_pool_,
-                                      &hints, iree_allocator_system(),
-                                      &module));
-
-  loom_source_id_t first_id = LOOM_SOURCE_ID_INVALID;
-  loom_source_id_t second_id = LOOM_SOURCE_ID_INVALID;
-  IREE_ASSERT_OK(
-      loom_module_append_source(module, IREE_SV("a.loom"), &first_id));
-  IREE_ASSERT_OK(
-      loom_module_append_source(module, IREE_SV("b.loom"), &second_id));
-
-  EXPECT_EQ(first_id, 0u);
-  EXPECT_EQ(second_id, 1u);
-  EXPECT_GE(module->sources.capacity, 2u);
-  loom_module_free(module);
-}
-
-TEST_F(ModuleTest, RegisterSourceRejectsInvalidSentinelId) {
-  loom_module_t* module = NULL;
-  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("test"), &block_pool_,
-                                      NULL, iree_allocator_system(), &module));
-
-  // Append permits repeated source names without a deduplication scan. Fill
-  // the table with real entries so registration can safely probe every name.
-  loom_source_id_t source_id = LOOM_SOURCE_ID_INVALID;
-  for (iree_host_size_t i = 0; i < LOOM_SOURCE_ID_INVALID; ++i) {
-    IREE_ASSERT_OK(
-        loom_module_append_source(module, IREE_SV("present"), &source_id));
-  }
-  EXPECT_EQ(source_id, LOOM_SOURCE_ID_INVALID - 1);
-  EXPECT_EQ(module->sources.count, LOOM_SOURCE_ID_INVALID);
-
-  // An existing source remains resolvable even when no new ID is available.
-  IREE_ASSERT_OK(
-      loom_module_register_source(module, IREE_SV("present"), &source_id));
-  EXPECT_EQ(source_id, 0u);
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_RESOURCE_EXHAUSTED,
-      loom_module_register_source(module, IREE_SV("overflow"), &source_id));
-  EXPECT_EQ(source_id, LOOM_SOURCE_ID_INVALID);
-  loom_module_free(module);
-}
-
 TEST_F(ModuleTest, ValueNameHelpersSkipAnonymousSource) {
   loom_module_t* module = NULL;
   IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("test"), &block_pool_,
@@ -3379,6 +3297,15 @@ TEST_F(ModuleTest, InternTypesRetainPriorStaticEncodingDependencies) {
                                                           0, &topological_id));
     IREE_ASSERT_OK(loom_module_intern_type_id(module, type, &general_id));
     EXPECT_EQ(general_id, topological_id);
+    const iree_host_size_t type_count = module->types.count;
+    const iree_host_size_t retained_bytes = module->arena.used_allocation_size;
+    EXPECT_EQ(loom_module_lookup_type_id(module, type), general_id);
+    EXPECT_EQ(loom_module_lookup_topological_type_id(
+                  module, type, /*structural_dependency_ids=*/nullptr,
+                  /*structural_dependency_count=*/0),
+              general_id);
+    EXPECT_EQ(module->types.count, type_count);
+    EXPECT_EQ(module->arena.used_allocation_size, retained_bytes);
     EXPECT_EQ(
         loom_module_encoding(module, encoding_id)->attributes[0].value.type_id,
         dependency_id);
@@ -3547,6 +3474,69 @@ TEST_F(ModuleTest, InternFunctionTypeDirectAndPackedFormsDedup) {
 
   iree_allocator_free(iree_allocator_system(),
                       (void*)loom_type_func_data(packed_source));
+  loom_module_free(module);
+}
+
+TEST_F(ModuleTest, LookupTypeFindsCanonicalCandidatesWithoutPublishing) {
+  loom_module_t* module = nullptr;
+  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("test"), &block_pool_,
+                                      nullptr, iree_allocator_system(),
+                                      &module));
+  const loom_type_t f32 = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
+  const loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+  loom_type_id_t f32_id = LOOM_TYPE_ID_INVALID;
+  loom_type_id_t i32_id = LOOM_TYPE_ID_INVALID;
+  IREE_ASSERT_OK(loom_module_intern_type_id(module, f32, &f32_id));
+  IREE_ASSERT_OK(loom_module_intern_type_id(module, i32, &i32_id));
+
+  struct FunctionTypeStorage {
+    // Number of argument types.
+    uint16_t argument_count;
+    // Number of result types.
+    uint16_t result_count;
+    // Alignment padding matching loom_func_type_data_t.
+    uint32_t reserved;
+    // Immediate dependency payload.
+    loom_type_t types[1];
+  } candidate = {};
+  static_assert(sizeof(FunctionTypeStorage) ==
+                sizeof(loom_func_type_data_t) + sizeof(loom_type_t));
+  candidate.argument_count = 1;
+  candidate.types[0] = f32;
+  const loom_type_t function_type = loom_type_function(
+      reinterpret_cast<const loom_func_type_data_t*>(&candidate));
+  loom_type_id_t function_type_id = LOOM_TYPE_ID_INVALID;
+  IREE_ASSERT_OK(
+      loom_module_intern_type_id(module, function_type, &function_type_id));
+
+  const iree_host_size_t type_count = module->types.count;
+  const iree_host_size_t interner_count = module->type_intern.count;
+  const iree_host_size_t retained_bytes = module->arena.used_allocation_size;
+  const uint32_t recent_type_ids[] = {
+      module->recent_exact_type_ordinals[0],
+      module->recent_exact_type_ordinals[1],
+  };
+  EXPECT_EQ(loom_module_lookup_type_id(module, function_type),
+            function_type_id);
+  EXPECT_EQ(
+      loom_module_lookup_topological_type_id(module, function_type, &f32_id,
+                                             /*structural_dependency_count=*/1),
+      function_type_id);
+
+  candidate.types[0] = i32;
+  const loom_type_t missing_function_type = loom_type_function(
+      reinterpret_cast<const loom_func_type_data_t*>(&candidate));
+  EXPECT_EQ(loom_module_lookup_type_id(module, missing_function_type),
+            LOOM_TYPE_ID_INVALID);
+  EXPECT_EQ(loom_module_lookup_topological_type_id(
+                module, missing_function_type, &i32_id,
+                /*structural_dependency_count=*/1),
+            LOOM_TYPE_ID_INVALID);
+  EXPECT_EQ(module->types.count, type_count);
+  EXPECT_EQ(module->type_intern.count, interner_count);
+  EXPECT_EQ(module->arena.used_allocation_size, retained_bytes);
+  EXPECT_EQ(module->recent_exact_type_ordinals[0], recent_type_ids[0]);
+  EXPECT_EQ(module->recent_exact_type_ordinals[1], recent_type_ids[1]);
   loom_module_free(module);
 }
 

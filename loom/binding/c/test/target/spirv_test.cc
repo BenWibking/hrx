@@ -201,7 +201,7 @@ TEST(TargetSpirvTest, CreatesTargetPipelinePassProgram) {
   ExpectSucceededResult(result_ptr.get());
 }
 
-TEST(TargetSpirvTest, ConfigIdentitySurvivesCloneAndResetsOnCompilation) {
+TEST(TargetSpirvTest, ConfigIdentitySurvivesCloneAndContinuedCompilation) {
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   ContextPtr context = CreateSpirvContext(target_environment.get());
   loomc_workspace_t* raw_workspace = nullptr;
@@ -284,14 +284,9 @@ kernel.def target(@target) @configured() {
       ASSERT_EQ(ToString(report->format),
                 LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON);
       const std::string json = ToString(report->contents);
-      if (invocation == 0) {
-        EXPECT_NE(json.find("\"key\":\"tile_size\",\"value\":\"32\""),
-                  std::string::npos)
-            << json;
-      } else {
-        EXPECT_EQ(json.find("\"key\":\"tile_size\""), std::string::npos)
-            << json;
-      }
+      EXPECT_NE(json.find("\"key\":\"tile_size\",\"value\":\"32\""),
+                std::string::npos)
+          << json;
       result.reset();
       loomc_workspace_trim(workspace.get());
     }

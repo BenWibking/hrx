@@ -38,7 +38,7 @@ from loom.assembly import (
     TypesOf,
     kw,
 )
-from loom.dialect.atomic import AtomicKind, AtomicOrdering, AtomicScope
+from loom.dialect.atomic import AtomicKind, AtomicMemoryFlags, AtomicOrdering, AtomicScope
 from loom.dialect.cache import CacheScope, CacheTemporal
 from loom.dialect.combining import CombiningKind
 from loom.dialect.memory import MemoryAccessFlags
@@ -423,6 +423,7 @@ def _vector_cast(
     source_constraint: Callable[[str], Constraint],
     doc: str,
     constraints: Sequence[Constraint] = (),
+    traits: Sequence[Trait] = (),
     input_role: OperandRole = OperandRole.NONE,
     facts: str = "",
     canonicalize: str = "",
@@ -444,7 +445,7 @@ def _vector_cast(
         ],
         facts=facts,
         canonicalize=canonicalize,
-        traits=[PURE, ELEMENTWISE],
+        traits=[PURE, ELEMENTWISE, *traits],
         format=[
             Ref("input"),
             COLON,
@@ -835,6 +836,7 @@ vector_concat = Op(
     ],
     verify="loom_vector_concat_verify",
     facts="loom_vector_concat_facts",
+    canonicalize="loom_vector_concat_canonicalize",
     traits=[PURE],
     format=[
         TemplateParam("axis"),
@@ -2092,6 +2094,7 @@ vector_scatter_mask = Op(
 def _atomic_memory_attrs() -> list[AttrDef]:
     return [
         AttrDef("kind", ATTR_TYPE_ENUM, enum_def=AtomicKind),
+        AttrDef("memory_flags", ATTR_TYPE_FLAGS, optional=True, enum_def=AtomicMemoryFlags),
         AttrDef(
             "ordering",
             ATTR_TYPE_ENUM,
@@ -2167,7 +2170,7 @@ vector_atomic_reduce = Op(
     interfaces=[CachePolicyInterface(), _atomic_memory_access_interface(value="value")],
     verify="loom_vector_atomic_reduce_verify",
     format=[
-        TemplateParam("kind"),
+        TemplateParamFlags("kind", "memory_flags"),
         Ref("value"),
         COMMA,
         Ref("view"),
@@ -2212,7 +2215,7 @@ vector_atomic_reduce_mask = Op(
     verify="loom_vector_atomic_reduce_mask_verify",
     canonicalize="loom_vector_masked_memory_canonicalize",
     format=[
-        TemplateParam("kind"),
+        TemplateParamFlags("kind", "memory_flags"),
         Ref("value"),
         COMMA,
         Ref("view"),
@@ -2265,7 +2268,7 @@ vector_atomic_rmw = Op(
     interfaces=[CachePolicyInterface(), _atomic_memory_access_interface(value="value")],
     verify="loom_vector_atomic_rmw_verify",
     format=[
-        TemplateParam("kind"),
+        TemplateParamFlags("kind", "memory_flags"),
         Ref("value"),
         COMMA,
         Ref("view"),
@@ -2313,7 +2316,7 @@ vector_atomic_rmw_mask = Op(
     verify="loom_vector_atomic_rmw_mask_verify",
     canonicalize="loom_vector_masked_memory_canonicalize",
     format=[
-        TemplateParam("kind"),
+        TemplateParamFlags("kind", "memory_flags"),
         Ref("value"),
         COMMA,
         Ref("view"),
@@ -2752,6 +2755,7 @@ vector_addi = _lanewise_binary(
     commutative=True,
     flags=("overflow", IntOverflowFlags),
     facts="loom_vector_addi_facts",
+    effective_traits="loom_scalar_integer_arithmetic_effective_traits",
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2762,6 +2766,7 @@ vector_subi = _lanewise_binary(
     doc=("Lanewise integer subtraction of same-typed vector operands. Optional overflow flags state required no-wrap facts for every lane."),
     flags=("overflow", IntOverflowFlags),
     facts="loom_vector_subi_facts",
+    effective_traits="loom_scalar_integer_arithmetic_effective_traits",
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2773,6 +2778,7 @@ vector_muli = _lanewise_binary(
     commutative=True,
     flags=("overflow", IntOverflowFlags),
     facts="loom_vector_muli_facts",
+    effective_traits="loom_scalar_integer_arithmetic_effective_traits",
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2834,7 +2840,7 @@ vector_negi = _lanewise_unary(
     "vector.negi",
     result_constraint=INTEGER_ELEMENT,
     doc="Lanewise integer negation of a same-typed vector operand.",
-    traits=[INVOLUTION],
+    traits=[INVOLUTION, SAFE_TO_SPECULATE],
     facts="loom_vector_negi_facts",
     canonicalize="loom_vector_uniform_result_canonicalize",
 )
@@ -2843,7 +2849,7 @@ vector_absi = _lanewise_unary(
     "vector.absi",
     result_constraint=INTEGER_ELEMENT,
     doc="Lanewise integer absolute value of a same-typed vector operand.",
-    traits=[IDEMPOTENT],
+    traits=[IDEMPOTENT, SAFE_TO_SPECULATE],
     facts="loom_vector_absi_facts",
     canonicalize="loom_vector_uniform_result_canonicalize",
 )
@@ -2855,6 +2861,7 @@ vector_minsi = _lanewise_binary(
     doc="Lanewise signed integer minimum of same-typed vector operands.",
     commutative=True,
     facts="loom_vector_minsi_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2865,6 +2872,7 @@ vector_maxsi = _lanewise_binary(
     doc="Lanewise signed integer maximum of same-typed vector operands.",
     commutative=True,
     facts="loom_vector_maxsi_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2875,6 +2883,7 @@ vector_minui = _lanewise_binary(
     doc="Lanewise unsigned integer minimum of same-typed vector operands.",
     commutative=True,
     facts="loom_vector_minui_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2885,6 +2894,7 @@ vector_maxui = _lanewise_binary(
     doc="Lanewise unsigned integer maximum of same-typed vector operands.",
     commutative=True,
     facts="loom_vector_maxui_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2906,6 +2916,7 @@ vector_fmai = Op(
     ],
     traits=[PURE, ELEMENTWISE],
     facts="loom_vector_fmai_facts",
+    effective_traits="loom_scalar_integer_arithmetic_effective_traits",
     canonicalize="loom_vector_uniform_result_canonicalize",
     format=[
         Flags("overflow"),
@@ -2927,6 +2938,7 @@ vector_andi = _lanewise_binary(
     doc="Lanewise bitwise AND of same-typed integer vector operands.",
     commutative=True,
     facts="loom_vector_andi_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2937,6 +2949,7 @@ vector_ori = _lanewise_binary(
     doc="Lanewise bitwise OR of same-typed integer vector operands.",
     commutative=True,
     facts="loom_vector_ori_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2947,6 +2960,7 @@ vector_xori = _lanewise_binary(
     doc="Lanewise bitwise XOR of same-typed integer vector operands.",
     commutative=True,
     facts="loom_vector_xori_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
@@ -2957,7 +2971,7 @@ vector_shli = _lanewise_binary(
     doc="Lanewise left shift of same-typed integer vector operands.",
     flags=("overflow", IntOverflowFlags),
     facts="loom_vector_shli_facts",
-    canonicalize="loom_vector_uniform_result_canonicalize",
+    canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
 vector_shrsi = _lanewise_binary(
@@ -2966,7 +2980,7 @@ vector_shrsi = _lanewise_binary(
     result_constraint=INTEGER_ELEMENT,
     doc="Lanewise arithmetic right shift of same-typed integer vector operands.",
     facts="loom_vector_shrsi_facts",
-    canonicalize="loom_vector_uniform_result_canonicalize",
+    canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
 vector_shrui = _lanewise_binary(
@@ -2975,7 +2989,7 @@ vector_shrui = _lanewise_binary(
     result_constraint=INTEGER_ELEMENT,
     doc="Lanewise logical right shift of same-typed integer vector operands.",
     facts="loom_vector_shrui_facts",
-    canonicalize="loom_vector_uniform_result_canonicalize",
+    canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
 vector_rotli = _lanewise_binary(
@@ -3422,6 +3436,7 @@ vector_signi = _lanewise_unary(
     result_constraint=INTEGER_ELEMENT,
     doc="Lanewise integer sign, returning -1, 0, or 1 per lane.",
     facts="loom_vector_signi_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_uniform_result_canonicalize",
 )
 
@@ -3468,6 +3483,7 @@ vector_extsi = _vector_cast(
     doc=("Lanewise signed integer extension. Source and result shapes match exactly, and each source lane is sign-extended to the result element width."),
     constraints=[ElementWidthGreaterThan("result", "input")],
     facts="loom_vector_extsi_facts",
+    traits=[SAFE_TO_SPECULATE],
     canonicalize="loom_vector_uniform_result_canonicalize",
 )
 
@@ -3477,6 +3493,7 @@ vector_extui = _vector_cast(
     source_constraint=HasIntegerElement,
     result_constraint=INTEGER_ELEMENT,
     doc=("Lanewise unsigned integer extension. Source and result shapes match exactly, and each source lane is zero-extended to the result element width."),
+    traits=[SAFE_TO_SPECULATE],
     constraints=[ElementWidthGreaterThan("result", "input")],
 )
 
@@ -3486,7 +3503,9 @@ vector_trunci = _vector_cast(
     source_constraint=HasIntegerElement,
     result_constraint=INTEGER_ELEMENT,
     doc=("Lanewise integer truncation. Source and result shapes match exactly, and each lane keeps the low bits required by the result element width."),
+    traits=[SAFE_TO_SPECULATE],
     constraints=[ElementWidthLessThan("result", "input")],
+    canonicalize="loom_vector_trunci_canonicalize",
 )
 
 vector_sitofp = _vector_cast(
@@ -3532,7 +3551,7 @@ vector_bitcast = Op(
     results=[Result("result", VECTOR)],
     constraints=[TotalBitCountEqual("input", "result")],
     facts="loom_vector_bitcast_facts",
-    traits=[PURE],
+    traits=[PURE, SAFE_TO_SPECULATE],
     format=[
         Ref("input"),
         COLON,
@@ -3585,7 +3604,7 @@ vector_bitfield_extractu = Op(
     ],
     facts="loom_vector_bitfield_extractu_facts",
     canonicalize="loom_vector_uniform_result_canonicalize",
-    traits=[PURE, ELEMENTWISE],
+    traits=[PURE, ELEMENTWISE, SAFE_TO_SPECULATE],
     format=[
         Ref("source"),
         AttrDict(),
@@ -3617,7 +3636,7 @@ vector_bitfield_extracts = Op(
     ],
     facts="loom_vector_bitfield_extracts_facts",
     canonicalize="loom_vector_uniform_result_canonicalize",
-    traits=[PURE, ELEMENTWISE],
+    traits=[PURE, ELEMENTWISE, SAFE_TO_SPECULATE],
     format=[
         Ref("source"),
         AttrDict(),
@@ -3653,7 +3672,7 @@ vector_bitfield_insert = Op(
     ],
     facts="loom_vector_bitfield_insert_facts",
     canonicalize="loom_vector_uniform_result_canonicalize",
-    traits=[PURE, ELEMENTWISE],
+    traits=[PURE, ELEMENTWISE, SAFE_TO_SPECULATE],
     format=[
         Ref("field"),
         kw("into"),

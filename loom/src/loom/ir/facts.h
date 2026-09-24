@@ -886,8 +886,11 @@ void loom_value_facts_remsi(const loom_value_facts_t* lhs,
 void loom_value_facts_shli(const loom_value_facts_t* lhs,
                            const loom_value_facts_t* rhs,
                            loom_value_facts_t* out);
+// Logical right shift in a verified integer width in [1, 64]. Interprets
+// source facts as raw bits at that width; a nonzero shift clears the sign bit.
+// Non-exact or out-of-domain shift amounts produce unknown facts.
 void loom_value_facts_shrui(const loom_value_facts_t* lhs,
-                            const loom_value_facts_t* rhs,
+                            const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out);
 void loom_value_facts_shrsi(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs,
@@ -897,6 +900,10 @@ void loom_value_facts_shrsi(const loom_value_facts_t* lhs,
 void loom_value_facts_andi(const loom_value_facts_t* lhs,
                            const loom_value_facts_t* rhs,
                            loom_value_facts_t* out);
+
+// Retains the maximum operand lower bound and a finite bit-width upper bound
+// when both operands are nonnegative. Either operand's nonzero proof survives,
+// including predicate-derived proofs whose ranges span zero.
 void loom_value_facts_ori(const loom_value_facts_t* lhs,
                           const loom_value_facts_t* rhs,
                           loom_value_facts_t* out);
@@ -904,16 +911,26 @@ void loom_value_facts_xori(const loom_value_facts_t* lhs,
                            const loom_value_facts_t* rhs,
                            loom_value_facts_t* out);
 
-// Min / max.
+// Signed minimum in the declared integer width (1 <= bit_count <= 64).
+// Inputs and results use the declared signed fact domain, except i1 uses
+// Boolean [0,1] facts with true ordered below false.
 void loom_value_facts_minsi(const loom_value_facts_t* lhs,
-                            const loom_value_facts_t* rhs,
+                            const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out);
+
+// Signed maximum with the same width and representation contract as minsi.
 void loom_value_facts_maxsi(const loom_value_facts_t* lhs,
-                            const loom_value_facts_t* rhs,
+                            const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out);
+
+// Unsigned minimum of integer facts in their declared signed representation.
+// Inputs and results use signed fact representation (Boolean [0,1] for i1),
+// while comparison interprets their raw bits as unsigned.
 void loom_value_facts_minui(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs,
                             loom_value_facts_t* out);
+
+// Unsigned maximum with the same representation contract as minui.
 void loom_value_facts_maxui(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs,
                             loom_value_facts_t* out);

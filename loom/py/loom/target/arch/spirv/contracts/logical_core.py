@@ -41,6 +41,9 @@ from loom.target.arch.spirv.contracts.descriptor_rule import (
 from loom.target.arch.spirv.contracts.descriptor_rule import (
     logical_core_descriptor as _descriptor,
 )
+from loom.target.arch.spirv.contracts.extended_math import (
+    SPIRV_EXTENDED_MATH_CONTRACT_CASES,
+)
 from loom.target.arch.spirv.contracts.index import (
     SPIRV_INDEX_CONVERSION_RULES,
     SPIRV_INDEX_NUMERIC_RULES,
@@ -118,6 +121,7 @@ from loom.target.arch.spirv.scalar_memory import (
 )
 from loom.target.contracts import (
     AttrProject,
+    Buffer,
     ContractCase,
     ContractFragment,
     DescriptorEmitForm,
@@ -607,6 +611,13 @@ def _select_rule(
     )
 
 
+def _storage_source_types(scalar: StorageBufferScalar) -> tuple[str, ...]:
+    # FP8 values use the signed-byte carrier for both registers and memory.
+    if scalar.source_type == "i8":
+        return ("i8", "f8E4M3", "f8E5M2")
+    return (scalar.source_type,)
+
+
 def _storage_element_format_guards(
     field: str,
     scalar: StorageBufferScalar,
@@ -629,7 +640,7 @@ def _buffer_view_rule(
     *,
     require_storage_element_format: bool = False,
 ) -> ValueElideRule:
-    view_type = View(scalar.source_type)
+    view_type = View(_storage_source_types(scalar))
     return ValueElideRule(
         source_op=buffer.buffer_view,
         values=(ValueRef.result("result"),),
@@ -746,14 +757,14 @@ def _storage_subview_rule(scalar: StorageBufferScalar) -> ValueElideRule:
         source_op=view.view_subview,
         values=(ValueRef.result("result"),),
         guards=(
-            Guard.value_type("result", View(scalar.source_type)),
+            Guard.value_type("result", View(_storage_source_types(scalar))),
             Guard.value_memory_space("result", _STORAGE_BUFFER_MEMORY_SPACES),
         ),
     )
 
 
 def _workgroup_subview_rule(scalar: StorageBufferScalar) -> ValueAliasRule:
-    view_type = View(scalar.source_type)
+    view_type = View(_storage_source_types(scalar))
     return ValueAliasRule(
         source_op=view.view_subview,
         source=ValueRef.operand("source"),
@@ -1007,8 +1018,8 @@ def _cooperative_matrix_rules() -> tuple[DescriptorRule, ...]:
 
 
 def _view_load_rule(scalar: StorageBufferScalar) -> DescriptorRule:
-    scalar_type = Scalar(scalar.source_type)
-    view_type = View(scalar.source_type)
+    scalar_type = Scalar(_storage_source_types(scalar))
+    view_type = View(_storage_source_types(scalar))
     descriptor = _descriptor(f"spirv.op_load.storage_buffer.{scalar.suffix}")
     address_materializer = _storage_buffer_address_materializer(scalar)
     return DescriptorRule(
@@ -1036,8 +1047,8 @@ def _view_load_rule(scalar: StorageBufferScalar) -> DescriptorRule:
 
 
 def _view_store_rule(scalar: StorageBufferScalar) -> DescriptorRule:
-    scalar_type = Scalar(scalar.source_type)
-    view_type = View(scalar.source_type)
+    scalar_type = Scalar(_storage_source_types(scalar))
+    view_type = View(_storage_source_types(scalar))
     descriptor = _descriptor(f"spirv.op_store.storage_buffer.{scalar.suffix}")
     address_materializer = _storage_buffer_address_materializer(scalar)
     return DescriptorRule(
@@ -1157,8 +1168,8 @@ def _view_load_workgroup_rule(
     scalar: StorageBufferScalar,
     coordinate_type: SourceMemoryAddressCoordinateType,
 ) -> DescriptorRule:
-    scalar_type = Scalar(scalar.source_type)
-    view_type = View(scalar.source_type)
+    scalar_type = Scalar(_storage_source_types(scalar))
+    view_type = View(_storage_source_types(scalar))
     descriptor = _descriptor(f"spirv.op_load.workgroup.{scalar.suffix}")
     address_materializer = _workgroup_address_materializer(scalar, coordinate_type)
     return DescriptorRule(
@@ -1190,8 +1201,8 @@ def _view_store_workgroup_rule(
     scalar: StorageBufferScalar,
     coordinate_type: SourceMemoryAddressCoordinateType,
 ) -> DescriptorRule:
-    scalar_type = Scalar(scalar.source_type)
-    view_type = View(scalar.source_type)
+    scalar_type = Scalar(_storage_source_types(scalar))
+    view_type = View(_storage_source_types(scalar))
     descriptor = _descriptor(f"spirv.op_store.workgroup.{scalar.suffix}")
     address_materializer = _workgroup_address_materializer(scalar, coordinate_type)
     return DescriptorRule(
@@ -1419,6 +1430,7 @@ def _select_rules() -> tuple[DescriptorRule, ...]:
     ]
     rules.append(_select_rule(Scalar("bf16"), "spirv.op_select.bf16"))
     rules.append(_select_rule(_I1, "spirv.op_select.bool"))
+    rules.append(_select_rule(Buffer(), "spirv.op_select.storage_buffer"))
     return tuple(rules)
 
 
@@ -1440,12 +1452,6 @@ SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT = ContractFragment(
         *_scalar_constant_rules(),
         *SPIRV_INDEX_CONVERSION_RULES,
         *SPIRV_INDEX_NUMERIC_RULES,
-        ValueAliasRule(
-            source_op=buffer.buffer_assume_alignment,
-            source=ValueRef.operand("buffers"),
-            result=ValueRef.result("results"),
-            guards=(Guard.operand_segment_count("buffers", 1),),
-        ),
         *_builtin_index_rules(),
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _F8E4M3, _I8),
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _I8, _F8E4M3),
@@ -1454,6 +1460,7 @@ SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT = ContractFragment(
         *_conversion_rules(),
         *_scalar_binary_rules(),
         *_vector_float_binary_rules(),
+        *SPIRV_EXTENDED_MATH_CONTRACT_CASES,
         *SPIRV_ORDINARY_VECTOR_CONTRACT_CASES,
         *_compare_rules(),
         *_select_rules(),

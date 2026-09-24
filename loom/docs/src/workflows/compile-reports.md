@@ -138,6 +138,33 @@ The [loop-tuning walkthrough](tune-loop-schedules.md) follows runnable row-sum
 and packed-dot kernels from `pipeline(...) unroll(...)` source through these
 schedule rows, `suggest`, and matched serial controls.
 
+Loop-carried aggregate decisions appear under **Source boundary projections**.
+Each row identifies the source function, loop ordinal, recurrence-column
+ordinal, logical type, and one of three outcomes:
+
+- `selected` means the compiler replaced the aggregate recurrence with
+  homogeneous scalar or tail-vector components;
+- `preserved` means the authored whole value remains the right representation,
+  including native fragments and untouched banks; and
+- `rejected` means component accesses attempted a decomposition but could not
+  form one valid boundary representation.
+
+Summary reports retain the three outcome counts. Detailed reports add the
+source and component shapes plus a stable reason such as
+`static_component_accesses`, `whole_value_use`,
+`non_static_component_access`, or `inconsistent_component_access`:
+
+```text
+Source boundary projections
+  selected=1 preserved=0 rejected=0
+  update_vector_bank scf.for[0] loop_state[0]: loop-vector-bank selected vector<4x4xf32> -> 4 x vector<4xf32> reason=static_component_accesses
+```
+
+The operation and state ordinals identify the compiled source structure; they
+are not source locations and may change after an arbitrary source edit. The
+[vector-bank guide](../guide/vectors-and-structured-compute.md#carry-logical-vector-banks-through-loops)
+shows the source form that produces this decision.
+
 Unavailable fields are omitted instead of rendered as zero. That distinction
 matters: zero instructions is a measurement; no target inspector for that
 metric is an absence of evidence.
@@ -216,6 +243,11 @@ fields directly; recipe-key spelling is reported as a separate selection
 change. If an edit shifts or removes the source row, the evidence appears as
 removed and added instead of being paired heuristically with another operation.
 
+Wait-reason diffs compare counter/reason groups independently of the aggregate
+entry totals. A schedule change can therefore keep the same number of wait
+actions while replacing full drains with partial waits or moving a dependency
+between ordinary, loop-entry, and loop-carried reasons.
+
 ## Compare target specialization
 
 Target comparison deliberately relaxes only the selected target specialization
@@ -255,6 +287,31 @@ counts SSA values, which can occupy several physical registers or share storage;
 it is not a physical register count. A single report establishes pipeline use
 and final resource consumption. A matched compilation and runtime comparison
 establishes the change in cost and performance.
+
+On AMDGPU, `amdgpu.pipeline_copy_waits` identifies full global-load waits whose
+native consumers are materialized branch-payload copies. Its cited
+`outstanding_before` values count packets in each scheduled block rather than
+the whole hardware counter. A zero local count can still represent a required
+residual counter-epoch or control-flow hazard; it does not establish that the
+wait is redundant.
+
+Rejected vector-bank projections produce source experiments only when the
+reason identifies a concrete rewrite:
+
+- `vector.compare_static_bank_access` compares a statically unrolled or
+  explicitly carried form when a small bounded component is selected
+  dynamically;
+- `vector.compare_uniform_bank_components` compares one component shape when
+  the source mixes prefix ranks; and
+- `vector.compare_componentwise_bank_state` compares a componentwise consumer
+  when one use still requires the whole active bank.
+
+Each suggestion asks the author to verify that projection became selected and
+then compare registers, spills, occupancy, code size, compile time, and measured
+runtime with the workload and schedule held fixed. Selection enables that
+experiment; it does not establish a gain. Expected whole-value fragments,
+untouched banks, very large decompositions, peer rejection, and generic
+transport rejection remain visible in `show` without speculative advice.
 
 Nested `scf.if` and `scf.for` appear as intact operations in the reported
 producer/consumer schedule. The read count includes static load operations

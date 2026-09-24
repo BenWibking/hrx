@@ -14,6 +14,8 @@
 #include "loom/target/legalization.h"
 #include "loom/target/pass_environment.h"
 #include "loom/target/pass_requirements.h"
+#include "loom/transforms/cleanup/pass_environment.h"
+#include "loom/transforms/cleanup/pass_requirements.h"
 
 namespace loom {
 namespace {
@@ -70,23 +72,52 @@ TEST(PassBuiltinRegistryTest, LookupKnownAndUnknownPasses) {
   EXPECT_EQ(descriptor, nullptr);
 }
 
-TEST(PassBuiltinRegistryTest, ValidatesBuiltinOptionSchemas) {
+TEST(PassBuiltinRegistryTest, CleanupPassesShareIterationBudget) {
+  for (const char* name : {"canonicalize", "combine"}) {
+    SCOPED_TRACE(name);
+    const loom_pass_descriptor_t* descriptor =
+        LookupBuiltinPass(iree_make_cstring_view(name));
+    ASSERT_NE(descriptor, nullptr);
+    IREE_ASSERT_OK(loom_pass_descriptor_validate_options(
+        descriptor, IREE_SV("max-iterations=4")));
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                          loom_pass_descriptor_validate_options(
+                              descriptor, IREE_SV("max-iterations=0")));
+    IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                          loom_pass_descriptor_validate_options(
+                              descriptor, IREE_SV("unknown-option=true")));
+    IREE_ASSERT_OK(CreateBuiltinPass(descriptor, iree_string_view_empty()));
+    IREE_ASSERT_OK(CreateBuiltinPass(descriptor, IREE_SV("max-iterations=4")));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        CreateBuiltinPass(descriptor, IREE_SV("max-iterations=0")));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        CreateBuiltinPass(descriptor,
+                          IREE_SV("max-iterations=2,max-iterations=3")));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        CreateBuiltinPass(descriptor, IREE_SV("unknown-option=true")));
+  }
+}
+
+TEST(PassBuiltinRegistryTest, CombineRequiresSourcePatternComposition) {
   const loom_pass_descriptor_t* canonicalize =
       LookupBuiltinPass(IREE_SV("canonicalize"));
   ASSERT_NE(canonicalize, nullptr);
-  IREE_ASSERT_OK(loom_pass_descriptor_validate_options(
-      canonicalize, IREE_SV("max-iterations=4")));
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
-                        loom_pass_descriptor_validate_options(
-                            canonicalize, IREE_SV("max-iterations=0")));
-  IREE_ASSERT_OK(loom_pass_descriptor_validate_options(
-      canonicalize, IREE_SV("view-loads=coalesce")));
-  IREE_ASSERT_OK(loom_pass_descriptor_validate_options(
-      canonicalize, IREE_SV("view-loads=preserve")));
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
-                        loom_pass_descriptor_validate_options(
-                            canonicalize, IREE_SV("view-loads=invalid")));
+  EXPECT_EQ(canonicalize->requirement_count, 0u);
 
+  const loom_pass_descriptor_t* combine = LookupBuiltinPass(IREE_SV("combine"));
+  ASSERT_NE(combine, nullptr);
+  ASSERT_EQ(combine->requirement_count, 1u);
+  EXPECT_EQ(combine->requirement_defs[0].capability_type,
+            &loom_cleanup_pass_capability_type);
+  EXPECT_TRUE(iree_string_view_equal(
+      combine->requirement_defs[0].key,
+      IREE_SV(LOOM_CLEANUP_PASS_REQUIREMENT_SOURCE_COMBINE_PATTERNS)));
+}
+
+TEST(PassBuiltinRegistryTest, ValidatesBuiltinOptionSchemas) {
   const loom_pass_descriptor_t* math =
       LookupBuiltinPass(IREE_SV("legalize-math"));
   ASSERT_NE(math, nullptr);
@@ -94,7 +125,7 @@ TEST(PassBuiltinRegistryTest, ValidatesBuiltinOptionSchemas) {
       loom_pass_descriptor_validate_options(math, IREE_SV("max-iterations=4")));
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         loom_pass_descriptor_validate_options(
-                            math, IREE_SV("view-loads=coalesce")));
+                            math, IREE_SV("unknown-option=true")));
 
   const loom_pass_descriptor_t* allocation =
       LookupBuiltinPass(IREE_SV("low-materialize-allocation"));

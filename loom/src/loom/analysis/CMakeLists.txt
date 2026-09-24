@@ -87,6 +87,48 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    storage_interference
+  HDRS
+    "storage_interference.h"
+  SRCS
+    "storage_interference.c"
+  DEPS
+    ::control_uniformity
+    ::value_relation
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::buffer
+    loom::ops::kernel
+    loom::ops::op_defs
+    loom::util::cfg_postdominance
+    loom::util::fact_table
+    loom::util::walk
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    storage_interference_test
+  SRCS
+    "storage_interference_test.cc"
+  DEPS
+    ::storage_interference
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::ops::buffer
+    loom::ops::op_defs
+    loom::ops::type_registry
+    loom::testing::context
+    loom::testing::module_ptr
+    loom::util::fact_table
+)
+
+loom_cc_library(
+  NAME
     value_relation
   HDRS
     "value_relation.h"
@@ -540,7 +582,6 @@ loom_cc_library(
     loom::error::error_defs
     loom::ir
     loom::ops::cfg
-    loom::ops::func
     loom::ops::op_defs
     loom::util::cfg_graph
     loom::util::walk
@@ -868,12 +909,26 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    liveness_uses
+  HDRS
+    "liveness_uses.h"
+  SRCS
+    "liveness_uses.c"
+  DEPS
+    iree::base
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     liveness_dataflow
   HDRS
     "liveness_dataflow.h"
   SRCS
     "liveness_dataflow.c"
   DEPS
+    ::liveness_uses
     iree::base
     iree::base::internal::arena
     loom::ir
@@ -883,13 +938,44 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    liveness_events
+  HDRS
+    "liveness_events.h"
+  SRCS
+    "liveness_events.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::util::adaptive_sort
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    liveness_events_test
+  SRCS
+    "liveness_events_test.cc"
+  DEPS
+    ::liveness_events
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_library(
+  NAME
     liveness
   HDRS
     "liveness.h"
+    "liveness_pressure.h"
   SRCS
     "liveness.c"
+    "liveness_pressure.c"
   DEPS
     ::liveness_dataflow
+    ::liveness_events
+    ::liveness_uses
     iree::base
     iree::base::internal
     iree::base::internal::arena
@@ -900,6 +986,20 @@ loom_cc_library(
     loom::util::cfg_graph
     loom::util::segmented_storage
   PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    liveness_pressure_test
+  SRCS
+    "liveness_pressure_test.cc"
+  DEPS
+    ::liveness
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::registers
+    loom::target::test::descriptors
 )
 
 loom_cc_test(
@@ -1216,9 +1316,11 @@ loom_cc_library(
   NAME
     symbolic_expr
   HDRS
+    "symbolic_congruence.h"
     "symbolic_expr.h"
     "symbolic_expr_proof.h"
   SRCS
+    "symbolic_congruence.c"
     "symbolic_expr.c"
     "symbolic_expr_proof.c"
     "symbolic_value.c"
@@ -1242,6 +1344,18 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_test(
+  NAME
+    symbolic_congruence_test
+  SRCS
+    "symbolic_congruence_test.cc"
+  DEPS
+    ::symbolic_expr
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 loom_cc_library(
   NAME
     symbolic_expr_test_fixture
@@ -1253,6 +1367,7 @@ loom_cc_library(
     iree::testing::gtest
     loom::ir
     loom::ops::index
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
     loom::util::fact_table
@@ -1353,6 +1468,7 @@ loom_cc_test(
     loom::ir
     loom::ops::index
     loom::ops::op_defs
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
 )
@@ -1373,6 +1489,7 @@ loom_cc_test(
     loom::ops::index
     loom::ops::kernel
     loom::ops::op_defs
+    loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
     loom::util::fact_table

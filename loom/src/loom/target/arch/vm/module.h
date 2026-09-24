@@ -8,6 +8,7 @@
 #define LOOM_TARGET_ARCH_VM_MODULE_H_
 
 #include "loom/target/arch/vm/function.h"
+#include "loom/target/function_version.h"
 #include "loom/target/provider.h"
 
 #ifdef __cplusplus
@@ -18,8 +19,8 @@ extern "C" {
 typedef struct loom_vm_module_callable_t {
   // Borrowed function definition or import declaration and signature values.
   loom_func_like_t function;
-  // Function target facts retained by the shared specialization pipeline.
-  const loom_target_facts_t* target_facts;
+  // Concrete compiler products retained by the shared compilation pipeline.
+  const loom_target_function_version_t* function_version;
   // Source-ordered entry argument IDs in the module.
   const loom_value_id_t* arguments;
   // Source-ordered signature result IDs in the module.

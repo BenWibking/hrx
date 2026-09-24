@@ -10,6 +10,7 @@
 
 #include "loom/tooling/context/context.h"
 #include "loom/tools/loom-check/main.h"
+#include "loom/transforms/cleanup/configured.h"
 
 enum {
   LOOM_CHECK_PROVIDER_TARGET_PROVIDER_CAPACITY = 64,
@@ -158,6 +159,8 @@ int loom_check_provider_main(int argc, char** argv,
               .user_data = &state,
           },
       .target_environment = &state.target_environment,
+      .cleanup_pattern_provider_set =
+          loom_cleanup_configured_pattern_provider_set(),
       .initialize_low_descriptor_registry =
           {
               .fn = loom_check_provider_initialize_low_descriptor_registry,

@@ -13,38 +13,109 @@ package(
 )
 
 loom_cc_library(
-    name = "canonicalize",
-    srcs = ["canonicalize.c"],
-    hdrs = ["canonicalize.h"],
-    visibility = [
-        "//loom/src/loom/ops/encoding:__pkg__",
-        "//loom/src/loom/pass:__pkg__",
-        "//loom/src/loom/target/arch/cmd/lower:__pkg__",
-        "//loom/src/loom/transforms/symbol:__pkg__",
+    name = "patterns",
+    srcs = ["patterns.c"],
+    hdrs = [
+        "patterns.h",
+        "special_value_policy.h",
     ],
     deps = [
-        "//loom/src/loom/analysis:condition_facts",
-        "//loom/src/loom/analysis:symbolic_expr",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/ir:facts",
-        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/rewrite:pattern_registry",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "pass_requirements",
+    hdrs = ["pass_requirements.h"],
+    visibility = ["//loom/src/loom/pass:__pkg__"],
+)
+
+loom_cc_library(
+    name = "pass_environment",
+    srcs = ["pass_environment.c"],
+    hdrs = ["pass_environment.h"],
+    deps = [
+        ":pass_requirements",
+        ":patterns",
+        "//loom/src/loom/pass:environment",
+        "//loom/src/loom/pass:types",
+    ],
+)
+
+loom_cc_library(
+    name = "configured",
+    srcs = ["configured.c"],
+    hdrs = ["configured.h"],
+    deps = [
+        ":patterns",
         "//loom/src/loom/ops:special_values",
-        "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/transforms/index:cleanup_patterns",
+        "//loom/src/loom/transforms/scalar:cleanup_patterns",
+        "//loom/src/loom/transforms/scalar:combine_patterns",
+        "//loom/src/loom/transforms/scf:branch_fact_patterns",
+        "//loom/src/loom/transforms/scf:combine_patterns",
+        "//loom/src/loom/transforms/vector:cleanup_patterns",
+        "//loom/src/loom/transforms/vector:combine_patterns",
+        "//loom/src/loom/transforms/view:combine_patterns",
+    ],
+)
+
+loom_cc_test(
+    name = "patterns_test",
+    srcs = ["patterns_test.cc"],
+    deps = [
+        ":configured",
+        ":pass_environment",
+        ":pass_requirements",
+        ":patterns",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/scf",
         "//loom/src/loom/ops/vector",
         "//loom/src/loom/ops/view",
+        "//loom/src/loom/pass:environment",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "canonicalize",
+    srcs = ["canonicalize.c"],
+    hdrs = ["canonicalize.h"],
+    visibility = ["//loom/src/loom/pass:__pkg__"],
+    deps = [
+        ":canonicalizer",
+        ":pass_environment",
         "//loom/src/loom/pass:pipeline",
         "//loom/src/loom/pass:registry",
         "//loom/src/loom/pass:types",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "canonicalizer",
+    srcs = ["canonicalizer.c"],
+    hdrs = ["canonicalizer.h"],
+    visibility = [
+        "//loom/src/loom/ops/encoding:__pkg__",
+        "//loom/src/loom/transforms/symbol:__pkg__",
+    ],
+    deps = [
+        ":patterns",
+        "//loom/src/loom/analysis:symbolic_expr",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ir:facts",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/pass:types",
         "//loom/src/loom/pass:value_facts",
         "//loom/src/loom/rewrite:greedy",
+        "//loom/src/loom/rewrite:pattern_registry",
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/rewrite:type_propagation",
-        "//loom/src/loom/target:math_policy",
-        "//loom/src/loom/target:pass_environment",
-        "//loom/src/loom/transforms/view:load_coalescing",
         "//loom/src/loom/util:fact_table",
         "//loom/src/loom/util:walk",
         "//runtime/src/iree/base",
@@ -53,12 +124,13 @@ loom_cc_library(
 )
 
 loom_cc_test(
-    name = "canonicalize_test",
-    srcs = ["canonicalize_test.cc"],
+    name = "canonicalizer_test",
+    srcs = ["canonicalizer_test.cc"],
     deps = [
-        ":canonicalize",
+        ":canonicalizer",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops:special_values",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/test",
         "//loom/src/loom/ops/vector",

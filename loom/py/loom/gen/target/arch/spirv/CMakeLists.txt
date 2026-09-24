@@ -108,6 +108,7 @@ iree_py_library(
     loom::py::loom::target::arch::spirv::builtins
     loom::py::loom::target::arch::spirv::cooperative_matrix
     loom::py::loom::target::arch::spirv::descriptors
+    loom::py::loom::target::arch::spirv::extended_math
     loom::py::loom::target::arch::spirv::ordinary_vector
     loom::py::loom::target::arch::spirv::ordinary_vector_bit_layout
     loom::py::loom::target::arch::spirv::ordinary_vector_float
@@ -131,6 +132,7 @@ iree_py_test(
     "loom.gen.target.arch.spirv.spirv_packet_rows_test"
   DEPS
     loom::py::loom::gen::target::arch::spirv::packet_rows
+    loom::py::loom::target::arch::spirv::extended_math
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"

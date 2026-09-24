@@ -65,6 +65,8 @@ from loom.target.contracts.immediates import (
     SourceOpProjectKind,
     ValueProject,
     ValueProjectKind,
+    ValueTypeProject,
+    ValueTypeProjectKind,
 )
 from loom.target.contracts.kinds import ContractSystem, SourceValueKind
 from loom.target.contracts.lower_rule_tables import (
@@ -100,7 +102,7 @@ from loom.target.contracts.lower_rules import (
     compile_lower_rule_set,
 )
 from loom.target.contracts.materializers import ValueMaterializer
-from loom.target.contracts.patterns import Scalar, TypePattern, Vector, View
+from loom.target.contracts.patterns import Buffer, Scalar, TypePattern, Vector, View
 from loom.target.contracts.rules import (
     MAX_SOURCE_NODES,
     SOURCE_NODE_COUNT_BITS,
@@ -146,6 +148,7 @@ from loom.target.contracts.templates import (
 __all__ = [
     "AttrProject",
     "AttrProjectKind",
+    "Buffer",
     "CONTRACT_ROW_NONE",
     "CompiledCase",
     "CompiledContractFragment",
@@ -235,6 +238,8 @@ __all__ = [
     "ValueMaterializer",
     "ValueProject",
     "ValueProjectKind",
+    "ValueTypeProject",
+    "ValueTypeProjectKind",
     "ValueRef",
     "Vector",
     "View",

@@ -15,13 +15,16 @@
 // analysis fail; the defining SSA result remains a symbolic variable and range
 // facts stay attached. This lets consumers such as view alias analysis prove
 // the common affine cases while preserving a conservative escape hatch.
-// Address casts expand through their input only when its range proves the cast
-// preserves numeric value; truncation and unsigned reinterpretation otherwise
-// retain the cast result as a symbolic variable.
+// Integer and address casts expand through their input only when its range
+// proves the cast preserves numeric value; truncation and unsigned
+// reinterpretation otherwise retain the cast result as a symbolic variable.
 // Fixed-width arithmetic expands only when its mathematical range fits the
 // result domain or an explicit no-signed-wrap contract permits the relation.
+// Left shifts additionally require a valid exact shift amount.
 // Potentially wrapping results remain independent symbols, so integer-order
-// proofs cannot cancel arithmetic across a modular boundary.
+// proofs cannot cancel arithmetic across a modular boundary. A separate
+// optional congruence retains periodic relationships for disjointness queries
+// without weakening these exact-expression and materialization contracts.
 //
 // Storage is caller-owned. The context memoizes value-to-expression queries and
 // owns a reusable scratch term buffer so fixed-point analyses can query without
@@ -47,6 +50,7 @@ extern "C" {
 #define LOOM_SYMBOLIC_EXPR_DEFAULT_TERM_LIMIT 64
 
 typedef struct loom_symbolic_expr_memo_entry_t loom_symbolic_expr_memo_entry_t;
+typedef struct loom_symbolic_congruence_t loom_symbolic_congruence_t;
 typedef struct loom_cfg_value_identity_table_t loom_cfg_value_identity_table_t;
 // A single coefficient times an SSA value.
 typedef struct loom_symbolic_term_t {
@@ -84,6 +88,10 @@ typedef struct loom_symbolic_expr_t {
 
   // Bitfield of loom_symbolic_expr_flag_bits_e.
   loom_symbolic_expr_flags_t flags;
+
+  // Optional producer-owned modular guarantee in addition to the exact terms.
+  // This never substitutes for an exact address or integer-order expression.
+  const loom_symbolic_congruence_t* congruence;
 } loom_symbolic_expr_t;
 
 // Stable summary for one analyzed SSA value.

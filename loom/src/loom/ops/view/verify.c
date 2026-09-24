@@ -57,6 +57,12 @@ static iree_status_t loom_view_verify_atomic_kind(
     iree_diagnostic_emitter_t emitter, const loom_op_t* op,
     iree_string_view_t value_name, loom_type_t value_type, uint8_t kind,
     bool allow_exchange) {
+  if (iree_any_bit_set(op->instance_flags, LOOM_MEMORY_ACCESS_FLAG_NOFTZ) &&
+      kind != LOOM_ATOMIC_KIND_ADDF) {
+    return loom_view_emit_attribute_value_constraint(
+        emitter, op, IREE_SV("memory_flags"), op->instance_flags,
+        IREE_SV("noftz requires floating-point atomic addition"));
+  }
   if (!allow_exchange && loom_atomic_kind_is_exchange(kind)) {
     return loom_view_emit_attribute_value_constraint(
         emitter, op, IREE_SV("kind"), kind,
@@ -135,6 +141,15 @@ iree_status_t loom_view_subview_verify(const loom_module_t* module,
   loom_attribute_t static_offsets = loom_view_subview_static_offsets(op);
   loom_type_t source_type =
       loom_module_value_type(module, loom_view_subview_source(op));
+  loom_type_t result_type =
+      loom_module_value_type(module, loom_view_subview_result(op));
+  if (loom_type_is_view(source_type) && loom_type_is_view(result_type) &&
+      loom_type_view_alignment(source_type) !=
+          loom_type_view_alignment(result_type)) {
+    return loom_view_emit_operand_constraint(
+        emitter, op, IREE_SV("source"), source_type,
+        IREE_SV("the same element-access alignment as the result view"));
+  }
   return loom_view_verify_index_list_rank(
       module, op, emitter, IREE_SV("source"), source_type, static_offsets,
       loom_view_subview_offsets(op).count);

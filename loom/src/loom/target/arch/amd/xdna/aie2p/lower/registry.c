@@ -34,6 +34,10 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
                                          loom_type_t source_type,
                                          loom_type_t* out_low_type) {
   (void)user_data;
+  if (loom_type_is_buffer(source_type)) {
+    return loom_low_lower_make_register_type(
+        context, AIE2P_CORE_REG_CLASS_ID_AIE2P_EP, 1, out_low_type);
+  }
   if (loom_type_is_scalar(source_type)) {
     switch (loom_type_element_type(source_type)) {
       case LOOM_SCALAR_TYPE_INDEX:
@@ -67,11 +71,6 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
     }
     const loom_scalar_type_t element_type = loom_type_element_type(source_type);
     const bool is_rank_one = loom_type_rank(source_type) == 1;
-    if (is_rank_one && element_count == 8 &&
-        element_type == LOOM_SCALAR_TYPE_BF16) {
-      return loom_low_lower_make_register_type(
-          context, AIE2P_CORE_REG_CLASS_ID_AIE2P_EWL, 1, out_low_type);
-    }
     // Full-width integer matrix and VUPS results remain in the accumulator
     // file so their 2048 payload bits do not require four vector-file moves.
     if (is_rank_one &&
@@ -95,9 +94,10 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
           context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE, 1, out_low_type);
     }
     const int32_t element_bits = loom_scalar_type_bitwidth(element_type);
-    if (is_rank_one && element_bits > 0 &&
-        element_count > 512 / (uint32_t)element_bits &&
+    if (element_bits > 0 && element_count > 512 / (uint32_t)element_bits &&
         element_count <= 1024 / (uint32_t)element_bits) {
+      // Ordinary wide vectors retain the same ordered W-register payload
+      // across logical shape changes, just like single-X values below.
       return loom_low_lower_make_register_type(
           context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 4, out_low_type);
     }

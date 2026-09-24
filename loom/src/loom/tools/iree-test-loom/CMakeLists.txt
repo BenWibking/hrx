@@ -116,6 +116,7 @@ loom_cc_binary(
     iree::base
     loom::tooling::execution::execution_provider
     loom::tooling::input::configured
+    loom::transforms::cleanup::configured
     ${_iree_test_loom_platform_deps}
 )
 
@@ -128,6 +129,7 @@ iree_execution_test_suite(
     "iree-test-loom=::iree-test-loom"
     "loom-link=loom::tools::loom-link"
   DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/input/testdata/duplicate_symbols.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/library_cases.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/linked_input_cases.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/requirement_cases.loom"

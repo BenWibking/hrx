@@ -65,6 +65,8 @@ static bool loom_amdgpu_hal_kernel_library_bundle_is_compatible(
 typedef struct loom_amdgpu_hal_kernel_library_kernel_plan_t {
   // Selected prepared low.kernel.def op for frame.
   loom_op_t* low_function_op;
+  // Retained source proofs for the prepared packet effects.
+  const loom_low_memory_access_map_t* memory_accesses;
   // Resolved representation contract and function target facts.
   loom_low_resolved_target_t target;
   // ABI layout derived from prepared target-low IR.
@@ -511,6 +513,8 @@ static iree_status_t loom_amdgpu_hal_kernel_library_prepare_kernel_plan(
     return iree_ok_status();
   }
   out_plan->low_function_op = entry->func.op;
+  const loom_target_function_version_t* version = entry->function_version;
+  out_plan->memory_accesses = version != NULL ? version->memory_accesses : NULL;
   entry->target_facts = out_plan->target.target_facts;
 
   if (report != NULL) {
@@ -652,7 +656,7 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
       .schedule_pair_affinities = schedule_pair_affinities,
       .schedule_structural_state_reads = schedule_state_reads,
       .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL,
-      .memory_access_table = loom_low_memory_access_table_empty(),
+      .memory_accesses = plan->memory_accesses,
       .allocation_fixed_values = plan->abi_verify.fixed_values,
       .allocation_fixed_value_count = plan->abi_verify.fixed_value_count,
       .storage_lease_provider = &storage_lease_provider,

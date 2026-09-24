@@ -53,15 +53,15 @@ typedef enum loom_amdgpu_descriptor_trait_bit_e {
 } loom_amdgpu_descriptor_trait_bit_t;
 typedef uint32_t loom_amdgpu_descriptor_traits_t;
 
-// Relative completion order of VMEM instructions that write vector-register
-// results. Distinct classes may complete out of order even when they share a
-// native wait counter.
+// Relative completion order of VMEM loads and cache invalidations. Distinct
+// classes may complete out of order even when they share a native wait counter.
 typedef enum loom_amdgpu_vmem_result_order_class_e {
-  // Descriptor does not write an asynchronous VMEM result.
+  // Descriptor does not participate in VMEM load-result ordering.
   LOOM_AMDGPU_VMEM_RESULT_ORDER_NONE = 0,
   // Descriptor writes a VMEM result whose completion class is not known.
   LOOM_AMDGPU_VMEM_RESULT_ORDER_UNKNOWN = 1,
-  // Buffer, flat, global, or scratch VMEM result.
+  // Buffer, flat, global, or scratch VMEM result, or ordered cache
+  // invalidation.
   LOOM_AMDGPU_VMEM_RESULT_ORDER_NOSAMPLER = 2,
   // Image sampling VMEM result.
   LOOM_AMDGPU_VMEM_RESULT_ORDER_SAMPLER = 3,
@@ -70,6 +70,16 @@ typedef enum loom_amdgpu_vmem_result_order_class_e {
   // Number of VMEM result-order classes, including NONE.
   LOOM_AMDGPU_VMEM_RESULT_ORDER_CLASS_COUNT = 5,
 } loom_amdgpu_vmem_result_order_class_t;
+
+// Compact memory properties use three bits for result order, three for the
+// one-based retained payload operand, and two for the VALU overwrite window.
+typedef struct loom_amdgpu_store_data_wait_t {
+  // Descriptor operand carrying the retained VGPR payload, when cycles is
+  // nonzero.
+  uint8_t operand_index;
+  // Intervening issue slots before VALU overwrite. Other writes need one less.
+  uint8_t cycles;
+} loom_amdgpu_store_data_wait_t;
 
 typedef enum loom_amdgpu_reg_class_trait_bit_e {
   // Register class is the CDNA accumulator file.
@@ -112,6 +122,11 @@ loom_amdgpu_descriptor_traits_t loom_amdgpu_descriptor_traits(
 // Returns the generated VMEM result completion-order class for |descriptor|.
 loom_amdgpu_vmem_result_order_class_t
 loom_amdgpu_descriptor_vmem_result_order_class(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_descriptor_t* descriptor);
+
+// Returns the wide-store source retention contract, or zero cycles when absent.
+loom_amdgpu_store_data_wait_t loom_amdgpu_descriptor_store_data_wait(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_descriptor_t* descriptor);
 

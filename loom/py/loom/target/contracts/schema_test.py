@@ -16,6 +16,7 @@ from loom.dialect.vector import defs as vector
 from loom.error.target import ERR_TARGET_003
 from loom.target.contracts import (
     AttrProject,
+    Buffer,
     ContractFragment,
     DescriptorRule,
     EmitDescriptorOp,
@@ -226,6 +227,26 @@ def test_vector_static_element_range_requires_ordered_bounds() -> None:
         match="vector static element range minimum exceeds maximum",
     ):
         Vector("i32", minimum_static_elements=8, maximum_static_elements=4)
+
+
+def test_buffer_type_pattern_has_no_scalar_or_shape_constraint() -> None:
+    pattern = Buffer()
+    assert pattern.kind == "buffer"
+    assert pattern.elements == ()
+    for invalid in (
+        {"element": "i32"},
+        {"elements": ("i32",)},
+        {"lanes": 1},
+        {"dims": (1,)},
+        {"minimum_lanes": 1},
+        {"maximum_lanes": 1},
+        {"minimum_static_elements": 1},
+        {"maximum_static_elements": 1},
+    ):
+        with pytest.raises(
+            ValueError, match="buffer type patterns cannot constrain elements or shape"
+        ):
+            replace(pattern, **invalid)
 
 
 def test_view_type_pattern_accepts_exact_dimensions() -> None:
@@ -732,6 +753,33 @@ def test_descriptor_rule_rejects_unknown_source_value_field() -> None:
                     source_op=vector.vector_extract,
                     descriptor=descriptor,
                     guards=[Guard.value_type("missing", Scalar("i32"))],
+                )
+            ],
+        )
+
+
+def test_descriptor_rule_rejects_element_on_nonvariadic_value() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"vector.extract: guard value_type operand field 'source' "
+            r"is not variadic"
+        ),
+    ):
+        ContractFragment(
+            name="bad.source.element",
+            descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+            cases=[
+                DescriptorRule(
+                    source_op=vector.vector_extract,
+                    descriptor=TEST_LOW_EXTRACT_LANE_I32_DESCRIPTOR,
+                    guards=[
+                        Guard.value_type(
+                            "source",
+                            Vector("i32"),
+                            element=1,
+                        )
+                    ],
                 )
             ],
         )

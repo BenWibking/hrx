@@ -398,6 +398,21 @@ typedef enum loom_amdgpu_descriptor_set_info_flag_bits_e {
   // A dual v_mov_b32 pair routes the Y source through the SRC2 cache.
   LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE = UINT64_C(1)
                                                                   << 9,
+  // F32 memory min/max prefer a number over either quiet or signaling NaNs.
+  LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA = UINT64_C(1)
+                                                                   << 10,
+  // Floating atomics work on fine-grained host and peer memory at device scope.
+  LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY = UINT64_C(1)
+                                                                   << 11,
+  // Floating system atomics use hardware CAS when the fabric lacks the opcode.
+  LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY = UINT64_C(1)
+                                                                    << 12,
+  // Global/flat/buffer F32 atomic add preserves input and output subnormals.
+  LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS = UINT64_C(1)
+                                                                  << 13,
+  // Wide VMEM payloads remain readable during a short issue-slot window.
+  LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES = UINT64_C(1)
+                                                                << 14,
   // Descriptor-set info flags known by the AMDGPU target package.
   LOOM_AMDGPU_DESCRIPTOR_SET_INFO_KNOWN_FLAGS =
       LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING |
@@ -409,7 +424,12 @@ typedef enum loom_amdgpu_descriptor_set_info_flag_bits_e {
       LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_ARITHMETIC |
       LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_CONVERSION |
       LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_COMPARE |
-      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE,
+      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE |
+      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA |
+      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY |
+      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY |
+      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS |
+      LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES,
 } loom_amdgpu_descriptor_set_info_flag_bits_t;
 
 // Bitset of loom_amdgpu_descriptor_set_info_flag_bits_t values.
@@ -473,6 +493,22 @@ typedef enum loom_amdgpu_vector_memory_cache_policy_encoding_e {
   LOOM_AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX950_NT_SC0_SC1 = 3,
 } loom_amdgpu_vector_memory_cache_policy_encoding_t;
 
+// Memory ordering is independent of the packet's cache-field encoding. In
+// particular, GFX12 and GFX125 share SCOPE but have different cache completion
+// and device-release writeback requirements.
+typedef enum loom_amdgpu_memory_ordering_model_e {
+  // No global atomic ordering recipe is available.
+  LOOM_AMDGPU_MEMORY_ORDERING_MODEL_NONE = 0,
+  // Separate vector load/store counters and GL0/GL1 invalidation.
+  LOOM_AMDGPU_MEMORY_ORDERING_MODEL_GFX11 = 1,
+  // Scoped vector caches with device-coherent write completion.
+  LOOM_AMDGPU_MEMORY_ORDERING_MODEL_GFX12 = 2,
+  // Scoped writeback and explicit invalidation completion.
+  LOOM_AMDGPU_MEMORY_ORDERING_MODEL_GFX125 = 3,
+  // CDNA3/4 scoped cache controls with unified vector completion.
+  LOOM_AMDGPU_MEMORY_ORDERING_MODEL_CDNA = 4,
+} loom_amdgpu_memory_ordering_model_t;
+
 typedef struct loom_amdgpu_descriptor_set_sopp_opcodes_t {
   // Opcode for S_NOP.
   uint16_t nop;
@@ -498,6 +534,8 @@ typedef struct loom_amdgpu_descriptor_set_buffer_resource_info_t {
 typedef struct loom_amdgpu_descriptor_set_vector_memory_info_t {
   // Vector memory packet cache-policy immediate encoding shape.
   loom_amdgpu_vector_memory_cache_policy_encoding_t cache_policy_encoding;
+  // Completion and coherence contract for global atomic memory operations.
+  loom_amdgpu_memory_ordering_model_t ordering_model;
 } loom_amdgpu_descriptor_set_vector_memory_info_t;
 
 typedef struct loom_amdgpu_descriptor_set_info_t {

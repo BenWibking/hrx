@@ -57,6 +57,10 @@ static iree_status_t loom_bytecode_emit_complete_type(
             values, loom_type_encoding_value_id(type), &encoding));
       }
       IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(sink, encoding));
+      if (loom_type_kind(type) == LOOM_TYPE_VIEW) {
+        IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(
+            sink, loom_type_view_alignment_override(type)));
+      }
       for (uint8_t i = 0; i < loom_type_rank(type); ++i) {
         const uint64_t dimension = loom_type_dim(type, i);
         const bool dynamic = loom_dim_is_dynamic(dimension);
@@ -122,7 +126,7 @@ static iree_status_t loom_bytecode_emit_complete_type(
             numbering, loom_attr_descriptor_name(parameter), &name));
         IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(sink, name));
         IREE_RETURN_IF_ERROR(loom_bytecode_emit_attr_value_at_depth(
-            sink, numbering, values, parameters[i], parameter, 0, true));
+            sink, numbering, values, parameters[i], parameter, 0));
       }
       return iree_ok_status();
     }
@@ -170,25 +174,6 @@ iree_status_t loom_bytecode_write_type_bindings(
   }
   if (iree_status_is_ok(status)) {
     status = loom_bytecode_page_writer_write(sink, bytes.data, bytes.size);
-  }
-  return status;
-}
-
-iree_status_t loom_bytecode_emit_type_bindings(
-    iree_string_builder_t* sink, loom_bytecode_numbering_t* numbering,
-    loom_bytecode_value_numbering_t* values, uint32_t storage_node) {
-  if (!numbering->types.index.nodes[storage_node].has_bindings) {
-    return loom_bytecode_emit_uvarint(sink, 0);
-  }
-  iree_string_builder_t* payload = loom_bytecode_record_buffer_reset(numbering);
-  iree_status_t status = loom_bytecode_emit_complete_bindings(
-      payload, numbering, values, storage_node);
-  const iree_string_view_t bytes = iree_string_builder_view(payload);
-  if (iree_status_is_ok(status)) {
-    status = loom_bytecode_emit_uvarint(sink, bytes.size);
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_string_builder_append_string(sink, bytes);
   }
   return status;
 }

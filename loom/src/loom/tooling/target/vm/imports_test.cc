@@ -30,6 +30,7 @@
 #include "loom/tooling/compile/pipeline.h"
 #include "loom/tooling/input/input.h"
 #include "loom/tooling/target/vm/imports_bytecode.h"
+#include "loom/transforms/cleanup/configured.h"
 
 namespace {
 
@@ -444,6 +445,8 @@ class VMSourceCaptureTest : public VMImportsTest {
     loom_compile_pipeline_options_initialize(&options);
     options.target_environment = &environment;
     options.low_descriptor_registry = &registry;
+    options.cleanup_pattern_provider_set =
+        loom_cleanup_configured_pattern_provider_set();
     options.target_specializations = {&specialization, 1};
     loom_compile_pipeline_result_t pipeline;
     IREE_ASSERT_OK(

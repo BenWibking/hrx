@@ -38,6 +38,7 @@
 #include "loom/import/cxx/source/locations.h"
 #include "loom/import/cxx/source/source.h"
 #include "loom/import/cxx/symbol/functions.h"
+#include "loom/import/cxx/value/bitcast.h"
 #include "loom/import/cxx/value/representation.h"
 #include "loom/import/cxx/value/scalar.h"
 #include "loom/import/cxx/value/signature.h"
@@ -237,11 +238,13 @@ class Translator {
       return;
     }
     auto parameters = symbol->parameters();
-    control_.emplace(unit_, types_, body);
+    control_.emplace(unit_, diagnostics_, types_, body);
     auto saved = loom_builder_enter_region(&builder_, op, region);
     values_.clear();
+    locals_.clear();
     value_arena_.reset();
     size_t argument_index = 0;
+    size_t parameter_index = 0;
     for (auto* parameter : parameters) {
       bool kernel = defined.kind == FunctionKind::Kernel;
       const auto& partition =
@@ -249,9 +252,22 @@ class Translator {
       auto value = region_value(region, argument_index,
                                 kernel ? kSSAPartition : partition);
       if (partition.kind == ValueKind::Pointer && kernel) {
-        value = storage_.root(value.ssa(), defined.source);
+        auto buffer = value.ssa();
+        if (!defined.parameter_contracts.empty()) {
+          buffer = apply_parameter_contract(
+              defined.parameter_contracts[parameter_index], buffer, locations_,
+              &builder_);
+        }
+        value = storage_.root(buffer, defined.source);
       }
-      values_[parameter] = name(value, cxx::to_string(parameter->name()));
+      value = name(value, cxx::to_string(parameter->name()));
+      if (control_->addressed(parameter)) {
+        auto access = allocate_local(parameter, 0, defined.source);
+        storage_.store(access, value.ssa(), parameter->type(), defined.source);
+      } else {
+        values_[parameter] = value;
+      }
+      ++parameter_index;
     }
     auto returned = return_sequence({body->statementList, nullptr});
     loom_op_t* terminator;
@@ -288,14 +304,75 @@ class Translator {
     }
   }
 
+  StorageAccess allocate_local(cxx::Symbol* symbol, int64_t alignment,
+                               cxx::AST* owner) {
+    auto allocation = storage_.allocate(
+        symbol->type(), LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, alignment, owner);
+    auto spelling = cxx::to_string(symbol->name());
+    name(Value(allocation.pointer), spelling + "_storage");
+    name(allocation.view, spelling + "_view");
+    locals_[symbol] = allocation;
+    return {allocation.view, std::nullopt};
+  }
+
+  Value binding(cxx::Symbol* symbol, cxx::AST* owner) {
+    auto found = locals_.find(symbol);
+    if (found == locals_.end()) {
+      return values_.at(symbol);
+    }
+    if (unit_.typeTraits().is_array(symbol->type())) {
+      return found->second.pointer;
+    }
+    return name(storage_.load({found->second.view, std::nullopt},
+                              symbol->type(), owner),
+                cxx::to_string(symbol->name()));
+  }
+
   void initialize_variable(cxx::VariableSymbol* variable,
                            cxx::ExpressionAST* initializer, cxx::AST* owner) {
+    if (auto* array = cxx::type_cast<cxx::BoundedArrayType>(
+            types_.unqualified(variable->type()))) {
+      auto access =
+          allocate_local(variable, variable->explicitAlignment(), owner);
+      if (!initializer) {
+        return;
+      }
+      auto* elements = cxx::Initializer(initializer).expressionListSlot();
+      if (!elements) {
+        fail(owner, "automatic arrays require element-wise initialization");
+      }
+      auto* element_type =
+          unit_.typeTraits().get_element_type(variable->type());
+      auto* next = *elements;
+      // The source frontend supplies conversions and explicit element order.
+      // Each store precedes the next clause, which may read this same array.
+      // Omitted trivial elements are value-initialized, unlike a declaration
+      // without an initializer.
+      for (size_t index = 0; index < array->size(); ++index) {
+        auto value =
+            next ? expression(next->value).ssa()
+                 : initialize(array->elementType(), nullptr, owner).ssa();
+        access.index = scalars_.integer(index, LOOM_SCALAR_TYPE_INDEX,
+                                        locations_.get(owner));
+        storage_.store(access, value, element_type, owner);
+        if (next) {
+          next = next->next;
+        }
+      }
+      return;
+    }
+    if (control_->addressed(variable) ||
+        unit_.typeTraits().is_volatile(variable->type())) {
+      auto access =
+          allocate_local(variable, variable->explicitAlignment(), owner);
+      if (initializer) {
+        storage_.store(access, expression(initializer).ssa(), variable->type(),
+                       owner);
+      }
+      return;
+    }
     if (!initializer) {
       fail(owner, "locals require initializers");
-    }
-    if (cxx::type_cast<cxx::BoundedArrayType>(
-            types_.unqualified(variable->type()))) {
-      fail(owner, "local arrays require __shared__ in this slice");
     }
     types_.partition(variable->type(), owner);
     types_.admit_copy(variable->constructor(), variable->type(), owner);
@@ -308,10 +385,10 @@ class Translator {
       return;
     }
     auto* declaration = control_->condition_declaration(variable);
-    reject_global_binding_attributes(unit_, diagnostics_,
-                                     declaration->attributeList);
-    reject_global_binding_declarator(unit_, diagnostics_,
-                                     declaration->declarator);
+    reject_misplaced_binding_attributes(unit_, diagnostics_,
+                                        declaration->attributeList);
+    reject_misplaced_binding_declarator(unit_, diagnostics_,
+                                        declaration->declarator);
     if (variable->isStatic() || variable->isExtern() ||
         variable->isThreadLocal()) {
       fail(declaration, "condition storage duration must be automatic");
@@ -429,49 +506,90 @@ class Translator {
     return return_sequence(continuation);
   }
 
+  StorageProjection pointer_projection(Value value, const cxx::Type* type,
+                                       cxx::AST* owner) {
+    auto* pointer = cxx::type_cast<cxx::PointerType>(types_.unqualified(type));
+    return storage_.project(value.pointer(),
+                            pointer ? pointer->elementType() : type, owner);
+  }
+
+  StorageProjection pointer_expression(cxx::ExpressionAST* ast) {
+    auto* source = cxx::Initializer::stripImplicitCasts(ast);
+    if (unit_.typeTraits().is_array(source->type)) {
+      // Direct array indexing retains its enclosing lvalue's alignment. An
+      // actual pointer value, including an explicit cast or call result, starts
+      // with its pointee contract and carries no hidden alignment component.
+      auto projection = object_address(source);
+      if (auto* member = cxx::ast_cast<cxx::MemberExpressionAST>(source)) {
+        name(projection.pointer, cxx::to_string(member->symbol->name()));
+      }
+      return projection;
+    }
+    return pointer_projection(expression(ast), ast->type, ast);
+  }
+
+  struct SubscriptOperands {
+    // Evaluated array or pointer origin with its source alignment.
+    StorageProjection base;
+    // Evaluated integral displacement, before address-width conversion.
+    loom_value_id_t index;
+    // Source array or pointer type owning the element stride.
+    const cxx::Type* base_type;
+    // Source displacement type owning its signedness and width.
+    const cxx::Type* index_type;
+  };
+
+  SubscriptOperands subscript_operands(cxx::SubscriptExpressionAST* ast) {
+    if (ast->symbol) {
+      fail(ast, "overloaded indexing is not admitted");
+    }
+    auto* base_type = ast->baseExpression->type;
+    auto* index_type = ast->indexExpression->type;
+    if (types_.vector(base_type) || types_.vector(index_type)) {
+      fail(ast, "vector lane subscripts require a value projection");
+    }
+    if (unit_.typeTraits().is_pointer(base_type) ||
+        unit_.typeTraits().is_array(base_type)) {
+      auto base = pointer_expression(ast->baseExpression);
+      auto index = expression(ast->indexExpression);
+      return {base, index.ssa(), base_type, index_type};
+    }
+    // The commuted spelling i[p] still evaluates its written base first.
+    auto index = expression(ast->baseExpression);
+    auto base = pointer_expression(ast->indexExpression);
+    return {base, index.ssa(), index_type, base_type};
+  }
+
   StorageAccess address(cxx::ExpressionAST* ast) {
     if (auto* nested = cxx::ast_cast<cxx::NestedExpressionAST>(ast)) {
       return address(nested->expression);
     }
-    if (cxx::ast_cast<cxx::MemberExpressionAST>(ast)) {
-      return storage_.dereference(address_of(ast).pointer(), ast->type, ast);
+    if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(ast)) {
+      auto found = locals_.find(id->symbol);
+      if (found != locals_.end()) {
+        return {found->second.view, std::nullopt};
+      }
     }
     if (auto* subscript = cxx::ast_cast<cxx::SubscriptExpressionAST>(ast)) {
-      if (subscript->symbol) {
-        fail(ast, "overloaded indexing is not admitted");
-      }
-      auto base = expression(subscript->baseExpression);
-      auto index = expression(subscript->indexExpression);
-      auto* base_type = subscript->baseExpression->type;
-      auto* index_type = subscript->indexExpression->type;
-      if (types_.vector(base_type) || types_.vector(index_type)) {
-        fail(ast, "vector lane subscripts require a value projection");
-      }
-      if (!base.is_pointer()) {
-        std::swap(base, index);
-        std::swap(base_type, index_type);
-      }
-      return storage_.subscript(base.pointer(), index.ssa(), base_type,
-                                index_type, ast);
+      auto operands = subscript_operands(subscript);
+      return storage_.subscript(operands.base, operands.index,
+                                operands.base_type, operands.index_type, ast);
     }
-    if (auto* unary = cxx::ast_cast<cxx::UnaryExpressionAST>(ast)) {
-      if (!unary->symbol && unary->op == cxx::TokenKind::T_STAR) {
-        auto base = expression(unary->expression);
-        return storage_.dereference(base.pointer(), ast->type, ast);
-      }
-    }
-    fail(ast,
-         "memory access requires a builtin subscript, dereference or field");
+    return storage_.dereference(object_address(ast), ast->type, ast);
   }
 
-  Value address_of(cxx::ExpressionAST* ast) {
+  StorageProjection object_address(cxx::ExpressionAST* ast) {
     ast = cxx::Initializer::stripImplicitCasts(ast);
     if (auto* nested = cxx::ast_cast<cxx::NestedExpressionAST>(ast)) {
-      return address_of(nested->expression);
+      return object_address(nested->expression);
     }
-    if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(ast);
-        id && unit_.typeTraits().is_array(id->type)) {
-      return expression(id);
+    if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(ast)) {
+      if (auto found = locals_.find(id->symbol); found != locals_.end()) {
+        return storage_.project(found->second.pointer, id->type, id);
+      }
+      if (unit_.typeTraits().is_array(id->type)) {
+        return storage_.project(expression(id).pointer(), id->type, id);
+      }
     }
     if (auto* member = cxx::ast_cast<cxx::MemberExpressionAST>(ast)) {
       auto* field = cxx::symbol_cast<cxx::FieldSymbol>(member->symbol);
@@ -479,31 +597,18 @@ class Translator {
         fail(ast, "record storage access requires a non-static data member");
       }
       auto base = member->accessOp == cxx::TokenKind::T_MINUS_GREATER
-                      ? expression(member->baseExpression)
-                      : address_of(member->baseExpression);
-      return storage_.member(base.pointer(), field, ast);
+                      ? pointer_expression(member->baseExpression)
+                      : object_address(member->baseExpression);
+      return storage_.member(base, field, ast);
     }
     if (auto* subscript = cxx::ast_cast<cxx::SubscriptExpressionAST>(ast)) {
-      if (subscript->symbol) {
-        fail(ast, "overloaded indexing is not admitted");
-      }
-      auto base = expression(subscript->baseExpression);
-      auto index = expression(subscript->indexExpression);
-      auto* base_type = subscript->baseExpression->type;
-      auto* index_type = subscript->indexExpression->type;
-      if (types_.vector(base_type) || types_.vector(index_type)) {
-        fail(ast, "vector lanes do not have an independent storage address");
-      }
-      if (!base.is_pointer()) {
-        std::swap(base, index);
-        std::swap(base_type, index_type);
-      }
-      return storage_.advance(base.pointer(), index.ssa(), base_type,
-                              index_type, cxx::TokenKind::T_PLUS, ast);
+      auto operands = subscript_operands(subscript);
+      return storage_.advance(operands.base, operands.index, operands.base_type,
+                              operands.index_type, cxx::TokenKind::T_PLUS, ast);
     }
     if (auto* unary = cxx::ast_cast<cxx::UnaryExpressionAST>(ast)) {
       if (!unary->symbol && unary->op == cxx::TokenKind::T_STAR) {
-        return expression(unary->expression);
+        return pointer_expression(unary->expression);
       }
     }
     fail(ast, "address-of requires an existing storage-backed element");
@@ -513,7 +618,7 @@ class Translator {
     // An array lvalue denotes borrowed storage. Decay and subsequent element
     // projections preserve that origin without loading or copying the array.
     if (unit_.typeTraits().is_array(ast->type)) {
-      return address_of(ast);
+      return object_address(ast).pointer;
     }
     return storage_.load(address(ast), ast->type, ast);
   }
@@ -532,6 +637,9 @@ class Translator {
   Lvalue destination(cxx::ExpressionAST* expression, cxx::AST* owner) {
     types_.require_mutable(expression->type, expression);
     if (auto destination = control_->destination(expression)) {
+      if (locals_.contains(destination->binding)) {
+        return {expression->type, address(expression)};
+      }
       if (!values_.contains(destination->binding)) {
         fail(owner, "mutation requires an owned automatic source binding");
       }
@@ -578,8 +686,10 @@ class Translator {
             types_.unqualified(destination->type))) {
       auto one = scalars_.integer(1, LOOM_SCALAR_TYPE_I32, source);
       updated =
-          storage_.advance(previous.pointer(), one, pointer,
-                           unit_.control()->getIntType(), operation, owner);
+          storage_
+              .advance(pointer_projection(previous, pointer, owner), one,
+                       pointer, unit_.control()->getIntType(), operation, owner)
+              .pointer;
     } else {
       if (!unit_.typeTraits().is_integral(destination->type) ||
           types_.unqualified(destination->type)->kind() ==
@@ -613,9 +723,12 @@ class Translator {
     auto old = read(target, destination);
     if (old.is_pointer()) {
       auto updated =
-          storage_.advance(old.pointer(), value.ssa(), destination->type,
-                           assignment->rightExpression->type,
-                           cxx::get_underlying_binary_op(assignment->op), ast);
+          storage_
+              .advance(pointer_projection(old, destination->type, ast),
+                       value.ssa(), destination->type,
+                       assignment->rightExpression->type,
+                       cxx::get_underlying_binary_op(assignment->op), ast)
+              .pointer;
       write(target, Value(updated), ast);
       return Value(updated);
     }
@@ -823,22 +936,10 @@ class Translator {
                                        cast->type, ast);
     }
     if (auto* cast = cxx::ast_cast<cxx::BuiltinBitCastExpressionAST>(ast)) {
-      auto input = types_.get(cast->expression->type, ast);
-      auto output = types_.get(cast->type, ast);
-      if (loom_type_kind(input) != loom_type_kind(output) ||
-          (loom_type_kind(input) != LOOM_TYPE_SCALAR &&
-           loom_type_kind(input) != LOOM_TYPE_VECTOR) ||
-          unit_.control()->memoryLayout()->sizeOf(cast->expression->type) !=
-              unit_.control()->memoryLayout()->sizeOf(cast->type)) {
-        fail(ast,
-             "bit_cast requires equal-width scalars or equal-width vectors");
-      }
+      BitCast conversion(unit_, diagnostics_, types_, cast->expression->type,
+                         cast->type, ast);
       auto value = expression(cast->expression).ssa();
-      loom_op_t* op;
-      auto build = types_.vector(cast->type) ? loom_vector_bitcast_build
-                                             : loom_scalar_bitcast_build;
-      check(build(&builder_, value, input, output, source, &op));
-      return result(op);
+      return conversion.build(builder_, value, source);
     }
     if (auto* cast = cxx::ast_cast<cxx::CastExpressionAST>(ast)) {
       auto input = loom_type_kind(types_.get(cast->expression->type, ast));
@@ -906,11 +1007,14 @@ class Translator {
     }
 
     if (auto* decision = cxx::ast_cast<cxx::ConditionExpressionAST>(ast)) {
-      return values_.at(decision->symbol);
+      return binding(decision->symbol, ast);
     }
     if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(ast)) {
       if (auto found = values_.find(id->symbol); found != values_.end()) {
         return found->second;
+      }
+      if (locals_.contains(id->symbol)) {
+        return binding(id->symbol, ast);
       }
       if (auto* enumerator =
               cxx::symbol_cast<cxx::EnumeratorSymbol>(id->symbol)) {
@@ -1037,15 +1141,21 @@ class Translator {
       auto right = expression(binary->rightExpression);
       if (left.is_pointer() || right.is_pointer()) {
         if (left.is_pointer() && !right.is_pointer()) {
-          return storage_.advance(
-              left.pointer(), right.ssa(), binary->leftExpression->type,
-              binary->rightExpression->type, binary->op, ast);
+          return storage_
+              .advance(
+                  pointer_projection(left, binary->leftExpression->type, ast),
+                  right.ssa(), binary->leftExpression->type,
+                  binary->rightExpression->type, binary->op, ast)
+              .pointer;
         }
         if (right.is_pointer() && !left.is_pointer() &&
             binary->op == cxx::TokenKind::T_PLUS) {
-          return storage_.advance(
-              right.pointer(), left.ssa(), binary->rightExpression->type,
-              binary->leftExpression->type, binary->op, ast);
+          return storage_
+              .advance(
+                  pointer_projection(right, binary->rightExpression->type, ast),
+                  left.ssa(), binary->rightExpression->type,
+                  binary->leftExpression->type, binary->op, ast)
+              .pointer;
         }
         fail(ast,
              "pointer arithmetic requires a pointer and an integral "
@@ -1079,7 +1189,19 @@ class Translator {
                          ast);
       }
       if (unary->op == cxx::TokenKind::T_AMP) {
-        return address_of(unary->expression);
+        auto* operand = cxx::Initializer::stripImplicitCasts(unary->expression);
+        while (auto* nested =
+                   cxx::ast_cast<cxx::NestedExpressionAST>(operand)) {
+          operand = cxx::Initializer::stripImplicitCasts(nested->expression);
+        }
+        if (auto* dereference = cxx::ast_cast<cxx::UnaryExpressionAST>(operand);
+            dereference && !dereference->symbol &&
+            dereference->op == cxx::TokenKind::T_STAR) {
+          // Taking the address of an indirect object preserves the pointer;
+          // it neither reads the object nor needs its storage layout.
+          return expression(dereference->expression);
+        }
+        return object_address(unary->expression).pointer;
       }
       if (unary->op == cxx::TokenKind::T_STAR) {
         return load(ast);
@@ -1382,16 +1504,38 @@ class Translator {
       if (cxx::ast_cast<cxx::EmptyDeclarationAST>(declaration->declaration)) {
         return;
       }
+      if (auto* alias = cxx::ast_cast<cxx::AliasDeclarationAST>(
+              declaration->declaration)) {
+        reject_misplaced_binding_attributes(unit_, diagnostics_,
+                                            alias->attributeList);
+        reject_misplaced_binding_attributes(unit_, diagnostics_,
+                                            alias->typeId->attributeList);
+        reject_misplaced_binding_declarator(unit_, diagnostics_,
+                                            alias->typeId->declarator);
+        return;
+      }
+      if (auto* directive =
+              cxx::ast_cast<cxx::UsingDirectiveAST>(declaration->declaration)) {
+        reject_misplaced_binding_attributes(unit_, diagnostics_,
+                                            directive->attributeList);
+        return;
+      }
+      if (cxx::ast_cast<cxx::UsingDeclarationAST>(declaration->declaration)) {
+        return;
+      }
       auto* simple =
           cxx::ast_cast<cxx::SimpleDeclarationAST>(declaration->declaration);
       if (!simple) {
         fail(ast, "unsupported local declaration");
       }
-      reject_global_binding_attributes(unit_, diagnostics_,
-                                       simple->attributeList);
+      reject_misplaced_binding_attributes(unit_, diagnostics_,
+                                          simple->attributeList);
       for (auto* variable : cxx::ListView{simple->initDeclaratorList}) {
-        reject_global_binding_declarator(unit_, diagnostics_,
-                                         variable->declarator);
+        reject_misplaced_binding_declarator(unit_, diagnostics_,
+                                            variable->declarator);
+        if (cxx::symbol_cast<cxx::TypeAliasSymbol>(variable->symbol)) {
+          continue;
+        }
         auto* source_variable =
             cxx::symbol_cast<cxx::VariableSymbol>(variable->symbol);
         if (!source_variable || source_variable->isStatic() ||
@@ -1407,8 +1551,9 @@ class Translator {
                  "shared storage must be an uninitialized fixed scalar array "
                  "in the kernel");
           }
-          auto allocation = storage_.workgroup(
-              array, source_variable->explicitAlignment(), variable);
+          auto allocation =
+              storage_.allocate(array, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+                                source_variable->explicitAlignment(), variable);
           auto spelling = cxx::to_string(variable->symbol->name());
           values_[variable->symbol] = name(Value(allocation.pointer), spelling);
           name(allocation.view, spelling + "_view");
@@ -1518,7 +1663,7 @@ class Translator {
                         LoopTest test, cxx::VariableSymbol* decision) {
     initialize_condition(decision);
     auto written = live_mutations(ast);
-    if (decision) {
+    if (decision && values_.contains(decision)) {
       std::erase(written, decision);
       written.push_back(decision);
     }
@@ -1554,8 +1699,13 @@ class Translator {
     // A decision object is recreated after the body and for-loop increment.
     // The preheader supplied its first value, so every check sees a real value.
     if (decision) {
-      values_[decision] = name(expression(decision->initializer()),
-                               cxx::to_string(decision->name()));
+      auto value = expression(decision->initializer());
+      if (auto found = locals_.find(decision); found != locals_.end()) {
+        storage_.store({found->second.view, std::nullopt}, value.ssa(),
+                       decision->type(), ast);
+      } else {
+        values_[decision] = name(value, cxx::to_string(decision->name()));
+      }
     }
     auto yielded = current(written);
     check(loom_scf_yield_build(&builder_, yielded.data(), yielded.size(),
@@ -1565,6 +1715,7 @@ class Translator {
     bind_values(written, loom_op_results(op));
     if (decision) {
       values_.erase(decision);
+      locals_.erase(decision);
     }
   }
 
@@ -1587,7 +1738,8 @@ class Translator {
         constant_upper
             ? scalars_.integer(static_cast<int32_t>(*constant_upper),
                                LOOM_SCALAR_TYPE_I32, source)
-            : expression(std::get<cxx::ExpressionAST*>(counted.upper)).ssa();
+            : expression(std::get<CountedLoop::Bound>(counted.upper).expression)
+                  .ssa();
     auto upper = unsigned_offset(bound, source);
     auto step = scalars_.integer(counted.step, LOOM_SCALAR_TYPE_OFFSET, source);
     auto depth = schedule.pipeline_depth()
@@ -1833,6 +1985,9 @@ class Translator {
   ValueArena value_arena_;
   // Bound symbols, never identifier spellings, key source-to-SSA mappings.
   std::unordered_map<cxx::Symbol*, Value> values_;
+  // Storage-backed automatic objects retain one allocation across direct and
+  // aliased accesses. They are not mutable SSA bindings at region edges.
+  std::unordered_map<cxx::Symbol*, StorageAllocation> locals_;
   // Immutable control facts for the function currently being translated.
   std::optional<ControlFlow> control_;
 };

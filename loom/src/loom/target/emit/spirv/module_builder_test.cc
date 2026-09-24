@@ -394,6 +394,51 @@ TEST(SpirvModuleBuilderTest, BuildsStorageBufferI32AddModule) {
   loom_spirv_module_binary_deinitialize(&module, iree_allocator_system());
 }
 
+TEST(SpirvModuleBuilderTest, InternsExtendedInstructionImports) {
+  loom_spirv_module_builder_t builder;
+  IREE_ASSERT_OK(loom_spirv_module_builder_initialize(
+      &loom_spirv_low_target_bundle_vulkan1_3, iree_allocator_system(),
+      &builder));
+
+  uint32_t first_id = 0;
+  IREE_ASSERT_OK(loom_spirv_module_builder_import_extended_instruction_set(
+      &builder, LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450, &first_id));
+  uint32_t repeated_id = 0;
+  IREE_ASSERT_OK(loom_spirv_module_builder_import_extended_instruction_set(
+      &builder, LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450,
+      &repeated_id));
+  EXPECT_EQ(repeated_id, first_id);
+
+  loom_spirv_module_binary_t module;
+  IREE_ASSERT_OK(loom_spirv_module_builder_finalize(&builder, &module));
+  loom_spirv_module_builder_deinitialize(&builder);
+
+  const std::vector<Instruction> instructions = ParseInstructions(module);
+  iree_host_size_t import_count = 0;
+  const Instruction* imported_set = nullptr;
+  for (const Instruction& instruction : instructions) {
+    if (instruction.opcode != LOOM_SPIRV_OP_EXT_INST_IMPORT) {
+      continue;
+    }
+    ++import_count;
+    imported_set = &instruction;
+    ASSERT_FALSE(instruction.operands.empty());
+    EXPECT_EQ(instruction.operands[0], first_id);
+    iree_host_size_t next_operand_index = 0;
+    EXPECT_EQ(DecodeStringOperand(instruction.operands, 1, &next_operand_index),
+              "GLSL.std.450");
+    EXPECT_EQ(next_operand_index, instruction.operands.size());
+  }
+  EXPECT_EQ(import_count, 1u);
+  ASSERT_NE(imported_set, nullptr);
+  const Instruction* memory_model =
+      FindInstruction(instructions, LOOM_SPIRV_OP_MEMORY_MODEL, {});
+  ASSERT_NE(memory_model, nullptr);
+  EXPECT_LT(imported_set->word_offset, memory_model->word_offset);
+
+  loom_spirv_module_binary_deinitialize(&module, iree_allocator_system());
+}
+
 TEST(SpirvModuleBuilderTest, EmitsRawBdaHalKernelPreamble) {
   const loom_target_snapshot_t snapshot = {
       /*.name=*/IREE_SVL("spirv-vulkan1.3"),

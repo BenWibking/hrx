@@ -15,7 +15,7 @@ from enum import Enum, unique
 from loom.dsl import MemoryAccessInterface, Op
 from loom.target.contracts.guards import GuardDiagnostic
 from loom.target.contracts.memory_spaces import MEMORY_SPACE_NAMES
-from loom.target.low_descriptors import Descriptor
+from loom.target.low_descriptors import Descriptor, OperandRole
 
 _I64_MIN = -(2**63)
 _I64_MAX = 2**63 - 1
@@ -81,21 +81,36 @@ class SourceMemoryAddressCoordinateType(Enum):
 
 @dataclass(frozen=True, slots=True)
 class SourceMemoryIntegerConversion:
-    """Converts a canonical integer term to the byte arithmetic carrier.
+    """Converts a canonical integer term to the address arithmetic carrier.
 
     Canonical terms preserve numeric values: i1 is zero/one and the other
     fixed-width integers are signed. Narrowing preserves the low carrier bits;
     source-memory matching proves representability of the complete address.
+    A unary descriptor performs numeric conversion. An i1 descriptor with three
+    inputs selects between carrier constants one and zero using the predicate.
     """
 
     source_type: str
     descriptor: Descriptor
     immediate: tuple[str, int] | None = None
 
+    @property
+    def input_count(self) -> int:
+        return sum(
+            operand.role
+            in (OperandRole.OPERAND, OperandRole.PREDICATE, OperandRole.RESOURCE)
+            for operand in self.descriptor.operands
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class SourceMemoryByteOffsetMaterializer:
-    """Low descriptors used to materialize a dynamic byte offset value."""
+    """Defines target arithmetic for canonical dynamic byte offsets.
+
+    Integer conversions establish the carrier for canonical terms whether a
+    term is consumed directly by a target descriptor or composed into a
+    complete byte offset with the arithmetic descriptors.
+    """
 
     constant: Descriptor
     add: Descriptor
@@ -121,8 +136,8 @@ class SourceMemoryAddressMaterializer:
     coordinate_minimum: int = _I64_MIN
     coordinate_maximum: int = _I64_MAX
     shl_coordinate: Descriptor | None = None
-    index_to_coordinate_input: Descriptor | None = None
     index_to_coordinate: Descriptor | None = None
+    integer_conversions: tuple[SourceMemoryIntegerConversion, ...] = ()
     const_coordinate_immediate: str = "value"
     diagnostic: GuardDiagnostic | None = None
 
@@ -155,9 +170,9 @@ class SourceMemoryAddressMaterializer:
             and self.coordinate_unit_byte_count != 1
         ):
             raise ValueError("offset-coordinate source-memory addresses use byte units")
-        if self.coordinate_type == SourceMemoryAddressCoordinateType.INDEX and (
-            self.index_to_coordinate_input is not None
-            or self.index_to_coordinate is not None
+        if (
+            self.coordinate_type == SourceMemoryAddressCoordinateType.INDEX
+            and self.index_to_coordinate is not None
         ):
             raise ValueError(
                 "index-coordinate source-memory addresses use the mapped index "
@@ -196,8 +211,11 @@ class SourceMemoryConstraint:
     dynamic_byte_stride: int | None = 0
     allow_dynamic_stride_values: bool = False
     preserve_source_index: bool = False
+    # Unsigned width of the complete byte offset, or zero if unconstrained.
+    byte_offset_unsigned_bit_count: int = 0
+    # Unsigned width excluding the static bias, or zero if unconstrained.
     dynamic_offset_unsigned_bit_count: int = 0
-    dynamic_offset_diagnostic: GuardDiagnostic | None = None
+    byte_offset_diagnostic: GuardDiagnostic | None = None
     address_layout_diagnostic: GuardDiagnostic | None = None
     cache_policy_build_flags: int | None = 0
     diagnostic: GuardDiagnostic | None = None
@@ -225,8 +243,9 @@ class SourceMemoryConstraint:
         dynamic_byte_stride: int | None = 0,
         allow_dynamic_stride_values: bool = False,
         preserve_source_index: bool = False,
+        byte_offset_unsigned_bit_count: int = 0,
         dynamic_offset_unsigned_bit_count: int = 0,
-        dynamic_offset_diagnostic: GuardDiagnostic | None = None,
+        byte_offset_diagnostic: GuardDiagnostic | None = None,
         address_layout_diagnostic: GuardDiagnostic | None = None,
         cache_policy_build_flags: int | None = 0,
         diagnostic: GuardDiagnostic | None = None,
@@ -267,13 +286,18 @@ class SourceMemoryConstraint:
         object.__setattr__(self, "preserve_source_index", preserve_source_index)
         object.__setattr__(
             self,
+            "byte_offset_unsigned_bit_count",
+            byte_offset_unsigned_bit_count,
+        )
+        object.__setattr__(
+            self,
             "dynamic_offset_unsigned_bit_count",
             dynamic_offset_unsigned_bit_count,
         )
         object.__setattr__(
             self,
-            "dynamic_offset_diagnostic",
-            dynamic_offset_diagnostic,
+            "byte_offset_diagnostic",
+            byte_offset_diagnostic,
         )
         object.__setattr__(
             self,
@@ -315,12 +339,7 @@ class SourceMemoryConstraint:
             raise ValueError("source memory vector lane byte stride must fit in i64")
         if self.vector_lane_byte_stride == 0:
             raise ValueError("source memory vector lane byte stride must be non-zero")
-        if not _I64_MIN <= self.static_byte_offset_minimum <= _I64_MAX:
-            raise ValueError("source memory minimum static byte offset must fit in i64")
-        if not _I64_MIN <= self.static_byte_offset_maximum <= _I64_MAX:
-            raise ValueError("source memory maximum static byte offset must fit in i64")
-        if self.static_byte_offset_minimum > self.static_byte_offset_maximum:
-            raise ValueError("source memory static byte offset range is empty")
+        self._validate_byte_offsets()
         if not 0 <= self.minimum_alignment <= _U32_MAX:
             raise ValueError("source memory minimum alignment must fit in u32")
         if self.minimum_alignment != 0 and (
@@ -383,18 +402,28 @@ class SourceMemoryConstraint:
                 raise ValueError(
                     "source-index preservation requires zero dynamic view-base terms"
                 )
-        if self.dynamic_byte_stride is not None and not (
-            _I64_MIN <= self.dynamic_byte_stride <= _I64_MAX
-        ):
-            raise ValueError("source memory dynamic byte stride must fit in i64")
-        if not 0 <= self.dynamic_offset_unsigned_bit_count <= 64:
-            raise ValueError(
-                "source memory dynamic offset unsigned bit count must fit in u8"
-            )
         if self.cache_policy_build_flags is not None and not (
             0 <= self.cache_policy_build_flags <= _U32_MAX
         ):
             raise ValueError("source memory cache policy flags must fit in u32")
+
+    def _validate_byte_offsets(self) -> None:
+        if not _I64_MIN <= self.static_byte_offset_minimum <= _I64_MAX:
+            raise ValueError("source memory minimum static byte offset must fit in i64")
+        if not _I64_MIN <= self.static_byte_offset_maximum <= _I64_MAX:
+            raise ValueError("source memory maximum static byte offset must fit in i64")
+        if self.static_byte_offset_minimum > self.static_byte_offset_maximum:
+            raise ValueError("source memory static byte offset range is empty")
+        if self.dynamic_byte_stride is not None and not (
+            _I64_MIN <= self.dynamic_byte_stride <= _I64_MAX
+        ):
+            raise ValueError("source memory dynamic byte stride must fit in i64")
+        if not 0 <= self.byte_offset_unsigned_bit_count <= 64:
+            raise ValueError("source memory byte offset width must be in [0, 64]")
+        if not 0 <= self.dynamic_offset_unsigned_bit_count <= 64:
+            raise ValueError(
+                "source memory dynamic byte offset width must be in [0, 64]"
+            )
 
     def validate(self, source_op: Op) -> None:
         if not self.preserve_source_index:

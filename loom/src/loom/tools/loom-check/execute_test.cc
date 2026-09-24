@@ -20,6 +20,7 @@
 #include "loom/testing/context.h"
 #include "loom/testing/test_file.h"
 #include "loom/tools/loom-check/diagnostics.h"
+#include "loom/transforms/cleanup/configured.h"
 
 namespace loom {
 namespace {
@@ -192,6 +193,8 @@ const loom_check_environment_t kExecuteTestEnvironment = {
         /*.user_data=*/nullptr,
     },
     /*.target_environment=*/{},
+    /*.cleanup_pattern_provider_set=*/
+    loom_cleanup_configured_pattern_provider_set(),
     /*.initialize_low_descriptor_registry=*/
     {
         /*.fn=*/InitializeTestLowDescriptorRegistry,
@@ -212,6 +215,8 @@ const loom_check_environment_t kExecuteTestProviderEnvironment = {
         /*.user_data=*/nullptr,
     },
     /*.target_environment=*/{},
+    /*.cleanup_pattern_provider_set=*/
+    loom_cleanup_configured_pattern_provider_set(),
     /*.initialize_low_descriptor_registry=*/
     {
         /*.fn=*/InitializeTestLowDescriptorRegistry,

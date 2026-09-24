@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from loom.ir import ScalarTypeKind
@@ -565,6 +566,66 @@ TEST_LOW_ADD_I32_DESCRIPTOR = Descriptor(
     asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
     schedule_class=_SCHEDULE_SCALAR_ALU,
     flags=(DescriptorFlag.DEAD_REMOVABLE,),
+)
+
+TEST_LOW_TOTAL_ADD_I32_DESCRIPTOR = replace(
+    TEST_LOW_ADD_I32_DESCRIPTOR,
+    key="test.total.add.i32",
+    mnemonic="test.total.add.i32",
+    semantic_tag="test.total.add.i32",
+    flags=(DescriptorFlag.DEAD_REMOVABLE, DescriptorFlag.SAFE_TO_SPECULATE),
+)
+
+# Lane-local arithmetic can widen its execution mask without changing results
+# for lanes already active. Sampling the mask as ordinary data cannot.
+_EXECUTION_MASK_READ = replace(
+    _schedule_state_read(),
+    flags=(
+        OperandFlag.IMPLICIT,
+        OperandFlag.STATE_READ,
+        OperandFlag.SCHEDULE_ONLY_STATE,
+        OperandFlag.EXECUTION_MASK,
+    ),
+)
+
+TEST_LOW_MASKED_ADD_I32_DESCRIPTOR = replace(
+    TEST_LOW_TOTAL_ADD_I32_DESCRIPTOR,
+    key="test.masked.add.i32",
+    mnemonic="test.masked.add.i32",
+    semantic_tag="test.masked.add.i32",
+    operands=(*TEST_LOW_ADD_I32_DESCRIPTOR.operands, _EXECUTION_MASK_READ),
+)
+
+TEST_LOW_MASK_NARROW_I32_DESCRIPTOR = Descriptor(
+    key="test.mask.narrow.i32",
+    mnemonic="test.mask.narrow.i32",
+    semantic_tag="test.mask.narrow.i32",
+    operands=(
+        _i32_result(),
+        _i32_operand("condition"),
+        _EXECUTION_MASK_READ,
+        replace(
+            _schedule_state_write(),
+            flags=(
+                OperandFlag.IMPLICIT,
+                OperandFlag.STATE_WRITE,
+                OperandFlag.NARROWS_EXECUTION_MASK,
+            ),
+        ),
+    ),
+    asm_forms=_asm(results=("dst",), operands=("condition",)),
+    schedule_class=_SCHEDULE_SCALAR_ALU,
+    flags=(DescriptorFlag.DEAD_REMOVABLE,),
+)
+
+TEST_LOW_MASK_SAMPLE_I32_DESCRIPTOR = Descriptor(
+    key="test.mask.sample.i32",
+    mnemonic="test.mask.sample.i32",
+    semantic_tag="test.mask.sample.i32",
+    operands=(_i32_result(), _schedule_state_read()),
+    asm_forms=_asm(results=("dst",)),
+    schedule_class=_SCHEDULE_SCALAR_ALU,
+    flags=(DescriptorFlag.DEAD_REMOVABLE, DescriptorFlag.SAFE_TO_SPECULATE),
 )
 
 TEST_LOW_ADD_I32_PHYS_RHS_DESCRIPTOR = Descriptor(
@@ -1706,6 +1767,17 @@ TEST_LOW_BARRIER_DESCRIPTOR = Descriptor(
     asm_forms=_asm(),
     effects=(_BARRIER_EFFECT,),
     schedule_class=_SCHEDULE_CONTROL,
+    flags=(DescriptorFlag.SIDE_EFFECTING, DescriptorFlag.BARRIER),
+)
+
+TEST_LOW_MEMORY_BARRIER_DESCRIPTOR = Descriptor(
+    key="test.memory.barrier",
+    mnemonic="test.memory.barrier",
+    semantic_tag="memory.barrier",
+    operands=(),
+    asm_forms=_asm(),
+    effects=(_BARRIER_EFFECT,),
+    schedule_class=_SCHEDULE_CONTROL,
     flags=(DescriptorFlag.SIDE_EFFECTING,),
 )
 
@@ -2235,6 +2307,10 @@ TEST_LOW_CORE_DESCRIPTOR_SET = DescriptorSet(
         TEST_LOW_CONST_EXPLICIT32_DESCRIPTOR,
         TEST_LOW_REMATERIALIZE_I32_DESCRIPTOR,
         TEST_LOW_ADD_I32_DESCRIPTOR,
+        TEST_LOW_TOTAL_ADD_I32_DESCRIPTOR,
+        TEST_LOW_MASKED_ADD_I32_DESCRIPTOR,
+        TEST_LOW_MASK_NARROW_I32_DESCRIPTOR,
+        TEST_LOW_MASK_SAMPLE_I32_DESCRIPTOR,
         TEST_LOW_ADD_I32_PHYS_RHS_DESCRIPTOR,
         TEST_LOW_CONVERGENT_I32_DESCRIPTOR,
         TEST_LOW_MUL_I32_DESCRIPTOR,
@@ -2313,6 +2389,7 @@ TEST_LOW_CORE_DESCRIPTOR_SET = DescriptorSet(
         TEST_LOW_STORE_INDEX_V4F32_DESCRIPTOR,
         TEST_LOW_CALL_I32_DESCRIPTOR,
         TEST_LOW_BARRIER_DESCRIPTOR,
+        TEST_LOW_MEMORY_BARRIER_DESCRIPTOR,
         TEST_LOW_BR_DESCRIPTOR,
         TEST_LOW_COND_BR_I32_DESCRIPTOR,
         TEST_LOW_RETURN_I32_DESCRIPTOR,

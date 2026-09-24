@@ -37,16 +37,6 @@ static bool loom_amdgpu_memory_access_static_byte_offset_is_usable(
   return true;
 }
 
-static bool loom_amdgpu_memory_access_is_single_byte_payload(
-    loom_type_t vector_type) {
-  if (!loom_type_is_vector(vector_type) || loom_type_rank(vector_type) != 1 ||
-      !loom_type_is_all_static(vector_type) ||
-      loom_type_dim_static_size_at(vector_type, 0) != 1) {
-    return false;
-  }
-  return loom_scalar_type_bitwidth(loom_type_element_type(vector_type)) == 8;
-}
-
 static loom_amdgpu_memory_access_rejection_flags_t
 loom_amdgpu_memory_access_alloca_root_rejection_bit(
     loom_value_fact_memory_space_t memory_space) {
@@ -73,7 +63,7 @@ bool loom_amdgpu_memory_access_include_alloca_root_byte_offset(
   }
 
   uint64_t root_byte_offset = 0;
-  if (!loom_amdgpu_source_alloca_layout_lookup_root(
+  if (!loom_amdgpu_source_alloca_layout_lookup_byte_offset(
           alloca_layout, access->source.memory_space,
           access->source.root_value_id, &root_byte_offset) ||
       root_byte_offset > INT64_MAX) {
@@ -98,14 +88,6 @@ static bool loom_amdgpu_memory_access_register_footprint(
     loom_type_t vector_type, loom_amdgpu_memory_access_t* access,
     loom_amdgpu_memory_access_diagnostic_t* diagnostic) {
   access->payload_format = LOOM_AMDGPU_MEMORY_PAYLOAD_FORMAT_GENERIC;
-  if (loom_amdgpu_memory_access_is_single_byte_payload(vector_type)) {
-    access->payload_register_class =
-        LOOM_AMDGPU_MEMORY_PAYLOAD_REGISTER_CLASS_VGPR;
-    access->payload_register_count = 1;
-    access->packet_byte_count = 1;
-    return true;
-  }
-
   uint32_t register_count = loom_amdgpu_vector_32bit_lane_count(vector_type);
   if (register_count == 0) {
     const uint32_t f64_lane_count = loom_amdgpu_static_vector_lane_count(
@@ -121,37 +103,20 @@ static bool loom_amdgpu_memory_access_register_footprint(
     return true;
   }
 
-  uint32_t payload_bit_count = 0;
-  bool packed_16bit_float = false;
-  bool packed_8bit_float = false;
-  if (!loom_amdgpu_type_packed_integer_storage(vector_type, &payload_bit_count,
-                                               &register_count)) {
-    if (!loom_amdgpu_type_packed_8bit_float_storage(
-            vector_type, &payload_bit_count, &register_count)) {
-      packed_16bit_float = loom_amdgpu_type_packed_16bit_float_storage(
-          vector_type, &payload_bit_count, &register_count);
-    } else {
-      packed_8bit_float = true;
-    }
-  }
-  if (payload_bit_count == 0) {
+  loom_amdgpu_vector_storage_t storage = {0};
+  if (loom_type_rank(vector_type) != 1 ||
+      !loom_amdgpu_type_vector_storage(vector_type, &storage)) {
     diagnostic->rejection_bits |=
         LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_VECTOR_TYPE;
     return false;
   }
+  const uint32_t payload_bit_count =
+      storage.element_count * storage.element_bit_count;
+  register_count = storage.register_count;
   const uint32_t register_bit_count = register_count * 32u;
-  const bool packed_i8_pair = payload_bit_count == 16u &&
-                              register_count == 1u &&
-                              loom_amdgpu_static_vector_lane_count(
-                                  vector_type, LOOM_SCALAR_TYPE_I8, 2) == 2;
-  const bool packed_f8_pair =
-      packed_8bit_float && payload_bit_count == 16u && register_count == 1u;
-  const bool packed_i16_scalar = payload_bit_count == 16u &&
-                                 register_count == 1u &&
-                                 loom_amdgpu_static_vector_lane_count(
-                                     vector_type, LOOM_SCALAR_TYPE_I16, 1) == 1;
-  if (payload_bit_count != register_bit_count && !packed_16bit_float &&
-      !packed_i8_pair && !packed_f8_pair && !packed_i16_scalar) {
+  if (payload_bit_count != register_bit_count &&
+      !iree_any_bit_set(loom_amdgpu_vector_storage_kind_flags(storage.kind),
+                        LOOM_AMDGPU_VECTOR_STORAGE_KIND_FLAG_PACKED_PAYLOAD)) {
     diagnostic->rejection_bits |=
         LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_PACKED_REGISTER_FOOTPRINT;
     diagnostic->payload_type = vector_type;
@@ -205,19 +170,6 @@ static void loom_amdgpu_memory_access_try_record_vector_width_diagnostic(
           source->element_byte_count, LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES);
 }
 
-static bool loom_amdgpu_memory_access_is_packed_16bit_float_tail(
-    loom_type_t vector_type, const loom_amdgpu_memory_access_t* access) {
-  uint32_t payload_bit_count = 0;
-  uint32_t register_count = 0;
-  if (!loom_amdgpu_type_packed_16bit_float_storage(
-          vector_type, &payload_bit_count, &register_count)) {
-    return false;
-  }
-  return register_count == access->payload_register_count &&
-         payload_bit_count / 8u == access->packet_byte_count &&
-         access->packet_byte_count % 4u == 2u;
-}
-
 static bool loom_amdgpu_memory_access_is_ds_pair(
     const loom_amdgpu_memory_access_t* access) {
   if (access->source.vector_lane_count != 2u ||
@@ -238,8 +190,8 @@ static bool loom_amdgpu_memory_access_has_contiguous_vector_lanes(
 }
 
 // Canonical address expressions can retain integer payloads after a
-// value-preserving address cast. Both payload widths are materializable;
-// the selected address form owns any narrowing proof.
+// value-preserving address cast. Narrow payloads already use signed words;
+// predicates project to zero/one. The address form owns any narrowing proof.
 static bool loom_amdgpu_memory_dynamic_index_can_materialize_vaddr(
     const loom_module_t* module, loom_value_id_t value_id) {
   if (value_id >= module->values.count) {
@@ -247,19 +199,20 @@ static bool loom_amdgpu_memory_dynamic_index_can_materialize_vaddr(
   }
   const loom_type_t type = loom_module_value_type(module, value_id);
   return loom_amdgpu_type_is_address_scalar(type) ||
-         loom_amdgpu_type_is_i32(type) || loom_amdgpu_type_is_i64(type);
+         (loom_type_is_scalar(type) &&
+          loom_scalar_type_is_integer(loom_type_element_type(type)));
 }
 
 static bool loom_amdgpu_memory_dynamic_index_can_materialize_soffset(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     const loom_view_region_table_t* view_regions,
     loom_amdgpu_source_value_analysis_t* analysis, loom_value_id_t value_id) {
-  if (value_id >= module->values.count) {
+  if (!loom_amdgpu_memory_dynamic_index_can_materialize_vaddr(module,
+                                                              value_id)) {
     return false;
   }
-  const loom_type_t type = loom_module_value_type(module, value_id);
-  return (loom_amdgpu_type_is_address_scalar(type) ||
-          loom_amdgpu_type_is_i32(type) || loom_amdgpu_type_is_i64(type)) &&
+  return !loom_amdgpu_analyzed_source_value_is_native_i1_mask(
+             module, fact_table, view_regions, analysis, value_id) &&
          !loom_amdgpu_analyzed_source_value_prefers_vgpr(
              module, fact_table, view_regions, analysis, value_id);
 }
@@ -295,17 +248,9 @@ static bool loom_amdgpu_memory_dynamic_term_can_materialize_soffset(
     const loom_view_region_table_t* view_regions,
     loom_amdgpu_source_value_analysis_t* analysis,
     const loom_low_source_memory_dynamic_term_t* term) {
-  if (term->index >= module->values.count) {
-    return false;
-  }
-  const loom_type_t type = loom_module_value_type(module, term->index);
-  if (!loom_amdgpu_type_is_address_scalar(type) &&
-      !loom_amdgpu_type_is_i32(type) && !loom_amdgpu_type_is_i64(type)) {
-    return false;
-  }
   if (term->source !=
           LOOM_LOW_SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_WORKGROUP_ID &&
-      loom_amdgpu_analyzed_source_value_prefers_vgpr(
+      !loom_amdgpu_memory_dynamic_index_can_materialize_soffset(
           module, fact_table, view_regions, analysis, term->index)) {
     return false;
   }
@@ -383,15 +328,16 @@ typedef struct loom_amdgpu_memory_packet_selection_context_t {
   // Cached dynamic-term materialization facts for the source access.
   const loom_amdgpu_memory_dynamic_term_materialization_plan_t*
       materialization_plan;
+  // The retained storage root has a per-lane vector address.
+  bool root_prefers_vgpr;
 } loom_amdgpu_memory_packet_selection_context_t;
 
-static bool loom_amdgpu_memory_dynamic_term_materialization_plan_build(
+static void loom_amdgpu_memory_dynamic_term_materialization_plan_build(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     const loom_view_region_table_t* view_regions,
     loom_amdgpu_source_value_analysis_t* analysis,
     const loom_low_source_memory_access_plan_t* source,
-    loom_amdgpu_memory_dynamic_term_materialization_plan_t* out_plan,
-    loom_amdgpu_memory_access_diagnostic_t* diagnostic) {
+    loom_amdgpu_memory_dynamic_term_materialization_plan_t* out_plan) {
   *out_plan = (loom_amdgpu_memory_dynamic_term_materialization_plan_t){
       .dynamic_view_base_can_materialize_soffset =
           loom_amdgpu_memory_access_dynamic_view_base_can_materialize_soffset(
@@ -401,11 +347,6 @@ static bool loom_amdgpu_memory_dynamic_term_materialization_plan_build(
        ++term_index) {
     const loom_low_source_memory_dynamic_term_t* term =
         &source->dynamic_terms[term_index];
-    if (term->byte_stride < 0) {
-      diagnostic->rejection_bits |=
-          LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_DYNAMIC_STRIDE;
-      return false;
-    }
     out_plan->terms[term_index] =
         (loom_amdgpu_memory_dynamic_term_materialization_t){
             .needs_scaled_materialization =
@@ -419,7 +360,6 @@ static bool loom_amdgpu_memory_dynamic_term_materialization_plan_build(
                                                                       term),
         };
   }
-  return true;
 }
 
 static bool loom_amdgpu_memory_dynamic_term_select_value_kind(
@@ -613,11 +553,9 @@ bool loom_amdgpu_memory_access_select_dynamic_term_kinds(
     loom_amdgpu_memory_access_t* access,
     loom_amdgpu_memory_access_diagnostic_t* diagnostic) {
   loom_amdgpu_memory_dynamic_term_materialization_plan_t materialization_plan;
-  if (!loom_amdgpu_memory_dynamic_term_materialization_plan_build(
-          module, fact_table, view_regions, analysis, &access->source,
-          &materialization_plan, diagnostic)) {
-    return false;
-  }
+  loom_amdgpu_memory_dynamic_term_materialization_plan_build(
+      module, fact_table, view_regions, analysis, &access->source,
+      &materialization_plan);
   return loom_amdgpu_memory_access_select_dynamic_term_kinds_from_plan(
       &materialization_plan, access, diagnostic);
 }
@@ -628,11 +566,6 @@ bool loom_amdgpu_memory_access_select_vaddr_dynamic_terms(
   for (uint8_t i = 0; i < access->source.dynamic_term_count; ++i) {
     const loom_low_source_memory_dynamic_term_t* term =
         &access->source.dynamic_terms[i];
-    if (term->byte_stride < 0) {
-      diagnostic->rejection_bits |=
-          LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_DYNAMIC_STRIDE;
-      return false;
-    }
     if (!loom_amdgpu_memory_dynamic_term_can_materialize_vaddr(module, term)) {
       diagnostic->rejection_bits |=
           LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_DYNAMIC_INDEX_SOURCE;
@@ -1958,7 +1891,10 @@ static bool loom_amdgpu_memory_access_try_select_global_smem(
     loom_low_source_memory_operation_kind_t kind,
     loom_amdgpu_memory_access_t* access) {
   loom_amdgpu_memory_access_t candidate = *access;
+  // Scalar memory discards the address's two low bits. Packed element types
+  // may require less alignment than the register-sized packets carrying them.
   if (kind != LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD ||
+      candidate.source.minimum_alignment < 4 ||
       (candidate.source.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
        candidate.source.memory_space !=
            LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT) ||
@@ -2036,7 +1972,7 @@ static bool loom_amdgpu_memory_access_try_select_global_saddr(
 static bool loom_amdgpu_memory_dynamic_term_can_flat_address(
     const loom_module_t* module,
     const loom_low_source_memory_dynamic_term_t* term) {
-  return term->byte_stride > 0 &&
+  return term->byte_stride != 0 &&
          loom_amdgpu_memory_dynamic_term_can_materialize_vaddr(module, term);
 }
 
@@ -2290,6 +2226,9 @@ loom_amdgpu_memory_address_attempt_apply(
                  ? LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_SELECTED
                  : LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_REJECTED;
     case LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_BUFFER_RESOURCE:
+      if (selection_context->root_prefers_vgpr) {
+        return LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_NOT_APPLICABLE;
+      }
       if (!loom_amdgpu_memory_access_has_contiguous_vector_lanes(access)) {
         diagnostic->rejection_bits |=
             LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_VECTOR_AXIS_STRIDE;
@@ -2300,7 +2239,7 @@ loom_amdgpu_memory_address_attempt_apply(
                  ? LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_SELECTED
                  : LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_NOT_APPLICABLE;
     case LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_GLOBAL_SMEM:
-      if (!allow_global_smem) {
+      if (!allow_global_smem || selection_context->root_prefers_vgpr) {
         return LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_NOT_APPLICABLE;
       }
       if (!loom_amdgpu_memory_access_has_contiguous_vector_lanes(access)) {
@@ -2311,6 +2250,9 @@ loom_amdgpu_memory_address_attempt_apply(
                  ? LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_SELECTED
                  : LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_NOT_APPLICABLE;
     case LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_GLOBAL_SADDR:
+      if (selection_context->root_prefers_vgpr) {
+        return LOOM_AMDGPU_MEMORY_ADDRESS_ATTEMPT_NOT_APPLICABLE;
+      }
       if (!loom_amdgpu_memory_access_has_contiguous_vector_lanes(access)) {
         diagnostic->rejection_bits |=
             LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_VECTOR_AXIS_STRIDE;
@@ -2600,21 +2542,14 @@ static bool loom_amdgpu_memory_access_make_byte_chunk_source(
     loom_amdgpu_memory_access_diagnostic_t* out_diagnostic) {
   *out_source = *source;
   if (source->element_byte_count == 0 ||
-      packet_byte_count % source->element_byte_count != 0 ||
-      packet_byte_count / source->element_byte_count > UINT32_MAX) {
+      packet_byte_count % source->element_byte_count != 0) {
     out_diagnostic->rejection_bits |=
         LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_VECTOR_TYPE;
     return false;
   }
   out_source->vector_lane_count =
       (uint32_t)(packet_byte_count / source->element_byte_count);
-  const uint64_t static_delta_unsigned = source_byte_offset;
-  if (static_delta_unsigned > INT64_MAX) {
-    out_diagnostic->rejection_bits |=
-        LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_DESCRIPTOR_OFFSET_RANGE;
-    return false;
-  }
-  const int64_t static_delta = (int64_t)static_delta_unsigned;
+  const int64_t static_delta = source_byte_offset;
   if (source->static_byte_offset > INT64_MAX - static_delta) {
     out_diagnostic->rejection_bits |=
         LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_DESCRIPTOR_OFFSET_RANGE;
@@ -2622,16 +2557,6 @@ static bool loom_amdgpu_memory_access_make_byte_chunk_source(
   }
   out_source->static_byte_offset = source->static_byte_offset + static_delta;
   return true;
-}
-
-static bool loom_amdgpu_memory_access_make_32bit_chunk_source(
-    const loom_low_source_memory_access_plan_t* source,
-    uint32_t source_register_offset, uint32_t source_register_count,
-    loom_low_source_memory_access_plan_t* out_source,
-    loom_amdgpu_memory_access_diagnostic_t* out_diagnostic) {
-  return loom_amdgpu_memory_access_make_byte_chunk_source(
-      source, source_register_offset * 4u, source_register_count * 4u,
-      out_source, out_diagnostic);
 }
 
 static void loom_amdgpu_memory_access_make_packet(
@@ -2649,7 +2574,7 @@ static void loom_amdgpu_memory_access_make_packet(
 static bool loom_amdgpu_memory_access_plan_push_packet(
     const loom_amdgpu_memory_packet_selection_context_t* selection_context,
     loom_low_source_memory_operation_kind_t kind, bool allow_global_smem,
-    uint32_t source_register_offset, loom_amdgpu_memory_access_t* access,
+    uint32_t payload_byte_offset, loom_amdgpu_memory_access_t* access,
     loom_amdgpu_memory_access_selection_t* out_selection,
     loom_amdgpu_memory_access_diagnostic_t* out_diagnostic) {
   if (!loom_amdgpu_memory_access_select_packet(
@@ -2665,7 +2590,7 @@ static bool loom_amdgpu_memory_access_plan_push_packet(
   out_selection->packets[out_selection->packet_count++] =
       (loom_amdgpu_memory_packet_plan_t){
           .access = *access,
-          .source_register_offset = source_register_offset,
+          .payload_byte_offset = payload_byte_offset,
       };
   return true;
 }
@@ -2674,13 +2599,13 @@ static bool loom_amdgpu_memory_access_plan_push_chunk_packet(
     const loom_amdgpu_memory_packet_selection_context_t* selection_context,
     loom_low_source_memory_operation_kind_t kind, bool allow_global_smem,
     const loom_low_source_memory_access_plan_t* source,
-    uint32_t source_register_offset, uint32_t payload_register_count,
+    uint32_t payload_byte_offset, uint32_t payload_register_count,
     uint32_t packet_byte_count,
     loom_amdgpu_memory_access_selection_t* out_selection,
     loom_amdgpu_memory_access_diagnostic_t* out_diagnostic) {
   loom_low_source_memory_access_plan_t chunk_source = {0};
   if (!loom_amdgpu_memory_access_make_byte_chunk_source(
-          source, source_register_offset * 4u, packet_byte_count, &chunk_source,
+          source, payload_byte_offset, packet_byte_count, &chunk_source,
           out_diagnostic)) {
     return false;
   }
@@ -2688,7 +2613,7 @@ static bool loom_amdgpu_memory_access_plan_push_chunk_packet(
   loom_amdgpu_memory_access_make_packet(&chunk_source, payload_register_count,
                                         packet_byte_count, &packet_access);
   return loom_amdgpu_memory_access_plan_push_packet(
-      selection_context, kind, allow_global_smem, source_register_offset,
+      selection_context, kind, allow_global_smem, payload_byte_offset,
       &packet_access, out_selection, out_diagnostic);
 }
 
@@ -2713,7 +2638,7 @@ static bool loom_amdgpu_memory_access_plan_push_strided_lane_packet(
                                         &packet_access);
   return loom_amdgpu_memory_access_plan_push_packet(
       selection_context, kind, /*allow_global_smem=*/false,
-      lane_index * lane_register_count, &packet_access, out_selection,
+      lane_index * source->element_byte_count, &packet_access, out_selection,
       out_diagnostic);
 }
 
@@ -2770,11 +2695,9 @@ bool loom_amdgpu_memory_access_plan_select(
                : LOOM_MEMORY_ACCESS_OPERATION_STORE;
   }
   loom_amdgpu_memory_dynamic_term_materialization_plan_t materialization_plan;
-  if (!loom_amdgpu_memory_dynamic_term_materialization_plan_build(
-          module, fact_table, view_regions, analysis, out_source,
-          &materialization_plan, out_diagnostic)) {
-    return false;
-  }
+  loom_amdgpu_memory_dynamic_term_materialization_plan_build(
+      module, fact_table, view_regions, analysis, out_source,
+      &materialization_plan);
   const loom_amdgpu_memory_packet_selection_context_t selection_context = {
       .module = module,
       .fact_table = fact_table,
@@ -2784,6 +2707,9 @@ bool loom_amdgpu_memory_access_plan_select(
       .bundle = bundle,
       .instruction_constraints = instruction_constraints,
       .materialization_plan = &materialization_plan,
+      .root_prefers_vgpr = loom_amdgpu_analyzed_source_value_prefers_vgpr(
+          module, fact_table, view_regions, analysis,
+          out_source->root_value_id),
   };
 
   loom_amdgpu_memory_access_t access = {
@@ -2843,9 +2769,8 @@ bool loom_amdgpu_memory_access_plan_select(
   const bool whole_register_payload =
       access.packet_byte_count == whole_register_byte_count;
   if (access.payload_register_count <= LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES &&
-      (whole_register_payload || access.payload_register_count == 1)) {
-    const bool allow_global_smem =
-        !is_atomic && loom_amdgpu_type_is_32bit_memory_payload(vector_type);
+      (whole_register_payload || access.packet_byte_count <= 2)) {
+    const bool allow_global_smem = !is_atomic && whole_register_payload;
     return loom_amdgpu_memory_access_plan_push_packet(
         &selection_context, kind, allow_global_smem, 0, &access, out_selection,
         out_diagnostic);
@@ -2855,17 +2780,6 @@ bool loom_amdgpu_memory_access_plan_select(
         LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_VECTOR_TYPE;
     return false;
   }
-  const bool packed_16bit_float_tail =
-      loom_amdgpu_memory_access_is_packed_16bit_float_tail(vector_type,
-                                                           &access);
-  if (!whole_register_payload && !packed_16bit_float_tail) {
-    out_diagnostic->rejection_bits |=
-        LOOM_AMDGPU_MEMORY_ACCESS_REJECTION_PACKED_REGISTER_FOOTPRINT;
-    out_diagnostic->payload_type = vector_type;
-    out_diagnostic->payload_bit_count = access.packet_byte_count * 8u;
-    out_diagnostic->register_bit_count = access.payload_register_count * 32u;
-    return false;
-  }
   if (out_source->vector_lane_byte_stride <= 0 ||
       out_source->vector_lane_byte_stride > UINT32_MAX) {
     out_diagnostic->rejection_bits |=
@@ -2873,55 +2787,23 @@ bool loom_amdgpu_memory_access_plan_select(
     return false;
   }
 
-  if (packed_16bit_float_tail) {
-    uint32_t source_register_offset = 0;
-    uint32_t full_register_count = access.packet_byte_count / 4u;
-    while (full_register_count != 0) {
-      const uint32_t packet_register_count =
-          iree_min(full_register_count, LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES);
-      if (!loom_amdgpu_memory_access_plan_push_chunk_packet(
-              &selection_context, kind, /*allow_global_smem=*/false,
-              &access.source, source_register_offset, packet_register_count,
-              packet_register_count * 4u, out_selection, out_diagnostic)) {
-        return false;
-      }
-      source_register_offset += packet_register_count;
-      full_register_count -= packet_register_count;
-    }
-    const uint32_t tail_byte_count = access.packet_byte_count % 4u;
-    if (tail_byte_count != 0 &&
-        !loom_amdgpu_memory_access_plan_push_chunk_packet(
-            &selection_context, kind, /*allow_global_smem=*/false,
-            &access.source, source_register_offset, 1u, tail_byte_count,
-            out_selection, out_diagnostic)) {
+  uint32_t payload_byte_offset = 0;
+  while (payload_byte_offset < access.packet_byte_count) {
+    const uint32_t remaining = access.packet_byte_count - payload_byte_offset;
+    // Full registers use the widest packet. Sub-register tails use a halfword
+    // and then a byte, retaining both positions within the packed SSA value.
+    const uint32_t packet_byte_count =
+        remaining >= 4u
+            ? iree_min(remaining / 4u, LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES) * 4u
+            : iree_min(remaining, 2u);
+    if (!loom_amdgpu_memory_access_plan_push_chunk_packet(
+            &selection_context, kind,
+            /*allow_global_smem=*/whole_register_payload, &access.source,
+            payload_byte_offset, (packet_byte_count + 3u) / 4u,
+            packet_byte_count, out_selection, out_diagnostic)) {
       return false;
     }
-    return true;
-  }
-
-  uint32_t source_register_offset = 0;
-  while (source_register_offset < access.payload_register_count) {
-    const uint32_t remaining =
-        access.payload_register_count - source_register_offset;
-    const uint32_t packet_register_count =
-        iree_min(remaining, LOOM_AMDGPU_MAX_MEMORY_32BIT_LANES);
-    loom_low_source_memory_access_plan_t chunk_source = {0};
-    if (!loom_amdgpu_memory_access_make_32bit_chunk_source(
-            &access.source, source_register_offset, packet_register_count,
-            &chunk_source, out_diagnostic)) {
-      return false;
-    }
-    loom_amdgpu_memory_access_t packet_access = {0};
-    loom_amdgpu_memory_access_make_packet(&chunk_source, packet_register_count,
-                                          packet_register_count * 4u,
-                                          &packet_access);
-    if (!loom_amdgpu_memory_access_plan_push_packet(
-            &selection_context, kind, /*allow_global_smem=*/true,
-            source_register_offset, &packet_access, out_selection,
-            out_diagnostic)) {
-      return false;
-    }
-    source_register_offset += packet_register_count;
+    payload_byte_offset += packet_byte_count;
   }
   return true;
 }

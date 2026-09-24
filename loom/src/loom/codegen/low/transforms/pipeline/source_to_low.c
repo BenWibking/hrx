@@ -19,6 +19,7 @@
 #include "loom/pass/value_facts.h"
 #include "loom/sanitizer/options.h"
 #include "loom/target/low_legality.h"
+#include "loom/target/pass_environment.h"
 #include "loom/target/reporting/low.h"
 
 typedef struct loom_low_source_to_low_pass_state_t {
@@ -486,6 +487,11 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         loom_function_version_update(
             selection->version_handle,
             loom_func_like_cast(module, lower_result.low_func_op));
+      }
+      loom_target_function_version_t* target_version =
+          loom_target_function_version_cast(selection->version_handle);
+      if (target_version != NULL) {
+        target_version->memory_accesses = lower_result.memory_accesses;
       }
       ++function_count;
     }

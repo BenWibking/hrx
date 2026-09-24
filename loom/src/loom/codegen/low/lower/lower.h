@@ -284,8 +284,9 @@ typedef iree_status_t (*loom_low_lower_materialize_structural_operand_fn_t)(
 
 typedef struct loom_low_lower_materialize_structural_operand_callback_t {
   // Optional callback invoked for low structural op operands after source value
-  // lookup. Targets use this to materialize target-defined storage contracts
-  // that are not represented in the low type, such as register parts.
+  // lookup. Required types come from the receiving boundary when one exists,
+  // such as the callable result signature. Targets materialize representation
+  // conversions and storage contracts such as defined register parts.
   loom_low_lower_materialize_structural_operand_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;
@@ -813,6 +814,15 @@ typedef struct loom_low_lower_policy_t {
   loom_low_lower_map_contract_value_callback_t map_contract_value;
   // Optionally maps source function arguments to non-direct ABI imports.
   loom_low_lower_map_argument_callback_t map_argument;
+  // Joins unequal native return carriers for one semantic result type. The
+  // operation is associative and commutative, and the selected carrier must
+  // losslessly accept either input through structural operand materialization.
+  // Inputs are mapped register types; none means no supported common carrier.
+  // Missing requires exact equality. This query consumes types only and must
+  // not inspect source IR or alter producer representations. Targets retaining
+  // direct calls must use the same result convention at definitions and calls.
+  loom_type_t (*join_result_type)(loom_type_t source_type, loom_type_t lhs,
+                                  loom_type_t rhs);
   // Optionally emits target live-ins or other structural preamble packets.
   loom_low_lower_emit_preamble_callback_t emit_preamble;
   // Optionally emits target entry-block setup packets after ABI imports.
@@ -825,8 +835,8 @@ typedef struct loom_low_lower_policy_t {
   // Optionally materializes branch payloads to the exact destination block
   // argument type after the canonical low value has been looked up.
   loom_low_lower_materialize_branch_arg_callback_t materialize_branch_arg;
-  // Optionally materializes structural op operands that have the correct low
-  // type but still need target-owned storage-contract adaptation.
+  // Optionally materializes structural op operands to their required low type
+  // and target storage contract, including the selected callable result type.
   loom_low_lower_materialize_structural_operand_callback_t
       materialize_structural_operand;
   // Optionally emits conditional branches that need target-specific structural
@@ -985,6 +995,8 @@ typedef struct loom_low_lower_result_t {
   loom_low_lower_report_row_list_t report_rows;
   // Owned source-memory packet report rows.
   loom_low_lower_memory_report_row_list_t memory_report_rows;
+  // Module-arena packet effects retained independently of optional reports.
+  loom_low_memory_access_map_t* memory_accesses;
 } loom_low_lower_result_t;
 
 typedef struct loom_low_lower_resolved_descriptor_t {
@@ -992,7 +1004,9 @@ typedef struct loom_low_lower_resolved_descriptor_t {
   const loom_low_descriptor_t* descriptor;
 } loom_low_lower_resolved_descriptor_t;
 
-// Lowers one func.def-like source function into a target-low function in place.
+// Lowers one body-backed FuncLike source callable into a target-low function in
+// place. Kernel definitions retain their target-low kernel ABI; other FuncLike
+// operations lower to low.func.def.
 //
 // User IR failures are emitted through |options->emitter| and counted in
 // |out_result|. The function returns OK in that case and does not emit a low
@@ -1061,6 +1075,15 @@ uint32_t loom_low_lower_context_error_count(
 loom_target_low_legality_diagnostic_flags_t
 loom_low_lower_context_diagnostic_flags(
     const loom_low_lower_context_t* context);
+
+// Records one packet whose memory effects all use |source_plan|'s address.
+// The caller has selected actual packet geometry; additional_offset bounds
+// runtime packet coordinates not present in the canonical source plan.
+iree_status_t loom_low_lower_record_memory_packet(
+    loom_low_lower_context_t* context, const loom_op_t* low_op,
+    const loom_low_descriptor_t* descriptor,
+    const loom_low_source_memory_access_plan_t* source_plan,
+    loom_value_facts_t additional_offset);
 
 // Returns true when the caller requested source-low detail report rows.
 bool loom_low_lower_context_wants_report_rows(
@@ -1262,6 +1285,22 @@ iree_status_t loom_low_lower_remap_successor_args(
     uint8_t successor_index, loom_block_t* low_dest,
     const loom_value_id_t* source_args, uint16_t source_arg_count,
     loom_value_id_t** out_low_args);
+
+// Resolves source values to their Low mappings and materializes each value for
+// a structural operation boundary. |required_types| may be NULL to retain each
+// mapped value's current Low type.
+iree_status_t loom_low_lower_remap_values(loom_low_lower_context_t* context,
+                                          const loom_op_t* source_op,
+                                          const loom_value_id_t* source_values,
+                                          iree_host_size_t value_count,
+                                          const loom_type_t* required_types,
+                                          loom_value_id_t** out_low_values);
+
+// Returns true when |source_op| is a direct exit from the active source
+// callable body. Nested-region terminators are never callable exits, even when
+// they have the same operation kind.
+bool loom_low_lower_source_op_is_callable_exit(
+    const loom_low_lower_context_t* context, const loom_op_t* source_op);
 
 // Materializes a low structural operand through the active target policy. The
 // incoming value must already have the required low type; the policy may return

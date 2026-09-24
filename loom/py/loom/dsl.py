@@ -286,6 +286,7 @@ __all__ = [
     "ShapeParam",
     "ScalarParam",
     "EncodingParam",
+    "AlignmentParam",
     # Helpers.
     "binary_op",
     "unary_op",
@@ -4099,9 +4100,28 @@ class EncodingParam:
     doc: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class AlignmentParam:
+    """Optional reduced view element-access alignment in bytes.
+
+    Absence requires natural physical scalar alignment. Explicit positive
+    powers of two may reduce that requirement, not increase it.
+    """
+
+    name: str
+    doc: str = ""
+
+    @property
+    def optional(self) -> bool:
+        """Omission selects the natural physical scalar alignment."""
+        return True
+
+
 # Union of type parameter kinds. AttrDef parameters use the shared tagged-value
 # schema and are consumed by Param format elements.
-type TypeParamDef = TypeParam | ShapeParam | ScalarParam | EncodingParam | AttrDef
+type TypeParamDef = (
+    TypeParam | ShapeParam | ScalarParam | EncodingParam | AlignmentParam | AttrDef
+)
 
 
 _COMPACT_SHAPE_IR_KINDS = frozenset(("pool", "tile", "tensor", "vector", "view"))
@@ -4114,12 +4134,20 @@ def _validate_compact_shape_format(
     format_elements: tuple[FormatElement, ...],
 ) -> None:
     """Validates the direct compact shape grammars implemented by the IR."""
-    compact_params = (ShapeParam, ScalarParam, EncodingParam)
+    compact_params = (ShapeParam, ScalarParam, EncodingParam, AlignmentParam)
     has_compact_params = any(isinstance(param, compact_params) for param in params)
     if ir_kind not in _COMPACT_SHAPE_IR_KINDS and not has_compact_params:
         return
 
-    from loom.assembly import COMMA, EncodingOf, ScalarOf, ShapeOf, kw
+    from loom.assembly import (
+        COMMA,
+        AlignmentOf,
+        Clause,
+        EncodingOf,
+        ScalarOf,
+        ShapeOf,
+        kw,
+    )
 
     if ir_kind == "pool":
         if len(params) != 1 or not isinstance(params[0], ShapeParam):
@@ -4153,14 +4181,15 @@ def _validate_compact_shape_format(
         )
     elif ir_kind in ("tile", "tensor", "view"):
         if (
-            len(params) != 3
+            len(params) != (4 if ir_kind == "view" else 3)
             or not isinstance(params[0], ShapeParam)
             or not isinstance(params[1], ScalarParam)
             or not isinstance(params[2], EncodingParam)
+            or (ir_kind == "view" and not isinstance(params[3], AlignmentParam))
         ):
             raise ValueError(
                 f"TypeDef '{name}': shaped representation requires shape, scalar, "
-                "and encoding parameters"
+                "and encoding parameters, plus access alignment for views"
             )
         encoding_param = cast(EncodingParam, params[2])
         if not encoding_param.optional:
@@ -4176,6 +4205,13 @@ def _validate_compact_shape_format(
                 anchor=encoding_param.name,
             ),
         )
+        if ir_kind == "view":
+            expected_format += (
+                OptionalGroup(
+                    [COMMA, Clause("align", AlignmentOf(params[3].name))],
+                    anchor=params[3].name,
+                ),
+            )
     else:
         raise ValueError(
             f"TypeDef '{name}': compact shape parameters are unsupported for "
@@ -4507,6 +4543,7 @@ def _collect_format_fields(elements: tuple[FormatElement, ...]) -> set[str]:
     """Recursively collect all field names referenced by format elements."""
     from loom.assembly import (
         AlignedRefs,
+        AlignmentOf,
         Attr,
         AttrDict,
         AttrParams,
@@ -4603,6 +4640,7 @@ def _collect_format_fields(elements: tuple[FormatElement, ...]) -> set[str]:
                 ShapeOf(field=f)
                 | ScalarOf(field=f)
                 | EncodingOf(field=f)
+                | AlignmentOf(field=f)
                 | Param(field=f)
             ):
                 fields.add(f)
@@ -5488,7 +5526,10 @@ class FuncLikeInterface(NamedTuple):
 
     Each field is the name of an attr or region on the op, or None if
     the op doesn't have that field. The generator resolves names to
-    attr/region indices and emits a loom_func_like_vtable_t in .rodata.
+    attr/region indices and emits a loom_func_like_vtable_t in .rodata. The
+    complete operand list of each callable exit—the declared body terminator
+    kind in a block directly owned by the body—is the function result tuple.
+    Nested same-kind terminators do not exit the function.
     """
 
     # Symbol ref attr that names this function (required).
@@ -5596,17 +5637,19 @@ class LoopLikeInterface(NamedTuple):
     """Interface for loop-like ops that iterate a body region.
 
     The variadic iter_args operand is the complete loop-carried state domain.
-    Implementing ops have one matching variadic result field and a required
-    single-block body whose carried block arguments follow any induction
-    variable. Each entry instantiates the result type scheme with its own
-    argument identities. The shared verifier checks that tuple and the counted
-    induction variable type. IterArgsMatchResults, YieldCountMatchesResults,
-    and YieldTypesMatchResults constraints check the incoming and yielded state.
+    Implementing ops have one matching variadic result field and exactly one
+    required single-block body whose carried block arguments follow any
+    induction variable. Each entry instantiates the result type scheme with its
+    own argument identities. The shared verifier checks that tuple and the
+    counted induction variable type. IterArgsMatchResults,
+    YieldCountMatchesResults, and YieldTypesMatchResults constraints check the
+    incoming and yielded state.
 
-    Condition-controlled loops also have a required single-block condition
-    region. Its entry arguments are the initial and backedge state. Operand
-    zero of its terminator is the condition, and the remaining operands form
-    the complete state tuple forwarded to the body and results.
+    Condition-controlled loops have exactly one additional required
+    single-block condition region. Its entry arguments are the initial and
+    backedge state. Operand zero of its terminator is the condition, and the
+    remaining operands form the complete state tuple forwarded to the body and
+    results.
     ConditionForwardedCountMatchesBlockArgs and
     ConditionForwardedTypesMatchBlockArgs check this edge against the recurring
     result scheme instantiated at the body entry.

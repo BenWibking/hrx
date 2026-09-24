@@ -16,7 +16,9 @@ package(
 loom_library(
     name = "examples",
     srcs = [
+        "aligned-vector-copy.loom",
         "encoded-values.loom",
+        "loop-vector-bank.loom",
         "matrix-fragments.loom",
         "reductions.loom",
         "vector-values.loom",

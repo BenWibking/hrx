@@ -29,12 +29,15 @@ loom_check_test_suite(
     "source_to_low_source_graph.loom-test"
     "source_to_low_structured_control.loom-test"
     "target_legalize.loom-test"
+    "target_legalize_atomic_float.loom-test"
     "target_legalize_buffer.loom-test"
+    "target_legalize_comparison.loom-test"
     "target_legalize_diagnostics.loom-test"
     "target_legalize_matrix.loom-test"
     "target_legalize_report.loom-test"
     "target_legalize_report_revisits.loom-test"
     "target_legalize_structure.loom-test"
+    "target_legalize_vector_atomic.loom-test"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

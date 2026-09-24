@@ -11,7 +11,7 @@
 
 #include "iree/base/api.h"
 
-// One source operation's position in the applied read-ahead schedule.
+// One source operation copy's position in the applied read-ahead schedule.
 typedef struct loom_source_loop_pipeline_operation_t {
   // Source mnemonic borrowed from the compilation context's dialect tables.
   iree_string_view_t op_name;
@@ -33,7 +33,8 @@ typedef struct loom_source_loop_pipeline_t {
   uint32_t values_per_record;
   // Number of ordinary source reads in the producer stage.
   uint32_t read_count;
-  // Applied stage per source operation, in source body order.
+  // Applied copies in source body order. Reconstructed arithmetic has both
+  // producer and consumer entries.
   const loom_source_loop_pipeline_operation_t* operations;
   // Number of entries in operations; zero for a depth-one policy.
   uint32_t operation_count;

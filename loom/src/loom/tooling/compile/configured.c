@@ -9,6 +9,7 @@
 #include "iree/base/threading/call_once.h"
 #include "loom/target/arch/cmd/provider.h"
 #include "loom/target/configured/provider_set.h"
+#include "loom/transforms/cleanup/configured.h"
 
 #ifndef LOOM_CONFIG_COMPILE_HAVE_AMDGPU_ARTIFACTS
 #define LOOM_CONFIG_COMPILE_HAVE_AMDGPU_ARTIFACTS 0
@@ -123,6 +124,8 @@ static iree_status_t loom_tooling_configured_compile_initialize_storage(void) {
   configured_compile_storage.environment = (loom_tooling_compile_environment_t){
       .target_environment = &configured_compile_storage.target_environment,
       .artifact_provider_registry = &kConfiguredArtifactProviderRegistry,
+      .cleanup_pattern_provider_set =
+          loom_cleanup_configured_pattern_provider_set(),
   };
   return iree_ok_status();
 }

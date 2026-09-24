@@ -148,6 +148,31 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    bitcast
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "bitcast.h"
+  SRCS
+    "bitcast.cc"
+  DEPS
+    ::types
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::error
+    loom::ir
+    loom::ops::scalar
+    loom::ops::vector
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     storage
   CXX_STANDARD
     23
@@ -167,6 +192,7 @@ loom_cc_library(
     loom::import::cxx::source::error
     loom::import::cxx::source::locations
     loom::ir
+    loom::ir::facts
     loom::ops::buffer
     loom::ops::index
     loom::ops::scalar
@@ -291,6 +317,32 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::third_party::cxx_parser
     loom::import::cxx::source::locations
+    loom::ops::vector
+  LABELS
+    "iree-build-requirement=loom.import.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_test(
+  NAME
+    bitcast_test
+  SRCS
+    "bitcast_test.cc"
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  DEPS
+    ::bitcast
+    ::builder_test
+    ::scalar
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::third_party::cxx_parser
+    loom::import::cxx::source::locations
+    loom::ir
     loom::ops::vector
   LABELS
     "iree-build-requirement=loom.import.cxx"

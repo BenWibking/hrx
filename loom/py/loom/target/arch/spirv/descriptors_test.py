@@ -13,6 +13,7 @@ from loom.target.arch.spirv.atomic import (
     ATOMIC_SCOPES,
     ATOMIC_STORAGE_CLASSES,
     atomic_descriptor_key,
+    float_atomic_cas_strategies,
     float_atomic_descriptor_key,
 )
 from loom.target.arch.spirv.builtins import (
@@ -24,6 +25,7 @@ from loom.target.arch.spirv.cooperative_matrix import (
     cooperative_matrix_descriptor_key,
 )
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
+from loom.target.arch.spirv.extended_math import EXTENDED_MATH_INSTRUCTIONS
 from loom.target.arch.spirv.features import feature_bits_value
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
@@ -71,7 +73,19 @@ from loom.target.arch.spirv.scalar_memory import (
     RAW_STORAGE_BUFFER_BYTE,
     STORAGE_BUFFER_SCALARS,
 )
-from loom.target.low_descriptors import AsmResultValueType
+from loom.target.low_descriptors import AsmResultValueType, InstructionClass
+
+
+def test_control_barriers_classify_both_execution_scopes() -> None:
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in SPIRV_LOGICAL_CORE_DESCRIPTOR_SET.descriptors
+    }
+    workgroup = descriptors["spirv.op_control_barrier.workgroup.workgroup.acq_rel"]
+    subgroup = descriptors["spirv.op_control_barrier.subgroup.workgroup.acq_rel"]
+    assert workgroup.effects == subgroup.effects
+    assert InstructionClass.EXECUTION_BARRIER in workgroup.instruction_classes
+    assert InstructionClass.EXECUTION_BARRIER in subgroup.instruction_classes
 
 
 def _scalar_recipe(source_type: str) -> AsmResultValueType:
@@ -131,18 +145,23 @@ def _atomic_result_recipes() -> dict[str, AsmResultValueType]:
                         )
                     if scalar.integer_scalar_enum is None:
                         continue
-                    strategy = "bitcast" if operation.source_kind == "xchgf" else "cas"
-                    add(
-                        float_atomic_descriptor_key(
-                            "rmw",
-                            strategy,
-                            scalar,
-                            storage_class,
-                            scope,
-                            operation=operation,
-                        ),
-                        scalar.source_type,
+                    strategies = (
+                        ("bitcast",)
+                        if operation.source_kind == "xchgf"
+                        else float_atomic_cas_strategies(scalar, operation)
                     )
+                    for strategy in strategies:
+                        add(
+                            float_atomic_descriptor_key(
+                                "rmw",
+                                strategy,
+                                scalar,
+                                storage_class,
+                                scope,
+                                operation=operation,
+                            ),
+                            scalar.source_type,
+                        )
                 if scalar.integer_scalar_enum is None:
                     continue
                 for success_ordering in scope.orderings:
@@ -159,6 +178,21 @@ def _atomic_result_recipes() -> dict[str, AsmResultValueType]:
                     )
 
     return recipes
+
+
+def _extended_math_result_recipes() -> dict[str, AsmResultValueType]:
+    f32_element_type = _scalar_recipe("f32").element_type
+    return {
+        row.descriptor_key: AsmResultValueType(
+            f32_element_type,
+            vector_lane_count=(
+                row.value_type.lane_count
+                if isinstance(row.value_type, OrdinaryVectorType)
+                else 0
+            ),
+        )
+        for row in EXTENDED_MATH_INSTRUCTIONS
+    }
 
 
 def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
@@ -250,6 +284,11 @@ def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
             ),
         )
 
+    extended_math_recipes = _extended_math_result_recipes()
+    assert expected_recipes.keys().isdisjoint(extended_math_recipes)
+    assert carrier_only_keys.isdisjoint(extended_math_recipes)
+    expected_recipes.update(extended_math_recipes)
+
     add_scalar_recipe("spirv.op_copy_object.i32", "i32")
     add_scalar_recipe("spirv.op_imul_add.i32", "i32")
     add_scalar_recipe("spirv.op_bit_count.i32", "i32")
@@ -262,6 +301,8 @@ def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
         )
         opcode = "bitcast" if scalar_pair.bit_width == 64 else "uconvert"
         add_carrier_only(f"spirv.op_{opcode}.{scalar.suffix}.offset64")
+        if scalar_pair.bit_width < 64:
+            add_carrier_only(f"spirv.op_s_convert.{scalar_pair.signed.suffix}.offset64")
         from_offset_key = f"spirv.op_{opcode}.offset64.{scalar.suffix}"
         if scalar in unsigned_scalars:
             add_carrier_only(from_offset_key)
@@ -300,6 +341,7 @@ def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
     add_scalar_recipe("spirv.op_select.bf16", BFLOAT16_CONSTANT_TYPE.source_type)
     add_scalar_recipe("spirv.op_select.bool", "i1")
     add_carrier_only("spirv.op_select.offset64")
+    add_carrier_only("spirv.op_select.storage_buffer")
 
     for scalar in STORAGE_BUFFER_SCALARS:
         add_carrier_only(

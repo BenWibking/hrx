@@ -27,11 +27,13 @@ loom_generated_cc_library(
     loom::py::loom::gen::ops::c_tables_vector_generator
   SRCS
     "canonicalize.c"
+    "construction.c"
     "facts.c"
     "fragment.c"
     "memory.c"
     "scalarization.c"
     "storage.c"
+    "table.c"
     "type_transfer.c"
     "verify.c"
   TEXTUAL_HDRS
@@ -72,11 +74,13 @@ loom_generated_cc_library(
     "tables/reduction.c"
     "tables/table.c"
   HDRS
+    "construction.h"
     "fragment.h"
     "memory.h"
     "ops.h"
     "scalarization.h"
     "storage.h"
+    "table.h"
     "tables.h"
   ARGS
     "--dialect=vector"

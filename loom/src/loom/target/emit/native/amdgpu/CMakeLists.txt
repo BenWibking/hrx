@@ -133,6 +133,8 @@ loom_check_test_suite(
     "test/assembly_vopd_profiles.loom-test"
     "test/assembly_wide_shifts.loom-test"
     "test/assembly_wmma.loom-test"
+    "test/atomic_i64.loom-test"
+    "test/cache_completion.loom-test"
     "test/compile_time_insertions.loom-test"
     "test/delay_alu.loom-test"
     "test/delay_layout.loom-test"
@@ -376,6 +378,7 @@ loom_cc_benchmark(
     loom::target::low_descriptor_registry
     loom::target::provider
     loom::tooling::compile::pipeline
+    loom::transforms::cleanup::configured
   TESTONLY
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
@@ -610,6 +613,9 @@ loom_cc_library(
   DEPS
     ::hsaco
     iree::base
+    loom::target::arch::amdgpu::abi::asan
+    loom::target::arch::amdgpu::abi::feedback
+    loom::target::arch::amdgpu::abi::tsan
   PUBLIC
 )
 endif()
@@ -720,6 +726,7 @@ loom_cc_test(
     loom::target::profile
     loom::testing::diagnostic_matchers
     loom::tooling::compile::pipeline
+    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
     "iree-build-requirement=loom.emit.amdgpu"

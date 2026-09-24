@@ -25,6 +25,9 @@
 extern "C" {
 #endif
 
+typedef struct loom_cleanup_pattern_provider_set_t
+    loom_cleanup_pattern_provider_set_t;
+
 // One plan-wide atomic executable-entry binding requirement.
 //
 // A root-local slot resolves this entire row at once. The executable object
@@ -162,9 +165,10 @@ typedef struct loom_cmd_program_plan_t {
 // independent compilation path. The prepared module becomes the returned
 // plan's root module and remains owned by that plan.
 //
-// |pass_registry| must provide the standard canonicalize and unroll-scf-for
-// function passes used to resolve root-local source structure. It is a
-// compiler-owned resource rather than part of the authored program contract.
+// |pass_registry| and |cleanup_pattern_provider_set| provide the standard
+// canonicalize and unroll-scf-for implementation used to resolve root-local
+// source structure. They are compiler-owned resources rather than part of the
+// authored program contract.
 //
 // |kernel_source| optionally visits the semantic classes reached by all
 // selected roots before source materialization. Publication is complete before
@@ -184,6 +188,7 @@ iree_status_t loom_cmd_program_plan_prepare_materialization(
     const loom_symbol_ref_t* program_refs, iree_host_size_t program_count,
     const loom_cmd_program_kernel_source_t* kernel_source,
     const loom_pass_registry_t* pass_registry,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_diagnostic_emitter_t diagnostic_emitter,
     iree_arena_block_pool_t* block_pool, bool* out_valid,
     loom_cmd_program_plan_t* out_plan, iree_allocator_t host_allocator);

@@ -146,6 +146,7 @@ loom_cc_binary(
         ":main",
         "//loom/src/loom/tooling/execution:execution_provider",
         "//loom/src/loom/tooling/input:configured",
+        "//loom/src/loom/transforms/cleanup:configured",
         "//runtime/src/iree/base",
     ] + _IREE_TEST_LOOM_TARGET_DEPS,
 )
@@ -157,6 +158,7 @@ iree_execution_test_suite(
         "testdata/linked_input_cases.loom",
         "testdata/requirement_cases.loom",
         "testdata/scalar_cases.loom",
+        "//loom/src/loom/tooling/input:testdata/duplicate_symbols.loom-test",
     ],
     manifests = ["iree-test-loom.test.json"],
     tags = ["hostonly"],

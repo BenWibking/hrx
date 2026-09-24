@@ -29,6 +29,7 @@ from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
 )
 from loom.target.contracts import (
     AttrProject,
+    Buffer,
     DescriptorEmitForm,
     DescriptorResultType,
     DescriptorRule,
@@ -63,7 +64,6 @@ _F8E5M2_VECTOR = Vector("f8E5M2", minimum_static_elements=1, maximum_static_elem
 _I16_VECTOR = Vector("i16", minimum_static_elements=1, maximum_static_elements=32)
 _F16_VECTOR = Vector("f16", minimum_static_elements=1, maximum_static_elements=32)
 _BF16_VECTOR = Vector("bf16", minimum_static_elements=1, maximum_static_elements=32)
-_BF16X8_VECTOR = Vector("bf16", lanes=8)
 _I32_VECTOR = Vector("i32", minimum_static_elements=1, maximum_static_elements=16)
 _F32_VECTOR = Vector("f32", minimum_static_elements=1, maximum_static_elements=16)
 _I32_MATRIX_ACCUMULATOR = Vector("i32", lanes=64)
@@ -355,6 +355,53 @@ def _scalar_select_rule(type_pattern: TypePattern) -> DescriptorRule:
                 },
                 results={"d0": ValueRef.result("result")},
                 copy_operands=("s2",),
+            ),
+        ),
+    )
+
+
+def _buffer_select_rule() -> DescriptorRule:
+    address_to_scalar = _descriptor("amd.xdna.aie2p.move.local-address-to-scalar")
+    scalar_to_address = _descriptor("amd.xdna.aie2p.move.scalar-to-local-address")
+    select = _descriptor("amd.xdna.aie2p.select.nonzero.i32")
+    true_address = ValueRef.temporary("true_address")
+    false_address = ValueRef.temporary("false_address")
+    selected_address = ValueRef.temporary("selected_address")
+    return DescriptorRule(
+        source_op=scf.scf_select,
+        descriptor=select,
+        guards=(
+            Guard.value_type("condition", _I1),
+            *_typed_guards(("true_value", "false_value", "result"), Buffer()),
+        ),
+        emit=(
+            _op_emit(
+                address_to_scalar,
+                operands={"src": ValueRef.operand("true_value")},
+                results={"dst": true_address},
+                result_types={"dst": DescriptorResultType()},
+            ),
+            _op_emit(
+                address_to_scalar,
+                operands={"src": ValueRef.operand("false_value")},
+                results={"dst": false_address},
+                result_types={"dst": DescriptorResultType()},
+            ),
+            _op_emit(
+                select,
+                operands={
+                    "s0": true_address,
+                    "s1": false_address,
+                    "s2": ValueRef.operand("condition"),
+                },
+                results={"d0": selected_address},
+                result_types={"d0": DescriptorResultType()},
+                copy_operands=("s2",),
+            ),
+            _op_emit(
+                scalar_to_address,
+                operands={"src": selected_address},
+                results={"dst": ValueRef.result("result")},
             ),
         ),
     )
@@ -709,6 +756,7 @@ def _predicate_binary_emits(
                 "storage": low_result,
             },
             results={"d0": result},
+            result_types={"d0": DescriptorResultType()},
         ),
     )
 
@@ -728,6 +776,42 @@ def _vector_predicate_binary_rule(
             ValueRef.operand("rhs"),
             ValueRef.result("result"),
             temporary_prefix="predicate",
+        ),
+    )
+
+
+def _vector_predicate_select_rule() -> DescriptorRule:
+    difference = ValueRef.temporary("difference")
+    changes = ValueRef.temporary("changes")
+    return DescriptorRule(
+        source_op=vector.vector_select,
+        descriptor=_descriptor("amd.xdna.aie2p.predicate.xor.high32"),
+        guards=_typed_guards(
+            ("condition", "true_value", "false_value", "result"), _I1_VECTOR
+        ),
+        # Select each packed predicate bit without expanding its payload lane.
+        emit=(
+            *_predicate_binary_emits(
+                "xor",
+                ValueRef.operand("true_value"),
+                ValueRef.operand("false_value"),
+                difference,
+                temporary_prefix="difference",
+            ),
+            *_predicate_binary_emits(
+                "and",
+                ValueRef.operand("condition"),
+                difference,
+                changes,
+                temporary_prefix="changes",
+            ),
+            *_predicate_binary_emits(
+                "xor",
+                ValueRef.operand("false_value"),
+                changes,
+                ValueRef.result("result"),
+                temporary_prefix="selected",
+            ),
         ),
     )
 

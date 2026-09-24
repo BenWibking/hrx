@@ -18,6 +18,7 @@
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
 #include "loom/ir/ir.h"
+#include "loom/rewrite/pattern_registry.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/util/fact_table.h"
 
@@ -176,39 +177,26 @@ iree_status_t loom_greedy_rewrite_run_region(
     const loom_greedy_rewrite_callbacks_t* callbacks,
     loom_greedy_rewrite_result_t* out_result);
 
-// A simple kind-rooted rewrite pattern. Patterns are tried in caller-provided
-// order for every matching op.
-typedef struct loom_pattern_t {
-  // Op kind this pattern matches.
-  loom_op_kind_t root_kind;
-
-  // Pattern callback. It reports a successful rewrite by mutating through the
-  // rewriter, which sets LOOM_REWRITER_FLAG_CHANGED.
-  iree_status_t (*match_and_rewrite)(const struct loom_pattern_t* pattern,
-                                     loom_op_t* op, loom_rewriter_t* rewriter);
-} loom_pattern_t;
-
 typedef struct loom_rewrite_config_t {
   // Maximum number of fixed-point iterations. Zero selects the default.
   uint32_t max_iterations;
 } loom_rewrite_config_t;
 
-// Runs simple pattern application on a function-like body region with an
+// Runs indexed pattern application on a function-like body region with an
 // already-initialized greedy driver. This lets pass-specific drivers keep
 // shared value-fact ownership while reusing the common pattern dispatch policy.
 iree_status_t loom_greedy_rewrite_run_patterns(
     loom_greedy_rewrite_driver_t* driver, loom_func_like_t function,
-    const loom_pattern_t* patterns, iree_host_size_t pattern_count,
-    const loom_greedy_rewrite_options_t* options,
+    const loom_rewrite_pattern_registry_t* pattern_registry,
+    void* pattern_context, const loom_greedy_rewrite_options_t* options,
     loom_greedy_rewrite_result_t* out_result);
 
-// Runs simple pattern application on a function-like body region.
-iree_status_t loom_greedy_rewrite(iree_arena_allocator_t* arena,
-                                  loom_module_t* module,
-                                  loom_func_like_t function,
-                                  const loom_pattern_t* patterns,
-                                  iree_host_size_t pattern_count,
-                                  const loom_rewrite_config_t* config);
+// Runs indexed pattern application on a function-like body region.
+iree_status_t loom_greedy_rewrite(
+    iree_arena_allocator_t* arena, loom_module_t* module,
+    loom_func_like_t function,
+    const loom_rewrite_pattern_registry_t* pattern_registry,
+    void* pattern_context, const loom_rewrite_config_t* config);
 
 #ifdef __cplusplus
 }

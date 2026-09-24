@@ -44,6 +44,7 @@
 #include "loom/target/low_descriptor_registry.h"
 #include "loom/target/provider.h"
 #include "loom/tooling/compile/pipeline.h"
+#include "loom/transforms/cleanup/configured.h"
 
 namespace {
 
@@ -489,6 +490,8 @@ class PacketPlanFixture {
       loom_compile_pipeline_options_initialize(&pipeline_options);
       pipeline_options.target_environment = &target_environment_;
       pipeline_options.low_descriptor_registry = &target_registry_;
+      pipeline_options.cleanup_pattern_provider_set =
+          loom_cleanup_configured_pattern_provider_set();
       pipeline_options.diagnostic_sink = {
           /*.fn=*/loom_diagnostic_stderr_sink,
           /*.user_data=*/nullptr,
@@ -551,7 +554,6 @@ class PacketPlanFixture {
     loom_amdgpu_storage_lease_provider(&storage_lease_provider);
     loom_low_emission_frame_options_t frame_options = {};
     frame_options.descriptor_registry = &target_registry_.registry;
-    frame_options.memory_access_table = loom_low_memory_access_table_empty();
     frame_options.residency_model =
         loom_amdgpu_occupancy_residency_model(&resolved_target);
     frame_options.schedule_pair_affinities = pair_affinities;

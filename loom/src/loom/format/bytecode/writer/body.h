@@ -50,9 +50,10 @@ typedef struct loom_bytecode_body_counts_t {
 iree_status_t loom_bytecode_count_serialized_bodies(
     loom_bytecode_numbering_t* numbering, loom_bytecode_body_counts_t* counts);
 
-// Appends one SSA value definition to a buffered metadata payload.
-iree_status_t loom_bytecode_emit_value_def(
-    iree_string_builder_t* builder, loom_bytecode_numbering_t* numbering,
+// Streams one SSA value definition.
+iree_status_t loom_bytecode_write_value_def(
+    loom_bytecode_page_writer_t* page_writer,
+    loom_bytecode_numbering_t* numbering,
     loom_bytecode_value_numbering_t* value_numbering,
     const loom_value_t* value);
 

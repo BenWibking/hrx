@@ -173,22 +173,22 @@ static loomc_status_t loomc_compile_run_pass_program(
   loomc_compile_diagnostic_capture_t capture = {
       .result = result,
   };
-  loom_low_pass_environment_storage_t low_environment_storage = {0};
-  loom_pass_environment_t pass_environment = loom_pass_environment_empty();
+  loom_codegen_pass_environment_storage_t codegen_environment_storage = {0};
+  loom_pass_environment_t pass_environment =
+      loomc_codegen_pass_environment_storage_initialize(
+          loomc_context_target_pass_environment(compiler->context),
+          loomc_context_cleanup_pattern_registry(compiler->context),
+          function_version_owner, &codegen_environment_storage);
   loom_target_pass_predicate_provider_storage_t predicate_storage = {0};
   loom_pass_predicate_provider_t predicate_provider = {0};
-  const loomc_target_pass_environment_t* target_environment =
-      loomc_context_target_pass_environment(compiler->context);
-  if (target_environment != NULL) {
-    pass_environment = loomc_target_pass_environment_make_loom_pass_environment(
-        target_environment, function_version_owner, &low_environment_storage);
+  if (loomc_context_target_pass_environment(compiler->context) != NULL) {
     loom_target_pass_predicate_provider_storage_initialize(
         loomc_workspace_block_pool(workspace), &predicate_storage);
     predicate_provider =
         loom_target_pass_predicate_provider(&predicate_storage);
   }
   const loom_pass_environment_capability_t* extended_capabilities
-      [IREE_ARRAYSIZE(low_environment_storage.capabilities) + 1];
+      [IREE_ARRAYSIZE(codegen_environment_storage.capabilities) + 1];
   if (launch_config_program != NULL) {
     for (iree_host_size_t i = 0; i < pass_environment.capability_count; ++i) {
       extended_capabilities[i] = pass_environment.capabilities[i];
@@ -222,9 +222,8 @@ static loomc_status_t loomc_compile_run_pass_program(
 static loomc_status_t loomc_compile_specialize_functions(
     const loomc_target_environment_t* target_environment,
     const loomc_target_specialization_options_t* options, loom_module_t* module,
-    loomc_result_t* result, iree_arena_allocator_t* arena,
-    loom_function_version_owner_t* out_function_versions) {
-  loom_function_version_owner_initialize(arena, out_function_versions);
+    loomc_result_t* result, loom_function_version_owner_t* function_versions) {
+  iree_arena_allocator_t* arena = function_versions->arena;
   if (options == NULL || (options->specialization_count == 0 &&
                           options->target_binding_count == 0)) {
     return loomc_ok_status();
@@ -247,9 +246,49 @@ static loomc_status_t loomc_compile_specialize_functions(
           .user_data = &capture,
       },
       arena, &specialization_result)));
-  *out_function_versions = specialization_result.function_versions;
   if (specialization_result.error_count != 0) {
     return loomc_result_set_state(result, LOOMC_RESULT_STATE_FAILED);
+  }
+  if (function_versions->list.count == 0) {
+    *function_versions = specialization_result.function_versions;
+    return loomc_ok_status();
+  }
+
+  // A subsequent invocation refines the same live functions. Preserve their
+  // captured lowering products while replacing the requested target contexts.
+  loom_target_function_version_snapshot_t previous = {0};
+  LOOMC_RETURN_IF_ERROR(
+      loomc_status_from_iree(loom_target_function_version_snapshot_build(
+          module, &function_versions->list, arena, &previous)));
+  const loom_function_version_list_t* replacements =
+      &specialization_result.function_versions.list;
+  for (iree_host_size_t i = 0; i < replacements->count; ++i) {
+    loom_target_function_version_t* replacement =
+        loom_target_function_version_cast(replacements->values[i]);
+    const iree_host_size_t context_ordinal =
+        previous.target_context_capacity + replacement->target_context_ordinal;
+    if (context_ordinal >= LOOM_TARGET_CONTEXT_ORDINAL_INVALID) {
+      return loomc_make_status(
+          LOOMC_STATUS_RESOURCE_EXHAUSTED,
+          "continued compilation exceeds target context capacity");
+    }
+    replacement->target_context_ordinal =
+        (loom_target_context_ordinal_t)context_ordinal;
+    loom_target_function_version_t* existing =
+        loom_target_function_version_cast(
+            loom_target_function_version_snapshot_handle_at(
+                &previous,
+                loom_func_like_callee(replacement->base.function).symbol_id));
+    if (existing != NULL) {
+      replacement->base.flags |= existing->base.flags;
+      replacement->memory_accesses = existing->memory_accesses;
+      replacement->loop_pipelines = existing->loop_pipelines;
+      *existing = *replacement;
+    } else {
+      LOOMC_RETURN_IF_ERROR(
+          loomc_status_from_iree(loom_function_version_owner_append(
+              function_versions, &replacement->base)));
+    }
   }
   return loomc_ok_status();
 }
@@ -573,8 +612,8 @@ static loomc_status_t loomc_compile_module_into_result(
 
   const loomc_target_environment_t* context_target_environment =
       loomc_context_target_environment(compiler->context);
-  iree_arena_allocator_t* function_version_arena = NULL;
-  loom_function_version_owner_t function_versions = {0};
+  loom_function_version_owner_t* function_versions =
+      loomc_module_function_version_owner(module);
   loom_kernel_launch_config_program_t launch_config_program = {0};
   bool launch_config_program_initialized = false;
   const bool launch_config_requested =
@@ -587,7 +626,6 @@ static loomc_status_t loomc_compile_module_into_result(
   loomc_status_t status =
       loomc_module_verify(module, context_target_environment, result);
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
-    function_version_arena = loomc_module_prepare_compilation(module);
     const loomc_module_t* config_module =
         options ? options->config_module : NULL;
     loomc_config_apply_module_options_t config_apply_options = {
@@ -605,7 +643,7 @@ static loomc_status_t loomc_compile_module_into_result(
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
     status = loomc_compile_specialize_functions(
         context_target_environment, target_specialization, internal_module,
-        result, function_version_arena, &function_versions);
+        result, function_versions);
   }
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result) &&
       launch_config_requested) {
@@ -618,7 +656,7 @@ static loomc_status_t loomc_compile_module_into_result(
   }
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
     status = loomc_compile_run_pass_program(
-        compiler, workspace, pass_program, internal_module, &function_versions,
+        compiler, workspace, pass_program, internal_module, function_versions,
         launch_config_requested ? &launch_config_program : NULL, result);
   }
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result) &&
@@ -632,9 +670,6 @@ static loomc_status_t loomc_compile_module_into_result(
     status = loomc_result_verify_loom_module(launch_config_module,
                                              /*source=*/NULL, result);
   }
-  if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
-    loomc_module_publish_function_versions(module, function_versions);
-  }
   if (loomc_status_is_ok(status)) {
     status = loomc_compile_emit_requested_artifacts(
         result, options, target_specialization, &config_application, module,
@@ -642,7 +677,7 @@ static loomc_status_t loomc_compile_module_into_result(
   }
   if (!loomc_status_is_ok(status) || !loomc_result_succeeded(result)) {
     loomc_module_invalidate_verification(module);
-    loomc_module_prepare_compilation(module);
+    loomc_module_invalidate_compilation(module);
   }
   if (launch_config_program_initialized) {
     loom_kernel_launch_config_program_deinitialize(&launch_config_program);

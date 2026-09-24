@@ -16,6 +16,8 @@
 #include "loom/codegen/low/memory_access.h"
 #include "loom/codegen/low/schedule/dependency_index.h"
 #include "loom/codegen/low/schedule/resource_calendar.h"
+#include "loom/codegen/low/schedule/setup_order.h"
+#include "loom/codegen/low/schedule/storage_lifetime.h"
 #include "loom/codegen/low/schedule/storage_relation_index.h"
 #include "loom/codegen/low/schedule/types.h"
 #include "loom/codegen/low/target_binding.h"
@@ -201,6 +203,8 @@ typedef struct loom_low_schedule_completion_domain_t {
 } loom_low_schedule_completion_domain_t;
 
 typedef struct loom_low_schedule_build_state_t {
+  // Result-arena block pressure contributions, dense by block then class.
+  uint64_t* block_pressure_peaks;
   // Module containing the low function being scheduled.
   loom_module_t* module;
   // Scheduler options provided by the caller.
@@ -245,8 +249,13 @@ typedef struct loom_low_schedule_build_state_t {
   loom_low_schedule_scopes_t scopes;
   // Stable dependency graph accumulated while building the schedule DAG.
   loom_low_schedule_dependency_graph_t dependencies;
+  // Producer-retained setup fan-out for exclusive storage and allocation
+  // repair.
+  loom_low_schedule_setup_order_t setup_order;
   // Compact verified storage relations grouped by owning schedule node.
   loom_low_schedule_storage_relation_index_t storage_relations;
+  // Retained copy/tied header lifetimes and producer-owned edge handoffs.
+  loom_low_schedule_storage_lifetimes_t storage_lifetimes;
   // Total storage relations counted while populating schedule nodes.
   iree_host_size_t storage_relation_count;
   // Compact producer/consumer groups used by list scheduling.
@@ -375,7 +384,7 @@ typedef struct loom_low_schedule_build_state_t {
   // Scratch outstanding effect writes, reused for each block.
   loom_low_schedule_effect_frontier_entry_t* effect_write_entries;
   // Optional source-derived memory access records for the function.
-  const loom_low_memory_access_record_t* memory_access_records;
+  const loom_low_memory_access_map_t* memory_accesses;
   // Per-resource aggregate resource pressure, dense by descriptor resource id
   // until compacted after scheduling.
   loom_low_schedule_resource_summary_t* resource_summaries;
@@ -428,10 +437,6 @@ typedef struct loom_low_schedule_build_state_t {
   iree_host_size_t effect_read_capacity;
   // Allocated effect-frontier write scratch capacity.
   iree_host_size_t effect_write_capacity;
-  // Number of rows in |memory_access_records|.
-  iree_host_size_t memory_access_record_count;
-  // Next memory access record to bind while walking function-order nodes.
-  iree_host_size_t memory_access_record_bind_index;
   // Allocated effect-use record capacity.
   iree_host_size_t effect_use_capacity;
   // Allocated hazard-use record capacity.

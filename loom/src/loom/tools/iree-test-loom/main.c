@@ -688,13 +688,13 @@ int iree_test_loom_main(int argc, char** argv,
     };
     session_options.initialize_low_descriptor_registry =
         configuration->initialize_low_descriptor_registry;
+    session_options.cleanup_pattern_provider_set =
+        configuration->cleanup_pattern_provider_set;
     status = loom_run_session_initialize(&session_options, &session);
   }
   if (iree_status_is_ok(status)) {
     loom_run_hal_testbench_context_initialize(
         configuration->device_provider_registry, allocator, &hal_context);
-    loom_run_hal_testbench_context_set_runtime_sanitizer_options(
-        &hal_context, &sanitizer_options);
     status =
         loom_run_hal_testbench_context_validate_explicit_device(&hal_context);
   }
@@ -740,6 +740,10 @@ int iree_test_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status)) {
     status = iree_test_loom_verify_run_module(&run_module);
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_run_hal_testbench_context_add_module_runtime_requirements(
+        &hal_context, run_module.module, &sanitizer_options);
   }
 
   if (iree_status_is_ok(status)) {

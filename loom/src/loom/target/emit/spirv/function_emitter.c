@@ -868,6 +868,43 @@ static iree_status_t loom_spirv_emit_control_barrier_packet(
       row->opcode, instruction_operands, IREE_ARRAYSIZE(instruction_operands));
 }
 
+static iree_status_t loom_spirv_emit_extended_instruction_packet(
+    loom_spirv_emit_state_t* state, const loom_low_descriptor_packet_t* packet,
+    const loom_spirv_packet_row_t* row) {
+  loom_spirv_module_value_ref_t operands[LOOM_SPIRV_PACKET_MAX_OPERAND_COUNT] =
+      {0};
+  IREE_RETURN_IF_ERROR(
+      loom_spirv_emit_load_packet_operands(state, packet, row, operands));
+  uint32_t result_type_id = 0;
+  IREE_RETURN_IF_ERROR(loom_spirv_emit_type_id_for_value_type(
+      state->type_context, loom_spirv_packet_row_result_type(row),
+      &result_type_id));
+  uint32_t result_id = 0;
+  IREE_RETURN_IF_ERROR(loom_spirv_emit_prepare_packet_result(
+      state, packet, result_type_id, loom_spirv_packet_row_result_type(row),
+      &result_id));
+  uint32_t instruction_set_id = 0;
+  IREE_RETURN_IF_ERROR(
+      loom_spirv_module_builder_import_extended_instruction_set(
+          state->builder, row->payload.extended_instruction.instruction_set,
+          &instruction_set_id));
+  uint32_t instruction_operands[4 + LOOM_SPIRV_PACKET_MAX_OPERAND_COUNT] = {
+      result_type_id,
+      result_id,
+      instruction_set_id,
+      row->payload.extended_instruction.instruction,
+  };
+  for (uint8_t i = 0; i < row->operand_count; ++i) {
+    instruction_operands[4 + i] = operands[i].id;
+  }
+  IREE_RETURN_IF_ERROR(loom_spirv_binary_write_instruction(
+      loom_spirv_emit_section(state, LOOM_SPIRV_MODULE_SECTION_FUNCTION),
+      row->opcode, instruction_operands, 4 + row->operand_count));
+  return loom_spirv_emit_define_packet_result(
+      state, packet, result_id, result_type_id,
+      loom_spirv_packet_row_result_type(row));
+}
+
 static iree_status_t loom_spirv_emit_transfer(loom_spirv_emit_state_t* state,
                                               const loom_op_t* op) {
   loom_spirv_module_value_ref_t source = {0};
@@ -886,6 +923,7 @@ static iree_status_t loom_spirv_emit_descriptor_packet(
     const uint64_t feature_bits =
         state->target->descriptor_set->feature_mask_words[feature_mask_row];
     IREE_ASSERT(i == 0 || feature_bits == 0);
+    state->required_feature_bits |= (loom_spirv_feature_bits_t)feature_bits;
     loom_spirv_module_builder_require_feature_bits(
         state->builder, (loom_spirv_feature_bits_t)feature_bits);
   }
@@ -947,6 +985,8 @@ static iree_status_t loom_spirv_emit_descriptor_packet(
     case LOOM_SPIRV_PACKET_FORM_ATOMIC_FLOAT_COMPARE_EXCHANGE:
       return loom_spirv_emit_atomic_float_compare_exchange_packet(state, packet,
                                                                   row);
+    case LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION:
+      return loom_spirv_emit_extended_instruction_packet(state, packet, row);
     case LOOM_SPIRV_PACKET_FORM_UNSUPPORTED:
       break;
   }
@@ -1069,10 +1109,24 @@ static iree_status_t loom_spirv_emit_entry_point(
       workgroup_size_x,   workgroup_size_y,
       workgroup_size_z,
   };
-  return loom_spirv_binary_write_instruction(
+  IREE_RETURN_IF_ERROR(loom_spirv_binary_write_instruction(
       loom_spirv_emit_section(state, LOOM_SPIRV_MODULE_SECTION_EXECUTION_MODE),
       LOOM_SPIRV_OP_EXECUTION_MODE, execution_mode_operands,
-      IREE_ARRAYSIZE(execution_mode_operands));
+      IREE_ARRAYSIZE(execution_mode_operands)));
+  if (iree_any_bit_set(state->required_feature_bits,
+                       LOOM_SPIRV_FEATURE_FLOAT32_DENORM_PRESERVE)) {
+    const uint32_t denorm_mode_operands[] = {
+        state->function_id,
+        LOOM_SPIRV_EXECUTION_MODE_DENORM_PRESERVE,
+        32,
+    };
+    IREE_RETURN_IF_ERROR(loom_spirv_binary_write_instruction(
+        loom_spirv_emit_section(state,
+                                LOOM_SPIRV_MODULE_SECTION_EXECUTION_MODE),
+        LOOM_SPIRV_OP_EXECUTION_MODE, denorm_mode_operands,
+        IREE_ARRAYSIZE(denorm_mode_operands)));
+  }
+  return iree_ok_status();
 }
 
 static iree_status_t loom_spirv_emit_function_signature(

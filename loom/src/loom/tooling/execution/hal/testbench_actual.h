@@ -45,14 +45,12 @@ typedef struct loom_run_hal_testbench_context_t {
   iree_allocator_t host_allocator;
   // Device event sink used when initializing |runtime|.
   iree_hal_device_event_sink_t device_event_sink;
-  // Sanitizer options used when deriving HAL runtime requirements.
-  loom_sanitizer_options_t runtime_sanitizer_options;
+  // HAL runtime services required by every module added to this context.
+  iree_hal_device_runtime_feature_flags_t runtime_features;
   // Selected provider for the active device.
   const loom_device_provider_t* device_provider;
   // Shared HAL runtime used by kernel launches.
   loom_run_hal_runtime_t runtime;
-  // True when |runtime_sanitizer_options| has been set by the tool.
-  bool has_runtime_sanitizer_options;
   // True when |runtime| owns initialized HAL state.
   bool runtime_initialized;
 } loom_run_hal_testbench_context_t;
@@ -68,9 +66,14 @@ void loom_run_hal_testbench_context_set_device_event_sink(
     loom_run_hal_testbench_context_t* context,
     iree_hal_device_event_sink_t device_event_sink);
 
-// Sets the structured sanitizer policy used by future HAL runtime creation.
-void loom_run_hal_testbench_context_set_runtime_sanitizer_options(
-    loom_run_hal_testbench_context_t* context,
+// Adds runtime requirements for executable sanitizer operations in |module|
+// and instrumentation requested by |sanitizer_options|.
+//
+// Requirements may be accumulated across modules before runtime creation. A
+// module added afterward must require only services already provisioned by the
+// active device.
+iree_status_t loom_run_hal_testbench_context_add_module_runtime_requirements(
+    loom_run_hal_testbench_context_t* context, const loom_module_t* module,
     const loom_sanitizer_options_t* sanitizer_options);
 
 // Releases HAL runtime resources owned by |context|.
@@ -86,7 +89,9 @@ iree_status_t loom_run_hal_testbench_context_validate_explicit_device(
 iree_status_t loom_run_hal_testbench_context_ensure_runtime(
     loom_run_hal_testbench_context_t* context);
 
-// Returns host-visible buffer parameters suitable for correctness execution.
+// Returns host-visible fixture parameters for CPU generation and observations.
+// HAL execution stages fixtures into device-local memory around kernel
+// launches.
 iree_hal_buffer_params_t loom_run_hal_testbench_host_visible_buffer_params(
     void);
 
@@ -325,9 +330,12 @@ loom_run_hal_testbench_actual_sequence_provider(
 //
 // When |input_parameters| is provided, scalar widths and HAL table offsets are
 // taken from the loaded executable's reflected ABI. A NULL parameter list uses
-// the source-type defaults required by backends without parameter reflection.
+// address carrier widths from |target_snapshot| for backends without parameter
+// reflection. |target_snapshot| may be NULL only when no input is an address
+// scalar.
 iree_status_t loom_run_hal_testbench_invocation_inputs_from_values(
     const loom_testbench_value_t* inputs, const loom_type_t* input_types,
+    const loom_target_snapshot_t* target_snapshot,
     const iree_hal_executable_function_parameter_t* input_parameters,
     iree_host_size_t input_count, loom_run_hal_invocation_options_t* options,
     iree_allocator_t allocator, loom_run_hal_binding_list_t* out_bindings);

@@ -149,7 +149,7 @@ _SEMANTIC_INSTRUCTION_CLASSES = (
     ("control.cond_branch", (InstructionClass.BRANCH,)),
     ("control.return", (InstructionClass.BRANCH,)),
     ("control.call", (InstructionClass.BRANCH,)),
-    ("control.barrier", (InstructionClass.BARRIER,)),
+    ("control.barrier", (InstructionClass.EXECUTION_BARRIER,)),
     ("control", (InstructionClass.CONTROL,)),
     ("convert", (InstructionClass.CONVERSION,)),
     ("register.copy", (InstructionClass.REGISTER_MOVE,)),
@@ -186,7 +186,7 @@ _INSTRUCTION_CLASS_IMPLICATIONS = {
     InstructionClass.SWMMAC: (InstructionClass.WMMA,),
     InstructionClass.WMMA: (InstructionClass.MATRIX,),
     InstructionClass.BRANCH: (InstructionClass.CONTROL,),
-    InstructionClass.BARRIER: (InstructionClass.CONTROL,),
+    InstructionClass.EXECUTION_BARRIER: (InstructionClass.CONTROL,),
     InstructionClass.GLOBAL_LOAD: (InstructionClass.GLOBAL_MEMORY,),
     InstructionClass.GLOBAL_STORE: (InstructionClass.GLOBAL_MEMORY,),
     InstructionClass.BUFFER_LOAD: (InstructionClass.GLOBAL_MEMORY,),
@@ -230,8 +230,6 @@ def derive_instruction_classes(
             classes.add(InstructionClass.ATOMIC)
 
     effect_kinds = {effect.kind for effect in descriptor.effects}
-    if EffectKind.BARRIER in effect_kinds:
-        classes.add(InstructionClass.BARRIER)
     if EffectKind.CALL in effect_kinds:
         classes.add(InstructionClass.BRANCH)
     if EffectKind.CONTROL in effect_kinds:
@@ -259,8 +257,8 @@ def derive_instruction_classes(
         raise ValueError(f"descriptor '{descriptor.key}' combines private and global memory instruction classes")
     if InstructionClass.ATOMIC in classes and not has_memory_effect:
         raise ValueError(f"descriptor '{descriptor.key}' has the atomic instruction class without a read or write effect")
-    if InstructionClass.BARRIER in classes and EffectKind.BARRIER not in effect_kinds:
-        raise ValueError(f"descriptor '{descriptor.key}' has the barrier instruction class without a barrier effect")
+    if InstructionClass.EXECUTION_BARRIER in classes and EffectKind.BARRIER not in effect_kinds:
+        raise ValueError(f"descriptor '{descriptor.key}' has the execution-barrier instruction class without a barrier effect")
     read_classes = {
         InstructionClass.GLOBAL_LOAD,
         InstructionClass.BUFFER_LOAD,
@@ -392,8 +390,6 @@ def derive_descriptor_projections(
         raise ValueError(f"descriptor '{descriptor.key}' authors the derived enum-immediates flag")
     if any(immediate.kind is ImmediateKind.ENUM for immediate in descriptor.immediates):
         derived_flags.append(DescriptorFlag.ENUM_IMMEDIATES)
-    if has_barrier_effect and not has_barrier_flag:
-        derived_flags.append(DescriptorFlag.BARRIER)
     if has_early_clobber_constraint and not has_early_clobber_flag:
         derived_flags.append(DescriptorFlag.EARLY_CLOBBER)
     has_variadic_operand = operand_layout.has_variadic_operands
@@ -569,6 +565,15 @@ def _compile_operand_form(
 
     replacement_ordinal = descriptor_ordinals[operand_form.replacement_descriptor]
     replacement = selected_descriptors[replacement_ordinal]
+
+    # Replacements preserve the packet's retained memory proof at each effect
+    # ordinal. Timing events may change with the encoding; semantic effects may
+    # not change identity, width, scope, or ordering.
+    def semantic_effects(value: Descriptor):
+        return tuple((effect.kind, effect.memory_space, effect.scope_id, effect.flags, effect.width_bits) for effect in value.effects)
+
+    if semantic_effects(descriptor) != semantic_effects(replacement):
+        raise ValueError(f"descriptor '{descriptor.key}' operand form replacement '{replacement.key}' must preserve semantic effect ordinals")
     _replacement_operand_indices, replacement_immediate_indices = _index_descriptor_fields(replacement)
     source_result_count = validation.validate_descriptor_operands(descriptor).result_count
     replacement_result_count = validation.validate_descriptor_operands(replacement).result_count
@@ -1061,6 +1066,7 @@ def compile_descriptor_set(
     projected_descriptors_by_key: dict[str, Descriptor] = {}
     for descriptor in spec.descriptors:
         operand_layout = validation.validate_descriptor_operands(descriptor)
+        validation.validate_descriptor_speculation(descriptor)
         operand_layouts_by_descriptor[descriptor.key] = operand_layout
         result_count = operand_layout.result_count
         source_value_indices_by_descriptor[descriptor.key] = validation.descriptor_operand_source_value_indices(

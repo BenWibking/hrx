@@ -102,6 +102,7 @@ loom_cc_test(
     loom::target::provider
     loom::tooling::compile::pipeline
     loom::tooling::input
+    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
 )
@@ -179,6 +180,7 @@ loom_cc_test(
     loom::target::provider
     loom::tooling::compile::pipeline
     loom::tooling::input
+    loom::transforms::cleanup::configured
   LABELS
     "iree-build-requirement=loom.target.arch.vm"
 )

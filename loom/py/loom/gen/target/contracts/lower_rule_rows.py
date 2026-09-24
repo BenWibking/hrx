@@ -37,6 +37,7 @@ from loom.target.contracts import (
     LowerValueRef,
     SourceMemoryAddressMaterializer,
     SourceMemoryByteOffsetMaterializer,
+    SourceMemoryIntegerConversion,
     SourceNodeRelation,
     TypePattern,
 )
@@ -97,6 +98,8 @@ _ATTR_COPY_VALUE_REF_KINDS = frozenset(
         LowerAttrCopyKind.VALUE_FLOAT_BITS,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F32_I32,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
+        LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
+        LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
     )
 )
 
@@ -332,6 +335,11 @@ def source_memory_row(
         )
     _append_field(
         fields,
+        "byte_offset_unsigned_bit_count",
+        constraint.byte_offset_unsigned_bit_count,
+    )
+    _append_field(
+        fields,
         "dynamic_offset_unsigned_bit_count",
         constraint.dynamic_offset_unsigned_bit_count,
     )
@@ -360,7 +368,7 @@ def source_memory_diagnostic_indices(
 ) -> tuple[int, int, int, int]:
     return (
         row.diagnostic_index,
-        row.dynamic_offset_diagnostic_index,
+        row.byte_offset_diagnostic_index,
         row.address_layout_diagnostic_index,
         row.address_diagnostic_index,
     )
@@ -371,39 +379,50 @@ def source_memory_diagnostics_row(
 ) -> list[str]:
     (
         constraint_diagnostic_index,
-        dynamic_offset_diagnostic_index,
+        byte_offset_diagnostic_index,
         address_layout_diagnostic_index,
         address_diagnostic_index,
     ) = indices
     return [
         ".constraint_diagnostic_index = " + lower_rule_spelling.diagnostic_index(constraint_diagnostic_index),
-        ".dynamic_offset_diagnostic_index = " + lower_rule_spelling.diagnostic_index(dynamic_offset_diagnostic_index),
+        ".byte_offset_diagnostic_index = " + lower_rule_spelling.diagnostic_index(byte_offset_diagnostic_index),
         ".address_layout_diagnostic_index = " + lower_rule_spelling.diagnostic_index(address_layout_diagnostic_index),
         ".address_diagnostic_index = " + lower_rule_spelling.diagnostic_index(address_diagnostic_index),
     ]
+
+
+def _source_memory_integer_conversion_rows(
+    descriptor_refs: Mapping[str, int],
+    conversions: tuple[SourceMemoryIntegerConversion, ...],
+    conversion_immediate_string_refs: Mapping[str, str],
+) -> str:
+    conversions_by_type = {conversion.source_type: conversion for conversion in conversions}
+    conversion_rows = []
+    for source_type in ("i1", "i8", "i16", "i32", "i64"):
+        conversion = conversions_by_type.get(source_type)
+        descriptor = conversion.descriptor if conversion is not None else None
+        immediate = conversion.immediate if conversion is not None else None
+        features = descriptor.feature_mask_words[0] if descriptor is not None and descriptor.feature_mask_words else 0
+        conversion_rows.append(
+            "{" + f".required_features = UINT64_C({features}), "
+            f".immediate_value = {_c_i64_literal(immediate[1] if immediate is not None else 0)}, "
+            f".immediate_string_ref = {conversion_immediate_string_refs.get(source_type, 'LOOM_STRING_REF_NONE')}, "
+            f".descriptor_ref = {_descriptor_ref_index(descriptor_refs, descriptor)}, "
+            f".input_count = {conversion.input_count if conversion is not None else 0}" + "}"
+        )
+    return ".integer_conversions = {" + ", ".join(conversion_rows) + "}"
 
 
 def source_memory_byte_offset_materializer_row(
     descriptor_refs: Mapping[str, int],
     row: SourceMemoryByteOffsetMaterializer,
     *,
-    immediate_string_offset: str,
-    conversion_immediate_string_offsets: Mapping[str, str],
+    immediate_string_ref: str,
+    conversion_immediate_string_refs: Mapping[str, str],
 ) -> list[str]:
-    conversions = {conversion.source_type: conversion for conversion in row.integer_conversions}
-    conversion_rows = []
-    for source_type in ("i1", "i8", "i16", "i32", "i64"):
-        conversion = conversions.get(source_type)
-        descriptor = conversion.descriptor if conversion is not None else None
-        immediate = conversion.immediate if conversion is not None else None
-        conversion_rows.append(
-            "{" + f".immediate_value = {_c_i64_literal(immediate[1] if immediate is not None else 0)}, "
-            f".immediate_string_offset = {conversion_immediate_string_offsets.get(source_type, 'LOOM_BSTRING_TABLE_OFFSET_NONE')}, "
-            f".descriptor_ref = {_descriptor_ref_index(descriptor_refs, descriptor)}" + "}"
-        )
     return [
-        ".integer_conversions = {" + ", ".join(conversion_rows) + "}",
-        f".constant_immediate_string_offset = {immediate_string_offset}",
+        _source_memory_integer_conversion_rows(descriptor_refs, row.integer_conversions, conversion_immediate_string_refs),
+        f".constant_immediate_string_ref = {immediate_string_ref}",
         f".constant_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.constant)}",
         f".add_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.add)}",
         f".multiply_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.multiply)}",
@@ -415,18 +434,19 @@ def source_memory_address_materializer_row(
     descriptor_refs: Mapping[str, int],
     row: SourceMemoryAddressMaterializer,
     *,
-    immediate_string_offset: str,
+    immediate_string_ref: str,
+    conversion_immediate_string_refs: Mapping[str, str],
 ) -> list[str]:
     return [
+        _source_memory_integer_conversion_rows(descriptor_refs, row.integer_conversions, conversion_immediate_string_refs),
         f".coordinate_minimum = {_c_i64_literal(row.coordinate_minimum)}",
         f".coordinate_maximum = {_c_i64_literal(row.coordinate_maximum)}",
         f".coordinate_unit_byte_count = {row.coordinate_unit_byte_count}",
-        f".const_coordinate_immediate_string_offset = {immediate_string_offset}",
+        f".const_coordinate_immediate_string_ref = {immediate_string_ref}",
         f".const_coordinate_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.const_coordinate)}",
         f".add_coordinate_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.add_coordinate)}",
         f".mul_coordinate_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.mul_coordinate)}",
         f".shl_coordinate_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.shl_coordinate)}",
-        f".index_to_coordinate_input_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.index_to_coordinate_input)}",
         f".index_to_coordinate_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.index_to_coordinate)}",
         f".address_descriptor_ref = {_descriptor_ref_index(descriptor_refs, row.address)}",
         f".base_kind = {lower_rule_spelling.SOURCE_MEMORY_ADDRESS_BASE_C_NAMES[row.base]}",
@@ -460,17 +480,17 @@ def descriptor_ref_keys(table: CompiledLowerRuleSet, source_contract: ContractFr
                     materializer.add_coordinate,
                     materializer.mul_coordinate,
                     materializer.shl_coordinate,
-                    materializer.index_to_coordinate_input,
                     materializer.index_to_coordinate,
                     materializer.address,
+                    *(conversion.descriptor for conversion in materializer.integer_conversions),
                 )
                 if descriptor is not None
             )
     return tuple(descriptor.key for descriptor in source_contract.descriptor_set.descriptors if descriptor.key in used_keys)
 
 
-def descriptor_ref_row(key_string_offset: str) -> list[str]:
-    return [f".key_string_offset = {key_string_offset}"]
+def descriptor_ref_row(key_string_ref: str) -> list[str]:
+    return [f".key_string_ref = {key_string_ref}"]
 
 
 def _descriptor_ref_index(descriptor_refs: Mapping[str, int], descriptor: Descriptor | None) -> int:
@@ -552,6 +572,7 @@ def guard_row(descriptor_refs: Mapping[str, int], row: LowerGuard) -> list[str]:
         GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
         GuardKind.VALUE_FLOAT_EQUALS,
         GuardKind.INSTANCE_FLAGS_HAS_ALL,
+        GuardKind.INSTANCE_FLAGS_HAS_NONE,
     ):
         u64_payload = lower_rule_spelling.u64_c_literal(row.u64)
     elif row.kind == GuardKind.VALUE_STORAGE_ELEMENT_FORMAT:
@@ -611,16 +632,16 @@ def guard_row(descriptor_refs: Mapping[str, int], row: LowerGuard) -> list[str]:
 def attr_copy_row(
     row: LowerAttrCopy,
     *,
-    target_name_string_offset: str | None = None,
+    target_name_string_ref: str | None = None,
 ) -> list[str]:
-    if target_name_string_offset is None:
-        raise ValueError("attribute-copy row is missing its target-name string offset")
+    if target_name_string_ref is None:
+        raise ValueError("attribute-copy row is missing its target-name string reference")
     fields: list[str] = []
     _append_field(fields, "kind", lower_rule_spelling.ATTR_COPY_KIND_C_NAMES[row.kind], always=True)
     _append_field(
         fields,
-        "target_name_string_offset",
-        target_name_string_offset,
+        "target_name_string_ref",
+        target_name_string_ref,
         always=True,
     )
     if row.kind in (
@@ -658,6 +679,8 @@ def attr_copy_row(
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
         LowerAttrCopyKind.VALUE_EXACT_I64_I32_WORD,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
+        LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
+        LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
     ):
         _append_field(
             fields,
@@ -669,6 +692,8 @@ def attr_copy_row(
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
+        LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
     ):
         _append_field(
             fields,
@@ -701,6 +726,8 @@ def attr_copy_row(
         LowerAttrCopyKind.SOURCE_MEMORY_STATIC_BYTE_OFFSET_REMAINDER,
         LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT,
         LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_MULTIPLIER,
+        LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
+        LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
     ):
         _append_field(
             fields,
@@ -927,12 +954,12 @@ def rule_set_row(
     if source_contract.target_contract_query:
         fields.append(".flags = LOOM_LOW_LOWER_RULE_SET_FLAG_TARGET_CONTRACT_QUERY")
     if string_pool.entries:
-        fields.append(f".string_table = {{.data = {string_data_name}, .data_length = sizeof({string_data_name}) - 1}}")
+        fields.append(f".string_pool = {{.data = {string_data_name}, .data_length = sizeof({string_data_name}) - 1}}")
     _append_table_fields(fields, "spans", table.spans, spans_name)
     _append_table_fields(fields, "rules", table.rules, rules_name)
     _append_table_fields(
         fields,
-        "report_key_string_offsets",
+        "report_key_string_refs",
         report_keys,
         report_keys_name,
     )
@@ -1032,7 +1059,7 @@ def _table_count_field_name(field_name: str) -> str:
         return "diagnostic_param_ref_count"
     if field_name == "guard_refs":
         return "guard_ref_count"
-    if field_name == "report_key_string_offsets":
+    if field_name == "report_key_string_refs":
         return "report_key_count"
     return f"{field_name[:-1]}_count"
 
@@ -1040,10 +1067,10 @@ def _table_count_field_name(field_name: str) -> str:
 def diagnostic_param_row(
     row: LowerDiagnosticParam,
     *,
-    string_value_offset: str | None = None,
+    string_value_ref: str | None = None,
 ) -> list[str]:
-    if row.kind == DiagnosticParamKind.STRING_LITERAL and string_value_offset is None:
-        raise ValueError("diagnostic string literal is missing its string offset")
+    if row.kind == DiagnosticParamKind.STRING_LITERAL and string_value_ref is None:
+        raise ValueError("diagnostic string literal is missing its string reference")
     fields: list[str] = []
     _append_field(
         fields,
@@ -1055,7 +1082,7 @@ def diagnostic_param_row(
         _append_field(
             fields,
             "value",
-            f"{{.string_value_offset = {string_value_offset}}}",
+            f"{{.string_value_ref = {string_value_ref}}}",
             always=True,
         )
     if row.kind == DiagnosticParamKind.VALUE_TYPE:
@@ -1097,15 +1124,15 @@ def diagnostic_param_row(
 
 
 def type_pattern_row(type_pattern: TypePattern) -> list[str]:
-    flags = [
-        "LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND",
-        "LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT",
-    ]
+    flags = ["LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND"]
+    if type_pattern.elements:
+        flags.append("LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT")
     row = [
         ".flags = " + " | ".join(flags),
         f".type_kind = {lower_rule_spelling.type_kind_c_name(type_pattern)}",
-        f".element_type_mask = {lower_rule_spelling.scalar_type_mask_c_expr(type_pattern.elements)}",
     ]
+    if type_pattern.elements:
+        row.append(f".element_type_mask = {lower_rule_spelling.scalar_type_mask_c_expr(type_pattern.elements)}")
     if type_pattern.dims:
         row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK"
         row.extend(

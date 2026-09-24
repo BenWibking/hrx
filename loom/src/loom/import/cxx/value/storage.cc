@@ -13,6 +13,7 @@
 #include <cxx/types.h>
 
 #include <algorithm>
+#include <numeric>
 
 #include "loom/import/cxx/source/error.h"
 #include "loom/ir/module.h"
@@ -29,10 +30,41 @@ Pointer Storage::root(loom_value_id_t buffer, cxx::AST* owner) {
           scalars_.integer(0, LOOM_SCALAR_TYPE_OFFSET, locations_.get(owner))};
 }
 
-Pointer Storage::advance(Pointer base, loom_value_id_t displacement,
-                         const cxx::Type* base_type,
-                         const cxx::Type* index_type, cxx::TokenKind operation,
-                         cxx::AST* owner) {
+Pointer Storage::constrain_origin(Pointer pointer, cxx::AST* owner) {
+  if (unit_.control()->memoryLayout()->sizeOfPointer() != 4) {
+    return pointer;
+  }
+  auto source = locations_.get(owner);
+  auto offset_type = loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET);
+  loom_predicate_t range = {
+      .kind = LOOM_PREDICATE_RANGE,
+      .arg_count = 3,
+      .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
+                   LOOM_PRED_ARG_CONST},
+      .args = {pointer.byte_offset, 0, UINT32_MAX},
+  };
+  loom_op_t* op;
+  check(loom_index_assume_build(&builder_, &pointer.byte_offset, 1, &range, 1,
+                                &offset_type, 1, source, &op));
+  return {pointer.root, loom_op_results(op)[0]};
+}
+
+StorageProjection Storage::project(Pointer pointer,
+                                   const cxx::Type* object_type,
+                                   cxx::AST* owner) {
+  types_.storage_size(object_type, owner);
+  auto alignment = unit_.control()->memoryLayout()->alignmentOf(object_type);
+  if (!alignment) {
+    diagnostics_.reject(unit_, owner, "unknown object alignment");
+  }
+  return {pointer, *alignment};
+}
+
+StorageProjection Storage::advance(StorageProjection base,
+                                   loom_value_id_t displacement,
+                                   const cxx::Type* base_type,
+                                   const cxx::Type* index_type,
+                                   cxx::TokenKind operation, cxx::AST* owner) {
   auto* pointer =
       cxx::type_cast<cxx::PointerType>(types_.unqualified(base_type));
   auto* array =
@@ -58,7 +90,7 @@ Pointer Storage::advance(Pointer base, loom_value_id_t displacement,
   check(
       loom_scalar_muli_build(&builder_, 0, wide, size, wide_type, source, &op));
   auto delta = loom_op_results(op)[0];
-  check(loom_index_cast_build(&builder_, base.byte_offset, offset_type,
+  check(loom_index_cast_build(&builder_, base.pointer.byte_offset, offset_type,
                               wide_type, source, &op));
   auto origin = loom_op_results(op)[0];
   auto build = operation == cxx::TokenKind::T_MINUS ? loom_scalar_subi_build
@@ -70,37 +102,53 @@ Pointer Storage::advance(Pointer base, loom_value_id_t displacement,
       .arg_count = 3,
       .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
                    LOOM_PRED_ARG_CONST},
-      .args = {byte_offset, 0, INT64_MAX},
+      .args = {byte_offset, 0,
+               unit_.control()->memoryLayout()->sizeOfPointer() == 4
+                   ? UINT32_MAX
+                   : INT64_MAX},
   };
   check(loom_scalar_assume_build(&builder_, &byte_offset, 1, &range, 1,
                                  &wide_type, 1, source, &op));
   check(loom_index_cast_build(&builder_, loom_op_results(op)[0], wide_type,
                               offset_type, source, &op));
-  return {base.root, loom_op_results(op)[0]};
+  return {{base.pointer.root, loom_op_results(op)[0]},
+          std::gcd(base.alignment, static_cast<uint64_t>(bytes)),
+          true};
 }
 
-Pointer Storage::member(Pointer base, cxx::FieldSymbol* field,
-                        cxx::AST* owner) {
+StorageProjection Storage::member(StorageProjection base,
+                                  cxx::FieldSymbol* field, cxx::AST* owner) {
   auto source = locations_.get(owner);
   auto field_offset = scalars_.integer(*field->offsetInClass(),
                                        LOOM_SCALAR_TYPE_OFFSET, source);
   loom_op_t* op;
-  check(loom_index_add_build(&builder_, base.byte_offset, field_offset,
+  check(loom_index_add_build(&builder_, base.pointer.byte_offset, field_offset,
                              loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET), source,
                              &op));
-  return {base.root, loom_op_results(op)[0]};
+  Pointer pointer =
+      constrain_origin({base.pointer.root, loom_op_results(op)[0]}, owner);
+  return {pointer, std::gcd(base.alignment, *field->offsetInClass()), true};
 }
 
-StorageAccess Storage::dereference(Pointer base, const cxx::Type* element_type,
+StorageAccess Storage::dereference(StorageProjection base,
+                                   const cxx::Type* element_type,
                                    cxx::AST* owner) {
+  if (!base.pointer_width_constrained) {
+    base.pointer = constrain_origin(base.pointer, owner);
+  }
   auto element = types_.get(element_type, owner);
   auto* vector = types_.vector(element_type);
   auto view_type =
       loom_type_shaped_1d(LOOM_TYPE_VIEW, loom_type_element_type(element),
                           vector ? vector->elementCount() : 1, 0);
+  view_type = loom_type_view_with_alignment(
+      view_type,
+      static_cast<uint8_t>(std::min<uint64_t>(
+          base.alignment, loom_type_view_natural_alignment(view_type))));
   loom_op_t* view;
-  check(loom_buffer_view_build(&builder_, base.root, base.byte_offset,
-                               view_type, locations_.get(owner), &view));
+  check(loom_buffer_view_build(&builder_, base.pointer.root,
+                               base.pointer.byte_offset, view_type,
+                               locations_.get(owner), &view));
   return {loom_op_results(view)[0], std::nullopt};
 }
 
@@ -129,7 +177,7 @@ void Storage::store(const StorageAccess& access, loom_value_id_t value,
               &op));
 }
 
-StorageAccess Storage::subscript(Pointer base, loom_value_id_t index,
+StorageAccess Storage::subscript(StorageProjection base, loom_value_id_t index,
                                  const cxx::Type* base_type,
                                  const cxx::Type* subscript_type,
                                  cxx::AST* owner) {
@@ -138,34 +186,26 @@ StorageAccess Storage::subscript(Pointer base, loom_value_id_t index,
   }
   auto* array =
       cxx::type_cast<cxx::BoundedArrayType>(types_.unqualified(base_type));
-  auto declared = array ? array_views_.find(base.root) : array_views_.end();
+  auto declared =
+      array ? array_views_.find(base.pointer.root) : array_views_.end();
   if (declared != array_views_.end() && declared->second.type == array &&
-      declared->second.byte_offset == base.byte_offset) {
-    auto input_type = types_.get(subscript_type, owner);
+      declared->second.byte_offset == base.pointer.byte_offset) {
+    // Widen before expressing the source's in-bounds precondition in the
+    // signed range domain. Narrow unsigned indices retain their high bit.
+    index = scalars_.convert(index, subscript_type,
+                             unit_.control()->getLongLongIntType(), owner);
+    auto wide_type = loom_type_scalar(LOOM_SCALAR_TYPE_I64);
+    loom_predicate_t range = {
+        .kind = LOOM_PREDICATE_RANGE,
+        .arg_count = 3,
+        .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
+                     LOOM_PRED_ARG_CONST},
+        .args = {index, 0, static_cast<int64_t>(array->size() - 1)},
+    };
     loom_op_t* cast;
-    if (types_.is_unsigned(subscript_type)) {
-      if (loom_type_element_type(input_type) == LOOM_SCALAR_TYPE_I64) {
-        // A defined fixed-array access is within the declared extent. Publish
-        // that source precondition before entering the offset domain.
-        loom_predicate_t range = {
-            .kind = LOOM_PREDICATE_RANGE,
-            .arg_count = 3,
-            .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
-                         LOOM_PRED_ARG_CONST},
-            .args = {index, 0, static_cast<int64_t>(array->size() - 1)},
-        };
-        check(loom_scalar_assume_build(&builder_, &index, 1, &range, 1,
-                                       &input_type, 1, locations_.get(owner),
-                                       &cast));
-        index = loom_op_results(cast)[0];
-      }
-      auto offset_type = loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET);
-      check(loom_index_cast_build(&builder_, index, input_type, offset_type,
-                                  locations_.get(owner), &cast));
-      index = loom_op_results(cast)[0];
-      input_type = offset_type;
-    }
-    check(loom_index_cast_build(&builder_, index, input_type,
+    check(loom_scalar_assume_build(&builder_, &index, 1, &range, 1, &wide_type,
+                                   1, locations_.get(owner), &cast));
+    check(loom_index_cast_build(&builder_, loom_op_results(cast)[0], wide_type,
                                 loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
                                 locations_.get(owner), &cast));
     return {declared->second.view, loom_op_results(cast)[0]};
@@ -178,33 +218,42 @@ StorageAccess Storage::subscript(Pointer base, loom_value_id_t index,
       advanced, pointer ? pointer->elementType() : array->elementType(), owner);
 }
 
-StorageAllocation Storage::workgroup(const cxx::BoundedArrayType* array,
-                                     int64_t explicit_alignment,
-                                     cxx::AST* owner) {
-  types_.get(array, owner);
+StorageAllocation Storage::allocate(const cxx::Type* type,
+                                    loom_value_fact_memory_space_t memory_space,
+                                    int64_t explicit_alignment,
+                                    cxx::AST* owner) {
+  types_.get(type, owner);
+  auto bytes = types_.storage_size(type, owner);
   auto* layout = unit_.control()->memoryLayout();
-  auto bytes = layout->sizeOf(array);
-  auto alignment = layout->alignmentOf(array);
-  if (!bytes || !alignment) {
-    diagnostics_.reject(unit_, owner, "unknown shared array layout");
+  auto alignment = layout->alignmentOf(type);
+  if (!alignment) {
+    diagnostics_.reject(unit_, owner, "unknown object alignment");
   }
   auto length =
-      scalars_.integer(*bytes, LOOM_SCALAR_TYPE_OFFSET, locations_.get(owner));
+      scalars_.integer(bytes, LOOM_SCALAR_TYPE_OFFSET, locations_.get(owner));
   loom_op_t* op;
   check(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+      &builder_, memory_space,
       std::max<int64_t>(*alignment, explicit_alignment), length,
       loom_type_buffer(), locations_.get(owner), &op));
   auto root = loom_op_results(op)[0];
   auto base =
       scalars_.integer(0, LOOM_SCALAR_TYPE_OFFSET, locations_.get(owner));
-  auto element = types_.get(array->elementType(), owner);
+  auto* array = cxx::type_cast<cxx::BoundedArrayType>(types_.unqualified(type));
+  auto* vector = types_.vector(type);
+  auto element = types_.get(array ? array->elementType() : type, owner);
+  auto count = array ? array->size() : vector ? vector->elementCount() : 1;
   auto view_type = loom_type_shaped_1d(
-      LOOM_TYPE_VIEW, loom_type_element_type(element), array->size(), 0);
+      LOOM_TYPE_VIEW, loom_type_element_type(element), count, 0);
+  view_type = loom_type_view_with_alignment(
+      view_type, static_cast<uint8_t>(std::min<uint64_t>(
+                     *alignment, loom_type_view_natural_alignment(view_type))));
   check(loom_buffer_view_build(&builder_, root, base, view_type,
                                locations_.get(owner), &op));
   auto view = loom_op_results(op)[0];
-  array_views_[root] = {types_.unqualified(array), base, view};
+  if (array) {
+    array_views_[root] = {array, base, view};
+  }
   return {{root, base}, view};
 }
 

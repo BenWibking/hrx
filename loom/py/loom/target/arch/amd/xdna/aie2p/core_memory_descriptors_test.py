@@ -493,13 +493,10 @@ def test_vector_memory_descriptors_cover_each_native_width_and_value_shape() -> 
             ("bf16", 16),
             ("i32", 32),
             ("f32", 32),
+            ("i64", 64),
+            ("f64", 64),
         ):
             shape = f"{element_type}x{width_bits // element_bits}"
-            expected_register_class = (
-                "aie2p.ewl"
-                if width_bits == 128 and element_type == "bf16"
-                else "aie2p.vec256"
-            )
             for load_pipe in ("a", "b"):
                 for address_form in ("immediate", "register"):
                     descriptor = descriptors[
@@ -507,7 +504,7 @@ def test_vector_memory_descriptors_cover_each_native_width_and_value_shape() -> 
                         f"{address_form}"
                     ]
                     payload = descriptor.operands[0]
-                    assert payload.reg_alts[0].reg_class == expected_register_class
+                    assert payload.reg_alts[0].reg_class == "aie2p.vec256"
                     assert payload.unit_count == unit_count
                     assert payload.register_part is None
                     assert all(
@@ -526,7 +523,7 @@ def test_vector_memory_descriptors_cover_each_native_width_and_value_shape() -> 
                     f"amd.xdna.aie2p.store.{shape}.indexed.{address_form}"
                 ]
                 payload = descriptor.operands[0]
-                assert payload.reg_alts[0].reg_class == expected_register_class
+                assert payload.reg_alts[0].reg_class == "aie2p.vec256"
                 assert payload.unit_count == unit_count
                 assert descriptor.effects[0].width_bits == width_bits
                 if address_form == "immediate":
@@ -535,12 +532,7 @@ def test_vector_memory_descriptors_cover_each_native_width_and_value_shape() -> 
             load = descriptors[f"amd.xdna.aie2p.load.a.{shape}.indexed.immediate"]
             store = descriptors[f"amd.xdna.aie2p.store.{shape}.indexed.immediate"]
             if width_bits == 128:
-                expected_part = (
-                    "aie2p.ewl.low128"
-                    if element_type == "bf16"
-                    else "aie2p.vec256.low128"
-                )
-                assert store.operands[0].register_part == expected_part
+                assert store.operands[0].register_part == "aie2p.vec256.low128"
             else:
                 assert load.operands[0].register_part is None
                 assert store.operands[0].register_part is None
@@ -556,6 +548,7 @@ def test_float_vector_memory_descriptors_reuse_bit_exact_physical_forms() -> Non
         for value_type, storage_type, element_bits in (
             ("bf16", "i16", 16),
             ("f32", "i32", 32),
+            ("f64", "i64", 64),
         ):
             value_shape = f"{value_type}x{width_bits // element_bits}"
             storage_shape = f"{storage_type}x{width_bits // element_bits}"
@@ -575,20 +568,7 @@ def test_float_vector_memory_descriptors_reuse_bit_exact_physical_forms() -> Non
                     assert value_descriptor.encoding_field_values == (
                         storage_descriptor.encoding_field_values
                     )
-                    if width_bits == 128 and value_type == "bf16":
-                        assert (
-                            value_descriptor.operands[1:]
-                            == storage_descriptor.operands[1:]
-                        )
-                        assert (
-                            value_descriptor.operands[0].reg_alts[0].reg_class
-                            == "aie2p.ewl"
-                        )
-                        assert value_descriptor.operands[0].register_part == (
-                            "aie2p.ewl.low128" if descriptor_family == "store" else None
-                        )
-                    else:
-                        assert value_descriptor.operands == storage_descriptor.operands
+                    assert value_descriptor.operands == storage_descriptor.operands
                     assert value_descriptor.immediates == storage_descriptor.immediates
 
 

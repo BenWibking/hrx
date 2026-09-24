@@ -68,12 +68,17 @@ from loom.target.arch.amdgpu.target_info import (  # noqa: E402
     AMDGPU_BUFFER_RESOURCE_RECORD_ENCODINGS,
     AMDGPU_CACHE_SCOPE_KEYWORDS,
     AMDGPU_CACHE_TEMPORAL_KEYWORDS,
+    AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS,
+    AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA,
+    AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY,
+    AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_OCP_FP8_NONCANONICAL_NAN,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_PACKED_BF16_ARITHMETIC,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_ARITHMETIC,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_COMPARE,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_CONVERSION,
+    AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOP3_TWO_SCALAR_SOURCES,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_NUMERIC_MINMAX_MNEMONICS,
@@ -125,6 +130,7 @@ from loom.target.arch.amdgpu.target_info import (  # noqa: E402
     AMDGPU_MATRIX_FEATURE_PROFILE_WMMA_GFX12,
     AMDGPU_MATRIX_FEATURE_PROFILE_WMMA_GFX12_5_GENERIC,
     AMDGPU_MATRIX_FEATURE_PROFILE_WMMA_GFX1250,
+    AMDGPU_MEMORY_ORDERING_MODELS,
     AMDGPU_PROCESSOR_INFO_FLAG_ARCHITECTED_WORKGROUP_IDS,
     AMDGPU_PROCESSOR_INFO_FLAG_CLUSTER_LAUNCH_STATE,
     AMDGPU_PROCESSOR_INFO_FLAG_HSACO_EMISSION,
@@ -242,6 +248,8 @@ _BUFFER_RESOURCE_CACHE_SWIZZLE_EXPRS = {
 
 _BUFFER_RESOURCE_RECORD_ENCODING_EXPRS = {encoding: f"LOOM_AMDGPU_BUFFER_RESOURCE_RECORD_ENCODING_{_c_ident(encoding)}" for encoding in AMDGPU_BUFFER_RESOURCE_RECORD_ENCODINGS}
 
+_MEMORY_ORDERING_MODEL_EXPRS = {model: f"LOOM_AMDGPU_MEMORY_ORDERING_MODEL_{_c_ident(model)}" for model in AMDGPU_MEMORY_ORDERING_MODELS}
+
 _VECTOR_MEMORY_CACHE_POLICY_ENCODING_EXPRS = {encoding: f"LOOM_AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_{_c_ident(encoding)}" for encoding in AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODINGS}
 
 _LDS_BANK_SERVICE_EVIDENCE_CLASS_EXPRS = {
@@ -261,6 +269,26 @@ _LDS_BANK_SERVICE_REQUEST_POLICY_EXPRS = {
 }
 
 _DESCRIPTOR_SET_INFO_FLAG_EXPRS = (
+    (
+        AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES,
+        "LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES",
+    ),
+    (
+        AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA,
+        "LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA",
+    ),
+    (
+        AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY,
+        "LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY",
+    ),
+    (
+        AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY,
+        "LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY",
+    ),
+    (
+        AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS,
+        "LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS",
+    ),
     (
         AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING,
         "LOOM_AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING",
@@ -499,6 +527,10 @@ def _vector_memory_cache_policy_encoding_expr(kind: str) -> str:
         _VECTOR_MEMORY_CACHE_POLICY_ENCODING_EXPRS,
         "vector-memory cache-policy encoding",
     )
+
+
+def _memory_ordering_model_expr(model: str) -> str:
+    return _enum_expr(model, _MEMORY_ORDERING_MODEL_EXPRS, "memory-ordering model")
 
 
 def _lds_bank_service_evidence_class_expr(evidence_class: str) -> str:
@@ -945,6 +977,7 @@ def _validate_descriptor_sets(descriptor_sets: Sequence[AmdgpuDescriptorSetInfo]
             raise ValueError(f"AMDGPU descriptor set {info.key} must declare a buffer-resource record encoding")
         _buffer_resource_cache_swizzle_expr(info.buffer_resource.cache_swizzle)
         _vector_memory_cache_policy_encoding_expr(info.vector_memory.cache_policy_encoding)
+        _memory_ordering_model_expr(info.vector_memory.ordering_model)
         if info.vector_memory.cache_policy_encoding == AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_NONE:
             raise ValueError(f"AMDGPU descriptor set {info.key} must declare a non-none vector-memory cache-policy encoding")
 
@@ -1197,6 +1230,7 @@ def _emit_descriptor_set_rows(rows: Sequence[_AmdgpuDescriptorSetRow]) -> list[s
                 "    },",
                 "    .vector_memory = {",
                 f"      .cache_policy_encoding = {_vector_memory_cache_policy_encoding_expr(info.vector_memory.cache_policy_encoding)},",
+                f"      .ordering_model = {_memory_ordering_model_expr(info.vector_memory.ordering_model)},",
                 "    },",
                 "  },",
             ]

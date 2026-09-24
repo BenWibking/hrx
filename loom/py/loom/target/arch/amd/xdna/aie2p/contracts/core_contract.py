@@ -61,6 +61,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.reduction import (
 from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     AIE2P_STRUCTURAL_RULES,
 )
+from loom.target.arch.amd.xdna.aie2p.contracts.table import AIE2P_TABLE_RULES
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
 )
@@ -116,6 +117,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
         *AIE2P_INTEGER_DIVISION_RULES,
         *AIE2P_REDUCTION_RULES,
         *AIE2P_STRUCTURAL_RULES,
+        *AIE2P_TABLE_RULES,
         *AIE2P_I64_RULES,
         *AIE2P_PACKET_MEMORY_RULES,
         *AIE2P_MEMORY_RULES,
@@ -270,6 +272,12 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
             core_rules._I32_MAX,
         ),
         core_rules._float_constant_rule(
+            core_rules._F8E4M3, ValueProject.float_bits("result")
+        ),
+        core_rules._float_constant_rule(
+            core_rules._F8E5M2, ValueProject.float_bits("result")
+        ),
+        core_rules._float_constant_rule(
             core_rules._F16, ValueProject.float_bits("result")
         ),
         core_rules._float_constant_rule(
@@ -313,6 +321,16 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
             "amd.xdna.aie2p.splat.i32x16",
             core_rules._I32_MIN,
             core_rules._I32_MAX,
+        ),
+        core_rules._float_vector_constant_rule(
+            core_rules._F8E4M3_VECTOR,
+            "amd.xdna.aie2p.splat.i8x64",
+            ValueProject.float_bits("result"),
+        ),
+        core_rules._float_vector_constant_rule(
+            core_rules._F8E5M2_VECTOR,
+            "amd.xdna.aie2p.splat.i8x64",
+            ValueProject.float_bits("result"),
         ),
         core_rules._float_vector_constant_rule(
             core_rules._F16_VECTOR,
@@ -439,22 +457,6 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
             core_rules._I1_VECTOR,
             1,
             "amd.xdna.aie2p.extract.predicate64.immediate",
-        ),
-        core_rules._vector_insert_zero_rule(
-            core_rules._BF16,
-            core_rules._BF16X8_VECTOR,
-            "amd.xdna.aie2p.insert.bf16x8.zero",
-        ),
-        core_rules._vector_insert_static_rule(
-            core_rules._BF16,
-            core_rules._BF16X8_VECTOR,
-            7,
-            "amd.xdna.aie2p.insert.bf16x8.register",
-        ),
-        core_rules._vector_insert_dynamic_rule(
-            core_rules._BF16,
-            core_rules._BF16X8_VECTOR,
-            "amd.xdna.aie2p.insert.bf16x8.register",
         ),
         *(
             rule
@@ -759,6 +761,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
                 (core_rules._F32_VECTOR, "amd.xdna.aie2p.select.i32x16.mask64"),
             )
         ),
+        core_rules._vector_predicate_select_rule(),
         *(
             core_rules._vector_predicate_binary_rule(source_op, operation)
             for source_op, operation in (
@@ -803,6 +806,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
                 core_rules._OFFSET,
             )
         ),
+        core_rules._buffer_select_rule(),
         *(
             core_rules._whole_vector_select_rule(result_type)
             for result_type in core_rules._BITCAST_VECTOR_TYPES

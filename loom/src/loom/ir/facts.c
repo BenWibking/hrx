@@ -855,22 +855,22 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
       break;
 
     case LOOM_PREDICATE_NOT_NAN:
-      facts->flags |= LOOM_VALUE_FACT_NOT_NAN;
+      facts->flags |= LOOM_VALUE_FACT_FLOAT | LOOM_VALUE_FACT_NOT_NAN;
       if (loom_value_facts_is_not_inf(*facts)) {
         facts->flags |= LOOM_VALUE_FACT_FINITE;
       }
       return;
 
     case LOOM_PREDICATE_NOT_INF:
-      facts->flags |= LOOM_VALUE_FACT_NOT_INF;
+      facts->flags |= LOOM_VALUE_FACT_FLOAT | LOOM_VALUE_FACT_NOT_INF;
       if (loom_value_facts_is_not_nan(*facts)) {
         facts->flags |= LOOM_VALUE_FACT_FINITE;
       }
       return;
 
     case LOOM_PREDICATE_FINITE:
-      facts->flags |= LOOM_VALUE_FACT_NOT_NAN | LOOM_VALUE_FACT_NOT_INF |
-                      LOOM_VALUE_FACT_FINITE;
+      facts->flags |= LOOM_VALUE_FACT_FLOAT | LOOM_VALUE_FACT_NOT_NAN |
+                      LOOM_VALUE_FACT_NOT_INF | LOOM_VALUE_FACT_FINITE;
       return;
 
     case LOOM_PREDICATE_RANGE: {
@@ -1287,47 +1287,40 @@ void loom_value_facts_shli(const loom_value_facts_t* lhs,
 }
 
 void loom_value_facts_shrui(const loom_value_facts_t* lhs,
-                            const loom_value_facts_t* rhs,
+                            const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out) {
-  const loom_value_facts_t lhs_facts = *lhs;
+  const loom_value_facts_t lhs_facts =
+      bit_count == 64 ? *lhs : loom_value_facts_wrap_integer(*lhs, bit_count);
   const loom_value_facts_t rhs_facts = *rhs;
-  int64_t lhs_lo = lhs_facts.range_lo, lhs_hi = lhs_facts.range_hi;
-  int64_t rhs_lo = rhs_facts.range_lo, rhs_hi = rhs_facts.range_hi;
-  int64_t lhs_divisor = lhs_facts.known_divisor;
-
-  // Shift amount must be exact and in [0, 63].
-  if (rhs_lo != rhs_hi || rhs_lo < 0 || rhs_lo > 63) {
+  const int64_t shift = rhs_facts.range_lo;
+  if (shift != rhs_facts.range_hi || shift < 0 || shift >= bit_count) {
     *out = loom_value_facts_unknown();
-    loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
-    return;
-  }
-  int64_t shift = rhs_lo;
-  if (shift == 63) {
-    // A 64-bit logical shift by 63 extracts the source sign bit.
-    if (lhs_lo >= 0) {
-      *out = loom_value_facts_exact_i64(0);
-    } else if (lhs_hi < 0) {
-      *out = loom_value_facts_exact_i64(1);
-    } else {
-      *out = loom_value_facts_make(0, 1, 1);
+  } else if (shift == 0) {
+    // Identity retains the signed fact domain, including the source sign bit.
+    *out = lhs_facts;
+  } else {
+    const uint64_t mask = UINT64_MAX >> (64 - bit_count);
+    int64_t lo = 0;
+    int64_t hi = (int64_t)(mask >> shift);
+    if (lhs_facts.range_lo >= 0 || lhs_facts.range_hi < 0) {
+      // Within either half of the signed domain, raw bits are monotonic.
+      // A range crossing zero instead spans both ends of the unsigned domain.
+      lo = (int64_t)(((uint64_t)lhs_facts.range_lo & mask) >> shift);
+      hi = (int64_t)(((uint64_t)lhs_facts.range_hi & mask) >> shift);
     }
-    loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
-    return;
+    int64_t divisor = lhs_facts.known_divisor;
+    if (lhs_facts.range_lo < 0) {
+      // Reinterpreting a signed value adds 2^bit_count. Only the power-of-two
+      // factor of its divisor necessarily survives that addition.
+      divisor &= -divisor;
+    }
+    // No positive signed divisor contains a factor of 2^63.
+    const uint64_t factor = UINT64_C(1) << shift;
+    divisor = (uint64_t)divisor % factor == 0
+                  ? (int64_t)((uint64_t)divisor / factor)
+                  : 1;
+    *out = loom_value_facts_make(lo, hi, divisor);
   }
-  int64_t factor = (int64_t)1 << shift;
-
-  // Divisor: independent of sign. Computed before range check.
-  int64_t divisor = (lhs_divisor % factor == 0) ? lhs_divisor / factor : 1;
-
-  // Range requires non-negative input for unsigned shift semantics.
-  if (lhs_lo < 0) {
-    *out = loom_value_facts_make(INT64_MIN, INT64_MAX, divisor);
-    loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
-    return;
-  }
-  int64_t lo = lhs_lo >> shift;
-  int64_t hi = lhs_hi >> shift;
-  *out = loom_value_facts_make(lo, hi, divisor);
   loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
 }
 
@@ -1374,6 +1367,10 @@ void loom_value_facts_shrsi(const loom_value_facts_t* lhs,
 // Transfer functions: bitwise
 //===----------------------------------------------------------------------===//
 
+// OR and XOR cannot introduce bits above either nonnegative operand's highest
+// possible set bit. Filling the lower bits is necessary: combining just the
+// endpoints would miss results such as 7 | 8 from two [0, 8] ranges. The signed
+// nonnegative domain limits bit_count to 63, including an INT64_MAX endpoint.
 static int64_t loom_value_facts_non_negative_bitwise_upper_bound(
     int64_t lhs_hi, int64_t rhs_hi) {
   uint64_t maximum_operand = (uint64_t)iree_max(lhs_hi, rhs_hi);
@@ -1454,29 +1451,19 @@ void loom_value_facts_ori(const loom_value_facts_t* lhs,
     return;
   }
 
-  // OR with a known non-zero exact value always produces non-zero.
-  // Use range [1, MAX] when either operand is exact and non-zero
-  // and the other is non-negative.
-  bool either_exact_nonzero =
-      (lhs_lo == lhs_hi && lhs_lo != 0) || (rhs_lo == rhs_hi && rhs_lo != 0);
-
-  // Both non-negative: result is non-negative.
+  // OR retains each nonnegative operand's set bits without introducing bits
+  // above the wider operand's bound.
   if (lhs_lo >= 0 && rhs_lo >= 0) {
-    int64_t lo = iree_max(lhs_lo, rhs_lo);
-    if (either_exact_nonzero && lo == 0) {
-      lo = 1;
-    }
-    *out = loom_value_facts_make(lo, INT64_MAX, 1);
-    loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
-    return;
-  }
-  // General case: if either operand is exact non-zero, the result
-  // is guaranteed non-zero (OR preserves set bits).
-  if (either_exact_nonzero) {
-    *out = loom_value_facts_make(INT64_MIN, INT64_MAX, 1);
-    out->flags |= LOOM_VALUE_FACT_NON_ZERO;
+    *out = loom_value_facts_make(
+        iree_max(lhs_lo, rhs_lo),
+        loom_value_facts_non_negative_bitwise_upper_bound(lhs_hi, rhs_hi), 1);
   } else {
     *out = loom_value_facts_unknown();
+  }
+  // A set bit survives OR regardless of sign or how nonzero was established.
+  if (loom_value_facts_is_non_zero(lhs_facts) ||
+      loom_value_facts_is_non_zero(rhs_facts)) {
+    out->flags |= LOOM_VALUE_FACT_NON_ZERO;
   }
   loom_value_facts_propagate_bitwise_flags(&lhs_facts, &rhs_facts, out);
 }
@@ -1510,28 +1497,49 @@ void loom_value_facts_xori(const loom_value_facts_t* lhs,
 // Transfer functions: min / max
 //===----------------------------------------------------------------------===//
 
+static void loom_value_facts_minimum_range(const loom_value_facts_t* lhs,
+                                           const loom_value_facts_t* rhs,
+                                           loom_value_facts_t* out) {
+  *out = loom_value_facts_make(
+      iree_min(lhs->range_lo, rhs->range_lo),
+      iree_min(lhs->range_hi, rhs->range_hi),
+      iree_math_gcd_i64(lhs->known_divisor, rhs->known_divisor));
+  loom_value_facts_propagate_binary_distribution(*lhs, *rhs, out);
+}
+
+static void loom_value_facts_maximum_range(const loom_value_facts_t* lhs,
+                                           const loom_value_facts_t* rhs,
+                                           loom_value_facts_t* out) {
+  *out = loom_value_facts_make(
+      iree_max(lhs->range_lo, rhs->range_lo),
+      iree_max(lhs->range_hi, rhs->range_hi),
+      iree_math_gcd_i64(lhs->known_divisor, rhs->known_divisor));
+  loom_value_facts_propagate_binary_distribution(*lhs, *rhs, out);
+}
+
 void loom_value_facts_minsi(const loom_value_facts_t* lhs,
-                            const loom_value_facts_t* rhs,
+                            const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out) {
   const loom_value_facts_t lhs_facts = *lhs;
   const loom_value_facts_t rhs_facts = *rhs;
-  *out = loom_value_facts_make(
-      iree_min(lhs_facts.range_lo, rhs_facts.range_lo),
-      iree_min(lhs_facts.range_hi, rhs_facts.range_hi),
-      iree_math_gcd_i64(lhs_facts.known_divisor, rhs_facts.known_divisor));
-  loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
+  // Boolean facts store true as 1, while signed i1 orders it below false.
+  if (bit_count == 1) {
+    loom_value_facts_maximum_range(&lhs_facts, &rhs_facts, out);
+  } else {
+    loom_value_facts_minimum_range(&lhs_facts, &rhs_facts, out);
+  }
 }
 
 void loom_value_facts_maxsi(const loom_value_facts_t* lhs,
-                            const loom_value_facts_t* rhs,
+                            const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out) {
   const loom_value_facts_t lhs_facts = *lhs;
   const loom_value_facts_t rhs_facts = *rhs;
-  *out = loom_value_facts_make(
-      iree_max(lhs_facts.range_lo, rhs_facts.range_lo),
-      iree_max(lhs_facts.range_hi, rhs_facts.range_hi),
-      iree_math_gcd_i64(lhs_facts.known_divisor, rhs_facts.known_divisor));
-  loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
+  if (bit_count == 1) {
+    loom_value_facts_minimum_range(&lhs_facts, &rhs_facts, out);
+  } else {
+    loom_value_facts_maximum_range(&lhs_facts, &rhs_facts, out);
+  }
 }
 
 void loom_value_facts_minui(const loom_value_facts_t* lhs,
@@ -1539,12 +1547,21 @@ void loom_value_facts_minui(const loom_value_facts_t* lhs,
                             loom_value_facts_t* out) {
   const loom_value_facts_t lhs_facts = *lhs;
   const loom_value_facts_t rhs_facts = *rhs;
-  // For non-negative ranges, unsigned min == signed min.
   if (lhs_facts.range_lo >= 0 && rhs_facts.range_lo >= 0) {
-    loom_value_facts_minsi(&lhs_facts, &rhs_facts, out);
+    loom_value_facts_minimum_range(&lhs_facts, &rhs_facts, out);
     return;
   }
-  *out = loom_value_facts_unknown();
+  // Integer facts use signed representation, so casting to uint64 preserves
+  // unsigned order within and across the two sign halves at every width.
+  if (loom_value_facts_is_exact(lhs_facts) &&
+      loom_value_facts_is_exact(rhs_facts)) {
+    *out = loom_value_facts_exact_i64((uint64_t)lhs_facts.range_lo <
+                                              (uint64_t)rhs_facts.range_lo
+                                          ? lhs_facts.range_lo
+                                          : rhs_facts.range_lo);
+  } else {
+    *out = loom_value_facts_unknown();
+  }
   loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
 }
 
@@ -1554,10 +1571,18 @@ void loom_value_facts_maxui(const loom_value_facts_t* lhs,
   const loom_value_facts_t lhs_facts = *lhs;
   const loom_value_facts_t rhs_facts = *rhs;
   if (lhs_facts.range_lo >= 0 && rhs_facts.range_lo >= 0) {
-    loom_value_facts_maxsi(&lhs_facts, &rhs_facts, out);
+    loom_value_facts_maximum_range(&lhs_facts, &rhs_facts, out);
     return;
   }
-  *out = loom_value_facts_unknown();
+  if (loom_value_facts_is_exact(lhs_facts) &&
+      loom_value_facts_is_exact(rhs_facts)) {
+    *out = loom_value_facts_exact_i64((uint64_t)lhs_facts.range_lo >
+                                              (uint64_t)rhs_facts.range_lo
+                                          ? lhs_facts.range_lo
+                                          : rhs_facts.range_lo);
+  } else {
+    *out = loom_value_facts_unknown();
+  }
   loom_value_facts_propagate_binary_distribution(lhs_facts, rhs_facts, out);
 }
 

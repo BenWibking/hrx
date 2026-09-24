@@ -38,6 +38,8 @@ from loom.target.low_descriptors import (
 
 
 def _type_pattern_text(type_pattern: TypePattern) -> str:
+    if type_pattern.kind == "buffer":
+        return "buffer"
     element_text = _type_pattern_element_text(type_pattern)
     if type_pattern.kind == "scalar":
         return element_text
@@ -57,11 +59,17 @@ def _type_pattern_element_text(type_pattern: TypePattern) -> str:
     return "{" + ", ".join(type_pattern.elements) + "}"
 
 
-def _value_type_diagnostic(field: str, type_pattern: TypePattern) -> DiagnosticRef:
+def _value_type_diagnostic(
+    field: str,
+    type_pattern: TypePattern,
+    *,
+    element: int = 0,
+) -> DiagnosticRef:
+    field_name = f"{field}[{element}]" if element else field
     return target_diagnostic(
         ERR_TARGET_002,
-        string_param("field_name", field),
-        value_type_param("actual_type", field),
+        string_param("field_name", field_name),
+        value_type_param("actual_type", field, element=element),
         string_param("expected_type", _type_pattern_text(type_pattern)),
     )
 
@@ -269,8 +277,10 @@ def _value_no_uses_diagnostic(field: str) -> DiagnosticRef:
     return _named_constraint_diagnostic("value", field, "no_ordinary_uses")
 
 
-def _instance_flags_diagnostic(field: str, enum_keyword: str) -> DiagnosticRef:
-    return _named_constraint_diagnostic("flags", field, f"has_all.{enum_keyword}")
+def _instance_flags_diagnostic(
+    field: str, enum_keyword: str, predicate: str
+) -> DiagnosticRef:
+    return _named_constraint_diagnostic("flags", field, f"{predicate}.{enum_keyword}")
 
 
 def _source_memory_diagnostic(
@@ -287,14 +297,14 @@ def _source_memory_diagnostic(
     )
 
 
-def _source_memory_dynamic_offset_diagnostic(
+def _source_memory_byte_offset_diagnostic(
     constraint: SourceMemoryConstraint,
 ) -> DiagnosticRef:
-    if constraint.dynamic_offset_diagnostic is not None:
-        ref = constraint.dynamic_offset_diagnostic.ref
+    if constraint.byte_offset_diagnostic is not None:
+        ref = constraint.byte_offset_diagnostic.ref
         if ref is None:
             raise ValueError(
-                "source-memory dynamic-offset diagnostic is missing an error ref"
+                "source-memory byte-offset diagnostic is missing an error ref"
             )
         return ref
     return _source_memory_diagnostic(constraint)

@@ -14,6 +14,9 @@
 #define LOOM_TARGET_EMIT_NATIVE_AMDGPU_RUNTIME_GLOBALS_H_
 
 #include "iree/base/api.h"
+#include "loom/target/arch/amdgpu/abi/asan.h"
+#include "loom/target/arch/amdgpu/abi/feedback.h"
+#include "loom/target/arch/amdgpu/abi/tsan.h"
 #include "loom/target/emit/native/amdgpu/hsaco.h"
 
 #ifdef __cplusplus
@@ -53,9 +56,11 @@ enum {
 };
 
 #define LOOM_AMDGPU_RUNTIME_GLOBAL_FEEDBACK_CONFIG_NAME \
-  IREE_SVL("iree_feedback_config")
-#define LOOM_AMDGPU_RUNTIME_GLOBAL_ASAN_CONFIG_NAME IREE_SVL("iree_asan_config")
-#define LOOM_AMDGPU_RUNTIME_GLOBAL_TSAN_CONFIG_NAME IREE_SVL("iree_tsan_config")
+  IREE_SVL(LOOM_AMDGPU_FEEDBACK_CONFIG_GLOBAL_NAME)
+#define LOOM_AMDGPU_RUNTIME_GLOBAL_ASAN_CONFIG_NAME \
+  IREE_SVL(LOOM_AMDGPU_ASAN_CONFIG_GLOBAL_NAME)
+#define LOOM_AMDGPU_RUNTIME_GLOBAL_TSAN_CONFIG_NAME \
+  IREE_SVL(LOOM_AMDGPU_TSAN_CONFIG_GLOBAL_NAME)
 
 // Validates that all runtime-global option bits are understood.
 iree_status_t loom_amdgpu_runtime_global_flags_validate(

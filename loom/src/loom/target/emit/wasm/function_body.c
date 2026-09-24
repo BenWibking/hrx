@@ -135,6 +135,9 @@ enum {
   LOOM_WASM_SIMD_SUBOPCODE_F32X4_GT = 0x44,
   LOOM_WASM_SIMD_SUBOPCODE_F32X4_LE = 0x45,
   LOOM_WASM_SIMD_SUBOPCODE_F32X4_GE = 0x46,
+  LOOM_WASM_SIMD_SUBOPCODE_V128_AND = 0x4E,
+  LOOM_WASM_SIMD_SUBOPCODE_V128_OR = 0x50,
+  LOOM_WASM_SIMD_SUBOPCODE_V128_XOR = 0x51,
   LOOM_WASM_SIMD_SUBOPCODE_V128_BITSELECT = 0x52,
   LOOM_WASM_SIMD_SUBOPCODE_I32X4_ADD = 0xAE,
   LOOM_WASM_SIMD_SUBOPCODE_I32X4_SUB = 0xB1,
@@ -214,6 +217,12 @@ enum {
       (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) | LOOM_WASM_SIMD_SUBOPCODE_F32X4_LE,
   LOOM_WASM_ENCODING_F32X4_GE =
       (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) | LOOM_WASM_SIMD_SUBOPCODE_F32X4_GE,
+  LOOM_WASM_ENCODING_V128_AND =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) | LOOM_WASM_SIMD_SUBOPCODE_V128_AND,
+  LOOM_WASM_ENCODING_V128_OR =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) | LOOM_WASM_SIMD_SUBOPCODE_V128_OR,
+  LOOM_WASM_ENCODING_V128_XOR =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) | LOOM_WASM_SIMD_SUBOPCODE_V128_XOR,
   LOOM_WASM_ENCODING_V128_BITSELECT = (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
                                       LOOM_WASM_SIMD_SUBOPCODE_V128_BITSELECT,
   LOOM_WASM_ENCODING_I32X4_ADD =
@@ -848,6 +857,9 @@ static iree_status_t loom_wasm_emit_descriptor_packet(
     case LOOM_WASM_OPCODE_I64_GE_S:
     case LOOM_WASM_OPCODE_I64_GE_U:
     case LOOM_WASM_OPCODE_F32_ADD:
+    case LOOM_WASM_ENCODING_V128_AND:
+    case LOOM_WASM_ENCODING_V128_OR:
+    case LOOM_WASM_ENCODING_V128_XOR:
     case LOOM_WASM_ENCODING_I32X4_EQ:
     case LOOM_WASM_ENCODING_I32X4_NE:
     case LOOM_WASM_ENCODING_I32X4_LT_S:
@@ -1014,8 +1026,7 @@ static iree_status_t loom_wasm_emit_descriptor_packet(
               .i64);
     default: {
       iree_string_view_t key = loom_low_descriptor_set_string(
-          state->allocation->target.descriptor_set,
-          descriptor->key_string_offset);
+          state->allocation->target.descriptor_set, descriptor->key_string_ref);
       return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
                               "Wasm descriptor '%.*s' is unsupported",
                               (int)key.size, key.data);

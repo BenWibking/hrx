@@ -1,5 +1,29 @@
 // RUN: pass canonicalize
 
+// Qualification and carrier formation do not assert address alignment, even
+// when the natural requirement is stronger than a known odd origin.
+func.def @access_requirement_is_not_an_address_fact(%buffer: buffer) -> (i64, i64, i64, i64) {
+  %odd = index.constant 1 : offset
+  %packed = buffer.view %buffer[%odd] : buffer -> view<4xi32, align(1)>
+  %natural = view.refine %packed : view<4xi32, align(1)> -> view<4xi32>
+  %sub = view.subview %natural[1] : view<4xi32> -> view<2xi32>
+  %origin = test.fact_view_min_alignment %natural : view<4xi32> -> i64
+  %root = test.fact_view_root_min_alignment %natural : view<4xi32> -> i64
+  %sub_origin = test.fact_view_min_alignment %sub : view<2xi32> -> i64
+  %sub_root = test.fact_view_root_min_alignment %sub : view<2xi32> -> i64
+  func.return %origin, %root, %sub_origin, %sub_root : i64, i64, i64, i64
+}
+// ----
+func.def @access_requirement_is_not_an_address_fact(%buffer: buffer) -> (i64, i64, i64, i64) {
+  %origin = scalar.constant 1 : i64
+  %root = scalar.constant 1 : i64
+  %sub_origin = scalar.constant 1 : i64
+  %sub_root = scalar.constant 1 : i64
+  func.return %origin, %root, %sub_origin, %sub_root : i64, i64, i64, i64
+}
+
+// ====
+
 // Buffer entry arguments seed storage-root facts.
 func.def @buffer_arg_reference(%buffer: buffer) -> (i1) {
   %is = test.fact_is_buffer_reference %buffer : buffer -> i1
@@ -643,5 +667,27 @@ func.def @bare_fp8_view_load_content_is_unknown(%buffer: buffer) -> (i1) {
   %view = buffer.view %buffer[%offset] : buffer -> view<4xf8E4M3>
   %value = view.load %view[0] : view<4xf8E4M3> -> f8E4M3
   %finite = scalar.isfinitef %value : f8E4M3
+  func.return %finite : i1
+}
+
+// ====
+
+// Storage content facts and a finite fallback retain their shared class.
+func.def @finite_storage_or_zero(%condition: i1, %buffer: buffer) -> (i1) {
+  %offset = index.constant 0 : offset
+  %layout = encoding.layout.dense : encoding<layout>
+  %schema = encoding.define #encoding.f8e5m2<rounding=finite_only> : encoding<schema>
+  %storage = encoding.define #encoding.storage {layout = %layout : encoding<layout>, schema = %schema : encoding<schema>} : encoding<storage>
+  %view = buffer.view %buffer[%offset] : buffer -> view<4xf8E5M2, %storage>
+  %loaded = view.load %view[0] : view<4xf8E5M2, %storage> -> f8E5M2
+  %c0 = scalar.constant 0.0 : f8E5M2
+  %value = scf.select %condition, %loaded, %c0 : f8E5M2
+  %finite = scalar.isfinitef %value : f8E5M2
+  func.return %finite : i1
+}
+
+// ----
+func.def @finite_storage_or_zero(%condition: i1, %buffer: buffer) -> (i1) {
+  %finite = scalar.constant true : i1
   func.return %finite : i1
 }

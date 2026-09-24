@@ -24,6 +24,9 @@ loom_check_test_suite(
     "auto_deduction.cxx-test"
     "bfloat16.cxx-test"
     "bfloat16_invalid.cxx-test"
+    "bitcast.cxx-test"
+    "bitcast_folding.cxx-test"
+    "bitcast_invalid.cxx-test"
     "check.cxx-test"
     "check_records.cxx-test"
     "check_resources.cxx-test"
@@ -34,6 +37,9 @@ loom_check_test_suite(
     "config_invalid.cxx-test"
     "const.cxx-test"
     "constexpr.cxx-test"
+    "constexpr_bitcast.cxx-test"
+    "constexpr_bitcast_cleanup.cxx-test"
+    "constexpr_bitcast_invalid.cxx-test"
     "constexpr_semantics.cxx-test"
     "control_invalid.cxx-test"
     "data_models.cxx-test"
@@ -46,6 +52,8 @@ loom_check_test_suite(
     "frontend.cxx-test"
     "functions.cxx-test"
     "initializer_dependencies.cxx-test"
+    "integer_intrinsics.cxx-test"
+    "integer_widening.cxx-test"
     "intrinsics_invalid.cxx-test"
     "kernel_intrinsics.cxx-test"
     "kernel_intrinsics_invalid.cxx-test"
@@ -53,12 +61,21 @@ loom_check_test_suite(
     "launch_invalid.cxx-test"
     "layout_attributes.cxx-test"
     "layout_attributes_roundtrip.cxx-test"
+    "list_initialization_invalid.cxx-test"
+    "local_addresses.cxx-test"
+    "local_arrays.cxx-test"
     "locations.cxx-test"
     "loops.cxx-test"
     "macro_operators.cxx-test"
     "offsetof.cxx-test"
     "offsetof_roundtrip.cxx-test"
+    "opaque_pointers.cxx-test"
+    "opaque_pointers_invalid.cxx-test"
     "packed_memory.cxx-test"
+    "parameter_alignment.cxx-test"
+    "parameter_alignment_invalid.cxx-test"
+    "parameter_noalias.cxx-test"
+    "parameter_noalias_invalid.cxx-test"
     "pointers.cxx-test"
     "record_arrays.cxx-test"
     "record_memory.cxx-test"
@@ -84,6 +101,9 @@ loom_check_test_suite(
     "vector_constants.cxx-test"
     "vector_conversion.cxx-test"
     "vector_conversion_invalid.cxx-test"
+    "vector_list_assignment.cxx-test"
+    "vector_list_assignment_invalid.cxx-test"
+    "vector_lookup.cxx-test"
     "vectors.cxx-test"
     "vectors_invalid.cxx-test"
     "view_values.cxx-test"
@@ -158,6 +178,110 @@ endif()
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 loom_test_module(
   NAME
+    integer_intrinsics_test_module
+  SRCS
+    "integer_intrinsics.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    integer_intrinsics_test_execute_vm_reference_test
+  MODULE
+    "::integer_intrinsics_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    local_addresses_test_module
+  SRCS
+    "local_addresses.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    local_addresses_test_execute_vm_reference_test
+  MODULE
+    "::local_addresses_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    local_arrays_test_module
+  SRCS
+    "local_arrays.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    local_arrays_test_execute_vm_reference_test
+  MODULE
+    "::local_arrays_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    local_names_test_module
+  SRCS
+    "local_names.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    local_names_test_execute_vm_reference_test
+  MODULE
+    "::local_names_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
     constexpr_values_test_module
   SRCS
     "constexpr_values.cxx"
@@ -186,10 +310,12 @@ loom_test_module(
   NAME
     atomic_values_test_module
   SRCS
-    "atomic_builtin_values.loom"
-    "atomic_builtins.cxx"
-    "atomic_values.loom"
-    "atomics.cxx"
+    "atomic_values.cxx"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/atomic_builtins.cxx"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/atomics.cxx"
+  INPUTOPTS
+    "cxx:root=sequence_i32 root=sequence_u32 root=sequence_i64 root=sequence_u64 root=builtin_compare_semantics root=builtin_wide_semantics"
 )
 endif()
 
@@ -942,13 +1068,22 @@ loom_check_test_suite(
 )
 endif()
 
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_WASM)
+loom_check_test_suite(
+  NAME
+    wasm_compiler_test
+  SRCS
+    "wasm_lowering.cxx-test"
+    "wasm_lowering_invalid.cxx-test"
+)
+endif()
+
 if(LOOM_IMPORT_CXX)
 loom_test_module(
   NAME
     atomics_module
   SRCS
     "atomic_builtins.cxx"
-    "atomic_kernels.loom"
     "atomics.cxx"
 )
 endif()
@@ -980,6 +1115,42 @@ loom_test_module(
   SRCS
     "record_memory.cxx"
     "record_memory_kernels.loom"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    packed_byte_arithmetic_module
+  SRCS
+    "packed_byte_arithmetic.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    packed_float16_conversion_module
+  SRCS
+    "packed_float16_conversion.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    packed_float8_conversion_module
+  SRCS
+    "packed_float8_conversion.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    vector_lookup_module
+  SRCS
+    "vector_lookup.cxx"
 )
 endif()
 

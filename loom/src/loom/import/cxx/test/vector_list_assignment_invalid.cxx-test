@@ -1,0 +1,56 @@
+// RUN: verify
+using Int4 = int __attribute__((ext_vector_type(4)));
+// ERROR@+1: PARSE/036 "excess elements in vector initializer"
+void entry(Int4* output) { *output = {1, 2, 3, 4, 5}; }
+
+// ====
+using Int4 = int __attribute__((ext_vector_type(4)));
+// ERROR@+1: PARSE/036 "cannot initialize vector element of type 'int' with expression of type 'const int*'"
+void entry(Int4* output, const int* pointer) { *output = {pointer}; }
+
+// ====
+using Int4 = int __attribute__((ext_vector_type(4)));
+// ERROR@+1: PARSE/036 "cannot initialize type 'int' with expression of type 'const int*'"
+void entry(Int4* output, const int* pointer) { *output = {{pointer}}; }
+
+// ====
+// Each bad element reports its own failure, without an outer assignment error.
+using Int4 = int __attribute__((ext_vector_type(4)));
+void entry(Int4* output, const int* pointer) {
+  // ERROR@+2: PARSE/036 "cannot initialize vector element of type 'int' with expression of type 'const int*'"
+  // ERROR@+1: PARSE/036 "cannot initialize vector element of type 'int' with expression of type 'const int*'"
+  *output = {pointer, pointer};
+}
+
+// ====
+using Int4 = int __attribute__((ext_vector_type(4)));
+template <class T>
+static void assign(Int4* output, T value) {
+  // ERROR@+1: PARSE/036 "cannot initialize vector element of type 'int' with expression of type 'const int*'"
+  *output = {value};
+}
+// REMARK@+1: PARSE/036 "in instantiation of function template specialization 'assign <const int*>' requested here"
+void entry(Int4* output, const int* pointer) { assign(output, pointer); }
+
+// ====
+// Successful list initialization still checks the destination value category.
+using Int4 = int __attribute__((ext_vector_type(4)));
+// ERROR@+1: PARSE/036 "cannot assign to an rvalue of type"
+void entry(Int4 left, Int4 right) { (left + right) = {1, 2, 3, 4}; }
+
+// ====
+using Bytes4 = unsigned char __attribute__((ext_vector_type(4)));
+// ERROR@+1: PARSE/036 "narrowing conversion from 'int' to 'unsigned char' in braced-init-list"
+void entry(Bytes4* output) { *output = {256}; }
+
+// ====
+using Int4 = int __attribute__((ext_vector_type(4)));
+// ERROR@+1: PARSE/036 "narrowing conversion from 'float' to 'int' in braced-init-list"
+void entry(Int4* output, float value) { *output = {value}; }
+
+// ====
+using Int4 = int __attribute__((ext_vector_type(4)));
+// REMARK@+1: PARSE/036 "candidate function not viable"
+static void consume(Int4& value) {}
+// ERROR@+1: PARSE/036 "no matching function for call to 'consume'"
+void entry() { consume({1, 2, 3, 4}); }

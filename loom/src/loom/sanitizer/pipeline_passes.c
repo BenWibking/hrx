@@ -1856,23 +1856,3 @@ iree_status_t loom_sanitizer_insert_assertions_run(loom_pass_t* pass,
   }
   return status;
 }
-
-static const loom_pass_info_t
-    loom_sanitizer_materialize_assertions_pass_info_storage = {
-        .name = IREE_SVL("sanitizer-materialize-assertions"),
-        .description =
-            IREE_SVL("Materialize sanitizer assertions for target reporting."),
-        .kind = LOOM_PASS_FUNCTION,
-};
-
-const loom_pass_info_t* loom_sanitizer_materialize_assertions_pass_info(void) {
-  return &loom_sanitizer_materialize_assertions_pass_info_storage;
-}
-
-iree_status_t loom_sanitizer_materialize_assertions_run(
-    loom_pass_t* pass, loom_module_t* module, loom_func_like_t function) {
-  (void)pass;
-  (void)module;
-  (void)function;
-  return iree_ok_status();
-}

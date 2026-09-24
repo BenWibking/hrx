@@ -37,9 +37,9 @@ from loom.target.arch.amd.xdna.aie2p.contracts.reduction import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
     _I8_DEINTERLEAVE_CONTROLS,
-    _I32_SLICE_HIGH_BYTE_OFFSET,
     AIE2P_STRUCTURAL_RULES,
 )
+from loom.target.arch.amd.xdna.aie2p.contracts.table import AIE2P_TABLE_RULES
 from loom.target.contracts import (
     DescriptorResultType,
     DescriptorRule,
@@ -185,6 +185,8 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
             "i16",
             "i32",
             "i64",
+            "f8E4M3",
+            "f8E5M2",
             "f16",
             "bf16",
             "f32",
@@ -206,6 +208,8 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
             "amd.xdna.aie2p.constant.i32",
         ],
         "i64": ["amd.xdna.aie2p.constant.i32"],
+        "f8E4M3": ["amd.xdna.aie2p.constant.i32"],
+        "f8E5M2": ["amd.xdna.aie2p.constant.i32"],
         "f16": ["amd.xdna.aie2p.constant.i32"],
         "bf16": ["amd.xdna.aie2p.constant.i32"],
         "f32": ["amd.xdna.aie2p.constant.i32"],
@@ -232,9 +236,12 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         1,
     ]
     float_constant_rules = [
-        constant_rules_by_type[element][0] for element in ("f16", "bf16", "f32")
+        constant_rules_by_type[element][0]
+        for element in ("f8E4M3", "f8E5M2", "f16", "bf16", "f32")
     ]
     assert [rule.emit[0].immediates["i"].kind for rule in float_constant_rules] == [
+        ValueProjectKind.FLOAT_BITS,
+        ValueProjectKind.FLOAT_BITS,
         ValueProjectKind.FLOAT_BITS,
         ValueProjectKind.FLOAT_BITS,
         ValueProjectKind.FLOAT_AS_F32_I32,
@@ -249,6 +256,8 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         "amd.xdna.aie2p.splat.i16x32",
         "amd.xdna.aie2p.splat.i32x16",
         "amd.xdna.aie2p.splat.i32x16",
+        "amd.xdna.aie2p.splat.i8x64",
+        "amd.xdna.aie2p.splat.i8x64",
         "amd.xdna.aie2p.splat.i16x32",
         "amd.xdna.aie2p.splat.i16x32",
         "amd.xdna.aie2p.splat.i32x16",
@@ -264,12 +273,16 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         2,
         2,
         2,
+        2,
+        2,
         1,
         1,
     ]
     assert [
-        rule.emit[0].immediates["i"].kind for rule in vector_constant_rules[5:8]
+        rule.emit[0].immediates["i"].kind for rule in vector_constant_rules[5:10]
     ] == [
+        ValueProjectKind.FLOAT_BITS,
+        ValueProjectKind.FLOAT_BITS,
         ValueProjectKind.FLOAT_BITS,
         ValueProjectKind.FLOAT_BITS,
         ValueProjectKind.FLOAT_AS_F32_I32,
@@ -283,6 +296,20 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         "amd.xdna.aie2p.broadcast.i16x32.from-vector",
         "amd.xdna.aie2p.broadcast.i32x16.from-vector",
     ]
+
+    table_lookup_rules = [
+        rule for rule in rules if rule.source_op is vector.vector_table_lookup
+    ]
+    assert table_lookup_rules == list(AIE2P_TABLE_RULES)
+    assert [rule.descriptor.key for rule in table_lookup_rules] == [
+        "amd.xdna.aie2p.broadcast.i8x64.from-vector",
+        "amd.xdna.aie2p.broadcast.i16x32.from-vector",
+        "amd.xdna.aie2p.broadcast.i32x16.from-vector",
+        "amd.xdna.aie2p.broadcast.i64x8.from-vector",
+    ]
+    assert [rule.emit[0].immediates["idx"].kind for rule in table_lookup_rules] == [
+        ValueProjectKind.EXACT_I64,
+    ] * 4
 
     vector_extract_rules = [
         rule
@@ -385,9 +412,6 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         ("f64", "f64", "amd.xdna.aie2p.insert.i64.zero"),
         ("f64", "f64", "amd.xdna.aie2p.insert.i64.register"),
         ("f64", "f64", "amd.xdna.aie2p.insert.i64.register"),
-        ("bf16", "bf16", "amd.xdna.aie2p.insert.bf16x8.zero"),
-        ("bf16", "bf16", "amd.xdna.aie2p.insert.bf16x8.register"),
-        ("bf16", "bf16", "amd.xdna.aie2p.insert.bf16x8.register"),
     ]
     for element_type, storage in (
         ("i8", "i8"),
@@ -830,35 +854,22 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         for rule in rules
         if rule.source_op is vector.vector_dot2f and not rule.source_nodes
     ]
-    assert len(bf16_dot2_rules) == 4
-    bf16_dot2_x8_zero, bf16_dot2_x8, bf16_dot2_zero, bf16_dot2 = bf16_dot2_rules
-    for zero_rule, source_rule in (
-        (bf16_dot2_x8_zero, bf16_dot2_x8),
-        (bf16_dot2_zero, bf16_dot2),
-    ):
-        assert zero_rule.guards == (
-            *source_rule.guards,
-            Guard.value_float_equals("acc", 0.0),
-        )
-        assert not any(isinstance(emit, EmitRegisterConcat) for emit in zero_rule.emit)
-        accumulates = [
-            emit
-            for emit in zero_rule.emit
-            if not isinstance(emit, EmitRegisterSlice)
-            and emit.descriptor.key == "amd.xdna.aie2p.accumulate.bf16x32.configured"
-        ]
-        assert len(accumulates) == 2
-        assert accumulates[0].operands["acc1"].field == "zero_accumulator"
-        assert accumulates[1].operands["acc1"].field == "even_accumulator"
-    assert bf16_dot2_x8.report_key == "bf16_dot2_x8_broadcast"
-    assert bf16_dot2.report_key == "bf16_dot2"
-    assert Guard.value_type("lhs", Vector("bf16", lanes=8)) in bf16_dot2_x8.guards
-    assert Guard.value_type("acc", Vector("f32", lanes=4)) in bf16_dot2_x8.guards
-    assert [emit.descriptor.key for emit in bf16_dot2_x8.emit[:2]] == [
-        "amd.xdna.aie2p.broadcast.bf16x8.to.bf16x32",
-        "amd.xdna.aie2p.broadcast.bf16x8.to.bf16x32",
+    assert len(bf16_dot2_rules) == 2
+    bf16_dot2_zero, bf16_dot2 = bf16_dot2_rules
+    assert bf16_dot2_zero.guards == (
+        *bf16_dot2.guards,
+        Guard.value_float_equals("acc", 0.0),
+    )
+    assert not any(isinstance(emit, EmitRegisterConcat) for emit in bf16_dot2_zero.emit)
+    accumulates = [
+        emit
+        for emit in bf16_dot2_zero.emit
+        if not isinstance(emit, EmitRegisterSlice)
+        and emit.descriptor.key == "amd.xdna.aie2p.accumulate.bf16x32.configured"
     ]
-    assert all(emit.immediates == {"idx": 0} for emit in bf16_dot2_x8.emit[:2])
+    assert len(accumulates) == 2
+    assert accumulates[0].operands["acc1"].field == "zero_accumulator"
+    assert accumulates[1].operands["acc1"].field == "even_accumulator"
     assert bf16_dot2.descriptor.key == ("amd.xdna.aie2p.accumulate.bf16x32.configured")
     assert [
         emit.descriptor.key
@@ -966,72 +977,6 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         )
         == _I8_DEINTERLEAVE_CONTROLS
     )
-
-    high_slice = next(
-        rule
-        for rule in rules
-        if rule.source_op is vector.vector_slice
-        and Guard.value_type("source", Vector(("i32", "f32"), lanes=16)) in rule.guards
-        and Guard.value_type("result", Vector(("i32", "f32"), lanes=8)) in rule.guards
-        and Guard.i64_array_element_range(
-            "static_offsets", element=0, minimum=8, maximum=8
-        )
-        in rule.guards
-    )
-    assert high_slice.descriptor.key == "amd.xdna.aie2p.shift.bytes.x.configured"
-    assert [emit.descriptor.key for emit in high_slice.emit] == [
-        "amd.xdna.aie2p.constant.i32.mova",
-        "amd.xdna.aie2p.shift.bytes.x.configured",
-    ]
-    assert high_slice.emit[0].immediates == {"i": _I32_SLICE_HIGH_BYTE_OFFSET}
-    assert high_slice.emit[1].operands["s1"].field == "source"
-    assert high_slice.emit[1].operands["s2"].field == "source"
-    assert high_slice.emit[1].results["d"].field == "result"
-
-    concat = next(
-        rule
-        for rule in rules
-        if rule.source_op is vector.vector_concat
-        and Guard.i64_range("axis", 0, 0) in rule.guards
-        and Guard.value_type("inputs", Vector("i8", lanes=32)) in rule.guards
-        and Guard.value_type("result", Vector("i8", lanes=64)) in rule.guards
-    )
-    assert concat.descriptor is None
-    assert len(concat.emit) == 3
-    assert all(isinstance(emit, EmitRegisterSlice) for emit in concat.emit[:2])
-    assert isinstance(concat.emit[2], EmitRegisterConcat)
-    assert [emit.source.element for emit in concat.emit[:2]] == [0, 1]
-    assert all(emit.unit_count == 1 for emit in concat.emit[:2])
-    assert [source.field for source in concat.emit[2].sources] == ["low", "high"]
-    assert concat.emit[2].result.field == "result"
-
-    for input_type, result_type in (
-        (
-            Vector(("i8", "f8E4M3", "f8E5M2"), lanes=64),
-            Vector(("i8", "f8E4M3", "f8E5M2"), lanes=128),
-        ),
-        (
-            Vector(("i16", "f16", "bf16"), lanes=32),
-            Vector(("i16", "f16", "bf16"), lanes=64),
-        ),
-        (Vector("i32", lanes=16), Vector("i32", lanes=32)),
-    ):
-        wide_concat = next(
-            rule
-            for rule in rules
-            if rule.source_op is vector.vector_concat
-            and Guard.value_type("inputs", input_type) in rule.guards
-            and Guard.value_type("result", result_type) in rule.guards
-        )
-        assert wide_concat.descriptor is None
-        assert len(wide_concat.emit) == 1
-        assert isinstance(wide_concat.emit[0], EmitRegisterConcat)
-        assert [source.field for source in wide_concat.emit[0].sources] == [
-            "inputs",
-            "inputs",
-        ]
-        assert [source.element for source in wide_concat.emit[0].sources] == [0, 1]
-        assert wide_concat.emit[0].result.field == "result"
 
     f32_add_rules = [rule for rule in rules if rule.source_op is vector.vector_addf]
     assert len(f32_add_rules) == 2
@@ -1195,10 +1140,13 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
     )
     assert predicate_splat.emit[-1].result_types is None
 
-    vector_select_rules = [
-        rule for rule in rules if rule.source_op is vector.vector_select
+    payload_select_rules = [
+        rule
+        for rule in rules
+        if rule.source_op is vector.vector_select
+        and rule.guards[1].type_pattern.element != "i1"
     ]
-    assert [rule.descriptor.key for rule in vector_select_rules] == [
+    assert [rule.descriptor.key for rule in payload_select_rules] == [
         "amd.xdna.aie2p.select.i8x64",
         "amd.xdna.aie2p.select.i8x64",
         "amd.xdna.aie2p.select.i8x64",
@@ -1208,7 +1156,7 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         "amd.xdna.aie2p.select.i32x16.mask64",
         "amd.xdna.aie2p.select.i32x16.mask64",
     ]
-    for rule in vector_select_rules:
+    for rule in payload_select_rules:
         select = rule.emit[0]
         assert select.operands["s1"].field == "false_value"
         assert select.operands["s2"].field == "true_value"
@@ -1294,6 +1242,7 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         rule
         for rule in whole_select_rules
         if rule.descriptor.key == "amd.xdna.aie2p.select.nonzero.i32"
+        and rule.guards[1].type_pattern.kind == "scalar"
         and len(rule.emit) != 1
     ]
     assert [
@@ -1384,19 +1333,16 @@ def test_core_contract_closes_scalar_and_integer_vector_families() -> None:
         for rule in vector_bitcast_rules
     ] == [
         (source_type, result_type)
+        for element_type in ("i16", "f16", "bf16")
+        for source_type, result_type in (
+            (Vector(element_type, lanes=64), Vector(element_type, dims=(8, 8))),
+            (Vector(element_type, dims=(8, 8)), Vector(element_type, lanes=64)),
+        )
+    ] + [
+        (source_type, result_type)
         for source_type in bitcast_types
         for result_type in bitcast_types
     ]
-    assert any(
-        rule.source_op is vector.vector_slice
-        and Guard.value_type("source", Vector(("i32", "f32"), lanes=16)) in rule.guards
-        and Guard.value_type("result", Vector(("i32", "f32"), lanes=8)) in rule.guards
-        and Guard.i64_array_element_range(
-            "static_offsets", element=0, minimum=0, maximum=0
-        )
-        in rule.guards
-        for rule in alias_rules
-    )
     packed_predicate_aliases = [
         rule for rule in alias_rules if rule.source_op is vector.vector_bitunpacku
     ]

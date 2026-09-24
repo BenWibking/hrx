@@ -56,6 +56,7 @@ loom_cc_library(
     loom::import::cxx::binding::intrinsics
     loom::import::cxx::binding::launch
     loom::import::cxx::binding::loop_schedule
+    loom::import::cxx::binding::parameter_contracts
     loom::import::cxx::control::analysis
     loom::import::cxx::source
     loom::import::cxx::source::attributes
@@ -65,6 +66,7 @@ loom_cc_library(
     loom::import::cxx::source::locations
     loom::import::cxx::source::options
     loom::import::cxx::symbol::functions
+    loom::import::cxx::value::bitcast
     loom::import::cxx::value::representation
     loom::import::cxx::value::scalar
     loom::import::cxx::value::signature

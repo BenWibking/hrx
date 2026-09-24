@@ -51,14 +51,18 @@ using Codes4 = signed char __attribute__((ext_vector_type(4)));
 using Codebook16 = signed char __attribute__((ext_vector_type(16)));
 using Float4 = float __attribute__((ext_vector_type(4)));
 
-[[loom::op("vector.table.lookup")]]
-Codes4 lookup(Codebook16 table, Bytes4 indices);
+static Codes4 lookup(Codebook16 table, Bytes4 indices) {
+  return {table[indices[0]], table[indices[1]], table[indices[2]],
+          table[indices[3]]};
+}
 
 // One workgroup decodes a whole block. Each workitem expands four packed bytes
 // into four weights in each half of its group using register table lookups.
 [[loom::kernel, loom::workgroup_size(32, 1, 1), loom::workgroup_count(8, 1, 1)]]
-void decode_iq4xs_packed(const IQ4XSBlock* blocks, const Codebook16* codebook,
-                         Float4* output) {
+void decode_iq4xs_packed(
+    [[loom::noalias]] const IQ4XSBlock* blocks,
+    [[loom::noalias, loom::assume_aligned(64)]] const Codebook16* codebook,
+    [[loom::noalias]] Float4* output) {
   unsigned block_index = loom::workgroup_id.x;
   unsigned lane = loom::workitem_id.x;
   auto* block = &blocks[block_index];

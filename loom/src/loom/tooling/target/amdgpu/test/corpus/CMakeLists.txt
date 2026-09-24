@@ -9,6 +9,81 @@
 
 iree_add_all_subdirs()
 
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    buffer_selection_test_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/buffer_selection.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    buffer_selection_test_execute_amdgpu_hardware_test
+  MODULE
+    "::buffer_selection_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    buffer_selection_test_execute_amdgpu_access_test
+  MODULE
+    "::buffer_selection_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "buffer_selection_test"
+  SRC
+    "::buffer_selection_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+endif()
+
 file(GLOB _GLOB_GENERIC_X_LOOM LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS generic/*.loom)
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
 loom_module(
@@ -70,7 +145,7 @@ loom_module(
 )
 endif()
 
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_GFX11_GENERIC_CORE)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND (LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_GFX11_GENERIC_CORE OR LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_RDNA3_CORE OR LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_RDNA3_5_CORE))
 iree_native_test(
   NAME
     "gfx11_test"
@@ -129,7 +204,7 @@ iree_native_test(
 )
 endif()
 
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_GFX11_GENERIC_CORE)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND (LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_GFX11_GENERIC_CORE OR LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_RDNA3_CORE OR LOOM_TARGET_AMDGPU_IREE_HAL_DESCRIPTOR_SET_RDNA3_5_CORE))
 iree_native_test(
   NAME
     "gfx11_loop_entry_access_test"

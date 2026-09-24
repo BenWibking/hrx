@@ -34,6 +34,7 @@ from loom.target.arch.spirv.atomic import (
 from loom.target.arch.spirv.builtins import BUILTIN_DIMENSIONS, BUILTIN_INDEX_QUERIES
 from loom.target.arch.spirv.cooperative_matrix import cooperative_matrix_descriptor_key
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
+from loom.target.arch.spirv.extended_math import EXTENDED_MATH_INSTRUCTIONS
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
     ORDINARY_VECTOR_TYPES,
@@ -586,6 +587,15 @@ def test_generation_emits_scalar_conversion_rows() -> None:
     assert "LOOM_SPIRV_PACKET_FORM_UNARY_TYPED" in tables
 
 
+def test_signed_address_conversions_preserve_source_width_and_signedness() -> None:
+    for suffix, scalar in (("i8", "S8"), ("i16", "S16"), ("i32", "S32")):
+        row = _packet_row(f"spirv.op_s_convert.{suffix}.offset64")
+        assert row.opcode == "LOOM_SPIRV_OP_S_CONVERT"
+        assert row.form == "LOOM_SPIRV_PACKET_FORM_UNARY_TYPED"
+        assert "LOOM_SPIRV_VALUE_CLASS_OFFSET64" in row.result_type
+        assert f"LOOM_SPIRV_SCALAR_TYPE_{scalar}" in row.operand_types[0]
+
+
 def test_generation_emits_complete_ordinary_vector_structural_matrix() -> None:
     tables = generate_tables()
     packet_rows_by_key = {row.descriptor_key: row for row in _packet_rows() if row.descriptor_key in {instruction.key for instruction in ORDINARY_VECTOR_INSTRUCTIONS}}
@@ -712,6 +722,27 @@ def test_generation_emits_complete_ordinary_vector_bit_layout_rows() -> None:
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS)
 
 
+def test_generation_emits_complete_extended_math_matrix() -> None:
+    assert len(EXTENDED_MATH_INSTRUCTIONS) == 24
+    rows = {row.descriptor_key: row for row in _packet_rows()}
+    descriptors = {descriptor.key: descriptor for descriptor in SPIRV_LOGICAL_CORE_DESCRIPTOR_SET.descriptors}
+    for instruction in EXTENDED_MATH_INSTRUCTIONS:
+        row = rows[instruction.descriptor_key]
+        expected_value_type = _expected_ordinary_vector_value(instruction.value_type)
+        assert row.opcode == "LOOM_SPIRV_OP_EXT_INST"
+        assert row.form == "LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION"
+        assert row.result_type == expected_value_type
+        assert row.operand_types == tuple(expected_value_type for _ in instruction.operation.operand_names)
+        assert row.result_count == 1
+        assert row.extended_instruction_set == "LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450"
+        assert row.extended_instruction == instruction.operation.instruction_c_enum
+
+        descriptor = descriptors[instruction.descriptor_key]
+        assert descriptor.mnemonic == instruction.mnemonic
+        assert descriptor.semantic_tag == instruction.descriptor_key
+        assert descriptor.immediates == ()
+
+
 def test_generation_compacts_only_repeated_four_operand_types() -> None:
     packet_rows_by_key = {row.descriptor_key: row for row in _packet_rows()}
 
@@ -772,7 +803,7 @@ def test_generation_emits_complete_address_conversion_rows() -> None:
 
 def test_generation_emits_atomic_packet_forms_and_immediates() -> None:
     atomic_rows = tuple(row for row in _packet_rows() if row.descriptor_key.startswith("spirv.atomic."))
-    assert len(atomic_rows) == 656
+    assert len(atomic_rows) == 672
 
     i64 = _atomic_model_row(ATOMIC_INTEGER_SCALARS, "source_type", "i64")
     integer_subtract = _atomic_model_row(ATOMIC_INTEGER_OPERATIONS, "source_kind", "subi")
@@ -829,6 +860,11 @@ def test_generation_emits_atomic_packet_forms_and_immediates() -> None:
     assert native_float_add.atomic_scope == "LOOM_SPIRV_SCOPE_DEVICE"
     assert native_float_add.atomic_storage_semantics == "LOOM_SPIRV_MEMORY_SEMANTICS_UNIFORM_MEMORY_MASK"
     assert "LOOM_SPIRV_SCALAR_TYPE_F32" in native_float_add.operand_types[0]
+
+    preserving_add = _packet_row(float_atomic_descriptor_key("rmw", "cas_preserve", f32, storage_buffer, device, operation=float_add))
+    assert preserving_add.form == "LOOM_SPIRV_PACKET_FORM_ATOMIC_FLOAT_CAS"
+    assert preserving_add.atomic_float_operation == float_add.cas_operation
+    assert preserving_add.atomic_integer_scalar == "LOOM_SPIRV_SCALAR_TYPE_S32"
 
     float_minimum = _atomic_model_row(ATOMIC_FLOAT_OPERATIONS, "source_kind", "minimumf")
     float_cas = _packet_row(

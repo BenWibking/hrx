@@ -31,6 +31,7 @@ from loom.target.contracts.diagnostics import (
 from loom.target.contracts.memory_spaces import MEMORY_SPACE_NAMES
 from loom.target.contracts.patterns import TypePattern
 from loom.target.contracts.source import (
+    ValueRef,
     _require_attr,
     _require_operand,
     _require_value,
@@ -73,6 +74,7 @@ class GuardKind(Enum):
     VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD = "value_packed_integer_lanes_from_payload"
     VALUE_NO_USES = "value_no_uses"
     INSTANCE_FLAGS_HAS_ALL = "instance_flags_has_all"
+    INSTANCE_FLAGS_HAS_NONE = "instance_flags_has_none"
     VECTOR_EXTRACT_SHAPE = "vector_extract_shape"
     VALUE_STATIC_ELEMENT_COUNT_EQ = "value_static_element_count_eq"
     VALUE_MEMORY_SPACE = "value_memory_space"
@@ -147,11 +149,13 @@ class Guard:
         field: str,
         type_pattern: TypePattern,
         *,
+        element: int = 0,
         diagnostic: GuardDiagnostic | None = None,
     ) -> Self:
         return cls(
             kind=GuardKind.VALUE_TYPE,
             field=field,
+            element=element,
             type_pattern=type_pattern,
             diagnostic=diagnostic,
         )
@@ -614,6 +618,22 @@ class Guard:
             diagnostic=diagnostic,
         )
 
+    @classmethod
+    def instance_flags_has_none(
+        cls,
+        field: str,
+        enum_case: str | EnumCase,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        keyword = enum_case.keyword if isinstance(enum_case, EnumCase) else enum_case
+        return cls(
+            kind=GuardKind.INSTANCE_FLAGS_HAS_NONE,
+            field=field,
+            enum_keyword=keyword,
+            diagnostic=diagnostic,
+        )
+
     def __post_init__(self) -> None:
         if not -(2**63) <= self.addend < 2**63:
             raise ValueError("power-of-two addend must fit in i64")
@@ -672,6 +692,12 @@ class Guard:
         subject = f"guard {self.kind.value}"
         if self.kind == GuardKind.VALUE_TYPE:
             _require_value(source_op, self.field, subject)
+            value_ref = (
+                ValueRef.operand(self.field, element=self.element or 0)
+                if source_op.operand(self.field) is not None
+                else ValueRef.result(self.field, element=self.element or 0)
+            )
+            value_ref.validate(source_op, subject)
             if self.type_pattern is None:
                 raise ValueError(f"{source_op.name}: {subject} needs a type pattern")
             return
@@ -774,7 +800,10 @@ class Guard:
                     f"{source_op.name}: {subject} is only valid for vector.extract"
                 )
             return
-        if self.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL:
+        if self.kind in (
+            GuardKind.INSTANCE_FLAGS_HAS_ALL,
+            GuardKind.INSTANCE_FLAGS_HAS_NONE,
+        ):
             attr = _require_attr(source_op, self.field, subject)
             if attr.attr_type != ATTR_TYPE_FLAGS:
                 raise ValueError(

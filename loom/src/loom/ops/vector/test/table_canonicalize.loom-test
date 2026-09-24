@@ -1,0 +1,20 @@
+// RUN: pass canonicalize
+
+// Universal cleanup folds scalar expressions while retaining scalar table
+// accesses. Target legalization may have deliberately chosen this form.
+func.def @scalar_table_accesses(%table: vector<16xf32>, %left: index, %right: index) -> (vector<2xf32>) {
+  %c0 = index.constant 0 : index
+  %position = index.add %left, %c0 : index
+  %a = vector.extract %table[%position] : vector<16xf32> -> f32
+  %b = vector.extract %table[%right] : vector<16xf32> -> f32
+  %result = vector.from_elements %a, %b : vector<2xf32>
+  func.return %result : vector<2xf32>
+}
+
+// ----
+func.def @scalar_table_accesses(%table: vector<16xf32>, %left: index, %right: index) -> (vector<2xf32>) {
+  %a = vector.extract %table[%left] : vector<16xf32> -> f32
+  %b = vector.extract %table[%right] : vector<16xf32> -> f32
+  %result = vector.from_elements %a, %b : vector<2xf32>
+  func.return %result : vector<2xf32>
+}

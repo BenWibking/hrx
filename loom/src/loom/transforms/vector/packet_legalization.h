@@ -17,7 +17,8 @@ extern "C" {
 // Target packet widths and the source payload boundary where packetization
 // replaces ordinary target or reference lowering.
 typedef struct loom_vector_packet_policy_t {
-  // Native packet widths in bits. Ordering is not significant.
+  // Native packet widths in bits. Widths are byte-aligned, each byte width is
+  // a power of two, and ordering is not significant.
   const uint16_t* native_bit_counts;
   // Number of entries in native_bit_counts.
   uint8_t native_bit_count_count;
@@ -32,9 +33,10 @@ iree_status_t loom_vector_packet_legalize_load(
     loom_target_legalization_context_t* context, loom_op_t* op,
     const loom_vector_packet_policy_t* policy, bool* out_rewritten);
 
-// Packetizes a dense vector store and its decomposable producer graph into
-// target-native widths. Returns false through |out_rewritten| when the graph or
-// policy does not admit an exact packetization.
+// Packetizes a dense vector store into target-native widths. Decomposable
+// producer graphs stream packets; other SSA values retain their snapshot and
+// supply static slices. Returns false through |out_rewritten| when the access
+// or policy does not admit an exact packetization.
 iree_status_t loom_vector_packet_legalize_store(
     loom_target_legalization_context_t* context, loom_op_t* op,
     const loom_vector_packet_policy_t* policy, bool* out_rewritten);

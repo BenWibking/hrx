@@ -227,6 +227,19 @@ AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODINGS = (
     AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX950_NT_SC0_SC1,
 )
 
+AMDGPU_MEMORY_ORDERING_MODEL_NONE = "none"
+AMDGPU_MEMORY_ORDERING_MODEL_GFX11 = "gfx11"
+AMDGPU_MEMORY_ORDERING_MODEL_GFX12 = "gfx12"
+AMDGPU_MEMORY_ORDERING_MODEL_GFX125 = "gfx125"
+AMDGPU_MEMORY_ORDERING_MODEL_CDNA = "cdna"
+AMDGPU_MEMORY_ORDERING_MODELS = (
+    AMDGPU_MEMORY_ORDERING_MODEL_NONE,
+    AMDGPU_MEMORY_ORDERING_MODEL_GFX11,
+    AMDGPU_MEMORY_ORDERING_MODEL_GFX12,
+    AMDGPU_MEMORY_ORDERING_MODEL_GFX125,
+    AMDGPU_MEMORY_ORDERING_MODEL_CDNA,
+)
+
 AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ATTR_SCOPE = "scope"
 AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ATTR_TH = "th"
 AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ATTR_NT = "nt"
@@ -277,6 +290,12 @@ AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_ARITHMETIC = 1 << 6
 AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_CONVERSION = 1 << 7
 AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_COMPARE = 1 << 8
 AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE = 1 << 9
+AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA = 1 << 10
+AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY = 1 << 11
+AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY = 1 << 12
+AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS = 1 << 13
+# CDNA wide VMEM payloads remain readable for a short issue window.
+AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES = 1 << 14
 AMDGPU_DESCRIPTOR_SET_INFO_KNOWN_FLAGS = (
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING
     | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_PACKETIZATION
@@ -288,6 +307,11 @@ AMDGPU_DESCRIPTOR_SET_INFO_KNOWN_FLAGS = (
     | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_CONVERSION
     | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_NATIVE_SCALAR_FLOAT_COMPARE
     | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE
+    | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+    | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+    | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY
+    | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+    | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES
 )
 AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA = (
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING
@@ -394,6 +418,7 @@ AMDGPU_BUFFER_RESOURCE_INFO_BASE57 = AmdgpuDescriptorSetBufferResourceInfo(
 @dataclass(frozen=True, slots=True)
 class AmdgpuDescriptorSetVectorMemoryInfo:
     cache_policy_encoding: str = AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_NONE
+    ordering_model: str = AMDGPU_MEMORY_ORDERING_MODEL_NONE
 
 
 @dataclass(frozen=True, slots=True)
@@ -1247,47 +1272,80 @@ def gfx125x_processor_info(
     )
 
 
+# Floating memory capability provenance: AMD GPU atomics operation support
+# (rocm.docs.amd.com/en/latest/reference/gpu-atomics-operation.html), RDNA4 ISA
+# chapter 13, and LLVM AgentScopeFineGrainedRemoteMemoryAtomics /
+# EmulatedSystemScopeAtomics. GFX11.7's newer VALU does not upgrade its memory
+# atomics. CDNA F32 LDS number-extrema semantics do not establish numeric
+# preference for signaling NaNs, so that guarantee is absent.
 AMDGPU_DESCRIPTOR_SET_INFOS: tuple[AmdgpuDescriptorSetInfo, ...] = (
     AmdgpuDescriptorSetInfo(
         generator_target="cdna3",
         key="amdgpu.cdna3.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_CDNA3,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES
+        ),
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_LEGACY,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX950_NT_SC0_SC1,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_CDNA,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="rdna4_gfx1250_a0",
         key="amdgpu.rdna4.gfx1250_a0.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_RDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY
+        ),
         storage_generator_target="rdna4_gfx125x",
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE57,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX12_NV_SCOPE_TH,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX125,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="rdna4_gfx125x",
         key="amdgpu.rdna4.gfx125x.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_RDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY
+        ),
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE57,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX12_NV_SCOPE_TH,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX125,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="rdna4_gfx1251",
         key="amdgpu.rdna4.gfx1251.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_RDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY
+        ),
         storage_generator_target="rdna4_gfx125x",
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE57,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX12_NV_SCOPE_TH,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX125,
         ),
     ),
     AmdgpuDescriptorSetInfo(
@@ -1298,6 +1356,7 @@ AMDGPU_DESCRIPTOR_SET_INFOS: tuple[AmdgpuDescriptorSetInfo, ...] = (
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_UNIFIED,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX11_GLC_SLC_DLC,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX11,
         ),
     ),
     AmdgpuDescriptorSetInfo(
@@ -1308,6 +1367,7 @@ AMDGPU_DESCRIPTOR_SET_INFOS: tuple[AmdgpuDescriptorSetInfo, ...] = (
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_UNIFIED,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX11_GLC_SLC_DLC,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX11,
         ),
     ),
     AmdgpuDescriptorSetInfo(
@@ -1318,29 +1378,42 @@ AMDGPU_DESCRIPTOR_SET_INFOS: tuple[AmdgpuDescriptorSetInfo, ...] = (
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_UNIFIED,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX11_GLC_SLC_DLC,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX11,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="rdna4",
         key="amdgpu.rdna4.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_RDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_NONCANONICAL_FP8,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_NONCANONICAL_FP8
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+        ),
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_UNIFIED,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX12_NV_SCOPE_TH,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX12,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="cdna4",
         key="amdgpu.cdna4.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_CDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES
+        ),
         buffer_resource=AmdgpuDescriptorSetBufferResourceInfo(
             record_encoding=AMDGPU_BUFFER_RESOURCE_RECORD_ENCODING_BASE48_NUM_RECORDS32_LEGACY_FORMAT,
             cache_swizzle=AMDGPU_BUFFER_RESOURCE_CACHE_SWIZZLE_STRIDE14_ENABLE_BIT,
         ),
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX950_NT_SC0_SC1,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_CDNA,
         ),
     ),
     AmdgpuDescriptorSetInfo(
@@ -1350,12 +1423,18 @@ AMDGPU_DESCRIPTOR_SET_INFOS: tuple[AmdgpuDescriptorSetInfo, ...] = (
             AMDGPU_DESCRIPTOR_SET_ISA_CDNA3,
             AMDGPU_DESCRIPTOR_SET_ISA_CDNA4,
         ),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAG_DESCRIPTOR_PACKET_ENCODING
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_STORE_DATA_WAIT_STATES
+        ),
         storage_generator_target="cdna3",
         member_generator_targets=("cdna3", "cdna4"),
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_LEGACY,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX950_NT_SC0_SC1,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_CDNA,
         ),
     ),
     AmdgpuDescriptorSetInfo(
@@ -1371,30 +1450,44 @@ AMDGPU_DESCRIPTOR_SET_INFOS: tuple[AmdgpuDescriptorSetInfo, ...] = (
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_UNIFIED,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX11_GLC_SLC_DLC,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX11,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="gfx12_generic",
         key="amdgpu.gfx12.generic.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_RDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_NONCANONICAL_FP8,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_NONCANONICAL_FP8
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+        ),
         storage_generator_target="rdna4",
         member_generator_targets=("rdna4",),
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE48_UNIFIED,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX12_NV_SCOPE_TH,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX12,
         ),
     ),
     AmdgpuDescriptorSetInfo(
         generator_target="gfx12_5_generic",
         key="amdgpu.gfx12_5.generic.core",
         isa_infos=(AMDGPU_DESCRIPTOR_SET_ISA_RDNA4,),
-        flags=AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16,
+        flags=(
+            AMDGPU_DESCRIPTOR_SET_INFO_FLAGS_RDNA4_VOPD_PACKED_BF16
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_AGENT_MEMORY
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_ADD_DENORMALS
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_F32_NUMBER_EXTREMA
+            | AMDGPU_DESCRIPTOR_SET_INFO_FLAG_ATOMIC_FLOAT_SYSTEM_MEMORY
+        ),
         storage_generator_target="rdna4_gfx125x",
         member_generator_targets=("rdna4_gfx1251", "rdna4_gfx125x"),
         buffer_resource=AMDGPU_BUFFER_RESOURCE_INFO_BASE57,
         vector_memory=AmdgpuDescriptorSetVectorMemoryInfo(
             cache_policy_encoding=AMDGPU_VECTOR_MEMORY_CACHE_POLICY_ENCODING_GFX12_NV_SCOPE_TH,
+            ordering_model=AMDGPU_MEMORY_ORDERING_MODEL_GFX125,
         ),
     ),
 )
@@ -2476,6 +2569,16 @@ def _validate_amdgpu_generic_descriptor_contract(
         raise ValueError(
             f"AMDGPU generic descriptor set {descriptor_set.key} "
             "vector-memory cache-policy encoding does not match every member"
+        )
+
+    if any(
+        member.vector_memory.ordering_model
+        != descriptor_set.vector_memory.ordering_model
+        for member in exact_member_descriptor_sets
+    ):
+        raise ValueError(
+            f"AMDGPU generic descriptor set {descriptor_set.key} "
+            "memory-ordering model does not match every member"
         )
 
     member_record_encodings = {
