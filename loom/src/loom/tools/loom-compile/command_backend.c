@@ -333,6 +333,8 @@ iree_status_t loom_compile_command_backend_emit(
                                 ? &plan_options
                                 : NULL,
             .pass_registry = loom_pass_builtin_registry(),
+            .cleanup_pattern_provider_set =
+                loom_run_session_cleanup_pattern_provider_set(session),
             .diagnostic_emitter =
                 loom_target_entry_emitter(&diagnostic_emitter),
             .materialization_environment = &materialization_environment,

@@ -143,6 +143,7 @@ static iree_status_t loom_cmd_program_plan_check_prepare_roots(
     loom_module_t* source_module, const loom_symbol_ref_t* source_root_refs,
     iree_host_size_t root_count, iree_arena_allocator_t* arena,
     iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_diagnostic_emitter_t diagnostic_emitter, bool* out_valid,
     loom_cmd_program_plan_t* out_plan) {
   *out_valid = false;
@@ -190,8 +191,8 @@ static iree_status_t loom_cmd_program_plan_check_prepare_roots(
     };
     status = loom_cmd_program_plan_prepare_index(
         index, root_symbol_ordinals, root_count, /*options=*/NULL,
-        loom_pass_builtin_registry(), diagnostic_emitter, &environment, arena,
-        out_valid, out_plan);
+        loom_pass_builtin_registry(), cleanup_pattern_provider_set,
+        diagnostic_emitter, &environment, arena, out_valid, out_plan);
   }
 
   loom_link_module_index_free(index);
@@ -290,6 +291,7 @@ static iree_status_t loom_cmd_program_plan_check_emit_provider_execute(
       status = loom_cmd_program_plan_check_prepare_roots(
           request->module, source_root_refs, options.root_count,
           request->case_arena, request->block_pool, request->host_allocator,
+          request->environment->cleanup_pattern_provider_set,
           (iree_diagnostic_emitter_t){
               .fn = loom_check_diagnostic_emitter_capture_emit,
               .user_data = &capture,

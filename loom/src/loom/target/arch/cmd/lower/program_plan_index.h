@@ -54,6 +54,10 @@ static inline void loom_cmd_program_plan_index_options_initialize(
 // needed after the call and remains valid after the index and scratch arena are
 // released.
 //
+// |pass_registry| and |cleanup_pattern_provider_set| select the nested
+// target-neutral compiler used to normalize linked command and configuration
+// IR before lowering.
+//
 // |materialization_environment| is shared by command/configuration projection
 // and optional kernel request production. Bytecode providers therefore use the
 // same Low descriptor codec, diagnostics, and caller preparation policy at
@@ -68,6 +72,7 @@ iree_status_t loom_cmd_program_plan_prepare_index(
     iree_host_size_t program_count,
     const loom_cmd_program_plan_index_options_t* options,
     const loom_pass_registry_t* pass_registry,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_diagnostic_emitter_t diagnostic_emitter,
     const loom_link_plan_materialization_environment_t*
         materialization_environment,

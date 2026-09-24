@@ -19,6 +19,7 @@
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/link/module_index.h"
+#include "loom/ops/index/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/op_registry.h"
 #include "loom/pass/builtin_registry.h"
@@ -29,6 +30,7 @@
 #include "loom/target/arch/cmd/program.h"
 #include "loom/testing/diagnostic_matchers.h"
 #include "loom/testing/module_ptr.h"
+#include "loom/transforms/cleanup/configured.h"
 #include "loom/verify/verify.h"
 
 namespace loom {
@@ -72,6 +74,27 @@ static iree_status_t CaptureKernelRequest(
 typedef struct RejectKernelRequestState {
   iree_host_size_t publish_count;
 } RejectKernelRequestState;
+
+typedef struct CleanupPatternVisitState {
+  iree_host_size_t count;
+} CleanupPatternVisitState;
+
+typedef struct CleanupPatternVisitData {
+  CleanupPatternVisitState* state;
+} CleanupPatternVisitData;
+
+static iree_status_t CountCleanupPatternVisits(
+    const loom_rewrite_pattern_t* pattern, void* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_changed) {
+  (void)context;
+  (void)op;
+  (void)rewriter;
+  const CleanupPatternVisitData* data =
+      static_cast<const CleanupPatternVisitData*>(pattern->user_data);
+  ++data->state->count;
+  *out_changed = false;
+  return iree_ok_status();
+}
 
 static iree_status_t RejectKernelRequest(
     void* user_data, const loom_cmd_program_kernel_request_t* request) {
@@ -182,6 +205,57 @@ class CmdProgramPlanTest : public ::testing::Test {
   loom_context_t context_;
 };
 
+TEST_F(CmdProgramPlanTest, UsesSelectedCleanupProvidersInNestedPipeline) {
+  ModulePtr source_module = ParseAndVerify(R"(
+kernel.entry.decl @step()
+
+command.program.def public @root() launch() {
+  %count = index.constant 1 : index
+  kernel.dispatch @step[%count]() : [index]()
+  command.return
+}
+)");
+  ASSERT_NE(source_module, nullptr);
+
+  CleanupPatternVisitState visit_state = {};
+  const CleanupPatternVisitData pattern_data = {&visit_state};
+  const loom_rewrite_pattern_t pattern = {
+      /*.root_kind=*/LOOM_OP_INDEX_CONSTANT,
+      /*.match_and_rewrite=*/CountCleanupPatternVisits,
+      /*.user_data=*/&pattern_data,
+  };
+  const loom_rewrite_pattern_provider_t provider = {
+      /*.name=*/IREE_SVL("cmd-program-plan-test"),
+      /*.patterns=*/&pattern,
+      /*.pattern_count=*/1,
+  };
+  const loom_rewrite_pattern_provider_t* providers[] = {&provider};
+  const loom_cleanup_pattern_provider_set_t provider_set = {
+      /*.region_initialization=*/{},
+      /*.universal_pre_fold=*/
+      loom_rewrite_pattern_provider_list_make(providers,
+                                              IREE_ARRAYSIZE(providers)),
+      /*.universal_post_type=*/{},
+      /*.source_combine=*/{},
+  };
+
+  const loom_symbol_ref_t root_ref =
+      FindSymbolRef(source_module.get(), IREE_SV("root"));
+  loom_link_plan_materialization_t materialization = {};
+  materialization.module = source_module.release();
+  loom_cmd_program_plan_t plan = {};
+  bool valid = false;
+  IREE_ASSERT_OK(loom_cmd_program_plan_prepare_materialization(
+      &materialization, &root_ref, /*program_count=*/1,
+      /*kernel_source=*/nullptr, loom_pass_builtin_registry(), &provider_set,
+      /*diagnostic_emitter=*/{}, &block_pool_, &valid, &plan,
+      iree_allocator_system()));
+
+  ASSERT_TRUE(valid);
+  EXPECT_GT(visit_state.count, 0u);
+  loom_cmd_program_plan_deinitialize(&plan);
+}
+
 TEST_F(CmdProgramPlanTest, OwnsMultipleRootsAndDeduplicatesEntries) {
   ModulePtr source_module = ParseAndVerify(R"(
 kernel.entry.decl @increment(%source: buffer, %target: buffer)
@@ -214,6 +288,7 @@ command.program.def public @increment_twice() launch(%source: buffer, %scratch: 
   IREE_ASSERT_OK(loom_cmd_program_plan_prepare_materialization(
       &materialization, program_refs, IREE_ARRAYSIZE(program_refs),
       /*kernel_source=*/nullptr, loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
       /*diagnostic_emitter=*/{}, &block_pool_, &valid, &plan,
       iree_allocator_system()));
   ASSERT_TRUE(valid);
@@ -352,8 +427,10 @@ command.program.def public @selected_schedule() launch(%storage: buffer) {
   };
   iree_status_t status = loom_cmd_program_plan_prepare_index(
       index, &root_symbol_ordinal, 1, /*options=*/nullptr,
-      loom_pass_builtin_registry(), diagnostic_capture.emitter(), &environment,
-      &scratch_arena, &valid, &plan);
+      loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
+      diagnostic_capture.emitter(), &environment, &scratch_arena, &valid,
+      &plan);
   loom_link_module_index_free(index);
   source_module.reset();
   iree_arena_deinitialize(&scratch_arena);
@@ -463,8 +540,10 @@ command.program.def public @root() launch() {
   bool body_blind_valid = false;
   IREE_ASSERT_OK(loom_cmd_program_plan_prepare_index(
       index, &root->ordinal, /*program_count=*/1, /*options=*/nullptr,
-      loom_pass_builtin_registry(), /*diagnostic_emitter=*/{}, &environment,
-      &body_blind_arena, &body_blind_valid, &body_blind_plan));
+      loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
+      /*diagnostic_emitter=*/{}, &environment, &body_blind_arena,
+      &body_blind_valid, &body_blind_plan));
   ASSERT_TRUE(body_blind_valid);
   ASSERT_EQ(body_blind_plan.root_count, 1u);
   ASSERT_EQ(body_blind_plan.entry_requirement_count, 1u);
@@ -486,8 +565,10 @@ command.program.def public @root() launch() {
   bool request_valid = false;
   IREE_EXPECT_NOT_OK(loom_cmd_program_plan_prepare_index(
       index, &root->ordinal, /*program_count=*/1, &request_options,
-      loom_pass_builtin_registry(), /*diagnostic_emitter=*/{}, &environment,
-      &request_arena, &request_valid, &request_plan));
+      loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
+      /*diagnostic_emitter=*/{}, &environment, &request_arena, &request_valid,
+      &request_plan));
   EXPECT_FALSE(request_valid);
   EXPECT_EQ(request_plan.root_module, nullptr);
   EXPECT_TRUE(request_capture.requests.empty());
@@ -600,8 +681,10 @@ command.program.def public @root_b() launch(%storage: buffer) {
   bool valid = false;
   IREE_ASSERT_OK(loom_cmd_program_plan_prepare_index(
       index, root_symbol_ordinals, IREE_ARRAYSIZE(root_symbol_ordinals),
-      &plan_options, loom_pass_builtin_registry(), diagnostic_capture.emitter(),
-      &environment, &scratch_arena, &valid, &plan));
+      &plan_options, loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
+      diagnostic_capture.emitter(), &environment, &scratch_arena, &valid,
+      &plan));
   ASSERT_TRUE(valid);
 
   RejectKernelRequestState reject_state = {};
@@ -618,6 +701,7 @@ command.program.def public @root_b() launch(%storage: buffer) {
       loom_cmd_program_plan_prepare_index(
           index, root_symbol_ordinals, IREE_ARRAYSIZE(root_symbol_ordinals),
           &plan_options, loom_pass_builtin_registry(),
+          loom_cleanup_configured_pattern_provider_set(),
           diagnostic_capture.emitter(), &environment, &reject_scratch_arena,
           &rejected_valid, &rejected_plan));
   EXPECT_FALSE(rejected_valid);
@@ -702,6 +786,7 @@ command.program.def public @parameterized() launch(%parameters: buffer, %target:
   IREE_ASSERT_OK(loom_cmd_program_plan_prepare_materialization(
       &materialization, program_refs, IREE_ARRAYSIZE(program_refs),
       /*kernel_source=*/nullptr, loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
       /*diagnostic_emitter=*/{}, &block_pool_, &valid, &plan,
       iree_allocator_system()));
   ASSERT_TRUE(valid);
@@ -771,6 +856,7 @@ command.program.def public @bodyless() launch(%output: buffer) {
   IREE_ASSERT_OK(loom_cmd_program_plan_prepare_materialization(
       &materialization, program_refs, IREE_ARRAYSIZE(program_refs),
       /*kernel_source=*/nullptr, loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
       /*diagnostic_emitter=*/{}, &block_pool_, &valid, &plan,
       iree_allocator_system()));
   ASSERT_TRUE(valid);
@@ -889,6 +975,7 @@ command.program.def public @dynamic_root() launch() {
   IREE_ASSERT_OK(loom_cmd_program_plan_prepare_materialization(
       &materialization, program_refs, IREE_ARRAYSIZE(program_refs),
       /*kernel_source=*/nullptr, loom_pass_builtin_registry(),
+      loom_cleanup_configured_pattern_provider_set(),
       /*diagnostic_emitter=*/{}, &block_pool_, &valid, &plan,
       iree_allocator_system()));
   ASSERT_TRUE(valid);
