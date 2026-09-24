@@ -14,6 +14,7 @@ from loom.assembly import (
     LPAREN,
     RPAREN,
     Attr,
+    BlockArgs,
     FuncArgs,
     OptionalGroup,
     Param,
@@ -75,6 +76,29 @@ pipeline_flow_type = TypeDef(
     params=[AttrDef("element_type", "type")],
     format=[Param("element_type")],
     doc=("Typed ordered record stream between scheduling groups. The element type describes one transferred value and is normally tile<...>."),
+)
+
+pipeline_placement_type = TypeDef(
+    "pipeline.placement",
+    params=[
+        AttrDef("logical_group", "type"),
+        AttrDef("physical_group", "type"),
+    ],
+    format=[Param("logical_group"), COMMA, Param("physical_group")],
+    doc=("Durable assignment relation from logical participants to physical execution participants. The relation carries no channels, storage, or ambient execution state."),
+)
+
+
+PipelinePlacementPolicy = EnumDef(
+    "PipelinePlacementPolicy",
+    [
+        EnumCase(
+            "cyclic",
+            1,
+            doc=("Map each row-major logical rank to its physical rank modulo the physical group cardinality."),
+        ),
+    ],
+    doc=("Authored logical-to-physical assignment policy. An absent policy leaves the assignment to scheduling."),
 )
 
 PipelineScope = EnumDef(
@@ -194,6 +218,97 @@ pipeline_def = Op(
 )
 
 _PIPELINE_GRAPH_TRAITS = [HasAncestor("pipeline.def")]
+
+pipeline_place = Op(
+    "pipeline.place",
+    group=pipeline_ops,
+    doc=(
+        "Relate a logical participant domain to physical execution capacity. "
+        "This operation fixes assignment, not execution order; multiple roles "
+        "may use the same physical group and remain dataflow scheduled."
+    ),
+    operands=[
+        Operand("logical_group", ANY, doc="Logical participant domain."),
+        Operand("physical_group", ANY, doc="Physical execution domain."),
+    ],
+    results=[Result("result", ANY, doc="Logical-to-physical assignment.")],
+    attrs=[
+        AttrDef(
+            "policy",
+            ATTR_TYPE_ENUM,
+            enum_def=PipelinePlacementPolicy,
+            optional=True,
+        )
+    ],
+    traits=[PURE, *_PIPELINE_GRAPH_TRAITS],
+    verify="loom_pipeline_place_verify",
+    format=[
+        OptionalGroup([TemplateParam("policy")], anchor="policy"),
+        Ref("logical_group"),
+        COMMA,
+        Ref("physical_group"),
+        COLON,
+        TypeOf("logical_group"),
+        COMMA,
+        TypeOf("physical_group"),
+        ARROW,
+        ResultType("result"),
+    ],
+    examples=["%placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>"],
+)
+
+pipeline_execute = Op(
+    "pipeline.execute",
+    group=pipeline_ops,
+    doc=(
+        "Execute one firing for every logical participant in a placement. The "
+        "first body argument is the row-major logical rank; remaining body "
+        "arguments explicitly capture the input operands. A captured channel "
+        "keeps one protocol identity; channel operations in the body address "
+        "the relation endpoints of the current logical firing. Execute "
+        "operations are concurrent unless SSA, channel, or explicit "
+        "synchronization edges order them."
+    ),
+    operands=[
+        Operand("assignment", ANY, doc="Logical-to-physical assignment."),
+        Operand("inputs", ANY, variadic=True, doc="Explicit region captures."),
+    ],
+    regions=[
+        RegionDef(
+            "body",
+            doc="One logical participant firing.",
+            single_block=True,
+            terminator="pipeline.yield",
+        )
+    ],
+    traits=[UNKNOWN_EFFECTS, *_PIPELINE_GRAPH_TRAITS],
+    verify="loom_pipeline_execute_verify",
+    format=[
+        Ref("assignment"),
+        GLUE,
+        LPAREN,
+        Refs("inputs"),
+        RPAREN,
+        COLON,
+        TypeOf("assignment"),
+        GLUE,
+        LPAREN,
+        TypesOf("inputs"),
+        RPAREN,
+        kw("do"),
+        BlockArgs("body"),
+        Region("body"),
+    ],
+    examples=["pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<6144xi32>>) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {\n  pipeline.yield\n}"],
+)
+
+pipeline_yield = Op(
+    "pipeline.yield",
+    group=pipeline_ops,
+    doc="Complete one logical participant firing.",
+    traits=[TERMINATOR, HasParent("pipeline.execute")],
+    examples=["pipeline.yield"],
+)
 
 pipeline_scatter = Op(
     "pipeline.scatter",
@@ -448,7 +563,10 @@ pipeline_finish = Op(
     examples=["pipeline.finish"],
 )
 
-ALL_PIPELINE_TYPES: tuple[TypeDef, ...] = (pipeline_flow_type,)
+ALL_PIPELINE_TYPES: tuple[TypeDef, ...] = (
+    pipeline_flow_type,
+    pipeline_placement_type,
+)
 ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_def,
     pipeline_scatter,
@@ -459,4 +577,7 @@ ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_reduce,
     pipeline_write,
     pipeline_finish,
+    pipeline_place,
+    pipeline_execute,
+    pipeline_yield,
 )

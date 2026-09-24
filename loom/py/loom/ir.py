@@ -1459,6 +1459,7 @@ def _canonicalize_parameterized_value(
                     ParameterizedType,
                     EncodingType,
                     PoolType,
+                    GroupType,
                     PlaceholderType,
                     NoneType,
                 ),

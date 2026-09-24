@@ -136,6 +136,7 @@ _IR_TYPE_CLASSES = (
     DialectType,
     ParameterizedType,
     EncodingType,
+    GroupType,
     PoolType,
     NoneType,
 )

@@ -124,6 +124,54 @@ pipeline.def @fold_integer_fastmath() run(%input: buffer) {
 // A reusable command product is authored with command.program.def; pipeline
 // scope names the directly loadable kernel artifact boundary.
 // ERROR@+1: PARSE/017 "scope" "command"
-pipeline.def<command> @unsupported_command_scope() launch() {
-  pipeline.return
+pipeline.def<command> @unsupported_command_scope() run() {
+  pipeline.finish
+}
+
+// ====
+
+pipeline.def @place_requires_groups(%columns: index, %tiles: group<4>) run() {
+  // ERROR@+1: TYPE/003 {operand_name="logical_group", actual_type="index", expected_constraint="group"}
+  %placement = pipeline.place<cyclic> %columns, %tiles : index, group<4> -> pipeline.placement<index, group<4>>
+  pipeline.finish
+}
+
+// ====
+
+pipeline.def @place_result_matches_groups(%columns: group<8>, %tiles: group<4>) run() {
+  // ERROR@+1: TYPE/004 {result_name="result", actual_type="pipeline.placement<group<4>, group<8>>", expected_constraint="pipeline.placement whose group parameters match its operands"}
+  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<4>, group<8>>
+  pipeline.finish
+}
+
+// ====
+
+pipeline.def @execute_requires_assignment(%not_assignment: index) run() {
+  // ERROR@+1: TYPE/003 {operand_name="assignment", actual_type="index", expected_constraint="pipeline.placement<group<...>, group<...>>"}
+  pipeline.execute %not_assignment() : index() do(%rank: index) {
+    pipeline.yield
+  }
+  pipeline.finish
+}
+
+// ====
+
+pipeline.def @execute_requires_rank(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<16xi32>>) {
+  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
+  // ERROR@+1: TYPE/013 {arg_index="0", arg_type="i32", expected_type="index"}
+  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<16xi32>>) do(%rank: i32, %endpoint: channel<tile<16xi32>>) {
+    pipeline.yield
+  }
+  pipeline.finish
+}
+
+// ====
+
+pipeline.def @execute_matches_captures(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<16xi32>>) {
+  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
+  // ERROR@+1: TYPE/013 {arg_index="1", arg_type="channel<tile<8xi32>>", expected_type="channel<tile<16xi32>>"}
+  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<16xi32>>) do(%rank: index, %endpoint: channel<tile<8xi32>>) {
+    pipeline.yield
+  }
+  pipeline.finish
 }

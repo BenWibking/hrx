@@ -126,6 +126,24 @@ iree_status_t loom_pipeline_flow_type_make(
     loom_type_id_t element_type,
     loom_type_t* out_type);
 
+extern const loom_parameterized_type_descriptor_t loom_pipeline_placement_type_parameterized_descriptor;
+static inline bool loom_pipeline_placement_type_isa(loom_type_t type) {
+  return loom_type_is_parameterized(type) && loom_type_parameterized_descriptor(type) == &loom_pipeline_placement_type_parameterized_descriptor;
+}
+enum { LOOM_PIPELINE_PLACEMENT_TYPE_LOGICAL_GROUP_PARAMETER_INDEX = 0 };
+static inline loom_type_id_t loom_pipeline_placement_type_logical_group(loom_type_t type) {
+  return loom_attr_as_type_id(loom_type_parameterized_parameters(type)[LOOM_PIPELINE_PLACEMENT_TYPE_LOGICAL_GROUP_PARAMETER_INDEX]);
+}
+enum { LOOM_PIPELINE_PLACEMENT_TYPE_PHYSICAL_GROUP_PARAMETER_INDEX = 1 };
+static inline loom_type_id_t loom_pipeline_placement_type_physical_group(loom_type_t type) {
+  return loom_attr_as_type_id(loom_type_parameterized_parameters(type)[LOOM_PIPELINE_PLACEMENT_TYPE_PHYSICAL_GROUP_PARAMETER_INDEX]);
+}
+iree_status_t loom_pipeline_placement_type_make(
+    loom_module_t* module,
+    loom_type_id_t logical_group,
+    loom_type_id_t physical_group,
+    loom_type_t* out_type);
+
 // Returns the number of entries in the common type registry.
 iree_host_size_t loom_type_registry_count(void);
 

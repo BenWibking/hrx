@@ -100,3 +100,16 @@ def test_generic_pipeline_roundtrip() -> None:
 def test_command_pipeline_scope_is_not_a_language_state() -> None:
     with pytest.raises(ParseError, match="invalid enum value 'command'"):
         _parse_module("pipeline.def<command> @unsupported() run() {\n  pipeline.finish\n}\n")
+
+
+def test_explicit_placement_roundtrip() -> None:
+    _roundtrip(
+        """pipeline.def @placed(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<6144xi32>>) {
+  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
+  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<6144xi32>>) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {
+    pipeline.yield
+  }
+  pipeline.finish
+}
+"""
+    )
