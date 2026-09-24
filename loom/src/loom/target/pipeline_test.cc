@@ -76,14 +76,18 @@ typedef struct PipelineRunCounts {
       iree_string_view_empty();
   // Number of source assertion-insertion pass runs.
   int sanitizer_insert_assertions = 0;
+  // Lexical pass-run ordinal of source assertion insertion.
+  int sanitizer_insert_assertions_ordinal = 0;
   // Checks option on the source assertion-insertion pass.
   iree_string_view_t sanitizer_insert_checks = iree_string_view_empty();
   // Number of source race-observation pass runs.
   int sanitizer_insert_race_observations = 0;
   // Checks option on the source race-observation pass.
   iree_string_view_t sanitizer_insert_race_checks = iree_string_view_empty();
-  // Number of target-low assertion-materialization pass runs.
+  // Number of semantic assertion-materialization pass runs.
   int sanitizer_materialize_assertions = 0;
+  // Lexical pass-run ordinal of semantic assertion materialization.
+  int sanitizer_materialize_assertions_ordinal = 0;
   // Number of other sanitizer pass runs.
   int other_sanitizer_runs = 0;
 } PipelineRunCounts;
@@ -197,6 +201,8 @@ iree_status_t InspectPipelineRun(void* user_data, loom_op_t* op,
   } else if (iree_string_view_equal(key,
                                     IREE_SV("sanitizer-insert-assertions"))) {
     ++counts->sanitizer_insert_assertions;
+    counts->sanitizer_insert_assertions_ordinal =
+        count_context->current_run_ordinal;
     counts->sanitizer_insert_checks = FindStringOption(
         count_context->module, loom_pass_run_options(op), IREE_SV("checks"));
   } else if (iree_string_view_equal(
@@ -207,6 +213,8 @@ iree_status_t InspectPipelineRun(void* user_data, loom_op_t* op,
   } else if (iree_string_view_equal(
                  key, IREE_SV("sanitizer-materialize-assertions"))) {
     ++counts->sanitizer_materialize_assertions;
+    counts->sanitizer_materialize_assertions_ordinal =
+        count_context->current_run_ordinal;
   } else if (iree_string_view_starts_with(key, IREE_SV("sanitizer-"))) {
     ++counts->other_sanitizer_runs;
   }
@@ -269,7 +277,7 @@ class TargetPipelineTest : public ::testing::Test {
   loom_target_environment_t environment_;
 };
 
-TEST_F(TargetPipelineTest, ZeroChecksBuildsNoSanitizerPassSlots) {
+TEST_F(TargetPipelineTest, ZeroChecksStillMaterializesAuthoredAssertions) {
   ModulePtr module = AllocateModule(IREE_SV("pipeline"));
   const loom_target_pipeline_options_t options = {0};
 
@@ -314,7 +322,11 @@ TEST_F(TargetPipelineTest, ZeroChecksBuildsNoSanitizerPassSlots) {
       iree_string_view_is_empty(counts.source_to_low_sanitizer_reporting));
   EXPECT_EQ(counts.sanitizer_insert_assertions, 0);
   EXPECT_EQ(counts.sanitizer_insert_race_observations, 0);
-  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 1);
+  EXPECT_LT(counts.first_scf_to_cfg_ordinal,
+            counts.sanitizer_materialize_assertions_ordinal);
+  EXPECT_LT(counts.sanitizer_materialize_assertions_ordinal,
+            counts.boundary_projection_ordinal);
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
@@ -335,6 +347,7 @@ TEST_F(TargetPipelineTest, ExpandedSourceStopsBeforeCallgraphSpecialization) {
   EXPECT_EQ(counts.boundary_projection, 0);
   EXPECT_EQ(counts.source_to_low, 0);
   EXPECT_EQ(counts.symbol_dce, 0);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
 }
 
 TEST_F(TargetPipelineTest, DiagnosticArtifactsPreserveRawSourceBoundary) {
@@ -357,6 +370,7 @@ TEST_F(TargetPipelineTest, DiagnosticArtifactsPreserveRawSourceBoundary) {
             counts.boundary_projection_ordinal);
   EXPECT_LT(counts.boundary_projection_ordinal, counts.source_to_low_ordinal);
   EXPECT_LT(counts.source_to_low_ordinal, counts.last_target_inlining_ordinal);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
 }
 
 TEST_F(TargetPipelineTest, OperandFormDiagnosticsBuildsSourceToLowOption) {
@@ -378,7 +392,7 @@ TEST_F(TargetPipelineTest, OperandFormDiagnosticsBuildsSourceToLowOption) {
                                      IREE_SV("operand-forms")));
   EXPECT_EQ(counts.sanitizer_insert_assertions, 0);
   EXPECT_EQ(counts.sanitizer_insert_race_observations, 0);
-  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 1);
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
@@ -407,7 +421,7 @@ TEST_F(TargetPipelineTest, TrapReportingBuildsSourceToLowOption) {
                                      IREE_SV("trap")));
   EXPECT_EQ(counts.sanitizer_insert_assertions, 0);
   EXPECT_EQ(counts.sanitizer_insert_race_observations, 0);
-  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 1);
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
@@ -435,7 +449,7 @@ TEST_F(TargetPipelineTest, ReportOnlyBuildsSourceToLowOption) {
   EXPECT_TRUE(iree_string_view_equal(counts.source_to_low_sanitizer_reporting,
                                      IREE_SV("report-only")));
   EXPECT_EQ(counts.sanitizer_insert_assertions, 0);
-  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 1);
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
@@ -466,6 +480,10 @@ TEST_F(TargetPipelineTest, EnabledChecksBuildSanitizerPassSlots) {
                                      IREE_SV("access|value|operation")));
   EXPECT_EQ(counts.sanitizer_insert_race_observations, 0);
   EXPECT_EQ(counts.sanitizer_materialize_assertions, 1);
+  EXPECT_LT(counts.sanitizer_insert_assertions_ordinal,
+            counts.sanitizer_materialize_assertions_ordinal);
+  EXPECT_LT(counts.sanitizer_materialize_assertions_ordinal,
+            counts.source_to_low_ordinal);
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
@@ -492,7 +510,7 @@ TEST_F(TargetPipelineTest, RaceChecksBuildRaceObservationPassSlot) {
   EXPECT_EQ(counts.sanitizer_insert_race_observations, 1);
   EXPECT_TRUE(iree_string_view_equal(counts.sanitizer_insert_race_checks,
                                      IREE_SV("race")));
-  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
+  EXPECT_EQ(counts.sanitizer_materialize_assertions, 1);
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
