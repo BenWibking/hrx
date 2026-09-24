@@ -1,14 +1,18 @@
-// RUN: pass target=vm:core legalize-math
+// RUN: pass legalize-math
+
+test.target<low_core> @math_target {contract_set_key = "test.math.widen_f32_round"}
 
 // The recipe widens directly from the source of an exact extension.
-func.def @scalar_source_extension(%x: f8E4M3, %scale: bf16) -> (bf16) {
+func.def target(@math_target) @scalar_source_extension(%x: f8E4M3, %scale: bf16) -> (bf16) {
   %extended = scalar.extf %x : f8E4M3 to bf16
   %result = scalar.mulf %extended, %scale : bf16
   func.return %result : bf16
 }
 
 // ----
-func.def @scalar_source_extension(%x: f8E4M3, %scale: bf16) -> (bf16) {
+test.target<low_core> @math_target {contract_set_key = "test.math.widen_f32_round"}
+
+func.def target(@math_target) @scalar_source_extension(%x: f8E4M3, %scale: bf16) -> (bf16) {
   %extended = scalar.extf %x : f8E4M3 to bf16
   %5 = scalar.extf %x : f8E4M3 to f32
   %6 = scalar.extf %scale : bf16 to f32
@@ -19,15 +23,19 @@ func.def @scalar_source_extension(%x: f8E4M3, %scale: bf16) -> (bf16) {
 
 // ====
 
+test.target<low_core> @math_target {contract_set_key = "test.math.widen_f32_round"}
+
 // The same source projection applies to lane-wise vector extensions.
-func.def @vector_source_extension(%x: vector<4xf8E4M3>, %scale: vector<4xbf16>) -> (vector<4xbf16>) {
+func.def target(@math_target) @vector_source_extension(%x: vector<4xf8E4M3>, %scale: vector<4xbf16>) -> (vector<4xbf16>) {
   %extended = vector.extf %x : vector<4xf8E4M3> to vector<4xbf16>
   %result = vector.mulf %extended, %scale : vector<4xbf16>
   func.return %result : vector<4xbf16>
 }
 
 // ----
-func.def @vector_source_extension(%x: vector<4xf8E4M3>, %scale: vector<4xbf16>) -> (vector<4xbf16>) {
+test.target<low_core> @math_target {contract_set_key = "test.math.widen_f32_round"}
+
+func.def target(@math_target) @vector_source_extension(%x: vector<4xf8E4M3>, %scale: vector<4xbf16>) -> (vector<4xbf16>) {
   %extended = vector.extf %x : vector<4xf8E4M3> to vector<4xbf16>
   %5 = vector.extf %x : vector<4xf8E4M3> to vector<4xf32>
   %6 = vector.extf %scale : vector<4xbf16> to vector<4xf32>
@@ -38,9 +46,11 @@ func.def @vector_source_extension(%x: vector<4xf8E4M3>, %scale: vector<4xbf16>) 
 
 // ====
 
+test.target<low_core> @math_target {contract_set_key = "test.math.widen_f32_round"}
+
 // Uniform vectors remain scalar conversions followed by splats. The nested
 // source extension is exact and projects through to the original FP8 value.
-func.def @vector_uniform_source_extension(%x: f8E4M3, %scale: bf16) -> (vector<4xbf16>) {
+func.def target(@math_target) @vector_uniform_source_extension(%x: f8E4M3, %scale: bf16) -> (vector<4xbf16>) {
   %extended = scalar.extf %x : f8E4M3 to bf16
   %uniform = vector.splat %extended : vector<4xbf16>
   %uniform_scale = vector.splat %scale : vector<4xbf16>
@@ -49,7 +59,9 @@ func.def @vector_uniform_source_extension(%x: f8E4M3, %scale: bf16) -> (vector<4
 }
 
 // ----
-func.def @vector_uniform_source_extension(%x: f8E4M3, %scale: bf16) -> (vector<4xbf16>) {
+test.target<low_core> @math_target {contract_set_key = "test.math.widen_f32_round"}
+
+func.def target(@math_target) @vector_uniform_source_extension(%x: f8E4M3, %scale: bf16) -> (vector<4xbf16>) {
   %extended = scalar.extf %x : f8E4M3 to bf16
   %uniform = vector.splat %extended : vector<4xbf16>
   %uniform_scale = vector.splat %scale : vector<4xbf16>
