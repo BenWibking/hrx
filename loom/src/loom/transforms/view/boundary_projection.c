@@ -44,7 +44,7 @@ typedef struct loom_view_boundary_coordinate_t {
   loom_view_region_id_t region_id;
   // Candidate supplying the root and possibly base offset.
   iree_host_size_t dependency;
-  // Correlated root-and-offset selection, or IREE_HOST_SIZE_MAX.
+  // Correlated base root-and-offset selection, or IREE_HOST_SIZE_MAX.
   iree_host_size_t selection;
 } loom_view_boundary_coordinate_t;
 
@@ -439,23 +439,36 @@ static iree_status_t loom_view_boundary_plan_coordinate(
     return iree_ok_status();
   }
 
+  loom_view_boundary_projection_function_state_t* state =
+      loom_view_boundary_function_state(rule, plan, function);
+  IREE_ASSERT(state != NULL);
+  const loom_view_region_t* region = NULL;
+  if (!loom_view_region_table_try_lookup(&state->regions, source, &region)) {
+    return iree_ok_status();
+  }
+
   loom_op_t* selection_op = NULL;
   loom_value_id_t condition_value_id = LOOM_VALUE_ID_INVALID;
   loom_value_id_t true_value_id = LOOM_VALUE_ID_INVALID;
   loom_value_id_t false_value_id = LOOM_VALUE_ID_INVALID;
   if (loom_view_boundary_match_binary_selection(
-          plan->module, source, &selection_op, &condition_value_id,
-          &true_value_id, &false_value_id)) {
-    return loom_view_boundary_plan_selection(
-        rule, plan, function, selection_op, source, condition_value_id,
-        true_value_id, false_value_id, out_coordinate, out_planned);
-  }
-
-  const loom_view_boundary_projection_function_state_t* state =
-      loom_view_boundary_function_state(rule, plan, function);
-  IREE_ASSERT(state != NULL);
-  const loom_view_region_t* region = NULL;
-  if (!loom_view_region_table_try_lookup(&state->regions, source, &region)) {
+          plan->module, region->base_view_value_id, &selection_op,
+          &condition_value_id, &true_value_id, &false_value_id)) {
+    if (!loom_symbolic_expr_is_linear(&region->projection_byte_offset)) {
+      return iree_ok_status();
+    }
+    IREE_RETURN_IF_ERROR(loom_view_boundary_plan_selection(
+        rule, plan, function, selection_op, region->base_view_value_id,
+        condition_value_id, true_value_id, false_value_id, out_coordinate,
+        out_planned));
+    if (*out_planned && region->base_view_value_id != source) {
+      // The region owns the complete displacement through subviews/refinements.
+      // Retain it relative to the selected coordinate instead of recovering the
+      // projection from the chain of defining operations.
+      out_coordinate->region_id = region->region_id;
+      state->offsets[region->region_id].expression =
+          &region->projection_byte_offset;
+    }
     return iree_ok_status();
   }
   const loom_view_boundary_offset_t* offset =
@@ -775,10 +788,15 @@ static iree_status_t loom_view_boundary_materialize_coordinate(
     const loom_view_boundary_coordinate_t* coordinate,
     loom_value_id_t out_values[2]) {
   if (coordinate->selection != IREE_HOST_SIZE_MAX) {
-    return loom_view_boundary_materialize_selection(
-        rule, plan, function, coordinate->selection, out_values);
-  }
-  if (coordinate->dependency != IREE_HOST_SIZE_MAX) {
+    IREE_RETURN_IF_ERROR(loom_view_boundary_materialize_selection(
+        rule, plan, function, coordinate->selection, out_values));
+    if (coordinate->region_id == LOOM_VIEW_REGION_ID_INVALID) {
+      return iree_ok_status();
+    }
+    loom_view_boundary_projection_function_state_t* state =
+        loom_view_boundary_function_state(rule, plan, function);
+    state->offsets[coordinate->region_id].base_value_id = out_values[1];
+  } else if (coordinate->dependency != IREE_HOST_SIZE_MAX) {
     const loom_boundary_projection_slot_t* candidate =
         &function->candidates[coordinate->dependency];
     IREE_ASSERT(candidate->component_value_ids[0] != LOOM_VALUE_ID_INVALID);
