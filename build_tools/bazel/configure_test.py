@@ -196,6 +196,27 @@ class ConfigureBazelTest(unittest.TestCase):
         self.assertIn("common --repo_env=IREE_HAL_AMDGPU_DEVICE_TOOLCHAIN=rocm", config)
         self.assert_rocm_path(config, rocm_root)
 
+    def test_rdma_defaults_off_and_accepts_portable_or_native_selection(self):
+        for arguments, expected in [
+            ([], "false"),
+            (["-DIREE_NET_RDMA=ON"], "true"),
+            (["-DIREE_NET_RDMA=OFF"], "false"),
+            (["--//runtime/config/net:rdma=true"], "true"),
+            (["--//runtime/config/net:rdma=false"], "false"),
+        ]:
+            with self.subTest(arguments=arguments):
+                args = self.configure_bazel.parse_arguments(arguments)
+                config = self.configure_bazel.generate_config(args)
+                self.assertIn(f"build --//runtime/config/net:rdma={expected}", config)
+                self.assertIn("build --//runtime/config/hal:drivers=task", config)
+
+    def test_rdma_rejects_mixed_selection_spellings(self):
+        with self.assertRaisesRegex(SystemExit, "Do not mix portable -DIREE_NET_RDMA"):
+            args = self.configure_bazel.parse_arguments(
+                ["-DIREE_NET_RDMA=ON", "--//runtime/config/net:rdma=false"]
+            )
+            self.configure_bazel.generate_config(args)
+
     def test_portable_project_options_configure_webgpu(self):
         args = self.configure_bazel.parse_arguments(["-DIREE_HAL_DRIVER_WEBGPU=ON"])
         config = self.configure_bazel.generate_config(args)

@@ -91,7 +91,8 @@ enum iree_async_socket_option_bits_e {
   // send transparently based on whether the proactor has
   // IREE_ASYNC_PROACTOR_CAPABILITY_ZERO_COPY_SEND. On platforms without
   // SO_ZEROCOPY (Windows, macOS), the option is accepted silently and sends
-  // always use the regular copy path.
+  // always use the regular copy path. Individual sends can suppress this hint
+  // with IREE_ASYNC_SOCKET_SEND_FLAG_NO_ZERO_COPY.
   //
   // Accepted sockets inherit this option from their listening socket. The
   // proactor calls setsockopt(SO_ZEROCOPY) on each accepted fd since the
@@ -121,7 +122,8 @@ enum iree_async_socket_flag_bits_e {
 
   // Send operations prefer zero-copy path (SEND_ZC on io_uring 6.0+) when the
   // proactor has IREE_ASYNC_PROACTOR_CAPABILITY_ZERO_COPY_SEND; otherwise sends
-  // use the regular copy path transparently.
+  // use the regular copy path transparently. A send's NO_ZERO_COPY flag
+  // overrides this preference without modifying the socket.
   // For create_socket: set when IREE_ASYNC_SOCKET_OPTION_ZERO_COPY is
   // requested. For import_socket: caller must set this if they configured
   // SO_ZEROCOPY.
