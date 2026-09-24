@@ -25,6 +25,9 @@
 // proofs cannot cancel arithmetic across a modular boundary. A separate
 // optional congruence retains periodic relationships for disjointness queries
 // without weakening these exact-expression and materialization contracts.
+// Memoized summaries also retain exact nonnegative quotient/remainder
+// projections for numeric equality and coordinate evaluation. The original
+// quotient or remainder remains the materialized SSA term.
 //
 // Storage is caller-owned. The context memoizes value-to-expression queries and
 // owns a reusable scratch term buffer so fixed-point analyses can query without
@@ -51,6 +54,7 @@ extern "C" {
 
 typedef struct loom_symbolic_expr_memo_entry_t loom_symbolic_expr_memo_entry_t;
 typedef struct loom_symbolic_congruence_t loom_symbolic_congruence_t;
+typedef struct loom_symbolic_projection_t loom_symbolic_projection_t;
 typedef struct loom_cfg_value_identity_table_t loom_cfg_value_identity_table_t;
 // A single coefficient times an SSA value.
 typedef struct loom_symbolic_term_t {
@@ -102,6 +106,10 @@ typedef struct loom_symbolic_expr_summary_t {
   // SSA value exactly materializing expression's nonconstant terms, or
   // LOOM_VALUE_ID_INVALID when no such value was retained during expansion.
   loom_value_id_t materialized_dynamic_value_id;
+
+  // Optional exact digit function for this value. Materialized expression
+  // terms remain unchanged; proof consumers may query this retained relation.
+  const loom_symbolic_projection_t* projection;
 } loom_symbolic_expr_summary_t;
 
 // Memoized condition-refined facts for one SSA value. This state is owned by

@@ -216,7 +216,16 @@ to `4×8` puts two rows in each write-service phase and doubles the required
 rounds. A `12×8`
 shape has different profiles across waves and reports
 `address-wave-profiles-differ`; no single wave's profile represents it exactly.
-Unproved varying terms and runtime coordinate strides remain unknown.
+
+Constant division, remainder, shift, and mask can also describe tiled
+coordinates. For example, the b128 store address
+`144*(x/8) + 16*(x%8)` is conflict-free across a 128-thread wave32 workgroup
+on gfx1100/gfx1151. Replacing `x` with `x+1` inside both digits doubles the
+required rounds. An offset inside division changes lane grouping; it is not
+just a common translation of the final addresses. These proofs require
+nonnegative, nonwrapping arithmetic and constant divisors. Unproved varying
+terms, runtime coordinate strides, and relationships lost across control-flow
+arguments remain unknown.
 
 Narrow packets use contiguous 32-lane service groups on the qualified devices.
 Halfword reads to either half of a bank word share a request; writes to disjoint

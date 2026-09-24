@@ -10,11 +10,13 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/analysis/symbolic_congruence.h"
 #include "loom/analysis/symbolic_expr_test_fixture.h"
+#include "loom/analysis/symbolic_projection.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/ops/sanitizer/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/scf/ops.h"
+#include "loom/target/facts.h"
 
 namespace loom {
 namespace {
@@ -646,6 +648,195 @@ TEST_F(SymbolicExprTest, SelectUsesScopedComparisonTruth) {
   }
   expression_context_.condition_scope = nullptr;
   loom_symbolic_expr_context_reset(&expression_context_);
+}
+
+TEST_F(SymbolicExprTest, IndexDigitsRetainNumericProofWithoutChangingTerms) {
+  const loom_value_id_t input = DefineIndexValue();
+  DefineFacts(input, loom_value_facts_make(0, 255, 1));
+  struct {
+    // Producer spelling for one exact numeric digit.
+    decltype(&loom_index_div_build) build;
+    // Constant right operand: divisor, shift amount, or mask.
+    int64_t operand;
+    // Divisor and modulus in the expected numeric function.
+    loom_symbolic_projection_t expected;
+  } cases[] = {
+      {loom_index_div_build, 8, {input, 1, 0, 8, 0}},
+      {loom_index_shrui_build, 3, {input, 1, 0, 8, 0}},
+      {loom_index_shrsi_build, 3, {input, 1, 0, 8, 0}},
+      {loom_index_rem_build, 8, {input, 1, 0, 1, 8}},
+      {loom_index_andi_build, 7, {input, 1, 0, 1, 8}},
+  };
+  for (const auto& test_case : cases) {
+    const auto operand =
+        loom_index_constant_result(BuildIndexConstant(test_case.operand));
+    loom_op_t* op = nullptr;
+    IREE_ASSERT_OK(
+        test_case.build(&builder_, input, operand, LOOM_LOCATION_UNKNOWN, &op));
+    const auto result = loom_op_const_results(op)[0];
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    loom_symbolic_expr_summary_t summary = {};
+    ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+        &expression_context_, result, &summary));
+    ASSERT_NE(summary.projection, nullptr);
+    EXPECT_TRUE(loom_symbolic_projection_equal(summary.projection,
+                                               &test_case.expected));
+    ASSERT_EQ(expression.term_count, 1u);
+    EXPECT_EQ(expression.terms[0].value_id, result);
+    EXPECT_EQ(summary.materialized_dynamic_value_id, result);
+  }
+}
+
+TEST_F(SymbolicExprTest, ProjectionRequiresNonnegativeBoundedInput) {
+  const auto input = DefineIndexValue();
+  const auto divisor = loom_index_constant_result(BuildIndexConstant(8));
+  loom_op_t* quotient = nullptr;
+  IREE_ASSERT_OK(loom_index_div_build(&builder_, input, divisor,
+                                      LOOM_LOCATION_UNKNOWN, &quotient));
+  const auto result = loom_index_div_result(quotient);
+  for (const auto facts :
+       {loom_value_facts_make(0, 255, 1), loom_value_facts_make(-255, 255, 1),
+        loom_value_facts_unknown()}) {
+    DefineFacts(input, facts);
+    // Updating facts invalidates both the linear summary and its projection.
+    loom_symbolic_expr_summary_t summary = {};
+    EXPECT_FALSE(loom_symbolic_expr_context_try_lookup_summary(
+        &expression_context_, result, &summary));
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+        &expression_context_, result, &summary));
+    EXPECT_EQ(summary.projection != nullptr, facts.range_lo == 0);
+  }
+}
+
+TEST_F(SymbolicExprTest,
+       ComposedDigitRetainsAffineInputAndNumericCastBoundary) {
+  auto constant = [&](int64_t value) {
+    loom_op_t* op = BuildIndexConstant(value);
+    ComputeFacts(op);
+    return loom_index_constant_result(op);
+  };
+  const auto input = DefineIndexValue();
+  DefineFacts(input, loom_value_facts_make(0, 4095, 1));
+  const auto scale = constant(3);
+  const auto offset = constant(7);
+  loom_op_t* affine = nullptr;
+  IREE_ASSERT_OK(loom_index_madd_build(&builder_, input, scale, offset,
+                                       LOOM_LOCATION_UNKNOWN, &affine));
+  ComputeFacts(affine);
+  const auto eight = constant(8);
+  loom_op_t* quotient = nullptr;
+  IREE_ASSERT_OK(loom_index_div_build(&builder_, loom_index_madd_result(affine),
+                                      eight, LOOM_LOCATION_UNKNOWN, &quotient));
+  ComputeFacts(quotient);
+  const auto modulus = constant(512);
+  loom_op_t* remainder = nullptr;
+  IREE_ASSERT_OK(loom_index_rem_build(&builder_,
+                                      loom_index_div_result(quotient), modulus,
+                                      LOOM_LOCATION_UNKNOWN, &remainder));
+  ComputeFacts(remainder);
+  for (auto type : {LOOM_SCALAR_TYPE_I32, LOOM_SCALAR_TYPE_I8}) {
+    loom_op_t* cast = nullptr;
+    IREE_ASSERT_OK(loom_index_cast_build(
+        &builder_, loom_index_rem_result(remainder),
+        loom_type_scalar(LOOM_SCALAR_TYPE_INDEX), loom_type_scalar(type),
+        LOOM_LOCATION_UNKNOWN, &cast));
+    ComputeFacts(cast);
+    const auto result = loom_index_cast_result(cast);
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    loom_symbolic_expr_summary_t summary = {};
+    ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+        &expression_context_, result, &summary));
+    if (type == LOOM_SCALAR_TYPE_I8) {
+      EXPECT_EQ(summary.projection, nullptr);
+    } else {
+      ASSERT_NE(summary.projection, nullptr);
+      const loom_symbolic_projection_t expected = {input, 3, 7, 8, 512};
+      EXPECT_TRUE(
+          loom_symbolic_projection_equal(summary.projection, &expected));
+    }
+  }
+}
+
+TEST_F(SymbolicExprTest, ProjectionRequiresRepresentableConstantArithmetic) {
+  loom_target_facts_t target_facts = {};
+  target_facts.storage.snapshot.index_bitwidth = 32;
+  fact_table_.context.target_facts = &target_facts;
+  const auto input = DefineIndexValue();
+  const auto right = DefineIndexValue();
+  struct {
+    // Operation whose arithmetic cannot be retained as one exact digit.
+    decltype(&loom_index_div_build) build;
+    // Dividend facts, interpreted in the target's index carrier.
+    loom_value_facts_t input_facts;
+    // Right operand facts: a runtime divisor or an invalid shift count.
+    loom_value_facts_t right_facts;
+  } cases[] = {
+      {loom_index_div_build, loom_value_facts_make(0, 255, 1),
+       loom_value_facts_make(1, 8, 1)},
+      {loom_index_div_build, loom_value_facts_make(0, INT64_C(1) << 40, 1),
+       loom_value_facts_exact_i64(8)},
+      {loom_index_shrui_build, loom_value_facts_make(0, 255, 1),
+       loom_value_facts_exact_i64(32)},
+  };
+  for (const auto& test_case : cases) {
+    DefineFacts(input, test_case.input_facts);
+    DefineFacts(right, test_case.right_facts);
+    loom_op_t* op = nullptr;
+    IREE_ASSERT_OK(
+        test_case.build(&builder_, input, right, LOOM_LOCATION_UNKNOWN, &op));
+    const auto result = loom_op_const_results(op)[0];
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    loom_symbolic_expr_summary_t summary = {};
+    ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+        &expression_context_, result, &summary));
+    EXPECT_EQ(summary.projection, nullptr);
+  }
+}
+
+TEST_F(SymbolicExprTest, ScalarDigitsRespectSignedInterpretation) {
+  const auto type = loom_type_scalar(LOOM_SCALAR_TYPE_I8);
+  loom_value_id_t input;
+  IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &input));
+  struct {
+    // Signed or unsigned producer of a quotient, shift, or remainder.
+    decltype(&loom_scalar_divsi_build) build;
+    // Constant divisor or shift count.
+    int64_t operand;
+  } cases[] = {{loom_scalar_divsi_build, 8}, {loom_scalar_divui_build, 8},
+               {loom_scalar_shrsi_build, 3}, {loom_scalar_shrui_build, 3},
+               {loom_scalar_remsi_build, 8}, {loom_scalar_remui_build, 8}};
+  for (const auto& test_case : cases) {
+    loom_op_t* constant = nullptr;
+    IREE_ASSERT_OK(
+        loom_scalar_constant_build(&builder_, loom_attr_i64(test_case.operand),
+                                   type, LOOM_LOCATION_UNKNOWN, &constant));
+    ComputeFacts(constant);
+    loom_op_t* op = nullptr;
+    IREE_ASSERT_OK(test_case.build(&builder_, input,
+                                   loom_scalar_constant_result(constant), type,
+                                   LOOM_LOCATION_UNKNOWN, &op));
+    for (int64_t lower : {0, -128}) {
+      DefineFacts(input, loom_value_facts_make(lower, 127, 1));
+      ComputeFacts(op);
+      const auto result = loom_op_const_results(op)[0];
+      loom_symbolic_expr_t expression = {};
+      IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                   &expression));
+      loom_symbolic_expr_summary_t summary = {};
+      ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+          &expression_context_, result, &summary));
+      EXPECT_EQ(summary.projection != nullptr, lower == 0);
+    }
+  }
 }
 
 TEST_F(SymbolicExprTest, SignedAndUnsignedRemaindersHaveDifferentPeriods) {

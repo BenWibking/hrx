@@ -1321,10 +1321,12 @@ loom_cc_library(
     "symbolic_congruence.h"
     "symbolic_expr.h"
     "symbolic_expr_proof.h"
+    "symbolic_projection.h"
   SRCS
     "symbolic_congruence.c"
     "symbolic_expr.c"
     "symbolic_expr_proof.c"
+    "symbolic_projection.c"
     "symbolic_value.c"
     "symbolic_value.h"
   DEPS
@@ -1354,6 +1356,17 @@ loom_cc_test(
   DEPS
     ::symbolic_expr
     iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_test(
+  NAME
+    symbolic_projection_test
+  SRCS
+    "symbolic_projection_test.cc"
+  DEPS
+    ::symbolic_expr
     iree::testing::gtest
     iree::testing::gtest_main
 )
@@ -1473,6 +1486,7 @@ loom_cc_test(
     loom::ops::sanitizer
     loom::ops::scalar
     loom::ops::scf
+    loom::target::facts
 )
 
 loom_cc_test(

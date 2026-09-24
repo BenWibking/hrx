@@ -1111,8 +1111,8 @@ func.def @guarded_flattened_store_proves_dynamic_axis_bounds(%payload: buffer, %
 
 // Equivalent nonlinear bounds may be materialized independently on each side
 // of a convergent operation. The active branch relation still proves that an
-// index guarded by the first quotient fits a view shaped by the second.
-func.def @guarded_recomputed_quotient_proves_dynamic_axis_bound(%payload: buffer, %base: offset, %active_count0: index, %block0: index, %value: i32) {
+// index guarded by a quotient fits a view shaped by an equivalent shift.
+func.def @guarded_equivalent_digits_prove_dynamic_axis_bound(%payload: buffer, %base: offset, %active_count0: index, %block0: index, %value: i32) {
   %block_rounding_bias = index.constant 63 : index
   %block_size = index.constant 64 : index
   %active_count = index.assume %active_count0 [range(%active_count0, 1, 2048)] : index
@@ -1127,7 +1127,8 @@ func.def @guarded_recomputed_quotient_proves_dynamic_axis_bound(%payload: buffer
     %active_block, %active_block_count, %active_token_count = index.assume %block, %block_count, %active_count [lt(%block, %block_count)] : index, index, index
     %inner_active_count = index.assume %active_token_count [range(%active_token_count, 1, 32768)] : index
     %inner_padded_count = index.add %inner_active_count, %block_rounding_bias : index
-    %inner_block_count0 = index.div %inner_padded_count, %block_size : index
+    %shift = index.constant 6 : index
+    %inner_block_count0 = index.shrui %inner_padded_count, %shift : index
     %inner_block_count = index.assume %inner_block_count0 [range(%inner_block_count0, 1, 512)] : index
     %view = buffer.view %payload[%base] : buffer -> view<[%inner_block_count]xi32>
     view.store %value, %view[%active_block] : i32, view<[%inner_block_count]xi32>
