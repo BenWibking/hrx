@@ -30,13 +30,12 @@ loom_cc_library(
     srcs = ["boundary_projection.c"],
     hdrs = ["boundary_projection.h"],
     deps = [
+        ":offset_expression",
         "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/analysis:view_regions",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops/buffer",
-        "//loom/src/loom/ops/index",
-        "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/scf",
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/target:provider",
@@ -98,18 +97,31 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "offset_expression",
+    srcs = ["offset_expression.c"],
+    hdrs = ["offset_expression.h"],
+    deps = [
+        "//loom/src/loom/analysis:symbolic_expr",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/scalar",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "transport",
     srcs = ["transport.c"],
     hdrs = ["transport.h"],
     deps = [
+        ":offset_expression",
         "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/analysis:view_regions",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/buffer",
-        "//loom/src/loom/ops/index",
-        "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/scf",
         "//loom/src/loom/pass:types",
         "//loom/src/loom/pass:value_facts",

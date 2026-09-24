@@ -299,3 +299,21 @@ func.def public target(@carrier_target) @choose_crops(%left_root: buffer, %left_
   %27 = index.add %selected_offset, %26 : offset
   func.return %selected_root, %selected_offset, %selected_root, %25, %selected_root, %27 : buffer, offset, buffer, offset, buffer, offset
 }
+
+// ====
+
+// RUN: with-checks pass specialize-target-callgraph,decompose-view-boundaries,dce
+
+test.target<low_core> @carrier_target
+
+func.def public target(@carrier_target) @choose_previous(%left: view<1xi32>, %right: view<1xi32>, %condition: i1, %position: index) -> (view<1xi32>) where [range(%position, -2, 0)] {
+  %selected = scf.select %condition, %left, %right : view<1xi32>
+  %previous = view.subview %selected[%position] : view<1xi32> -> view<1xi32>
+  func.return %previous : view<1xi32>
+}
+
+// ----
+CHECK: %selected_root, %selected_offset = scf.if * -> (buffer, offset) {
+CHECK: * = index.sub %selected_offset, * : offset
+CHECK: func.return %selected_root, * : buffer, offset
+CHECK-NOT: * = index.cast %selected_offset : offset to i64
