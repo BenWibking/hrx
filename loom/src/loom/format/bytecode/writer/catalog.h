@@ -187,6 +187,13 @@ typedef struct loom_bytecode_numbering_t {
   } ops;
 } loom_bytecode_numbering_t;
 
+// Returns the string assigned to |writer_id|.
+static inline iree_string_view_t loom_bytecode_numbering_string(
+    const loom_bytecode_numbering_t* numbering, uint32_t writer_id) {
+  IREE_ASSERT(writer_id < numbering->strings.count);
+  return numbering->strings.values[writer_id];
+}
+
 // Initializes empty catalogs and the stable symbol-order projection.
 iree_status_t loom_bytecode_numbering_initialize(
     loom_bytecode_numbering_t* numbering, const loom_module_t* module,

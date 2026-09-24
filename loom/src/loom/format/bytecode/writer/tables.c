@@ -44,7 +44,7 @@ iree_status_t loom_bytecode_write_strings_section(
       page_writer, numbering->strings.count));
   for (iree_host_size_t i = 0; i < numbering->strings.count; ++i) {
     IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_string(
-        page_writer, numbering->strings.values[i]));
+        page_writer, loom_bytecode_numbering_string(numbering, (uint32_t)i)));
   }
   return iree_ok_status();
 }

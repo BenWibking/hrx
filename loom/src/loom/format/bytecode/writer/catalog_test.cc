@@ -6,6 +6,8 @@
 
 #include "loom/format/bytecode/writer/catalog.h"
 
+#include <cstdio>
+#include <string>
 #include <vector>
 
 #include "iree/testing/gtest.h"
@@ -169,8 +171,9 @@ TEST_F(CatalogTest, EncodingOrderPreservesFirstUseAndAliases) {
   };
   ASSERT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected));
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(expected); ++i) {
-    EXPECT_TRUE(
-        iree_string_view_equal(numbering.strings.values[i], expected[i]));
+    EXPECT_TRUE(iree_string_view_equal(
+        loom_bytecode_numbering_string(&numbering, static_cast<uint32_t>(i)),
+        expected[i]));
   }
   IREE_ASSERT_OK(loom_bytecode_number_attr_value(
       &numbering, loom_attr_encoding(child), nullptr));
@@ -225,10 +228,13 @@ TEST_F(CatalogTest, EncodingPayloadsNumberNestedTypesAndStrings) {
   IREE_ASSERT_OK(NumberEncodings(&numbering));
   ASSERT_EQ(numbering.types.count, 1u);
   EXPECT_EQ(numbering.types.module_indices_by_writer_id[0], element);
-  const uint32_t label_id = numbering.strings.writer_ids_by_module_id[label];
+  uint32_t label_id = 0;
+  IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(&numbering, label,
+                                                              &label_id));
   ASSERT_LT(label_id, numbering.strings.count);
-  EXPECT_TRUE(iree_string_view_equal(numbering.strings.values[label_id],
-                                     IREE_SV("element_label")));
+  EXPECT_TRUE(iree_string_view_equal(
+      loom_bytecode_numbering_string(&numbering, label_id),
+      IREE_SV("element_label")));
 }
 
 TEST_F(CatalogTest, SharedTypeNumberingRetainsCompletedResults) {
@@ -380,8 +386,9 @@ TEST_F(CatalogTest, TypeAndAttributeMetadataKeepFirstUseOrder) {
   };
   ASSERT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected_strings));
   for (size_t i = 0; i < IREE_ARRAYSIZE(expected_strings); ++i) {
-    EXPECT_TRUE(iree_string_view_equal(numbering.strings.values[i],
-                                       expected_strings[i]));
+    EXPECT_TRUE(iree_string_view_equal(
+        loom_bytecode_numbering_string(&numbering, static_cast<uint32_t>(i)),
+        expected_strings[i]));
   }
   const auto completed_storage = arena_.used_allocation_size;
   IREE_ASSERT_OK(
@@ -427,9 +434,92 @@ TEST_F(CatalogTest, ParameterizedTypesResumeAfterNestedTypes) {
   };
   ASSERT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected));
   for (size_t i = 0; i < IREE_ARRAYSIZE(expected); ++i) {
-    EXPECT_TRUE(
-        iree_string_view_equal(numbering.strings.values[i], expected[i]));
+    EXPECT_TRUE(iree_string_view_equal(
+        loom_bytecode_numbering_string(&numbering, static_cast<uint32_t>(i)),
+        expected[i]));
   }
+}
+
+TEST_F(CatalogTest, StringCatalogRetainsFirstUseOrderAtScale) {
+  constexpr size_t kStringCount = 257;
+  std::vector<std::string> names;
+  std::vector<loom_string_id_t> module_ids;
+  names.reserve(kStringCount);
+  module_ids.reserve(kStringCount);
+  for (size_t i = 0; i < kStringCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "catalog_name_%08zu", i);
+    names.emplace_back(name);
+    module_ids.push_back(Intern(
+        iree_make_string_view(names.back().data(), names.back().size())));
+  }
+
+  loom_bytecode_numbering_t numbering;
+  IREE_ASSERT_OK(
+      loom_bytecode_numbering_initialize(&numbering, module_, &arena_));
+  for (size_t ordinal = kStringCount; ordinal > 0; --ordinal) {
+    uint32_t writer_id = 0;
+    IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
+        &numbering, module_ids[ordinal - 1], &writer_id));
+    EXPECT_EQ(writer_id, kStringCount - ordinal + 1);
+  }
+
+  ASSERT_EQ(numbering.strings.count, kStringCount + 1);
+  EXPECT_TRUE(
+      iree_string_view_is_empty(loom_bytecode_numbering_string(&numbering, 0)));
+  for (uint32_t writer_id = 1; writer_id <= kStringCount; ++writer_id) {
+    const std::string& expected = names[kStringCount - writer_id];
+    EXPECT_TRUE(iree_string_view_equal(
+        loom_bytecode_numbering_string(&numbering, writer_id),
+        iree_make_string_view(expected.data(), expected.size())));
+  }
+
+  for (size_t i = 0; i < kStringCount; ++i) {
+    uint32_t writer_id = 0;
+    IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
+        &numbering, module_ids[i], &writer_id));
+    EXPECT_EQ(writer_id, kStringCount - i);
+  }
+  EXPECT_EQ(numbering.strings.count, kStringCount + 1);
+}
+
+TEST_F(CatalogTest, StringViewsReuseModuleAndExternalIdentities) {
+  const loom_string_id_t module_id = Intern(IREE_SV("module_owned"));
+  loom_bytecode_numbering_t numbering;
+  IREE_ASSERT_OK(
+      loom_bytecode_numbering_initialize(&numbering, module_, &arena_));
+
+  std::string module_spelling = "module_owned";
+  uint32_t module_view_writer_id = 0;
+  IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+      &numbering,
+      iree_make_string_view(module_spelling.data(), module_spelling.size()),
+      &module_view_writer_id));
+  uint32_t module_id_writer_id = 0;
+  IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
+      &numbering, module_id, &module_id_writer_id));
+  EXPECT_EQ(module_view_writer_id, module_id_writer_id);
+  EXPECT_EQ(numbering.strings.count, 2u);
+
+  std::string first_external_spelling = "external_only";
+  std::string second_external_spelling = first_external_spelling;
+  uint32_t first_external_writer_id = 0;
+  IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+      &numbering,
+      iree_make_string_view(first_external_spelling.data(),
+                            first_external_spelling.size()),
+      &first_external_writer_id));
+  uint32_t second_external_writer_id = 0;
+  IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+      &numbering,
+      iree_make_string_view(second_external_spelling.data(),
+                            second_external_spelling.size()),
+      &second_external_writer_id));
+  EXPECT_EQ(first_external_writer_id, second_external_writer_id);
+  EXPECT_EQ(numbering.strings.count, 3u);
+  EXPECT_TRUE(iree_string_view_equal(
+      loom_bytecode_numbering_string(&numbering, first_external_writer_id),
+      IREE_SV("external_only")));
 }
 
 }  // namespace
