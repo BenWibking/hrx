@@ -233,7 +233,7 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
   EXPECT_EQ(provider_set->region_initialization.count, 1u);
   EXPECT_EQ(provider_set->universal_pre_fold.count, 2u);
   EXPECT_EQ(provider_set->universal_post_type.count, 2u);
-  EXPECT_EQ(provider_set->source_combine.count, 3u);
+  EXPECT_EQ(provider_set->source_combine.count, 4u);
   EXPECT_NE(provider_set->special_value_policy, nullptr);
 
   loom_cleanup_pattern_registry_storage_t storage = {};
@@ -296,6 +296,26 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
   const loom_rewrite_pattern_registry_t* source_combine =
       registries->source_combine;
   EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_SCALAR_EXTF)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_SCALAR_FPTRUNC)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_SCALAR_EXTSI)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_SCALAR_EXTUI)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_SCALAR_TRUNCI)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
                                                       LOOM_OP_SCF_SELECT)
                 .count,
             1u);
@@ -311,7 +331,27 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
                 source_combine, LOOM_OP_VECTOR_TABLE_LOOKUP)
                 .count,
             1u);
-  EXPECT_EQ(source_combine->pattern_count, 5u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_VECTOR_EXTF)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_VECTOR_FPTRUNC)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_VECTOR_EXTSI)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_VECTOR_EXTUI)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_VECTOR_TRUNCI)
+                .count,
+            1u);
+  EXPECT_EQ(source_combine->pattern_count, 15u);
   loom_cleanup_pattern_registry_storage_deinitialize(&storage);
 }
 

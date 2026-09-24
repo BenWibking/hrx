@@ -2878,6 +2878,7 @@ iree_status_t loom_vector_trunci_build(
     loom_builder_t* builder, loom_value_id_t input,
     loom_type_t input_type, loom_type_t result_type,
     loom_location_id_t location, loom_op_t** out_op);
+iree_status_t loom_vector_trunci_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 
 // LOOM_OP_VECTOR_SITOFP: Lanewise signed integer to floating-point conversion with unchanged shape.
 // vector.sitofp

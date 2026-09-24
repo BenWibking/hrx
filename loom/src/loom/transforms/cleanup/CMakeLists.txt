@@ -60,6 +60,7 @@ loom_cc_library(
     loom::ops::special_values
     loom::transforms::index::cleanup_patterns
     loom::transforms::scalar::cleanup_patterns
+    loom::transforms::scalar::combine_patterns
     loom::transforms::scf::branch_fact_patterns
     loom::transforms::scf::combine_patterns
     loom::transforms::vector::cleanup_patterns

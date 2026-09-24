@@ -52,6 +52,7 @@ loom_cc_library(
         "//loom/src/loom/ops:special_values",
         "//loom/src/loom/transforms/index:cleanup_patterns",
         "//loom/src/loom/transforms/scalar:cleanup_patterns",
+        "//loom/src/loom/transforms/scalar:combine_patterns",
         "//loom/src/loom/transforms/scf:branch_fact_patterns",
         "//loom/src/loom/transforms/scf:combine_patterns",
         "//loom/src/loom/transforms/vector:cleanup_patterns",
