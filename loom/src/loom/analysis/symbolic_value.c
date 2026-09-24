@@ -9,7 +9,6 @@
 #include <string.h>
 
 #include "loom/analysis/condition_facts.h"
-#include "loom/analysis/symbolic_projection.h"
 #include "loom/ir/attribute.h"
 #include "loom/ir/context.h"
 #include "loom/ops/index/ops.h"
@@ -679,18 +678,6 @@ iree_status_t loom_symbolic_values_match(loom_symbolic_expr_context_t* context,
       context, left_value, right_value, &difference));
   *out_match = difference.kind == LOOM_SYMBOLIC_VALUE_DIFFERENCE_CONSTANT &&
                difference.constant == 0;
-  if (!*out_match) {
-    loom_symbolic_expr_summary_t left_summary = {0};
-    loom_symbolic_expr_summary_t right_summary = {0};
-    if (loom_symbolic_expr_context_try_lookup_summary(context, left_value,
-                                                      &left_summary) &&
-        loom_symbolic_expr_context_try_lookup_summary(context, right_value,
-                                                      &right_summary) &&
-        left_summary.projection && right_summary.projection) {
-      *out_match = loom_symbolic_projection_equal(left_summary.projection,
-                                                  right_summary.projection);
-    }
-  }
   return iree_ok_status();
 }
 
