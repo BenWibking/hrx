@@ -14,6 +14,15 @@ from pathlib import Path
 
 from loom.gen.test.kernel_fixture import Arrays, Case, signed_bits
 
+# Element name, exponent bits, fraction bits, and exponent bias. E4M3 reserves
+# only the largest magnitude payload for NaN; the other formats follow IEEE.
+NARROW_FORMATS = (
+    ("f8E4M3", 4, 3, 7),
+    ("f8E5M2", 5, 2, 15),
+    ("f16", 5, 10, 15),
+    ("bf16", 8, 7, 127),
+)
+
 
 def float_bits(value, width):
     return int.from_bytes(struct.pack("<f" if width == 32 else "<d", value), "little")
@@ -116,6 +125,37 @@ def conversion_case(arrays, source_width, *, nan):
     return case.finish(expected, tolerance=0.0 if nan else None)
 
 
+def narrow_float_value(bits, element, exponent_bits, fraction_bits, bias):
+    magnitude = bits & ((1 << (exponent_bits + fraction_bits)) - 1)
+    exponent = magnitude >> fraction_bits
+    fraction = magnitude & ((1 << fraction_bits) - 1)
+    sign = -1.0 if bits >> (exponent_bits + fraction_bits) else 1.0
+    if element == "f8E4M3":
+        if magnitude == 0x7F:
+            return math.nan
+    elif exponent == (1 << exponent_bits) - 1:
+        return math.nan if fraction else math.copysign(math.inf, sign)
+    significand = fraction if exponent == 0 else (1 << fraction_bits) + fraction
+    value = math.ldexp(significand, max(1, exponent) - bias - fraction_bits)
+    return math.copysign(value, sign)
+
+
+def narrow_conversion_case(arrays, float_format):
+    element, exponent_bits, fraction_bits, _ = float_format
+    width = 1 + exponent_bits + fraction_bits
+    count = 1 << width
+    case = Case(arrays, f"scalar_{element}_to_f64_all_bits", "f64", count)
+    case.array("bits", [signed_bits(bits, width) for bits in range(count)], f"i{width}")
+    case.lines.append(f"  %input = check.tensor.view %bits offset(0) : tensor<{count}xi{width}> -> tensor<{count}x{element}>")
+    case.launch(f"scalar_{element}_to_f64", "%input, %output", f"tensor<{count}x{element}>, tensor<{count}xf64>")
+    # NaNs are compared by classification; zero signs retain bitwise checks.
+    for name, offset, value in (("positive", 0, "0.0"), ("negative", (count // 2) * 8, "-0.0")):
+        case.lines.append(f"  %{name}_zero = check.tensor.view %output offset({offset}) : tensor<{count}xf64> -> tensor<1xf64>")
+        case.lines.append(f"  %{name}_expected = check.generate.fill value({value}) : tensor<1xf64>")
+        case.lines.append(f"  check.expect.bitwise actual(%{name}_zero) expected(%{name}_expected) : tensor<1xf64>")
+    return case.finish([narrow_float_value(bits, *float_format) for bits in range(count)], tolerance=0.0)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -123,7 +163,9 @@ def main():
     options = parser.parse_args()
     arrays = Arrays(options.arrays, options.output.parent)
     declarations = "".join(f"kernel.decl @scalar_f{source}_to_f{result}() launch(%input: buffer, %uniform: f{source}, %output: buffer)\n" for source, result in ((32, 64), (64, 32)))
+    declarations += "".join(f"kernel.decl @scalar_{float_format[0]}_to_f64() launch(%input: buffer, %output: buffer)\n" for float_format in NARROW_FORMATS)
     cases = [conversion_case(arrays, width, nan=nan) for width in (32, 64) for nan in (False, True)]
+    cases.extend(narrow_conversion_case(arrays, float_format) for float_format in NARROW_FORMATS)
     options.output.parent.mkdir(parents=True, exist_ok=True)
     options.output.write_text(declarations + "\n" + "\n".join(cases))
 
