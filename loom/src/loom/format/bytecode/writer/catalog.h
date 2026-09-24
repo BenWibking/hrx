@@ -43,6 +43,39 @@ typedef struct loom_bytecode_op_entry_t {
   uint32_t string_writer_id;
 } loom_bytecode_op_entry_t;
 
+// One module value's state in the currently active writer-local namespace.
+typedef struct loom_bytecode_value_scope_row_t {
+  // Scope generation that owns this row, or zero before first use.
+  uint32_t generation;
+  // Wire-local number in numbering scopes; unused in membership-only scopes.
+  uint32_t number;
+} loom_bytecode_value_scope_row_t;
+
+// Direct-index rows corresponding to one stable module value segment.
+typedef iree_alignas(64) struct loom_bytecode_value_scope_segment_t {
+  // Scope-local mappings indexed by the row within the module value segment.
+  loom_bytecode_value_scope_row_t rows[LOOM_VALUE_SEGMENT_CAPACITY];
+} loom_bytecode_value_scope_segment_t;
+
+static_assert(sizeof(loom_bytecode_value_scope_segment_t) == 2048,
+              "writer value scope segment must fit in arena blocks");
+
+typedef struct loom_bytecode_global_value_list_t
+    loom_bytecode_global_value_list_t;
+
+// Number of retained global-value closures in each symbol-index segment.
+#define LOOM_BYTECODE_GLOBAL_VALUE_SEGMENT_CAPACITY 256u
+
+// Retained declaration-local closures for one range of module symbol IDs.
+typedef iree_alignas(64) struct loom_bytecode_global_value_segment_t {
+  // Closure pointers indexed by the row within the symbol-ID segment.
+  loom_bytecode_global_value_list_t*
+      values[LOOM_BYTECODE_GLOBAL_VALUE_SEGMENT_CAPACITY];
+} loom_bytecode_global_value_segment_t;
+
+static_assert(sizeof(loom_bytecode_global_value_segment_t) <= 2048,
+              "writer global-value segment must fit in arena blocks");
+
 // Sequential catalog-completion facts retained until ENCODINGS emission.
 // Fixed-size chunks fit the arena pool and are consumed without random lookup.
 typedef struct loom_bytecode_encoding_prefix_chunk_t {
@@ -75,6 +108,18 @@ typedef struct loom_bytecode_numbering_t {
     // Presentation-ordered wire ordinals indexed by module symbol ID.
     loom_symbol_id_t* wire_ordinals;
   } symbol_order;
+
+  // Invocation-owned direct index for body-local numbering and membership.
+  struct {
+    // Segmented rows sharing the module value table's ID geometry.
+    loom_segmented_storage_t segments;
+  } value_scopes;
+
+  // Declaration-local value closures prepared before section emission.
+  struct {
+    // Segmented closure pointers indexed directly by module symbol ID.
+    loom_segmented_storage_t segments;
+  } global_values;
 
   // First-use-ordered string catalog and its module/external projections.
   struct {

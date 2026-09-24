@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "iree/base/internal/arena.h"
@@ -1550,6 +1551,136 @@ TEST_F(WriterTest, GlobalSymbolWritesDeclarationLocalValues) {
   EXPECT_EQ(bytes[offset++], 8u);
 
   loom_module_free(module);
+}
+
+TEST_F(WriterTest, ValueNumberingFollowsPhysicalDefinitionOrder) {
+  constexpr uint32_t kValueCount = 513;
+  std::vector<uint8_t> canonical_bytes;
+  for (bool reverse_allocation_order : {false, true}) {
+    loom_module_t* module = CreateModule("value_order");
+    loom_type_t i32_type = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+    IREE_ASSERT_OK(loom_module_intern_type(module, i32_type, &i32_type));
+
+    loom_builder_t module_builder;
+    loom_builder_initialize(module, &module->arena, loom_module_block(module),
+                            &module_builder);
+    loom_string_id_t name_id = LOOM_STRING_ID_INVALID;
+    IREE_ASSERT_OK(loom_builder_intern_string(
+        &module_builder, IREE_SV("ordered_values"), &name_id));
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_add_symbol(module, name_id, &symbol_id));
+    loom_op_t* func_op = nullptr;
+    IREE_ASSERT_OK(loom_test_func_build(
+        &module_builder, /*build_flags=*/0, /*visibility=*/0, /*cc=*/0,
+        {/*.module_id=*/0, /*.symbol_id=*/symbol_id}, /*arg_types=*/nullptr,
+        /*arg_count=*/0, /*result_types=*/nullptr, /*result_count=*/0,
+        /*arg_names=*/nullptr, /*arg_name_count=*/0, /*result_names=*/nullptr,
+        /*result_name_count=*/0, LOOM_LOCATION_NONE, &func_op));
+
+    loom_block_t* body = loom_region_entry_block(
+        loom_func_like_body(loom_func_like_cast(module, func_op)));
+    loom_builder_t body_builder;
+    loom_builder_initialize(module, &module->arena, body, &body_builder);
+    std::vector<loom_op_t*> constants(kValueCount);
+    std::vector<loom_value_id_t> values(kValueCount);
+    for (uint32_t i = 0; i < kValueCount; ++i) {
+      const uint32_t logical_index =
+          reverse_allocation_order ? kValueCount - i - 1 : i;
+      IREE_ASSERT_OK(loom_test_constant_build(
+          &body_builder, loom_attr_i64(logical_index), i32_type,
+          LOOM_LOCATION_NONE, &constants[logical_index]));
+      values[logical_index] = loom_op_results(constants[logical_index])[0];
+    }
+    loom_op_t* yield_op = nullptr;
+    IREE_ASSERT_OK(loom_test_yield_build(&body_builder, values.data(),
+                                         values.size(), LOOM_LOCATION_NONE,
+                                         &yield_op));
+
+    if (reverse_allocation_order) {
+      for (loom_op_t* constant : constants) {
+        loom_block_unlink_op(module, constant);
+        IREE_ASSERT_OK(
+            loom_block_insert_before_op(module, body, yield_op, constant));
+      }
+    }
+
+    std::vector<uint8_t> bytes = WriteModule(module);
+    if (canonical_bytes.empty()) {
+      canonical_bytes = std::move(bytes);
+    } else {
+      EXPECT_EQ(bytes, canonical_bytes);
+    }
+    loom_module_free(module);
+  }
+}
+
+TEST_F(WriterTest, GlobalValueClosureRetainsFirstDiscoveryOrder) {
+  constexpr uint32_t kLocalValueCount = 300;
+  std::vector<uint8_t> canonical_bytes;
+  for (bool reverse_allocation_order : {false, true}) {
+    loom_module_t* module = CreateModule("global_value_order");
+    loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+    IREE_ASSERT_OK(loom_module_intern_type(module, index_type, &index_type));
+
+    std::vector<loom_value_id_t> values(kLocalValueCount);
+    for (uint32_t i = 0; i < kLocalValueCount; ++i) {
+      const uint32_t logical_index =
+          reverse_allocation_order ? kLocalValueCount - i - 1 : i;
+      IREE_ASSERT_OK(
+          loom_module_define_value(module, index_type, &values[logical_index]));
+    }
+    std::vector<loom_predicate_t> predicates(2 * kLocalValueCount);
+    for (iree_host_size_t i = 0; i < predicates.size(); ++i) {
+      const uint32_t logical_index = (uint32_t)i % kLocalValueCount;
+      predicates[i] = loom_predicate_t{
+          /*.kind=*/LOOM_PREDICATE_MUL,
+          /*.arg_count=*/2,
+          /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
+          /*.reserved=*/{},
+          /*.args=*/{(int64_t)values[logical_index], 1},
+      };
+    }
+
+    loom_builder_t builder;
+    loom_builder_initialize(module, &module->arena, loom_module_block(module),
+                            &builder);
+    loom_string_id_t name_id = LOOM_STRING_ID_INVALID;
+    IREE_ASSERT_OK(loom_builder_intern_string(
+        &builder, IREE_SV("captured_values"), &name_id));
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_add_symbol(module, name_id, &symbol_id));
+    loom_op_t* global_op = nullptr;
+    IREE_ASSERT_OK(loom_global_constant_build(
+        &builder, LOOM_GLOBAL_CONSTANT_BUILD_FLAG_HAS_PREDICATES,
+        {/*.module_id=*/0, /*.symbol_id=*/symbol_id}, index_type,
+        predicates.data(), predicates.size(), loom_attr_i64(0),
+        LOOM_LOCATION_NONE, &global_op));
+
+    std::vector<uint8_t> bytes = WriteModule(module);
+    size_t offset = SectionPayloadOffset(bytes, LOOM_BYTECODE_SECTION_SYMBOLS);
+    ASSERT_GT(offset, 0u);
+    ASSERT_EQ(ReadUVarint(bytes, &offset), 1u);  // symbol_count
+    const uint64_t import_count = ReadUVarint(bytes, &offset);
+    const uint64_t export_count = ReadUVarint(bytes, &offset);
+    ReadUVarint(bytes, &offset);  // root_region_payload_count
+    offset += (import_count + export_count) * sizeof(uint64_t);
+    ReadUVarint(bytes, &offset);  // name_id
+    ASSERT_EQ(bytes[offset++], LOOM_BYTECODE_SYMBOL_GLOBAL);
+    offset += 1;                  // visibility
+    offset += sizeof(uint16_t);   // flags
+    ReadUVarint(bytes, &offset);  // location
+    ReadUVarint(bytes, &offset);  // defining op kind
+    SkipSourceTrivia(bytes, &offset);
+    ASSERT_EQ(ReadUVarint(bytes, &offset), 1u);  // result_count
+    EXPECT_EQ(ReadUVarint(bytes, &offset), kLocalValueCount + 1);
+
+    if (canonical_bytes.empty()) {
+      canonical_bytes = std::move(bytes);
+    } else {
+      EXPECT_EQ(bytes, canonical_bytes);
+    }
+    loom_module_free(module);
+  }
 }
 
 TEST_F(WriterTest, ExecutableSymbolFailsLoudly) {

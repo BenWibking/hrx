@@ -86,10 +86,10 @@ iree_status_t loom_bytecode_count_serialized_bodies(
         bytecode_kind == LOOM_SYMBOL_RECORD;
     if (!is_function_like || !symbol->defining_op) {
       if (is_global && symbol->defining_op) {
-        loom_bytecode_global_value_list_t local_values = {0};
-        IREE_RETURN_IF_ERROR(loom_bytecode_collect_global_values(
-            numbering->arena, module, symbol->defining_op, &local_values));
-        counts->value_count += local_values.count;
+        const loom_bytecode_global_value_list_t* local_values = NULL;
+        IREE_RETURN_IF_ERROR(loom_bytecode_prepare_global_values(
+            numbering, module_symbol_id, symbol->defining_op, &local_values));
+        counts->value_count += local_values->count;
       } else if (is_record && symbol->defining_op &&
                  symbol->defining_op->region_count == 1) {
         loom_region_t* body = loom_op_regions(symbol->defining_op)[0];
@@ -510,8 +510,6 @@ iree_status_t loom_bytecode_write_ir_section(
 
       loom_bytecode_value_numbering_t value_numbering;
       loom_bytecode_value_numbering_initialize(&value_numbering, numbering);
-      IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_ensure_capacity(
-          &value_numbering, region_counts.value_count));
       IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_assign_region(
           &value_numbering, regions[i]));
 

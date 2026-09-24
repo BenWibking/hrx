@@ -347,6 +347,7 @@ loom_cc_benchmark(
     iree::io::stream
     iree::testing::benchmark_main
     loom::ir
+    loom::ops::global
     loom::ops::test
   TESTONLY
 )

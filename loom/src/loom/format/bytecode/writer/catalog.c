@@ -141,6 +141,14 @@ iree_status_t loom_bytecode_numbering_initialize(
   memset(numbering, 0, sizeof(*numbering));
   numbering->module = module;
   numbering->arena = arena;
+  loom_segmented_storage_initialize(
+      sizeof(loom_bytecode_value_scope_segment_t),
+      iree_alignof(loom_bytecode_value_scope_segment_t),
+      &numbering->value_scopes.segments);
+  loom_segmented_storage_initialize(
+      sizeof(loom_bytecode_global_value_segment_t),
+      iree_alignof(loom_bytecode_global_value_segment_t),
+      &numbering->global_values.segments);
   IREE_RETURN_IF_ERROR(
       loom_bytecode_numbering_initialize_symbol_order(numbering));
 
