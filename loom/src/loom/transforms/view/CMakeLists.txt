@@ -33,6 +33,7 @@ loom_cc_library(
   SRCS
     "boundary_projection.c"
   DEPS
+    ::offset_expression
     iree::base
     iree::base::internal::arena
     loom::analysis::symbolic_expr
@@ -40,8 +41,6 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::buffer
-    loom::ops::index
-    loom::ops::scalar
     loom::ops::scf
     loom::rewrite::rewriter
     loom::target::provider
@@ -111,12 +110,30 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    offset_expression
+  HDRS
+    "offset_expression.h"
+  SRCS
+    "offset_expression.c"
+  DEPS
+    iree::base
+    loom::analysis::symbolic_expr
+    loom::ir
+    loom::ops::index
+    loom::ops::op_defs
+    loom::ops::scalar
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     transport
   HDRS
     "transport.h"
   SRCS
     "transport.c"
   DEPS
+    ::offset_expression
     iree::base
     iree::base::internal
     loom::analysis::symbolic_expr
@@ -124,9 +141,7 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::buffer
-    loom::ops::index
     loom::ops::op_defs
-    loom::ops::scalar
     loom::ops::scf
     loom::pass::types
     loom::pass::value_facts
