@@ -32,34 +32,6 @@ enum loom_low_schedule_state_access_bits_e {
   LOOM_LOW_SCHEDULE_STATE_ACCESS_WRITE = 1u << 1,
 };
 
-static iree_status_t loom_low_schedule_verify_memory_access_table(
-    loom_low_memory_access_table_t table, const loom_op_t* low_func_op,
-    const loom_region_t* body) {
-  IREE_ASSERT(body != NULL);
-  if (table.count == 0) {
-    return iree_ok_status();
-  }
-  if (!table.values || table.function_op != low_func_op ||
-      table.count > UINT32_MAX) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "low schedule memory access table must match the scheduled function");
-  }
-  for (iree_host_size_t i = 0; i < table.count; ++i) {
-    const loom_low_memory_access_record_t* record = &table.values[i];
-    IREE_ASSERT(record->op != NULL);
-    IREE_ASSERT(record->position.block_index !=
-                LOOM_BLOCK_REGION_INDEX_INVALID);
-    IREE_ASSERT(record->position.block_index < body->block_count);
-    IREE_ASSERT(record->position.block_ordinal != 0);
-    if (i != 0) {
-      IREE_ASSERT(loom_low_memory_access_position_compare_order(
-                      &table.values[i - 1].position, &record->position) < 0);
-    }
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_low_schedule_initialize_value_records(
     loom_low_schedule_build_state_t* state) {
   const loom_local_value_domain_t* value_domain = state->value_domain;
@@ -1686,12 +1658,7 @@ static iree_status_t loom_low_schedule_build(
   };
   loom_low_schedule_dependency_graph_initialize(&state.dependencies);
   IREE_ASSERT(state.body != NULL);
-  IREE_RETURN_IF_ERROR(loom_low_schedule_verify_memory_access_table(
-      options->memory_access_table, model->function_op, state.body));
-  if (options->memory_access_table.function_op == model->function_op) {
-    state.memory_access_records = options->memory_access_table.values;
-    state.memory_access_record_count = options->memory_access_table.count;
-  }
+  state.memory_accesses = options->memory_accesses;
   state.register_type_resolver =
       loom_low_register_type_resolver_for_descriptor_set(
           state.target.descriptor_set);
@@ -1784,7 +1751,7 @@ static iree_status_t loom_low_schedule_build(
         .module = model->module,
         .function_op = model->function_op,
         .target = state.target,
-        .memory_access_table = options->memory_access_table,
+        .memory_accesses = options->memory_accesses,
         .requirements = model->requirements,
         .value_ids = model->value_domain.value_ids,
         .value_count = model->value_domain.value_count,

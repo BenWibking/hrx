@@ -781,9 +781,22 @@ class LowKernelEmitter {
           IREE_STATUS_FAILED_PRECONDITION,
           "AMDGPU HSA low kernel target has no descriptor set");
     }
+    loom_amdgpu_hal_kernel_abi_verify_result_t source_abi = {};
+    IREE_RETURN_IF_ERROR(loom_amdgpu_hal_kernel_abi_verify_low(
+        module_, low_function, descriptor_set, /*max_errors=*/20,
+        iree_diagnostic_emitter_t{
+            /*.fn=*/PrintCompilerDiagnostic,
+            /*.user_data=*/nullptr,
+        },
+        &source_abi, arena));
+    if (source_abi.error_count != 0) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "AMDGPU HSA source failed HAL ABI verification");
+    }
     loom_amdgpu_hal_binding_materialization_result_t materialization = {};
     IREE_RETURN_IF_ERROR(loom_amdgpu_hal_binding_materialize(
-        module_, low_function, descriptor_set, &materialization, arena));
+        module_, low_function, descriptor_set, source_abi.kernarg_segment_ptr,
+        &materialization, arena));
 
     loom_amdgpu_hal_kernel_abi_verify_result_t abi_verify_result = {};
     IREE_RETURN_IF_ERROR(loom_amdgpu_hal_kernel_abi_verify_low(

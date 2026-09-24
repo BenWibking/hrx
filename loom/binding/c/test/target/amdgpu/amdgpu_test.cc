@@ -1770,6 +1770,23 @@ config.def @unused = 9 : index
   ExpectSucceededResult(compile_result.get());
   ASSERT_TRUE(loomc_result_succeeded(compile_result.get()));
   compile_result.reset();
+
+  // Continue through another compiler invocation, then clone the prepared
+  // product into independent storage before releasing its original workspace.
+  raw_compile_result = nullptr;
+  LOOMC_ASSERT_OK(loomc_compile_module(
+      compiler.get(), workspace.get(), pass_program.get(), module.get(),
+      nullptr, loomc_allocator_system(), &raw_compile_result));
+  compile_result.reset(raw_compile_result);
+  ExpectSucceededResult(compile_result.get());
+  ASSERT_TRUE(loomc_result_succeeded(compile_result.get()));
+  compile_result.reset();
+  WorkspacePtr clone_workspace = CreateWorkspace();
+  loomc_module_t* raw_clone = nullptr;
+  LOOMC_ASSERT_OK(loomc_module_clone(module.get(), clone_workspace.get(),
+                                     loomc_allocator_system(), &raw_clone));
+  module.reset(raw_clone);
+  workspace = std::move(clone_workspace);
   config.reset();
   config_source.reset();
   pass_program.reset();

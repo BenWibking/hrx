@@ -8,6 +8,7 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/analysis/symbolic_congruence.h"
 #include "loom/analysis/symbolic_expr_test_fixture.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
@@ -645,6 +646,76 @@ TEST_F(SymbolicExprTest, SelectUsesScopedComparisonTruth) {
   }
   expression_context_.condition_scope = nullptr;
   loom_symbolic_expr_context_reset(&expression_context_);
+}
+
+TEST_F(SymbolicExprTest, SignedAndUnsignedRemaindersHaveDifferentPeriods) {
+  const loom_type_t type = loom_type_scalar(LOOM_SCALAR_TYPE_I8);
+  loom_value_id_t input;
+  IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &input));
+  DefineFacts(input, loom_value_facts_make(-128, 127, 1));
+  loom_op_t* divisor;
+  IREE_ASSERT_OK(loom_scalar_constant_build(&builder_, loom_attr_i64(3), type,
+                                            LOOM_LOCATION_UNKNOWN, &divisor));
+  ComputeFacts(divisor);
+  const auto divisor_value = loom_scalar_constant_result(divisor);
+  loom_op_t* signed_remainder;
+  loom_op_t* unsigned_remainder;
+  IREE_ASSERT_OK(loom_scalar_remsi_build(&builder_, input, divisor_value, type,
+                                         LOOM_LOCATION_UNKNOWN,
+                                         &signed_remainder));
+  IREE_ASSERT_OK(loom_scalar_remui_build(&builder_, input, divisor_value, type,
+                                         LOOM_LOCATION_UNKNOWN,
+                                         &unsigned_remainder));
+  ComputeFacts(signed_remainder);
+  ComputeFacts(unsigned_remainder);
+  loom_symbolic_expr_t original, signed_expression, unsigned_expression;
+  IREE_ASSERT_OK(
+      loom_symbolic_expr_from_value(&expression_context_, input, &original));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_scalar_remsi_result(signed_remainder),
+      &signed_expression));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_scalar_remui_result(unsigned_remainder),
+      &unsigned_expression));
+  // Exact addressing retains the remainder itself, never the dividend.
+  ASSERT_EQ(signed_expression.term_count, 1u);
+  EXPECT_EQ(signed_expression.terms[0].value_id,
+            loom_scalar_remsi_result(signed_remainder));
+  EXPECT_TRUE(loom_symbolic_congruence_excludes_difference(&signed_expression,
+                                                           &original, 1, 1));
+  // At input -1, unsigned i8 remainder is 255%3 = 0, so the difference is 1.
+  EXPECT_FALSE(loom_symbolic_congruence_excludes_difference(
+      &unsigned_expression, &original, 1, 1));
+}
+
+TEST_F(SymbolicExprTest, WrappedAdditionRetainsOnlyAModularGuarantee) {
+  const loom_type_t type = loom_type_scalar(LOOM_SCALAR_TYPE_I8);
+  loom_value_id_t input;
+  IREE_ASSERT_OK(loom_builder_define_value(&builder_, type, &input));
+  DefineFacts(input, loom_value_facts_make(-128, 127, 1));
+  loom_op_t* one;
+  IREE_ASSERT_OK(loom_scalar_constant_build(&builder_, loom_attr_i64(1), type,
+                                            LOOM_LOCATION_UNKNOWN, &one));
+  ComputeFacts(one);
+  loom_op_t* added;
+  IREE_ASSERT_OK(loom_scalar_addi_build(&builder_, 0, input,
+                                        loom_scalar_constant_result(one), type,
+                                        LOOM_LOCATION_UNKNOWN, &added));
+  ComputeFacts(added);
+  loom_symbolic_expr_t original, wrapped;
+  IREE_ASSERT_OK(
+      loom_symbolic_expr_from_value(&expression_context_, input, &original));
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_scalar_addi_result(added), &wrapped));
+  ASSERT_EQ(wrapped.term_count, 1u);
+  EXPECT_EQ(wrapped.terms[0].value_id, loom_scalar_addi_result(added));
+  EXPECT_TRUE(
+      loom_symbolic_congruence_excludes_difference(&wrapped, &original, 0, 0));
+  // 127+1 wraps to -128: the difference can be -255, as well as 1.
+  EXPECT_FALSE(loom_symbolic_congruence_excludes_difference(&wrapped, &original,
+                                                            -255, -255));
+  EXPECT_FALSE(
+      loom_symbolic_congruence_excludes_difference(&wrapped, &original, 1, 1));
 }
 
 }  // namespace

@@ -44,7 +44,7 @@ typedef struct loom_low_emission_frame_options_t {
   // When omitted, frame construction resolves the target from authored IR.
   const loom_target_facts_t* function_target_facts;
   // Optional analysis-derived memory summaries for the scheduled low function.
-  loom_low_memory_access_table_t memory_access_table;
+  const loom_low_memory_access_map_t* memory_accesses;
   // Optional immutable target residency policy.
   const loom_target_residency_model_t* residency_model;
   // Optional target-provided descriptor pair-affinity table.

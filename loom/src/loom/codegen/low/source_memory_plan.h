@@ -216,6 +216,8 @@ typedef struct loom_low_source_memory_access_plan_t {
   loom_low_source_memory_address_layout_t address_layout;
   // Source SSA value that represents the storage root.
   loom_value_id_t root_value_id;
+  // Participant domain in which the storage base denotes the same address.
+  loom_value_fact_uniform_scope_t root_uniform_scope;
   // Minimum provable power-of-two byte alignment of the storage root base
   // address, capped at the largest power of two representable in uint32_t.
   uint32_t root_minimum_alignment;

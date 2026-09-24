@@ -175,49 +175,6 @@ static iree_status_t loom_low_schedule_apply_structural_model(
   return iree_ok_status();
 }
 
-static int loom_low_schedule_compare_memory_access_position(
-    const loom_low_memory_access_position_t* position, uint16_t block_index,
-    uint64_t block_ordinal) {
-  const loom_low_memory_access_position_t key = {
-      .block_index = block_index,
-      .block_ordinal = block_ordinal,
-  };
-  return loom_low_memory_access_position_compare_order(position, &key);
-}
-
-static void loom_low_schedule_bind_memory_access_record(
-    loom_low_schedule_build_state_t* state, uint32_t node_index,
-    uint16_t block_index, const loom_op_t* op) {
-  while (state->memory_access_record_bind_index <
-         state->memory_access_record_count) {
-    const loom_low_memory_access_record_t* record =
-        &state->memory_access_records[state->memory_access_record_bind_index];
-    if (record->op != NULL) {
-      if (iree_any_bit_set(record->op->flags, LOOM_OP_FLAG_DEAD) ||
-          record->op->block_ordinal == 0) {
-        ++state->memory_access_record_bind_index;
-        continue;
-      }
-      if (record->op == op) {
-        state->nodes[node_index].memory_access_record_index =
-            (uint32_t)state->memory_access_record_bind_index++;
-      }
-      return;
-    }
-    const int compare = loom_low_schedule_compare_memory_access_position(
-        &record->position, block_index, op->block_ordinal);
-    if (compare > 0) {
-      return;
-    }
-    if (compare == 0) {
-      state->nodes[node_index].memory_access_record_index =
-          (uint32_t)state->memory_access_record_bind_index++;
-      return;
-    }
-    ++state->memory_access_record_bind_index;
-  }
-}
-
 static bool loom_low_schedule_dependency_equal(
     const loom_low_schedule_dependency_t* dependency, uint32_t producer_node,
     uint32_t consumer_node, loom_low_schedule_dependency_kind_t kind,
@@ -1481,8 +1438,6 @@ iree_status_t loom_low_schedule_fill_nodes(
           .descriptor = NULL,
           .schedule_class = NULL,
           .schedule_class_id = LOOM_LOW_SCHEDULE_CLASS_NONE,
-          .memory_access_record_index =
-              LOOM_LOW_SCHEDULE_MEMORY_ACCESS_RECORD_NONE,
       };
       if (loom_low_schedule_op_is_terminator(state->module, op)) {
         node->kind = LOOM_LOW_SCHEDULE_NODE_TERMINATOR;
@@ -1531,8 +1486,6 @@ iree_status_t loom_low_schedule_fill_nodes(
       node->storage_relation_count =
           loom_low_storage_relation_count(state->module, op);
       state->storage_relation_count += node->storage_relation_count;
-      loom_low_schedule_bind_memory_access_record(state, next_node_index,
-                                                  block_index, op);
 
       const loom_value_ordinal_t* result_ordinals =
           loom_low_schedule_node_const_result_ordinals(node);

@@ -1166,12 +1166,14 @@ loom_cc_test(
 loom_cc_library(
     name = "symbolic_expr",
     srcs = [
+        "symbolic_congruence.c",
         "symbolic_expr.c",
         "symbolic_expr_proof.c",
         "symbolic_value.c",
         "symbolic_value.h",
     ],
     hdrs = [
+        "symbolic_congruence.h",
         "symbolic_expr.h",
         "symbolic_expr_proof.h",
     ],
@@ -1191,6 +1193,17 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "symbolic_congruence_test",
+    srcs = ["symbolic_congruence_test.cc"],
+    deps = [
+        ":symbolic_expr",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 

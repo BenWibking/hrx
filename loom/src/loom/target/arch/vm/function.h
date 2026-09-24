@@ -9,6 +9,7 @@
 
 #include "iree/io/stream.h"
 #include "iree/vm/bytecode/wire/module.h"
+#include "loom/target/function_version.h"
 #include "loom/target/provider.h"
 
 #ifdef __cplusplus
@@ -51,7 +52,7 @@ typedef struct loom_vm_function_signature_t {
 // append their referenced payload once to its read-only section plan.
 iree_status_t loom_vm_function_emit(
     const loom_target_emit_request_t* request, loom_func_like_t function,
-    const loom_target_facts_t* target_facts,
+    const loom_target_function_version_t* function_version,
     const loom_vm_function_signature_t* signature,
     loom_vm_module_plan_t* functions, iree_io_stream_t* stream,
     iree_vm_bytecode_v0_function_row_t* out_row);

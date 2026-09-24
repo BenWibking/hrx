@@ -8,8 +8,10 @@
 
 #include <string.h>
 
+#include "iree/base/internal/math.h"
 #include "loom/analysis/cfg_value_identity.h"
 #include "loom/analysis/condition_facts.h"
+#include "loom/analysis/symbolic_congruence.h"
 #include "loom/ir/attribute.h"
 #include "loom/ir/context.h"
 #include "loom/ops/index/ops.h"
@@ -450,7 +452,7 @@ static iree_status_t loom_symbolic_expr_override_facts(
   return iree_ok_status();
 }
 
-static iree_status_t loom_symbolic_expr_add_or_sub(
+static iree_status_t loom_symbolic_expr_add_or_sub_exact(
     loom_symbolic_expr_context_t* context,
     const loom_symbolic_expr_t* left_expression,
     const loom_symbolic_expr_t* right_expression, bool subtract,
@@ -517,6 +519,25 @@ static iree_status_t loom_symbolic_expr_add_or_sub(
                                         facts, out_expression);
 }
 
+static iree_status_t loom_symbolic_expr_add_or_sub(
+    loom_symbolic_expr_context_t* context,
+    const loom_symbolic_expr_t* left_expression,
+    const loom_symbolic_expr_t* right_expression, bool subtract,
+    loom_symbolic_expr_t* out_expression) {
+  if (!left_expression->congruence && !right_expression->congruence) {
+    return loom_symbolic_expr_add_or_sub_exact(
+        context, left_expression, right_expression, subtract, out_expression);
+  }
+  // Callers may accumulate in place; retain both inputs before replacing
+  // output.
+  const loom_symbolic_expr_t left = *left_expression;
+  const loom_symbolic_expr_t right = *right_expression;
+  IREE_RETURN_IF_ERROR(loom_symbolic_expr_add_or_sub_exact(
+      context, &left, &right, subtract, out_expression));
+  return loom_symbolic_congruence_combine(context, &left, &right,
+                                          subtract ? -1 : 1, out_expression);
+}
+
 iree_status_t loom_symbolic_expr_add(
     loom_symbolic_expr_context_t* context,
     const loom_symbolic_expr_t* left_expression,
@@ -535,10 +556,10 @@ iree_status_t loom_symbolic_expr_sub(
                                        right_expression, true, out_expression);
 }
 
-iree_status_t loom_symbolic_expr_mul_i64(loom_symbolic_expr_context_t* context,
-                                         const loom_symbolic_expr_t* expression,
-                                         int64_t multiplier,
-                                         loom_symbolic_expr_t* out_expression) {
+static iree_status_t loom_symbolic_expr_mul_i64_exact(
+    loom_symbolic_expr_context_t* context,
+    const loom_symbolic_expr_t* expression, int64_t multiplier,
+    loom_symbolic_expr_t* out_expression) {
   loom_value_facts_t multiplier_facts = loom_value_facts_exact_i64(multiplier);
   loom_value_facts_t facts = {0};
   loom_value_facts_muli(&expression->facts, &multiplier_facts, &facts);
@@ -574,6 +595,21 @@ iree_status_t loom_symbolic_expr_mul_i64(loom_symbolic_expr_context_t* context,
   return loom_symbolic_expr_make_linear(
       context, constant, context->scratch_terms, expression->term_count, facts,
       out_expression);
+}
+
+iree_status_t loom_symbolic_expr_mul_i64(loom_symbolic_expr_context_t* context,
+                                         const loom_symbolic_expr_t* expression,
+                                         int64_t multiplier,
+                                         loom_symbolic_expr_t* out_expression) {
+  if (!expression->congruence) {
+    return loom_symbolic_expr_mul_i64_exact(context, expression, multiplier,
+                                            out_expression);
+  }
+  const loom_symbolic_expr_t input = *expression;
+  IREE_RETURN_IF_ERROR(loom_symbolic_expr_mul_i64_exact(
+      context, &input, multiplier, out_expression));
+  return loom_symbolic_congruence_scale(context, &input, multiplier,
+                                        out_expression);
 }
 
 static bool loom_symbolic_expr_constant_value(
@@ -623,9 +659,12 @@ static iree_status_t loom_symbolic_expr_attach_identity_relation_value(
   IREE_RETURN_IF_ERROR(loom_symbolic_expr_ensure_scratch_terms(context, 1));
   context->scratch_terms[0] = expression->terms[0];
   context->scratch_terms[0].relation_value_id = relation_value;
-  return loom_symbolic_expr_make_linear(context, expression->constant,
-                                        context->scratch_terms, 1,
-                                        expression->facts, expression);
+  const loom_symbolic_congruence_t* congruence = expression->congruence;
+  IREE_RETURN_IF_ERROR(loom_symbolic_expr_make_linear(
+      context, expression->constant, context->scratch_terms, 1,
+      expression->facts, expression));
+  expression->congruence = congruence;
+  return iree_ok_status();
 }
 
 typedef enum loom_symbolic_expr_expansion_kind_e {
@@ -638,6 +677,9 @@ typedef enum loom_symbolic_expr_expansion_kind_e {
   LOOM_SYMBOLIC_EXPR_EXPANSION_SHIFT_LEFT,
   LOOM_SYMBOLIC_EXPR_EXPANSION_NEGATE,
   LOOM_SYMBOLIC_EXPR_EXPANSION_SELECT,
+  LOOM_SYMBOLIC_EXPR_EXPANSION_REMAINDER,
+  LOOM_SYMBOLIC_EXPR_EXPANSION_UNSIGNED_REMAINDER,
+  LOOM_SYMBOLIC_EXPR_EXPANSION_MASK,
 } loom_symbolic_expr_expansion_kind_t;
 
 typedef enum loom_symbolic_expr_expansion_stage_e {
@@ -729,6 +771,9 @@ static loom_value_id_t loom_symbolic_expr_expansion_materialized_dynamic_value(
     case LOOM_SYMBOLIC_EXPR_EXPANSION_MULTIPLY_ADD:
     case LOOM_SYMBOLIC_EXPR_EXPANSION_SHIFT_LEFT:
     case LOOM_SYMBOLIC_EXPR_EXPANSION_NEGATE:
+    case LOOM_SYMBOLIC_EXPR_EXPANSION_REMAINDER:
+    case LOOM_SYMBOLIC_EXPR_EXPANSION_UNSIGNED_REMAINDER:
+    case LOOM_SYMBOLIC_EXPR_EXPANSION_MASK:
       break;
   }
   return source_entry != NULL ? source_entry->materialized_dynamic_value_id
@@ -902,6 +947,23 @@ static iree_status_t loom_symbolic_expr_expansion_prepare_frame(
       frame->operand_values[0] = input;
       break;
     }
+    case LOOM_OP_INDEX_REM:
+    case LOOM_OP_SCALAR_REMSI:
+      frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_REMAINDER;
+      frame->operand_values[0] = loom_op_const_operands(defining_op)[0];
+      frame->operand_values[1] = loom_op_const_operands(defining_op)[1];
+      break;
+    case LOOM_OP_SCALAR_REMUI:
+      frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_UNSIGNED_REMAINDER;
+      frame->operand_values[0] = loom_op_const_operands(defining_op)[0];
+      frame->operand_values[1] = loom_op_const_operands(defining_op)[1];
+      break;
+    case LOOM_OP_INDEX_ANDI:
+    case LOOM_OP_SCALAR_ANDI:
+      frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_MASK;
+      frame->operand_values[0] = loom_op_const_operands(defining_op)[0];
+      frame->operand_values[1] = loom_op_const_operands(defining_op)[1];
+      break;
     case LOOM_OP_INDEX_ADD:
       frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_ADD;
       frame->operand_values[0] = loom_index_add_lhs(defining_op);
@@ -1046,6 +1108,9 @@ static iree_status_t loom_symbolic_expr_expansion_step(
           *out_complete = true;
           return iree_ok_status();
         }
+        case LOOM_SYMBOLIC_EXPR_EXPANSION_REMAINDER:
+        case LOOM_SYMBOLIC_EXPR_EXPANSION_UNSIGNED_REMAINDER:
+        case LOOM_SYMBOLIC_EXPR_EXPANSION_MASK:
         case LOOM_SYMBOLIC_EXPR_EXPANSION_ADD:
         case LOOM_SYMBOLIC_EXPR_EXPANSION_SUBTRACT:
         case LOOM_SYMBOLIC_EXPR_EXPANSION_MULTIPLY:
@@ -1130,6 +1195,36 @@ static iree_status_t loom_symbolic_expr_expansion_step(
           &operand_pending));
       if (operand_pending) {
         return iree_ok_status();
+      }
+      if (frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_REMAINDER ||
+          frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_UNSIGNED_REMAINDER ||
+          frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_MASK) {
+        *out_complete = true;
+        IREE_RETURN_IF_ERROR(
+            loom_symbolic_expr_value(context, frame->value_id, out_expression));
+        int64_t divisor = 0;
+        if (!loom_symbolic_expr_constant_value(&operand_expression, &divisor) ||
+            divisor <= 0) {
+          return iree_ok_status();
+        }
+        uint64_t modulus = (uint64_t)divisor;
+        if (frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_MASK) {
+          ++modulus;
+          if ((modulus & (modulus - 1)) != 0) {
+            return iree_ok_status();
+          }
+        }
+        if (frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_UNSIGNED_REMAINDER &&
+            frame->intermediate_expression.facts.range_lo < 0) {
+          // Unsigned interpretation can add 2^width to the signed expression.
+          // Only factors shared with that period survive the remainder.
+          modulus = frame->integer_bit_count == 64
+                        ? modulus & (UINT64_C(0) - modulus)
+                        : iree_math_gcd_u64(
+                              modulus, UINT64_C(1) << frame->integer_bit_count);
+        }
+        return loom_symbolic_congruence_restrict(
+            context, &frame->intermediate_expression, modulus, out_expression);
       }
       if (frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_ADD ||
           frame->kind == LOOM_SYMBOLIC_EXPR_EXPANSION_SUBTRACT) {
@@ -1229,7 +1324,7 @@ iree_status_t loom_symbolic_expr_from_value(
     if (bit_count != 0) {
       // Check the mathematical result before replacing its facts with the
       // producer's wrapped range. A potentially wrapping result remains its
-      // own symbol; downstream comparisons cannot cancel across this boundary.
+      // own exact symbol; order proofs cannot cancel across this boundary.
       bool fits = bit_count == 1 ? loom_value_facts_fit_unsigned_bit_count(
                                        expression.facts, 1)
                                  : loom_value_facts_fit_signed_bit_count(
@@ -1244,11 +1339,21 @@ iree_status_t loom_symbolic_expr_from_value(
         fits = false;
       }
       if (!fits) {
+        loom_symbolic_expr_t wrapped = {0};
+        // 2^64 is not representable as a modulus. Its factor 2^63 still
+        // preserves every smaller power-of-two period conservatively.
+        status = loom_symbolic_congruence_restrict(
+            context, &expression, UINT64_C(1) << iree_min(bit_count, 63),
+            &wrapped);
+        expression.congruence = wrapped.congruence;
         expression.flags &= ~LOOM_SYMBOLIC_EXPR_FLAG_LINEAR;
       }
     }
-    if (!loom_symbolic_expr_is_linear(&expression)) {
+    if (iree_status_is_ok(status) &&
+        !loom_symbolic_expr_is_linear(&expression)) {
+      const loom_symbolic_congruence_t* congruence = expression.congruence;
       status = loom_symbolic_expr_value(context, completed_value, &expression);
+      expression.congruence = congruence;
     }
     if (iree_status_is_ok(status)) {
       status = loom_symbolic_expr_override_facts(context, completed_value,

@@ -749,7 +749,7 @@ static iree_status_t loom_vm_function_arguments(
 
 iree_status_t loom_vm_function_emit(
     const loom_target_emit_request_t* request, loom_func_like_t function,
-    const loom_target_facts_t* target_facts,
+    const loom_target_function_version_t* function_version,
     const loom_vm_function_signature_t* signature,
     loom_vm_module_plan_t* functions, iree_io_stream_t* stream,
     iree_vm_bytecode_v0_function_row_t* out_row) {
@@ -779,7 +779,11 @@ iree_status_t loom_vm_function_emit(
   iree_diagnostic_emitter_t diagnostic_emitter = request->diagnostic_emitter;
   const loom_low_emission_frame_options_t options = {
       .descriptor_registry = request->low_descriptor_registry,
-      .function_target_facts = target_facts,
+      .function_target_facts = function_version != NULL
+                                   ? function_version->function_target_facts
+                                   : NULL,
+      .memory_accesses =
+          function_version != NULL ? function_version->memory_accesses : NULL,
       .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY,
       .allocation_fixed_values = fixed_values,
       .allocation_fixed_value_count = fixed_count,

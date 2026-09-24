@@ -197,7 +197,7 @@ static iree_status_t loom_low_emission_frame_build_impl(
       LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE, arena, &model);
   loom_low_schedule_options_t schedule_options = {
       .retained_blocks = retained_blocks,
-      .memory_access_table = options->memory_access_table,
+      .memory_accesses = options->memory_accesses,
       .residency_model = options->residency_model,
       .allocation_budgets = options->allocation_budgets,
       .allocation_budget_count = options->allocation_budget_count,

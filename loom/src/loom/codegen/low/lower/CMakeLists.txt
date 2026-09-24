@@ -39,6 +39,7 @@ loom_cc_library(
     "execution.c"
     "function_boundary.c"
     "lower.c"
+    "memory_effects.c"
     "module_state.c"
     "policy.c"
     "report.c"

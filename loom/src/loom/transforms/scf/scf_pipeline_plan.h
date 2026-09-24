@@ -15,17 +15,20 @@
 extern "C" {
 #endif
 
-typedef uint8_t loom_scf_pipeline_stage_t;
-enum loom_scf_pipeline_stage_e {
-  LOOM_SCF_PIPELINE_STAGE_PRODUCER = 0,
-  LOOM_SCF_PIPELINE_STAGE_CONSUMER = 1,
+typedef uint8_t loom_scf_pipeline_stage_flags_t;
+enum loom_scf_pipeline_stage_bits_e {
+  LOOM_SCF_PIPELINE_STAGE_PRODUCER = 1u << 0,
+  LOOM_SCF_PIPELINE_STAGE_CONSUMER = 1u << 1,
 };
 
 typedef struct loom_scf_pipeline_plan_t {
   // Complete source operations and local payload dependencies.
   loom_scf_body_t body;
-  // Stage of each body operation, in authored order.
-  loom_scf_pipeline_stage_t* stages;
+  // Stages executing each body operation, in authored order. Reconstructed
+  // address arithmetic belongs to both stages with distinct iteration inputs.
+  loom_scf_pipeline_stage_flags_t* stages;
+  // Number of operations reconstructed in the consumer instead of queued.
+  uint32_t rematerialized_count;
   // Source values carried from a producer iteration to its consumer.
   loom_value_id_t* queue_values;
   // Number of values in each queued iteration record.
@@ -54,6 +57,9 @@ typedef struct loom_scf_pipeline_rejection_t {
 // across the serial/main/drain split. The plan owns the complete cut, including
 // values referenced only by types or attributes. Materializers and reports
 // consume this cut directly.
+// Queued index add/sub results are reconstructed in the consumer when their
+// complete prerequisites are already available there. This removes redundant
+// queue entries and keeps their arithmetic relationship to other queued values.
 //
 // The admission contract excludes other nested control, global/unknown writes,
 // global fences, source-order constraints, mixed producer/consumer units,

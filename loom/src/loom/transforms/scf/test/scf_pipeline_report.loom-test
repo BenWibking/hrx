@@ -136,3 +136,27 @@ CHECK: *{"category":"scf-pipeline","loop":0,"outcome":"pipelined","schedule":"re
 CHECK: *{"category":"scf-pipeline-stage","loop":0,"position":0,"op":"scf.if","stage":"producer","iteration_lookahead":1}*
 CHECK: *{"category":"scf-pipeline-stage","loop":0,"position":1,"op":"view.load","stage":"producer","iteration_lookahead":1}*
 CHECK: *{"category":"scf-pipeline-stage","loop":0,"position":2,"op":"scalar.addf","stage":"consumer","iteration_lookahead":0}*
+
+// ====
+
+// The address increment executes in both stages while only the induction and
+// payload are carried. Reports describe each copy at its actual lookahead.
+func.def @reconstructed_index(%input: view<64xi32>, %initial: i32) -> (index, i32) {
+  %begin = index.constant 0 : index
+  %end = index.constant 8 : index
+  %step = index.constant 1 : index
+  %depth = index.constant 3 : index
+  %distance, %total = scf.for %i = [%begin to %end step %step](%previous = %begin : index, %sum = %initial : i32) -> (index, i32) pipeline(%depth) {
+    %next = index.add %i, %step : index
+    %loaded = view.load %input[%next] : view<64xi32> -> i32
+    %gap = index.sub %next, %i : index
+    %added = scalar.addi %sum, %loaded : i32
+    scf.yield %gap, %added : index, i32
+  }
+  func.return %distance, %total : index, i32
+}
+
+// ----
+CHECK: *"values_per_record":2,"read_count":1*
+CHECK: *"position":0,"op":"index.add","stage":"producer","iteration_lookahead":2*
+CHECK: *"position":0,"op":"index.add","stage":"consumer","iteration_lookahead":0*
