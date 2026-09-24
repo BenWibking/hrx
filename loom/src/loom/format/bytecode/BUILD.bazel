@@ -316,6 +316,7 @@ loom_cc_benchmark(
     deps = [
         ":writer",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/test",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/io:stream",
