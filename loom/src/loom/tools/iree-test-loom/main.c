@@ -26,6 +26,7 @@
 #include "loom/tooling/testbench/executor.h"
 #include "loom/tooling/testbench/issue_report.h"
 #include "loom/tooling/testbench/reference.h"
+#include "loom/tooling/testbench/reference_attention.h"
 #include "loom/tooling/testbench/requirements.h"
 #include "loom/tools/iree-test-loom/library_linker.h"
 #include "loom/util/json.h"
@@ -365,8 +366,8 @@ static iree_status_t iree_test_loom_run_case_samples(
   loom_testbench_case_execution_options_t execution_options =
       *base_execution_options;
   loom_run_hal_testbench_actual_sequence_t hal_actual_sequence = {0};
-  loom_testbench_reference_matmul_oracle_options_t matmul_oracle_options = {0};
-  loom_testbench_oracle_provider_t oracle_providers[2] = {0};
+  loom_testbench_reference_oracle_options_t reference_oracle_options = {0};
+  loom_testbench_oracle_provider_t oracle_providers[3] = {0};
   bool hal_actual_sequence_initialized = false;
   if (iree_test_loom_case_has_kernel_launch(case_plan)) {
     status = iree_test_loom_configure_hal_actual_sequence(
@@ -375,18 +376,19 @@ static iree_status_t iree_test_loom_run_case_samples(
         &hal_actual_sequence);
     hal_actual_sequence_initialized = iree_status_is_ok(status);
     if (iree_status_is_ok(status)) {
-      matmul_oracle_options =
-          (loom_testbench_reference_matmul_oracle_options_t){
-              .device_allocator =
-                  iree_hal_device_allocator(hal_context->runtime.device),
-              .result_buffer_params =
-                  loom_run_hal_testbench_host_visible_buffer_params(),
-              .host_allocator = execution_options.materializer.host_allocator,
-          };
+      reference_oracle_options = (loom_testbench_reference_oracle_options_t){
+          .device_allocator =
+              iree_hal_device_allocator(hal_context->runtime.device),
+          .result_buffer_params =
+              loom_run_hal_testbench_host_visible_buffer_params(),
+          .host_allocator = execution_options.materializer.host_allocator,
+      };
       loom_testbench_reference_matmul_oracle_provider_initialize(
-          &matmul_oracle_options, &oracle_providers[0]);
+          &reference_oracle_options, &oracle_providers[0]);
       loom_testbench_reference_tiled_matmul_oracle_provider_initialize(
-          &matmul_oracle_options, &oracle_providers[1]);
+          &reference_oracle_options, &oracle_providers[1]);
+      loom_testbench_reference_mxfp8_paged_attention_oracle_provider_initialize(
+          &reference_oracle_options, &oracle_providers[2]);
       execution_options.invocation.oracle_providers =
           loom_make_testbench_oracle_provider_list(
               oracle_providers, IREE_ARRAYSIZE(oracle_providers));

@@ -17,14 +17,14 @@
 extern "C" {
 #endif
 
-typedef struct loom_testbench_reference_matmul_oracle_options_t {
+typedef struct loom_testbench_reference_oracle_options_t {
   // HAL allocator used to allocate the result buffer view.
   iree_hal_allocator_t* device_allocator;
   // Buffer placement used for the result buffer view.
   iree_hal_buffer_params_t result_buffer_params;
   // Host allocator used for transient accumulation storage.
   iree_allocator_t host_allocator;
-} loom_testbench_reference_matmul_oracle_options_t;
+} loom_testbench_reference_oracle_options_t;
 
 // Initializes the reference.matmul oracle provider.
 //
@@ -39,7 +39,7 @@ typedef struct loom_testbench_reference_matmul_oracle_options_t {
 // borrowed by the provider and must outlive any invocation using
 // |out_provider|.
 void loom_testbench_reference_matmul_oracle_provider_initialize(
-    const loom_testbench_reference_matmul_oracle_options_t* options,
+    const loom_testbench_reference_oracle_options_t* options,
     loom_testbench_oracle_provider_t* out_provider);
 
 // Initializes the reference.tiled_matmul oracle provider.
@@ -56,7 +56,7 @@ void loom_testbench_reference_matmul_oracle_provider_initialize(
 // "f32"}. |options| is borrowed by the provider and must outlive any invocation
 // using |out_provider|.
 void loom_testbench_reference_tiled_matmul_oracle_provider_initialize(
-    const loom_testbench_reference_matmul_oracle_options_t* options,
+    const loom_testbench_reference_oracle_options_t* options,
     loom_testbench_oracle_provider_t* out_provider);
 
 #ifdef __cplusplus

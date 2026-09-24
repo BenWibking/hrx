@@ -182,6 +182,22 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    reference_attention
+  HDRS
+    "reference_attention.h"
+  SRCS
+    "reference_attention.c"
+  DEPS
+    ::invocation
+    ::reference
+    iree::base
+    iree::base::internal
+    iree::hal
+  PUBLIC
+)
+
 loom_cc_test(
   NAME
     testbench_test
@@ -293,6 +309,19 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::ir
+)
+
+loom_cc_test(
+  NAME
+    reference_attention_test
+  SRCS
+    "reference_attention_test.cc"
+  DEPS
+    ::reference_attention
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 loom_cc_test(

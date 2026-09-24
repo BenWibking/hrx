@@ -159,6 +159,19 @@ loom_cc_library(
     ],
 )
 
+loom_cc_library(
+    name = "reference_attention",
+    srcs = ["reference_attention.c"],
+    hdrs = ["reference_attention.h"],
+    deps = [
+        ":invocation",
+        ":reference",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
+        "//runtime/src/iree/hal",
+    ],
+)
+
 loom_cc_test(
     name = "testbench_test",
     srcs = ["testbench_test.cc"],
@@ -260,6 +273,18 @@ loom_cc_test(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "reference_attention_test",
+    srcs = ["reference_attention_test.cc"],
+    deps = [
+        ":reference_attention",
+        "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",

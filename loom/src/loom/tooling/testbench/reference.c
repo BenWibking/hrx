@@ -1131,7 +1131,7 @@ static iree_status_t loom_testbench_reference_fill_matmul_result(
 }
 
 static iree_status_t loom_testbench_reference_allocate_matmul_result(
-    const loom_testbench_reference_matmul_oracle_options_t* options,
+    const loom_testbench_reference_oracle_options_t* options,
     iree_host_size_t rows, iree_host_size_t columns,
     iree_hal_element_type_t element_type, const uint8_t* data,
     iree_host_size_t data_length, iree_hal_buffer_view_t** out_buffer_view) {
@@ -1151,7 +1151,7 @@ static iree_status_t loom_testbench_reference_allocate_matmul_result(
 }
 
 static iree_status_t loom_testbench_reference_allocate_tiled_matmul_result(
-    const loom_testbench_reference_matmul_oracle_options_t* options,
+    const loom_testbench_reference_oracle_options_t* options,
     iree_host_size_t outer_rows, iree_host_size_t outer_columns,
     iree_host_size_t inner_rows, iree_host_size_t inner_columns,
     iree_hal_element_type_t element_type, const uint8_t* data,
@@ -1206,8 +1206,8 @@ static iree_status_t loom_testbench_reference_matmul_invoke(
     iree_host_size_t input_count, const loom_testbench_value_t* inputs,
     iree_host_size_t result_count, loom_testbench_value_t* out_results) {
   (void)workloads;
-  const loom_testbench_reference_matmul_oracle_options_t* options =
-      (const loom_testbench_reference_matmul_oracle_options_t*)user_data;
+  const loom_testbench_reference_oracle_options_t* options =
+      (const loom_testbench_reference_oracle_options_t*)user_data;
   if (workload_count != 0 || input_count != 3 || result_count != 1) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "reference.matmul expects 3 inputs and 1 result");
@@ -1300,8 +1300,8 @@ static iree_status_t loom_testbench_reference_tiled_matmul_invoke(
     iree_host_size_t input_count, const loom_testbench_value_t* inputs,
     iree_host_size_t result_count, loom_testbench_value_t* out_results) {
   (void)workloads;
-  const loom_testbench_reference_matmul_oracle_options_t* options =
-      (const loom_testbench_reference_matmul_oracle_options_t*)user_data;
+  const loom_testbench_reference_oracle_options_t* options =
+      (const loom_testbench_reference_oracle_options_t*)user_data;
   if (workload_count != 0 || input_count != 3 || result_count != 1) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
@@ -1384,7 +1384,7 @@ static iree_status_t loom_testbench_reference_tiled_matmul_invoke(
 }
 
 void loom_testbench_reference_matmul_oracle_provider_initialize(
-    const loom_testbench_reference_matmul_oracle_options_t* options,
+    const loom_testbench_reference_oracle_options_t* options,
     loom_testbench_oracle_provider_t* out_provider) {
   IREE_ASSERT_ARGUMENT(options);
   IREE_ASSERT_ARGUMENT(out_provider);
@@ -1399,7 +1399,7 @@ void loom_testbench_reference_matmul_oracle_provider_initialize(
 }
 
 void loom_testbench_reference_tiled_matmul_oracle_provider_initialize(
-    const loom_testbench_reference_matmul_oracle_options_t* options,
+    const loom_testbench_reference_oracle_options_t* options,
     loom_testbench_oracle_provider_t* out_provider) {
   IREE_ASSERT_ARGUMENT(options);
   IREE_ASSERT_ARGUMENT(out_provider);
