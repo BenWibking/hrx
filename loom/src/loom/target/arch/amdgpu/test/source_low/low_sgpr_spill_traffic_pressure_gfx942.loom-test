@@ -1,0 +1,258 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+// The scalar address-add/concat sequence comes from a scratch-buffer load in
+// the lowered chemistry advance kernel. Synthetic live SGPR pairs and explicit
+// spill uses isolate its allocator failure mode: BACKEND/005 with failure code
+// spill-traffic-register-exhausted. This is not a chemistry computation.
+
+// RUN: with-checks emit low-allocation-json @sgpr_spill_traffic_exhausted amdgpu.sgpr=102
+
+amdgpu.target<gfx942> @target
+
+low.func.def target<amdgpu.cdna3.core>(@target) @sgpr_spill_traffic_exhausted(
+    %a0: reg<amdgpu.sgpr x2>,
+    %a1: reg<amdgpu.sgpr x2>,
+    %a2: reg<amdgpu.sgpr x2>,
+    %a3: reg<amdgpu.sgpr x2>,
+    %a4: reg<amdgpu.sgpr x2>,
+    %a5: reg<amdgpu.sgpr x2>,
+    %a6: reg<amdgpu.sgpr x2>,
+    %a7: reg<amdgpu.sgpr x2>,
+    %a8: reg<amdgpu.sgpr x2>,
+    %a9: reg<amdgpu.sgpr x2>,
+    %a10: reg<amdgpu.sgpr x2>,
+    %a11: reg<amdgpu.sgpr x2>,
+    %a12: reg<amdgpu.sgpr x2>,
+    %a13: reg<amdgpu.sgpr x2>,
+    %a14: reg<amdgpu.sgpr x2>,
+    %a15: reg<amdgpu.sgpr x2>,
+    %a16: reg<amdgpu.sgpr x2>,
+    %a17: reg<amdgpu.sgpr x2>,
+    %a18: reg<amdgpu.sgpr x2>,
+    %a19: reg<amdgpu.sgpr x2>,
+    %a20: reg<amdgpu.sgpr x2>,
+    %a21: reg<amdgpu.sgpr x2>,
+    %a22: reg<amdgpu.sgpr x2>,
+    %a23: reg<amdgpu.sgpr x2>,
+    %a24: reg<amdgpu.sgpr x2>,
+    %a25: reg<amdgpu.sgpr x2>,
+    %a26: reg<amdgpu.sgpr x2>,
+    %a27: reg<amdgpu.sgpr x2>,
+    %a28: reg<amdgpu.sgpr x2>,
+    %a29: reg<amdgpu.sgpr x2>,
+    %a30: reg<amdgpu.sgpr x2>,
+    %a31: reg<amdgpu.sgpr x2>,
+    %a32: reg<amdgpu.sgpr x2>,
+    %a33: reg<amdgpu.sgpr x2>,
+    %a34: reg<amdgpu.sgpr x2>,
+    %a35: reg<amdgpu.sgpr x2>,
+    %a36: reg<amdgpu.sgpr x2>,
+    %a37: reg<amdgpu.sgpr x2>,
+    %a38: reg<amdgpu.sgpr x2>,
+    %a39: reg<amdgpu.sgpr x2>,
+    %a40: reg<amdgpu.sgpr x2>,
+    %a41: reg<amdgpu.sgpr x2>,
+    %a42: reg<amdgpu.sgpr x2>,
+    %a43: reg<amdgpu.sgpr x2>,
+    %a44: reg<amdgpu.sgpr x2>,
+    %a45: reg<amdgpu.sgpr x2>,
+    %a46: reg<amdgpu.sgpr x2>,
+    %a47: reg<amdgpu.sgpr x2>,
+    %a48: reg<amdgpu.sgpr x2>,
+    %a49: reg<amdgpu.sgpr x2>,
+    %a50: reg<amdgpu.sgpr x2>) asm {
+  %storage = storage {byte_alignment = 8, byte_length = 416} : low.storage<private>
+  %offset = s_mov_b32 609
+  %base_lo = slice %a0[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %base_hi = slice %a0[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %zero = s_mov_b32 0
+  %lo, %carry = s_add_co_u32 %base_lo, %offset
+  %hi, %carry2 = s_addc_u32 %base_hi, %zero, %carry
+  // ERROR@+1: BACKEND/005 {function_name="sgpr_spill_traffic_exhausted", value_class="amdgpu.sgpr", budget="102", peak="106", failure_code="spill-traffic-register-exhausted"}
+  %pair = concat(%lo, %hi) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  low.spill %pair, %storage : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a0, %storage {offset = 8} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a1, %storage {offset = 16} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a2, %storage {offset = 24} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a3, %storage {offset = 32} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a4, %storage {offset = 40} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a5, %storage {offset = 48} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a6, %storage {offset = 56} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a7, %storage {offset = 64} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a8, %storage {offset = 72} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a9, %storage {offset = 80} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a10, %storage {offset = 88} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a11, %storage {offset = 96} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a12, %storage {offset = 104} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a13, %storage {offset = 112} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a14, %storage {offset = 120} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a15, %storage {offset = 128} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a16, %storage {offset = 136} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a17, %storage {offset = 144} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a18, %storage {offset = 152} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a19, %storage {offset = 160} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a20, %storage {offset = 168} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a21, %storage {offset = 176} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a22, %storage {offset = 184} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a23, %storage {offset = 192} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a24, %storage {offset = 200} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a25, %storage {offset = 208} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a26, %storage {offset = 216} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a27, %storage {offset = 224} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a28, %storage {offset = 232} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a29, %storage {offset = 240} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a30, %storage {offset = 248} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a31, %storage {offset = 256} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a32, %storage {offset = 264} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a33, %storage {offset = 272} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a34, %storage {offset = 280} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a35, %storage {offset = 288} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a36, %storage {offset = 296} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a37, %storage {offset = 304} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a38, %storage {offset = 312} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a39, %storage {offset = 320} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a40, %storage {offset = 328} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a41, %storage {offset = 336} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a42, %storage {offset = 344} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a43, %storage {offset = 352} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a44, %storage {offset = 360} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a45, %storage {offset = 368} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a46, %storage {offset = 376} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a47, %storage {offset = 384} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a48, %storage {offset = 392} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a49, %storage {offset = 400} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a50, %storage {offset = 408} : reg<amdgpu.sgpr x2>, low.storage<private>
+  return
+}
+
+// ----
+CHECK: *"failure":{"code":"spill-traffic-register-exhausted","blocking_kind":"active-assignment",*
+CHECK: *"name":"pair","type":"reg<amdgpu.sgpr x2>"},*
+CHECK: *"required_units":2,"budget_units":102,"peak_live_units":106,*
+
+// ====
+
+// RUN: with-checks emit low-allocation-json @sgpr_spill_traffic_within_budget amdgpu.sgpr=102
+
+amdgpu.target<gfx942> @target
+
+low.func.def target<amdgpu.cdna3.core>(@target) @sgpr_spill_traffic_within_budget(
+    %a0: reg<amdgpu.sgpr x2>,
+    %a1: reg<amdgpu.sgpr x2>,
+    %a2: reg<amdgpu.sgpr x2>,
+    %a3: reg<amdgpu.sgpr x2>,
+    %a4: reg<amdgpu.sgpr x2>,
+    %a5: reg<amdgpu.sgpr x2>,
+    %a6: reg<amdgpu.sgpr x2>,
+    %a7: reg<amdgpu.sgpr x2>,
+    %a8: reg<amdgpu.sgpr x2>,
+    %a9: reg<amdgpu.sgpr x2>,
+    %a10: reg<amdgpu.sgpr x2>,
+    %a11: reg<amdgpu.sgpr x2>,
+    %a12: reg<amdgpu.sgpr x2>,
+    %a13: reg<amdgpu.sgpr x2>,
+    %a14: reg<amdgpu.sgpr x2>,
+    %a15: reg<amdgpu.sgpr x2>,
+    %a16: reg<amdgpu.sgpr x2>,
+    %a17: reg<amdgpu.sgpr x2>,
+    %a18: reg<amdgpu.sgpr x2>,
+    %a19: reg<amdgpu.sgpr x2>,
+    %a20: reg<amdgpu.sgpr x2>,
+    %a21: reg<amdgpu.sgpr x2>,
+    %a22: reg<amdgpu.sgpr x2>,
+    %a23: reg<amdgpu.sgpr x2>,
+    %a24: reg<amdgpu.sgpr x2>,
+    %a25: reg<amdgpu.sgpr x2>,
+    %a26: reg<amdgpu.sgpr x2>,
+    %a27: reg<amdgpu.sgpr x2>,
+    %a28: reg<amdgpu.sgpr x2>,
+    %a29: reg<amdgpu.sgpr x2>,
+    %a30: reg<amdgpu.sgpr x2>,
+    %a31: reg<amdgpu.sgpr x2>,
+    %a32: reg<amdgpu.sgpr x2>,
+    %a33: reg<amdgpu.sgpr x2>,
+    %a34: reg<amdgpu.sgpr x2>,
+    %a35: reg<amdgpu.sgpr x2>,
+    %a36: reg<amdgpu.sgpr x2>,
+    %a37: reg<amdgpu.sgpr x2>,
+    %a38: reg<amdgpu.sgpr x2>,
+    %a39: reg<amdgpu.sgpr x2>,
+    %a40: reg<amdgpu.sgpr x2>,
+    %a41: reg<amdgpu.sgpr x2>,
+    %a42: reg<amdgpu.sgpr x2>,
+    %a43: reg<amdgpu.sgpr x2>,
+    %a44: reg<amdgpu.sgpr x2>,
+    %a45: reg<amdgpu.sgpr x2>,
+    %a46: reg<amdgpu.sgpr x2>,
+    %a47: reg<amdgpu.sgpr x2>,
+    %a48: reg<amdgpu.sgpr x2>,
+    %a49: reg<amdgpu.sgpr x2>) asm {
+  %storage = storage {byte_alignment = 8, byte_length = 408} : low.storage<private>
+  %offset = s_mov_b32 609
+  %base_lo = slice %a0[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %base_hi = slice %a0[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %zero = s_mov_b32 0
+  %lo, %carry = s_add_co_u32 %base_lo, %offset
+  %hi, %carry2 = s_addc_u32 %base_hi, %zero, %carry
+  %pair = concat(%lo, %hi) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  low.spill %pair, %storage : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a0, %storage {offset = 8} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a1, %storage {offset = 16} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a2, %storage {offset = 24} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a3, %storage {offset = 32} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a4, %storage {offset = 40} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a5, %storage {offset = 48} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a6, %storage {offset = 56} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a7, %storage {offset = 64} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a8, %storage {offset = 72} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a9, %storage {offset = 80} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a10, %storage {offset = 88} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a11, %storage {offset = 96} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a12, %storage {offset = 104} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a13, %storage {offset = 112} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a14, %storage {offset = 120} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a15, %storage {offset = 128} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a16, %storage {offset = 136} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a17, %storage {offset = 144} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a18, %storage {offset = 152} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a19, %storage {offset = 160} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a20, %storage {offset = 168} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a21, %storage {offset = 176} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a22, %storage {offset = 184} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a23, %storage {offset = 192} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a24, %storage {offset = 200} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a25, %storage {offset = 208} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a26, %storage {offset = 216} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a27, %storage {offset = 224} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a28, %storage {offset = 232} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a29, %storage {offset = 240} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a30, %storage {offset = 248} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a31, %storage {offset = 256} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a32, %storage {offset = 264} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a33, %storage {offset = 272} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a34, %storage {offset = 280} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a35, %storage {offset = 288} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a36, %storage {offset = 296} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a37, %storage {offset = 304} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a38, %storage {offset = 312} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a39, %storage {offset = 320} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a40, %storage {offset = 328} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a41, %storage {offset = 336} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a42, %storage {offset = 344} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a43, %storage {offset = 352} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a44, %storage {offset = 360} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a45, %storage {offset = 368} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a46, %storage {offset = 376} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a47, %storage {offset = 384} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a48, %storage {offset = 392} : reg<amdgpu.sgpr x2>, low.storage<private>
+  low.spill %a49, %storage {offset = 400} : reg<amdgpu.sgpr x2>, low.storage<private>
+  return
+}
+
+// ----
+CHECK: *"spill_count":0,*
+CHECK: *"name":"pair","type":"reg<amdgpu.sgpr x2>"},*

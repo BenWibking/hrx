@@ -20,3 +20,25 @@ CHECK: %lhs = global_load_dwordx2*
 CHECK: %rhs = global_load_dwordx2*
 CHECK: %sum = v_add_f64 %lhs, %rhs
 CHECK: global_store_dwordx2* %sum*
+
+// ====
+
+// RUN: with-checks emit source-low target=amdgpu:gfx942 output=low
+
+// HAL kernel scalar arguments use the SGPR kernarg ABI even when their f64
+// consumers require VGPRs.
+kernel.def @f64_direct_arg() {
+  %one = index.constant 1 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%one, %one, %one) : index
+} launch(%input: f64, %output_buffer: buffer) {
+  %zero = index.constant 0 : offset
+  %output_view = buffer.view %output_buffer[%zero] : buffer -> view<1xf64>
+  view.store %input, %output_view[0] : f64, view<1xf64>
+  kernel.return
+}
+
+// ----
+CHECK: low.kernel.def* @f64_direct_arg(%input: reg<amdgpu.sgpr x2>) asm {
+CHECK: *slice %input[0]*reg<amdgpu.sgpr x2>*
+CHECK: *slice %input[1]*reg<amdgpu.sgpr x2>*
+CHECK: global_store_dwordx2*

@@ -57,6 +57,34 @@ bool loom_low_allocation_unit_locations_form_register_move(
          !loom_low_allocation_unit_locations_equal(source, destination);
 }
 
+static bool loom_low_allocation_unit_location_assignment_live_at_point(
+    const loom_low_allocation_assignment_t* assignment,
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    uint32_t point) {
+  if (point < assignment->start_point) {
+    return false;
+  }
+  return assignment->liveness_segments.count == 0 ||
+         loom_liveness_segment_range_contains(
+             unit_liveness->storage_segments.entries,
+             assignment->liveness_segments, point);
+}
+
+static bool loom_low_allocation_unit_location_assignment_unit_live_at_point(
+    const loom_low_allocation_assignment_t* assignment,
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    uint32_t unit_offset, uint32_t point) {
+  const uint32_t unit_start_point =
+      loom_low_allocation_live_range_assignment_unit_start_point(
+          unit_liveness->start_points, unit_liveness->point_count, assignment,
+          unit_offset);
+  const uint32_t unit_end_point =
+      loom_low_allocation_live_range_assignment_unit_end_point(
+          unit_liveness->end_points, unit_liveness->point_count, assignment,
+          unit_offset);
+  return point >= unit_start_point && point < unit_end_point;
+}
+
 bool loom_low_allocation_unit_location_is_live_at_point(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_allocation_assignment_t* assignments,
@@ -75,7 +103,8 @@ bool loom_low_allocation_unit_location_is_live_at_point(
   for (iree_host_size_t i = 0; i < assignment_count; ++i) {
     const loom_low_allocation_assignment_t* assignment = &assignments[i];
     if (assignment->location_kind != location->location_kind ||
-        point < assignment->start_point) {
+        !loom_low_allocation_unit_location_assignment_live_at_point(
+            assignment, unit_liveness, point)) {
       continue;
     }
     if (!loom_low_allocation_storage_assignment_ranges_overlap(
@@ -94,15 +123,8 @@ bool loom_low_allocation_unit_location_is_live_at_point(
         is_explicit ? assignment->location_count : unit_begin + 1u;
     for (uint32_t unit_offset = unit_begin; unit_offset < unit_end;
          ++unit_offset) {
-      const uint32_t unit_start_point =
-          loom_low_allocation_live_range_assignment_unit_start_point(
-              unit_liveness->start_points, unit_liveness->point_count,
-              assignment, unit_offset);
-      const uint32_t unit_end_point =
-          loom_low_allocation_live_range_assignment_unit_end_point(
-              unit_liveness->end_points, unit_liveness->point_count, assignment,
-              unit_offset);
-      if (point < unit_start_point || point >= unit_end_point) {
+      if (!loom_low_allocation_unit_location_assignment_unit_live_at_point(
+              assignment, unit_liveness, unit_offset, point)) {
         continue;
       }
       if (!is_explicit ||
@@ -114,4 +136,58 @@ bool loom_low_allocation_unit_location_is_live_at_point(
     }
   }
   return false;
+}
+
+void loom_low_allocation_unit_location_mark_live_at_point(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_allocation_assignment_t* assignments,
+    iree_host_size_t assignment_count,
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    const loom_low_move_location_t* storage_class, uint32_t point,
+    uint32_t location_count, uint8_t* out_live_locations) {
+  IREE_ASSERT_ARGUMENT(descriptor_set);
+  IREE_ASSERT_ARGUMENT(unit_liveness);
+  IREE_ASSERT_ARGUMENT(storage_class);
+  IREE_ASSERT_ARGUMENT(out_live_locations);
+  for (iree_host_size_t i = 0; i < assignment_count; ++i) {
+    const loom_low_allocation_assignment_t* assignment = &assignments[i];
+    if (assignment->location_kind != storage_class->location_kind ||
+        !loom_low_allocation_storage_reg_classes_share(
+            descriptor_set, assignment->descriptor_reg_class_id,
+            storage_class->descriptor_reg_class_id) ||
+        !loom_low_allocation_unit_location_assignment_live_at_point(
+            assignment, unit_liveness, point)) {
+      continue;
+    }
+    const bool is_explicit =
+        loom_low_allocation_storage_assignment_uses_explicit_physical_register(
+            descriptor_set, assignment);
+    for (uint32_t unit_offset = 0; unit_offset < assignment->location_count;
+         ++unit_offset) {
+      if (!loom_low_allocation_unit_location_assignment_unit_live_at_point(
+              assignment, unit_liveness, unit_offset, point)) {
+        continue;
+      }
+      if (!is_explicit) {
+        const uint32_t location = assignment->location_base + unit_offset;
+        if (location < location_count) {
+          out_live_locations[location] = 1;
+        }
+        continue;
+      }
+      for (uint32_t location = 0; location < location_count; ++location) {
+        const loom_low_allocation_assignment_t candidate = {
+            .descriptor_reg_class_id = storage_class->descriptor_reg_class_id,
+            .location_kind = storage_class->location_kind,
+            .location_base = location,
+            .location_count = 1,
+        };
+        if (loom_low_allocation_storage_assignment_subranges_overlap(
+                descriptor_set, assignment, unit_offset, &candidate, 0,
+                /*unit_count=*/1)) {
+          out_live_locations[location] = 1;
+        }
+      }
+    }
+  }
 }

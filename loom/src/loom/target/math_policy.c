@@ -108,6 +108,8 @@ iree_string_view_t loom_target_math_op_name(loom_target_math_op_t math_op) {
       return IREE_SV("roundevenf");
     case LOOM_TARGET_MATH_OP_TRUNCF:
       return IREE_SV("truncf");
+    case LOOM_TARGET_MATH_OP_CBRTF:
+      return IREE_SV("cbrtf");
     case LOOM_TARGET_MATH_OP_UNKNOWN:
       return IREE_SV("unknown");
   }
@@ -160,6 +162,12 @@ iree_string_view_t loom_target_math_recipe_name(
       return IREE_SV("pow-log2-exp2-f32");
     case LOOM_TARGET_MATH_RECIPE_ROUND_AWAY:
       return IREE_SV("round-away");
+    case LOOM_TARGET_MATH_RECIPE_CBRT_NEWTON_F64:
+      return IREE_SV("cbrt-newton-f64");
+    case LOOM_TARGET_MATH_RECIPE_EXP_RATIONAL_F64:
+      return IREE_SV("exp-rational-f64");
+    case LOOM_TARGET_MATH_RECIPE_LOG_RATIONAL_F64:
+      return IREE_SV("log-rational-f64");
     case LOOM_TARGET_MATH_RECIPE_UNKNOWN:
       return IREE_SV("unknown");
   }

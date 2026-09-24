@@ -32,7 +32,7 @@ typedef enum loom_low_emission_frame_failure_e {
 // Spill materialization may expose new spill traffic that requires another
 // complete frame build. Bound that convergence process independently from
 // value repair so one strategy cannot consume the other's budget.
-#define LOOM_LOW_EMISSION_FRAME_MAX_SPILL_MATERIALIZATION_ITERATIONS 8
+#define LOOM_LOW_EMISSION_FRAME_MAX_SPILL_MATERIALIZATION_ITERATIONS 16
 
 typedef struct loom_low_emission_frame_materialization_summary_t {
   // Cumulative spill storage materialized while building the final frame.

@@ -236,6 +236,8 @@ static loom_target_math_op_t loom_math_legalize_scalar_op_kind(
       return LOOM_TARGET_MATH_OP_EXPF;
     case LOOM_OP_SCALAR_LOGF:
       return LOOM_TARGET_MATH_OP_LOGF;
+    case LOOM_OP_SCALAR_CBRTF:
+      return LOOM_TARGET_MATH_OP_CBRTF;
     case LOOM_OP_SCALAR_LOG2F:
       return LOOM_TARGET_MATH_OP_LOG2F;
     case LOOM_OP_SCALAR_TANHF:

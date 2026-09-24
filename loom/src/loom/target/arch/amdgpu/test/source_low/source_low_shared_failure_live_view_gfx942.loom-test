@@ -1,0 +1,45 @@
+// RUN: with-checks emit source-low target=amdgpu:gfx942 output=low
+
+// The shared failure target requires predicate convergence. A non-owning view
+// made between the guards remains live in the other successor.
+amdgpu.target<gfx942> @target
+
+kernel.def target(@target) @shared_failure_live_view() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch(%input: buffer, %step: i32, %output: buffer) {
+  %lane = kernel.workitem.id<x> : index
+  %zero_offset = index.constant 0 : offset
+  %input_view = buffer.view %input[%zero_offset] : buffer -> view<128xi32>
+  %first_value = view.load %input_view[%lane] : view<128xi32> -> i32
+  %valid = scalar.cmpi eq, %first_value, %step : i32
+  %true = scalar.constant true : i1
+  %bad = scalar.xori %valid, %true : i1
+  cfg.cond_br %bad, ^failure, ^check_second
+^check_second:
+  %stride = index.constant 64 : index
+  %second_index = index.add %lane, %stride : index
+  %second_value = view.load %input_view[%second_index] : view<128xi32> -> i32
+  %zero = scalar.constant 0 : i32
+  %second_bad = scalar.cmpi sgt, %second_value, %zero : i32
+  %success_view = buffer.view %output[%zero_offset] : buffer -> view<1xi32>
+  cfg.cond_br %second_bad, ^failure, ^success
+^failure:
+  %output_view = buffer.view %output[%zero_offset] : buffer -> view<1xi32>
+  %bad_code = scalar.constant -1 : i32
+  view.store %bad_code, %output_view[0] : i32, view<1xi32>
+  cfg.br ^done
+^success:
+  view.store %second_value, %success_view[0] : i32, view<1xi32>
+  cfg.br ^done
+^done:
+  kernel.return
+}
+
+// ----
+CHECK: low.kernel.def* @shared_failure_live_view*
+CHECK: ^failure:
+CHECK: global_store_dword_saddr* %output_view
+CHECK: ^success:
+CHECK: global_store_dword_saddr* %output_view

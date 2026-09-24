@@ -1010,9 +1010,11 @@ static iree_status_t loom_amdgpu_prepare_exec_mask_branch(
       &passthrough_terminator);
   const loom_cfg_region_t* true_region = NULL;
   const loom_cfg_region_t* false_region = NULL;
-  if ((immediate_diamond || !has_false_passthrough) &&
-      loom_amdgpu_try_if_else_regions(facts, source_op, &true_region,
-                                      &false_region)) {
+  if (loom_amdgpu_try_if_else_regions(facts, source_op, &true_region,
+                                      &false_region) &&
+      (immediate_diamond || !has_false_passthrough ||
+       passthrough_continuation->region_index !=
+           true_region->continuation_index)) {
     return loom_amdgpu_prepare_if_else_regions(context, source_op, true_region,
                                                false_region);
   }

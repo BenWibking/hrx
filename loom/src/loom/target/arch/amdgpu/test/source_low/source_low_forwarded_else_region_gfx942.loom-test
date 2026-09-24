@@ -1,0 +1,46 @@
+// RUN: with-checks emit source-low target=amdgpu:gfx942 output=low
+
+// A forwarding false edge enters a real loop region. Both arms meet after
+// the loop, so lowering must use an if/else region, not an if-then shortcut.
+amdgpu.target<gfx942> @target
+
+kernel.def target(@target) @forwarded_else_region() {
+  %one = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%size, %one, %one) : index
+} launch(%input: buffer, %output: buffer) {
+  %lane = kernel.workitem.id<x> : index
+  %zero_offset = index.constant 0 : offset
+  %input_view = buffer.view %input[%zero_offset] : buffer -> view<64xi32>
+  %output_view = buffer.view %output[%zero_offset] : buffer -> view<64xi32>
+  %value = view.load %input_view[%lane] : view<64xi32> -> i32
+  %zero = scalar.constant 0 : i32
+  %positive = scalar.cmpi sgt, %value, %zero : i32
+  cfg.cond_br %positive, ^then, ^else_forward
+^then:
+  %one_value = scalar.constant 1 : i32
+  view.store %one_value, %output_view[%lane] : i32, view<64xi32>
+  cfg.br ^merge
+^else_forward:
+  cfg.br ^else_loop(%zero: i32)
+^else_loop(%iteration: i32):
+  %two = scalar.constant 2 : i32
+  %more = scalar.cmpi slt, %iteration, %two : i32
+  cfg.cond_br %more, ^else_body, ^else_done
+^else_body:
+  %one_step = scalar.constant 1 : i32
+  %next = scalar.addi %iteration, %one_step : i32
+  cfg.br ^else_loop(%next: i32)
+^else_done:
+  %minus_one = scalar.constant -1 : i32
+  view.store %minus_one, %output_view[%lane] : i32, view<64xi32>
+  cfg.br ^merge
+^merge:
+  kernel.return
+}
+
+// ----
+CHECK: low.kernel.def* @forwarded_else_region*
+CHECK: ^then:
+CHECK: global_store_dword* %output_view
+CHECK: global_store_dword* %output_view

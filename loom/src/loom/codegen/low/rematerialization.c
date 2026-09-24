@@ -16,6 +16,7 @@
 #include "loom/error/error_catalog.h"
 #include "loom/ir/module.h"
 #include "loom/ir/structural_hash.h"
+#include "loom/ops/low/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/rewrite/materialize.h"
 #include "loom/rewrite/remap.h"
@@ -71,6 +72,10 @@ static bool loom_low_descriptor_packet_kind_may_rematerialize(
     loom_low_descriptor_packet_kind_t kind) {
   return kind == LOOM_LOW_DESCRIPTOR_PACKET_OP ||
          kind == LOOM_LOW_DESCRIPTOR_PACKET_CONST;
+}
+
+static bool loom_low_structural_op_may_rematerialize(const loom_op_t* op) {
+  return loom_low_concat_isa(op) || loom_low_slice_isa(op);
 }
 
 static bool loom_low_rematerialization_use_is_eligible(
@@ -182,9 +187,10 @@ iree_status_t loom_low_rematerialize_value_uses(
   loom_low_descriptor_packet_t packet = {0};
   loom_low_descriptor_packet_initialize(target->descriptor_set, defining_op,
                                         &packet);
-  if (!loom_low_descriptor_packet_kind_may_rematerialize(packet.kind) ||
-      !loom_low_descriptor_result_can_rematerialize(
-          target->descriptor_set, packet.descriptor, result_index)) {
+  if (!loom_low_structural_op_may_rematerialize(defining_op) &&
+      (!loom_low_descriptor_packet_kind_may_rematerialize(packet.kind) ||
+       !loom_low_descriptor_result_can_rematerialize(
+           target->descriptor_set, packet.descriptor, result_index))) {
     return iree_ok_status();
   }
 

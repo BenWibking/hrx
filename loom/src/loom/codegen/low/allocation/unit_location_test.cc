@@ -155,6 +155,48 @@ TEST(LowAllocationUnitLocationTest, DetectsLiveUnitAtPoint) {
       &outside_unit, /*point=*/4));
 }
 
+TEST(LowAllocationUnitLocationTest, SkipsSparseStorageLifetimeHole) {
+  const loom_low_reg_class_t reg_classes[] = {RegClass(/*alias_set_id=*/0)};
+  const loom_low_descriptor_set_t descriptor_set =
+      DescriptorSet(reg_classes, IREE_ARRAYSIZE(reg_classes));
+
+  loom_low_allocation_assignment_t assignment = Assignment(/*reg_class_id=*/0);
+  assignment.location_base = 4;
+  assignment.location_count = 1;
+  assignment.unit_count = 1;
+  assignment.start_point = 2;
+  assignment.end_point = 10;
+  assignment.liveness_segments = {.start = 0, .count = 2};
+  const loom_liveness_segment_t storage_segments[] = {{2, 5}, {8, 10}};
+  uint32_t unit_end_points[] = {10};
+  loom_low_allocation_unit_liveness_t unit_liveness = {};
+  unit_liveness.end_points = unit_end_points;
+  unit_liveness.point_count = IREE_ARRAYSIZE(unit_end_points);
+  unit_liveness.storage_segments.entries = storage_segments;
+  const loom_low_move_location_t location =
+      Location(/*reg_class_id=*/0, /*location=*/4);
+
+  EXPECT_TRUE(loom_low_allocation_unit_location_is_live_at_point(
+      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
+      &location, /*point=*/4));
+  EXPECT_FALSE(loom_low_allocation_unit_location_is_live_at_point(
+      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
+      &location, /*point=*/6));
+  EXPECT_TRUE(loom_low_allocation_unit_location_is_live_at_point(
+      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
+      &location, /*point=*/9));
+
+  uint8_t live_locations[8] = {};
+  loom_low_allocation_unit_location_mark_live_at_point(
+      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
+      &location, /*point=*/6, IREE_ARRAYSIZE(live_locations), live_locations);
+  EXPECT_EQ(live_locations[4], 0);
+  loom_low_allocation_unit_location_mark_live_at_point(
+      &descriptor_set, &assignment, /*assignment_count=*/1, &unit_liveness,
+      &location, /*point=*/9, IREE_ARRAYSIZE(live_locations), live_locations);
+  EXPECT_EQ(live_locations[4], 1);
+}
+
 TEST(LowAllocationUnitLocationTest, WideScratchOverlapsEveryNarrowUnit) {
   // The pair is two independently live narrow units but one wide register.
   // Its first narrow unit can be dead while the second is still occupied.

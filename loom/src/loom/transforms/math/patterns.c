@@ -17,5 +17,16 @@ iree_status_t loom_math_legalize_rewrite_recipe(
     return iree_ok_status();
   }
 
-  return iree_ok_status();
+  IREE_RETURN_IF_ERROR(loom_math_legalize_rewrite_cbrt_recipe(
+      context, op, rewriter, out_rewritten));
+  if (*out_rewritten) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_math_legalize_rewrite_exp_recipe(
+      context, op, rewriter, out_rewritten));
+  if (*out_rewritten) {
+    return iree_ok_status();
+  }
+  return loom_math_legalize_rewrite_log_recipe(context, op, rewriter,
+                                               out_rewritten);
 }

@@ -149,6 +149,31 @@ static void loom_amdgpu_math_policy_query(
     return;
   }
 
+  if (query->math_op == LOOM_TARGET_MATH_OP_CBRTF &&
+      query->lane_domain == LOOM_TARGET_MATH_LANE_DOMAIN_SCALAR &&
+      query->element_type == LOOM_SCALAR_TYPE_F64) {
+    *out_decision = loom_amdgpu_math_rewrite(
+        LOOM_TARGET_MATH_RECIPE_CBRT_NEWTON_F64,
+        IREE_SV("math.recipe.cbrt_newton_f64"));
+    return;
+  }
+  if (query->math_op == LOOM_TARGET_MATH_OP_EXPF &&
+      query->lane_domain == LOOM_TARGET_MATH_LANE_DOMAIN_SCALAR &&
+      query->element_type == LOOM_SCALAR_TYPE_F64) {
+    *out_decision = loom_amdgpu_math_rewrite(
+        LOOM_TARGET_MATH_RECIPE_EXP_RATIONAL_F64,
+        IREE_SV("math.recipe.exp_rational_f64"));
+    return;
+  }
+  if (query->math_op == LOOM_TARGET_MATH_OP_LOGF &&
+      query->lane_domain == LOOM_TARGET_MATH_LANE_DOMAIN_SCALAR &&
+      query->element_type == LOOM_SCALAR_TYPE_F64) {
+    *out_decision = loom_amdgpu_math_rewrite(
+        LOOM_TARGET_MATH_RECIPE_LOG_RATIONAL_F64,
+        IREE_SV("math.recipe.log_rational_f64"));
+    return;
+  }
+
   if (query->element_type != LOOM_SCALAR_TYPE_F32) {
     *out_decision = loom_amdgpu_math_reject(IREE_SV("math.element.f32"));
     return;
@@ -250,6 +275,10 @@ static void loom_amdgpu_math_policy_query(
     case LOOM_TARGET_MATH_OP_ADDF:
     case LOOM_TARGET_MATH_OP_MULF:
       *out_decision = loom_amdgpu_math_keep(IREE_SV("math.op.native_f32"));
+      return;
+    case LOOM_TARGET_MATH_OP_CBRTF:
+      *out_decision =
+          loom_amdgpu_math_reject(IREE_SV("math.cbrt.exact_f32"));
       return;
     case LOOM_TARGET_MATH_OP_UNKNOWN:
       break;

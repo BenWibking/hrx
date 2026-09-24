@@ -6,6 +6,8 @@
 
 #include "loom/codegen/low/allocation/move_plan.h"
 
+#include <string.h>
+
 #include "loom/codegen/low/allocation/storage.h"
 #include "loom/codegen/low/allocation/unit_location.h"
 #include "loom/codegen/low/schedule/types.h"
@@ -140,6 +142,21 @@ static iree_status_t loom_low_allocation_move_plan_resolve_temporary(
                      capacity.is_bounded ? capacity.max_units : UINT32_MAX)
           : last_location + 1u;
   const uint32_t program_point = group_context->operation_point->start_point;
+  uint8_t inline_live_locations[256];
+  uint8_t* live_locations = NULL;
+  if (!uses_explicit_physical_registers && candidate_count != 0) {
+    live_locations = inline_live_locations;
+    if (candidate_count > IREE_ARRAYSIZE(inline_live_locations)) {
+      IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+          group_context->plan->sequence_scratch.arena, candidate_count,
+          sizeof(*live_locations), (void**)&live_locations));
+    }
+    memset(live_locations, 0, candidate_count * sizeof(*live_locations));
+    loom_low_allocation_unit_location_mark_live_at_point(
+        context->descriptor_set, context->assignment_map.assignments,
+        context->assignment_map.assignment_count, context->unit_liveness,
+        storage_class, program_point, candidate_count, live_locations);
+  }
   for (uint32_t candidate_ordinal = 0; candidate_ordinal < candidate_count;
        ++candidate_ordinal) {
     const uint32_t location =
@@ -157,10 +174,13 @@ static iree_status_t loom_low_allocation_move_plan_resolve_temporary(
     if (loom_low_allocation_target_constraints_reserved_range_conflicts(
             context->target_constraints, temporary.descriptor_reg_class_id,
             temporary.location_kind, temporary.location, 1) ||
-        loom_low_allocation_unit_location_is_live_at_point(
-            context->descriptor_set, context->assignment_map.assignments,
-            context->assignment_map.assignment_count, context->unit_liveness,
-            &temporary, program_point) ||
+        (live_locations != NULL
+             ? live_locations[location] != 0
+             : loom_low_allocation_unit_location_is_live_at_point(
+                   context->descriptor_set,
+                   context->assignment_map.assignments,
+                   context->assignment_map.assignment_count,
+                   context->unit_liveness, &temporary, program_point)) ||
         loom_low_allocation_move_group_uses_location(
             context->descriptor_set, moves, move_count, &temporary)) {
       continue;

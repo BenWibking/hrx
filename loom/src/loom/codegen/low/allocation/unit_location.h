@@ -46,6 +46,17 @@ bool loom_low_allocation_unit_location_is_live_at_point(
     const loom_low_allocation_unit_liveness_t* unit_liveness,
     const loom_low_move_location_t* location, uint32_t point);
 
+// Marks occupied linear locations in [0, location_count) with one pass over
+// assignments. |out_live_locations| is caller-zeroed and indexed by location.
+// This is the batched form of the query above for cycle-scratch selection.
+void loom_low_allocation_unit_location_mark_live_at_point(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_low_allocation_assignment_t* assignments,
+    iree_host_size_t assignment_count,
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    const loom_low_move_location_t* storage_class, uint32_t point,
+    uint32_t location_count, uint8_t* out_live_locations);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -120,6 +120,22 @@ TEST_F(AmdgpuBranchLayoutTest, RelaxesJustOutsideForwardRange) {
   EXPECT_EQ(layout.islands[0].relative_dword_offset, 16385);
 }
 
+TEST_F(AmdgpuBranchLayoutTest, PicksFirstAnchorAtNearestTiedOffset) {
+  constexpr uint64_t kTarget = 4u + (uint64_t{INT16_MAX} + 1u) * 4u;
+  const std::array blocks = {BlockAt(0), BlockAt(kTarget)};
+  const std::array edges = {EdgeTo(0, 1)};
+  const std::array anchors = {
+      AnchorAt(65536, 3),
+      AnchorAt(65536, 4),
+      AnchorAt(65540, 5),
+  };
+
+  const loom_amdgpu_branch_layout_t layout =
+      Build(kTarget + 4u, blocks, edges, anchors);
+  ASSERT_EQ(layout.group_count, 1u);
+  EXPECT_EQ(layout.groups[0].packet_index, 3u);
+}
+
 TEST_F(AmdgpuBranchLayoutTest, RelaxesJustOutsideBackwardRange) {
   constexpr uint64_t kSource = (uint64_t{-INT16_MIN} + 1u) * 4u - 4u;
   const std::array blocks = {
@@ -164,6 +180,20 @@ TEST_F(AmdgpuBranchLayoutTest, RecomputesDirectSiblingEdgeAfterInsertion) {
   EXPECT_EQ(layout.edges[1].target.kind, LOOM_AMDGPU_BRANCH_TARGET_BLOCK);
   EXPECT_EQ(layout.edges[1].target.index, 1u);
   EXPECT_EQ(layout.edges[1].relative_dword_offset, 17920);
+}
+
+TEST_F(AmdgpuBranchLayoutTest, GroupsIslandsSharingAnAnchor) {
+  constexpr uint64_t kTarget = 4u + (uint64_t{INT16_MAX} + 2u) * 4u;
+  const std::array blocks = {BlockAt(0), BlockAt(kTarget)};
+  const std::array edges = {EdgeTo(0, 1), EdgeTo(4, 1)};
+  const std::array anchors = {AnchorAt(65536, 9)};
+
+  const loom_amdgpu_branch_layout_t layout =
+      Build(kTarget + 4u, blocks, edges, anchors);
+  ASSERT_EQ(layout.group_count, 1u);
+  EXPECT_EQ(layout.groups[0].packet_index, 9u);
+  EXPECT_EQ(layout.groups[0].island_count, 2u);
+  EXPECT_EQ(layout.island_count, 2u);
 }
 
 TEST_F(AmdgpuBranchLayoutTest, BuildsConvergedMultiHopPath) {

@@ -43,6 +43,23 @@ iree_status_t loom_math_legalize_rewrite_elementwise_recipe(
     const loom_math_legalize_recipe_context_t* context, loom_op_t* op,
     loom_rewriter_t* rewriter, bool* out_rewritten);
 
+// Rewrites scalar f64 cube root through exponent normalization and f64 Newton
+// refinement when selected by the target math policy.
+iree_status_t loom_math_legalize_rewrite_cbrt_recipe(
+    const loom_math_legalize_recipe_context_t* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_rewritten);
+
+// Rewrites scalar f64 exponential with bounded-range argument reduction and
+// a rational approximation when selected by the target math policy.
+iree_status_t loom_math_legalize_rewrite_exp_recipe(
+    const loom_math_legalize_recipe_context_t* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_rewritten);
+
+// Rewrites scalar f64 logarithm with exponent reduction and a polynomial.
+iree_status_t loom_math_legalize_rewrite_log_recipe(
+    const loom_math_legalize_recipe_context_t* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_rewritten);
+
 #ifdef __cplusplus
 }
 #endif
