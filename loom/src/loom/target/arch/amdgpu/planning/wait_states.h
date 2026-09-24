@@ -33,7 +33,7 @@ extern "C" {
 #endif
 
 struct loom_amdgpu_vopd_plan_t;
-struct loom_amdgpu_wait_plan_t;
+struct loom_amdgpu_wait_packet_plan_t;
 struct loom_amdgpu_matrix_coexecution_t;
 struct loom_amdgpu_processor_info_t;
 
@@ -69,8 +69,10 @@ typedef enum loom_amdgpu_wait_state_reason_e {
   // An ordinary VALU packet reads or overwrites storage retained by
   // matrix/vector coexecution.
   LOOM_AMDGPU_WAIT_STATE_REASON_MATRIX_COEXECUTION_VALU_USE = 10,
+  // A writer reuses VGPR payload storage still read by a wide VMEM store.
+  LOOM_AMDGPU_WAIT_STATE_REASON_STORE_DATA_REUSE = 11,
   // Number of wait-state reasons, including UNKNOWN.
-  LOOM_AMDGPU_WAIT_STATE_REASON_COUNT_ = 11,
+  LOOM_AMDGPU_WAIT_STATE_REASON_COUNT_ = 12,
 } loom_amdgpu_wait_state_reason_t;
 
 typedef enum loom_amdgpu_wait_state_action_e {
@@ -144,14 +146,15 @@ iree_string_view_t loom_amdgpu_wait_state_action_name(
 
 // Builds fixed AMDGPU wait-state insertions from the final scheduled,
 // allocated, and VOPD-packetized low function. Elided authored waits in
-// |wait_plan| provide no instruction-slot progress. |vopd_plan| may be NULL
+// |wait_packets->wait_plan| provide no instruction-slot progress. Concrete
+// wait insertions supply native progress. |vopd_plan| may be NULL
 // when the target has no native packetization. The caller must keep the input
 // plans immutable and |arena| alive for as long as |out_plan| is used.
 iree_status_t loom_amdgpu_wait_state_plan_build(
     const loom_low_schedule_table_t* schedule,
     const loom_low_allocation_table_t* allocation,
     const struct loom_amdgpu_processor_properties_t* processor_properties,
-    const struct loom_amdgpu_wait_plan_t* wait_plan,
+    const struct loom_amdgpu_wait_packet_plan_t* wait_packets,
     const struct loom_amdgpu_vopd_plan_t* vopd_plan,
     struct loom_amdgpu_matrix_coexecution_t* matrix_coexecution,
     iree_arena_allocator_t* arena, iree_arena_allocator_t* transient_arena,

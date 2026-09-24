@@ -155,8 +155,14 @@ loom_cc_test(
 
 loom_cc_library(
     name = "wait_states",
-    srcs = ["wait_states.c"],
-    hdrs = ["wait_states.h"],
+    srcs = [
+        "store_data_wait.c",
+        "wait_states.c",
+    ],
+    hdrs = [
+        "store_data_wait.h",
+        "wait_states.h",
+    ],
     deps = [
         ":delay_alu",
         ":descriptor_semantics",
@@ -164,6 +170,7 @@ loom_cc_library(
         ":matrix_wait_states",
         ":structural_packet",
         ":vopd_plan",
+        ":wait_packets",
         ":wait_plan",
         "//loom/src/loom/codegen/low:allocation",
         "//loom/src/loom/codegen/low:packet",
@@ -176,6 +183,7 @@ loom_cc_library(
         "//loom/src/loom/target/arch/amdgpu/encoding",
         "//loom/src/loom/target/arch/amdgpu/matrix:contract",
         "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//loom/src/loom/util:cfg_graph",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],
