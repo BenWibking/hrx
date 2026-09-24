@@ -95,6 +95,12 @@ loom_cc_library(
     ),
 )
 
+loom_cc_library(
+    name = "extended_instruction",
+    hdrs = ["extended_instruction.h"],
+    visibility = _SPIRV_EMIT_VISIBILITY,
+)
+
 loom_generated_file(
     name = "features_gen",
     args = [
@@ -164,6 +170,7 @@ loom_cc_library(
     textual_hdrs = [":packet_rows_tables.inl"],
     visibility = _SPIRV_EMIT_VISIBILITY,
     deps = [
+        ":extended_instruction",
         ":isa",
         ":value_types",
         "//loom/src/loom/target/arch/spirv/descriptors",
@@ -445,6 +452,7 @@ loom_check_test_suite(
         "test/source_low/numeric_conversion.loom-test",
         "test/source_low/numeric_conversion_float8.loom-test",
         "test/source_low/numeric_conversion_wide.loom-test",
+        "test/source_low/numeric_extended_math.loom-test",
         "test/source_low/numeric_float_comparison_flags.loom-test",
         "test/source_low/numeric_index.loom-test",
         "test/source_low/numeric_index_conversion.loom-test",

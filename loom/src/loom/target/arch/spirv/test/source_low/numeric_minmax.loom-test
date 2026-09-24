@@ -1,7 +1,7 @@
 // TEMPLATE: loom/src/loom/test/corpus/source_low/numeric_minmax.loom-test
 // RUN: emit source-low target=spirv:vulkan1.3+bda+extended-types output=low control-flow=structured-low
 
-// XFAIL: SPIR-V floating min/max lowering is unsupported
+// XFAIL: exact signed-zero floating min/max lowering is unsupported
 func.def @scalar_f32_minnum_maxnum(%lhs: f32, %rhs: f32) -> (f32) {
   %min = scalar.minnumf %lhs, %rhs : f32
   %max = scalar.maxnumf %lhs, %rhs : f32
@@ -11,7 +11,7 @@ func.def @scalar_f32_minnum_maxnum(%lhs: f32, %rhs: f32) -> (f32) {
 
 // ====
 
-// XFAIL: SPIR-V ordinary vector math is unsupported
+// XFAIL: SPIR-V vector arguments are unsupported
 func.def @vector_f32_minnum_maxnum(%lhs: vector<2xf32>, %rhs: vector<2xf32>) -> (vector<2xf32>) {
   %min = vector.minnumf %lhs, %rhs : vector<2xf32>
   %max = vector.maxnumf %lhs, %rhs : vector<2xf32>
@@ -446,7 +446,6 @@ kernel.def @index_minmax_vgpr_select() {
 
 // ====
 
-// XFAIL: SPIR-V f32 constants and vector memory alignment are unsupported
 func.def @f32_reduce_minnum_maxnum(%input: buffer, %output: buffer) {
   %buffer_base = index.constant 0 : offset
   %input_view = buffer.view %input[%buffer_base] : buffer -> view<4xf32>
@@ -459,4 +458,35 @@ func.def @f32_reduce_minnum_maxnum(%input: buffer, %output: buffer) {
   %stored = vector.from_elements %min, %max : vector<2xf32>
   vector.store %stored, %output_view[0] : vector<2xf32>, view<2xf32>
   func.return
+}
+
+// ----
+low.func.def target<spirv.logical.core> abi(shader_entry_point) @f32_reduce_minnum_maxnum(%input: reg<spirv.ptr.storage_buffer>, %output: reg<spirv.ptr.storage_buffer>) asm {
+  %34 = OpConstant.offset64 0
+  %35 = OpPtrAccessChain.storage_buffer.f32.byte_offset %input, %34
+  %36 = OpLoad.storage_buffer.f32 %35
+  %37 = OpConstant.offset64 4
+  %38 = OpPtrAccessChain.storage_buffer.f32.byte_offset %input, %37
+  %39 = OpLoad.storage_buffer.f32 %38
+  %40 = OpConstant.offset64 8
+  %41 = OpPtrAccessChain.storage_buffer.f32.byte_offset %input, %40
+  %42 = OpLoad.storage_buffer.f32 %41
+  %43 = OpConstant.offset64 12
+  %44 = OpPtrAccessChain.storage_buffer.f32.byte_offset %input, %43
+  %45 = OpLoad.storage_buffer.f32 %44
+  %min_init = OpConstant.f32 1148846080
+  %47 = OpExtInst.GLSL.std.450.NMin.f32 %36, %39
+  %48 = OpExtInst.GLSL.std.450.NMin.f32 %42, %45
+  %49 = OpExtInst.GLSL.std.450.NMin.f32 %47, %48
+  %min = OpExtInst.GLSL.std.450.NMin.f32 %min_init, %49
+  %max_init = OpConstant.f32 3296329728
+  %52 = OpExtInst.GLSL.std.450.NMax.f32 %36, %39
+  %53 = OpExtInst.GLSL.std.450.NMax.f32 %42, %45
+  %54 = OpExtInst.GLSL.std.450.NMax.f32 %52, %53
+  %max = OpExtInst.GLSL.std.450.NMax.f32 %max_init, %54
+  %57 = OpPtrAccessChain.storage_buffer.f32.byte_offset %output, %34
+  OpStore.storage_buffer.f32 %57, %min
+  %59 = OpPtrAccessChain.storage_buffer.f32.byte_offset %output, %37
+  OpStore.storage_buffer.f32 %59, %max
+  return
 }

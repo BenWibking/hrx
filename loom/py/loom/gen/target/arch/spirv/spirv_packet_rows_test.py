@@ -34,6 +34,7 @@ from loom.target.arch.spirv.atomic import (
 from loom.target.arch.spirv.builtins import BUILTIN_DIMENSIONS, BUILTIN_INDEX_QUERIES
 from loom.target.arch.spirv.cooperative_matrix import cooperative_matrix_descriptor_key
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
+from loom.target.arch.spirv.extended_math import EXTENDED_MATH_INSTRUCTIONS
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
     ORDINARY_VECTOR_TYPES,
@@ -719,6 +720,27 @@ def test_generation_emits_complete_ordinary_vector_integer_conversions() -> None
 def test_generation_emits_complete_ordinary_vector_bit_layout_rows() -> None:
     assert len(ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS) == 100
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS)
+
+
+def test_generation_emits_complete_extended_math_matrix() -> None:
+    assert len(EXTENDED_MATH_INSTRUCTIONS) == 24
+    rows = {row.descriptor_key: row for row in _packet_rows()}
+    descriptors = {descriptor.key: descriptor for descriptor in SPIRV_LOGICAL_CORE_DESCRIPTOR_SET.descriptors}
+    for instruction in EXTENDED_MATH_INSTRUCTIONS:
+        row = rows[instruction.descriptor_key]
+        expected_value_type = _expected_ordinary_vector_value(instruction.value_type)
+        assert row.opcode == "LOOM_SPIRV_OP_EXT_INST"
+        assert row.form == "LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION"
+        assert row.result_type == expected_value_type
+        assert row.operand_types == tuple(expected_value_type for _ in instruction.operation.operand_names)
+        assert row.result_count == 1
+        assert row.extended_instruction_set == "LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450"
+        assert row.extended_instruction == instruction.operation.instruction_c_enum
+
+        descriptor = descriptors[instruction.descriptor_key]
+        assert descriptor.mnemonic == instruction.mnemonic
+        assert descriptor.semantic_tag == instruction.descriptor_key
+        assert descriptor.immediates == ()
 
 
 def test_generation_compacts_only_repeated_four_operand_types() -> None:

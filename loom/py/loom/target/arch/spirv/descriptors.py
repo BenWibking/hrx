@@ -43,6 +43,10 @@ from loom.target.arch.spirv.cooperative_matrix import (
     CooperativeMatrixCase,
     cooperative_matrix_descriptor_key,
 )
+from loom.target.arch.spirv.extended_math import (
+    EXTENDED_MATH_INSTRUCTIONS,
+    ExtendedMathInstruction,
+)
 from loom.target.arch.spirv.features import feature_bit_value
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
@@ -624,6 +628,34 @@ def _ordinary_vector_descriptor(row: OrdinaryVectorInstruction) -> Descriptor:
             results=("dst",),
             operands=row.operand_names,
             immediates=("component_index",) if has_component_index else (),
+            result_value_types=(
+                (result_value_type,) if result_value_type is not None else ()
+            ),
+        ),
+        schedule_class=_SCHEDULE_ALU,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _extended_math_descriptor(row: ExtendedMathInstruction) -> Descriptor:
+    result_value_type = _ordinary_vector_result_value_type(row.value_type)
+    return Descriptor(
+        key=row.descriptor_key,
+        mnemonic=row.mnemonic,
+        semantic_tag=row.descriptor_key,
+        operands=(
+            _ordinary_vector_result(row.value_type),
+            *(
+                _ordinary_vector_operand(operand_name, row.value_type)
+                for operand_name in row.operation.operand_names
+            ),
+        ),
+        feature_mask_words=(
+            (row.value_type.feature_bits,) if row.value_type.feature_bits else ()
+        ),
+        asm_forms=_asm(
+            results=("dst",),
+            operands=row.operation.operand_names,
             result_value_types=(
                 (result_value_type,) if result_value_type is not None else ()
             ),
@@ -1812,6 +1844,7 @@ SPIRV_LOGICAL_CORE_DESCRIPTOR_SET = DescriptorSet(
             _ordinary_vector_descriptor(row)
             for row in ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS
         ),
+        *(_extended_math_descriptor(row) for row in EXTENDED_MATH_INSTRUCTIONS),
         _coordinate_copy_descriptor(),
         _ternary_same_type_descriptor(
             key="spirv.op_imul_add.i32",

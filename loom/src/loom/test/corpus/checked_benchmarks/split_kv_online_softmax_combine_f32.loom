@@ -30,7 +30,7 @@ kernel.def @split_kv_online_softmax_combine_f32() {
   %acc0_values = vector.load %acc0_view[0] : view<4xf32> -> vector<4xf32>
   %acc1_values = vector.load %acc1_view[0] : view<4xf32> -> vector<4xf32>
 
-  %combined_max = scalar.maxnumf %max0, %max1 : f32
+  %combined_max = scalar.maxnumf<nsz> %max0, %max1 : f32
   %delta0 = scalar.subf %max0, %combined_max : f32
   %delta1 = scalar.subf %max1, %combined_max : f32
   %scale0 = scalar.expf<afn> %delta0 : f32
