@@ -56,6 +56,21 @@ loom_test(
 )
 
 loom_test(
+    name = "byte_memory_banks_test",
+    srcs = [
+        "byte_memory_banks.loom",
+        "//loom/src/loom/test/corpus/source_low:byte_memory_banks.loom-test",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/spirv:vulkan1.3+bda+extended-types",
+    ],
+    execution_profiles = GPU_HARDWARE_PROFILES + [AMDGPU_ACCESS_PROFILE],
+)
+
+loom_test(
     name = "scheduled_unroll_scope_test",
     srcs = ["scheduled_unroll_scope.loom"],
     compile_targets = [

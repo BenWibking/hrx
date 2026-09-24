@@ -77,6 +77,7 @@ static bool loom_amdgpu_source_memory_access_prefers_vgpr(
     return true;
   }
   if (plan.operation_kind != LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD ||
+      (uint64_t)plan.element_byte_count * plan.vector_lane_count < 4 ||
       plan.minimum_alignment < 4 ||
       (plan.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
        plan.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT) ||
@@ -88,7 +89,9 @@ static bool loom_amdgpu_source_memory_access_prefers_vgpr(
                                              plan.alias_scope_id,
                                              plan.memory_space) ||
       loom_amdgpu_source_memory_terms_prefer_vgpr(
-          module, fact_table, view_regions, analysis, &plan)) {
+          module, fact_table, view_regions, analysis, &plan) ||
+      loom_amdgpu_analyzed_source_value_prefers_vgpr(
+          module, fact_table, view_regions, analysis, plan.root_value_id)) {
     return true;
   }
   return false;
