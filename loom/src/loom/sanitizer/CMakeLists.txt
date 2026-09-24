@@ -52,6 +52,28 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    materialize_assertions
+  HDRS
+    "materialize_assertions.h"
+  SRCS
+    "materialize_assertions.c"
+  DEPS
+    iree::base
+    loom::error::error_defs
+    loom::ir
+    loom::ops::index
+    loom::ops::kernel
+    loom::ops::op_defs
+    loom::ops::sanitizer
+    loom::ops::scalar
+    loom::ops::view
+    loom::pass::types
+    loom::rewrite::rewriter
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     race_insertion
   HDRS
     "race_insertion.h"

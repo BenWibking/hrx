@@ -48,6 +48,25 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "materialize_assertions",
+    srcs = ["materialize_assertions.c"],
+    hdrs = ["materialize_assertions.h"],
+    deps = [
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/ops/sanitizer",
+        "//loom/src/loom/ops/scalar",
+        "//loom/src/loom/ops/view",
+        "//loom/src/loom/pass:types",
+        "//loom/src/loom/rewrite:rewriter",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "race_insertion",
     srcs = ["race_insertion.c"],
     hdrs = ["race_insertion.h"],

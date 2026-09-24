@@ -17,6 +17,7 @@
 #include "loom/codegen/low/transforms/operand_forms.h"
 #include "loom/codegen/low/transforms/pipeline/source_to_low.h"
 #include "loom/codegen/low/transforms/pipeline/target_legalize.h"
+#include "loom/sanitizer/materialize_assertions.h"
 #include "loom/sanitizer/pipeline_passes.h"
 #include "loom/sanitizer/race_insertion.h"
 #include "loom/target/callgraph_specialization.h"
