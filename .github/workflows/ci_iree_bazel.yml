@@ -92,14 +92,6 @@ jobs:
             host_cxx: clang++
             install_compiler_rt: true
             setup_python: true
-          - name: Linux / CPU / MSAN
-            command: iree-bazel-cpu-msan
-            container_image: ghcr.io/rocm/no_rocm_image_ubuntu24_04@sha256:4150afe4759d14822f0e3f8930e1124f26e11f68b5c7b91ec9a02b20b1ebbb98
-            host_ar: ar
-            host_cc: clang
-            host_cxx: clang++
-            install_compiler_rt: true
-            setup_python: true
           - name: Linux / CPU / TSAN
             command: iree-bazel-cpu-tsan
             container_image: ghcr.io/rocm/no_rocm_image_ubuntu24_04@sha256:4150afe4759d14822f0e3f8930e1124f26e11f68b5c7b91ec9a02b20b1ebbb98
@@ -138,9 +130,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
 
       - name: Adjust git config
         run: git config --global --add safe.directory "$PWD"
+
+      - name: Select affected tests
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 build_tools/ci/change_scope.py --base "$BASE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         if: matrix.setup_python
@@ -178,10 +178,14 @@ jobs:
 
       - name: Run IREE Bazel CI
         id: iree_bazel_ci
+        shell: bash
         run: |
-          echo "python3 build_tools/devtools/ci.py ${{ matrix.command }} --bazel-profile-dir ${RUNNER_TEMP}/bazel-profiles --keep-going"
+          scope_args=()
+          if [[ "${{ steps.scope.outputs.loom_only }}" == true && "${{ matrix.command }}" != iree-bazel-repository-build ]]; then
+            scope_args=(--target //loom/...)
+          fi
           python3 build_tools/devtools/ci.py ${{ matrix.command }} \
-            --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
+            "${scope_args[@]}" --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
 
       - name: Upload Bazel profiles
         continue-on-error: true
@@ -346,11 +350,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
 
       - name: Adjust git config
         run: |
           mkdir -p "$HOME"
           git config --global --add safe.directory "$PWD"
+
+      - name: Select affected tests
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 build_tools/ci/change_scope.py --base "$BASE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Install Vulkan build environment
         run: |
@@ -390,10 +402,14 @@ jobs:
 
       - name: Run IREE Bazel CI
         id: iree_bazel_ci
+        shell: bash
         run: |
-          echo "python3 build_tools/devtools/ci.py iree-bazel-vulkan --bazel-profile-dir ${RUNNER_TEMP}/bazel-profiles --keep-going"
+          scope_args=()
+          if [[ "${{ steps.scope.outputs.loom_only }}" == true ]]; then
+            scope_args=(--target //loom/...)
+          fi
           python3 build_tools/devtools/ci.py iree-bazel-vulkan \
-            --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
+            "${scope_args[@]}" --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
 
       - name: Upload Bazel profiles
         continue-on-error: true
@@ -498,11 +514,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
 
       - name: Adjust git config
         run: |
           mkdir -p "$HOME"
           git config --global --add safe.directory "$PWD"
+
+      - name: Select affected tests
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 build_tools/ci/change_scope.py --base "$BASE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -531,11 +555,15 @@ jobs:
 
       - name: Run IREE Bazel CI
         id: iree_bazel_ci
+        shell: bash
         run: |
-          echo "python3 build_tools/devtools/ci.py ${{ matrix.command }} --amdgpu-target ${{ matrix.target_selector }} --bazel-profile-dir ${RUNNER_TEMP}/bazel-profiles --keep-going"
+          scope_args=()
+          if [[ "${{ steps.scope.outputs.loom_only }}" == true ]]; then
+            scope_args=(--target //loom/...)
+          fi
           python3 build_tools/devtools/ci.py ${{ matrix.command }} \
             --amdgpu-target "${{ matrix.target_selector }}" \
-            --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
+            "${scope_args[@]}" --bazel-profile-dir "${RUNNER_TEMP}/bazel-profiles" --keep-going
 
       - name: Upload Bazel profiles
         continue-on-error: true

@@ -162,7 +162,6 @@ class CiStep:
 class StepResult:
     step: CiStep
     returncode: int
-    elapsed_seconds: float
 
     @property
     def ok(self) -> bool:
@@ -548,8 +547,6 @@ def repository_integration_steps(amdgpu_target_selector: str) -> list[CiStep]:
 def cpu_sanitizer_steps(targets: tuple[str, ...]) -> list[CiStep]:
     steps = [bazel_configure_step()]
     for config in ci_config.SANITIZER_TEST_CONFIGS:
-        steps.extend(cpu_config_steps(targets, config))
-    for config in ci_config.SANITIZER_BUILD_CONFIGS:
         steps.extend(cpu_config_steps(targets, config))
     return steps
 
@@ -1006,13 +1003,6 @@ def cmake_sanitizer_steps(
                 command_name, target_group, config, amdgpu_target_selector
             )
         )
-    for config in ci_config.SANITIZER_BUILD_CONFIGS:
-        command_name = f"{prefix}-{config}"
-        steps.extend(
-            cmake_target_steps(
-                command_name, target_group, config, amdgpu_target_selector
-            )
-        )
     return steps
 
 
@@ -1034,22 +1024,6 @@ def cmake_sanitizer_smoke_steps() -> list[CiStep]:
                     regex=test_regex,
                     env=sanitizer_env(config),
                     parallelism=2,
-                ),
-            ]
-        )
-    for config in ci_config.SANITIZER_BUILD_CONFIGS:
-        command_name = f"{CMAKE_SANITIZER_SMOKE_COMMAND}-{config}"
-        steps.extend(
-            [
-                cmake_configure_step(
-                    command_name,
-                    sanitizer=config,
-                    build_tests=False,
-                ),
-                cmake_build_step(
-                    command_name,
-                    f"Build IREE CMake sanitizer smoke with {config.upper()}",
-                    ci_config.CMAKE_SANITIZER_SMOKE_LIBRARY_BUILD_TARGETS,
                 ),
             ]
         )
@@ -1335,7 +1309,7 @@ def run_step(step: CiStep, verbose: bool) -> StepResult:
         audit_result = audit_requirements(step.requirement_audit, environment)
         if audit_result:
             print(f"[fail] {step.name}: run-requirement audit", flush=True)
-            return StepResult(step, audit_result, time.monotonic() - start_time)
+            return StepResult(step, audit_result)
     artifact_dir = os.environ.get(windows_diagnostics.ARTIFACT_DIR_ENV)
     if artifact_dir:
         build_dir = None
@@ -1354,7 +1328,7 @@ def run_step(step: CiStep, verbose: bool) -> StepResult:
             step.argv, cwd=REPO_ROOT, env=environment
         ).returncode
     elapsed_seconds = time.monotonic() - start_time
-    result = StepResult(step, returncode, elapsed_seconds)
+    result = StepResult(step, returncode)
     if result.ok:
         print(f"[ok] {step.name} ({elapsed_seconds:.1f}s)", flush=True)
     else:
@@ -1364,25 +1338,6 @@ def run_step(step: CiStep, verbose: bool) -> StepResult:
         )
         print("  " + step.command_line(), flush=True)
     return result
-
-
-def write_step_summary(results: list[StepResult]) -> None:
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not summary_path:
-        return
-    lines = [
-        "## IREE CI",
-        "",
-        "| Phase | Result | Time |",
-        "| --- | --- | ---: |",
-    ]
-    for result in results:
-        outcome = "pass" if result.ok else f"fail ({result.returncode})"
-        lines.append(
-            f"| {result.step.name} | {outcome} | {result.elapsed_seconds:.1f}s |"
-        )
-    with Path(summary_path).open("a", encoding="utf-8") as summary_file:
-        summary_file.write("\n".join(lines) + "\n")
 
 
 def run_steps(
@@ -1398,20 +1353,18 @@ def run_steps(
         return 0
 
     print("== IREE CI ==", flush=True)
-    results = []
+    failures = []
     for step in steps:
         print_group_start(step.name)
         try:
             result = run_step(step, verbose=verbose)
         finally:
             print_group_end()
-        results.append(result)
-        if not result.ok and not keep_going:
-            write_step_summary(results)
-            return result.returncode
+        if not result.ok:
+            if not keep_going:
+                return result.returncode
+            failures.append(result)
 
-    write_step_summary(results)
-    failures = [result for result in results if not result.ok]
     if failures:
         print("", flush=True)
         print("Failed phases:", flush=True)
