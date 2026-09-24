@@ -174,6 +174,31 @@ static loom_string_id_t loom_bytecode_numbering_lookup_module_string(
   return loom_module_lookup_string(numbering->module, view);
 }
 
+// Publishes one entry in both directions of the symbol-order projection.
+static void loom_bytecode_numbering_publish_symbol_order(
+    loom_bytecode_numbering_t* numbering, loom_symbol_id_t module_symbol_id,
+    loom_symbol_id_t wire_ordinal) {
+  if (IREE_LIKELY(numbering->module->symbols.count <=
+                  LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY)) {
+    numbering->symbol_order.flat.module_ids[wire_ordinal] = module_symbol_id;
+    numbering->symbol_order.flat.wire_ordinals[module_symbol_id] = wire_ordinal;
+    return;
+  }
+  loom_bytecode_symbol_order_segment_t* wire_segment =
+      numbering->symbol_order
+          .segments[wire_ordinal >> LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT];
+  wire_segment
+      ->module_ids[wire_ordinal & LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_MASK] =
+      module_symbol_id;
+  loom_bytecode_symbol_order_segment_t* module_segment =
+      numbering->symbol_order
+          .segments[module_symbol_id >>
+                    LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT];
+  module_segment->wire_ordinals[module_symbol_id &
+                                LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_MASK] =
+      wire_ordinal;
+}
+
 // Builds the stable module-ID to presentation-ordered wire-ordinal mapping.
 static iree_status_t loom_bytecode_numbering_initialize_symbol_order(
     loom_bytecode_numbering_t* numbering) {
@@ -182,16 +207,36 @@ static iree_status_t loom_bytecode_numbering_initialize_symbol_order(
     return iree_ok_status();
   }
 
-  // Both directions share one dense arena allocation. Symbol IDs are bounded
-  // below LOOM_SYMBOL_ID_INVALID by module construction.
-  loom_symbol_id_t* storage = NULL;
-  IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(numbering->arena, module->symbols.count,
-                                2 * sizeof(*storage), (void**)&storage));
-  numbering->symbol_order.module_ids = storage;
-  numbering->symbol_order.wire_ordinals = storage + module->symbols.count;
-  memset(numbering->symbol_order.wire_ordinals, 0xFF,
-         module->symbols.count * sizeof(*storage));
+  if (module->symbols.count <= LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY) {
+    // Preserve one direct projection for ordinary modules. The complete pair
+    // fits in one segment-sized arena allocation.
+    loom_symbol_id_t* storage = NULL;
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate_array(numbering->arena, module->symbols.count,
+                                  2 * sizeof(*storage), (void**)&storage));
+    numbering->symbol_order.flat.module_ids = storage;
+    numbering->symbol_order.flat.wire_ordinals =
+        storage + module->symbols.count;
+    memset(numbering->symbol_order.flat.wire_ordinals, 0xFF,
+           module->symbols.count * sizeof(*storage));
+  } else {
+    // Both directions share pool-fitting segments. Symbol IDs are bounded
+    // below LOOM_SYMBOL_ID_INVALID by module construction.
+    const iree_host_size_t segment_count =
+        (module->symbols.count + LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_MASK) >>
+        LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT;
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate_array(numbering->arena, segment_count,
+                                  sizeof(*numbering->symbol_order.segments),
+                                  (void**)&numbering->symbol_order.segments));
+    for (iree_host_size_t i = 0; i < segment_count; ++i) {
+      loom_bytecode_symbol_order_segment_t* segment = NULL;
+      IREE_RETURN_IF_ERROR(iree_arena_allocate(
+          numbering->arena, sizeof(*segment), (void**)&segment));
+      numbering->symbol_order.segments[i] = segment;
+      memset(segment->wire_ordinals, 0xFF, sizeof(segment->wire_ordinals));
+    }
+  }
 
   loom_symbol_id_t wire_ordinal = 0;
   const loom_block_t* module_block =
@@ -206,10 +251,10 @@ static iree_status_t loom_bytecode_numbering_initialize_symbol_order(
     if (module->symbols.entries[symbol_id].defining_op != op) {
       continue;
     }
-    IREE_ASSERT_EQ(numbering->symbol_order.wire_ordinals[symbol_id],
+    IREE_ASSERT_EQ(loom_bytecode_wire_symbol_ordinal(numbering, symbol_id),
                    LOOM_SYMBOL_ID_INVALID);
-    numbering->symbol_order.module_ids[wire_ordinal] = symbol_id;
-    numbering->symbol_order.wire_ordinals[symbol_id] = wire_ordinal;
+    loom_bytecode_numbering_publish_symbol_order(numbering, symbol_id,
+                                                 wire_ordinal);
     ++wire_ordinal;
   }
 
@@ -217,12 +262,12 @@ static iree_status_t loom_bytecode_numbering_initialize_symbol_order(
   // anchor. Preserve their stable module-table order after all definitions.
   for (loom_symbol_id_t module_symbol_id = 0;
        module_symbol_id < module->symbols.count; ++module_symbol_id) {
-    if (numbering->symbol_order.wire_ordinals[module_symbol_id] !=
+    if (loom_bytecode_wire_symbol_ordinal(numbering, module_symbol_id) !=
         LOOM_SYMBOL_ID_INVALID) {
       continue;
     }
-    numbering->symbol_order.module_ids[wire_ordinal] = module_symbol_id;
-    numbering->symbol_order.wire_ordinals[module_symbol_id] = wire_ordinal;
+    loom_bytecode_numbering_publish_symbol_order(numbering, module_symbol_id,
+                                                 wire_ordinal);
     ++wire_ordinal;
   }
   IREE_ASSERT_EQ(wire_ordinal, module->symbols.count);

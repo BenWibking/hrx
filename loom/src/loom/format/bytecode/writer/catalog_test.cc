@@ -492,6 +492,73 @@ TEST_F(CatalogTest, ParameterizedTypesResumeAfterNestedTypes) {
   }
 }
 
+TEST_F(CatalogTest, SymbolOrderRetainsOrdinaryModuleOrder) {
+  constexpr size_t kSymbolCount = LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY;
+  std::vector<loom_symbol_id_t> symbol_ids;
+  symbol_ids.reserve(kSymbolCount);
+  for (size_t i = 0; i < kSymbolCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "symbol_%08zu", i);
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_add_symbol(
+        module_, Intern(iree_make_cstring_view(name)), &symbol_id));
+    symbol_ids.push_back(symbol_id);
+  }
+
+  loom_bytecode_numbering_t numbering;
+  IREE_ASSERT_OK(
+      loom_bytecode_numbering_initialize(&numbering, module_, &arena_));
+  for (size_t i = 0; i < kSymbolCount; ++i) {
+    EXPECT_EQ(loom_bytecode_module_symbol_id(&numbering,
+                                             static_cast<loom_symbol_id_t>(i)),
+              symbol_ids[i]);
+    EXPECT_EQ(loom_bytecode_wire_symbol_ordinal(&numbering, symbol_ids[i]), i);
+  }
+}
+
+TEST_F(CatalogTest, SymbolOrderUsesPoolSizedStorage) {
+  constexpr size_t kSymbolCount =
+      4 * LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY + 1;
+  std::vector<loom_symbol_id_t> symbol_ids;
+  symbol_ids.reserve(kSymbolCount);
+  for (size_t i = 0; i < kSymbolCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "symbol_%08zu", i);
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_add_symbol(
+        module_, Intern(iree_make_cstring_view(name)), &symbol_id));
+    symbol_ids.push_back(symbol_id);
+  }
+
+  iree_arena_block_pool_statistics_t before;
+  iree_arena_block_pool_query_statistics(&pool_, &before);
+  loom_bytecode_numbering_t numbering;
+  IREE_ASSERT_OK(
+      loom_bytecode_numbering_initialize(&numbering, module_, &arena_));
+  iree_arena_block_pool_statistics_t after;
+  iree_arena_block_pool_query_statistics(&pool_, &after);
+  EXPECT_EQ(after.oversized_allocation_count,
+            before.oversized_allocation_count);
+  EXPECT_EQ(after.oversized_allocation_bytes,
+            before.oversized_allocation_bytes);
+
+  constexpr size_t kSegmentCapacity =
+      LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY;
+  const size_t indices[] = {0,
+                            kSegmentCapacity - 1,
+                            kSegmentCapacity,
+                            2 * kSegmentCapacity - 1,
+                            2 * kSegmentCapacity,
+                            4 * kSegmentCapacity};
+  for (size_t index : indices) {
+    EXPECT_EQ(loom_bytecode_module_symbol_id(
+                  &numbering, static_cast<loom_symbol_id_t>(index)),
+              symbol_ids[index]);
+    EXPECT_EQ(loom_bytecode_wire_symbol_ordinal(&numbering, symbol_ids[index]),
+              index);
+  }
+}
+
 TEST_F(CatalogTest, StringCatalogRetainsFirstUseOrderAtScale) {
   constexpr size_t kStringCount = 257;
   std::vector<std::string> names;

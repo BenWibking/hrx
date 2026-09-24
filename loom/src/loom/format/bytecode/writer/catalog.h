@@ -73,6 +73,26 @@ typedef iree_alignas(64) struct loom_bytecode_global_value_segment_t {
 static_assert(sizeof(loom_bytecode_global_value_segment_t) <= 2048,
               "writer global-value segment must fit in arena blocks");
 
+// Number of entries in each direction of a symbol-order segment.
+#define LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY 512u
+#define LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT 9u
+#define LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_MASK \
+  (LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY - 1u)
+
+// Bidirectional projections for one range of symbol IDs and wire ordinals.
+typedef struct loom_bytecode_symbol_order_segment_t {
+  // Module symbol IDs indexed by the low bits of a wire ordinal.
+  loom_symbol_id_t module_ids[LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY];
+  // Wire ordinals indexed by the low bits of a module symbol ID.
+  loom_symbol_id_t wire_ordinals[LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY];
+} loom_bytecode_symbol_order_segment_t;
+
+static_assert(sizeof(loom_bytecode_symbol_order_segment_t) == 2048,
+              "writer symbol-order segment must fit in arena blocks");
+static_assert((1u << LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT) ==
+                  LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY,
+              "writer symbol-order segment capacity must match its shift");
+
 // Sequential catalog-completion facts retained until ENCODINGS emission.
 // Fixed-size chunks fit the arena pool and are consumed without random lookup.
 typedef struct loom_bytecode_encoding_prefix_chunk_t {
@@ -98,12 +118,18 @@ typedef struct loom_bytecode_numbering_t {
     const loom_low_repr_descriptor_set_t* active_descriptor_set;
   } low_repr;
 
-  // Bidirectional stable module ID and presentation-order mapping.
-  struct {
-    // Module symbol IDs indexed by presentation-ordered wire ordinal.
-    loom_symbol_id_t* module_ids;
-    // Presentation-ordered wire ordinals indexed by module symbol ID.
-    loom_symbol_id_t* wire_ordinals;
+  // Bidirectional stable module ID and presentation-order mapping. Modules
+  // fitting one segment use flat; larger modules use segments.
+  union {
+    // Direct projections retained by ordinary modules.
+    struct {
+      // Module symbol IDs indexed by presentation-ordered wire ordinal.
+      loom_symbol_id_t* module_ids;
+      // Presentation-ordered wire ordinals indexed by module symbol ID.
+      loom_symbol_id_t* wire_ordinals;
+    } flat;
+    // Paired projections indexed by the high bits of either ID.
+    loom_bytecode_symbol_order_segment_t** segments;
   } symbol_order;
 
   // Invocation-owned direct index for body-local numbering and membership.
@@ -207,7 +233,15 @@ iree_status_t loom_bytecode_numbering_initialize(
 static inline loom_symbol_id_t loom_bytecode_module_symbol_id(
     const loom_bytecode_numbering_t* numbering, loom_symbol_id_t wire_ordinal) {
   IREE_ASSERT(wire_ordinal < numbering->module->symbols.count);
-  return numbering->symbol_order.module_ids[wire_ordinal];
+  if (IREE_LIKELY(numbering->module->symbols.count <=
+                  LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY)) {
+    return numbering->symbol_order.flat.module_ids[wire_ordinal];
+  }
+  const loom_bytecode_symbol_order_segment_t* segment =
+      numbering->symbol_order
+          .segments[wire_ordinal >> LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT];
+  return segment
+      ->module_ids[wire_ordinal & LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_MASK];
 }
 
 // Returns the wire ordinal assigned to |module_symbol_id|.
@@ -215,7 +249,16 @@ static inline loom_symbol_id_t loom_bytecode_wire_symbol_ordinal(
     const loom_bytecode_numbering_t* numbering,
     loom_symbol_id_t module_symbol_id) {
   IREE_ASSERT(module_symbol_id < numbering->module->symbols.count);
-  return numbering->symbol_order.wire_ordinals[module_symbol_id];
+  if (IREE_LIKELY(numbering->module->symbols.count <=
+                  LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_CAPACITY)) {
+    return numbering->symbol_order.flat.wire_ordinals[module_symbol_id];
+  }
+  const loom_bytecode_symbol_order_segment_t* segment =
+      numbering->symbol_order
+          .segments[module_symbol_id >>
+                    LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_SHIFT];
+  return segment->wire_ordinals[module_symbol_id &
+                                LOOM_BYTECODE_SYMBOL_ORDER_SEGMENT_MASK];
 }
 
 // Interns a module-owned string into the bytecode string catalog.
