@@ -162,9 +162,6 @@ static iree_status_t loom_bytecode_write_func_metadata(
       loom_bytecode_emit_uvarint(builder, workload_args.count));
   IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(builder, arg_count));
   IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(builder, result_count));
-  IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_ensure_capacity(
-      signature_numbering,
-      (iree_host_size_t)workload_args.count + arg_count + result_count));
 
   for (uint16_t i = 0; i < workload_args.count; ++i) {
     IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_assign_value(
@@ -279,14 +276,10 @@ static iree_status_t loom_bytecode_write_func_metadata(
 static iree_status_t loom_bytecode_write_global_metadata(
     iree_string_builder_t* builder, loom_bytecode_numbering_t* numbering,
     const loom_module_t* module, const loom_op_t* op,
+    const loom_bytecode_global_value_list_t* local_values,
     loom_bytecode_value_numbering_t* value_numbering) {
-  loom_bytecode_global_value_list_t local_values = {0};
-  IREE_RETURN_IF_ERROR(loom_bytecode_collect_global_values(
-      numbering->arena, module, op, &local_values));
   IREE_RETURN_IF_ERROR(
-      loom_bytecode_number_global(numbering, op, &local_values));
-  IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_ensure_capacity(
-      value_numbering, local_values.count));
+      loom_bytecode_number_global(numbering, op, local_values));
 
   uint32_t writer_op_id = 0;
   IREE_RETURN_IF_ERROR(
@@ -302,15 +295,20 @@ static iree_status_t loom_bytecode_write_global_metadata(
       comments, comment_count));
 
   IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(builder, op->result_count));
-  IREE_RETURN_IF_ERROR(loom_bytecode_emit_uvarint(builder, local_values.count));
-  for (iree_host_size_t i = 0; i < local_values.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_bytecode_value_numbering_assign_value(
-        value_numbering, local_values.values[i]));
+  IREE_RETURN_IF_ERROR(
+      loom_bytecode_emit_uvarint(builder, local_values->count));
+  loom_bytecode_global_value_iterator_t iterator =
+      loom_bytecode_global_value_iterator_begin(local_values);
+  loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
+  while (loom_bytecode_global_value_iterator_next(&iterator, &value_id)) {
+    IREE_RETURN_IF_ERROR(
+        loom_bytecode_value_numbering_assign_value(value_numbering, value_id));
   }
-  for (iree_host_size_t i = 0; i < local_values.count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_bytecode_emit_value_def(
-        builder, numbering, value_numbering,
-        loom_module_value(module, local_values.values[i])));
+  iterator = loom_bytecode_global_value_iterator_begin(local_values);
+  while (loom_bytecode_global_value_iterator_next(&iterator, &value_id)) {
+    IREE_RETURN_IF_ERROR(
+        loom_bytecode_emit_value_def(builder, numbering, value_numbering,
+                                     loom_module_value(module, value_id)));
   }
 
   const loom_op_vtable_t* vtable = loom_op_vtable(module, op);
@@ -683,8 +681,10 @@ iree_status_t loom_bytecode_write_symbols_section(
     } else if (has_global_metadata && symbol->defining_op) {
       loom_bytecode_value_numbering_t signature_numbering;
       loom_bytecode_value_numbering_initialize(&signature_numbering, numbering);
+      const loom_bytecode_global_value_list_t* local_values =
+          loom_bytecode_global_values_for_symbol(numbering, module_symbol_id);
       IREE_RETURN_IF_ERROR(loom_bytecode_write_global_metadata(
-          builder, numbering, module, symbol->defining_op,
+          builder, numbering, module, symbol->defining_op, local_values,
           &signature_numbering));
     } else if (has_record_metadata && symbol->defining_op) {
       IREE_RETURN_IF_ERROR(loom_bytecode_write_record_metadata(

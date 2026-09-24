@@ -28,8 +28,12 @@ static iree_status_t loom_bytecode_prepare_type_bindings(
   while (depth) {
     loom_bytecode_type_frame_t* frame = &index->stack[depth - 1];
     loom_bytecode_type_node_t* node = &index->nodes[frame->node];
-    if (!node->has_bindings ||
-        node->binding_generation == values->binding_generation) {
+    if (!node->has_bindings) {
+      --depth;
+      continue;
+    }
+    IREE_ASSERT(values->scope_generation != 0);
+    if (node->binding_generation == values->scope_generation) {
       --depth;
       continue;
     }
@@ -39,7 +43,7 @@ static iree_status_t loom_bytecode_prepare_type_bindings(
       index->stack[depth++] = (loom_bytecode_type_frame_t){.node = child};
       continue;
     }
-    node->binding_generation = values->binding_generation;
+    node->binding_generation = values->scope_generation;
     node->binding = ++values->binding_count;
     index->pending[(*out_count)++] = frame->node;
     --depth;
