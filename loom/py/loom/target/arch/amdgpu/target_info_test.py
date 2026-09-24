@@ -12,6 +12,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 
 from loom.target.arch.amdgpu.lds_bank_service import (
+    AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151,
     AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES,
 )
 from loom.target.arch.amdgpu.target_catalog import (
@@ -491,6 +495,35 @@ def test_lds_bank_service_models_are_structural_target_data() -> None:
         == AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES
     )
     assert gfx1250_a0.semantics.lds_bank_service_models is None
+    for name in ("gfx940", "gfx941"):
+        assert (
+            processors[name].features.lds_bank_service_models
+            == AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3
+        )
+    assert (
+        processors["gfx942"].features.lds_bank_service_models
+        == AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942
+    )
+    assert (
+        processors["gfx1100"].features.lds_bank_service_models
+        == AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100
+    )
+    assert (
+        processors["gfx1151"].features.lds_bank_service_models
+        == AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151
+    )
+    # Native qualification does not transfer to other processors in a family.
+    for name in (
+        "gfx1101",
+        "gfx1102",
+        "gfx1103",
+        "gfx1150",
+        "gfx1200",
+        "gfx1201",
+        "gfx11-generic",
+        "gfx9-4-generic",
+    ):
+        assert processors[name].features.lds_bank_service_models == ()
     assert processors["gfx1251"].features.lds_bank_service_models == ()
     assert processors["gfx12-5-generic"].features.lds_bank_service_models == ()
 

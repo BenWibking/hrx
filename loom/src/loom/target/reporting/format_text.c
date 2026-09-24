@@ -616,7 +616,8 @@ static iree_status_t loom_target_compile_report_format_summary(
           loom_target_compile_report_format_text_source_low_memory_summary(
               summary, &report->workload, builder));
       IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "\n"));
-      if (report->bank_service_summary.modeled_packet_count != 0) {
+      if (report->bank_service_summary.modeled_packet_count != 0 ||
+          report->bank_service_summary.unmodeled_packet_count != 0) {
         IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
             builder,
             "COMPILE-REPORT: source_low_bank_service_summary groups=%" PRIhsz,
@@ -872,7 +873,8 @@ static iree_status_t loom_target_compile_report_format_entry_rows(
           row->wait_counter_row_count, row->wait_reason_summary_row_count,
           row->wait_action_row_count, row->target_capability_row_count,
           row->target_insertion_row_count));
-      if (row->bank_service_summary.modeled_packet_count != 0) {
+      if (row->bank_service_summary.modeled_packet_count != 0 ||
+          row->bank_service_summary.unmodeled_packet_count != 0) {
         IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
             builder,
             "COMPILE-REPORT: entry_bank_service[%" PRIhsz "] function=%.*s",

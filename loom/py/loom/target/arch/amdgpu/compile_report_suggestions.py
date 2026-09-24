@@ -1235,7 +1235,6 @@ def _suggest_lds_bank_service(
             raise CompileReportError(
                 f"{path_prefix}.index: expected {group_position}, got {report_index}"
             )
-        model = _report_object(group.get("model"), f"{path_prefix}.model")
         summary = _report_object(group.get("summary"), f"{path_prefix}.summary")
         structural = _report_object(
             summary.get("structural"),
@@ -1264,12 +1263,12 @@ def _suggest_lds_bank_service(
         )
         if (
             exact_packet_count == 0
-            or unknown_packet_count != 0
             or conflicted_packet_count == 0
             or extra_round_count == 0
         ):
             continue
 
+        model = _report_object(group.get("model"), f"{path_prefix}.model")
         model_evidence = _report_string(
             model.get("evidence"),
             f"{path_prefix}.model.evidence",
@@ -1331,6 +1330,13 @@ def _suggest_lds_bank_service(
                     "packet width to reduce exact structural extra rounds. "
                     "Recompile each candidate, reject spill or occupancy "
                     "regressions, and select only from hardware timing."
+                    + (
+                        " Packets without exact address evidence: "
+                        f"{unknown_packet_count}. This finding covers only "
+                        "the proven packets."
+                        if unknown_packet_count
+                        else ""
+                    )
                 ),
                 evidence=(
                     CompileReportSuggestionEvidence(
@@ -1353,6 +1359,10 @@ def _suggest_lds_bank_service(
                             "maximum_request_multiplicity"
                         ),
                         value=maximum_request_multiplicity,
+                    ),
+                    CompileReportSuggestionEvidence(
+                        path=f"{path_prefix}.summary.unknown_packet_count",
+                        value=unknown_packet_count,
                     ),
                     CompileReportSuggestionEvidence(
                         path=f"{path_prefix}.model.evidence",

@@ -179,6 +179,55 @@ loom-compile-report show kernel.report.json --format=json \
 The view is smaller and more stable for dashboards and agents than the complete
 compiler report.
 
+## Diagnose LDS bank conflicts
+
+For an AMDGPU kernel using workgroup memory, capture a `details` report and run
+`loom-compile-report show kernel.report.json`. The **Bank service** view connects
+source loads and stores to the selected LDS packet and its lane-service model.
+It separates three coverage counts:
+
+- **Exact** packets have proven addresses and active lanes under a named model.
+- **Unknown** packets have a model, but an address, alignment, or participation
+  proof is missing. Each source group names the missing proof.
+- **Unmodeled** packets have no model for the selected target, packet, and wave
+  size. A missing model is not evidence of conflict-free access.
+
+Model selection respects the function's execution width. The qualified b128
+coverage includes silicon-calibrated gfx1100/gfx1151 models for wave32 and
+wave64, silicon-calibrated gfx942 wave64 models, and documented CDNA3 wave64
+models for gfx940/gfx941. The gfx1250 wave32 model is explicitly an unvalidated
+vendor software model. Other gfx11 processors, gfx1200/gfx1201, unsupported wave
+modes, and other packet widths report unmodeled coverage. A shared bank count
+alone does not establish shared service rules.
+
+Reads and writes can have different lane-service groups, and repeated reads
+can broadcast. AMD's [LDS bank-conflict explanation](https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html)
+describes the CDNA3 b128 groups; the
+[ROCm programming guide](https://rocm-handbook.amd.com/_/downloads/amd-rocm-programming-guide/en/docs-7.2.3/pdf/)
+describes identical-address broadcast. Wide-packet analysis requires packet
+alignment and full-subgroup participation. Fragment accesses use their compiled
+lane/register layout, including repeated lane addresses.
+
+Required and extra **service rounds** describe proven static packets under the
+reported model. They are not measured cycles, wall-clock time, or a predicted
+speedup. Dynamic totals include only packets with proven execution counts;
+unresolved loop counts remain unknown. The model's provenance is separate from
+the address proof: `exact` under an unvalidated model is still experimental.
+
+Use `loom-compile-report suggest kernel.report.json` to find proven conflicting
+groups. Findings retain proven conflicts even when other packets in the same
+group are unknown, and state that coverage explicitly. Unvalidated-model
+suggestions require `--include-experimental`.
+
+Compare an authored pitch, padding, or lane-mapping change with
+`loom-compile-report diff baseline.report.json candidate.report.json`. The diff
+reports service changes and proof loss independently. A lower conflict count
+accompanied by more unknown or unmodeled packets does not demonstrate an
+improvement. Evaluate both producer stores and consumer loads, then check
+register pressure, LDS footprint, residency, and native execution time before
+selecting the layout. Instruction scheduling can overlap service with other
+work; it cannot remove a conflict within one LDS instruction.
+
 ## Diff one controlled change
 
 Capture the same root, configuration, target, and workload before and after one

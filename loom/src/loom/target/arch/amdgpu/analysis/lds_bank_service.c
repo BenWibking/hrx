@@ -16,7 +16,7 @@ typedef struct loom_amdgpu_lds_bank_service_model_binding_t {
 } loom_amdgpu_lds_bank_service_model_binding_t;
 
 typedef struct loom_amdgpu_lds_bank_service_model_set_t {
-  // Models sorted by descriptor reference.
+  // Models sorted by descriptor reference, then wave size.
   const loom_amdgpu_lds_bank_service_model_binding_t* bindings;
   // Number of models in |bindings|.
   iree_host_size_t count;
@@ -27,7 +27,7 @@ typedef struct loom_amdgpu_lds_bank_service_model_set_t {
 const loom_amdgpu_lds_bank_service_model_t*
 loom_amdgpu_lds_bank_service_model_lookup(
     loom_amdgpu_lds_bank_service_model_set_ordinal_t model_set_ordinal,
-    loom_amdgpu_descriptor_ref_t descriptor_ref) {
+    loom_amdgpu_descriptor_ref_t descriptor_ref, uint8_t wave_size) {
   if (model_set_ordinal ==
       LOOM_AMDGPU_LDS_BANK_SERVICE_MODEL_SET_ORDINAL_NONE) {
     return NULL;
@@ -42,10 +42,13 @@ loom_amdgpu_lds_bank_service_model_lookup(
     const iree_host_size_t mid = low + (high - low) / 2;
     const loom_amdgpu_lds_bank_service_model_binding_t* binding =
         &model_set->bindings[mid];
-    if (binding->descriptor_ref == descriptor_ref) {
+    if (binding->descriptor_ref == descriptor_ref &&
+        binding->model.wave_size == wave_size) {
       return &binding->model;
     }
-    if (binding->descriptor_ref < descriptor_ref) {
+    if (binding->descriptor_ref < descriptor_ref ||
+        (binding->descriptor_ref == descriptor_ref &&
+         binding->model.wave_size < wave_size)) {
       low = mid + 1;
     } else {
       high = mid;

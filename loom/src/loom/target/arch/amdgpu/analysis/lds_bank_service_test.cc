@@ -54,19 +54,24 @@ static void ExpectProfile(const loom_amdgpu_lds_bank_service_result_t& result,
 }
 
 static const loom_amdgpu_lds_bank_service_model_t* LookupB128Model(
-    loom_amdgpu_descriptor_ref_t descriptor_ref) {
+    loom_amdgpu_descriptor_ref_t descriptor_ref,
+    iree_string_view_t processor_name = IREE_SV("gfx1250"),
+    uint8_t wave_size = 32) {
   const loom_amdgpu_processor_info_t* processor =
-      loom_amdgpu_target_info_find_processor(IREE_SV("gfx1250"));
+      loom_amdgpu_target_info_find_processor(processor_name);
   IREE_ASSERT(processor != nullptr);
   return loom_amdgpu_lds_bank_service_model_lookup(
       processor->properties.features.lds_bank_service_model_set_ordinal,
-      descriptor_ref);
+      descriptor_ref, wave_size);
 }
 
 TEST(AmdgpuLdsBankServiceTest, RegisteredB128ModelsMatchReferenceProfiles) {
   struct Case {
+    // Byte distance between consecutive lanes.
     uint32_t lane_stride_bytes;
+    // Total service rounds under the registered model.
     uint16_t required_rounds;
+    // Largest number of distinct requests served by one bank in a phase.
     uint16_t maximum_multiplicity;
   };
   static constexpr Case kCases[] = {
@@ -100,7 +105,7 @@ TEST(AmdgpuLdsBankServiceTest, RegisteredB128ModelsMatchReferenceProfiles) {
 TEST(AmdgpuLdsBankServiceTest, LookupRequiresModelAndDescriptorBinding) {
   EXPECT_EQ(loom_amdgpu_lds_bank_service_model_lookup(
                 LOOM_AMDGPU_LDS_BANK_SERVICE_MODEL_SET_ORDINAL_NONE,
-                LOOM_AMDGPU_DESCRIPTOR_REF_DS_READ_B128),
+                LOOM_AMDGPU_DESCRIPTOR_REF_DS_READ_B128, 32),
             nullptr);
   const loom_amdgpu_processor_info_t* processor =
       loom_amdgpu_target_info_find_processor(IREE_SV("gfx1250"));
@@ -108,51 +113,58 @@ TEST(AmdgpuLdsBankServiceTest, LookupRequiresModelAndDescriptorBinding) {
   EXPECT_EQ(
       loom_amdgpu_lds_bank_service_model_lookup(
           processor->properties.features.lds_bank_service_model_set_ordinal,
-          LOOM_AMDGPU_DESCRIPTOR_REF_NONE),
+          LOOM_AMDGPU_DESCRIPTOR_REF_NONE, 32),
       nullptr);
 }
 
-static constexpr uint64_t LaneRangeMask(uint8_t begin, uint8_t count) {
-  return ((UINT64_C(1) << count) - UINT64_C(1)) << begin;
-}
-
-TEST(AmdgpuLdsBankServiceTest, ModelPhasesChangeStride96Result) {
-  const auto* registered_model =
-      LookupB128Model(LOOM_AMDGPU_DESCRIPTOR_REF_DS_READ_B128);
-  ASSERT_NE(registered_model, nullptr);
-  const auto registered_result = EvaluateLinear(registered_model, 96);
-  ExpectProfile(registered_result, /*required_rounds=*/8,
-                /*uncontended_rounds=*/8, /*maximum_multiplicity=*/1);
-
-  const loom_amdgpu_lds_bank_service_model_t ck_wave64_model = {
-      /*.key=*/IREE_SV("ck-wave64.ds_read_b128"),
-      /*.revision=*/
-      IREE_SV("ROCm/rocm-libraries@e370a4f28f42:lds_bank_conflicts.rst"),
-      /*.evidence_class=*/
-      LOOM_AMDGPU_LDS_BANK_SERVICE_EVIDENCE_PUBLIC_VENDOR_DOCUMENTATION,
-      /*.direction=*/LOOM_AMDGPU_LDS_BANK_SERVICE_DIRECTION_READ,
-      /*.request_policy=*/
-      LOOM_AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
-      /*.wave_size=*/64,
-      /*.bank_count=*/32,
-      /*.bank_word_byte_count=*/4,
-      /*.packet_word_count=*/4,
-      /*.phase_count=*/8,
-      /*.phase_lane_masks=*/
-      {
-          LaneRangeMask(0, 4) | LaneRangeMask(20, 4),
-          LaneRangeMask(4, 4) | LaneRangeMask(16, 4),
-          LaneRangeMask(8, 4) | LaneRangeMask(28, 4),
-          LaneRangeMask(12, 4) | LaneRangeMask(24, 4),
-          LaneRangeMask(32, 4) | LaneRangeMask(52, 4),
-          LaneRangeMask(36, 4) | LaneRangeMask(48, 4),
-          LaneRangeMask(40, 4) | LaneRangeMask(60, 4),
-          LaneRangeMask(44, 4) | LaneRangeMask(56, 4),
-      },
-  };
-  const auto ck_result = EvaluateLinear(&ck_wave64_model, 96);
-  ExpectProfile(ck_result, /*required_rounds=*/16,
-                /*uncontended_rounds=*/8, /*maximum_multiplicity=*/2);
+// The permutations distinguish the read and write service groups. A stride
+// sweep alone cannot distinguish octets made from different lane quads.
+TEST(AmdgpuLdsBankServiceTest, QualifiedOctetsDistinguishReadsAndWrites) {
+  for (const auto processor_name : {IREE_SV("gfx940"), IREE_SV("gfx942"),
+                                    IREE_SV("gfx1100"), IREE_SV("gfx1151")}) {
+    for (uint8_t wave_size : {32, 64}) {
+      const auto* read_model = LookupB128Model(
+          LOOM_AMDGPU_DESCRIPTOR_REF_DS_READ_B128, processor_name, wave_size);
+      const auto* write_model = LookupB128Model(
+          LOOM_AMDGPU_DESCRIPTOR_REF_DS_WRITE_B128, processor_name, wave_size);
+      if (wave_size == 32 &&
+          (iree_string_view_equal(processor_name, IREE_SV("gfx940")) ||
+           iree_string_view_equal(processor_name, IREE_SV("gfx942")))) {
+        EXPECT_EQ(read_model, nullptr);
+        EXPECT_EQ(write_model, nullptr);
+        continue;
+      }
+      ASSERT_NE(read_model, nullptr);
+      ASSERT_NE(write_model, nullptr);
+      const uint16_t phases = wave_size / 8;
+      ExpectProfile(EvaluateLinear(read_model, 16), phases, phases, 1);
+      ExpectProfile(EvaluateLinear(write_model, 16), phases, phases, 1);
+      ExpectProfile(EvaluateLinear(read_model, 96), phases * 2, phases, 2);
+      ExpectProfile(EvaluateLinear(write_model, 96), phases * 2, phases, 2);
+      ExpectProfile(EvaluateLinear(read_model, 0), phases, phases, 1);
+      for (unsigned permutation = 0; permutation < 2; ++permutation) {
+        LaneAddresses addresses = {};
+        for (uint8_t lane = 0; lane < wave_size; ++lane) {
+          const unsigned half = (lane % 32) / 16;
+          const unsigned bank_block = permutation == 0 ? (lane % 8) ^ (half * 4)
+                                                       : (lane % 4) + half * 4;
+          addresses[lane] = lane * 128 + bank_block * 16;
+        }
+        loom_amdgpu_lds_bank_service_result_t read_result = {};
+        loom_amdgpu_lds_bank_service_result_t write_result = {};
+        loom_amdgpu_lds_bank_service_evaluate(read_model,
+                                              FullWaveMask(wave_size),
+                                              addresses.data(), &read_result);
+        loom_amdgpu_lds_bank_service_evaluate(write_model,
+                                              FullWaveMask(wave_size),
+                                              addresses.data(), &write_result);
+        ExpectProfile(read_result, phases * (permutation == 0 ? 2 : 1), phases,
+                      permutation == 0 ? 2 : 1);
+        ExpectProfile(write_result, phases * (permutation == 0 ? 1 : 2), phases,
+                      permutation == 0 ? 1 : 2);
+      }
+    }
+  }
 }
 
 TEST(AmdgpuLdsBankServiceTest, ReadRequestPolicyChangesBroadcastProfile) {

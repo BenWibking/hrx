@@ -92,7 +92,7 @@ typedef struct loom_amdgpu_lds_bank_service_result_t {
 } loom_amdgpu_lds_bank_service_result_t;
 
 // Returns the immutable model selected by |model_set_ordinal| and
-// |descriptor_ref|.
+// |descriptor_ref| and the function's selected |wave_size|.
 //
 // Generated target rows intern complete, unambiguous model sets. Multiple
 // processors and revisions may select the same set without introducing
@@ -100,7 +100,7 @@ typedef struct loom_amdgpu_lds_bank_service_result_t {
 const loom_amdgpu_lds_bank_service_model_t*
 loom_amdgpu_lds_bank_service_model_lookup(
     loom_amdgpu_lds_bank_service_model_set_ordinal_t model_set_ordinal,
-    loom_amdgpu_descriptor_ref_t descriptor_ref);
+    loom_amdgpu_descriptor_ref_t descriptor_ref, uint8_t wave_size);
 
 // Returns the stable report key for |evidence_class|.
 iree_string_view_t loom_amdgpu_lds_bank_service_evidence_class_name(
