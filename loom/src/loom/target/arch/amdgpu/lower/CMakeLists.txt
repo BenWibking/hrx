@@ -241,6 +241,7 @@ loom_cc_library(
     loom::analysis::condition_facts
     loom::analysis::contract_vector
     loom::analysis::control_uniformity
+    loom::analysis::storage_interference
     loom::analysis::symbolic_expr
     loom::analysis::view_regions
     loom::codegen::low::builder
