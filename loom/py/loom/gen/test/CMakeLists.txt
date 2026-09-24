@@ -42,6 +42,17 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    predicate_select
+  MAIN
+    "predicate_select.py"
+  SRCS
+    "predicate_select.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
     numeric_conversion_matrix
   MAIN
     "numeric_conversion_matrix.py"

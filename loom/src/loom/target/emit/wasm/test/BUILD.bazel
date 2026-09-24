@@ -48,6 +48,10 @@ iree_py_test(
         "$(location //loom/src/loom/test/corpus/source_low:buffer_selection.loom-test)",
         "$(location byte_access.loom)",
         "$(location buffer_selection.mjs)",
+        "--corpus",
+        "$(location //loom/src/loom/test/corpus/source_low:predicate_select_values.loom)",
+        "$(location byte_access.loom)",
+        "$(location predicate_select.mjs)",
     ],
     data = [
         "address_widening.mjs",
@@ -62,6 +66,7 @@ iree_py_test(
         "narrow_memory.mjs",
         "predicate_lanes.loom",
         "predicate_lanes.mjs",
+        "predicate_select.mjs",
         "scalar_memory.loom",
         "scalar_memory.mjs",
         "sum.loom",
@@ -76,6 +81,7 @@ iree_py_test(
         "//loom/src/loom/test/corpus/source_low:numeric_boolean_comparison.loom-test",
         "//loom/src/loom/test/corpus/source_low:numeric_index_operands.loom-test",
         "//loom/src/loom/test/corpus/source_low:numeric_scalar_i64_shift_counts.loom-test",
+        "//loom/src/loom/test/corpus/source_low:predicate_select_values.loom",
         "//loom/src/loom/tools/loom-compile",
     ],
     env_inherit = [

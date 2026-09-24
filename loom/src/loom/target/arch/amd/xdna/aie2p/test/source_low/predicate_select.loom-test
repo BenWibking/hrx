@@ -106,3 +106,21 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @predicate_select_
   %selected = predicate.xor.high32 %false_value, %12, %13
   return %selected
 }
+
+// ====
+
+func.def @predicate_select_single(%mask: vector<1xi1>, %true_value: vector<1xi1>, %false_value: vector<1xi1>) -> (vector<1xi1>) {
+  %selected = vector.select %mask, %true_value, %false_value : vector<1xi1>
+  func.return %selected : vector<1xi1>
+}
+
+// ----
+low.func.def target<amd.xdna.aie2p.core> abi(object_function) @predicate_select_single(%mask: reg<aie2p.elpredicate>, %true_value: reg<aie2p.elpredicate>, %false_value: reg<aie2p.elpredicate>) -> (reg<aie2p.elpredicate>) asm {
+  %9 = predicate.xor.low32 %true_value, %false_value
+  %10 = predicate.xor.high32 %true_value, %false_value, %9
+  %11 = predicate.and.low32 %mask, %10
+  %12 = predicate.and.high32 %mask, %10, %11
+  %13 = predicate.xor.low32 %false_value, %12
+  %selected = predicate.xor.high32 %false_value, %12, %13
+  return %selected
+}

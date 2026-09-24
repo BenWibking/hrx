@@ -945,6 +945,7 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _splat_rule(_I64, _V2I64, "wasm.i64x2.splat"),
         _splat_rule(_F32, _V4F32, "wasm.f32x4.splat"),
         _splat_rule(_F64, _V2F64, "wasm.f64x2.splat"),
+        _select_rule(_V4I1),
         _select_rule(_V4I32),
         _select_rule(_V4F32),
         _compare_rule(vector.vector_cmpi, "eq", _V4I32, "wasm.i32x4.eq"),

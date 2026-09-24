@@ -39,6 +39,7 @@ _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS: dict[
     Callable[[], AmdgpuDescriptorOverlay],
 ] = {
     "amdgpu.s_mov_b32": _s_mov_b32_contract_overlay,
+    "amdgpu.s_mov_b64_exec_read": _s_mov_b64_exec_read_contract_overlay,
     "amdgpu.s_add_u32": _s_add_u32_overlay,
     "amdgpu.s_sub_u32": _s_sub_u32_overlay,
     "amdgpu.s_mul_i32": _s_mul_i32_overlay,

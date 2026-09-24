@@ -49,6 +49,10 @@ iree_py_test(
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/buffer_selection.loom-test}}"
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/byte_access.loom}}"
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/buffer_selection.mjs}}"
+    "--corpus"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/predicate_select_values.loom}}"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/byte_access.loom}}"
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/predicate_select.mjs}}"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/address_widening.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/boolean.mjs"
@@ -62,6 +66,7 @@ iree_py_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/narrow_memory.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/predicate_lanes.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/predicate_lanes.mjs"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/predicate_select.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/scalar_memory.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/scalar_memory.mjs"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/wasm/test/sum.loom"
@@ -76,6 +81,7 @@ iree_py_test(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_boolean_comparison.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_index_operands.loom-test"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/numeric_scalar_i64_shift_counts.loom-test"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/source_low/predicate_select_values.loom"
     "loom::tools::loom-compile::loom-compile"
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
