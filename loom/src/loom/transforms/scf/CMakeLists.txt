@@ -89,6 +89,7 @@ loom_cc_library(
     ::scf_body
     iree::base
     loom::ir
+    loom::ops::index
     loom::ops::op_defs
   PUBLIC
 )

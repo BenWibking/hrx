@@ -339,22 +339,29 @@ static iree_status_t loom_scf_pipeline_report(
   IREE_RETURN_IF_ERROR(loom_pass_report_append_detail(
       context->pass, IREE_SV("scf-pipeline"), fields, IREE_ARRAYSIZE(fields)));
   for (uint32_t i = 0; i < plan->body.count; ++i) {
-    const bool producer = plan->stages[i] == LOOM_SCF_PIPELINE_STAGE_PRODUCER;
-    loom_pass_report_detail_field_t stage_fields[] = {
-        loom_pass_report_detail_uint64_field(IREE_SV("loop"), loop_ordinal),
-        loom_pass_report_detail_uint64_field(IREE_SV("position"), i),
-        loom_pass_report_detail_string_field(
-            IREE_SV("op"),
-            loom_op_name(context->module, plan->body.operations[i].op)),
-        loom_pass_report_detail_string_field(
-            IREE_SV("stage"),
-            producer ? IREE_SV("producer") : IREE_SV("consumer")),
-        loom_pass_report_detail_uint64_field(IREE_SV("iteration_lookahead"),
-                                             producer ? depth - 1 : 0),
-    };
-    IREE_RETURN_IF_ERROR(loom_pass_report_append_detail(
-        context->pass, IREE_SV("scf-pipeline-stage"), stage_fields,
-        IREE_ARRAYSIZE(stage_fields)));
+    for (loom_scf_pipeline_stage_flags_t stage =
+             LOOM_SCF_PIPELINE_STAGE_PRODUCER;
+         stage <= LOOM_SCF_PIPELINE_STAGE_CONSUMER; stage <<= 1) {
+      if (!iree_any_bit_set(plan->stages[i], stage)) {
+        continue;
+      }
+      const bool producer = stage == LOOM_SCF_PIPELINE_STAGE_PRODUCER;
+      loom_pass_report_detail_field_t stage_fields[] = {
+          loom_pass_report_detail_uint64_field(IREE_SV("loop"), loop_ordinal),
+          loom_pass_report_detail_uint64_field(IREE_SV("position"), i),
+          loom_pass_report_detail_string_field(
+              IREE_SV("op"),
+              loom_op_name(context->module, plan->body.operations[i].op)),
+          loom_pass_report_detail_string_field(
+              IREE_SV("stage"),
+              producer ? IREE_SV("producer") : IREE_SV("consumer")),
+          loom_pass_report_detail_uint64_field(IREE_SV("iteration_lookahead"),
+                                               producer ? depth - 1 : 0),
+      };
+      IREE_RETURN_IF_ERROR(loom_pass_report_append_detail(
+          context->pass, IREE_SV("scf-pipeline-stage"), stage_fields,
+          IREE_ARRAYSIZE(stage_fields)));
+    }
   }
   return iree_ok_status();
 }
@@ -375,15 +382,24 @@ static iree_status_t loom_scf_pipeline_retain(
   IREE_RETURN_IF_ERROR(iree_arena_allocate(owner->arena, sizeof(*observation),
                                            (void**)&observation));
   loom_source_loop_pipeline_operation_t* operations = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(owner->arena, plan->body.count,
-                                                 sizeof(*operations),
-                                                 (void**)&operations));
+  const uint32_t operation_count =
+      plan->body.count + plan->rematerialized_count;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      owner->arena, operation_count, sizeof(*operations), (void**)&operations));
+  uint32_t operation_index = 0;
   for (uint32_t i = 0; i < plan->body.count; ++i) {
-    operations[i] = (loom_source_loop_pipeline_operation_t){
-        .op_name = loom_op_name(context->module, plan->body.operations[i].op),
-        .iteration_lookahead =
-            plan->stages[i] == LOOM_SCF_PIPELINE_STAGE_PRODUCER ? depth - 1 : 0,
-    };
+    for (loom_scf_pipeline_stage_flags_t stage =
+             LOOM_SCF_PIPELINE_STAGE_PRODUCER;
+         stage <= LOOM_SCF_PIPELINE_STAGE_CONSUMER; stage <<= 1) {
+      if (!iree_any_bit_set(plan->stages[i], stage)) {
+        continue;
+      }
+      operations[operation_index++] = (loom_source_loop_pipeline_operation_t){
+          .op_name = loom_op_name(context->module, plan->body.operations[i].op),
+          .iteration_lookahead =
+              stage == LOOM_SCF_PIPELINE_STAGE_PRODUCER ? depth - 1 : 0,
+      };
+    }
   }
   loom_source_loop_pipeline_list_t* list = &version->loop_pipelines;
   *observation = (loom_source_loop_pipeline_t){
@@ -392,7 +408,7 @@ static iree_status_t loom_scf_pipeline_retain(
       .values_per_record = plan->queue_value_count,
       .read_count = plan->read_count,
       .operations = operations,
-      .operation_count = plan->body.count,
+      .operation_count = operation_count,
   };
   if (list->tail) {
     list->tail->next = observation;
@@ -534,9 +550,9 @@ static iree_status_t loom_scf_pipeline_emit_serial(
 
 static iree_status_t loom_scf_pipeline_emit_stage(
     loom_scf_pipeline_context_t* context, const loom_scf_pipeline_plan_t* plan,
-    loom_scf_pipeline_stage_t stage, loom_ir_remap_t* remap) {
+    loom_scf_pipeline_stage_flags_t stage, loom_ir_remap_t* remap) {
   for (uint32_t i = 0; i < plan->body.count; ++i) {
-    if (plan->stages[i] != stage) {
+    if (!iree_any_bit_set(plan->stages[i], stage)) {
       continue;
     }
     remap->op_projection.entries = plan->body.accesses.units[i].count

@@ -7,6 +7,7 @@
 #include "loom/transforms/scf/scf_pipeline_plan.h"
 
 #include "loom/ir/local_value_domain.h"
+#include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
 
 static iree_status_t loom_scf_pipeline_plan_partition(
@@ -189,6 +190,47 @@ static iree_status_t loom_scf_pipeline_plan_partition(
            plan->stages[producer] == LOOM_SCF_PIPELINE_STAGE_PRODUCER)) {
         queued_values[ordinal] = true;
       }
+    }
+  }
+  // Contract the cut without introducing any new carried inputs. Reconstruct
+  // address increments from values already available in the consumer so related
+  // indices retain their algebraic identity instead of becoming independent
+  // block arguments. Source order makes earlier reconstructions available to
+  // later ones; the materializer consumes the selected stages directly.
+  for (uint32_t i = 0; i < plan->body.count; ++i) {
+    const loom_scf_body_operation_t* operation = &plan->body.operations[i];
+    const loom_op_t* op = operation->op;
+    if (plan->stages[i] != LOOM_SCF_PIPELINE_STAGE_PRODUCER ||
+        (op->kind != LOOM_OP_INDEX_ADD && op->kind != LOOM_OP_INDEX_SUB)) {
+      continue;
+    }
+    const loom_value_ordinal_t result =
+        loom_local_value_domain_ordinal(domain, loom_op_const_results(op)[0]);
+    if (!queued_values[result]) {
+      continue;
+    }
+    bool available = true;
+    for (iree_host_size_t j = 0; j < operation->reference_count; ++j) {
+      const loom_scf_body_reference_t* reference =
+          &plan->body.references[operation->reference_begin + j];
+      if (reference->allow_identity_mapping) {
+        continue;
+      }
+      const loom_value_ordinal_t operand =
+          loom_local_value_domain_ordinal(domain, reference->value_id);
+      const uint32_t producer = producers[operand];
+      if (!queued_values[operand] &&
+          (producer == UINT32_MAX ||
+           !iree_any_bit_set(plan->stages[producer],
+                             LOOM_SCF_PIPELINE_STAGE_CONSUMER))) {
+        available = false;
+        break;
+      }
+    }
+    if (available) {
+      plan->stages[i] |= LOOM_SCF_PIPELINE_STAGE_CONSUMER;
+      queued_values[result] = false;
+      ++plan->rematerialized_count;
     }
   }
   for (loom_value_ordinal_t i = 0; i < domain->value_count; ++i) {
