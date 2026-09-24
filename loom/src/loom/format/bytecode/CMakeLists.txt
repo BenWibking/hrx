@@ -275,6 +275,7 @@ loom_cc_test(
     iree::io::stream
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::format::bytecode::writer::encoder
     loom::ir
     loom::ops::global
     loom::ops::test

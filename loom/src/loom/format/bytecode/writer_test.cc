@@ -17,6 +17,7 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/format/bytecode/format.h"
 #include "loom/format/bytecode/varint.h"
+#include "loom/format/bytecode/writer/encoder.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/global/ops.h"
@@ -762,6 +763,74 @@ TEST_F(WriterTest, FunctionSymbolKindUsesDenseWireEnum) {
   uint8_t kind = 0;
   IREE_ASSERT_OK(loom_bytecode_cursor_read_u8(&cursor, &kind));
   EXPECT_EQ(kind, LOOM_BYTECODE_SYMBOL_FUNC_DEF);
+
+  loom_module_free(module);
+}
+
+TEST_F(WriterTest, ExportOffsetsCrossWriterPageBoundary) {
+  constexpr uint32_t kSymbolCount =
+      LOOM_BYTECODE_WRITER_PAGE_SIZE / sizeof(uint64_t) + 3;
+  loom_module_t* module = CreateModule("exports");
+  loom_builder_t builder;
+  loom_builder_initialize(module, &module->arena, loom_module_block(module),
+                          &builder);
+
+  for (uint32_t i = 0; i < kSymbolCount; ++i) {
+    const std::string name = "export_" + std::to_string(i);
+    loom_string_id_t name_id = LOOM_STRING_ID_INVALID;
+    IREE_ASSERT_OK(loom_builder_intern_string(
+        &builder, iree_make_string_view(name.data(), name.size()), &name_id));
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_add_symbol(module, name_id, &symbol_id));
+    loom_op_t* function_op = nullptr;
+    IREE_ASSERT_OK(loom_test_func_build(
+        &builder, LOOM_TEST_FUNC_BUILD_FLAG_HAS_VISIBILITY,
+        LOOM_TEST_VISIBILITY_PUBLIC, /*cc=*/0,
+        {/*.module_id=*/0, /*.symbol_id=*/symbol_id}, /*arg_types=*/nullptr,
+        /*arg_count=*/0, /*result_types=*/nullptr, /*result_count=*/0,
+        /*tied_results=*/nullptr, /*tied_result_count=*/0,
+        /*predicates=*/nullptr, /*predicate_count=*/0, LOOM_LOCATION_NONE,
+        &function_op));
+  }
+
+  const std::vector<uint8_t> bytes = WriteModule(module);
+  const size_t module_directory_offset = 24;
+  const uint64_t module_offset = ReadU64LE(bytes, module_directory_offset + 8);
+  const std::vector<SectionEntry> sections =
+      ReadSectionDirectory(bytes, module_offset);
+  SectionEntry symbols = {};
+  ASSERT_TRUE(FindSection(sections, LOOM_BYTECODE_SECTION_SYMBOLS, &symbols));
+  const size_t section_start = (size_t)module_offset + symbols.offset;
+  const size_t section_end = section_start + symbols.length;
+  size_t cursor = section_start;
+  ASSERT_EQ(ReadUVarint(bytes, &cursor), kSymbolCount);
+  ASSERT_EQ(ReadUVarint(bytes, &cursor), 0u);  // import_count
+  ASSERT_EQ(ReadUVarint(bytes, &cursor), kSymbolCount);
+  ReadUVarint(bytes, &cursor);  // root_region_payload_count
+
+  const size_t export_table_start = cursor;
+  const size_t entries_start =
+      export_table_start + kSymbolCount * sizeof(uint64_t);
+  ASSERT_GT(entries_start - export_table_start, LOOM_BYTECODE_WRITER_PAGE_SIZE);
+  uint64_t previous_entry_offset = 0;
+  for (uint32_t i = 0; i < kSymbolCount; ++i) {
+    const uint64_t entry_offset =
+        ReadU64LE(bytes, export_table_start + i * sizeof(uint64_t));
+    if (i == 0) {
+      EXPECT_EQ(entry_offset, 0u);
+    } else {
+      EXPECT_GT(entry_offset, previous_entry_offset);
+    }
+    previous_entry_offset = entry_offset;
+
+    size_t entry_cursor = entries_start + (size_t)entry_offset;
+    ASSERT_LT(entry_cursor, section_end);
+    ReadUVarint(bytes, &entry_cursor);  // name_id
+    ASSERT_EQ(bytes[entry_cursor++], LOOM_BYTECODE_SYMBOL_FUNC_DEF);
+    ASSERT_EQ(bytes[entry_cursor++], LOOM_BYTECODE_SYMBOL_VISIBILITY_PUBLIC);
+    EXPECT_NE(ReadU16LE(bytes, entry_cursor) & LOOM_BYTECODE_SYMBOL_FLAG_EXPORT,
+              0u);
+  }
 
   loom_module_free(module);
 }
