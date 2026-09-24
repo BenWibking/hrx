@@ -431,10 +431,18 @@ def _add_vmem_source_reuse_evidence(
                 "index": 0,
                 "function": "routed_linear",
                 "counter": "vmem_load",
+                "counter_id": 1,
                 "reason": "amdgpu.memory_source_reuse",
+                "reason_id": 10,
                 "summary": {
                     "action_count": action_count,
+                    "explicit_action_count": 0,
+                    "planned_action_count": action_count,
                     "full_drain_count": source_reuse_full_drain_count,
+                    "partial_wait_count": action_count - source_reuse_full_drain_count,
+                    "drained_count": source_reuse_full_drain_count * 3,
+                    "max_drained_count": 3,
+                    "max_outstanding_before": 3,
                     "max_full_drain_outstanding_before": 3,
                 },
             }
@@ -460,12 +468,21 @@ def _add_lds_ssa_use_evidence(
                 "index": 0,
                 "function": "routed_linear",
                 "counter": "lds",
+                "counter_id": 3,
                 "reason": "amdgpu.ssa_use",
+                "reason_id": 2,
                 "summary": {
                     "action_count": action_count,
+                    "explicit_action_count": 0,
+                    "planned_action_count": action_count,
                     "full_drain_count": ssa_use_full_drain_count,
                     "partial_wait_count": ssa_use_partial_wait_count,
+                    "drained_count": max_outstanding_before,
+                    "max_drained_count": max_outstanding_before,
                     "max_outstanding_before": max_outstanding_before,
+                    "max_full_drain_outstanding_before": (
+                        max_outstanding_before if ssa_use_full_drain_count else 0
+                    ),
                 },
             }
         ],

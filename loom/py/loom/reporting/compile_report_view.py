@@ -73,6 +73,14 @@ from loom.reporting.compile_report_subgroup_access import (
     build_subgroup_access_diff,
     build_subgroup_access_show,
 )
+from loom.reporting.compile_report_wait_reasons import (
+    CompileReportWaitReasonInventory,
+    append_wait_reason_diff_text,
+    append_wait_reason_show_text,
+    build_wait_reason_diff,
+    build_wait_reason_show,
+    wait_reason_diff_has_changes,
+)
 from loom.reporting.compile_report_workload import (
     append_workload_diff_text,
     append_workload_show_text,
@@ -379,6 +387,7 @@ def build_compile_report_show(
     document: CompileReportDocument,
 ) -> dict[str, object]:
     """Builds a deterministic target-neutral report view."""
+    wait_reasons = document.wait_reason_inventory
     report_workload = build_workload_show(
         document.report.get("workload"),
         document.report.get("target_resources"),
@@ -405,6 +414,7 @@ def build_compile_report_show(
                 document.report.get("target_resources"),
                 f"{document.source}.entries.rows[{entry['index']}]",
                 document.residency_constraints_by_function,
+                wait_reasons,
             )
             for entry in document.entries
         ],
@@ -456,6 +466,8 @@ def build_compile_report_diff(
     report_workload = build_workload_diff(
         baseline_report_workload, candidate_report_workload
     )
+    baseline_wait_reasons = baseline.wait_reason_inventory
+    candidate_wait_reasons = candidate.wait_reason_inventory
     entries = []
     unchanged_entry_count = 0
     for pair in match.pairs:
@@ -511,6 +523,12 @@ def build_compile_report_diff(
             baseline_entry_source,
             candidate_entry_source,
         )
+        wait_reasons = build_wait_reason_diff(
+            baseline_wait_reasons,
+            candidate_wait_reasons,
+            pair.baseline_identity.function,
+            pair.candidate_identity.function,
+        )
         residency = build_residency_diff(
             build_residency_show(
                 pair.baseline,
@@ -531,6 +549,7 @@ def build_compile_report_diff(
             and not workload_diff_has_changes(entry_workload)
             and not execution_economics_diff_has_changes(execution_economics)
             and not move_cause_diff_has_changes(move_causes)
+            and not wait_reason_diff_has_changes(wait_reasons)
             and residency is None
         ):
             unchanged_entry_count += 1
@@ -544,6 +563,8 @@ def build_compile_report_diff(
             entry_view["workload"] = entry_workload
         if move_causes is not None:
             entry_view["move_causes"] = move_causes
+        if wait_reason_diff_has_changes(wait_reasons):
+            entry_view["wait_reasons"] = wait_reasons
         if residency is not None:
             entry_view["residency"] = residency
         if force:
@@ -689,6 +710,9 @@ def format_compile_report_show_text(view: dict[str, object]) -> str:
         move_causes = entry.get("move_causes")
         if isinstance(move_causes, dict):
             append_move_cause_show_text(lines, move_causes)
+        wait_reasons = entry.get("wait_reasons")
+        if isinstance(wait_reasons, dict):
+            append_wait_reason_show_text(lines, wait_reasons)
         residency = entry.get("residency")
         if isinstance(residency, dict):
             append_residency_show_text(lines, residency)
@@ -833,6 +857,9 @@ def format_compile_report_diff_text(view: dict[str, object]) -> str:
         move_causes = entry.get("move_causes")
         if isinstance(move_causes, dict):
             append_move_cause_diff_text(lines, move_causes)
+        wait_reasons = entry.get("wait_reasons")
+        if isinstance(wait_reasons, dict):
+            append_wait_reason_diff_text(lines, wait_reasons)
         residency = entry.get("residency")
         if isinstance(residency, dict):
             append_residency_diff_text(lines, residency)
@@ -859,6 +886,7 @@ def _show_entry_json(
     report_target_resources_value: object,
     source: str,
     residency_constraints_by_function: dict[str, tuple[dict[str, object], ...]],
+    wait_reasons: CompileReportWaitReasonInventory | None,
 ) -> dict[str, object]:
     entry_workload = build_workload_show(
         entry.get("workload", report_workload_value),
@@ -878,6 +906,9 @@ def _show_entry_json(
     move_causes = build_move_cause_show(entry, source)
     if move_causes is not None:
         view["move_causes"] = move_causes
+    wait_reason_view = build_wait_reason_show(wait_reasons, identity.function)
+    if wait_reason_view is not None:
+        view["wait_reasons"] = wait_reason_view
     residency = build_residency_show(
         entry, residency_constraints_by_function.get(identity.function or "", ())
     )
