@@ -375,6 +375,14 @@ iree_status_t loom_rewriter_set_operand(loom_rewriter_t* rewriter,
                                         loom_op_t* op, uint16_t operand_index,
                                         loom_value_id_t new_value);
 
+// Replaces the complete operand tuple of |op| and publishes the semantic
+// mutation once after all changed use-list edges have been retargeted. This is
+// equivalent to setting each changed operand individually, without exposing
+// analyses or worklist consumers to intermediate tuples.
+iree_status_t loom_rewriter_set_operands(loom_rewriter_t* rewriter,
+                                         loom_op_t* op,
+                                         const loom_value_id_t* new_values);
+
 // Changes the type of a value. Adds all users of the value to the
 // worklist since they may be simplifiable with the new type (e.g.,
 // encoding materialization resolving SSA encoding refs to static
