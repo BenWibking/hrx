@@ -344,28 +344,19 @@ iree_status_t loom_bytecode_write_module(
     }
   }
 
-  // Symbols section: buffered in a string builder because the import/export
-  // offset tables at the start reference entry positions that come later.
-  // Its separate arena releases temporary payload storage as soon as the
-  // section reaches the output stream, without retaining it in catalogs.
-  iree_arena_allocator_t symbols_arena;
-  iree_arena_initialize(block_pool, &symbols_arena);
-  loom_bytecode_buffer_t symbols_buffer;
-  loom_bytecode_buffer_initialize(&symbols_arena, &symbols_buffer);
-  if (iree_status_is_ok(status)) {
-    status = loom_bytecode_write_symbols_section(&symbols_buffer.builder,
-                                                 &numbering, ir_regions);
-  }
+  // Symbol metadata streams directly; its leading import/export tables are
+  // patched through the required seekable output stream.
   if (iree_status_is_ok(status)) {
     section_offsets[LOOM_BYTECODE_SECTION_SYMBOLS] =
         page_writer.total_written - module_start;
-    status = loom_bytecode_page_writer_write(
-        &page_writer, iree_string_builder_buffer(&symbols_buffer.builder),
-        iree_string_builder_size(&symbols_buffer.builder));
-    section_lengths[LOOM_BYTECODE_SECTION_SYMBOLS] =
-        iree_string_builder_size(&symbols_buffer.builder);
+    status = loom_bytecode_write_symbols_section(&page_writer, &numbering,
+                                                 ir_regions);
+    if (iree_status_is_ok(status)) {
+      section_lengths[LOOM_BYTECODE_SECTION_SYMBOLS] =
+          page_writer.total_written - module_start -
+          section_offsets[LOOM_BYTECODE_SECTION_SYMBOLS];
+    }
   }
-  iree_arena_deinitialize(&symbols_arena);
 
   // Symbol references preserve the direct metadata-only dependency graph.
   if (iree_status_is_ok(status)) {
