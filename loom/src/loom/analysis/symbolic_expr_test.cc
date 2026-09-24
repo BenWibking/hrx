@@ -713,6 +713,52 @@ TEST_F(SymbolicExprTest, ProjectionRequiresNonnegativeBoundedInput) {
   }
 }
 
+TEST_F(SymbolicExprTest, ProjectionGrowthPreservesSummariesAndMaterialization) {
+  const auto input = DefineIndexValue();
+  DefineFacts(input, loom_value_facts_make(0, 4095, 1));
+  loom_symbolic_expr_summary_t first_summary = {};
+  loom_value_id_t first_result = LOOM_VALUE_ID_INVALID;
+  for (int64_t divisor = 8; divisor < 40; ++divisor) {
+    const auto divisor_value =
+        loom_index_constant_result(BuildIndexConstant(divisor));
+    loom_op_t* quotient = nullptr;
+    IREE_ASSERT_OK(loom_index_div_build(&builder_, input, divisor_value,
+                                        LOOM_LOCATION_UNKNOWN, &quotient));
+    const auto result = loom_index_div_result(quotient);
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(&expression_context_, result,
+                                                 &expression));
+    if (divisor == 8) {
+      first_result = result;
+      ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+          &expression_context_, result, &first_summary));
+    }
+  }
+  ASSERT_NE(first_summary.projection, nullptr);
+  const loom_symbolic_projection_t expected = {input, 1, 0, 8, 0};
+  EXPECT_TRUE(
+      loom_symbolic_projection_equal(first_summary.projection, &expected));
+
+  const auto offset = loom_index_constant_result(BuildIndexConstant(4));
+  loom_op_t* shifted = nullptr;
+  IREE_ASSERT_OK(loom_index_add_build(&builder_, first_result, offset,
+                                      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+                                      LOOM_LOCATION_UNKNOWN, &shifted));
+  loom_symbolic_expr_t expression = {};
+  IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+      &expression_context_, loom_index_add_result(shifted), &expression));
+  loom_symbolic_expr_summary_t summary = {};
+  ASSERT_TRUE(loom_symbolic_expr_context_try_lookup_summary(
+      &expression_context_, loom_index_add_result(shifted), &summary));
+  EXPECT_EQ(summary.materialized_dynamic_value_id, first_result);
+  EXPECT_EQ(summary.expression.constant, 4);
+  EXPECT_EQ(summary.projection, nullptr);
+
+  loom_symbolic_expr_context_reset(&expression_context_);
+  EXPECT_FALSE(loom_symbolic_expr_context_try_lookup_summary(
+      &expression_context_, first_result, &summary));
+}
+
 TEST_F(SymbolicExprTest,
        ComposedDigitRetainsAffineInputAndNumericCastBoundary) {
   auto constant = [&](int64_t value) {

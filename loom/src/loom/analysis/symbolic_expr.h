@@ -158,6 +158,17 @@ typedef struct loom_symbolic_expr_context_t {
   // Allocated memo entry count.
   iree_host_size_t memo_capacity;
 
+  // Exact digit proofs owned by this context. Only projected values allocate
+  // records; their memo slots retain indices into this array.
+  struct {
+    // Arena-owned records; growth preserves previously returned summaries.
+    loom_symbolic_projection_t* values;
+    // Number of records populated in the current epoch.
+    iree_host_size_t count;
+    // Allocated record count, retained across context resets.
+    iree_host_size_t capacity;
+  } projections;
+
   // Storage ordinals whose memo entries are live in the current epoch.
   loom_value_ordinal_t* touched_memo_ordinals;
 
@@ -219,6 +230,13 @@ void loom_symbolic_expr_context_reset(loom_symbolic_expr_context_t* context);
 bool loom_symbolic_expr_context_try_lookup_summary(
     const loom_symbolic_expr_context_t* context, loom_value_id_t value_id,
     loom_symbolic_expr_summary_t* out_summary);
+
+// Returns the retained exact digit proof for an expression containing one
+// unscaled SSA term and no constant. Reads its canonical term's memo entry;
+// does not expand source IR or allocate storage.
+const loom_symbolic_projection_t* loom_symbolic_expr_lookup_projection(
+    const loom_symbolic_expr_context_t* context,
+    const loom_symbolic_expr_t* expression);
 
 // Constructs a facts-only expression. This is the conservative result for
 // unsupported nonlinear arithmetic when no precise SSA variable is available.
