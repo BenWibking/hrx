@@ -13,6 +13,7 @@
 #include "loom/target/arch/amdgpu/lower/constants.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
+#include "loom/target/arch/amdgpu/lower/materializers.h"
 #include "loom/target/arch/amdgpu/lower/subgroup.h"
 #include "loom/target/arch/amdgpu/lower/topology.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
@@ -119,11 +120,10 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_shuffle_plan(
 
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_value_id_t value = loom_kernel_subgroup_shuffle_value(source_op);
-  loom_amdgpu_subgroup_payload_kind_t payload_kind =
-      LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE;
-  uint32_t register_count = 0;
-  if (!loom_amdgpu_collective_payload_is_supported(module, value, &payload_kind,
-                                                   &register_count)) {
+  const uint32_t register_count =
+      loom_amdgpu_collective_transport_register_count(
+          loom_module_value_type(module, value));
+  if (register_count == 0) {
     return iree_ok_status();
   }
 
@@ -181,7 +181,6 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_shuffle_plan(
   out_plan->source_offset = loom_kernel_subgroup_shuffle_offset(source_op);
   out_plan->result = loom_kernel_subgroup_shuffle_result(source_op);
   out_plan->valid = loom_kernel_subgroup_shuffle_valid(source_op);
-  out_plan->payload_kind = payload_kind;
   out_plan->register_count = register_count;
   out_plan->crosslane_kind = crosslane_kind;
   out_plan->mode = mode;
@@ -403,8 +402,8 @@ iree_status_t loom_amdgpu_lower_kernel_subgroup_shuffle(
                                                    plan->valid, &valid_type));
 
   loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_collective_lookup_payload(
-      context, source_op, plan->value, plan->payload_kind, &low_value));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_registers(
+      context, source_op, plan->value, &low_value));
 
   loom_value_id_t low_valid = LOOM_VALUE_ID_INVALID;
   loom_value_id_t low_source_byte_offset = LOOM_VALUE_ID_INVALID;
@@ -470,11 +469,8 @@ iree_status_t loom_amdgpu_low_legality_verify_kernel_subgroup_shuffle(
 
   const loom_module_t* module = loom_target_low_legality_module(context);
   const loom_value_id_t value = loom_kernel_subgroup_shuffle_value(op);
-  loom_amdgpu_subgroup_payload_kind_t unused_payload_kind =
-      LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE;
-  uint32_t unused_register_count = 0;
-  if (!loom_amdgpu_collective_payload_is_supported(
-          module, value, &unused_payload_kind, &unused_register_count)) {
+  if (loom_amdgpu_collective_transport_register_count(
+          loom_module_value_type(module, value)) == 0) {
     return loom_amdgpu_low_legality_reject(context, op,
                                            IREE_SV("subgroup_shuffle.payload"));
   }
