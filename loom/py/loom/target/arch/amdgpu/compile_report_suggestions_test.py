@@ -1082,7 +1082,7 @@ def test_calibrated_exact_bank_conflict_is_high_confidence() -> None:
     assert bank_suggestion.confidence == "high"
 
 
-def test_bank_suggestion_requires_complete_exact_conflict_evidence() -> None:
+def test_bank_suggestion_retains_proven_conflicts_with_unknown_packets() -> None:
     report = _compile_report(target_key="gfx1250-a0", subgroup_size=32)
     _add_bank_service_group(
         report,
@@ -1094,9 +1094,16 @@ def test_bank_suggestion_requires_complete_exact_conflict_evidence() -> None:
 
     result = AMDGPU_COMPILE_REPORT_SUGGESTION_PROVIDER.suggest(document)
 
-    assert "amdgpu.lds_bank_service" not in {
-        suggestion.suggestion_id for suggestion in result.suggestions
-    }
+    finding = next(
+        suggestion
+        for suggestion in result.suggestions
+        if suggestion.suggestion_id == "amdgpu.lds_bank_service"
+    )
+    assert "Packets without exact address evidence: 1" in finding.action
+    assert any(
+        evidence.path.endswith("unknown_packet_count") and evidence.value == 1
+        for evidence in finding.evidence
+    )
 
 
 def test_bank_suggestion_rejects_unknown_model_evidence_class() -> None:

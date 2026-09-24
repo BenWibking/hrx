@@ -475,11 +475,11 @@ typedef struct loom_low_lower_report_row_t {
 
 // Target-owned bank-service evidence for one emitted source memory packet.
 typedef struct loom_low_lower_memory_bank_service_report_t {
-  // Exactness of the result: "exact", "unknown", or empty when not analyzed.
+  // Evidence: "exact", "unknown", "unmodeled", or empty when not applicable.
   iree_string_view_t proof;
   // Exact result class: "conflict-free", "conflicted", or empty when unknown.
   iree_string_view_t classification;
-  // Stable target packet-service model key.
+  // Stable target packet-service model key, empty when unmodeled.
   iree_string_view_t model_key;
   // Immutable source revision defining the selected model.
   iree_string_view_t model_revision;
@@ -493,9 +493,9 @@ typedef struct loom_low_lower_memory_bank_service_report_t {
   iree_string_view_t active_lane_proof;
   // Proof covering unknown common LDS base translations.
   iree_string_view_t base_residue_proof;
-  // Stable reason key when |proof| is "unknown".
+  // Stable reason key when |proof| is "unknown" or "unmodeled".
   iree_string_view_t unknown_reason;
-  // Number of lanes represented by the model phases.
+  // Selected execution wave size, including when no model is available.
   uint8_t wave_size;
   // Number of independently serviced LDS banks.
   uint8_t bank_count;

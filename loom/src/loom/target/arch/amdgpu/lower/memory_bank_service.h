@@ -20,7 +20,8 @@ extern "C" {
 
 // Populates bank-service evidence for a selected source-memory packet.
 //
-// The output remains empty when the target or packet has no registered model.
+// Non-LDS packets leave the output empty. LDS packets without a target, packet,
+// or wave-size model report "unmodeled" with an explicit reason.
 // A selected model always produces either an exact result or an explicit
 // unknown proof reason. Analysis runs only while detail report rows are
 // requested.

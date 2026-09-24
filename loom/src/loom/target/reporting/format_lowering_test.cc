@@ -425,6 +425,58 @@ TEST(CompileReportFormatTest, FormatsSourceToLowSelectionAndMemory) {
   loom_target_compile_report_deinitialize(&report);
 }
 
+TEST(CompileReportFormatTest, KeepsUnmodeledBankCoverageWithoutAModel) {
+  loom_target_compile_report_t entry_report = {};
+  loom_target_compile_report_initialize(&entry_report, iree_allocator_system());
+  entry_report.function_name = IREE_SVL("kernel");
+  loom_target_compile_report_source_low_memory_row_t memory = {};
+  memory.function_name = entry_report.function_name;
+  memory.source_op_name = IREE_SVL("vector.load");
+  memory.source_root_name = IREE_SVL("scratch");
+  memory.source_root_argument_index = UINT16_MAX;
+  memory.memory_space = IREE_SVL("workgroup");
+  memory.operation_kind = IREE_SVL("load");
+  memory.packet_key = IREE_SVL("test.lds.load.i32");
+  memory.element_byte_count = 4;
+  memory.vector_lane_count = 1;
+  memory.issued_read_byte_count = 4;
+  memory.bank_service.proof = IREE_SVL("unmodeled");
+  memory.bank_service.unknown_reason = IREE_SVL("target-model-unavailable");
+  memory.bank_service.wave_size = 32;
+  IREE_ASSERT_OK(loom_target_compile_report_record_source_low_memory_row(
+      &entry_report, &memory));
+  loom_target_compile_report_t report = {};
+  loom_target_compile_report_initialize(&report, iree_allocator_system());
+  IREE_ASSERT_OK(
+      loom_target_compile_report_record_entry_report(&report, &entry_report));
+  loom_target_compile_report_deinitialize(&entry_report);
+
+  iree_string_builder_t builder;
+  iree_string_builder_initialize(iree_allocator_system(), &builder);
+  loom_output_stream_t stream;
+  loom_output_stream_for_builder(&builder, &stream);
+  const loom_target_compile_report_format_options_t options = {
+      /*.mode=*/LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_DETAILS,
+  };
+  IREE_ASSERT_OK(
+      loom_target_compile_report_format_json(&report, &options, &stream));
+  const auto root = ParseJsonDocument(iree_string_builder_view(&builder));
+  const auto memory_summary = LookupObject(
+      LookupObject(root, IREE_SV("source_low")), IREE_SV("memory"));
+  const auto summary = LookupObject(memory_summary, IREE_SV("bank_service"));
+  ExpectObjectUint64Equals(summary, IREE_SV("unmodeled_packet_count"), 1);
+  ExpectObjectUint64Equals(summary, IREE_SV("modeled_packet_count"), 0);
+  const auto group = LookupArrayElement(
+      LookupObject(memory_summary, IREE_SV("bank_service_groups")), 0);
+  ExpectObjectValueEquals(group, IREE_SV("model"), IREE_SV("null"));
+  ExpectObjectUint64Equals(group, IREE_SV("wave_size"), 32);
+  ExpectObjectValueEquals(LookupObject(group, IREE_SV("unknown_evidence")),
+                          IREE_SV("reason"),
+                          IREE_SV("target-model-unavailable"));
+  iree_string_builder_deinitialize(&builder);
+  loom_target_compile_report_deinitialize(&report);
+}
+
 TEST(CompileReportFormatTest, FormatsMathAndTargetLegalization) {
   loom_target_compile_report_t report = {};
   loom_target_compile_report_initialize(&report, iree_allocator_system());

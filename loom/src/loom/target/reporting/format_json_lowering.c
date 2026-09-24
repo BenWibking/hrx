@@ -786,7 +786,7 @@ static iree_status_t
 loom_target_compile_report_format_source_low_memory_bank_service_json(
     const loom_target_compile_report_bank_service_t* bank_service,
     loom_json_object_writer_t* row_object) {
-  if (iree_string_view_is_empty(bank_service->model_key)) {
+  if (iree_string_view_is_empty(bank_service->proof)) {
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(
@@ -801,6 +801,14 @@ loom_target_compile_report_format_source_low_memory_bank_service_json(
   IREE_RETURN_IF_ERROR(
       loom_target_compile_report_json_write_optional_string_field(
           &object, IREE_SV("unknown_reason"), bank_service->unknown_reason));
+
+  if (iree_string_view_is_empty(bank_service->model_key)) {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_write_null_field(&object, IREE_SV("model")));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &object, IREE_SV("wave_size"), bank_service->wave_size));
+    return loom_json_object_end(&object);
+  }
 
   IREE_RETURN_IF_ERROR(loom_json_object_begin_field(&object, IREE_SV("model")));
   loom_json_object_writer_t model;
@@ -966,6 +974,9 @@ iree_status_t loom_target_compile_report_format_bank_service_summary_json(
     loom_output_stream_t* stream) {
   loom_json_object_writer_t object;
   IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(
+      &object, IREE_SV("unmodeled_packet_count"),
+      summary->unmodeled_packet_count));
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(
       &object, IREE_SV("modeled_packet_count"), summary->modeled_packet_count));
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(
@@ -1197,28 +1208,37 @@ loom_target_compile_report_format_source_low_bank_service_summary_json(
       loom_target_compile_report_json_write_optional_string_field(
           &object, IREE_SV("strategy"), row->strategy_key));
 
-  IREE_RETURN_IF_ERROR(loom_json_object_begin_field(&object, IREE_SV("model")));
-  loom_json_object_writer_t model;
-  IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &model));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &model, IREE_SV("key"), row->model_key));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &model, IREE_SV("revision"), row->model_revision));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &model, IREE_SV("evidence"), row->model_evidence));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
-      &model, IREE_SV("request_policy"), row->request_policy));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
-      &model, IREE_SV("wave_size"), row->wave_size));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
-      &model, IREE_SV("bank_count"), row->bank_count));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
-      &model, IREE_SV("bank_word_bytes"), row->bank_word_byte_count));
-  IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
-      &model, IREE_SV("packet_bank_words"), row->packet_word_count));
-  IREE_RETURN_IF_ERROR(loom_json_object_end(&model));
+  if (iree_string_view_is_empty(row->model_key)) {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_write_null_field(&object, IREE_SV("model")));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &object, IREE_SV("wave_size"), row->wave_size));
+  } else {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_begin_field(&object, IREE_SV("model")));
+    loom_json_object_writer_t model;
+    IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &model));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+        &model, IREE_SV("key"), row->model_key));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+        &model, IREE_SV("revision"), row->model_revision));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+        &model, IREE_SV("evidence"), row->model_evidence));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+        &model, IREE_SV("request_policy"), row->request_policy));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &model, IREE_SV("wave_size"), row->wave_size));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &model, IREE_SV("bank_count"), row->bank_count));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &model, IREE_SV("bank_word_bytes"), row->bank_word_byte_count));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &model, IREE_SV("packet_bank_words"), row->packet_word_count));
+    IREE_RETURN_IF_ERROR(loom_json_object_end(&model));
+  }
 
-  if (row->summary.unknown_packet_count != 0) {
+  if (row->summary.unknown_packet_count != 0 ||
+      row->summary.unmodeled_packet_count != 0) {
     IREE_RETURN_IF_ERROR(
         loom_json_object_begin_field(&object, IREE_SV("unknown_evidence")));
     loom_json_object_writer_t unknown_evidence;
@@ -1610,7 +1630,8 @@ loom_target_compile_report_format_source_low_memory_summary_json(
   IREE_RETURN_IF_ERROR(
       loom_target_compile_report_format_source_low_memory_summary_fields_json(
           summary, &report->workload, &object));
-  if (report->bank_service_summary.modeled_packet_count != 0) {
+  if (report->bank_service_summary.modeled_packet_count != 0 ||
+      report->bank_service_summary.unmodeled_packet_count != 0) {
     IREE_RETURN_IF_ERROR(
         loom_json_object_begin_field(&object, IREE_SV("bank_service")));
     IREE_RETURN_IF_ERROR(

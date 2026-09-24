@@ -80,8 +80,15 @@ static iree_status_t
 loom_target_compile_report_append_source_low_memory_bank_service_text(
     const loom_target_compile_report_bank_service_t* bank_service,
     iree_string_builder_t* builder) {
-  if (iree_string_view_is_empty(bank_service->model_key)) {
+  if (iree_string_view_is_empty(bank_service->proof)) {
     return iree_ok_status();
+  }
+  if (iree_string_view_is_empty(bank_service->model_key)) {
+    return iree_string_builder_append_format(
+        builder,
+        " bank_service={proof:unmodeled,wave_size:%u,unknown_reason:%.*s}",
+        bank_service->wave_size, (int)bank_service->unknown_reason.size,
+        bank_service->unknown_reason.data);
   }
   IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
       builder,
@@ -196,20 +203,21 @@ loom_target_compile_report_append_bank_service_summary_text_fields(
     iree_string_builder_t* builder) {
   return iree_string_builder_append_format(
       builder,
-      " modeled_packets=%" PRIu64 " exact_packets=%" PRIu64
-      " unknown_packets=%" PRIu64 " conflict_free_packets=%" PRIu64
-      " conflicted_packets=%" PRIu64 " structural_required_rounds=%" PRIu64
+      " unmodeled_packets=%" PRIu64 " modeled_packets=%" PRIu64
+      " exact_packets=%" PRIu64 " unknown_packets=%" PRIu64
+      " conflict_free_packets=%" PRIu64 " conflicted_packets=%" PRIu64
+      " structural_required_rounds=%" PRIu64
       " structural_uncontended_rounds=%" PRIu64
       " structural_extra_rounds=%" PRIu64
       " maximum_request_multiplicity=%" PRIu16 " dynamic_exact_packets=%" PRIu64
       " dynamic_unknown_packets=%" PRIu64 " dynamic_packets=%" PRIu64
       " dynamic_required_rounds=%" PRIu64 " dynamic_uncontended_rounds=%" PRIu64
       " dynamic_extra_rounds=%" PRIu64,
-      summary->modeled_packet_count, summary->exact_packet_count,
-      summary->unknown_packet_count, summary->conflict_free_packet_count,
-      summary->conflicted_packet_count, summary->required_round_count,
-      summary->uncontended_round_count, summary->extra_round_count,
-      summary->maximum_request_multiplicity,
+      summary->unmodeled_packet_count, summary->modeled_packet_count,
+      summary->exact_packet_count, summary->unknown_packet_count,
+      summary->conflict_free_packet_count, summary->conflicted_packet_count,
+      summary->required_round_count, summary->uncontended_round_count,
+      summary->extra_round_count, summary->maximum_request_multiplicity,
       summary->exact_dynamic_packet_count,
       summary->unknown_dynamic_packet_count, summary->dynamic_packet_count,
       summary->dynamic_required_round_count,
@@ -1237,21 +1245,31 @@ loom_target_compile_report_format_source_low_bank_service_summaries(
           builder, IREE_SV("packet"), row->packet_key));
       IREE_RETURN_IF_ERROR(loom_target_compile_report_text_append_string_field(
           builder, IREE_SV("strategy"), row->strategy_key));
-      IREE_RETURN_IF_ERROR(loom_target_compile_report_text_append_string_field(
-          builder, IREE_SV("model"), row->model_key));
-      IREE_RETURN_IF_ERROR(loom_target_compile_report_text_append_string_field(
-          builder, IREE_SV("model_revision"), row->model_revision));
-      IREE_RETURN_IF_ERROR(loom_target_compile_report_text_append_string_field(
-          builder, IREE_SV("model_evidence"), row->model_evidence));
-      IREE_RETURN_IF_ERROR(loom_target_compile_report_text_append_string_field(
-          builder, IREE_SV("request_policy"), row->request_policy));
-      IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
-          builder,
-          " wave_size=%" PRIu8 " banks=%" PRIu8 " bank_word_bytes=%" PRIu8
-          " packet_bank_words=%" PRIu8,
-          row->wave_size, row->bank_count, row->bank_word_byte_count,
-          row->packet_word_count));
-      if (row->summary.unknown_packet_count != 0) {
+      if (iree_string_view_is_empty(row->model_key)) {
+        IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+            builder, " model=unavailable wave_size=%u", row->wave_size));
+      } else {
+        IREE_RETURN_IF_ERROR(
+            loom_target_compile_report_text_append_string_field(
+                builder, IREE_SV("model"), row->model_key));
+        IREE_RETURN_IF_ERROR(
+            loom_target_compile_report_text_append_string_field(
+                builder, IREE_SV("model_revision"), row->model_revision));
+        IREE_RETURN_IF_ERROR(
+            loom_target_compile_report_text_append_string_field(
+                builder, IREE_SV("model_evidence"), row->model_evidence));
+        IREE_RETURN_IF_ERROR(
+            loom_target_compile_report_text_append_string_field(
+                builder, IREE_SV("request_policy"), row->request_policy));
+        IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+            builder,
+            " wave_size=%" PRIu8 " banks=%" PRIu8 " bank_word_bytes=%" PRIu8
+            " packet_bank_words=%" PRIu8,
+            row->wave_size, row->bank_count, row->bank_word_byte_count,
+            row->packet_word_count));
+      }
+      if (row->summary.unknown_packet_count != 0 ||
+          row->summary.unmodeled_packet_count != 0) {
         const iree_string_view_t unknown_reason =
             row->has_mixed_unknown_reasons
                 ? IREE_SV("mixed")
