@@ -12,6 +12,95 @@ iree_add_all_subdirs()
 file(GLOB _GLOB_X_LOOM LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS *.loom)
 loom_generated_file_family(
   NAME
+    predicate_bitwise_gen
+  GENERATOR
+    loom::py::loom::gen::test::predicate_bitwise
+  OUTPUTS
+    "predicate_bitwise_cases.loom"
+    "predicate_bitwise_arrays"
+  OUTPUT_FLAGS
+    "--output"
+    "--arrays"
+  TESTONLY
+)
+
+loom_test_module(
+  NAME
+    predicate_bitwise_test_module
+  SRCS
+    "predicate_bitwise.loom"
+    "${CMAKE_CURRENT_BINARY_DIR}/predicate_bitwise_cases.loom"
+  DATA
+    "${CMAKE_CURRENT_BINARY_DIR}/predicate_bitwise_arrays"
+    "${CMAKE_CURRENT_BINARY_DIR}/predicate_bitwise_cases.loom"
+)
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    predicate_bitwise_test_execute_amdgpu_hardware_test
+  MODULE
+    "::predicate_bitwise_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    predicate_bitwise_test_execute_amdgpu_access_test
+  MODULE
+    "::predicate_bitwise_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+loom_check_compile_tests(
+  NAME
+    "predicate_bitwise_test"
+  SRC
+    "::predicate_bitwise_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
+)
+
+loom_generated_file_family(
+  NAME
     predicate_select_gen
   GENERATOR
     loom::py::loom::gen::test::predicate_select
