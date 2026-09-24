@@ -7,6 +7,7 @@
 #include "loom/target/arch/amdgpu/lower/memory_bank_service.h"
 
 #include "iree/base/internal/math.h"
+#include "loom/analysis/symbolic_projection.h"
 #include "loom/target/arch/amdgpu/analysis/lds_bank_service.h"
 #include "loom/target/arch/amdgpu/facts.h"
 #include "loom/target/arch/amdgpu/lower/fragment_memory/address.h"
@@ -173,6 +174,7 @@ static void loom_amdgpu_memory_bank_service_evaluate_full_wave(
 void loom_amdgpu_memory_calculate_source_bank_service(
     const loom_amdgpu_lds_bank_service_model_t* model,
     const loom_low_source_memory_access_plan_t* source,
+    const loom_symbolic_expr_context_t* expressions,
     const loom_target_workgroup_size_t* workgroup_size,
     loom_low_lower_memory_bank_service_report_t* out_report) {
   loom_amdgpu_memory_bank_service_initialize_report(model, out_report);
@@ -183,6 +185,15 @@ void loom_amdgpu_memory_calculate_source_bank_service(
   }
 
   uint64_t coordinate_byte_strides[LOOM_KERNEL_DIMENSION_COUNT_] = {0};
+  struct {
+    // Shared producer's exact numeric function of one workitem coordinate.
+    const loom_symbolic_projection_t* projection;
+    // Physical byte coefficient supplied by the canonical source plan.
+    uint64_t byte_stride;
+    // Native workitem coordinate selected by the projection's root facts.
+    uint8_t dimension;
+  } projected_terms[LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY];
+  uint8_t projected_term_count = 0;
   loom_value_facts_t common_offset = loom_value_facts_exact_i64(0);
   for (uint8_t i = 0; i < source->dynamic_term_count; ++i) {
     const loom_low_source_memory_dynamic_term_t* term =
@@ -191,11 +202,22 @@ void loom_amdgpu_memory_calculate_source_bank_service(
       loom_value_facts_addi(&common_offset, &term->byte_facts, &common_offset);
       continue;
     }
+    loom_symbolic_expr_summary_t summary = {0};
+    const loom_value_fact_topology_domain_t* domain = NULL;
     if (term->source !=
         LOOM_LOW_SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_WORKITEM_ID) {
-      loom_amdgpu_memory_bank_service_mark_unknown(
-          IREE_SV("address-varying-term-unproven"), out_report);
-      return;
+      if (loom_symbolic_expr_context_try_lookup_summary(
+              expressions, term->index, &summary) &&
+          summary.projection) {
+        domain = loom_value_facts_topology_domain(loom_value_fact_table_lookup(
+            expressions->fact_table, summary.projection->value_id));
+      }
+      if (!domain ||
+          domain->value_kind != LOOM_VALUE_FACT_TOPOLOGY_VALUE_WORKITEM_ID) {
+        loom_amdgpu_memory_bank_service_mark_unknown(
+            IREE_SV("address-varying-term-unproven"), out_report);
+        return;
+      }
     }
     if (term->stride_value_count != 0) {
       loom_amdgpu_memory_bank_service_mark_unknown(
@@ -207,7 +229,20 @@ void loom_amdgpu_memory_calculate_source_bank_service(
           IREE_SV("address-negative-stride"), out_report);
       return;
     }
-    coordinate_byte_strides[term->dimension] += (uint64_t)term->byte_stride;
+    if (!summary.projection) {
+      coordinate_byte_strides[term->dimension] += (uint64_t)term->byte_stride;
+      continue;
+    }
+    if ((uint64_t)term->byte_stride % model->packet_byte_count != 0) {
+      loom_amdgpu_memory_bank_service_mark_unknown(
+          IREE_SV("address-packet-alignment-unproven"), out_report);
+      return;
+    }
+    projected_terms[projected_term_count].projection = summary.projection;
+    projected_terms[projected_term_count].byte_stride =
+        (uint64_t)term->byte_stride;
+    projected_terms[projected_term_count].dimension = (uint8_t)domain->axis;
+    ++projected_term_count;
   }
   const uint32_t packet_alignment = model->packet_byte_count;
   if (source->minimum_alignment < packet_alignment ||
@@ -219,7 +254,9 @@ void loom_amdgpu_memory_calculate_source_bank_service(
     return;
   }
   out_report->lane_address_proof =
-      IREE_SV("canonical-workitem-coordinates-all-waves");
+      projected_term_count != 0
+          ? IREE_SV("canonical-workitem-digits-all-waves")
+          : IREE_SV("canonical-workitem-coordinates-all-waves");
   out_report->base_residue_proof =
       IREE_SV("subgroup-uniform-common-translation-all-bank-word-residues");
 
@@ -245,6 +282,19 @@ void loom_amdgpu_memory_calculate_source_bank_service(
       lane_offsets[lane] = x * coordinate_byte_strides[0] +
                            y * coordinate_byte_strides[1] +
                            z * coordinate_byte_strides[2];
+      const uint32_t coordinates[] = {x, y, z};
+      for (uint8_t i = 0; i < projected_term_count; ++i) {
+        const loom_symbolic_projection_t* projection =
+            projected_terms[i].projection;
+        uint64_t digit = ((uint64_t)coordinates[projected_terms[i].dimension] *
+                              (uint64_t)projection->scale +
+                          (uint64_t)projection->offset) /
+                         (uint64_t)projection->divisor;
+        if (projection->modulus != 0) {
+          digit %= (uint64_t)projection->modulus;
+        }
+        lane_offsets[lane] += digit * projected_terms[i].byte_stride;
+      }
     }
     loom_amdgpu_lds_bank_service_result_t candidate = {0};
     if (!loom_amdgpu_lds_bank_service_evaluate(
@@ -297,7 +347,8 @@ iree_status_t loom_amdgpu_memory_report_bank_service(
     return iree_ok_status();
   }
   loom_amdgpu_memory_calculate_source_bank_service(
-      model, source, &active_lane_proof.workgroup_size, out_report);
+      model, source, loom_low_lower_context_symbolic_expr_context(context),
+      &active_lane_proof.workgroup_size, out_report);
   out_report->active_lane_proof = active_lane_proof.proof;
   return iree_ok_status();
 }

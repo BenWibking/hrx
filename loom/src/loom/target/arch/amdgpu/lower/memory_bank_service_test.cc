@@ -48,9 +48,10 @@ static loom_low_source_memory_access_plan_t CoordinateSource(
 static loom_low_lower_memory_bank_service_report_t Calculate(
     const loom_low_source_memory_access_plan_t& source,
     loom_target_workgroup_size_t workgroup_size, uint8_t wave_size = 32) {
+  const loom_symbolic_expr_context_t expressions = {};
   loom_low_lower_memory_bank_service_report_t report = {};
   loom_amdgpu_memory_calculate_source_bank_service(
-      WriteModel(wave_size), &source, &workgroup_size, &report);
+      WriteModel(wave_size), &source, &expressions, &workgroup_size, &report);
   return report;
 }
 
@@ -120,8 +121,9 @@ TEST(AmdgpuMemoryBankServiceTest, UniformReadStillUsesRequestPolicy) {
       processor->properties.features.lds_bank_service_model_set_ordinal,
       LOOM_AMDGPU_DESCRIPTOR_REF_DS_READ_B128, 32);
   const loom_target_workgroup_size_t workgroup_size = {32, 1, 1};
+  const loom_symbolic_expr_context_t expressions = {};
   loom_low_lower_memory_bank_service_report_t report = {};
-  loom_amdgpu_memory_calculate_source_bank_service(model, &source,
+  loom_amdgpu_memory_calculate_source_bank_service(model, &source, &expressions,
                                                    &workgroup_size, &report);
   ExpectExact(report, 4, 4);
 }
@@ -160,14 +162,15 @@ TEST(AmdgpuMemoryBankServiceTest, SubwordUniformOffsetRetainsItsResidues) {
       processor->properties.features.lds_bank_service_model_set_ordinal,
       LOOM_AMDGPU_DESCRIPTOR_REF_DS_WRITE_B16, 32);
   const loom_target_workgroup_size_t workgroup_size = {64, 1, 1};
+  const loom_symbolic_expr_context_t expressions = {};
   loom_low_lower_memory_bank_service_report_t report = {};
-  loom_amdgpu_memory_calculate_source_bank_service(model, &source,
+  loom_amdgpu_memory_calculate_source_bank_service(model, &source, &expressions,
                                                    &workgroup_size, &report);
   ExpectExact(report, 1, 1);
   EXPECT_EQ(report.base_residue_count, 64);
 
   stage.byte_facts = loom_value_facts_exact_i64(2);
-  loom_amdgpu_memory_calculate_source_bank_service(model, &source,
+  loom_amdgpu_memory_calculate_source_bank_service(model, &source, &expressions,
                                                    &workgroup_size, &report);
   ExpectExact(report, 1, 1);
   EXPECT_EQ(report.base_residue_count, 32);

@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "loom/analysis/condition_facts.h"
+#include "loom/analysis/symbolic_projection.h"
 #include "loom/analysis/symbolic_value.h"
 #include "loom/ir/attribute.h"
 #include "loom/util/adaptive_sort.h"
@@ -231,6 +232,18 @@ static iree_status_t loom_symbolic_expr_normalize_difference_into_scratch(
   if (!iree_checked_sub_i64(left_expression->constant,
                             right_expression->constant, out_constant)) {
     return iree_ok_status();
+  }
+
+  if (context->projections.count != 0) {
+    const loom_symbolic_projection_t* left_projection =
+        loom_symbolic_expr_lookup_projection(context, left_expression);
+    const loom_symbolic_projection_t* right_projection =
+        loom_symbolic_expr_lookup_projection(context, right_expression);
+    if (left_projection && right_projection &&
+        loom_symbolic_projection_equal(left_projection, right_projection)) {
+      *out_linear = true;
+      return iree_ok_status();
+    }
   }
 
   iree_host_size_t term_count = 0;

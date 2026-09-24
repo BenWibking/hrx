@@ -1171,6 +1171,7 @@ loom_cc_library(
         "symbolic_congruence.c",
         "symbolic_expr.c",
         "symbolic_expr_proof.c",
+        "symbolic_projection.c",
         "symbolic_value.c",
         "symbolic_value.h",
     ],
@@ -1178,6 +1179,7 @@ loom_cc_library(
         "symbolic_congruence.h",
         "symbolic_expr.h",
         "symbolic_expr_proof.h",
+        "symbolic_projection.h",
     ],
     deps = [
         ":cfg_value_identity",
@@ -1204,6 +1206,16 @@ loom_cc_test(
     deps = [
         ":symbolic_expr",
         "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "symbolic_projection_test",
+    srcs = ["symbolic_projection_test.cc"],
+    deps = [
+        ":symbolic_expr",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
@@ -1310,6 +1322,7 @@ loom_cc_test(
         "//loom/src/loom/ops/sanitizer",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/scf",
+        "//loom/src/loom/target:facts",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
