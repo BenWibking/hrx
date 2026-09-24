@@ -356,6 +356,9 @@ void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
   table->select_dependencies.index = NULL;
   table->select_dependencies.roots = NULL;
   table->select_dependencies.capacity = 0;
+  table->exact_relations.ops = NULL;
+  table->exact_relations.count = 0;
+  table->exact_relations.capacity = 0;
   table->scratch.facts.values = NULL;
   table->scratch.facts.capacity = 0;
   table->scratch.value_ids.values = NULL;
@@ -670,6 +673,18 @@ loom_value_id_t loom_value_fact_table_query_identity(
   return identity != LOOM_VALUE_ID_INVALID ? identity : value_id;
 }
 
+void loom_value_fact_table_pending_exact_relations(
+    const loom_value_fact_table_t* table, loom_op_t* const** out_ops,
+    iree_host_size_t* out_op_count) {
+  *out_ops = table ? table->exact_relations.ops : NULL;
+  *out_op_count = table ? table->exact_relations.count : 0;
+}
+
+void loom_value_fact_table_clear_pending_exact_relations(
+    loom_value_fact_table_t* table) {
+  table->exact_relations.count = 0;
+}
+
 loom_value_set_id_t loom_value_fact_table_select_dependencies_begin(
     const loom_value_fact_table_t* table, loom_value_id_t value_id,
     loom_value_set_cursor_t* out_cursor) {
@@ -853,6 +868,64 @@ static iree_status_t loom_value_fact_table_set_identity(
     }
   }
   table->identities.entries[value_id] = identity;
+  return iree_ok_status();
+}
+
+#define LOOM_VALUE_FACT_EXACT_RELATION_INITIAL_CAPACITY 8
+
+static bool loom_value_fact_table_op_has_dynamic_predicate(
+    const loom_value_fact_table_t* table, const loom_op_t* op) {
+  const loom_attribute_t* attributes = loom_op_const_attrs(op);
+  for (uint8_t i = 0; i < op->attribute_count; ++i) {
+    if (attributes[i].kind != LOOM_ATTR_PREDICATE_LIST) {
+      continue;
+    }
+    for (uint16_t j = 0; j < attributes[i].count; ++j) {
+      const loom_predicate_t* predicate = &attributes[i].predicate_list[j];
+      for (uint8_t k = 0; k < predicate->arg_count; ++k) {
+        if (predicate->arg_tags[k] != LOOM_PRED_ARG_VALUE ||
+            predicate->args[k] < 0) {
+          continue;
+        }
+        const loom_value_facts_t facts = loom_value_fact_table_lookup(
+            table, (loom_value_id_t)predicate->args[k]);
+        if (!loom_value_facts_is_exact(facts)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+static iree_status_t loom_value_fact_table_record_exact_relation(
+    loom_value_fact_table_t* table, const loom_op_t* op,
+    loom_trait_flags_t traits) {
+  if (op->result_count == 0 || loom_traits_has_side_effects(traits)) {
+    return iree_ok_status();
+  }
+  const loom_value_id_t* results = loom_op_const_results(op);
+  for (uint16_t i = 0; i < op->result_count; ++i) {
+    if (results[i] == LOOM_VALUE_ID_INVALID ||
+        !loom_value_facts_is_exact(
+            loom_value_fact_table_lookup(table, results[i]))) {
+      return iree_ok_status();
+    }
+  }
+  if (!loom_value_fact_table_op_has_dynamic_predicate(table, op)) {
+    return iree_ok_status();
+  }
+  if (table->exact_relations.count == table->exact_relations.capacity) {
+    const iree_host_size_t minimum_capacity =
+        table->exact_relations.capacity
+            ? table->exact_relations.capacity * 2
+            : LOOM_VALUE_FACT_EXACT_RELATION_INITIAL_CAPACITY;
+    IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+        table->transient_arena, table->exact_relations.capacity,
+        minimum_capacity, sizeof(*table->exact_relations.ops),
+        &table->exact_relations.capacity, (void**)&table->exact_relations.ops));
+  }
+  table->exact_relations.ops[table->exact_relations.count++] = (loom_op_t*)op;
   return iree_ok_status();
 }
 
@@ -1430,6 +1503,10 @@ iree_status_t loom_value_fact_table_propagate_origins(
         IREE_RETURN_IF_ERROR(loom_value_fact_table_forward_layout_strides(
             table, operands[i], results[i]));
       }
+    }
+    if (inout_changed && *inout_changed) {
+      IREE_RETURN_IF_ERROR(
+          loom_value_fact_table_record_exact_relation(table, op, traits));
     }
   }
   return iree_ok_status();

@@ -281,6 +281,17 @@ struct loom_value_fact_table_t {
     iree_host_size_t capacity;
   } select_dependencies;
 
+  // Exact predicate-bearing identities awaiting path-local fact transport.
+  // The pointer array is allocated only when such an identity is discovered.
+  struct {
+    // Operations observed while their result facts changed to exact values.
+    loom_op_t** ops;
+    // Number of pending observations. Cyclic solves may repeat an operation.
+    iree_host_size_t count;
+    // Allocated operation pointer count.
+    iree_host_size_t capacity;
+  } exact_relations;
+
   // Reusable scratch buffers for fact inference calls. Allocated on first use,
   // grown only when an op needs more slots. Never shrinks. Old buffers are
   // abandoned in the arena and freed in bulk with the arena.
@@ -488,6 +499,19 @@ void loom_value_fact_table_contextual_query_values(
 // lifetime and mutation/recomputation contract as numeric facts.
 loom_value_id_t loom_value_fact_table_query_identity(
     const loom_value_fact_table_t* table, loom_value_id_t value_id);
+
+// Returns exact predicate-bearing identity operations that still relate at
+// least one dynamic SSA value. The borrowed observation array may contain the
+// same operation more than once after a cyclic solve and remains valid until
+// the transient fact arena is reset. No storage is allocated when empty.
+void loom_value_fact_table_pending_exact_relations(
+    const loom_value_fact_table_t* table, loom_op_t* const** out_ops,
+    iree_host_size_t* out_op_count);
+
+// Marks every currently pending exact-relation observation as consumed. The
+// pointer storage remains available for later incremental observations.
+void loom_value_fact_table_clear_pending_exact_relations(
+    loom_value_fact_table_t* table);
 
 // Begins increasing-order iteration over select conditions transitively
 // controlling |value_id|. Returns the canonical set identity, or zero when
