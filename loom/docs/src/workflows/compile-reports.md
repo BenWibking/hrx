@@ -183,28 +183,32 @@ compiler report.
 
 For an AMDGPU kernel using workgroup memory, capture a `details` report and run
 `loom-compile-report show kernel.report.json`. The **Bank service** view connects
-source loads and stores to the selected LDS packet and its lane-service model.
-It separates three coverage counts:
+source loads and stores to the selected LDS instruction and its lane-service
+model. Here, a report "packet" is one selected load/store instruction, such as
+`ds_write_b128`. Static totals count each instruction site once, regardless
+of how often its enclosing loop executes. Coverage divides those instructions
+into three categories:
 
-- **Exact** packets have proven addresses and active lanes under a named model.
-- **Unknown** packets have a model, but an address, alignment, or participation
-  proof is missing. Each source group names the missing proof.
-- **Unmodeled** packets have no model for the selected target, packet, and wave
-  size. A missing model is not evidence of conflict-free access.
+- **Exact** instructions have proven addresses and active lanes under a named
+  model.
+- **Unknown** instructions have a model, but an address, alignment, or
+  participation proof is missing. Each source group names the missing proof.
+- **Unmodeled** instructions have no model for the selected target, access width,
+  and wave size. A missing model is not evidence of conflict-free access.
 
 Model selection respects the function's execution width. Silicon-calibrated
 models cover `ds_read_u16`, `ds_write_b16`, and b32/b128 reads and writes on
 gfx1100/gfx1151 in wave32 and wave64, and gfx942 in wave64. Documented CDNA3
 b128 wave64 models cover gfx940/gfx941. The gfx1250 wave32 model is explicitly an
 unvalidated vendor software model. Other gfx11 processors, gfx1200/gfx1201,
-unsupported wave modes, and other packet widths report unmodeled coverage. A
+unsupported wave modes, and other access widths report unmodeled coverage. A
 shared bank count alone does not establish shared service rules.
 
 Reads and writes can have different lane-service groups, and repeated reads
 can broadcast. AMD's [LDS bank-conflict explanation](https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html)
 describes the CDNA3 b128 groups; the
 [ROCm programming guide](https://rocm-handbook.amd.com/_/downloads/amd-rocm-programming-guide/en/docs-7.2.3/pdf/)
-describes identical-address broadcast. Wide-packet analysis requires packet
+describes identical-address broadcast. Wide-access analysis requires proven
 alignment and full-subgroup participation. Fragment accesses use their compiled
 lane/register layout, including repeated lane addresses.
 
@@ -227,7 +231,7 @@ nonnegative, nonwrapping arithmetic and constant divisors. Unproved varying
 terms, runtime coordinate strides, and relationships lost across control-flow
 arguments remain unknown.
 
-Narrow packets use contiguous 32-lane service groups on the qualified devices.
+Narrow accesses use contiguous 32-lane service groups on the qualified devices.
 Halfword reads to either half of a bank word share a request; writes to disjoint
 halves also combine. Distinct words mapping to the same bank still conflict.
 The model reports `packet_bytes` separately from `bank_word_bytes` so a two-byte
@@ -241,21 +245,21 @@ compatible byte-base residues, and reports `address-base-residue-unproven` when
 the possible placements have different phase profiles. Full-word translations
 only rotate bank indices and need no enumeration.
 
-Required and extra **service rounds** describe proven static packets under the
-reported model. They are not measured cycles, wall-clock time, or a predicted
-speedup. Dynamic totals include only packets with proven execution counts;
+Required and extra **service rounds** describe proven static instructions under
+the reported model. They are not measured cycles, wall-clock time, or a predicted
+speedup. Dynamic totals include only instructions with proven execution counts;
 unresolved loop counts remain unknown. The model's provenance is separate from
 the address proof: `exact` under an unvalidated model is still experimental.
 
 Use `loom-compile-report suggest kernel.report.json` to find proven conflicting
-groups. Findings retain proven conflicts even when other packets in the same
-group are unknown, and state that coverage explicitly. Unvalidated-model
+groups. Findings retain proven conflicts even when other instructions in the
+same group are unknown, and state that coverage explicitly. Unvalidated-model
 suggestions require `--include-experimental`.
 
 Compare an authored pitch, padding, or lane-mapping change with
 `loom-compile-report diff baseline.report.json candidate.report.json`. The diff
 reports service changes and proof loss independently. A lower conflict count
-accompanied by more unknown or unmodeled packets does not demonstrate an
+accompanied by more unknown or unmodeled instructions does not demonstrate an
 improvement. Evaluate both producer stores and consumer loads, then check
 register pressure, LDS footprint, residency, and native execution time before
 selecting the layout. Instruction scheduling can overlap service with other
