@@ -188,6 +188,7 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
     const loom_amdgpu_fragment_memory_plan_t* plan,
     const loom_amdgpu_fragment_memory_packet_plan_t* packet,
     uint16_t element_index,
+    const loom_amdgpu_fragment_memory_packet_offset_t* runtime_offset,
     loom_low_lower_memory_bank_service_report_t* out_report) {
   *out_report = (loom_low_lower_memory_bank_service_report_t){0};
   if (plan->source.memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
@@ -209,8 +210,7 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
         IREE_SV("address-dynamic-base-not-subgroup-uniform"), out_report);
     return iree_ok_status();
   }
-  if (!loom_amdgpu_fragment_memory_runtime_packet_offset_is_subgroup_uniform(
-          plan, packet->register_index, element_index)) {
+  if (!runtime_offset->is_subgroup_uniform) {
     loom_amdgpu_memory_full_subgroup_proof_t active_lane_proof = {0};
     IREE_RETURN_IF_ERROR(loom_amdgpu_memory_prove_full_subgroup(
         context, source_op, model->wave_size,

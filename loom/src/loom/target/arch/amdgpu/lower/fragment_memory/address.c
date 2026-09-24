@@ -666,26 +666,38 @@ bool loom_amdgpu_fragment_memory_vaddr_static_offset_u32(
   return *out_static_byte_offset <= UINT32_MAX;
 }
 
-bool loom_amdgpu_fragment_memory_runtime_packet_offset_is_subgroup_uniform(
+loom_amdgpu_fragment_memory_packet_offset_t
+loom_amdgpu_fragment_memory_runtime_packet_offset(
     const loom_amdgpu_fragment_memory_plan_t* plan, uint16_t register_index,
     uint16_t element_index) {
-  IREE_ASSERT_LT(register_index, plan->register_count);
+  loom_amdgpu_fragment_memory_packet_offset_t offset = {
+      .byte_facts = loom_value_facts_exact_i64(0),
+      .is_subgroup_uniform = true,
+  };
   for (uint8_t view_axis = 0; view_axis < plan->view_rank; ++view_axis) {
     const loom_amdgpu_fragment_memory_runtime_axis_t* runtime_axis =
         &plan->runtime_axes[view_axis];
     if (runtime_axis->lane_coordinate_scale != 0) {
-      return false;
+      offset.is_subgroup_uniform = false;
     }
     const uint64_t packet_coordinate =
         (uint64_t)runtime_axis->register_coordinates[register_index] +
         (uint64_t)element_index *
             runtime_axis->packed_element_coordinate_stride;
-    if (packet_coordinate != 0 && !loom_value_facts_is_subgroup_uniform(
-                                      runtime_axis->byte_stride.byte_facts)) {
-      return false;
+    if (packet_coordinate == 0) {
+      continue;
     }
+    offset.is_subgroup_uniform &= loom_value_facts_is_subgroup_uniform(
+        runtime_axis->byte_stride.byte_facts);
+    IREE_ASSERT_LE(packet_coordinate, INT64_MAX);
+    const loom_value_facts_t coordinate_facts =
+        loom_value_facts_exact_i64((int64_t)packet_coordinate);
+    loom_value_facts_t axis_offset = loom_value_facts_unknown();
+    loom_value_facts_muli(&runtime_axis->byte_stride.byte_facts,
+                          &coordinate_facts, &axis_offset);
+    loom_value_facts_addi(&offset.byte_facts, &axis_offset, &offset.byte_facts);
   }
-  return true;
+  return offset;
 }
 
 static void loom_amdgpu_fragment_memory_split_static_offset(
