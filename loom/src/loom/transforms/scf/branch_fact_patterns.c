@@ -4,15 +4,19 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/transforms/cleanup/branch_facts.h"
+#include "loom/transforms/scf/branch_fact_patterns.h"
 
 #include <string.h>
 
+#include "loom/analysis/condition_facts.h"
+#include "loom/analysis/symbolic_expr.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/scf/ops.h"
+#include "loom/rewrite/rewriter.h"
+#include "loom/transforms/cleanup/patterns.h"
 #include "loom/util/walk.h"
 
 //===----------------------------------------------------------------------===//
@@ -928,31 +932,29 @@ loom_branch_facts_materialize_selector_default_facts_in_region(
                                                     &assume_set, out_changed);
 }
 
-static iree_status_t loom_branch_facts_try_materialize_branch_edge_facts(
+static iree_status_t loom_branch_facts_materialize_if_edge_facts(
     loom_rewriter_t* rewriter, loom_condition_query_t* condition_query,
     loom_op_t* op, bool* out_changed) {
   *out_changed = false;
-  if (loom_scf_if_isa(op)) {
-    bool then_changed = false;
+  bool then_changed = false;
+  IREE_RETURN_IF_ERROR(loom_branch_facts_materialize_condition_facts_in_region(
+      rewriter, condition_query, op, loom_scf_if_then_region(op),
+      loom_scf_if_condition(op), true, &then_changed));
+  bool else_changed = false;
+  loom_region_t* else_region = loom_scf_if_else_region(op);
+  if (else_region) {
     IREE_RETURN_IF_ERROR(
         loom_branch_facts_materialize_condition_facts_in_region(
-            rewriter, condition_query, op, loom_scf_if_then_region(op),
-            loom_scf_if_condition(op), true, &then_changed));
-    bool else_changed = false;
-    loom_region_t* else_region = loom_scf_if_else_region(op);
-    if (else_region) {
-      IREE_RETURN_IF_ERROR(
-          loom_branch_facts_materialize_condition_facts_in_region(
-              rewriter, condition_query, op, else_region,
-              loom_scf_if_condition(op), false, &else_changed));
-    }
-    *out_changed = then_changed || else_changed;
-    return iree_ok_status();
+            rewriter, condition_query, op, else_region,
+            loom_scf_if_condition(op), false, &else_changed));
   }
-  if (!loom_scf_switch_isa(op)) {
-    return iree_ok_status();
-  }
+  *out_changed = then_changed || else_changed;
+  return iree_ok_status();
+}
 
+static iree_status_t loom_branch_facts_materialize_switch_edge_facts(
+    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_changed) {
+  *out_changed = false;
   loom_attribute_t case_keys = loom_scf_switch_case_keys(op);
   if (case_keys.kind != LOOM_ATTR_I64_ARRAY ||
       (case_keys.count > 0 && !case_keys.i64_array)) {
@@ -981,58 +983,39 @@ static iree_status_t loom_branch_facts_try_materialize_branch_edge_facts(
   return iree_ok_status();
 }
 
-typedef struct loom_branch_facts_edge_fact_materialization_t {
-  // Rewriter used for inserted assumes and region-local operand replacement.
-  loom_rewriter_t* rewriter;
-  // Reusable traversal state for condition fact derivation.
-  loom_condition_query_t* condition_query;
-  // Result updated when materialization rewrites an edge.
-  loom_greedy_rewrite_result_t* result;
-  // True when at least one branch edge gained materialized facts.
-  bool changed;
-} loom_branch_facts_edge_fact_materialization_t;
+static iree_status_t loom_scf_if_branch_fact_pattern(
+    const loom_rewrite_pattern_t* pattern, void* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_changed) {
+  (void)pattern;
+  loom_cleanup_pattern_context_t* cleanup_context =
+      (loom_cleanup_pattern_context_t*)context;
+  return loom_branch_facts_materialize_if_edge_facts(
+      rewriter, &cleanup_context->symbolic_expression_context->condition_query,
+      op, out_changed);
+}
 
-static iree_status_t loom_branch_facts_materialize_branch_edge_facts_preorder(
-    void* user_data, loom_op_t* op, const loom_walk_context_t* context,
-    loom_walk_result_t* out_result) {
+static iree_status_t loom_scf_switch_branch_fact_pattern(
+    const loom_rewrite_pattern_t* pattern, void* context, loom_op_t* op,
+    loom_rewriter_t* rewriter, bool* out_changed) {
+  (void)pattern;
   (void)context;
-  *out_result = LOOM_WALK_CONTINUE;
-  loom_branch_facts_edge_fact_materialization_t* materialization =
-      (loom_branch_facts_edge_fact_materialization_t*)user_data;
-
-  bool op_changed = false;
-  materialization->rewriter->flags = 0;
-  IREE_RETURN_IF_ERROR(loom_branch_facts_try_materialize_branch_edge_facts(
-      materialization->rewriter, materialization->condition_query, op,
-      &op_changed));
-  if (!op_changed) {
-    return iree_ok_status();
-  }
-
-  materialization->changed = true;
-  loom_greedy_rewrite_result_record_change(
-      materialization->result, materialization->rewriter,
-      LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
-  return iree_ok_status();
+  return loom_branch_facts_materialize_switch_edge_facts(rewriter, op,
+                                                         out_changed);
 }
 
-iree_status_t loom_branch_facts_materialize_region(
-    loom_rewriter_t* rewriter, loom_condition_query_t* condition_query,
-    loom_region_t* region, loom_greedy_rewrite_result_t* result,
-    bool* out_changed) {
-  loom_branch_facts_edge_fact_materialization_t materialization = {
-      .rewriter = rewriter,
-      .condition_query = condition_query,
-      .result = result,
-      .changed = false,
-  };
-  loom_walk_result_t walk_result = LOOM_WALK_CONTINUE;
-  IREE_RETURN_IF_ERROR(loom_walk_region(
-      rewriter->module, region, LOOM_WALK_PRE_ORDER,
-      (loom_walk_callback_t){
-          loom_branch_facts_materialize_branch_edge_facts_preorder,
-          &materialization},
-      rewriter->arena, &walk_result));
-  *out_changed = materialization.changed;
-  return iree_ok_status();
-}
+static const loom_rewrite_pattern_t kScfBranchFactPatterns[] = {
+    {
+        .root_kind = LOOM_OP_SCF_IF,
+        .match_and_rewrite = loom_scf_if_branch_fact_pattern,
+    },
+    {
+        .root_kind = LOOM_OP_SCF_SWITCH,
+        .match_and_rewrite = loom_scf_switch_branch_fact_pattern,
+    },
+};
+
+const loom_rewrite_pattern_provider_t loom_scf_branch_fact_pattern_provider = {
+    .name = IREE_SVL("scf-branch-facts"),
+    .patterns = kScfBranchFactPatterns,
+    .pattern_count = IREE_ARRAYSIZE(kScfBranchFactPatterns),
+};

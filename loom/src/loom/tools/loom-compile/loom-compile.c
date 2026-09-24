@@ -185,8 +185,10 @@ static iree_status_t loom_compile_initialize_low_descriptor_registry(
 }
 
 static iree_status_t loom_compile_initialize_session(
-    const loom_target_environment_t* target_environment,
+    const loom_tooling_compile_environment_t* compile_environment,
     iree_allocator_t allocator, loom_run_session_t* out_session) {
+  const loom_target_environment_t* target_environment =
+      compile_environment->target_environment;
   loom_run_session_options_t session_options = {0};
   loom_run_session_options_initialize(&session_options);
   session_options.host_allocator = allocator;
@@ -199,6 +201,8 @@ static iree_status_t loom_compile_initialize_session(
           .fn = loom_compile_initialize_low_descriptor_registry,
           .user_data = (void*)target_environment,
       };
+  session_options.cleanup_pattern_provider_set =
+      compile_environment->cleanup_pattern_provider_set;
   return loom_run_session_initialize(&session_options, out_session);
 }
 
@@ -418,6 +422,8 @@ static iree_status_t loom_compile_run_pass_pipeline(
   pipeline_options.target_environment = target_environment;
   pipeline_options.low_descriptor_registry =
       loom_run_session_low_descriptor_registry(session);
+  pipeline_options.cleanup_pattern_provider_set =
+      loom_run_session_cleanup_pattern_provider_set(session);
   loom_compile_diagnostic_sink_t diagnostic_sink = {
       .run_module = run_module,
       .compile_report_capture = compile_report_capture,
@@ -966,8 +972,8 @@ int main(int argc, char** argv) {
   int exit_code = 0;
 
   if (iree_status_is_ok(status)) {
-    status = loom_compile_initialize_session(
-        compile_environment->target_environment, allocator, &session);
+    status = loom_compile_initialize_session(compile_environment, allocator,
+                                             &session);
   }
   if (iree_status_is_ok(status)) {
     status = loom_compile_append_config_files(&config_set, allocator);

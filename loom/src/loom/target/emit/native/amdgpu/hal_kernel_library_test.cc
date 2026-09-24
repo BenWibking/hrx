@@ -41,6 +41,7 @@
 #include "loom/target/profile.h"
 #include "loom/testing/diagnostic_matchers.h"
 #include "loom/tooling/compile/pipeline.h"
+#include "loom/transforms/cleanup/configured.h"
 
 namespace loom {
 namespace {
@@ -603,6 +604,8 @@ class AmdgpuHalKernelLibraryTest : public ::testing::Test {
     loom_compile_pipeline_options_initialize(&options);
     options.target_environment = &target_environment_;
     options.low_descriptor_registry = &low_registry_;
+    options.cleanup_pattern_provider_set =
+        loom_cleanup_configured_pattern_provider_set();
     options.diagnostic_sink = capture->sink();
     options.max_errors = 20;
     loom_compile_pipeline_result_t result = {};

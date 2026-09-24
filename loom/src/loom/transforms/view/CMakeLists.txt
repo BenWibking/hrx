@@ -11,6 +11,22 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    combine_patterns
+  HDRS
+    "combine_patterns.h"
+  SRCS
+    "combine_patterns.c"
+  DEPS
+    ::load_coalescing
+    iree::base
+    loom::ops::view
+    loom::rewrite::pattern_registry
+    loom::transforms::cleanup::patterns
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     boundary_projection
   HDRS
     "boundary_projection.h"

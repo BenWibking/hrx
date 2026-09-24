@@ -317,6 +317,8 @@ loom_cc_library(
     loom::transforms::cleanup::canonicalize
     loom::transforms::cleanup::cse
     loom::transforms::cleanup::dce
+    loom::transforms::cleanup::pass_environment
+    loom::transforms::cleanup::pass_requirements
     loom::transforms::cleanup::strip_hints
     loom::transforms::encoding::layout_transport
     loom::transforms::func::locations
@@ -462,6 +464,8 @@ loom_cc_test(
     loom::target::legalization
     loom::target::pass_environment
     loom::target::pass_requirements
+    loom::transforms::cleanup::pass_environment
+    loom::transforms::cleanup::pass_requirements
 )
 
 loom_cc_test(

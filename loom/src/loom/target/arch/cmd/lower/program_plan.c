@@ -25,6 +25,7 @@
 #include "loom/target/arch/cmd/lower/program_plan_requests.h"
 #include "loom/target/arch/cmd/lower/schedule.h"
 #include "loom/target/arch/cmd/lower/transients.h"
+#include "loom/transforms/cleanup/pass_environment.h"
 #include "loom/transforms/kernel/resolve_launches.h"
 #include "loom/transforms/symbol/template_expansion_pipeline.h"
 #include "loom/util/fact_table.h"
@@ -163,6 +164,7 @@ static iree_status_t loom_cmd_program_plan_build_preparation_body(
 // device implementation IR.
 static iree_status_t loom_cmd_program_plan_prepare_roots(
     loom_module_t* module, const loom_pass_registry_t* pass_registry,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_diagnostic_emitter_t diagnostic_emitter,
     iree_arena_block_pool_t* block_pool, bool has_templates, bool* out_valid) {
   *out_valid = false;
@@ -178,8 +180,29 @@ static iree_status_t loom_cmd_program_plan_prepare_roots(
       LOOM_PASS_ANCHOR_MODULE, loom_cmd_program_plan_build_preparation_body,
       &has_templates, &pipeline_op);
 
+  iree_arena_allocator_t registry_arena;
+  iree_arena_initialize(block_pool, &registry_arena);
+  loom_cleanup_pattern_registry_storage_t cleanup_pattern_registry_storage = {
+      0};
+  if (iree_status_is_ok(status)) {
+    status = loom_cleanup_pattern_registry_storage_initialize(
+        cleanup_pattern_provider_set, iree_arena_allocator(&registry_arena),
+        &cleanup_pattern_registry_storage);
+  }
+  const loom_cleanup_pass_capability_t cleanup_capability =
+      loom_cleanup_pass_capability_make(
+          loom_cleanup_pattern_registry_storage_registry(
+              &cleanup_pattern_registry_storage),
+          (loom_cleanup_canonicalizer_context_resolver_t){0});
+  const loom_pass_environment_capability_t* capabilities[] = {
+      &cleanup_capability.base,
+  };
+  const loom_pass_environment_t pass_environment =
+      loom_pass_environment_make(capabilities, IREE_ARRAYSIZE(capabilities));
+
   const loom_pass_program_compile_options_t compile_options = {
       .registry = pass_registry,
+      .environment = pass_environment,
   };
   loom_pass_program_t program = {0};
   if (iree_status_is_ok(status)) {
@@ -190,6 +213,7 @@ static iree_status_t loom_cmd_program_plan_prepare_roots(
   const loom_pass_interpreter_options_t interpreter_options = {
       .block_pool = block_pool,
       .diagnostic_emitter = diagnostic_emitter,
+      .environment = pass_environment,
   };
   bool valid = false;
   if (iree_status_is_ok(status)) {
@@ -200,6 +224,9 @@ static iree_status_t loom_cmd_program_plan_prepare_roots(
   }
 
   loom_pass_program_deinitialize(&program);
+  loom_cleanup_pattern_registry_storage_deinitialize(
+      &cleanup_pattern_registry_storage);
+  iree_arena_deinitialize(&registry_arena);
   loom_module_free(pipeline_module);
   if (iree_status_is_ok(status)) {
     *out_valid = valid;
@@ -578,6 +605,7 @@ iree_status_t loom_cmd_program_plan_prepare_materialization(
     const loom_symbol_ref_t* program_refs, iree_host_size_t program_count,
     const loom_cmd_program_kernel_source_t* kernel_source,
     const loom_pass_registry_t* pass_registry,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_diagnostic_emitter_t diagnostic_emitter,
     iree_arena_block_pool_t* block_pool, bool* out_valid,
     loom_cmd_program_plan_t* out_plan, iree_allocator_t host_allocator) {
@@ -586,6 +614,7 @@ iree_status_t loom_cmd_program_plan_prepare_materialization(
   IREE_ASSERT_ARGUMENT(program_refs);
   IREE_ASSERT_GT(program_count, 0u);
   IREE_ASSERT_ARGUMENT(pass_registry);
+  IREE_ASSERT_ARGUMENT(cleanup_pattern_provider_set);
   IREE_ASSERT_ARGUMENT(block_pool);
   IREE_ASSERT_ARGUMENT(out_valid);
   IREE_ASSERT_ARGUMENT(out_plan);
@@ -660,8 +689,8 @@ iree_status_t loom_cmd_program_plan_prepare_materialization(
   }
   if (valid && iree_status_is_ok(status)) {
     status = loom_cmd_program_plan_prepare_roots(
-        preparation_module, pass_registry, diagnostic_emitter, block_pool,
-        has_templates, &valid);
+        preparation_module, pass_registry, cleanup_pattern_provider_set,
+        diagnostic_emitter, block_pool, has_templates, &valid);
   }
 
   iree_host_size_t entry_requirement_capacity = 0;

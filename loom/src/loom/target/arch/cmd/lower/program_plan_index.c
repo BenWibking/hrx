@@ -35,13 +35,15 @@ iree_status_t loom_cmd_program_plan_prepare_index(
     iree_host_size_t program_count,
     const loom_cmd_program_plan_index_options_t* options,
     const loom_pass_registry_t* pass_registry,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_diagnostic_emitter_t diagnostic_emitter,
     const loom_link_plan_materialization_environment_t*
         materialization_environment,
     iree_arena_allocator_t* scratch_arena, bool* out_valid,
     loom_cmd_program_plan_t* out_plan) {
   if (index == NULL || program_symbol_ordinals == NULL || program_count == 0 ||
-      pass_registry == NULL || materialization_environment == NULL ||
+      pass_registry == NULL || cleanup_pattern_provider_set == NULL ||
+      materialization_environment == NULL ||
       materialization_environment->context == NULL ||
       materialization_environment->block_pool == NULL ||
       scratch_arena == NULL || out_valid == NULL || out_plan == NULL) {
@@ -132,8 +134,9 @@ iree_status_t loom_cmd_program_plan_prepare_index(
     status = loom_cmd_program_plan_prepare_materialization(
         &materialization.product, target_root_refs, program_count,
         kernel_source.producer != NULL ? &kernel_source : NULL, pass_registry,
-        diagnostic_emitter, materialization_environment->block_pool, out_valid,
-        out_plan, materialization_environment->allocator);
+        cleanup_pattern_provider_set, diagnostic_emitter,
+        materialization_environment->block_pool, out_valid, out_plan,
+        materialization_environment->allocator);
   }
 
   loom_kernel_request_producer_free(kernel_request_producer);

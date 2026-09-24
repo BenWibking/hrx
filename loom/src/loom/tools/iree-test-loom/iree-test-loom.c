@@ -12,6 +12,7 @@
 #include "loom/tooling/execution/execution_provider.h"
 #include "loom/tooling/input/configured.h"
 #include "loom/tools/iree-test-loom/main.h"
+#include "loom/transforms/cleanup/configured.h"
 
 #ifndef IREE_TEST_LOOM_HAVE_AMDGPU
 #define IREE_TEST_LOOM_HAVE_AMDGPU 0
@@ -179,6 +180,8 @@ int main(int argc, char** argv) {
               &environment),
       .target_environment =
           loom_run_execution_environment_target_environment(&environment),
+      .cleanup_pattern_provider_set =
+          loom_cleanup_configured_pattern_provider_set(),
       .device_provider_registry = &kIreeTestLoomDeviceProviderRegistry,
       .populate_requirement_providers =
           {
@@ -191,6 +194,7 @@ int main(int argc, char** argv) {
 #if IREE_TEST_LOOM_HAVE_VM
   loom_vm_testbench_t vm_testbench;
   loom_vm_testbench_initialize(configuration.target_environment,
+                               configuration.cleanup_pattern_provider_set,
                                iree_allocator_system(), &vm_testbench);
   configuration.function_call_provider =
       (loom_testbench_function_call_provider_callback_t){

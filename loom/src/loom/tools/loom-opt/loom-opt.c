@@ -12,9 +12,9 @@
 #include "iree/base/api.h"
 #include "iree/base/tooling/flags.h"
 #include "loom/codegen/low/pipeline/legalizer_registry.h"
-#include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/text_asm.h"
 #include "loom/codegen/low/verify.h"
+#include "loom/codegen/pass_environment.h"
 #include "loom/error/diagnostic.h"
 #include "loom/error/json_sink.h"
 #include "loom/error/source.h"
@@ -35,6 +35,8 @@
 #include "loom/tooling/execution/session.h"
 #include "loom/tooling/io/file.h"
 #include "loom/tooling/pass/trace_cli.h"
+#include "loom/transforms/cleanup/configured.h"
+#include "loom/transforms/cleanup/patterns.h"
 #include "loom/util/json.h"
 #include "loom/util/stream.h"
 #include "loom/verify/verify.h"
@@ -855,6 +857,7 @@ static iree_status_t loom_opt_run_shared_compile_pipeline(
 static iree_status_t loom_opt_run_passes(
     const loom_target_low_descriptor_registry_t* low_registry,
     const loom_target_environment_t* target_environment,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     const loom_pass_registry_t* pass_registry,
     iree_arena_block_pool_t* block_pool, loom_run_module_t* run_module,
     loom_diagnostic_sink_t diagnostic_sink, loom_pass_report_t* report,
@@ -893,7 +896,7 @@ static iree_status_t loom_opt_run_passes(
       loom_target_environment_low_legality_provider_list(target_environment);
   const loom_target_legalizer_provider_list_t legalizer_provider_list =
       loom_target_environment_legalizer_provider_list(target_environment);
-  loom_low_pass_environment_storage_t low_pass_environment_storage;
+  loom_codegen_pass_environment_storage_t codegen_environment_storage;
   loom_target_pass_predicate_provider_storage_t predicate_storage;
   loom_target_pass_predicate_provider_storage_initialize(block_pool,
                                                          &predicate_storage);
@@ -915,15 +918,32 @@ static iree_status_t loom_opt_run_passes(
   iree_status_t status = loom_low_legalizer_registry_storage_initialize(
       legalizer_provider_list, iree_arena_allocator(&function_version_arena),
       &legalizer_registry_storage);
+  loom_cleanup_pattern_registry_storage_t cleanup_pattern_registry_storage = {
+      0};
+  if (iree_status_is_ok(status)) {
+    status = loom_cleanup_pattern_registry_storage_initialize(
+        cleanup_pattern_provider_set,
+        iree_arena_allocator(&function_version_arena),
+        &cleanup_pattern_registry_storage);
+  }
+  const loom_codegen_pass_environment_options_t environment_options = {
+      .descriptor_registry = &low_registry->registry,
+      .lower_policy_registry = &low_lower_policy_registry,
+      .legality_provider_list = &low_legality_provider_list,
+      .legalizer_registry = loom_target_legalizer_registry_storage_registry(
+          &legalizer_registry_storage),
+      .math_policy_registry = &math_policy_registry,
+      .compile_report = NULL,
+      .target_environment = target_environment,
+      .cleanup_pattern_registry =
+          loom_cleanup_pattern_registry_storage_registry(
+              &cleanup_pattern_registry_storage),
+  };
   loom_pass_tool_run_options_t run_options = {
       .registry = pass_registry,
-      .environment = loom_low_pass_environment_storage_initialize_mutable(
-          &low_registry->registry, &low_lower_policy_registry,
-          &low_legality_provider_list,
-          loom_target_legalizer_registry_storage_registry(
-              &legalizer_registry_storage),
-          &math_policy_registry, /*compile_report=*/NULL, target_environment,
-          &function_versions, &low_pass_environment_storage),
+      .environment = loom_codegen_pass_environment_storage_initialize_mutable(
+          &environment_options, &function_versions,
+          &codegen_environment_storage),
       .function_versions = &function_versions.list,
       .predicate_provider =
           loom_target_pass_predicate_provider(&predicate_storage),
@@ -959,6 +979,8 @@ static iree_status_t loom_opt_run_passes(
   }
   loom_target_legalizer_registry_storage_deinitialize(
       &legalizer_registry_storage);
+  loom_cleanup_pattern_registry_storage_deinitialize(
+      &cleanup_pattern_registry_storage);
   iree_arena_deinitialize(&function_version_arena);
   return status;
 }
@@ -1370,6 +1392,8 @@ int main(int argc, char** argv) {
             .fn = loom_opt_initialize_low_descriptor_registry,
             .user_data = (void*)target_environment,
         };
+    session_options.cleanup_pattern_provider_set =
+        loom_cleanup_configured_pattern_provider_set();
     status = loom_run_session_initialize(&session_options, &run_session);
     if (iree_status_is_ok(status)) {
       loom_low_descriptor_text_print_context_initialize(
@@ -1446,9 +1470,10 @@ int main(int argc, char** argv) {
   if (iree_status_is_ok(status) && !metadata_only) {
     pass_pipeline_status = loom_opt_run_passes(
         loom_run_session_low_descriptor_registry(&run_session),
-        target_environment, pass_registry,
-        loom_run_session_block_pool(&run_session), &run_module, diagnostic_sink,
-        pass_report_initialized ? &pass_report : NULL,
+        target_environment,
+        loom_run_session_cleanup_pattern_provider_set(&run_session),
+        pass_registry, loom_run_session_block_pool(&run_session), &run_module,
+        diagnostic_sink, pass_report_initialized ? &pass_report : NULL,
         loom_tooling_pass_trace_options(&pass_trace), &pass_execution_started,
         &pass_run_result, allocator);
     status = pass_pipeline_status;

@@ -29,6 +29,9 @@ typedef struct loom_cmd_program_artifact_builder_options_t {
   // Pass registry used to specialize linked command and configuration IR.
   const loom_pass_registry_t* pass_registry;
 
+  // Cleanup providers selected for command and configuration IR.
+  const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
+
   // Destination for authored command contract diagnostics.
   iree_diagnostic_emitter_t diagnostic_emitter;
 

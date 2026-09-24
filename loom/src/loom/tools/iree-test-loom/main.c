@@ -688,6 +688,8 @@ int iree_test_loom_main(int argc, char** argv,
     };
     session_options.initialize_low_descriptor_registry =
         configuration->initialize_low_descriptor_registry;
+    session_options.cleanup_pattern_provider_set =
+        configuration->cleanup_pattern_provider_set;
     status = loom_run_session_initialize(&session_options, &session);
   }
   if (iree_status_is_ok(status)) {

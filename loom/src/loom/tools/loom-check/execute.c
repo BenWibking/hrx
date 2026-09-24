@@ -8,9 +8,9 @@
 
 #include "loom/codegen/low/lower/lower.h"
 #include "loom/codegen/low/pipeline/legalizer_registry.h"
-#include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/text_asm.h"
 #include "loom/codegen/low/verify.h"
+#include "loom/codegen/pass_environment.h"
 #include "loom/error/diagnostic.h"
 #include "loom/error/json_sink.h"
 #include "loom/error/source.h"
@@ -30,6 +30,7 @@
 #include "loom/tools/loom-check/requirements.h"
 #include "loom/tools/loom-check/source_low.h"
 #include "loom/tools/loom-format/convert.h"
+#include "loom/transforms/cleanup/patterns.h"
 #include "loom/util/diff.h"
 #include "loom/util/json.h"
 #include "loom/util/stream.h"
@@ -640,7 +641,7 @@ static iree_status_t loom_check_execute_pass_with_output(
         math_policy_registry_ref = &math_policy_registry;
       }
     }
-    loom_low_pass_environment_storage_t low_pass_environment_storage;
+    loom_codegen_pass_environment_storage_t codegen_environment_storage;
     loom_target_pass_predicate_provider_storage_t predicate_storage;
     loom_target_pass_predicate_provider_storage_initialize(block_pool,
                                                            &predicate_storage);
@@ -669,16 +670,39 @@ static iree_status_t loom_check_execute_pass_with_output(
           legalizer_provider_list, iree_arena_allocator(&diagnostic_arena),
           &legalizer_registry_storage);
     }
+    loom_cleanup_pattern_registry_storage_t cleanup_pattern_registry_storage = {
+        0};
+    const loom_cleanup_pattern_registry_t* cleanup_pattern_registry = NULL;
+    if (iree_status_is_ok(status) && environment != NULL &&
+        environment->cleanup_pattern_provider_set != NULL) {
+      status = loom_cleanup_pattern_registry_storage_initialize(
+          environment->cleanup_pattern_provider_set,
+          iree_arena_allocator(&diagnostic_arena),
+          &cleanup_pattern_registry_storage);
+      if (iree_status_is_ok(status)) {
+        cleanup_pattern_registry =
+            loom_cleanup_pattern_registry_storage_registry(
+                &cleanup_pattern_registry_storage);
+      }
+    }
+    const loom_codegen_pass_environment_options_t environment_options = {
+        .descriptor_registry = &low_registry.registry,
+        .lower_policy_registry = low_lower_policy_registry_ref,
+        .legality_provider_list =
+            environment ? &environment->low_legality_provider_list : NULL,
+        .legalizer_registry = loom_target_legalizer_registry_storage_registry(
+            &legalizer_registry_storage),
+        .math_policy_registry = math_policy_registry_ref,
+        .compile_report = compile_report_ref,
+        .target_environment =
+            environment ? environment->target_environment : NULL,
+        .cleanup_pattern_registry = cleanup_pattern_registry,
+    };
     loom_pass_tool_run_options_t run_options = {
         .registry = pass_registry,
-        .environment = loom_low_pass_environment_storage_initialize_mutable(
-            &low_registry.registry, low_lower_policy_registry_ref,
-            environment ? &environment->low_legality_provider_list : NULL,
-            loom_target_legalizer_registry_storage_registry(
-                &legalizer_registry_storage),
-            math_policy_registry_ref, compile_report_ref,
-            environment ? environment->target_environment : NULL,
-            &function_versions, &low_pass_environment_storage),
+        .environment = loom_codegen_pass_environment_storage_initialize_mutable(
+            &environment_options, &function_versions,
+            &codegen_environment_storage),
         .function_versions = &function_versions.list,
         .predicate_provider =
             loom_target_pass_predicate_provider(&predicate_storage),
@@ -697,6 +721,8 @@ static iree_status_t loom_check_execute_pass_with_output(
     }
     loom_target_legalizer_registry_storage_deinitialize(
         &legalizer_registry_storage);
+    loom_cleanup_pattern_registry_storage_deinitialize(
+        &cleanup_pattern_registry_storage);
   }
   if (!iree_status_is_ok(status)) {
     status = loom_check_execute_finish_status_failure(

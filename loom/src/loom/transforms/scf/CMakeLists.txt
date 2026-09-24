@@ -11,6 +11,42 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    branch_fact_patterns
+  HDRS
+    "branch_fact_patterns.h"
+  SRCS
+    "branch_fact_patterns.c"
+  DEPS
+    iree::base
+    loom::analysis::condition_facts
+    loom::analysis::symbolic_expr
+    loom::ir
+    loom::ops::index
+    loom::ops::scalar
+    loom::ops::scf
+    loom::rewrite::pattern_registry
+    loom::rewrite::rewriter
+    loom::transforms::cleanup::patterns
+    loom::util::walk
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    combine_patterns
+  HDRS
+    "combine_patterns.h"
+  SRCS
+    "combine_patterns.c"
+  DEPS
+    iree::base
+    loom::ops::scf
+    loom::rewrite::pattern_registry
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     scf_memory
   HDRS
     "scf_memory.h"

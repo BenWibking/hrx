@@ -116,6 +116,7 @@ loom_cc_binary(
     iree::base
     loom::tooling::execution::execution_provider
     loom::tooling::input::configured
+    loom::transforms::cleanup::configured
     ${_iree_test_loom_platform_deps}
 )
 

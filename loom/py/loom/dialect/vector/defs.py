@@ -3505,6 +3505,7 @@ vector_trunci = _vector_cast(
     doc=("Lanewise integer truncation. Source and result shapes match exactly, and each lane keeps the low bits required by the result element width."),
     traits=[SAFE_TO_SPECULATE],
     constraints=[ElementWidthLessThan("result", "input")],
+    canonicalize="loom_vector_trunci_canonicalize",
 )
 
 vector_sitofp = _vector_cast(

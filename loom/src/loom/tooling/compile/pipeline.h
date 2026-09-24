@@ -31,6 +31,8 @@ extern "C" {
 #endif
 
 typedef struct loom_target_environment_t loom_target_environment_t;
+typedef struct loom_cleanup_pattern_provider_set_t
+    loom_cleanup_pattern_provider_set_t;
 
 typedef enum loom_compile_default_pipeline_e {
   // Build the shared source/kernel-to-target-low pipeline. This is useful for
@@ -65,6 +67,8 @@ typedef struct loom_compile_pipeline_options_t {
   loom_target_specialization_request_list_t target_specializations;
   // Target-low descriptor registry package initialized for this session.
   const loom_target_low_descriptor_registry_t* low_descriptor_registry;
+  // Cleanup pattern providers linked into this compile front door.
+  const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;
   // Diagnostic sink used by pass execution.
   loom_diagnostic_sink_t diagnostic_sink;
   // Source resolver used to render source-attributed diagnostics.

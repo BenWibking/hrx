@@ -26,6 +26,7 @@
 #include "loom/pass/builtin_registry.h"
 #include "loom/target/arch/cmd/artifact_builder.h"
 #include "loom/target/arch/cmd/artifact_set.h"
+#include "loom/transforms/cleanup/configured.h"
 #include "loom/transforms/kernel/kernel_class_materializer.h"
 #include "loom/transforms/kernel/kernel_request_producer.h"
 #include "loomc/compile.h"
@@ -505,6 +506,8 @@ static loomc_status_t loomc_cmd_program_product_build_indexed(
                 .plan_options =
                     request_sink.publish != NULL ? &plan_options : NULL,
                 .pass_registry = loom_pass_builtin_registry(),
+                .cleanup_pattern_provider_set =
+                    loom_cleanup_configured_pattern_provider_set(),
                 .diagnostic_emitter =
                     {
                         .fn = loomc_cmd_program_product_capture_diagnostic,

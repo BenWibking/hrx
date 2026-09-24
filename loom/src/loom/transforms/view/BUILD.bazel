@@ -13,6 +13,19 @@ package(
 )
 
 loom_cc_library(
+    name = "combine_patterns",
+    srcs = ["combine_patterns.c"],
+    hdrs = ["combine_patterns.h"],
+    deps = [
+        ":load_coalescing",
+        "//loom/src/loom/ops/view",
+        "//loom/src/loom/rewrite:pattern_registry",
+        "//loom/src/loom/transforms/cleanup:patterns",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "boundary_projection",
     srcs = ["boundary_projection.c"],
     hdrs = ["boundary_projection.h"],

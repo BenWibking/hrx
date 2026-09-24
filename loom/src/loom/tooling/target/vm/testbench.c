@@ -21,9 +21,11 @@
 
 void loom_vm_testbench_initialize(
     const loom_target_environment_t* target_environment,
+    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
     iree_allocator_t host_allocator, loom_vm_testbench_t* out_testbench) {
   *out_testbench = (loom_vm_testbench_t){
       .target_environment = target_environment,
+      .cleanup_pattern_provider_set = cleanup_pattern_provider_set,
       .host_allocator = host_allocator,
   };
 }
@@ -144,6 +146,8 @@ static iree_status_t loom_vm_testbench_compile(loom_vm_testbench_t* testbench,
     options.target_specializations =
         (loom_target_specialization_request_list_t){requests, request_count};
     options.low_descriptor_registry = &registry;
+    options.cleanup_pattern_provider_set =
+        testbench->cleanup_pattern_provider_set;
     status = loom_compile_run_pipeline(module, &options, &pool, &pipeline);
     if (iree_status_is_ok(status) && pipeline.pass.error_count) {
       status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,

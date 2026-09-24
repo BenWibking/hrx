@@ -282,6 +282,7 @@ loom_cc_library(
         "//loom/src/loom/rewrite:materialize",
         "//loom/src/loom/rewrite:remap",
         "//loom/src/loom/transforms/cleanup:canonicalizer",
+        "//loom/src/loom/transforms/cleanup:pass_environment",
         "//loom/src/loom/util:fact_table",
         "//loom/src/loom/util:walk",
         "//runtime/src/iree/base",

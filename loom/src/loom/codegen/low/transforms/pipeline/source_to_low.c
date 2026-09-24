@@ -19,6 +19,7 @@
 #include "loom/pass/value_facts.h"
 #include "loom/sanitizer/options.h"
 #include "loom/target/low_legality.h"
+#include "loom/target/pass_environment.h"
 #include "loom/target/reporting/low.h"
 
 typedef struct loom_low_source_to_low_pass_state_t {

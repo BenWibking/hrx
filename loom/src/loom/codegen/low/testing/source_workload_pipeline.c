@@ -12,10 +12,10 @@
 #include "iree/base/internal/arena.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/lower/source_selection.h"
-#include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/pipeline/pipeline.h"
 #include "loom/codegen/low/testing/allocation_checker.h"
 #include "loom/codegen/low/verify.h"
+#include "loom/codegen/pass_environment.h"
 #include "loom/ir/module.h"
 #include "loom/ops/func/ops.h"
 #include "loom/ops/low/ops.h"
@@ -120,13 +120,13 @@ static iree_status_t loom_low_source_workload_prepare_low_functions(
     pipeline_op = mutable_pipeline_op;
   }
 
-  loom_low_pass_environment_storage_t environment_storage = {0};
+  const loom_codegen_pass_environment_options_t environment_options = {
+      .descriptor_registry = options->descriptor_registry,
+  };
+  loom_codegen_pass_environment_storage_t environment_storage = {0};
   loom_pass_environment_t environment =
-      loom_low_pass_environment_storage_initialize(
-          options->descriptor_registry, /*lower_policy_registry=*/NULL,
-          /*legality_provider_list=*/NULL, /*legalizer_registry=*/NULL,
-          /*math_policy_registry=*/NULL, /*compile_report=*/NULL,
-          /*target_environment=*/NULL, /*function_versions=*/NULL,
+      loom_codegen_pass_environment_storage_initialize(
+          &environment_options, /*function_versions=*/NULL,
           &environment_storage);
   loom_pass_program_t program = {0};
   if (iree_status_is_ok(status)) {
