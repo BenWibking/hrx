@@ -19,6 +19,8 @@ from typing import Protocol
 
 from loom.dialect.cache import CacheScope, CacheTemporal
 from loom.target.arch.amdgpu.lds_bank_service import (
+    AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151,
     AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES,
     amdgpu_lds_bank_service_model_info_by_key,
     validate_amdgpu_lds_bank_service_model_selection,
@@ -1153,6 +1155,7 @@ def cdna3_processor_info(
         scheduling_bits=AMDGPU_PROCESSOR_SCHEDULING_CDNA_FIXED_WAIT_STATES,
         max_workgroup_storage_bytes=AMDGPU_DEFAULT_MAX_WORKGROUP_STORAGE_BYTES,
         occupancy=AMDGPU_OCCUPANCY_CDNA3,
+        lds_bank_service_models=AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
     )
 
 
@@ -1161,6 +1164,7 @@ def gfx115x_processor_info(
     elf_machine_flags: int,
     *,
     occupancy: AmdgpuProcessorOccupancyInfo = AMDGPU_OCCUPANCY_RDNA_1024,
+    lds_bank_service_models: tuple[str, ...] = (),
 ) -> AmdgpuProcessorInfo:
     return processor_info(
         processor=processor,
@@ -1177,6 +1181,7 @@ def gfx115x_processor_info(
             | AMDGPU_PROCESSOR_SCHEDULING_VMEM_RESULT_WRITES_IN_ORDER
         ),
         occupancy=occupancy,
+        lds_bank_service_models=lds_bank_service_models,
     )
 
 
@@ -1594,7 +1599,12 @@ AMDGPU_PROCESSOR_INFOS: tuple[AmdgpuProcessorInfo, ...] = (
         scheduling_bits=AMDGPU_PROCESSOR_SCHEDULING_VALU_TRANS_USE_DEPCTR,
     ),
     gfx115x_processor_info("gfx1150", 0x043),
-    gfx115x_processor_info("gfx1151", 0x04A, occupancy=AMDGPU_OCCUPANCY_RDNA_1536),
+    gfx115x_processor_info(
+        "gfx1151",
+        0x04A,
+        occupancy=AMDGPU_OCCUPANCY_RDNA_1536,
+        lds_bank_service_models=AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151,
+    ),
     gfx115x_processor_info("gfx1152", 0x055),
     gfx115x_processor_info("gfx1153", 0x058),
     rdna4m_processor_info("gfx1170", 0x05D),

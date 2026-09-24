@@ -69,55 +69,124 @@ class AmdgpuLdsBankServiceModelInfo:
     phase_lane_masks: tuple[int, ...]
 
 
-AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] = (
-    AmdgpuLdsBankServiceModelInfo(
-        key="amdgpu.lds.wave32.b128.quad-phases.read.count-each",
-        revision="ROCm/rocm-libraries@a7e3879c8847:LDSModel.cpp",
-        descriptor_key="amdgpu.ds_read_b128",
-        evidence_class=(
-            AMDGPU_LDS_BANK_SERVICE_EVIDENCE_VENDOR_SOFTWARE_MODEL_UNVALIDATED
-        ),
-        direction=AMDGPU_LDS_BANK_SERVICE_DIRECTION_READ,
-        request_policy=AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
-        wave_size=32,
+def _b128_octet_model(
+    family: str,
+    wave_size: int,
+    direction: str,
+    evidence_class: str,
+) -> AmdgpuLdsBankServiceModelInfo:
+    # AMD CK documents distinct read/write octets:
+    # https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html
+    # Read broadcast semantics: AMD ROCm Programming Guide 7.2.3, section 6.3.3.
+    # gfx1151 qualification distinguishes the two phase maps with permutations
+    # that conflict only on reads or only on writes, in both wave modes.
+    read = direction == AMDGPU_LDS_BANK_SERVICE_DIRECTION_READ
+    request_policy = (
+        AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COALESCE_IDENTICAL_READS
+        if read
+        else AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH
+    )
+    half_wave_masks = (
+        (0x00F0000F, 0x000F00F0, 0xF0000F00, 0x0F00F000)
+        if read
+        else (0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000)
+    )
+    return AmdgpuLdsBankServiceModelInfo(
+        key=f"amdgpu.lds.{family}.wave{wave_size}.b128.{direction}.{request_policy}",
+        revision="AMD:CK-LDS-2025-07-25;ROCm-guide-7.2.3:6.3.3",
+        descriptor_key=f"amdgpu.ds_{direction}_b128",
+        evidence_class=evidence_class,
+        direction=direction,
+        request_policy=request_policy,
+        wave_size=wave_size,
         bank_count=32,
         bank_word_byte_count=4,
         packet_word_count=4,
-        phase_lane_masks=(
-            0x0000000F,
-            0x000000F0,
-            0x00000F00,
-            0x0000F000,
-            0x000F0000,
-            0x00F00000,
-            0x0F000000,
-            0xF0000000,
+        phase_lane_masks=tuple(
+            mask << half_wave_start
+            for half_wave_start in range(0, wave_size, 32)
+            for mask in half_wave_masks
         ),
-    ),
-    AmdgpuLdsBankServiceModelInfo(
-        key="amdgpu.lds.wave32.b128.quad-phases.write.count-each",
-        revision="ROCm/rocm-libraries@a7e3879c8847:LDSModel.cpp",
-        descriptor_key="amdgpu.ds_write_b128",
-        evidence_class=(
-            AMDGPU_LDS_BANK_SERVICE_EVIDENCE_VENDOR_SOFTWARE_MODEL_UNVALIDATED
+    )
+
+
+_B128_OCTET_MODELS = tuple(
+    _b128_octet_model(family, wave_size, direction, evidence)
+    for family, wave_sizes, evidence in (
+        ("cdna3", (64,), AMDGPU_LDS_BANK_SERVICE_EVIDENCE_PUBLIC_VENDOR_DOCUMENTATION),
+        (
+            "gfx1151",
+            (32, 64),
+            AMDGPU_LDS_BANK_SERVICE_EVIDENCE_SILICON_CALIBRATED_VENDOR_MODEL,
         ),
-        direction=AMDGPU_LDS_BANK_SERVICE_DIRECTION_WRITE,
-        request_policy=AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
-        wave_size=32,
-        bank_count=32,
-        bank_word_byte_count=4,
-        packet_word_count=4,
-        phase_lane_masks=(
-            0x0000000F,
-            0x000000F0,
-            0x00000F00,
-            0x0000F000,
-            0x000F0000,
-            0x00F00000,
-            0x0F000000,
-            0xF0000000,
+    )
+    for direction in AMDGPU_LDS_BANK_SERVICE_DIRECTIONS
+    for wave_size in wave_sizes
+)
+
+
+AMDGPU_LDS_BANK_SERVICE_MODEL_INFOS: tuple[AmdgpuLdsBankServiceModelInfo, ...] = tuple(
+    sorted(
+        (
+            *_B128_OCTET_MODELS,
+            AmdgpuLdsBankServiceModelInfo(
+                key="amdgpu.lds.wave32.b128.quad-phases.read.count-each",
+                revision="ROCm/rocm-libraries@a7e3879c8847:LDSModel.cpp",
+                descriptor_key="amdgpu.ds_read_b128",
+                evidence_class=(
+                    AMDGPU_LDS_BANK_SERVICE_EVIDENCE_VENDOR_SOFTWARE_MODEL_UNVALIDATED
+                ),
+                direction=AMDGPU_LDS_BANK_SERVICE_DIRECTION_READ,
+                request_policy=AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
+                wave_size=32,
+                bank_count=32,
+                bank_word_byte_count=4,
+                packet_word_count=4,
+                phase_lane_masks=(
+                    0x0000000F,
+                    0x000000F0,
+                    0x00000F00,
+                    0x0000F000,
+                    0x000F0000,
+                    0x00F00000,
+                    0x0F000000,
+                    0xF0000000,
+                ),
+            ),
+            AmdgpuLdsBankServiceModelInfo(
+                key="amdgpu.lds.wave32.b128.quad-phases.write.count-each",
+                revision="ROCm/rocm-libraries@a7e3879c8847:LDSModel.cpp",
+                descriptor_key="amdgpu.ds_write_b128",
+                evidence_class=(
+                    AMDGPU_LDS_BANK_SERVICE_EVIDENCE_VENDOR_SOFTWARE_MODEL_UNVALIDATED
+                ),
+                direction=AMDGPU_LDS_BANK_SERVICE_DIRECTION_WRITE,
+                request_policy=AMDGPU_LDS_BANK_SERVICE_REQUEST_POLICY_COUNT_EACH,
+                wave_size=32,
+                bank_count=32,
+                bank_word_byte_count=4,
+                packet_word_count=4,
+                phase_lane_masks=(
+                    0x0000000F,
+                    0x000000F0,
+                    0x00000F00,
+                    0x0000F000,
+                    0x000F0000,
+                    0x00F00000,
+                    0x0F000000,
+                    0xF0000000,
+                ),
+            ),
         ),
-    ),
+        key=lambda info: info.key,
+    )
+)
+
+AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3 = tuple(
+    info.key for info in _B128_OCTET_MODELS if ".cdna3." in info.key
+)
+AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151 = tuple(
+    info.key for info in _B128_OCTET_MODELS if ".gfx1151." in info.key
 )
 
 # Structural service model shared by every target selecting these rows.
@@ -224,14 +293,18 @@ def validate_amdgpu_lds_bank_service_model_selection(
             f"{owner} references unknown LDS bank-service models: "
             + ", ".join(unknown_keys)
         )
-    descriptor_keys = tuple(
-        model_infos_by_key[key].descriptor_key for key in model_keys
+    binding_keys = tuple(
+        (model_infos_by_key[key].descriptor_key, model_infos_by_key[key].wave_size)
+        for key in model_keys
     )
-    if len(descriptor_keys) != len(set(descriptor_keys)):
-        raise ValueError(f"{owner} selects multiple LDS models for one descriptor")
-    if descriptor_keys != tuple(sorted(descriptor_keys)):
+    if len(binding_keys) != len(set(binding_keys)):
         raise ValueError(
-            f"{owner} LDS bank-service models must be sorted by descriptor key"
+            f"{owner} selects multiple LDS models for one descriptor and wave size"
+        )
+    if binding_keys != tuple(sorted(binding_keys)):
+        raise ValueError(
+            f"{owner} LDS bank-service models must be sorted by "
+            "descriptor and wave size"
         )
 
 

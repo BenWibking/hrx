@@ -15,7 +15,8 @@
 
 static const loom_amdgpu_lds_bank_service_model_t*
 loom_amdgpu_memory_bank_service_model(loom_low_lower_context_t* context,
-                                      const loom_low_descriptor_t* descriptor) {
+                                      const loom_low_descriptor_t* descriptor,
+                                      uint8_t wave_size) {
   const loom_amdgpu_target_facts_t* target_facts =
       loom_amdgpu_target_facts_cast(
           loom_low_lower_context_target_facts(context));
@@ -25,7 +26,8 @@ loom_amdgpu_memory_bank_service_model(loom_low_lower_context_t* context,
       loom_low_lower_context_descriptor_set(context);
   return loom_amdgpu_lds_bank_service_model_lookup(
       target_facts->properties.lds_bank_service_model_set_ordinal,
-      loom_amdgpu_descriptor_ref_for_descriptor(descriptor_set, descriptor));
+      loom_amdgpu_descriptor_ref_for_descriptor(descriptor_set, descriptor),
+      wave_size);
 }
 
 static void loom_amdgpu_memory_bank_service_initialize_report(
@@ -94,8 +96,10 @@ iree_status_t loom_amdgpu_memory_report_bank_service(
     const loom_low_source_memory_access_plan_t* source,
     loom_low_lower_memory_bank_service_report_t* out_report) {
   *out_report = (loom_low_lower_memory_bank_service_report_t){0};
+  const uint8_t wave_size =
+      loom_low_lower_context_bundle(context)->snapshot->subgroup_size;
   const loom_amdgpu_lds_bank_service_model_t* model =
-      loom_amdgpu_memory_bank_service_model(context, descriptor);
+      loom_amdgpu_memory_bank_service_model(context, descriptor, wave_size);
   if (model == NULL) {
     return iree_ok_status();
   }
@@ -125,10 +129,12 @@ iree_status_t loom_amdgpu_memory_report_bank_service(
     return iree_ok_status();
   }
   const uint64_t byte_stride = (uint64_t)term->byte_stride;
-  if (source->minimum_alignment < model->bank_word_byte_count ||
-      byte_stride % model->bank_word_byte_count != 0) {
+  const uint32_t packet_alignment =
+      model->bank_word_byte_count * model->packet_word_count;
+  if (source->minimum_alignment < packet_alignment ||
+      byte_stride % packet_alignment != 0) {
     loom_amdgpu_memory_bank_service_mark_unknown(
-        IREE_SV("address-bank-word-alignment-unproven"), out_report);
+        IREE_SV("address-packet-alignment-unproven"), out_report);
     return iree_ok_status();
   }
   out_report->lane_address_proof = IREE_SV("affine-workitem-x-byte-stride");
@@ -174,17 +180,13 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
       loom_amdgpu_descriptor_ref_descriptor(descriptor_set,
                                             packet->descriptor_ref);
   const loom_amdgpu_lds_bank_service_model_t* model =
-      loom_amdgpu_memory_bank_service_model(context, descriptor);
+      loom_amdgpu_memory_bank_service_model(context, descriptor,
+                                            layout->wave_size);
   if (model == NULL) {
     return iree_ok_status();
   }
   loom_amdgpu_memory_bank_service_initialize_report(model, out_report);
 
-  if (layout->wave_size != model->wave_size) {
-    loom_amdgpu_memory_bank_service_mark_unknown(
-        IREE_SV("address-layout-wave-size-mismatch"), out_report);
-    return iree_ok_status();
-  }
   if (!plan->dynamic_base_is_subgroup_uniform) {
     loom_amdgpu_memory_bank_service_mark_unknown(
         IREE_SV("address-dynamic-base-not-subgroup-uniform"), out_report);
@@ -210,9 +212,11 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
     packet_byte_offset += (uint64_t)element_index *
                           plan->address_layout.packed_element_byte_stride;
   }
-  if (plan->source.minimum_alignment < model->bank_word_byte_count) {
+  const uint32_t packet_alignment =
+      model->bank_word_byte_count * model->packet_word_count;
+  if (plan->source.minimum_alignment < packet_alignment) {
     loom_amdgpu_memory_bank_service_mark_unknown(
-        IREE_SV("address-bank-word-alignment-unproven"), out_report);
+        IREE_SV("address-packet-alignment-unproven"), out_report);
     return iree_ok_status();
   }
 
@@ -223,9 +227,9 @@ iree_status_t loom_amdgpu_fragment_memory_report_bank_service(
         packet_byte_offset +
         loom_amdgpu_fragment_memory_relative_lane_byte_offset(
             &plan->address_layout, lane);
-    if (lane_base_byte_offsets[lane] % model->bank_word_byte_count != 0) {
+    if (lane_base_byte_offsets[lane] % packet_alignment != 0) {
       loom_amdgpu_memory_bank_service_mark_unknown(
-          IREE_SV("address-bank-word-alignment-unproven"), out_report);
+          IREE_SV("address-packet-alignment-unproven"), out_report);
       return iree_ok_status();
     }
   }

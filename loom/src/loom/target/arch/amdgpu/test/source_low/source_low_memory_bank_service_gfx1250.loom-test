@@ -93,12 +93,12 @@ kernel.def target(@target) @unknown_address_alignment() {
   %scratch_base = index.constant 0 : offset
   %bytes = index.constant 2048 : offset
   %layout = encoding.layout.strided [16, 1] : encoding<layout>
-  %scratch = buffer.alloca<workgroup> align(1) %bytes : buffer
-  %view = buffer.view %scratch[%scratch_base] : buffer -> view<32x4xi32, %layout, align(1)>
+  %scratch = buffer.alloca<workgroup> align(4) %bytes : buffer
+  %view = buffer.view %scratch[%scratch_base] : buffer -> view<32x4xi32, %layout>
   %value = vector.constant 1 : vector<4xi32>
-  vector.store %value, %view[%lane, 0] : vector<4xi32>, view<32x4xi32, %layout, align(1)>
+  vector.store %value, %view[%lane, 0] : vector<4xi32>, view<32x4xi32, %layout>
   kernel.return
 }
 
 // ----
-bank-service function=unknown_address_alignment source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.wave32.b128.quad-phases.write.count-each proof=unknown lane-address=unproven active-lanes=unproven base-residue=unproven unknown-reason=address-bank-word-alignment-unproven
+bank-service function=unknown_address_alignment source-op=vector.store root=scratch packet=amdgpu.ds_write_b128 model=amdgpu.lds.wave32.b128.quad-phases.write.count-each proof=unknown lane-address=unproven active-lanes=unproven base-residue=unproven unknown-reason=address-packet-alignment-unproven
