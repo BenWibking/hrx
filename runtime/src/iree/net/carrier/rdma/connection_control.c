@@ -235,7 +235,8 @@ static void iree_net_rdma_connection_control_service_failed(
 
 static iree_status_t iree_net_rdma_connection_control_create_queue(
     iree_net_rdma_connection_control_t* control) {
-  if (control->id->verbs != iree_net_rdma_context_device(control->context)) {
+  if (control->id->verbs->device !=
+      iree_net_rdma_context_device(control->context)->device) {
     return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
                             "RDMA connection resolved to a different device");
   }
@@ -263,6 +264,10 @@ static iree_status_t iree_net_rdma_connection_control_create_queue(
                                                          errno);
   }
   initial.qp_access_flags = 0;
+  if (initial.port_num != iree_net_rdma_context_port_number(control->context)) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "RDMA connection resolved to a different port");
+  }
   int error = library->ibv_modify_qp(control->queue, &initial, mask);
   if (error) {
     return iree_net_rdma_connection_control_native_error("ibv_modify_qp",

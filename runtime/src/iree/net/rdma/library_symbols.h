@@ -6,11 +6,6 @@
 
 // Included with IREE_NET_RDMA_SYMBOL(library, result, name, arguments).
 
-// Canonical CM inventory preserves context identity across connections.
-IREE_NET_RDMA_SYMBOL(cm, struct ibv_context**, rdma_get_devices, (int*))
-// Releases one canonical inventory reference.
-IREE_NET_RDMA_SYMBOL(cm, void, rdma_free_devices, (struct ibv_context**))
-
 // Creates an independently monitored asynchronous CM channel.
 IREE_NET_RDMA_SYMBOL(cm, struct rdma_event_channel*, rdma_create_event_channel,
                      (void))
@@ -42,10 +37,6 @@ IREE_NET_RDMA_SYMBOL(cm, int, rdma_resolve_addr,
                       int))
 // Starts native asynchronous route resolution after address selection.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_resolve_route, (struct rdma_cm_id*, int))
-// Creates a CM-managed QP using the caller's explicit protection domain/CQs.
-IREE_NET_RDMA_SYMBOL(cm, int, rdma_create_qp,
-                     (struct rdma_cm_id*, struct ibv_pd*,
-                      struct ibv_qp_init_attr*))
 // Queries state-specific route attributes without transferring QP ownership.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_init_qp_attr,
                      (struct rdma_cm_id*, struct ibv_qp_attr*, int*))
@@ -60,9 +51,19 @@ IREE_NET_RDMA_SYMBOL(cm, int, rdma_accept,
 // Rejects a pending request without creating a data connection.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_reject,
                      (struct rdma_cm_id*, const void*, uint8_t))
-// Initiates or replies to the native disconnect handshake and stops the QP.
+// Initiates or replies to the native disconnect handshake.
+// Independently owned QPs still require explicit retirement by their owner.
 IREE_NET_RDMA_SYMBOL(cm, int, rdma_disconnect, (struct rdma_cm_id*))
 
+// Enumerates native devices without opening their event streams.
+IREE_NET_RDMA_SYMBOL(verbs, struct ibv_device**, ibv_get_device_list, (int*))
+// Releases an inventory; opened contexts retain their selected device.
+IREE_NET_RDMA_SYMBOL(verbs, void, ibv_free_device_list, (struct ibv_device**))
+// Opens an independently owned device and async event stream.
+IREE_NET_RDMA_SYMBOL(verbs, struct ibv_context*, ibv_open_device,
+                     (struct ibv_device*))
+// Closes the device after its native resources have retired.
+IREE_NET_RDMA_SYMBOL(verbs, int, ibv_close_device, (struct ibv_context*))
 // Returns a borrowed device name for explicit selection.
 IREE_NET_RDMA_SYMBOL(verbs, const char*, ibv_get_device_name,
                      (struct ibv_device*))

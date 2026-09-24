@@ -24,7 +24,7 @@ iree_status_t iree_net_rdma_connection_route_initialize(
     iree_net_rdma_connection_route_t* out_route) {
   memset(out_route, 0, sizeof(*out_route));
   struct ibv_context* device = iree_net_rdma_context_device(context);
-  if (id->verbs != device) {
+  if (id->verbs->device != device->device) {
     return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
                             "RDMA route uses a different native device");
   }

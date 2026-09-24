@@ -154,15 +154,16 @@ class NativeConnection {
   void RetireControl() {
     EXPECT_EQ(pending_, 0u);
     if (id_) {
-      if (id_->qp) {
+      if (queue_) {
         ibv_qp_attr attributes = {};
         attributes.qp_state = IBV_QPS_ERR;
-        CheckVerbs(library_->ibv_modify_qp(id_->qp, &attributes, IBV_QP_STATE));
-        // CQs belong to the production service, not the CM convenience API.
+        CheckVerbs(library_->ibv_modify_qp(queue_, &attributes, IBV_QP_STATE));
+        // CM supplies routes but owns none of the native data-plane objects.
+        EXPECT_EQ(id_->qp, nullptr);
         EXPECT_EQ(id_->send_cq, nullptr);
         EXPECT_EQ(id_->recv_cq, nullptr);
-        CheckVerbs(library_->ibv_destroy_qp(id_->qp));
-        id_->qp = nullptr;
+        CheckVerbs(library_->ibv_destroy_qp(queue_));
+        queue_ = nullptr;
       }
       CheckCM(library_->rdma_destroy_id(id_));
       id_ = nullptr;
@@ -191,6 +192,7 @@ class NativeConnection {
         id_, iree_net_rdma_connection_events_handle(events_)));
     id_->context = this;
     CreateQueue();
+    ConnectQueue();
     auto options = ConnectOptions();
     CheckCM(library_->rdma_accept(id_, &options));
     IREE_CHECK_OK(iree_net_rdma_connection_events_activate(events_));
@@ -218,7 +220,7 @@ class NativeConnection {
     receive.wr_id = 2;
     ibv_recv_wr* rejected_receive = nullptr;
     CheckVerbs(ibv_post_recv(queue_index == UINT32_MAX
-                                 ? peer.id_->qp
+                                 ? peer.queue_
                                  : peer.data_queues_[queue_index].handle,
                              &receive, &rejected_receive));
     peer.pending_ = 1;
@@ -237,7 +239,7 @@ class NativeConnection {
     request.wr.rdma.rkey = remote_target_.key;
     ibv_send_wr* rejected_send = nullptr;
     CheckVerbs(ibv_post_send(
-        queue_index == UINT32_MAX ? id_->qp : data_queues_[queue_index].handle,
+        queue_index == UINT32_MAX ? queue_ : data_queues_[queue_index].handle,
         &request, &rejected_send));
     pending_ = 1;
     expected_completion_id_ = 1;
@@ -331,11 +333,14 @@ class NativeConnection {
     options.initiator_depth = 1;
     options.retry_count = 7;
     options.rnr_retry_count = 7;
+    options.qp_num = queue_->qp_num;
     return options;
   }
 
   void CreateQueue() {
-    EXPECT_EQ(id_->verbs, iree_net_rdma_context_device(context_));
+    EXPECT_EQ(id_->verbs->device,
+              iree_net_rdma_context_device(context_)->device);
+    EXPECT_NE(id_->verbs, iree_net_rdma_context_device(context_));
     ibv_qp_init_attr options = {};
     options.qp_type = IBV_QPT_RC;
     options.send_cq = iree_net_rdma_completion_queue_handle(completions_);
@@ -344,8 +349,24 @@ class NativeConnection {
     options.cap.max_recv_wr = 4;
     options.cap.max_send_sge = 1;
     options.cap.max_recv_sge = 1;
-    CheckCM(library_->rdma_create_qp(
-        id_, iree_net_rdma_context_protection_domain(context_), &options));
+    queue_ = library_->ibv_create_qp(
+        iree_net_rdma_context_protection_domain(context_), &options);
+    ASSERT_NE(queue_, nullptr);
+    ibv_qp_attr attributes = {};
+    attributes.qp_state = IBV_QPS_INIT;
+    int mask = 0;
+    CheckCM(library_->rdma_init_qp_attr(id_, &attributes, &mask));
+    attributes.qp_access_flags = IBV_ACCESS_REMOTE_WRITE;
+    CheckVerbs(library_->ibv_modify_qp(queue_, &attributes, mask));
+  }
+
+  void ConnectQueue() {
+    IREE_ASSERT_OK(
+        iree_net_rdma_connection_route_initialize(context_, id_, &route_));
+    CheckVerbs(library_->ibv_modify_qp(queue_, &route_.receive.attributes,
+                                       route_.receive.mask));
+    CheckVerbs(library_->ibv_modify_qp(queue_, &route_.send.attributes,
+                                       route_.send.mask));
   }
 
   void ReadTarget(const rdma_conn_param& options) {
@@ -372,6 +393,12 @@ class NativeConnection {
         state_ |= kRequestSent;
         break;
       }
+      case RDMA_CM_EVENT_CONNECT_RESPONSE:
+        ReadTarget(event.param.conn);
+        ConnectQueue();
+        CheckCM(library_->rdma_establish(id_));
+        state_ |= kEstablished;
+        break;
       case RDMA_CM_EVENT_ESTABLISHED:
         if (!remote_target_.address) {
           ReadTarget(event.param.conn);
@@ -420,8 +447,10 @@ class NativeConnection {
   iree_net_rdma_completion_queue_t* completions_ = nullptr;
   // Registered source/target backing retained through native teardown.
   iree_async_region_t* region_ = nullptr;
-  // Explicit CM ID and its native QP.
+  // Explicit routing-only CM ID.
   rdma_cm_id* id_ = nullptr;
+  // Native QP owned independently of the CM routing context.
+  ibv_qp* queue_ = nullptr;
   // Test bootstrap target description supplied as native private data.
   std::array<uint8_t, 16> hello_ = {};
   // Actual peer target learned through the production CM event callback.

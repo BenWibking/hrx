@@ -16,9 +16,11 @@ idle polling loop.
 ## Native Ownership
 
 This layer owns Linux rdma-core resources independently of a connection or an
-async proactor. An explicit context retains the canonical device inventory,
-one protection domain, and the dynamically loaded libraries. Registered async
-regions retain that context and their backing slab. Connections can therefore
+async proactor. An explicit context owns an independently opened verbs device,
+its async event stream, one protection domain, and the dynamically loaded
+libraries. CM uses its own routing context on the same physical device and
+port; it does not own the connection's QPs. Registered async regions retain
+that context and their backing slab. Connections can therefore
 share registrations without registering the same memory for every connection
 or making registration lifetime depend on a polling thread.
 
@@ -157,8 +159,8 @@ runtime loads `libibverbs.so.1` and `librdmacm.so.1` through the platform loader
 normal search path. There is no link-time dependency on those libraries.
 CM and its verbs dependency remain loaded for the process lifetime because CM
 retains its canonical live-device inventory after inventory references are
-released. IREE context teardown still releases its own protection domain and
-inventory reference after all registrations and connections retire.
+released. IREE context teardown releases its own protection domain and closes
+its independently opened device after all registrations and connections retire.
 
 The native test requires an active IB or IPv4 RoCE v2 port. A configured
 SoftRoCE device suffices for ownership qualification. Without an explicit device

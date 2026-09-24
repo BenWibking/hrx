@@ -14,7 +14,7 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Explicit owner of a native device inventory reference, one protection
+// Explicit owner of an independently opened native device, one protection
 // domain, and their library lifetime. Connections and registrations retain this
 // owner independently; no proactor, worker or address registry is created.
 typedef struct iree_net_rdma_context_t iree_net_rdma_context_t;
@@ -35,9 +35,10 @@ iree_net_rdma_context_options_default(void) {
   return options;
 }
 
-// Creates a shared native owner from the canonical rdma_cm device inventory.
-// CM connections must match the exact returned native device identity and
-// selected port, not merely a device name. No connection-specific PD or memory
+// Creates a shared native owner with an independent async event stream.
+// CM routes must match the underlying native device and selected port, not
+// merely a device name. Their routing context need not be the opened context
+// used for queues and registrations. No connection-specific PD or memory
 // registration is made.
 // Missing requested devices return NOT_FOUND; no active port returns
 // UNAVAILABLE. Native/library/allocation failures propagate. Output is NULL

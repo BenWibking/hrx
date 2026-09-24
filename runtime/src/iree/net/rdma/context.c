@@ -13,11 +13,9 @@ struct iree_net_rdma_context_t {
   iree_atomic_ref_count_t ref_count;
   // Allocator for this object.
   iree_allocator_t host_allocator;
-  // Libraries kept loaded through inventory and domain destruction.
+  // Libraries kept loaded through device and domain destruction.
   iree_net_rdma_library_t library;
-  // Canonical rdma_cm inventory reference, released with rdma_free_devices.
-  struct ibv_context** devices;
-  // Selected native context borrowed from devices.
+  // Independently opened native context, including its async event stream.
   struct ibv_context* device;
   // Explicit domain shared by compatible native queues and registrations.
   struct ibv_pd* protection_domain;
@@ -29,21 +27,37 @@ struct iree_net_rdma_context_t {
   uint8_t port_number;
 };
 
+static void iree_net_rdma_context_close_device(
+    const iree_net_rdma_library_t* library, struct ibv_context* device) {
+  int error = library->ibv_close_device(device);
+  if (error) {
+    iree_status_abort(iree_make_status(iree_status_code_from_errno(error),
+                                       "ibv_close_device: %s",
+                                       strerror(error)));
+  }
+}
+
 static iree_status_t iree_net_rdma_context_select_device(
     iree_net_rdma_context_options_t options, int device_count,
-    iree_net_rdma_context_t* context) {
+    struct ibv_device** devices, iree_net_rdma_context_t* context) {
   bool name_found = false;
   iree_status_t status = iree_ok_status();
   for (int i = 0;
        i < device_count && !context->device && iree_status_is_ok(status); ++i) {
-    struct ibv_context* device = context->devices[i];
     iree_string_view_t name = iree_make_cstring_view(
-        context->library.ibv_get_device_name(device->device));
+        context->library.ibv_get_device_name(devices[i]));
     if (!iree_string_view_is_empty(options.device_name) &&
         !iree_string_view_equal(options.device_name, name)) {
       continue;
     }
     name_found = true;
+    struct ibv_context* device = context->library.ibv_open_device(devices[i]);
+    if (!device) {
+      int error = errno;
+      status = iree_make_status(iree_status_code_from_errno(error),
+                                "ibv_open_device: %s", strerror(error));
+      continue;
+    }
     int error =
         context->library.ibv_query_device(device, &context->device_attributes);
     if (error) {
@@ -70,6 +84,9 @@ static iree_status_t iree_net_rdma_context_select_device(
         context->port_attributes = attributes;
       }
     }
+    if (context->device != device) {
+      iree_net_rdma_context_close_device(&context->library, device);
+    }
   }
   if (iree_status_is_ok(status) && !context->device) {
     status = name_found || iree_string_view_is_empty(options.device_name)
@@ -91,8 +108,8 @@ static void iree_net_rdma_context_destroy(iree_net_rdma_context_t* context) {
                                          strerror(error)));
     }
   }
-  if (context->devices) {
-    context->library.rdma_free_devices(context->devices);
+  if (context->device) {
+    iree_net_rdma_context_close_device(&context->library, context->device);
   }
   iree_net_rdma_library_deinitialize(&context->library);
   iree_allocator_free(context->host_allocator, context);
@@ -110,17 +127,21 @@ iree_status_t iree_net_rdma_context_create(
   iree_status_t status =
       iree_net_rdma_library_initialize(host_allocator, &context->library);
   int device_count = 0;
+  struct ibv_device** devices = NULL;
   if (iree_status_is_ok(status)) {
-    context->devices = context->library.rdma_get_devices(&device_count);
-    if (!context->devices) {
+    devices = context->library.ibv_get_device_list(&device_count);
+    if (!devices) {
       int error = errno;
       status = iree_make_status(iree_status_code_from_errno(error),
-                                "rdma_get_devices: %s", strerror(error));
+                                "ibv_get_device_list: %s", strerror(error));
     }
   }
   if (iree_status_is_ok(status)) {
-    status =
-        iree_net_rdma_context_select_device(options, device_count, context);
+    status = iree_net_rdma_context_select_device(options, device_count, devices,
+                                                 context);
+  }
+  if (devices) {
+    context->library.ibv_free_device_list(devices);
   }
   if (iree_status_is_ok(status)) {
     context->protection_domain = context->library.ibv_alloc_pd(context->device);

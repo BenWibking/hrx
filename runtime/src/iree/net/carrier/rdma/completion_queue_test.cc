@@ -62,8 +62,11 @@ class NativePair {
     context_ = iree_net_rdma_region_context(first);
     library_ = iree_net_rdma_context_library(context_);
     auto* device = iree_net_rdma_context_device(context_);
-    EXPECT_EQ(device, iree_net_rdma_context_device(
-                          iree_net_rdma_region_context(second)));
+    auto* peer_device =
+        iree_net_rdma_context_device(iree_net_rdma_region_context(second));
+    EXPECT_EQ(device->device, peer_device->device);
+    EXPECT_NE(device, peer_device);
+    EXPECT_NE(device->async_fd, peer_device->async_fd);
     auto options = iree_async_proactor_options_default();
     if (strcmp(backend, "io_uring") == 0) {
       IREE_CHECK_OK(iree_async_proactor_create_io_uring(
@@ -76,22 +79,25 @@ class NativePair {
     queue_options.capacity = 32;
     queue_options.service_batch_size = service_batch_size;
     service_batch_size_ = service_batch_size;
-    IREE_CHECK_OK(iree_net_rdma_completion_queue_create(
-        context_, proactor_, queue_options,
-        {+[](void* user_data, iree_host_size_t count,
-             const ibv_wc* completions) {
-           auto* self = static_cast<NativePair*>(user_data);
-           ASSERT_LE(count, self->service_batch_size_);
-           for (iree_host_size_t i = 0; i < count; ++i) {
-             ASSERT_GT(self->pending_, 0u);
-             --self->pending_;
-             ASSERT_LT(self->completed_count_, self->completed_.size());
-             self->completed_[self->completed_count_++] = completions[i];
-           }
-         },
-         +[](void*, iree_status_t status) { iree_status_abort(status); }, this},
-        iree_allocator_system(), &completion_queue_));
-    auto* queue = iree_net_rdma_completion_queue_handle(completion_queue_);
+    for (uint32_t side = 0; side < 2; ++side) {
+      IREE_CHECK_OK(iree_net_rdma_completion_queue_create(
+          iree_net_rdma_region_context(regions_[side]), proactor_,
+          queue_options,
+          {+[](void* user_data, iree_host_size_t count,
+               const ibv_wc* completions) {
+             auto* self = static_cast<NativePair*>(user_data);
+             ASSERT_LE(count, self->service_batch_size_);
+             for (iree_host_size_t i = 0; i < count; ++i) {
+               ASSERT_GT(self->pending_, 0u);
+               --self->pending_;
+               ASSERT_LT(self->completed_count_, self->completed_.size());
+               self->completed_[self->completed_count_++] = completions[i];
+             }
+           },
+           +[](void*, iree_status_t status) { iree_status_abort(status); },
+           this},
+          iree_allocator_system(), &completion_queues_[side]));
+    }
 
     uint8_t port = iree_net_rdma_context_port_number(context_);
     struct ibv_port_attr port_attributes = {};
@@ -134,8 +140,9 @@ class NativePair {
 
     for (uint32_t side = 0; side < 2; ++side) {
       ibv_qp_init_attr options = {};
-      options.send_cq = queue;
-      options.recv_cq = queue;
+      options.send_cq =
+          iree_net_rdma_completion_queue_handle(completion_queues_[side]);
+      options.recv_cq = options.send_cq;
       options.qp_type = IBV_QPT_RC;
       options.cap.max_send_wr = 4;
       options.cap.max_recv_wr = 4;
@@ -205,14 +212,16 @@ class NativePair {
     for (auto* queue : queues_) {
       CheckNative(library_->ibv_destroy_qp(queue));
     }
-    bool joined = false;
-    iree_net_rdma_completion_queue_deactivate(
-        completion_queue_,
-        {+[](void* user_data) { *static_cast<bool*>(user_data) = true; },
-         &joined});
-    PollUntil(proactor_, [&] { return joined; });
+    for (auto* completion_queue : completion_queues_) {
+      bool joined = false;
+      iree_net_rdma_completion_queue_deactivate(
+          completion_queue,
+          {+[](void* user_data) { *static_cast<bool*>(user_data) = true; },
+           &joined});
+      PollUntil(proactor_, [&] { return joined; });
+      iree_net_rdma_completion_queue_destroy(completion_queue);
+    }
     EXPECT_EQ(proactor_->progress_list, nullptr);
-    iree_net_rdma_completion_queue_destroy(completion_queue_);
     iree_async_proactor_release(proactor_);
     for (auto* region : regions_) {
       iree_async_region_release(region);
@@ -356,8 +365,8 @@ class NativePair {
   const iree_net_rdma_library_t* library_ = nullptr;
   // Independently owned polling lifetime for this native pair.
   iree_async_proactor_t* proactor_ = nullptr;
-  // Production CQ service, sized for the complete error burst from both QPs.
-  iree_net_rdma_completion_queue_t* completion_queue_ = nullptr;
+  // Independent CQ services on each peer's native device context.
+  std::array<iree_net_rdma_completion_queue_t*, 2> completion_queues_ = {};
   // Maximum allowed native completions per service visit.
   uint32_t service_batch_size_ = 0;
   // Native peer QPs; no global lookup associates them with registrations.
