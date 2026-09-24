@@ -6,6 +6,8 @@
 
 #include "loom/format/bytecode/writer/body.h"
 
+#include <string.h>
+
 #include "loom/format/bytecode/writer/attribute.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -414,11 +416,40 @@ static iree_status_t loom_bytecode_write_region(
   return iree_ok_status();
 }
 
+static iree_status_t loom_bytecode_ir_region_index_get_or_create_page(
+    loom_bytecode_numbering_t* numbering,
+    loom_bytecode_ir_region_index_t* index, loom_symbol_id_t symbol_id,
+    loom_bytecode_ir_region_page_t** out_page) {
+  *out_page = NULL;
+  if (!index->pages) {
+    const iree_host_size_t page_count =
+        (numbering->module->symbols.count +
+         LOOM_BYTECODE_IR_REGION_PAGE_CAPACITY - 1) >>
+        LOOM_BYTECODE_IR_REGION_PAGE_SHIFT;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(numbering->arena, page_count,
+                                                   sizeof(*index->pages),
+                                                   (void**)&index->pages));
+    memset(index->pages, 0, page_count * sizeof(*index->pages));
+  }
+
+  const iree_host_size_t page_index =
+      symbol_id >> LOOM_BYTECODE_IR_REGION_PAGE_SHIFT;
+  loom_bytecode_ir_region_page_t* page = index->pages[page_index];
+  if (!page) {
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate(numbering->arena, sizeof(*page), (void**)&page));
+    memset(page, 0, sizeof(*page));
+    index->pages[page_index] = page;
+  }
+  *out_page = page;
+  return iree_ok_status();
+}
+
 // Writes the IR section and returns per-symbol root-region ranges.
 iree_status_t loom_bytecode_write_ir_section(
     loom_bytecode_page_writer_t* page_writer,
     loom_bytecode_numbering_t* numbering,
-    loom_bytecode_ir_region_list_t* ir_regions) {
+    loom_bytecode_ir_region_index_t* ir_region_index) {
   const loom_module_t* module = numbering->module;
   iree_host_size_t section_start = page_writer->total_written;
 
@@ -470,10 +501,14 @@ iree_status_t loom_bytecode_write_ir_section(
       continue;
     }
 
-    loom_bytecode_ir_region_list_t* region_list = &ir_regions[module_symbol_id];
+    loom_bytecode_ir_region_page_t* region_page = NULL;
+    IREE_RETURN_IF_ERROR(loom_bytecode_ir_region_index_get_or_create_page(
+        numbering, ir_region_index, module_symbol_id, &region_page));
+    loom_bytecode_ir_region_payload_t* region_payloads = NULL;
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        numbering->arena, root_region_count, sizeof(*region_list->values),
-        (void**)&region_list->values));
+        numbering->arena, root_region_count, sizeof(*region_payloads),
+        (void**)&region_payloads));
+    uint8_t region_payload_count = 0;
     loom_region_t** regions = loom_op_regions(symbol->defining_op);
     for (uint8_t i = 0; i < symbol->defining_op->region_count; ++i) {
       if (!regions[i]) {
@@ -507,14 +542,19 @@ iree_status_t loom_bytecode_write_ir_section(
                                 " exceeds uint32 maximum",
                                 payload_length);
       }
-      region_list->values[region_list->count++] =
+      region_payloads[region_payload_count++] =
           (loom_bytecode_ir_region_payload_t){
               .offset = payload_start - section_start,
               .length = (uint32_t)payload_length,
               .region_index = i,
           };
     }
-    IREE_ASSERT(region_list->count == root_region_count);
+    IREE_ASSERT(region_payload_count == root_region_count);
+    const iree_host_size_t page_offset =
+        module_symbol_id & (LOOM_BYTECODE_IR_REGION_PAGE_CAPACITY - 1u);
+    region_page->values[page_offset] = region_payloads;
+    region_page->counts[page_offset] = region_payload_count;
+    ir_region_index->payload_count += region_payload_count;
     numbering->low_repr.active_descriptor_set = NULL;
   }
 

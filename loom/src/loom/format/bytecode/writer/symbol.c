@@ -650,13 +650,12 @@ static iree_status_t loom_bytecode_symbol_linkage(
 // Streams the SYMBOLS section and patches its leading offset tables in place.
 iree_status_t loom_bytecode_write_symbols_section(
     loom_bytecode_page_writer_t* writer, loom_bytecode_numbering_t* numbering,
-    const loom_bytecode_ir_region_list_t* ir_regions) {
+    const loom_bytecode_ir_region_index_t* ir_region_index) {
   const loom_module_t* module = numbering->module;
 
   // Classify symbols.
   uint32_t import_count = 0;
   uint32_t export_count = 0;
-  iree_host_size_t root_region_payload_count = 0;
   for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
     loom_bytecode_symbol_linkage_t linkage;
     IREE_RETURN_IF_ERROR(loom_bytecode_symbol_linkage(
@@ -666,7 +665,6 @@ iree_status_t loom_bytecode_write_symbols_section(
     } else if (linkage.is_export) {
       ++export_count;
     }
-    root_region_payload_count += ir_regions[i].count;
   }
 
   IREE_RETURN_IF_ERROR(
@@ -676,7 +674,7 @@ iree_status_t loom_bytecode_write_symbols_section(
   IREE_RETURN_IF_ERROR(
       loom_bytecode_page_writer_write_uvarint(writer, export_count));
   IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_uvarint(
-      writer, root_region_payload_count));
+      writer, ir_region_index->payload_count));
 
   // Reserve import/export offset tables (patched after writing entries).
   const uint64_t offset_table_start = writer->total_written;
@@ -795,9 +793,12 @@ iree_status_t loom_bytecode_write_symbols_section(
         loom_bytecode_value_numbering_t signature_numbering;
         loom_bytecode_value_numbering_initialize(&signature_numbering,
                                                  numbering);
+        const loom_bytecode_ir_region_list_t region_list =
+            loom_bytecode_ir_region_index_list(ir_region_index,
+                                               module_symbol_id);
         IREE_RETURN_IF_ERROR(loom_bytecode_write_func_metadata(
             writer, numbering, module, func_like, &signature_numbering,
-            &ir_regions[module_symbol_id]));
+            &region_list));
       }
     } else if (has_global_metadata && symbol->defining_op) {
       loom_bytecode_value_numbering_t signature_numbering;
@@ -808,9 +809,10 @@ iree_status_t loom_bytecode_write_symbols_section(
           writer, numbering, module, symbol->defining_op, local_values,
           &signature_numbering));
     } else if (has_record_metadata && symbol->defining_op) {
+      const loom_bytecode_ir_region_list_t region_list =
+          loom_bytecode_ir_region_index_list(ir_region_index, module_symbol_id);
       IREE_RETURN_IF_ERROR(loom_bytecode_write_record_metadata(
-          writer, numbering, module, symbol->defining_op,
-          &ir_regions[module_symbol_id]));
+          writer, numbering, module, symbol->defining_op, &region_list));
     }
   }
 
