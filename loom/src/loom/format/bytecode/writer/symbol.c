@@ -903,17 +903,17 @@ iree_status_t loom_bytecode_write_symbol_references_section(
        ++wire_ordinal) {
     const loom_symbol_id_t module_symbol_id =
         loom_bytecode_module_symbol_id(numbering, wire_ordinal);
-    const loom_symbol_reference_symbol_occurrences_t* symbol =
-        &table->symbols[module_symbol_id];
+    const loom_symbol_reference_symbol_occurrences_t symbol =
+        loom_symbol_reference_table_symbol(table, module_symbol_id);
     const uint32_t dependency_count =
         loom_bytecode_count_dependency_occurrences(
-            table, symbol->first_outgoing_occurrence_id);
+            table, symbol.first_outgoing_occurrence_id);
     IREE_RETURN_IF_ERROR(loom_bytecode_write_dependency_row(
-        page_writer, numbering, table, symbol->first_outgoing_occurrence_id,
+        page_writer, numbering, table, symbol.first_outgoing_occurrence_id,
         dependency_count));
     IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_uvarint(
-        page_writer, symbol->template_demand_count));
-    loom_template_demand_id_t demand_id = symbol->first_template_demand_id;
+        page_writer, symbol.template_demand_count));
+    loom_template_demand_id_t demand_id = symbol.first_template_demand_id;
     while (demand_id != LOOM_TEMPLATE_DEMAND_ID_INVALID) {
       const loom_template_demand_t* demand =
           &table->template_demands.values[demand_id];

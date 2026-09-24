@@ -316,7 +316,8 @@ static iree_status_t loom_parser_verify_symbols_resolved(
     bool has_reference = false;
     bool has_availability = false;
     loom_symbol_reference_occurrence_id_t occurrence_id =
-        out_symbol_references->symbols[origin.symbol_id]
+        loom_symbol_reference_table_symbol(out_symbol_references,
+                                           origin.symbol_id)
             .first_incoming_occurrence_id;
     while (occurrence_id != LOOM_SYMBOL_REFERENCE_OCCURRENCE_ID_INVALID) {
       const loom_symbol_reference_occurrence_t* occurrence =
