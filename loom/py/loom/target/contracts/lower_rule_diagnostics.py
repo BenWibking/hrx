@@ -297,14 +297,14 @@ def _source_memory_diagnostic(
     )
 
 
-def _source_memory_dynamic_offset_diagnostic(
+def _source_memory_byte_offset_diagnostic(
     constraint: SourceMemoryConstraint,
 ) -> DiagnosticRef:
-    if constraint.dynamic_offset_diagnostic is not None:
-        ref = constraint.dynamic_offset_diagnostic.ref
+    if constraint.byte_offset_diagnostic is not None:
+        ref = constraint.byte_offset_diagnostic.ref
         if ref is None:
             raise ValueError(
-                "source-memory dynamic-offset diagnostic is missing an error ref"
+                "source-memory byte-offset diagnostic is missing an error ref"
             )
         return ref
     return _source_memory_diagnostic(constraint)

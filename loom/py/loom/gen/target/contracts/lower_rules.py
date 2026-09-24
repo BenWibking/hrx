@@ -835,12 +835,16 @@ def _validate_c_table_shape(
                 f"{row_subject} dynamic byte stride",
             )
         _require_u8(
+            constraint.byte_offset_unsigned_bit_count,
+            f"{row_subject} byte offset unsigned bit count",
+        )
+        _require_u8(
             constraint.dynamic_offset_unsigned_bit_count,
-            f"{row_subject} dynamic offset unsigned bit count",
+            f"{row_subject} dynamic byte offset unsigned bit count",
         )
         for diagnostic_name, diagnostic_index in (
             ("constraint", row.diagnostic_index),
-            ("dynamic-offset", row.dynamic_offset_diagnostic_index),
+            ("byte-offset", row.byte_offset_diagnostic_index),
             ("address-layout", row.address_layout_diagnostic_index),
             ("address", row.address_diagnostic_index),
         ):

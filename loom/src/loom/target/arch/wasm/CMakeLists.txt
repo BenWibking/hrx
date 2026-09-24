@@ -100,6 +100,7 @@ loom_check_test_suite(
     "test/source_low/loop_counter_offset.loom-test"
     "test/source_low/math_contraction.loom-test"
     "test/source_low/memory_access_flags.loom-test"
+    "test/source_low/memory_biased_offsets.loom-test"
     "test/source_low/memory_float8.loom-test"
     "test/source_low/memory_packed_tails.loom-test"
     "test/source_low/memory_scalar_narrow.loom-test"

@@ -335,6 +335,11 @@ def source_memory_row(
         )
     _append_field(
         fields,
+        "byte_offset_unsigned_bit_count",
+        constraint.byte_offset_unsigned_bit_count,
+    )
+    _append_field(
+        fields,
         "dynamic_offset_unsigned_bit_count",
         constraint.dynamic_offset_unsigned_bit_count,
     )
@@ -363,7 +368,7 @@ def source_memory_diagnostic_indices(
 ) -> tuple[int, int, int, int]:
     return (
         row.diagnostic_index,
-        row.dynamic_offset_diagnostic_index,
+        row.byte_offset_diagnostic_index,
         row.address_layout_diagnostic_index,
         row.address_diagnostic_index,
     )
@@ -374,13 +379,13 @@ def source_memory_diagnostics_row(
 ) -> list[str]:
     (
         constraint_diagnostic_index,
-        dynamic_offset_diagnostic_index,
+        byte_offset_diagnostic_index,
         address_layout_diagnostic_index,
         address_diagnostic_index,
     ) = indices
     return [
         ".constraint_diagnostic_index = " + lower_rule_spelling.diagnostic_index(constraint_diagnostic_index),
-        ".dynamic_offset_diagnostic_index = " + lower_rule_spelling.diagnostic_index(dynamic_offset_diagnostic_index),
+        ".byte_offset_diagnostic_index = " + lower_rule_spelling.diagnostic_index(byte_offset_diagnostic_index),
         ".address_layout_diagnostic_index = " + lower_rule_spelling.diagnostic_index(address_layout_diagnostic_index),
         ".address_diagnostic_index = " + lower_rule_spelling.diagnostic_index(address_diagnostic_index),
     ]

@@ -459,7 +459,7 @@ def test_validate_c_table_shape_rejects_source_memory_diagnostic_indices_oob() -
             static_byte_offset=0,
         ),
         diagnostic_index=0xFFFF,
-        dynamic_offset_diagnostic_index=0xFFFF,
+        byte_offset_diagnostic_index=0xFFFF,
     )
 
     for row, diagnostic_name in (
@@ -1626,7 +1626,7 @@ def test_source_memory_row_emits_dynamic_byte_stride_any_flag() -> None:
             dynamic_byte_stride=None,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1654,7 +1654,7 @@ def test_source_memory_row_emits_cache_policy_any_flag() -> None:
             cache_policy_build_flags=None,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1680,7 +1680,7 @@ def test_source_memory_row_emits_compact_address_layout() -> None:
             static_byte_offset=0,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
         address_layout_diagnostic_index=5,
     )
 
@@ -1713,7 +1713,7 @@ def test_source_memory_row_emits_preserve_source_index_flag() -> None:
             preserve_source_index=True,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1740,7 +1740,7 @@ def test_source_memory_row_emits_any_positive_dynamic_term_count() -> None:
             dynamic_term_count_minimum=1,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1770,7 +1770,7 @@ def test_source_memory_row_emits_portable_signed_i64_values() -> None:
             dynamic_byte_stride=-(1 << 31),
         ),
         diagnostic_index=0xFFFF,
-        dynamic_offset_diagnostic_index=0xFFFF,
+        byte_offset_diagnostic_index=0xFFFF,
     )
 
     fields = source_memory_row(
@@ -1802,7 +1802,7 @@ def test_source_memory_row_emits_dynamic_stride_values_flag() -> None:
             allow_dynamic_stride_values=True,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
     )
 
     fields = source_memory_row(
@@ -1842,7 +1842,7 @@ def test_source_memory_rows_split_complete_address_materializer() -> None:
             dynamic_term_count=None,
         ),
         diagnostic_index=3,
-        dynamic_offset_diagnostic_index=4,
+        byte_offset_diagnostic_index=4,
         address_diagnostic_index=5,
         address_materializer=materializer,
     )
@@ -1983,7 +1983,7 @@ def test_source_memory_conversion_rows_keep_source_kind_and_selector() -> None:
             dynamic_term_count_minimum=1,
         ),
         diagnostic_index=0xFFFF,
-        dynamic_offset_diagnostic_index=0xFFFF,
+        byte_offset_diagnostic_index=0xFFFF,
         byte_offset_materializer=materializer,
     )
     table = _compiled_lower_rule_set(source_memories=(row,))

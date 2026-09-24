@@ -205,3 +205,22 @@ def test_complete_address_validates_its_canonical_integer_conversions():
                     materializer, integer_conversions=conversions
                 ),
             ).validate(vector.vector_load, TEST_LOW_CORE_DESCRIPTOR_SET, set())
+
+
+@pytest.mark.parametrize(
+    "field", ["byte_offset_unsigned_bit_count", "dynamic_offset_unsigned_bit_count"]
+)
+def test_byte_offset_widths_cover_the_integer_fact_domain(field):
+    constraint = SourceMemoryConstraint(
+        operation=SourceMemoryOperation.LOAD,
+        memory_spaces=("global",),
+        element_byte_count=4,
+        vector_lane_count=1,
+        vector_lane_byte_stride=4,
+        static_byte_offset=0,
+    )
+    for width in (0, 32, 64):
+        replace(constraint, **{field: width})
+    for width in (-1, 65):
+        with pytest.raises(ValueError, match="width must be in"):
+            replace(constraint, **{field: width})
