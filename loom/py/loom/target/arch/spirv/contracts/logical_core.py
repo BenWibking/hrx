@@ -1449,12 +1449,6 @@ SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT = ContractFragment(
         *_scalar_constant_rules(),
         *SPIRV_INDEX_CONVERSION_RULES,
         *SPIRV_INDEX_NUMERIC_RULES,
-        ValueAliasRule(
-            source_op=buffer.buffer_assume_alignment,
-            source=ValueRef.operand("buffers"),
-            result=ValueRef.result("results"),
-            guards=(Guard.operand_segment_count("buffers", 1),),
-        ),
         *_builtin_index_rules(),
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _F8E4M3, _I8),
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _I8, _F8E4M3),
