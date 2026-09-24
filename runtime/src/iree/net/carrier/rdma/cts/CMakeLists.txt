@@ -298,4 +298,37 @@ iree_cc_test(
 )
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_native_test(
+  NAME
+    "busy_poll_transfer_trial_tests"
+  SRC
+    ::transfer_trial_tests
+  ENV
+    "IREE_NET_RDMA_CTS_COMPLETION_MODE=busy_poll"
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_native_test(
+  NAME
+    "busy_poll_direct_transfer_trial_tests"
+  SRC
+    ::direct_transfer_trial_tests
+  ENV
+    "IREE_NET_RDMA_CTS_COMPLETION_MODE=busy_poll"
+)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IREE_NET_RDMA)
+iree_native_test(
+  NAME
+    "busy_poll_collective_trial_tests"
+  SRC
+    ::collective_trial_tests
+  ENV
+    "IREE_NET_RDMA_CTS_COMPLETION_MODE=busy_poll"
+)
+endif()
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
