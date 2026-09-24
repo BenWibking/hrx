@@ -14,6 +14,7 @@
 #include "loom/codegen/low/descriptor_traits.h"
 #include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/function.h"
+#include "loom/codegen/low/memory_access.h"
 #include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/storage_relation.h"
 #include "loom/codegen/low/target_binding.h"
@@ -1178,6 +1179,12 @@ static iree_status_t loom_low_select_operand_form_rewrite_packet(
   loom_builder_restore(&rewriter->builder, saved_ip);
   IREE_RETURN_IF_ERROR(status);
 
+  loom_target_function_version_t* version =
+      loom_target_function_version_cast(state->pass->function_version);
+  if (version != NULL) {
+    IREE_RETURN_IF_ERROR(loom_low_memory_access_map_replace(
+        version->memory_accesses, op, replacement_op));
+  }
   const loom_value_id_t* replacements = loom_op_results(replacement_op);
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
       rewriter, op, replacements, replacement_op->result_count,

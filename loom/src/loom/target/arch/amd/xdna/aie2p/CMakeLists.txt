@@ -306,6 +306,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::codegen::low::builder
     loom::codegen::low::function
+    loom::codegen::low::memory_access
     loom::ir
     loom::ops::low
     loom::ops::op_defs
@@ -313,6 +314,7 @@ loom_cc_library(
     loom::rewrite::remap
     loom::rewrite::rewriter
     loom::target::arch::amd::xdna::array_facts
+    loom::target::function_version
     loom::transforms::cfg::block_fusion
     loom::util::cfg_graph
     loom::util::dominance

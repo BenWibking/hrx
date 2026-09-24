@@ -195,6 +195,9 @@ static iree_status_t loom_amdgpu_emit_memory_packet(
       packet->access.source.access_flags, operands, operand_count, attrs,
       result_types, result_count, /*tied_results=*/NULL,
       /*tied_result_count=*/0, source_op->location, out_op));
+  IREE_RETURN_IF_ERROR(loom_low_lower_record_memory_packet(
+      context, *out_op, packet->access.descriptor, &packet->access.source,
+      loom_value_facts_exact_i64(0)));
   return loom_amdgpu_record_memory_packet_report(context, source_op, packet);
 }
 

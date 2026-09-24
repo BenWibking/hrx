@@ -22,11 +22,15 @@
 extern "C" {
 #endif
 
+typedef struct loom_low_memory_access_map_t loom_low_memory_access_map_t;
+
 typedef struct loom_aie2p_leaf_compile_options_t {
   // Descriptor registry used to resolve the core representation contract.
   const loom_low_descriptor_registry_t* descriptor_registry;
   // Optional invocation-refined target facts for this function version.
   const loom_target_facts_t* function_target_facts;
+  // Captured source proofs bound to this core function's memory effects.
+  const loom_low_memory_access_map_t* memory_accesses;
   // Borrowed SSA location constraints, valid for the duration of compilation.
   // Locations are constrained only over each value's live interval. Returned
   // values express state that must remain live through the leaf's exit.

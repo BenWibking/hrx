@@ -487,8 +487,6 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
         &schedule_classes[descriptor_views[i].schedule_class_id];
     schedule_nodes[i].source_ordinal = i;
     schedule_nodes[i].scheduled_ordinal = i;
-    schedule_nodes[i].memory_access_record_index =
-        LOOM_LOW_SCHEDULE_MEMORY_ACCESS_RECORD_NONE;
     schedule_nodes[i].kind = LOOM_LOW_SCHEDULE_NODE_DESCRIPTOR;
   }
   schedule_nodes[0].operand_count = 1;

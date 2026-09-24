@@ -177,7 +177,6 @@ typedef enum loom_low_schedule_strategy_e {
   LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL = 3,
 } loom_low_schedule_strategy_t;
 
-#define LOOM_LOW_SCHEDULE_MEMORY_ACCESS_RECORD_NONE UINT32_MAX
 #define LOOM_LOW_SCHEDULE_PRESSURE_CLIFF_NONE UINT32_MAX
 
 // One target-provided pair-affinity row.
@@ -305,8 +304,6 @@ typedef struct loom_low_schedule_node_t {
   uint32_t issue_cycle;
   // Table-wide issue-group ordinal containing this node.
   uint32_t issue_group_ordinal;
-  // Source memory-access record attached to this node, or NONE.
-  uint32_t memory_access_record_index;
   // Present immediate fields in canonical dictionary key order. Retained for
   // this immutable function snapshot; descriptor alternatives preserve keys.
   uint32_t immediate_presence;
@@ -714,7 +711,7 @@ typedef struct loom_low_schedule_options_t {
   const loom_low_schedule_retained_blocks_t* retained_blocks;
   // Optional source-derived memory summaries for the modeled function. Empty
   // uses conservative descriptor effect summaries.
-  loom_low_memory_access_table_t memory_access_table;
+  const loom_low_memory_access_map_t* memory_accesses;
   // Optional immutable target residency policy.
   const loom_target_residency_model_t* residency_model;
   // Optional explicit allocation budgets. These are interpreted as hard
@@ -760,7 +757,7 @@ typedef struct loom_low_schedule_table_t {
   // Resolved target context selected by |function_op|.
   loom_low_resolved_target_t target;
   // Borrowed source-derived memory summaries attached to scheduled nodes.
-  loom_low_memory_access_table_t memory_access_table;
+  const loom_low_memory_access_map_t* memory_accesses;
   // Declared interfaces and storage retained from the immutable function model.
   loom_low_function_requirements_t requirements;
   // Function-local value IDs indexed by local value ordinal.

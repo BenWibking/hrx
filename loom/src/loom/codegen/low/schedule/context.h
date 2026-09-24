@@ -384,7 +384,7 @@ typedef struct loom_low_schedule_build_state_t {
   // Scratch outstanding effect writes, reused for each block.
   loom_low_schedule_effect_frontier_entry_t* effect_write_entries;
   // Optional source-derived memory access records for the function.
-  const loom_low_memory_access_record_t* memory_access_records;
+  const loom_low_memory_access_map_t* memory_accesses;
   // Per-resource aggregate resource pressure, dense by descriptor resource id
   // until compacted after scheduling.
   loom_low_schedule_resource_summary_t* resource_summaries;
@@ -437,10 +437,6 @@ typedef struct loom_low_schedule_build_state_t {
   iree_host_size_t effect_read_capacity;
   // Allocated effect-frontier write scratch capacity.
   iree_host_size_t effect_write_capacity;
-  // Number of rows in |memory_access_records|.
-  iree_host_size_t memory_access_record_count;
-  // Next memory access record to bind while walking function-order nodes.
-  iree_host_size_t memory_access_record_bind_index;
   // Allocated effect-use record capacity.
   iree_host_size_t effect_use_capacity;
   // Allocated hazard-use record capacity.

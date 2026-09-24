@@ -200,8 +200,8 @@ static iree_status_t loom_vm_module_collect(
     bindings_by_symbol[i] = entry;
     *entry = (loom_vm_module_callable_t){
         .function = function,
-        .target_facts = loom_target_function_version_target_facts(
-            loom_target_function_version_snapshot_handle_at(&versions, i)),
+        .function_version =
+            loom_target_function_version_snapshot_at(&versions, i),
         .results = {loom_op_results(op), op->result_count},
     };
     entry->arguments = loom_func_like_arg_ids(function, &entry->argument_count);
@@ -670,7 +670,7 @@ static iree_status_t loom_vm_module_write(
           .bytecode_offset_u32 = (uint32_t)offset,
       };
       status = loom_vm_function_emit(&function_request, entry->function,
-                                     entry->target_facts, &entry->signature,
+                                     entry->function_version, &entry->signature,
                                      &functions, stream, &row);
       iree_arena_reset(&function_arena);
       if (iree_status_is_ok(status)) {

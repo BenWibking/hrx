@@ -995,6 +995,8 @@ typedef struct loom_low_lower_result_t {
   loom_low_lower_report_row_list_t report_rows;
   // Owned source-memory packet report rows.
   loom_low_lower_memory_report_row_list_t memory_report_rows;
+  // Module-arena packet effects retained independently of optional reports.
+  loom_low_memory_access_map_t* memory_accesses;
 } loom_low_lower_result_t;
 
 typedef struct loom_low_lower_resolved_descriptor_t {
@@ -1073,6 +1075,15 @@ uint32_t loom_low_lower_context_error_count(
 loom_target_low_legality_diagnostic_flags_t
 loom_low_lower_context_diagnostic_flags(
     const loom_low_lower_context_t* context);
+
+// Records one packet whose memory effects all use |source_plan|'s address.
+// The caller has selected actual packet geometry; additional_offset bounds
+// runtime packet coordinates not present in the canonical source plan.
+iree_status_t loom_low_lower_record_memory_packet(
+    loom_low_lower_context_t* context, const loom_op_t* low_op,
+    const loom_low_descriptor_t* descriptor,
+    const loom_low_source_memory_access_plan_t* source_plan,
+    loom_value_facts_t additional_offset);
 
 // Returns true when the caller requested source-low detail report rows.
 bool loom_low_lower_context_wants_report_rows(

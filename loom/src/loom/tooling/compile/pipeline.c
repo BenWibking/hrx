@@ -42,7 +42,7 @@ static iree_status_t loom_compile_project_trace_snapshot(
   }
   return loom_target_function_versions_project_module(
       source_module, state->function_versions, state->block_pool,
-      source_module->allocator, out_projected_module);
+      source_module->allocator, NULL, out_projected_module);
 }
 
 void loom_compile_pipeline_options_initialize(

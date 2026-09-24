@@ -13,6 +13,7 @@
 #include "iree/base/internal/arena.h"
 #include "loom/ir/ir.h"
 #include "loom/target/arch/amd/xdna/aie2p/array/plan.h"
+#include "loom/target/function_version.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,10 @@ typedef struct loom_aie2p_array_resident_worker_t {
   loom_symbol_ref_t entry;
   // Private retained core Low function implementing the resident loop.
   loom_op_t* function_op;
+  // Invocation target facts borrowed from the source worker's compiler version.
+  const loom_target_facts_t* function_target_facts;
+  // Module-owned proof bindings translated into the resident invocation.
+  loom_low_memory_access_map_t* memory_accesses;
 } loom_aie2p_array_resident_worker_t;
 
 // Materialized resident core programs for one physical array plan.
@@ -48,6 +53,7 @@ typedef struct loom_aie2p_array_resident_program_t {
 // retained as final array-image roots.
 iree_status_t loom_aie2p_array_materialize_resident_program(
     loom_module_t* module, const loom_aie2p_array_plan_t* plan,
+    const loom_function_version_list_t* function_versions,
     iree_arena_allocator_t* arena,
     loom_aie2p_array_resident_program_t* out_program);
 

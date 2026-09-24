@@ -565,6 +565,15 @@ def _compile_operand_form(
 
     replacement_ordinal = descriptor_ordinals[operand_form.replacement_descriptor]
     replacement = selected_descriptors[replacement_ordinal]
+
+    # Replacements preserve the packet's retained memory proof at each effect
+    # ordinal. Timing events may change with the encoding; semantic effects may
+    # not change identity, width, scope, or ordering.
+    def semantic_effects(value: Descriptor):
+        return tuple((effect.kind, effect.memory_space, effect.scope_id, effect.flags, effect.width_bits) for effect in value.effects)
+
+    if semantic_effects(descriptor) != semantic_effects(replacement):
+        raise ValueError(f"descriptor '{descriptor.key}' operand form replacement '{replacement.key}' must preserve semantic effect ordinals")
     _replacement_operand_indices, replacement_immediate_indices = _index_descriptor_fields(replacement)
     source_result_count = validation.validate_descriptor_operands(descriptor).result_count
     replacement_result_count = validation.validate_descriptor_operands(replacement).result_count

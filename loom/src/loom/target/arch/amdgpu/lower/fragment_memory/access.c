@@ -57,20 +57,11 @@ static bool loom_amdgpu_fragment_memory_packet_static_offset(
       plan, packet->register_index, element_index, out_static_byte_offset);
 }
 
-static void loom_amdgpu_fragment_memory_add_runtime_packet_source_interval(
+static loom_value_facts_t loom_amdgpu_fragment_memory_runtime_packet_offset(
     const loom_amdgpu_fragment_memory_plan_t* plan,
     const loom_amdgpu_fragment_memory_packet_plan_t* packet,
-    uint16_t element_index, loom_low_lower_memory_report_row_t* row) {
-  const loom_low_byte_interval_precision_flags_t required_precision =
-      LOOM_LOW_BYTE_INTERVAL_PRECISION_BEGIN_RANGE |
-      LOOM_LOW_BYTE_INTERVAL_PRECISION_END_RANGE;
-  if (!iree_all_bits_set(row->source_interval.precision_flags,
-                         required_precision)) {
-    return;
-  }
-
+    uint16_t element_index) {
   loom_value_facts_t runtime_packet_offset = loom_value_facts_exact_i64(0);
-  bool has_runtime_packet_offset = false;
   for (uint8_t view_axis = 0; view_axis < plan->view_rank; ++view_axis) {
     const loom_amdgpu_fragment_memory_runtime_axis_t* runtime_axis =
         &plan->runtime_axes[view_axis];
@@ -89,12 +80,22 @@ static void loom_amdgpu_fragment_memory_add_runtime_packet_source_interval(
                           &coordinate_facts, &axis_offset);
     loom_value_facts_addi(&runtime_packet_offset, &axis_offset,
                           &runtime_packet_offset);
-    has_runtime_packet_offset = true;
   }
-  if (!has_runtime_packet_offset) {
+  return runtime_packet_offset;
+}
+
+static void loom_amdgpu_fragment_memory_add_runtime_packet_source_interval(
+    loom_value_facts_t runtime_packet_offset,
+    loom_low_lower_memory_report_row_t* row) {
+  const loom_low_byte_interval_precision_flags_t required_precision =
+      LOOM_LOW_BYTE_INTERVAL_PRECISION_BEGIN_RANGE |
+      LOOM_LOW_BYTE_INTERVAL_PRECISION_END_RANGE;
+  if (!iree_all_bits_set(row->source_interval.precision_flags,
+                         required_precision) ||
+      (runtime_packet_offset.range_lo == 0 &&
+       runtime_packet_offset.range_hi == 0)) {
     return;
   }
-
   loom_value_facts_addi(&row->source_interval.begin_facts,
                         &runtime_packet_offset,
                         &row->source_interval.begin_facts);
@@ -129,15 +130,11 @@ iree_status_t loom_amdgpu_fragment_memory_packet_resource(
 
 static iree_status_t loom_amdgpu_record_fragment_memory_packet(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    const loom_amdgpu_matrix_fragment_layout_t* layout,
+    const loom_op_t* low_op, const loom_amdgpu_matrix_fragment_layout_t* layout,
     const loom_amdgpu_fragment_memory_plan_t* plan,
     const loom_amdgpu_fragment_memory_packet_plan_t* packet,
     loom_amdgpu_descriptor_ref_t descriptor_ref, uint16_t element_index,
     uint32_t vector_lane_count) {
-  if (!loom_low_lower_context_wants_report_rows(context)) {
-    return iree_ok_status();
-  }
-
   const loom_low_descriptor_set_t* descriptor_set =
       loom_low_lower_context_descriptor_set(context);
   const loom_low_descriptor_t* descriptor =
@@ -150,13 +147,24 @@ static iree_status_t loom_amdgpu_record_fragment_memory_packet(
                                                 descriptor->key_string_ref);
   }
   int64_t static_offset_bytes = plan->source.static_byte_offset;
-  (void)loom_amdgpu_fragment_memory_packet_static_offset(
-      plan, packet, element_index, &static_offset_bytes);
+  const bool has_static_offset =
+      loom_amdgpu_fragment_memory_packet_static_offset(
+          plan, packet, element_index, &static_offset_bytes);
   loom_low_source_memory_access_plan_t packet_source = plan->source;
   packet_source.static_byte_offset = static_offset_bytes;
   packet_source.element_byte_count = plan->element_byte_count;
   packet_source.vector_lane_count = vector_lane_count;
   packet_source.vector_lane_byte_stride = plan->element_byte_count;
+  const loom_value_facts_t runtime_packet_offset =
+      loom_amdgpu_fragment_memory_runtime_packet_offset(plan, packet,
+                                                        element_index);
+  if (has_static_offset) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_record_memory_packet(
+        context, low_op, descriptor, &packet_source, runtime_packet_offset));
+  }
+  if (!loom_low_lower_context_wants_report_rows(context)) {
+    return iree_ok_status();
+  }
   loom_amdgpu_fragment_memory_packet_report_t packet_report = {0};
   loom_amdgpu_fragment_memory_query_packet_report(plan, packet, &packet_report);
   loom_low_lower_memory_subgroup_access_report_t subgroup_access = {0};
@@ -201,11 +209,13 @@ static iree_status_t loom_amdgpu_record_fragment_memory_packet(
   IREE_RETURN_IF_ERROR(loom_amdgpu_fragment_memory_report_bank_service(
       context, source_op, layout, plan, packet, element_index,
       &row.bank_service));
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_memory_report_row_populate_source_interval(
-          context, &packet_source, &row));
+  if (has_static_offset) {
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_memory_report_row_populate_source_interval(
+            context, &packet_source, &row));
+  }
   loom_amdgpu_fragment_memory_add_runtime_packet_source_interval(
-      plan, packet, element_index, &row);
+      runtime_packet_offset, &row);
   return loom_low_lower_record_memory_report_row(context, source_op, &row);
 }
 
@@ -271,8 +281,8 @@ static iree_status_t loom_amdgpu_emit_fragment_load_packet_with_descriptor(
       loom_make_named_attr_slice(attrs, attr_count), &result_type, 1,
       tied_results, tied_result_count, source_op->location, &low_op));
   IREE_RETURN_IF_ERROR(loom_amdgpu_record_fragment_memory_packet(
-      context, source_op, layout, plan, packet, descriptor_ref, element_index,
-      vector_lane_count));
+      context, source_op, low_op, layout, plan, packet, descriptor_ref,
+      element_index, vector_lane_count));
   *out_low_packet = loom_value_slice_get(loom_low_op_results(low_op), 0);
   return iree_ok_status();
 }
@@ -367,6 +377,6 @@ iree_status_t loom_amdgpu_emit_fragment_store_packet(
       /*result_count=*/0, /*tied_results=*/NULL, /*tied_result_count=*/0,
       source_op->location, &low_op));
   return loom_amdgpu_record_fragment_memory_packet(
-      context, source_op, layout, plan, packet, packet->descriptor_ref,
+      context, source_op, low_op, layout, plan, packet, packet->descriptor_ref,
       element_index, vector_lane_count);
 }

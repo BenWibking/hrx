@@ -278,6 +278,8 @@ static iree_status_t loom_aie2p_xdna_compile_resident_tiles(
       worker_report_ptr = &worker_report;
     }
     const loom_aie2p_leaf_compile_options_t worker_compile_options = {
+        .function_target_facts = resident->function_target_facts,
+        .memory_accesses = resident->memory_accesses,
         .descriptor_registry = request->low_descriptor_registry,
         .diagnostic_emitter = request->diagnostic_emitter,
         .compile_report = worker_report_ptr,
@@ -372,8 +374,8 @@ iree_status_t loom_aie2p_xdna_artifact_emit(
         &array_plans[i], request->scratch_arena, &array_programs[i]));
     loom_aie2p_array_resident_program_t resident_program = {0};
     IREE_RETURN_IF_ERROR(loom_aie2p_array_materialize_resident_program(
-        request->module, &array_plans[i], request->scratch_arena,
-        &resident_program));
+        request->module, &array_plans[i], request->function_versions,
+        request->scratch_arena, &resident_program));
     loom_aie2p_xdna_tile_t* tiles = NULL;
     IREE_RETURN_IF_ERROR(loom_aie2p_xdna_compile_resident_tiles(
         request, &array_plans[i], &resident_program, &tiles));

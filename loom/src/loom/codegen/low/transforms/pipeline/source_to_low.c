@@ -488,6 +488,11 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
             selection->version_handle,
             loom_func_like_cast(module, lower_result.low_func_op));
       }
+      loom_target_function_version_t* target_version =
+          loom_target_function_version_cast(selection->version_handle);
+      if (target_version != NULL) {
+        target_version->memory_accesses = lower_result.memory_accesses;
+      }
       ++function_count;
     }
     loom_low_lower_result_deinitialize(&lower_result);

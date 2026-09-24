@@ -388,6 +388,9 @@ loom_cc_library(
   DEPS
     ::descriptors
     iree::base
+    iree::base::internal::arena
+    loom::analysis::symbolic_expr
+    loom::ir
     loom::ir::facts
   PUBLIC
 )
@@ -399,8 +402,10 @@ loom_cc_test(
     "memory_access_test.cc"
   DEPS
     ::memory_access
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::analysis::symbolic_expr
 )
 
 loom_cc_library(

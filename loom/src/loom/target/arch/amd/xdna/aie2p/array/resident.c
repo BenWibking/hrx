@@ -12,6 +12,7 @@
 
 #include "loom/codegen/low/builder.h"
 #include "loom/codegen/low/function.h"
+#include "loom/codegen/low/memory_access.h"
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/op_defs.h"
@@ -48,6 +49,8 @@ typedef enum loom_aie2p_array_state_value_kind_e {
 typedef struct loom_aie2p_array_resident_builder_t {
   // Module receiving all resident worker functions.
   loom_module_t* module;
+  // Source compiler versions indexed once at the materialization boundary.
+  loom_target_function_version_snapshot_t versions;
   // Trusted physical plan consumed by materialization.
   const loom_aie2p_array_plan_t* plan;
   // Scratch arena for names, remaps, and ring state.
@@ -1667,10 +1670,27 @@ static iree_status_t loom_aie2p_array_resident_materialize_worker(
         builder->module, resident_body, &record_header));
   }
   const uint16_t source_block_start = resident_body->block_count;
+  const loom_target_function_version_t* source_version =
+      loom_target_function_version_snapshot_at(&builder->versions,
+                                               worker->entry.symbol_id);
+  loom_low_memory_access_map_t* memory_accesses = NULL;
+  loom_ir_remap_options_t remap_options = {0};
+  if (source_version != NULL && source_version->memory_accesses != NULL) {
+    IREE_RETURN_IF_ERROR(loom_low_memory_access_map_create(
+        &builder->module->arena, &memory_accesses));
+    loom_low_memory_access_clone_t* clone = NULL;
+    IREE_RETURN_IF_ERROR(loom_low_memory_access_clone_create(
+        source_version->memory_accesses, memory_accesses, builder->arena,
+        &clone));
+    remap_options.clone_observer = (loom_ir_clone_observer_t){
+        .fn = loom_low_memory_access_clone_op,
+        .user_data = clone,
+    };
+  }
   loom_ir_remap_t remap = {0};
   IREE_RETURN_IF_ERROR(loom_ir_remap_initialize(builder->module,
                                                 builder->module, builder->arena,
-                                                /*options=*/NULL, &remap));
+                                                &remap_options, &remap));
   IREE_RETURN_IF_ERROR(loom_ir_clone_region_blocks(
       &ir_builder, source_body, resident_body, source_block_start, &remap));
   loom_block_t* source_entry =
@@ -1706,12 +1726,16 @@ static iree_status_t loom_aie2p_array_resident_materialize_worker(
       .worker_index = worker_index,
       .entry = resident_ref,
       .function_op = resident_function,
+      .function_target_facts =
+          source_version != NULL ? source_version->function_target_facts : NULL,
+      .memory_accesses = memory_accesses,
   };
   return iree_ok_status();
 }
 
 iree_status_t loom_aie2p_array_materialize_resident_program(
     loom_module_t* module, const loom_aie2p_array_plan_t* plan,
+    const loom_function_version_list_t* function_versions,
     iree_arena_allocator_t* arena,
     loom_aie2p_array_resident_program_t* out_program) {
   IREE_ASSERT_ARGUMENT(module);
@@ -1729,6 +1753,8 @@ iree_status_t loom_aie2p_array_materialize_resident_program(
       .arena = arena,
       .descriptor_set = loom_aie2p_core_descriptor_set(),
   };
+  IREE_RETURN_IF_ERROR(loom_target_function_version_snapshot_build(
+      module, function_versions, arena, &builder.versions));
   IREE_RETURN_IF_ERROR(loom_module_intern_string(
       module, IREE_SV("i"), &builder.integer_immediate_name));
   IREE_RETURN_IF_ERROR(loom_module_intern_string(

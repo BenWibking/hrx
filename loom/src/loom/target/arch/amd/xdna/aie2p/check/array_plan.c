@@ -627,7 +627,7 @@ static iree_status_t loom_aie2p_array_plan_check_resident_program(
     iree_diagnostic_emitter_t diagnostic_emitter) {
   loom_aie2p_array_resident_program_t program = {0};
   IREE_RETURN_IF_ERROR(loom_aie2p_array_materialize_resident_program(
-      request->module, plan, request->case_arena, &program));
+      request->module, plan, NULL, request->case_arena, &program));
   IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
       &request->result->actual_output,
       "\nresident-program workers=%" PRIhsz "\n", program.worker_count));

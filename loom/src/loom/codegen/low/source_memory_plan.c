@@ -1073,6 +1073,12 @@ static bool loom_low_source_memory_access_add_view_base_byte_offset(
 
   plan->memory_space = view_region->memory_space;
   plan->root_value_id = view_region->root_value_id;
+  plan->root_uniform_scope = loom_value_facts_uniform_scope(
+      loom_value_fact_table_lookup(fact_table, view_region->root_value_id));
+  if (view_region->origin.kind == LOOM_VALUE_FACT_REFERENCE_ORIGIN_ALLOCATION &&
+      view_region->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
+    plan->root_uniform_scope = LOOM_VALUE_FACT_UNIFORM_SCOPE_WORKGROUP;
+  }
   plan->root_minimum_alignment = loom_low_source_memory_clamp_alignment(
       view_region->root_minimum_alignment);
   plan->alias_scope_id = view_region->alias_scope_id;

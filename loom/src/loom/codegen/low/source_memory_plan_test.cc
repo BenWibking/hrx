@@ -1214,8 +1214,8 @@ TEST_F(SourceMemoryPlanTest, SummaryCapturesStridedPacketSlot) {
   loom_low_memory_access_summary_t preceding_summary = {};
   loom_low_source_memory_access_plan_make_summary(&plan, &preceding_interval,
                                                   &preceding_summary);
-  EXPECT_FALSE(
-      loom_low_memory_access_summaries_may_alias(&preceding_summary, &summary));
+  EXPECT_FALSE(loom_low_memory_access_summaries_may_alias(
+      &preceding_summary, &summary, LOOM_LOW_MEMORY_COMPARISON_INDEPENDENT));
 }
 
 TEST(SourceMemoryPlan, DynamicPacketOffsetsPreserveDivisibility) {
