@@ -130,10 +130,14 @@ static iree_status_t loom_canonicalizer_run_pass(
           cleanup_capability, pass, module, function, &context));
   run_options.target_facts = context.target_facts;
   run_options.math_policy = context.math_policy;
+  const loom_cleanup_pattern_registry_t* pattern_registry =
+      loom_cleanup_pass_capability_pattern_registry(cleanup_capability);
 
   loom_canonicalizer_t canonicalizer;
   IREE_RETURN_IF_ERROR(loom_canonicalizer_initialize(
-      module, pass->arena, pass->value_facts, &canonicalizer));
+      module, pass->arena, pass->value_facts,
+      pattern_registry ? pattern_registry->special_value_policy : NULL,
+      &canonicalizer));
 
   loom_canonicalizer_result_t result;
   iree_status_t status = loom_canonicalizer_run_function(

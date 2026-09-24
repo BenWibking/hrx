@@ -14,6 +14,7 @@ loom_cc_library(
     patterns
   HDRS
     "patterns.h"
+    "special_value_policy.h"
   SRCS
     "patterns.c"
   DEPS
@@ -56,6 +57,7 @@ loom_cc_library(
     "configured.c"
   DEPS
     ::patterns
+    loom::ops::special_values
     loom::transforms::index::cleanup_patterns
     loom::transforms::scalar::cleanup_patterns
     loom::transforms::scf::branch_fact_patterns
@@ -119,8 +121,6 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::op_defs
-    loom::ops::special_values
-    loom::ops::type_registry
     loom::pass::types
     loom::pass::value_facts
     loom::rewrite::greedy
@@ -145,6 +145,7 @@ loom_cc_test(
     loom::ir
     loom::ops::op_defs
     loom::ops::scalar
+    loom::ops::special_values
     loom::ops::test
     loom::ops::vector
     loom::pass::types

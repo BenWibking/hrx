@@ -28,6 +28,8 @@ extern "C" {
 #endif
 
 typedef struct loom_symbolic_expr_context_t loom_symbolic_expr_context_t;
+typedef struct loom_cleanup_special_value_policy_t
+    loom_cleanup_special_value_policy_t;
 
 // Invocation-local state available to cleanup rewrite patterns.
 typedef struct loom_cleanup_pattern_context_t {
@@ -45,6 +47,8 @@ typedef struct loom_cleanup_pattern_provider_set_t {
   loom_rewrite_pattern_provider_list_t universal_post_type;
   // Source representation combines disabled after target legalization.
   loom_rewrite_pattern_provider_list_t source_combine;
+  // Dialect-backed special-value recognition and builders, or NULL.
+  const loom_cleanup_special_value_policy_t* special_value_policy;
 } loom_cleanup_pattern_provider_set_t;
 
 // Indexed pattern registries prepared for one compiler invocation.
@@ -57,6 +61,8 @@ typedef struct loom_cleanup_pattern_registry_t {
   const loom_rewrite_pattern_registry_t* universal_post_type;
   // Source representation combines disabled after target legalization.
   const loom_rewrite_pattern_registry_t* source_combine;
+  // Dialect-backed special-value recognition and builders, or NULL.
+  const loom_cleanup_special_value_policy_t* special_value_policy;
 } loom_cleanup_pattern_registry_t;
 
 // Owned storage for the four indexed cleanup pattern registries. Provider

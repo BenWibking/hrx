@@ -40,3 +40,10 @@ new or changed branches without rescanning the whole function on every
 iteration. Direct canonicalizer users project the same universal phase set from
 their cleanup capability, so nested passes do not silently lose configured
 dialect behavior.
+
+The same compiler composition supplies the special-value policy used by the
+generic driver. Poison and empty propagation remain universal trait/interface
+logic, while the policy identifies supported values and types and builds the
+selected dialect's poison, empty, and constant operations. A minimal compiler
+can omit that policy, leaving those materializations disabled instead of
+implicitly selecting concrete operation builders.

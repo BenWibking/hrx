@@ -115,6 +115,7 @@ TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
       /*.source_combine=*/
       loom_rewrite_pattern_provider_list_make(
           source_combine_providers, IREE_ARRAYSIZE(source_combine_providers)),
+      /*.special_value_policy=*/nullptr,
   };
 
   loom_cleanup_pattern_registry_storage_t storage = {};
@@ -177,6 +178,7 @@ TEST(CleanupPatternsTest, ExplicitEmptyProviderSetSatisfiesComposition) {
   EXPECT_EQ(registry->region_initialization->pattern_count, 0u);
   ASSERT_NE(registry->source_combine, nullptr);
   EXPECT_EQ(registry->source_combine->pattern_count, 0u);
+  EXPECT_EQ(registry->special_value_policy, nullptr);
 
   const loom_cleanup_pass_capability_t capability =
       loom_cleanup_pass_capability_make(
@@ -232,12 +234,15 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
   EXPECT_EQ(provider_set->universal_pre_fold.count, 2u);
   EXPECT_EQ(provider_set->universal_post_type.count, 2u);
   EXPECT_EQ(provider_set->source_combine.count, 3u);
+  EXPECT_NE(provider_set->special_value_policy, nullptr);
 
   loom_cleanup_pattern_registry_storage_t storage = {};
   IREE_ASSERT_OK(loom_cleanup_pattern_registry_storage_initialize(
       provider_set, iree_allocator_system(), &storage));
   const loom_cleanup_pattern_registry_t* registries =
       loom_cleanup_pattern_registry_storage_registry(&storage);
+  EXPECT_EQ(registries->special_value_policy,
+            provider_set->special_value_policy);
   const loom_rewrite_pattern_registry_t* region_initialization =
       registries->region_initialization;
   EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(region_initialization,
