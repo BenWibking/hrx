@@ -22,6 +22,7 @@
 #include "loom/target/arch/amdgpu/lower/encoding/fp8.h"
 #include "loom/target/arch/amdgpu/lower/encoding/fp8_encode.h"
 #include "loom/target/arch/amdgpu/lower/encoding/fp8_vector_conversion.h"
+#include "loom/target/arch/amdgpu/lower/encoding/fp8_vector_plan.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
