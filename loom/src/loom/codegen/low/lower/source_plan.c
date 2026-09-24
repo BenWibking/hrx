@@ -54,11 +54,30 @@ static bool loom_low_lower_supported_structured_source_op(
   }
 }
 
+static bool loom_low_lower_source_op_requires_emission_with_traits(
+    const loom_op_t* source_op, loom_trait_flags_t traits) {
+  if (source_op->result_count == 0 || source_op->region_count != 0 ||
+      source_op->tied_result_count != 0) {
+    return true;
+  }
+  if (iree_any_bit_set(traits, LOOM_TRAIT_TERMINATOR | LOOM_TRAIT_HINT |
+                                   LOOM_TRAIT_UNIQUE_IDENTITY |
+                                   LOOM_TRAIT_CONVERGENT |
+                                   LOOM_TRAIT_OBSERVABLE_EFFECT)) {
+    return true;
+  }
+  return loom_traits_may_read(traits) || loom_traits_may_write(traits);
+}
+
 static bool loom_low_lower_op_is_structural(
     const loom_low_lower_context_t* context, const loom_op_t* op,
     loom_trait_flags_t traits, bool is_callable_exit) {
-  if (loom_traits_are_fact_identity(traits) ||
-      loom_traits_are_value_alias(traits) || is_callable_exit) {
+  if ((loom_traits_are_fact_identity(traits) ||
+       loom_traits_are_value_alias(traits)) &&
+      !loom_low_lower_source_op_requires_emission_with_traits(op, traits)) {
+    return true;
+  }
+  if (is_callable_exit) {
     return true;
   }
   if (iree_any_bit_set(traits, LOOM_TRAIT_CALLABLE_BOUNDARY) &&
@@ -476,19 +495,10 @@ static void loom_low_lower_mark_structural_storage_demands(
 
 static bool loom_low_lower_source_op_requires_emission(
     const loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  if (source_op->result_count == 0 || source_op->region_count != 0 ||
-      source_op->tied_result_count != 0) {
-    return true;
-  }
   const loom_trait_flags_t traits =
       loom_op_effective_traits(context->module, source_op);
-  if (iree_any_bit_set(traits, LOOM_TRAIT_TERMINATOR | LOOM_TRAIT_HINT |
-                                   LOOM_TRAIT_UNIQUE_IDENTITY |
-                                   LOOM_TRAIT_CONVERGENT |
-                                   LOOM_TRAIT_OBSERVABLE_EFFECT)) {
-    return true;
-  }
-  return loom_traits_may_read(traits) || loom_traits_may_write(traits);
+  return loom_low_lower_source_op_requires_emission_with_traits(source_op,
+                                                                traits);
 }
 
 static bool loom_low_lower_source_op_result_storage_required(

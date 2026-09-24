@@ -926,7 +926,7 @@ PREDICATE_KINDS: dict[str, int] = {
     "le": 2,
     "gt": 2,
     "ge": 2,
-    "mul": 2,  # mul(a, n) — a is a multiple of n.
+    "mul": 2,  # mul(a, n) — a is a multiple of positive n.
     "min": 2,  # min(a, n) — a >= n.
     "max": 2,  # max(a, n) — a <= n.
     "pow2": 1,  # pow2(a) — a is a power of 2.

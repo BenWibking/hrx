@@ -31,8 +31,6 @@ typedef struct loom_amdgpu_sanitizer_race_observation_plan_t {
   loom_amdgpu_tsan_access_kind_t report_access_kind;
   // Compact shadow access kind written to the per-granule detector slot.
   loom_amdgpu_tsan_shadow_access_kind_t shadow_access_kind;
-  // Static access width in bytes.
-  uint32_t access_size;
   // Whether the current access came from an atomic memory operation.
   bool atomic;
 } loom_amdgpu_sanitizer_race_observation_plan_t;
@@ -42,6 +40,8 @@ typedef struct loom_amdgpu_sanitizer_race_access_plan_t {
   loom_amdgpu_sanitizer_race_observation_plan_t observation;
   // Selected memory-space-relative byte address of the observed LDS access.
   loom_amdgpu_memory_access_t address;
+  // Static width of the physical access in bytes.
+  uint32_t access_size;
 } loom_amdgpu_sanitizer_race_access_plan_t;
 
 typedef struct loom_amdgpu_sanitizer_race_fragment_access_plan_t {

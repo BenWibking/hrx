@@ -116,12 +116,24 @@ void loom_run_hal_testbench_context_set_device_event_sink(
   context->device_event_sink = device_event_sink;
 }
 
-void loom_run_hal_testbench_context_set_runtime_sanitizer_options(
-    loom_run_hal_testbench_context_t* context,
+iree_status_t loom_run_hal_testbench_context_add_module_runtime_requirements(
+    loom_run_hal_testbench_context_t* context, const loom_module_t* module,
     const loom_sanitizer_options_t* sanitizer_options) {
-  IREE_ASSERT(!context->runtime_initialized);
-  context->runtime_sanitizer_options = *sanitizer_options;
-  context->has_runtime_sanitizer_options = true;
+  iree_hal_device_runtime_feature_flags_t runtime_features =
+      IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE;
+  IREE_RETURN_IF_ERROR(loom_run_hal_runtime_features_query(
+      module, sanitizer_options, context->host_allocator, &runtime_features));
+  const iree_hal_device_runtime_feature_flags_t missing_features =
+      runtime_features & ~context->runtime_features;
+  if (context->runtime_initialized && missing_features != 0) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "HAL runtime does not provision required module sanitizer features "
+        "0x%016" PRIx64,
+        (uint64_t)missing_features);
+  }
+  context->runtime_features |= runtime_features;
+  return iree_ok_status();
 }
 
 void loom_run_hal_testbench_context_deinitialize(
@@ -182,15 +194,7 @@ iree_status_t loom_run_hal_testbench_context_ensure_runtime(
   loom_run_hal_runtime_options_initialize(context->device_provider->driver_name,
                                           &runtime_options);
   runtime_options.event_sink = context->device_event_sink;
-  loom_target_pipeline_options_t runtime_target_pipeline_options =
-      context->device_provider->artifact_provider->default_pipeline_options;
-  if (context->has_runtime_sanitizer_options) {
-    runtime_target_pipeline_options.sanitizer =
-        context->runtime_sanitizer_options;
-  }
-  runtime_options.runtime_features |=
-      loom_run_hal_runtime_features_from_sanitizer_options(
-          &runtime_target_pipeline_options.sanitizer);
+  runtime_options.runtime_features = context->runtime_features;
   iree_status_t status = loom_run_hal_runtime_initialize(
       &runtime_options, context->host_allocator, &context->runtime);
   IREE_RETURN_IF_ERROR(status);
@@ -579,6 +583,10 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
   if (provider->prepared_candidate_initialized || provider->compile_rejected) {
     return iree_ok_status();
   }
+  IREE_RETURN_IF_ERROR(
+      loom_run_hal_testbench_context_add_module_runtime_requirements(
+          provider->context, provider->run_module->module,
+          &provider->sanitizer));
   IREE_RETURN_IF_ERROR(
       loom_run_hal_testbench_context_ensure_runtime(provider->context));
 

@@ -274,6 +274,7 @@ loom_cc_library(
         "//loom/src/loom/codegen/low/transforms:operand_forms",
         "//loom/src/loom/codegen/low/transforms/pipeline:source_to_low",
         "//loom/src/loom/codegen/low/transforms/pipeline:target_legalize",
+        "//loom/src/loom/sanitizer:materialize_assertions",
         "//loom/src/loom/sanitizer:pipeline_passes",
         "//loom/src/loom/sanitizer:race_insertion",
         "//loom/src/loom/target:callgraph_specialization",

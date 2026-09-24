@@ -264,9 +264,18 @@ iree_status_t loom_run_hal_execution_backend_run_one_shot(
   loom_run_hal_runtime_options_t runtime_options;
   loom_run_hal_runtime_options_initialize(device_provider->driver_name,
                                           &runtime_options);
-  runtime_options.runtime_features |=
-      loom_run_hal_runtime_features_from_sanitizer_options(
-          &compile_options.target_pipeline_options.sanitizer);
+  if (iree_status_is_ok(status) && entry_selected) {
+    status = loom_run_module_clone(
+        request->session, request->run_module,
+        (iree_string_view_list_t){.count = 1, .values = &entry.func_name},
+        &compile_module);
+  }
+  if (iree_status_is_ok(status) && entry_selected) {
+    status = loom_run_hal_runtime_features_query(
+        compile_module.module,
+        &compile_options.target_pipeline_options.sanitizer,
+        request->host_allocator, &runtime_options.runtime_features);
+  }
   if (iree_status_is_ok(status) && entry_selected) {
     status = loom_run_hal_runtime_initialize(&runtime_options,
                                              request->host_allocator, &runtime);
@@ -275,12 +284,6 @@ iree_status_t loom_run_hal_execution_backend_run_one_shot(
     status = loom_run_hal_execution_backend_select_device_target(
         device_provider, &runtime, request, entry.target_facts,
         &owns_device_target, &device_target);
-  }
-  if (iree_status_is_ok(status) && entry_selected) {
-    status = loom_run_module_clone(
-        request->session, request->run_module,
-        (iree_string_view_list_t){.count = 1, .values = &entry.func_name},
-        &compile_module);
   }
   if (iree_status_is_ok(status) && entry_selected) {
     compile_options.source_resolver =

@@ -10,6 +10,7 @@ CHECK: select-templates(mode = "final", rewrite = "inline")
 CHECK: specialize-target-callgraph
 CHECK: target-legalize(mode = "complete")
 CHECK: scf-to-cfg
+CHECK: sanitizer-materialize-assertions
 CHECK: where target(codegen = "low_native", family = "amdgpu") {
 CHECK: cfg-converge
 CHECK: source-to-low
@@ -39,6 +40,7 @@ CHECK: pass.pipeline<module> @__loom_check_source_low pipeline {
 CHECK: target-legalize(mode = "complete")
 CHECK: scf-to-cfg
 CHECK: sanitizer-insert-assertions(checks = "access")
+CHECK: sanitizer-materialize-assertions
 CHECK: where target(codegen = "low_native", family = "amdgpu") {
 CHECK: cfg-converge
 CHECK: source-to-low
@@ -101,6 +103,7 @@ CHECK: select-templates(mode = "final", rewrite = "inline")
 CHECK: specialize-target-callgraph
 CHECK: target-legalize(mode = "complete")
 CHECK: scf-to-cfg
+CHECK: sanitizer-materialize-assertions
 CHECK: cfg-converge
 CHECK: source-to-low
 CHECK: symbol-dce

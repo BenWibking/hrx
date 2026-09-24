@@ -116,33 +116,53 @@ kernel.def target(@target) @race_crosslane_fragment_publication() {
 }
 
 // ----
-// TSAN observes both BF16 elements in each physical B32 publication while
-// EXEC contains only the even-lane publishers selected by the real epilogue.
+// Each physical B32 publication is one four-byte TSAN range. Its range loop
+// stays nested under the even-lane publisher EXEC selected by the real
+// epilogue, and the physical write restores that enclosing EXEC afterward.
 CHECK: low.kernel.def * @race_crosslane_fragment_publication(* asm {
 CHECK: %first = v_mfma_f32_16x16x16_bf16 *
 CHECK: * = v_cmp_eq_i32_src1_inline * {rhs = 0}
 CHECK: *, * = s_and_saveexec_b64 *
+CHECK: * = v_add_u32* *, 3
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
+CHECK: ^*(*reg<amdgpu.vgpr>*):
+CHECK: * = v_cmp_ne_i32 *
+CHECK: * = v_cndmask_b32 *
+CHECK: low.cond_br *
+CHECK: *, * = s_and_saveexec_b64 *
 CHECK: * = global_atomic_swap_x2_rtn_saddr *
-CHECK: * = v_add_u32* *, 2
-CHECK: * = global_atomic_swap_x2_rtn_saddr *
+CHECK: s_mov_b64_exec *
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
 CHECK: s_mov_b64_exec *
 CHECK: * = v_add_u32* *, 32
 CHECK: *, * = s_and_saveexec_b64 *
+CHECK: * = v_add_u32* *, 3
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
+CHECK: * = v_cmp_ne_i32 *
+CHECK: *, * = s_and_saveexec_b64 *
 CHECK: * = global_atomic_swap_x2_rtn_saddr *
-CHECK: * = v_add_u32* *, 2
-CHECK: * = global_atomic_swap_x2_rtn_saddr *
+CHECK: s_mov_b64_exec *
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
 CHECK: s_mov_b64_exec *
 CHECK: * = v_add_u32* *, 64
 CHECK: *, * = s_and_saveexec_b64 *
+CHECK: * = v_add_u32* *, 3
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
+CHECK: * = v_cmp_ne_i32 *
+CHECK: *, * = s_and_saveexec_b64 *
 CHECK: * = global_atomic_swap_x2_rtn_saddr *
-CHECK: * = v_add_u32* *, 2
-CHECK: * = global_atomic_swap_x2_rtn_saddr *
+CHECK: s_mov_b64_exec *
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
 CHECK: s_mov_b64_exec *
 CHECK: * = v_add_u32* *, 96
 CHECK: *, * = s_and_saveexec_b64 *
+CHECK: * = v_add_u32* *, 3
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
+CHECK: * = v_cmp_ne_i32 *
+CHECK: *, * = s_and_saveexec_b64 *
 CHECK: * = global_atomic_swap_x2_rtn_saddr *
-CHECK: * = v_add_u32* *, 2
-CHECK: * = global_atomic_swap_x2_rtn_saddr *
+CHECK: s_mov_b64_exec *
+CHECK: low.br ^*(*reg<amdgpu.vgpr>*)
 CHECK: s_mov_b64_exec *
 CHECK: * = v_mov_b32_dpp *
 CHECK: *, * = s_and_saveexec_b64 *

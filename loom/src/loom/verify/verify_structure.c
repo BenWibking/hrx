@@ -745,6 +745,44 @@ static void loom_verify_predicate_list_attr(loom_verify_state_t* state,
       loom_verify_emit_structured(state, op, LOOM_ERR_STRUCTURE_022, params,
                                   IREE_ARRAYSIZE(params));
     }
+
+    // Literal-only contradictions are malformed independently of the op that
+    // carries the predicate list. Keeping these invariants at the attribute
+    // boundary prevents individual fact consumers from assigning different
+    // meanings to the same predicate spelling.
+    uint8_t constrained_argument_index = UINT8_MAX;
+    int64_t constrained_argument_value = 0;
+    iree_string_view_t expected_constraint = iree_string_view_empty();
+    if (predicate->kind == LOOM_PREDICATE_MUL &&
+        predicate->arg_count == expected_argument_count &&
+        predicate->arg_tags[1] == LOOM_PRED_ARG_CONST &&
+        predicate->args[1] <= 0) {
+      constrained_argument_index = 1;
+      constrained_argument_value = predicate->args[1];
+      expected_constraint = IREE_SV("a positive divisor");
+    } else if (predicate->kind == LOOM_PREDICATE_RANGE &&
+               predicate->arg_count == expected_argument_count &&
+               predicate->arg_tags[1] == LOOM_PRED_ARG_CONST &&
+               predicate->arg_tags[2] == LOOM_PRED_ARG_CONST &&
+               predicate->args[1] > predicate->args[2]) {
+      constrained_argument_index = 2;
+      constrained_argument_value = predicate->args[2];
+      expected_constraint =
+          IREE_SV("a value greater than or equal to the lower bound");
+    }
+    if (constrained_argument_index != UINT8_MAX) {
+      char field_name[64];
+      iree_snprintf(field_name, sizeof(field_name), "%.*s[%u].arg[%u]",
+                    (int)name.size, name.data, predicate_index,
+                    constrained_argument_index);
+      loom_diagnostic_param_t params[] = {
+          loom_param_string(iree_make_cstring_view(field_name)),
+          loom_param_i64(constrained_argument_value),
+          loom_param_string(expected_constraint),
+      };
+      loom_verify_emit_structured(state, op, LOOM_ERR_STRUCTURE_014, params,
+                                  IREE_ARRAYSIZE(params));
+    }
   }
 }
 

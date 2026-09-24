@@ -11,6 +11,7 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
+#include "loom/ir/ir.h"
 #include "loom/sanitizer/options.h"
 
 #ifdef __cplusplus
@@ -45,10 +46,13 @@ void loom_run_hal_runtime_options_initialize(
     iree_string_view_t hal_driver_name,
     loom_run_hal_runtime_options_t* out_options);
 
-// Returns HAL runtime features needed by |sanitizer_options|.
-iree_hal_device_runtime_feature_flags_t
-loom_run_hal_runtime_features_from_sanitizer_options(
-    const loom_sanitizer_options_t* sanitizer_options);
+// Returns HAL runtime features needed by executable sanitizer operations in
+// |module| and instrumentation requested by |sanitizer_options|.
+iree_status_t loom_run_hal_runtime_features_query(
+    const loom_module_t* module,
+    const loom_sanitizer_options_t* sanitizer_options,
+    iree_allocator_t host_allocator,
+    iree_hal_device_runtime_feature_flags_t* out_runtime_features);
 
 // Initializes the HAL runtime state using |options|.
 iree_status_t loom_run_hal_runtime_initialize(

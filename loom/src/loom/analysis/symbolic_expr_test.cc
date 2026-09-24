@@ -11,6 +11,7 @@
 #include "loom/analysis/symbolic_expr_test_fixture.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
+#include "loom/ops/sanitizer/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/scf/ops.h"
 
@@ -88,6 +89,38 @@ TEST_F(SymbolicExprTest, ExactIntegerFactsFoldToConstant) {
   EXPECT_TRUE(loom_symbolic_expr_is_constant(&expression));
   EXPECT_EQ(expression.constant, 42);
   EXPECT_EQ(expression.term_count, 0);
+}
+
+TEST_F(SymbolicExprTest, FactIdentityExpansionPreservesOrdinalRelations) {
+  const loom_value_id_t left = DefineIndexValue();
+  const loom_value_id_t right = DefineIndexValue();
+  const loom_value_id_t values[] = {left, right};
+  const loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  const loom_type_t result_types[] = {index_type, index_type};
+  const loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{left, right},
+  };
+  loom_op_t* assertion_op = nullptr;
+  IREE_ASSERT_OK(loom_sanitizer_assert_value_build(
+      &builder_, values, IREE_ARRAYSIZE(values), &predicate, 1, result_types,
+      IREE_ARRAYSIZE(result_types), LOOM_LOCATION_UNKNOWN, &assertion_op));
+  const loom_value_slice_t checked_values =
+      loom_sanitizer_assert_value_results(assertion_op);
+
+  for (iree_host_size_t i = 0; i < checked_values.count; ++i) {
+    loom_symbolic_expr_t expression = {};
+    IREE_ASSERT_OK(loom_symbolic_expr_from_value(
+        &expression_context_, checked_values.values[i], &expression));
+    ASSERT_TRUE(loom_symbolic_expr_is_linear(&expression));
+    ASSERT_EQ(expression.term_count, 1);
+    EXPECT_EQ(expression.terms[0].coefficient, 1);
+    EXPECT_EQ(expression.terms[0].value_id, values[i]);
+    EXPECT_EQ(expression.terms[0].relation_value_id, checked_values.values[i]);
+  }
 }
 
 TEST_F(SymbolicExprTest, IndexCastsExpandOnlyWhenTheyPreserveNumericValue) {

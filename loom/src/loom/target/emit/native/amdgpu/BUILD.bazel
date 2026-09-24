@@ -511,6 +511,9 @@ loom_cc_library(
     visibility = _AMDGPU_TOOLING_VISIBILITY,
     deps = [
         ":hsaco",
+        "//loom/src/loom/target/arch/amdgpu/abi:asan",
+        "//loom/src/loom/target/arch/amdgpu/abi:feedback",
+        "//loom/src/loom/target/arch/amdgpu/abi:tsan",
         "//runtime/src/iree/base",
     ],
 )

@@ -46,8 +46,9 @@ iree_status_t loom_amdgpu_value_can_materialize_as_sgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value_id, bool* out_can_materialize);
 
-// Returns true when a source scalar i1 value can be materialized as an
-// EXEC-width SGPR mask for divergent predicate arithmetic.
+// Returns true when a source scalar i1 value can be materialized in one of the
+// native AMDGPU predicate representations: SCC, a durable SGPR word, or an
+// EXEC-width SGPR mask.
 iree_status_t loom_amdgpu_value_can_materialize_as_native_i1_mask(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t value_id, bool* out_can_materialize);

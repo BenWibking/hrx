@@ -833,6 +833,20 @@ static iree_status_t loom_symbolic_expr_expansion_prepare_frame(
     return loom_symbolic_expr_value(context, frame->value_id, out_expression);
   }
 
+  if (loom_traits_are_fact_identity(
+          loom_op_effective_traits(context->module, defining_op))) {
+    IREE_ASSERT_EQ(defining_op->operand_count, defining_op->result_count,
+                   "verified fact identity fields must have equal arity");
+    const uint16_t result_index = loom_value_def_index(value);
+    IREE_ASSERT(result_index < defining_op->result_count,
+                "fact identity result index must be in range");
+    frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_ASSUME;
+    frame->operand_values[0] =
+        loom_op_const_operands(defining_op)[result_index];
+    frame->stage = LOOM_SYMBOLIC_EXPR_EXPANSION_STAGE_FIRST_OPERAND;
+    return iree_ok_status();
+  }
+
   switch (defining_op->kind) {
     case LOOM_OP_INDEX_CONSTANT: {
       loom_attribute_t value_attr = loom_index_constant_value(defining_op);
@@ -886,18 +900,6 @@ static iree_status_t loom_symbolic_expr_expansion_prepare_frame(
       }
       frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_IDENTITY;
       frame->operand_values[0] = input;
-      break;
-    }
-    case LOOM_OP_INDEX_ASSUME: {
-      loom_value_slice_t values = loom_index_assume_values(defining_op);
-      uint16_t result_index = loom_value_def_index(value);
-      if (result_index >= values.count) {
-        *out_complete = true;
-        return loom_symbolic_expr_value(context, frame->value_id,
-                                        out_expression);
-      }
-      frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_ASSUME;
-      frame->operand_values[0] = values.values[result_index];
       break;
     }
     case LOOM_OP_INDEX_ADD:
@@ -973,18 +975,6 @@ static iree_status_t loom_symbolic_expr_expansion_prepare_frame(
       frame->operand_values[1] = loom_scalar_fmai_b(defining_op);
       frame->operand_values[2] = loom_scalar_fmai_c(defining_op);
       break;
-    case LOOM_OP_SCALAR_ASSUME: {
-      loom_value_slice_t values = loom_scalar_assume_values(defining_op);
-      uint16_t result_index = loom_value_def_index(value);
-      if (result_index >= values.count) {
-        *out_complete = true;
-        return loom_symbolic_expr_value(context, frame->value_id,
-                                        out_expression);
-      }
-      frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_ASSUME;
-      frame->operand_values[0] = values.values[result_index];
-      break;
-    }
     case LOOM_OP_SCF_SELECT:
       frame->kind = LOOM_SYMBOLIC_EXPR_EXPANSION_SELECT;
       frame->operand_values[0] = loom_scf_select_condition(defining_op);

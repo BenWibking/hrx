@@ -613,6 +613,9 @@ loom_cc_library(
   DEPS
     ::hsaco
     iree::base
+    loom::target::arch::amdgpu::abi::asan
+    loom::target::arch::amdgpu::abi::feedback
+    loom::target::arch::amdgpu::abi::tsan
   PUBLIC
 )
 endif()

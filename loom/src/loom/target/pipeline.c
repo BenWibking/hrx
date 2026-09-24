@@ -124,6 +124,14 @@ static iree_status_t loom_target_pipeline_build_sanitizer_assertion_selection(
       checks_value);
 }
 
+static iree_status_t
+loom_target_pipeline_build_sanitizer_assertion_materialization(
+    loom_builder_t* builder, void* user_data) {
+  (void)user_data;
+  return loom_target_pipeline_build_run(
+      builder, IREE_SV("sanitizer-materialize-assertions"));
+}
+
 static iree_status_t loom_target_pipeline_build_sanitizer_race_observations(
     loom_builder_t* builder, void* user_data) {
   const loom_target_pipeline_build_context_t* context =
@@ -532,12 +540,6 @@ static iree_status_t loom_target_pipeline_build_low_preparation(
       (const loom_target_pipeline_build_context_t*)user_data;
   IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
       builder, context, LOOM_TARGET_PIPELINE_PHASE_TARGET_LOW_MATERIALIZATION));
-  if (loom_target_pipeline_sanitizer_has_checks(
-          context, LOOM_SANITIZER_CHECK_ACCESS | LOOM_SANITIZER_CHECK_VALUE |
-                       LOOM_SANITIZER_CHECK_OPERATION)) {
-    IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
-        builder, IREE_SV("sanitizer-materialize-assertions")));
-  }
   IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
       builder, context, LOOM_TARGET_PIPELINE_PHASE_TARGET_LOW_PREPARATION));
   return loom_low_pipeline_build_packetization_preparation(builder);
@@ -620,6 +622,12 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
         builder, loom_target_pipeline_build_sanitizer_assertion_selection,
         user_data, &for_op));
   }
+  // Authored semantic assertions are executable independently of insertion
+  // policy. Collapse both authored and inserted forms to kernel.assert before
+  // source-to-low asks the selected target to execute or reject the boundary.
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
+      builder, loom_target_pipeline_build_sanitizer_assertion_materialization,
+      user_data, &for_op));
   if (loom_target_pipeline_sanitizer_has_checks(context,
                                                 LOOM_SANITIZER_CHECK_RACE)) {
     IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(

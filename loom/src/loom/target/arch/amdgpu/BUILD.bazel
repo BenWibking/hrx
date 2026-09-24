@@ -338,8 +338,10 @@ loom_cc_library(
     hdrs = ["runtime_requirements.h"],
     visibility = _AMDGPU_TOOLING_VISIBILITY,
     deps = [
-        "//loom/src/loom/sanitizer:options",
-        "//loom/src/loom/target:pipeline_options",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/target/arch/amdgpu/abi:asan",
+        "//loom/src/loom/target/arch/amdgpu/abi:feedback",
+        "//loom/src/loom/target/arch/amdgpu/abi:tsan",
         "//runtime/src/iree/base",
     ],
 )
@@ -349,7 +351,8 @@ loom_cc_test(
     srcs = ["runtime_requirements_test.cc"],
     deps = [
         ":runtime_requirements",
-        "//loom/src/loom/sanitizer:options",
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],

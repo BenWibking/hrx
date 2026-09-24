@@ -17,11 +17,9 @@ typedef struct loom_amdgpu_compile_artifact_storage_t {
 } loom_amdgpu_compile_artifact_storage_t;
 
 static loom_amdgpu_runtime_global_flags_t
-loom_amdgpu_artifact_provider_runtime_globals(
-    const loom_target_pipeline_options_t* target_pipeline_options) {
+loom_amdgpu_artifact_provider_runtime_globals(const loom_module_t* module) {
   const loom_amdgpu_runtime_requirements_t requirements =
-      loom_amdgpu_runtime_requirements_from_target_pipeline_options(
-          target_pipeline_options);
+      loom_amdgpu_runtime_requirements_from_target_low_module(module);
   loom_amdgpu_runtime_global_flags_t runtime_globals =
       LOOM_AMDGPU_RUNTIME_GLOBAL_NONE;
   if (iree_any_bit_set(requirements,
@@ -59,8 +57,7 @@ static iree_status_t loom_amdgpu_artifact_provider_emit_artifact(
 
   const loom_amdgpu_hal_kernel_library_options_t library_options = {
       .function_versions = options->function_versions,
-      .runtime_globals = loom_amdgpu_artifact_provider_runtime_globals(
-          &options->target_pipeline_options),
+      .runtime_globals = loom_amdgpu_artifact_provider_runtime_globals(module),
       .diagnostic_sink = options->diagnostic_sink,
       .source_resolver = options->source_resolver,
       .max_errors = options->max_errors,

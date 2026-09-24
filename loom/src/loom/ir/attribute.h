@@ -73,7 +73,7 @@ enum loom_predicate_kind_e {
   LOOM_PREDICATE_GT = 4,
   // ge(a, b)
   LOOM_PREDICATE_GE = 5,
-  // mul(a, n): a is multiple of n.
+  // mul(a, n): a is a multiple of positive n.
   LOOM_PREDICATE_MUL = 6,
   // min(a, n): a >= n.
   LOOM_PREDICATE_MIN = 7,
