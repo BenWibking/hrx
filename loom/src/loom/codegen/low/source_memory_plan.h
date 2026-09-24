@@ -359,6 +359,12 @@ bool loom_low_source_memory_dynamic_offset_fits_unsigned_bit_count(
     const loom_low_source_memory_access_plan_t* plan,
     int64_t static_byte_offset, uint8_t bit_count);
 
+// Adds a target-selected physical allocation-root offset to |plan|.
+// Returns false without changing the plan when the offset cannot be represented
+// by the signed static byte-offset field.
+bool loom_low_source_memory_access_plan_include_root_byte_offset(
+    loom_low_source_memory_access_plan_t* plan, uint64_t root_byte_offset);
+
 // Returns the conservative byte envelope added by vector lanes within a single
 // planned memory packet.
 bool loom_low_source_memory_access_plan_lane_byte_envelope(

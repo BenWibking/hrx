@@ -569,6 +569,18 @@ loom_storage_interference_lookup_root(
              : NULL;
 }
 
+bool loom_storage_interference_root_may_be_accessed(
+    const loom_storage_interference_t* analysis,
+    loom_value_id_t root_value_id) {
+  IREE_ASSERT_ARGUMENT(analysis);
+  const loom_storage_interference_entry_t* entry =
+      loom_storage_interference_lookup_root(analysis, root_value_id);
+  return entry == NULL ||
+         !iree_all_bits_set(entry->flags,
+                            LOOM_STORAGE_INTERFERENCE_ENTRY_COMPLETE) ||
+         entry->footprint.operation_count != 0;
+}
+
 static iree_status_t loom_storage_interference_get_cfg_region(
     loom_storage_interference_t* analysis, const loom_region_t* region,
     loom_storage_interference_cfg_region_t** out_summary) {

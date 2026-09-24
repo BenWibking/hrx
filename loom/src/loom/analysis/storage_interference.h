@@ -35,6 +35,15 @@ iree_status_t loom_storage_interference_analyze_function(
     const loom_local_value_domain_t* value_domain, loom_func_like_t function,
     iree_arena_allocator_t* arena, loom_storage_interference_t** out_analysis);
 
+// Returns true when |root_value_id| may have a memory footprint.
+//
+// Complete roots with no recorded accesses return false. Missing roots,
+// incomplete provenance, and unknown memory effects conservatively return
+// true. Storage layout consumers use this to omit provably unused allocations
+// without repeating source traversal or demand analysis.
+bool loom_storage_interference_root_may_be_accessed(
+    const loom_storage_interference_t* analysis, loom_value_id_t root_value_id);
+
 // Proves that two workgroup buffer.alloca roots never require their bytes at
 // the same time. The proof accepts workgroup-uniform mutually exclusive
 // control or a verified workgroup acq_rel barrier separating all synchronous
