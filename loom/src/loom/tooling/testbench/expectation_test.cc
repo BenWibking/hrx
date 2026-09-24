@@ -488,6 +488,7 @@ TEST_F(ExpectationTest, EvaluatesDeviceEventExpectations) {
   loom_module_t* module = ParseModule(R"(
 check.case @device_event {
   check.expect.event<device> {type = "tsan_report", severity = "error", count = 1, driver = "amdgpu", tsan = {check = "data_race", memory = "workgroup", current_access = "write", prior_access = "read", access_length = 4, memory_address = 12, current_atomic = false, prior_atomic = false}}
+  check.expect.event<device> {type = "ubsan_report", count = 1, ubsan = {check = "assertion", site_id = 17, operand0 = 3, operand1 = 4}}
   check.expect.event<device> {type = "asan_report", count = 0}
   check.return
 }
@@ -498,9 +499,10 @@ check.case @device_event {
   ASSERT_EQ(plan.issue_count, 0u);
   ASSERT_EQ(plan.case_count, 1u);
   const loom_testbench_case_plan_t& case_plan = plan.cases[0];
-  ASSERT_EQ(case_plan.expectation_count, 2u);
+  ASSERT_EQ(case_plan.expectation_count, 3u);
   EXPECT_EQ(case_plan.expectations[0].kind, LOOM_TESTBENCH_EXPECTATION_EVENT);
   EXPECT_EQ(case_plan.expectations[1].kind, LOOM_TESTBENCH_EXPECTATION_EVENT);
+  EXPECT_EQ(case_plan.expectations[2].kind, LOOM_TESTBENCH_EXPECTATION_EVENT);
 
   loom_testbench_value_table_t table = {};
   IREE_ASSERT_OK(loom_testbench_value_table_initialize(
@@ -518,18 +520,34 @@ check.case @device_event {
   tsan_report.prior_access_kind = IREE_HAL_DEVICE_TSAN_ACCESS_KIND_READ;
   tsan_report.access_length = 4;
   tsan_report.memory_address = 12;
-  iree_hal_device_event_t event = iree_hal_device_event_default();
-  event.type = IREE_HAL_DEVICE_EVENT_TYPE_TSAN_REPORT;
-  event.severity = IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR;
-  event.source.driver_id = IREE_SV("amdgpu");
-  event.payload = iree_make_const_byte_span(&tsan_report, sizeof(tsan_report));
+  iree_hal_device_event_t tsan_event = iree_hal_device_event_default();
+  tsan_event.type = IREE_HAL_DEVICE_EVENT_TYPE_TSAN_REPORT;
+  tsan_event.severity = IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR;
+  tsan_event.source.driver_id = IREE_SV("amdgpu");
+  tsan_event.payload =
+      iree_make_const_byte_span(&tsan_report, sizeof(tsan_report));
   iree_hal_device_event_sink_publish(
-      loom_testbench_device_event_capture_sink(&capture), &event);
+      loom_testbench_device_event_capture_sink(&capture), &tsan_event);
+  iree_hal_device_ubsan_report_t ubsan_report = {};
+  ubsan_report.record_length = sizeof(ubsan_report);
+  ubsan_report.abi_version = IREE_HAL_DEVICE_UBSAN_REPORT_ABI_VERSION_0;
+  ubsan_report.check_kind = IREE_HAL_DEVICE_UBSAN_CHECK_KIND_ASSERTION;
+  ubsan_report.site_id = 17;
+  ubsan_report.operand0 = 3;
+  ubsan_report.operand1 = 4;
+  iree_hal_device_event_t ubsan_event = iree_hal_device_event_default();
+  ubsan_event.type = IREE_HAL_DEVICE_EVENT_TYPE_UBSAN_REPORT;
+  ubsan_event.payload =
+      iree_make_const_byte_span(&ubsan_report, sizeof(ubsan_report));
+  iree_hal_device_event_sink_publish(
+      loom_testbench_device_event_capture_sink(&capture), &ubsan_event);
   loom_testbench_device_event_list_t event_list = {};
   loom_testbench_device_event_capture_events(&capture, &event_list);
-  ASSERT_EQ(event_list.count, 1u);
+  ASSERT_EQ(event_list.count, 2u);
   EXPECT_EQ((uintptr_t)0, (uintptr_t)event_list.records[0].event.payload.data %
                               iree_alignof(iree_hal_device_tsan_report_t));
+  EXPECT_EQ((uintptr_t)0, (uintptr_t)event_list.records[1].event.payload.data %
+                              iree_alignof(iree_hal_device_ubsan_report_t));
   loom_testbench_case_sample_observations_t observations =
       loom_testbench_case_sample_observations_empty();
   observations.device_events = &event_list;
@@ -546,26 +564,31 @@ check.case @device_event {
   IREE_ASSERT_OK(loom_testbench_evaluate_case_expectations(
       &schedule, &table, &observations, &report));
 
-  EXPECT_EQ(report.expectation_count, 2u);
-  EXPECT_EQ(report.passed_count, 2u);
+  EXPECT_EQ(report.expectation_count, 3u);
+  EXPECT_EQ(report.passed_count, 3u);
   EXPECT_EQ(report.failure_count, 0u);
 
-  uint8_t unaligned_payload_storage[sizeof(tsan_report) + 1] = {0};
-  memcpy(unaligned_payload_storage + 1, &tsan_report, sizeof(tsan_report));
-  loom_testbench_device_event_record_t unaligned_record = {};
-  unaligned_record.event = event;
-  unaligned_record.event.payload = iree_make_const_byte_span(
-      unaligned_payload_storage + 1, sizeof(tsan_report));
+  uint8_t unaligned_tsan_payload[sizeof(tsan_report) + 1] = {0};
+  memcpy(unaligned_tsan_payload + 1, &tsan_report, sizeof(tsan_report));
+  uint8_t unaligned_ubsan_payload[sizeof(ubsan_report) + 1] = {0};
+  memcpy(unaligned_ubsan_payload + 1, &ubsan_report, sizeof(ubsan_report));
+  loom_testbench_device_event_record_t unaligned_records[2] = {};
+  unaligned_records[0].event = tsan_event;
+  unaligned_records[0].event.payload = iree_make_const_byte_span(
+      unaligned_tsan_payload + 1, sizeof(tsan_report));
+  unaligned_records[1].event = ubsan_event;
+  unaligned_records[1].event.payload = iree_make_const_byte_span(
+      unaligned_ubsan_payload + 1, sizeof(ubsan_report));
   loom_testbench_device_event_list_t unaligned_event_list = {
-      /*.records=*/&unaligned_record,
-      /*.count=*/1,
+      /*.records=*/unaligned_records,
+      /*.count=*/IREE_ARRAYSIZE(unaligned_records),
   };
   observations.device_events = &unaligned_event_list;
   loom_testbench_expectation_report_reset(&report);
   IREE_ASSERT_OK(loom_testbench_evaluate_case_expectations(
       &schedule, &table, &observations, &report));
-  EXPECT_EQ(report.expectation_count, 2u);
-  EXPECT_EQ(report.passed_count, 2u);
+  EXPECT_EQ(report.expectation_count, 3u);
+  EXPECT_EQ(report.passed_count, 3u);
   EXPECT_EQ(report.failure_count, 0u);
 
   iree_string_builder_t json_builder;
@@ -576,7 +599,7 @@ check.case @device_event {
       loom_testbench_expectation_report_write_json(&report, &json_stream));
   std::string json(iree_string_builder_view(&json_builder).data,
                    iree_string_builder_view(&json_builder).size);
-  EXPECT_THAT(json, ::testing::HasSubstr("\"expectation_count\":2"));
+  EXPECT_THAT(json, ::testing::HasSubstr("\"expectation_count\":3"));
   EXPECT_THAT(json, ::testing::HasSubstr("\"failure_count\":0"));
   iree_string_builder_deinitialize(&json_builder);
 

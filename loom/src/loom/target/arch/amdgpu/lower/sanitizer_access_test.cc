@@ -407,8 +407,8 @@ TEST_F(AmdgpuSanitizerAccessTest, FeedsMaskedFailuresToSharedReportIsland) {
       /*.workitem_id_x=*/report_workgroup_id,
   };
   const loom_amdgpu_sanitizer_access_report_t report = {
-      /*.access_kind=*/LOOM_AMDGPU_SANITIZER_ACCESS_KIND_READ,
-      /*.flags=*/LOOM_AMDGPU_SANITIZER_REPORT_FLAG_NONE,
+      /*.access_kind=*/LOOM_AMDGPU_ASAN_ACCESS_KIND_READ,
+      /*.flags=*/LOOM_AMDGPU_ASAN_REPORT_FLAG_NONE,
       /*.fault_address=*/report_address,
       /*.access_size=*/report_address,
       /*.site_id=*/report_address,
@@ -419,8 +419,8 @@ TEST_F(AmdgpuSanitizerAccessTest, FeedsMaskedFailuresToSharedReportIsland) {
   loom_amdgpu_sanitizer_access_report_island_t island = {};
   IREE_ASSERT_OK(loom_amdgpu_build_sanitizer_access_report_island(
       &builder_, descriptor_set_, body_block_, feedback_config_symbol,
-      LOOM_AMDGPU_SANITIZER_ACCESS_KIND_READ,
-      LOOM_AMDGPU_SANITIZER_REPORT_FLAG_NONE, LOOM_LOCATION_UNKNOWN, &island));
+      LOOM_AMDGPU_ASAN_ACCESS_KIND_READ, LOOM_AMDGPU_ASAN_REPORT_FLAG_NONE,
+      LOOM_LOCATION_UNKNOWN, &island));
 
   loom_builder_set_block(&builder_, body_block_);
   loom_amdgpu_sanitizer_access_report_failure_branch_t branch = {};

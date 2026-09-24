@@ -30,7 +30,7 @@ typedef struct loom_amdgpu_sanitizer_access_plan_t {
   // Flat application address plan selected from the asserted view access.
   loom_amdgpu_memory_access_t address;
   // Runtime access kind reported when the assertion fails.
-  loom_amdgpu_sanitizer_access_kind_t report_access_kind;
+  loom_amdgpu_asan_access_kind_t report_access_kind;
   // Number of application bytes covered by the assertion.
   uint32_t access_size;
   // Minimum byte alignment proven for each repeated access address.

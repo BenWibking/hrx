@@ -444,19 +444,19 @@ iree_status_t loom_amdgpu_sanitizer_site_id_for_op(
 static bool loom_amdgpu_sanitizer_assert_access_kinds(
     loom_sanitizer_assert_access_kind_t kind,
     loom_low_source_memory_operation_kind_t* out_source_kind,
-    loom_amdgpu_sanitizer_access_kind_t* out_report_kind) {
+    loom_amdgpu_asan_access_kind_t* out_report_kind) {
   switch (kind) {
     case LOOM_SANITIZER_ASSERT_ACCESS_KIND_READ:
       *out_source_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD;
-      *out_report_kind = LOOM_AMDGPU_SANITIZER_ACCESS_KIND_READ;
+      *out_report_kind = LOOM_AMDGPU_ASAN_ACCESS_KIND_READ;
       return true;
     case LOOM_SANITIZER_ASSERT_ACCESS_KIND_WRITE:
       *out_source_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_STORE;
-      *out_report_kind = LOOM_AMDGPU_SANITIZER_ACCESS_KIND_WRITE;
+      *out_report_kind = LOOM_AMDGPU_ASAN_ACCESS_KIND_WRITE;
       return true;
     case LOOM_SANITIZER_ASSERT_ACCESS_KIND_READ_WRITE:
       *out_source_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_ATOMIC_RMW;
-      *out_report_kind = LOOM_AMDGPU_SANITIZER_ACCESS_KIND_ATOMIC;
+      *out_report_kind = LOOM_AMDGPU_ASAN_ACCESS_KIND_ATOMIC;
       return true;
     default:
       return false;
@@ -466,19 +466,19 @@ static bool loom_amdgpu_sanitizer_assert_access_kinds(
 static bool loom_amdgpu_sanitizer_assert_accesses_kinds(
     loom_sanitizer_assert_accesses_kind_t kind,
     loom_low_source_memory_operation_kind_t* out_source_kind,
-    loom_amdgpu_sanitizer_access_kind_t* out_report_kind) {
+    loom_amdgpu_asan_access_kind_t* out_report_kind) {
   switch (kind) {
     case LOOM_SANITIZER_ASSERT_ACCESSES_KIND_READ:
       *out_source_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD;
-      *out_report_kind = LOOM_AMDGPU_SANITIZER_ACCESS_KIND_READ;
+      *out_report_kind = LOOM_AMDGPU_ASAN_ACCESS_KIND_READ;
       return true;
     case LOOM_SANITIZER_ASSERT_ACCESSES_KIND_WRITE:
       *out_source_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_STORE;
-      *out_report_kind = LOOM_AMDGPU_SANITIZER_ACCESS_KIND_WRITE;
+      *out_report_kind = LOOM_AMDGPU_ASAN_ACCESS_KIND_WRITE;
       return true;
     case LOOM_SANITIZER_ASSERT_ACCESSES_KIND_READ_WRITE:
       *out_source_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_ATOMIC_RMW;
-      *out_report_kind = LOOM_AMDGPU_SANITIZER_ACCESS_KIND_ATOMIC;
+      *out_report_kind = LOOM_AMDGPU_ASAN_ACCESS_KIND_ATOMIC;
       return true;
     default:
       return false;
@@ -628,8 +628,8 @@ static bool loom_amdgpu_sanitizer_assert_access_plan_build(
 
   loom_low_source_memory_operation_kind_t source_kind =
       LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD;
-  loom_amdgpu_sanitizer_access_kind_t report_kind =
-      LOOM_AMDGPU_SANITIZER_ACCESS_KIND_UNKNOWN;
+  loom_amdgpu_asan_access_kind_t report_kind =
+      LOOM_AMDGPU_ASAN_ACCESS_KIND_UNKNOWN;
   loom_value_id_t view_value_id = LOOM_VALUE_ID_INVALID;
   loom_value_slice_t indices = {0};
   loom_attribute_t static_indices = loom_attr_absent();
@@ -842,15 +842,15 @@ static iree_status_t loom_amdgpu_sanitizer_emit_vgpr_u32_constant(
 static loom_amdgpu_sanitizer_access_report_island_t*
 loom_amdgpu_sanitizer_island_for_kind(
     loom_amdgpu_sanitizer_lower_state_t* state,
-    loom_amdgpu_sanitizer_access_kind_t access_kind, bool** out_has_island) {
+    loom_amdgpu_asan_access_kind_t access_kind, bool** out_has_island) {
   switch (access_kind) {
-    case LOOM_AMDGPU_SANITIZER_ACCESS_KIND_READ:
+    case LOOM_AMDGPU_ASAN_ACCESS_KIND_READ:
       *out_has_island = &state->has_read_island;
       return &state->read_island;
-    case LOOM_AMDGPU_SANITIZER_ACCESS_KIND_WRITE:
+    case LOOM_AMDGPU_ASAN_ACCESS_KIND_WRITE:
       *out_has_island = &state->has_write_island;
       return &state->write_island;
-    case LOOM_AMDGPU_SANITIZER_ACCESS_KIND_ATOMIC:
+    case LOOM_AMDGPU_ASAN_ACCESS_KIND_ATOMIC:
       *out_has_island = &state->has_atomic_island;
       return &state->atomic_island;
     default:
@@ -862,8 +862,7 @@ loom_amdgpu_sanitizer_island_for_kind(
 static iree_status_t loom_amdgpu_sanitizer_get_access_island(
     loom_builder_t* builder, const loom_low_descriptor_set_t* descriptor_set,
     loom_amdgpu_sanitizer_lower_state_t* state,
-    loom_amdgpu_sanitizer_access_kind_t access_kind,
-    loom_location_id_t location,
+    loom_amdgpu_asan_access_kind_t access_kind, loom_location_id_t location,
     const loom_amdgpu_sanitizer_access_report_island_t** out_island) {
   *out_island = NULL;
   bool* has_island = NULL;
@@ -877,7 +876,7 @@ static iree_status_t loom_amdgpu_sanitizer_get_access_island(
     loom_builder_ip_t saved_ip = loom_builder_save(builder);
     IREE_RETURN_IF_ERROR(loom_amdgpu_build_sanitizer_access_report_island(
         builder, descriptor_set, saved_ip.block, state->feedback_config_symbol,
-        access_kind, LOOM_AMDGPU_SANITIZER_REPORT_FLAG_NONE, location, island));
+        access_kind, LOOM_AMDGPU_ASAN_REPORT_FLAG_NONE, location, island));
     loom_builder_restore(builder, saved_ip);
     *has_island = true;
   }
@@ -1107,7 +1106,7 @@ iree_status_t loom_amdgpu_lower_sanitizer_assert_access(
       &report_check));
   loom_amdgpu_sanitizer_access_report_t report = {
       .access_kind = plan->report_access_kind,
-      .flags = LOOM_AMDGPU_SANITIZER_REPORT_FLAG_NONE,
+      .flags = LOOM_AMDGPU_ASAN_REPORT_FLAG_NONE,
       .fault_address = repeat_failure.selected_fault_address,
       .access_size = report_access_size,
       .site_id = report_site_id,

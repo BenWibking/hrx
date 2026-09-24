@@ -1018,6 +1018,10 @@ static bool loom_testbench_ubsan_check_parse(iree_string_view_t value,
     *out_kind = IREE_HAL_DEVICE_UBSAN_CHECK_KIND_UNREACHABLE;
     return true;
   }
+  if (iree_string_view_equal(value, IREE_SV("assertion"))) {
+    *out_kind = IREE_HAL_DEVICE_UBSAN_CHECK_KIND_ASSERTION;
+    return true;
+  }
   if (iree_string_view_equal(value, IREE_SV("unknown"))) {
     *out_kind = IREE_HAL_DEVICE_UBSAN_CHECK_KIND_UNKNOWN;
     return true;

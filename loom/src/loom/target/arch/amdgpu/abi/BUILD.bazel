@@ -37,6 +37,7 @@ loom_cc_test(
     srcs = ["asan_test.cc"],
     deps = [
         ":asan",
+        "//runtime/src/iree/hal/drivers/amdgpu/abi",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
@@ -57,6 +58,7 @@ loom_cc_test(
     srcs = ["feedback_test.cc"],
     deps = [
         ":feedback",
+        "//runtime/src/iree/hal/drivers/amdgpu/abi",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
@@ -70,6 +72,38 @@ loom_cc_library(
         _AMDGPU_NATIVE_VISIBILITY +
         _AMDGPU_TOOLING_VISIBILITY
     ),
+)
+
+loom_cc_test(
+    name = "tsan_test",
+    srcs = ["tsan_test.cc"],
+    deps = [
+        ":tsan",
+        "//runtime/src/iree/hal/drivers/amdgpu/abi",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "ubsan",
+    hdrs = ["ubsan.h"],
+    visibility = (
+        _AMDGPU_LOWER_VISIBILITY +
+        _AMDGPU_NATIVE_VISIBILITY +
+        _AMDGPU_TOOLING_VISIBILITY
+    ),
+)
+
+loom_cc_test(
+    name = "ubsan_test",
+    srcs = ["ubsan_test.cc"],
+    deps = [
+        ":ubsan",
+        "//runtime/src/iree/hal/drivers/amdgpu/abi",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
 )
 
 loom_cc_library(

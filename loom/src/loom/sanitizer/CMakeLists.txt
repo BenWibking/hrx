@@ -143,6 +143,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::ir
+    loom::ops::kernel
     loom::ops::op_defs
     loom::ops::sanitizer
     loom::util::walk
@@ -190,6 +191,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::ir
+    loom::ops::kernel
     loom::ops::sanitizer
     loom::ops::test
 )

@@ -60,6 +60,8 @@ enum loom_amdgpu_feedback_packet_kind_e {
   LOOM_AMDGPU_FEEDBACK_PACKET_KIND_HOST_CALL = 3u,
   // Thread-sanitizer diagnostic packet.
   LOOM_AMDGPU_FEEDBACK_PACKET_KIND_TSAN = 4u,
+  // Undefined-behavior sanitizer diagnostic packet.
+  LOOM_AMDGPU_FEEDBACK_PACKET_KIND_UBSAN = 5u,
   // First packet kind reserved for user-defined packet schemas.
   LOOM_AMDGPU_FEEDBACK_PACKET_KIND_USER = 0x8000u,
 };
