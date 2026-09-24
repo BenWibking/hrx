@@ -152,20 +152,44 @@ loom_low_lower_representation_find_boundary(
   if (provider->boundary_count == 0) {
     return NULL;
   }
-  if (op_kind < provider->boundaries[0].op_kind) {
-    return NULL;
+  const loom_low_lower_representation_boundary_t* first =
+      &provider->boundaries[0];
+  if (op_kind <= first->op_kind) {
+    return op_kind == first->op_kind ? first : NULL;
   }
   const loom_low_lower_representation_boundary_t* last =
       &provider->boundaries[provider->boundary_count - 1];
   if (op_kind >= last->op_kind) {
     return op_kind == last->op_kind ? last : NULL;
   }
+  const uint8_t dialect_id = loom_op_dialect_id(op_kind);
+  if (dialect_id < provider->boundary_dialect_base_id) {
+    return NULL;
+  }
+  const uint8_t dialect_index = dialect_id - provider->boundary_dialect_base_id;
+  if (dialect_index >= provider->boundary_dialect_count) {
+    return NULL;
+  }
+  const loom_low_lower_representation_boundary_span_t span =
+      provider->boundary_spans[dialect_index];
+  if (span.boundary_count == 0) {
+    return NULL;
+  }
+  const loom_low_lower_representation_boundary_t* boundaries =
+      &provider->boundaries[span.first_boundary];
+  if (op_kind <= boundaries[0].op_kind) {
+    return op_kind == boundaries[0].op_kind ? &boundaries[0] : NULL;
+  }
+  last = &boundaries[span.boundary_count - 1];
+  if (op_kind >= last->op_kind) {
+    return op_kind == last->op_kind ? last : NULL;
+  }
   uint16_t begin = 0;
-  uint16_t end = provider->boundary_count - 1;
+  uint16_t end = span.boundary_count - 1;
   while (begin < end) {
     const uint16_t middle = begin + (uint16_t)((end - begin) / 2);
     const loom_low_lower_representation_boundary_t* boundary =
-        &provider->boundaries[middle];
+        &boundaries[middle];
     if (op_kind == boundary->op_kind) {
       return boundary;
     }
@@ -175,9 +199,7 @@ loom_low_lower_representation_find_boundary(
       begin = middle + 1;
     }
   }
-  return provider->boundaries[begin].op_kind == op_kind
-             ? &provider->boundaries[begin]
-             : NULL;
+  return boundaries[begin].op_kind == op_kind ? &boundaries[begin] : NULL;
 }
 
 iree_status_t loom_low_lower_representation_observer_begin(
@@ -191,8 +213,10 @@ iree_status_t loom_low_lower_representation_observer_begin(
       provider != NULL &&
           (provider->relation_mask != 0) == (provider->relation != NULL) &&
           (provider->relation_mask & ~LOOM_VALUE_RELATION_MASK_ALL) == 0 &&
+          (provider->boundary_count == 0) ==
+              (provider->boundary_dialect_count == 0) &&
           (provider->boundary_count == 0 ||
-           (provider->boundaries != NULL &&
+           (provider->boundaries != NULL && provider->boundary_spans != NULL &&
             provider->observe_boundary != NULL)),
       "source representation provider must be internally valid");
   loom_low_lower_representation_observer_state_t* state = NULL;

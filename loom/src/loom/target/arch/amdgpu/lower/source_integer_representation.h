@@ -43,9 +43,16 @@ enum loom_amdgpu_source_integer_representation_action_e {
   LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_UNSIGNED_CONVERSION = 8,
 };
 
-// Returns whether |relation| transports one narrow integer carrier exactly.
-bool loom_amdgpu_source_integer_representation_relation(
-    loom_low_lower_context_t* context, const loom_value_relation_t* relation);
+// Returns whether |type| uses a target narrow integer carrier.
+static inline bool loom_amdgpu_source_integer_representation_type_is_narrow(
+    loom_type_t type) {
+  if (!loom_type_is_scalar(type)) {
+    return false;
+  }
+  const loom_scalar_type_t scalar_type = loom_type_element_type(type);
+  return scalar_type == LOOM_SCALAR_TYPE_I8 ||
+         scalar_type == LOOM_SCALAR_TYPE_I16;
+}
 
 // Records target alternatives at one narrow integer operation boundary.
 void loom_amdgpu_source_integer_representation_observe_boundary(

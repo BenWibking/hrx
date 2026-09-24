@@ -268,9 +268,6 @@ static bool loom_amdgpu_source_representation_relation(
           loom_module_value_type(module, relation->destination_value_id))) {
     return false;
   }
-  if (loom_amdgpu_source_integer_representation_relation(context, relation)) {
-    return true;
-  }
   if (loom_amdgpu_type_is_address_scalar(source_type) &&
       loom_amdgpu_address_representation_relation_is_exact(relation->kind)) {
     loom_amdgpu_address_representation_constrain_value(
@@ -280,6 +277,14 @@ static bool loom_amdgpu_source_representation_relation(
     return true;
   }
   switch ((loom_value_relation_kind_t)relation->kind) {
+    case LOOM_VALUE_RELATION_FACT_IDENTITY:
+    case LOOM_VALUE_RELATION_VALUE_ALIAS:
+    case LOOM_VALUE_RELATION_SELECT_PAYLOAD:
+      if (loom_amdgpu_source_integer_representation_type_is_narrow(
+              source_type)) {
+        return true;
+      }
+      break;
     case LOOM_VALUE_RELATION_CFG_ARGUMENT:
     case LOOM_VALUE_RELATION_LOOP_CARRIED:
     case LOOM_VALUE_RELATION_LOOP_BYPASS:
@@ -573,6 +578,17 @@ static const loom_low_lower_representation_boundary_t
          LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGN_EXTENDED_RESULT,
          LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
 };
+static const loom_low_lower_representation_boundary_span_t
+    kAmdgpuSourceRepresentationBoundarySpans[LOOM_DIALECT_INDEX -
+                                             LOOM_DIALECT_SCALAR + 1] = {
+        [LOOM_DIALECT_SCALAR - LOOM_DIALECT_SCALAR] = {0, 9},
+        [LOOM_DIALECT_VIEW - LOOM_DIALECT_SCALAR] = {9, 1},
+        [LOOM_DIALECT_VECTOR - LOOM_DIALECT_SCALAR] = {10, 6},
+        [LOOM_DIALECT_INDEX - LOOM_DIALECT_SCALAR] = {16, 1},
+};
+static_assert(9 + 1 + 6 + 1 ==
+                  IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundaries),
+              "AMDGPU representation spans must cover every boundary");
 static_assert((loom_op_kind_t)LOOM_OP_SCALAR_SITOFP <
                       (loom_op_kind_t)LOOM_OP_SCALAR_UITOFP &&
                   (loom_op_kind_t)LOOM_OP_SCALAR_UITOFP <
@@ -616,7 +632,11 @@ static const loom_low_lower_representation_provider_t
         .observe_callable_boundary =
             loom_amdgpu_source_representation_observe_callable_boundary,
         .boundaries = kAmdgpuSourceRepresentationBoundaries,
+        .boundary_spans = kAmdgpuSourceRepresentationBoundarySpans,
         .boundary_count = IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundaries),
+        .boundary_dialect_base_id = LOOM_DIALECT_SCALAR,
+        .boundary_dialect_count =
+            IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundarySpans),
         .relation_mask = LOOM_VALUE_RELATION_MASK_ALL,
 };
 

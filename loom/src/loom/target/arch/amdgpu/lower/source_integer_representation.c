@@ -21,13 +21,8 @@ typedef uint8_t loom_amdgpu_narrow_integer_guarantees_t;
 
 static bool loom_amdgpu_source_integer_representation_is_narrow(
     const loom_module_t* module, loom_value_id_t value_id) {
-  const loom_type_t type = loom_module_value_type(module, value_id);
-  if (!loom_type_is_scalar(type)) {
-    return false;
-  }
-  const loom_scalar_type_t scalar_type = loom_type_element_type(type);
-  return scalar_type == LOOM_SCALAR_TYPE_I8 ||
-         scalar_type == LOOM_SCALAR_TYPE_I16;
+  return loom_amdgpu_source_integer_representation_type_is_narrow(
+      loom_module_value_type(module, value_id));
 }
 
 static void loom_amdgpu_source_integer_representation_record_flexible(
@@ -136,36 +131,6 @@ static void loom_amdgpu_source_integer_representation_record_conversion(
     loom_amdgpu_source_integer_representation_record_guarantees(
         result, result_guarantees, recorder);
   }
-}
-
-bool loom_amdgpu_source_integer_representation_relation(
-    loom_low_lower_context_t* context, const loom_value_relation_t* relation) {
-  if (iree_any_bit_set(relation->flags, LOOM_VALUE_RELATION_FLAG_TYPE_CHANGE)) {
-    return false;
-  }
-  const loom_module_t* module = loom_low_lower_context_module(context);
-  if (!loom_amdgpu_source_integer_representation_is_narrow(
-          module, relation->source_value_id) ||
-      !loom_amdgpu_source_integer_representation_is_narrow(
-          module, relation->destination_value_id)) {
-    return false;
-  }
-  switch ((loom_value_relation_kind_t)relation->kind) {
-    case LOOM_VALUE_RELATION_FACT_IDENTITY:
-    case LOOM_VALUE_RELATION_VALUE_ALIAS:
-    case LOOM_VALUE_RELATION_SELECT_PAYLOAD:
-    case LOOM_VALUE_RELATION_CFG_ARGUMENT:
-    case LOOM_VALUE_RELATION_LOOP_CARRIED:
-    case LOOM_VALUE_RELATION_LOOP_BYPASS:
-    case LOOM_VALUE_RELATION_REGION_RESULT:
-      return true;
-    case LOOM_VALUE_RELATION_UNKNOWN:
-    case LOOM_VALUE_RELATION_TIED_RESULT:
-    case LOOM_VALUE_RELATION_ELEMENTWISE:
-    case LOOM_VALUE_RELATION_COUNT_:
-      return false;
-  }
-  return false;
 }
 
 void loom_amdgpu_source_integer_representation_observe_boundary(
