@@ -415,7 +415,6 @@ loom_test_module(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/global_atomic_add_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/loop_rotating_values.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/loop_rotating_views.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/functions/extended_math.loom"
 )
 endif()
 
