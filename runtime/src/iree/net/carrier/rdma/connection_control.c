@@ -424,6 +424,7 @@ static iree_status_t iree_net_rdma_connection_control_start(
       .capacity = control->options.send_count + control->options.receive_count +
                   control->options.data_work_capacity,
       .service_batch_size = control->options.service_batch_size,
+      .mode = control->options.completion_mode,
   };
   IREE_RETURN_IF_ERROR(iree_net_rdma_completion_queue_create(
       control->context, control->proactor, options,

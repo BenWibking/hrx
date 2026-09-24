@@ -24,13 +24,13 @@ struct iree_net_rdma_completion_queue_t {
   iree_net_rdma_context_t* context;
   // Retained poll owner dispatching all service callbacks.
   iree_async_proactor_t* proactor;
-  // Owned native CQ notification channel.
+  // Owned native CQ notification channel, or NULL for busy polling.
   struct ibv_comp_channel* channel;
   // Owned CQ shared by the connection's explicitly bounded native QPs.
   struct ibv_cq* handle;
   // Native fd monitor, joined before releasing the channel.
   iree_async_event_source_t* monitor;
-  // Ready-only continuation after exhausting one service batch.
+  // Bounded service continuation, persistent only for busy polling.
   iree_async_progress_entry_t progress;
   // Poll-owner-only service state.
   iree_net_rdma_completion_queue_flags_t flags;
@@ -112,7 +112,10 @@ static iree_status_t iree_net_rdma_completion_queue_progress(
     count = iree_net_rdma_completion_queue_poll_batch(queue);
   }
   *out_completed_count = count;
-  queue->progress.remove_requested = count < queue->service_batch_size;
+  queue->progress.remove_requested =
+      iree_any_bit_set(queue->flags,
+                       IREE_NET_RDMA_COMPLETION_QUEUE_FLAG_FAILED) ||
+      (queue->channel && count < queue->service_batch_size);
   return iree_ok_status();
 }
 
@@ -190,7 +193,8 @@ iree_status_t iree_net_rdma_completion_queue_create(
       !callbacks.on_error || !options.capacity || options.capacity > INT_MAX ||
       !options.service_batch_size ||
       options.service_batch_size > options.capacity ||
-      options.completion_vector > INT_MAX) {
+      options.completion_vector > INT_MAX ||
+      options.mode > IREE_NET_RDMA_COMPLETION_QUEUE_MODE_BUSY_POLL) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "invalid RDMA completion queue configuration");
   }
@@ -218,14 +222,16 @@ iree_status_t iree_net_rdma_completion_queue_create(
   const iree_net_rdma_library_t* library =
       iree_net_rdma_context_library(context);
   struct ibv_context* device = iree_net_rdma_context_device(context);
-  queue->channel = library->ibv_create_comp_channel(device);
   iree_status_t status = iree_ok_status();
-  if (!queue->channel) {
-    int error = errno;
-    status = iree_make_status(iree_status_code_from_errno(error),
-                              "ibv_create_comp_channel: %s", strerror(error));
+  if (options.mode == IREE_NET_RDMA_COMPLETION_QUEUE_MODE_READINESS) {
+    queue->channel = library->ibv_create_comp_channel(device);
+    if (!queue->channel) {
+      int error = errno;
+      status = iree_make_status(iree_status_code_from_errno(error),
+                                "ibv_create_comp_channel: %s", strerror(error));
+    }
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && queue->channel) {
     int flags = fcntl(queue->channel->fd, F_GETFL);
     if (flags < 0 || fcntl(queue->channel->fd, F_SETFL, flags | O_NONBLOCK)) {
       int error = errno;
@@ -244,14 +250,14 @@ iree_status_t iree_net_rdma_completion_queue_create(
                                 "ibv_create_cq: %s", strerror(error));
     }
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && queue->channel) {
     int error = ibv_req_notify_cq(queue->handle, 0);
     if (error) {
       status = iree_make_status(iree_status_code_from_errno(error),
                                 "ibv_req_notify_cq: %s", strerror(error));
     }
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && queue->channel) {
     status = iree_async_proactor_register_event_source(
         proactor, iree_async_primitive_from_fd(queue->channel->fd),
         (iree_async_event_source_callback_t){
@@ -261,6 +267,10 @@ iree_status_t iree_net_rdma_completion_queue_create(
         &queue->monitor);
   }
   if (iree_status_is_ok(status)) {
+    if (!queue->channel) {
+      queue->flags |= IREE_NET_RDMA_COMPLETION_QUEUE_FLAG_PROGRESS;
+      iree_async_proactor_register_progress(proactor, &queue->progress);
+    }
     *out_queue = queue;
   } else {
     iree_net_rdma_completion_queue_free(queue);
@@ -298,12 +308,16 @@ void iree_net_rdma_completion_queue_deactivate(
     iree_async_proactor_unregister_progress(queue->proactor, &queue->progress);
     queue->flags &= ~IREE_NET_RDMA_COMPLETION_QUEUE_FLAG_PROGRESS;
   }
-  iree_async_proactor_unregister_event_source(
-      queue->proactor, queue->monitor,
-      (iree_async_event_source_unregistered_callback_t){
-          .fn = iree_net_rdma_completion_queue_unregistered,
-          .user_data = queue,
-      });
+  if (queue->monitor) {
+    iree_async_proactor_unregister_event_source(
+        queue->proactor, queue->monitor,
+        (iree_async_event_source_unregistered_callback_t){
+            .fn = iree_net_rdma_completion_queue_unregistered,
+            .user_data = queue,
+        });
+  } else {
+    iree_net_rdma_completion_queue_unregistered(queue);
+  }
 }
 
 void iree_net_rdma_completion_queue_destroy(

@@ -259,3 +259,24 @@ iree_runtime_cc_test(
         "//runtime/src/iree/net/rdma:test_context",
     ],
 )
+
+iree_executable_test(
+    name = "busy_poll_transfer_trial_tests",
+    src = ":transfer_trial_tests",
+    env = {"IREE_NET_RDMA_CTS_COMPLETION_MODE": "busy_poll"},
+    target_compatible_with = RDMA_COMPATIBILITY,
+)
+
+iree_executable_test(
+    name = "busy_poll_direct_transfer_trial_tests",
+    src = ":direct_transfer_trial_tests",
+    env = {"IREE_NET_RDMA_CTS_COMPLETION_MODE": "busy_poll"},
+    target_compatible_with = RDMA_COMPATIBILITY,
+)
+
+iree_executable_test(
+    name = "busy_poll_collective_trial_tests",
+    src = ":collective_trial_tests",
+    env = {"IREE_NET_RDMA_CTS_COMPLETION_MODE": "busy_poll"},
+    target_compatible_with = RDMA_COMPATIBILITY,
+)
