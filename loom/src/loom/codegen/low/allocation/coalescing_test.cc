@@ -245,6 +245,8 @@ TEST_F(LowAllocationCoalescingTest, AssignsTiedIntervalToSourceLocation) {
   placement.relation_count = 1;
   placement.ranges_by_result_ordinal = ranges_by_result;
   placement.ranges_by_source_ordinal = ranges_by_source;
+  const loom_value_ordinal_t tied_origins[] = {0, 0};
+  placement.tied_storage_origins_by_value_ordinal = tied_origins;
 
   loom_low_allocation_assignment_t assignments[2] = {
       Assignment(source_value, /*start=*/0, /*end=*/8, value_class,
