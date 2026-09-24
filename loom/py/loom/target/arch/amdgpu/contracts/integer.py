@@ -61,6 +61,7 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.s_or_b32",
     "amdgpu.s_xor_b32",
     "amdgpu.s_and_b64",
+    "amdgpu.s_mov_b64_exec_read",
     "amdgpu.s_or_b64",
     "amdgpu.s_xor_b64",
     "amdgpu.s_lshl_b64",
@@ -625,49 +626,68 @@ def _i1_sgpr_mask_rule(
 
 
 def _vector_predicate_select_rule() -> DescriptorRule:
-    bit_xor = _descriptor("amdgpu.s_xor_b64")
     bit_and = _descriptor("amdgpu.s_and_b64")
+    bit_xor = _descriptor("amdgpu.s_xor_b64")
+    read_exec = _descriptor("amdgpu.s_mov_b64_exec_read")
+    bit_or = _descriptor("amdgpu.s_or_b64")
     return DescriptorRule(
         source_op=vector.vector_select,
-        descriptor=bit_xor,
+        descriptor=bit_or,
         guards=(
             *(
                 Guard.value_type(field, _VECTOR_I1)
                 for field in ("condition", "true_value", "false_value", "result")
             ),
-            *_descriptor_available_guards(bit_xor, bit_and),
+            *_descriptor_available_guards(bit_and, read_exec, bit_xor, bit_or),
         ),
-        # Each logical element is a complete two-SGPR subgroup mask. Per-lane
-        # emission slices by the descriptor's two-unit width, including wave32.
+        # Match scalar selection's mask lifetimes by completing each two-SGPR
+        # element before starting the next. Low CSE shares the EXEC snapshot;
+        # true-side masks can die before false-side comparisons are available.
         emit=(
-            EmitDescriptorOp(
-                descriptor=bit_xor,
-                operands={
-                    "lhs": ValueRef.operand("true_value"),
-                    "rhs": ValueRef.operand("false_value"),
-                },
-                results={"dst": ValueRef.temporary("difference")},
-                result_types={"dst": _RESULT},
-                form=DescriptorEmitForm.PER_LANE,
-            ),
             EmitDescriptorOp(
                 descriptor=bit_and,
                 operands={
                     "lhs": ValueRef.operand("condition"),
-                    "rhs": ValueRef.temporary("difference"),
+                    "rhs": ValueRef.operand("true_value"),
                 },
-                results={"dst": ValueRef.temporary("changes")},
+                results={"dst": ValueRef.temporary("selected_true")},
                 result_types={"dst": _RESULT},
-                form=DescriptorEmitForm.PER_LANE,
+                form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+            ),
+            EmitDescriptorOp(
+                descriptor=read_exec,
+                results={"dst": ValueRef.temporary("exec")},
+                result_types={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE_SEQUENCE,
             ),
             EmitDescriptorOp(
                 descriptor=bit_xor,
                 operands={
-                    "lhs": ValueRef.operand("false_value"),
-                    "rhs": ValueRef.temporary("changes"),
+                    "lhs": ValueRef.operand("condition"),
+                    "rhs": ValueRef.temporary("exec"),
+                },
+                results={"dst": ValueRef.temporary("inverse_condition")},
+                result_types={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+            ),
+            EmitDescriptorOp(
+                descriptor=bit_and,
+                operands={
+                    "lhs": ValueRef.temporary("inverse_condition"),
+                    "rhs": ValueRef.operand("false_value"),
+                },
+                results={"dst": ValueRef.temporary("selected_false")},
+                result_types={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+            ),
+            EmitDescriptorOp(
+                descriptor=bit_or,
+                operands={
+                    "lhs": ValueRef.temporary("selected_true"),
+                    "rhs": ValueRef.temporary("selected_false"),
                 },
                 results={"dst": _RESULT},
-                form=DescriptorEmitForm.PER_LANE,
+                form=DescriptorEmitForm.PER_LANE_SEQUENCE,
             ),
         ),
     )

@@ -372,6 +372,16 @@ class DescriptorRule:
             result_bindings = emit.results if emit.results is not None else {}
             result_refs = []
             for descriptor_operand in emit.descriptor.operands:
+                if (
+                    descriptor_operand.role is not OperandRole.IMPLICIT
+                    and descriptor_operand.unit_count == 0
+                ):
+                    raise ValueError(
+                        f"{self.source_op.name}: per-lane-sequence descriptor "
+                        f"'{emit.descriptor.key}' field "
+                        f"'{descriptor_operand.field_name}' requires a fixed "
+                        "register width"
+                    )
                 if descriptor_operand.role not in (
                     OperandRole.RESULT,
                     OperandRole.OPERAND_RESULT,

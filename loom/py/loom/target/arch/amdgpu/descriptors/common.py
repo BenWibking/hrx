@@ -1912,6 +1912,26 @@ def _s_mov_b32_contract_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+def _s_mov_b64_exec_read_contract_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.s_mov_b64_exec_read",
+        instruction_name="S_MOV_B64",
+        mnemonic="s_mov_b64",
+        encoding_name="ENC_SOP1",
+        semantic_tag="control.exec.read",
+        schedule_class=_SCHEDULE_SALU,
+        operands=(AmdgpuOperandOverlay("SDST", _sgpr_result(units=2)),),
+        implicit_operands=(
+            AmdgpuImplicitOperandOverlay(
+                "OPR_SSRC",
+                descriptor_operand=_exec_value_read(),
+                xml_operand_required=False,
+            ),
+        ),
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
 def _manual_scalar_descriptors(
     spec: AmdgpuIsaFactSource,
 ) -> tuple[Descriptor, ...]:
@@ -3707,6 +3727,7 @@ __all__ = (
     "_offset_immediate",
     "_predefined",
     "_s_mov_b32_contract_overlay",
+    "_s_mov_b64_exec_read_contract_overlay",
     "_scc_clobber",
     "_scc_input",
     "_scc_output",

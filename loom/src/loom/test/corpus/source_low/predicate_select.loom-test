@@ -37,3 +37,10 @@ func.def @predicate_select_full_matrix(%mask: vector<8x8xi1>, %true_value: vecto
   %selected = vector.select %mask, %true_value, %false_value : vector<8x8xi1>
   func.return %selected : vector<8x8xi1>
 }
+
+// ====
+
+func.def @predicate_select_single(%mask: vector<1xi1>, %true_value: vector<1xi1>, %false_value: vector<1xi1>) -> (vector<1xi1>) {
+  %selected = vector.select %mask, %true_value, %false_value : vector<1xi1>
+  func.return %selected : vector<1xi1>
+}

@@ -831,6 +831,45 @@ def test_compile_lower_rule_set_compiles_setup_before_per_lane_sequence() -> Non
     )
 
 
+@pytest.mark.parametrize("field", ["dst", "lhs", "rhs"])
+def test_descriptor_rule_rejects_variable_width_lane_sequence(field: str) -> None:
+    descriptor = replace(
+        TEST_LOW_ADD_I32_DESCRIPTOR,
+        operands=tuple(
+            replace(operand, unit_count=0) if operand.field_name == field else operand
+            for operand in TEST_LOW_ADD_I32_DESCRIPTOR.operands
+        ),
+    )
+    with pytest.raises(
+        ValueError, match=f"field '{field}' requires a fixed register width"
+    ):
+        DescriptorRule(
+            source_op=vector.vector_addi,
+            descriptor=descriptor,
+            emit=(
+                EmitDescriptorOp(
+                    descriptor=descriptor,
+                    operands={
+                        "lhs": ValueRef.operand("lhs"),
+                        "rhs": ValueRef.operand("rhs"),
+                    },
+                    results={"dst": ValueRef.temporary("partial")},
+                    result_types={"dst": ValueRef.result("result")},
+                    form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+                ),
+                EmitDescriptorOp(
+                    descriptor=descriptor,
+                    operands={
+                        "lhs": ValueRef.temporary("partial"),
+                        "rhs": ValueRef.operand("rhs"),
+                    },
+                    results={"dst": ValueRef.result("result")},
+                    form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+                ),
+            ),
+        ).validate(replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,)))
+
+
 def test_descriptor_rule_rejects_noncontiguous_per_lane_sequence_emit() -> None:
     _expect_value_error(
         lambda: DescriptorRule(
