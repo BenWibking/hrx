@@ -25,6 +25,7 @@ loom_check_test_suite(
     "reduce_axes_to_scalar.loom-test"
     "sink_single_use_reads.loom-test"
     "to_scalar.loom-test"
+    "to_scalar_e8m0.loom-test"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
