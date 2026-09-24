@@ -19,6 +19,7 @@
 #include "loom/target/arch/amdgpu/contracts/arithmetic_lower_rules.h"
 #include "loom/target/arch/amdgpu/error_catalog.h"
 #include "loom/target/arch/amdgpu/lower/candidates/arithmetic_candidates.h"
+#include "loom/target/arch/amdgpu/lower/descriptor_ref.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
@@ -33,6 +34,78 @@ iree_status_t loom_amdgpu_select_arithmetic_contract(
       context, &loom_amdgpu_arithmetic_lower_rule_set, source_op, &selection));
   *out_selected = selection.rule != NULL;
   return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_select_f64_sign_plan(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_amdgpu_f64_sign_plan_t* out_plan, bool* out_selected) {
+  *out_selected = false;
+  *out_plan = (loom_amdgpu_f64_sign_plan_t){0};
+  if (source_op->operand_count != 1 || source_op->result_count != 1 ||
+      (source_op->kind != LOOM_OP_SCALAR_NEGF &&
+       source_op->kind != LOOM_OP_SCALAR_ABSF)) {
+    return iree_ok_status();
+  }
+  const loom_module_t* module = loom_low_lower_context_module(context);
+  const loom_value_id_t source = loom_op_const_operands(source_op)[0];
+  const loom_value_id_t result = loom_op_const_results(source_op)[0];
+  const loom_type_t source_type = loom_module_value_type(module, source);
+  const loom_type_t result_type = loom_module_value_type(module, result);
+  if (!loom_type_is_scalar(source_type) ||
+      loom_type_element_type(source_type) != LOOM_SCALAR_TYPE_F64 ||
+      !loom_type_is_scalar(result_type) ||
+      loom_type_element_type(result_type) != LOOM_SCALAR_TYPE_F64) {
+    return iree_ok_status();
+  }
+  const bool negate = source_op->kind == LOOM_OP_SCALAR_NEGF;
+  const loom_amdgpu_descriptor_ref_t descriptor_ref =
+      negate ? LOOM_AMDGPU_DESCRIPTOR_REF_V_XOR_B32_LIT
+             : LOOM_AMDGPU_DESCRIPTOR_REF_V_AND_B32_LIT;
+  if (!loom_amdgpu_descriptor_set_has_ref(
+          loom_low_lower_context_descriptor_set(context), descriptor_ref)) {
+    return iree_ok_status();
+  }
+  *out_plan = (loom_amdgpu_f64_sign_plan_t){
+      .source = source,
+      .result = result,
+      .descriptor_ref = descriptor_ref,
+      .immediate = negate ? UINT32_C(0x80000000) : UINT32_C(0x7fffffff),
+  };
+  *out_selected = true;
+  return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_lower_f64_sign(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_amdgpu_f64_sign_plan_t* plan) {
+  loom_value_id_t source = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_lookup_value(context, plan->source, &source));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32_registers(
+      context, source_op, source, &source));
+  const loom_module_t* module = loom_low_lower_context_module(context);
+  const loom_type_t lane_type =
+      loom_amdgpu_low_register_lane_type(module, source);
+  loom_value_id_t low_word = LOOM_VALUE_ID_INVALID;
+  loom_value_id_t high_word = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(
+      context, source_op, source, 0, lane_type, &low_word));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_slice(
+      context, source_op, source, 1, lane_type, &high_word));
+  loom_value_id_t signed_high_word = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr_binary_immediate(
+      context, source_op, plan->descriptor_ref, high_word, plan->immediate,
+      lane_type, &signed_high_word));
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
+      context, source_op, plan->result, &result_type));
+  const loom_value_id_t words[2] = {low_word, signed_high_word};
+  loom_op_t* concat = NULL;
+  IREE_RETURN_IF_ERROR(loom_low_concat_build(
+      loom_low_lower_context_builder(context), words, IREE_ARRAYSIZE(words),
+      result_type, source_op->location, &concat));
+  return loom_low_lower_bind_value(context, plan->result,
+                                   loom_low_concat_result(concat));
 }
 
 static bool loom_amdgpu_type_is_f16(loom_type_t type) {

@@ -107,6 +107,12 @@ static bool loom_amdgpu_memory_access_register_footprint(
   }
 
   uint32_t register_count = loom_amdgpu_vector_32bit_lane_count(vector_type);
+  if (register_count == 0) {
+    const uint32_t f64_lane_count = loom_amdgpu_static_vector_lane_count(
+        vector_type, LOOM_SCALAR_TYPE_F64,
+        LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES / 2u);
+    register_count = f64_lane_count * 2u;
+  }
   if (register_count != 0) {
     access->payload_register_class =
         LOOM_AMDGPU_MEMORY_PAYLOAD_REGISTER_CLASS_VGPR;

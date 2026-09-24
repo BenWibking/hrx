@@ -1194,6 +1194,8 @@ typedef enum loom_low_native_asm_value_kind_e {
   LOOM_LOW_NATIVE_ASM_VALUE_KIND_REGISTER_PART = 7,
   // Fixed native assembly modifier separated by whitespace.
   LOOM_LOW_NATIVE_ASM_VALUE_KIND_MODIFIER_LITERAL = 8,
+  // Descriptor-local packet operand printed with a unary minus prefix.
+  LOOM_LOW_NATIVE_ASM_VALUE_KIND_NEGATED_OPERAND = 9,
 } loom_low_native_asm_value_kind_t;
 
 typedef struct loom_low_native_asm_value_t {

@@ -910,7 +910,7 @@ def _compile_native_asm_value(
             literal=None,
         )
 
-    if kind is NativeAsmValueKind.OPERAND:
+    if kind in (NativeAsmValueKind.OPERAND, NativeAsmValueKind.NEGATED_OPERAND):
         reject_literal_and_bit_width()
         name = require_field_name()
         operand_index = operand_indices.get(name)

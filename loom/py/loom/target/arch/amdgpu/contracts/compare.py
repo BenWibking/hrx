@@ -16,6 +16,7 @@ from loom.dsl import Op
 from loom.target.arch.amdgpu.contracts.materializers import (
     ADDRESS_VGPR_MATERIALIZER,
     F32_VGPR_MATERIALIZER,
+    F64_VGPR_MATERIALIZER,
     I32_VGPR_MATERIALIZER,
 )
 from loom.target.arch.amdgpu.descriptors import (
@@ -95,12 +96,17 @@ _FLOAT_COMPARE_MASK_DESCRIPTOR_KEYS = tuple(
         f"amdgpu.v_cmp_{predicate}_f32.src1_inline",
     )
 )
+_F64_COMPARE_MASK_DESCRIPTOR_KEYS = tuple(
+    f"amdgpu.v_cmp_{predicate}_f64"
+    for predicate in _CMP_FLOAT_SCALAR_PREDICATES
+)
 _DESCRIPTOR_KEYS = (
     "amdgpu.s_mov_b32",
     "amdgpu.s_cselect_b32",
     *_COMPARE_DESCRIPTOR_KEYS,
     *_FLOAT_COMPARE_DESCRIPTOR_KEYS,
     *_FLOAT_COMPARE_MASK_DESCRIPTOR_KEYS,
+    *_F64_COMPARE_MASK_DESCRIPTOR_KEYS,
     *(descriptor_key for _, descriptor_key in _CMP_I64_SCALAR_CASES),
 )
 
@@ -113,6 +119,7 @@ _I64 = Scalar("i64")
 _I32 = Scalar("i32")
 _F16 = Scalar("f16")
 _F32 = Scalar("f32")
+_F64 = Scalar("f64")
 _INDEX = Scalar("index")
 _OFFSET = Scalar("offset")
 _I1 = Scalar("i1")
@@ -120,6 +127,8 @@ _I32_VGPR_LHS = ValueRef.operand("lhs", materializer=I32_VGPR_MATERIALIZER.name)
 _I32_VGPR_RHS = ValueRef.operand("rhs", materializer=I32_VGPR_MATERIALIZER.name)
 _F32_VGPR_LHS = ValueRef.operand("lhs", materializer=F32_VGPR_MATERIALIZER.name)
 _F32_VGPR_RHS = ValueRef.operand("rhs", materializer=F32_VGPR_MATERIALIZER.name)
+_F64_VGPR_LHS = ValueRef.operand("lhs", materializer=F64_VGPR_MATERIALIZER.name)
+_F64_VGPR_RHS = ValueRef.operand("rhs", materializer=F64_VGPR_MATERIALIZER.name)
 _ADDRESS_VGPR_LHS = ValueRef.operand("lhs", materializer=ADDRESS_VGPR_MATERIALIZER.name)
 _ADDRESS_VGPR_RHS = ValueRef.operand("rhs", materializer=ADDRESS_VGPR_MATERIALIZER.name)
 _SOURCE_INLINE_DIAGNOSTIC = GuardDiagnostic(
@@ -600,6 +609,18 @@ def _rules() -> tuple[DescriptorRule, ...]:
         *_float_scalar_rules(scalar.scalar_cmpf, _F16, 16),
         *_float_scalar_rules(scalar.scalar_cmpf, _F32, 32),
         *_float_mask_rules(),
+        *(
+            _mask_rule(
+                scalar.scalar_cmpf,
+                _F64,
+                _F64_VGPR_LHS,
+                _F64_VGPR_RHS,
+                F64_VGPR_MATERIALIZER.name,
+                predicate,
+                _descriptor(f"amdgpu.v_cmp_{predicate}_f64"),
+            )
+            for predicate in _CMP_FLOAT_SCALAR_PREDICATES
+        ),
         *_i64_scalar_rules(scalar.scalar_cmpi),
         *_typed_rules(
             scalar.scalar_cmpi,
@@ -637,6 +658,7 @@ AMDGPU_COMPARE_CONTRACT_FRAGMENT = ContractFragment(
     materializers=(
         I32_VGPR_MATERIALIZER,
         F32_VGPR_MATERIALIZER,
+        F64_VGPR_MATERIALIZER,
         ADDRESS_VGPR_MATERIALIZER,
     ),
     cases=_rules(),

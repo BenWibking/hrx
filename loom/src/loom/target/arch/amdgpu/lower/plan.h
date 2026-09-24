@@ -469,6 +469,8 @@ typedef enum loom_amdgpu_scalar_conversion_kind_e {
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_I64,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ZERO_EXTEND,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_UITOFP_NARROW_TO_F32,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_UITOFP_I64_TO_F64,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SITOFP_I64_TO_F64,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FP8_TO_BF16,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FP8_ENCODE,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FPTOI_F32_TO_I32,
@@ -491,6 +493,13 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   // Native packed FP8 encode strategy for an FP8-result truncation.
   loom_amdgpu_fp8_encode_plan_t fp8_encode;
 } loom_amdgpu_scalar_conversion_plan_t;
+
+typedef struct loom_amdgpu_f64_sign_plan_t {
+  loom_value_id_t source;
+  loom_value_id_t result;
+  loom_amdgpu_descriptor_ref_t descriptor_ref;
+  uint32_t immediate;
+} loom_amdgpu_f64_sign_plan_t;
 
 typedef enum loom_amdgpu_vector_conversion_kind_e {
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_NONE = 0,

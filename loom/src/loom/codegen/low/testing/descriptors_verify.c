@@ -478,6 +478,7 @@ static bool loom_low_native_asm_value_kind_is_valid(
     case LOOM_LOW_NATIVE_ASM_VALUE_KIND_IMMEDIATE_TARGET_FORMAT:
     case LOOM_LOW_NATIVE_ASM_VALUE_KIND_REGISTER_PART:
     case LOOM_LOW_NATIVE_ASM_VALUE_KIND_MODIFIER_LITERAL:
+    case LOOM_LOW_NATIVE_ASM_VALUE_KIND_NEGATED_OPERAND:
       return true;
     default:
       return false;
@@ -556,7 +557,8 @@ static iree_status_t loom_low_verify_native_asm_values(
         }
         break;
       }
-      case LOOM_LOW_NATIVE_ASM_VALUE_KIND_OPERAND: {
+      case LOOM_LOW_NATIVE_ASM_VALUE_KIND_OPERAND:
+      case LOOM_LOW_NATIVE_ASM_VALUE_KIND_NEGATED_OPERAND: {
         if (value->index >= descriptor->operand_count) {
           return iree_make_status(
               IREE_STATUS_OUT_OF_RANGE,

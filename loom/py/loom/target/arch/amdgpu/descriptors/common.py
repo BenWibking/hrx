@@ -263,8 +263,10 @@ _AMDGPU_TRANS_DESCRIPTOR_KEYS = (
     "amdgpu.v_sin_f32",
     "amdgpu.v_cos_f32",
     "amdgpu.v_sqrt_f32",
+    "amdgpu.v_sqrt_f64",
     "amdgpu.v_rsq_f32",
     "amdgpu.v_rcp_f32",
+    "amdgpu.v_rcp_f64",
 )
 
 _AMDGPU_TRANS_PROXY_LATENCY_CYCLES = 8
@@ -1209,6 +1211,10 @@ def _native_result(field_name: str) -> NativeAsmValue:
 
 def _native_operand(field_name: str) -> NativeAsmValue:
     return NativeAsmValue(NativeAsmValueKind.OPERAND, field_name=field_name)
+
+
+def _native_negated_operand(field_name: str) -> NativeAsmValue:
+    return NativeAsmValue(NativeAsmValueKind.NEGATED_OPERAND, field_name=field_name)
 
 
 def _native_register_part(field_name: str) -> NativeAsmValue:
@@ -3650,6 +3656,7 @@ __all__ = (
     "_native_literal",
     "_native_modifier_literal",
     "_native_operand",
+    "_native_negated_operand",
     "_native_register_part",
     "_native_result",
     "_native_unsigned_hex_immediate",

@@ -1193,6 +1193,12 @@ static iree_status_t loom_amdgpu_append_native_asm_form_value(
     case LOOM_LOW_NATIVE_ASM_VALUE_KIND_OPERAND:
       return loom_amdgpu_append_asm_form_value(
           context, descriptor, value->index, /*is_result=*/false);
+    case LOOM_LOW_NATIVE_ASM_VALUE_KIND_NEGATED_OPERAND: {
+      IREE_RETURN_IF_ERROR(
+          iree_string_builder_append_cstring(context->builder, "-"));
+      return loom_amdgpu_append_asm_form_value(
+          context, descriptor, value->index, /*is_result=*/false);
+    }
     case LOOM_LOW_NATIVE_ASM_VALUE_KIND_REGISTER_PART:
       return loom_amdgpu_append_descriptor_register_part_assignment(
           context, value->index);

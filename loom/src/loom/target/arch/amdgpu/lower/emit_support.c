@@ -2064,6 +2064,13 @@ iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_i64(
       context, source_op, low_value, out_low_value);
 }
 
+iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_f64(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
+  return loom_amdgpu_lookup_or_materialize_vgpr_i64(
+      context, source_op, source_value, out_low_value);
+}
+
 iree_status_t loom_amdgpu_lookup_or_materialize_vgpr_address(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, loom_value_id_t* out_low_value) {

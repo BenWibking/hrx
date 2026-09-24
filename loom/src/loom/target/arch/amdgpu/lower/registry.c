@@ -339,6 +339,14 @@ LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_scalar_conversion_dispatch,
                              loom_amdgpu_scalar_conversion_plan_t,
                              loom_amdgpu_lower_scalar_conversion)
 
+LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_f64_sign_dispatch,
+                               loom_amdgpu_f64_sign_plan_t,
+                               loom_amdgpu_select_f64_sign_plan)
+
+LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_f64_sign_dispatch,
+                             loom_amdgpu_f64_sign_plan_t,
+                             loom_amdgpu_lower_f64_sign)
+
 LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_vector_conversion_dispatch,
                                loom_amdgpu_vector_conversion_plan_t,
                                loom_amdgpu_select_vector_conversion_plan)

@@ -1,0 +1,178 @@
+// RUN: emit source-low target=amdgpu:gfx942 output=low
+
+func.def @native_f64(%lhs: f64, %rhs: f64) -> (f64, f64, f64) {
+  %sum = scalar.addf %lhs, %rhs : f64
+  %product = scalar.mulf %lhs, %rhs : f64
+  %root = scalar.sqrtf %lhs : f64
+  func.return %sum, %product, %root : f64, f64, f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @native_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
+  %sum = v_add_f64 %lhs, %rhs
+  %product = v_mul_f64 %lhs, %rhs
+  %root = v_sqrt_f64 %lhs
+  return %sum, %product, %root
+}
+
+// ====
+
+func.def @compare_f64(%lhs: f64, %rhs: f64) -> (i1, i1) {
+  %ordered = scalar.cmpf olt, %lhs, %rhs : f64
+  %unordered = scalar.cmpf uno, %lhs, %rhs : f64
+  func.return %ordered, %unordered : i1, i1
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @compare_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.sgpr x2>, reg<amdgpu.sgpr x2>) asm {
+  %ordered = v_cmp_lt_f64 %lhs, %rhs
+  %unordered = v_cmp_u_f64 %lhs, %rhs
+  return %ordered, %unordered
+}
+
+// ====
+
+func.def @convert_f64(%signed: i32, %unsigned: i32) -> (f64, f64) {
+  %s = scalar.sitofp %signed : i32 to f64
+  %u = scalar.uitofp %unsigned : i32 to f64
+  func.return %s, %u : f64, f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @convert_f64(%signed: reg<amdgpu.sgpr>, %unsigned: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
+  %s = v_cvt_f64_i32 %signed
+  %u = v_cvt_f64_u32 %unsigned
+  return %s, %u
+}
+
+// ====
+
+func.def @compare_constant_f64(%lhs: f64) -> (i1) {
+  %one = scalar.constant 1.0 : f64
+  %result = scalar.cmpf olt, %lhs, %one : f64
+  func.return %result : i1
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @compare_constant_f64(%lhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
+  %6 = v_mov_b32 0
+  %7 = v_mov_b32 1072693248
+  %one = concat(%6, %7) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %result = v_cmp_lt_f64 %lhs, %one
+  return %result
+}
+
+// ====
+
+func.def @compare_to_f64(%lhs: f64, %rhs: f64) -> (f64) {
+  %less = scalar.cmpf olt, %lhs, %rhs : f64
+  %result = scalar.uitofp %less : i1 to f64
+  func.return %result : f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @compare_to_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %less = v_cmp_lt_f64 %lhs, %rhs
+  %9 = v_mov_b32 0
+  %10 = v_mov_b32 1
+  %11 = v_cndmask_b32 %9, %10, %less
+  %result = v_cvt_f64_u32 %11
+  return %result
+}
+
+// ====
+
+func.def @unsigned_i64_to_f64(%bits: i64) -> (f64) {
+  %result = scalar.uitofp %bits : i64 to f64
+  func.return %result : f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @unsigned_i64_to_f64(%bits: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %5 = slice %bits[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %6 = slice %bits[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %7 = v_cvt_f64_u32 %5
+  %8 = v_cvt_f64_u32 %6
+  %9 = v_mov_b32 0
+  %10 = v_mov_b32 1106247680
+  %11 = concat(%9, %10) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %12 = v_mul_f64 %8, %11
+  %result = v_add_f64 %12, %7
+  return %result
+}
+
+// ====
+
+func.def @signed_i64_to_f64(%bits: i64) -> (f64) {
+  %result = scalar.sitofp %bits : i64 to f64
+  func.return %result : f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @signed_i64_to_f64(%bits: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %5 = slice %bits[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %6 = slice %bits[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %7 = v_cvt_f64_u32 %5
+  %8 = v_cvt_f64_i32 %6
+  %9 = v_mov_b32 0
+  %10 = v_mov_b32 1106247680
+  %11 = concat(%9, %10) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %12 = v_mul_f64 %8, %11
+  %result = v_add_f64 %12, %7
+  return %result
+}
+
+// ====
+
+func.def @subtract_f64(%lhs: f64, %rhs: f64) -> (f64) {
+  %result = scalar.subf %lhs, %rhs : f64
+  func.return %result : f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @subtract_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %result = v_sub_f64 %lhs, %rhs
+  return %result
+}
+
+// ====
+
+func.def @change_f64_sign(%value: f64) -> (f64, f64) {
+  %negative = scalar.negf %value : f64
+  %absolute = scalar.absf %value : f64
+  func.return %negative, %absolute : f64, f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @change_f64_sign(%value: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
+  %8 = slice %value[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %9 = slice %value[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %10 = v_xor_b32_lit %9, 2147483648
+  %negative = concat(%8, %10) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %14 = v_and_b32_lit %9, 2147483647
+  %absolute = concat(%8, %14) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  return %negative, %absolute
+}
+
+// ====
+
+func.def @divide_f64(%numerator: f64, %denominator: f64) -> (f64) {
+  %quotient = scalar.divf %numerator, %denominator : f64
+  func.return %quotient : f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @divide_f64(%numerator: reg<amdgpu.vgpr x2>, %denominator: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %7, %8 = v_div_scale_f64 %denominator, %denominator, %numerator
+  %9 = v_rcp_f64 %7
+  %10 = v_fma_f64_neg_a_one %7, %9
+  %11 = v_fma_f64 %9, %10, %9
+  %12 = v_fma_f64_neg_a_one %7, %11
+  %13, %14 = v_div_scale_f64 %numerator, %denominator, %numerator
+  %15 = v_fma_f64 %11, %12, %11
+  %16 = v_mul_f64 %13, %15
+  %17 = v_fma_f64_neg_a %7, %16, %13
+  %18 = v_div_fmas_f64 %17, %15, %16, %14
+  %quotient = v_div_fixup_f64 %18, %denominator, %numerator
+  return %quotient
+}
