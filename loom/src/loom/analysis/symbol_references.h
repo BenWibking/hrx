@@ -37,11 +37,6 @@ typedef uint32_t loom_symbol_reference_occurrence_id_t;
 typedef uint32_t loom_template_demand_id_t;
 #define LOOM_TEMPLATE_DEMAND_ID_INVALID ((loom_template_demand_id_t)UINT32_MAX)
 
-// Index into a symbol reference table's template-provider array.
-typedef uint32_t loom_template_provider_reference_id_t;
-#define LOOM_TEMPLATE_PROVIDER_REFERENCE_ID_INVALID \
-  ((loom_template_provider_reference_id_t)UINT32_MAX)
-
 // Sentinel for occurrences not attached to a concrete op attribute.
 #define LOOM_SYMBOL_REFERENCE_ATTR_INDEX_NONE ((uint8_t)UINT8_MAX)
 
@@ -135,33 +130,27 @@ typedef struct loom_template_demand_t {
 static_assert(sizeof(loom_template_demand_t) == 24,
               "template demands must remain 24 bytes");
 
-// One available template provider indexed by its implemented family.
-typedef struct loom_template_provider_reference_t {
-  // Module-local provider symbol.
-  loom_symbol_id_t symbol_id;
-
-  // Next provider implementing the same family.
-  loom_template_provider_reference_id_t next_family_provider_id;
-} loom_template_provider_reference_t;
-
-static_assert(sizeof(loom_template_provider_reference_t) == 8,
-              "template provider references must remain 8 bytes");
-
-// Incoming/outgoing occurrence-list heads for one symbol.
+// Incoming/outgoing occurrence-list heads for one referenced symbol.
 typedef struct loom_symbol_reference_symbol_occurrences_t {
   // First occurrence whose source_symbol_id is this symbol.
   loom_symbol_reference_occurrence_id_t first_outgoing_occurrence_id;
   // First occurrence whose target_symbol_id is this symbol.
   loom_symbol_reference_occurrence_id_t first_incoming_occurrence_id;
-  // Number of outgoing occurrences across all graph roles.
-  uint32_t outgoing_count;
-  // Number of incoming occurrences across all graph roles.
-  uint32_t incoming_count;
   // First abstract provider demand owned by this symbol.
   loom_template_demand_id_t first_template_demand_id;
   // Number of abstract provider demands owned by this symbol.
   uint32_t template_demand_count;
 } loom_symbol_reference_symbol_occurrences_t;
+
+static_assert(sizeof(loom_symbol_reference_symbol_occurrences_t) == 16,
+              "symbol occurrence heads must remain 16 bytes");
+
+// Shift mapping a symbol ID to its lazily allocated row segment.
+#define LOOM_SYMBOL_REFERENCE_SYMBOL_SEGMENT_SHIFT 7u
+
+// Number of symbol occurrence rows in each arena-owned segment.
+#define LOOM_SYMBOL_REFERENCE_SYMBOL_SEGMENT_CAPACITY \
+  (1u << LOOM_SYMBOL_REFERENCE_SYMBOL_SEGMENT_SHIFT)
 
 // Direct call occurrences classified during reference publication.
 typedef struct loom_symbol_reference_call_counts_t {
@@ -176,9 +165,9 @@ typedef struct loom_symbol_reference_call_counts_t {
 typedef struct loom_symbol_reference_table_t {
   // Module this table was built from.
   const loom_module_t* module;
-  // Dense per-symbol incoming/outgoing lists.
-  const loom_symbol_reference_symbol_occurrences_t* symbols;
-  // Number of entries in symbols.
+  // Direct directory of lazily allocated symbol occurrence row segments.
+  const loom_symbol_reference_symbol_occurrences_t* const* symbol_segments;
+  // Number of logical symbol rows addressable through symbol_segments.
   iree_host_size_t symbol_count;
   // Stable occurrence segments owned by the caller-provided arena.
   loom_segmented_storage_t occurrences;
@@ -190,6 +179,8 @@ typedef struct loom_symbol_reference_table_t {
   uint32_t module_occurrence_count;
   // Call counts retained by the reference producer for plan sizing.
   loom_symbol_reference_call_counts_t calls;
+  // Number of valid module-local template providers.
+  uint32_t template_provider_count;
   // Abstract template.apply provider demands owned by module symbols.
   struct {
     // Demand records owned by the caller-provided arena.
@@ -208,18 +199,32 @@ typedef struct loom_symbol_reference_table_t {
     const uint64_t* family_bits;
   } template_demands;
 
-  // Available template providers indexed by implemented family.
-  struct {
-    // Provider records owned by the caller-provided arena.
-    const loom_template_provider_reference_t* values;
-
-    // Number of entries in values.
-    iree_host_size_t count;
-
-    // First provider record for each module-local family symbol.
-    const loom_template_provider_reference_id_t* first_by_family_symbol_id;
-  } template_providers;
 } loom_symbol_reference_table_t;
+
+// Returns occurrence heads for a valid module symbol ID. Symbols with no
+// incoming, outgoing, or template-demand occurrences return an empty row by
+// value and require no arena storage.
+static inline loom_symbol_reference_symbol_occurrences_t
+loom_symbol_reference_table_symbol(const loom_symbol_reference_table_t* table,
+                                   loom_symbol_id_t symbol_id) {
+  const loom_symbol_reference_symbol_occurrences_t* segment =
+      table->symbol_segments
+          ? table->symbol_segments[symbol_id >>
+                                   LOOM_SYMBOL_REFERENCE_SYMBOL_SEGMENT_SHIFT]
+          : NULL;
+  if (!segment) {
+    return (loom_symbol_reference_symbol_occurrences_t){
+        /*.first_outgoing_occurrence_id=*/
+        LOOM_SYMBOL_REFERENCE_OCCURRENCE_ID_INVALID,
+        /*.first_incoming_occurrence_id=*/
+        LOOM_SYMBOL_REFERENCE_OCCURRENCE_ID_INVALID,
+        /*.first_template_demand_id=*/LOOM_TEMPLATE_DEMAND_ID_INVALID,
+        /*.template_demand_count=*/0,
+    };
+  }
+  return segment[symbol_id &
+                 (LOOM_SYMBOL_REFERENCE_SYMBOL_SEGMENT_CAPACITY - 1u)];
+}
 
 // Returns an occurrence by its valid ID in this immutable analysis snapshot.
 // The row borrows the table's arena; user_op also borrows the analyzed module.

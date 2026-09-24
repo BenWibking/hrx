@@ -1120,9 +1120,11 @@ TEST_F(ParserTest, ReturnsSymbolReferencesFromParsedSnapshot) {
   ASSERT_NE(provider_id, LOOM_SYMBOL_ID_INVALID);
 
   const loom_symbol_reference_occurrence_id_t dependency_occurrence_id =
-      symbol_references.symbols[dependency_id].first_incoming_occurrence_id;
+      loom_symbol_reference_table_symbol(&symbol_references, dependency_id)
+          .first_incoming_occurrence_id;
   const loom_symbol_reference_occurrence_id_t availability_occurrence_id =
-      symbol_references.symbols[provider_id].first_incoming_occurrence_id;
+      loom_symbol_reference_table_symbol(&symbol_references, provider_id)
+          .first_incoming_occurrence_id;
   ASSERT_NE(dependency_occurrence_id,
             LOOM_SYMBOL_REFERENCE_OCCURRENCE_ID_INVALID);
   ASSERT_NE(availability_occurrence_id,

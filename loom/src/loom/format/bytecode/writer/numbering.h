@@ -75,8 +75,8 @@ static inline loom_bytecode_global_value_iterator_t
 loom_bytecode_global_value_iterator_begin(
     const loom_bytecode_global_value_list_t* list) {
   return (loom_bytecode_global_value_iterator_t){
-      .list = list,
-      .chunk = list->first,
+      /*.list=*/list,
+      /*.chunk=*/list->first,
   };
 }
 

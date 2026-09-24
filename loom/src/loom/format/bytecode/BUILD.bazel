@@ -248,6 +248,7 @@ loom_cc_test(
         ":format",
         ":varint",
         ":writer",
+        "//loom/src/loom/format/bytecode/writer:body",
         "//loom/src/loom/format/bytecode/writer:encoder",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/func",

@@ -40,11 +40,13 @@ static iree_status_t loom_bytecode_encoding_role_byte(loom_encoding_role_t role,
 iree_status_t loom_bytecode_write_strings_section(
     loom_bytecode_page_writer_t* page_writer,
     const loom_bytecode_numbering_t* numbering) {
-  IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_uvarint(
-      page_writer, numbering->strings.count));
-  for (iree_host_size_t i = 0; i < numbering->strings.count; ++i) {
+  const iree_host_size_t string_count =
+      loom_bytecode_numbering_string_count(numbering);
+  IREE_RETURN_IF_ERROR(
+      loom_bytecode_page_writer_write_uvarint(page_writer, string_count));
+  for (iree_host_size_t i = 0; i < string_count; ++i) {
     IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_string(
-        page_writer, numbering->strings.values[i]));
+        page_writer, loom_bytecode_numbering_string(numbering, (uint32_t)i)));
   }
   return iree_ok_status();
 }
@@ -160,10 +162,8 @@ iree_status_t loom_bytecode_write_types_section(
         loom_string_id_t name_id = loom_type_dialect_name_id(type);
         uint32_t name_writer_id = 0;
         if (name_id < numbering->module->strings.count) {
-          IREE_RETURN_IF_ERROR(loom_bytecode_numbering_intern_string_view(
-              numbering,
-              loom_string_table_get(&numbering->module->strings, name_id),
-              &name_writer_id));
+          IREE_RETURN_IF_ERROR(loom_bytecode_numbering_intern_module_string(
+              numbering, name_id, &name_writer_id));
         }
         IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_uvarint(
             page_writer, name_writer_id));
