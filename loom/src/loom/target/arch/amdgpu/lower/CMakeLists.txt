@@ -110,6 +110,7 @@ loom_cc_library(
     "sanitizer_race.h"
     "sanitizer_race_report.h"
     "sanitizer_report.h"
+    "sanitizer_ubsan_report.h"
     "signal.h"
     "source_representation.h"
     "structural.h"
@@ -206,6 +207,7 @@ loom_cc_library(
     "sanitizer_race.c"
     "sanitizer_race_report.c"
     "sanitizer_report.c"
+    "sanitizer_ubsan_report.c"
     "signal.c"
     "source_alloca_layout.c"
     "source_representation.c"
@@ -273,6 +275,7 @@ loom_cc_library(
     loom::target::arch::amdgpu::abi::feedback
     loom::target::arch::amdgpu::abi::signal
     loom::target::arch::amdgpu::abi::tsan
+    loom::target::arch::amdgpu::abi::ubsan
     loom::target::arch::amdgpu::analysis::lds_bank_service
     loom::target::arch::amdgpu::contracts
     loom::target::arch::amdgpu::encoding::encoding_defs
@@ -477,6 +480,7 @@ loom_cc_test(
     loom::ops::op_registry
     loom::ops::target
     loom::target::arch::amdgpu::abi::feedback
+    loom::target::arch::amdgpu::abi::ubsan
     loom::target::arch::amdgpu::descriptors::low_registry
     loom::target::arch::amdgpu::refs::target_refs
     loom::target::registers

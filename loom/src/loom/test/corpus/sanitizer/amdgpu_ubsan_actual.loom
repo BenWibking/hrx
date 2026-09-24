@@ -1,0 +1,61 @@
+kernel.def @assert_nonzero() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%value: i32, %output: buffer) {
+  %c0 = scalar.constant 0 : i32
+  %condition = scalar.cmpi ne, %value, %c0 : i32
+  kernel.assert %condition "value must be nonzero" : i1
+  %base = index.constant 0 : offset
+  %output_index = index.constant 0 : index
+  %global = buffer.assume.memory_space<global> %output : buffer
+  %output_view = buffer.view %global[%base] : buffer -> view<1xi32>
+  view.store %value, %output_view[%output_index] : i32, view<1xi32>
+  kernel.return
+}
+
+kernel.def @assert_first_two_lanes() {
+  %unit = index.constant 1 : index
+  %width = index.constant 4 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
+} launch(%output: buffer) {
+  %base = index.constant 0 : offset
+  %limit = index.constant 2 : index
+  %lane = kernel.workitem.id<x> : index
+  %condition = index.cmp ult, %lane, %limit : index
+  kernel.assert %condition "only the first two lanes are valid" : i1
+  %value = scalar.constant 7 : i32
+  %global = buffer.assume.memory_space<global> %output : buffer
+  %output_view = buffer.view %global[%base] : buffer -> view<4xi32>
+  view.store %value, %output_view[%lane] : i32, view<4xi32>
+  kernel.return
+}
+
+check.case @assert_nonzero_passes_case {
+  %value = check.literal value(7) : i32
+  %output = check.generate.fill value(0) : tensor<1xi32>
+  kernel.launch @assert_nonzero(%value, %output) : (i32, tensor<1xi32>)
+  %expected = check.generate.fill value(7) : tensor<1xi32>
+  check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
+  check.expect.event<device> {count = 0, type = "ubsan_report"}
+  check.return
+}
+
+check.case @assert_nonzero_fails_case {
+  %value = check.literal value(0) : i32
+  %output = check.generate.fill value(11) : tensor<1xi32>
+  kernel.launch @assert_nonzero(%value, %output) : (i32, tensor<1xi32>)
+  %expected = check.generate.fill value(11) : tensor<1xi32>
+  check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
+  check.expect.event<device> {count = 1, operation = "kernel.assert", severity = "error", site_id = 0, type = "ubsan_report", ubsan = {check = "assertion", operand0 = 0, operand1 = 0, site_id = 0}}
+  check.return
+}
+
+check.case @assert_first_two_lanes_fails_case {
+  %output = check.generate.fill value(11) : tensor<4xi32>
+  kernel.launch @assert_first_two_lanes(%output) : (tensor<4xi32>)
+  %expected = check.generate.fill value(11) : tensor<4xi32>
+  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
+  // Failed lanes compete for one representative feedback packet per wave.
+  check.expect.event<device> {count = 1, operation = "kernel.assert", severity = "error", type = "ubsan_report", ubsan = {check = "assertion", operand0 = 0, operand1 = 0}}
+  check.return
+}

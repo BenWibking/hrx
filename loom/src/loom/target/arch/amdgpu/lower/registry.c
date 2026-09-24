@@ -804,6 +804,14 @@ LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_view_prefetch_dispatch,
                              loom_amdgpu_prefetch_plan_t,
                              loom_amdgpu_lower_view_prefetch)
 
+LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_kernel_assert_dispatch,
+                               loom_amdgpu_kernel_assert_plan_t,
+                               loom_amdgpu_select_kernel_assert_plan)
+
+LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_kernel_assert_dispatch,
+                             loom_amdgpu_kernel_assert_plan_t,
+                             loom_amdgpu_lower_kernel_assert)
+
 LOOM_AMDGPU_DEFINE_DATA_SELECT(
     loom_amdgpu_select_sanitizer_assert_access_dispatch,
     loom_amdgpu_sanitizer_access_plan_t,

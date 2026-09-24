@@ -1162,6 +1162,9 @@ static void loom_amdgpu_find_first_dynamic_count_ops(
 iree_status_t loom_amdgpu_emit_preamble(void* user_data,
                                         loom_low_lower_context_t* context) {
   (void)user_data;
+  const bool needs_sanitizer_report_coordinates =
+      loom_low_lower_context_sanitizer_reporting_mode(context) !=
+      LOOM_SANITIZER_REPORTING_MODE_TRAP;
   const loom_op_t* first_workitem_id_ops[LOOM_KERNEL_DIMENSION_COUNT_] = {0};
   const loom_op_t* first_workgroup_id_ops[LOOM_KERNEL_DIMENSION_COUNT_] = {0};
   const loom_op_t* first_cluster_id_ops[LOOM_KERNEL_DIMENSION_COUNT_] = {0};
@@ -1258,6 +1261,23 @@ iree_status_t loom_amdgpu_emit_preamble(void* user_data,
       case LOOM_OP_KERNEL_WORKGROUP_REDUCE: {
         loom_amdgpu_mark_lane_query_workitem_id_live_ins(
             context, source_op, LOOM_VALUE_ID_INVALID, first_workitem_id_ops);
+        break;
+      }
+      case LOOM_OP_KERNEL_ASSERT:
+      case LOOM_OP_SANITIZER_ASSERT_ACCESS:
+      case LOOM_OP_SANITIZER_ASSERT_ACCESSES: {
+        if (!needs_sanitizer_report_coordinates) {
+          break;
+        }
+        if (first_dispatch_ptr_op == NULL) {
+          first_dispatch_ptr_op = source_op;
+        }
+        if (first_workitem_id_ops[LOOM_KERNEL_DIMENSION_X] == NULL) {
+          first_workitem_id_ops[LOOM_KERNEL_DIMENSION_X] = source_op;
+        }
+        if (first_workgroup_id_ops[LOOM_KERNEL_DIMENSION_X] == NULL) {
+          first_workgroup_id_ops[LOOM_KERNEL_DIMENSION_X] = source_op;
+        }
         break;
       }
       case LOOM_OP_SANITIZER_RACE_ACCESS:
