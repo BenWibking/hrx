@@ -57,6 +57,53 @@ static const loom_parameterized_attr_descriptor_t kPayloadDescriptor = {
     /*.parameter_descriptors=*/kPayloadParameters,
 };
 
+// Writer arena whose backing allocation attempts can fail deterministically.
+class FailingWriterArena {
+ public:
+  FailingWriterArena() {
+    iree_arena_block_pool_initialize(128, {this, Allocate}, &pool_);
+    iree_arena_initialize(&pool_, &arena_);
+  }
+
+  ~FailingWriterArena() {
+    iree_arena_deinitialize(&arena_);
+    iree_arena_block_pool_deinitialize(&pool_);
+  }
+
+  void FailAt(iree_host_size_t failure_index) {
+    allocation_count_ = 0;
+    failure_index_ = failure_index;
+  }
+
+  void DisableFailures() { failure_index_ = SIZE_MAX; }
+
+  iree_host_size_t allocation_count() const { return allocation_count_; }
+
+  iree_arena_allocator_t* arena() { return &arena_; }
+
+ private:
+  static iree_status_t Allocate(void* self, iree_allocator_command_t command,
+                                const void* parameters, void** pointer) {
+    auto* arena = static_cast<FailingWriterArena*>(self);
+    if (command != IREE_ALLOCATOR_COMMAND_FREE &&
+        arena->allocation_count_++ == arena->failure_index_) {
+      return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                              "injected writer allocation failure");
+    }
+    const iree_allocator_t allocator = iree_allocator_system();
+    return allocator.ctl(allocator.self, command, parameters, pointer);
+  }
+
+  // Number of backing allocation attempts since the last failure selection.
+  iree_host_size_t allocation_count_ = 0;
+  // Backing allocation ordinal to fail, or SIZE_MAX when disabled.
+  iree_host_size_t failure_index_ = SIZE_MAX;
+  // Tiny blocks expose every catalog segment and directory allocation.
+  iree_arena_block_pool_t pool_ = {};
+  // Invocation-owned writer storage under test.
+  iree_arena_allocator_t arena_ = {};
+};
+
 class CatalogTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -154,7 +201,7 @@ class CatalogTest : public ::testing::Test {
 TEST_F(CatalogTest, EmptyEncodingTable) {
   loom_bytecode_numbering_t numbering;
   IREE_ASSERT_OK(NumberEncodings(&numbering));
-  EXPECT_EQ(numbering.strings.count, 1u);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), 1u);
   EXPECT_EQ(numbering.types.count, 0u);
 }
 
@@ -169,7 +216,8 @@ TEST_F(CatalogTest, EncodingOrderPreservesFirstUseAndAliases) {
       IREE_SV("block"), IREE_SV("tail"),         IREE_SV("left"),
       IREE_SV("right"),
   };
-  ASSERT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected));
+  ASSERT_EQ(loom_bytecode_numbering_string_count(&numbering),
+            IREE_ARRAYSIZE(expected));
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(expected); ++i) {
     EXPECT_TRUE(iree_string_view_equal(
         loom_bytecode_numbering_string(&numbering, static_cast<uint32_t>(i)),
@@ -177,7 +225,8 @@ TEST_F(CatalogTest, EncodingOrderPreservesFirstUseAndAliases) {
   }
   IREE_ASSERT_OK(loom_bytecode_number_attr_value(
       &numbering, loom_attr_encoding(child), nullptr));
-  EXPECT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected));
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering),
+            IREE_ARRAYSIZE(expected));
   EXPECT_EQ(numbering.types.count, 0u);
 }
 
@@ -189,7 +238,7 @@ TEST_F(CatalogTest, SharedEncodingDependenciesStayBounded) {
   loom_bytecode_numbering_t numbering;
   IREE_ASSERT_OK(NumberEncodings(&numbering));
   EXPECT_EQ(module_->encodings.count, 257u);
-  EXPECT_EQ(numbering.strings.count, 5u);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), 5u);
   EXPECT_EQ(numbering.types.count, 0u);
 }
 
@@ -201,7 +250,7 @@ TEST_F(CatalogTest, DeepEncodingDependenciesNeedNoRecursiveStack) {
   loom_bytecode_numbering_t numbering;
   IREE_ASSERT_OK(NumberEncodings(&numbering));
   EXPECT_EQ(module_->encodings.count, 8192u);
-  EXPECT_EQ(numbering.strings.count, 4u);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), 4u);
 }
 
 TEST_F(CatalogTest, EncodingPayloadsNumberNestedTypesAndStrings) {
@@ -231,7 +280,7 @@ TEST_F(CatalogTest, EncodingPayloadsNumberNestedTypesAndStrings) {
   uint32_t label_id = 0;
   IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(&numbering, label,
                                                               &label_id));
-  ASSERT_LT(label_id, numbering.strings.count);
+  ASSERT_LT(label_id, loom_bytecode_numbering_string_count(&numbering));
   EXPECT_TRUE(iree_string_view_equal(
       loom_bytecode_numbering_string(&numbering, label_id),
       IREE_SV("element_label")));
@@ -384,7 +433,8 @@ TEST_F(CatalogTest, TypeAndAttributeMetadataKeepFirstUseOrder) {
       IREE_SV("after"),
       IREE_SV("late"),
   };
-  ASSERT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected_strings));
+  ASSERT_EQ(loom_bytecode_numbering_string_count(&numbering),
+            IREE_ARRAYSIZE(expected_strings));
   for (size_t i = 0; i < IREE_ARRAYSIZE(expected_strings); ++i) {
     EXPECT_TRUE(iree_string_view_equal(
         loom_bytecode_numbering_string(&numbering, static_cast<uint32_t>(i)),
@@ -393,7 +443,8 @@ TEST_F(CatalogTest, TypeAndAttributeMetadataKeepFirstUseOrder) {
   const auto completed_storage = arena_.used_allocation_size;
   IREE_ASSERT_OK(
       loom_bytecode_number_attr_value(&numbering, variants, &parameters[2]));
-  EXPECT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected_strings));
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering),
+            IREE_ARRAYSIZE(expected_strings));
   EXPECT_EQ(numbering.types.count, IREE_ARRAYSIZE(expected_types));
   EXPECT_EQ(arena_.used_allocation_size, completed_storage);
 }
@@ -432,7 +483,8 @@ TEST_F(CatalogTest, ParameterizedTypesResumeAfterNestedTypes) {
       IREE_SV(""),      IREE_SV("test.chain"),  IREE_SV("element"),
       IREE_SV("label"), IREE_SV("chain_label"),
   };
-  ASSERT_EQ(numbering.strings.count, IREE_ARRAYSIZE(expected));
+  ASSERT_EQ(loom_bytecode_numbering_string_count(&numbering),
+            IREE_ARRAYSIZE(expected));
   for (size_t i = 0; i < IREE_ARRAYSIZE(expected); ++i) {
     EXPECT_TRUE(iree_string_view_equal(
         loom_bytecode_numbering_string(&numbering, static_cast<uint32_t>(i)),
@@ -464,7 +516,7 @@ TEST_F(CatalogTest, StringCatalogRetainsFirstUseOrderAtScale) {
     EXPECT_EQ(writer_id, kStringCount - ordinal + 1);
   }
 
-  ASSERT_EQ(numbering.strings.count, kStringCount + 1);
+  ASSERT_EQ(loom_bytecode_numbering_string_count(&numbering), kStringCount + 1);
   EXPECT_TRUE(
       iree_string_view_is_empty(loom_bytecode_numbering_string(&numbering, 0)));
   for (uint32_t writer_id = 1; writer_id <= kStringCount; ++writer_id) {
@@ -480,7 +532,7 @@ TEST_F(CatalogTest, StringCatalogRetainsFirstUseOrderAtScale) {
         &numbering, module_ids[i], &writer_id));
     EXPECT_EQ(writer_id, kStringCount - i);
   }
-  EXPECT_EQ(numbering.strings.count, kStringCount + 1);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), kStringCount + 1);
 }
 
 TEST_F(CatalogTest, StringViewsReuseModuleAndExternalIdentities) {
@@ -499,7 +551,7 @@ TEST_F(CatalogTest, StringViewsReuseModuleAndExternalIdentities) {
   IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
       &numbering, module_id, &module_id_writer_id));
   EXPECT_EQ(module_view_writer_id, module_id_writer_id);
-  EXPECT_EQ(numbering.strings.count, 2u);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), 2u);
 
   std::string first_external_spelling = "external_only";
   std::string second_external_spelling = first_external_spelling;
@@ -516,10 +568,143 @@ TEST_F(CatalogTest, StringViewsReuseModuleAndExternalIdentities) {
                             second_external_spelling.size()),
       &second_external_writer_id));
   EXPECT_EQ(first_external_writer_id, second_external_writer_id);
-  EXPECT_EQ(numbering.strings.count, 3u);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), 3u);
   EXPECT_TRUE(iree_string_view_equal(
       loom_bytecode_numbering_string(&numbering, first_external_writer_id),
       IREE_SV("external_only")));
+}
+
+TEST_F(CatalogTest, StringCatalogUsesPoolSizedStorage) {
+  constexpr size_t kStringCount = 513;
+  std::vector<loom_string_id_t> module_ids;
+  std::vector<std::string> external_names;
+  module_ids.reserve(kStringCount);
+  external_names.reserve(kStringCount);
+  for (size_t i = 0; i < kStringCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "module_string_%08zu", i);
+    module_ids.push_back(Intern(iree_make_cstring_view(name)));
+    std::snprintf(name, sizeof(name), "external_name_%08zu", i);
+    external_names.emplace_back(name);
+  }
+
+  iree_arena_block_pool_statistics_t before;
+  iree_arena_block_pool_query_statistics(&pool_, &before);
+  loom_bytecode_numbering_t numbering;
+  IREE_ASSERT_OK(
+      loom_bytecode_numbering_initialize(&numbering, module_, &arena_));
+  uint32_t writer_id = 0;
+  for (loom_string_id_t module_id : module_ids) {
+    IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
+        &numbering, module_id, &writer_id));
+  }
+  const size_t module_indices[] = {512, 0, 511, 128, 127};
+  for (size_t module_index : module_indices) {
+    IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
+        &numbering, module_ids[module_index], &writer_id));
+    EXPECT_EQ(writer_id, module_index + 1);
+  }
+  for (const std::string& name : external_names) {
+    IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+        &numbering, iree_make_string_view(name.data(), name.size()),
+        &writer_id));
+  }
+  iree_arena_block_pool_statistics_t after;
+  iree_arena_block_pool_query_statistics(&pool_, &after);
+  EXPECT_EQ(after.oversized_allocation_count,
+            before.oversized_allocation_count);
+  EXPECT_EQ(after.oversized_allocation_bytes,
+            before.oversized_allocation_bytes);
+  EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering),
+            2 * kStringCount + 1);
+}
+
+TEST_F(CatalogTest, ExternalStringAllocationFailurePreservesCatalog) {
+  constexpr size_t kModuleStringCount = 127;
+  constexpr size_t kExternalStringCount = 1537;
+  std::vector<loom_string_id_t> module_ids;
+  std::vector<std::string> external_names;
+  module_ids.reserve(kModuleStringCount);
+  external_names.reserve(kExternalStringCount);
+  for (size_t i = 0; i < kModuleStringCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "module_name_%08zu", i);
+    module_ids.push_back(Intern(iree_make_cstring_view(name)));
+  }
+  for (size_t i = 0; i < kExternalStringCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "external_name_%08zu", i);
+    external_names.emplace_back(name);
+  }
+
+  // Each boundary makes the next external insertion grow both the ordered
+  // catalog and its content index. The larger case also crosses the intern
+  // table's inline segment directory.
+  const struct {
+    size_t module_count;
+    size_t external_count;
+  } cases[] = {
+      {63, 192},
+      {127, 1536},
+  };
+  for (const auto& test_case : cases) {
+    SCOPED_TRACE(test_case.external_count);
+    for (iree_host_size_t failure_index = 0;; ++failure_index) {
+      SCOPED_TRACE(failure_index);
+      FailingWriterArena writer_arena;
+      loom_bytecode_numbering_t numbering;
+      IREE_ASSERT_OK(loom_bytecode_numbering_initialize(&numbering, module_,
+                                                        writer_arena.arena()));
+      uint32_t writer_id = 0;
+      for (size_t i = 0; i < test_case.module_count; ++i) {
+        IREE_ASSERT_OK(loom_bytecode_numbering_intern_module_string(
+            &numbering, module_ids[i], &writer_id));
+      }
+      for (size_t i = 0; i < test_case.external_count; ++i) {
+        const std::string& name = external_names[i];
+        IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+            &numbering, iree_make_string_view(name.data(), name.size()),
+            &writer_id));
+      }
+
+      const iree_host_size_t count =
+          loom_bytecode_numbering_string_count(&numbering);
+      writer_arena.FailAt(failure_index);
+      const std::string& name = external_names[test_case.external_count];
+      const iree_string_view_t view =
+          iree_make_string_view(name.data(), name.size());
+      writer_id = UINT32_MAX;
+      iree_status_t status = loom_bytecode_numbering_intern_string_view(
+          &numbering, view, &writer_id);
+      writer_arena.DisableFailures();
+      if (iree_status_is_ok(status)) {
+        EXPECT_LE(writer_arena.allocation_count(), failure_index);
+        EXPECT_EQ(writer_id, count);
+        EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), count + 1);
+        break;
+      }
+
+      IREE_EXPECT_STATUS_IS(IREE_STATUS_RESOURCE_EXHAUSTED, status);
+      EXPECT_EQ(writer_arena.allocation_count(), failure_index + 1);
+      EXPECT_EQ(writer_id, UINT32_MAX);
+      EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), count);
+
+      // Existing rows remain queryable and retry publishes exactly one new ID.
+      const std::string& prior_name =
+          external_names[test_case.external_count - 1];
+      IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+          &numbering,
+          iree_make_string_view(prior_name.data(), prior_name.size()),
+          &writer_id));
+      EXPECT_EQ(writer_id, count - 1);
+      IREE_ASSERT_OK(loom_bytecode_numbering_intern_string_view(
+          &numbering, view, &writer_id));
+      EXPECT_EQ(writer_id, count);
+      EXPECT_EQ(loom_bytecode_numbering_string_count(&numbering), count + 1);
+      EXPECT_TRUE(iree_string_view_equal(
+          loom_bytecode_numbering_string(&numbering, writer_id), view));
+    }
+  }
 }
 
 }  // namespace

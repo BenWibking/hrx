@@ -16,7 +16,9 @@
 #include "loom/format/bytecode/writer/type_index.h"
 #include "loom/format/low_repr.h"
 #include "loom/ir/context.h"
+#include "loom/ir/intern_table.h"
 #include "loom/ir/ir.h"
+#include "loom/ir/string_table.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,13 +27,8 @@ extern "C" {
 // Maps a trusted native type kind to its independently versioned wire tag.
 uint8_t loom_bytecode_type_kind_byte(loom_type_kind_t kind);
 
-// String originating outside of the module string table.
-typedef struct loom_bytecode_external_string_t {
-  // External string contents.
-  iree_string_view_t view;
-  // Dense bytecode string-table ID assigned to |view|.
-  uint32_t writer_id;
-} loom_bytecode_external_string_t;
+// Number of external strings retained without allocating a content index.
+#define LOOM_BYTECODE_INLINE_EXTERNAL_STRING_CAPACITY 16u
 
 // Operation kind registered in the bytecode operation table.
 typedef struct loom_bytecode_op_entry_t {
@@ -123,22 +120,24 @@ typedef struct loom_bytecode_numbering_t {
 
   // First-use-ordered string catalog and its module/external projections.
   struct {
-    // Bytecode string-table entries indexed by bytecode string ID.
-    iree_string_view_t* values;
-    // Number of assigned bytecode string IDs.
-    iree_host_size_t count;
-    // Allocated capacity of |values|.
-    iree_host_size_t capacity;
-    // Bytecode string IDs indexed by module string ID.
-    uint32_t* writer_ids_by_module_id;
-    // Strings originating outside of the module string table.
+    // Segmented borrowed views indexed by bytecode string ID.
+    loom_string_table_t table;
+    // Module string ID projection.
     struct {
-      // External string records in discovery order.
-      loom_bytecode_external_string_t* values;
-      // Number of populated external string records.
+      // Segmented bytecode string IDs indexed by module string ID.
+      loom_segmented_storage_t segments;
+    } module_ids;
+    // Strings absent from the source module.
+    struct {
+      // Borrowed views retained before the content index is needed.
+      iree_string_view_t
+          inline_views[LOOM_BYTECODE_INLINE_EXTERNAL_STRING_CAPACITY];
+      // Writer IDs paired with |inline_views|.
+      uint32_t inline_writer_ids[LOOM_BYTECODE_INLINE_EXTERNAL_STRING_CAPACITY];
+      // Number of external strings in the catalog.
       iree_host_size_t count;
-      // Allocated capacity of |values|.
-      iree_host_size_t capacity;
+      // Lazily built content index after the inline tier fills.
+      loom_intern_table_t index;
     } external;
   } strings;
 
@@ -187,11 +186,16 @@ typedef struct loom_bytecode_numbering_t {
   } ops;
 } loom_bytecode_numbering_t;
 
+// Returns the number of assigned bytecode string IDs.
+static inline iree_host_size_t loom_bytecode_numbering_string_count(
+    const loom_bytecode_numbering_t* numbering) {
+  return numbering->strings.table.count;
+}
+
 // Returns the string assigned to |writer_id|.
 static inline iree_string_view_t loom_bytecode_numbering_string(
     const loom_bytecode_numbering_t* numbering, uint32_t writer_id) {
-  IREE_ASSERT(writer_id < numbering->strings.count);
-  return numbering->strings.values[writer_id];
+  return loom_string_table_get(&numbering->strings.table, writer_id);
 }
 
 // Initializes empty catalogs and the stable symbol-order projection.
