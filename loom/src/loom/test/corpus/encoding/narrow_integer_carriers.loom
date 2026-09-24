@@ -1,0 +1,177 @@
+func.def public @f8e4m3_signed_bits(%input: f32) -> (i32) {
+  %narrow = scalar.fptrunc %input : f32 to f8E4M3
+  %bits = scalar.bitcast %narrow : f8E4M3 to i8
+  %result = scalar.extsi %bits : i8 to i32
+  func.return %result : i32
+}
+
+check.case @f8e4m3_signed_bits_positive {
+  %input = check.literal value(1.125) : f32
+  %actual = func.call @f8e4m3_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(57) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+check.case @f8e4m3_signed_bits_negative_zero {
+  %input = check.literal value(-0.0) : f32
+  %actual = func.call @f8e4m3_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(-128) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+func.def public @f8e5m2_signed_bits(%input: f32) -> (i32) {
+  %narrow = scalar.fptrunc %input : f32 to f8E5M2
+  %bits = scalar.bitcast %narrow : f8E5M2 to i8
+  %result = scalar.extsi %bits : i8 to i32
+  func.return %result : i32
+}
+
+check.case @f8e5m2_signed_bits_positive {
+  %input = check.literal value(1.25) : f32
+  %actual = func.call @f8e5m2_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(61) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+check.case @f8e5m2_signed_bits_negative_zero {
+  %input = check.literal value(-0.0) : f32
+  %actual = func.call @f8e5m2_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(-128) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+func.def public @f16_signed_bits(%input: f32) -> (i32) {
+  %narrow = scalar.fptrunc %input : f32 to f16
+  %bits = scalar.bitcast %narrow : f16 to i16
+  %result = scalar.extsi %bits : i16 to i32
+  func.return %result : i32
+}
+
+check.case @f16_signed_bits_positive {
+  %input = check.literal value(1.0009765625) : f32
+  %actual = func.call @f16_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(15361) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+check.case @f16_signed_bits_negative {
+  %input = check.literal value(-1.0009765625) : f32
+  %actual = func.call @f16_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(-17407) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+func.def public @bf16_signed_bits(%input: f32) -> (i32) {
+  %narrow = scalar.fptrunc %input : f32 to bf16
+  %bits = scalar.bitcast %narrow : bf16 to i16
+  %result = scalar.extsi %bits : i16 to i32
+  func.return %result : i32
+}
+
+check.case @bf16_signed_bits_positive {
+  %input = check.literal value(1.0078125) : f32
+  %actual = func.call @bf16_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(16257) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+check.case @bf16_signed_bits_negative {
+  %input = check.literal value(-1.0078125) : f32
+  %actual = func.call @bf16_signed_bits(%input) : (f32) -> (i32)
+  %expected = check.literal value(-16511) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+func.def public @i16_add_carriers(%lhs: i16, %rhs: i16) -> (i32, i32) {
+  %sum = scalar.addi %lhs, %rhs : i16
+  %signed = scalar.extsi %sum : i16 to i32
+  %unsigned = scalar.extui %sum : i16 to i32
+  func.return %signed, %unsigned : i32, i32
+}
+
+check.case @i16_add_wrap_carriers {
+  %lhs = check.literal value(32767) : i16
+  %rhs = check.literal value(1) : i16
+  %signed, %unsigned = func.call @i16_add_carriers(%lhs, %rhs) : (i16, i16) -> (i32, i32)
+  %expected_signed = check.literal value(-32768) : i32
+  %expected_unsigned = check.literal value(32768) : i32
+  check.expect.equal actual(%signed) expected(%expected_signed) : i32
+  check.expect.equal actual(%unsigned) expected(%expected_unsigned) : i32
+  check.return
+}
+
+func.def public @i8_shift_carriers(%value: i8, %amount: i8) -> (i32, i32) {
+  %shifted = scalar.shli %value, %amount : i8
+  %signed = scalar.extsi %shifted : i8 to i32
+  %unsigned = scalar.extui %shifted : i8 to i32
+  func.return %signed, %unsigned : i32, i32
+}
+
+check.case @i8_shift_wrap_carriers {
+  %value = check.literal value(64) : i8
+  %amount = check.literal value(1) : i8
+  %signed, %unsigned = func.call @i8_shift_carriers(%value, %amount) : (i8, i8) -> (i32, i32)
+  %expected_signed = check.literal value(-128) : i32
+  %expected_unsigned = check.literal value(128) : i32
+  check.expect.equal actual(%signed) expected(%expected_signed) : i32
+  check.expect.equal actual(%unsigned) expected(%expected_unsigned) : i32
+  check.return
+}
+
+func.def public @f16_bits_or_fallback(%input: f16, %choose_input: i1) -> (i32, f32) {
+  %bits = scalar.bitcast %input : f16 to i16
+  %fallback = scalar.constant -1 : i16
+  %selected = scf.select %choose_input, %bits, %fallback : i16
+  %integer = scalar.extui %selected : i16 to i32
+  %floating = scalar.uitofp %selected : i16 to f32
+  func.return %integer, %floating : i32, f32
+}
+
+check.case @f16_bits_fallback_unsigned {
+  %input = check.literal value(1.0) : f16
+  %choose_input = check.literal value(false) : i1
+  %integer, %floating = func.call @f16_bits_or_fallback(%input, %choose_input) : (f16, i1) -> (i32, f32)
+  %expected_integer = check.literal value(65535) : i32
+  %expected_floating = check.literal value(65535.0) : f32
+  check.expect.equal actual(%integer) expected(%expected_integer) : i32
+  check.expect.equal actual(%floating) expected(%expected_floating) : f32
+  check.return
+}
+
+func.def public @i8_unsigned_extension_chain(%input: i8) -> (i32) {
+  %middle = scalar.extui %input : i8 to i16
+  %result = scalar.extui %middle : i16 to i32
+  func.return %result : i32
+}
+
+check.case @i8_unsigned_extension_chain_high_bits {
+  %input = check.literal value(-1) : i8
+  %actual = func.call @i8_unsigned_extension_chain(%input) : (i8) -> (i32)
+  %expected = check.literal value(255) : i32
+  check.expect.equal actual(%actual) expected(%expected) : i32
+  check.return
+}
+
+func.def public @i16_argument_carriers(%input: i16) -> (i32, i32) {
+  %signed = scalar.extsi %input : i16 to i32
+  %unsigned = scalar.extui %input : i16 to i32
+  func.return %signed, %unsigned : i32, i32
+}
+
+check.case @i16_argument_carriers_sign_bit {
+  %input = check.literal value(-32768) : i16
+  %signed, %unsigned = func.call @i16_argument_carriers(%input) : (i16) -> (i32, i32)
+  %expected_signed = check.literal value(-32768) : i32
+  %expected_unsigned = check.literal value(32768) : i32
+  check.expect.equal actual(%signed) expected(%expected_signed) : i32
+  check.expect.equal actual(%unsigned) expected(%expected_unsigned) : i32
+  check.return
+}
