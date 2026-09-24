@@ -278,8 +278,8 @@ iree_status_t loom_pipeline_place_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_PIPELINE_EXECUTE: Execute one firing for every logical participant in a placement. The first body argument is the row-major logical rank; remaining body arguments explicitly capture the input operands. A captured channel keeps one protocol identity; channel operations in the body address the relation endpoints of the current logical firing. Execute operations are concurrent unless SSA, channel, or explicit synchronization edges order them.
-// pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<6144xi32>>) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {
+// LOOM_OP_PIPELINE_EXECUTE: Execute one firing for every logical participant in a placement. The first body argument is the row-major logical rank; remaining body arguments explicitly capture the input operands and are the textual source of their types. Capture types must match after outer SSA values are remapped to their corresponding body arguments. A captured channel keeps one protocol identity; channel operations in the body address the relation endpoints of the current logical firing. Execute operations are concurrent unless SSA, channel, or explicit synchronization edges order them.
+// pipeline.execute %placement(%input) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {
 //   pipeline.yield
 // }
 LOOM_DEFINE_ISA(loom_pipeline_execute_isa, LOOM_OP_PIPELINE_EXECUTE)

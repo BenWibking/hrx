@@ -50,9 +50,9 @@ pipeline.def @transfer() run(%source: read<tile<256xf32>>, %destination: write<t
 // Logical columns may outnumber physical workers. The placement fixes the
 // rank assignment while channel synchronization determines when each firing
 // can make progress.
-pipeline.def @placed(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<6144xi32>>) {
+pipeline.def @placed(%columns: group<8>, %tiles: group<4>, %width: index) run(%input: channel<tile<[%width]xi32>>) {
   %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<6144xi32>>) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {
+  pipeline.execute %placement(%width, %input) do(%rank: index, %local_width: index, %endpoint: channel<tile<[%local_width]xi32>>) {
     pipeline.yield
   }
   pipeline.finish

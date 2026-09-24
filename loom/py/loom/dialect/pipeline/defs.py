@@ -263,11 +263,13 @@ pipeline_execute = Op(
     doc=(
         "Execute one firing for every logical participant in a placement. The "
         "first body argument is the row-major logical rank; remaining body "
-        "arguments explicitly capture the input operands. A captured channel "
-        "keeps one protocol identity; channel operations in the body address "
-        "the relation endpoints of the current logical firing. Execute "
-        "operations are concurrent unless SSA, channel, or explicit "
-        "synchronization edges order them."
+        "arguments explicitly capture the input operands and are the textual "
+        "source of their types. Capture types must match after outer SSA "
+        "values are remapped to their corresponding body arguments. A "
+        "captured channel keeps one protocol identity; channel operations in "
+        "the body address the relation endpoints of the current logical "
+        "firing. Execute operations are concurrent unless SSA, channel, or "
+        "explicit synchronization edges order them."
     ),
     operands=[
         Operand("assignment", ANY, doc="Logical-to-physical assignment."),
@@ -289,17 +291,11 @@ pipeline_execute = Op(
         LPAREN,
         Refs("inputs"),
         RPAREN,
-        COLON,
-        TypeOf("assignment"),
-        GLUE,
-        LPAREN,
-        TypesOf("inputs"),
-        RPAREN,
         kw("do"),
         BlockArgs("body"),
         Region("body"),
     ],
-    examples=["pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<6144xi32>>) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {\n  pipeline.yield\n}"],
+    examples=["pipeline.execute %placement(%input) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {\n  pipeline.yield\n}"],
 )
 
 pipeline_yield = Op(

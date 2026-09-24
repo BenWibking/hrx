@@ -25,6 +25,16 @@ pipeline.def @typed_arguments(%width: index) run(%input: channel<tile<[%width]xf
 
 // ====
 
+pipeline.def @execute_remaps_dependent_capture_types(%logical_count: index, %physical_count: index, %width: index, %columns: group<[%logical_count]>, %tiles: group<[%physical_count]>) run(%input: channel<tile<[%width]xi32>>) {
+  %placement = pipeline.place<cyclic> %columns, %tiles : group<[%logical_count]>, group<[%physical_count]> -> pipeline.placement<group<[%logical_count]>, group<[%physical_count]>>
+  pipeline.execute %placement(%width, %input) do(%rank: index, %local_width: index, %endpoint: channel<tile<[%local_width]xi32>>) {
+    pipeline.yield
+  }
+  pipeline.finish
+}
+
+// ====
+
 func.def @wrong_group(%input: buffer) {
   func.return
 }
@@ -148,7 +158,7 @@ pipeline.def @place_result_matches_groups(%columns: group<8>, %tiles: group<4>) 
 
 pipeline.def @execute_requires_assignment(%not_assignment: index) run() {
   // ERROR@+1: TYPE/003 {operand_name="assignment", actual_type="index", expected_constraint="pipeline.placement<group<...>, group<...>>"}
-  pipeline.execute %not_assignment() : index() do(%rank: index) {
+  pipeline.execute %not_assignment() do(%rank: index) {
     pipeline.yield
   }
   pipeline.finish
@@ -159,7 +169,7 @@ pipeline.def @execute_requires_assignment(%not_assignment: index) run() {
 pipeline.def @execute_requires_rank(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<16xi32>>) {
   %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
   // ERROR@+1: TYPE/013 {arg_index="0", arg_type="i32", expected_type="index"}
-  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<16xi32>>) do(%rank: i32, %endpoint: channel<tile<16xi32>>) {
+  pipeline.execute %placement(%input) do(%rank: i32, %endpoint: channel<tile<16xi32>>) {
     pipeline.yield
   }
   pipeline.finish
@@ -170,7 +180,7 @@ pipeline.def @execute_requires_rank(%columns: group<8>, %tiles: group<4>) run(%i
 pipeline.def @execute_matches_captures(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<16xi32>>) {
   %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
   // ERROR@+1: TYPE/013 {arg_index="1", arg_type="channel<tile<8xi32>>", expected_type="channel<tile<16xi32>>"}
-  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<16xi32>>) do(%rank: index, %endpoint: channel<tile<8xi32>>) {
+  pipeline.execute %placement(%input) do(%rank: index, %endpoint: channel<tile<8xi32>>) {
     pipeline.yield
   }
   pipeline.finish

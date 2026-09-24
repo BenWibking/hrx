@@ -104,9 +104,9 @@ def test_command_pipeline_scope_is_not_a_language_state() -> None:
 
 def test_explicit_placement_roundtrip() -> None:
     _roundtrip(
-        """pipeline.def @placed(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<6144xi32>>) {
+        """pipeline.def @placed(%columns: group<8>, %tiles: group<4>, %width: index) run(%input: channel<tile<[%width]xi32>>) {
   %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-  pipeline.execute %placement(%input) : pipeline.placement<group<8>, group<4>>(channel<tile<6144xi32>>) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {
+  pipeline.execute %placement(%width, %input) do(%rank: index, %local_width: index, %endpoint: channel<tile<[%local_width]xi32>>) {
     pipeline.yield
   }
   pipeline.finish
