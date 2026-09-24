@@ -36,6 +36,8 @@ typedef struct iree_net_rdma_connection_control_options_t {
   uint32_t data_work_capacity;
   // Maximum native records/completions handled in one service visit.
   uint32_t service_batch_size;
+  // Local completion policy for the shared control/data CQ.
+  iree_net_rdma_completion_queue_mode_t completion_mode;
   // Native address/route resolution timeout, in milliseconds, up to INT_MAX.
   // This is a setup policy, not a drain deadline or data-operation timeout.
   uint32_t resolution_timeout_ms;

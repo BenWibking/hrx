@@ -139,6 +139,7 @@ iree_net_rdma_connection_options_t iree_net_rdma_connection_options_default(
     void) {
   iree_net_rdma_connection_options_t options = {0};
   options.max_endpoint_count = 4;
+  options.completion_mode = IREE_NET_RDMA_COMPLETION_QUEUE_MODE_READINESS;
   options.control.send_count = 16;
   options.control.receive_count = 16;
   options.control.service_batch_size = 32;
@@ -169,6 +170,8 @@ iree_status_t iree_net_rdma_connection_options_validate(
     const iree_net_rdma_connection_options_t* options) {
   if (!options || !options->max_endpoint_count ||
       options->max_endpoint_count >= (UINT32_C(1) << 30) ||
+      options->completion_mode >
+          IREE_NET_RDMA_COMPLETION_QUEUE_MODE_BUSY_POLL ||
       !options->control.send_count || !options->control.receive_count ||
       !options->control.service_batch_size ||
       !options->control.resolution_timeout_ms ||
@@ -867,6 +870,7 @@ iree_status_t iree_net_rdma_connection_create(
       .receive_count = options->control.receive_count,
       .data_work_capacity = data_work_capacity,
       .service_batch_size = options->control.service_batch_size,
+      .completion_mode = options->completion_mode,
       .resolution_timeout_ms = options->control.resolution_timeout_ms,
       .minimum_rnr_timer = options->control.minimum_rnr_timer,
   };
