@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "loom/codegen/low/lower/lower.h"
+#include "loom/codegen/low/representation_plan.h"
 #include "loom/codegen/low/source_memory_plan.h"
 #include "loom/ir/ir.h"
 #include "loom/ir/scalar_type.h"
@@ -471,10 +472,12 @@ typedef enum loom_amdgpu_scalar_conversion_kind_e {
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_TRUNCATE_LOW_32,
-  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_NARROW,
-  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_NARROW_LOW_32,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT_LOW_32,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_I64,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ZERO_EXTEND,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SITOFP_NARROW_TO_F32,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_UITOFP_NARROW_TO_F32,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FP8_TO_BF16,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_FP8_ENCODE,
@@ -495,6 +498,8 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   uint32_t result_bit_count;
   // Descriptor selected for conversion packets used by the strategy.
   loom_amdgpu_descriptor_ref_t convert_descriptor_ref;
+  // Planned physical representation of a narrow source or result.
+  loom_low_representation_id_t narrow_representation;
   // Native packed FP8 encode strategy for an FP8-result truncation.
   loom_amdgpu_fp8_encode_plan_t fp8_encode;
 } loom_amdgpu_scalar_conversion_plan_t;
