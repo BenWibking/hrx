@@ -313,9 +313,12 @@ def _suggest_wait_serialization(
             )
             suggestion_id = "amdgpu.lds_ssa_use_serialization"
             action = (
-                "Issue independent LDS or DS producers before consuming their "
-                "SSA results so waits can remain partial; then require "
-                "LDS SSA-use full drains to fall before benchmarking."
+                "Repeated LDS or DS results are consumed after full counter "
+                "drains. Inspect the cited producer/consumer pairs: dependent "
+                "chains such as subgroup reductions require these waits, while "
+                "independent chains can issue producers together so waits remain "
+                "partial. Benchmark only when the report shows fewer LDS "
+                "SSA-use full drains."
             )
             reason_evidence = (
                 CompileReportSuggestionEvidence(
@@ -325,6 +328,12 @@ def _suggest_wait_serialization(
                 CompileReportSuggestionEvidence(
                     path=f"{row_path}.summary.max_outstanding_before",
                     value=max_outstanding,
+                ),
+                *_wait_descriptor_evidence(
+                    document,
+                    function_name=function_name,
+                    counter="lds",
+                    reason="amdgpu.ssa_use",
                 ),
             )
         suggestions.append(
@@ -350,6 +359,56 @@ def _suggest_wait_serialization(
             )
         )
     return tuple(suggestions)
+
+
+def _wait_descriptor_evidence(
+    document: CompileReportDocument,
+    *,
+    function_name: str | None,
+    counter: str,
+    reason: str,
+) -> tuple[CompileReportSuggestionEvidence, ...]:
+    actions_value = document.report.get("wait_action_rows")
+    if actions_value is None:
+        return ()
+    rows = _report_indexed_rows(
+        _report_object(actions_value, "wait_action_rows"), "wait_action_rows"
+    )
+    evidence = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for position, row in enumerate(rows):
+        if (
+            row.get("function") != function_name
+            or row.get("counter") != counter
+            or row.get("reason") != reason
+        ):
+            continue
+        row_path = f"wait_action_rows.rows[{position}]"
+        producer = _report_string(
+            row.get("producer_descriptor_key"),
+            f"{row_path}.producer_descriptor_key",
+        )
+        consumer = _report_string(
+            row.get("consumer_descriptor_key"),
+            f"{row_path}.consumer_descriptor_key",
+        )
+        pair = (producer, consumer)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        evidence.extend(
+            (
+                CompileReportSuggestionEvidence(
+                    path=f"{row_path}.producer_descriptor_key",
+                    value=producer,
+                ),
+                CompileReportSuggestionEvidence(
+                    path=f"{row_path}.consumer_descriptor_key",
+                    value=consumer,
+                ),
+            )
+        )
+    return tuple(evidence)
 
 
 def _suggest_spill_traffic(
