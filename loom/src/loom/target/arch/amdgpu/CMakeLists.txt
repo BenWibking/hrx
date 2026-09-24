@@ -298,8 +298,10 @@ loom_cc_library(
     "runtime_requirements.c"
   DEPS
     iree::base
-    loom::sanitizer::options
-    loom::target::pipeline_options
+    loom::ir
+    loom::target::arch::amdgpu::abi::asan
+    loom::target::arch::amdgpu::abi::feedback
+    loom::target::arch::amdgpu::abi::tsan
   PUBLIC
 )
 endif()
@@ -312,9 +314,10 @@ loom_cc_test(
     "runtime_requirements_test.cc"
   DEPS
     ::runtime_requirements
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::sanitizer::options
+    loom::ir
   LABELS
     "iree-build-requirement=loom.target.arch.amdgpu"
 )

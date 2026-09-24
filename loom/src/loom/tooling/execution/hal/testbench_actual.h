@@ -45,14 +45,12 @@ typedef struct loom_run_hal_testbench_context_t {
   iree_allocator_t host_allocator;
   // Device event sink used when initializing |runtime|.
   iree_hal_device_event_sink_t device_event_sink;
-  // Sanitizer options used when deriving HAL runtime requirements.
-  loom_sanitizer_options_t runtime_sanitizer_options;
+  // HAL runtime services required by every module added to this context.
+  iree_hal_device_runtime_feature_flags_t runtime_features;
   // Selected provider for the active device.
   const loom_device_provider_t* device_provider;
   // Shared HAL runtime used by kernel launches.
   loom_run_hal_runtime_t runtime;
-  // True when |runtime_sanitizer_options| has been set by the tool.
-  bool has_runtime_sanitizer_options;
   // True when |runtime| owns initialized HAL state.
   bool runtime_initialized;
 } loom_run_hal_testbench_context_t;
@@ -68,9 +66,14 @@ void loom_run_hal_testbench_context_set_device_event_sink(
     loom_run_hal_testbench_context_t* context,
     iree_hal_device_event_sink_t device_event_sink);
 
-// Sets the structured sanitizer policy used by future HAL runtime creation.
-void loom_run_hal_testbench_context_set_runtime_sanitizer_options(
-    loom_run_hal_testbench_context_t* context,
+// Adds runtime requirements for executable sanitizer operations in |module|
+// and instrumentation requested by |sanitizer_options|.
+//
+// Requirements may be accumulated across modules before runtime creation. A
+// module added afterward must require only services already provisioned by the
+// active device.
+iree_status_t loom_run_hal_testbench_context_add_module_runtime_requirements(
+    loom_run_hal_testbench_context_t* context, const loom_module_t* module,
     const loom_sanitizer_options_t* sanitizer_options);
 
 // Releases HAL runtime resources owned by |context|.

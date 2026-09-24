@@ -23,6 +23,25 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    runtime_requirements
+  HDRS
+    "runtime_requirements.h"
+  SRCS
+    "runtime_requirements.c"
+  DEPS
+    ::options
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::kernel
+    loom::ops::op_defs
+    loom::ops::sanitizer
+    loom::util::walk
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     pipeline_passes
   HDRS
     "pipeline_passes.h"
@@ -187,6 +206,22 @@ loom_cc_test(
   DEPS
     ::site_collection
     ::site_payload
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::kernel
+    loom::ops::sanitizer
+    loom::ops::test
+)
+
+loom_cc_test(
+  NAME
+    runtime_requirements_test
+  SRCS
+    "runtime_requirements_test.cc"
+  DEPS
+    ::runtime_requirements
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main

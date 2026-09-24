@@ -211,8 +211,6 @@ iree_status_t iree_benchmark_loom_run_file(
   iree_benchmark_loom_hal_context_initialize(options->configuration, allocator,
                                              &hal_context);
   hal_context.config_set = benchmark_options->config_set;
-  loom_run_hal_testbench_context_set_runtime_sanitizer_options(
-      &hal_context.execution, &benchmark_options->sanitizer);
   loom_testbench_device_event_capture_t device_event_capture = {0};
   bool device_event_capture_initialized = false;
   iree_arena_allocator_t plan_arena;
@@ -375,6 +373,12 @@ iree_status_t iree_benchmark_loom_run_file(
       ++failure_count;
       exit_code = 1;
     }
+  }
+
+  if (iree_status_is_ok(status) && failure_count == 0) {
+    status = loom_run_hal_testbench_context_add_module_runtime_requirements(
+        &hal_context.execution, run_module.module,
+        &benchmark_options->sanitizer);
   }
 
   if (iree_status_is_ok(status) && failure_count == 0) {

@@ -10,7 +10,7 @@
 #define LOOM_TARGET_ARCH_AMDGPU_RUNTIME_REQUIREMENTS_H_
 
 #include "iree/base/api.h"
-#include "loom/target/pipeline_options.h"
+#include "loom/ir/ir.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,10 +30,15 @@ enum loom_amdgpu_runtime_requirement_bit_e {
 // Bitset of loom_amdgpu_runtime_requirement_bit_e values.
 typedef uint32_t loom_amdgpu_runtime_requirements_t;
 
-// Returns target runtime requirements implied by |options|.
+// Returns runtime globals reserved by prepared target-low |module|.
+//
+// Artifact emission consumes the lowered IR as its source of truth instead of
+// reconstructing possible references from the source pipeline options. Target
+// lowering reserves each ABI symbol only when it emits a corresponding
+// reference.
 loom_amdgpu_runtime_requirements_t
-loom_amdgpu_runtime_requirements_from_target_pipeline_options(
-    const loom_target_pipeline_options_t* options);
+loom_amdgpu_runtime_requirements_from_target_low_module(
+    const loom_module_t* module);
 
 #ifdef __cplusplus
 }  // extern "C"

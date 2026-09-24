@@ -15,6 +15,8 @@
 namespace {
 
 TEST(AmdgpuTsanAbiTest, ConfigConstantsMatchHalTsanAbi) {
+  EXPECT_STREQ(LOOM_AMDGPU_TSAN_CONFIG_GLOBAL_NAME,
+               IREE_HAL_AMDGPU_TSAN_CONFIG_GLOBAL_NAME);
   EXPECT_EQ(LOOM_AMDGPU_TSAN_CONFIG_BYTE_LENGTH,
             sizeof(iree_hal_amdgpu_tsan_config_t));
   EXPECT_EQ(LOOM_AMDGPU_TSAN_CONFIG_FLAGS_OFFSET,

@@ -22,6 +22,8 @@ extern "C" {
 
 #define LOOM_AMDGPU_ASAN_CONFIG_ABI_VERSION 0u
 
+#define LOOM_AMDGPU_ASAN_CONFIG_GLOBAL_NAME "iree_asan_config"
+
 // ABI version for AMDGPU ASAN feedback report payloads.
 #define LOOM_AMDGPU_ASAN_REPORT_ABI_VERSION 0u
 

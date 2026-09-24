@@ -475,6 +475,64 @@ TEST_F(HalTestbenchActualTest, RequiresExplicitDeviceWhenHalProviderExists) {
   loom_run_hal_testbench_context_deinitialize(&context);
 }
 
+TEST_F(HalTestbenchActualTest,
+       AddsAuthoredSanitizerRequirementsBeforeRuntimeInitialization) {
+  static constexpr char kSource[] = R"(
+kernel.def @entry() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%condition: i1) {
+  kernel.assert %condition : i1
+  kernel.return
+}
+)";
+  loom_run_module_t run_module = {};
+  loom_testbench_module_plan_t module_plan = {};
+  ParseAndPlan(IREE_SV(kSource), &run_module, &module_plan);
+
+  loom_run_hal_testbench_context_t context = {};
+  loom_run_hal_testbench_context_initialize(
+      /*device_provider_registry=*/nullptr, iree_allocator_system(), &context);
+  const loom_sanitizer_options_t sanitizer = {};
+  IREE_ASSERT_OK(loom_run_hal_testbench_context_add_module_runtime_requirements(
+      &context, run_module.module, &sanitizer));
+  EXPECT_EQ(context.runtime_features,
+            IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_FEEDBACK);
+
+  loom_run_hal_testbench_context_deinitialize(&context);
+  loom_run_module_deinitialize(&run_module);
+}
+
+TEST_F(HalTestbenchActualTest,
+       RejectsNewSanitizerRequirementsAfterRuntimeInitialization) {
+  static constexpr char kSource[] = R"(
+kernel.def @entry() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%condition: i1) {
+  kernel.assert %condition : i1
+  kernel.return
+}
+)";
+  loom_run_module_t run_module = {};
+  loom_testbench_module_plan_t module_plan = {};
+  ParseAndPlan(IREE_SV(kSource), &run_module, &module_plan);
+
+  loom_run_hal_testbench_context_t context = {};
+  loom_run_hal_testbench_context_initialize(
+      /*device_provider_registry=*/nullptr, iree_allocator_system(), &context);
+  iree_hal_queue_t dispatch_queue = {};
+  IREE_ASSERT_OK(InitializeFakeHalContext(&context, &dispatch_queue));
+  const loom_sanitizer_options_t sanitizer = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_FAILED_PRECONDITION,
+      loom_run_hal_testbench_context_add_module_runtime_requirements(
+          &context, run_module.module, &sanitizer));
+
+  loom_run_hal_testbench_context_deinitialize(&context);
+  loom_run_module_deinitialize(&run_module);
+}
+
 TEST_F(HalTestbenchActualTest, ScalarInputsPackDispatchConstantWords) {
   loom_testbench_value_t inputs[] = {
       I32Value(0x12345678),

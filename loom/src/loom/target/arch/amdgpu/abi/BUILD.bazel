@@ -18,6 +18,8 @@ package(
 
 _AMDGPU_LOWER_VISIBILITY = ["//loom/src/loom/target/arch/amdgpu/lower:__pkg__"]
 
+_AMDGPU_ARCH_VISIBILITY = ["//loom/src/loom/target/arch/amdgpu:__pkg__"]
+
 _AMDGPU_NATIVE_VISIBILITY = ["//loom/src/loom/target/emit/native/amdgpu:__pkg__"]
 
 _AMDGPU_TOOLING_VISIBILITY = ["//loom/src/loom/tooling/target/amdgpu:__pkg__"]
@@ -26,6 +28,7 @@ loom_cc_library(
     name = "asan",
     hdrs = ["asan.h"],
     visibility = (
+        _AMDGPU_ARCH_VISIBILITY +
         _AMDGPU_LOWER_VISIBILITY +
         _AMDGPU_NATIVE_VISIBILITY +
         _AMDGPU_TOOLING_VISIBILITY
@@ -47,6 +50,7 @@ loom_cc_library(
     name = "feedback",
     hdrs = ["feedback.h"],
     visibility = (
+        _AMDGPU_ARCH_VISIBILITY +
         _AMDGPU_LOWER_VISIBILITY +
         _AMDGPU_NATIVE_VISIBILITY +
         _AMDGPU_TOOLING_VISIBILITY
@@ -68,6 +72,7 @@ loom_cc_library(
     name = "tsan",
     hdrs = ["tsan.h"],
     visibility = (
+        _AMDGPU_ARCH_VISIBILITY +
         _AMDGPU_LOWER_VISIBILITY +
         _AMDGPU_NATIVE_VISIBILITY +
         _AMDGPU_TOOLING_VISIBILITY
