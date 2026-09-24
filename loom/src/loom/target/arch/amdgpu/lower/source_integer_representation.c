@@ -139,6 +139,14 @@ void loom_amdgpu_source_integer_representation_observe_boundary(
     loom_low_lower_representation_recorder_t* recorder) {
   const loom_module_t* module = loom_low_lower_context_module(context);
   switch (action) {
+    case LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD: {
+      const loom_value_id_t input = loom_op_const_operands(source_op)[0];
+      const loom_value_id_t result = loom_op_const_results(source_op)[0];
+      if (loom_amdgpu_source_integer_representation_is_narrow(module, input)) {
+        loom_low_lower_representation_record_union(recorder, input, result);
+      }
+      return;
+    }
     case LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT:
     case LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGN_EXTENDED_RESULT: {
       IREE_ASSERT_EQ(source_op->result_count, 1u);

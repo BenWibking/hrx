@@ -577,16 +577,26 @@ static const loom_low_lower_representation_boundary_t
         {LOOM_OP_INDEX_CAST,
          LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGN_EXTENDED_RESULT,
          LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_KERNEL_SUBGROUP_SHUFFLE,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
+        {LOOM_OP_KERNEL_SUBGROUP_BROADCAST,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
+        {LOOM_OP_KERNEL_SUBGROUP_BROADCAST_FIRST,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
 };
 static const loom_low_lower_representation_boundary_span_t
-    kAmdgpuSourceRepresentationBoundarySpans[LOOM_DIALECT_INDEX -
+    kAmdgpuSourceRepresentationBoundarySpans[LOOM_DIALECT_KERNEL -
                                              LOOM_DIALECT_SCALAR + 1] = {
         [LOOM_DIALECT_SCALAR - LOOM_DIALECT_SCALAR] = {0, 9},
         [LOOM_DIALECT_VIEW - LOOM_DIALECT_SCALAR] = {9, 1},
         [LOOM_DIALECT_VECTOR - LOOM_DIALECT_SCALAR] = {10, 6},
         [LOOM_DIALECT_INDEX - LOOM_DIALECT_SCALAR] = {16, 1},
+        [LOOM_DIALECT_KERNEL - LOOM_DIALECT_SCALAR] = {17, 3},
 };
-static_assert(9 + 1 + 6 + 1 ==
+static_assert(9 + 1 + 6 + 1 + 3 ==
                   IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundaries),
               "AMDGPU representation spans must cover every boundary");
 static_assert((loom_op_kind_t)LOOM_OP_SCALAR_SITOFP <
@@ -622,7 +632,11 @@ static_assert((loom_op_kind_t)LOOM_OP_SCALAR_SITOFP <
                   (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_REPACK <
                       (loom_op_kind_t)LOOM_OP_INDEX_CAST &&
                   (loom_op_kind_t)LOOM_OP_INDEX_CAST <
-                      (loom_op_kind_t)LOOM_OP_KERNEL_DEF,
+                      (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_SHUFFLE &&
+                  (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_SHUFFLE <
+                      (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_BROADCAST &&
+                  (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_BROADCAST <
+                      (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_BROADCAST_FIRST,
               "AMDGPU representation boundaries must remain ordered");
 
 static const loom_low_lower_representation_provider_t

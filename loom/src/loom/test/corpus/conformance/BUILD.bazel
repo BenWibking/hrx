@@ -47,6 +47,7 @@ loom_test(
         ":subgroup_transport_cases.loom",
         "//loom/src/loom/test/corpus/source_low:subgroup_shuffle_participation.loom-test",
         "//loom/src/loom/test/corpus/source_low:subgroup_transport.loom-test",
+        "//loom/src/loom/test/corpus/source_low:subgroup_transport_carrier.loom-test",
     ],
     compile_targets = [
         "//loom/target/amdgpu:gfx942",

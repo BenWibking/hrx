@@ -7,6 +7,7 @@
 """Exact subgroup payload transport, including NaN bits and packed tails."""
 
 import argparse
+import struct
 from pathlib import Path
 
 from loom.gen.test.kernel_fixture import Arrays, Case, signed_bits
@@ -103,6 +104,23 @@ def participation_cases(arrays, mode):
     return results
 
 
+def carrier_cases(arrays, width):
+    kernel = f"subgroup_carrier_i{width}"
+    inputs = [signed_bits(0xDEADBEEF + item * 0x1234567, 32) for item in range(32)]
+    results = [f"kernel.decl @{kernel}() launch(%selected: index, %input: buffer, %output: buffer)\n"]
+    for selected in range(32):
+        case = Case(arrays, f"{kernel}_lane_{selected}", "i32", 128)
+        case.array("input", inputs)
+        case.scalar("selected", selected, "index")
+        case.launch(kernel, "%selected, %input, %output", "index, tensor<32xi32>, tensor<128xi32>")
+        signed = signed_bits(inputs[selected], width)
+        unsigned = inputs[selected] % (1 << width)
+        signed_float = struct.unpack("<i", struct.pack("<f", signed))[0]
+        unsigned_float = struct.unpack("<i", struct.pack("<f", unsigned))[0]
+        results.append(case.finish([signed] * 32 + [unsigned] * 32 + [signed_float] * 32 + [unsigned_float] * 32))
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -115,6 +133,8 @@ def main():
     cases.append(uniform_case(arrays))
     for mode in ["index", "xor", "up", "down", "xor_one"]:
         cases.extend(participation_cases(arrays, mode))
+    for width in [8, 16]:
+        cases.extend(carrier_cases(arrays, width))
     args.output.write_text("\n".join(cases))
 
 
