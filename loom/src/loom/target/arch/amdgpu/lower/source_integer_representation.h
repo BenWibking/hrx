@@ -41,6 +41,8 @@ enum loom_amdgpu_source_integer_representation_action_e {
   LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGNED_CONVERSION = 7,
   // An unsigned conversion consumes a narrow operand and may produce one.
   LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_UNSIGNED_CONVERSION = 8,
+  // First payload operand/result preserve the same native carrier bits.
+  LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD = 9,
 };
 
 // Returns whether |type| uses a target narrow integer carrier.

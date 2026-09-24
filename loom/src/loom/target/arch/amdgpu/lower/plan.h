@@ -1030,8 +1030,6 @@ typedef struct loom_amdgpu_subgroup_broadcast_plan_t {
   loom_value_id_t source_lane;
   // Exact source lane when known during planning, or UINT32_MAX when dynamic.
   uint32_t exact_source_lane;
-  // Source/result payload shape selected during planning.
-  loom_amdgpu_subgroup_payload_kind_t payload_kind;
   // Number of 32-bit registers in the broadcast payload.
   uint32_t register_count;
   // Native exchange and publication strategy selected during planning.
@@ -1047,8 +1045,6 @@ typedef struct loom_amdgpu_subgroup_broadcast_first_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Result value receiving the broadcast payload.
   loom_value_id_t result;
-  // Source/result payload shape selected during planning.
-  loom_amdgpu_subgroup_payload_kind_t payload_kind;
   // Number of 32-bit registers in the broadcast payload.
   uint32_t register_count;
   // Whether the mapped result requires copying the scalar read into VGPRs.
@@ -1086,10 +1082,8 @@ typedef struct loom_amdgpu_subgroup_shuffle_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Result value receiving the moved payload.
   loom_value_id_t result;
-  // Per-lane mask reporting whether the selected source lane is valid.
+  // Used per-lane participation result, or INVALID when the result is unused.
   loom_value_id_t valid;
-  // Source/result payload shape selected during planning.
-  loom_amdgpu_subgroup_payload_kind_t payload_kind;
   // Number of 32-bit registers in the shuffled payload.
   uint32_t register_count;
   // Cross-lane packet family selected for the shuffle.

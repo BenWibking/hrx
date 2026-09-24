@@ -90,6 +90,17 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    subgroup_transport
+  MAIN
+    "subgroup_transport.py"
+  SRCS
+    "subgroup_transport.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
     scalar_float_conversion
   MAIN
     "scalar_float_conversion.py"
