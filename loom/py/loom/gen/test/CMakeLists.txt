@@ -42,6 +42,17 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    predicate_bitwise
+  MAIN
+    "predicate_bitwise.py"
+  SRCS
+    "predicate_bitwise.py"
+  DEPS
+    loom::py::loom::gen::test::kernel_fixture
+)
+
+iree_py_library(
+  NAME
     predicate_select
   MAIN
     "predicate_select.py"

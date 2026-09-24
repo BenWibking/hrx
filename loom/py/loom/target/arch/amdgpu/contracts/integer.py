@@ -625,6 +625,28 @@ def _i1_sgpr_mask_rule(
     )
 
 
+def _vector_predicate_bitwise_rule(
+    source_op: Op, descriptor_key: str
+) -> DescriptorRule:
+    descriptor = _descriptor(descriptor_key)
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=descriptor,
+        guards=(
+            *_typed_binary_guards(_VECTOR_I1),
+            Guard.descriptor_available(descriptor),
+        ),
+        emit=(
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={"lhs": _DIRECT_LHS, "rhs": _DIRECT_RHS},
+                results={"dst": _RESULT},
+                form=DescriptorEmitForm.PER_LANE,
+            ),
+        ),
+    )
+
+
 def _vector_predicate_select_rule() -> DescriptorRule:
     bit_and = _descriptor("amdgpu.s_and_b64")
     bit_xor = _descriptor("amdgpu.s_xor_b64")
@@ -1727,6 +1749,14 @@ def _rules() -> tuple[DescriptorRule, ...]:
     )
     rules.append(_index_madd_sgpr_rule())
     rules.extend(_scalar_ctpopi_i32_rules())
+    rules.extend(
+        _vector_predicate_bitwise_rule(source_op, descriptor_key)
+        for source_op, descriptor_key in (
+            (vector.vector_andi, "amdgpu.s_and_b64"),
+            (vector.vector_ori, "amdgpu.s_or_b64"),
+            (vector.vector_xori, "amdgpu.s_xor_b64"),
+        )
+    )
     rules.append(_vector_predicate_select_rule())
     return tuple(rules)
 

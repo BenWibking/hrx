@@ -184,8 +184,10 @@ loom_cc_library(
   NAME
     wait_states
   HDRS
+    "store_data_wait.h"
     "wait_states.h"
   SRCS
+    "store_data_wait.c"
     "wait_states.c"
   DEPS
     ::delay_alu
@@ -194,6 +196,7 @@ loom_cc_library(
     ::matrix_wait_states
     ::structural_packet
     ::vopd_plan
+    ::wait_packets
     ::wait_plan
     iree::base
     iree::base::internal::arena
@@ -208,6 +211,7 @@ loom_cc_library(
     loom::target::arch::amdgpu::matrix::contract
     loom::target::arch::amdgpu::refs::target_refs
     loom::target::arch::amdgpu::target_info
+    loom::util::cfg_graph
   PUBLIC
 )
 endif()

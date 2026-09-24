@@ -309,7 +309,7 @@ def test_target_ref_source_shares_exact_tables() -> None:
         amdgpu_target_refs._descriptor_set_table_name,
         amdgpu_target_refs._descriptor_ref_table_name,
         amdgpu_target_refs._descriptor_set_trait_table_name,
-        amdgpu_target_refs._descriptor_set_vmem_result_order_class_table_name,
+        amdgpu_target_refs._descriptor_set_memory_property_table_name,
         amdgpu_target_refs._descriptor_set_immediate_slot_table_name,
         amdgpu_target_refs._reg_class_trait_table_name,
     )
