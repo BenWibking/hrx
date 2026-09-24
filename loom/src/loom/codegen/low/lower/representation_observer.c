@@ -94,6 +94,26 @@ void loom_low_lower_representation_record_candidates(
   }
 }
 
+void loom_low_lower_representation_record_costs(
+    loom_low_lower_representation_recorder_t* recorder,
+    loom_value_id_t source_value_id,
+    const loom_low_representation_candidate_t* candidates,
+    iree_host_size_t candidate_count) {
+  IREE_ASSERT_ARGUMENT(recorder);
+  if (!iree_status_is_ok(recorder->state->terminal_status)) {
+    return;
+  }
+  IREE_ASSERT_ARGUMENT(candidates);
+  IREE_ASSERT_GT(candidate_count, 0u);
+  const loom_value_ordinal_t value_ordinal =
+      loom_low_lower_representation_ordinal(recorder, source_value_id);
+  iree_status_t status = loom_low_representation_plan_contribute_costs(
+      &recorder->state->plan, value_ordinal, candidates, candidate_count);
+  if (!iree_status_is_ok(status)) {
+    loom_low_lower_representation_record_failure(recorder, status);
+  }
+}
+
 bool loom_low_lower_representation_component_is_constrained(
     loom_low_lower_representation_recorder_t* recorder,
     loom_value_id_t source_value_id) {

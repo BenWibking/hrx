@@ -123,6 +123,15 @@ void loom_low_lower_representation_record_candidates(
     const loom_low_representation_candidate_t* candidates,
     iree_host_size_t candidate_count);
 
+// Adds costs for representations selected by an exact producer domain in the
+// same component. Cost rows may be observed before the producer or relation
+// that activates the component. They do not activate a component themselves.
+void loom_low_lower_representation_record_costs(
+    loom_low_lower_representation_recorder_t* recorder,
+    loom_value_id_t source_value_id,
+    const loom_low_representation_candidate_t* candidates,
+    iree_host_size_t candidate_count);
+
 // Returns whether |source_value_id|'s current component has already received
 // an exact candidate domain. The query does not make an absent value
 // participate.
