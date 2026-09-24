@@ -43,6 +43,10 @@ from loom.target.arch.spirv.cooperative_matrix import (
     CooperativeMatrixCase,
     cooperative_matrix_descriptor_key,
 )
+from loom.target.arch.spirv.extended_math import (
+    EXTENDED_MATH_INSTRUCTIONS,
+    ExtendedMathInstruction,
+)
 from loom.target.arch.spirv.features import feature_bit_value
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
@@ -630,6 +634,20 @@ def _ordinary_vector_descriptor(row: OrdinaryVectorInstruction) -> Descriptor:
         ),
         schedule_class=_SCHEDULE_ALU,
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _extended_math_descriptor(row: ExtendedMathInstruction) -> Descriptor:
+    return _unary_typed_descriptor(
+        key=row.descriptor_key,
+        mnemonic=row.mnemonic,
+        semantic_tag=row.descriptor_key,
+        operands=(
+            _ordinary_vector_result(row.value_type),
+            _ordinary_vector_operand("input", row.value_type),
+        ),
+        result_value_type=_ordinary_vector_result_value_type(row.value_type),
+        feature_bits=row.value_type.feature_bits,
     )
 
 
@@ -1812,6 +1830,7 @@ SPIRV_LOGICAL_CORE_DESCRIPTOR_SET = DescriptorSet(
             _ordinary_vector_descriptor(row)
             for row in ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS
         ),
+        *(_extended_math_descriptor(row) for row in EXTENDED_MATH_INSTRUCTIONS),
         _coordinate_copy_descriptor(),
         _ternary_same_type_descriptor(
             key="spirv.op_imul_add.i32",

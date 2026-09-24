@@ -98,6 +98,12 @@ iree_py_library(
 )
 
 iree_py_library(
+    name = "extended_math",
+    srcs = ["extended_math.py"],
+    deps = [":ordinary_vector"],
+)
+
+iree_py_library(
     name = "descriptors",
     srcs = [
         "__init__.py",
@@ -107,6 +113,7 @@ iree_py_library(
         ":atomic",
         ":builtins",
         ":cooperative_matrix",
+        ":extended_math",
         ":features",
         ":ordinary_vector",
         ":ordinary_vector_bit_layout",
@@ -146,6 +153,7 @@ iree_py_test(
         ":builtins",
         ":cooperative_matrix",
         ":descriptors",
+        ":extended_math",
         ":ordinary_vector",
         ":ordinary_vector_bit_layout",
         ":ordinary_vector_float",

@@ -217,6 +217,36 @@ uint32_t loom_spirv_module_builder_allocate_id(
   return builder->id_bound++;
 }
 
+iree_status_t loom_spirv_module_builder_import_extended_instruction_set(
+    loom_spirv_module_builder_t* builder,
+    loom_spirv_extended_instruction_set_t instruction_set,
+    uint32_t* out_result_id) {
+  IREE_ASSERT_ARGUMENT(builder);
+  IREE_ASSERT_ARGUMENT(out_result_id);
+  IREE_ASSERT(instruction_set > LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_UNKNOWN &&
+              instruction_set < LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_COUNT);
+
+  uint32_t* result_id = &builder->extended_instruction_set_ids[instruction_set];
+  if (*result_id == 0) {
+    static const iree_string_view_t kImportNames[] = {
+        [LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450] =
+            IREE_SVL("GLSL.std.450"),
+    };
+    const uint32_t new_result_id =
+        loom_spirv_module_builder_allocate_id(builder);
+    const uint32_t prefix_operands[] = {new_result_id};
+    IREE_RETURN_IF_ERROR(loom_spirv_binary_write_string_instruction(
+        loom_spirv_module_builder_section(
+            builder, LOOM_SPIRV_MODULE_SECTION_EXTENDED_INSTRUCTION_IMPORT),
+        LOOM_SPIRV_OP_EXT_INST_IMPORT, prefix_operands,
+        IREE_ARRAYSIZE(prefix_operands), kImportNames[instruction_set], NULL,
+        0));
+    *result_id = new_result_id;
+  }
+  *out_result_id = *result_id;
+  return iree_ok_status();
+}
+
 void loom_spirv_module_builder_require_id_bound(
     loom_spirv_module_builder_t* builder, uint32_t id_bound) {
   IREE_ASSERT_ARGUMENT(builder);

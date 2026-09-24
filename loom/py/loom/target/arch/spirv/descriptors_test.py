@@ -25,6 +25,7 @@ from loom.target.arch.spirv.cooperative_matrix import (
     cooperative_matrix_descriptor_key,
 )
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
+from loom.target.arch.spirv.extended_math import EXTENDED_MATH_INSTRUCTIONS
 from loom.target.arch.spirv.features import feature_bits_value
 from loom.target.arch.spirv.ordinary_vector import (
     ORDINARY_VECTOR_INSTRUCTIONS,
@@ -179,6 +180,21 @@ def _atomic_result_recipes() -> dict[str, AsmResultValueType]:
     return recipes
 
 
+def _extended_math_result_recipes() -> dict[str, AsmResultValueType]:
+    f32_element_type = _scalar_recipe("f32").element_type
+    return {
+        row.descriptor_key: AsmResultValueType(
+            f32_element_type,
+            vector_lane_count=(
+                row.value_type.lane_count
+                if isinstance(row.value_type, OrdinaryVectorType)
+                else 0
+            ),
+        )
+        for row in EXTENDED_MATH_INSTRUCTIONS
+    }
+
+
 def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
     expected_recipes: dict[str, AsmResultValueType] = {}
     carrier_only_keys: set[str] = set()
@@ -267,6 +283,11 @@ def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
                 vector_lane_count=lane_count,
             ),
         )
+
+    extended_math_recipes = _extended_math_result_recipes()
+    assert expected_recipes.keys().isdisjoint(extended_math_recipes)
+    assert carrier_only_keys.isdisjoint(extended_math_recipes)
+    expected_recipes.update(extended_math_recipes)
 
     add_scalar_recipe("spirv.op_copy_object.i32", "i32")
     add_scalar_recipe("spirv.op_imul_add.i32", "i32")

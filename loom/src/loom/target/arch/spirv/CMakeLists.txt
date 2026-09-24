@@ -53,6 +53,18 @@ loom_cc_library(
 endif()
 
 if(LOOM_TARGET_ARCH_SPIRV)
+loom_cc_library(
+  NAME
+    extended_instruction
+  HDRS
+    "extended_instruction.h"
+  DEPS
+
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV)
 loom_generated_file(
   NAME
     features_gen
@@ -148,6 +160,7 @@ loom_cc_library(
   SRCS
     "packet_rows.c"
   DEPS
+    ::extended_instruction
     ::isa
     ::value_types
     iree::base

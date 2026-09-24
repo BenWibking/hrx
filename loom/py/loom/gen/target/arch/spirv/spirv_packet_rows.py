@@ -51,6 +51,9 @@ from loom.target.arch.spirv.cooperative_matrix import (  # noqa: E402
     CooperativeMatrixCase,
 )
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET  # noqa: E402
+from loom.target.arch.spirv.extended_math import (  # noqa: E402
+    EXTENDED_MATH_INSTRUCTIONS,
+)
 from loom.target.arch.spirv.ordinary_vector import (  # noqa: E402
     ORDINARY_VECTOR_INSTRUCTIONS,
     OrdinaryVectorComponentType,
@@ -234,6 +237,8 @@ class _PacketRow:
     atomic_success_ordering: int | None = None
     atomic_integer_scalar: str | None = None
     atomic_float_operation: int | None = None
+    extended_instruction_set: str | None = None
+    extended_instruction: str | None = None
 
     def encoded_operand_types(self) -> tuple[str, ...]:
         if len(self.operand_types) <= _PACKET_OPERAND_TYPE_CAPACITY:
@@ -296,6 +301,10 @@ class _PacketRow:
             lines.append(f"            .payload.atomic.integer_scalar = {self.atomic_integer_scalar},")
         if self.atomic_float_operation is not None:
             lines.append(f"            .payload.atomic.float_operation = {self.atomic_float_operation},")
+        if self.extended_instruction_set is not None:
+            lines.append(f"            .payload.extended_instruction.instruction_set = {self.extended_instruction_set},")
+        if self.extended_instruction is not None:
+            lines.append(f"            .payload.extended_instruction.instruction = {self.extended_instruction},")
         lines.append("        },")
         return "\n".join(lines)
 
@@ -961,6 +970,22 @@ def _ordinary_vector_rows() -> list[_PacketRow]:
     ]
 
 
+def _extended_math_rows() -> list[_PacketRow]:
+    return [
+        _PacketRow(
+            row.descriptor_key,
+            opcode="LOOM_SPIRV_OP_EXT_INST",
+            form="LOOM_SPIRV_PACKET_FORM_EXTENDED_INSTRUCTION",
+            result_type=_ordinary_vector_instruction_value(row.value_type),
+            operand_types=(_ordinary_vector_instruction_value(row.value_type),),
+            result_count=1,
+            extended_instruction_set=("LOOM_SPIRV_EXTENDED_INSTRUCTION_SET_GLSL_STD_450"),
+            extended_instruction=row.operation.instruction_c_enum,
+        )
+        for row in EXTENDED_MATH_INSTRUCTIONS
+    ]
+
+
 def _builtin_index_rows() -> list[_PacketRow]:
     return [
         _PacketRow(
@@ -1189,6 +1214,7 @@ def _packet_rows() -> tuple[_PacketRow, ...]:
         *_scalar_binary_rows(),
         *_conversion_rows(),
         *_ordinary_vector_rows(),
+        *_extended_math_rows(),
         *_builtin_index_rows(),
         *_coordinate_binary_rows(),
         *_coordinate_unary_rows(),
