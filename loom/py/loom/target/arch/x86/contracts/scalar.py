@@ -1081,6 +1081,13 @@ def _cases() -> Sequence[ContractCase]:
         _masked_extui_rule(_I8, 0xFF, descriptor_lookup),
         _masked_extui_rule(_I16, 0xFFFF, descriptor_lookup),
         _conversion_rule(
+            scalar_conversion.scalar_extsi,
+            _I32,
+            _I64,
+            "x86.scalar.movsxd.gpr64.gpr32",
+            descriptor_lookup,
+        ),
+        _conversion_rule(
             scalar_conversion.scalar_extui,
             _I32,
             _I64,

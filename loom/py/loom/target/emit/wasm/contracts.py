@@ -1006,6 +1006,18 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _conversion_alias_rule(scalar_conversion.scalar_extui, _I1, _I32),
         _masked_extui_rule(_I8, 0xFF),
         _masked_extui_rule(_I16, 0xFFFF),
+        _conversion_rule(
+            scalar_conversion.scalar_extsi,
+            _I32,
+            _I64,
+            "wasm.i64.extend_i32_s",
+        ),
+        _conversion_rule(
+            scalar_conversion.scalar_extui,
+            _I32,
+            _I64,
+            "wasm.i64.extend_i32_u",
+        ),
         _const_i32_rule(scalar_conversion.scalar_constant, _I32),
         _const_i1_rule(),
         _const_i64_rule(scalar_conversion.scalar_constant, _I64),
