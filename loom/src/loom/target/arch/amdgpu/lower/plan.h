@@ -502,10 +502,12 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
 typedef enum loom_amdgpu_vector_conversion_kind_e {
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_NONE = 0,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_32_TO_FULL_32,
+  LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_32_TO_FULL_64,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_64_TO_FULL_32,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_32_TO_PACKED_INTEGER,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_64_TO_PACKED_INTEGER,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_INTEGER_TO_FULL_32,
+  LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_INTEGER_TO_FULL_64,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_INTEGER_TO_PACKED_INTEGER,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_U8_TO_F32,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_COUNT_,
@@ -534,12 +536,12 @@ typedef struct loom_amdgpu_vector_conversion_plan_t {
   uint32_t result_register_count;
   // Number of 32-bit source registers occupied by one source lane.
   uint32_t source_element_register_count;
-  // Descriptor selected for conversion packets used by the strategy.
+  // Descriptor for lane conversion, or high-word construction for i64 results.
   loom_amdgpu_descriptor_ref_t convert_descriptor_ref;
   // Byte permutation plan selected for full-register i8 result assembly.
   loom_amdgpu_i8_pack_permute_plan_t packed_i8_permute;
-  // True when packed integer source lanes require sign extension.
-  bool sign_extend_packed_source;
+  // True when integer source lanes require sign extension.
+  bool sign_extend_source;
 } loom_amdgpu_vector_conversion_plan_t;
 
 typedef struct loom_amdgpu_bitpack_plan_t {
