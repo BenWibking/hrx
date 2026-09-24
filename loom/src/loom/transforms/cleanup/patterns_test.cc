@@ -29,10 +29,15 @@ static iree_status_t IgnorePattern(const loom_rewrite_pattern_t*, void*,
 }
 
 TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
+  const loom_op_kind_t region_initialization_kind =
+      LOOM_OP_KIND(LOOM_DIALECT_SCF, 0);
   const loom_op_kind_t pre_fold_kind = LOOM_OP_KIND(LOOM_DIALECT_SCALAR, 1);
   const loom_op_kind_t post_type_kind = LOOM_OP_KIND(LOOM_DIALECT_INDEX, 2);
   const loom_op_kind_t source_combine_kind =
       LOOM_OP_KIND(LOOM_DIALECT_VECTOR, 3);
+  const loom_rewrite_pattern_t region_initialization_patterns[] = {
+      {region_initialization_kind, IgnorePattern, nullptr},
+  };
   const loom_rewrite_pattern_t pre_fold_patterns[] = {
       {pre_fold_kind, IgnorePattern, nullptr},
   };
@@ -41,6 +46,11 @@ TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
   };
   const loom_rewrite_pattern_t source_combine_patterns[] = {
       {source_combine_kind, IgnorePattern, nullptr},
+  };
+  const loom_rewrite_pattern_provider_t region_initialization_provider = {
+      /*.name=*/IREE_SVL("region-initialization"),
+      /*.patterns=*/region_initialization_patterns,
+      /*.pattern_count=*/IREE_ARRAYSIZE(region_initialization_patterns),
   };
   const loom_rewrite_pattern_provider_t pre_fold_provider = {
       /*.name=*/IREE_SVL("pre-fold"),
@@ -57,6 +67,9 @@ TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
       /*.patterns=*/source_combine_patterns,
       /*.pattern_count=*/IREE_ARRAYSIZE(source_combine_patterns),
   };
+  const loom_rewrite_pattern_provider_t* region_initialization_providers[] = {
+      &region_initialization_provider,
+  };
   const loom_rewrite_pattern_provider_t* pre_fold_providers[] = {
       &pre_fold_provider,
   };
@@ -67,7 +80,11 @@ TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
       &source_combine_provider,
   };
   const loom_cleanup_pattern_provider_set_t provider_set = {
-      /*.universal_pre_fold=*/loom_rewrite_pattern_provider_list_make(
+      /*.region_initialization=*/loom_rewrite_pattern_provider_list_make(
+          region_initialization_providers,
+          IREE_ARRAYSIZE(region_initialization_providers)),
+      /*.universal_pre_fold=*/
+      loom_rewrite_pattern_provider_list_make(
           pre_fold_providers, IREE_ARRAYSIZE(pre_fold_providers)),
       /*.universal_post_type=*/
       loom_rewrite_pattern_provider_list_make(
@@ -83,6 +100,14 @@ TEST(CleanupPatternsTest, KeepsPhaseRegistriesSeparate) {
   const loom_cleanup_pattern_registry_t* registry =
       loom_cleanup_pattern_registry_storage_registry(&storage);
 
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(
+                registry->region_initialization, region_initialization_kind)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(
+                registry->region_initialization, pre_fold_kind)
+                .count,
+            0u);
   EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(
                 registry->universal_pre_fold, pre_fold_kind)
                 .count,
@@ -124,6 +149,8 @@ TEST(CleanupPatternsTest, ExplicitEmptyProviderSetSatisfiesComposition) {
       &provider_set, iree_allocator_system(), &storage));
   const loom_cleanup_pattern_registry_t* registry =
       loom_cleanup_pattern_registry_storage_registry(&storage);
+  ASSERT_NE(registry->region_initialization, nullptr);
+  EXPECT_EQ(registry->region_initialization->pattern_count, 0u);
   ASSERT_NE(registry->source_combine, nullptr);
   EXPECT_EQ(registry->source_combine->pattern_count, 0u);
 
@@ -144,7 +171,8 @@ TEST(CleanupPatternsTest, ExplicitEmptyProviderSetSatisfiesComposition) {
 TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
   const loom_cleanup_pattern_provider_set_t* provider_set =
       loom_cleanup_configured_pattern_provider_set();
-  EXPECT_EQ(provider_set->universal_pre_fold.count, 1u);
+  EXPECT_EQ(provider_set->region_initialization.count, 1u);
+  EXPECT_EQ(provider_set->universal_pre_fold.count, 2u);
   EXPECT_EQ(provider_set->universal_post_type.count, 2u);
   EXPECT_EQ(provider_set->source_combine.count, 3u);
 
@@ -153,8 +181,26 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
       provider_set, iree_allocator_system(), &storage));
   const loom_cleanup_pattern_registry_t* registries =
       loom_cleanup_pattern_registry_storage_registry(&storage);
+  const loom_rewrite_pattern_registry_t* region_initialization =
+      registries->region_initialization;
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(region_initialization,
+                                                      LOOM_OP_SCF_IF)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(region_initialization,
+                                                      LOOM_OP_SCF_SWITCH)
+                .count,
+            1u);
+  EXPECT_EQ(region_initialization->pattern_count, 2u);
   const loom_rewrite_pattern_registry_t* pre_fold =
       registries->universal_pre_fold;
+  EXPECT_EQ(
+      loom_rewrite_pattern_registry_lookup_kind(pre_fold, LOOM_OP_SCF_IF).count,
+      1u);
+  EXPECT_EQ(
+      loom_rewrite_pattern_registry_lookup_kind(pre_fold, LOOM_OP_SCF_SWITCH)
+          .count,
+      1u);
   EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(pre_fold,
                                                       LOOM_OP_VECTOR_EXTRACT)
                 .count,
@@ -167,7 +213,7 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
       loom_rewrite_pattern_registry_lookup_kind(pre_fold, LOOM_OP_VECTOR_DOTF)
           .count,
       1u);
-  EXPECT_EQ(pre_fold->pattern_count, 3u);
+  EXPECT_EQ(pre_fold->pattern_count, 5u);
 
   const loom_rewrite_pattern_registry_t* post_type =
       registries->universal_post_type;

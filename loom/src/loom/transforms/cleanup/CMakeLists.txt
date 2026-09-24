@@ -58,6 +58,7 @@ loom_cc_library(
     ::patterns
     loom::transforms::index::cleanup_patterns
     loom::transforms::scalar::cleanup_patterns
+    loom::transforms::scf::branch_fact_patterns
     loom::transforms::scf::combine_patterns
     loom::transforms::vector::cleanup_patterns
     loom::transforms::vector::combine_patterns
@@ -83,26 +84,6 @@ loom_cc_test(
     loom::ops::vector
     loom::ops::view
     loom::pass::environment
-)
-
-loom_cc_library(
-  NAME
-    branch_facts
-  HDRS
-    "branch_facts.h"
-  SRCS
-    "branch_facts.c"
-  DEPS
-    iree::base
-    loom::analysis::condition_facts
-    loom::ir
-    loom::ops::index
-    loom::ops::scalar
-    loom::ops::scf
-    loom::rewrite::greedy
-    loom::rewrite::rewriter
-    loom::util::walk
-  PUBLIC
 )
 
 loom_cc_library(
@@ -133,7 +114,6 @@ loom_cc_library(
   SRCS
     "canonicalizer.c"
   DEPS
-    ::branch_facts
     ::patterns
     iree::base
     iree::base::internal
@@ -150,6 +130,7 @@ loom_cc_library(
     loom::rewrite::rewriter
     loom::rewrite::type_propagation
     loom::util::fact_table
+    loom::util::walk
   PUBLIC
 )
 

@@ -161,14 +161,11 @@ static iree_status_t loom_canonicalizer_run_pass(
 
 iree_status_t loom_canonicalize_run(loom_pass_t* pass, loom_module_t* module,
                                     loom_func_like_t function) {
-  loom_canonicalizer_pattern_registries_t patterns = {0};
   const loom_cleanup_pattern_registry_t* registry =
       loom_cleanup_pass_capability_pattern_registry(
           loom_cleanup_pass_capability_from_pass(pass));
-  if (registry != NULL) {
-    patterns.pre_fold = registry->universal_pre_fold;
-    patterns.post_type = registry->universal_post_type;
-  }
+  const loom_canonicalizer_pattern_registries_t patterns =
+      loom_canonicalizer_pattern_registries_from_cleanup_registry(registry);
   return loom_canonicalizer_run_pass(pass, module, function, patterns);
 }
 
@@ -179,10 +176,8 @@ iree_status_t loom_combine_run(loom_pass_t* pass, loom_module_t* module,
           loom_cleanup_pass_capability_from_pass(pass));
   IREE_ASSERT(registry != NULL);
   IREE_ASSERT(registry->source_combine != NULL);
-  const loom_canonicalizer_pattern_registries_t patterns = {
-      .pre_fold = registry->universal_pre_fold,
-      .post_type = registry->universal_post_type,
-      .post_canonicalization = registry->source_combine,
-  };
+  loom_canonicalizer_pattern_registries_t patterns =
+      loom_canonicalizer_pattern_registries_from_cleanup_registry(registry);
+  patterns.post_canonicalization = registry->source_combine;
   return loom_canonicalizer_run_pass(pass, module, function, patterns);
 }

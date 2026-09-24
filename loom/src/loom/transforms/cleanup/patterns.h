@@ -6,10 +6,16 @@
 
 // Cleanup rewrite pattern composition.
 //
-// Cleanup has three ordering-sensitive pattern phases. Universal pre-fold
-// patterns run before constant folding, universal post-type patterns run after
-// type propagation, and source-combine patterns run after structural
-// canonicalization only while source representations remain legal.
+// Cleanup has four ordering-sensitive pattern phases. Region-initialization
+// patterns run once in region preorder before the first worklist is processed.
+// Universal pre-fold patterns run before constant folding, universal post-type
+// patterns run after type propagation, and source-combine patterns run after
+// structural canonicalization only while source representations remain legal.
+//
+// Region-initialization patterns establish outer-to-inner invariants without
+// erasing or replacing walked roots. Providers that must maintain those
+// invariants for roots created or changed during rewriting also register the
+// same rooted patterns in an ordinary fixed-point phase.
 
 #ifndef LOOM_TRANSFORMS_CLEANUP_PATTERNS_H_
 #define LOOM_TRANSFORMS_CLEANUP_PATTERNS_H_
@@ -31,6 +37,8 @@ typedef struct loom_cleanup_pattern_context_t {
 
 // Ordered provider lists selected by one compiler composition.
 typedef struct loom_cleanup_pattern_provider_set_t {
+  // Patterns applied once in outer-to-inner order before worklist processing.
+  loom_rewrite_pattern_provider_list_t region_initialization;
   // Universal patterns applied before fact-backed constant folding.
   loom_rewrite_pattern_provider_list_t universal_pre_fold;
   // Universal patterns applied after type propagation.
@@ -41,6 +49,8 @@ typedef struct loom_cleanup_pattern_provider_set_t {
 
 // Indexed pattern registries prepared for one compiler invocation.
 typedef struct loom_cleanup_pattern_registry_t {
+  // Patterns applied once in outer-to-inner order before worklist processing.
+  const loom_rewrite_pattern_registry_t* region_initialization;
   // Universal patterns applied before fact-backed constant folding.
   const loom_rewrite_pattern_registry_t* universal_pre_fold;
   // Universal patterns applied after type propagation.
@@ -49,9 +59,11 @@ typedef struct loom_cleanup_pattern_registry_t {
   const loom_rewrite_pattern_registry_t* source_combine;
 } loom_cleanup_pattern_registry_t;
 
-// Owned storage for the three indexed cleanup pattern registries. Provider
+// Owned storage for the four indexed cleanup pattern registries. Provider
 // descriptors and callback data remain borrowed.
 typedef struct loom_cleanup_pattern_registry_storage_t {
+  // Storage for the region-initialization registry.
+  loom_rewrite_pattern_registry_storage_t region_initialization_storage;
   // Storage for the universal pre-fold registry.
   loom_rewrite_pattern_registry_storage_t universal_pre_fold_storage;
   // Storage for the universal post-type registry.

@@ -48,6 +48,7 @@ loom_cc_library(
         ":patterns",
         "//loom/src/loom/transforms/index:cleanup_patterns",
         "//loom/src/loom/transforms/scalar:cleanup_patterns",
+        "//loom/src/loom/transforms/scf:branch_fact_patterns",
         "//loom/src/loom/transforms/scf:combine_patterns",
         "//loom/src/loom/transforms/vector:cleanup_patterns",
         "//loom/src/loom/transforms/vector:combine_patterns",
@@ -71,24 +72,6 @@ loom_cc_test(
         "//loom/src/loom/pass:environment",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
-    ],
-)
-
-loom_cc_library(
-    name = "branch_facts",
-    srcs = ["branch_facts.c"],
-    hdrs = ["branch_facts.h"],
-    visibility = [":__pkg__"],
-    deps = [
-        "//loom/src/loom/analysis:condition_facts",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/ops/index",
-        "//loom/src/loom/ops/scalar",
-        "//loom/src/loom/ops/scf",
-        "//loom/src/loom/rewrite:greedy",
-        "//loom/src/loom/rewrite:rewriter",
-        "//loom/src/loom/util:walk",
-        "//runtime/src/iree/base",
     ],
 )
 
@@ -119,7 +102,6 @@ loom_cc_library(
         "//loom/src/loom/transforms/symbol:__pkg__",
     ],
     deps = [
-        ":branch_facts",
         ":patterns",
         "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/ir",
@@ -134,6 +116,7 @@ loom_cc_library(
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/rewrite:type_propagation",
         "//loom/src/loom/util:fact_table",
+        "//loom/src/loom/util:walk",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
     ],

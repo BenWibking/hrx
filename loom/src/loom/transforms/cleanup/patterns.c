@@ -15,8 +15,13 @@ iree_status_t loom_cleanup_pattern_registry_storage_initialize(
   *out_storage = (loom_cleanup_pattern_registry_storage_t){0};
 
   iree_status_t status = loom_rewrite_pattern_registry_storage_initialize(
-      provider_set->universal_pre_fold, allocator,
-      &out_storage->universal_pre_fold_storage);
+      provider_set->region_initialization, allocator,
+      &out_storage->region_initialization_storage);
+  if (iree_status_is_ok(status)) {
+    status = loom_rewrite_pattern_registry_storage_initialize(
+        provider_set->universal_pre_fold, allocator,
+        &out_storage->universal_pre_fold_storage);
+  }
   if (iree_status_is_ok(status)) {
     status = loom_rewrite_pattern_registry_storage_initialize(
         provider_set->universal_post_type, allocator,
@@ -29,6 +34,8 @@ iree_status_t loom_cleanup_pattern_registry_storage_initialize(
   }
   if (iree_status_is_ok(status)) {
     out_storage->registry = (loom_cleanup_pattern_registry_t){
+        .region_initialization = loom_rewrite_pattern_registry_storage_registry(
+            &out_storage->region_initialization_storage),
         .universal_pre_fold = loom_rewrite_pattern_registry_storage_registry(
             &out_storage->universal_pre_fold_storage),
         .universal_post_type = loom_rewrite_pattern_registry_storage_registry(
@@ -53,6 +60,8 @@ void loom_cleanup_pattern_registry_storage_deinitialize(
       &storage->universal_post_type_storage);
   loom_rewrite_pattern_registry_storage_deinitialize(
       &storage->universal_pre_fold_storage);
+  loom_rewrite_pattern_registry_storage_deinitialize(
+      &storage->region_initialization_storage);
   *storage = (loom_cleanup_pattern_registry_storage_t){0};
 }
 

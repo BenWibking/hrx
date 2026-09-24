@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 typedef struct loom_canonicalizer_state_t loom_canonicalizer_state_t;
+typedef struct loom_cleanup_pattern_registry_t loom_cleanup_pattern_registry_t;
 
 //===----------------------------------------------------------------------===//
 // Canonicalizer driver
@@ -30,6 +31,8 @@ typedef struct loom_canonicalizer_state_t loom_canonicalizer_state_t;
 // is optional and runs at the named ordering point in the shared fixed-point
 // driver.
 typedef struct loom_canonicalizer_pattern_registries_t {
+  // Patterns applied once in region preorder before worklist processing.
+  const loom_rewrite_pattern_registry_t* region_initialization;
   // Patterns applied after mini-DCE and before built-in poison/fold rules.
   const loom_rewrite_pattern_registry_t* pre_fold;
   // Patterns applied after type propagation and before symbolic cleanup.
@@ -37,6 +40,13 @@ typedef struct loom_canonicalizer_pattern_registries_t {
   // Patterns applied after structural op canonicalization.
   const loom_rewrite_pattern_registry_t* post_canonicalization;
 } loom_canonicalizer_pattern_registries_t;
+
+// Projects universal cleanup phases from |registry| for a canonicalizer run.
+// Source-combine patterns remain excluded because they are legal only at the
+// explicit source-combine pipeline boundary. NULL returns an empty selection.
+loom_canonicalizer_pattern_registries_t
+loom_canonicalizer_pattern_registries_from_cleanup_registry(
+    const loom_cleanup_pattern_registry_t* registry);
 
 // Canonicalizer driver options. Zero-initialized options use defaults.
 typedef struct loom_canonicalizer_options_t {

@@ -19,12 +19,25 @@
 #include "loom/rewrite/greedy.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/rewrite/type_propagation.h"
-#include "loom/transforms/cleanup/branch_facts.h"
 #include "loom/transforms/cleanup/patterns.h"
+#include "loom/util/walk.h"
 
 //===----------------------------------------------------------------------===//
 // Implementation
 //===----------------------------------------------------------------------===//
+
+loom_canonicalizer_pattern_registries_t
+loom_canonicalizer_pattern_registries_from_cleanup_registry(
+    const loom_cleanup_pattern_registry_t* registry) {
+  if (registry == NULL) {
+    return (loom_canonicalizer_pattern_registries_t){0};
+  }
+  return (loom_canonicalizer_pattern_registries_t){
+      .region_initialization = registry->region_initialization,
+      .pre_fold = registry->universal_pre_fold,
+      .post_type = registry->universal_post_type,
+  };
+}
 
 static bool loom_canonicalize_value_type_has_poison(loom_type_t type) {
   if (loom_type_is_scalar(type)) {
@@ -366,6 +379,9 @@ typedef struct loom_canonicalize_rewrite_state_t {
 
   // True after expression_context has been initialized.
   bool expression_context_initialized;
+
+  // True after ordered region-initialization patterns have run.
+  bool region_initialization_complete;
 } loom_canonicalize_rewrite_state_t;
 
 static iree_status_t loom_canonicalize_prepare_region(
@@ -429,17 +445,64 @@ static void loom_canonicalize_reset_symbolic_context(
   }
 }
 
-static iree_status_t loom_canonicalize_before_worklist(
+typedef struct loom_canonicalize_region_initialization_t {
+  // Canonicalizer state supplying the configured pattern registry and context.
+  loom_canonicalize_rewrite_state_t* state;
+  // Active rewriter receiving initialization mutations.
+  loom_rewriter_t* rewriter;
+  // Greedy result receiving mutation and fact accounting.
+  loom_greedy_rewrite_result_t* result;
+  // True when at least one initialization pattern changed the region.
+  bool changed;
+} loom_canonicalize_region_initialization_t;
+
+static iree_status_t loom_canonicalize_initialize_region_op(
+    void* user_data, loom_op_t* op, const loom_walk_context_t* context,
+    loom_walk_result_t* out_result) {
+  (void)context;
+  *out_result = LOOM_WALK_CONTINUE;
+  loom_canonicalize_region_initialization_t* initialization =
+      (loom_canonicalize_region_initialization_t*)user_data;
+  bool changed = false;
+  IREE_RETURN_IF_ERROR(loom_canonicalize_apply_patterns(
+      initialization->state,
+      initialization->state->patterns.region_initialization, op,
+      initialization->rewriter, initialization->result, &changed));
+  initialization->changed |= changed;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_canonicalize_begin_iteration(
     void* user_data, loom_greedy_rewrite_driver_t* driver,
     loom_region_t* region, loom_greedy_rewrite_result_t* result,
     bool* out_changed) {
   loom_canonicalize_rewrite_state_t* state =
       (loom_canonicalize_rewrite_state_t*)user_data;
   loom_type_propagator_begin_iteration(state->type_propagator);
-  driver->rewriter.flags = 0;
-  return loom_branch_facts_materialize_region(
-      &driver->rewriter, &state->expression_context.condition_query, region,
-      result, out_changed);
+  *out_changed = false;
+  const loom_rewrite_pattern_registry_t* initialization_registry =
+      state->patterns.region_initialization;
+  if (state->region_initialization_complete ||
+      initialization_registry == NULL ||
+      initialization_registry->pattern_count == 0) {
+    state->region_initialization_complete = true;
+    return iree_ok_status();
+  }
+
+  loom_canonicalize_region_initialization_t initialization = {
+      .state = state,
+      .rewriter = &driver->rewriter,
+      .result = result,
+  };
+  loom_walk_result_t walk_result = LOOM_WALK_CONTINUE;
+  IREE_RETURN_IF_ERROR(loom_walk_region(
+      driver->module, region, LOOM_WALK_PRE_ORDER,
+      (loom_walk_callback_t){loom_canonicalize_initialize_region_op,
+                             &initialization},
+      driver->scratch_arena, &walk_result));
+  state->region_initialization_complete = true;
+  *out_changed = initialization.changed;
+  return iree_ok_status();
 }
 
 static iree_status_t loom_canonicalize_rewrite_op(
@@ -602,7 +665,7 @@ static iree_status_t loom_canonicalizer_run_precomputed_region(
       .user_data = &state,
       .prepare_region = loom_canonicalize_prepare_region,
       .cleanup_region = loom_canonicalize_cleanup_region,
-      .before_worklist = loom_canonicalize_before_worklist,
+      .before_worklist = loom_canonicalize_begin_iteration,
       .rewrite_op = loom_canonicalize_rewrite_op,
       .changed = loom_canonicalize_reset_symbolic_context,
   };

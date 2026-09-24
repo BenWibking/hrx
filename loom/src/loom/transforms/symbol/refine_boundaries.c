@@ -22,6 +22,7 @@
 #include "loom/pass/pipeline.h"
 #include "loom/pass/registry.h"
 #include "loom/transforms/cleanup/canonicalizer.h"
+#include "loom/transforms/cleanup/pass_environment.h"
 #include "loom/transforms/symbol/boundary_graph.h"
 #include "loom/transforms/symbol/boundary_pruning.h"
 #include "loom/transforms/symbol/boundary_specialization.h"
@@ -1321,6 +1322,7 @@ static bool loom_refine_boundaries_can_refine_boundary(void* user_data,
 
 static iree_status_t loom_refine_boundaries_run_function(
     loom_pass_t* pass, loom_canonicalizer_t* canonicalizer,
+    const loom_canonicalizer_pattern_registries_t* canonicalizer_patterns,
     loom_refine_boundaries_graph_t* graph, loom_value_fact_table_t* seed_facts,
     const loom_refine_boundaries_replacement_table_t* seed_replacements,
     loom_value_fact_table_t* next_boundary_facts,
@@ -1332,6 +1334,7 @@ static iree_status_t loom_refine_boundaries_run_function(
   int64_t replacements_applied = 0;
   int64_t constants_materialized = 0;
   loom_canonicalizer_options_t options = {
+      .patterns = *canonicalizer_patterns,
       .refine_boundary = {loom_refine_boundaries_can_refine_boundary, graph},
   };
   IREE_RETURN_IF_ERROR(loom_refine_boundaries_apply_function_boundary_values(
@@ -1546,6 +1549,12 @@ iree_status_t loom_refine_boundaries_run_with_options(
   uint32_t max_iterations = options && options->max_iterations > 0
                                 ? options->max_iterations
                                 : LOOM_REFINE_BOUNDARIES_DEFAULT_MAX_ITERATIONS;
+  const loom_cleanup_pattern_registry_t* cleanup_pattern_registry =
+      loom_cleanup_pass_capability_pattern_registry(
+          loom_cleanup_pass_capability_from_pass(pass));
+  const loom_canonicalizer_pattern_registries_t canonicalizer_patterns =
+      loom_canonicalizer_pattern_registries_from_cleanup_registry(
+          cleanup_pattern_registry);
   const iree_host_size_t boundary_fact_value_capacity =
       loom_value_table_capacity(&module->values);
 
@@ -1610,10 +1619,10 @@ iree_status_t loom_refine_boundaries_run_with_options(
            ++member) {
         iree_host_size_t node = scc->nodes[member];
         status = loom_refine_boundaries_run_function(
-            pass, &canonicalizer, &graph, &current_boundary->facts,
-            &current_boundary->replacements, &next_boundary->facts,
-            &next_boundary->replacements, &graph.functions[node],
-            &signature_type_changed_count);
+            pass, &canonicalizer, &canonicalizer_patterns, &graph,
+            &current_boundary->facts, &current_boundary->replacements,
+            &next_boundary->facts, &next_boundary->replacements,
+            &graph.functions[node], &signature_type_changed_count);
       }
     }
     if (!iree_status_is_ok(status) || loom_pass_has_error_diagnostics(pass)) {
