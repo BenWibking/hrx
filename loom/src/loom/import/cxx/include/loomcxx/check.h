@@ -57,7 +57,7 @@ template <class... Attributes>
                                             Attributes... attributes);
 
 // Observes provider events with the same metadata spelling as require().
-// For example: expect_event("device", "type", "asan_report", "count", 0).
+// For example: expect_event("device", "type", "asan_report").
 template <class... Attributes>
 [[loom::op("check.expect.event")]] void expect_event(const char* provider,
                                                      Attributes... attributes);

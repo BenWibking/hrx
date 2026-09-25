@@ -26,7 +26,6 @@ check.case public @global_atomic_add_f32_subnormal_values {
   %expected_old = check.generate.fill value(1) : tensor<1xi32>
   check.expect.bitwise actual(%accumulator) expected(%expected) : tensor<2xi32>
   check.expect.bitwise actual(%old_value) expected(%expected_old) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -74,6 +73,5 @@ check.case public @workgroup_atomic_add_f32_subnormal_values {
   %expected_final = check.generate.iota offset(5) step(-2) : tensor<2xi32>
   check.expect.bitwise actual(%old) expected(%expected_old) : tensor<2xi32>
   check.expect.bitwise actual(%final) expected(%expected_final) : tensor<2xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

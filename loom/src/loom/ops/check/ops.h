@@ -37,11 +37,10 @@ enum {
   LOOM_OP_CHECK_EXPECT_BITWISE = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 15),
   LOOM_OP_CHECK_EXPECT_CLOSE = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 16),
   LOOM_OP_CHECK_EXPECT_SHAPE = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 17),
-  LOOM_OP_CHECK_EXPECT = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 18),
-  LOOM_OP_CHECK_EXPECT_EVENT = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 19),
-  LOOM_OP_CHECK_BENCHMARK = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 20),
-  LOOM_OP_CHECK_TENSOR_VIEW = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 21),
-  LOOM_OP_CHECK_COUNT_ = 22,
+  LOOM_OP_CHECK_EXPECT_EVENT = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 18),
+  LOOM_OP_CHECK_BENCHMARK = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 19),
+  LOOM_OP_CHECK_TENSOR_VIEW = LOOM_OP_KIND(LOOM_DIALECT_CHECK, 20),
+  LOOM_OP_CHECK_COUNT_ = 21,
 };
 
 // Check symbol visibility. Absent (0) means private.
@@ -370,27 +369,6 @@ iree_status_t loom_check_expect_shape_build(
     iree_host_size_t dims_count,
     const int64_t* static_dims,
     iree_host_size_t static_dims_count,
-    loom_location_id_t location,
-    loom_op_t** out_op);
-
-// LOOM_OP_CHECK_EXPECT: Runs a pluggable custom validator over actual and expected values.
-// check.expect<topk.equal> actual(%actual) expected(%expected) {k = 5} : tensor<1000xf32>
-LOOM_DEFINE_ISA(loom_check_expect_isa, LOOM_OP_CHECK_EXPECT)
-LOOM_DEFINE_OPERAND(loom_check_expect_actual, 0)
-LOOM_DEFINE_OPERAND(loom_check_expect_expected, 1)
-LOOM_DEFINE_ATTR_STRING(loom_check_expect_provider, 0)
-LOOM_DEFINE_ATTR_DICT(loom_check_expect_attrs, 1)
-enum loom_check_expect_build_flag_bits_e {
-  LOOM_CHECK_EXPECT_BUILD_FLAG_HAS_ATTRS = 1u << 0,
-};
-typedef uint32_t loom_check_expect_build_flags_t;
-iree_status_t loom_check_expect_build(
-    loom_builder_t* builder,
-    loom_check_expect_build_flags_t build_flags,
-    loom_string_id_t provider,
-    loom_value_id_t actual,
-    loom_value_id_t expected,
-    loom_optional loom_named_attr_slice_t attrs,
     loom_location_id_t location,
     loom_op_t** out_op);
 

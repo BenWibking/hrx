@@ -78,7 +78,6 @@ check.case @assert_nonzero_passes_case {
   kernel.launch @assert_nonzero(%value, %output) : (i32, tensor<1xi32>)
   %expected = check.generate.fill value(7) : tensor<1xi32>
   check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "ubsan_report"}
   check.return
 }
 
@@ -108,7 +107,6 @@ check.case @semantic_value_passes_case {
   kernel.launch @assert_semantic_value_nonzero(%value, %output) : (i32, tensor<1xi32>)
   %expected = check.generate.fill value(7) : tensor<1xi32>
   check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "ubsan_report"}
   check.return
 }
 
@@ -128,7 +126,6 @@ check.case @semantic_operation_passes_case {
   kernel.launch @assert_semantic_operation_nonzero(%value, %output) : (i32, tensor<1xi32>)
   %expected = check.generate.fill value(9) : tensor<1xi32>
   check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "ubsan_report"}
   check.return
 }
 
@@ -149,7 +146,6 @@ check.case @semantic_layout_passes_case {
   kernel.launch @assert_semantic_layout_extent_four(%extent, %input, %output) : (index, tensor<4xi32>, tensor<1xi32>)
   %expected = check.generate.fill value(11) : tensor<1xi32>
   check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "ubsan_report"}
   check.return
 }
 

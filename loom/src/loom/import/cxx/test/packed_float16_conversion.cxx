@@ -55,5 +55,4 @@ LOOM_CHECK_CASE(uniform_float16_conversion) {
                               loom::check::fill<float, 4>(99.0f));
   loom::check::expect_bitwise(loom::check::slice<4>(storage, 12),
                               loom::check::fill<float, 4>(99.0f));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }

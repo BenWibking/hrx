@@ -1126,7 +1126,6 @@ def iq4xs_blocks(arrays):
   kernel.launch @update_iq4xs(%input) : (tensor<1088xi8>)
   %expected = check.file.read.npy path("{expected_path}") : tensor<1152xi8>
   check.expect.bitwise actual(%storage) expected(%expected) : tensor<1152xi8>
-  check.expect.event<device> {{type = "asan_report", count = 0}}
   check.return
 }}
 '''

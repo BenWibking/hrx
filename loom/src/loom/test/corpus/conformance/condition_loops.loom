@@ -257,7 +257,6 @@ check.case public @condition_view_0 {
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
   check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -279,7 +278,6 @@ check.case public @condition_view_1 {
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
   check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -301,6 +299,5 @@ check.case public @condition_view_3 {
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
   check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

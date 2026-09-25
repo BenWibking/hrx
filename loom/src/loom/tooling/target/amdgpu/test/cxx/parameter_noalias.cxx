@@ -78,7 +78,6 @@ LOOM_CHECK_CASE(noalias_embedding_rows) {
                               loom::check::fill<unsigned, 1>(1u));
   loom::check::expect_bitwise(loom::check::slice<1>(indices, 1),
                               loom::check::fill<unsigned, 1>(0u));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }
 
 [[loom::kernel, loom::workgroup_size(1, 1, 1), loom::workgroup_count(1, 1, 1)]]
@@ -111,5 +110,4 @@ LOOM_CHECK_CASE(noalias_preserves_possible_aliases) {
   loom::check::expect_bitwise(loom::check::slice<1>(output, 1),
                               loom::check::fill<unsigned, 1>(0u));
   loom::check::expect_bitwise(replacement, loom::check::fill<unsigned, 2>(38u));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }

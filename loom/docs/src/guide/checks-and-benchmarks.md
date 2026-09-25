@@ -181,12 +181,17 @@ The expectation operation records what equality means:
 | [`check.expect.bitwise`](../reference/dialects/check/ops/expect-bitwise.md) | Exact payload-bit identity. |
 | [`check.expect.close`](../reference/dialects/check/ops/expect-close.md) | Floating-point comparison with explicit absolute tolerance, relative tolerance, and NaN policy. |
 | [`check.expect.shape`](../reference/dialects/check/ops/expect-shape.md) | Exact static and dynamic dimensions. |
-| [`check.expect`](../reference/dialects/check/ops/expect.md) | A named pluggable validator with typed actual and expected values. |
 | [`check.expect.event`](../reference/dialects/check/ops/expect-event.md) | A provider-specific structured runtime event such as a sanitizer report. |
 
 Tolerance belongs in source because it is part of the operation's numeric
 contract. A benchmark or CI invocation may select a case, but it must not make a
 failing result pass by changing comparison thresholds out of band.
+
+Error and fatal device events fail every executed sample without an authored
+event expectation. Use `check.expect.event` only when successful execution is
+supposed to emit a structured event and the case must validate its payload.
+Such expectations require a positive count; additional or unmatched error
+events and event-capture overflow still fail the sample.
 
 [`check.file.write.npy`](../reference/dialects/check/ops/file-write-npy.md) can
 capture an actual value always or only on failure. This is an evidence output,

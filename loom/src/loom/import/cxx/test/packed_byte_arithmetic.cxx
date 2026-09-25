@@ -50,7 +50,6 @@ LOOM_CHECK_CASE(uniform_byte_arithmetic) {
   loom::check::expect_bitwise(
       loom::check::slice<1>(storage, 2),
       loom::check::fill<unsigned long long, 1>(0xA5A5A5A5A5A5A5A5ull));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }
 
 LOOM_CHECK_CASE(mixed_byte_arithmetic_banks) {
@@ -90,5 +89,4 @@ LOOM_CHECK_CASE(mixed_byte_arithmetic_banks) {
   loom::check::expect_bitwise(
       loom::check::slice<1>(storage, 7),
       loom::check::fill<unsigned long long, 1>(0xA5A5A5A5A5A5A5A5ull));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }

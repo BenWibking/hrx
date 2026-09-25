@@ -135,10 +135,6 @@ iree_status_t loom_testbench_device_event_capture_initialize(
   iree_status_t status = iree_allocator_malloc_array(
       out_capture->host_allocator, record_capacity,
       sizeof(*out_capture->records), (void**)&out_capture->records);
-  if (iree_status_is_ok(status)) {
-    memset(out_capture->records, 0,
-           record_capacity * sizeof(*out_capture->records));
-  }
   if (!iree_status_is_ok(status)) {
     loom_testbench_device_event_capture_deinitialize(out_capture);
   }

@@ -70,6 +70,5 @@ check.case public @predicate_element_values {
   check.expect.equal actual(%selected_inactive) expected(%expected_inactive) : tensor<8xi32>
   check.expect.equal actual(%votes_active) expected(%expected_votes) : tensor<56xi32>
   check.expect.equal actual(%votes_inactive) expected(%expected_inactive) : tensor<8xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

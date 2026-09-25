@@ -80,6 +80,5 @@ class Case:
         self.lines.append(f"  %guard = check.generate.fill value({self.guard}) : tensor<16x{self.element}>")
         for name in ["prefix", "suffix"]:
             self.lines.append(f"  check.expect.bitwise actual(%{name}) expected(%guard) : tensor<16x{self.element}>")
-        self.lines.append('  check.expect.event<device> {type = "asan_report", count = 0}')
         self.lines.extend(["  check.return", "}", ""])
         return "\n".join(self.lines)

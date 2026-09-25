@@ -55,7 +55,6 @@ check.case public @index_add_negative_step {
   %guard = check.generate.fill value(-123) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi32>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -82,7 +81,6 @@ check.case public @index_add_high_signed_bits {
   %guard = check.generate.fill value(-123) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi32>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -145,7 +143,6 @@ check.case public @offset_add_high_unsigned_bits {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -172,6 +169,5 @@ check.case public @offset_add_maximum_bits {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

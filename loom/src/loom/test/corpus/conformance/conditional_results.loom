@@ -47,7 +47,6 @@ check.case public @conditional_results_empty {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<1xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
@@ -76,7 +75,6 @@ check.case public @conditional_results_single {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<1xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
@@ -111,7 +109,6 @@ check.case public @conditional_results_partial {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<37xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
@@ -152,7 +149,6 @@ check.case public @conditional_results_mixed {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<64xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
@@ -187,7 +183,6 @@ check.case public @conditional_results_outer_false {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<64xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
@@ -216,7 +211,6 @@ check.case public @conditional_results_inner_false {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<64xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
@@ -245,7 +239,6 @@ check.case public @conditional_results_all_true {
   %storage = check.generate.fill value(-99) : tensor<224xi32>
   %output = check.tensor.view %storage offset(64) : tensor<224xi32> -> tensor<192xi32>
   kernel.launch @conditional_results(%input, %output, %length, %lower, %upper) : (tensor<64xi32>, tensor<192xi32>, index, i32, i32)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<224xi32> -> tensor<16xi32>
   %expected_prefix = check.generate.fill value(-99) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
