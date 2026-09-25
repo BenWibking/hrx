@@ -206,7 +206,8 @@ iree_hal_buffer_params_t loom_run_hal_testbench_host_visible_buffer_params(
     void) {
   return (iree_hal_buffer_params_t){
       .usage = IREE_HAL_BUFFER_USAGE_DEFAULT | IREE_HAL_BUFFER_USAGE_TRANSFER |
-               IREE_HAL_BUFFER_USAGE_MAPPING,
+               IREE_HAL_BUFFER_USAGE_MAPPING |
+               IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
       .access = IREE_HAL_MEMORY_ACCESS_ALL,
       .type =
           IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,

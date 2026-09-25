@@ -11,7 +11,11 @@ load(
     "loom_config_compatible_with",
 )
 load("//loom/build_tools/bazel:defs.bzl", "loom_test")
-load("//loom/target:execution_profiles.bzl", "GPU_HARDWARE_PROFILES")
+load(
+    "//loom/target:execution_profiles.bzl",
+    "GPU_HARDWARE_PROFILES",
+    "GPU_HARDWARE_VM_ORACLE_PROFILES",
+)
 
 package(
     default_visibility = ["//visibility:public"],
@@ -28,6 +32,7 @@ exports_files([
     "testdata/dynamic_workgroup_hal_actual.loom",
     "testdata/launch_schedule_hal_actual.loom",
     "testdata/scenario_batch_hal_actual.loom",
+    "testdata/scenario_compare_hal_vm.loom",
 ])
 
 loom_test(
@@ -39,6 +44,12 @@ loom_test(
         "testdata/scenario_batch_hal_actual.loom",
     ],
     execution_profiles = GPU_HARDWARE_PROFILES,
+)
+
+loom_test(
+    name = "scenario_compare_test",
+    srcs = ["testdata/scenario_compare_hal_vm.loom"],
+    execution_profiles = GPU_HARDWARE_VM_ORACLE_PROFILES,
 )
 
 loom_cc_library(
@@ -171,6 +182,11 @@ loom_cc_library(
         ":invocation",
         ":testbench_actual",
         ":testbench_staging",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/func",
+        "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/kernel",
         "//loom/src/loom/tooling/testbench:scenario_executor",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
