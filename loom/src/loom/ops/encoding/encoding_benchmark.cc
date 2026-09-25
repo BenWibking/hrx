@@ -1150,7 +1150,8 @@ static iree_status_t CanonicalizeDynamicEncodingQueryBranches(
   loom_canonicalizer_t canonicalizer;
   iree_status_t status = loom_canonicalizer_initialize(
       module, &pass_arena, &value_facts,
-      cleanup_pattern_registry->special_value_policy, &canonicalizer);
+      cleanup_pattern_registry->special_value_policy,
+      cleanup_pattern_registry->fact_refinement_policy, &canonicalizer);
   if (iree_status_is_ok(status)) {
     const loom_canonicalizer_options_t options = {
         /*.max_iterations=*/0,

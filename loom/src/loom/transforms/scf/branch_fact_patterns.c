@@ -713,6 +713,138 @@ static iree_status_t loom_branch_facts_replace_region_uses(
   return loom_branch_facts_replace_result_type_refs(replacement, op);
 }
 
+static bool loom_branch_facts_candidate_exact_integer(
+    loom_rewriter_t* rewriter,
+    const loom_branch_facts_edge_assume_candidate_t* candidate,
+    int64_t* out_value) {
+  return candidate->replacement != LOOM_VALUE_ID_INVALID &&
+         loom_value_facts_as_exact_i64(
+             loom_rewriter_value_facts(rewriter, candidate->replacement),
+             out_value);
+}
+
+static bool loom_branch_facts_source_exact_integer(
+    loom_rewriter_t* rewriter,
+    const loom_branch_facts_edge_assume_set_t* assume_set,
+    loom_value_id_t source, int64_t* out_value) {
+  for (uint16_t i = assume_set->candidate_count; i > 0; --i) {
+    const loom_branch_facts_edge_assume_candidate_t* candidate =
+        &assume_set->candidates[i - 1];
+    if (candidate->source == source &&
+        loom_branch_facts_candidate_exact_integer(rewriter, candidate,
+                                                  out_value)) {
+      return true;
+    }
+  }
+  return loom_value_facts_as_exact_i64(
+      loom_rewriter_value_facts(rewriter, source), out_value);
+}
+
+static iree_status_t loom_branch_facts_set_predicates(
+    loom_rewriter_t* rewriter,
+    loom_branch_facts_edge_assume_candidate_t* candidate,
+    const loom_predicate_t* predicates, uint16_t predicate_count) {
+  loom_predicate_t* storage = NULL;
+  IREE_RETURN_IF_ERROR(loom_builder_copy_predicate_list_attr_storage(
+      &rewriter->builder, predicates, predicate_count,
+      IREE_SV("branch fact predicates"), &storage));
+  return loom_rewriter_set_attr(
+      rewriter, candidate->assume_op, 0,
+      loom_attr_predicate_list(storage, predicate_count));
+}
+
+// Branch candidates describe one simultaneous edge fact set. Rewrite references
+// to candidates proven exact as literals before ordinary folding can erase the
+// identities that established those path-local values.
+static iree_status_t loom_branch_facts_normalize_exact_assumes(
+    loom_rewriter_t* rewriter,
+    loom_branch_facts_edge_assume_set_t* assume_set) {
+  for (uint16_t iteration = 0; iteration <= assume_set->candidate_count;
+       ++iteration) {
+    bool changed = false;
+    for (uint16_t candidate_index = 0;
+         candidate_index < assume_set->candidate_count; ++candidate_index) {
+      loom_branch_facts_edge_assume_candidate_t* candidate =
+          &assume_set->candidates[candidate_index];
+      if (candidate->kind != LOOM_BRANCH_FACTS_EDGE_ASSUME_PREDICATES ||
+          !candidate->assume_op) {
+        continue;
+      }
+      const loom_attribute_t source =
+          loom_op_const_attrs(candidate->assume_op)[0];
+      loom_predicate_t predicates[LOOM_BRANCH_FACTS_EDGE_PREDICATE_CAPACITY];
+      memcpy(predicates, source.predicate_list,
+             source.count * sizeof(*predicates));
+      bool candidate_changed = false;
+      for (uint16_t predicate_index = 0; predicate_index < source.count;
+           ++predicate_index) {
+        loom_predicate_t* predicate = &predicates[predicate_index];
+        for (uint8_t argument_index = 0; argument_index < predicate->arg_count;
+             ++argument_index) {
+          if (predicate->arg_tags[argument_index] != LOOM_PRED_ARG_VALUE ||
+              predicate->args[argument_index] < 0) {
+            continue;
+          }
+          const loom_value_id_t referenced =
+              (loom_value_id_t)predicate->args[argument_index];
+          if (argument_index == 0) {
+            predicate->args[argument_index] = candidate->materialized_input;
+            candidate_changed |= referenced != candidate->materialized_input;
+            continue;
+          }
+          int64_t exact_value = 0;
+          if (loom_branch_facts_source_exact_integer(
+                  rewriter, assume_set, referenced, &exact_value)) {
+            predicate->arg_tags[argument_index] = LOOM_PRED_ARG_CONST;
+            predicate->args[argument_index] = exact_value;
+            candidate_changed = true;
+          }
+        }
+      }
+      if (candidate_changed) {
+        IREE_RETURN_IF_ERROR(loom_branch_facts_set_predicates(
+            rewriter, candidate, predicates, source.count));
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
+  }
+
+  for (uint16_t candidate_index = 0;
+       candidate_index < assume_set->candidate_count; ++candidate_index) {
+    loom_branch_facts_edge_assume_candidate_t* candidate =
+        &assume_set->candidates[candidate_index];
+    if (candidate->kind != LOOM_BRANCH_FACTS_EDGE_ASSUME_PREDICATES ||
+        !candidate->assume_op) {
+      continue;
+    }
+    int64_t exact_value = 0;
+    if (!loom_branch_facts_candidate_exact_integer(rewriter, candidate,
+                                                   &exact_value)) {
+      continue;
+    }
+    const loom_predicate_t exact_predicate = {
+        .kind = LOOM_PREDICATE_EQ,
+        .arg_count = 2,
+        .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
+                     LOOM_PRED_ARG_NONE},
+        .args = {candidate->materialized_input, exact_value, 0},
+    };
+    const loom_attribute_t predicates =
+        loom_op_const_attrs(candidate->assume_op)[0];
+    if (predicates.count == 1 &&
+        loom_branch_facts_predicate_equal(&predicates.predicate_list[0],
+                                          &exact_predicate)) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(loom_branch_facts_set_predicates(rewriter, candidate,
+                                                          &exact_predicate, 1));
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_branch_facts_materialize_edge_assumes(
     loom_rewriter_t* rewriter, loom_op_t* parent_op, loom_region_t* region,
     const loom_condition_fact_set_t* condition_facts,
@@ -834,6 +966,8 @@ static iree_status_t loom_branch_facts_materialize_edge_assumes(
   if (!*out_changed) {
     return iree_ok_status();
   }
+  IREE_RETURN_IF_ERROR(
+      loom_branch_facts_normalize_exact_assumes(rewriter, assume_set));
   loom_branch_facts_region_replacement_t replacement = {
       .rewriter = rewriter,
       .assume_set = assume_set,

@@ -98,6 +98,15 @@ class FactTableComputeTest : public ::testing::Test {
                                                            &cursor);
   }
 
+  static std::vector<loom_op_t*> PendingExactRelations(
+      const loom_value_fact_table_t& table) {
+    loom_op_t* const* ops = nullptr;
+    iree_host_size_t op_count = 0;
+    loom_value_fact_table_pending_exact_relations(&table, &ops, &op_count);
+    return op_count ? std::vector<loom_op_t*>(ops, ops + op_count)
+                    : std::vector<loom_op_t*>();
+  }
+
   iree_arena_block_pool_t pool_;
   iree_arena_allocator_t arena_;
   loom_context_t context_;
@@ -132,6 +141,7 @@ TEST_F(FactTableComputeTest, IdentityOnlyMutationReportsChangedFacts) {
   IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(&table_, module_,
                                                              first, &changed));
   EXPECT_FALSE(changed);
+  EXPECT_EQ(table_.exact_relations.ops, nullptr);
 
   IREE_ASSERT_OK(loom_op_set_operand(module_, first, 0, inputs_[1]));
   IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(&table_, module_,
@@ -144,6 +154,109 @@ TEST_F(FactTableComputeTest, IdentityOnlyMutationReportsChangedFacts) {
             inputs_[1]);
   EXPECT_TRUE(loom_value_facts_is_unknown(
       loom_value_fact_table_lookup(&table_, second_result)));
+}
+
+TEST_F(FactTableComputeTest, ExactDynamicRelationsAreRetainedLazily) {
+  EXPECT_EQ(table_.exact_relations.ops, nullptr);
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table_, inputs_[0],
+                                              loom_value_facts_exact_i64(5)));
+  loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{inputs_[0], inputs_[1]},
+  };
+  loom_op_t* assume = nullptr;
+  IREE_ASSERT_OK(loom_index_assume_build(&builder_, &inputs_[0], 1, &predicate,
+                                         1, &type_, 1, LOOM_LOCATION_UNKNOWN,
+                                         &assume));
+  bool changed = false;
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(&table_, module_,
+                                                             assume, &changed));
+  EXPECT_TRUE(changed);
+  EXPECT_EQ(PendingExactRelations(table_), std::vector<loom_op_t*>({assume}));
+
+  // A stable incremental refresh performs no candidate work and does not
+  // duplicate the pending observation.
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(&table_, module_,
+                                                             assume, &changed));
+  EXPECT_FALSE(changed);
+  EXPECT_EQ(PendingExactRelations(table_), std::vector<loom_op_t*>({assume}));
+
+  loom_value_fact_table_clear_pending_exact_relations(&table_);
+  EXPECT_TRUE(PendingExactRelations(table_).empty());
+  predicate.arg_tags[1] = LOOM_PRED_ARG_CONST;
+  predicate.args[1] = 10;
+  IREE_ASSERT_OK(loom_index_assume_set_predicates(
+      module_, assume, loom_attr_predicate_list(&predicate, 1)));
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(&table_, module_,
+                                                             assume, &changed));
+  EXPECT_TRUE(PendingExactRelations(table_).empty());
+
+  predicate.kind = LOOM_PREDICATE_POW2;
+  predicate.arg_count = 1;
+  predicate.arg_tags[0] = LOOM_PRED_ARG_VALUE;
+  predicate.args[0] = inputs_[1];
+  loom_op_t* unary_assume = nullptr;
+  IREE_ASSERT_OK(loom_index_assume_build(&builder_, &inputs_[0], 1, &predicate,
+                                         1, &type_, 1, LOOM_LOCATION_UNKNOWN,
+                                         &unary_assume));
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(
+      &table_, module_, unary_assume, &changed));
+  EXPECT_EQ(PendingExactRelations(table_),
+            std::vector<loom_op_t*>({unary_assume}));
+
+  loom_value_fact_table_clear_scope(&table_);
+  EXPECT_EQ(table_.exact_relations.ops, nullptr);
+}
+
+TEST_F(FactTableComputeTest,
+       ExactDynamicRelationsAreRetainedWithoutChangeReporting) {
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table_, inputs_[0],
+                                              loom_value_facts_exact_i64(5)));
+  loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{inputs_[0], inputs_[1]},
+  };
+  loom_op_t* assume = nullptr;
+  IREE_ASSERT_OK(loom_index_assume_build(&builder_, &inputs_[0], 1, &predicate,
+                                         1, &type_, 1, LOOM_LOCATION_UNKNOWN,
+                                         &assume));
+
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, assume));
+
+  EXPECT_EQ(PendingExactRelations(table_), std::vector<loom_op_t*>({assume}));
+}
+
+TEST_F(FactTableComputeTest, ExactRelationRetentionGrowsWithCandidates) {
+  constexpr iree_host_size_t kAssumeCount = 64;
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table_, inputs_[0],
+                                              loom_value_facts_exact_i64(5)));
+  loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{inputs_[0], inputs_[1]},
+  };
+  std::vector<loom_op_t*> assumes;
+  assumes.reserve(kAssumeCount);
+  for (iree_host_size_t i = 0; i < kAssumeCount; ++i) {
+    loom_op_t* assume = nullptr;
+    IREE_ASSERT_OK(loom_index_assume_build(&builder_, &inputs_[0], 1,
+                                           &predicate, 1, &type_, 1,
+                                           LOOM_LOCATION_UNKNOWN, &assume));
+    bool changed = false;
+    IREE_ASSERT_OK(loom_value_fact_table_compute_op_and_report(
+        &table_, module_, assume, &changed));
+    EXPECT_TRUE(changed);
+    assumes.push_back(assume);
+  }
+  EXPECT_EQ(PendingExactRelations(table_), assumes);
 }
 
 TEST_F(FactTableComputeTest,

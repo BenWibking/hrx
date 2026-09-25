@@ -11,6 +11,7 @@
 #include "loom/pass/types.h"
 #include "loom/rewrite/pattern_registry.h"
 #include "loom/rewrite/type_propagation.h"
+#include "loom/transforms/cleanup/fact_refinement_policy.h"
 #include "loom/transforms/cleanup/special_value_policy.h"
 #include "loom/util/fact_table.h"
 
@@ -115,6 +116,10 @@ typedef struct loom_canonicalizer_t {
   // Compiler-selected special-value policy, or NULL to disable materialization.
   const loom_cleanup_special_value_policy_t* special_value_policy;
 
+  // Compiler-selected fact-refinement materializers, or NULL to disable
+  // relation preservation across exact folding.
+  const loom_fact_refinement_policy_t* fact_refinement_policy;
+
   // Parent arena whose block pool backs the resettable scratch arena.
   iree_arena_allocator_t* parent_arena;
 
@@ -131,15 +136,15 @@ typedef struct loom_canonicalizer_t {
   loom_canonicalizer_state_t* state;
 } loom_canonicalizer_t;
 
-// Initializes a canonicalizer over |module|. |special_value_policy| supplies
-// compiler-selected builders and may be NULL to disable special-value and
-// constant materialization. |parent_arena| is not used for bulk scratch
-// allocations directly; its block pool backs a nested arena that is reset for
-// each run.
+// Initializes a canonicalizer over |module|. The two policies supply
+// compiler-selected builders and may be NULL to disable their respective
+// materializations. |parent_arena| is not used for bulk scratch allocations
+// directly; its block pool backs a nested arena that is reset for each run.
 iree_status_t loom_canonicalizer_initialize(
     loom_module_t* module, iree_arena_allocator_t* parent_arena,
     loom_pass_value_fact_owner_t* value_facts,
     const loom_cleanup_special_value_policy_t* special_value_policy,
+    const loom_fact_refinement_policy_t* fact_refinement_policy,
     loom_canonicalizer_t* out_canonicalizer);
 
 // Releases transient worklist state and returns scratch blocks to the parent
