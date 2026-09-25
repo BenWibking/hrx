@@ -1369,8 +1369,9 @@ The functions import as scalar constants. `__attribute__((packed))`,
 requests share the same source layout owner. GNU `aligned(N)` raises a packed
 member's alignment, while a pragma pack cap limits member alignment. Record
 alignment can raise the final stride without changing internal member offsets.
-Standard `alignas` retains its own validation rules. Explicit alignment on shared
-arrays reaches the workgroup allocation's `align` operand.
+Standard `alignas` retains its own validation rules. Explicit alignment on
+shared scalar, vector, and fixed scalar-array objects reaches the workgroup
+allocation's `align` operand.
 
 Compound `__builtin_offsetof` designators follow nested members and constant
 array indices. For example, `__builtin_offsetof(Block<unsigned>, words[2])` is
@@ -1651,7 +1652,8 @@ The current translation surface covers scalar and explicit vector arithmetic,
 conversions, typed-pointer indexing and arithmetic, aggregate record values,
 record field storage, local SSA values, automatic scalar, vector, and array storage,
 conditional regions, short-circuit `&&` and `||`, counted and general `for`
-loops, `while` and `do/while` loops, fixed workgroup arrays, and direct calls.
+loops, `while` and `do/while` loops, scalar/vector/fixed-array workgroup
+storage, and direct calls.
 Unsupported reachable types and statements produce source diagnostics. Integral
 subscripts preserve their source width and signedness. Interior pointers carry a
 buffer root and an
@@ -1767,7 +1769,7 @@ edges. Objects with constructors, exceptions, and indirect calls need additional
 storage and control-flow projections before they can be imported.
 
 Volatile scalar and vector accesses through pointers, automatic objects, and
-workgroup arrays become `view.load/store<volatile>` and
+workgroup objects become `view.load/store<volatile>` and
 `vector.load/store<volatile>`. The qualifier belongs to the accessed object:
 a copied pointer or a pointer member
 retains its pointee's observation semantics. Discarded reads, including explicit

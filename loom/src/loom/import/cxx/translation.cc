@@ -1543,19 +1543,25 @@ class Translator {
           fail(ast, "local storage duration must be automatic or __shared__");
         }
         if (variable->symbol && annotated(variable->symbol, "workgroup")) {
-          auto* array = cxx::type_cast<cxx::BoundedArrayType>(
-              types_.unqualified(variable->symbol->type()));
-          if (!array || variable->initializer ||
-              current_function_.kind != FunctionKind::Kernel) {
-            fail(ast,
-                 "shared storage must be an uninitialized fixed scalar array "
-                 "in the kernel");
+          if (current_function_.kind != FunctionKind::Kernel) {
+            fail(variable, "workgroup storage requires a kernel body");
           }
-          auto allocation =
-              storage_.allocate(array, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
-                                source_variable->explicitAlignment(), variable);
+          if (variable->initializer) {
+            fail(variable, "workgroup storage cannot have an initializer");
+          }
+          auto* source_type = types_.unqualified(variable->symbol->type());
+          auto* array = cxx::type_cast<cxx::BoundedArrayType>(source_type);
+          auto allocation = storage_.allocate(
+              source_type, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+              source_variable->explicitAlignment(), variable);
           auto spelling = cxx::to_string(variable->symbol->name());
-          values_[variable->symbol] = name(Value(allocation.pointer), spelling);
+          if (array) {
+            values_[variable->symbol] =
+                name(Value(allocation.pointer), spelling);
+          } else {
+            name(Value(allocation.pointer), spelling + "_storage");
+            locals_[variable->symbol] = allocation;
+          }
           name(allocation.view, spelling + "_view");
           continue;
         }
