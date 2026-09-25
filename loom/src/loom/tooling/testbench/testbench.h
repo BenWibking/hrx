@@ -473,6 +473,15 @@ typedef struct loom_testbench_scenario_plan_t {
   iree_host_size_t issue_count;
 } loom_testbench_scenario_plan_t;
 
+typedef struct loom_testbench_scenario_sample_coordinate_t {
+  // Scenario configuration selected by the benchmark sample.
+  iree_host_size_t configuration_ordinal;
+  // Scenario trial domain selected by the benchmark sample.
+  iree_host_size_t trial_index;
+  // Trial ordinal within the selected domain.
+  iree_host_size_t trial_ordinal;
+} loom_testbench_scenario_sample_coordinate_t;
+
 typedef struct loom_testbench_case_plan_t {
   // Module-local symbol reference naming this case.
   loom_symbol_ref_t ref;
@@ -614,6 +623,16 @@ iree_host_size_t loom_testbench_case_sample_parameter_ordinal(
 // reduced benchmark sample domain.
 iree_host_size_t loom_testbench_benchmark_sample_case_ordinal(
     const loom_testbench_case_plan_t* case_plan,
+    const loom_testbench_benchmark_plan_t* benchmark_plan,
+    iree_host_size_t benchmark_sample_ordinal);
+
+// Maps a benchmark-local sample ordinal to its scenario domain coordinate.
+//
+// Configurations vary slowest. Within each configuration, trial domains and
+// their concrete ordinals follow source order.
+loom_testbench_scenario_sample_coordinate_t
+loom_testbench_benchmark_sample_scenario_coordinate(
+    const loom_testbench_scenario_plan_t* scenario_plan,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     iree_host_size_t benchmark_sample_ordinal);
 

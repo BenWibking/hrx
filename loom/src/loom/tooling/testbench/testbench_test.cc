@@ -325,6 +325,20 @@ check.benchmark<@configured> @configured_throughput
   EXPECT_EQ(plan.benchmarks[0].scenario_index, 0u);
   EXPECT_EQ(plan.benchmarks[0].cartesian_sample_count, 16u);
   EXPECT_EQ(plan.benchmarks[0].sample_count, 16u);
+  const loom_testbench_scenario_sample_coordinate_t expected_coordinates[] = {
+      {0, 0, 0}, {0, 0, 3}, {0, 1, 0}, {0, 1, 1},
+      {0, 2, 0}, {0, 3, 0}, {1, 0, 0}, {1, 3, 0},
+  };
+  const iree_host_size_t benchmark_ordinals[] = {0, 3, 4, 5, 6, 7, 8, 15};
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(benchmark_ordinals); ++i) {
+    const loom_testbench_scenario_sample_coordinate_t coordinate =
+        loom_testbench_benchmark_sample_scenario_coordinate(
+            &scenario, &plan.benchmarks[0], benchmark_ordinals[i]);
+    EXPECT_EQ(coordinate.configuration_ordinal,
+              expected_coordinates[i].configuration_ordinal);
+    EXPECT_EQ(coordinate.trial_index, expected_coordinates[i].trial_index);
+    EXPECT_EQ(coordinate.trial_ordinal, expected_coordinates[i].trial_ordinal);
+  }
   EXPECT_EQ(plan.issue_count, 0u);
 
   loom_module_free(module);

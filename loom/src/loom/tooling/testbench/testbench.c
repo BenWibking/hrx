@@ -1812,6 +1812,42 @@ iree_host_size_t loom_testbench_benchmark_sample_case_ordinal(
   return case_sample_ordinal;
 }
 
+loom_testbench_scenario_sample_coordinate_t
+loom_testbench_benchmark_sample_scenario_coordinate(
+    const loom_testbench_scenario_plan_t* scenario_plan,
+    const loom_testbench_benchmark_plan_t* benchmark_plan,
+    iree_host_size_t benchmark_sample_ordinal) {
+  IREE_ASSERT(benchmark_plan->case_index == LOOM_TESTBENCH_CASE_INDEX_INVALID);
+  IREE_ASSERT(benchmark_plan->scenario_index !=
+              LOOM_TESTBENCH_SCENARIO_INDEX_INVALID);
+  IREE_ASSERT(benchmark_sample_ordinal < benchmark_plan->sample_count);
+  IREE_ASSERT(scenario_plan->configuration_count != 0);
+  IREE_ASSERT(
+      benchmark_plan->sample_count % scenario_plan->configuration_count == 0);
+
+  const iree_host_size_t trials_per_configuration =
+      benchmark_plan->sample_count / scenario_plan->configuration_count;
+  loom_testbench_scenario_sample_coordinate_t coordinate = {
+      .configuration_ordinal =
+          benchmark_sample_ordinal / trials_per_configuration,
+  };
+  iree_host_size_t ordinal =
+      benchmark_sample_ordinal % trials_per_configuration;
+  for (iree_host_size_t trial_index = 0;
+       trial_index < scenario_plan->trial_count; ++trial_index) {
+    const iree_host_size_t trial_count =
+        scenario_plan->trials[trial_index].trial_count;
+    if (ordinal < trial_count) {
+      coordinate.trial_index = trial_index;
+      coordinate.trial_ordinal = ordinal;
+      return coordinate;
+    }
+    ordinal -= trial_count;
+  }
+  IREE_ASSERT_UNREACHABLE("planned scenario sample outside its trial domains");
+  IREE_BUILTIN_UNREACHABLE();
+}
+
 static iree_status_t loom_testbench_range_sample_value(
     const loom_testbench_parameter_plan_t* parameter,
     iree_host_size_t parameter_sample_ordinal, loom_attribute_t* out_value) {
