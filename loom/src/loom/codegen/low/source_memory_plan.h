@@ -232,8 +232,11 @@ typedef struct loom_low_source_memory_access_plan_t {
   int64_t vector_lane_byte_stride;
   // Classification of any per-lane offset vector carried by the source op.
   loom_low_source_memory_vector_offset_kind_t vector_offset_kind;
-  // Total static byte offset selected from the source view access.
+  // Total static byte offset, including a folded physical allocation base.
   int64_t static_byte_offset;
+  // Physical allocation-base contribution included in static_byte_offset.
+  // Subtract this when publishing source-root-relative memory effects.
+  int64_t physical_root_byte_offset;
   // Static byte offset contributed by the source view base.
   int64_t static_view_base_byte_offset;
   // Source SSA value that materializes the dynamic view-base byte offset, or

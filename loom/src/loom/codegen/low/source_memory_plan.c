@@ -755,11 +755,16 @@ bool loom_low_source_memory_access_plan_include_root_byte_offset(
     return false;
   }
   int64_t static_byte_offset = 0;
+  int64_t physical_root_byte_offset = 0;
   if (!iree_checked_add_i64(plan->static_byte_offset, (int64_t)root_byte_offset,
-                            &static_byte_offset)) {
+                            &static_byte_offset) ||
+      !iree_checked_add_i64(plan->physical_root_byte_offset,
+                            (int64_t)root_byte_offset,
+                            &physical_root_byte_offset)) {
     return false;
   }
   plan->static_byte_offset = static_byte_offset;
+  plan->physical_root_byte_offset = physical_root_byte_offset;
   return true;
 }
 

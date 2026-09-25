@@ -1,0 +1,1647 @@
+// RUN: emit amdgpu-kernel-assembly input=source-low
+
+// Compile-only fixtures exercise the declared transfer effects. Raw descriptor
+// words are placeholders and these kernels are not device execution tests.
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @independent_allocations() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %second = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %dest_second = buffer.view %second[%c0] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %copy_second = kernel.async.tensor.load.to.lds %source to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  kernel.async.wait %group_second {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected independent_allocations
+.globl independent_allocations
+.p2align 8
+.type independent_allocations,@function
+independent_allocations:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  tensor_load_to_lds s[0:3], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  s_wait_tensorcnt 1
+  s_wait_tensorcnt 0
+  s_endpgm
+.Lfunc_end0:
+.size independent_allocations, .Lfunc_end0-independent_allocations
+
+.rodata
+.p2align 6
+.amdhsa_kernel independent_allocations
+  .amdhsa_group_segment_fixed_size 512
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 0
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 0
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 1
+  .amdhsa_next_free_sgpr 16
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'independent_allocations'
+      .symbol: 'independent_allocations.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 512
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 16
+      .vgpr_count: 1
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+// Equal SSA lane offsets do not mean equal addresses across participants.
+// The store envelope overlaps the transfer even though one lane's views do not.
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @participant_varying_overlap() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 768 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %scratch = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %lane = kernel.workitem.id<x> : index
+  %stride = index.constant 4 : offset
+  %lane_offset = index.scale %lane, %stride : index, offset -> offset
+  %shift = index.constant 128 : offset
+  %shifted_offset = index.add %lane_offset, %shift : offset
+  %writes = buffer.view %scratch[%lane_offset] : buffer -> view<1xf32>
+  %dest = buffer.view %scratch[%shifted_offset] : buffer -> view<64xf32>
+  %value = scalar.constant 1.0 : f32
+  view.store %value, %writes[0] : f32, view<1xf32>
+  %copy = kernel.async.tensor.load.to.lds %source to %dest using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected participant_varying_overlap
+.globl participant_varying_overlap
+.p2align 8
+.type participant_varying_overlap,@function
+participant_varying_overlap:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  v_lshlrev_b32 v0, 2, v0
+  v_mov_b32 v1, 1065353216
+  v_mov_b32 v2, 0
+  ds_write_b32 v0, v1 offset:0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s0, v2
+  v_readfirstlane_b32 s1, v2
+  v_readfirstlane_b32 s2, v2
+  v_readfirstlane_b32 s3, v2
+  v_readfirstlane_b32 s8, v2
+  v_readfirstlane_b32 s9, v2
+  v_readfirstlane_b32 s10, v2
+  v_readfirstlane_b32 s11, v2
+  v_readfirstlane_b32 s12, v2
+  v_readfirstlane_b32 s13, v2
+  v_readfirstlane_b32 s14, v2
+  v_readfirstlane_b32 s15, v2
+  s_wait_dscnt dscnt(0)
+  tensor_load_to_lds s[0:3], s[8:15]
+  s_wait_tensorcnt 0
+  s_endpgm
+.Lfunc_end0:
+.size participant_varying_overlap, .Lfunc_end0-participant_varying_overlap
+
+.rodata
+.p2align 6
+.amdhsa_kernel participant_varying_overlap
+  .amdhsa_group_segment_fixed_size 768
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 0
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 0
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 3
+  .amdhsa_next_free_sgpr 16
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'participant_varying_overlap'
+      .symbol: 'participant_varying_overlap.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 768
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 16
+      .vgpr_count: 3
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @placed_lds_write_before_transfer() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %second = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %dest_second = buffer.view %second[%c0] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %value = scalar.constant 1.0 : f32
+  view.store %value, %dest_second[0] : f32, view<64xf32>
+  %copy_second = kernel.async.tensor.load.to.lds %source to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  kernel.async.wait %group_second {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected placed_lds_write_before_transfer
+.globl placed_lds_write_before_transfer
+.p2align 8
+.type placed_lds_write_before_transfer,@function
+placed_lds_write_before_transfer:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_mov_b32 v1, 1065353216
+  v_mov_b32 v2, 0
+  tensor_load_to_lds s[0:3], s[8:15]
+  ds_write_b32 v2, v1 offset:256
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  s_wait_dscnt dscnt(0)
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[0:3], s[8:15]
+  s_wait_tensorcnt 1
+  s_wait_tensorcnt 0
+  s_endpgm
+.Lfunc_end0:
+.size placed_lds_write_before_transfer, .Lfunc_end0-placed_lds_write_before_transfer
+
+.rodata
+.p2align 6
+.amdhsa_kernel placed_lds_write_before_transfer
+  .amdhsa_group_segment_fixed_size 512
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 0
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 0
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 3
+  .amdhsa_next_free_sgpr 16
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'placed_lds_write_before_transfer'
+      .symbol: 'placed_lds_write_before_transfer.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 512
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 16
+      .vgpr_count: 3
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+// Thirteen issues cross the hardware bound. An authored bound of eleven
+// does not satisfy the next issue's <=10 requirement.
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @tensor_issue_limit() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 3328 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %scratch = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %offset0 = index.constant 0 : offset
+  %dest0 = buffer.view %scratch[%offset0] : buffer -> view<64xf32>
+  %copy0 = kernel.async.tensor.load.to.lds %source to %dest0 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group0 = kernel.async.group %copy0 : kernel.async.token -> kernel.async.group
+  %offset1 = index.constant 256 : offset
+  %dest1 = buffer.view %scratch[%offset1] : buffer -> view<64xf32>
+  %copy1 = kernel.async.tensor.load.to.lds %source to %dest1 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group1 = kernel.async.group %copy1 : kernel.async.token -> kernel.async.group
+  %offset2 = index.constant 512 : offset
+  %dest2 = buffer.view %scratch[%offset2] : buffer -> view<64xf32>
+  %copy2 = kernel.async.tensor.load.to.lds %source to %dest2 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group2 = kernel.async.group %copy2 : kernel.async.token -> kernel.async.group
+  %offset3 = index.constant 768 : offset
+  %dest3 = buffer.view %scratch[%offset3] : buffer -> view<64xf32>
+  %copy3 = kernel.async.tensor.load.to.lds %source to %dest3 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group3 = kernel.async.group %copy3 : kernel.async.token -> kernel.async.group
+  %offset4 = index.constant 1024 : offset
+  %dest4 = buffer.view %scratch[%offset4] : buffer -> view<64xf32>
+  %copy4 = kernel.async.tensor.load.to.lds %source to %dest4 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group4 = kernel.async.group %copy4 : kernel.async.token -> kernel.async.group
+  %offset5 = index.constant 1280 : offset
+  %dest5 = buffer.view %scratch[%offset5] : buffer -> view<64xf32>
+  %copy5 = kernel.async.tensor.load.to.lds %source to %dest5 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group5 = kernel.async.group %copy5 : kernel.async.token -> kernel.async.group
+  %offset6 = index.constant 1536 : offset
+  %dest6 = buffer.view %scratch[%offset6] : buffer -> view<64xf32>
+  %copy6 = kernel.async.tensor.load.to.lds %source to %dest6 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group6 = kernel.async.group %copy6 : kernel.async.token -> kernel.async.group
+  %offset7 = index.constant 1792 : offset
+  %dest7 = buffer.view %scratch[%offset7] : buffer -> view<64xf32>
+  %copy7 = kernel.async.tensor.load.to.lds %source to %dest7 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group7 = kernel.async.group %copy7 : kernel.async.token -> kernel.async.group
+  %offset8 = index.constant 2048 : offset
+  %dest8 = buffer.view %scratch[%offset8] : buffer -> view<64xf32>
+  %copy8 = kernel.async.tensor.load.to.lds %source to %dest8 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group8 = kernel.async.group %copy8 : kernel.async.token -> kernel.async.group
+  %offset9 = index.constant 2304 : offset
+  %dest9 = buffer.view %scratch[%offset9] : buffer -> view<64xf32>
+  %copy9 = kernel.async.tensor.load.to.lds %source to %dest9 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group9 = kernel.async.group %copy9 : kernel.async.token -> kernel.async.group
+  %offset10 = index.constant 2560 : offset
+  %dest10 = buffer.view %scratch[%offset10] : buffer -> view<64xf32>
+  %copy10 = kernel.async.tensor.load.to.lds %source to %dest10 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group10 = kernel.async.group %copy10 : kernel.async.token -> kernel.async.group
+  %offset11 = index.constant 2816 : offset
+  %dest11 = buffer.view %scratch[%offset11] : buffer -> view<64xf32>
+  %copy11 = kernel.async.tensor.load.to.lds %source to %dest11 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group11 = kernel.async.group %copy11 : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group0 {newer_groups = 11} : kernel.async.group
+  %offset12 = index.constant 3072 : offset
+  %dest12 = buffer.view %scratch[%offset12] : buffer -> view<64xf32>
+  %copy12 = kernel.async.tensor.load.to.lds %source to %dest12 using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group12 = kernel.async.group %copy12 : kernel.async.token -> kernel.async.group
+  %value = view.load %dest0[0] : view<64xf32> -> f32
+  kernel.async.wait %group1 {newer_groups = 11} : kernel.async.group
+  kernel.async.wait %group2 {newer_groups = 10} : kernel.async.group
+  kernel.async.wait %group3 {newer_groups = 9} : kernel.async.group
+  kernel.async.wait %group4 {newer_groups = 8} : kernel.async.group
+  kernel.async.wait %group5 {newer_groups = 7} : kernel.async.group
+  kernel.async.wait %group6 {newer_groups = 6} : kernel.async.group
+  kernel.async.wait %group7 {newer_groups = 5} : kernel.async.group
+  kernel.async.wait %group8 {newer_groups = 4} : kernel.async.group
+  kernel.async.wait %group9 {newer_groups = 3} : kernel.async.group
+  kernel.async.wait %group10 {newer_groups = 2} : kernel.async.group
+  kernel.async.wait %group11 {newer_groups = 1} : kernel.async.group
+  kernel.async.wait %group12 {newer_groups = 0} : kernel.async.group
+  view.store %value, %source[0] : f32, view<64xf32>
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected tensor_issue_limit
+.globl tensor_issue_limit
+.p2align 8
+.type tensor_issue_limit,@function
+tensor_issue_limit:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  s_load_dwordx2 s[2:3], s[0:1] offset:0
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_mov_b32 v0, 0
+  s_wait_tensorcnt 11
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  ds_read_b32 v1, v0 offset:0
+  s_wait_tensorcnt 11
+  s_wait_tensorcnt 10
+  s_wait_tensorcnt 9
+  s_wait_tensorcnt 8
+  s_wait_tensorcnt 7
+  s_wait_tensorcnt 6
+  s_wait_tensorcnt 5
+  s_wait_tensorcnt 4
+  s_wait_tensorcnt 3
+  s_wait_tensorcnt 2
+  s_wait_tensorcnt 1
+  s_wait_tensorcnt 0
+  s_wait_dscnt dscnt(0)
+  s_wait_kmcnt kmcnt(0)
+  global_store_b32 v0, v1, s[2:3] offset:0
+  s_wait_storecnt storecnt(0)
+  s_endpgm
+.Lfunc_end0:
+.size tensor_issue_limit, .Lfunc_end0-tensor_issue_limit
+
+.rodata
+.p2align 6
+.amdhsa_kernel tensor_issue_limit
+  .amdhsa_group_segment_fixed_size 3328
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 2
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 1
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 2
+  .amdhsa_next_free_sgpr 20
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'tensor_issue_limit'
+      .symbol: 'tensor_issue_limit.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 3328
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 20
+      .vgpr_count: 2
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @disjoint_views_d4() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 512 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1, %d0, %d0) : vector<4xi32>, vector<8xi32>, vector<4xi32>, vector<4xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %slot = index.constant 256 : offset
+  %dest_second = buffer.view %first[%slot] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %copy_second = kernel.async.tensor.load.to.lds %source to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  kernel.async.wait %group_second {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected disjoint_views_d4
+.globl disjoint_views_d4
+.p2align 8
+.type disjoint_views_d4,@function
+disjoint_views_d4:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  v_readfirstlane_b32 s20, v0
+  v_readfirstlane_b32 s21, v0
+  v_readfirstlane_b32 s22, v0
+  v_readfirstlane_b32 s23, v0
+  tensor_load_to_lds s[0:3], s[8:15], s[4:7], s[16:19]
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[20:23], s[0:7], s[8:11], s[12:15]
+  s_wait_tensorcnt 1
+  s_wait_tensorcnt 0
+  s_endpgm
+.Lfunc_end0:
+.size disjoint_views_d4, .Lfunc_end0-disjoint_views_d4
+
+.rodata
+.p2align 6
+.amdhsa_kernel disjoint_views_d4
+  .amdhsa_group_segment_fixed_size 512
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 0
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 0
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 1
+  .amdhsa_next_free_sgpr 24
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'disjoint_views_d4'
+      .symbol: 'disjoint_views_d4.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 512
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 24
+      .vgpr_count: 1
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @overlapping_views_after_partial_wait() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %second = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %dest_second = buffer.view %second[%c0] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %copy_second = kernel.async.tensor.load.to.lds %source to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  %copy_third = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_third = kernel.async.group %copy_third : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_second {newer_groups = 1} : kernel.async.group
+  kernel.async.wait %group_third {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected overlapping_views_after_partial_wait
+.globl overlapping_views_after_partial_wait
+.p2align 8
+.type overlapping_views_after_partial_wait,@function
+overlapping_views_after_partial_wait:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  tensor_load_to_lds s[0:3], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  s_wait_tensorcnt 1
+  tensor_load_to_lds s[0:3], s[8:15]
+  s_wait_tensorcnt 1
+  s_wait_tensorcnt 0
+  s_endpgm
+.Lfunc_end0:
+.size overlapping_views_after_partial_wait, .Lfunc_end0-overlapping_views_after_partial_wait
+
+.rodata
+.p2align 6
+.amdhsa_kernel overlapping_views_after_partial_wait
+  .amdhsa_group_segment_fixed_size 512
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 0
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 0
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 1
+  .amdhsa_next_free_sgpr 16
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'overlapping_views_after_partial_wait'
+      .symbol: 'overlapping_views_after_partial_wait.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 512
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 16
+      .vgpr_count: 1
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @explicit_partial_issue_bound() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %second = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %dest_second = buffer.view %second[%c0] : buffer -> view<64xf32>
+  %third = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_third = buffer.view %third[%c0] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %copy_second = kernel.async.tensor.load.to.lds %source to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  %copy_third = kernel.async.tensor.load.to.lds %source to %dest_third using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_third = kernel.async.group %copy_third : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_second {newer_groups = 1} : kernel.async.group
+  kernel.async.wait %group_third {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected explicit_partial_issue_bound
+.globl explicit_partial_issue_bound
+.p2align 8
+.type explicit_partial_issue_bound,@function
+explicit_partial_issue_bound:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  tensor_load_to_lds s[0:3], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s0, v0
+  v_readfirstlane_b32 s1, v0
+  v_readfirstlane_b32 s2, v0
+  v_readfirstlane_b32 s3, v0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  s_wait_tensorcnt 1
+  tensor_load_to_lds s[0:3], s[8:15]
+  s_wait_tensorcnt 1
+  s_wait_tensorcnt 0
+  s_endpgm
+.Lfunc_end0:
+.size explicit_partial_issue_bound, .Lfunc_end0-explicit_partial_issue_bound
+
+.rodata
+.p2align 6
+.amdhsa_kernel explicit_partial_issue_bound
+  .amdhsa_group_segment_fixed_size 768
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 0
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 0
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 1
+  .amdhsa_next_free_sgpr 16
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'explicit_partial_issue_bound'
+      .symbol: 'explicit_partial_issue_bound.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 768
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 16
+      .vgpr_count: 1
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @partial_bound_lds_consumer() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %second = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %dest_second = buffer.view %second[%c0] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %copy_second = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  // The first transfer targets the second allocation, whose physical base is
+  // 256 bytes. Its logical effect coordinates still start at zero.
+  %value = view.load %dest_second[0] : view<64xf32> -> f32
+  kernel.async.wait %group_second {newer_groups = 0} : kernel.async.group
+  view.store %value, %source[0] : f32, view<64xf32>
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected partial_bound_lds_consumer
+.globl partial_bound_lds_consumer
+.p2align 8
+.type partial_bound_lds_consumer,@function
+partial_bound_lds_consumer:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  s_load_dwordx2 s[2:3], s[0:1] offset:0
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_mov_b32 v0, 0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  s_wait_tensorcnt 1
+  ds_read_b32 v1, v0 offset:256
+  s_wait_tensorcnt 0
+  s_wait_dscnt dscnt(0)
+  s_wait_kmcnt kmcnt(0)
+  global_store_b32 v0, v1, s[2:3] offset:0
+  s_wait_storecnt storecnt(0)
+  s_endpgm
+.Lfunc_end0:
+.size partial_bound_lds_consumer, .Lfunc_end0-partial_bound_lds_consumer
+
+.rodata
+.p2align 6
+.amdhsa_kernel partial_bound_lds_consumer
+  .amdhsa_group_segment_fixed_size 512
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 2
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 1
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 2
+  .amdhsa_next_free_sgpr 20
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'partial_bound_lds_consumer'
+      .symbol: 'partial_bound_lds_consumer.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 512
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 20
+      .vgpr_count: 2
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata
+
+// ====
+
+amdgpu.target<gfx1250> @target
+
+kernel.def target(@target) @global_source_overwrite() {
+  %c1 = index.constant 1 : index
+  %threads = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%threads, %c1, %c1) : index
+} launch(%input: buffer) {
+  %c0 = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %d0 = vector.constant 0 : vector<4xi32>
+  %d1 = vector.constant 0 : vector<8xi32>
+  %descriptor = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%c0] : buffer -> view<64xf32>
+  %first = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %second = buffer.alloca<workgroup> align(256) %bytes : buffer
+  %dest_first = buffer.view %first[%c0] : buffer -> view<64xf32>
+  %dest_second = buffer.view %second[%c0] : buffer -> view<64xf32>
+  %source_offset = index.constant 256 : offset
+  %source_tail = buffer.view %global[%source_offset] : buffer -> view<64xf32>
+  %copy_first = kernel.async.tensor.load.to.lds %source to %dest_first using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_first = kernel.async.group %copy_first : kernel.async.token -> kernel.async.group
+  %copy_second = kernel.async.tensor.load.to.lds %source_tail to %dest_second using %descriptor {cache_scope = cu, cache_temporal = regular} : view<64xf32> to view<64xf32>, kernel.tensor.lds.descriptor -> kernel.async.token
+  %group_second = kernel.async.group %copy_second : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group_first {newer_groups = 1} : kernel.async.group
+  %replacement = scalar.constant 1.0 : f32
+  view.store %replacement, %source[0] : f32, view<64xf32>
+  kernel.async.wait %group_second {newer_groups = 0} : kernel.async.group
+  kernel.return
+}
+
+// ----
+.text
+.amdgcn_target "amdgcn-amd-amdhsa--gfx1250"
+.amdhsa_code_object_version 6
+
+.protected global_source_overwrite
+.globl global_source_overwrite
+.p2align 8
+.type global_source_overwrite,@function
+global_source_overwrite:
+  global_prefetch_b8 v0, s[0:1] scope:SCOPE_SE
+  v_nop
+  s_setreg_imm32_b32 hwreg(HW_REG_WAVE_MODE, 25, 1), 1
+  s_load_dwordx2 s[2:3], s[0:1] offset:0
+  v_mov_b32 v0, 0
+  s_delay_alu instid0(VALU_DEP_1)
+  v_readfirstlane_b32 s4, v0
+  v_readfirstlane_b32 s5, v0
+  v_readfirstlane_b32 s6, v0
+  v_readfirstlane_b32 s7, v0
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_readfirstlane_b32 s16, v0
+  v_readfirstlane_b32 s17, v0
+  v_readfirstlane_b32 s18, v0
+  v_readfirstlane_b32 s19, v0
+  tensor_load_to_lds s[4:7], s[8:15]
+  v_readfirstlane_b32 s8, v0
+  v_readfirstlane_b32 s9, v0
+  v_readfirstlane_b32 s10, v0
+  v_readfirstlane_b32 s11, v0
+  v_readfirstlane_b32 s12, v0
+  v_readfirstlane_b32 s13, v0
+  v_readfirstlane_b32 s14, v0
+  v_readfirstlane_b32 s15, v0
+  v_mov_b32 v0, 1065353216
+  v_mov_b32 v1, 0
+  s_wait_tensorcnt tensorcnt(10)
+  tensor_load_to_lds s[16:19], s[8:15]
+  s_wait_tensorcnt 1
+  s_wait_kmcnt kmcnt(0)
+  global_store_b32 v1, v0, s[2:3] offset:0
+  s_wait_tensorcnt 0
+  s_wait_storecnt storecnt(0)
+  s_endpgm
+.Lfunc_end0:
+.size global_source_overwrite, .Lfunc_end0-global_source_overwrite
+
+.rodata
+.p2align 6
+.amdhsa_kernel global_source_overwrite
+  .amdhsa_group_segment_fixed_size 512
+  .amdhsa_private_segment_fixed_size 0
+  .amdhsa_kernarg_size 8
+  .amdhsa_user_sgpr_count 2
+  .amdhsa_user_sgpr_dispatch_ptr 0
+  .amdhsa_user_sgpr_queue_ptr 0
+  .amdhsa_user_sgpr_kernarg_segment_ptr 1
+  .amdhsa_user_sgpr_dispatch_id 0
+  .amdhsa_user_sgpr_private_segment_size 0
+  .amdhsa_wavefront_size32 1
+  .amdhsa_uses_dynamic_stack 0
+  .amdhsa_enable_private_segment 0
+  .amdhsa_system_sgpr_workgroup_id_x 0
+  .amdhsa_system_sgpr_workgroup_id_y 0
+  .amdhsa_system_sgpr_workgroup_id_z 0
+  .amdhsa_system_sgpr_workgroup_info 0
+  .amdhsa_system_vgpr_workitem_id 0
+  .amdhsa_next_free_vgpr 2
+  .amdhsa_next_free_sgpr 20
+  .amdhsa_reserve_vcc 0
+  .amdhsa_float_round_mode_32 0
+  .amdhsa_float_round_mode_16_64 0
+  .amdhsa_float_denorm_mode_32 3
+  .amdhsa_float_denorm_mode_16_64 3
+  .amdhsa_fp16_overflow 0
+  .amdhsa_memory_ordered 1
+  .amdhsa_forward_progress 1
+  .amdhsa_inst_pref_size 0
+  .amdhsa_round_robin_scheduling 0
+  .amdhsa_named_barrier_count 0
+  .amdhsa_exception_fp_ieee_invalid_op 0
+  .amdhsa_exception_fp_denorm_src 0
+  .amdhsa_exception_fp_ieee_div_zero 0
+  .amdhsa_exception_fp_ieee_overflow 0
+  .amdhsa_exception_fp_ieee_underflow 0
+  .amdhsa_exception_fp_ieee_inexact 0
+  .amdhsa_exception_int_div_zero 0
+.end_amdhsa_kernel
+
+.amdgpu_metadata
+  amdhsa.version:
+    - 1
+    - 2
+  amdhsa.target: 'amdgcn-amd-amdhsa--gfx1250'
+  amdhsa.kernels:
+    - .name: 'global_source_overwrite'
+      .symbol: 'global_source_overwrite.kd'
+      .kernarg_segment_size: 8
+      .group_segment_fixed_size: 512
+      .private_segment_fixed_size: 0
+      .kernarg_segment_align: 8
+      .wavefront_size: 32
+      .sgpr_count: 20
+      .vgpr_count: 2
+      .max_flat_workgroup_size: 64
+      .reqd_workgroup_size:
+        - 64
+        - 1
+        - 1
+      .gfx1250_revision: B0
+      .args:
+        - .name: 'binding0'
+          .offset: 0
+          .size: 8
+          .value_kind: global_buffer
+          .align: 8
+          .address_space: global
+.end_amdgpu_metadata

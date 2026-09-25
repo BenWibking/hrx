@@ -28,6 +28,7 @@
 #include "loom/target/emit/native/amdgpu/spill_lowering.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/low_emit.h"
+#include "loom/tools/loom-check/source_low.h"
 
 typedef enum loom_amdgpu_loom_check_wait_mode_e {
   LOOM_AMDGPU_LOOM_CHECK_WAIT_MODE_AUTO = 0,
@@ -431,7 +432,36 @@ static iree_status_t loom_amdgpu_loom_check_append_artifact_segment(
 
 static iree_status_t loom_amdgpu_loom_check_emit_hal_kernel_assembly(
     const loom_check_emit_provider_request_t* request) {
+  const iree_string_view_t input =
+      iree_string_view_trim(request->target_options);
+  const bool compile_source =
+      iree_string_view_equal(input, IREE_SV("input=source-low"));
+  if (!compile_source && !iree_string_view_is_empty(input) &&
+      !iree_string_view_equal(input, IREE_SV("input=low"))) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "AMDGPU kernel assembly expects input=low or input=source-low");
+  }
+  loom_compile_pipeline_result_t pipeline_result = {0};
+  iree_status_t status = iree_ok_status();
+  if (compile_source) {
+    loom_check_prepare_source_low_options_t prepare_options;
+    loom_check_prepare_source_low_options_initialize(&prepare_options);
+    prepare_options.default_pipeline =
+        LOOM_COMPILE_DEFAULT_PIPELINE_PREPARED_LOW;
+    status = loom_check_prepare_source_low_module(
+        request->module, &prepare_options, request->low_registry,
+        request->environment, request->source_resolver,
+        request->diagnostic_collector, request->block_pool, &pipeline_result);
+  }
+  if (!iree_status_is_ok(status) || loom_check_diagnostic_collector_has_error(
+                                        request->diagnostic_collector)) {
+    loom_compile_pipeline_result_deinitialize(&pipeline_result);
+    return status;
+  }
   const loom_amdgpu_hal_kernel_library_options_t options = {
+      .function_versions =
+          compile_source ? &pipeline_result.function_versions.list : NULL,
       .diagnostic_sink =
           {
               .fn = loom_check_diagnostic_collector_sink,
@@ -443,7 +473,7 @@ static iree_status_t loom_amdgpu_loom_check_emit_hal_kernel_assembly(
   };
   bool emitted = false;
   loom_amdgpu_hal_kernel_library_t library = {0};
-  iree_status_t status = loom_amdgpu_emit_hal_kernel_library(
+  status = loom_amdgpu_emit_hal_kernel_library(
       request->module, &options, request->host_allocator, &emitted, &library);
   if (iree_status_is_ok(status) && emitted) {
     if (!iree_string_view_equal(library.target_listing_format,
@@ -469,6 +499,7 @@ static iree_status_t loom_amdgpu_loom_check_emit_hal_kernel_assembly(
   }
   loom_amdgpu_hal_kernel_library_deinitialize(&library,
                                               request->host_allocator);
+  loom_compile_pipeline_result_deinitialize(&pipeline_result);
   return status;
 }
 

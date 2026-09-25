@@ -169,6 +169,12 @@ accept `@function` for an explicit entry. The selected entry remains a compiler
 root even when private; specialization does not change source visibility or
 add an export. Its reachable helpers may be inlined and removed normally.
 
+`emit amdgpu-kernel-assembly input=source-low` compiles kernels with authored
+target bindings through native code-object emission and compares the final
+assembly listing, including inserted waits. Its default `input=low` accepts
+already prepared Low kernels. Source compilation retains analysis results
+through emission; printing and reparsing intermediate Low would discard them.
+
 ### Running Fixtures
 
 Use checked-in Bazel test targets for normal verification:

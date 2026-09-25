@@ -1094,6 +1094,12 @@ loom_target_low_legality_diagnostic_flags_t
 loom_low_lower_context_diagnostic_flags(
     const loom_low_lower_context_t* context);
 
+// Retains a producer-owned footprint for one exact descriptor effect. The
+// result owns a deep copy in the module arena; source analysis may then expire.
+iree_status_t loom_low_lower_record_memory_effect(
+    loom_low_lower_context_t* context, const loom_op_t* low_op,
+    uint16_t effect_ordinal, const loom_low_memory_access_summary_t* summary);
+
 // Records one packet whose memory effects all use |source_plan|'s address.
 // The caller has selected actual packet geometry; additional_offset bounds
 // runtime packet coordinates not present in the canonical source plan.

@@ -147,6 +147,8 @@ loom_check_test_suite(
     "test/packet.loom-test"
     "test/packet_json.loom-test"
     "test/spill_lowering.loom-test"
+    "test/tensor_completion.loom-test"
+    "test/tensor_overlap.loom-test"
     "test/vopd_plan.loom-test"
     "test/wait_coalescing.loom-test"
     "test/wait_completion.loom-test"
