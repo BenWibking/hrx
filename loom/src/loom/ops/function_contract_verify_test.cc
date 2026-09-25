@@ -211,7 +211,7 @@ TEST_F(FunctionContractVerifyTest,
   DiagnosticEmissionCapture capture;
   IREE_EXPECT_OK(loom_function_call_contract_verify(
       module_, call, loom_func_call_callee(call), loom_func_call_operands(call),
-      call_results, capture.emitter()));
+      call_results, /*argument_match_flags=*/0, capture.emitter()));
   EXPECT_TRUE(capture.emissions.empty());
   EXPECT_EQ(module_->types.count, type_count);
   EXPECT_EQ(module_->arena.used_allocation_size, retained_bytes);
@@ -241,6 +241,37 @@ TEST_F(FunctionContractVerifyTest, MaterializesStorageAtBufferCallBoundaries) {
       module_, tensor_type, buffer_type, /*value_remap=*/nullptr,
       /*flags=*/0, &matches));
   EXPECT_FALSE(matches);
+
+  loom_symbol_ref_t callee = loom_symbol_ref_null();
+  AddSymbol(IREE_SV("buffer_boundary"), &callee);
+  loom_op_t* declaration = nullptr;
+  IREE_ASSERT_OK(loom_func_decl_build(
+      &builder_, /*build_flags=*/0, /*visibility=*/0, /*retain=*/0,
+      LOOM_STRING_ID_INVALID, LOOM_STRING_ID_INVALID, /*cc=*/0,
+      /*purity=*/0, /*temperature=*/0, /*inline_policy=*/0,
+      loom_symbol_ref_null(), /*abi=*/0, loom_named_attr_slice_empty(),
+      LOOM_STRING_ID_INVALID, loom_named_attr_slice_empty(), callee,
+      &buffer_type, 1, /*result_types=*/nullptr, /*result_count=*/0,
+      /*tied_results=*/nullptr, /*tied_result_count=*/0,
+      /*predicates=*/nullptr, /*predicates_count=*/0, LOOM_LOCATION_UNKNOWN,
+      &declaration));
+  loom_value_id_t tensor_value = LOOM_VALUE_ID_INVALID;
+  IREE_ASSERT_OK(loom_module_define_value(module_, tensor_type, &tensor_value));
+  IREE_ASSERT_OK(
+      loom_block_add_arg(module_, loom_module_block(module_), tensor_value));
+  loom_op_t* call = nullptr;
+  IREE_ASSERT_OK(loom_func_call_build(
+      &builder_, /*build_flags=*/0, /*purity=*/0, /*temperature=*/0,
+      /*inline_policy=*/0, callee, &tensor_value, 1, /*result_types=*/nullptr,
+      /*result_count=*/0, /*tied_results=*/nullptr, /*tied_result_count=*/0,
+      LOOM_LOCATION_UNKNOWN, &call));
+  DiagnosticEmissionCapture capture;
+  IREE_EXPECT_OK(loom_function_call_contract_verify(
+      module_, call, callee, loom_func_call_operands(call),
+      loom_func_call_results(call),
+      LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+      capture.emitter()));
+  EXPECT_TRUE(capture.emissions.empty());
 }
 
 TEST_F(FunctionContractVerifyTest, RejectsPredicateValueOutsideSignature) {

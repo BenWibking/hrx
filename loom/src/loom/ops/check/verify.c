@@ -653,8 +653,10 @@ iree_status_t loom_check_compare_verify(const loom_module_t* module,
     return iree_ok_status();
   }
   if (loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_CALLABLE)) {
-    return loom_function_call_contract_verify(module, op, callee, arguments,
-                                              actual_results, emitter);
+    return loom_function_call_contract_verify(
+        module, op, callee, arguments, actual_results,
+        LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+        emitter);
   }
   if (actual_results.count == 0) {
     return iree_ok_status();
@@ -682,8 +684,10 @@ iree_status_t loom_check_invoke_verify(const loom_module_t* module,
   }
   const loom_value_slice_t results = loom_check_invoke_results(op);
   if (loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_CALLABLE)) {
-    return loom_function_call_contract_verify(module, op, callee, arguments,
-                                              results, emitter);
+    return loom_function_call_contract_verify(
+        module, op, callee, arguments, results,
+        LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+        emitter);
   }
   if (results.count == 0) {
     return iree_ok_status();

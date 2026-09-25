@@ -43,6 +43,8 @@ typedef struct loom_function_contract_boundary_t {
   const loom_value_id_t* result_ids;
   // Number of actual results.
   uint16_t result_count;
+  // Materialization policies admitted for arguments at this boundary.
+  loom_function_call_argument_match_flags_t argument_match_flags;
   // Diagnostic field kind for actual arguments.
   loom_diagnostic_field_kind_t argument_field_kind;
   // Diagnostic field kind for actual results.
@@ -361,8 +363,17 @@ loom_function_contract_verify_boundary_types_with_lookup(
     const loom_type_t expected_type =
         loom_module_value_type(module, signature->argument_ids[i]);
     bool equal = false;
-    status = loom_function_contract_types_equal_after_remap(
-        module, &type_lookup, remap, expected_type, actual_type, &equal);
+    const loom_type_kind_t actual_kind = loom_type_kind(actual_type);
+    if (iree_any_bit_set(
+            boundary->argument_match_flags,
+            LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION) &&
+        (actual_kind == LOOM_TYPE_TENSOR || actual_kind == LOOM_TYPE_VIEW) &&
+        loom_type_kind(expected_type) == LOOM_TYPE_BUFFER) {
+      equal = true;
+    } else {
+      status = loom_function_contract_types_equal_after_remap(
+          module, &type_lookup, remap, expected_type, actual_type, &equal);
+    }
     if (!iree_status_is_ok(status) || equal) {
       continue;
     }
@@ -444,8 +455,11 @@ static iree_status_t loom_function_contract_verify_boundary(
           module, signature, boundary, &signature_remap, i, argument_count,
           /*result_start=*/0, result_count, emitter);
     }
-    if (loom_type_equal_after_value_remap(module, expected_type, actual_type,
-                                          &signature_remap)) {
+    bool matches = false;
+    IREE_RETURN_IF_ERROR(loom_function_call_argument_type_matches(
+        module, actual_type, expected_type, &signature_remap,
+        boundary->argument_match_flags, &matches));
+    if (matches) {
       continue;
     }
     IREE_RETURN_IF_ERROR(loom_function_contract_emit_type_mismatch(
@@ -505,6 +519,7 @@ static iree_status_t loom_function_contract_verify_symbol_boundary(
 iree_status_t loom_function_call_contract_verify(
     const loom_module_t* module, const loom_op_t* op, loom_symbol_ref_t callee,
     loom_value_slice_t operands, loom_value_slice_t results,
+    loom_function_call_argument_match_flags_t argument_match_flags,
     iree_diagnostic_emitter_t emitter) {
   const loom_function_contract_boundary_t boundary = {
       .op = op,
@@ -512,6 +527,7 @@ iree_status_t loom_function_call_contract_verify(
       .argument_count = operands.count,
       .result_ids = results.values,
       .result_count = results.count,
+      .argument_match_flags = argument_match_flags,
       .argument_field_kind = LOOM_DIAGNOSTIC_FIELD_OPERAND,
       .result_field_kind = LOOM_DIAGNOSTIC_FIELD_RESULT,
       .argument_prefix = "operand",
