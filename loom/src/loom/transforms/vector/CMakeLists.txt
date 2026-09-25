@@ -202,6 +202,23 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    table_legalization
+  HDRS
+    "table_legalization.h"
+  SRCS
+    "table_legalization.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::vector
+    loom::rewrite::rewriter
+    loom::target::legalization
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     target_legalization
   HDRS
     "target_legalization.h"
