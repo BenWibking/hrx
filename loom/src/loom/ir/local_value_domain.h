@@ -52,7 +52,8 @@ typedef struct loom_local_value_domain_t {
 // Acquires a local value domain for |region| in |module|'s ordinal scratch.
 //
 // The domain initially registers block arguments, op results, op operands, SSA
-// references carried by value types, and values captured by nested regions.
+// references carried by value types and attributes, and values captured by
+// nested regions.
 // Rewriting frames that create new values while the domain is active must
 // explicitly register those values before indexing ordinal-keyed scratch.
 // The definition prefix describes the acquired source topology; moving or
