@@ -171,6 +171,7 @@ __all__ = [
     # Trait constructors.
     "AllTypesMatch",
     "HasAncestor",
+    "HasAnyAncestor",
     "HasParent",
     "ImplicitTerminator",
     "NoAncestor",
@@ -1667,6 +1668,13 @@ def KeyedModuleRecord(key_attr: str) -> Trait:
 def HasAncestor(op_name: str) -> Trait:
     """This op must be nested under the named op at any depth."""
     return Trait("HasAncestor", op_name)
+
+
+def HasAnyAncestor(*op_names: str) -> Trait:
+    """This op must be nested under at least one named op at any depth."""
+    if not op_names:
+        raise ValueError("HasAnyAncestor requires at least one op name")
+    return Trait("HasAnyAncestor", *op_names)
 
 
 def HasParent(op_name: str) -> Trait:

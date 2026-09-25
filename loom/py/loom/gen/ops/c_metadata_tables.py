@@ -1143,10 +1143,12 @@ def generate_tables_c(
         # Structural placement descriptor.
         required_parent_kinds = c_traits.trait_op_kinds(op, ops_by_name, "HasParent")
         required_ancestor_kinds = c_traits.trait_op_kinds(op, ops_by_name, "HasAncestor")
+        required_any_ancestor_kinds, required_any_ancestor_names = c_traits.any_ancestor_op_kinds(op, ops_by_name)
         forbidden_ancestor_kinds = c_traits.trait_op_kinds(op, ops_by_name, "NoAncestor")
-        if required_parent_kinds or required_ancestor_kinds or forbidden_ancestor_kinds:
+        if required_parent_kinds or required_ancestor_kinds or required_any_ancestor_kinds or forbidden_ancestor_kinds:
             required_parent_ptr = "NULL"
             required_ptr = "NULL"
+            required_any_ptr = "NULL"
             forbidden_ptr = "NULL"
             if required_parent_kinds:
                 required_parent_ptr = f"{prefix}_required_parents"
@@ -1157,6 +1159,11 @@ def generate_tables_c(
                 required_ptr = f"{prefix}_required_ancestors"
                 lines.append(f"static const loom_op_kind_t {required_ptr}[] = {{")
                 lines.extend(f"    {kind}," for kind in required_ancestor_kinds)
+                lines.append("};")
+            if required_any_ancestor_kinds:
+                required_any_ptr = f"{prefix}_required_any_ancestors"
+                lines.append(f"static const loom_op_kind_t {required_any_ptr}[] = {{")
+                lines.extend(f"    {kind}," for kind in required_any_ancestor_kinds)
                 lines.append("};")
             if forbidden_ancestor_kinds:
                 forbidden_ptr = f"{prefix}_forbidden_ancestors"
@@ -1170,6 +1177,11 @@ def generate_tables_c(
             if required_ptr != "NULL":
                 lines.append(f"    .required_ancestors = {required_ptr},")
                 lines.append(f"    .required_ancestor_count = IREE_ARRAYSIZE({required_ptr}),")
+            if required_any_ptr != "NULL":
+                required_any_names = " or ".join(required_any_ancestor_names)
+                lines.append(f"    .required_any_ancestors = {required_any_ptr},")
+                lines.append(f'    .required_any_ancestor_names = "{required_any_names}",')
+                lines.append(f"    .required_any_ancestor_count = IREE_ARRAYSIZE({required_any_ptr}),")
             if forbidden_ptr != "NULL":
                 lines.append(f"    .forbidden_ancestors = {forbidden_ptr},")
                 lines.append(f"    .forbidden_ancestor_count = IREE_ARRAYSIZE({forbidden_ptr}),")
@@ -1204,7 +1216,7 @@ def generate_tables_c(
         eff_traits = op.effective_traits or "NULL"
         interface_initializers = {spec.vtable_field: c_interfaces.interface_vtable_initializer(op, spec) for spec in c_interfaces.INTERFACES}
         symbol_def_ptr = f"&{prefix}_symbol_def" if op.symbol_def is not None else "NULL"
-        has_placement = any(trait.name in ("HasParent", "HasAncestor", "NoAncestor") for trait in op.traits)
+        has_placement = any(trait.name in ("HasParent", "HasAncestor", "HasAnyAncestor", "NoAncestor") for trait in op.traits)
         placement_ptr = f"&{prefix}_placement" if has_placement else "NULL"
         attr_desc_ptr = f"{prefix}_attr_desc" if non_flags else "NULL"
         operand_desc_ptr = f"{prefix}_operand_desc" if op.operands else "NULL"

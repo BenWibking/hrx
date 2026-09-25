@@ -1046,6 +1046,21 @@ class ModuleVerifier:
                         source=path,
                         details=(f"expected ancestor op '{expected}'",),
                     )
+                case "HasAnyAncestor":
+                    if trait.args and any(
+                        operation.name in trait.args for operation in parent_stack
+                    ):
+                        continue
+                    # Templates and required-inline functions are verified
+                    # before their final placement context is known.
+                    if self._has_deferred_required_ancestor(parent_stack):
+                        continue
+                    expected = ", ".join(f"'{name}'" for name in trait.args)
+                    self.diagnostics.error(
+                        "op is missing required ancestor",
+                        source=path,
+                        details=(f"expected one of ancestor ops {expected}",),
+                    )
                 case "NoAncestor":
                     if not trait.args:
                         continue

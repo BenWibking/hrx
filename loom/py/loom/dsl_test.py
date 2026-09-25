@@ -127,6 +127,7 @@ from loom.dsl import (
     HasAllStaticRankOneVector,
     HasAllStaticVector,
     HasAncestor,
+    HasAnyAncestor,
     HasBitwiseElement,
     HasBitwiseScalar,
     HasF16OrBf16Element,
@@ -1125,11 +1126,18 @@ class TestTraits:
 
     def test_ancestor_placement_traits(self) -> None:
         required = HasAncestor("low.func.def")
+        alternative = HasAnyAncestor("check.case", "check.scenario")
         forbidden = NoAncestor("low.func.def")
         assert required.name == "HasAncestor"
         assert required.args == ("low.func.def",)
+        assert alternative.name == "HasAnyAncestor"
+        assert alternative.args == ("check.case", "check.scenario")
         assert forbidden.name == "NoAncestor"
         assert forbidden.args == ("low.func.def",)
+
+    def test_any_ancestor_requires_an_alternative(self) -> None:
+        with _raises(ValueError, match="at least one op name"):
+            HasAnyAncestor()
 
     def test_implicit_terminator(self) -> None:
         t = ImplicitTerminator("scf.yield")

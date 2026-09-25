@@ -4,6 +4,8 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import pytest
+
 import loom.ir as ir
 from loom.builtin_types import ALL_BUILTIN_TYPES
 from loom.diagnostics import DiagnosticEngine
@@ -15,6 +17,7 @@ from loom.dsl import (
     INTEGER,
     ISOLATED_FROM_ABOVE,
     HasAncestor,
+    HasAnyAncestor,
     InlinePolicy,
     Op,
     Operand,
@@ -594,6 +597,96 @@ def test_verifier_does_not_defer_through_nested_isolation() -> None:
     )
 
     assert _diagnostic_text_contains(diagnostics, "missing required ancestor")
+
+
+@pytest.mark.parametrize("ancestor_name", ["test.first_context", "test.second_context"])
+def test_verifier_accepts_any_required_ancestor(ancestor_name: str) -> None:
+    first_context = Op("test.first_context", regions=[RegionDef("body")])
+    second_context = Op("test.second_context", regions=[RegionDef("body")])
+    requires_context = Op(
+        "test.requires_any_context",
+        traits=[HasAnyAncestor("test.first_context", "test.second_context")],
+    )
+    module = _module_with_body_ops(
+        Operation(
+            name=ancestor_name,
+            regions=[
+                Region(
+                    blocks=[
+                        Block(
+                            ops=[
+                                Operation(name="test.requires_any_context"),
+                                Operation(name="test.yield"),
+                            ]
+                        )
+                    ]
+                )
+            ],
+        ),
+    )
+
+    diagnostics = verify_module(
+        module,
+        ops=(*ALL_TEST_OPS, first_context, second_context, requires_context),
+    )
+
+    assert not diagnostics.has_errors, str(diagnostics.diagnostics)
+
+
+def test_verifier_rejects_missing_any_required_ancestor() -> None:
+    first_context = Op("test.first_context")
+    second_context = Op("test.second_context")
+    requires_context = Op(
+        "test.requires_any_context",
+        traits=[HasAnyAncestor("test.first_context", "test.second_context")],
+    )
+    module = _module_with_body_ops(
+        Operation(name="test.requires_any_context"),
+        append_yield=False,
+    )
+
+    diagnostics = verify_module(
+        module,
+        ops=(*ALL_TEST_OPS, first_context, second_context, requires_context),
+    )
+
+    assert _diagnostic_text_contains(
+        diagnostics,
+        "expected one of ancestor ops 'test.first_context', 'test.second_context'",
+    )
+
+
+def test_verifier_defers_any_required_ancestor_for_inline_function() -> None:
+    requires_context = Op(
+        "test.requires_any_context",
+        traits=[HasAnyAncestor("test.first_context", "test.second_context")],
+    )
+    first_context = Op("test.first_context")
+    second_context = Op("test.second_context")
+    module = Module()
+    module.add_symbol(
+        _symbol(
+            "helper",
+            _func_def_with_ops(
+                "helper",
+                InlinePolicy.INLINE,
+                Operation(name="test.requires_any_context"),
+            ),
+        )
+    )
+
+    diagnostics = verify_module(
+        module,
+        ops=(
+            *ALL_TEST_OPS,
+            *ALL_FUNC_OPS,
+            first_context,
+            second_context,
+            requires_context,
+        ),
+    )
+
+    assert not diagnostics.has_errors
 
 
 def test_verifier_reports_missing_region_terminator() -> None:

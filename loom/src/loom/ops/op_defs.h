@@ -711,12 +711,19 @@ typedef struct loom_op_placement_descriptor_t {
   const loom_op_kind_t* required_parents;
   // Op kinds that must appear somewhere in the parent-op chain.
   const loom_op_kind_t* required_ancestors;
+  // Alternative op kinds, at least one of which must appear in the parent-op
+  // chain.
+  const loom_op_kind_t* required_any_ancestors;
   // Op kinds that must not appear anywhere in the parent-op chain.
   const loom_op_kind_t* forbidden_ancestors;
+  // Human-readable alternative ancestor names used in diagnostics.
+  const char* required_any_ancestor_names;
   // Number of entries in |required_parents|.
   uint8_t required_parent_count;
   // Number of entries in |required_ancestors|.
   uint8_t required_ancestor_count;
+  // Number of entries in |required_any_ancestors|.
+  uint8_t required_any_ancestor_count;
   // Number of entries in |forbidden_ancestors|.
   uint8_t forbidden_ancestor_count;
 } loom_op_placement_descriptor_t;
