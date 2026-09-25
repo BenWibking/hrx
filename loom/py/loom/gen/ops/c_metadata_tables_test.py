@@ -88,6 +88,7 @@ def test_generate_tables_marks_executable_predicates() -> None:
 
     source = generate_tables_c("test", 0x01, [op])
     assert ".flags = LOOM_ATTR_EXECUTABLE_PREDICATES," in source
+    assert ".vtable_flags = LOOM_OP_VTABLE_HAS_PREDICATE_LIST," in source
 
 
 def test_rejects_duplicate_assembly_mnemonics() -> None:

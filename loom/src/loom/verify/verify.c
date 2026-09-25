@@ -556,7 +556,9 @@ IREE_ATTRIBUTE_ALWAYS_INLINE static inline iree_status_t loom_verify_op(
   if (op->attribute_count) {
     loom_verify_attribute_value_refs(state, op, vtable);
     IREE_RETURN_IF_ERROR(loom_verify_pending_diagnostic_status(state));
-    if (state->result->error_count == initial_error_count) {
+    if (state->result->error_count == initial_error_count &&
+        iree_any_bit_set(vtable->vtable_flags,
+                         LOOM_OP_VTABLE_HAS_PREDICATE_LIST)) {
       IREE_RETURN_IF_ERROR(loom_verify_predicate_attributes(state, op, vtable));
       IREE_RETURN_IF_ERROR(loom_verify_pending_diagnostic_status(state));
     }

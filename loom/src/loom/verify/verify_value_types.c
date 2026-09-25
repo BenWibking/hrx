@@ -726,9 +726,6 @@ static void loom_verify_predicate(
 iree_status_t loom_verify_predicate_attributes(loom_verify_state_t* state,
                                                const loom_op_t* op,
                                                const loom_op_vtable_t* vtable) {
-  if (!vtable->attr_descriptors) {
-    return iree_ok_status();
-  }
   loom_verify_predicate_value_policy_t prepared_value_policy =
       LOOM_VERIFY_PREDICATE_VALUES_ANY_VISIBLE;
   const loom_attribute_t* attributes = loom_op_attrs(op);
