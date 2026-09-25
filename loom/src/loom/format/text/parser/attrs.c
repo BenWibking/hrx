@@ -929,6 +929,18 @@ static const struct {
     {(const uint8_t*)"\x06"
                      "finite",
      LOOM_PREDICATE_FINITE},
+    {(const uint8_t*)"\x03"
+                     "ult",
+     LOOM_PREDICATE_ULT},
+    {(const uint8_t*)"\x03"
+                     "ule",
+     LOOM_PREDICATE_ULE},
+    {(const uint8_t*)"\x03"
+                     "ugt",
+     LOOM_PREDICATE_UGT},
+    {(const uint8_t*)"\x03"
+                     "uge",
+     LOOM_PREDICATE_UGE},
 };
 
 static iree_status_t loom_parse_predicate(loom_parser_t* parser,

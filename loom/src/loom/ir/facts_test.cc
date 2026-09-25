@@ -871,6 +871,14 @@ TEST(FactsPredicateConflict, NotEqualExcludesExactKnownValue) {
   EXPECT_EQ(conflict.predicate_value, 64);
 }
 
+TEST(FactsPredicateConflict, UnsignedRelationUsesCarrierBitOrder) {
+  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_ULE, INT64_MIN);
+  EXPECT_TRUE(loom_value_facts_predicate_conflict(
+      loom_value_facts_exact_i64(-1), &pred, NULL));
+  EXPECT_FALSE(loom_value_facts_predicate_conflict(
+      loom_value_facts_exact_i64(INT64_MIN), &pred, NULL));
+}
+
 TEST(FactsPredicateConflict, DivisibilityRejectsExactNonMultiple) {
   loom_value_facts_t f = loom_value_facts_exact_i64(66);
   loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MUL, 64);
@@ -1022,6 +1030,19 @@ TEST(FactsApplyPredicate, Le) {
   loom_value_facts_apply_predicate(&f, &pred);
   EXPECT_EQ(f.range_lo, INT64_MIN);
   EXPECT_EQ(f.range_hi, 100);
+}
+
+TEST(FactsApplyPredicate, UnsignedRelationRefinesOneSignPartition) {
+  loom_value_facts_t negative = loom_value_facts_make(-10, -1, 1);
+  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_ULT, -5);
+  loom_value_facts_apply_predicate(&negative, &pred);
+  EXPECT_EQ(negative.range_lo, -10);
+  EXPECT_EQ(negative.range_hi, -6);
+
+  loom_value_facts_t split = loom_value_facts_make(-10, 10, 1);
+  loom_value_facts_apply_predicate(&split, &pred);
+  EXPECT_EQ(split.range_lo, -10);
+  EXPECT_EQ(split.range_hi, 10);
 }
 
 TEST(FactsApplyPredicate, Mul) {

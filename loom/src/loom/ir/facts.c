@@ -524,6 +524,41 @@ static bool loom_value_facts_predicate_value_first_arg(
          predicate->arg_tags[0] == LOOM_PRED_ARG_VALUE;
 }
 
+static bool loom_value_facts_unsigned_relation_holds(loom_predicate_kind_t kind,
+                                                     int64_t lhs, int64_t rhs) {
+  const uint64_t unsigned_lhs = (uint64_t)lhs;
+  const uint64_t unsigned_rhs = (uint64_t)rhs;
+  switch (kind) {
+    case LOOM_PREDICATE_ULT:
+      return unsigned_lhs < unsigned_rhs;
+    case LOOM_PREDICATE_ULE:
+      return unsigned_lhs <= unsigned_rhs;
+    case LOOM_PREDICATE_UGT:
+      return unsigned_lhs > unsigned_rhs;
+    case LOOM_PREDICATE_UGE:
+      return unsigned_lhs >= unsigned_rhs;
+    default:
+      return false;
+  }
+}
+
+static loom_predicate_kind_t loom_value_facts_signed_relation_kind(
+    loom_predicate_kind_t unsigned_kind) {
+  switch (unsigned_kind) {
+    case LOOM_PREDICATE_ULT:
+      return LOOM_PREDICATE_LT;
+    case LOOM_PREDICATE_ULE:
+      return LOOM_PREDICATE_LE;
+    case LOOM_PREDICATE_UGT:
+      return LOOM_PREDICATE_GT;
+    case LOOM_PREDICATE_UGE:
+      return LOOM_PREDICATE_GE;
+    default:
+      IREE_ASSERT_UNREACHABLE("expected an unsigned relation predicate");
+      IREE_BUILTIN_UNREACHABLE();
+  }
+}
+
 static bool loom_value_facts_predicate_required_range(
     const loom_predicate_t* predicate, int64_t* out_minimum,
     int64_t* out_maximum) {
@@ -639,6 +674,15 @@ static bool loom_value_facts_predicate_exact_i64_conflict(
       break;
     case LOOM_PREDICATE_POW2:
       conflicts = known_value <= 0 || (known_value & (known_value - 1)) != 0;
+      break;
+    case LOOM_PREDICATE_ULT:
+    case LOOM_PREDICATE_ULE:
+    case LOOM_PREDICATE_UGT:
+    case LOOM_PREDICATE_UGE:
+      conflicts = loom_value_facts_predicate_const_arg(predicate, 1,
+                                                       &predicate_value) &&
+                  !loom_value_facts_unsigned_relation_holds(
+                      predicate->kind, known_value, predicate_value);
       break;
     default:
       return false;
@@ -829,6 +873,16 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
       facts->range_lo = iree_max(facts->range_lo, constant);
       break;
 
+    case LOOM_PREDICATE_ULT:
+    case LOOM_PREDICATE_ULE:
+    case LOOM_PREDICATE_UGT:
+    case LOOM_PREDICATE_UGE: {
+      loom_value_facts_t constant_facts = loom_value_facts_exact_i64(constant);
+      (void)loom_value_facts_refine_relation(predicate->kind, *facts,
+                                             constant_facts, facts, NULL);
+      return;
+    }
+
     case LOOM_PREDICATE_MUL: {
       // a is a multiple of N → known_divisor = lcm(known_divisor, N).
       int64_t new_divisor;
@@ -895,6 +949,25 @@ bool loom_value_facts_refine_relation(uint8_t predicate_kind,
                                       loom_value_facts_t rhs_facts,
                                       loom_value_facts_t* lhs_result,
                                       loom_value_facts_t* rhs_result) {
+  if (predicate_kind == LOOM_PREDICATE_ULT ||
+      predicate_kind == LOOM_PREDICATE_ULE ||
+      predicate_kind == LOOM_PREDICATE_UGT ||
+      predicate_kind == LOOM_PREDICATE_UGE) {
+    const bool lhs_is_nonnegative = lhs_facts.range_lo >= 0;
+    const bool rhs_is_nonnegative = rhs_facts.range_lo >= 0;
+    const bool lhs_is_negative = lhs_facts.range_hi < 0;
+    const bool rhs_is_negative = rhs_facts.range_hi < 0;
+    if ((lhs_is_nonnegative && rhs_is_nonnegative) ||
+        (lhs_is_negative && rhs_is_negative)) {
+      return loom_value_facts_refine_relation(
+          loom_value_facts_signed_relation_kind(predicate_kind), lhs_facts,
+          rhs_facts, lhs_result, rhs_result);
+    }
+    // A split interval needs two unsigned ranges, while opposite sign-stable
+    // partitions make the relation either tautological or contradictory. This
+    // lattice has neither unions nor an empty set, so retain its current facts.
+    return true;
+  }
   switch ((loom_predicate_kind_t)predicate_kind) {
     case LOOM_PREDICATE_EQ: {
       const int64_t range_lo = iree_max(lhs_facts.range_lo, rhs_facts.range_lo);

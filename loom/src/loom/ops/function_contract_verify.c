@@ -92,6 +92,11 @@ static iree_string_view_t loom_function_contract_predicate_expected_type(
     case LOOM_PREDICATE_NOT_INF:
     case LOOM_PREDICATE_FINITE:
       return IREE_SV("floating-point scalar");
+    case LOOM_PREDICATE_ULT:
+    case LOOM_PREDICATE_ULE:
+    case LOOM_PREDICATE_UGT:
+    case LOOM_PREDICATE_UGE:
+      return IREE_SV("fixed-width integer scalar");
     default:
       return IREE_SV("integer, index, or offset scalar");
   }

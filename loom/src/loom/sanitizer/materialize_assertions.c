@@ -144,8 +144,28 @@ static iree_status_t loom_sanitizer_build_integer_comparison(
     loom_sanitizer_predicate_materializer_t* materializer, loom_type_t type,
     loom_predicate_kind_t kind, loom_value_id_t lhs, loom_value_id_t rhs,
     loom_value_id_t* out_condition) {
-  const bool unsigned_comparison =
+  bool unsigned_comparison =
       loom_sanitizer_integer_comparison_is_unsigned(type);
+  switch (kind) {
+    case LOOM_PREDICATE_ULT:
+      kind = LOOM_PREDICATE_LT;
+      unsigned_comparison = true;
+      break;
+    case LOOM_PREDICATE_ULE:
+      kind = LOOM_PREDICATE_LE;
+      unsigned_comparison = true;
+      break;
+    case LOOM_PREDICATE_UGT:
+      kind = LOOM_PREDICATE_GT;
+      unsigned_comparison = true;
+      break;
+    case LOOM_PREDICATE_UGE:
+      kind = LOOM_PREDICATE_GE;
+      unsigned_comparison = true;
+      break;
+    default:
+      break;
+  }
   loom_op_t* comparison_op = NULL;
   if (loom_sanitizer_is_address_scalar(type)) {
     IREE_RETURN_IF_ERROR(loom_index_cmp_build(
@@ -350,6 +370,10 @@ static iree_status_t loom_sanitizer_materialize_predicate(
     case LOOM_PREDICATE_LE:
     case LOOM_PREDICATE_GT:
     case LOOM_PREDICATE_GE:
+    case LOOM_PREDICATE_ULT:
+    case LOOM_PREDICATE_ULE:
+    case LOOM_PREDICATE_UGT:
+    case LOOM_PREDICATE_UGE:
       return loom_sanitizer_materialize_integer_relation(
           materializer, predicate, type, (loom_predicate_kind_t)predicate->kind,
           0, 1, out_condition);

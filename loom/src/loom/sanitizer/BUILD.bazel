@@ -46,6 +46,7 @@ loom_cc_library(
         ":options",
         ":site_location",
         ":site_payload",
+        "//loom/src/loom/decision:predicate",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/index",

@@ -28,6 +28,12 @@ TEST(AttributeTest, PredicateValueTypeContracts) {
       LOOM_PREDICATE_NOT_INF,
       LOOM_PREDICATE_FINITE,
   };
+  static constexpr loom_predicate_kind_t kUnsignedPredicateKinds[] = {
+      LOOM_PREDICATE_ULT,
+      LOOM_PREDICATE_ULE,
+      LOOM_PREDICATE_UGT,
+      LOOM_PREDICATE_UGE,
+  };
   const loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
   const loom_type_t index = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
   const loom_type_t offset = loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET);
@@ -44,6 +50,13 @@ TEST(AttributeTest, PredicateValueTypeContracts) {
   for (loom_predicate_kind_t kind : kFloatPredicateKinds) {
     EXPECT_FALSE(loom_predicate_kind_accepts_value_type(kind, i32));
     EXPECT_TRUE(loom_predicate_kind_accepts_value_type(kind, f32));
+    EXPECT_FALSE(loom_predicate_kind_accepts_value_type(kind, buffer));
+  }
+  for (loom_predicate_kind_t kind : kUnsignedPredicateKinds) {
+    EXPECT_TRUE(loom_predicate_kind_accepts_value_type(kind, i32));
+    EXPECT_FALSE(loom_predicate_kind_accepts_value_type(kind, index));
+    EXPECT_FALSE(loom_predicate_kind_accepts_value_type(kind, offset));
+    EXPECT_FALSE(loom_predicate_kind_accepts_value_type(kind, f32));
     EXPECT_FALSE(loom_predicate_kind_accepts_value_type(kind, buffer));
   }
   EXPECT_FALSE(
@@ -70,13 +83,19 @@ TEST(AttributeTest, PredicateValueTypeContractsUseTypedRegisterSemantics) {
 
   EXPECT_TRUE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_EQ,
                                                      integer_register));
+  EXPECT_TRUE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_ULE,
+                                                     integer_register));
   EXPECT_FALSE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_FINITE,
                                                       integer_register));
   EXPECT_FALSE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_EQ,
                                                       float_register));
+  EXPECT_FALSE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_ULE,
+                                                      float_register));
   EXPECT_TRUE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_FINITE,
                                                      float_register));
   EXPECT_FALSE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_EQ,
+                                                      untyped_register));
+  EXPECT_FALSE(loom_predicate_kind_accepts_value_type(LOOM_PREDICATE_ULE,
                                                       untyped_register));
 }
 

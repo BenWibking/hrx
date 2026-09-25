@@ -2505,6 +2505,10 @@ class BytecodeReader:
         "not_nan",
         "not_inf",
         "finite",
+        "ult",
+        "ule",
+        "ugt",
+        "uge",
     ]
 
     def _read_predicate_list(
