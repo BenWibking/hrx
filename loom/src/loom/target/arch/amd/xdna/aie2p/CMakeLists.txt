@@ -316,6 +316,7 @@ loom_cc_library(
     loom::codegen::low::verify
     loom::error::error_defs
     loom::ir
+    loom::ops::func
     loom::ops::global
     loom::ops::low
     loom::ops::op_defs

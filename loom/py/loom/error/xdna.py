@@ -691,11 +691,12 @@ ERR_XDNA_036 = ErrorDef(
     summary="Configuration references an undefined function body.",
     message=(
         "configuration reference '{field_name}' to '@{symbol_name}' "
-        "requires a Low function definition"
+        "requires a {definition_kind} definition"
     ),
     params=(
         ErrorParam("field_name", ParamKind.STRING),
         ErrorParam("symbol_name", ParamKind.STRING),
+        ErrorParam("definition_kind", ParamKind.STRING),
     ),
 )
 

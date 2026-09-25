@@ -12,6 +12,7 @@
 #include "loom/codegen/low/packet.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/module.h"
+#include "loom/ops/func/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/target/arch/amd/xdna/aie2p/array/abi_layout.h"
@@ -465,11 +466,17 @@ static iree_status_t loom_aie2p_low_verify_function_reference(
         AIE2P_CONFIGURATION_DESCRIPTOR_SET_ID) {
       return iree_ok_status();
     }
-    if (!loom_low_func_def_isa(entry_function.op)) {
+    const bool is_program =
+        iree_string_view_equal(field_name, IREE_SV("program"));
+    const bool is_source_worker =
+        is_program && loom_func_def_isa(entry_function.op);
+    if (!loom_low_func_def_isa(entry_function.op) && !is_source_worker) {
       const loom_diagnostic_param_t params[] = {
           loom_param_string(field_name),
           loom_param_string(
               loom_low_diagnostic_symbol_name(state->module, entry_ref)),
+          loom_param_string(is_program ? IREE_SV("source or Low function")
+                                       : IREE_SV("Low function")),
       };
       return loom_low_verify_context_emit(context, packet->op,
                                           LOOM_ERR_XDNA_036, params,
@@ -488,6 +495,13 @@ static iree_status_t loom_aie2p_low_verify_function_reference(
       return loom_low_verify_context_emit(context, packet->op,
                                           LOOM_ERR_XDNA_037, params,
                                           IREE_ARRAYSIZE(params));
+    }
+    // Source workers carry their target contract through ordinary source
+    // lowering. Their resulting Low bodies participate in the same complete
+    // image checks as authored Low workers; there is no Low body to inspect
+    // during this verification of the mixed-level source module.
+    if (is_source_worker) {
+      return iree_ok_status();
     }
     loom_aie2p_low_verify_module_state_t* module_state = state->module_state;
     if (module_state->reference_count == module_state->reference_capacity) {
