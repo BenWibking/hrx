@@ -11,7 +11,6 @@ pipeline.def<kernel> @matching_records() run(%input: buffer, %output: buffer) {
   %input_flow = pipeline.scatter %input_view across %workers : view<2x1x3x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x3x4xi32>
-  pipeline.finish
 }
 
 // ====
@@ -23,7 +22,6 @@ pipeline.def<kernel> @matching_records() run(%input: buffer, %output: buffer) {
 
 // ERROR@+1: TYPE/003 {operand_name="run argument 0", actual_type="i32", expected_constraint="buffer for the flow-graph ABI"}
 pipeline.def @non_buffer_binding() run(%binding: i32) {
-  pipeline.finish
 }
 
 // ====

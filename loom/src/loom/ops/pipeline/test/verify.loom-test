@@ -14,23 +14,11 @@ pipeline.def<kernel> @valid() run(%input: buffer, %output: buffer) {
   %output_tiles = pipeline.stage @copy on %workers(%input_tiles) : (group<[%worker_lanes]>, pipeline.flow<tile<8x8xi8>>) -> (pipeline.flow<tile<8x8xi8>>)
   %folded = pipeline.fold<addi> %output_tiles : pipeline.flow<tile<8x8xi8>>
   pipeline.write %folded to %output_view : pipeline.flow<tile<8x8xi8>>, view<8x8xi8>
-  pipeline.finish
 }
 
 // ====
 
 pipeline.def @typed_arguments(%width: index) run(%input: channel<tile<[%width]xf32>>, %scratch: view<[%width]xf32>, %count: index) {
-  pipeline.finish
-}
-
-// ====
-
-pipeline.def @execute_remaps_dependent_capture_types(%logical_count: index, %physical_count: index, %width: index, %columns: group<[%logical_count]>, %tiles: group<[%physical_count]>) run(%input: channel<tile<[%width]xi32>>) {
-  %placement = pipeline.place<cyclic> %columns, %tiles : group<[%logical_count]>, group<[%physical_count]> -> pipeline.placement<group<[%logical_count]>, group<[%physical_count]>>
-  pipeline.execute %placement(%width, %input) do(%rank: index, %local_width: index, %endpoint: channel<tile<[%local_width]xi32>>) {
-    pipeline.yield
-  }
-  pipeline.finish
 }
 
 // ====
@@ -135,53 +123,56 @@ pipeline.def @fold_integer_fastmath() run(%input: buffer) {
 // scope names the directly loadable kernel artifact boundary.
 // ERROR@+1: PARSE/017 "scope" "command"
 pipeline.def<command> @unsupported_command_scope() run() {
-  pipeline.finish
 }
 
 // ====
 
-pipeline.def @place_requires_groups(%columns: index, %tiles: group<4>) run() {
-  // ERROR@+1: TYPE/003 {operand_name="logical_group", actual_type="index", expected_constraint="group"}
-  %placement = pipeline.place<cyclic> %columns, %tiles : index, group<4> -> pipeline.placement<index, group<4>>
-  pipeline.finish
-}
+// The construction loop captures its own column. The worker loop remains
+// ordinary runtime control and each acquired input is released independently.
+target.decl @npu
 
-// ====
-
-pipeline.def @place_result_matches_groups(%columns: group<8>, %tiles: group<4>) run() {
-  // ERROR@+1: TYPE/004 {result_name="result", actual_type="pipeline.placement<group<4>, group<8>>", expected_constraint="pipeline.placement whose group parameters match its operands"}
-  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<4>, group<8>>
-  pipeline.finish
-}
-
-// ====
-
-pipeline.def @execute_requires_assignment(%not_assignment: index) run() {
-  // ERROR@+1: TYPE/003 {operand_name="assignment", actual_type="index", expected_constraint="pipeline.placement<group<...>, group<...>>"}
-  pipeline.execute %not_assignment() do(%rank: index) {
-    pipeline.yield
+pipeline.def target(@npu) @columns(%width: index) run(%input: channel<tile<[%width]xi32>>, %count: index) {
+  %record_begin = index.constant 0 : index
+  %record_step = index.constant 1 : index
+  %columns = index.constant 8 : index
+  scf.for %column = [%record_begin to %columns step %record_step] {
+    pipeline.strand workers([%column, 2], [1, 1], [1, 1]) {
+      scf.for %record = [%record_begin to %count step %record_step] {
+        %read, %view = channel.acquire %input : channel<tile<[%width]xi32>> -> (read<tile<[%width]xi32>>, view<[%width]xi32>)
+        channel.release %read : read<tile<[%width]xi32>>
+      }
+    }
   }
-  pipeline.finish
 }
 
 // ====
 
-pipeline.def @execute_requires_rank(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<16xi32>>) {
-  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-  // ERROR@+1: TYPE/013 {arg_index="0", arg_type="i32", expected_type="index"}
-  pipeline.execute %placement(%input) do(%rank: i32, %endpoint: channel<tile<16xi32>>) {
-    pipeline.yield
+pipeline.def @unequal_worker_rank() run() {
+  // ERROR@+1: STRUCTURE/013 "counts" "1" "worker rank" "2"
+  pipeline.strand workers([0, 2], [1], [1, 1]) {
   }
-  pipeline.finish
 }
 
 // ====
 
-pipeline.def @execute_matches_captures(%columns: group<8>, %tiles: group<4>) run(%input: channel<tile<16xi32>>) {
-  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-  // ERROR@+1: TYPE/013 {arg_index="1", arg_type="channel<tile<8xi32>>", expected_type="channel<tile<16xi32>>"}
-  pipeline.execute %placement(%input) do(%rank: index, %endpoint: channel<tile<8xi32>>) {
-    pipeline.yield
+pipeline.def @empty_worker_rank() run() {
+  // ERROR@+1: STRUCTURE/014 "worker rank" "0" "at least one worker dimension"
+  pipeline.strand workers([], [], []) {
   }
-  pipeline.finish
+}
+
+// ====
+
+pipeline.def @invalid_worker_stride() run() {
+  // ERROR@+1: STRUCTURE/014 "strides" "0" "positive worker stride"
+  pipeline.strand workers([0, 2], [1, 1], [1, 0]) {
+  }
+}
+
+// ====
+
+pipeline.def @negative_worker_count() run() {
+  // ERROR@+1: STRUCTURE/014 "counts" "-1" "nonnegative worker coordinate or count"
+  pipeline.strand workers([0], [-1], [1]) {
+  }
 }

@@ -83,7 +83,6 @@ pipeline.def<kernel> public target(@array) @split_k() run(%lhs: buffer, %rhs: bu
   %buffered = pipeline.buffer %folded capacity %ring_capacity : (pipeline.flow<tile<8x8xi32>>, index) -> pipeline.flow<tile<8x8xi32>>
   %result = pipeline.reduce @reduce from %products(%buffered) to %reducers(%bias_tiles) : (group<[%product_lanes]>, pipeline.flow<tile<8x8xi32>>) to (group<[%reducer_lanes]>, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<8x8xi32>>, view<8x8xi32>
-  pipeline.finish
 }
 """
     module = _parse_module(text)
@@ -94,22 +93,22 @@ pipeline.def<kernel> public target(@array) @split_k() run(%lhs: buffer, %rhs: bu
 
 
 def test_generic_pipeline_roundtrip() -> None:
-    _roundtrip("pipeline.def @generic(%batch: index) run(%input: buffer) {\n  pipeline.finish\n}\n")
+    _roundtrip("pipeline.def @generic(%batch: index) run(%input: buffer) {\n}\n")
 
 
 def test_command_pipeline_scope_is_not_a_language_state() -> None:
     with pytest.raises(ParseError, match="invalid enum value 'command'"):
-        _parse_module("pipeline.def<command> @unsupported() run() {\n  pipeline.finish\n}\n")
+        _parse_module("pipeline.def<command> @unsupported() run() {\n}\n")
 
 
-def test_explicit_placement_roundtrip() -> None:
+def test_strand_captures_dependent_types() -> None:
     _roundtrip(
-        """pipeline.def @placed(%columns: group<8>, %tiles: group<4>, %width: index) run(%input: channel<tile<[%width]xi32>>) {
-  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-  pipeline.execute %placement(%width, %input) do(%rank: index, %local_width: index, %endpoint: channel<tile<[%local_width]xi32>>) {
-    pipeline.yield
+        """func.decl @process(%width: index, %input: channel<tile<[%width]xi32>>, %count: index)
+
+pipeline.def @placed(%column: index, %width: index) run(%input: channel<tile<[%width]xi32>>, %count: index) {
+  pipeline.strand workers([%column, 2], [1, 1], [1, 1]) {
+    func.call @process(%width, %input, %count) : (index, channel<tile<[%width]xi32>>, index)
   }
-  pipeline.finish
 }
 """
     )

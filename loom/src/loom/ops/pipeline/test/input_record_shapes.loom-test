@@ -12,7 +12,6 @@ pipeline.def<kernel> @stage_extent_mismatch() run(%lhs: buffer, %rhs: buffer) {
   %rhs_records = pipeline.read %rhs_view on %workers : view<2x8xi8>, group<[%lanes]> -> pipeline.flow<tile<8xi8>>
   // ERROR@+1: LOWERING/063 {dimension="0", extent="2", expected_extent="4"}
   %output = pipeline.stage @join on %workers(%lhs_records, %rhs_records) : (group<[%lanes]>, pipeline.flow<tile<8xi8>>, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
-  pipeline.finish
 }
 
 // ====
@@ -33,7 +32,6 @@ pipeline.def<kernel> @stage_rank_mismatch() run(%lhs: buffer, %rhs: buffer) {
   %rhs_records = pipeline.read %rhs_view on %workers : view<4x8xi8>, group<[%lanes]> -> pipeline.flow<tile<8xi8>>
   // ERROR@+1: LOWERING/062 {rank="1", expected_rank="2"}
   %output = pipeline.stage @join on %workers(%lhs_records, %rhs_records) : (group<[%lanes]>, pipeline.flow<tile<8xi8>>, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
-  pipeline.finish
 }
 
 // ====
@@ -56,5 +54,4 @@ pipeline.def<kernel> @reduction_extent_mismatch() run(%input: buffer, %bias: buf
   %bias_records = pipeline.read %bias_view on %reducers : view<2x8xi8>, group<[%lanes]> -> pipeline.flow<tile<8xi8>>
   // ERROR@+1: LOWERING/063 {dimension="0", extent="2", expected_extent="4"}
   %output_records = pipeline.reduce @reduce from %producers(%source_records) to %reducers(%bias_records) : (group<[%lanes]>, pipeline.flow<tile<8xi8>>) to (group<[%lanes]>, pipeline.flow<tile<8xi8>>) -> (pipeline.flow<tile<8xi8>>)
-  pipeline.finish
 }

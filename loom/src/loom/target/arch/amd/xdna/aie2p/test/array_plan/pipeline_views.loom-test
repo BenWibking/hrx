@@ -18,7 +18,6 @@ pipeline.def<kernel> public retain target(@array_target) @broadcast_read_array()
   %input_flow = pipeline.read %input_view on %workers : view<3x1xf32, #encoding.layout.strided<strides=[2, 1]>>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
   %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<1xf32>>, view<2x3x1xf32>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy_record(%input: buffer, %output: buffer) {
@@ -190,7 +189,6 @@ pipeline.def<kernel> public retain target(@array_target) @partitioned_write_arra
   %input_flow = pipeline.scatter %input_view across %workers : view<2x3x1xf32>, group<[%lane_count]> -> pipeline.flow<tile<1xf32>>
   %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group<[%lane_count]>, pipeline.flow<tile<1xf32>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<1xf32>>, view<2x3x1xf32>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy_record(%input: buffer, %output: buffer) {

@@ -26,7 +26,6 @@ pipeline.def<kernel> public retain target(@array_target) @parallel_folded_compos
   %right_sum = pipeline.fold<addf> %right_records : pipeline.flow<tile<1xf32>>
   pipeline.write %left_sum to %left_output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
   pipeline.write %right_sum to %right_output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy_f32_record(%input: buffer, %output: buffer) {

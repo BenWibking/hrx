@@ -21,7 +21,6 @@ pipeline.def @reduce_partials() run(%partials: channel<tile<256xf32>>, %output_w
     scf.yield %updated : write<tile<256xf32>>
   }
   channel.publish %finished : write<tile<256xf32>>
-  pipeline.finish
 }
 
 // ----
@@ -31,7 +30,6 @@ CHECK: func.return %write : write<tile<256xf32>>
 CHECK: pipeline.def @reduce_partials() run(*) {
 CHECK: %updated = func.call @accumulate(*)
 CHECK: channel.publish %finished : write<tile<256xf32>>
-CHECK: pipeline.finish
 CHECK-NOT: *scf.*
 
 // ====
@@ -51,7 +49,6 @@ pipeline.def @forward_records() run(%initial: read<tile<256xf32>>, %incoming: ch
     scf.yield %next : read<tile<256xf32>>
   }
   channel.release %last : read<tile<256xf32>>
-  pipeline.finish
 }
 
 // ----
@@ -59,7 +56,6 @@ CHECK: pipeline.def @forward_records() run(*) {
 CHECK: channel.copy %pending -> %write : read<tile<256xf32>>, write<tile<256xf32>>
 CHECK: %next = channel.accept %incoming : channel<tile<256xf32>> -> read<tile<256xf32>>
 CHECK: channel.release %last : read<tile<256xf32>>
-CHECK: pipeline.finish
 CHECK-NOT: *scf.*
 
 // ====
@@ -67,9 +63,8 @@ CHECK-NOT: *scf.*
 // RUN: pass ownership-lifetime
 
 // Finishing a pipeline does not silently discard an invocation-owned read.
+// ERROR@+2: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="read"}
 pipeline.def @unreleased_input() run(%read: read<tile<256xf32>>) {
-  // ERROR@+1: DOMINANCE/014 {phase_name="ownership-lifetime", value_name="read"}
-  pipeline.finish
 }
 
 // ====
@@ -80,5 +75,4 @@ pipeline.def @retired_input() run(%read: read<tile<256xf32>>) {
   channel.release %read : read<tile<256xf32>>
   // ERROR@+1: DOMINANCE/012 {phase_name="ownership-lifetime", value_name="read", op_name="channel.wait"}
   %payload = channel.wait %read : read<tile<256xf32>> -> view<256xf32>
-  pipeline.finish
 }

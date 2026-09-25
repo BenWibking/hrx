@@ -452,108 +452,68 @@ iree_status_t loom_pipeline_write_verify(const loom_module_t* module,
       IREE_SV("pipeline.flow tile matching a target view suffix"));
 }
 
-iree_status_t loom_pipeline_place_verify(const loom_module_t* module,
-                                         const loom_op_t* op,
-                                         iree_diagnostic_emitter_t emitter) {
-  const loom_value_id_t logical_group = loom_pipeline_place_logical_group(op);
-  const loom_value_id_t physical_group = loom_pipeline_place_physical_group(op);
-  const loom_type_t logical_type =
-      loom_module_value_type(module, logical_group);
-  const loom_type_t physical_type =
-      loom_module_value_type(module, physical_group);
-  if (!loom_type_is_group(logical_type)) {
-    return loom_pipeline_emit_operand_constraint(
-        emitter, op, IREE_SV("logical_group"), logical_type, IREE_SV("group"));
+static iree_status_t loom_pipeline_verify_worker_axis_list(
+    const loom_op_t* op, iree_diagnostic_emitter_t emitter,
+    iree_string_view_t field, loom_attribute_t static_values,
+    uint16_t dynamic_count, uint32_t rank, int64_t minimum) {
+  if (static_values.count != rank) {
+    return loom_pipeline_emit_count_mismatch(
+        emitter, op, field, static_values.count, IREE_SV("worker rank"), rank);
   }
-  if (!loom_type_is_group(physical_type)) {
-    return loom_pipeline_emit_operand_constraint(
-        emitter, op, IREE_SV("physical_group"), physical_type,
-        IREE_SV("group"));
+  uint32_t expected_dynamic_count = 0;
+  for (uint32_t i = 0; i < static_values.count; ++i) {
+    const int64_t value = static_values.i64_array[i];
+    if (value == INT64_MIN) {
+      ++expected_dynamic_count;
+    } else if (value < minimum) {
+      const loom_diagnostic_param_t params[] = {
+          loom_param_string(field),
+          loom_param_i64(value),
+          loom_param_string(
+              minimum == 0 ? IREE_SV("nonnegative worker coordinate or count")
+                           : IREE_SV("positive worker stride")),
+      };
+      return loom_pipeline_emit(emitter, op, LOOM_ERR_STRUCTURE_014, params,
+                                IREE_ARRAYSIZE(params));
+    }
   }
-
-  const loom_type_t placement_type =
-      loom_module_value_type(module, loom_pipeline_place_result(op));
-  if (!loom_pipeline_placement_type_isa(placement_type)) {
-    return loom_pipeline_emit_result_constraint(
-        emitter, op, IREE_SV("result"), placement_type,
-        IREE_SV("pipeline.placement<group<...>, group<...>>"));
-  }
-  const loom_type_t placement_logical_type = loom_type_table_get(
-      &module->types,
-      loom_pipeline_placement_type_logical_group(placement_type));
-  const loom_type_t placement_physical_type = loom_type_table_get(
-      &module->types,
-      loom_pipeline_placement_type_physical_group(placement_type));
-  if (!loom_type_equal(logical_type, placement_logical_type) ||
-      !loom_type_equal(physical_type, placement_physical_type)) {
-    return loom_pipeline_emit_result_constraint(
-        emitter, op, IREE_SV("result"), placement_type,
-        IREE_SV("pipeline.placement whose group parameters match its "
-                "operands"));
+  if (dynamic_count != expected_dynamic_count) {
+    return loom_pipeline_emit_count_mismatch(emitter, op, field, dynamic_count,
+                                             IREE_SV("dynamic axis"),
+                                             expected_dynamic_count);
   }
   return iree_ok_status();
 }
 
-iree_status_t loom_pipeline_execute_verify(const loom_module_t* module,
-                                           const loom_op_t* op,
-                                           iree_diagnostic_emitter_t emitter) {
-  const loom_type_t placement_type =
-      loom_module_value_type(module, loom_pipeline_execute_assignment(op));
-  if (!loom_pipeline_placement_type_isa(placement_type)) {
-    return loom_pipeline_emit_operand_constraint(
-        emitter, op, IREE_SV("assignment"), placement_type,
-        IREE_SV("pipeline.placement<group<...>, group<...>>"));
-  }
-
-  const loom_region_t* body = loom_pipeline_execute_body(op);
-  const loom_block_t* entry = loom_region_const_entry_block(body);
-  const loom_value_slice_t inputs = loom_pipeline_execute_inputs(op);
-  const uint16_t expected_arg_count = (uint16_t)(inputs.count + 1);
-  if (entry->arg_count != expected_arg_count) {
+iree_status_t loom_pipeline_strand_verify(const loom_module_t* module,
+                                          const loom_op_t* op,
+                                          iree_diagnostic_emitter_t emitter) {
+  (void)module;
+  const loom_attribute_t origins = loom_pipeline_strand_static_origins(op);
+  if (origins.count == 0) {
     const loom_diagnostic_param_t params[] = {
-        loom_param_u32(entry->arg_count),
-        loom_param_u32(expected_arg_count),
+        loom_param_string(IREE_SV("worker rank")),
+        loom_param_i64(0),
+        loom_param_string(IREE_SV("at least one worker dimension")),
     };
-    return loom_pipeline_emit(emitter, op, LOOM_ERR_STRUCTURE_007, params,
+    return loom_pipeline_emit(emitter, op, LOOM_ERR_STRUCTURE_014, params,
                               IREE_ARRAYSIZE(params));
   }
-
-  const loom_value_id_t rank_arg = loom_block_arg_id(entry, 0);
-  const loom_type_t rank_type = loom_module_value_type(module, rank_arg);
-  const loom_type_t expected_rank_type =
-      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
-  if (!loom_type_equal(rank_type, expected_rank_type)) {
-    const loom_diagnostic_param_t params[] = {
-        loom_param_u32(0),
-        loom_param_type(rank_type),
-        loom_param_type(expected_rank_type),
-    };
-    return loom_pipeline_emit(emitter, op, LOOM_ERR_TYPE_013, params,
-                              IREE_ARRAYSIZE(params));
-  }
-
-  const loom_value_id_t* body_args = entry->arg_ids + 1;
-  const loom_type_value_remap_t input_remap = {
-      .source_values = inputs.values,
-      .target_values = body_args,
-      .count = inputs.count,
-  };
-  for (uint16_t i = 0; i < inputs.count; ++i) {
-    const loom_type_t input_type =
-        loom_module_value_type(module, inputs.values[i]);
-    const loom_type_t body_arg_type =
-        loom_module_value_type(module, body_args[i]);
-    if (loom_type_equal_after_value_remap(module, input_type, body_arg_type,
-                                          &input_remap)) {
-      continue;
-    }
-    const loom_diagnostic_param_t params[] = {
-        loom_param_u32((uint32_t)i + 1),
-        loom_param_type(body_arg_type),
-        loom_param_type(input_type),
-    };
-    return loom_pipeline_emit(emitter, op, LOOM_ERR_TYPE_013, params,
-                              IREE_ARRAYSIZE(params));
+  IREE_RETURN_IF_ERROR(loom_pipeline_verify_worker_axis_list(
+      op, emitter, IREE_SV("origins"), origins,
+      loom_pipeline_strand_origins(op).count, origins.count, 0));
+  IREE_RETURN_IF_ERROR(loom_pipeline_verify_worker_axis_list(
+      op, emitter, IREE_SV("counts"), loom_pipeline_strand_static_counts(op),
+      loom_pipeline_strand_counts(op).count, origins.count, 0));
+  IREE_RETURN_IF_ERROR(loom_pipeline_verify_worker_axis_list(
+      op, emitter, IREE_SV("strides"), loom_pipeline_strand_static_strides(op),
+      loom_pipeline_strand_strides(op).count, origins.count, 1));
+  const loom_block_t* entry =
+      loom_region_const_entry_block(loom_pipeline_strand_body(op));
+  if (entry->arg_count != 0) {
+    return loom_pipeline_emit_count_mismatch(
+        emitter, op, IREE_SV("strand entry argument"), entry->arg_count,
+        IREE_SV("implicit capture argument"), 0);
   }
   return iree_ok_status();
 }

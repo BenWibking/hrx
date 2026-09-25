@@ -20,7 +20,6 @@ pipeline.def<kernel> public retain target(@array_target) @cyclic_worker_array() 
   %middle_flow = pipeline.stage @copy_i32x16 on %middle_workers(%first_flow) : (group<[%lane_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   %output_flow = pipeline.stage @copy_i32x16 on %outer_workers(%middle_flow) : (group<[%lane_count]>, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi32>>, view<16xi32>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy_i32x16(%input: buffer, %output: buffer) {

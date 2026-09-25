@@ -14,7 +14,6 @@ pipeline.def<kernel> public retain target(@array_target) @copy_1_workers_1_recor
   %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32, #encoding.layout.strided<strides=[12, 8, 1]>>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x1x4xi32, #encoding.layout.strided<strides=[16, 12, 1]>>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
@@ -58,7 +57,6 @@ pipeline.def<kernel> public retain target(@array_target) @copy_1_workers_3_recor
   %input_flow = pipeline.scatter %input_view across %workers : view<1x3x4xi32, #encoding.layout.strided<strides=[28, 8, 1]>>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x3x4xi32, #encoding.layout.strided<strides=[40, 12, 1]>>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
@@ -102,7 +100,6 @@ pipeline.def<kernel> public retain target(@array_target) @copy_2_workers_1_recor
   %input_flow = pipeline.scatter %input_view across %workers : view<2x1x4xi32, #encoding.layout.strided<strides=[12, 8, 1]>>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x4xi32, #encoding.layout.strided<strides=[16, 12, 1]>>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
@@ -150,7 +147,6 @@ pipeline.def<kernel> public retain target(@array_target) @copy_2_workers_3_recor
   %input_flow = pipeline.scatter %input_view across %workers : view<2x3x4xi32, #encoding.layout.strided<strides=[28, 8, 1]>>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x3x4xi32, #encoding.layout.strided<strides=[40, 12, 1]>>
-  pipeline.finish
 }
 
 func.def target(@core_target) @copy(%input: buffer, %output: buffer) {

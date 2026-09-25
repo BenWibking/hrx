@@ -27,14 +27,12 @@ pipeline.def<kernel> public @split_k() run(%lhs: buffer, %rhs: buffer, %bias: bu
   %buffered = pipeline.buffer %folded capacity %ring_capacity : (pipeline.flow<tile<8x8xi32>>, index) -> pipeline.flow<tile<8x8xi32>>
   %result = pipeline.reduce @reduce from %products(%buffered) to %reducers(%bias_tiles) : (group<[%product_lanes]>, pipeline.flow<tile<8x8xi32>>) to (group<[%reducer_lanes]>, pipeline.flow<tile<8x8xi32>>) -> (pipeline.flow<tile<8x8xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<8x8xi32>>, view<8x8xi32>
-  pipeline.finish
 }
 
 // ====
 
 // Specialization fixes record tiling independently of runtime work count.
 pipeline.def @stream(%width: index) run(%input: channel<tile<[%width]xf32>>, %output: channel<tile<[%width]xf32>>, %scratch: view<[%width]xf32>, %count: index) {
-  pipeline.finish
 }
 
 // ====
@@ -42,18 +40,16 @@ pipeline.def @stream(%width: index) run(%input: channel<tile<[%width]xf32>>, %ou
 // Owned invocation arguments are capabilities, not encoded buffer pointers.
 pipeline.def @transfer() run(%source: read<tile<256xf32>>, %destination: write<tile<256xf32>>) {
   channel.copy %source -> %destination : read<tile<256xf32>>, write<tile<256xf32>>
-  pipeline.finish
 }
 
 // ====
 
-// Logical columns may outnumber physical workers. The placement fixes the
-// rank assignment while channel synchronization determines when each firing
-// can make progress.
-pipeline.def @placed(%columns: group<8>, %tiles: group<4>, %width: index) run(%input: channel<tile<[%width]xi32>>) {
-  %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-  pipeline.execute %placement(%width, %input) do(%rank: index, %local_width: index, %endpoint: channel<tile<[%local_width]xi32>>) {
-    pipeline.yield
+// Dependent capture types retain the lexical width. No synthesized rank or
+// duplicate capture signature is needed at the strand boundary.
+func.decl @process(%width: index, %input: channel<tile<[%width]xi32>>, %count: index)
+
+pipeline.def @placed(%column: index, %width: index) run(%input: channel<tile<[%width]xi32>>, %count: index) {
+  pipeline.strand workers([%column, 2], [1, 1], [1, 1]) {
+    func.call @process(%width, %input, %count) : (index, channel<tile<[%width]xi32>>, index)
   }
-  pipeline.finish
 }

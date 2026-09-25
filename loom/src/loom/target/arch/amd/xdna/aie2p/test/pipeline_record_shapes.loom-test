@@ -15,7 +15,6 @@ pipeline.def<kernel> public retain target(@array_target) @scatter_unit_unit() ru
   %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<2x2xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<2x2xi32>>, view<1x1x2x2xi32>
-  pipeline.finish
 }
 
 // ----
@@ -41,7 +40,6 @@ pipeline.def<kernel> public retain target(@array_target) @scatter_unit_many() ru
   %input_flow = pipeline.scatter %input_view across %workers : view<1x3x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x3x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -67,7 +65,6 @@ pipeline.def<kernel> public retain target(@array_target) @scatter_many_unit() ru
   %input_flow = pipeline.scatter %input_view across %workers : view<2x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -93,7 +90,6 @@ pipeline.def<kernel> public retain target(@array_target) @scatter_many_many() ru
   %input_flow = pipeline.scatter %input_view across %workers : view<2x3x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x3x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -119,7 +115,6 @@ pipeline.def<kernel> public retain target(@array_target) @scatter_unit_no_tempor
   %input_flow = pipeline.scatter %input_view across %workers : view<1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -145,7 +140,6 @@ pipeline.def<kernel> public retain target(@array_target) @single_without_lane_ax
   %input_flow = pipeline.scatter %input_view across %workers : view<1x1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -172,7 +166,6 @@ pipeline.def<kernel> public retain target(@array_target) @single_tile_only() run
   %input_flow = pipeline.scatter %input_view across %workers : view<1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -199,7 +192,6 @@ pipeline.def<kernel> public retain target(@array_target) @read_unit_record() run
   %input_flow = pipeline.read %input_view on %workers : view<1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -227,7 +219,6 @@ pipeline.def<kernel> public retain target(@array_target) @read_unit_partition() 
   %input_flow = pipeline.read %input_view on %workers : view<1x4xi32>, group<[%lanes]> -> pipeline.flow<tile<4xi32>>
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x1x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -255,7 +246,6 @@ pipeline.def<kernel> public retain target(@array_target) @fold_innermost_unit_ax
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   %folded = pipeline.fold<addi> %output_flow : pipeline.flow<tile<4xi32>>
   pipeline.write %folded to %output_view : pipeline.flow<tile<4xi32>>, view<1x1x4xi32>
-  pipeline.finish
 }
 
 // ----
@@ -284,7 +274,6 @@ pipeline.def<kernel> public retain target(@array_target) @independent_output_lay
   %output_flow, %other_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<2x2xi32>>, pipeline.flow<tile<4xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<2x2xi32>>, view<1x1x2x2xi32>
   pipeline.write %other_flow to %other_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
-  pipeline.finish
 }
 
 // ----

@@ -83,5 +83,4 @@ pipeline.def<kernel> public retain target(@array_target) @ffn_gate_up_quadratic_
   %weights_flow = pipeline.read %weights_view on %workers : view<2x[%input_size]xbf16>, group<[%c1]> -> pipeline.flow<tile<2x[%input_size]xbf16>>
   %result = pipeline.stage @gate_up_tile on %workers(%input_flow, %weights_flow) : (group<[%c1]>, pipeline.flow<tile<[%input_size]xbf16>>, pipeline.flow<tile<2x[%input_size]xbf16>>) -> (pipeline.flow<tile<1xf32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xf32>>, view<1xf32>
-  pipeline.finish
 }

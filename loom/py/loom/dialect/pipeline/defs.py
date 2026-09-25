@@ -14,8 +14,8 @@ from loom.assembly import (
     LPAREN,
     RPAREN,
     Attr,
-    BlockArgs,
     FuncArgs,
+    IndexList,
     OptionalGroup,
     Param,
     PredicateList,
@@ -40,6 +40,7 @@ from loom.dsl import (
     ATTR_TYPE_ENUM,
     ATTR_TYPE_FLAGS,
     ATTR_TYPE_I64,
+    ATTR_TYPE_I64_ARRAY,
     INDEX,
     ISOLATED_FROM_ABOVE,
     PURE,
@@ -54,6 +55,7 @@ from loom.dsl import (
     FuncLikeInterface,
     HasAncestor,
     HasParent,
+    ImplicitTerminator,
     Op,
     Operand,
     OpPhase,
@@ -76,29 +78,6 @@ pipeline_flow_type = TypeDef(
     params=[AttrDef("element_type", "type")],
     format=[Param("element_type")],
     doc=("Typed ordered record stream between scheduling groups. The element type describes one transferred value and is normally tile<...>."),
-)
-
-pipeline_placement_type = TypeDef(
-    "pipeline.placement",
-    params=[
-        AttrDef("logical_group", "type"),
-        AttrDef("physical_group", "type"),
-    ],
-    format=[Param("logical_group"), COMMA, Param("physical_group")],
-    doc=("Durable assignment relation from logical participants to physical execution participants. The relation carries no channels, storage, or ambient execution state."),
-)
-
-
-PipelinePlacementPolicy = EnumDef(
-    "PipelinePlacementPolicy",
-    [
-        EnumCase(
-            "cyclic",
-            1,
-            doc=("Map each row-major logical rank to its physical rank modulo the physical group cardinality."),
-        ),
-    ],
-    doc=("Authored logical-to-physical assignment policy. An absent policy leaves the assignment to scheduling."),
 )
 
 PipelineScope = EnumDef(
@@ -176,7 +155,7 @@ pipeline_def = Op(
         "export ABI. The optional scope fixes the artifact boundary that "
         "lowering must satisfy."
     ),
-    traits=[SYMBOL_DEFINE, ISOLATED_FROM_ABOVE],
+    traits=[SYMBOL_DEFINE, ISOLATED_FROM_ABOVE, ImplicitTerminator("pipeline.finish")],
     attrs=list(_PIPELINE_ATTRS),
     symbol_def=SymbolDefinition(
         field="callee",
@@ -190,7 +169,7 @@ pipeline_def = Op(
     regions=[
         RegionDef(
             "body",
-            doc="Portable scheduling groups, flows, and stage graph.",
+            doc="Construction of invocation-owned storage and independently progressing strands.",
             terminator="pipeline.finish",
             buffer_arg_memory_space="global",
         )
@@ -212,98 +191,92 @@ pipeline_def = Op(
         Region("body"),
     ],
     examples=[
-        "pipeline.def<kernel> target(@array) @resident() run(%input: buffer, %output: buffer) {\n  pipeline.finish\n}",
-        "pipeline.def @heterogeneous(%batch: index) run(%input: buffer) {\n  pipeline.finish\n}",
+        "pipeline.def<kernel> target(@array) @resident() run(%input: buffer, %output: buffer) {\n}",
+        "pipeline.def @heterogeneous(%batch: index) run(%input: buffer) {\n}",
     ],
 )
 
 _PIPELINE_GRAPH_TRAITS = [HasAncestor("pipeline.def")]
 
-pipeline_place = Op(
-    "pipeline.place",
+pipeline_strand = Op(
+    "pipeline.strand",
     group=pipeline_ops,
     doc=(
-        "Relate a logical participant domain to physical execution capacity. "
-        "This operation fixes assignment, not execution order; multiple roles "
-        "may use the same physical group and remain dataflow scheduled."
+        "Construct independently progressing strand instances over a target-relative "
+        "worker domain. Each selected worker enters its instance once; ordinary "
+        "loops in the body express repeated work. The region captures lexical SSA "
+        "values and declares work rather than executing inline. Multiple strands "
+        "may share a worker, with channel dependencies controlling their progress. "
+        "Origins, counts and strides select coordinates as origin + index * stride. "
+        "An omitted target inherits the enclosing pipeline's target environment."
     ),
     operands=[
-        Operand("logical_group", ANY, doc="Logical participant domain."),
-        Operand("physical_group", ANY, doc="Physical execution domain."),
+        Operand("origins", INDEX, variadic=True, doc="Dynamic worker origins."),
+        Operand("counts", INDEX, variadic=True, doc="Dynamic worker counts."),
+        Operand("strides", INDEX, variadic=True, doc="Dynamic worker strides."),
     ],
-    results=[Result("result", ANY, doc="Logical-to-physical assignment.")],
     attrs=[
         AttrDef(
-            "policy",
-            ATTR_TYPE_ENUM,
-            enum_def=PipelinePlacementPolicy,
+            "target",
+            "symbol",
             optional=True,
-        )
-    ],
-    traits=[PURE, *_PIPELINE_GRAPH_TRAITS],
-    verify="loom_pipeline_place_verify",
-    format=[
-        OptionalGroup([TemplateParam("policy")], anchor="policy"),
-        Ref("logical_group"),
-        COMMA,
-        Ref("physical_group"),
-        COLON,
-        TypeOf("logical_group"),
-        COMMA,
-        TypeOf("physical_group"),
-        ARROW,
-        ResultType("result"),
-    ],
-    examples=["%placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>"],
-)
-
-pipeline_execute = Op(
-    "pipeline.execute",
-    group=pipeline_ops,
-    doc=(
-        "Execute one firing for every logical participant in a placement. The "
-        "first body argument is the row-major logical rank; remaining body "
-        "arguments explicitly capture the input operands and are the textual "
-        "source of their types. Capture types must match after outer SSA "
-        "values are remapped to their corresponding body arguments. A "
-        "captured channel keeps one protocol identity; channel operations in "
-        "the body address the relation endpoints of the current logical "
-        "firing. Execute operations are concurrent unless SSA, channel, or "
-        "explicit synchronization edges order them."
-    ),
-    operands=[
-        Operand("assignment", ANY, doc="Logical-to-physical assignment."),
-        Operand("inputs", ANY, variadic=True, doc="Explicit region captures."),
+            symbol_ref=SymbolReference("target", ["target"]),
+        ),
+        AttrDef(
+            "static_origins",
+            ATTR_TYPE_I64_ARRAY,
+            doc="Worker origins; INT64_MIN entries refer to dynamic origins.",
+        ),
+        AttrDef(
+            "static_counts",
+            ATTR_TYPE_I64_ARRAY,
+            doc="Worker counts; INT64_MIN entries refer to dynamic counts.",
+        ),
+        AttrDef(
+            "static_strides",
+            ATTR_TYPE_I64_ARRAY,
+            doc="Worker strides; INT64_MIN entries refer to dynamic strides.",
+        ),
     ],
     regions=[
         RegionDef(
             "body",
-            doc="One logical participant firing.",
-            single_block=True,
-            terminator="pipeline.yield",
-        )
+            doc="One complete strand instance, with lexical captures.",
+            terminator="pipeline.end",
+        ),
     ],
-    traits=[UNKNOWN_EFFECTS, *_PIPELINE_GRAPH_TRAITS],
-    verify="loom_pipeline_execute_verify",
+    traits=[
+        UNKNOWN_EFFECTS,
+        *_PIPELINE_GRAPH_TRAITS,
+        ImplicitTerminator("pipeline.end"),
+    ],
+    verify="loom_pipeline_strand_verify",
     format=[
-        Ref("assignment"),
+        OptionalGroup(
+            [kw("target"), GLUE, LPAREN, SymbolRef("target"), GLUE, RPAREN],
+            anchor="target",
+        ),
+        kw("workers"),
         GLUE,
         LPAREN,
-        Refs("inputs"),
+        IndexList("origins", "static_origins"),
+        COMMA,
+        IndexList("counts", "static_counts", glue=False),
+        COMMA,
+        IndexList("strides", "static_strides", glue=False),
+        GLUE,
         RPAREN,
-        kw("do"),
-        BlockArgs("body"),
         Region("body"),
     ],
-    examples=["pipeline.execute %placement(%input) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {\n  pipeline.yield\n}"],
+    examples=["pipeline.strand target(@npu) workers([%column, 2], [1, 1], [1, 1]) {\n}"],
 )
 
-pipeline_yield = Op(
-    "pipeline.yield",
+pipeline_end = Op(
+    "pipeline.end",
     group=pipeline_ops,
-    doc="Complete one logical participant firing.",
-    traits=[TERMINATOR, HasParent("pipeline.execute")],
-    examples=["pipeline.yield"],
+    doc="Complete a strand instance. Implicit at the end of its region.",
+    traits=[TERMINATOR, HasParent("pipeline.strand")],
+    examples=["pipeline.end"],
 )
 
 pipeline_scatter = Op(
@@ -559,10 +532,7 @@ pipeline_finish = Op(
     examples=["pipeline.finish"],
 )
 
-ALL_PIPELINE_TYPES: tuple[TypeDef, ...] = (
-    pipeline_flow_type,
-    pipeline_placement_type,
-)
+ALL_PIPELINE_TYPES: tuple[TypeDef, ...] = (pipeline_flow_type,)
 ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_def,
     pipeline_scatter,
@@ -573,7 +543,6 @@ ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_reduce,
     pipeline_write,
     pipeline_finish,
-    pipeline_place,
-    pipeline_execute,
-    pipeline_yield,
+    pipeline_strand,
+    pipeline_end,
 )

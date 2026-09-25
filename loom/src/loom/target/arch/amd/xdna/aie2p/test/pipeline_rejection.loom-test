@@ -14,7 +14,6 @@ pipeline.def<kernel> public retain target(@array_target) @missing_lane_axis() ru
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/060 {lane_count="2"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
-  pipeline.finish
 }
 
 // ====
@@ -25,7 +24,6 @@ aie2p.target<array> @array_target
 // materializer cannot treat it as a buffer-valued native argument.
 // ERROR@+1: TYPE/003 {operand_name="run argument 0", actual_type="channel<tile<256xf32>>", expected_constraint="buffer for the flow-graph ABI"}
 pipeline.def<kernel> public retain target(@array_target) @bound_channel() run(%input: channel<tile<256xf32>>) {
-  pipeline.finish
 }
 
 // ====
@@ -44,7 +42,6 @@ pipeline.def<kernel> public retain target(@array_target) @unit_lane_extent() run
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/061 {extent="2", lane_count="1"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<2x1x4xi32>
-  pipeline.finish
 }
 
 // ====
@@ -63,7 +60,6 @@ pipeline.def<kernel> public retain target(@array_target) @missing_temporal_axis(
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/062 {rank="1", expected_rank="2"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x4xi32>
-  pipeline.finish
 }
 
 // ====
@@ -82,7 +78,6 @@ pipeline.def<kernel> public retain target(@array_target) @extra_temporal_axis() 
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/062 {rank="3", expected_rank="1"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x1x1x4xi32>
-  pipeline.finish
 }
 
 // ====
@@ -101,7 +96,6 @@ pipeline.def<kernel> public retain target(@array_target) @equal_count_different_
   %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<4xi32>>) -> (pipeline.flow<tile<4xi32>>)
   // ERROR@+1: LOWERING/063 {dimension="0", extent="3", expected_extent="2"}
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<4xi32>>, view<1x3x2x4xi32>
-  pipeline.finish
 }
 
 // ====
@@ -112,14 +106,12 @@ aie2p.target<array> @array_target
 
 // ERROR@+1: XDNA/008 {scope="generic"}
 pipeline.def target(@array_target) @generic_scope() run() {
-  pipeline.finish
 }
 
 // ====
 
 // ERROR@+1: TARGET/009 {pipeline_name="aie2p-lower-pipeline", function_name="missing_array_target"}
 pipeline.def<kernel> @missing_array_target() run() {
-  pipeline.finish
 }
 
 // ====
@@ -148,5 +140,4 @@ pipeline.def<kernel> target(@array_target) @too_many_resident_workers() run(%inp
   %source = pipeline.scatter %input_view across %workers : view<33x1xi32>, group<[%lane_count]> -> pipeline.flow<tile<1xi32>>
   %result = pipeline.stage @copy_record on %workers(%source) : (group<[%lane_count]>, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<33x1xi32>
-  pipeline.finish
 }

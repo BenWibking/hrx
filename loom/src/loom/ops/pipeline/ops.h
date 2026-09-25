@@ -29,10 +29,9 @@ enum {
   LOOM_OP_PIPELINE_REDUCE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 6),
   LOOM_OP_PIPELINE_WRITE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 7),
   LOOM_OP_PIPELINE_FINISH = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 8),
-  LOOM_OP_PIPELINE_PLACE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 9),
-  LOOM_OP_PIPELINE_EXECUTE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 10),
-  LOOM_OP_PIPELINE_YIELD = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 11),
-  LOOM_OP_PIPELINE_COUNT_ = 12,
+  LOOM_OP_PIPELINE_STRAND = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 9),
+  LOOM_OP_PIPELINE_END = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 10),
+  LOOM_OP_PIPELINE_COUNT_ = 11,
 };
 
 // IEEE 754 fast-math relaxation flags for float operations.
@@ -63,15 +62,8 @@ typedef enum loom_pipeline_def_retain_e {
   LOOM_PIPELINE_DEF_RETAIN_COUNT_ = 2,
 } loom_pipeline_def_retain_t;
 
-// Authored logical-to-physical assignment policy. An absent policy leaves the assignment to scheduling.
-typedef enum loom_pipeline_place_policy_e {
-  LOOM_PIPELINE_PLACE_POLICY_CYCLIC = 1,
-  LOOM_PIPELINE_PLACE_POLICY_COUNT_ = 2,
-} loom_pipeline_place_policy_t;
-
 // LOOM_OP_PIPELINE_DEF: Persistent dataflow program. Leading specialization arguments remain ordinary SSA values and typed run arguments are supplied by each invocation. Their source types are independent of the eventual target export ABI. The optional scope fixes the artifact boundary that lowering must satisfy.
 // pipeline.def<kernel> target(@array) @resident() run(%input: buffer, %output: buffer) {
-//   pipeline.finish
 // }
 LOOM_DEFINE_ISA(loom_pipeline_def_isa, LOOM_OP_PIPELINE_DEF)
 LOOM_DEFINE_ATTR_SYMBOL(loom_pipeline_def_callee, 0)
@@ -254,55 +246,48 @@ iree_status_t loom_pipeline_finish_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 
-// LOOM_OP_PIPELINE_PLACE: Relate a logical participant domain to physical execution capacity. This operation fixes assignment, not execution order; multiple roles may use the same physical group and remain dataflow scheduled.
-// %placement = pipeline.place<cyclic> %columns, %tiles : group<8>, group<4> -> pipeline.placement<group<8>, group<4>>
-LOOM_DEFINE_ISA(loom_pipeline_place_isa, LOOM_OP_PIPELINE_PLACE)
-LOOM_DEFINE_OPERAND(loom_pipeline_place_logical_group, 0)
-LOOM_DEFINE_OPERAND(loom_pipeline_place_physical_group, 1)
-LOOM_DEFINE_RESULT(loom_pipeline_place_result, 0)
-LOOM_DEFINE_ATTR_ENUM_TYPED(loom_pipeline_place_policy, 0, loom_pipeline_place_policy_t)
-enum loom_pipeline_place_build_flag_bits_e {
-  LOOM_PIPELINE_PLACE_BUILD_FLAG_HAS_POLICY = 1u << 0,
-};
-typedef uint32_t loom_pipeline_place_build_flags_t;
-iree_status_t loom_pipeline_place_build(
-    loom_builder_t* builder,
-    loom_pipeline_place_build_flags_t build_flags,
-    loom_optional uint8_t policy,
-    loom_may_consume loom_value_id_t logical_group,
-    loom_may_consume loom_value_id_t physical_group,
-    loom_type_t result_type,
-    loom_location_id_t location,
-    loom_op_t** out_op);
-iree_status_t loom_pipeline_place_verify(
-    const loom_module_t* module, const loom_op_t* op,
-    iree_diagnostic_emitter_t emitter);
-
-// LOOM_OP_PIPELINE_EXECUTE: Execute one firing for every logical participant in a placement. The first body argument is the row-major logical rank; remaining body arguments explicitly capture the input operands and are the textual source of their types. Capture types must match after outer SSA values are remapped to their corresponding body arguments. A captured channel keeps one protocol identity; channel operations in the body address the relation endpoints of the current logical firing. Execute operations are concurrent unless SSA, channel, or explicit synchronization edges order them.
-// pipeline.execute %placement(%input) do(%rank: index, %endpoint: channel<tile<6144xi32>>) {
-//   pipeline.yield
+// LOOM_OP_PIPELINE_STRAND: Construct independently progressing strand instances over a target-relative worker domain. Each selected worker enters its instance once; ordinary loops in the body express repeated work. The region captures lexical SSA values and declares work rather than executing inline. Multiple strands may share a worker, with channel dependencies controlling their progress. Origins, counts and strides select coordinates as origin + index * stride. An omitted target inherits the enclosing pipeline's target environment.
+// pipeline.strand target(@npu) workers([%column, 2], [1, 1], [1, 1]) {
 // }
-LOOM_DEFINE_ISA(loom_pipeline_execute_isa, LOOM_OP_PIPELINE_EXECUTE)
-LOOM_DEFINE_OPERAND(loom_pipeline_execute_assignment, 0)
-LOOM_DEFINE_VARIADIC_OPERANDS(loom_pipeline_execute_inputs, 1)
-LOOM_DEFINE_REGION(loom_pipeline_execute_body, 0)
-iree_status_t loom_pipeline_execute_build(
+LOOM_DEFINE_ISA(loom_pipeline_strand_isa, LOOM_OP_PIPELINE_STRAND)
+LOOM_DEFINE_SEGMENTED_OPERANDS(loom_pipeline_strand_origins, 0)
+LOOM_DEFINE_SEGMENTED_OPERANDS(loom_pipeline_strand_counts, 1)
+LOOM_DEFINE_SEGMENTED_OPERANDS(loom_pipeline_strand_strides, 2)
+LOOM_DEFINE_ATTR_SYMBOL(loom_pipeline_strand_target, 0)
+LOOM_DEFINE_ATTR_I64_ARRAY(loom_pipeline_strand_static_origins, 1)
+LOOM_DEFINE_ATTR_I64_ARRAY(loom_pipeline_strand_static_counts, 2)
+LOOM_DEFINE_ATTR_I64_ARRAY(loom_pipeline_strand_static_strides, 3)
+LOOM_DEFINE_REGION(loom_pipeline_strand_body, 0)
+enum loom_pipeline_strand_build_flag_bits_e {
+  LOOM_PIPELINE_STRAND_BUILD_FLAG_HAS_TARGET = 1u << 0,
+};
+typedef uint32_t loom_pipeline_strand_build_flags_t;
+iree_status_t loom_pipeline_strand_build(
     loom_builder_t* builder,
-    loom_value_id_t assignment,
-    const loom_value_id_t* inputs,
-    iree_host_size_t inputs_count,
-    const loom_type_t* body_arg_types,
-    iree_host_size_t body_arg_types_count,
+    loom_pipeline_strand_build_flags_t build_flags,
+    loom_optional loom_symbol_ref_t target,
+    const loom_value_id_t* origins,
+    iree_host_size_t origins_count,
+    const int64_t* static_origins,
+    iree_host_size_t static_origins_count,
+    const loom_value_id_t* counts,
+    iree_host_size_t counts_count,
+    const int64_t* static_counts,
+    iree_host_size_t static_counts_count,
+    const loom_value_id_t* strides,
+    iree_host_size_t strides_count,
+    const int64_t* static_strides,
+    iree_host_size_t static_strides_count,
     loom_location_id_t location,
     loom_op_t** out_op);
-iree_status_t loom_pipeline_execute_verify(
+iree_status_t loom_pipeline_strand_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 
-// LOOM_OP_PIPELINE_YIELD: Complete one logical participant firing.
-// pipeline.yield
-LOOM_DEFINE_ISA(loom_pipeline_yield_isa, LOOM_OP_PIPELINE_YIELD)
-iree_status_t loom_pipeline_yield_build(
+// LOOM_OP_PIPELINE_END: Complete a strand instance. Implicit at the end of its region.
+// pipeline.end
+LOOM_DEFINE_ISA(loom_pipeline_end_isa, LOOM_OP_PIPELINE_END)
+iree_status_t loom_pipeline_end_build(
     loom_builder_t* builder,
     loom_location_id_t location,
     loom_op_t** out_op);

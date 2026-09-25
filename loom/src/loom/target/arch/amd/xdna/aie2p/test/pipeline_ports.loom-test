@@ -47,7 +47,6 @@ pipeline.def<kernel> public retain target(@array_target) @interleaved_aliases() 
   pipeline.write %copied to %copy_view : pipeline.flow<tile<1xi32>>, view<1xi32>
   pipeline.write %sum to %sum_view : pipeline.flow<tile<1xi32>>, view<1xi32>
   pipeline.write %buffered to %alias_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.finish
 }
 
 // ----
@@ -197,7 +196,6 @@ pipeline.def<kernel> public retain target(@array_target) @single_stage_aliases()
   %buffered = pipeline.buffer %result capacity %c1 : (pipeline.flow<tile<1xi32>>, index) -> pipeline.flow<tile<1xi32>>
   pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
   pipeline.write %buffered to %alias_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.finish
 }
 
 // ----

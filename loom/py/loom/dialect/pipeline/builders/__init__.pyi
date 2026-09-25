@@ -108,28 +108,17 @@ class PipelineBuilder(DialectBuilder):
         *,
         location_id: int | None = ...,
     ) -> None: ...
-    def place(
+    def strand(
         self,
         *,
-        policy: str | None = ...,
-        logical_group: ValueRef,
-        physical_group: ValueRef,
-        results: list[Type | TiedResultSpec],
-        name: str | None = ...,
-        names: Sequence[str] | None = ...,
-        result_names: Sequence[str] | None = ...,
-        location_id: int | None = ...,
-    ) -> ValueRef: ...
-    def execute(
-        self,
-        *,
-        assignment: ValueRef,
-        inputs: list[ValueRef] = ...,
-        body_args: Sequence[tuple[str, Type]] = ...,
+        target: str | None = ...,
+        origins: list[int | ValueRef],
+        counts: list[int | ValueRef],
+        strides: list[int | ValueRef],
         body: Region | None = ...,
         location_id: int | None = ...,
     ) -> None: ...
-    def yield_(
+    def end(
         self,
         *,
         location_id: int | None = ...,
