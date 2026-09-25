@@ -124,6 +124,21 @@ loom_cc_binary(
     ${_iree_test_loom_platform_deps}
 )
 
+loom_cc_binary(
+  NAME
+    scenario_failure_test_tool
+  SRCS
+    "scenario_failure_test.c"
+  DEPS
+    ::main
+    iree::base
+    iree::hal
+    loom::ir
+    loom::tooling::execution::execution_provider
+    loom::tooling::testbench::scenario_executor
+  TESTONLY
+)
+
 iree_execution_test_suite(
   NAME
     execution_test
@@ -156,5 +171,18 @@ iree_execution_test_suite(
     "hostonly"
 )
 endif()
+
+iree_execution_test_suite(
+  NAME
+    scenario_failure_test
+  MANIFESTS
+    "scenario_failure.test.json"
+  TOOLS
+    "scenario-failure-test=::scenario_failure_test_tool"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/scenario_failures.loom"
+  LABELS
+    "hostonly"
+)
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

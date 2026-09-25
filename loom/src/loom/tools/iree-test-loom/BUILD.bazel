@@ -156,6 +156,20 @@ loom_cc_binary(
     ] + _IREE_TEST_LOOM_TARGET_DEPS,
 )
 
+loom_cc_binary(
+    name = "scenario_failure_test_tool",
+    testonly = True,
+    srcs = ["scenario_failure_test.c"],
+    deps = [
+        ":main",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/tooling/execution:execution_provider",
+        "//loom/src/loom/tooling/testbench:scenario_executor",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+    ],
+)
+
 iree_execution_test_suite(
     name = "execution_test",
     data = [
@@ -181,5 +195,15 @@ iree_execution_test_suite(
     target_compatible_with = loom_config_compatible_with(["//loom/config/target/arch:vm"]),
     tools = {
         "iree-test-loom": ":iree-test-loom",
+    },
+)
+
+iree_execution_test_suite(
+    name = "scenario_failure_test",
+    data = ["testdata/scenario_failures.loom"],
+    manifests = ["scenario_failure.test.json"],
+    tags = ["hostonly"],
+    tools = {
+        "scenario-failure-test": ":scenario_failure_test_tool",
     },
 )
