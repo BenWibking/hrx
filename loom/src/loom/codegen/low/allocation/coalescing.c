@@ -1549,6 +1549,18 @@ iree_status_t loom_low_allocation_coalescing_assign_tied_interval(
   const uint16_t ignored_value_capacity =
       (uint16_t)IREE_ARRAYSIZE(ignored_value_ids);
   uint16_t ignored_value_count = 1;
+  const loom_value_ordinal_t tied_origin_ordinal =
+      context->placement
+          ->tied_storage_origins_by_value_ordinal[relation->source_ordinal];
+  if (tied_origin_ordinal != relation->source_ordinal) {
+    // Unit liveness retains a complete tied component on its origin
+    // assignment. Consider that producer-indexed origin before the bounded
+    // incidental-alias walk so chain depth cannot hide the reservation owner.
+    IREE_RETURN_IF_ERROR(
+        loom_low_allocation_coalescing_try_append_dead_exact_storage_alias(
+            context, relation->op, interval->start_point, tied_origin_ordinal,
+            ignored_value_ids, ignored_value_capacity, &ignored_value_count));
+  }
   const loom_low_placement_relation_t* tied_operand_copy_relation =
       loom_low_allocation_coalescing_transfer_relation_for_result_ordinal(
           context, relation->source_ordinal);

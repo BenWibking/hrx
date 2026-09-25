@@ -479,6 +479,8 @@ TEST_F(LowAllocationIntervalAssignmentTest,
   placement.ranges_by_result_ordinal = ranges_by_result;
   placement.relation_indices_by_source_ordinal = relation_indices_by_source;
   placement.ranges_by_source_ordinal = ranges_by_source;
+  const loom_value_ordinal_t tied_origins[] = {0, 0};
+  placement.tied_storage_origins_by_value_ordinal = tied_origins;
 
   loom_low_reg_class_t reg_class = {};
   reg_class.flags = LOOM_LOW_REG_CLASS_FLAG_PHYSICAL;

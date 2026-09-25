@@ -251,6 +251,14 @@ enum loom_amdgpu_vector_float_conversion_strategy_e {
   // The strategy payload contains selected FP8 decode actions.
   LOOM_AMDGPU_VECTOR_FLOAT_CONVERSION_STRATEGY_FP8_DECODE = 4,
 };
+
+typedef uint8_t loom_amdgpu_vector_scale_materialization_kind_t;
+enum loom_amdgpu_vector_scale_materialization_kind_e {
+  // The conversion consumes its scale source directly, if present.
+  LOOM_AMDGPU_VECTOR_SCALE_MATERIALIZATION_NONE = 0,
+  // Packed E8M0 group scales are materialized as exact F32 operands.
+  LOOM_AMDGPU_VECTOR_SCALE_MATERIALIZATION_E8M0_F32 = 1,
+};
 static_assert(LOOM_AMDGPU_MAX_PACKED_16BIT_FLOAT_LANES <= UINT8_MAX,
               "vector conversion lane counts must fit compact plans");
 static_assert(LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES <= UINT8_MAX,
@@ -310,8 +318,8 @@ typedef struct loom_amdgpu_vector_16bit_float_conversion_plan_t {
   uint8_t storage_register_count;
   // Number of 32-bit result registers occupied by the result vector.
   uint8_t result_register_count;
-  // Byte reserved for a future bounded conversion-plan count.
-  uint8_t reserved;
+  // Target-side scale representation selected for conversion emission.
+  loom_amdgpu_vector_scale_materialization_kind_t scale_materialization_kind;
   // Strategy-specific data selected before emission.
   union {
     // Packed FP4 decode strategy when strategy_kind is FP4_DECODE.

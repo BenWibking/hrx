@@ -489,6 +489,19 @@ def _add_lds_ssa_use_evidence(
             }
         ],
     }
+    report["wait_action_rows"] = {
+        "count": 1,
+        "rows": [
+            {
+                "index": 0,
+                "function": "routed_linear",
+                "counter": "lds",
+                "reason": "amdgpu.ssa_use",
+                "producer_descriptor_key": "amdgpu.ds_bpermute_b32",
+                "consumer_descriptor_key": "amdgpu.v_add_f32",
+            }
+        ],
+    }
 
 
 def _add_single_subgroup_communication_evidence(
@@ -763,10 +776,21 @@ def test_suggests_dominant_lds_ssa_use_serialization() -> None:
 
     suggestion = result.suggestions[0]
     assert suggestion.suggestion_id == "amdgpu.lds_ssa_use_serialization"
-    assert "independent LDS or DS producers" in suggestion.action
+    assert "dependent chains such as subgroup reductions require these waits" in (
+        suggestion.action
+    )
+    assert "independent chains can issue producers together" in suggestion.action
     evidence = {item.path: item.value for item in suggestion.evidence}
     assert evidence["wait_reason_summary_rows.rows[0].summary.full_drain_count"] == 27
     assert evidence["wait_reason_summary_rows.rows[0].summary.partial_wait_count"] == 0
+    assert (
+        evidence["wait_action_rows.rows[0].producer_descriptor_key"]
+        == "amdgpu.ds_bpermute_b32"
+    )
+    assert (
+        evidence["wait_action_rows.rows[0].consumer_descriptor_key"]
+        == "amdgpu.v_add_f32"
+    )
     assert evidence["entries.rows[0].wait_plan.full_drain_count"] == 125
 
 
