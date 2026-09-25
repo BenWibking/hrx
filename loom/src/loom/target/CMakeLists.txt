@@ -850,6 +850,8 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::analysis::symbol_facts
+    loom::error::error_defs
+    loom::error::source
     loom::format::text::parser
     loom::ir
     loom::ops::func

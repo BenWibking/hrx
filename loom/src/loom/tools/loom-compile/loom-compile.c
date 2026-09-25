@@ -827,6 +827,8 @@ static iree_status_t loom_compile_materialize_module(
   loom_low_descriptor_text_print_context_initialize(
       &loom_run_session_low_descriptor_registry(session)->registry,
       &compile_diagnostic_sink.type_print_context);
+  loom_source_table_projection_t sources = {
+      .table = run_module->sources.table, .arena = &run_module->sources.arena};
   const loom_compile_pipeline_options_t pipeline_options = {
       .target_environment = target_environment,
       .diagnostic_sink =
@@ -834,12 +836,17 @@ static iree_status_t loom_compile_materialize_module(
               .fn = loom_compile_diagnostic_sink,
               .user_data = &compile_diagnostic_sink,
           },
-      .source_resolver = loom_run_module_source_resolver(run_module),
+      .source_resolver = {.fn = loom_source_table_resolve,
+                          .user_data = &sources.table},
   };
   uint32_t error_count = 0;
-  IREE_RETURN_IF_ERROR(loom_compile_materialize_request(
-      request, &pipeline_options, loom_run_session_block_pool(session),
-      allocator, &run_module->module, &error_count));
+  iree_status_t status = loom_compile_materialize_request(
+      request, &pipeline_options, &sources,
+      loom_run_session_block_pool(session), allocator, &run_module->module,
+      &error_count);
+  run_module->sources.table = sources.table;
+  run_module->sources.capacity = sources.table.count;
+  IREE_RETURN_IF_ERROR(status);
   if (error_count != 0) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

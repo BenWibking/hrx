@@ -771,7 +771,7 @@ int iree_test_loom_main(int argc, char** argv,
         execution_options.invocation.function_call =
             configuration->function_call_provider.fn(
                 configuration->function_call_provider.user_data, selected,
-                loom_run_module_source_resolver(&run_module), &config_set);
+                &run_module.sources.table, &config_set);
       }
     }
     execution_options.materializer.host_allocator = allocator;

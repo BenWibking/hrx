@@ -154,7 +154,7 @@ class ParserTest : public ::testing::Test {
   // Parses source text and expects parse errors (diagnostics emitted,
   // module is NULL, but status is ok — parse errors are not infrastructure
   // failures).
-  const std::vector<CapturedDiagnostic>& ParseExpectErrors(const char* source) {
+  const std::deque<CapturedDiagnostic>& ParseExpectErrors(const char* source) {
     loom_module_t* module = nullptr;
     IREE_EXPECT_OK(Parse(source, &module));
     EXPECT_EQ(module, nullptr);

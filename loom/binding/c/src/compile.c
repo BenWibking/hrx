@@ -68,6 +68,8 @@ static const loomc_product_descriptor_t
 typedef struct loomc_compile_diagnostic_capture_t {
   // Result receiving converted diagnostics.
   loomc_result_t* result;
+  // Borrowed module owning operation locations during this synchronous call.
+  const loom_module_t* module;
 } loomc_compile_diagnostic_capture_t;
 
 static loomc_status_t loomc_compile_validate_string_view(
@@ -161,7 +163,7 @@ static iree_status_t loomc_compile_capture_diagnostic_emission(
   loomc_compile_diagnostic_capture_t* capture =
       (loomc_compile_diagnostic_capture_t*)user_data;
   return iree_status_from_loomc(loomc_result_add_loom_diagnostic_emission(
-      capture->result, /*source=*/NULL, LOOM_EMITTER_PASS, emission));
+      capture->result, capture->module, LOOM_EMITTER_PASS, emission));
 }
 
 static loomc_status_t loomc_compile_run_pass_program(
@@ -172,6 +174,7 @@ static loomc_status_t loomc_compile_run_pass_program(
     loomc_result_t* result) {
   loomc_compile_diagnostic_capture_t capture = {
       .result = result,
+      .module = internal_module,
   };
   loom_codegen_pass_environment_storage_t codegen_environment_storage = {0};
   loom_pass_environment_t pass_environment =
@@ -236,6 +239,7 @@ static loomc_status_t loomc_compile_specialize_functions(
 
   loomc_compile_diagnostic_capture_t capture = {
       .result = result,
+      .module = module,
   };
   loom_target_specialization_result_t specialization_result = {0};
   LOOMC_RETURN_IF_ERROR(loomc_status_from_iree(loom_target_specialize_functions(
@@ -667,8 +671,7 @@ static loomc_status_t loomc_compile_module_into_result(
   }
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result) &&
       launch_config_module != NULL) {
-    status = loomc_result_verify_loom_module(launch_config_module,
-                                             /*source=*/NULL, result);
+    status = loomc_result_verify_loom_module(launch_config_module, result);
   }
   if (loomc_status_is_ok(status)) {
     status = loomc_compile_emit_requested_artifacts(

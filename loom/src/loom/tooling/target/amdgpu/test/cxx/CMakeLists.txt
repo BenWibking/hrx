@@ -2712,4 +2712,20 @@ loom_execution_test(
 endif()
 endif()
 
+if(LOOM_IMPORT_CXX AND LOOM_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+iree_execution_test_suite(
+  NAME
+    source_locations_test
+  MANIFESTS
+    "source_locations.test.json"
+  TOOLS
+    "loom-compile=loom::tools::loom-compile"
+    "loom-import-cxx=loom::tools::loom-import-cxx"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/source_locations.cxx"
+  LABELS
+    "hostonly"
+)
+endif()
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

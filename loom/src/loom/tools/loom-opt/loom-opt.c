@@ -273,19 +273,15 @@ static iree_status_t loom_opt_initialize_low_descriptor_registry(
 }
 
 static bool loom_opt_resolve_emission_location(
-    const loom_opt_diagnostic_emitter_t* emitter, const loom_op_t* op,
-    loom_source_range_t* out_source_location) {
-  if (!emitter || !emitter->module || !op) {
+    const loom_opt_diagnostic_emitter_t* emitter, const loom_module_t* module,
+    const loom_op_t* op, loom_source_range_t* out_source_location) {
+  if (!emitter || !op) {
     return false;
   }
-  if (!loom_source_resolve(emitter->source_resolver, emitter->module,
-                           op->location, out_source_location)) {
+  module = module ? module : emitter->module;
+  if (!loom_source_resolve(emitter->source_resolver, module, op->location,
+                           out_source_location)) {
     return false;
-  }
-  if (out_source_location->provenance ==
-          LOOM_SOURCE_PROVENANCE_UNAVAILABLE_SOURCE &&
-      out_source_location->source.size > 0) {
-    out_source_location->provenance = LOOM_SOURCE_PROVENANCE_EXACT_SOURCE;
   }
   return true;
 }
@@ -305,7 +301,8 @@ static iree_host_size_t loom_opt_collect_related_locations(
     loom_source_range_t source_location = {
         .provenance = LOOM_SOURCE_PROVENANCE_UNAVAILABLE_SOURCE,
     };
-    if (!loom_opt_resolve_emission_location(emitter, related_ops[i].op,
+    if (!loom_opt_resolve_emission_location(emitter, related_ops[i].module,
+                                            related_ops[i].op,
                                             &source_location)) {
       continue;
     }
@@ -351,7 +348,8 @@ static iree_status_t loom_opt_diagnostic_emitter_emit(
     diagnostic.related_locations = related_locations;
   }
 
-  if (loom_opt_resolve_emission_location(emitter, emission->op,
+  if (loom_opt_resolve_emission_location(emitter, emission->module,
+                                         emission->op,
                                          &diagnostic.source_location)) {
     diagnostic.origin = diagnostic.source_location;
   }

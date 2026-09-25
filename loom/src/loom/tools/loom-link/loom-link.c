@@ -905,7 +905,8 @@ static iree_status_t loom_link_cli_capture_sources(
     const loom_link_cli_input_t* input =
         index->provider_inputs[module->provider_ordinal];
     IREE_RETURN_IF_ERROR(loom_tooling_source_storage_project(
-        sources, &input->source.sources.table, projection->values));
+        sources, product->module, &input->source.sources.table,
+        projection->values));
   }
   return iree_ok_status();
 }

@@ -527,11 +527,18 @@ const loom_module_t* loomc_module_const_loom_module(
   return module ? module->module : NULL;
 }
 
+typedef struct loomc_module_verify_capture_t {
+  // Result receiving verification diagnostics.
+  loomc_result_t* result;
+  // Borrowed module owning operation locations during verification.
+  const loom_module_t* module;
+} loomc_module_verify_capture_t;
+
 static iree_status_t loomc_module_capture_verify_emission(
     void* user_data, const loom_diagnostic_emission_t* emission) {
+  const loomc_module_verify_capture_t* capture = user_data;
   return iree_status_from_loomc(loomc_result_add_loom_diagnostic_emission(
-      (loomc_result_t*)user_data, /*source=*/NULL, LOOM_EMITTER_VERIFIER,
-      emission));
+      capture->result, capture->module, LOOM_EMITTER_VERIFIER, emission));
 }
 
 loomc_status_t loomc_module_verify(
@@ -545,8 +552,8 @@ loomc_status_t loomc_module_verify(
   }
 
   if (!module->verification.structural) {
-    LOOMC_RETURN_IF_ERROR(loomc_result_verify_loom_module(
-        module->module, /*source=*/NULL, result));
+    LOOMC_RETURN_IF_ERROR(
+        loomc_result_verify_loom_module(module->module, result));
     if (!loomc_result_succeeded(result)) {
       return loomc_ok_status();
     }
@@ -555,13 +562,15 @@ loomc_status_t loomc_module_verify(
 
   const loomc_target_pass_environment_t* pass_environment =
       loomc_target_environment_pass_environment(target_environment);
+  loomc_module_verify_capture_t capture = {.result = result,
+                                           .module = module->module};
   const loom_low_verify_options_t options = {
       .descriptor_registry =
           pass_environment ? &pass_environment->low_descriptor_registry.registry
                            : NULL,
       .function_versions = loomc_module_function_versions(module),
       .emitter = {.fn = loomc_module_capture_verify_emission,
-                  .user_data = result},
+                  .user_data = &capture},
       .provider_list = pass_environment
                            ? loom_target_environment_low_verify_provider_list(
                                  pass_environment->target_environment)

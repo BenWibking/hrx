@@ -425,6 +425,26 @@ check.case @entry_case {
   EXPECT_EQ(provider.owns_compile_device_target, !expects_explicit_selection);
   EXPECT_EQ(g_projected_target_profile, &kFakeTargetProfile);
 
+  // Both private modules retain exact spelling through their independent
+  // source-ID maps and share the compile owner's source bytes.
+  loom_source_table_resolver_t* tables[] = {
+      &provider.compile_module.sources.table, &provider.launch_config_sources};
+  EXPECT_EQ(tables[0]->module, provider.compile_module.module);
+  EXPECT_EQ(tables[1]->module, provider.launch_config_module);
+  for (auto* table : tables) {
+    const auto* module = table->module;
+    auto symbol = loom_module_find_symbol(
+        module, loom_module_lookup_string(module, IREE_SV("entry")));
+    ASSERT_NE(symbol, LOOM_SYMBOL_ID_INVALID);
+    loom_source_range_t range = {};
+    ASSERT_TRUE(loom_source_table_resolve(
+        table, module, module->symbols.entries[symbol].defining_op->location,
+        &range));
+    EXPECT_EQ(range.provenance, LOOM_SOURCE_PROVENANCE_EXACT_SOURCE);
+    EXPECT_TRUE(iree_string_view_equal(range.source, IREE_SV(kSource)));
+    EXPECT_EQ(range.source.data, tables[0]->entries[0].source.data);
+  }
+
   loom_run_hal_testbench_actual_provider_deinitialize(&provider);
   loom_run_hal_testbench_context_deinitialize(&context);
   loom_target_environment_deinitialize(&target_environment);
