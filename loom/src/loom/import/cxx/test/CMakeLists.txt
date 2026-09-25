@@ -1075,6 +1075,7 @@ loom_check_test_suite(
   SRCS
     "wasm_lowering.cxx-test"
     "wasm_lowering_invalid.cxx-test"
+    "wasm_pointer_narrowing.cxx-test"
 )
 endif()
 

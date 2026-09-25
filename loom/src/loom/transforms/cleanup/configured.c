@@ -13,6 +13,7 @@
 #include "loom/transforms/cleanup/fact_refinement_policy.h"
 #include "loom/transforms/cleanup/special_value_policy.h"
 #include "loom/transforms/index/cleanup_patterns.h"
+#include "loom/transforms/index/combine_patterns.h"
 #include "loom/transforms/scalar/cleanup_patterns.h"
 #include "loom/transforms/scalar/combine_patterns.h"
 #include "loom/transforms/scf/branch_fact_patterns.h"
@@ -152,6 +153,7 @@ static const loom_rewrite_pattern_provider_t* const
 
 static const loom_rewrite_pattern_provider_t* const
     kConfiguredSourceCombinePatternProviders[] = {
+        &loom_index_source_combine_pattern_provider,
         &loom_scalar_source_combine_pattern_provider,
         &loom_scf_source_combine_pattern_provider,
         &loom_view_source_combine_pattern_provider,

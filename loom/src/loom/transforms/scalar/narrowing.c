@@ -21,14 +21,6 @@ static loom_op_t* loom_scalar_narrowing_defining_op(
 static loom_scalar_narrowing_operand_t loom_scalar_narrowing_select_operand(
     const loom_rewriter_t* rewriter, loom_value_id_t input) {
   loom_op_t* producer = loom_scalar_narrowing_defining_op(rewriter, input);
-  if (producer &&
-      iree_any_bit_set(producer->traits, LOOM_TRAIT_FACT_IDENTITY)) {
-    const loom_value_id_t identity =
-        loom_value_fact_table_query_identity(rewriter->fact_table, input);
-    if (identity != input) {
-      producer = loom_scalar_narrowing_defining_op(rewriter, identity);
-    }
-  }
   if (producer && loom_scalar_constant_isa(producer)) {
     // Keep the literal conversion defined even when the low word is negative.
     int64_t constant =
@@ -220,14 +212,6 @@ iree_status_t loom_scalar_narrowing_truncate(loom_rewriter_t* rewriter,
                        loom_type_scalar(LOOM_SCALAR_TYPE_I64)) ||
       !loom_type_equal(loom_module_value_type(rewriter->module, result),
                        loom_type_scalar(LOOM_SCALAR_TYPE_I32))) {
-    return iree_ok_status();
-  }
-  const loom_value_id_t identity =
-      loom_value_fact_table_query_identity(rewriter->fact_table, input);
-  if (identity != input) {
-    IREE_RETURN_IF_ERROR(
-        loom_rewriter_set_operand(rewriter, truncation, 0, identity));
-    *out_changed = true;
     return iree_ok_status();
   }
   if (loom_index_cast_isa(producer)) {
