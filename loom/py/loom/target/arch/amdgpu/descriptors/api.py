@@ -1211,7 +1211,7 @@ def _amdgpu_descriptor_storage_leases(
     schedule_classes: dict[str, ScheduleClass],
     descriptor: Descriptor,
     *,
-    enable_gfx125x_xcnt: bool,
+    builder_flags: int,
 ) -> tuple[StorageLease, ...]:
     if descriptor.storage_leases:
         raise ValueError(
@@ -1247,13 +1247,24 @@ def _amdgpu_descriptor_storage_leases(
         _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_VMEM_LOAD]
         | _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_TENSOR]
     )
+    if (
+        builder_flags
+        & _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE
+        and InstructionClass.BUFFER_LOAD in descriptor.instruction_classes
+        and descriptor.schedule_class == _SCHEDULE_VMEM_LOAD
+    ):
+        # These scalar address inputs are captured independently of load
+        # completion. Only the result storage retains the VMEM completion lease.
+        memory_source_read_counter_mask &= ~_AMDGPU_WAIT_COUNTER_MASKS[
+            _COUNTER_VMEM_LOAD
+        ]
     memory_source_write_counter_mask = write_counter_mask & (
         _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_VMEM_STORE]
         | _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_TENSOR]
     )
     xcnt_source_counter_mask = (
         _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_X]
-        if enable_gfx125x_xcnt
+        if builder_flags & _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X
         and descriptor.schedule_class in _GFX125X_XCNT_SCHEDULE_CLASSES
         else 0
     )
@@ -1297,7 +1308,7 @@ def _descriptor_result_count(descriptor: Descriptor) -> int:
 
 
 def _with_storage_lease_rows(
-    descriptor_set: DescriptorSet, *, enable_gfx125x_xcnt: bool = False
+    descriptor_set: DescriptorSet, *, builder_flags: int = 0
 ) -> DescriptorSet:
     schedule_classes = {
         schedule_class.name: schedule_class
@@ -1309,7 +1320,7 @@ def _with_storage_lease_rows(
         storage_leases = _amdgpu_descriptor_storage_leases(
             schedule_classes,
             descriptor,
-            enable_gfx125x_xcnt=enable_gfx125x_xcnt,
+            builder_flags=builder_flags,
         )
         if storage_leases == descriptor.storage_leases:
             descriptors.append(descriptor)
@@ -1425,6 +1436,7 @@ def _with_instruction_classes(descriptor_set: DescriptorSet) -> DescriptorSet:
 
 
 _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X = 1 << 0
+_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE = 1 << 1
 
 _AMDGPU_CORE_INSTRUCTION_FACT_NAMES = (
     "S_GETPC_B64",
@@ -1502,6 +1514,7 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
         overlay_rows=_gfx11_core_overlays,
         overlay_descriptors=_gfx11_core_overlay_descriptors,
         extra_descriptors=(_s_delay_alu_descriptor(),),
+        flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE,
     ),
     "gfx11_generic": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
@@ -1510,6 +1523,7 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
         overlay_rows=_gfx11_core_overlays,
         overlay_descriptors=_gfx11_core_overlay_descriptors,
         extra_descriptors=(_s_delay_alu_descriptor(),),
+        flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE,
     ),
     "gfx12_generic": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
@@ -1533,6 +1547,7 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
         overlay_rows=_gfx115x_core_overlays,
         overlay_descriptors=_gfx115x_core_overlay_descriptors,
         extra_descriptors=(_s_delay_alu_descriptor(),),
+        flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE,
     ),
     "rdna4m": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
@@ -1645,10 +1660,10 @@ def _build_amdgpu_core_descriptor_set_from_spec(
     is_gfx125x = bool(builder.flags & _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X)
     if is_gfx125x:
         descriptor_set = _with_gfx125x_vgpr_msb_address_states(descriptor_set)
-    descriptor_set = _with_storage_lease_rows(
-        descriptor_set, enable_gfx125x_xcnt=is_gfx125x
-    )
     descriptor_set = _with_instruction_classes(descriptor_set)
+    descriptor_set = _with_storage_lease_rows(
+        descriptor_set, builder_flags=builder.flags
+    )
     if builder.valu_sgpr_separation_cycles:
         descriptor_set = _with_valu_sgpr_timing(
             descriptor_set, builder.valu_sgpr_separation_cycles
