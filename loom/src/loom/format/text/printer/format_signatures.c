@@ -60,11 +60,12 @@ static const loom_value_id_t* loom_print_tied_operand_ids(
   return loom_op_const_operands(op);
 }
 
-// Symbol results need a local binder when their identity is referenced, even
-// without an explicit source name. Construction and mutation retain operand,
-// type and attribute uses, so deciding this requires no signature traversal.
-static bool loom_print_symbol_result_needs_binding(const loom_module_t* module,
-                                                   loom_value_id_t value_id) {
+// Locally scoped signature results need a binder when their identity is
+// referenced, even without an explicit source name. Construction and mutation
+// retain operand, type, and attribute uses, so deciding this requires no
+// signature traversal.
+static bool loom_print_signature_result_needs_binding(
+    const loom_module_t* module, loom_value_id_t value_id) {
   if (value_id >= module->values.count) {
     return false;
   }
@@ -84,8 +85,9 @@ iree_status_t loom_print_result_type_list(
   if (use_parens) {
     IREE_RETURN_IF_ERROR(loom_print_emit_cstr(ctx, "(", false));
   }
-  const bool is_symbol_definition =
-      iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE);
+  const bool prints_signature_results =
+      iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE) ||
+      loom_op_vtable_has_signature_only_results(vtable);
   uint16_t tied_operand_count = 0;
   const loom_value_id_t* tied_operand_ids =
       loom_print_tied_operand_ids(op, vtable, &tied_operand_count);
@@ -96,9 +98,9 @@ iree_status_t loom_print_result_type_list(
       IREE_RETURN_IF_ERROR(loom_print_emit_cstr(ctx, ",", false));
     }
 
-    if (is_symbol_definition &&
-        loom_print_symbol_result_needs_binding(ctx->module,
-                                               loom_op_const_results(op)[j])) {
+    if (prints_signature_results &&
+        loom_print_signature_result_needs_binding(
+            ctx->module, loom_op_const_results(op)[j])) {
       IREE_RETURN_IF_ERROR(
           loom_print_value_name(ctx, loom_op_const_results(op)[j]));
       IREE_RETURN_IF_ERROR(loom_print_emit_cstr(ctx, ":", true));

@@ -1451,6 +1451,41 @@ test_invoke = Op(
 )
 
 # ============================================================================
+# test.signature_sink — locally scoped call result signature
+# ============================================================================
+
+test_signature_sink = Op(
+    "test.signature_sink",
+    group=test_ops,
+    doc=("Test terminal-style signature results that retain result identities for dependent types without exposing SSA values to following ops."),
+    operands=[Operand("operands", ANY, variadic=True)],
+    results=[
+        Result(
+            "results",
+            ANY,
+            variadic=True,
+            signature_only=True,
+        )
+    ],
+    traits=[UNKNOWN_EFFECTS],
+    format=[
+        GLUE,
+        LPAREN,
+        Refs("operands"),
+        RPAREN,
+        COLON,
+        LPAREN,
+        TypesOf("operands"),
+        RPAREN,
+        ARROW,
+        Scope([ResultTypeList("results")]),
+    ],
+    examples=[
+        "test.signature_sink() : () -> (%width: index, vector<[%width]xf32>)",
+    ],
+)
+
+# ============================================================================
 # test.low_call / test.low_invoke — non-semantic call-like kind fixtures
 # ============================================================================
 
@@ -3222,4 +3257,5 @@ ALL_TEST_OPS: tuple[Op, ...] = (
     test_memory_fence,
     test_result_pair,
     test_block_arg_groups,
+    test_signature_sink,
 )

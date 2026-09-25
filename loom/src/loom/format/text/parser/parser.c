@@ -555,16 +555,17 @@ static iree_status_t loom_finalize_op(
     }
   }
 
-  // Copy result value IDs into the op. Body-op results become visible in the
-  // current lexical scope here; symbol-definition results are signature values
-  // only and must not leak into the module scope or their function body.
+  // Copy result value IDs into the op. Ordinary body-op results become visible
+  // in the current lexical scope here. Symbol and signature-only results are
+  // local signature values and must not leak into the surrounding body.
   // Values already have their types and names set during LHS parsing and the
   // format walk.
   loom_value_id_t* result_slots = loom_op_results(op);
   for (uint16_t i = 0; i < parsed->result_count; ++i) {
     loom_value_id_t value_id = parsed->result_ids[i];
     result_slots[i] = value_id;
-    if (iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE)) {
+    if (iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE) ||
+        loom_op_vtable_has_signature_only_results(vtable)) {
       continue;
     }
     loom_string_id_t name_id =
@@ -717,9 +718,12 @@ static iree_status_t loom_parse_op_into(
   uint16_t pending_func_arg_start = parser->pending_func_args.count;
   const loom_text_low_repr_context_t previous_low_repr = parser->low_repr;
 
-  bool is_symbol_definition =
+  const bool is_symbol_definition =
       iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE);
-  if (is_symbol_definition && parsed->result_count > 0) {
+  const bool has_signature_only_results =
+      loom_op_vtable_has_signature_only_results(vtable);
+  if ((is_symbol_definition || has_signature_only_results) &&
+      parsed->result_count > 0) {
     return loom_parser_emit_result_count_mismatch(parser, vtable, op_name_token,
                                                   /*expected_count=*/0,
                                                   parsed->result_count);

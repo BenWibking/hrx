@@ -929,8 +929,9 @@ iree_status_t loom_parser_walk_format(
   *out_func_args_consumed_by_region = false;
   const loom_format_element_t* elements = format.elements;
   uint16_t element_count = format.count;
-  bool is_symbol_definition =
-      iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE);
+  const bool defines_signature_results =
+      iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE) ||
+      loom_op_vtable_has_signature_only_results(vtable);
   const uint16_t pending_block_arg_start = parser->pending_block_args.count;
 
   uint32_t errors_before = parser->error_count;
@@ -1143,14 +1144,14 @@ iree_status_t loom_parser_walk_format(
       case LOOM_FORMAT_KIND_RESULT_TYPE_SINGLE: {
         IREE_RETURN_IF_ERROR(loom_parse_format_result_type(
             parser, vtable, op_name_token, element, parsed,
-            is_symbol_definition));
+            defines_signature_results));
         break;
       }
 
       case LOOM_FORMAT_KIND_RESULT_TYPE_LIST: {
         IREE_RETURN_IF_ERROR(loom_parse_format_result_type_list(
             parser, vtable, op_name_token, element, parsed,
-            is_symbol_definition));
+            defines_signature_results));
         break;
       }
 

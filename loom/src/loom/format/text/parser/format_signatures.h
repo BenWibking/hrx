@@ -29,11 +29,11 @@ iree_status_t loom_parse_body_result_type(loom_parser_t* parser,
 iree_status_t loom_parse_format_result_type(
     loom_parser_t* parser, const loom_op_vtable_t* vtable,
     loom_token_t op_name_token, const loom_format_element_t* element,
-    loom_parsed_op_t* parsed, bool is_symbol_definition);
+    loom_parsed_op_t* parsed, bool defines_signature_results);
 iree_status_t loom_parse_format_result_type_list(
     loom_parser_t* parser, const loom_op_vtable_t* vtable,
     loom_token_t op_name_token, const loom_format_element_t* element,
-    loom_parsed_op_t* parsed, bool is_symbol_definition);
+    loom_parsed_op_t* parsed, bool defines_signature_results);
 iree_status_t loom_parse_format_binding_list(
     loom_parser_t* parser, const loom_format_element_t* element,
     loom_parsed_op_t* parsed);

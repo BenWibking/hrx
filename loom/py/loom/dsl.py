@@ -491,6 +491,8 @@ class Result:
     variadic: If True, this is zero-or-more result values.
     allocates: If True, this result is a freshly allocated resource
         that cannot alias any pre-existing resource.
+    signature_only: If True, this result describes a locally scoped signature
+        value rather than an SSA value visible after the operation.
     """
 
     name: str
@@ -498,6 +500,7 @@ class Result:
     doc: str = ""
     variadic: bool = False
     allocates: bool = False
+    signature_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -6171,6 +6174,71 @@ def _validate_keyed_module_record(
         )
 
 
+def _validate_signature_only_results(
+    op_name: str,
+    results: tuple[Result | TiedResult, ...],
+    traits: tuple[Trait, ...],
+    format_elements: tuple[FormatElement, ...],
+) -> None:
+    """Validates locally scoped result signatures."""
+    from loom.assembly import Clause, OptionalGroup, ResultType, ResultTypeList, Scope
+
+    signature_results = [
+        result for result in results if getattr(result, "signature_only", False)
+    ]
+    if not signature_results:
+        return
+    if len(signature_results) != len(results):
+        raise ValueError(
+            f"Op '{op_name}': signature-only and SSA-visible results cannot be mixed"
+        )
+    if any(isinstance(result, TiedResult) for result in results):
+        raise ValueError(
+            f"Op '{op_name}': signature-only results cannot be tied to operands"
+        )
+    if any(result.allocates for result in signature_results):
+        raise ValueError(
+            f"Op '{op_name}': signature-only results cannot allocate resources"
+        )
+    if any(trait.name == "SymbolDefine" for trait in traits):
+        raise ValueError(
+            f"Op '{op_name}': symbol results are already locally scoped and "
+            "must not be marked signature-only"
+        )
+
+    result_names = {result.name for result in signature_results}
+    scoped_result_fields: set[str] = set()
+    unscoped_result_fields: set[str] = set()
+
+    def collect(
+        elements: tuple[FormatElement, ...], inside_scope: bool = False
+    ) -> None:
+        for element in elements:
+            if isinstance(element, Scope):
+                collect(element.elements, True)
+            elif isinstance(element, Clause | OptionalGroup):
+                collect(element.elements, inside_scope)
+            elif isinstance(element, ResultType | ResultTypeList):
+                if element.field not in result_names:
+                    continue
+                (scoped_result_fields if inside_scope else unscoped_result_fields).add(
+                    element.field
+                )
+
+    collect(format_elements)
+    if unscoped_result_fields:
+        raise ValueError(
+            f"Op '{op_name}': signature-only result fields must be printed "
+            f"inside Scope(...): {sorted(unscoped_result_fields)}"
+        )
+    missing_result_fields = result_names - scoped_result_fields
+    if missing_result_fields:
+        raise ValueError(
+            f"Op '{op_name}': signature-only result fields require an explicit "
+            f"result type format: {sorted(missing_result_fields)}"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Op:
     """A complete operation declaration.
@@ -6515,6 +6583,9 @@ class Op:
             frozen_effects,
             frozen_ownership_effects,
         )
+        _validate_signature_only_results(
+            name, frozen_results, tuple(traits), frozen_format
+        )
         _validate_op_formats(self)
         if frozen_legacy_formats:
             _validate_legacy_formats(
@@ -6538,6 +6609,14 @@ class Op:
         return f"Op({self.name!r})"
 
     # --- Lookup helpers ---
+
+    @property
+    def has_signature_only_results(self) -> bool:
+        """Whether every result is local to the operation's signature."""
+        return bool(self.results) and all(
+            isinstance(result, Result) and result.signature_only
+            for result in self.results
+        )
 
     def operand(self, name: str) -> Operand | None:
         """Find an operand by name."""

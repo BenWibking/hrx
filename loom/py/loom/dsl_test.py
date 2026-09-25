@@ -31,6 +31,7 @@ from loom.assembly import (
     Ref,
     Region,
     ResultType,
+    ResultTypeList,
     ScalarOf,
     Scope,
     ScopedEnumRef,
@@ -2680,6 +2681,41 @@ class TestOp:
         op = Op("test.op", results=[Result("out", FLOAT)])
         assert op.result("out") is not None
         assert op.result("missing") is None
+
+    def test_signature_only_results_require_a_local_signature(self) -> None:
+        op = Op(
+            "test.sink",
+            results=[Result("results", ANY, variadic=True, signature_only=True)],
+            format=[Scope([ResultTypeList("results")])],
+        )
+        assert op.has_signature_only_results
+
+        with _raises(ValueError, match="cannot be mixed"):
+            Op(
+                "test.mixed",
+                results=[
+                    Result("signature", ANY, signature_only=True),
+                    Result("value", ANY),
+                ],
+                format=[Scope([ResultType("signature"), ResultType("value")])],
+            )
+        with _raises(ValueError, match=r"inside Scope\(\.\.\.\)"):
+            Op(
+                "test.unscoped",
+                results=[Result("result", ANY, signature_only=True)],
+                format=[ResultType("result")],
+            )
+        with _raises(ValueError, match="require an explicit result type format"):
+            Op(
+                "test.implicit",
+                results=[Result("result", ANY, signature_only=True)],
+            )
+        with _raises(ValueError, match="cannot allocate resources"):
+            Op(
+                "test.allocating",
+                results=[Result("result", ANY, allocates=True, signature_only=True)],
+                format=[Scope([ResultType("result")])],
+            )
 
     def test_lookup_attr(self) -> None:
         op = Op("test.op", attrs=[AttrDef("axis", "i64")])

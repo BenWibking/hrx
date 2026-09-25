@@ -306,7 +306,7 @@ def _check_duplicate_param_names(op: Op, params: list[BuilderParam]) -> None:
 
 
 def _return_hint(op: Op) -> str:
-    if not op.results:
+    if not op.results or op.has_signature_only_results:
         return "None"
     if len(op.results) == 1:
         if any(result.variadic for result in op.results):

@@ -924,6 +924,8 @@ def generate_tables_c(
                     flags_parts.append("LOOM_RESULT_VARIADIC")
                 if result.allocates:
                     flags_parts.append("LOOM_RESULT_ALLOCATES")
+                if getattr(result, "signature_only", False):
+                    flags_parts.append("LOOM_RESULT_SIGNATURE_ONLY")
                 flags = " | ".join(flags_parts) if flags_parts else "0"
                 result_ownership_effect = ownership_result_map.get(result.name)
                 source_operand_index = "LOOM_RESULT_OWNERSHIP_SOURCE_FIELD_NONE"

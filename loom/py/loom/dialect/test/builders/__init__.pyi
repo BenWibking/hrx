@@ -1169,3 +1169,10 @@ class TestBuilder(DialectBuilder):
         body: Region | None = ...,
         location_id: int | None = ...,
     ) -> None: ...
+    def signature_sink(
+        self,
+        *,
+        operands: list[ValueRef] = ...,
+        results: list[Type | TiedResultSpec],
+        location_id: int | None = ...,
+    ) -> None: ...

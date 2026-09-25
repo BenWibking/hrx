@@ -1,5 +1,16 @@
 // RUN: roundtrip
 
+// Signature-only results preserve result-to-result type dependencies without
+// exposing the local binders to following operations.
+test.func @signature_only_results() {
+  test.signature_sink() : () -> (%width: index, vector<[%width]xf32>)
+  %width = test.constant 4 : index
+  test.use %width : index
+  test.yield
+}
+
+// ====
+
 // One region entry signature can expose named, typed projections without
 // materializing carrier operands for either group.
 test.func @projected_block_argument_groups() {

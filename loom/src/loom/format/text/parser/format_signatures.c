@@ -67,7 +67,7 @@ static iree_status_t loom_parse_format_assign_lhs_result_type(
                                     parsed->result_ids[result_index], type);
 }
 
-static iree_status_t loom_parse_format_append_symbol_result(
+static iree_status_t loom_parse_format_append_signature_result(
     loom_parser_t* parser, loom_parsed_op_t* parsed, loom_type_t type,
     loom_token_t name_token) {
   loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
@@ -259,8 +259,9 @@ static iree_status_t loom_parse_format_lhs_result_type_list(
 }
 
 // Parses an optional local binder followed by a type or tied-result clause.
-// The binder names the result independently of the argument named by a tie.
-static iree_status_t loom_parse_format_symbol_result_type(
+// The binder names the signature result independently of the argument named
+// by a tie.
+static iree_status_t loom_parse_format_signature_result_type(
     loom_parser_t* parser, loom_parsed_op_t* parsed) {
   const uint32_t errors_before = parser->error_count;
   loom_token_t name_token = loom_token_none();
@@ -334,17 +335,17 @@ static iree_status_t loom_parse_format_symbol_result_type(
         parsed, &parser->parser_arena, LOOM_LOCATION_FIELD_OPERAND,
         operand_index, tied_token, tied_token.line, tied_token.end_column));
   }
-  return loom_parse_format_append_symbol_result(parser, parsed, type,
-                                                name_token);
+  return loom_parse_format_append_signature_result(parser, parsed, type,
+                                                   name_token);
 }
 
-// Parses a symbol-definition result type list:
+// Parses a locally scoped signature result type list:
 //   (type, %name: type, %arg as type, %name: %arg as type, ...)
 //
 // Result values are created as each type is parsed. Named result values are
 // local to the surrounding Scope(...); definition-mode type references can
 // resolve a later binder in the same signature.
-static iree_status_t loom_parse_format_symbol_result_type_list(
+static iree_status_t loom_parse_format_signature_result_type_list(
     loom_parser_t* parser, const loom_format_element_t* element,
     loom_parsed_op_t* parsed) {
   uint32_t errors_before = parser->error_count;
@@ -365,7 +366,8 @@ static iree_status_t loom_parse_format_symbol_result_type_list(
         break;
       }
     }
-    IREE_RETURN_IF_ERROR(loom_parse_format_symbol_result_type(parser, parsed));
+    IREE_RETURN_IF_ERROR(
+        loom_parse_format_signature_result_type(parser, parsed));
     if (parser->error_count > errors_before) {
       return iree_ok_status();
     }
@@ -384,15 +386,15 @@ static iree_status_t loom_parse_format_symbol_result_type_list(
 iree_status_t loom_parse_format_result_type(
     loom_parser_t* parser, const loom_op_vtable_t* vtable,
     loom_token_t op_name_token, const loom_format_element_t* element,
-    loom_parsed_op_t* parsed, bool is_symbol_definition) {
+    loom_parsed_op_t* parsed, bool defines_signature_results) {
   loom_type_parse_mode_t type_mode = loom_parser_in_definition_scope(parser)
                                          ? LOOM_TYPE_PARSE_ARG
                                          : LOOM_TYPE_PARSE_BODY;
-  if (is_symbol_definition) {
+  if (defines_signature_results) {
     loom_type_t type = {0};
     IREE_RETURN_IF_ERROR(loom_parse_type(parser, type_mode, &type));
-    return loom_parse_format_append_symbol_result(parser, parsed, type,
-                                                  loom_token_none());
+    return loom_parse_format_append_signature_result(parser, parsed, type,
+                                                     loom_token_none());
   }
 
   IREE_RETURN_IF_ERROR(loom_parse_format_prepare_result_scope(parser, parsed));
@@ -407,9 +409,10 @@ iree_status_t loom_parse_format_result_type(
 iree_status_t loom_parse_format_result_type_list(
     loom_parser_t* parser, const loom_op_vtable_t* vtable,
     loom_token_t op_name_token, const loom_format_element_t* element,
-    loom_parsed_op_t* parsed, bool is_symbol_definition) {
-  if (is_symbol_definition) {
-    return loom_parse_format_symbol_result_type_list(parser, element, parsed);
+    loom_parsed_op_t* parsed, bool defines_signature_results) {
+  if (defines_signature_results) {
+    return loom_parse_format_signature_result_type_list(parser, element,
+                                                        parsed);
   }
 
   IREE_RETURN_IF_ERROR(loom_parse_format_prepare_result_scope(parser, parsed));

@@ -705,6 +705,12 @@ def _normalize_result_names(
         raise TypeError(
             f"{op.name}: pass only one of 'name', 'names', or 'result_names'"
         )
+    if op.has_signature_only_results:
+        if supplied:
+            raise TypeError(
+                f"{op.name}: signature-only results cannot be named as SSA values"
+            )
+        return None
     if not op.results:
         if supplied:
             raise TypeError(f"{op.name}: result names were supplied for a void op")

@@ -131,6 +131,16 @@ def test_separate_result_types_follow_declared_fields() -> None:
     assert block.ops[0].results == [result.id for result in results]
 
 
+def test_signature_only_results_are_retained_without_ssa_values() -> None:
+    block, builder = _builder()
+
+    results = builder.test.signature_sink(results=[INDEX, I32])
+
+    assert results is None
+    assert len(block.ops) == 1
+    assert len(block.ops[0].results) == 2
+
+
 def test_dynamic_builder_inserts_module_scope_operation_without_block() -> None:
     module, builder = module_builder(ops=ALL_TEST_OPS)
 

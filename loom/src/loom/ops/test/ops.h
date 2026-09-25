@@ -313,7 +313,8 @@ enum {
   LOOM_OP_TEST_MEMORY_FENCE = LOOM_OP_KIND(LOOM_DIALECT_TEST, 117),
   LOOM_OP_TEST_RESULT_PAIR = LOOM_OP_KIND(LOOM_DIALECT_TEST, 118),
   LOOM_OP_TEST_BLOCK_ARG_GROUPS = LOOM_OP_KIND(LOOM_DIALECT_TEST, 119),
-  LOOM_OP_TEST_COUNT_ = 120,
+  LOOM_OP_TEST_SIGNATURE_SINK = LOOM_OP_KIND(LOOM_DIALECT_TEST, 120),
+  LOOM_OP_TEST_COUNT_ = 121,
 };
 
 // Synthetic flags for TemplateParamFlags parser/printer coverage.
@@ -2395,6 +2396,22 @@ iree_status_t loom_test_block_arg_groups_build(
     iree_host_size_t actual_arg_types_count,
     const loom_type_t* expected_arg_types,
     iree_host_size_t expected_arg_types_count,
+    loom_location_id_t location,
+    loom_op_t** out_op);
+
+// LOOM_OP_TEST_SIGNATURE_SINK: Test terminal-style signature results that retain result identities for dependent types without exposing SSA values to following ops.
+// test.signature_sink() : () -> (%width: index, vector<[%width]xf32>)
+LOOM_DEFINE_ISA(loom_test_signature_sink_isa, LOOM_OP_TEST_SIGNATURE_SINK)
+LOOM_DEFINE_VARIADIC_OPERANDS(loom_test_signature_sink_operands, 0)
+LOOM_DEFINE_VARIADIC_RESULTS(loom_test_signature_sink_results, 0)
+iree_status_t loom_test_signature_sink_build(
+    loom_builder_t* builder,
+    loom_may_consume const loom_value_id_t* operands,
+    iree_host_size_t operands_count,
+    const loom_type_t* result_types,
+    iree_host_size_t result_count,
+    const loom_tied_result_t* tied_results,
+    iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
 
