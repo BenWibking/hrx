@@ -43,6 +43,22 @@ enum loom_testbench_value_kind_e {
   LOOM_TESTBENCH_VALUE_KIND_ENTROPY = 3,
 };
 
+// Canonical recipe-relative identity for a materialized buffer reference.
+//
+// Physical buffers differ between target and oracle realizations. A traceable
+// reference instead names the authored allocation value and its accessible
+// byte range within that allocation.
+typedef struct loom_testbench_buffer_reference_t {
+  // True when the remaining fields identify an authored allocation.
+  bool is_traceable;
+  // SSA value defining the root allocation in the scenario recipe.
+  loom_value_id_t allocation_value_id;
+  // Byte origin within the logical root allocation.
+  iree_device_size_t byte_offset;
+  // Accessible byte extent beginning at |byte_offset|.
+  iree_device_size_t byte_length;
+} loom_testbench_buffer_reference_t;
+
 typedef struct loom_testbench_value_t {
   // Active payload discriminator.
   loom_testbench_value_kind_t kind;
@@ -54,6 +70,9 @@ typedef struct loom_testbench_value_t {
     // Immutable deterministic entropy identity.
     loom_testbench_entropy_t entropy;
   };
+  // Recipe-relative identity when |kind| is BUFFER and the reference can be
+  // traced to an authored allocation.
+  loom_testbench_buffer_reference_t buffer_reference;
 } loom_testbench_value_t;
 
 typedef struct loom_testbench_value_slot_t {
@@ -160,6 +179,11 @@ bool loom_testbench_value_is_entropy(const loom_testbench_value_t* value);
 // Returns the HAL buffer view carried by |value|, or NULL when none exists.
 iree_hal_buffer_view_t* loom_testbench_value_buffer_view(
     const loom_testbench_value_t* value);
+
+// Assigns a canonical recipe-relative identity to a materialized buffer.
+void loom_testbench_value_set_buffer_reference(
+    loom_value_id_t allocation_value_id, iree_device_size_t byte_offset,
+    iree_device_size_t byte_length, loom_testbench_value_t* value);
 
 // Retains |source| into |out_value|. The caller must deinitialize |out_value|.
 void loom_testbench_value_retain(const loom_testbench_value_t* source,

@@ -59,6 +59,8 @@ typedef struct loom_vm_testbench_t {
   iree_vm_variant_t* arguments;
   // Result variants within the IO slab, sized from the immutable case plan.
   iree_vm_variant_t* results;
+  // Retained imported buffer arguments used to trace returned references.
+  iree_vm_buffer_t** argument_buffers;
   // Borrowed Core descriptors whose provider lives with the linked VM runtime.
   iree_vm_ref_types_t ref_types;
 } loom_vm_testbench_t;

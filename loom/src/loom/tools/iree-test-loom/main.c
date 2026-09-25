@@ -724,6 +724,7 @@ int iree_test_loom_main(int argc, char** argv,
   loom_sanitizer_options_t sanitizer_options = {0};
   loom_run_hal_testbench_context_t hal_context = {0};
   loom_run_hal_testbench_scenario_profile_t hal_scenario_profile = {0};
+  iree_hal_allocator_t* host_device_allocator = NULL;
   loom_testbench_device_event_capture_t device_event_capture = {0};
   bool device_event_capture_initialized = false;
   iree_arena_allocator_t plan_arena;
@@ -973,6 +974,15 @@ int iree_test_loom_main(int argc, char** argv,
                 &hal_scenario_profile);
       }
     }
+    if (iree_status_is_ok(status) && selected_scenario_count != 0 &&
+        execution_options.materializer.device_allocator == NULL) {
+      status =
+          iree_hal_allocator_create_heap(IREE_SV("iree-test-loom"), allocator,
+                                         allocator, &host_device_allocator);
+      if (iree_status_is_ok(status)) {
+        execution_options.materializer.device_allocator = host_device_allocator;
+      }
+    }
     iree_host_size_t sample_count = 0;
     iree_host_size_t failed_sample_count = 0;
     iree_host_size_t trial_count = 0;
@@ -1079,6 +1089,7 @@ int iree_test_loom_main(int argc, char** argv,
   iree_string_builder_deinitialize(&sample_output);
   iree_arena_deinitialize(&execution_arena);
   iree_arena_deinitialize(&plan_arena);
+  iree_hal_allocator_release(host_device_allocator);
   loom_run_hal_testbench_context_deinitialize(&hal_context);
   loom_tooling_config_set_deinitialize(&config_set);
   if (device_event_capture_initialized) {

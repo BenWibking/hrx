@@ -23,6 +23,27 @@
           "\"trial_index\":1,\"trial_ordinal\":1,\"passed\":true"
         ]
       }
+    },
+    {
+      "name": "compares returned VM references by recipe identity",
+      "run": {
+        "tool": "iree-test-loom",
+        "args": [
+          "{srcdir}/testdata/scenario_cases.loom",
+          "--case=@returned_reference_vm"
+        ]
+      },
+      "stdout": {
+        "contains": [
+          "\"scenario_count\":1",
+          "\"trial_count\":2",
+          "\"failed_trial_count\":0",
+          "\"scenario\":\"returned_reference_vm\",\"action\":\"compare\"",
+          "\"trial_index\":0,\"trial_ordinal\":0,\"passed\":true",
+          "\"trial_index\":1,\"trial_ordinal\":0,\"passed\":true",
+          "\"expectation_count\":3,\"passed_count\":3,\"failure_count\":0"
+        ]
+      }
     }
   ]
 }

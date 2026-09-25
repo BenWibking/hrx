@@ -475,6 +475,18 @@ iree_hal_buffer_view_t* loom_testbench_value_buffer_view(
   return value->buffer.buffer_view;
 }
 
+void loom_testbench_value_set_buffer_reference(
+    loom_value_id_t allocation_value_id, iree_device_size_t byte_offset,
+    iree_device_size_t byte_length, loom_testbench_value_t* value) {
+  IREE_ASSERT(loom_testbench_value_is_buffer(value));
+  value->buffer_reference = (loom_testbench_buffer_reference_t){
+      .is_traceable = true,
+      .allocation_value_id = allocation_value_id,
+      .byte_offset = byte_offset,
+      .byte_length = byte_length,
+  };
+}
+
 void loom_testbench_value_retain(const loom_testbench_value_t* source,
                                  loom_testbench_value_t* out_value) {
   *out_value = (loom_testbench_value_t){0};
@@ -1361,6 +1373,11 @@ static iree_status_t loom_testbench_materialize_generated_source(
   iree_status_t status =
       loom_testbench_value_set_buffer_view_move(buffer_view, &value);
   if (iree_status_is_ok(status)) {
+    loom_testbench_value_set_buffer_reference(
+        source->value_id, /*byte_offset=*/0,
+        iree_hal_buffer_view_byte_length(buffer_view), &value);
+  }
+  if (iree_status_is_ok(status)) {
     status =
         loom_testbench_value_table_assign_move(table, source->value_id, &value);
   }
@@ -1469,6 +1486,11 @@ static iree_status_t loom_testbench_materialize_file_read_npy(
   loom_testbench_value_t value = {0};
   status = loom_testbench_value_set_buffer_view_move(buffer_view, &value);
   if (iree_status_is_ok(status)) {
+    loom_testbench_value_set_buffer_reference(
+        source->value_id, /*byte_offset=*/0,
+        iree_hal_buffer_view_byte_length(buffer_view), &value);
+  }
+  if (iree_status_is_ok(status)) {
     status =
         loom_testbench_value_table_assign_move(table, source->value_id, &value);
   }
@@ -1555,6 +1577,26 @@ static iree_status_t loom_testbench_materialize_tensor_view(
   loom_testbench_value_t value = {0};
   if (iree_status_is_ok(status)) {
     status = loom_testbench_value_set_buffer_view_move(buffer_view, &value);
+  }
+  iree_device_size_t reference_byte_offset = 0;
+  if (iree_status_is_ok(status) &&
+      !source_value->buffer_reference.is_traceable) {
+    status = iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "check.tensor.view source has no logical allocation identity");
+  }
+  if (iree_status_is_ok(status) &&
+      !iree_device_size_checked_add(source_value->buffer_reference.byte_offset,
+                                    source->tensor_view.byte_offset,
+                                    &reference_byte_offset)) {
+    status = iree_make_status(
+        IREE_STATUS_OUT_OF_RANGE,
+        "check.tensor.view logical allocation byte offset overflows");
+  }
+  if (iree_status_is_ok(status)) {
+    loom_testbench_value_set_buffer_reference(
+        source_value->buffer_reference.allocation_value_id,
+        reference_byte_offset, result_byte_length, &value);
   }
   if (iree_status_is_ok(status)) {
     status =

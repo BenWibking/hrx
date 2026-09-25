@@ -294,6 +294,77 @@ check.case @scalar_mismatch {
   loom_module_free(module);
 }
 
+TEST_F(ExpectationTest, ComparesBufferReferencesByLogicalIdentity) {
+  loom_module_t* module = nullptr;
+  IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("buffer_reference"),
+                                      &block_pool_, nullptr, host_allocator_,
+                                      &module));
+  loom_testbench_expectation_plan_t expectation = {};
+  expectation.kind = LOOM_TESTBENCH_EXPECTATION_EQUAL;
+  expectation.type = loom_type_buffer();
+  IREE_ASSERT_OK(loom_module_define_value(module, expectation.type,
+                                          &expectation.actual_value_id));
+  IREE_ASSERT_OK(loom_module_define_value(module, expectation.type,
+                                          &expectation.expected_value_id));
+  loom_testbench_case_plan_t case_plan = {};
+  case_plan.expectations = &expectation;
+  case_plan.expectation_count = 1;
+  loom_testbench_value_table_t table = {};
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
+      module, &case_plan, host_allocator_, &table));
+  loom_testbench_expectation_report_t report = {};
+  IREE_ASSERT_OK(loom_testbench_expectation_report_initialize(
+      1, host_allocator_, &report));
+
+  auto compare = [&](loom_value_id_t actual_allocation,
+                     iree_device_size_t actual_offset,
+                     loom_value_id_t expected_allocation,
+                     iree_device_size_t expected_offset) {
+    loom_testbench_value_table_reset(&table);
+    loom_testbench_value_t actual = {};
+    actual.kind = LOOM_TESTBENCH_VALUE_KIND_BUFFER;
+    actual.buffer = {};
+    loom_testbench_value_set_buffer_reference(actual_allocation, actual_offset,
+                                              /*byte_length=*/64, &actual);
+    loom_testbench_value_t expected = {};
+    expected.kind = LOOM_TESTBENCH_VALUE_KIND_BUFFER;
+    expected.buffer = {};
+    loom_testbench_value_set_buffer_reference(
+        expected_allocation, expected_offset, /*byte_length=*/64, &expected);
+    IREE_ASSERT_OK(loom_testbench_value_table_assign_move(
+        &table, expectation.actual_value_id, &actual));
+    IREE_ASSERT_OK(loom_testbench_value_table_assign_move(
+        &table, expectation.expected_value_id, &expected));
+    IREE_ASSERT_OK(loom_testbench_evaluate_case_expectations(&case_plan, &table,
+                                                             nullptr, &report));
+  };
+
+  compare(/*actual_allocation=*/7, /*actual_offset=*/16,
+          /*expected_allocation=*/7, /*expected_offset=*/16);
+  EXPECT_EQ(report.passed_count, 1u);
+  EXPECT_EQ(report.failure_count, 0u);
+
+  compare(/*actual_allocation=*/8, /*actual_offset=*/16,
+          /*expected_allocation=*/7, /*expected_offset=*/16);
+  ASSERT_EQ(report.failure_count, 1u);
+  EXPECT_THAT(FailureDetail(report, report.failures[0]),
+              ::testing::HasSubstr("allocation=8"));
+  EXPECT_THAT(FailureDetail(report, report.failures[0]),
+              ::testing::HasSubstr("allocation=7"));
+
+  compare(/*actual_allocation=*/7, /*actual_offset=*/20,
+          /*expected_allocation=*/7, /*expected_offset=*/16);
+  ASSERT_EQ(report.failure_count, 1u);
+  EXPECT_THAT(FailureDetail(report, report.failures[0]),
+              ::testing::HasSubstr("offset=20"));
+  EXPECT_THAT(FailureDetail(report, report.failures[0]),
+              ::testing::HasSubstr("offset=16"));
+
+  loom_testbench_expectation_report_deinitialize(&report);
+  loom_testbench_value_table_deinitialize(&table);
+  loom_module_free(module);
+}
+
 TEST_F(ExpectationTest, EvaluatesBufferShapeAndCloseExpectations) {
   loom_module_t* module = ParseModule(R"(
 check.case @buffer_expectations {

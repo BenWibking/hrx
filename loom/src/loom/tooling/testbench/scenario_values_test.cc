@@ -220,6 +220,25 @@ TEST_F(ScenarioValuesTest, MaterializesIndependentPairedAliasGraphs) {
   ASSERT_TRUE(loom_testbench_value_is_buffer(oracle_storage));
   ASSERT_TRUE(loom_testbench_value_is_buffer(oracle_tail));
 
+  EXPECT_TRUE(target_storage->buffer_reference.is_traceable);
+  EXPECT_TRUE(target_tail->buffer_reference.is_traceable);
+  EXPECT_TRUE(oracle_storage->buffer_reference.is_traceable);
+  EXPECT_TRUE(oracle_tail->buffer_reference.is_traceable);
+  EXPECT_EQ(target_storage->buffer_reference.allocation_value_id,
+            trial.value_sources[3].value_id);
+  EXPECT_EQ(oracle_storage->buffer_reference.allocation_value_id,
+            trial.value_sources[3].value_id);
+  EXPECT_EQ(target_tail->buffer_reference.allocation_value_id,
+            trial.value_sources[3].value_id);
+  EXPECT_EQ(oracle_tail->buffer_reference.allocation_value_id,
+            trial.value_sources[3].value_id);
+  EXPECT_EQ(target_storage->buffer_reference.byte_offset, 0u);
+  EXPECT_EQ(oracle_storage->buffer_reference.byte_offset, 0u);
+  EXPECT_EQ(target_tail->buffer_reference.byte_offset, 8u);
+  EXPECT_EQ(oracle_tail->buffer_reference.byte_offset, 8u);
+  EXPECT_EQ(target_tail->buffer_reference.byte_length, 8u);
+  EXPECT_EQ(oracle_tail->buffer_reference.byte_length, 8u);
+
   EXPECT_EQ(iree_hal_buffer_test_overlap(
                 target_storage->buffer.buffer, 0, IREE_HAL_WHOLE_BUFFER,
                 target_tail->buffer.buffer, 0, IREE_HAL_WHOLE_BUFFER),

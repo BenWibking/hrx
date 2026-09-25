@@ -279,11 +279,15 @@ static iree_status_t loom_vm_testbench_compile(
                                       testbench->host_allocator, out_contents);
   }
   if (iree_status_is_ok(status) && artifact_emitted) {
-    iree_host_size_t total_size = 0, results_offset = 0;
+    iree_host_size_t total_size = 0;
+    iree_host_size_t results_offset = 0;
+    iree_host_size_t argument_buffers_offset = 0;
     status = IREE_STRUCT_LAYOUT(
         0, &total_size,
         IREE_STRUCT_FIELD(max_arguments, iree_vm_variant_t, NULL),
-        IREE_STRUCT_FIELD(max_results, iree_vm_variant_t, &results_offset));
+        IREE_STRUCT_FIELD(max_results, iree_vm_variant_t, &results_offset),
+        IREE_STRUCT_FIELD(max_arguments, iree_vm_buffer_t*,
+                          &argument_buffers_offset));
     if (iree_status_is_ok(status) && total_size) {
       status = iree_allocator_malloc(testbench->host_allocator, total_size,
                                      (void**)&testbench->arguments);
@@ -291,6 +295,11 @@ static iree_status_t loom_vm_testbench_compile(
         testbench->results =
             (iree_vm_variant_t*)((uint8_t*)testbench->arguments +
                                  results_offset);
+        testbench->argument_buffers =
+            (iree_vm_buffer_t**)((uint8_t*)testbench->arguments +
+                                 argument_buffers_offset);
+        memset(testbench->argument_buffers, 0,
+               max_arguments * sizeof(*testbench->argument_buffers));
       }
     }
     if (!iree_status_is_ok(status)) {
@@ -418,45 +427,123 @@ static void loom_vm_testbench_release_vm_buffer(void* user_data,
   iree_vm_buffer_release(user_data);
 }
 
+static const uint8_t* loom_vm_testbench_buffer_data(iree_vm_buffer_t* buffer) {
+  const uint8_t* data = (const uint8_t*)iree_vm_buffer_const_data(buffer);
+  return data ? data : (const uint8_t*)iree_vm_buffer_data(buffer);
+}
+
+static iree_status_t loom_vm_testbench_trace_buffer_reference(
+    iree_vm_buffer_t* result_buffer, iree_host_size_t input_count,
+    const loom_testbench_value_t* inputs,
+    iree_vm_buffer_t* const* argument_buffers,
+    loom_testbench_buffer_reference_t* out_reference) {
+  *out_reference = (loom_testbench_buffer_reference_t){0};
+  const iree_host_size_t result_length = iree_vm_buffer_length(result_buffer);
+  const uint8_t* result_data = loom_vm_testbench_buffer_data(result_buffer);
+  for (iree_host_size_t input_index = 0; input_index < input_count;
+       ++input_index) {
+    iree_vm_buffer_t* input_buffer = argument_buffers[input_index];
+    const loom_testbench_buffer_reference_t* input_reference =
+        &inputs[input_index].buffer_reference;
+    if (input_buffer == NULL || !input_reference->is_traceable) {
+      continue;
+    }
+
+    iree_host_size_t relative_offset = 0;
+    if (result_buffer != input_buffer) {
+      const uint8_t* input_data = loom_vm_testbench_buffer_data(input_buffer);
+      const iree_host_size_t input_length = iree_vm_buffer_length(input_buffer);
+      const uintptr_t result_address = (uintptr_t)result_data;
+      const uintptr_t input_address = (uintptr_t)input_data;
+      if (result_data == NULL || input_data == NULL ||
+          result_address < input_address) {
+        continue;
+      }
+      const uintptr_t offset = result_address - input_address;
+      if (offset > input_length || result_length > input_length - offset) {
+        continue;
+      }
+      relative_offset = (iree_host_size_t)offset;
+    }
+
+    iree_device_size_t byte_offset = 0;
+    if (!iree_device_size_checked_add(input_reference->byte_offset,
+                                      relative_offset, &byte_offset)) {
+      return iree_make_status(
+          IREE_STATUS_OUT_OF_RANGE,
+          "returned VM buffer logical allocation byte offset overflows");
+    }
+    const loom_testbench_buffer_reference_t candidate = {
+        .is_traceable = true,
+        .allocation_value_id = input_reference->allocation_value_id,
+        .byte_offset = byte_offset,
+        .byte_length = result_length,
+    };
+    if (!out_reference->is_traceable) {
+      *out_reference = candidate;
+    } else if (out_reference->allocation_value_id !=
+                   candidate.allocation_value_id ||
+               out_reference->byte_offset != candidate.byte_offset ||
+               out_reference->byte_length != candidate.byte_length) {
+      return iree_make_status(
+          IREE_STATUS_FAILED_PRECONDITION,
+          "returned VM buffer maps to inconsistent logical allocations");
+    }
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_vm_testbench_export_buffer(
     loom_vm_testbench_t* testbench, iree_vm_variant_t result,
+    iree_host_size_t input_count, const loom_testbench_value_t* inputs,
+    iree_vm_buffer_t* const* argument_buffers,
     loom_testbench_value_t* out_value) {
   iree_vm_buffer_t* source = NULL;
   IREE_RETURN_IF_ERROR(iree_vm_buffer_ptr_from_variant_borrowed(
       &testbench->ref_types, result, &source));
+  if (source == NULL) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "VM function returned a null buffer reference");
+  }
+  loom_testbench_buffer_reference_t reference = {0};
+  IREE_RETURN_IF_ERROR(loom_vm_testbench_trace_buffer_reference(
+      source, input_count, inputs, argument_buffers, &reference));
+
   iree_hal_buffer_t* buffer = NULL;
   const iree_host_size_t length = iree_vm_buffer_length(source);
-  if (source) {
-    const iree_vm_buffer_access_flags_t vm_access =
-        iree_vm_buffer_access(source);
-    iree_hal_memory_access_t access = IREE_HAL_MEMORY_ACCESS_UNALIGNED;
-    if (iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_READ)) {
-      access |= IREE_HAL_MEMORY_ACCESS_READ;
-    }
-    if (iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_WRITE)) {
-      access |= IREE_HAL_MEMORY_ACCESS_WRITE;
-    }
-    void* data = iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_WRITE)
-                     ? iree_vm_buffer_data(source)
-                     : (void*)iree_vm_buffer_const_data(source);
-    IREE_RETURN_IF_ERROR(iree_hal_heap_buffer_wrap(
-        iree_hal_buffer_placement_undefined(),
-        IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_COHERENT,
-        access,
-        IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED |
-            IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
-        length, iree_make_byte_span(data, length),
-        (iree_hal_buffer_release_callback_t){
-            .fn = loom_vm_testbench_release_vm_buffer, .user_data = source},
-        testbench->host_allocator, &buffer));
-    iree_vm_buffer_retain(source);
+  const iree_vm_buffer_access_flags_t vm_access = iree_vm_buffer_access(source);
+  iree_hal_memory_access_t access = IREE_HAL_MEMORY_ACCESS_UNALIGNED;
+  if (iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_READ)) {
+    access |= IREE_HAL_MEMORY_ACCESS_READ;
   }
+  if (iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_WRITE)) {
+    access |= IREE_HAL_MEMORY_ACCESS_WRITE;
+  }
+  void* data = iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_WRITE)
+                   ? iree_vm_buffer_data(source)
+                   : (void*)iree_vm_buffer_const_data(source);
+  IREE_RETURN_IF_ERROR(iree_hal_heap_buffer_wrap(
+      iree_hal_buffer_placement_undefined(),
+      IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_COHERENT,
+      access,
+      IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED |
+          IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
+      length, iree_make_byte_span(data, length),
+      (iree_hal_buffer_release_callback_t){
+          .fn = loom_vm_testbench_release_vm_buffer, .user_data = source},
+      testbench->host_allocator, &buffer));
+  iree_vm_buffer_retain(source);
   *out_value = (loom_testbench_value_t){
       .kind = LOOM_TESTBENCH_VALUE_KIND_BUFFER,
       .buffer = {.kind = IREE_TOOLING_BUFFER_BINDING_KIND_STORAGE_BUFFER,
                  .buffer = buffer,
                  .byte_length = length},
   };
+  if (reference.is_traceable) {
+    loom_testbench_value_set_buffer_reference(reference.allocation_value_id,
+                                              reference.byte_offset,
+                                              reference.byte_length, out_value);
+  }
   return iree_ok_status();
 }
 
@@ -484,12 +571,20 @@ static iree_status_t loom_vm_testbench_invoke_prepared(
       &callee));
   iree_vm_variant_t* arguments = testbench->arguments;
   iree_vm_variant_t* results = testbench->results;
+  iree_vm_buffer_t** argument_buffers = testbench->argument_buffers;
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0; i < parameter_count && iree_status_is_ok(status);
        ++i) {
     if (inputs[i].kind == LOOM_TESTBENCH_VALUE_KIND_BUFFER) {
       status = loom_vm_testbench_import_buffer(testbench, &inputs[i].buffer,
                                                &arguments[i]);
+      if (iree_status_is_ok(status)) {
+        status = iree_vm_buffer_ptr_from_variant_borrowed(
+            &testbench->ref_types, arguments[i], &argument_buffers[i]);
+      }
+      if (iree_status_is_ok(status)) {
+        iree_vm_buffer_retain(argument_buffers[i]);
+      }
     } else if (inputs[i].kind != LOOM_TESTBENCH_VALUE_KIND_SCALAR) {
       status = iree_make_status(
           IREE_STATUS_UNIMPLEMENTED,
@@ -558,8 +653,9 @@ static iree_status_t loom_vm_testbench_invoke_prepared(
   for (iree_host_size_t i = 0; i < result_count && iree_status_is_ok(status);
        ++i) {
     if (iree_vm_variant_is_ref(results[i])) {
-      status = loom_vm_testbench_export_buffer(testbench, results[i],
-                                               &out_results[i]);
+      status = loom_vm_testbench_export_buffer(
+          testbench, results[i], input_count, inputs, argument_buffers,
+          &out_results[i]);
       continue;
     }
     out_results[i].kind = LOOM_TESTBENCH_VALUE_KIND_SCALAR;
@@ -635,6 +731,10 @@ static iree_status_t loom_vm_testbench_invoke_prepared(
   }
   iree_vm_variant_span_reset(
       iree_vm_variant_span_from_ptr(results, result_count));
+  for (iree_host_size_t i = 0; i < input_count; ++i) {
+    iree_vm_buffer_release(argument_buffers[i]);
+    argument_buffers[i] = NULL;
+  }
   return status;
 }
 

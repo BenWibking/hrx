@@ -539,10 +539,58 @@ static iree_status_t loom_testbench_compare_buffer_close(
   return status;
 }
 
-static iree_status_t loom_testbench_compare_equal(
+static iree_status_t loom_testbench_compare_buffer_reference_equal(
     const loom_testbench_value_t* actual,
     const loom_testbench_value_t* expected,
     iree_string_builder_t* detail_builder, bool* out_matched) {
+  *out_matched = false;
+  if (!loom_testbench_value_is_buffer(actual) ||
+      !loom_testbench_value_is_buffer(expected)) {
+    return loom_testbench_append_value_kind_mismatch(actual, expected,
+                                                     detail_builder);
+  }
+  const loom_testbench_buffer_reference_t* actual_reference =
+      &actual->buffer_reference;
+  const loom_testbench_buffer_reference_t* expected_reference =
+      &expected->buffer_reference;
+  if (!actual_reference->is_traceable || !expected_reference->is_traceable) {
+    return iree_string_builder_append_format(
+        detail_builder,
+        "buffer reference is not traceable to a trial allocation "
+        "(actual=%s, expected=%s)",
+        actual_reference->is_traceable ? "traceable" : "untraceable",
+        expected_reference->is_traceable ? "traceable" : "untraceable");
+  }
+  *out_matched =
+      actual_reference->allocation_value_id ==
+          expected_reference->allocation_value_id &&
+      actual_reference->byte_offset == expected_reference->byte_offset &&
+      actual_reference->byte_length == expected_reference->byte_length;
+  if (*out_matched) {
+    return iree_ok_status();
+  }
+  return iree_string_builder_append_format(
+      detail_builder,
+      "actual buffer reference (allocation=%u, offset=%" PRIu64
+      ", length=%" PRIu64
+      ") does not match expected (allocation=%u, offset=%" PRIu64
+      ", length=%" PRIu64 ")",
+      (unsigned)actual_reference->allocation_value_id,
+      actual_reference->byte_offset, actual_reference->byte_length,
+      (unsigned)expected_reference->allocation_value_id,
+      expected_reference->byte_offset, expected_reference->byte_length);
+}
+
+static iree_status_t loom_testbench_compare_equal(
+    const loom_testbench_expectation_plan_t* expectation,
+    const loom_testbench_value_t* actual,
+    const loom_testbench_value_t* expected,
+    iree_string_builder_t* detail_builder, bool* out_matched) {
+  if (loom_type_is_buffer(expectation->type) ||
+      loom_type_is_view(expectation->type)) {
+    return loom_testbench_compare_buffer_reference_equal(
+        actual, expected, detail_builder, out_matched);
+  }
   if (loom_testbench_value_is_scalar(actual) &&
       loom_testbench_value_is_scalar(expected)) {
     return loom_testbench_compare_scalar_equal(actual, expected, detail_builder,
@@ -1537,8 +1585,8 @@ static iree_status_t loom_testbench_evaluate_single_expectation(
 
   switch (expectation->kind) {
     case LOOM_TESTBENCH_EXPECTATION_EQUAL:
-      return loom_testbench_compare_equal(actual, expected, detail_builder,
-                                          out_matched);
+      return loom_testbench_compare_equal(expectation, actual, expected,
+                                          detail_builder, out_matched);
     case LOOM_TESTBENCH_EXPECTATION_BITWISE:
       return loom_testbench_compare_bitwise(actual, expected, detail_builder,
                                             out_matched);
