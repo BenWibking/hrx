@@ -43,6 +43,7 @@
 #include "loom/transforms/loop/loop_fusion.h"
 #include "loom/transforms/math/legalize.h"
 #include "loom/transforms/ownership/ownership_lifetime.h"
+#include "loom/transforms/pipeline/outline.h"
 #include "loom/transforms/scf/scf_pipeline.h"
 #include "loom/transforms/scf/scf_to_cfg.h"
 #include "loom/transforms/scf/scf_unroll.h"
@@ -509,6 +510,11 @@ static const loom_pass_descriptor_t kBuiltinPassDescriptors[] = {
         .key = IREE_SVL("normalize-kernel-resources"),
         .info = loom_normalize_kernel_resources_pass_info,
         .function_run = loom_normalize_kernel_resources_run,
+    },
+    {
+        .key = IREE_SVL("outline-pipeline-strands"),
+        .info = loom_pipeline_outline_pass_info,
+        .module_run = loom_pipeline_outline_run,
     },
     {
         .key = IREE_SVL("ownership-lifetime"),

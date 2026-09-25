@@ -361,6 +361,7 @@ loom_cc_library(
     loom::transforms::loop::loop_fusion
     loom::transforms::math::legalize
     loom::transforms::ownership::ownership_lifetime
+    loom::transforms::pipeline::outline
     loom::transforms::scf::scf_pipeline
     loom::transforms::scf::scf_to_cfg
     loom::transforms::scf::scf_unroll
