@@ -69,16 +69,17 @@ exact selected program, workload, tool identity, and evidence boundary.
 
 ## Correctness and performance
 
-`iree-test-loom` executes `check.case` records and emits structured correctness
-results. `iree-benchmark-loom` plans `check.benchmark` records, gates timing on
-the selected case's correctness, and records measurement evidence. Keeping
-those tasks separate prevents a fast incorrect candidate from becoming a
-performance result.
+`iree-test-loom` executes `check.case` and `check.scenario` records and emits
+structured correctness results. `iree-benchmark-loom` plans `check.benchmark`
+records, gates timing on the selected case or scenario correctness, and records
+measurement evidence. Keeping those tasks separate prevents a fast incorrect
+candidate from becoming a performance result.
 
 | Task | Workflow |
 | --- | --- |
-| Execute every checked case | [Test correctness](test-correctness.md#run-every-case) |
+| Execute every correctness record | [Test correctness](test-correctness.md#run-every-correctness-record) |
 | Select one case or sample | [Test correctness](test-correctness.md#select-a-case-or-sample) |
+| Compare a target against an oracle | [Test correctness](test-correctness.md#compare-a-target-against-its-oracle) |
 | Test a wrapper against bytecode libraries | [Test correctness](test-correctness.md#link-test-wrappers-to-libraries) |
 | Add target-pipeline sanitizers | [Test correctness](test-correctness.md#instrument-a-test-run) |
 | Inspect a benchmark plan without execution | [Benchmark checked work](benchmark.md#inspect-the-plan-first) |
