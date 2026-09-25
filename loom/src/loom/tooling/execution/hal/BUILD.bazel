@@ -187,6 +187,7 @@ loom_cc_library(
         "//loom/src/loom/ops/func",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/tooling/execution:benchmark",
         "//loom/src/loom/tooling/testbench:scenario_executor",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",

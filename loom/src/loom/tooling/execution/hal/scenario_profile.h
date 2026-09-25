@@ -42,7 +42,8 @@ void loom_run_hal_testbench_scenario_profile_initialize(
 // product; the authored module remains unchanged for oracle execution. Product
 // execution records every call in a bounded batch into one command sequence,
 // stages each distinct host allocation once while preserving aliases, submits
-// once, and reads completed state back.
+// once, and reads completed state back. Product benchmarking reuses that same
+// command sequence after target-local staging and omits readback.
 loom_testbench_execution_profile_t
 loom_run_hal_testbench_scenario_execution_profile(
     loom_run_hal_testbench_scenario_profile_t* profile);

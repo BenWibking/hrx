@@ -286,6 +286,7 @@ loom_cc_library(
     loom::ops::index
     loom::ops::kernel
     loom::ops::op_defs
+    loom::tooling::execution::benchmark
     loom::tooling::testbench::scenario_executor
   PUBLIC
 )
