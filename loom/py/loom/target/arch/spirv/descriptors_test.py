@@ -67,6 +67,7 @@ from loom.target.arch.spirv.scalar_constant import (
     FLOAT_CONSTANT_TYPES,
 )
 from loom.target.arch.spirv.scalar_conversion import (
+    DIRECT_SCALAR_CONVERSIONS,
     INTEGER_VALUE_VIEW_CONVERSIONS,
     LOW_SCALAR_CONVERSIONS,
 )
@@ -75,6 +76,15 @@ from loom.target.arch.spirv.scalar_memory import (
     STORAGE_BUFFER_SCALARS,
 )
 from loom.target.low_descriptors import AsmResultValueType, InstructionClass
+
+
+def test_bfloat16_float32_conversions_are_bidirectional() -> None:
+    conversions = {
+        (row.source_type.source_type, row.result_type.source_type): row
+        for row in DIRECT_SCALAR_CONVERSIONS
+    }
+    assert conversions[("bf16", "f32")].source_op_key == "extf"
+    assert conversions[("f32", "bf16")].source_op_key == "fptrunc"
 
 
 def test_control_barriers_classify_both_execution_scopes() -> None:
