@@ -89,7 +89,7 @@
         },
         {
           "name": "meta.operation-name.loom",
-          "match": "\\b(check)\\.(generate\\.random\\.uniform|expect\\.bitwise|file\\.write\\.npy|file\\.read\\.npy|generate\\.fill|generate\\.iota|expect\\.close|expect\\.equal|expect\\.event|expect\\.shape|param\\.choice|oracle\\.call|param\\.range|tensor\\.view|param\\.seed|benchmark|requires|literal|skip_if|expect|return|case)\\b",
+          "match": "\\b(check)\\.(generate\\.random\\.uniform|expect\\.bitwise|file\\.write\\.npy|file\\.read\\.npy|generate\\.fill|generate\\.iota|expect\\.close|expect\\.equal|expect\\.event|expect\\.shape|param\\.choice|oracle\\.call|param\\.range|tensor\\.view|param\\.seed|benchmark|requires|literal|skip_if|return|case)\\b",
           "captures": {
             "1": {
               "name": "support.namespace.dialect.loom"

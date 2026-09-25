@@ -624,7 +624,7 @@ static bool loom_testbench_plan_invocation(
 static bool loom_testbench_is_expectation_op(const loom_op_t* op) {
   return loom_check_expect_equal_isa(op) || loom_check_expect_bitwise_isa(op) ||
          loom_check_expect_close_isa(op) || loom_check_expect_shape_isa(op) ||
-         loom_check_expect_isa(op) || loom_check_expect_event_isa(op);
+         loom_check_expect_event_isa(op);
 }
 
 static bool loom_testbench_plan_expectation(
@@ -669,14 +669,6 @@ static bool loom_testbench_plan_expectation(
     out_expectation->shape.dimension_value_count = dimensions.count;
     out_expectation->shape.static_dimensions = static_dimensions.i64_array;
     out_expectation->shape.static_dimension_count = static_dimensions.count;
-  } else if (loom_check_expect_isa(op)) {
-    out_expectation->kind = LOOM_TESTBENCH_EXPECTATION_CUSTOM;
-    out_expectation->actual_value_id = loom_check_expect_actual(op);
-    out_expectation->expected_value_id = loom_check_expect_expected(op);
-    out_expectation->custom.provider_id = loom_check_expect_provider(op);
-    out_expectation->custom.provider = loom_testbench_string_from_id(
-        module, out_expectation->custom.provider_id);
-    out_expectation->custom.attrs = loom_check_expect_attrs(op);
   } else if (loom_check_expect_event_isa(op)) {
     out_expectation->kind = LOOM_TESTBENCH_EXPECTATION_EVENT;
     out_expectation->actual_value_id = LOOM_VALUE_ID_INVALID;
@@ -720,10 +712,6 @@ static bool loom_testbench_plan_expectation(
                  module, out_expectation->shape.dimension_value_ids,
                  out_expectation->shape.dimension_value_count);
     }
-    case LOOM_TESTBENCH_EXPECTATION_CUSTOM:
-      return out_expectation->expected_value_id < module->values.count &&
-             out_expectation->custom.provider_id < module->strings.count &&
-             !iree_string_view_is_empty(out_expectation->custom.provider);
     case LOOM_TESTBENCH_EXPECTATION_EVENT:
       return out_expectation->event.provider_id < module->strings.count &&
              !iree_string_view_is_empty(out_expectation->event.provider);

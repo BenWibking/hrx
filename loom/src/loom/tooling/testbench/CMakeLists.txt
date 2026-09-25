@@ -122,7 +122,6 @@ loom_cc_library(
     ::value_materializer
     iree::base
     iree::base::internal
-    iree::base::internal::arena
     iree::hal
     iree::tooling::buffer_view_matchers
     loom::ir

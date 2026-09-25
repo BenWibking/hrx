@@ -16,7 +16,6 @@ void loom_testbench_case_execution_options_initialize(
   loom_testbench_value_materializer_options_initialize(
       &out_options->materializer);
   loom_testbench_invocation_options_initialize(&out_options->invocation);
-  loom_testbench_expectation_options_initialize(&out_options->expectation);
 }
 
 iree_status_t loom_testbench_prepare_case_execution(
@@ -43,12 +42,9 @@ iree_status_t loom_testbench_prepare_case_execution(
 
   out_prepared_case->module = module_plan->module;
   out_prepared_case->case_plan = case_plan;
-  IREE_RETURN_IF_ERROR(loom_testbench_prepare_case_invocations(
+  return loom_testbench_prepare_case_invocations(
       &options->invocation, case_plan, arena,
-      &out_prepared_case->invocation_schedule));
-  return loom_testbench_prepare_case_expectations(
-      &options->expectation, case_plan, arena,
-      &out_prepared_case->expectation_schedule);
+      &out_prepared_case->invocation_schedule);
 }
 
 iree_status_t loom_testbench_case_executor_initialize(
@@ -76,7 +72,7 @@ iree_status_t loom_testbench_case_executor_initialize(
   }
   if (iree_status_is_ok(status)) {
     status = loom_testbench_expectation_report_initialize(
-        prepared_case->expectation_schedule.expectation_count, host_allocator,
+        prepared_case->case_plan->expectation_count, host_allocator,
         &out_executor->expectation_report);
   }
   if (iree_status_is_ok(status) && out_executor->device_event_capture != NULL) {
@@ -148,7 +144,7 @@ iree_status_t loom_testbench_run_case_sample(
           executor->expected_device_event_capacity;
     }
     status = loom_testbench_evaluate_case_expectations(
-        &executor->prepared_case->expectation_schedule, &executor->value_table,
+        executor->prepared_case->case_plan, &executor->value_table,
         &observations, &executor->expectation_report);
   }
 

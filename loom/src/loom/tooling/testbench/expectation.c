@@ -27,81 +27,10 @@ const char* loom_testbench_expectation_kind_name(
       return "close";
     case LOOM_TESTBENCH_EXPECTATION_SHAPE:
       return "shape";
-    case LOOM_TESTBENCH_EXPECTATION_CUSTOM:
-      return "custom";
     case LOOM_TESTBENCH_EXPECTATION_EVENT:
       return "event";
   }
   return "unknown";
-}
-
-void loom_testbench_expectation_options_initialize(
-    loom_testbench_expectation_options_t* out_options) {
-  memset(out_options, 0, sizeof(*out_options));
-  out_options->providers = loom_testbench_expectation_provider_list_empty();
-}
-
-static bool loom_testbench_find_expectation_provider(
-    const loom_testbench_expectation_options_t* options,
-    iree_string_view_t name,
-    loom_testbench_expectation_callback_t* out_evaluate) {
-  for (iree_host_size_t provider_index = 0;
-       provider_index < options->providers.count; ++provider_index) {
-    const loom_testbench_expectation_provider_t* provider =
-        &options->providers.values[provider_index];
-    if (iree_string_view_equal(provider->name, name)) {
-      *out_evaluate = provider->evaluate;
-      return true;
-    }
-  }
-  memset(out_evaluate, 0, sizeof(*out_evaluate));
-  return false;
-}
-
-iree_status_t loom_testbench_prepare_case_expectations(
-    const loom_testbench_expectation_options_t* options,
-    const loom_testbench_case_plan_t* case_plan, iree_arena_allocator_t* arena,
-    loom_testbench_expectation_schedule_t* out_schedule) {
-  memset(out_schedule, 0, sizeof(*out_schedule));
-
-  loom_testbench_prepared_expectation_t* prepared_expectations = NULL;
-  if (case_plan->expectation_count != 0) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        arena, case_plan->expectation_count, sizeof(*prepared_expectations),
-        (void**)&prepared_expectations));
-    memset(prepared_expectations, 0,
-           case_plan->expectation_count * sizeof(*prepared_expectations));
-  }
-
-  for (iree_host_size_t expectation_index = 0;
-       expectation_index < case_plan->expectation_count; ++expectation_index) {
-    const loom_testbench_expectation_plan_t* expectation =
-        &case_plan->expectations[expectation_index];
-    prepared_expectations[expectation_index].plan = expectation;
-    if (expectation->kind != LOOM_TESTBENCH_EXPECTATION_CUSTOM) {
-      continue;
-    }
-
-    loom_testbench_expectation_callback_t evaluate = {0};
-    if (!loom_testbench_find_expectation_provider(
-            options, expectation->custom.provider, &evaluate)) {
-      return iree_make_status(IREE_STATUS_UNAVAILABLE,
-                              "expectation provider `%.*s` is not configured",
-                              (int)expectation->custom.provider.size,
-                              expectation->custom.provider.data);
-    }
-    if (!evaluate.fn) {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "expectation provider `%.*s` has no callback",
-                              (int)expectation->custom.provider.size,
-                              expectation->custom.provider.data);
-    }
-    prepared_expectations[expectation_index].custom_evaluate = evaluate;
-  }
-
-  out_schedule->expectations = prepared_expectations;
-  out_schedule->expectation_count = case_plan->expectation_count;
-  return iree_ok_status();
 }
 
 iree_status_t loom_testbench_expectation_report_initialize(
@@ -133,10 +62,6 @@ void loom_testbench_expectation_report_reset(
   report->passed_count = 0;
   report->failure_count = 0;
   iree_string_builder_reset(&report->detail_builder);
-  if (report->failures) {
-    memset(report->failures, 0,
-           report->failure_capacity * sizeof(*report->failures));
-  }
 }
 
 void loom_testbench_expectation_report_deinitialize(
@@ -1593,11 +1518,10 @@ static iree_status_t loom_testbench_evaluate_event_expectation(
 }
 
 static iree_status_t loom_testbench_evaluate_single_expectation(
-    const loom_testbench_prepared_expectation_t* prepared,
+    const loom_testbench_expectation_plan_t* expectation,
     const loom_testbench_value_table_t* table,
     const loom_testbench_case_sample_observations_t* observations,
     iree_string_builder_t* detail_builder, bool* out_matched) {
-  const loom_testbench_expectation_plan_t* expectation = prepared->plan;
   if (expectation->kind == LOOM_TESTBENCH_EXPECTATION_EVENT) {
     return loom_testbench_evaluate_event_expectation(
         expectation, table->module, observations, detail_builder, out_matched);
@@ -1620,10 +1544,6 @@ static iree_status_t loom_testbench_evaluate_single_expectation(
                                           detail_builder, out_matched);
     case LOOM_TESTBENCH_EXPECTATION_SHAPE:
       return loom_testbench_compare_shape(expectation, table, actual,
-                                          detail_builder, out_matched);
-    case LOOM_TESTBENCH_EXPECTATION_CUSTOM:
-      return prepared->custom_evaluate.fn(prepared->custom_evaluate.user_data,
-                                          expectation, actual, expected,
                                           detail_builder, out_matched);
     case LOOM_TESTBENCH_EXPECTATION_EVENT:
       return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
@@ -1661,40 +1581,40 @@ static iree_status_t loom_testbench_append_expectation_failure(
 }
 
 iree_status_t loom_testbench_evaluate_case_expectations(
-    const loom_testbench_expectation_schedule_t* schedule,
+    const loom_testbench_case_plan_t* case_plan,
     const loom_testbench_value_table_t* table,
     const loom_testbench_case_sample_observations_t* observations,
     loom_testbench_expectation_report_t* report) {
-  if (report->failure_capacity < schedule->expectation_count) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "expectation report capacity %" PRIhsz
-        " is smaller than schedule expectation count %" PRIhsz,
-        report->failure_capacity, schedule->expectation_count);
+  if (report->failure_capacity < case_plan->expectation_count) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "expectation report capacity %" PRIhsz
+                            " is smaller than case expectation count %" PRIhsz,
+                            report->failure_capacity,
+                            case_plan->expectation_count);
   }
 
   loom_testbench_expectation_report_reset(report);
   report->module = table->module;
-  report->expectation_count = schedule->expectation_count;
+  report->expectation_count = case_plan->expectation_count;
   iree_string_builder_t detail_builder;
   iree_string_builder_initialize(report->host_allocator, &detail_builder);
 
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t expectation_index = 0;
        iree_status_is_ok(status) &&
-       expectation_index < schedule->expectation_count;
+       expectation_index < case_plan->expectation_count;
        ++expectation_index) {
-    const loom_testbench_prepared_expectation_t* prepared =
-        &schedule->expectations[expectation_index];
+    const loom_testbench_expectation_plan_t* expectation =
+        &case_plan->expectations[expectation_index];
     bool matched = false;
     iree_string_builder_reset(&detail_builder);
     status = loom_testbench_evaluate_single_expectation(
-        prepared, table, observations, &detail_builder, &matched);
+        expectation, table, observations, &detail_builder, &matched);
     if (iree_status_is_ok(status) && matched) {
       ++report->passed_count;
     } else if (iree_status_is_ok(status)) {
       status = loom_testbench_append_expectation_failure(
-          report, expectation_index, prepared->plan,
+          report, expectation_index, expectation,
           iree_string_builder_view(&detail_builder));
     }
   }

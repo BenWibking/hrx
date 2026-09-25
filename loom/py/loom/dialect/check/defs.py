@@ -569,29 +569,6 @@ check_expect_shape = Op(
     ],
 )
 
-check_expect = Op(
-    "check.expect",
-    group=check_ops,
-    doc="Runs a pluggable custom validator over actual and expected values.",
-    operands=_EXPECT_OPERANDS,
-    attrs=[
-        AttrDef("provider", "string"),
-        AttrDef("attrs", "dict", optional=True),
-    ],
-    constraints=[SameType("actual", "expected")],
-    traits=_CASE_BODY_TRAITS,
-    format=[
-        KeyRef("provider"),
-        *_EXPECT_VALUE_CLAUSES,
-        OptionalGroup([AttrDict("attrs")], anchor="attrs"),
-        COLON,
-        TypeOf("actual"),
-    ],
-    examples=[
-        "check.expect<topk.equal> actual(%actual) expected(%expected) {k = 5} : tensor<1000xf32>",
-    ],
-)
-
 check_expect_event = Op(
     "check.expect.event",
     group=check_ops,
@@ -667,7 +644,6 @@ ALL_CHECK_OPS = (
     check_expect_bitwise,
     check_expect_close,
     check_expect_shape,
-    check_expect,
     check_expect_event,
     check_benchmark,
     # Append new operations to preserve existing bytecode op ordinals.
