@@ -225,12 +225,8 @@ iree_status_t iree_benchmark_loom_append_device_row(
 
 // Appends a selected benchmark plan row.
 iree_status_t iree_benchmark_loom_append_plan_row(
-    const iree_benchmark_loom_run_identity_t* run,
-    const iree_benchmark_loom_candidate_identity_t* candidate,
-    const loom_module_t* module,
-    const loom_testbench_benchmark_plan_t* benchmark_plan,
-    const loom_testbench_case_plan_t* case_plan,
-    const iree_benchmark_loom_benchmark_policy_t* policy,
+    const iree_benchmark_loom_run_identity_t* run, const loom_module_t* module,
+    const iree_benchmark_loom_selected_benchmark_t* selection,
     const iree_benchmark_loom_options_t* options, iree_allocator_t allocator,
     iree_string_builder_t* plan_output);
 

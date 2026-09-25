@@ -21,14 +21,15 @@
 #include "loom/util/json.h"
 
 IREE_FLAG(string, case, "",
-          "Optional check.case symbol to benchmark, such as '@smoke'. Empty "
-          "keeps all cases referenced by selected benchmarks.");
+          "Optional check.case or check.scenario symbol to benchmark, such as "
+          "'@smoke'. Empty keeps all records referenced by selected "
+          "benchmarks.");
 IREE_FLAG(string, benchmark, "",
           "Optional check.benchmark name to execute, such as '@smoke_time'. "
           "Empty executes all benchmarks in source order.");
 IREE_FLAG(int32_t, sample, -1,
           "Optional concrete sample ordinal to execute for selected benchmark "
-          "cases. Negative executes all planned samples.");
+          "records. Negative executes all planned samples.");
 IREE_FLAG(string, measure, "case_end_to_end",
           "Measurement mode. Use 'case_end_to_end', 'end_to_end', or "
           "'dispatch_complete'.");

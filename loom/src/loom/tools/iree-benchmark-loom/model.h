@@ -87,6 +87,8 @@ typedef struct iree_benchmark_loom_selected_benchmark_t {
   const loom_testbench_benchmark_plan_t* benchmark_plan;
   // Borrowed case plan referenced by |benchmark_plan|.
   const loom_testbench_case_plan_t* case_plan;
+  // Borrowed scenario plan referenced by |benchmark_plan|.
+  const loom_testbench_scenario_plan_t* scenario_plan;
   // Effective benchmark policy after command-line overrides.
   iree_benchmark_loom_benchmark_policy_t policy;
 } iree_benchmark_loom_selected_benchmark_t;

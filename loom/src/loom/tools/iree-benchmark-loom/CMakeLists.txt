@@ -180,6 +180,7 @@ loom_cc_test(
     loom::format::text::parser
     loom::ir
     loom::ops::check
+    loom::ops::test
     loom::tooling::testbench
 )
 

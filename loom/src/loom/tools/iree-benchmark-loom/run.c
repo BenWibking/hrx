@@ -444,21 +444,32 @@ iree_status_t iree_benchmark_loom_run_file(
     const loom_testbench_function_call_provider_callback_t function_calls =
         options->configuration->function_call_provider;
     if (iree_status_is_ok(status) && failure_count == 0 && function_calls.fn) {
+      iree_host_size_t selected_case_count = 0;
+      for (iree_host_size_t i = 0; i < work_plan.selected_benchmark_count;
+           ++i) {
+        selected_case_count +=
+            work_plan.selected_benchmarks[i].case_plan != NULL ? 1 : 0;
+      }
       const loom_testbench_case_plan_t** selected_cases = NULL;
-      status = iree_arena_allocate_array(
-          &plan_arena, work_plan.selected_benchmark_count,
-          sizeof(*selected_cases), (void**)&selected_cases);
+      status = iree_arena_allocate_array(&plan_arena, selected_case_count,
+                                         sizeof(*selected_cases),
+                                         (void**)&selected_cases);
       if (iree_status_is_ok(status)) {
+        iree_host_size_t selected_case_index = 0;
         for (iree_host_size_t i = 0; i < work_plan.selected_benchmark_count;
              ++i) {
-          selected_cases[i] = work_plan.selected_benchmarks[i].case_plan;
+          if (work_plan.selected_benchmarks[i].case_plan != NULL) {
+            selected_cases[selected_case_index++] =
+                work_plan.selected_benchmarks[i].case_plan;
+          }
         }
-        execution_options.invocation.function_call =
-            function_calls.fn(function_calls.user_data,
-                              (loom_testbench_case_plan_list_t){
-                                  .values = selected_cases,
-                                  .count = work_plan.selected_benchmark_count},
-                              &run_module.sources.table, &config_set);
+        if (selected_case_count != 0) {
+          execution_options.invocation.function_call = function_calls.fn(
+              function_calls.user_data,
+              (loom_testbench_case_plan_list_t){.values = selected_cases,
+                                                .count = selected_case_count},
+              &run_module.sources.table, &config_set);
+        }
       }
     }
 

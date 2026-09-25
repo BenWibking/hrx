@@ -379,9 +379,7 @@ static iree_status_t iree_benchmark_loom_jsonl_event_sink_emit(
       return iree_benchmark_loom_jsonl_sink_end(
           jsonl_sink,
           iree_benchmark_loom_append_plan_row(
-              event->plan.run, &event->plan.selection->identity,
-              event->plan.module, event->plan.selection->benchmark_plan,
-              event->plan.selection->case_plan, &event->plan.selection->policy,
+              event->plan.run, event->plan.module, event->plan.selection,
               event->plan.options, jsonl_sink->host_allocator,
               iree_benchmark_loom_jsonl_sink_begin(jsonl_sink)));
     case IREE_BENCHMARK_LOOM_EVENT_SUMMARY:

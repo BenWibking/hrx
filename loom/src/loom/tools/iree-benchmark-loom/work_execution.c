@@ -178,6 +178,12 @@ iree_status_t iree_benchmark_loom_run_work_plan(
             inout_failed_benchmark_count);
         break;
       }
+      case IREE_BENCHMARK_LOOM_WORK_ITEM_SCENARIO_TRIAL: {
+        status = iree_make_status(
+            IREE_STATUS_UNIMPLEMENTED,
+            "scenario benchmark execution is not yet implemented");
+        break;
+      }
       case IREE_BENCHMARK_LOOM_WORK_ITEM_NONE:
       default:
         status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,

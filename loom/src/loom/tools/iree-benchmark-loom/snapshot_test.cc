@@ -802,5 +802,85 @@ TEST(BenchmarkSnapshotSinkTest, DryRunReportsPlannedWorkAliases) {
   iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
 }
 
+TEST(BenchmarkSnapshotSinkTest, DryRunReportsScenarioTrialCoordinates) {
+  iree_allocator_t allocator = iree_allocator_system();
+  iree_benchmark_loom_snapshot_sink_t snapshot = {};
+  IREE_ASSERT_OK(
+      iree_benchmark_loom_snapshot_sink_initialize(allocator, &snapshot));
+  iree_benchmark_loom_event_sink_t event_sink = {};
+  iree_benchmark_loom_snapshot_event_sink_initialize(&snapshot, &event_sink);
+
+  iree_benchmark_loom_run_identity_t run = {};
+  run.run_id = IREE_SV("run");
+  run.source = IREE_SV("input.loom");
+  run.results_path = IREE_SV("-");
+  run.file_output_dir = IREE_SV("/tmp/loom");
+  loom_testbench_benchmark_plan_t benchmark_plan = {};
+  benchmark_plan.name = IREE_SV("scenario_throughput");
+  benchmark_plan.sample_count = 8;
+  loom_testbench_scenario_plan_t scenario_plan = {};
+  scenario_plan.name = IREE_SV("scenario");
+  iree_benchmark_loom_selected_benchmark_t selection = {};
+  selection.identity.candidate_id = IREE_SV("c0");
+  selection.benchmark_plan = &benchmark_plan;
+  selection.scenario_plan = &scenario_plan;
+  selection.policy.measure = IREE_SV("dispatch_complete");
+  const loom_testbench_scenario_sample_coordinate_t coordinate = {1, 2, 3};
+  iree_benchmark_loom_logical_sample_t logical_sample = {};
+  logical_sample.begin_benchmark_sample = 7;
+  logical_sample.end_benchmark_sample = 8;
+  logical_sample.scenario_coordinate = coordinate;
+  logical_sample.work_item_index = 4;
+  iree_benchmark_loom_work_item_t work_item = {};
+  work_item.kind = IREE_BENCHMARK_LOOM_WORK_ITEM_SCENARIO_TRIAL;
+  work_item.work_item_index = 4;
+  work_item.hal_compile_item_index = IREE_BENCHMARK_LOOM_INDEX_INVALID;
+  work_item.begin_benchmark_sample = 7;
+  work_item.end_benchmark_sample = 8;
+  work_item.scenario_coordinate = coordinate;
+  iree_benchmark_loom_work_plan_t work_plan = {};
+  work_plan.selected_benchmarks = &selection;
+  work_plan.selected_benchmark_count = 1;
+  work_plan.logical_samples = &logical_sample;
+  work_plan.logical_sample_count = 1;
+  work_plan.work_items = &work_item;
+  work_plan.work_item_count = 1;
+  loom_module_t module = {};
+  iree_benchmark_loom_artifact_bundle_t bundle = {};
+
+  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_run(
+      &event_sink, &run, /*dry_run=*/true, &kNoSanitizer));
+  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_work_plan(
+      &event_sink, &run, &module, &work_plan));
+  IREE_ASSERT_OK(iree_benchmark_loom_event_sink_emit_summary(
+      &event_sink, &run, &bundle, /*planned_case_count=*/0,
+      /*planned_benchmark_count=*/1, /*selected_benchmark_count=*/1,
+      /*logical_sample_count=*/1, /*work_item_count=*/1,
+      /*failure_count=*/0, /*failed_benchmark_count=*/0,
+      /*correctness_sample_count=*/0, /*correctness_failed_sample_count=*/0,
+      /*dry_run=*/true));
+
+  iree_string_builder_t output;
+  iree_string_builder_initialize(allocator, &output);
+  iree_string_view_t root = ParseJsonDocument(SnapshotJson(&snapshot, &output));
+  iree_string_view_t work_items = LookupObject(root, IREE_SV("work_items"));
+  iree_string_view_t first_work_item = FirstArrayElement(work_items);
+  EXPECT_TRUE(
+      iree_string_view_equal(LookupObject(first_work_item, IREE_SV("kind")),
+                             IREE_SV("scenario_trial")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(first_work_item, IREE_SV("scenario")), IREE_SV("scenario")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(first_work_item, IREE_SV("configuration_ordinal")),
+      IREE_SV("1")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(first_work_item, IREE_SV("trial_index")), IREE_SV("2")));
+  EXPECT_TRUE(iree_string_view_equal(
+      LookupObject(first_work_item, IREE_SV("trial_ordinal")), IREE_SV("3")));
+
+  iree_string_builder_deinitialize(&output);
+  iree_benchmark_loom_snapshot_sink_deinitialize(&snapshot);
+}
+
 }  // namespace
 }  // namespace loom
