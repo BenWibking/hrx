@@ -1,4 +1,6 @@
 // TEMPLATE: loom/src/loom/test/corpus/source_low/vector_slice.loom-test
+// TEMPLATE-EXCLUDE: @i32x4_broadcast_rank2 Covered by focused AMDGPU multidimensional shape legalization checks.
+// TEMPLATE-EXCLUDE: @f32x2x4_insert_static Covered by focused AMDGPU multidimensional shape legalization checks.
 // RUN: emit source-low target=amdgpu:gfx11-generic output=low
 
 func.def @i32x4_slice_middle(%values: vector<4xi32>) -> (vector<2xi32>) {
@@ -167,14 +169,6 @@ func.def @i8x8_deinterleave(%values: vector<8xi8>) -> (vector<4xi8>, vector<4xi8
 
 // ====
 
-func.def @i32x4_broadcast_rank2(%values: vector<4xi32>) -> (vector<2x4xi32>) {
-  // ERROR@+1: TARGET/001 {op_name="vector.broadcast"}
-  %result = vector.broadcast %values : vector<4xi32> -> vector<2x4xi32>
-  func.return %result : vector<2x4xi32>
-}
-
-// ====
-
 func.def @i16x1_broadcast(%value: vector<1xi16>) -> (vector<16xi16>) {
   // ERROR@+1: TARGET/001 {op_name="vector.broadcast"}
   %result = vector.broadcast %value : vector<1xi16> -> vector<16xi16>
@@ -187,14 +181,6 @@ func.def @f32x3x4_slice_row(%values: vector<3x4xf32>) -> (vector<1x4xf32>) {
   // ERROR@+1: AMDGPU/023 {constraint_key="slice.shape"}
   %result = vector.slice %values[1, 0] : vector<3x4xf32> -> vector<1x4xf32>
   func.return %result : vector<1x4xf32>
-}
-
-// ====
-
-func.def @f32x2x4_insert_static(%values: vector<2x4xf32>, %value: f32) -> (vector<2x4xf32>) {
-  // ERROR@+1: TARGET/004 {op_name="vector.insert", subject_name="static_indices", constraint_key="array_count", expected_count="1"}
-  %result = vector.insert %value into %values[1, 2] : f32, vector<2x4xf32>
-  func.return %result : vector<2x4xf32>
 }
 
 // ====

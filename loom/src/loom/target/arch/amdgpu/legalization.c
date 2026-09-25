@@ -23,10 +23,12 @@
 #include "loom/target/arch/amdgpu/lower/kinds.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
 #include "loom/target/arch/amdgpu/lower/table.h"
+#include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/lower/value/vector_transform.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/target/arch/amdgpu/target_info_defs.h"
 #include "loom/transforms/vector/packet_legalization.h"
+#include "loom/transforms/vector/shape_legalization.h"
 #include "loom/transforms/vector/table_legalization.h"
 #include "loom/transforms/vector/to_scalar.h"
 #include "loom/transforms/view/target_legalization.h"
@@ -76,6 +78,55 @@ static const loom_vector_packet_policy_t kAmdgpuVectorPacketPolicy = {
     .maximum_unpacketized_bit_count =
         LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES * 32u,
 };
+
+static bool loom_amdgpu_static_shape_carrier_type(
+    const loom_module_t* module, const loom_op_t* op,
+    loom_type_t* out_carrier_type) {
+  switch (op->kind) {
+    case LOOM_OP_VECTOR_BROADCAST:
+      *out_carrier_type =
+          loom_module_value_type(module, loom_vector_broadcast_result(op));
+      return true;
+    case LOOM_OP_VECTOR_INSERT:
+      *out_carrier_type =
+          loom_module_value_type(module, loom_vector_insert_dest(op));
+      return true;
+    default:
+      return false;
+  }
+}
+
+static iree_status_t loom_amdgpu_legalize_static_vector_shape(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_amdgpu_legalizer_descriptor_set_is_amdgpu(
+          context->descriptor_set)) {
+    return iree_ok_status();
+  }
+
+  loom_type_t carrier_type = loom_type_none();
+  loom_amdgpu_vector_storage_t carrier_storage = {0};
+  if (!loom_amdgpu_static_shape_carrier_type(context->module, op,
+                                             &carrier_type) ||
+      !loom_amdgpu_type_vector_storage(carrier_type, &carrier_storage) ||
+      carrier_storage.register_count == 0 ||
+      carrier_storage.register_count > LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES) {
+    return iree_ok_status();
+  }
+
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(
+      loom_vector_static_shape_rewrite_op(context, op, &rewritten));
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
 
 static iree_status_t loom_amdgpu_legalize_oversized_vector_store(
     const loom_target_legalizer_entry_t* entry,
@@ -534,6 +585,14 @@ static iree_status_t loom_amdgpu_legalize_kernel_subgroup_match_all(
 }
 
 static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
+    {
+        .root_kind = LOOM_OP_VECTOR_BROADCAST,
+        .legalize = loom_amdgpu_legalize_static_vector_shape,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_INSERT,
+        .legalize = loom_amdgpu_legalize_static_vector_shape,
+    },
     // Half-precision atomics require packed instructions. Preserve the vector
     // footprint for native selection and its alignment/scope diagnostics.
     {

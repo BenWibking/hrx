@@ -207,6 +207,19 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "shape_legalization",
+    srcs = ["shape_legalization.c"],
+    hdrs = ["shape_legalization.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/target:legalization",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "target_legalization",
     srcs = ["target_legalization.c"],
     hdrs = ["target_legalization.h"],
