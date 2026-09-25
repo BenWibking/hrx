@@ -17,19 +17,23 @@ loom_cc_library(
     "lower.h"
     "matrix.h"
     "workgroup.h"
+    "workgroup_layout.h"
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/spirv/contracts/tables.inl"
   SRCS
     "matrix.c"
     "registry.c"
     "workgroup.c"
+    "workgroup_layout.c"
   DEPS
     iree::base
     iree::base::internal
     loom::analysis::contract_vector
+    loom::analysis::storage_interference
     loom::codegen::low::descriptors
     loom::codegen::low::lower
     loom::codegen::low::source_memory_plan
+    loom::codegen::low::source_storage_packing
     loom::error::error_defs
     loom::ir
     loom::ir::facts

@@ -40,6 +40,7 @@ loom_cc_library(
         "//loom/src/loom/ops/vector",
         "//loom/src/loom/rewrite:pattern_registry",
         "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/transforms/conversion:chain",
         "//runtime/src/iree/base",
     ],
 )
@@ -184,6 +185,33 @@ loom_cc_library(
         "//loom/src/loom/ops/buffer",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/scf",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/target:legalization",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "table_legalization",
+    srcs = ["table_legalization.c"],
+    hdrs = ["table_legalization.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/target:legalization",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "shape_legalization",
+    srcs = ["shape_legalization.c"],
+    hdrs = ["shape_legalization.h"],
+    deps = [
+        "//loom/src/loom/ir",
         "//loom/src/loom/ops/vector",
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/target:legalization",

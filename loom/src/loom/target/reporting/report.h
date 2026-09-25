@@ -575,6 +575,8 @@ typedef struct loom_target_compile_report_workload_t {
 
 // Structural target bank-service evidence accumulated across source packets.
 typedef struct loom_target_compile_report_bank_service_summary_t {
+  // Number of applicable source packets without a selected service model.
+  uint64_t unmodeled_packet_count;
   // Number of source packets for which a target service model was selected.
   uint64_t modeled_packet_count;
   // Number of modeled source packets with exact service evidence.
@@ -1372,11 +1374,11 @@ typedef struct loom_target_compile_report_memory_interval_summary_t {
 
 // Target-owned bank-service evidence for one emitted source memory packet.
 typedef struct loom_target_compile_report_bank_service_t {
-  // Exactness of the result: "exact", "unknown", or empty when not analyzed.
+  // Evidence: "exact", "unknown", "unmodeled", or empty when not applicable.
   iree_string_view_t proof;
   // Exact result class: "conflict-free", "conflicted", or empty when unknown.
   iree_string_view_t classification;
-  // Stable target packet-service model key.
+  // Stable target packet-service model key, empty when unmodeled.
   iree_string_view_t model_key;
   // Immutable source revision defining the selected model.
   iree_string_view_t model_revision;
@@ -1390,23 +1392,23 @@ typedef struct loom_target_compile_report_bank_service_t {
   iree_string_view_t active_lane_proof;
   // Proof covering unknown common LDS base translations.
   iree_string_view_t base_residue_proof;
-  // Stable reason key when |proof| is "unknown".
+  // Stable reason key when |proof| is "unknown" or "unmodeled".
   iree_string_view_t unknown_reason;
-  // Number of lanes represented by the model phases.
+  // Selected execution wave size, including when no model is available.
   uint8_t wave_size;
   // Number of independently serviced LDS banks.
   uint8_t bank_count;
   // Byte width of one LDS bank word.
   uint8_t bank_word_byte_count;
-  // Number of consecutive bank words requested by each active lane.
-  uint8_t packet_word_count;
+  // Number of bytes accessed by each active lane.
+  uint8_t packet_byte_count;
   // Number of populated phase entries.
   uint8_t phase_count;
   // Number of active model lanes in each service phase.
   uint8_t
       phase_lane_counts[LOOM_TARGET_COMPILE_REPORT_BANK_SERVICE_PHASE_CAPACITY];
-  // Number of common bank-word base residues covered by the result.
-  uint8_t base_residue_count;
+  // Number of common byte-base residues covered by the result.
+  uint16_t base_residue_count;
   // Required bank service rounds for each model phase.
   uint16_t phase_required_rounds
       [LOOM_TARGET_COMPILE_REPORT_BANK_SERVICE_PHASE_CAPACITY];
@@ -1568,7 +1570,7 @@ typedef struct loom_target_compile_report_source_low_bank_service_summary_t {
   iree_string_view_t packet_key;
   // Stable target-owned strategy key selected for the modeled packets.
   iree_string_view_t strategy_key;
-  // Stable target packet-service model key.
+  // Stable target packet-service model key, empty when unmodeled.
   iree_string_view_t model_key;
   // Immutable source revision defining the selected model.
   iree_string_view_t model_revision;
@@ -1580,14 +1582,14 @@ typedef struct loom_target_compile_report_source_low_bank_service_summary_t {
   iree_string_view_t unknown_reason;
   // Whether unknown rows carried more than one stable reason.
   bool has_mixed_unknown_reasons;
-  // Number of lanes represented by the model phases.
+  // Selected execution wave size, including when no model is available.
   uint8_t wave_size;
   // Number of independently serviced banks.
   uint8_t bank_count;
   // Byte width of one bank word.
   uint8_t bank_word_byte_count;
-  // Number of consecutive bank words requested by each active lane.
-  uint8_t packet_word_count;
+  // Number of bytes accessed by each active lane.
+  uint8_t packet_byte_count;
   // Accumulated structural service evidence for the packet group.
   loom_target_compile_report_bank_service_summary_t summary;
 } loom_target_compile_report_source_low_bank_service_summary_t;

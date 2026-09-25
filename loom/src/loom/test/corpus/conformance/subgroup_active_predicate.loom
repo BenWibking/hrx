@@ -54,6 +54,5 @@ check.case public @votes_ignore_inactive_lanes {
   check.expect.equal actual(%any) expected(%expected_false) : tensor<32xi32>
   check.expect.equal actual(%all) expected(%expected_true) : tensor<32xi32>
   check.expect.equal actual(%ballot) expected(%expected_true) : tensor<32xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

@@ -637,8 +637,8 @@ iree_status_t loom_amdgpu_select_kernel_subgroup_reduce_plan(
   loom_amdgpu_subgroup_payload_kind_t payload_kind =
       LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE;
   uint32_t register_count = 0;
-  if (!loom_amdgpu_collective_payload_is_supported(module, value, &payload_kind,
-                                                   &register_count)) {
+  if (!loom_amdgpu_collective_arithmetic_payload_is_supported(
+          module, value, &payload_kind, &register_count)) {
     return iree_ok_status();
   }
 
@@ -772,8 +772,8 @@ iree_status_t loom_amdgpu_select_kernel_workgroup_reduce_plan(
   loom_amdgpu_subgroup_payload_kind_t payload_kind =
       LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE;
   uint32_t register_count = 0;
-  if (!loom_amdgpu_collective_payload_is_supported(module, value, &payload_kind,
-                                                   &register_count)) {
+  if (!loom_amdgpu_collective_arithmetic_payload_is_supported(
+          module, value, &payload_kind, &register_count)) {
     return iree_ok_status();
   }
 
@@ -1552,8 +1552,8 @@ iree_status_t loom_amdgpu_low_legality_verify_kernel_subgroup_reduce(
   loom_amdgpu_subgroup_payload_kind_t payload_kind =
       LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE;
   uint32_t unused_register_count = 0;
-  if (!loom_amdgpu_collective_payload_is_supported(module, value, &payload_kind,
-                                                   &unused_register_count)) {
+  if (!loom_amdgpu_collective_arithmetic_payload_is_supported(
+          module, value, &payload_kind, &unused_register_count)) {
     return loom_amdgpu_low_legality_reject(context, op,
                                            IREE_SV("subgroup_reduce.payload"));
   }
@@ -1692,8 +1692,8 @@ iree_status_t loom_amdgpu_low_legality_verify_kernel_workgroup_reduce(
   loom_amdgpu_subgroup_payload_kind_t payload_kind =
       LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE;
   uint32_t register_count = 0;
-  if (!loom_amdgpu_collective_payload_is_supported(module, value, &payload_kind,
-                                                   &register_count)) {
+  if (!loom_amdgpu_collective_arithmetic_payload_is_supported(
+          module, value, &payload_kind, &register_count)) {
     return loom_amdgpu_low_legality_reject(context, op,
                                            IREE_SV("workgroup_reduce.payload"));
   }

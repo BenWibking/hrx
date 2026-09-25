@@ -614,3 +614,40 @@ low.kernel.def target<amdgpu.gfx11.generic.core>(@target) abi_layout({constant_c
 ^tail:
   low.br ^tail
 }
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+// A typed but footprint-free root must not increase physical Workgroup
+// storage or its alignment.
+kernel.def target(@target) @unused_root_does_not_inflate_arena() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%output: buffer) {
+  %base = index.constant 0 : offset
+  %unused_bytes = index.constant 32768 : offset
+  %live_bytes = index.constant 64 : offset
+  %value = scalar.constant 1 : i32
+  %unused = buffer.alloca<workgroup> align(256) %unused_bytes : buffer
+  %unused_view = buffer.view %unused[%base] : buffer -> view<1xi32>
+  %live = buffer.alloca<workgroup> align(16) %live_bytes : buffer
+  %live_view = buffer.view %live[%base] : buffer -> view<1xi32>
+  %output_view = buffer.view %output[%base] : buffer -> view<1xi32>
+  view.store %value, %live_view[0] : i32, view<1xi32>
+  %result = view.load %live_view[0] : view<1xi32> -> i32
+  view.store %result, %output_view[0] : i32, view<1xi32>
+  kernel.return
+}
+
+// ----
+low.kernel.def target<amdgpu.gfx11.generic.core>(@target) abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 1, resource_count = 1, resource_offsets = [0], resource_parameter_indices = [0], uses_kernarg_segment_ptr = true}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @unused_root_does_not_inflate_arena() asm {
+  %output_view = resource<hal_binding> {extent = 4, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %13 = storage {byte_alignment = 16, byte_length = 64} : low.storage<workgroup>
+  %16 = v_mov_b32 1
+  %17 = v_mov_b32 0
+  ds_write_b32 %17, %16
+  %result = ds_read_b32 %17
+  global_store_b32_saddr %17, %result, %output_view
+  return
+}

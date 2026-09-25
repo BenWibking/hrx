@@ -31,7 +31,7 @@ typedef struct loom_bytecode_symbol_reference_plan_t {
 iree_status_t loom_bytecode_write_symbols_section(
     loom_bytecode_page_writer_t* page_writer,
     loom_bytecode_numbering_t* numbering,
-    const loom_bytecode_ir_region_list_t* ir_regions);
+    const loom_bytecode_ir_region_index_t* ir_region_index);
 
 // Builds the canonical dependency-facet analysis and aggregate counts.
 iree_status_t loom_bytecode_symbol_reference_plan_initialize(

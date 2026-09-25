@@ -11,7 +11,6 @@ LOOM_CHECK_CASE(resource_values) {
   loom::check::launch<update>(selected, 13u);
   loom::check::expect_bitwise(loom::check::slice<1>(storage, 1),
                             loom::check::fill<unsigned, 1>(13u));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }
 LOOM_CHECK_BENCHMARK(resource_benchmark, resource_values);
 // ----
@@ -20,7 +19,6 @@ CHECK: * = check.generate.fill value(37) : tensor<4xi32>
 CHECK: %selected = check.tensor.view * offset(4) : tensor<4xi32> -> tensor<2xi32>
 CHECK: kernel.launch @update(%selected, *) : (tensor<2xi32>, i32)
 CHECK: check.expect.bitwise actual(*) expected(*) : tensor<1xi32>
-CHECK: check.expect.event<device> *count = 0*type = "asan_report"*
 CHECK: check.benchmark<@resource_values> @resource_benchmark
 
 // ====

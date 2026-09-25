@@ -97,5 +97,4 @@ LOOM_CHECK_CASE(opaque_roots_and_origins) {
                               loom::check::fill<unsigned, 2>(0xA5A5A5A5u));
   loom::check::expect_bitwise(first, first_expected);
   loom::check::expect_bitwise(second, second_expected);
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }

@@ -1255,19 +1255,20 @@ static iree_status_t loom_link_index_project_symbol_references(
          ++symbol_index) {
       loom_link_module_index_symbol_t* symbol = loom_link_index_local_symbol_at(
           index, module->symbol_start_ordinal + symbol_index);
-      const loom_symbol_reference_symbol_occurrences_t* source =
-          &table->symbols[symbol_index];
+      const loom_symbol_reference_symbol_occurrences_t source =
+          loom_symbol_reference_table_symbol(table,
+                                             (loom_symbol_id_t)symbol_index);
       symbol->dependencies.first = (uint32_t)dependency_position;
       symbol->dependencies.count = loom_link_index_count_dependency_occurrences(
-          table, source->first_outgoing_occurrence_id);
+          table, source.first_outgoing_occurrence_id);
       loom_link_index_copy_dependency_occurrences(
-          table, source->first_outgoing_occurrence_id, dependency_values,
+          table, source.first_outgoing_occurrence_id, dependency_values,
           dependency_target_interfaces,
           dependency_source_root_region_indices_plus_one, &dependency_position);
 
       symbol->template_demands.first = (uint32_t)template_demand_position;
-      symbol->template_demands.count = source->template_demand_count;
-      loom_template_demand_id_t demand_id = source->first_template_demand_id;
+      symbol->template_demands.count = source.template_demand_count;
+      loom_template_demand_id_t demand_id = source.first_template_demand_id;
       while (demand_id != LOOM_TEMPLATE_DEMAND_ID_INVALID &&
              iree_status_is_ok(status)) {
         const loom_template_demand_t* demand =

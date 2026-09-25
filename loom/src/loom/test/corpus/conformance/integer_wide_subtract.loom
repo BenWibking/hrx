@@ -96,7 +96,6 @@ check.case public @wide_subtract_zero {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -147,7 +146,6 @@ check.case public @wide_subtract_low_borrow {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -198,7 +196,6 @@ check.case public @wide_subtract_no_borrow {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -249,7 +246,6 @@ check.case public @wide_subtract_negative {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -300,7 +296,6 @@ check.case public @wide_subtract_minimum {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -351,7 +346,6 @@ check.case public @wide_subtract_maximum {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -402,7 +396,6 @@ check.case public @wide_subtract_high_borrow {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -453,7 +446,6 @@ check.case public @wide_subtract_both_minimum {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -504,7 +496,6 @@ check.case public @wide_subtract_high_payload {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -555,6 +546,5 @@ check.case public @wide_subtract_negative_high_word {
   %guard = check.generate.fill value(-7777) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

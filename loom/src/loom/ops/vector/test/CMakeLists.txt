@@ -24,6 +24,7 @@ loom_check_test_suite(
     "integer_extrema_facts.loom-test"
     "integer_partial_facts.loom-test"
     "load_extract.loom-test"
+    "partial_lane_facts.loom-test"
     "roundtrip.loom-test"
     "table_canonicalize.loom-test"
     "table_combine.loom-test"

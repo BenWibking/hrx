@@ -17,10 +17,28 @@ loom_cc_library(
   SRCS
     "combine_patterns.c"
   DEPS
+    ::narrowing
     iree::base
     loom::ir
     loom::ops::scalar
     loom::rewrite::pattern_registry
+    loom::rewrite::rewriter
+    loom::transforms::conversion::chain
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    narrowing
+  HDRS
+    "narrowing.h"
+  SRCS
+    "narrowing.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::index
+    loom::ops::scalar
     loom::rewrite::rewriter
   PUBLIC
 )

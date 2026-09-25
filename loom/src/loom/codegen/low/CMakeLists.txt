@@ -399,6 +399,8 @@ loom_cc_library(
     ::target_binding
     iree::base
     loom::analysis::liveness
+    loom::error::emitter
+    loom::error::error_defs
     loom::ir
     loom::ops::low
   PUBLIC
@@ -1148,6 +1150,7 @@ loom_cc_library(
     "verify.c"
   DEPS
     ::call_context
+    ::diagnostics
     ::function
     ::packet
     ::register_parts

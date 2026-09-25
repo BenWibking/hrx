@@ -222,6 +222,20 @@ typedef struct loom_low_lower_source_plan_observer_t {
   void* user_data;
 } loom_low_lower_source_plan_observer_t;
 
+typedef uint64_t (*loom_low_lower_source_memory_root_byte_offset_fn_t)(
+    void* user_data, const loom_low_lower_context_t* context,
+    const loom_low_source_memory_access_plan_t* source_memory_access);
+
+typedef struct loom_low_lower_source_memory_root_byte_offset_callback_t {
+  // Optional target physical-layout query applied to canonical source-memory
+  // plans before generated rule matching. The callback must answer from
+  // retained indexed state and must not traverse source IR. An absent callback
+  // contributes a zero root offset.
+  loom_low_lower_source_memory_root_byte_offset_fn_t fn;
+  // Caller-owned payload passed to |fn|.
+  void* user_data;
+} loom_low_lower_source_memory_root_byte_offset_callback_t;
+
 typedef iree_status_t (*loom_low_lower_emit_preamble_fn_t)(
     void* user_data, loom_low_lower_context_t* context);
 
@@ -475,11 +489,11 @@ typedef struct loom_low_lower_report_row_t {
 
 // Target-owned bank-service evidence for one emitted source memory packet.
 typedef struct loom_low_lower_memory_bank_service_report_t {
-  // Exactness of the result: "exact", "unknown", or empty when not analyzed.
+  // Evidence: "exact", "unknown", "unmodeled", or empty when not applicable.
   iree_string_view_t proof;
   // Exact result class: "conflict-free", "conflicted", or empty when unknown.
   iree_string_view_t classification;
-  // Stable target packet-service model key.
+  // Stable target packet-service model key, empty when unmodeled.
   iree_string_view_t model_key;
   // Immutable source revision defining the selected model.
   iree_string_view_t model_revision;
@@ -493,22 +507,22 @@ typedef struct loom_low_lower_memory_bank_service_report_t {
   iree_string_view_t active_lane_proof;
   // Proof covering unknown common LDS base translations.
   iree_string_view_t base_residue_proof;
-  // Stable reason key when |proof| is "unknown".
+  // Stable reason key when |proof| is "unknown" or "unmodeled".
   iree_string_view_t unknown_reason;
-  // Number of lanes represented by the model phases.
+  // Selected execution wave size, including when no model is available.
   uint8_t wave_size;
   // Number of independently serviced LDS banks.
   uint8_t bank_count;
   // Byte width of one LDS bank word.
   uint8_t bank_word_byte_count;
-  // Number of consecutive bank words requested by each active lane.
-  uint8_t packet_word_count;
+  // Number of bytes accessed by each active lane.
+  uint8_t packet_byte_count;
   // Number of populated phase entries.
   uint8_t phase_count;
   // Number of active model lanes in each service phase.
   uint8_t phase_lane_counts[LOOM_LOW_LOWER_MEMORY_BANK_SERVICE_PHASE_CAPACITY];
-  // Number of common bank-word base residues covered by the result.
-  uint8_t base_residue_count;
+  // Number of common byte-base residues covered by the result.
+  uint16_t base_residue_count;
   // Required bank service rounds for each model phase.
   uint16_t
       phase_required_rounds[LOOM_LOW_LOWER_MEMORY_BANK_SERVICE_PHASE_CAPACITY];
@@ -851,6 +865,10 @@ typedef struct loom_low_lower_policy_t {
   // observer sees the current op only and must not recursively inspect the
   // source function.
   const loom_low_lower_source_plan_observer_t* source_plan_observer;
+  // Optional target physical allocation-root placement applied before
+  // generated source-memory rule matching.
+  loom_low_lower_source_memory_root_byte_offset_callback_t
+      source_memory_root_byte_offset;
   // Optional capability/cost query for the common acquire visibility planner.
   // It supplies target facts without traversing source operations.
   loom_low_lower_visibility_model_t (*visibility_model)(
@@ -1076,6 +1094,12 @@ loom_target_low_legality_diagnostic_flags_t
 loom_low_lower_context_diagnostic_flags(
     const loom_low_lower_context_t* context);
 
+// Retains a producer-owned footprint for one exact descriptor effect. The
+// result owns a deep copy in the module arena; source analysis may then expire.
+iree_status_t loom_low_lower_record_memory_effect(
+    loom_low_lower_context_t* context, const loom_op_t* low_op,
+    uint16_t effect_ordinal, const loom_low_memory_access_summary_t* summary);
+
 // Records one packet whose memory effects all use |source_plan|'s address.
 // The caller has selected actual packet geometry; additional_offset bounds
 // runtime packet coordinates not present in the canonical source plan.
@@ -1224,6 +1248,13 @@ iree_status_t loom_low_lower_allocate_plan_data(
 iree_status_t loom_low_lower_get_or_allocate_target_state(
     loom_low_lower_context_t* context, const void* key,
     iree_host_size_t data_length, void** out_data);
+
+// Returns existing function-local target state for |key|, or NULL when no
+// state has been allocated. A matching record is asserted to have
+// |data_length| bytes.
+const void* loom_low_lower_lookup_target_state(
+    const loom_low_lower_context_t* context, const void* key,
+    iree_host_size_t data_length);
 
 // Returns module-scope target state from the active source-to-low module pass.
 iree_status_t loom_low_lower_get_or_allocate_module_target_state(

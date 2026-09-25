@@ -212,6 +212,18 @@ typedef struct loom_low_placement_table_t {
   // Relation ranges into |relation_indices_by_source_ordinal| indexed by source
   // value ordinal.
   const loom_low_placement_relation_range_t* ranges_by_source_ordinal;
+  // Local value ordinals in users-before-sources order for structural SSA
+  // storage relations. Tied results and aliasable low copy/move/slice/concat
+  // relations form an acyclic graph independent of block layout; allocation
+  // analyses use this retained order for transitive storage facts.
+  const loom_value_ordinal_t* storage_value_order;
+  // Number of entries in |storage_value_order|. Zero when the function has no
+  // structural SSA storage relations; otherwise equal to |value_count|.
+  loom_value_ordinal_t storage_value_order_count;
+  // Origin value in each exact tied-storage component, indexed by local value
+  // ordinal. Unconnected values name themselves. NULL when the function has no
+  // tied storage.
+  const loom_value_ordinal_t* tied_storage_origins_by_value_ordinal;
 } loom_low_placement_table_t;
 
 // Returns true when |relation| can justify overlapping target-visible storage.

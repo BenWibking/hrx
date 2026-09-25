@@ -67,19 +67,30 @@ class StorageInterferenceTest : public ::testing::Test {
     loom_type_registry_configure_fact_context(&facts_.context);
     IREE_ASSERT_OK(
         loom_value_fact_table_compute(&facts_, module_.get(), function_));
-    IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(
+    IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region_tree(
         module_.get(), loom_func_like_body(function_), &analysis_arena_,
         &value_domain_));
     IREE_ASSERT_OK(loom_storage_interference_analyze_function(
         module_.get(), &facts_, &value_domain_, function_, &analysis_arena_,
         &analysis_));
 
+    FindRoots(loom_func_like_body(function_));
+  }
+
+  void FindRoots(loom_region_t* region) {
+    if (!region) {
+      return;
+    }
     loom_block_t* block = nullptr;
-    loom_region_for_each_block(loom_func_like_body(function_), block) {
+    loom_region_for_each_block(region, block) {
       loom_op_t* op = nullptr;
       loom_block_for_each_op(block, op) {
         if (loom_buffer_alloca_isa(op)) {
           roots_.push_back(loom_buffer_alloca_result(op));
+        }
+        loom_region_t* const* child_regions = loom_op_regions(op);
+        for (uint8_t i = 0; i < op->region_count; ++i) {
+          FindRoots(child_regions[i]);
         }
       }
     }
@@ -94,6 +105,12 @@ class StorageInterferenceTest : public ::testing::Test {
     return proven;
   }
 
+  bool RootMayBeAccessed(iree_host_size_t index) {
+    EXPECT_LT(index, roots_.size());
+    return loom_storage_interference_root_may_be_accessed(analysis_,
+                                                          roots_[index]);
+  }
+
   iree_arena_block_pool_t block_pool_;
   iree_arena_allocator_t analysis_arena_;
   loom_context_t context_;
@@ -104,6 +121,38 @@ class StorageInterferenceTest : public ::testing::Test {
   loom_storage_interference_t* analysis_ = nullptr;
   std::vector<loom_value_id_t> roots_;
 };
+
+TEST_F(StorageInterferenceTest, DistinguishesUnusedAndAccessedRoots) {
+  Analyze(R"(
+func.def @test() {
+  %base = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %value = scalar.constant 1 : i32
+  %unused = buffer.alloca<workgroup> align(16) %bytes : buffer
+  %unused_view = buffer.view %unused[%base] : buffer -> view<1xi32>
+  %accessed = buffer.alloca<workgroup> align(16) %bytes : buffer
+  %accessed_view = buffer.view %accessed[%base] : buffer -> view<1xi32>
+  view.store %value, %accessed_view[0] : i32, view<1xi32>
+  func.return
+}
+)");
+  ASSERT_EQ(roots_.size(), 2u);
+  EXPECT_FALSE(RootMayBeAccessed(0));
+  EXPECT_TRUE(RootMayBeAccessed(1));
+}
+
+TEST_F(StorageInterferenceTest, IncompleteRootMayBeAccessed) {
+  Analyze(R"(
+func.def @test() {
+  %bytes = index.constant 256 : offset
+  %root = buffer.alloca<workgroup> align(16) %bytes : buffer
+  test.use %root : buffer
+  func.return
+}
+)");
+  ASSERT_EQ(roots_.size(), 1u);
+  EXPECT_TRUE(RootMayBeAccessed(0));
+}
 
 TEST_F(StorageInterferenceTest, WorkgroupBarrierSeparatesSequentialPhases) {
   Analyze(R"(
@@ -221,6 +270,56 @@ func.def @test() {
 )");
   ASSERT_EQ(roots_.size(), 2u);
   EXPECT_TRUE(ProveRootsDoNotOverlap(0, 1));
+}
+
+TEST_F(StorageInterferenceTest,
+       WorkgroupUniformStructuredBranchesDoNotInterfere) {
+  Analyze(R"(
+func.def @test() {
+  %base = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %condition = scalar.constant 1 : i1
+  %value = scalar.constant 7 : i32
+  scf.if %condition {
+    %first = buffer.alloca<workgroup> align(16) %bytes : buffer
+    %first_view = buffer.view %first[%base] : buffer -> view<1xi32>
+    view.store %value, %first_view[0] : i32, view<1xi32>
+    %first_read = view.load %first_view[0] : view<1xi32> -> i32
+  } else {
+    %second = buffer.alloca<workgroup> align(16) %bytes : buffer
+    %second_view = buffer.view %second[%base] : buffer -> view<1xi32>
+    view.store %value, %second_view[0] : i32, view<1xi32>
+    %second_read = view.load %second_view[0] : view<1xi32> -> i32
+  }
+  func.return
+}
+)");
+  ASSERT_EQ(roots_.size(), 2u);
+  EXPECT_TRUE(ProveRootsDoNotOverlap(0, 1));
+}
+
+TEST_F(StorageInterferenceTest, DivergentStructuredBranchesMayInterfere) {
+  Analyze(R"(
+func.def @test(%condition: i1) {
+  %base = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %value = scalar.constant 7 : i32
+  scf.if %condition {
+    %first = buffer.alloca<workgroup> align(16) %bytes : buffer
+    %first_view = buffer.view %first[%base] : buffer -> view<1xi32>
+    view.store %value, %first_view[0] : i32, view<1xi32>
+    %first_read = view.load %first_view[0] : view<1xi32> -> i32
+  } else {
+    %second = buffer.alloca<workgroup> align(16) %bytes : buffer
+    %second_view = buffer.view %second[%base] : buffer -> view<1xi32>
+    view.store %value, %second_view[0] : i32, view<1xi32>
+    %second_read = view.load %second_view[0] : view<1xi32> -> i32
+  }
+  func.return
+}
+)");
+  ASSERT_EQ(roots_.size(), 2u);
+  EXPECT_FALSE(ProveRootsDoNotOverlap(0, 1));
 }
 
 TEST_F(StorageInterferenceTest, BarrierSeparatesAcrossCfgBlocks) {

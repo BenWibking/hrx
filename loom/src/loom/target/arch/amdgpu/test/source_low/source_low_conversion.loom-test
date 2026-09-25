@@ -902,7 +902,8 @@ func.def @scalar_sitofp_i16(%input: i16) -> (f32) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_sitofp_i16(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %converted = v_cvt_f32_i32 %input
+  %5 = v_bfe_i32_offset_width_inline %input {offset = 0, width = 16}
+  %converted = v_cvt_f32_i32 %5
   return %converted
 }
 
@@ -941,8 +942,7 @@ func.def @scalar_fptosi_i8(%input: f32) -> (i8) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_fptosi_i8(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %5 = v_cvt_i32_f32 %input
-  %converted = v_bfe_i32_offset_width_inline %5 {offset = 0, width = 8}
+  %converted = v_cvt_i32_f32 %input
   return %converted
 }
 
@@ -955,8 +955,7 @@ func.def @scalar_fptosi_i16(%input: f32) -> (i16) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_fptosi_i16(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %5 = v_cvt_i32_f32 %input
-  %converted = v_bfe_i32_offset_width_inline %5 {offset = 0, width = 16}
+  %converted = v_cvt_i32_f32 %input
   return %converted
 }
 
@@ -969,8 +968,7 @@ func.def @scalar_fptoui_i8(%input: f32) -> (i8) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_fptoui_i8(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %5 = v_cvt_u32_f32 %input
-  %converted = v_bfe_i32_offset_width_inline %5 {offset = 0, width = 8}
+  %converted = v_cvt_u32_f32 %input
   return %converted
 }
 
@@ -983,8 +981,7 @@ func.def @scalar_fptoui_i16(%input: f32) -> (i16) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_fptoui_i16(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %5 = v_cvt_u32_f32 %input
-  %converted = v_bfe_i32_offset_width_inline %5 {offset = 0, width = 16}
+  %converted = v_cvt_u32_f32 %input
   return %converted
 }
 
@@ -997,8 +994,7 @@ func.def @scalar_trunci_i32_to_i8(%input: i32) -> (i8) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_trunci_i32_to_i8(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %5 = v_mov_b32_copy %input
-  %converted = v_bfe_i32_offset_width_inline %5 {offset = 0, width = 8}
+  %converted = v_mov_b32_copy %input
   return %converted
 }
 
@@ -1010,8 +1006,7 @@ func.def @scalar_trunci_i16_to_i8(%input: i16) -> (i8) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_trunci_i16_to_i8(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %converted = v_bfe_i32_offset_width_inline %input {offset = 0, width = 8}
+low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_trunci_i16_to_i8(%converted: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
   return %converted
 }
 
@@ -1024,8 +1019,7 @@ func.def @scalar_trunci_i32_to_i16(%input: i32) -> (i16) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_trunci_i32_to_i16(%input: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %5 = v_mov_b32_copy %input
-  %converted = v_bfe_i32_offset_width_inline %5 {offset = 0, width = 16}
+  %converted = v_mov_b32_copy %input
   return %converted
 }
 
@@ -1039,8 +1033,7 @@ func.def @scalar_trunci_i64_to_i8(%input: i64) -> (i8) {
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_trunci_i64_to_i8(%input: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.vgpr>) asm {
   %5 = slice %input[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %6 = v_mov_b32_copy %5
-  %converted = v_bfe_i32_offset_width_inline %6 {offset = 0, width = 8}
+  %converted = v_mov_b32_copy %5
   return %converted
 }
 
@@ -1054,8 +1047,7 @@ func.def @scalar_trunci_i64_to_i16(%input: i64) -> (i16) {
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_trunci_i64_to_i16(%input: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.vgpr>) asm {
   %5 = slice %input[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %6 = v_mov_b32_copy %5
-  %converted = v_bfe_i32_offset_width_inline %6 {offset = 0, width = 16}
+  %converted = v_mov_b32_copy %5
   return %converted
 }
 
@@ -1436,7 +1428,8 @@ func.def @scalar_extsi_i8_to_i16(%input: i8) -> (i16) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i8_to_i16(%converted: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i8_to_i16(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %converted = v_bfe_i32_offset_width_inline %input {offset = 0, width = 8}
   return %converted
 }
 
@@ -1448,7 +1441,8 @@ func.def @scalar_extsi_i8_to_i32(%input: i8) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i8_to_i32(%converted: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i8_to_i32(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %converted = v_bfe_i32_offset_width_inline %input {offset = 0, width = 8}
   return %converted
 }
 
@@ -1461,8 +1455,9 @@ func.def @scalar_extsi_i8_to_i64(%input: i8) -> (i64) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i8_to_i64(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr x2>) asm {
-  %5 = v_ashrrev_i32_src0_inline %input, 31
-  %converted = concat(%input, %5) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %5 = v_bfe_i32_offset_width_inline %input {offset = 0, width = 8}
+  %6 = v_ashrrev_i32_src0_inline %5, 31
+  %converted = concat(%5, %6) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
   return %converted
 }
 
@@ -1474,7 +1469,8 @@ func.def @scalar_extsi_i16_to_i32(%input: i16) -> (i32) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i16_to_i32(%converted: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i16_to_i32(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
+  %converted = v_bfe_i32_offset_width_inline %input {offset = 0, width = 16}
   return %converted
 }
 
@@ -1487,8 +1483,9 @@ func.def @scalar_extsi_i16_to_i64(%input: i16) -> (i64) {
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scalar_extsi_i16_to_i64(%input: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr x2>) asm {
-  %5 = v_ashrrev_i32_src0_inline %input, 31
-  %converted = concat(%input, %5) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %5 = v_bfe_i32_offset_width_inline %input {offset = 0, width = 16}
+  %6 = v_ashrrev_i32_src0_inline %5, 31
+  %converted = concat(%5, %6) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
   return %converted
 }
 

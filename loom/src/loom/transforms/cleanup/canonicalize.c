@@ -137,6 +137,7 @@ static iree_status_t loom_canonicalizer_run_pass(
   IREE_RETURN_IF_ERROR(loom_canonicalizer_initialize(
       module, pass->arena, pass->value_facts,
       pattern_registry ? pattern_registry->special_value_policy : NULL,
+      pattern_registry ? pattern_registry->fact_refinement_policy : NULL,
       &canonicalizer));
 
   loom_canonicalizer_result_t result;

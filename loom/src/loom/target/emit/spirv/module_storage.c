@@ -72,6 +72,8 @@ iree_status_t loom_spirv_module_workgroup_storage_emit_reserve(
   IREE_ASSERT_ARGUMENT(state);
   IREE_ASSERT_ARGUMENT(op);
 
+  IREE_RETURN_IF_ERROR(loom_low_storage_layout_accumulate_reservation(
+      value_domain->module, op, &state->layout_sizes));
   loom_spirv_module_workgroup_storage_entry_t* entry =
       loom_spirv_module_workgroup_storage_lookup_entry(
           value_domain, state, loom_low_storage_reserve_storage(op));

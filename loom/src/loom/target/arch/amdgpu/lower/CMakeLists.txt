@@ -72,6 +72,7 @@ loom_cc_library(
     "descriptor_ref.h"
     "dot.h"
     "emit.h"
+    "encoding/e8m0_scale.h"
     "encoding/float16.h"
     "encoding/fp4.h"
     "encoding/fp8.h"
@@ -79,6 +80,7 @@ loom_cc_library(
     "encoding/fp8_table_counts.h"
     "encoding/fp8_tables.h"
     "encoding/fp8_vector_conversion.h"
+    "encoding/fp8_vector_plan.h"
     "encoding/vector_conversion.h"
     "feedback.h"
     "fragment_memory/access.h"
@@ -112,6 +114,7 @@ loom_cc_library(
     "sanitizer_report.h"
     "sanitizer_ubsan_report.h"
     "signal.h"
+    "source_integer_representation.h"
     "source_representation.h"
     "structural.h"
     "subgroup.h"
@@ -161,6 +164,7 @@ loom_cc_library(
     "descriptor_ref.c"
     "dot.c"
     "emit_support.c"
+    "encoding/e8m0_scale.c"
     "encoding/float16.c"
     "encoding/fp4.c"
     "encoding/fp8.c"
@@ -171,6 +175,7 @@ loom_cc_library(
     "encoding/fp8_plan.c"
     "encoding/fp8_tables.c"
     "encoding/fp8_vector_conversion.c"
+    "encoding/fp8_vector_plan.c"
     "encoding/vector_conversion.c"
     "feedback.c"
     "fragment_memory/access.c"
@@ -210,6 +215,7 @@ loom_cc_library(
     "sanitizer_ubsan_report.c"
     "signal.c"
     "source_alloca_layout.c"
+    "source_integer_representation.c"
     "source_representation.c"
     "source_type_mapping.c"
     "source_value_analysis.c"
@@ -303,6 +309,27 @@ loom_cc_library(
     loom::util::fact_table
     loom::util::numeric_format
   PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    memory_bank_service_test
+  SRCS
+    "memory_bank_service_test.cc"
+  DEPS
+    ::lower
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::codegen::low::source_memory_plan
+    loom::ir
+    loom::target::arch::amdgpu::analysis::lds_bank_service
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info
+    loom::target::types
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
 )
 endif()
 

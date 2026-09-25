@@ -56,6 +56,15 @@ static constexpr loom_low_lower_representation_boundary_t kBoundaries[] = {
     {LOOM_OP_VECTOR_MULI, kBoundaryVectorMultiply,
      LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
 };
+// Dense slots between the scalar and vector dialects are intentionally empty.
+static constexpr loom_low_lower_representation_boundary_span_t
+    kBoundarySpans[] = {
+        {0, 2}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0},
+        {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {2, 4},
+};
+static_assert(IREE_ARRAYSIZE(kBoundarySpans) ==
+              LOOM_DIALECT_VECTOR - LOOM_DIALECT_SCALAR + 1);
+static_assert(2 + 4 == IREE_ARRAYSIZE(kBoundaries));
 static_assert(static_cast<loom_op_kind_t>(LOOM_OP_SCALAR_CONSTANT) <
               static_cast<loom_op_kind_t>(LOOM_OP_SCALAR_ASSUME));
 static_assert(static_cast<loom_op_kind_t>(LOOM_OP_SCALAR_ASSUME) <
@@ -266,7 +275,10 @@ class LowLowerRepresentationObserverTest : public ::testing::Test {
         /*.observe_boundary=*/ObserveBoundary,
         /*.observe_callable_boundary=*/ObserveCallableBoundary,
         /*.boundaries=*/kBoundaries,
+        /*.boundary_spans=*/kBoundarySpans,
         /*.boundary_count=*/IREE_ARRAYSIZE(kBoundaries),
+        /*.boundary_dialect_base_id=*/LOOM_DIALECT_SCALAR,
+        /*.boundary_dialect_count=*/IREE_ARRAYSIZE(kBoundarySpans),
         /*.relation_mask=*/LOOM_VALUE_RELATION_MASK_ALL,
         /*.user_data=*/this,
     };

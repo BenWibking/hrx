@@ -159,6 +159,10 @@ static iree_status_t loom_amdgpu_source_alloca_layout_record_allocation(
                         LOOM_AMDGPU_SOURCE_ALLOCA_LAYOUT_ENTRY_HAS_OFFSET)) {
     return iree_ok_status();
   }
+  if (!loom_storage_interference_root_may_be_accessed(layout->interference,
+                                                      root_value_id)) {
+    return iree_ok_status();
+  }
 
   loom_amdgpu_source_alloca_layout_segment_t* segment =
       &layout->segments[memory_space];

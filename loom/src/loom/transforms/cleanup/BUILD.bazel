@@ -13,6 +13,32 @@ package(
 )
 
 loom_cc_library(
+    name = "fact_refinement_policy",
+    hdrs = ["fact_refinement_policy.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "fact_refinement",
+    srcs = ["fact_refinement.c"],
+    hdrs = ["fact_refinement.h"],
+    deps = [
+        ":fact_refinement_policy",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/util:adaptive_sort",
+        "//loom/src/loom/util:dominance",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "patterns",
     srcs = ["patterns.c"],
     hdrs = [
@@ -20,6 +46,7 @@ loom_cc_library(
         "special_value_policy.h",
     ],
     deps = [
+        ":fact_refinement_policy",
         "//loom/src/loom/rewrite:pattern_registry",
         "//runtime/src/iree/base",
     ],
@@ -48,9 +75,14 @@ loom_cc_library(
     srcs = ["configured.c"],
     hdrs = ["configured.h"],
     deps = [
+        ":fact_refinement_policy",
         ":patterns",
         "//loom/src/loom/ops:special_values",
+        "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/scalar",
+        "//loom/src/loom/ops/view",
         "//loom/src/loom/transforms/index:cleanup_patterns",
+        "//loom/src/loom/transforms/index:combine_patterns",
         "//loom/src/loom/transforms/scalar:cleanup_patterns",
         "//loom/src/loom/transforms/scalar:combine_patterns",
         "//loom/src/loom/transforms/scf:branch_fact_patterns",
@@ -105,6 +137,8 @@ loom_cc_library(
         "//loom/src/loom/transforms/symbol:__pkg__",
     ],
     deps = [
+        ":fact_refinement",
+        ":fact_refinement_policy",
         ":patterns",
         "//loom/src/loom/analysis:symbolic_expr",
         "//loom/src/loom/ir",
@@ -128,9 +162,11 @@ loom_cc_test(
     srcs = ["canonicalizer_test.cc"],
     deps = [
         ":canonicalizer",
+        ":configured",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops:special_values",
+        "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/test",
         "//loom/src/loom/ops/vector",
@@ -182,8 +218,7 @@ loom_cc_library(
         "//loom/src/loom/analysis:ownership",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
-        "//loom/src/loom/util:cfg_dominance",
-        "//loom/src/loom/util:cfg_graph",
+        "//loom/src/loom/util:dominance",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],

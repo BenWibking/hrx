@@ -661,7 +661,8 @@ static bool loom_target_callgraph_has_propagating_incoming_call(
     const loom_target_callgraph_state_t* state,
     loom_symbol_id_t target_symbol_id) {
   loom_symbol_reference_occurrence_id_t occurrence_id =
-      state->references.symbols[target_symbol_id].first_incoming_occurrence_id;
+      loom_symbol_reference_table_symbol(&state->references, target_symbol_id)
+          .first_incoming_occurrence_id;
   while (occurrence_id != LOOM_SYMBOL_REFERENCE_OCCURRENCE_ID_INVALID) {
     const loom_symbol_reference_occurrence_t* occurrence =
         loom_symbol_reference_table_occurrence(&state->references,
@@ -778,7 +779,8 @@ static iree_status_t loom_target_callgraph_plan_reachable_rows(
     loom_target_callgraph_context_t* caller_context =
         state->rows[row_id].context;
     loom_symbol_reference_occurrence_id_t edge_id =
-        state->references.symbols[caller_source_symbol_id]
+        loom_symbol_reference_table_symbol(&state->references,
+                                           caller_source_symbol_id)
             .first_outgoing_occurrence_id;
     while (state->plan_valid &&
            edge_id != LOOM_SYMBOL_REFERENCE_OCCURRENCE_ID_INVALID) {

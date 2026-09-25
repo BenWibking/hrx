@@ -10,6 +10,8 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/analysis/symbol_facts.h"
+#include "loom/error/error_defs.h"
+#include "loom/error/source.h"
 #include "loom/format/text/parser.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -145,6 +147,61 @@ class TargetEntrySelectionTest : public ::testing::Test {
   loom_context_t context_;
   iree_arena_allocator_t analysis_arena_;
 };
+
+TEST_F(TargetEntrySelectionTest, EmissionAndRelatedOpsUseTheirOwnModules) {
+  const char* first_source = "func.def @first() { func.return }\n";
+  ModulePtr first = ParseModule(first_source);
+  ModulePtr second = ParseModule("func.def @other() { func.return }\n");
+  // Both modules admit the same filename and source ID with different bytes.
+  const loom_source_entry_t snapshot = {0, iree_make_cstring_view(first_source),
+                                        first->sources.entries[0]};
+  loom_source_table_resolver_t table = {first.get(), &snapshot, 1};
+  loom_target_entry_options_t options = {};
+  options.source_resolver = {loom_source_table_resolve, &table};
+  options.diagnostic_sink.fn = [](void*, const loom_diagnostic_t* diagnostic) {
+    EXPECT_EQ(diagnostic->origin.provenance,
+              LOOM_SOURCE_PROVENANCE_UNAVAILABLE_SOURCE);
+    EXPECT_EQ(diagnostic->origin.source.size, 0u);
+    EXPECT_TRUE(
+        iree_string_view_equal(diagnostic->origin.filename,
+                               IREE_SV("target_entry_selection_test.loom")));
+    EXPECT_EQ(diagnostic->origin.start_line, 1u);
+    EXPECT_EQ(diagnostic->origin.start_column, 1u);
+    EXPECT_EQ(diagnostic->related_location_count, 2u);
+    if (diagnostic->related_location_count == 2) {
+      const auto& own = diagnostic->related_locations[0].source_location;
+      EXPECT_EQ(own.provenance, LOOM_SOURCE_PROVENANCE_EXACT_SOURCE);
+      EXPECT_TRUE(iree_string_view_equal(
+          own.source, IREE_SV("func.def @first() { func.return }\n")));
+      const auto& other = diagnostic->related_locations[1].source_location;
+      EXPECT_EQ(other.provenance, LOOM_SOURCE_PROVENANCE_UNAVAILABLE_SOURCE);
+      EXPECT_EQ(other.source.size, 0u);
+      EXPECT_EQ(other.start_line, 1u);
+    }
+    return iree_ok_status();
+  };
+  loom_target_entry_diagnostic_emitter_t emitter;
+  loom_target_entry_diagnostic_emitter_initialize(first.get(), &options,
+                                                  LOOM_EMITTER_PASS, &emitter);
+  loom_diagnostic_param_t params[] = {loom_param_string(IREE_SV("value"))};
+  loom_diagnostic_related_op_t related[2] = {};
+  related[0].op = loom_module_block(first.get())->first_op;
+  related[0].label = IREE_SV("original");
+  related[1].module = second.get();
+  related[1].op = loom_module_block(second.get())->first_op;
+  related[1].label = IREE_SV("other");
+  loom_diagnostic_emission_t emission = {};
+  emission.module = second.get();
+  emission.op = loom_module_block(second.get())->first_op;
+  emission.error = loom_error_def_lookup(LOOM_ERROR_DOMAIN_PARSE, 1);
+  emission.params = params;
+  emission.param_count = IREE_ARRAYSIZE(params);
+  emission.related_ops = related;
+  emission.related_op_count = IREE_ARRAYSIZE(related);
+  IREE_ASSERT_OK(
+      iree_diagnostic_emit(loom_target_entry_emitter(&emitter), &emission));
+  EXPECT_EQ(emitter.error_count, 1u);
+}
 
 TEST_F(TargetEntrySelectionTest, RefinedVersionOverridesAuthoredTarget) {
   ModulePtr module = ParseModule(R"(

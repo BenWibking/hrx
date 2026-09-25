@@ -382,6 +382,8 @@ loom_cc_library(
         "//loom/src/loom/target/arch/amdgpu/matrix:contract",
         "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
         "//loom/src/loom/transforms/vector:packet_legalization",
+        "//loom/src/loom/transforms/vector:shape_legalization",
+        "//loom/src/loom/transforms/vector:table_legalization",
         "//loom/src/loom/transforms/vector:to_scalar",
         "//loom/src/loom/transforms/view:target_legalization",
         "//runtime/src/iree/base",
@@ -554,6 +556,15 @@ loom_check_test_suite(
         ],
     ),
     compile_targets = {
+        "test/source_low/narrow_float_arguments.loom-test": [
+            "//loom/target/amdgpu:gfx942",
+            "//loom/target/amdgpu:gfx950",
+            "//loom/target/amdgpu:gfx1100",
+            "//loom/target/amdgpu:gfx1151",
+            "//loom/target/amdgpu:gfx1170",
+            "//loom/target/amdgpu:gfx1200",
+            "//loom/target/amdgpu:gfx1250",
+        ],
         "test/source_low/source_low_memory_atomic_observations_gfx1200.loom-test": [
             "//loom/target/amdgpu:gfx1200",
             "//loom/target/amdgpu:gfx1201",

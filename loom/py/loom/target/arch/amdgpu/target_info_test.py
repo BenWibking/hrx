@@ -12,6 +12,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 
 from loom.target.arch.amdgpu.lds_bank_service import (
+    AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100,
+    AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151,
     AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES,
 )
 from loom.target.arch.amdgpu.target_catalog import (
@@ -42,6 +46,7 @@ from loom.target.arch.amdgpu.target_info import (
     AMDGPU_MEMORY_ORDERING_MODEL_GFX12,
     AMDGPU_PROCESSOR_INFOS,
     AMDGPU_PROCESSOR_SCHEDULING_DELAY_ALU,
+    AMDGPU_PROCESSOR_SCHEDULING_TENSOR_ISSUE_DRAIN,
     AMDGPU_TARGET_ID_FEATURE_SUPPORT_NONE,
     AMDGPU_TARGET_ID_FEATURE_SUPPORT_SRAMECC,
     AMDGPU_TARGET_ID_FEATURE_SUPPORT_XNACK,
@@ -269,6 +274,16 @@ def test_descriptor_set_storage_target_lookup_classifies_storage_targets() -> No
         )
 
 
+def test_tensor_issue_drain_covers_exact_and_generic_gfx125x() -> None:
+    assert {
+        info.processor
+        for info in AMDGPU_PROCESSOR_INFOS
+        if info.features.scheduling & AMDGPU_PROCESSOR_SCHEDULING_TENSOR_ISSUE_DRAIN
+    } == {"gfx1250", "gfx1251", "gfx12-5-generic"}
+    # Stepping overlays inherit their processor's scheduling contract.
+    assert amdgpu_target_info_by_name("gfx1250-a0").processor == "gfx1250"
+
+
 def test_generic_descriptor_sets_have_independent_contracts() -> None:
     descriptor_sets_by_key = {info.key: info for info in AMDGPU_DESCRIPTOR_SET_INFOS}
     processors_by_name = {info.processor: info for info in AMDGPU_PROCESSOR_INFOS}
@@ -491,6 +506,35 @@ def test_lds_bank_service_models_are_structural_target_data() -> None:
         == AMDGPU_LDS_BANK_SERVICE_MODELS_WAVE32_B128_QUAD_PHASES
     )
     assert gfx1250_a0.semantics.lds_bank_service_models is None
+    for name in ("gfx940", "gfx941"):
+        assert (
+            processors[name].features.lds_bank_service_models
+            == AMDGPU_LDS_BANK_SERVICE_MODELS_CDNA3
+        )
+    assert (
+        processors["gfx942"].features.lds_bank_service_models
+        == AMDGPU_LDS_BANK_SERVICE_MODELS_GFX942
+    )
+    assert (
+        processors["gfx1100"].features.lds_bank_service_models
+        == AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1100
+    )
+    assert (
+        processors["gfx1151"].features.lds_bank_service_models
+        == AMDGPU_LDS_BANK_SERVICE_MODELS_GFX1151
+    )
+    # Native qualification does not transfer to other processors in a family.
+    for name in (
+        "gfx1101",
+        "gfx1102",
+        "gfx1103",
+        "gfx1150",
+        "gfx1200",
+        "gfx1201",
+        "gfx11-generic",
+        "gfx9-4-generic",
+    ):
+        assert processors[name].features.lds_bank_service_models == ()
     assert processors["gfx1251"].features.lds_bank_service_models == ()
     assert processors["gfx12-5-generic"].features.lds_bank_service_models == ()
 

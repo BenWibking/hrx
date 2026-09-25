@@ -179,6 +179,125 @@ loom-compile-report show kernel.report.json --format=json \
 The view is smaller and more stable for dashboards and agents than the complete
 compiler report.
 
+## Diagnose LDS bank conflicts
+
+For an AMDGPU kernel using workgroup memory, capture a `details` report and run
+`loom-compile-report show kernel.report.json`. The **Bank service** view connects
+source loads and stores to the selected LDS instruction and its lane-service
+model. Here, a report "packet" is one selected load/store instruction, such as
+`ds_write_b128`. Static totals count each instruction site once, regardless
+of how often its enclosing loop executes. Coverage divides those instructions
+into three categories:
+
+- **Exact** instructions have proven addresses and active lanes under a named
+  model.
+- **Unknown** instructions have a model, but an address, alignment, or
+  participation proof is missing. Each source group names the missing proof.
+- **Unmodeled** instructions have no model for the selected target, access width,
+  and wave size. A missing model is not evidence of conflict-free access.
+
+Model selection respects the function's execution width. Silicon-calibrated
+models cover `ds_read_u16`, `ds_write_b16`, and b32/b64/b128 reads and writes on
+gfx1100/gfx1151 in wave32 and wave64, and gfx942 in wave64. The gfx1100/gfx1151
+models also cover the partial-register `ds_load_u16_d16` and
+`ds_load_u16_d16_hi` reads in both wave sizes. Documented CDNA3 b128 wave64
+models cover gfx940/gfx941. The gfx1250 wave32 model is explicitly an
+unvalidated vendor software model. Other gfx11 processors, gfx1200/gfx1201,
+unsupported wave modes, and other access widths report unmodeled coverage. A
+shared bank count alone does not establish shared service rules.
+
+Reads and writes can have different lane-service groups, and repeated reads
+can broadcast. AMD's [LDS bank-conflict explanation](https://rocm.blogs.amd.com/software-tools-optimization/lds-bank-conflict/README.html)
+describes the CDNA3 b128 groups; the
+[ROCm programming guide](https://rocm-handbook.amd.com/_/downloads/amd-rocm-programming-guide/en/docs-7.2.3/pdf/)
+describes identical-address broadcast. Wide-access analysis requires proven
+alignment and full-subgroup participation. Fragment accesses use their compiled
+lane/register layout, including repeated lane addresses.
+
+Source accesses can combine multiple workitem coordinates and subgroup-uniform
+offsets. The analysis uses the native X-fastest workitem order and checks every
+wave in the workgroup. For example, on gfx1100/gfx1151, a b128 store at
+`16*x + 512*y` is conflict-free for a `32×2` wave32 workgroup. Changing the shape
+to `4×8` puts two rows in each write-service phase and doubles the required
+rounds. A `12×8`
+shape has different profiles across waves and reports
+`address-wave-profiles-differ`; no single wave's profile represents it exactly.
+
+Constant division, remainder, shift, and mask can also describe tiled
+coordinates. For example, the b128 store address
+`144*(x/8) + 16*(x%8)` is conflict-free across a 128-thread wave32 workgroup
+on gfx1100/gfx1151. Replacing `x` with `x+1` inside both digits doubles the
+required rounds. An offset inside division changes lane grouping; it is not
+just a common translation of the final addresses. These proofs require
+nonnegative, nonwrapping arithmetic and constant divisors. Unproved varying
+terms, runtime coordinate strides, and relationships lost across control-flow
+arguments remain unknown.
+
+The b64 models use contiguous 16-lane service groups on the qualified devices.
+For example, a wave32 b64 access at `8*lane` needs two uncontended rounds.
+Changing the lane stride to 128 bytes maps all sixteen lanes in each group to
+the same two banks, requiring 32 rounds: 30 extra rounds per instruction.
+Repeated reads of the same address still need only the uncontended rounds.
+
+Halfword and word accesses use contiguous 32-lane service groups.
+Halfword reads to either half of a bank word share a request; writes to disjoint
+halves also combine. Distinct words mapping to the same bank still conflict.
+The model reports `packet_bytes` separately from `bank_word_bytes` so a two-byte
+access retains its subword identity.
+
+Packed fragment loads can fill a register with separate low- and high-half
+reads. Each instruction gets its own model and address proof. For example,
+halfword reads at `2*(lane%16)` repeat eight bank words and need only two
+uncontended rounds per instruction in wave64. Filling the other register half
+does not change which LDS banks serve the read.
+
+Subword placement matters even with a fixed lane layout. For example, two
+16-halfword spans separated by 96 bytes are conflict-free at a four-byte-aligned
+base. Moving the base by two bytes makes the spans touch distinct words of bank
+zero. The report retains static offsets and dynamic divisibility, evaluates
+compatible byte-base residues, and reports `address-base-residue-unproven` when
+the possible placements have different phase profiles. Full-word translations
+only rotate bank indices and need no enumeration.
+
+Required and extra **service rounds** describe proven static instructions under
+the reported model. They are not measured cycles, wall-clock time, or a predicted
+speedup. Dynamic totals include only instructions with proven execution counts;
+unresolved loop counts remain unknown. The model's provenance is separate from
+the address proof: `exact` under an unvalidated model is still experimental.
+
+Use `loom-compile-report suggest kernel.report.json` to find proven conflicting
+groups, ordered by extra static service rounds. A finding names the source
+buffer and instruction, compares required and uncontended service, and gives
+the current bytes per lane. This order prioritizes structural layout
+experiments; a rarely executed tail can rank above a frequently executed loop.
+Runtime frequency and measured time determine which experiment matters most.
+
+Findings also identify unknown and unmodeled accesses to the same buffer,
+including other load and store forms. When the compiler records an LDS growth
+limit, the finding states how much padding fits before the next modeled
+residency drop, holding the launch and other resource counts fixed. Missing
+growth limits remain unavailable. Unvalidated-model suggestions require
+`--include-experimental`.
+
+For example, 32 wide reads might require 2,048 service rounds versus 256
+uncontended: an eightfold structural service requirement, with 1,792 extra
+rounds. If the report also records 27,904 bytes of LDS and a residency drop at
+32,769 bytes, there are 4,864 bytes of growth before that cliff. This supports
+trying a padded row pitch while preserving the 16-byte instruction width and
+updating both producer and consumer views. It does not establish a particular
+pitch: the physical layout, every access direction, and alignment still need
+qualification. Saving space in another staging buffer can also make room for
+padding, so compare the combined footprint as well as each individual change.
+
+Compare an authored pitch, padding, or lane-mapping change with
+`loom-compile-report diff baseline.report.json candidate.report.json`. The diff
+reports service changes and proof loss independently. A lower conflict count
+accompanied by more unknown or unmodeled instructions does not demonstrate an
+improvement. Evaluate both producer stores and consumer loads, then check
+register pressure, LDS footprint, residency, and native execution time before
+selecting the layout. Instruction scheduling can overlap service with other
+work; it cannot remove a conflict within one LDS instruction.
+
 ## Diff one controlled change
 
 Capture the same root, configuration, target, and workload before and after one

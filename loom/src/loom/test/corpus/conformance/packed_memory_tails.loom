@@ -35,7 +35,6 @@ check.case public @stage_i8_3_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -73,7 +72,6 @@ check.case public @stage_i8_7_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<224xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -111,7 +109,6 @@ check.case public @stage_i8_17_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<136xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -149,7 +146,6 @@ check.case public @stage_i8_63_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<252xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -187,7 +183,6 @@ check.case public @stage_f8E4M3_3_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -225,7 +220,6 @@ check.case public @stage_f8E5M2_7_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<224xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -263,7 +257,6 @@ check.case public @stage_i16_3_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi16>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi16>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi16>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -301,7 +294,6 @@ check.case public @stage_f16_63_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<63xi16>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi16>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi16>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -339,7 +331,6 @@ check.case public @stage_bf16_7_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<224xi16>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi16>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi16>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -377,7 +368,6 @@ check.case public @three_byte_snapshot {
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%input) expected(%cleared) : tensor<3xi8>
   check.expect.bitwise actual(%observed) expected(%cleared) : tensor<3xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -415,6 +405,5 @@ check.case public @stage_private_i8_3_bits {
   check.expect.bitwise actual(%input) expected(%expected) : tensor<192xi8>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi8>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

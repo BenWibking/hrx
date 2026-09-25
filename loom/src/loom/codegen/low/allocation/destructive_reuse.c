@@ -8,8 +8,6 @@
 
 #include <string.h>
 
-// Structural SSA relations form a DAG even when CFG block order differs from
-// definition order. Edge transfers are not identity relations in this graph.
 static bool loom_low_allocation_reuse_relation(
     const loom_low_placement_relation_t* relation) {
   return loom_low_placement_relation_can_alias(relation) &&
@@ -21,16 +19,9 @@ static iree_status_t loom_low_allocation_refine_destructive_reuse_build(
     const loom_low_allocation_unit_liveness_t* unit_liveness,
     const loom_liveness_analysis_t* liveness,
     loom_low_placement_table_t* placement, iree_arena_allocator_t* scratch) {
-  uint32_t* pending_users = NULL;
-  loom_value_ordinal_t* order = NULL;
   uint32_t* preservation_ends = NULL;
   uint32_t* first_writes = NULL;
   uint64_t* tied_preservation_words = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      scratch, placement->value_count, sizeof(*pending_users),
-      (void**)&pending_users));
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      scratch, placement->value_count, sizeof(*order), (void**)&order));
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       scratch, unit_liveness->point_count, sizeof(*preservation_ends),
       (void**)&preservation_ends));
@@ -46,7 +37,6 @@ static iree_status_t loom_low_allocation_refine_destructive_reuse_build(
       .bit_count = unit_liveness->point_count,
       .words = tied_preservation_words,
   };
-  memset(pending_users, 0, placement->value_count * sizeof(*pending_users));
   memcpy(preservation_ends, unit_liveness->end_points,
          unit_liveness->point_count * sizeof(*preservation_ends));
   memset(first_writes, 0xFF,
@@ -58,7 +48,6 @@ static iree_status_t loom_low_allocation_refine_destructive_reuse_build(
     if (!loom_low_allocation_reuse_relation(relation)) {
       continue;
     }
-    ++pending_users[relation->source_ordinal];
     const uint32_t source_start =
         unit_starts[relation->source_ordinal] + relation->source_unit_offset;
     const uint32_t result_start =
@@ -82,12 +71,9 @@ static iree_status_t loom_low_allocation_refine_destructive_reuse_build(
 
   // Visit users before sources. Required equalities retain the latest storage
   // observation through each tied-result chain, independently of SSA lifetime.
-  loom_value_ordinal_t order_count = 0;
-  for (loom_value_ordinal_t i = 0; i < placement->value_count; ++i) {
-    if (pending_users[i] == 0) {
-      order[order_count++] = i;
-    }
-  }
+  const loom_value_ordinal_t* order = placement->storage_value_order;
+  const loom_value_ordinal_t order_count = placement->storage_value_order_count;
+  IREE_ASSERT_EQ(order_count, placement->value_count);
   for (loom_value_ordinal_t cursor = 0; cursor < order_count; ++cursor) {
     const loom_low_placement_relation_range_t range =
         placement->ranges_by_result_ordinal[order[cursor]];
@@ -108,13 +94,8 @@ static iree_status_t loom_low_allocation_refine_destructive_reuse_build(
                        preservation_ends[result_start + unit]);
         }
       }
-      if (--pending_users[relation->source_ordinal] == 0) {
-        order[order_count++] = relation->source_ordinal;
-      }
     }
   }
-  IREE_ASSERT_EQ(order_count, placement->value_count,
-                 "structural SSA storage relations must be acyclic");
 
   // Identity siblings also share the family's storage observation bound.
   for (loom_value_ordinal_t cursor = order_count; cursor > 0; --cursor) {

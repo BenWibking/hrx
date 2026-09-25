@@ -17,6 +17,7 @@
 #include "loom/rewrite/greedy.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/rewrite/type_propagation.h"
+#include "loom/transforms/cleanup/fact_refinement.h"
 #include "loom/transforms/cleanup/patterns.h"
 #include "loom/util/walk.h"
 
@@ -322,6 +323,7 @@ iree_status_t loom_canonicalizer_initialize(
     loom_module_t* module, iree_arena_allocator_t* parent_arena,
     loom_pass_value_fact_owner_t* value_facts,
     const loom_cleanup_special_value_policy_t* special_value_policy,
+    const loom_fact_refinement_policy_t* fact_refinement_policy,
     loom_canonicalizer_t* out_canonicalizer) {
   memset(out_canonicalizer, 0, sizeof(*out_canonicalizer));
   loom_canonicalizer_state_t* state = NULL;
@@ -331,6 +333,7 @@ iree_status_t loom_canonicalizer_initialize(
   out_canonicalizer->module = module;
   out_canonicalizer->value_facts = value_facts;
   out_canonicalizer->special_value_policy = special_value_policy;
+  out_canonicalizer->fact_refinement_policy = fact_refinement_policy;
   out_canonicalizer->parent_arena = parent_arena;
   out_canonicalizer->state = state;
   iree_arena_initialize(parent_arena->block_pool,
@@ -366,6 +369,9 @@ typedef struct loom_canonicalize_rewrite_state_t {
   // Compiler-selected special-value policy, or NULL.
   const loom_cleanup_special_value_policy_t* special_value_policy;
 
+  // Dialect-composed relation preservation selected once for this region run.
+  const loom_fact_refinement_policy_t* fact_refinement_policy;
+
   // Symbolic expression context for exact address/integer cleanup.
   loom_symbolic_expr_context_t expression_context;
 
@@ -390,6 +396,12 @@ typedef struct loom_canonicalize_rewrite_state_t {
   // True after ordered region-initialization patterns have run.
   bool region_initialization_complete;
 } loom_canonicalize_rewrite_state_t;
+
+static iree_status_t loom_canonicalize_preserve_pending_exact_relations(
+    void* user_data, loom_rewriter_t* rewriter) {
+  return loom_fact_refinement_preserve_pending(
+      rewriter, (const loom_fact_refinement_policy_t*)user_data);
+}
 
 static iree_status_t loom_canonicalize_prepare_region(
     void* user_data, loom_greedy_rewrite_driver_t* driver,
@@ -489,26 +501,36 @@ static iree_status_t loom_canonicalize_begin_iteration(
   *out_changed = false;
   const loom_rewrite_pattern_registry_t* initialization_registry =
       state->patterns.region_initialization;
-  if (state->region_initialization_complete ||
-      initialization_registry == NULL ||
-      initialization_registry->pattern_count == 0) {
-    state->region_initialization_complete = true;
-    return iree_ok_status();
+  if (!state->region_initialization_complete && initialization_registry &&
+      initialization_registry->pattern_count > 0) {
+    loom_canonicalize_region_initialization_t initialization = {
+        .state = state,
+        .rewriter = &driver->rewriter,
+        .result = result,
+    };
+    loom_walk_result_t walk_result = LOOM_WALK_CONTINUE;
+    IREE_RETURN_IF_ERROR(loom_walk_region(
+        driver->module, region, LOOM_WALK_PRE_ORDER,
+        (loom_walk_callback_t){loom_canonicalize_initialize_region_op,
+                               &initialization},
+        driver->scratch_arena, &walk_result));
+    *out_changed = initialization.changed;
   }
-
-  loom_canonicalize_region_initialization_t initialization = {
-      .state = state,
-      .rewriter = &driver->rewriter,
-      .result = result,
-  };
-  loom_walk_result_t walk_result = LOOM_WALK_CONTINUE;
-  IREE_RETURN_IF_ERROR(loom_walk_region(
-      driver->module, region, LOOM_WALK_PRE_ORDER,
-      (loom_walk_callback_t){loom_canonicalize_initialize_region_op,
-                             &initialization},
-      driver->scratch_arena, &walk_result));
   state->region_initialization_complete = true;
-  *out_changed = initialization.changed;
+
+  if (state->fact_refinement_policy &&
+      loom_value_fact_table_has_pending_exact_relations(
+          driver->rewriter.fact_table)) {
+    driver->rewriter.flags = 0;
+    IREE_RETURN_IF_ERROR(loom_fact_refinement_preserve_pending(
+        &driver->rewriter, state->fact_refinement_policy));
+    if (iree_any_bit_set(driver->rewriter.flags, LOOM_REWRITER_FLAG_CHANGED)) {
+      loom_greedy_rewrite_result_record_change(
+          result, &driver->rewriter,
+          LOOM_GREEDY_REWRITE_CHANGE_FLAG_COUNT_MODIFIED_OP);
+      *out_changed = true;
+    }
+  }
   return iree_ok_status();
 }
 
@@ -655,6 +677,7 @@ static iree_status_t loom_canonicalizer_run_precomputed_region(
   }
   loom_canonicalize_rewrite_state_t state = {
       .special_value_policy = canonicalizer->special_value_policy,
+      .fact_refinement_policy = canonicalizer->fact_refinement_policy,
       .patterns = options ? options->patterns
                           : (loom_canonicalizer_pattern_registries_t){0},
       .refine_boundary = options
@@ -670,6 +693,13 @@ static iree_status_t loom_canonicalizer_run_precomputed_region(
           canonicalizer->special_value_policy
               ? canonicalizer->special_value_policy->materialize_constant
               : NULL,
+      .pending_exact_relations_callback =
+          {
+              .user_data = (void*)canonicalizer->fact_refinement_policy,
+              .fn = canonicalizer->fact_refinement_policy
+                        ? loom_canonicalize_preserve_pending_exact_relations
+                        : NULL,
+          },
       .math_policy = options ? options->math_policy : NULL,
   };
   loom_greedy_rewrite_callbacks_t callbacks = {

@@ -109,11 +109,12 @@ loom_low_allocation_unit_liveness_storage_segment_range_for_value_ordinal(
     const loom_liveness_analysis_t* liveness,
     loom_value_ordinal_t value_ordinal);
 
-// Propagates storage lifetimes across structural placement relations. Exact
-// tied results extend source ends and carry source starts into results.
-// Contiguous aggregate parts carry source starts into potential result
-// reservations. Sparse tied-source reservations retain the union of source and
-// result lifetimes without occupying gaps between mutually exclusive paths.
+// Propagates storage lifetimes across structural placement relations. One
+// origin assignment retains each exact tied component through its terminal
+// end, and source starts flow into tied results. Contiguous aggregate parts
+// carry source starts into potential result reservations. Sparse tied-source
+// reservations retain the component union without occupying gaps between
+// mutually exclusive paths.
 iree_status_t loom_low_allocation_unit_liveness_propagate_storage_relations(
     loom_low_allocation_unit_liveness_t* unit_liveness,
     const loom_liveness_analysis_t* liveness,

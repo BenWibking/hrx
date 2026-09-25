@@ -15,7 +15,9 @@
 
 #include <stdint.h>
 
+#include "loom/analysis/view_regions.h"
 #include "loom/codegen/low/lower/lower.h"
+#include "loom/codegen/low/representation_plan.h"
 #include "loom/codegen/low/source_memory_plan.h"
 #include "loom/ir/ir.h"
 #include "loom/ir/scalar_type.h"
@@ -249,6 +251,14 @@ enum loom_amdgpu_vector_float_conversion_strategy_e {
   // The strategy payload contains selected FP8 decode actions.
   LOOM_AMDGPU_VECTOR_FLOAT_CONVERSION_STRATEGY_FP8_DECODE = 4,
 };
+
+typedef uint8_t loom_amdgpu_vector_scale_materialization_kind_t;
+enum loom_amdgpu_vector_scale_materialization_kind_e {
+  // The conversion consumes its scale source directly, if present.
+  LOOM_AMDGPU_VECTOR_SCALE_MATERIALIZATION_NONE = 0,
+  // Packed E8M0 group scales are materialized as exact F32 operands.
+  LOOM_AMDGPU_VECTOR_SCALE_MATERIALIZATION_E8M0_F32 = 1,
+};
 static_assert(LOOM_AMDGPU_MAX_PACKED_16BIT_FLOAT_LANES <= UINT8_MAX,
               "vector conversion lane counts must fit compact plans");
 static_assert(LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES <= UINT8_MAX,
@@ -308,8 +318,8 @@ typedef struct loom_amdgpu_vector_16bit_float_conversion_plan_t {
   uint8_t storage_register_count;
   // Number of 32-bit result registers occupied by the result vector.
   uint8_t result_register_count;
-  // Byte reserved for a future bounded conversion-plan count.
-  uint8_t reserved;
+  // Target-side scale representation selected for conversion emission.
+  loom_amdgpu_vector_scale_materialization_kind_t scale_materialization_kind;
   // Strategy-specific data selected before emission.
   union {
     // Packed FP4 decode strategy when strategy_kind is FP4_DECODE.
@@ -471,10 +481,12 @@ typedef enum loom_amdgpu_scalar_conversion_kind_e {
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_TRUNCATE_LOW_32,
-  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_NARROW,
-  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_NARROW_LOW_32,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT_LOW_32,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SIGN_EXTEND_I64,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ZERO_EXTEND,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SITOFP_NARROW_TO_F32,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_UITOFP_NARROW_TO_F32,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_UITOFP_I64_TO_F64,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_SITOFP_I64_TO_F64,
@@ -497,6 +509,8 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   uint32_t result_bit_count;
   // Descriptor selected for conversion packets used by the strategy.
   loom_amdgpu_descriptor_ref_t convert_descriptor_ref;
+  // Planned physical representation of a narrow source or result.
+  loom_low_representation_id_t narrow_representation;
   // Native packed FP8 encode strategy for an FP8-result truncation.
   loom_amdgpu_fp8_encode_plan_t fp8_encode;
 } loom_amdgpu_scalar_conversion_plan_t;
@@ -511,10 +525,12 @@ typedef struct loom_amdgpu_f64_sign_plan_t {
 typedef enum loom_amdgpu_vector_conversion_kind_e {
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_NONE = 0,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_32_TO_FULL_32,
+  LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_32_TO_FULL_64,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_64_TO_FULL_32,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_32_TO_PACKED_INTEGER,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_FULL_64_TO_PACKED_INTEGER,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_INTEGER_TO_FULL_32,
+  LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_INTEGER_TO_FULL_64,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_INTEGER_TO_PACKED_INTEGER,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_PACKED_U8_TO_F32,
   LOOM_AMDGPU_VECTOR_CONVERSION_KIND_COUNT_,
@@ -543,12 +559,12 @@ typedef struct loom_amdgpu_vector_conversion_plan_t {
   uint32_t result_register_count;
   // Number of 32-bit source registers occupied by one source lane.
   uint32_t source_element_register_count;
-  // Descriptor selected for conversion packets used by the strategy.
+  // Descriptor for lane conversion, or high-word construction for i64 results.
   loom_amdgpu_descriptor_ref_t convert_descriptor_ref;
   // Byte permutation plan selected for full-register i8 result assembly.
   loom_amdgpu_i8_pack_permute_plan_t packed_i8_permute;
-  // True when packed integer source lanes require sign extension.
-  bool sign_extend_packed_source;
+  // True when integer source lanes require sign extension.
+  bool sign_extend_source;
 } loom_amdgpu_vector_conversion_plan_t;
 
 typedef struct loom_amdgpu_bitpack_plan_t {
@@ -815,7 +831,7 @@ typedef enum loom_amdgpu_table_lookup_strategy_e {
 typedef struct loom_amdgpu_table_lookup_plan_t {
   // Register table value selected by each index lane.
   loom_value_id_t table;
-  // Index vector selecting table lanes.
+  // Index vector selecting dynamic table lanes, or invalid when all are static.
   loom_value_id_t indices;
   // Result vector receiving selected table lanes.
   loom_value_id_t result;
@@ -841,6 +857,8 @@ typedef struct loom_amdgpu_table_lookup_plan_t {
   uint32_t result_lane_count;
   // Number of 32-bit registers occupied by the index vector.
   uint32_t index_register_count;
+  // Selected table lane for each F32 result, or UINT8_MAX for a dynamic index.
+  uint8_t table_lane_indices[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
 } loom_amdgpu_table_lookup_plan_t;
 
 typedef struct loom_amdgpu_vector_compare_plan_t {
@@ -1032,8 +1050,6 @@ typedef struct loom_amdgpu_subgroup_broadcast_plan_t {
   loom_value_id_t source_lane;
   // Exact source lane when known during planning, or UINT32_MAX when dynamic.
   uint32_t exact_source_lane;
-  // Source/result payload shape selected during planning.
-  loom_amdgpu_subgroup_payload_kind_t payload_kind;
   // Number of 32-bit registers in the broadcast payload.
   uint32_t register_count;
   // Native exchange and publication strategy selected during planning.
@@ -1049,8 +1065,6 @@ typedef struct loom_amdgpu_subgroup_broadcast_first_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Result value receiving the broadcast payload.
   loom_value_id_t result;
-  // Source/result payload shape selected during planning.
-  loom_amdgpu_subgroup_payload_kind_t payload_kind;
   // Number of 32-bit registers in the broadcast payload.
   uint32_t register_count;
   // Whether the mapped result requires copying the scalar read into VGPRs.
@@ -1088,10 +1102,8 @@ typedef struct loom_amdgpu_subgroup_shuffle_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Result value receiving the moved payload.
   loom_value_id_t result;
-  // Per-lane mask reporting whether the selected source lane is valid.
+  // Used per-lane participation result, or INVALID when the result is unused.
   loom_value_id_t valid;
-  // Source/result payload shape selected during planning.
-  loom_amdgpu_subgroup_payload_kind_t payload_kind;
   // Number of 32-bit registers in the shuffled payload.
   uint32_t register_count;
   // Cross-lane packet family selected for the shuffle.
@@ -1979,6 +1991,10 @@ typedef struct loom_amdgpu_tensor_load_plan_t {
   loom_low_lower_resolved_descriptor_t descriptor;
   // Descriptor row used to move each uniform D-group lane into an SGPR.
   loom_low_lower_resolved_descriptor_t readfirstlane_descriptor;
+  // Canonical global-read region, borrowed until source lowering finishes.
+  const loom_view_region_t* source_region;
+  // Canonical LDS-write region, borrowed until source lowering finishes.
+  const loom_view_region_t* dest_region;
   // Source values materialized as the packet's D0 through D3 SGPR groups.
   loom_value_id_t dgroups[LOOM_AMDGPU_TENSOR_DGROUP_CAPACITY];
   // Number of populated D-group source values.

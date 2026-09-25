@@ -1086,6 +1086,19 @@ def _buffer_load_b16_d16_hi_overlay(
         operand_forms=_buffer_operand_forms(
             vaddr_offset_descriptor_key=vaddr_offset_descriptor_key,
         ),
+        asm_forms=_asm(
+            results=("dst",),
+            operands=("src", "resource", "vaddr", "soffset"),
+            immediates=_memory_asm_immediate_names(cache_fields),
+            named_immediates=True,
+            native_assembly_values=(
+                _native_result("dst"),
+                _native_operand("vaddr"),
+                _native_operand("resource"),
+                _native_operand("soffset"),
+                _native_modifier_literal("offen"),
+            ),
+        ),
     )
 
 

@@ -318,16 +318,8 @@ iree_status_t loom_bytecode_write_module(
   uint64_t section_offsets[LOOM_BYTECODE_SECTION_COUNT] = {0};
   uint64_t section_lengths[LOOM_BYTECODE_SECTION_COUNT] = {0};
 
-  // Allocate root-region payload tracking from the arena.
-  loom_bytecode_ir_region_list_t* ir_regions = NULL;
-  if (iree_status_is_ok(status) && module->symbols.count > 0) {
-    status =
-        iree_arena_allocate_array(&arena, module->symbols.count,
-                                  sizeof(*ir_regions), (void**)&ir_regions);
-    if (iree_status_is_ok(status)) {
-      memset(ir_regions, 0, module->symbols.count * sizeof(*ir_regions));
-    }
-  }
+  // Root-region payload ranges produced by IR and consumed by SYMBOLS.
+  loom_bytecode_ir_region_index_t ir_region_index = {0};
 
   // IR section: independently bounded root regions streamed through the page
   // writer.
@@ -335,8 +327,8 @@ iree_status_t loom_bytecode_write_module(
   if (iree_status_is_ok(status)) {
     section_offsets[LOOM_BYTECODE_SECTION_IR] =
         page_writer.total_written - module_start;
-    status =
-        loom_bytecode_write_ir_section(&page_writer, &numbering, ir_regions);
+    status = loom_bytecode_write_ir_section(&page_writer, &numbering,
+                                            &ir_region_index);
     if (iree_status_is_ok(status)) {
       section_lengths[LOOM_BYTECODE_SECTION_IR] =
           page_writer.total_written - module_start -
@@ -350,7 +342,7 @@ iree_status_t loom_bytecode_write_module(
     section_offsets[LOOM_BYTECODE_SECTION_SYMBOLS] =
         page_writer.total_written - module_start;
     status = loom_bytecode_write_symbols_section(&page_writer, &numbering,
-                                                 ir_regions);
+                                                 &ir_region_index);
     if (iree_status_is_ok(status)) {
       section_lengths[LOOM_BYTECODE_SECTION_SYMBOLS] =
           page_writer.total_written - module_start -

@@ -180,16 +180,16 @@ static const loom_amdgpu_lower_dispatch_row_t
                 loom_amdgpu_emit_scalar_conversion_dispatch,
                 loom_amdgpu_low_legality_verify_scalar_conversion, 1,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
-        [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_UITOFP)] =
+        [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_SITOFP)] =
             LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
-                LOOM_OP_SCALAR_UITOFP, loom_amdgpu_scalar_conversion_plan_t,
+                LOOM_OP_SCALAR_SITOFP, loom_amdgpu_scalar_conversion_plan_t,
                 loom_amdgpu_select_scalar_conversion_dispatch,
                 loom_amdgpu_emit_scalar_conversion_dispatch,
                 loom_amdgpu_low_legality_verify_scalar_conversion, 1,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
-        [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_SITOFP)] =
+        [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_UITOFP)] =
             LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
-                LOOM_OP_SCALAR_SITOFP, loom_amdgpu_scalar_conversion_plan_t,
+                LOOM_OP_SCALAR_UITOFP, loom_amdgpu_scalar_conversion_plan_t,
                 loom_amdgpu_select_scalar_conversion_dispatch,
                 loom_amdgpu_emit_scalar_conversion_dispatch,
                 loom_amdgpu_low_legality_verify_scalar_conversion, 1,
@@ -207,13 +207,26 @@ static const loom_amdgpu_lower_dispatch_row_t
                 loom_amdgpu_emit_f64_sign_dispatch, NULL, 1,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_FPTOSI)] =
-            LOOM_AMDGPU_LEGALITY_ROW(
-                LOOM_OP_SCALAR_FPTOSI,
-                loom_amdgpu_low_legality_verify_scalar_conversion),
+            LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
+                LOOM_OP_SCALAR_FPTOSI, loom_amdgpu_scalar_conversion_plan_t,
+                loom_amdgpu_select_scalar_conversion_dispatch,
+                loom_amdgpu_emit_scalar_conversion_dispatch,
+                loom_amdgpu_low_legality_verify_scalar_conversion, 1,
+                LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_FPTOUI)] =
-            LOOM_AMDGPU_LEGALITY_ROW(
-                LOOM_OP_SCALAR_FPTOUI,
-                loom_amdgpu_low_legality_verify_scalar_conversion),
+            LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
+                LOOM_OP_SCALAR_FPTOUI, loom_amdgpu_scalar_conversion_plan_t,
+                loom_amdgpu_select_scalar_conversion_dispatch,
+                loom_amdgpu_emit_scalar_conversion_dispatch,
+                loom_amdgpu_low_legality_verify_scalar_conversion, 1,
+                LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
+        [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_BITCAST)] =
+            LOOM_AMDGPU_GENERATED_PRESELECT_DATA_SOURCE_POLICY_ROW(
+                LOOM_OP_SCALAR_BITCAST, loom_amdgpu_scalar_conversion_plan_t,
+                loom_amdgpu_select_scalar_conversion_dispatch,
+                loom_amdgpu_emit_scalar_conversion_dispatch,
+                loom_amdgpu_low_legality_verify_scalar_conversion, 1,
+                LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_CMPF)] =
             LOOM_AMDGPU_LEGALITY_ROW(LOOM_OP_SCALAR_CMPF, NULL),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_SCALAR_CLAMPF)] =
@@ -537,11 +550,12 @@ static const loom_amdgpu_lower_dispatch_row_t
                 loom_amdgpu_low_legality_verify_clampf, 3,
                 LOOM_AMDGPU_PRESELECT_TARGET_PLAN),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_VECTOR_TABLE_LOOKUP)] =
-            LOOM_AMDGPU_RECIPE_DATA_SOURCE_REPORT_KEY_ROW(
+            LOOM_AMDGPU_RECIPE_DATA_STORAGE_REPORT_KEY_ROW(
                 LOOM_OP_VECTOR_TABLE_LOOKUP, loom_amdgpu_table_lookup_plan_t,
                 loom_amdgpu_select_vector_table_lookup_dispatch,
                 loom_amdgpu_emit_vector_table_lookup_dispatch,
-                loom_amdgpu_low_legality_verify_vector_table, 2,
+                loom_amdgpu_low_legality_verify_vector_table,
+                LOOM_AMDGPU_STORAGE_TABLE_LOOKUP,
                 LOOM_AMDGPU_REPORT_KEY_TABLE_LOOKUP_STRATEGY),
         [LOOM_AMDGPU_OP_INDEX(LOOM_OP_VECTOR_BITPACK)] =
             LOOM_AMDGPU_RECIPE_DATA_SOURCE_ROW(

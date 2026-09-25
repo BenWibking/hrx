@@ -31,7 +31,6 @@ check.case public @nibble_lookup_4_consumers {
   %expected_floats = check.generate.iota offset(-127.0) step(16.0) period(16) : tensor<128xf32>
   check.expect.bitwise actual(%bytes) expected(%expected_bytes) : tensor<128xi8>
   check.expect.bitwise actual(%floats) expected(%expected_floats) : tensor<128xf32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -68,7 +67,6 @@ check.case public @nibble_lookup_8_consumers {
   %expected_floats = check.generate.iota offset(-127.0) step(16.0) period(16) : tensor<256xf32>
   check.expect.bitwise actual(%bytes) expected(%expected_bytes) : tensor<256xi8>
   check.expect.bitwise actual(%floats) expected(%expected_floats) : tensor<256xf32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -105,7 +103,6 @@ check.case public @nibble_lookup_16_consumers {
   %expected_floats = check.generate.iota offset(-127.0) step(16.0) period(16) : tensor<512xf32>
   check.expect.bitwise actual(%bytes) expected(%expected_bytes) : tensor<512xi8>
   check.expect.bitwise actual(%floats) expected(%expected_floats) : tensor<512xf32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -152,7 +149,6 @@ check.case public @computed_lookup_1 {
   %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<17xi8>
   check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<17xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<17xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -196,7 +192,6 @@ check.case public @computed_lookup_2 {
   %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<34xi8>
   check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<34xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<34xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -240,7 +235,6 @@ check.case public @computed_lookup_3 {
   %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<51xi8>
   check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<51xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<51xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -284,7 +278,6 @@ check.case public @computed_lookup_5 {
   %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<85xi8>
   check.expect.bitwise actual(%short_output) expected(%short_expected) : tensor<85xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<85xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -317,7 +310,6 @@ check.case public @computed_lookup_63 {
   kernel.launch @lookup_computed_63(%table, %output) : (tensor<16xi8>, tensor<1071xi8>)
   %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<1071xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<1071xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -350,7 +342,6 @@ check.case public @computed_lookup_64 {
   kernel.launch @lookup_computed_64(%table, %output) : (tensor<16xi8>, tensor<1088xi8>)
   %expected = check.generate.iota offset(-127) step(16) period(16) : tensor<1088xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<1088xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -383,7 +374,6 @@ check.case public @computed_short_lookup_63 {
   kernel.launch @lookup_short_computed_63(%table, %output) : (tensor<4xi8>, tensor<1071xi8>)
   %expected = check.generate.iota offset(-127) step(64) period(4) : tensor<1071xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<1071xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -416,6 +406,5 @@ check.case public @computed_short_lookup_64 {
   kernel.launch @lookup_short_computed_64(%table, %output) : (tensor<4xi8>, tensor<1088xi8>)
   %expected = check.generate.iota offset(-127) step(64) period(4) : tensor<1088xi8>
   check.expect.bitwise actual(%output) expected(%expected) : tensor<1088xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

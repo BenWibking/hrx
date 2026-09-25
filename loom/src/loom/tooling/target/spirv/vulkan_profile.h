@@ -120,6 +120,8 @@ typedef struct loom_spirv_vulkan_hal_profile_facts_t {
   uint32_t subgroup_size;
   // Maximum flat local workgroup size in invocations.
   uint32_t max_compute_workgroup_invocations;
+  // Maximum total Workgroup storage used by one shader entry point, in bytes.
+  uint64_t max_compute_shared_memory_size;
   // Maximum local workgroup size per dimension.
   loom_target_workgroup_size_t max_compute_workgroup_size;
   // Maximum dispatch workgroup count per dimension.

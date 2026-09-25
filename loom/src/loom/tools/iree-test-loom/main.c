@@ -220,16 +220,6 @@ static bool iree_test_loom_case_has_kernel_launch(
   return case_plan->kernel_launch_count != 0;
 }
 
-static bool iree_test_loom_selected_cases_have_device_event_expectation(
-    loom_testbench_case_plan_list_t cases) {
-  for (iree_host_size_t i = 0; i < cases.count; ++i) {
-    if (cases.values[i]->has_device_event_expectation) {
-      return true;
-    }
-  }
-  return false;
-}
-
 static iree_status_t iree_test_loom_append_skipped_case(
     const loom_testbench_case_plan_t* case_plan,
     const loom_testbench_requirement_result_t* requirement_result,
@@ -781,7 +771,7 @@ int iree_test_loom_main(int argc, char** argv,
         execution_options.invocation.function_call =
             configuration->function_call_provider.fn(
                 configuration->function_call_provider.user_data, selected,
-                loom_run_module_source_resolver(&run_module), &config_set);
+                &run_module.sources.table, &config_set);
       }
     }
     execution_options.materializer.host_allocator = allocator;
@@ -790,8 +780,7 @@ int iree_test_loom_main(int argc, char** argv,
             .fn = iree_test_loom_open_file_for_read,
             .user_data = &file_provider,
         };
-    if (iree_status_is_ok(status) &&
-        iree_test_loom_selected_cases_have_device_event_expectation(selected)) {
+    if (iree_status_is_ok(status)) {
       status = loom_testbench_device_event_capture_initialize(
           LOOM_TESTBENCH_DEVICE_EVENT_DEFAULT_CAPACITY, allocator,
           &device_event_capture);

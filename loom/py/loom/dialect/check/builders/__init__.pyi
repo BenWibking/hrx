@@ -183,15 +183,6 @@ class CheckBuilder(DialectBuilder):
         dims: list[int | ValueRef],
         location_id: int | None = ...,
     ) -> None: ...
-    def expect(
-        self,
-        *,
-        provider: str,
-        actual: ValueRef,
-        expected: ValueRef,
-        attrs: Mapping[str, Any] | None = ...,
-        location_id: int | None = ...,
-    ) -> None: ...
     def event(
         self,
         *,

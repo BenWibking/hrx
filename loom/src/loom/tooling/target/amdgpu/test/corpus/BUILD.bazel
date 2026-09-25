@@ -14,6 +14,7 @@ load(
 load(
     "//loom/build_tools/amdgpu:target_config.bzl",
     "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY",
+    "LOOM_AMDGPU_SUPPORTED_TARGETS",
 )
 load("//loom/build_tools/bazel:build_defs.bzl", "loom_config_compatible_with")
 load("//loom/build_tools/bazel:defs.bzl", "loom_module", "loom_test")
@@ -73,6 +74,15 @@ loom_test(
         AMDGPU_HARDWARE_PROFILE,
         AMDGPU_ACCESS_PROFILE,
     ],
+)
+
+loom_test(
+    name = "mx_decode_test",
+    srcs = [
+        "//loom/src/loom/test/corpus/encoding:mxfp4_decode_bf16.loom",
+        "//loom/src/loom/test/corpus/encoding:mxfp8_decode.loom",
+    ],
+    compile_targets = ["//loom/target/amdgpu:" + target for target in LOOM_AMDGPU_SUPPORTED_TARGETS],
 )
 
 loom_module(

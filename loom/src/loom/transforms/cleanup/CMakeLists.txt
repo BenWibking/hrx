@@ -11,6 +11,37 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    fact_refinement_policy
+  HDRS
+    "fact_refinement_policy.h"
+  DEPS
+    iree::base
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    fact_refinement
+  HDRS
+    "fact_refinement.h"
+  SRCS
+    "fact_refinement.c"
+  DEPS
+    ::fact_refinement_policy
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::op_defs
+    loom::rewrite::rewriter
+    loom::util::adaptive_sort
+    loom::util::dominance
+    loom::util::fact_table
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     patterns
   HDRS
     "patterns.h"
@@ -18,6 +49,7 @@ loom_cc_library(
   SRCS
     "patterns.c"
   DEPS
+    ::fact_refinement_policy
     iree::base
     loom::rewrite::pattern_registry
   PUBLIC
@@ -56,9 +88,14 @@ loom_cc_library(
   SRCS
     "configured.c"
   DEPS
+    ::fact_refinement_policy
     ::patterns
+    loom::ops::index
+    loom::ops::scalar
     loom::ops::special_values
+    loom::ops::view
     loom::transforms::index::cleanup_patterns
+    loom::transforms::index::combine_patterns
     loom::transforms::scalar::cleanup_patterns
     loom::transforms::scalar::combine_patterns
     loom::transforms::scf::branch_fact_patterns
@@ -115,6 +152,8 @@ loom_cc_library(
   SRCS
     "canonicalizer.c"
   DEPS
+    ::fact_refinement
+    ::fact_refinement_policy
     ::patterns
     iree::base
     iree::base::internal
@@ -140,10 +179,12 @@ loom_cc_test(
     "canonicalizer_test.cc"
   DEPS
     ::canonicalizer
+    ::configured
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
     loom::ir
+    loom::ops::index
     loom::ops::op_defs
     loom::ops::scalar
     loom::ops::special_values
@@ -202,8 +243,7 @@ loom_cc_library(
     loom::analysis::ownership
     loom::ir
     loom::ops::op_defs
-    loom::util::cfg_dominance
-    loom::util::cfg_graph
+    loom::util::dominance
   PUBLIC
 )
 

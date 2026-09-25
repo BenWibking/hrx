@@ -352,6 +352,8 @@ loom_cc_library(
     loom::target::arch::amdgpu::target_info_defs
     loom::target::legalization
     loom::transforms::vector::packet_legalization
+    loom::transforms::vector::shape_legalization
+    loom::transforms::vector::table_legalization
     loom::transforms::vector::to_scalar
     loom::transforms::view::target_legalization
   PUBLIC
@@ -576,6 +578,25 @@ loom_check_test_suite(
     "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
   TEST_NAME_PREFIX_TO_STRIP
     "test/source_low/"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "narrow_float_arguments"
+  SRC
+    "test/source_low/narrow_float_arguments.loom-test"
+  REGISTERED_SRCS
+    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
+  TARGETS
+    loom::target::amdgpu::gfx1100
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1170
+    loom::target::amdgpu::gfx1200
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+    loom::target::amdgpu::gfx950
 )
 endif()
 

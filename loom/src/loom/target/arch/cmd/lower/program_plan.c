@@ -674,7 +674,7 @@ iree_status_t loom_cmd_program_plan_prepare_materialization(
   }
   if (iree_status_is_ok(status)) {
     has_templates = references.template_demands.count != 0 ||
-                    references.template_providers.count != 0;
+                    references.template_provider_count != 0;
   }
   if (iree_status_is_ok(status)) {
     status = loom_kernel_resolve_launches(

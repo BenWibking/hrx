@@ -49,7 +49,6 @@ check.case public @conditional_guards_stopped {
   %stop = check.literal value(1) : i32
   %iterations = check.literal value(3) : index
   kernel.launch @conditional_guards(%input, %output, %length, %stop, %iterations) : (tensor<1xi32>, tensor<64xi32>, i32, i32, index)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %expected = check.generate.fill value(-123) : tensor<96xi32>
   check.expect.bitwise actual(%storage) expected(%expected) : tensor<96xi32>
   %original_input = check.generate.iota offset(-18) step(1) : tensor<1xi32>
@@ -66,7 +65,6 @@ check.case public @conditional_guards_empty {
   %stop = check.literal value(0) : i32
   %iterations = check.literal value(3) : index
   kernel.launch @conditional_guards(%input, %output, %length, %stop, %iterations) : (tensor<1xi32>, tensor<64xi32>, i32, i32, index)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %expected = check.generate.fill value(-123) : tensor<96xi32>
   check.expect.bitwise actual(%storage) expected(%expected) : tensor<96xi32>
   %original_input = check.generate.iota offset(-18) step(1) : tensor<1xi32>
@@ -84,7 +82,6 @@ check.case public @conditional_guards_partial_wave {
   %stop = check.literal value(0) : i32
   %iterations = check.literal value(3) : index
   kernel.launch @conditional_guards(%input, %output, %length, %stop, %iterations) : (tensor<37xi32>, tensor<64xi32>, i32, i32, index)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<96xi32> -> tensor<34xi32>
   %expected_prefix = check.generate.fill value(-123) : tensor<34xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<34xi32>
@@ -108,7 +105,6 @@ check.case public @conditional_guards_full_wave {
   %stop = check.literal value(0) : i32
   %iterations = check.literal value(3) : index
   kernel.launch @conditional_guards(%input, %output, %length, %stop, %iterations) : (tensor<64xi32>, tensor<64xi32>, i32, i32, index)
-  check.expect.event<device> {count = 0, type = "asan_report"}
   %prefix = check.tensor.view %storage offset(0) : tensor<96xi32> -> tensor<34xi32>
   %expected_prefix = check.generate.fill value(-123) : tensor<34xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<34xi32>

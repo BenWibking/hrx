@@ -147,6 +147,7 @@ loom_check_test_suite(
     "test/packet.loom-test"
     "test/packet_json.loom-test"
     "test/spill_lowering.loom-test"
+    "test/tensor_completion.loom-test"
     "test/vopd_plan.loom-test"
     "test/wait_coalescing.loom-test"
     "test/wait_completion.loom-test"
@@ -660,7 +661,6 @@ loom_cc_library(
     loom::codegen::low::storage_layout
     loom::codegen::low::target_binding
     loom::error::diagnostic
-    loom::error::error_defs
     loom::error::source
     loom::ir
     loom::ops::global

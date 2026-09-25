@@ -27,6 +27,100 @@ _CASES = glob(
 exports_files(_CASES + _CONFIGURED_CASES)
 
 loom_generated_file_family(
+    name = "subgroup_transport_gen",
+    testonly = True,
+    generator = "//loom/py/loom/gen/test:subgroup_transport",
+    output_directories = ["subgroup_transport_arrays"],
+    output_flags = [
+        "--output",
+        "--arrays",
+    ],
+    outputs = [
+        "subgroup_transport_cases.loom",
+        "subgroup_transport_arrays",
+    ],
+)
+
+loom_test(
+    name = "subgroup_transport_test",
+    srcs = [
+        ":subgroup_transport_cases.loom",
+        "//loom/src/loom/test/corpus/source_low:subgroup_shuffle_participation.loom-test",
+        "//loom/src/loom/test/corpus/source_low:subgroup_transport.loom-test",
+        "//loom/src/loom/test/corpus/source_low:subgroup_transport_carrier.loom-test",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx950",
+        "//loom/target/amdgpu:gfx1100",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1170",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/amdgpu:gfx1250",
+    ],
+    data = [":subgroup_transport_gen"],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
+loom_generated_file_family(
+    name = "scalar_float_conversion_gen",
+    testonly = True,
+    generator = "//loom/py/loom/gen/test:scalar_float_conversion",
+    output_directories = ["scalar_float_conversion_arrays"],
+    output_flags = [
+        "--output",
+        "--arrays",
+    ],
+    outputs = [
+        "scalar_float_conversion_cases.loom",
+        "scalar_float_conversion_arrays",
+    ],
+)
+
+loom_test(
+    name = "scalar_float_conversion_test",
+    srcs = [
+        "scalar_float_conversion.loom",
+        ":scalar_float_conversion_cases.loom",
+        "//loom/src/loom/test/corpus/source_low:narrow_float_arguments.loom-test",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx950",
+        "//loom/target/amdgpu:gfx1100",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1170",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/amdgpu:gfx1250",
+        "//loom/target/spirv:vulkan1.3+bda+extended-types",
+    ],
+    data = [":scalar_float_conversion_gen"],
+    execution_profiles = [
+        AMDGPU_HARDWARE_PROFILE,
+        AMDGPU_ACCESS_PROFILE,
+    ],
+)
+
+loom_test(
+    name = "vector_integer_widening_test",
+    srcs = ["vector_integer_widening.loom"],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx950",
+        "//loom/target/amdgpu:gfx1100",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1170",
+        "//loom/target/amdgpu:gfx1200",
+        "//loom/target/amdgpu:gfx1250",
+        "//loom/target/spirv:vulkan1.3+bda+extended-types",
+    ],
+    execution_profiles = GPU_HARDWARE_PROFILES + [AMDGPU_ACCESS_PROFILE],
+)
+
+loom_generated_file_family(
     name = "vector_i64_bitwise_gen",
     testonly = True,
     generator = "//loom/py/loom/gen/test:vector_i64_bitwise",

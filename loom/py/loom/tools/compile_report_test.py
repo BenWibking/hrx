@@ -72,6 +72,7 @@ def _write_report(
         }
     if experimental_bank_conflict:
         bank_service = {
+            "unmodeled_packet_count": 0,
             "modeled_packet_count": 1,
             "exact_packet_count": 1,
             "unknown_packet_count": 0,
@@ -117,7 +118,7 @@ def _write_report(
                             "wave_size": 32,
                             "bank_count": 32,
                             "bank_word_bytes": 4,
-                            "packet_bank_words": 4,
+                            "packet_bytes": 16,
                         },
                         "summary": bank_service,
                     }

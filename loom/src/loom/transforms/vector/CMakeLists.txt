@@ -40,6 +40,7 @@ loom_cc_library(
     loom::ops::vector
     loom::rewrite::pattern_registry
     loom::rewrite::rewriter
+    loom::transforms::conversion::chain
   PUBLIC
 )
 
@@ -194,6 +195,39 @@ loom_cc_library(
     loom::ops::buffer
     loom::ops::index
     loom::ops::scf
+    loom::ops::vector
+    loom::rewrite::rewriter
+    loom::target::legalization
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    table_legalization
+  HDRS
+    "table_legalization.h"
+  SRCS
+    "table_legalization.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::vector
+    loom::rewrite::rewriter
+    loom::target::legalization
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    shape_legalization
+  HDRS
+    "shape_legalization.h"
+  SRCS
+    "shape_legalization.c"
+  DEPS
+    iree::base
+    loom::ir
     loom::ops::vector
     loom::rewrite::rewriter
     loom::target::legalization

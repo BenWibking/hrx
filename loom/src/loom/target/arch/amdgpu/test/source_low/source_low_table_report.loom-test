@@ -154,6 +154,21 @@ CHECK-NOT: *plan_key=amdgpu.table_lookup.strategy.packed_i8*
 // RUN: with-checks compile-report target-legalize{mode=final},dce,canonicalize,source-to-low,low-dce
 amdgpu.target<gfx11-generic> @target
 
+func.def target(@target) @report_f32_table_lookup_static(%table: vector<3xf32>) -> (vector<4xf32>) {
+  %indices = vector.constant 2 : vector<4xi8>
+  %result = vector.table.lookup %table[%indices] : vector<3xf32>, vector<4xi8> -> vector<4xf32>
+  func.return %result : vector<4xf32>
+}
+
+// ----
+CHECK: COMPILE-REPORT: source_low[*] function=report_f32_table_lookup_static source_op=vector.table.lookup selection=plan plan_key=amdgpu.table_lookup.strategy.f32_static *
+CHECK-NOT: *plan_key=amdgpu.table_lookup.strategy.f32_ladder*
+
+// ====
+
+// RUN: with-checks compile-report target-legalize{mode=final},dce,canonicalize,source-to-low,low-dce
+amdgpu.target<gfx11-generic> @target
+
 // A U4 bound is insufficient for a four-entry table, including partial words.
 func.def target(@target) @insufficient_partial_index_bound(%table: vector<4xi8>, %input: vector<5xi8>) -> (vector<5xi8>) {
   %mask = vector.constant 15 : vector<5xi8>

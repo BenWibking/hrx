@@ -8,18 +8,25 @@
 
 #include "iree/base/internal/math.h"
 #include "loom/analysis/contract_vector.h"
+#include "loom/ops/index/ops.h"
+#include "loom/ops/scalar/ops.h"
 #include "loom/ops/vector/fragment.h"
 #include "loom/ops/vector/ops.h"
+#include "loom/ops/view/ops.h"
 #include "loom/target/arch/amdgpu/lower/fragment_memory/plan.h"
 #include "loom/target/arch/amdgpu/lower/matrix.h"
 #include "loom/target/arch/amdgpu/lower/matrix_fragment.h"
 #include "loom/target/arch/amdgpu/lower/matrix_fragment_state.h"
+#include "loom/target/arch/amdgpu/lower/source_integer_representation.h"
 #include "loom/target/arch/amdgpu/lower/source_value_analysis.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/matrix/contract.h"
 
 static_assert(LOOM_AMDGPU_ADDRESS_REPRESENTATION_NARROW >
                   LOOM_AMDGPU_MATRIX_RESULT_REPRESENTATION_MAX_ID,
+              "AMDGPU representation namespaces must not overlap");
+static_assert(LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_LOW_BITS >
+                  LOOM_AMDGPU_ADDRESS_REPRESENTATION_WIDE_VGPR,
               "AMDGPU representation namespaces must not overlap");
 
 typedef enum loom_amdgpu_matrix_representation_action_e {
@@ -28,6 +35,10 @@ typedef enum loom_amdgpu_matrix_representation_action_e {
   LOOM_AMDGPU_MATRIX_REPRESENTATION_ACTION_MMA = 2,
   LOOM_AMDGPU_MATRIX_REPRESENTATION_ACTION_FRAGMENT = 3,
 } loom_amdgpu_matrix_representation_action_t;
+static_assert(
+    (uint8_t)LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT >
+        (uint8_t)LOOM_AMDGPU_MATRIX_REPRESENTATION_ACTION_FRAGMENT,
+    "AMDGPU representation action namespaces must not overlap");
 
 IREE_ATTRIBUTE_NOINLINE static bool
 loom_amdgpu_matrix_representation_accumulator_fact(
@@ -266,6 +277,14 @@ static bool loom_amdgpu_source_representation_relation(
     return true;
   }
   switch ((loom_value_relation_kind_t)relation->kind) {
+    case LOOM_VALUE_RELATION_FACT_IDENTITY:
+    case LOOM_VALUE_RELATION_VALUE_ALIAS:
+    case LOOM_VALUE_RELATION_SELECT_PAYLOAD:
+      if (loom_amdgpu_source_integer_representation_type_is_narrow(
+              source_type)) {
+        return true;
+      }
+      break;
     case LOOM_VALUE_RELATION_CFG_ARGUMENT:
     case LOOM_VALUE_RELATION_LOOP_CARRIED:
     case LOOM_VALUE_RELATION_LOOP_BYPASS:
@@ -421,12 +440,19 @@ static void loom_amdgpu_matrix_representation_observe_store(
   }
 }
 
-static void loom_amdgpu_matrix_representation_observe_boundary(
+static void loom_amdgpu_source_representation_observe_boundary(
     void* user_data, uint8_t action,
     loom_low_lower_representation_boundary_flags_t flags,
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_representation_recorder_t* recorder) {
   (void)user_data;
+  if (action >=
+      LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT) {
+    loom_amdgpu_source_integer_representation_observe_boundary(
+        (loom_amdgpu_source_integer_representation_action_t)action, context,
+        source_op, recorder);
+    return;
+  }
   switch ((loom_amdgpu_matrix_representation_action_t)action) {
     case LOOM_AMDGPU_MATRIX_REPRESENTATION_ACTION_PIN_VALUE:
       if (iree_any_bit_set(
@@ -464,6 +490,8 @@ static void loom_amdgpu_source_representation_observe_callable_boundary(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_representation_recorder_t* recorder) {
   (void)user_data;
+  loom_amdgpu_source_integer_representation_observe_callable_boundary(
+      kind, context, source_op, recorder);
   const loom_module_t* module = loom_low_lower_context_module(context);
   switch (kind) {
     case LOOM_LOW_LOWER_REPRESENTATION_CALLABLE_DEFINITION: {
@@ -497,7 +525,40 @@ static void loom_amdgpu_source_representation_observe_callable_boundary(
 }
 
 static const loom_low_lower_representation_boundary_t
-    kAmdgpuMatrixRepresentationBoundaries[] = {
+    kAmdgpuSourceRepresentationBoundaries[] = {
+        {LOOM_OP_SCALAR_SITOFP,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGNED_CONVERSION,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_OPERANDS},
+        {LOOM_OP_SCALAR_UITOFP,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_UNSIGNED_CONVERSION,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_OPERANDS},
+        {LOOM_OP_SCALAR_FPTOSI,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_SCALAR_FPTOUI,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_SCALAR_EXTSI,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGNED_CONVERSION,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
+        {LOOM_OP_SCALAR_EXTUI,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_UNSIGNED_CONVERSION,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
+        {LOOM_OP_SCALAR_TRUNCI,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_SCALAR_BITCAST,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_SCALAR_CONSTANT,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_CONSTANT_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_VIEW_LOAD,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGN_EXTENDED_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_VECTOR_EXTRACT,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGN_EXTENDED_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
         {LOOM_OP_VECTOR_FRAGMENT_LOAD,
          LOOM_AMDGPU_MATRIX_REPRESENTATION_ACTION_PIN_VALUE,
          LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
@@ -513,8 +574,54 @@ static const loom_low_lower_representation_boundary_t
          LOOM_AMDGPU_MATRIX_REPRESENTATION_ACTION_PIN_VALUE,
          LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_OPERANDS |
              LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_INDEX_CAST,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_SIGN_EXTENDED_RESULT,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_RESULTS},
+        {LOOM_OP_KERNEL_SUBGROUP_SHUFFLE,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
+        {LOOM_OP_KERNEL_SUBGROUP_BROADCAST,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
+        {LOOM_OP_KERNEL_SUBGROUP_BROADCAST_FIRST,
+         LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_TRANSPORT_PAYLOAD,
+         LOOM_LOW_LOWER_REPRESENTATION_BOUNDARY_FLAG_ALL},
 };
-static_assert((loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_LOAD <
+static const loom_low_lower_representation_boundary_span_t
+    kAmdgpuSourceRepresentationBoundarySpans[LOOM_DIALECT_KERNEL -
+                                             LOOM_DIALECT_SCALAR + 1] = {
+        [LOOM_DIALECT_SCALAR - LOOM_DIALECT_SCALAR] = {0, 9},
+        [LOOM_DIALECT_VIEW - LOOM_DIALECT_SCALAR] = {9, 1},
+        [LOOM_DIALECT_VECTOR - LOOM_DIALECT_SCALAR] = {10, 6},
+        [LOOM_DIALECT_INDEX - LOOM_DIALECT_SCALAR] = {16, 1},
+        [LOOM_DIALECT_KERNEL - LOOM_DIALECT_SCALAR] = {17, 3},
+};
+static_assert(9 + 1 + 6 + 1 + 3 ==
+                  IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundaries),
+              "AMDGPU representation spans must cover every boundary");
+static_assert((loom_op_kind_t)LOOM_OP_SCALAR_SITOFP <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_UITOFP &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_UITOFP <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_FPTOSI &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_FPTOSI <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_FPTOUI &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_FPTOUI <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_EXTSI &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_EXTSI <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_EXTUI &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_EXTUI <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_TRUNCI &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_TRUNCI <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_BITCAST &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_BITCAST <
+                      (loom_op_kind_t)LOOM_OP_SCALAR_CONSTANT &&
+                  (loom_op_kind_t)LOOM_OP_SCALAR_CONSTANT <
+                      (loom_op_kind_t)LOOM_OP_VIEW_LOAD &&
+                  (loom_op_kind_t)LOOM_OP_VIEW_LOAD <
+                      (loom_op_kind_t)LOOM_OP_VECTOR_EXTRACT &&
+                  (loom_op_kind_t)LOOM_OP_VECTOR_EXTRACT <
+                      (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_LOAD &&
+                  (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_LOAD <
                       (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_STORE &&
                   (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_STORE <
                       (loom_op_kind_t)LOOM_OP_VECTOR_MMA &&
@@ -523,17 +630,27 @@ static_assert((loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_LOAD <
                   (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT <
                       (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_REPACK &&
                   (loom_op_kind_t)LOOM_OP_VECTOR_FRAGMENT_REPACK <
-                      (loom_op_kind_t)LOOM_OP_KERNEL_DEF,
-              "matrix representation boundaries must remain ordered");
+                      (loom_op_kind_t)LOOM_OP_INDEX_CAST &&
+                  (loom_op_kind_t)LOOM_OP_INDEX_CAST <
+                      (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_SHUFFLE &&
+                  (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_SHUFFLE <
+                      (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_BROADCAST &&
+                  (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_BROADCAST <
+                      (loom_op_kind_t)LOOM_OP_KERNEL_SUBGROUP_BROADCAST_FIRST,
+              "AMDGPU representation boundaries must remain ordered");
 
 static const loom_low_lower_representation_provider_t
     kAmdgpuSourceRepresentationProvider = {
         .relation = loom_amdgpu_source_representation_relation,
-        .observe_boundary = loom_amdgpu_matrix_representation_observe_boundary,
+        .observe_boundary = loom_amdgpu_source_representation_observe_boundary,
         .observe_callable_boundary =
             loom_amdgpu_source_representation_observe_callable_boundary,
-        .boundaries = kAmdgpuMatrixRepresentationBoundaries,
-        .boundary_count = IREE_ARRAYSIZE(kAmdgpuMatrixRepresentationBoundaries),
+        .boundaries = kAmdgpuSourceRepresentationBoundaries,
+        .boundary_spans = kAmdgpuSourceRepresentationBoundarySpans,
+        .boundary_count = IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundaries),
+        .boundary_dialect_base_id = LOOM_DIALECT_SCALAR,
+        .boundary_dialect_count =
+            IREE_ARRAYSIZE(kAmdgpuSourceRepresentationBoundarySpans),
         .relation_mask = LOOM_VALUE_RELATION_MASK_ALL,
 };
 

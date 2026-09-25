@@ -748,6 +748,26 @@ bool loom_low_source_memory_dynamic_offset_fits_unsigned_bit_count(
       bit_count);
 }
 
+bool loom_low_source_memory_access_plan_include_root_byte_offset(
+    loom_low_source_memory_access_plan_t* plan, uint64_t root_byte_offset) {
+  IREE_ASSERT_ARGUMENT(plan);
+  if (root_byte_offset > INT64_MAX) {
+    return false;
+  }
+  int64_t static_byte_offset = 0;
+  int64_t physical_root_byte_offset = 0;
+  if (!iree_checked_add_i64(plan->static_byte_offset, (int64_t)root_byte_offset,
+                            &static_byte_offset) ||
+      !iree_checked_add_i64(plan->physical_root_byte_offset,
+                            (int64_t)root_byte_offset,
+                            &physical_root_byte_offset)) {
+    return false;
+  }
+  plan->static_byte_offset = static_byte_offset;
+  plan->physical_root_byte_offset = physical_root_byte_offset;
+  return true;
+}
+
 static bool loom_low_source_memory_access_exact_positive_i64(
     const loom_value_fact_table_t* fact_table, loom_value_id_t value_id,
     int64_t* out_value) {
@@ -1380,7 +1400,14 @@ static bool loom_low_source_memory_access_plan_from_components(
     if (loom_symbolic_expr_context_try_lookup_summary(
             view_regions->expression_context, source_index,
             &analyzed_summary)) {
-      index_summary = analyzed_summary;
+      // Incoming coordinates are already materialized at the block boundary.
+      // Keep that value instead of reconstructing its expression across the
+      // CFG edge. Proof consumers still have the complete canonical summary.
+      if (loom_value_is_block_arg(loom_module_value(module, source_index))) {
+        index_summary.expression.facts = analyzed_summary.expression.facts;
+      } else {
+        index_summary = analyzed_summary;
+      }
     }
 
     const loom_symbolic_expr_t* index_expression = &index_summary.expression;
@@ -1391,8 +1418,7 @@ static bool loom_low_source_memory_access_plan_from_components(
     if (dynamic_axis_count == 1 && stride_value_count == 0) {
       out_plan->source_index_byte_stride = expression_byte_stride;
     }
-    loom_value_facts_t expression_facts =
-        loom_value_fact_table_lookup(fact_table, source_index);
+    loom_value_facts_t expression_facts = index_expression->facts;
 
     // A coordinate suffix cannot become a static byte offset when its axis
     // stride contains a dynamic extent: the suffix is multiplied by that

@@ -5268,6 +5268,40 @@ def _v_div_fixup_f32_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+def _v_cvt_f64_f32_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.v_cvt_f64_f32",
+        instruction_name="V_CVT_F64_F32",
+        mnemonic="v_cvt_f64_f32",
+        encoding_name="ENC_VOP1",
+        semantic_tag="convert.float.f32.f64",
+        schedule_class=_SCHEDULE_VALU,
+        operands=(
+            AmdgpuOperandOverlay("VDST", _vgpr_result(units=2)),
+            AmdgpuOperandOverlay("SRC0", _sgpr_vgpr_operand("input")),
+        ),
+        constraints=_REMATERIALIZABLE_RESULT_CONSTRAINTS,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _v_cvt_f32_f64_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.v_cvt_f32_f64",
+        instruction_name="V_CVT_F32_F64",
+        mnemonic="v_cvt_f32_f64",
+        encoding_name="ENC_VOP1",
+        semantic_tag="convert.float.f64.f32",
+        schedule_class=_SCHEDULE_VALU,
+        operands=(
+            AmdgpuOperandOverlay("VDST", _vgpr_result()),
+            AmdgpuOperandOverlay("SRC0", _sgpr_vgpr_operand("input", units=2)),
+        ),
+        constraints=_REMATERIALIZABLE_RESULT_CONSTRAINTS,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
 def _v_cvt_f32_i32_overlay() -> AmdgpuDescriptorOverlay:
     return AmdgpuDescriptorOverlay(
         descriptor_key="amdgpu.v_cvt_f32_i32",
@@ -7193,6 +7227,8 @@ __all__ = (
     "_v_cvt_f32_f16_overlay",
     "_v_cvt_f32_i32_overlay",
     "_v_cvt_f64_integer_overlays",
+    "_v_cvt_f64_f32_overlay",
+    "_v_cvt_f32_f64_overlay",
     "_v_cvt_f32_packed8_overlays",
     "_v_cvt_f32_packed8_selection_overlays",
     "_v_cvt_f32_ubyte_overlays",

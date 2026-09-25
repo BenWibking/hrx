@@ -232,8 +232,11 @@ typedef struct loom_low_source_memory_access_plan_t {
   int64_t vector_lane_byte_stride;
   // Classification of any per-lane offset vector carried by the source op.
   loom_low_source_memory_vector_offset_kind_t vector_offset_kind;
-  // Total static byte offset selected from the source view access.
+  // Total static byte offset, including a folded physical allocation base.
   int64_t static_byte_offset;
+  // Physical allocation-base contribution included in static_byte_offset.
+  // Subtract this when publishing source-root-relative memory effects.
+  int64_t physical_root_byte_offset;
   // Static byte offset contributed by the source view base.
   int64_t static_view_base_byte_offset;
   // Source SSA value that materializes the dynamic view-base byte offset, or
@@ -358,6 +361,12 @@ loom_value_facts_t loom_low_source_memory_dynamic_offset_facts(
 bool loom_low_source_memory_dynamic_offset_fits_unsigned_bit_count(
     const loom_low_source_memory_access_plan_t* plan,
     int64_t static_byte_offset, uint8_t bit_count);
+
+// Adds a target-selected physical allocation-root offset to |plan|.
+// Returns false without changing the plan when the offset cannot be represented
+// by the signed static byte-offset field.
+bool loom_low_source_memory_access_plan_include_root_byte_offset(
+    loom_low_source_memory_access_plan_t* plan, uint64_t root_byte_offset);
 
 // Returns the conservative byte envelope added by vector lanes within a single
 // planned memory packet.

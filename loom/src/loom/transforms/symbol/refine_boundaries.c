@@ -1585,6 +1585,9 @@ iree_status_t loom_refine_boundaries_run_with_options(
         cleanup_pattern_registry
             ? cleanup_pattern_registry->special_value_policy
             : NULL,
+        cleanup_pattern_registry
+            ? cleanup_pattern_registry->fact_refinement_policy
+            : NULL,
         &canonicalizer);
     canonicalizer_initialized = iree_status_is_ok(status);
   }

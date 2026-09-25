@@ -589,3 +589,29 @@ func.def @loop_widening_retains_byte_domain(%n: index) -> (i8, i64, i64) {
 // ----
 CHECK: %body_lower = scalar.constant -128 : i64
 CHECK: %body_upper = scalar.constant 127 : i64
+
+// ====
+
+// RUN: pass canonicalize,dce
+
+// Two independently tiled coordinates identify the same element within a tile.
+func.def @same_tile_coordinate(%raw: index) -> (index, i1) {
+  %value = index.assume %raw [range(%raw, 0, 4095)] : index
+  %tile = index.constant 128 : index
+  %group = index.constant 8 : index
+  %groups = index.constant 16 : index
+  %within_tile = index.rem %value, %tile : index
+  %left = index.div %within_tile, %group : index
+  %group_index = index.div %value, %group : index
+  %right = index.rem %group_index, %groups : index
+  %difference = index.sub %left, %right : index
+  %equal = index.cmp eq, %left, %right : index
+  func.return %difference, %equal : index, i1
+}
+
+// ----
+func.def @same_tile_coordinate(%raw: index) -> (index, i1) {
+  %difference = index.constant 0 : index
+  %equal = scalar.constant true : i1
+  func.return %difference, %equal : index, i1
+}

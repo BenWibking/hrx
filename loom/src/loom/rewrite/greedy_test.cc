@@ -472,6 +472,88 @@ TEST_F(GreedyRewriteTest, OperandMutationRequeuesUsersWhenFactsRemainEqual) {
   iree_arena_deinitialize(&arena);
 }
 
+TEST_F(GreedyRewriteTest, OperandTupleMutationPublishesFinalStateOnce) {
+  const loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+  loom_op_t* constants[4] = {};
+  for (int64_t i = 0; i < 4; ++i) {
+    IREE_ASSERT_OK(loom_test_constant_build(&builder_, loom_attr_i64(i + 1),
+                                            i32, LOOM_LOCATION_UNKNOWN,
+                                            &constants[i]));
+  }
+  loom_op_t* producer = nullptr;
+  IREE_ASSERT_OK(loom_test_addi_build(&builder_,
+                                      loom_test_constant_result(constants[0]),
+                                      loom_test_constant_result(constants[1]),
+                                      i32, LOOM_LOCATION_UNKNOWN, &producer));
+  loom_op_t* user = nullptr;
+  IREE_ASSERT_OK(loom_test_neg_build(&builder_, loom_test_addi_result(producer),
+                                     i32, LOOM_LOCATION_UNKNOWN, &user));
+
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(&block_pool_, &arena);
+  loom_pass_value_fact_owner_t fact_owner;
+  loom_pass_value_fact_owner_initialize(&block_pool_, &fact_owner);
+  loom_value_fact_table_t* facts = nullptr;
+  IREE_ASSERT_OK(loom_pass_value_fact_owner_acquire(
+      &fact_owner, module_, loom_pass_value_fact_scope_function(function_),
+      &facts));
+  loom_rewriter_t rewriter;
+  loom_rewriter_initialize(&rewriter, module_, &arena);
+  IREE_ASSERT_OK(loom_rewriter_enable_worklist(&rewriter));
+  loom_rewriter_attach_value_facts(&rewriter, facts);
+
+  int64_t exact_value = 0;
+  ASSERT_TRUE(loom_value_facts_as_exact_i64(
+      loom_rewriter_value_facts(&rewriter, loom_test_addi_result(producer)),
+      &exact_value));
+  EXPECT_EQ(exact_value, 3);
+
+  const loom_value_id_t replacement_operands[] = {
+      loom_test_constant_result(constants[2]),
+      loom_test_constant_result(constants[3]),
+  };
+  IREE_ASSERT_OK(
+      loom_rewriter_set_operands(&rewriter, producer, replacement_operands));
+  EXPECT_EQ(loom_test_addi_lhs(producer), replacement_operands[0]);
+  EXPECT_EQ(loom_test_addi_rhs(producer), replacement_operands[1]);
+  EXPECT_EQ(loom_module_value(module_, loom_test_constant_result(constants[0]))
+                ->use_count,
+            0u);
+  EXPECT_EQ(loom_module_value(module_, loom_test_constant_result(constants[1]))
+                ->use_count,
+            0u);
+  for (uint16_t i = 0; i < 2; ++i) {
+    const loom_value_t* value =
+        loom_module_value(module_, replacement_operands[i]);
+    ASSERT_EQ(value->use_count, 1u);
+    EXPECT_EQ(loom_use_user_op(loom_value_uses(value)[0]), producer);
+    EXPECT_EQ(loom_use_operand_index(loom_value_uses(value)[0]), i);
+  }
+  ASSERT_TRUE(loom_value_facts_as_exact_i64(
+      loom_rewriter_value_facts(&rewriter, loom_test_addi_result(producer)),
+      &exact_value));
+  EXPECT_EQ(exact_value, 7);
+
+  bool saw_producer = false;
+  bool saw_user = false;
+  while (loom_op_t* op = loom_rewriter_pop(&rewriter)) {
+    saw_producer |= op == producer;
+    saw_user |= op == user;
+  }
+  EXPECT_TRUE(saw_producer);
+  EXPECT_TRUE(saw_user);
+
+  rewriter.flags = 0;
+  IREE_ASSERT_OK(
+      loom_rewriter_set_operands(&rewriter, producer, replacement_operands));
+  EXPECT_EQ(rewriter.flags, 0u);
+  EXPECT_EQ(loom_rewriter_pop(&rewriter), nullptr);
+
+  loom_rewriter_deinitialize(&rewriter);
+  loom_pass_value_fact_owner_deinitialize(&fact_owner);
+  iree_arena_deinitialize(&arena);
+}
+
 TEST_F(GreedyRewriteTest, CyclicFactsNarrowAfterSemanticUpdates) {
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
   loom_region_t* body = loom_func_like_body(function_);

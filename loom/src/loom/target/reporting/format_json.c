@@ -1367,12 +1367,14 @@ static iree_status_t loom_target_compile_report_format_entry_json(
   IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(
       &object, IREE_SV("local_memory_bytes"), row->local_memory_bytes));
   if (row->bank_service_summary.modeled_packet_count != 0 ||
+      row->bank_service_summary.unmodeled_packet_count != 0 ||
       row->subgroup_access_summary.modeled_packet_count != 0) {
     IREE_RETURN_IF_ERROR(
         loom_json_object_begin_field(&object, IREE_SV("source_low_memory")));
     loom_json_object_writer_t source_low_memory;
     IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &source_low_memory));
-    if (row->bank_service_summary.modeled_packet_count != 0) {
+    if (row->bank_service_summary.modeled_packet_count != 0 ||
+        row->bank_service_summary.unmodeled_packet_count != 0) {
       IREE_RETURN_IF_ERROR(loom_json_object_begin_field(
           &source_low_memory, IREE_SV("bank_service")));
       IREE_RETURN_IF_ERROR(

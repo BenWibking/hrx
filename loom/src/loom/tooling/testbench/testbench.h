@@ -106,10 +106,8 @@ typedef enum loom_testbench_expectation_kind_e {
   LOOM_TESTBENCH_EXPECTATION_CLOSE = 3,
   // check.expect.shape metadata comparison.
   LOOM_TESTBENCH_EXPECTATION_SHAPE = 4,
-  // check.expect<provider> custom validation.
-  LOOM_TESTBENCH_EXPECTATION_CUSTOM = 5,
   // check.expect.event<provider> structured runtime event validation.
-  LOOM_TESTBENCH_EXPECTATION_EVENT = 6,
+  LOOM_TESTBENCH_EXPECTATION_EVENT = 5,
 } loom_testbench_expectation_kind_t;
 
 typedef struct loom_testbench_plan_options_t {
@@ -311,15 +309,6 @@ typedef struct loom_testbench_shape_expectation_plan_t {
   iree_host_size_t static_dimension_count;
 } loom_testbench_shape_expectation_plan_t;
 
-typedef struct loom_testbench_custom_expectation_plan_t {
-  // Interned provider string ID.
-  loom_string_id_t provider_id;
-  // Borrowed provider name.
-  iree_string_view_t provider;
-  // Borrowed custom validation attributes.
-  loom_named_attr_slice_t attrs;
-} loom_testbench_custom_expectation_plan_t;
-
 typedef struct loom_testbench_event_expectation_plan_t {
   // Interned provider string ID.
   loom_string_id_t provider_id;
@@ -345,8 +334,6 @@ typedef struct loom_testbench_expectation_plan_t {
     loom_testbench_close_expectation_plan_t close;
     // Payload for check.expect.shape.
     loom_testbench_shape_expectation_plan_t shape;
-    // Payload for check.expect<provider>.
-    loom_testbench_custom_expectation_plan_t custom;
     // Payload for check.expect.event<provider>.
     loom_testbench_event_expectation_plan_t event;
   };
@@ -376,8 +363,6 @@ typedef struct loom_testbench_case_plan_t {
   iree_string_view_t name;
   // True when the check.case is public testbench API.
   bool is_public;
-  // True when an expectation observes sample-scoped HAL device events.
-  bool has_device_event_expectation;
   // Parameter plans in source order.
   const loom_testbench_parameter_plan_t* parameters;
   // Number of entries in |parameters|.

@@ -90,11 +90,14 @@ class DestructiveReuseTest : public ::testing::Test {
     relations_[3] = Relation(2, 4, 1, 1, LOOM_LOW_PLACEMENT_CAUSE_LOW_CONCAT);
     const loom_low_placement_relation_range_t ranges[] = {
         {0, 1}, {1, 1}, {2, 2}, {4, 0}, {4, 0}};
+    const loom_value_ordinal_t storage_order[] = {1, 0, 2, 3, 4};
     loom_low_placement_table_t placement = {};
     placement.relations = relations_;
     placement.relation_count = IREE_ARRAYSIZE(relations_);
     placement.value_count = IREE_ARRAYSIZE(ranges);
     placement.ranges_by_result_ordinal = ranges;
+    placement.storage_value_order = storage_order;
+    placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
     IREE_ASSERT_OK(loom_low_allocation_refine_destructive_reuse(
         &units, &liveness, &placement, &arena_));
   }
@@ -162,11 +165,14 @@ TEST_F(DestructiveReuseTest, PreservesRequiredTiedFamilyObservations) {
   relations[1].write_point = 4;
   const loom_low_placement_relation_range_t ranges[] = {
       {0, 1}, {1, 1}, {2, 0}, {2, 1}};
+  const loom_value_ordinal_t storage_order[] = {1, 3, 0, 2};
   loom_low_placement_table_t placement = {};
   placement.relations = relations;
   placement.relation_count = IREE_ARRAYSIZE(relations);
   placement.value_count = IREE_ARRAYSIZE(ranges);
   placement.ranges_by_result_ordinal = ranges;
+  placement.storage_value_order = storage_order;
+  placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
 
   IREE_ASSERT_OK(loom_low_allocation_refine_destructive_reuse(
       &units, &liveness, &placement, &arena_));

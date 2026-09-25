@@ -45,7 +45,7 @@ typedef struct loom_spirv_emit_module_state_t {
   loom_spirv_type_context_t type_context;
   // Physical push-constant storage shared by HAL kernel entries.
   loom_spirv_module_shared_bda_root_t shared_bda_root;
-  // Shared Input variables for workgroup/local/global invocation builtins.
+  // Shared Input variables for invocation and subgroup builtins.
   uint32_t builtin_variable_ids[LOOM_SPIRV_BUILTIN_VARIABLE_COUNT];
   // First function's module-level target contract.
   loom_spirv_module_contract_t contract;
@@ -155,9 +155,15 @@ static iree_status_t loom_spirv_emit_low_function_into_module(
       .type_context = &state->type_context,
       .shared_bda_root = &state->shared_bda_root,
       .builtin_variable_ids = state->builtin_variable_ids,
+      .diagnostic_emitter = state->diagnostic_emitter,
   };
-  IREE_RETURN_IF_ERROR(loom_spirv_emit_low_function(&function_context,
-                                                    low_function_op, &target));
+  bool function_valid = false;
+  IREE_RETURN_IF_ERROR(loom_spirv_emit_low_function(
+      &function_context, low_function_op, &target, &function_valid));
+  if (!function_valid) {
+    state->flags |= LOOM_SPIRV_EMIT_MODULE_STATE_FLAG_INVALID_ENTRY;
+    return iree_ok_status();
+  }
   ++state->function_count;
   return iree_ok_status();
 }
@@ -272,8 +278,10 @@ iree_status_t loom_spirv_emit_low_module(
     const loom_low_descriptor_registry_t* descriptor_registry,
     iree_diagnostic_emitter_t diagnostic_emitter,
     iree_arena_allocator_t* scratch_arena,
-    const loom_spirv_emit_low_module_options_t* options,
+    const loom_spirv_emit_low_module_options_t* options, bool* out_emitted,
     loom_spirv_module_binary_t* out_module, iree_allocator_t allocator) {
+  IREE_ASSERT_ARGUMENT(out_emitted);
+  *out_emitted = false;
   loom_spirv_emit_module_state_t state = {0};
   IREE_RETURN_IF_ERROR(loom_spirv_emit_low_module_options_validate(options));
   IREE_RETURN_IF_ERROR(loom_spirv_emit_low_module_initialize(
@@ -300,6 +308,9 @@ iree_status_t loom_spirv_emit_low_module(
       !iree_any_bit_set(state.flags,
                         LOOM_SPIRV_EMIT_MODULE_STATE_FLAG_INVALID_ENTRY)) {
     status = loom_spirv_emit_module_state_finalize(&state, out_module);
+    if (iree_status_is_ok(status)) {
+      *out_emitted = true;
+    }
   }
   loom_spirv_emit_module_state_deinitialize(&state);
   if (!iree_status_is_ok(status)) {

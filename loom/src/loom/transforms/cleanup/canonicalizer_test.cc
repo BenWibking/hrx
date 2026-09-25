@@ -11,6 +11,7 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
+#include "loom/ops/index/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/special_values.h"
@@ -19,6 +20,7 @@
 #include "loom/pass/value_facts.h"
 #include "loom/target/facts.h"
 #include "loom/target/types.h"
+#include "loom/transforms/cleanup/configured.h"
 
 namespace loom {
 namespace {
@@ -43,6 +45,9 @@ class CanonicalizerTest : public ::testing::Test {
         loom_test_dialect_vtables(&vtable_count);
     IREE_ASSERT_OK(loom_context_register_dialect(
         &context_, LOOM_DIALECT_TEST, vtables, (uint16_t)vtable_count));
+    vtables = loom_index_dialect_vtables(&vtable_count);
+    IREE_ASSERT_OK(loom_context_register_dialect(
+        &context_, LOOM_DIALECT_INDEX, vtables, (uint16_t)vtable_count));
     vtables = loom_scalar_dialect_vtables(&vtable_count);
     IREE_ASSERT_OK(loom_context_register_dialect(
         &context_, LOOM_DIALECT_SCALAR, vtables, (uint16_t)vtable_count));
@@ -84,15 +89,16 @@ class CanonicalizerTest : public ::testing::Test {
       loom_func_like_t function,
       const loom_canonicalizer_options_t* options = nullptr,
       const loom_cleanup_special_value_policy_t* special_value_policy =
-          &kSpecialValuePolicy) {
+          &kSpecialValuePolicy,
+      const loom_fact_refinement_policy_t* fact_refinement_policy = nullptr) {
     iree_arena_allocator_t pass_arena;
     iree_arena_initialize(&block_pool_, &pass_arena);
     loom_pass_value_fact_owner_t value_facts = {};
     loom_pass_value_fact_owner_initialize(&block_pool_, &value_facts);
     loom_canonicalizer_t canonicalizer;
-    iree_status_t status =
-        loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                      special_value_policy, &canonicalizer);
+    iree_status_t status = loom_canonicalizer_initialize(
+        module_, &pass_arena, &value_facts, special_value_policy,
+        fact_refinement_policy, &canonicalizer);
     if (iree_status_is_ok(status)) {
       status = loom_canonicalizer_run_function(&canonicalizer, function,
                                                options, nullptr);
@@ -454,6 +460,122 @@ TEST_F(CanonicalizerTest, NewOpsAddedToWorklist) {
   EXPECT_EQ(constant_value(loom_op_operands(use)[0]), 7);
 }
 
+TEST_F(CanonicalizerTest, FactRefinementChainUsesBoundedNames) {
+  constexpr uint16_t kRelationCount = 256;
+  const loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+
+  loom_value_id_t upper = LOOM_VALUE_ID_INVALID;
+  IREE_ASSERT_OK(loom_builder_define_block_arg(
+      &builder_, loom_region_entry_block(body_), index_type, &upper));
+  loom_string_id_t upper_name = LOOM_STRING_ID_INVALID;
+  IREE_ASSERT_OK(
+      loom_builder_intern_string(&builder_, IREE_SV("upper"), &upper_name));
+  IREE_ASSERT_OK(loom_module_set_value_name(module_, upper, upper_name));
+  for (uint16_t i = 0; i < kRelationCount; ++i) {
+    loom_op_t* constant_op = nullptr;
+    IREE_ASSERT_OK(loom_index_constant_build(&builder_, loom_attr_i64(i),
+                                             index_type, LOOM_LOCATION_UNKNOWN,
+                                             &constant_op));
+    const loom_value_id_t exact = loom_index_constant_result(constant_op);
+    const loom_predicate_t predicate = {
+        /*.kind=*/LOOM_PREDICATE_LT,
+        /*.arg_count=*/2,
+        /*.arg_tags=*/
+        {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_NONE},
+        /*.reserved=*/{},
+        /*.args=*/{exact, upper, 0},
+    };
+    loom_op_t* assume_op = nullptr;
+    IREE_ASSERT_OK(loom_index_assume_build(&builder_, &exact, 1, &predicate, 1,
+                                           &index_type, 1,
+                                           LOOM_LOCATION_UNKNOWN, &assume_op));
+  }
+  loom_op_t* use_op = nullptr;
+  IREE_ASSERT_OK(loom_test_use_build(&builder_, &upper, 1,
+                                     LOOM_LOCATION_UNKNOWN, &use_op));
+
+  const loom_fact_refinement_policy_t* refinement_policy =
+      loom_cleanup_configured_pattern_provider_set()->fact_refinement_policy;
+  IREE_ASSERT_OK(run_canonicalize(func_like_, nullptr, &kSpecialValuePolicy,
+                                  refinement_policy));
+
+  loom_value_id_t current = loom_op_const_operands(use_op)[0];
+  for (uint16_t i = 0; i < kRelationCount; ++i) {
+    loom_op_t* defining_op =
+        loom_value_def_op(loom_module_value(module_, current));
+    ASSERT_NE(defining_op, nullptr);
+    ASSERT_TRUE(loom_index_assume_isa(defining_op));
+    EXPECT_TRUE(iree_string_view_equal(loom_module_value_name(module_, current),
+                                       IREE_SV("upper_refined")));
+    const loom_attribute_t predicates =
+        loom_index_assume_predicates(defining_op);
+    ASSERT_EQ(predicates.count, 1);
+    EXPECT_EQ(predicates.predicate_list[0].kind, LOOM_PREDICATE_GT);
+    EXPECT_EQ(predicates.predicate_list[0].args[1], kRelationCount - i - 1);
+    current = loom_index_assume_values(defining_op).values[0];
+  }
+  EXPECT_EQ(current, upper);
+}
+
+TEST_F(CanonicalizerTest, FactRefinementBatchesVariadicRelations) {
+  constexpr uint16_t kRelationCount = 256;
+  const loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
+  loom_value_id_t exact_values[kRelationCount];
+  loom_value_id_t upper_values[kRelationCount];
+  loom_type_t result_types[kRelationCount];
+  loom_predicate_t predicates[kRelationCount] = {};
+
+  loom_block_t* entry_block = loom_region_entry_block(body_);
+  for (uint16_t i = 0; i < kRelationCount; ++i) {
+    IREE_ASSERT_OK(loom_builder_define_block_arg(&builder_, entry_block,
+                                                 index_type, &upper_values[i]));
+  }
+  for (uint16_t i = 0; i < kRelationCount; ++i) {
+    loom_op_t* constant_op = nullptr;
+    IREE_ASSERT_OK(loom_index_constant_build(&builder_, loom_attr_i64(i),
+                                             index_type, LOOM_LOCATION_UNKNOWN,
+                                             &constant_op));
+    exact_values[i] = loom_index_constant_result(constant_op);
+    result_types[i] = index_type;
+    predicates[i] = (loom_predicate_t){
+        /*.kind=*/LOOM_PREDICATE_LT,
+        /*.arg_count=*/2,
+        /*.arg_tags=*/
+        {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_NONE},
+        /*.reserved=*/{},
+        /*.args=*/{exact_values[i], upper_values[i], 0},
+    };
+  }
+  loom_op_t* assume_op = nullptr;
+  IREE_ASSERT_OK(loom_index_assume_build(
+      &builder_, exact_values, kRelationCount, predicates, kRelationCount,
+      result_types, kRelationCount, LOOM_LOCATION_UNKNOWN, &assume_op));
+  loom_op_t* use_op = nullptr;
+  IREE_ASSERT_OK(loom_test_use_build(&builder_, upper_values, kRelationCount,
+                                     LOOM_LOCATION_UNKNOWN, &use_op));
+
+  const loom_fact_refinement_policy_t* refinement_policy =
+      loom_cleanup_configured_pattern_provider_set()->fact_refinement_policy;
+  IREE_ASSERT_OK(run_canonicalize(func_like_, nullptr, &kSpecialValuePolicy,
+                                  refinement_policy));
+
+  for (uint16_t i = 0; i < kRelationCount; ++i) {
+    const loom_value_id_t refined = loom_op_const_operands(use_op)[i];
+    loom_op_t* defining_op =
+        loom_value_def_op(loom_module_value(module_, refined));
+    ASSERT_NE(defining_op, nullptr);
+    ASSERT_TRUE(loom_index_assume_isa(defining_op));
+    EXPECT_EQ(loom_op_const_operands(defining_op)[0], upper_values[i]);
+    const loom_attribute_t refined_predicates =
+        loom_index_assume_predicates(defining_op);
+    ASSERT_EQ(refined_predicates.count, 1);
+    EXPECT_EQ(refined_predicates.predicate_list[0].kind, LOOM_PREDICATE_GT);
+    EXPECT_EQ(refined_predicates.predicate_list[0].arg_tags[1],
+              LOOM_PRED_ARG_CONST);
+    EXPECT_EQ(refined_predicates.predicate_list[0].args[1], i);
+  }
+}
+
 TEST_F(CanonicalizerTest, EmptyFunctionNoOps) {
   // Empty function body — canonicalize should succeed with nothing to do.
   IREE_ASSERT_OK(run_canonicalize(func_like_));
@@ -743,9 +865,9 @@ TEST_F(CanonicalizerTest, DriverReusesFactsAcrossNoopRuns) {
   loom_pass_value_fact_lifecycle_counts_t counts = {};
   value_facts.lifecycle_counts = &counts;
   loom_canonicalizer_t canonicalizer;
-  IREE_ASSERT_OK(
-      loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                    &kSpecialValuePolicy, &canonicalizer));
+  IREE_ASSERT_OK(loom_canonicalizer_initialize(
+      module_, &pass_arena, &value_facts, &kSpecialValuePolicy,
+      /*fact_refinement_policy=*/nullptr, &canonicalizer));
 
   loom_canonicalizer_result_t result;
   IREE_ASSERT_OK(loom_canonicalizer_run_function(&canonicalizer, func_like_,
@@ -803,9 +925,9 @@ TEST_F(CanonicalizerTest, DriverFactsMatchFreshRecomputationAfterChanges) {
   loom_pass_value_fact_owner_t value_facts = {};
   loom_pass_value_fact_owner_initialize(&block_pool_, &value_facts);
   loom_canonicalizer_t canonicalizer;
-  IREE_ASSERT_OK(
-      loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                    &kSpecialValuePolicy, &canonicalizer));
+  IREE_ASSERT_OK(loom_canonicalizer_initialize(
+      module_, &pass_arena, &value_facts, &kSpecialValuePolicy,
+      /*fact_refinement_policy=*/nullptr, &canonicalizer));
   loom_canonicalizer_result_t result;
   IREE_ASSERT_OK(loom_canonicalizer_run_function(&canonicalizer, func_like_,
                                                  NULL, &result));
@@ -890,9 +1012,9 @@ TEST_F(CanonicalizerTest, DriverAcceptsSeedFacts) {
   loom_pass_value_fact_owner_t value_facts = {};
   loom_pass_value_fact_owner_initialize(&block_pool_, &value_facts);
   loom_canonicalizer_t canonicalizer;
-  IREE_ASSERT_OK(
-      loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                    &kSpecialValuePolicy, &canonicalizer));
+  IREE_ASSERT_OK(loom_canonicalizer_initialize(
+      module_, &pass_arena, &value_facts, &kSpecialValuePolicy,
+      /*fact_refinement_policy=*/nullptr, &canonicalizer));
   loom_canonicalizer_result_t result;
   loom_canonicalizer_options_t options = {};
   options.seed_facts = {&seed_facts, &arg, 1};
@@ -975,9 +1097,9 @@ TEST_F(CanonicalizerTest, DriverPreservesExplicitTargetFactsAcrossSideRegions) {
   loom_pass_value_fact_lifecycle_counts_t counts = {};
   value_facts.lifecycle_counts = &counts;
   loom_canonicalizer_t canonicalizer;
-  IREE_ASSERT_OK(
-      loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                    &kSpecialValuePolicy, &canonicalizer));
+  IREE_ASSERT_OK(loom_canonicalizer_initialize(
+      module_, &pass_arena, &value_facts, &kSpecialValuePolicy,
+      /*fact_refinement_policy=*/nullptr, &canonicalizer));
   loom_canonicalizer_result_t result;
   loom_canonicalizer_options_t options = {};
   options.target_facts = &target_facts;
@@ -1044,9 +1166,9 @@ TEST_F(CanonicalizerTest, RegionDriverAcceptsSeedFacts) {
   loom_pass_value_fact_owner_t value_facts = {};
   loom_pass_value_fact_owner_initialize(&block_pool_, &value_facts);
   loom_canonicalizer_t canonicalizer;
-  IREE_ASSERT_OK(
-      loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                    &kSpecialValuePolicy, &canonicalizer));
+  IREE_ASSERT_OK(loom_canonicalizer_initialize(
+      module_, &pass_arena, &value_facts, &kSpecialValuePolicy,
+      /*fact_refinement_policy=*/nullptr, &canonicalizer));
   loom_canonicalizer_result_t result;
   loom_canonicalizer_options_t options = {};
   options.seed_facts = {&seed_facts, &config_arg, 1};
@@ -1076,9 +1198,9 @@ TEST_F(CanonicalizerTest, DriverResetsScratchArenaBetweenRuns) {
   loom_pass_value_fact_owner_t value_facts = {};
   loom_pass_value_fact_owner_initialize(&block_pool_, &value_facts);
   loom_canonicalizer_t canonicalizer;
-  IREE_ASSERT_OK(
-      loom_canonicalizer_initialize(module_, &pass_arena, &value_facts,
-                                    &kSpecialValuePolicy, &canonicalizer));
+  IREE_ASSERT_OK(loom_canonicalizer_initialize(
+      module_, &pass_arena, &value_facts, &kSpecialValuePolicy,
+      /*fact_refinement_policy=*/nullptr, &canonicalizer));
 
   loom_canonicalizer_result_t result;
   IREE_ASSERT_OK(loom_canonicalizer_run_function(&canonicalizer, func_like_,

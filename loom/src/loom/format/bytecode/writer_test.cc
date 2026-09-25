@@ -6,6 +6,7 @@
 
 #include "loom/format/bytecode/writer.h"
 
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/format/bytecode/format.h"
 #include "loom/format/bytecode/varint.h"
+#include "loom/format/bytecode/writer/body.h"
 #include "loom/format/bytecode/writer/encoder.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -1394,6 +1396,134 @@ TEST_F(WriterTest, ProjectsModuleSymbolsIntoPresentationOrder) {
   EXPECT_GT(bytes.size(), 0u);
   EXPECT_EQ(wire_symbol_ordinals[0], 1u);
   EXPECT_EQ(wire_symbol_ordinals[1], 0u);
+
+  loom_module_free(module);
+}
+
+TEST_F(WriterTest, BodyPayloadIndexUsesSparsePoolSizedPages) {
+  constexpr iree_host_size_t kPageCapacity =
+      LOOM_BYTECODE_IR_REGION_PAGE_CAPACITY;
+  constexpr iree_host_size_t kSymbolCount = 2 * kPageCapacity + 1;
+  const loom_symbol_id_t body_symbol_ids[] = {
+      0,
+      (loom_symbol_id_t)(kPageCapacity - 1),
+      (loom_symbol_id_t)(2 * kPageCapacity),
+  };
+
+  loom_module_t* module = CreateModule("body_payload_index");
+  loom_builder_t module_builder;
+  loom_builder_initialize(module, &module->arena, loom_module_block(module),
+                          &module_builder);
+  for (iree_host_size_t i = 0; i < kSymbolCount; ++i) {
+    char name[32];
+    std::snprintf(name, sizeof(name), "function_%08zu", i);
+    loom_string_id_t name_id = LOOM_STRING_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_intern_string(
+        module, iree_make_cstring_view(name), &name_id));
+    loom_symbol_id_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+    IREE_ASSERT_OK(loom_module_add_symbol(module, name_id, &symbol_id));
+    ASSERT_EQ(symbol_id, i);
+
+    const bool has_body = symbol_id == body_symbol_ids[0] ||
+                          symbol_id == body_symbol_ids[1] ||
+                          symbol_id == body_symbol_ids[2];
+    if (has_body) {
+      loom_op_t* function_op = nullptr;
+      IREE_ASSERT_OK(loom_test_func_build(
+          &module_builder, /*build_flags=*/0, /*visibility=*/0, /*cc=*/0,
+          {/*.module_id=*/0, /*.symbol_id=*/symbol_id}, /*arg_types=*/nullptr,
+          /*arg_count=*/0, /*result_types=*/nullptr, /*result_count=*/0,
+          /*tied_results=*/nullptr, /*tied_result_count=*/0,
+          /*predicates=*/nullptr, /*predicates_count=*/0, LOOM_LOCATION_NONE,
+          &function_op));
+      loom_builder_t body_builder;
+      loom_builder_initialize(
+          module, &module->arena,
+          loom_region_entry_block(loom_test_func_body(function_op)),
+          &body_builder);
+      loom_op_t* yield_op = nullptr;
+      IREE_ASSERT_OK(loom_test_yield_build(&body_builder, /*values=*/nullptr,
+                                           /*values_count=*/0,
+                                           LOOM_LOCATION_NONE, &yield_op));
+    } else {
+      loom_op_t* declaration_op = nullptr;
+      IREE_ASSERT_OK(loom_test_decl_build(
+          &module_builder, /*build_flags=*/0, /*visibility=*/0, /*cc=*/0,
+          {/*.module_id=*/0, /*.symbol_id=*/symbol_id}, /*arg_types=*/nullptr,
+          /*arg_types_count=*/0, /*result_types=*/nullptr, /*result_count=*/0,
+          /*tied_results=*/nullptr, /*tied_result_count=*/0, LOOM_LOCATION_NONE,
+          &declaration_op));
+    }
+  }
+
+  iree_arena_allocator_t writer_arena;
+  iree_arena_initialize(&block_pool_, &writer_arena);
+  loom_bytecode_numbering_t numbering;
+  IREE_ASSERT_OK(
+      loom_bytecode_numbering_initialize(&numbering, module, &writer_arena));
+  iree_io_stream_t* stream = nullptr;
+  IREE_ASSERT_OK(iree_io_vec_stream_create(
+      IREE_IO_STREAM_MODE_WRITABLE | IREE_IO_STREAM_MODE_SEEKABLE |
+          IREE_IO_STREAM_MODE_RESIZABLE,
+      4096, iree_allocator_system(), &stream));
+  loom_bytecode_page_writer_t page_writer;
+  loom_bytecode_page_writer_initialize(&page_writer, stream);
+  loom_bytecode_ir_region_index_t index = {};
+  IREE_ASSERT_OK(
+      loom_bytecode_write_ir_section(&page_writer, &numbering, &index));
+  IREE_ASSERT_OK(loom_bytecode_page_writer_flush(&page_writer));
+
+  ASSERT_NE(index.pages, nullptr);
+  EXPECT_NE(index.pages[0], nullptr);
+  EXPECT_EQ(index.pages[1], nullptr);
+  EXPECT_NE(index.pages[2], nullptr);
+  EXPECT_EQ(index.payload_count, IREE_ARRAYSIZE(body_symbol_ids));
+  uint64_t previous_end = 0;
+  for (loom_symbol_id_t symbol_id : body_symbol_ids) {
+    const loom_bytecode_ir_region_list_t list =
+        loom_bytecode_ir_region_index_list(&index, symbol_id);
+    ASSERT_EQ(list.count, 1u);
+    ASSERT_NE(list.values, nullptr);
+    EXPECT_EQ(list.values[0].region_index, 0u);
+    EXPECT_GT(list.values[0].length, 0u);
+    EXPECT_GE(list.values[0].offset, previous_end);
+    previous_end = list.values[0].offset + list.values[0].length;
+  }
+  const loom_symbol_id_t empty_symbol_ids[] = {
+      1,
+      (loom_symbol_id_t)(kPageCapacity - 2),
+      (loom_symbol_id_t)kPageCapacity,
+      (loom_symbol_id_t)(2 * kPageCapacity - 1),
+  };
+  for (loom_symbol_id_t symbol_id : empty_symbol_ids) {
+    const loom_bytecode_ir_region_list_t list =
+        loom_bytecode_ir_region_index_list(&index, symbol_id);
+    EXPECT_EQ(list.values, nullptr);
+    EXPECT_EQ(list.count, 0u);
+  }
+  EXPECT_EQ(writer_arena.allocation_head, nullptr);
+
+  iree_io_stream_release(stream);
+  iree_arena_deinitialize(&writer_arena);
+
+  iree_arena_block_pool_statistics_t before;
+  iree_arena_block_pool_query_statistics(&block_pool_, &before);
+  const std::vector<uint8_t> bytes = WriteModule(module);
+  iree_arena_block_pool_statistics_t after;
+  iree_arena_block_pool_query_statistics(&block_pool_, &after);
+  EXPECT_EQ(after.oversized_allocation_count,
+            before.oversized_allocation_count);
+  EXPECT_EQ(after.oversized_allocation_bytes,
+            before.oversized_allocation_bytes);
+
+  size_t symbols_offset =
+      SectionPayloadOffset(bytes, LOOM_BYTECODE_SECTION_SYMBOLS);
+  ASSERT_NE(symbols_offset, 0u);
+  EXPECT_EQ(ReadUVarint(bytes, &symbols_offset), kSymbolCount);
+  ReadUVarint(bytes, &symbols_offset);  // Import count.
+  ReadUVarint(bytes, &symbols_offset);  // Export count.
+  EXPECT_EQ(ReadUVarint(bytes, &symbols_offset),
+            IREE_ARRAYSIZE(body_symbol_ids));
 
   loom_module_free(module);
 }

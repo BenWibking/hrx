@@ -428,15 +428,7 @@ iree_status_t iree_benchmark_loom_run_file(
       }
     }
 
-    bool needs_device_events = false;
-    for (iree_host_size_t i = 0;
-         iree_status_is_ok(status) && i < work_plan.selected_benchmark_count;
-         ++i) {
-      needs_device_events |= work_plan.selected_benchmarks[i]
-                                 .case_plan->has_device_event_expectation;
-    }
-    if (iree_status_is_ok(status) && !benchmark_options->dry_run &&
-        needs_device_events) {
+    if (iree_status_is_ok(status) && !benchmark_options->dry_run) {
       status = loom_testbench_device_event_capture_initialize(
           LOOM_TESTBENCH_DEVICE_EVENT_DEFAULT_CAPACITY, allocator,
           &device_event_capture);
@@ -461,12 +453,12 @@ iree_status_t iree_benchmark_loom_run_file(
              ++i) {
           selected_cases[i] = work_plan.selected_benchmarks[i].case_plan;
         }
-        execution_options.invocation.function_call = function_calls.fn(
-            function_calls.user_data,
-            (loom_testbench_case_plan_list_t){
-                .values = selected_cases,
-                .count = work_plan.selected_benchmark_count},
-            loom_run_module_source_resolver(&run_module), &config_set);
+        execution_options.invocation.function_call =
+            function_calls.fn(function_calls.user_data,
+                              (loom_testbench_case_plan_list_t){
+                                  .values = selected_cases,
+                                  .count = work_plan.selected_benchmark_count},
+                              &run_module.sources.table, &config_set);
       }
     }
 

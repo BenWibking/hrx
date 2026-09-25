@@ -299,6 +299,8 @@ iree_status_t loom_spirv_vulkan_hal_profile_query(
   out_facts->subgroup_size = dispatch->subgroup.default_size;
   out_facts->max_compute_workgroup_invocations =
       dispatch->launch.maximum_workgroup_invocations;
+  out_facts->max_compute_shared_memory_size =
+      dispatch->execution.maximum_workgroup_local_memory_size;
   out_facts->max_compute_workgroup_size.x =
       dispatch->launch.maximum_workgroup_size[0];
   out_facts->max_compute_workgroup_size.y =
@@ -548,6 +550,7 @@ iree_status_t loom_spirv_vulkan_hal_target_profile_storage_initialize(
       LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_SIZE_Y,
       LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_SIZE_Z,
       LOOM_TARGET_FACT_FIELD_MAX_FLAT_WORKGROUP_SIZE,
+      LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_STORAGE_BYTES,
       LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_COUNT_X,
       LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_COUNT_Y,
       LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_COUNT_Z,
@@ -588,6 +591,11 @@ iree_status_t loom_spirv_vulkan_hal_profile_validate(
         IREE_STATUS_UNAVAILABLE,
         "Vulkan SPIR-V raw-BDA profile requires Vulkan 1.3");
   }
+  if (facts->max_compute_shared_memory_size == 0) {
+    return iree_make_status(
+        IREE_STATUS_UNAVAILABLE,
+        "Vulkan HAL device does not report maxComputeSharedMemorySize");
+  }
   IREE_RETURN_IF_ERROR(loom_spirv_vulkan_hal_profile_require_flag(
       facts, LOOM_SPIRV_VULKAN_HAL_PROFILE_FLAG_RAW_BDA_EXECUTABLE,
       IREE_SV("Vulkan HAL device does not support the vulkan1.3+bda "
@@ -624,6 +632,8 @@ iree_status_t loom_spirv_vulkan_hal_profile_initialize_target_bundle(
   out_storage->snapshot.max_workgroup_size = facts->max_compute_workgroup_size;
   out_storage->snapshot.max_flat_workgroup_size =
       facts->max_compute_workgroup_invocations;
+  out_storage->snapshot.max_workgroup_storage_bytes =
+      facts->max_compute_shared_memory_size;
   out_storage->snapshot.subgroup_size = facts->subgroup_size;
   out_storage->snapshot.max_workgroup_count =
       facts->max_compute_workgroup_count;

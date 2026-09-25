@@ -19,6 +19,8 @@
 namespace loom {
 namespace {
 
+constexpr uint64_t kMaximumWorkgroupLocalMemorySize = 32 * 1024;
+
 typedef struct fake_hal_device_t {
   // HAL resource header used by device vtable dispatch.
   iree_hal_resource_t resource;
@@ -100,6 +102,15 @@ static iree_status_t CreateDeviceSpec(
       {
           /*.unit_count=*/1,
           /*.group_count=*/1,
+          /*.maximum_resident_workgroup_count=*/0,
+          /*.maximum_resident_invocation_count=*/0,
+          /*.maximum_resident_subgroup_count=*/0,
+          /*.maximum_register_count=*/0,
+          /*.maximum_workgroup_register_count=*/0,
+          /*.maximum_local_memory_size=*/0,
+          /*.maximum_workgroup_local_memory_size=*/
+          kMaximumWorkgroupLocalMemorySize,
+          /*.maximum_workgroup_local_memory_size_optin=*/0,
       },
       /*.addressing=*/
       {
@@ -172,6 +183,8 @@ static loom_spirv_vulkan_hal_profile_facts_t BaselineFacts() {
           LOOM_SPIRV_VULKAN_HAL_PROFILE_FLAG_SHADER_INT64,
       /*.subgroup_size=*/32,
       /*.max_compute_workgroup_invocations=*/256,
+      /*.max_compute_shared_memory_size=*/
+      kMaximumWorkgroupLocalMemorySize,
       /*.max_compute_workgroup_size=*/
       {
           /*.x=*/256,
@@ -306,6 +319,8 @@ TEST(VulkanProfileTest, QueryReadsHalDeviceFacts) {
       LOOM_SPIRV_VULKAN_HAL_PROFILE_FLAG_VULKAN_MEMORY_MODEL_DEVICE_SCOPE));
   EXPECT_EQ(facts.subgroup_size, 32u);
   EXPECT_EQ(facts.max_compute_workgroup_invocations, 256u);
+  EXPECT_EQ(facts.max_compute_shared_memory_size,
+            kMaximumWorkgroupLocalMemorySize);
   EXPECT_EQ(facts.max_compute_workgroup_size.x, 256u);
   EXPECT_EQ(facts.max_compute_workgroup_size.y, 128u);
   EXPECT_EQ(facts.max_compute_workgroup_size.z, 64u);
@@ -442,6 +457,8 @@ TEST(VulkanProfileTest, MaterializesRawBdaHalKernelTarget) {
   EXPECT_EQ(storage.snapshot.offset_bitwidth, 64u);
   EXPECT_EQ(storage.snapshot.subgroup_size, 32u);
   EXPECT_EQ(storage.snapshot.max_flat_workgroup_size, 256u);
+  EXPECT_EQ(storage.snapshot.max_workgroup_storage_bytes,
+            kMaximumWorkgroupLocalMemorySize);
   EXPECT_EQ(storage.snapshot.max_workgroup_size.x, 256u);
   EXPECT_EQ(storage.snapshot.max_workgroup_size.y, 128u);
   EXPECT_EQ(storage.snapshot.max_workgroup_size.z, 64u);
@@ -490,6 +507,16 @@ TEST(VulkanProfileTest, RejectsMissingBufferDeviceAddress) {
 TEST(VulkanProfileTest, RejectsMissingShaderInt64) {
   loom_spirv_vulkan_hal_profile_facts_t facts = BaselineFacts();
   facts.flags &= ~LOOM_SPIRV_VULKAN_HAL_PROFILE_FLAG_SHADER_INT64;
+
+  loom_target_bundle_storage_t storage = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_UNAVAILABLE,
+      loom_spirv_vulkan_hal_profile_initialize_target_bundle(&facts, &storage));
+}
+
+TEST(VulkanProfileTest, RejectsMissingWorkgroupStorageLimit) {
+  loom_spirv_vulkan_hal_profile_facts_t facts = BaselineFacts();
+  facts.max_compute_shared_memory_size = 0;
 
   loom_target_bundle_storage_t storage = {};
   IREE_EXPECT_STATUS_IS(
@@ -661,6 +688,7 @@ TEST(VulkanProfileTest, PreservesDeviceInputsWithoutChoosingSubgroupWidth) {
                        LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_SIZE_Y,
                        LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_SIZE_Z,
                        LOOM_TARGET_FACT_FIELD_MAX_FLAT_WORKGROUP_SIZE,
+                       LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_STORAGE_BYTES,
                        LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_COUNT_X,
                        LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_COUNT_Y,
                        LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_COUNT_Z,
@@ -673,8 +701,9 @@ TEST(VulkanProfileTest, PreservesDeviceInputsWithoutChoosingSubgroupWidth) {
               subgroup_size != 0);
     EXPECT_EQ(storage.target_bundle_storage.snapshot.subgroup_size,
               subgroup_size);
-    EXPECT_FALSE(loom_target_fact_field_set_contains(
-        explicit_fields, LOOM_TARGET_FACT_FIELD_MAX_WORKGROUP_STORAGE_BYTES));
+    EXPECT_EQ(
+        storage.target_bundle_storage.snapshot.max_workgroup_storage_bytes,
+        kMaximumWorkgroupLocalMemorySize);
     loom_spirv_vulkan_hal_target_profile_storage_deinitialize(
         &storage, iree_allocator_system());
   }

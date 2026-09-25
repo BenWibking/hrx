@@ -32,7 +32,7 @@ loom_cc_library(
 )
 endif()
 
-if(LOOM_TARGET_ARCH_AMDGPU)
+if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX125X_CORE AND LOOM_TARGET_ARCH_AMDGPU)
 loom_cc_test(
   NAME
     address_state_test
@@ -343,6 +343,31 @@ loom_cc_library(
     loom::target::arch::amdgpu::refs::target_refs
     loom::util::segmented_storage
   PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX125X_CORE AND LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    wait_plan_test
+  SRCS
+    "wait_plan_test.cc"
+  DEPS
+    ::wait_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::codegen::low::builder
+    loom::codegen::low::immediates
+    loom::codegen::low::schedule
+    loom::ir
+    loom::ops::low
+    loom::target::arch::amdgpu::descriptors::low_registry
+    loom::target::arch::amdgpu::facts
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
 )
 endif()
 
