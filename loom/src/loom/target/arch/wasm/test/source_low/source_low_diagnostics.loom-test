@@ -4,7 +4,7 @@ wasm.target<simd128> @target
 
 func.def target(@target) @view_origin_exceeds_wasm32(%input: buffer, %origin_input: offset) -> (view<1xi32>) {
   %origin = index.assume %origin_input [range(%origin_input, 4294967296, 8589934591)] : offset
-  // ERROR@+1: WASM/005 {op_name="buffer.view"}
+  // ERROR@+1: WASM/006 {op_name="buffer.view", bit_count="32"}
   %view = buffer.view %input[%origin] : buffer -> view<1xi32>
   func.return %view : view<1xi32>
 }
@@ -15,7 +15,7 @@ wasm.target<simd128> @target
 
 func.def target(@target) @view_origin_may_overflow_wasm32(%input: buffer, %origin_input: offset) -> (view<1xi32>) {
   %origin = index.assume %origin_input [range(%origin_input, 0, 4294967296)] : offset
-  // ERROR@+1: WASM/005 {op_name="buffer.view"}
+  // ERROR@+1: WASM/006 {op_name="buffer.view", bit_count="32"}
   %view = buffer.view %input[%origin] : buffer -> view<1xi32>
   func.return %view : view<1xi32>
 }
