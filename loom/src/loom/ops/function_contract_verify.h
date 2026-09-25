@@ -44,6 +44,28 @@ iree_status_t loom_function_call_contract_verify(
     loom_value_slice_t operands, loom_value_slice_t results,
     iree_diagnostic_emitter_t emitter);
 
+enum loom_function_call_argument_match_flag_bits_e {
+  // Allows a tensor or view value to be materialized as a buffer ABI argument.
+  LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION = 1u << 0,
+};
+typedef uint16_t loom_function_call_argument_match_flags_t;
+
+// Tests one call argument against its function contract type after applying
+// |value_remap|. Execution boundaries that own storage materialization may
+// allow tensor/view values to satisfy buffer ABI arguments.
+iree_status_t loom_function_call_argument_type_matches(
+    const loom_module_t* module, loom_type_t actual_type,
+    loom_type_t expected_type, const loom_type_value_remap_t* value_remap,
+    loom_function_call_argument_match_flags_t flags, bool* out_matches);
+
+// Verifies a call-shaped boundary whose results are retained as explicit type
+// metadata instead of SSA values. This is used by terminal execution records
+// that must preserve the complete call signature without exposing dead results.
+iree_status_t loom_function_call_type_contract_verify(
+    const loom_module_t* module, const loom_op_t* op, loom_symbol_ref_t callee,
+    loom_value_slice_t operands, const loom_type_t* result_types,
+    uint16_t result_count, iree_diagnostic_emitter_t emitter);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -41,6 +41,8 @@ typedef struct loom_function_contract_boundary_t {
   uint16_t argument_count;
   // Actual result value IDs in signature order.
   const loom_value_id_t* result_ids;
+  // Actual result types when the boundary retains no SSA result IDs.
+  const loom_type_t* result_types;
   // Number of actual results.
   uint16_t result_count;
   // Diagnostic field kind for actual arguments.
@@ -52,6 +54,14 @@ typedef struct loom_function_contract_boundary_t {
   // Human-readable actual result field prefix.
   const char* result_prefix;
 } loom_function_contract_boundary_t;
+
+static loom_type_t loom_function_contract_boundary_result_type(
+    const loom_module_t* module,
+    const loom_function_contract_boundary_t* boundary, uint16_t index) {
+  return boundary->result_types
+             ? boundary->result_types[index]
+             : loom_module_value_type(module, boundary->result_ids[index]);
+}
 
 static bool loom_function_contract_signature_contains_value(
     const loom_value_id_t* argument_ids, uint16_t argument_count,
@@ -306,6 +316,34 @@ static iree_status_t loom_function_contract_types_equal_after_remap(
                                       out_equal);
 }
 
+iree_status_t loom_function_call_argument_type_matches(
+    const loom_module_t* module, loom_type_t actual_type,
+    loom_type_t expected_type, const loom_type_value_remap_t* value_remap,
+    loom_function_call_argument_match_flags_t flags, bool* out_matches) {
+  *out_matches = false;
+  if (iree_any_bit_set(
+          flags,
+          LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION)) {
+    const loom_type_kind_t actual_kind = loom_type_kind(actual_type);
+    if ((actual_kind == LOOM_TYPE_TENSOR || actual_kind == LOOM_TYPE_VIEW) &&
+        loom_type_kind(expected_type) == LOOM_TYPE_BUFFER) {
+      *out_matches = true;
+      return iree_ok_status();
+    }
+  }
+  if (!loom_type_remap_requires_lookup(expected_type)) {
+    *out_matches = loom_type_equal_after_value_remap(module, expected_type,
+                                                     actual_type, value_remap);
+    return iree_ok_status();
+  }
+  loom_type_remap_lookup_t lookup;
+  loom_type_remap_lookup_initialize(module, value_remap, &lookup);
+  const iree_status_t status = loom_type_remap_lookup_equal(
+      &lookup, expected_type, actual_type, out_matches);
+  loom_type_remap_lookup_deinitialize(&lookup);
+  return status;
+}
+
 // Continues a boundary comparison after encountering the first recursive type.
 // Keeping traversal state on this frame leaves the common bounded-leaf path
 // allocation-free and free of fallible loop bookkeeping.
@@ -341,7 +379,7 @@ loom_function_contract_verify_boundary_types_with_lookup(
   for (uint16_t i = result_start; i < result_count && iree_status_is_ok(status);
        ++i) {
     const loom_type_t actual_type =
-        loom_module_value_type(module, boundary->result_ids[i]);
+        loom_function_contract_boundary_result_type(module, boundary, i);
     const loom_type_t expected_type =
         loom_module_value_type(module, signature->result_ids[i]);
     bool equal = false;
@@ -385,7 +423,7 @@ static iree_status_t loom_function_contract_verify_boundary(
   const loom_type_value_remap_t result_remap = {
       .source_values = signature->result_ids,
       .target_values = boundary->result_ids,
-      .count = result_count,
+      .count = boundary->result_ids ? result_count : 0,
       .flags = LOOM_TYPE_VALUE_REMAP_FLAG_SOURCE_DEFINITION_SLICE,
   };
   // FuncLike arguments form one definition slice. Checking at most two IDs
@@ -397,7 +435,7 @@ static iree_status_t loom_function_contract_verify_boundary(
       .flags = argument_count > 2
                    ? LOOM_TYPE_VALUE_REMAP_FLAG_SOURCE_DEFINITION_SLICE
                    : 0,
-      .next = &result_remap,
+      .next = result_remap.count ? &result_remap : NULL,
   };
 
   for (uint16_t i = 0; i < argument_count; ++i) {
@@ -422,7 +460,7 @@ static iree_status_t loom_function_contract_verify_boundary(
 
   for (uint16_t i = 0; i < result_count; ++i) {
     const loom_type_t actual_type =
-        loom_module_value_type(module, boundary->result_ids[i]);
+        loom_function_contract_boundary_result_type(module, boundary, i);
     const loom_type_t expected_type =
         loom_module_value_type(module, signature->result_ids[i]);
     if (loom_type_remap_requires_lookup(expected_type)) {
@@ -482,6 +520,25 @@ iree_status_t loom_function_call_contract_verify(
       .result_field_kind = LOOM_DIAGNOSTIC_FIELD_RESULT,
       .argument_prefix = "operand",
       .result_prefix = "result",
+  };
+  return loom_function_contract_verify_symbol_boundary(module, callee,
+                                                       &boundary, emitter);
+}
+
+iree_status_t loom_function_call_type_contract_verify(
+    const loom_module_t* module, const loom_op_t* op, loom_symbol_ref_t callee,
+    loom_value_slice_t operands, const loom_type_t* result_types,
+    uint16_t result_count, iree_diagnostic_emitter_t emitter) {
+  const loom_function_contract_boundary_t boundary = {
+      .op = op,
+      .argument_ids = operands.values,
+      .argument_count = operands.count,
+      .result_types = result_types,
+      .result_count = result_count,
+      .argument_field_kind = LOOM_DIAGNOSTIC_FIELD_OPERAND,
+      .result_field_kind = LOOM_DIAGNOSTIC_FIELD_NONE,
+      .argument_prefix = "operand",
+      .result_prefix = "declared result",
   };
   return loom_function_contract_verify_symbol_boundary(module, callee,
                                                        &boundary, emitter);

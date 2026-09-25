@@ -217,6 +217,86 @@ TEST_F(FunctionContractVerifyTest,
   EXPECT_EQ(module_->arena.used_allocation_size, retained_bytes);
 }
 
+TEST_F(FunctionContractVerifyTest, ExplicitResultTypesMatchCallContract) {
+  loom_op_t* declaration = nullptr;
+  AddIndexDeclaration(IREE_SV("typed_boundary"), &declaration);
+  ASSERT_NE(declaration, nullptr);
+
+  loom_value_id_t operands[5] = {};
+  for (loom_value_id_t& operand : operands) {
+    IREE_ASSERT_OK(loom_module_define_value(
+        module_, loom_type_scalar(LOOM_SCALAR_TYPE_INDEX), &operand));
+    IREE_ASSERT_OK(
+        loom_block_add_arg(module_, loom_module_block(module_), operand));
+  }
+  const loom_value_slice_t declaration_arguments =
+      loom_func_decl_args(declaration);
+  const loom_value_slice_t declaration_results =
+      loom_func_decl_results(declaration);
+  const loom_type_t declaration_dependent_result = loom_type_shaped_1d(
+      LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
+      loom_dim_pack_dynamic(declaration_arguments.values[0]), 0);
+  IREE_ASSERT_OK(loom_module_set_value_type(
+      module_, declaration_results.values[0], declaration_dependent_result));
+  const loom_type_t result_types[] = {
+      loom_type_shaped_1d(LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_F32,
+                          loom_dim_pack_dynamic(operands[0]), 0),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+  };
+
+  DiagnosticEmissionCapture capture;
+  const loom_value_slice_t operand_slice = {
+      /*.values=*/operands,
+      /*.count=*/IREE_ARRAYSIZE(operands),
+  };
+  IREE_EXPECT_OK(loom_function_call_type_contract_verify(
+      module_, declaration, loom_func_decl_callee(declaration), operand_slice,
+      result_types, IREE_ARRAYSIZE(result_types), capture.emitter()));
+  EXPECT_TRUE(capture.emissions.empty());
+
+  const loom_type_t mismatched_result_types[] = {
+      loom_type_scalar(LOOM_SCALAR_TYPE_I32),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
+  };
+  DiagnosticEmissionCapture mismatch_capture;
+  IREE_EXPECT_OK(loom_function_call_type_contract_verify(
+      module_, declaration, loom_func_decl_callee(declaration), operand_slice,
+      mismatched_result_types, IREE_ARRAYSIZE(mismatched_result_types),
+      mismatch_capture.emitter()));
+  ASSERT_EQ(mismatch_capture.emissions.size(), 1u);
+  EXPECT_EQ(mismatch_capture.emissions[0].error, LOOM_ERR_TYPE_001);
+}
+
+TEST_F(FunctionContractVerifyTest, MaterializesStorageAtBufferCallBoundaries) {
+  const loom_type_t buffer_type = loom_type_buffer();
+  const uint64_t four = loom_dim_pack_static(4);
+  const loom_type_t tensor_type =
+      loom_type_shaped_1d(LOOM_TYPE_TENSOR, LOOM_SCALAR_TYPE_I32, four, 0);
+  const loom_type_t view_type =
+      loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32, four, 0);
+
+  bool matches = false;
+  IREE_EXPECT_OK(loom_function_call_argument_type_matches(
+      module_, tensor_type, buffer_type, /*value_remap=*/nullptr,
+      LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+      &matches));
+  EXPECT_TRUE(matches);
+  IREE_EXPECT_OK(loom_function_call_argument_type_matches(
+      module_, view_type, buffer_type, /*value_remap=*/nullptr,
+      LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+      &matches));
+  EXPECT_TRUE(matches);
+
+  IREE_EXPECT_OK(loom_function_call_argument_type_matches(
+      module_, tensor_type, buffer_type, /*value_remap=*/nullptr,
+      /*flags=*/0, &matches));
+  EXPECT_FALSE(matches);
+}
+
 TEST_F(FunctionContractVerifyTest, RejectsPredicateValueOutsideSignature) {
   const loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
   loom_value_id_t foreign_value = LOOM_VALUE_ID_INVALID;
