@@ -211,6 +211,27 @@ TEST_F(FactTableComputeTest, ExactDynamicRelationsAreRetainedLazily) {
   EXPECT_EQ(table_.exact_relations.ops, nullptr);
 }
 
+TEST_F(FactTableComputeTest,
+       ExactDynamicRelationsAreRetainedWithoutChangeReporting) {
+  IREE_ASSERT_OK(loom_value_fact_table_define(&table_, inputs_[0],
+                                              loom_value_facts_exact_i64(5)));
+  loom_predicate_t predicate = {
+      /*.kind=*/LOOM_PREDICATE_LT,
+      /*.arg_count=*/2,
+      /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_VALUE},
+      /*.reserved=*/{},
+      /*.args=*/{inputs_[0], inputs_[1]},
+  };
+  loom_op_t* assume = nullptr;
+  IREE_ASSERT_OK(loom_index_assume_build(&builder_, &inputs_[0], 1, &predicate,
+                                         1, &type_, 1, LOOM_LOCATION_UNKNOWN,
+                                         &assume));
+
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, assume));
+
+  EXPECT_EQ(PendingExactRelations(table_), std::vector<loom_op_t*>({assume}));
+}
+
 TEST_F(FactTableComputeTest, ExactRelationRetentionGrowsWithCandidates) {
   constexpr iree_host_size_t kAssumeCount = 64;
   IREE_ASSERT_OK(loom_value_fact_table_define(&table_, inputs_[0],

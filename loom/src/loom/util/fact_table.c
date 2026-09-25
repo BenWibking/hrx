@@ -1504,7 +1504,12 @@ iree_status_t loom_value_fact_table_propagate_origins(
             table, operands[i], results[i]));
       }
     }
-    if (inout_changed && *inout_changed) {
+    // Whole-region structured traversal intentionally omits change reporting;
+    // every visited identity belongs to the freshly populated scope.
+    // Incremental and cyclic traversal supplies a report pointer and only
+    // publishes newly changed identities so stable revisits do not duplicate
+    // observations.
+    if (!inout_changed || *inout_changed) {
       IREE_RETURN_IF_ERROR(
           loom_value_fact_table_record_exact_relation(table, op, traits));
     }
