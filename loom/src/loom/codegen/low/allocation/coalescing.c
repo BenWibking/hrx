@@ -877,15 +877,16 @@ static iree_status_t loom_low_allocation_coalescing_append_relation_interval(
           &result_location_base)) {
     return iree_ok_status();
   }
-  // Optional copies use the same retained physical-domain preferences as
-  // ordinary search, leaving narrow storage available to its constrained users.
+  // Optional copies may override a preference for idle narrower storage when
+  // that removes a transfer. They must not consume capacity reserved for an
+  // overlapping narrower lifetime.
   if (relation->cause == LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY ||
       relation->cause == LOOM_LOW_PLACEMENT_CAUSE_LOW_MOVE) {
-    const uint64_t* penalties =
+    const loom_low_allocation_physical_domain_row_t domain =
         loom_low_allocation_physical_domains_for_interval(
             context->search_context->physical_domains, context->liveness,
             interval);
-    if (penalties) {
+    if (domain.penalty_words) {
       const loom_low_descriptor_set_t* descriptor_set =
           context->search_context->descriptor_set;
       const loom_low_reg_class_t* reg_class =
@@ -895,7 +896,10 @@ static iree_status_t loom_low_allocation_coalescing_append_relation_interval(
               [reg_class->candidate_lookup.ordinal_start +
                result_location_base -
                reg_class->candidate_lookup.register_base];
-      if ((penalties[ordinal / 64] >> (ordinal % 64)) & 1) {
+      if (loom_low_allocation_physical_domain_row_candidate_is_reserved(
+              domain, ordinal) ||
+          loom_low_allocation_physical_domain_row_candidate_breaks_affinity(
+              domain, ordinal)) {
         return iree_ok_status();
       }
     }
