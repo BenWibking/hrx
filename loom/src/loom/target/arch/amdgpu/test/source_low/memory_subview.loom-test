@@ -49,7 +49,7 @@ func.def @subview_nested_dynamic(%input: buffer, %output: buffer, %base: offset,
 
 // ----
 low.func.def target<amdgpu.gfx12.generic.core> abi(hal_kernel) @subview_nested_dynamic(%origin: reg<amdgpu.sgpr x2>, %row_bounded: reg<amdgpu.sgpr>, %column_bounded: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %source_refined = resource<hal_binding> {index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %source = resource<hal_binding> {index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %destination = resource<hal_binding> {index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %26 = v_mov_b32 0
   %27 = slice %origin[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
@@ -57,8 +57,8 @@ low.func.def target<amdgpu.gfx12.generic.core> abi(hal_kernel) @subview_nested_d
   %29 = s_add_u32 %27, %28
   %30 = s_lshl_b32_rhs_inline %column_bounded, 2
   %31 = s_add_u32 %29, %30
-  %32 = slice %source_refined[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %33 = slice %source_refined[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %32 = slice %source[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %33 = slice %source[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
   %34 = s_mov_b32 0
   %35, %36 = s_add_co_u32 %32, %31
   %37, %38 = s_addc_u32 %33, %34, %36

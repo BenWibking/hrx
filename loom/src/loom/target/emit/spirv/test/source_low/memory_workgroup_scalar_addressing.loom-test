@@ -306,7 +306,7 @@ func.def @workgroup_subview_refine_i32(%value: i32, %element: index) -> (i32) {
                OpName %workgroup_subview_refine_i32 "workgroup_subview_refine_i32"
                OpName %value "value"
                OpName %element_bounded "element_bounded"
-               OpName %scratch_refined "scratch_refined"
+               OpName %scratch_view "scratch_view"
                OpName %loaded "loaded"
                OpMemberDecorate %_struct_5 0 Offset 0
                OpDecorate %_struct_5 Block
@@ -330,7 +330,7 @@ func.def @workgroup_subview_refine_i32(%value: i32, %element: index) -> (i32) {
     %uint_16 = OpConstant %uint 16
 %_arr_int_uint_16 = OpTypeArray %int %uint_16
 %_ptr_Workgroup__arr_int_uint_16 = OpTypePointer Workgroup %_arr_int_uint_16
-%scratch_refined = OpVariable %_ptr_Workgroup__arr_int_uint_16 Workgroup
+%scratch_view = OpVariable %_ptr_Workgroup__arr_int_uint_16 Workgroup
       %int_3 = OpConstant %int 3
 %_ptr_Workgroup_int = OpTypePointer Workgroup %int
      %uint_2 = OpConstant %uint 2
@@ -343,11 +343,11 @@ func.def @workgroup_subview_refine_i32(%value: i32, %element: index) -> (i32) {
          %15 = OpAccessChain %_ptr_StorageBuffer_int %8 %int_0
 %element_bounded = OpLoad %int %15 Aligned 4
          %23 = OpIAdd %int %element_bounded %int_3
-         %25 = OpAccessChain %_ptr_Workgroup_int %scratch_refined %23
+         %25 = OpAccessChain %_ptr_Workgroup_int %scratch_view %23
                OpStore %25 %value Aligned 4
                OpControlBarrier %uint_2 %uint_2 %uint_264
          %29 = OpIAdd %int %element_bounded %int_3_0
-         %30 = OpAccessChain %_ptr_Workgroup_int %scratch_refined %29
+         %30 = OpAccessChain %_ptr_Workgroup_int %scratch_view %29
      %loaded = OpLoad %int %30 Aligned 4
          %32 = OpAccessChain %_ptr_StorageBuffer_int %9 %int_0
                OpStore %32 %loaded Aligned 4

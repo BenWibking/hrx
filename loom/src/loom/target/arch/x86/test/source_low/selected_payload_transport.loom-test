@@ -139,10 +139,6 @@ func.def public @independent_assumption_payload(%input: vector<4xi32>, %left: i3
 
 // ----
 low.func.def public target<x86.avx2.core> abi(object_function) @independent_assumption_payload(%input: reg<x86.xmm>, %left: reg<x86.gpr32>, %right: reg<x86.gpr32>, %payload: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  %value = vpextrd.xmm %input, 0
-  %condition = cmp.sgt.imm.gpr32 %value, 0
-  %20 = copy %right : reg<x86.gpr32> -> reg<x86.gpr32>
-  %bounded = select.gpr32 %condition, %left, %20
   low.br ^forward(%payload: reg<x86.gpr32>)
 ^forward(%carried: reg<x86.gpr32>):
   return %carried
@@ -189,13 +185,9 @@ func.def public @independent_transformed_assumption_payload(%input: vector<4xi32
 
 // ----
 low.func.def public target<x86.avx2.core> abi(object_function) @independent_transformed_assumption_payload(%input: reg<x86.xmm>, %left: reg<x86.gpr32>, %right: reg<x86.gpr32>, %payload: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
-  %value = vpextrd.xmm %input, 0
-  %condition = cmp.sgt.imm.gpr32 %value, 0
-  %22 = copy %right : reg<x86.gpr32> -> reg<x86.gpr32>
-  %bounded = select.gpr32 %condition, %left, %22
   %increment = mov.imm32 3
-  %25 = copy %payload : reg<x86.gpr32> -> reg<x86.gpr32>
-  %transformed = add.gpr32 %25, %increment
+  %21 = copy %payload : reg<x86.gpr32> -> reg<x86.gpr32>
+  %transformed = add.gpr32 %21, %increment
   low.br ^forward(%transformed: reg<x86.gpr32>)
 ^forward(%carried: reg<x86.gpr32>):
   return %carried
