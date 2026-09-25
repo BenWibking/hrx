@@ -109,6 +109,7 @@ loom_cc_library(
     loom::error::diagnostic
     loom::error::error_defs
     loom::error::renderer
+    loom::error::source
     loom::format::bytecode::format
     loom::format::bytecode::index
     loom::format::bytecode::reader

@@ -60,6 +60,8 @@ typedef struct loomc_emit_resolved_options_t {
 typedef struct loomc_emit_diagnostic_capture_t {
   // Result receiving converted diagnostics.
   loomc_result_t* result;
+  // Borrowed module owning operation locations during emission.
+  const loom_module_t* module;
 
   // Number of error diagnostics captured during emission.
   uint32_t error_count;
@@ -519,7 +521,7 @@ static iree_status_t loomc_emit_capture_diagnostic(
     ++capture->error_count;
   }
   return iree_status_from_loomc(loomc_result_add_loom_diagnostic_emission(
-      capture->result, /*source=*/NULL, LOOM_EMITTER_VERIFIER, emission));
+      capture->result, capture->module, LOOM_EMITTER_VERIFIER, emission));
 }
 
 static loomc_status_t loomc_emit_sidecar_artifact_metadata(
@@ -764,6 +766,7 @@ loomc_status_t loomc_emit_module(loomc_target_environment_t* target_environment,
           loomc_target_environment_pass_environment(target_environment);
       loomc_emit_diagnostic_capture_t capture = {
           .result = result,
+          .module = internal_module,
       };
       if (resolved_options.artifact_manifest_mode !=
           LOOMC_ARTIFACT_MANIFEST_MODE_NONE) {

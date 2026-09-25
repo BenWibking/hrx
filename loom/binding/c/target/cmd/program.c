@@ -396,7 +396,7 @@ static iree_status_t loomc_cmd_program_product_capture_diagnostic(
   loomc_cmd_program_product_invocation_t* invocation =
       (loomc_cmd_program_product_invocation_t*)user_data;
   return iree_status_from_loomc(loomc_result_add_loom_diagnostic_emission(
-      invocation->result, /*source=*/NULL, LOOM_EMITTER_PASS, emission));
+      invocation->result, /*module=*/NULL, LOOM_EMITTER_PASS, emission));
 }
 
 static loomc_status_t loomc_cmd_program_product_translate_plan_status(

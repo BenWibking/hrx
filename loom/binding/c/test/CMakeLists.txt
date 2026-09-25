@@ -103,6 +103,19 @@ loom_cc_test(
 
 loom_cc_test(
   NAME
+    diagnostic_test
+  SRCS
+    "diagnostic_test.cc"
+  DEPS
+    ::test_util
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::binding::c::loomc
+    loom::error::error_defs
+)
+
+loom_cc_test(
+  NAME
     context_test
   SRCS
     "context_test.cc"
