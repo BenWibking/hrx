@@ -113,9 +113,9 @@ func.def @wide_shift_low_word(%value: i64) -> (i32) {
 
 // ----
 low.func.def target<spirv.logical.core> abi(shader_entry_point) @wide_shift_low_word(%value: reg<spirv.id : i64>) -> (reg<spirv.id : i32>) asm {
-  %count = OpConstant.i64 6
-  %shifted = OpShiftLeftLogical.i64 %value, %count
-  %result = OpSConvert.i64.i32 %shifted
+  %9 = OpConstant.i32 6
+  %10 = OpSConvert.i64.i32 %value
+  %result = OpShiftLeftLogical %10, %9
   return %result
 }
 

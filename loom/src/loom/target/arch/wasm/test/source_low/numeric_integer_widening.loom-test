@@ -79,12 +79,12 @@ func.def @exchange_signed_position(%buffer: buffer, %position: i32, %replacement
 
 // ----
 low.func.def target<wasm.core.simd128> abi(wasm_function) @exchange_signed_position(%view: reg<wasm.i32>, %bounded_position: reg<wasm.i32>, %replacement: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %20 = i32.const 16
-  %21 = i32.const 4
-  %22 = i32.mul %bounded_position, %21
-  %23 = i32.add %22, %20
-  %24 = i32.add %view, %23
-  %previous = i32.load %24
-  i32.store %24, %replacement
+  %26 = i32.const 16
+  %27 = i32.const 4
+  %28 = i32.mul %bounded_position, %27
+  %29 = i32.add %28, %26
+  %30 = i32.add %view, %29
+  %previous = i32.load %30
+  i32.store %30, %replacement
   return %previous
 }

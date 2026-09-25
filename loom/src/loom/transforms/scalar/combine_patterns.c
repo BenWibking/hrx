@@ -9,6 +9,7 @@
 #include "loom/ir/module.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/transforms/scalar/narrowing.h"
 
 static loom_op_t* loom_scalar_combine_defining_op(
     const loom_rewriter_t* rewriter, loom_value_id_t value_id) {
@@ -218,6 +219,10 @@ static iree_status_t loom_scalar_conversion_chain_pattern(
       loom_scalar_combine_select_integer_chain(
           rewriter, op, defining_op, outer_input, &input, &replacement_kind);
   if (!matched) {
+    if (loom_scalar_trunci_isa(op)) {
+      return loom_scalar_narrowing_truncate(rewriter, op, defining_op,
+                                            out_changed);
+    }
     return iree_ok_status();
   }
 

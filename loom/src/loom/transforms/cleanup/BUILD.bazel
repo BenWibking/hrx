@@ -82,6 +82,7 @@ loom_cc_library(
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/view",
         "//loom/src/loom/transforms/index:cleanup_patterns",
+        "//loom/src/loom/transforms/index:combine_patterns",
         "//loom/src/loom/transforms/scalar:cleanup_patterns",
         "//loom/src/loom/transforms/scalar:combine_patterns",
         "//loom/src/loom/transforms/scf:branch_fact_patterns",

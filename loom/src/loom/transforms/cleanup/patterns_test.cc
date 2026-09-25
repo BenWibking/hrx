@@ -235,7 +235,7 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
   EXPECT_EQ(provider_set->region_initialization.count, 1u);
   EXPECT_EQ(provider_set->universal_pre_fold.count, 2u);
   EXPECT_EQ(provider_set->universal_post_type.count, 2u);
-  EXPECT_EQ(provider_set->source_combine.count, 4u);
+  EXPECT_EQ(provider_set->source_combine.count, 5u);
   EXPECT_NE(provider_set->special_value_policy, nullptr);
   ASSERT_NE(provider_set->fact_refinement_policy, nullptr);
   EXPECT_EQ(provider_set->fact_refinement_policy->value_providers.count, 2u);
@@ -303,6 +303,10 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
   const loom_rewrite_pattern_registry_t* source_combine =
       registries->source_combine;
   EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
+                                                      LOOM_OP_INDEX_CAST)
+                .count,
+            1u);
+  EXPECT_EQ(loom_rewrite_pattern_registry_lookup_kind(source_combine,
                                                       LOOM_OP_SCALAR_EXTF)
                 .count,
             1u);
@@ -358,7 +362,7 @@ TEST(CleanupPatternsTest, ConfiguredProvidersCoverOwnedRoots) {
                                                       LOOM_OP_VECTOR_TRUNCI)
                 .count,
             1u);
-  EXPECT_EQ(source_combine->pattern_count, 15u);
+  EXPECT_EQ(source_combine->pattern_count, 16u);
   loom_cleanup_pattern_registry_storage_deinitialize(&storage);
 }
 
