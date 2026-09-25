@@ -801,6 +801,32 @@ static void loom_value_facts_refine_divisible_range(loom_value_facts_t* facts) {
 
 void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
                                       const loom_predicate_t* predicate) {
+  if (loom_value_facts_is_float(*facts)) {
+    int64_t constant = 0;
+    switch ((loom_predicate_kind_t)predicate->kind) {
+      case LOOM_PREDICATE_EQ:
+        if (loom_value_facts_predicate_const_arg(predicate, 1, &constant)) {
+          facts->flags |= LOOM_VALUE_FACT_NOT_NAN;
+          if (constant == 0) {
+            facts->flags |= LOOM_VALUE_FACT_NOT_INF | LOOM_VALUE_FACT_FINITE;
+          }
+        }
+        return;
+      case LOOM_PREDICATE_NE:
+        if (loom_value_facts_predicate_const_arg(predicate, 1, &constant) &&
+            constant == 0) {
+          facts->flags |= LOOM_VALUE_FACT_NON_ZERO;
+        }
+        return;
+      case LOOM_PREDICATE_NOT_NAN:
+      case LOOM_PREDICATE_NOT_INF:
+      case LOOM_PREDICATE_FINITE:
+        break;
+      default:
+        return;
+    }
+  }
+
   // This scalar fact lattice can consume predicates with literal bounds. Value
   // operands are still useful to symbolic relation analysis, but treating a
   // value ID as an integer literal here would corrupt range facts.

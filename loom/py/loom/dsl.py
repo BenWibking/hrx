@@ -896,6 +896,9 @@ class AttrDef:
         ordinals and leaves selected/supported-case policy to the op verifier.
     bare_identifier: If True, string values use bare identifier spelling in
         descriptor-aware text formats instead of quoted string spelling.
+    executable_predicates: If True, this predicate-list field describes
+        runtime checks over operation operands. Generic verification requires
+        every value argument to be an operand with one exact semantic type.
     parameterized_attr: Optional exact family constraint for parameterized
         attributes or every element of a parameterized attribute array. None
         leaves the family open.
@@ -914,6 +917,7 @@ class AttrDef:
     open_enum: bool = False
     parameterized_attr: ParameterizedAttrDef | None = None
     bare_identifier: bool = False
+    executable_predicates: bool = False
 
     def __post_init__(self) -> None:
         if self.attr_type not in _VALID_ATTR_TYPES:
@@ -939,6 +943,11 @@ class AttrDef:
         ):
             raise ValueError(
                 f"AttrDef '{self.name}': open_enum requires an enum attribute"
+            )
+        if self.executable_predicates and self.attr_type != ATTR_TYPE_PREDICATE_LIST:
+            raise ValueError(
+                f"AttrDef '{self.name}': executable_predicates requires "
+                "attr_type='predicate_list'"
             )
         if self.attr_type == ATTR_TYPE_SCOPED_ENUM:
             if self.optional:

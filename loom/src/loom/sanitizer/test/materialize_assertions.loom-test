@@ -353,6 +353,32 @@ kernel.def @unsigned_predicates() {
 
 // ====
 
+// Float equality preserves C/C++ NaN behavior: equality is ordered while
+// inequality is unordered.
+kernel.def @float_equality_predicates() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%lhs: f32, %rhs: f32) {
+  %lhs_checked, %rhs_checked = sanitizer.assert.value %lhs, %rhs [eq(%lhs, %rhs), ne(%lhs, 0)] : f32, f32
+  kernel.return
+}
+
+// ----
+kernel.def @float_equality_predicates() {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%lhs: f32, %rhs: f32) {
+  %5 = scalar.cmpf oeq, %lhs, %rhs : f32
+  %6 = scalar.constant 0.0 : f32
+  %7 = scalar.cmpf une, %lhs, %6 : f32
+  %8 = scalar.andi %5, %7 : i1
+  kernel.assert %8 : i1
+  %lhs_checked, %rhs_checked = scalar.assume %lhs, %rhs [eq(%lhs, %rhs), ne(%lhs, 0)] : f32, f32
+  kernel.return
+}
+
+// ====
+
 // Runtime strengthening of an access-alignment contract has no represented
 // source query and must fail before facts can escape the assertion.
 kernel.def @rejects_alignment_strengthening() {

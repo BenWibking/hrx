@@ -39,4 +39,10 @@ void loom_verify_attribute_value_refs(loom_verify_state_t* state,
                                       const loom_op_t* op,
                                       const loom_op_vtable_t* vtable);
 
+// Checks semantic type domains and carrier-specific ownership for direct
+// predicate list attributes after their SSA references have been validated.
+iree_status_t loom_verify_predicate_attributes(loom_verify_state_t* state,
+                                               const loom_op_t* op,
+                                               const loom_op_vtable_t* vtable);
+
 #endif  // LOOM_VERIFY_VERIFY_VALUE_TYPES_H_

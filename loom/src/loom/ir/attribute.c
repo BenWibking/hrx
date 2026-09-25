@@ -123,6 +123,10 @@ bool loom_predicate_kind_accepts_value_type(uint8_t kind, loom_type_t type) {
   switch ((loom_predicate_kind_t)kind) {
     case LOOM_PREDICATE_EQ:
     case LOOM_PREDICATE_NE:
+      return scalar_type == LOOM_SCALAR_TYPE_INDEX ||
+             scalar_type == LOOM_SCALAR_TYPE_OFFSET ||
+             loom_scalar_type_is_integer(scalar_type) ||
+             loom_scalar_type_is_float(scalar_type);
     case LOOM_PREDICATE_LT:
     case LOOM_PREDICATE_LE:
     case LOOM_PREDICATE_GT:

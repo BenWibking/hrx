@@ -370,6 +370,14 @@ class TestAttrDef:
         with _raises(ValueError, match="elide_default requires default"):
             AttrDef("offset", "i64", elide_default=True)
 
+    def test_executable_predicates_require_predicate_list(self) -> None:
+        predicates = AttrDef("predicates", "predicate_list", executable_predicates=True)
+        assert predicates.executable_predicates
+        with _raises(
+            ValueError, match="executable_predicates requires.*predicate_list"
+        ):
+            AttrDef("predicate", "i64", executable_predicates=True)
+
     def test_enum_attr(self) -> None:
         a = AttrDef("predicate", "enum", enum_def=_cmpi_preds)
         assert a.enum_def is not None

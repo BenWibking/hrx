@@ -763,6 +763,18 @@ static void loom_verify_predicate_list_attr(loom_verify_state_t* state,
          ++argument_index) {
       uint8_t tag = predicate->arg_tags[argument_index];
       if (tag > LOOM_PRED_ARG_NONE && tag < LOOM_PRED_ARG_COUNT_) {
+        if (tag == LOOM_PRED_ARG_VALUE &&
+            (predicate->args[argument_index] < 0 ||
+             predicate->args[argument_index] > UINT32_MAX ||
+             (loom_value_id_t)predicate->args[argument_index] >=
+                 state->module->values.count)) {
+          loom_diagnostic_param_t params[] = {
+              loom_param_u32((uint32_t)predicate->args[argument_index]),
+              loom_param_u32((uint32_t)state->module->values.count),
+          };
+          loom_verify_emit_structured(state, op, LOOM_ERR_DOMINANCE_003, params,
+                                      IREE_ARRAYSIZE(params));
+        }
         continue;
       }
       loom_diagnostic_param_t params[] = {

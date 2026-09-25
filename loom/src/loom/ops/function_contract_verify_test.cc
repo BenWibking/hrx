@@ -273,44 +273,5 @@ TEST_F(FunctionContractVerifyTest, MaterializesStorageAtBufferCallBoundaries) {
       capture.emitter()));
   EXPECT_TRUE(capture.emissions.empty());
 }
-
-TEST_F(FunctionContractVerifyTest, RejectsPredicateValueOutsideSignature) {
-  const loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
-  loom_value_id_t foreign_value = LOOM_VALUE_ID_INVALID;
-  IREE_ASSERT_OK(loom_module_define_value(module_, i32, &foreign_value));
-
-  loom_predicate_t predicate = {};
-  predicate.kind = LOOM_PREDICATE_EQ;
-  predicate.arg_count = 2;
-  predicate.arg_tags[0] = LOOM_PRED_ARG_VALUE;
-  predicate.args[0] = foreign_value;
-  predicate.arg_tags[1] = LOOM_PRED_ARG_CONST;
-  predicate.args[1] = 4;
-
-  loom_symbol_ref_t function_symbol = loom_symbol_ref_null();
-  AddSymbol(IREE_SV("invalid"), &function_symbol);
-  loom_op_t* function_op = nullptr;
-  IREE_ASSERT_OK(loom_func_def_build(
-      &builder_, LOOM_FUNC_DEF_BUILD_FLAG_HAS_PREDICATES,
-      /*visibility=*/0, /*retain=*/0, /*cc=*/0, /*purity=*/0,
-      /*temperature=*/0, /*inline_policy=*/0, loom_symbol_ref_null(),
-      /*abi=*/0, loom_named_attr_slice_empty(), LOOM_STRING_ID_INVALID,
-      loom_named_attr_slice_empty(), function_symbol, &i32, 1,
-      /*result_types=*/nullptr, /*result_count=*/0, /*tied_results=*/nullptr,
-      /*tied_result_count=*/0, &predicate, 1, LOOM_LOCATION_UNKNOWN,
-      &function_op));
-
-  DiagnosticEmissionCapture capture;
-  IREE_EXPECT_OK(
-      loom_function_contract_verify(module_, function_op, capture.emitter()));
-  ASSERT_EQ(capture.emissions.size(), 1u);
-  const auto& emission = capture.emissions.front();
-  EXPECT_EQ(emission.error, LOOM_ERR_STRUCTURE_032);
-  ASSERT_EQ(emission.string_params.size(), 3u);
-  EXPECT_EQ(emission.string_params[0], "func.def");
-  EXPECT_EQ(emission.string_params[1], "predicates[0].arg[0]");
-  EXPECT_EQ(emission.string_params[2], "a function argument or result");
-}
-
 }  // namespace
 }  // namespace loom

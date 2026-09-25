@@ -145,11 +145,11 @@ const char* loom_predicate_kind_name(uint8_t kind);
 // predicate vocabulary.
 uint8_t loom_predicate_kind_argument_count(uint8_t kind);
 
-// Returns true when |kind| may constrain a value of |type|. General integer
-// predicates accept integer, index, and offset scalars. Unsigned ordered
-// relations accept fixed-width integer scalars. Floating-point classification
-// predicates accept floating-point scalars. Typed target registers are
-// classified by their carried semantic value type.
+// Returns true when |kind| may constrain a value of |type|. Equality accepts
+// numeric scalars. General integer predicates accept integer, index, and offset
+// scalars. Unsigned ordered relations accept fixed-width integer scalars.
+// Floating-point classification predicates accept floating-point scalars.
+// Typed target registers are classified by their carried semantic value type.
 bool loom_predicate_kind_accepts_value_type(uint8_t kind, loom_type_t type);
 
 //===----------------------------------------------------------------------===//

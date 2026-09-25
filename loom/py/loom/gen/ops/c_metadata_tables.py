@@ -992,6 +992,8 @@ def generate_tables_c(
                     flag_names.append("LOOM_ATTR_ELIDE_DEFAULT")
                 if attr_def.open_enum:
                     flag_names.append("LOOM_ATTR_OPEN_ENUM")
+                if attr_def.executable_predicates:
+                    flag_names.append("LOOM_ATTR_EXECUTABLE_PREDICATES")
                 flags = " | ".join(flag_names) if flag_names else "0"
                 if attr_def.attr_type in ("enum", "enum_array", "signed_enum_set") and attr_def.enum_def:
                     enum_names = _enum_names_array_name(op, attr_def, shared_enums)

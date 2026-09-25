@@ -959,6 +959,32 @@ TEST(FactsApplyPredicate, Eq) {
   EXPECT_EQ(f.range_hi, 42);
 }
 
+TEST(FactsApplyPredicate, FloatEqPreservesAConservativeFloatDomain) {
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  facts.flags |= LOOM_VALUE_FACT_FLOAT;
+  loom_predicate_t predicate = make_predicate_1(LOOM_PREDICATE_EQ, 0);
+  loom_value_facts_apply_predicate(&facts, &predicate);
+
+  EXPECT_TRUE(loom_value_facts_is_float(facts));
+  EXPECT_TRUE(loom_value_facts_is_finite(facts));
+  EXPECT_FALSE(loom_value_facts_is_exact(facts));
+  EXPECT_EQ(facts.range_lo, INT64_MIN);
+  EXPECT_EQ(facts.range_hi, INT64_MAX);
+}
+
+TEST(FactsApplyPredicate, FloatNeZeroRetainsFloatAndNonzeroFacts) {
+  loom_value_facts_t facts = loom_value_facts_unknown();
+  facts.flags |= LOOM_VALUE_FACT_FLOAT;
+  loom_predicate_t predicate = make_predicate_1(LOOM_PREDICATE_NE, 0);
+  loom_value_facts_apply_predicate(&facts, &predicate);
+
+  EXPECT_TRUE(loom_value_facts_is_float(facts));
+  EXPECT_TRUE(loom_value_facts_is_non_zero(facts));
+  EXPECT_FALSE(loom_value_facts_is_exact(facts));
+  EXPECT_EQ(facts.range_lo, INT64_MIN);
+  EXPECT_EQ(facts.range_hi, INT64_MAX);
+}
+
 TEST(FactsApplyPredicate, ValueBoundDoesNotCorruptRange) {
   loom_value_facts_t f = loom_value_facts_unknown();
   loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_LT, 42);

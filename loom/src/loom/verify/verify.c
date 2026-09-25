@@ -556,6 +556,10 @@ IREE_ATTRIBUTE_ALWAYS_INLINE static inline iree_status_t loom_verify_op(
   if (op->attribute_count) {
     loom_verify_attribute_value_refs(state, op, vtable);
     IREE_RETURN_IF_ERROR(loom_verify_pending_diagnostic_status(state));
+    if (state->result->error_count == initial_error_count) {
+      IREE_RETURN_IF_ERROR(loom_verify_predicate_attributes(state, op, vtable));
+      IREE_RETURN_IF_ERROR(loom_verify_pending_diagnostic_status(state));
+    }
   }
 
   // Poison may flow through pure SSA computation, but it must not be consumed

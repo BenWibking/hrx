@@ -1279,3 +1279,31 @@ func.def @async_tensor_store_rejects_constant_dest(%buffer: buffer, %offset: off
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
 }
+
+// ====
+
+// Kernel declarations expose the same function-like predicate contract as
+// ordinary source functions.
+// ERROR@+1: TYPE/003 "predicates[0].arg[0]" "f32" "integer, index, or offset scalar"
+kernel.decl @bad_predicate_domain() launch(%value: f32) where [range(%value, 0, 4)]
+
+// ====
+
+// ERROR@+1: STRUCTURE/032 {op_name="kernel.decl", field_name="predicates[0].arg[0]", required_origin="a function argument or result"}
+kernel.decl @constant_predicate() launch(%value: i32) where [eq(4, %value)]
+
+// ====
+
+kernel.decl @valid_predicate_contract() launch(%tokens: i32, %capacity: i32) where [ule(%tokens, %capacity)]
+
+// ====
+
+// Kernel definitions also run the shared function contract before their
+// launch-purity and barrier-control checks.
+// ERROR@+1: STRUCTURE/032 {op_name="kernel.def", field_name="predicates[0].arg[0]", required_origin="a function argument or result"}
+kernel.def @bad_definition_predicate() {
+  %c1 = index.constant 1 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%c1, %c1, %c1) : index
+} launch(%value: i32) where [eq(4, %value)] {
+  kernel.return
+}
