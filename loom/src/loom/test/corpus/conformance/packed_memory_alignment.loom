@@ -42,6 +42,5 @@ check.case public @packed_byte_origins {
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi8>
   %original = check.generate.iota offset(0) step(1) : tensor<64xi8>
   check.expect.bitwise actual(%input) expected(%original) : tensor<64xi8>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

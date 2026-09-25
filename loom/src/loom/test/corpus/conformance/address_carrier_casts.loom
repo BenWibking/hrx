@@ -74,7 +74,6 @@ check.case public @refined_address_casts_low {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -107,7 +106,6 @@ check.case public @refined_address_casts_sign_bit {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -140,7 +138,6 @@ check.case public @refined_address_casts_maximum {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -186,7 +183,6 @@ check.case public @truncate_wide_address_low {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -206,7 +202,6 @@ check.case public @truncate_wide_address_sign_bit {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -226,7 +221,6 @@ check.case public @truncate_wide_address_maximum {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -271,7 +265,6 @@ check.case public @widen_refined_index_zero {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -292,6 +285,5 @@ check.case public @widen_refined_index_maximum {
   %guard = check.generate.fill value(-123) : tensor<16xi64>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<16xi64>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<16xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

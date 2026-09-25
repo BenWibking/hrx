@@ -1043,7 +1043,6 @@ LOOM_CHECK_CASE(update_values) {
                             loom::check::fill<unsigned, 1>(37u));
   loom::check::expect_bitwise(loom::check::slice<1>(storage, 2),
                             loom::check::fill<unsigned, 1>(37u));
-  loom::check::expect_event("device", "type", "asan_report", "count", 0);
 }
 LOOM_CHECK_BENCHMARK(update_benchmark, update_values);
 ```

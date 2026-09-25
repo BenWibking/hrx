@@ -79,6 +79,14 @@ iree_status_t loom_testbench_case_executor_initialize(
         prepared_case->expectation_schedule.expectation_count, host_allocator,
         &out_executor->expectation_report);
   }
+  if (iree_status_is_ok(status) && out_executor->device_event_capture != NULL) {
+    out_executor->expected_device_event_capacity =
+        out_executor->device_event_capture->record_capacity;
+    status = iree_allocator_malloc_array(
+        host_allocator, out_executor->expected_device_event_capacity,
+        sizeof(*out_executor->expected_device_events),
+        (void**)&out_executor->expected_device_events);
+  }
   if (!iree_status_is_ok(status)) {
     loom_testbench_case_executor_deinitialize(out_executor);
   }
@@ -91,6 +99,8 @@ void loom_testbench_case_executor_deinitialize(
     return;
   }
   loom_testbench_expectation_report_deinitialize(&executor->expectation_report);
+  iree_allocator_free(executor->materializer_options.host_allocator,
+                      executor->expected_device_events);
   loom_testbench_invocation_executor_deinitialize(
       &executor->invocation_executor);
   loom_testbench_value_table_deinitialize(&executor->value_table);
@@ -106,6 +116,8 @@ iree_status_t loom_testbench_run_case_sample(
       executor->prepared_case->case_plan;
   loom_testbench_value_table_reset(&executor->value_table);
   loom_testbench_expectation_report_reset(&executor->expectation_report);
+  executor->device_events = (loom_testbench_device_event_list_t){0};
+  executor->unhandled_device_event_count = 0;
   if (executor->device_event_capture != NULL) {
     loom_testbench_device_event_capture_reset(executor->device_event_capture);
   }
@@ -119,22 +131,43 @@ iree_status_t loom_testbench_run_case_sample(
   }
   const bool has_sample_issues = iree_status_is_ok(status) &&
                                  executor->invocation_executor.issue_count != 0;
+  if (iree_status_is_ok(status) && executor->device_event_capture != NULL) {
+    loom_testbench_device_event_capture_events(executor->device_event_capture,
+                                               &executor->device_events);
+    memset(executor->expected_device_events, 0,
+           executor->device_events.count *
+               sizeof(*executor->expected_device_events));
+  }
   if (iree_status_is_ok(status) && !has_sample_issues) {
     loom_testbench_case_sample_observations_t observations =
         loom_testbench_case_sample_observations_empty();
-    loom_testbench_device_event_list_t device_events = {0};
     if (executor->device_event_capture != NULL) {
-      loom_testbench_device_event_capture_events(executor->device_event_capture,
-                                                 &device_events);
-      observations.device_events = &device_events;
+      observations.device_events = &executor->device_events;
+      observations.expected_device_events = executor->expected_device_events;
+      observations.expected_device_event_capacity =
+          executor->expected_device_event_capacity;
     }
     status = loom_testbench_evaluate_case_expectations(
         &executor->prepared_case->expectation_schedule, &executor->value_table,
         &observations, &executor->expectation_report);
   }
 
-  const bool case_failed =
-      has_sample_issues || executor->expectation_report.failure_count != 0;
+  if (iree_status_is_ok(status)) {
+    for (iree_host_size_t i = 0; i < executor->device_events.count; ++i) {
+      const iree_hal_device_event_t* event =
+          &executor->device_events.records[i].event;
+      if (event->severity >= IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR &&
+          !executor->expected_device_events[i]) {
+        ++executor->unhandled_device_event_count;
+      }
+    }
+  }
+
+  const bool device_events_failed =
+      executor->device_events.dropped_count != 0 ||
+      executor->unhandled_device_event_count != 0;
+  const bool case_failed = has_sample_issues || device_events_failed ||
+                           executor->expectation_report.failure_count != 0;
   if (iree_status_is_ok(status) && !has_sample_issues) {
     status = loom_testbench_write_case_files(&executor->materializer_options,
                                              case_plan, &executor->value_table,
@@ -152,7 +185,139 @@ iree_status_t loom_testbench_run_case_sample(
   out_result->issue_count = executor->invocation_executor.issue_count;
   out_result->passed = !case_failed;
   out_result->expectation_report = &executor->expectation_report;
+  if (executor->device_event_capture != NULL) {
+    out_result->device_events = &executor->device_events;
+    out_result->expected_device_events = executor->expected_device_events;
+    out_result->unhandled_device_event_count =
+        executor->unhandled_device_event_count;
+  }
   return iree_ok_status();
+}
+
+static const char* loom_testbench_device_event_type_name(
+    iree_hal_device_event_type_t type) {
+  switch (type) {
+    case IREE_HAL_DEVICE_EVENT_TYPE_NONE:
+      return "none";
+    case IREE_HAL_DEVICE_EVENT_TYPE_DRIVER_FAILURE:
+      return "driver_failure";
+    case IREE_HAL_DEVICE_EVENT_TYPE_ASAN_REPORT:
+      return "asan_report";
+    case IREE_HAL_DEVICE_EVENT_TYPE_UBSAN_REPORT:
+      return "ubsan_report";
+    case IREE_HAL_DEVICE_EVENT_TYPE_TSAN_REPORT:
+      return "tsan_report";
+    case IREE_HAL_DEVICE_EVENT_TYPE_PRINTF:
+      return "printf";
+    case IREE_HAL_DEVICE_EVENT_TYPE_HOST_CALL:
+      return "host_call";
+    default:
+      return "unknown";
+  }
+}
+
+static const char* loom_testbench_device_event_severity_name(
+    iree_hal_device_event_severity_t severity) {
+  switch (severity) {
+    case IREE_HAL_DEVICE_EVENT_SEVERITY_TRACE:
+      return "trace";
+    case IREE_HAL_DEVICE_EVENT_SEVERITY_INFO:
+      return "info";
+    case IREE_HAL_DEVICE_EVENT_SEVERITY_WARNING:
+      return "warning";
+    case IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR:
+      return "error";
+    case IREE_HAL_DEVICE_EVENT_SEVERITY_FATAL:
+      return "fatal";
+    default:
+      return "unknown";
+  }
+}
+
+static iree_status_t loom_testbench_write_device_event_site_json(
+    const iree_hal_device_event_site_t* site, loom_output_stream_t* stream) {
+  loom_json_object_writer_t object;
+  IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_uint64_field(
+      &object, IREE_SV("site_id"), site->site_id));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      &object, IREE_SV("source_file"), site->source_file));
+  if (site->start_line != 0) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &object, IREE_SV("start_line"), site->start_line));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &object, IREE_SV("start_column"), site->start_column));
+  }
+  if (site->end_line != 0) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &object, IREE_SV("end_line"), site->end_line));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_uint32_field(
+        &object, IREE_SV("end_column"), site->end_column));
+  }
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      &object, IREE_SV("function"), site->function_name));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      &object, IREE_SV("operation"), site->operation_name));
+  return loom_json_object_end(&object);
+}
+
+static iree_status_t loom_testbench_write_device_event_json(
+    const iree_hal_device_event_t* event, loom_output_stream_t* stream) {
+  loom_json_object_writer_t object;
+  IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      &object, IREE_SV("type"),
+      iree_make_cstring_view(
+          loom_testbench_device_event_type_name(event->type))));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      &object, IREE_SV("severity"),
+      iree_make_cstring_view(
+          loom_testbench_device_event_severity_name(event->severity))));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      &object, IREE_SV("driver"), event->source.driver_id));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field_if_nonempty(
+      &object, IREE_SV("device"), event->source.device_id));
+  if (event->site != NULL) {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_begin_field(&object, IREE_SV("site")));
+    IREE_RETURN_IF_ERROR(
+        loom_testbench_write_device_event_site_json(event->site, stream));
+  }
+  return loom_json_object_end(&object);
+}
+
+static iree_status_t loom_testbench_write_device_events_json(
+    const loom_testbench_case_sample_result_t* result,
+    loom_json_object_writer_t* object) {
+  IREE_RETURN_IF_ERROR(
+      loom_json_object_begin_field(object, IREE_SV("device_events")));
+  loom_json_object_writer_t device_events;
+  IREE_RETURN_IF_ERROR(loom_json_object_begin(object->stream, &device_events));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      &device_events, IREE_SV("captured_count"), result->device_events->count));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      &device_events, IREE_SV("dropped_count"),
+      result->device_events->dropped_count));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      &device_events, IREE_SV("unhandled_error_count"),
+      result->unhandled_device_event_count));
+  IREE_RETURN_IF_ERROR(loom_json_object_begin_field(
+      &device_events, IREE_SV("unhandled_errors")));
+  loom_json_array_writer_t events;
+  IREE_RETURN_IF_ERROR(loom_json_array_begin(object->stream, &events));
+  for (iree_host_size_t i = 0; i < result->device_events->count; ++i) {
+    const iree_hal_device_event_t* event =
+        &result->device_events->records[i].event;
+    if (event->severity < IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR ||
+        result->expected_device_events[i]) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(loom_json_array_begin_element(&events));
+    IREE_RETURN_IF_ERROR(
+        loom_testbench_write_device_event_json(event, object->stream));
+  }
+  IREE_RETURN_IF_ERROR(loom_json_array_end(&events));
+  return loom_json_object_end(&device_events);
 }
 
 static const char* loom_testbench_sample_issue_category_name(
@@ -218,6 +383,12 @@ iree_status_t loom_testbench_case_sample_result_write_json(
   if (result->issue_count != 0) {
     IREE_RETURN_IF_ERROR(
         loom_testbench_write_sample_issues_json(result, &object));
+  }
+  if (result->device_events != NULL &&
+      (result->unhandled_device_event_count != 0 ||
+       result->device_events->dropped_count != 0)) {
+    IREE_RETURN_IF_ERROR(
+        loom_testbench_write_device_events_json(result, &object));
   }
   return loom_json_object_end(&object);
 }

@@ -50,7 +50,6 @@ check.case public @masked_duplicate_active {
   check.expect.bitwise actual(%inactive) expected(%expected_inactive) : tensor<2xi32>
   check.expect.bitwise actual(%updated) expected(%expected_updated) : tensor<1xi32>
   check.expect.bitwise actual(%guards) expected(%expected_guards) : tensor<3xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -63,7 +62,6 @@ check.case public @masked_duplicate_inactive {
   %expected_output = check.generate.fill value(-101) : tensor<4xi32>
   check.expect.bitwise actual(%memory) expected(%expected_memory) : tensor<4xi32>
   check.expect.bitwise actual(%output) expected(%expected_output) : tensor<4xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -98,7 +96,6 @@ check.case public @inactive_offset_outside_view {
   %expected_output = check.generate.iota offset(7) step(-108) : tensor<2xi32>
   check.expect.bitwise actual(%memory) expected(%expected_memory) : tensor<1xi32>
   check.expect.bitwise actual(%output) expected(%expected_output) : tensor<2xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -142,7 +139,6 @@ check.case public @float_old_and_passthrough_nan_payloads {
   check.expect.bitwise actual(%active) expected(%expected_active) : tensor<1xi32>
   check.expect.bitwise actual(%inactive) expected(%expected_inactive) : tensor<1xi32>
   check.expect.bitwise actual(%output) expected(%expected_output) : tensor<2xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -168,7 +164,6 @@ check.case public @vector_atomic_input_snapshot {
   kernel.launch @atomic_input_snapshot(%memory) : (tensor<2xi32>)
   %expected = check.generate.fill value(5) : tensor<2xi32>
   check.expect.bitwise actual(%memory) expected(%expected) : tensor<2xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -204,7 +199,6 @@ check.case public @vector_atomic_i64_high_words {
   check.expect.bitwise actual(%old) expected(%expected_old) : tensor<2xi64>
   check.expect.bitwise actual(%observed) expected(%expected_observed) : tensor<2xi64>
   check.expect.bitwise actual(%memory) expected(%expected_old) : tensor<2xi64>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -249,7 +243,6 @@ check.case public @vector_atomic_float_bitwise_comparison {
   check.expect.bitwise actual(%old) expected(%expected_old) : tensor<2xi32>
   check.expect.bitwise actual(%observed) expected(%expected_observed) : tensor<2xi32>
   check.expect.bitwise actual(%memory) expected(%expected_memory) : tensor<2xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -284,6 +277,5 @@ check.case public @vector_atomic_contended_tickets {
   %expected_sum = check.generate.fill value(32640) : tensor<1xi32>
   check.expect.bitwise actual(%memory) expected(%expected_memory) : tensor<1xi32>
   check.expect.bitwise actual(%old_sum) expected(%expected_sum) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

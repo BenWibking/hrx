@@ -34,6 +34,5 @@ check.case public @workgroup_atomic_cmpxchg_values {
   %replaced = check.tensor.view %output offset(4) : tensor<4xi32> -> tensor<3xi32>
   check.expect.bitwise actual(%success_old) expected(%expected_old) : tensor<1xi32>
   check.expect.bitwise actual(%replaced) expected(%expected_replaced) : tensor<3xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

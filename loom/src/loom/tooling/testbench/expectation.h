@@ -82,6 +82,10 @@ typedef struct loom_testbench_expectation_options_t {
 typedef struct loom_testbench_case_sample_observations_t {
   // Device events captured while executing the sample's kernel launches.
   const loom_testbench_device_event_list_t* device_events;
+  // Mutable byte flags set for events matched by positive event expectations.
+  uint8_t* expected_device_events;
+  // Number of entries available in |expected_device_events|.
+  iree_host_size_t expected_device_event_capacity;
 } loom_testbench_case_sample_observations_t;
 
 // Returns empty sample observations.

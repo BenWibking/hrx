@@ -209,7 +209,7 @@ def narrow_argument_cases(arrays):
                 comparison = "close" if any(math.isnan(value) for value in expected) else "bitwise"
                 options = " atol(0.0) rtol(0.0) nan(same)" if comparison == "close" else ""
                 lines.append(f"  check.expect.{comparison} actual(%actual_{field}) expected(%{field}_expected){options} : {tensor}")
-            lines += ['  check.expect.event<device> {type = "asan_report", count = 0}', "  check.return", "}", ""]
+            lines += ["  check.return", "}", ""]
             yield "\n".join(lines)
 
 

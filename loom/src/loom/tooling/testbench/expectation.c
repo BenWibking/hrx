@@ -1536,6 +1536,14 @@ static iree_status_t loom_testbench_evaluate_event_expectation(
   }
   const loom_testbench_device_event_list_t* events =
       observations->device_events;
+  if (events->count > observations->expected_device_event_capacity ||
+      (events->count != 0 && observations->expected_device_events == NULL)) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "device event expectation accounting capacity %" PRIhsz
+        " is smaller than captured event count %" PRIhsz,
+        observations->expected_device_event_capacity, events->count);
+  }
   if (events->dropped_count != 0) {
     return iree_string_builder_append_format(
         detail_builder,
@@ -1552,9 +1560,9 @@ static iree_status_t loom_testbench_evaluate_event_expectation(
   if (!count_present) {
     expected_count = 1;
   }
-  if (expected_count < 0) {
+  if (expected_count <= 0) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "event expectation count must be non-negative");
+                            "event expectation count must be positive");
   }
 
   iree_host_size_t matched_count = 0;
@@ -1565,6 +1573,7 @@ static iree_status_t loom_testbench_evaluate_event_expectation(
     status = loom_testbench_event_record_matches(
         module, expectation, &events->records[i], &event_matches);
     if (iree_status_is_ok(status) && event_matches) {
+      observations->expected_device_events[i] = 1;
       ++matched_count;
     }
   }

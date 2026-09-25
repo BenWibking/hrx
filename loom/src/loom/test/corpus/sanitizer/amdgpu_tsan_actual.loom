@@ -182,7 +182,6 @@ check.case @tsan_workgroup_adjacent_wide_writes_case {
   kernel.launch @tsan_workgroup_adjacent_wide_writes(%output) : (tensor<2xi32>)
   %expected = check.generate.fill value(1) : tensor<2xi32>
   check.expect.equal actual(%output) expected(%expected) : tensor<2xi32>
-  check.expect.event<device> {count = 0, type = "tsan_report"}
   check.return
 }
 
@@ -191,6 +190,5 @@ check.case @tsan_workgroup_barrier_safe_write_case {
   kernel.launch @tsan_workgroup_barrier_safe_write(%output) : (tensor<1xi32>)
   %expected = check.generate.fill value(2) : tensor<1xi32>
   check.expect.equal actual(%output) expected(%expected) : tensor<1xi32>
-  check.expect.event<device> {count = 0, type = "tsan_report"}
   check.return
 }

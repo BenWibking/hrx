@@ -59,7 +59,6 @@ check.case public @address_carrier_loop_empty {
   %expected_suffix = check.generate.fill value(-123) : tensor<80xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
   check.expect.bitwise actual(%suffix) expected(%expected_suffix) : tensor<80xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -80,7 +79,6 @@ check.case public @address_carrier_loop_partial_wave {
   %expected_suffix = check.generate.fill value(-123) : tensor<43xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
   check.expect.bitwise actual(%suffix) expected(%expected_suffix) : tensor<43xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
 
@@ -101,6 +99,5 @@ check.case public @address_carrier_loop_full_wave {
   %expected_suffix = check.generate.fill value(-123) : tensor<16xi32>
   check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<16xi32>
   check.expect.bitwise actual(%suffix) expected(%expected_suffix) : tensor<16xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }

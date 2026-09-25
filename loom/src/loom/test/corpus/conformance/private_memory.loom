@@ -40,6 +40,5 @@ check.case public @private_memory_roundtrip {
   %guard = check.generate.fill value(91) : tensor<4xi32>
   check.expect.bitwise actual(%prefix) expected(%guard) : tensor<4xi32>
   check.expect.bitwise actual(%suffix) expected(%guard) : tensor<4xi32>
-  check.expect.event<device> {count = 0, type = "asan_report"}
   check.return
 }
