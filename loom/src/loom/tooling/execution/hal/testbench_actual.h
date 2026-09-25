@@ -171,6 +171,8 @@ typedef struct loom_run_hal_testbench_actual_provider_t {
   loom_run_module_t compile_module;
   // Config-materialized source kernel retained for launch evaluation.
   loom_module_t* launch_config_module;
+  // Launch-module snapshots borrowing bytes from compile_module.sources.
+  loom_source_table_resolver_t launch_config_sources;
   // Exact target facts used to expand and evaluate the launch region.
   const loom_target_facts_t* launch_config_target_facts;
   // Reusable signed workload arguments used during launch evaluation.
