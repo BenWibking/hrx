@@ -18,7 +18,11 @@ package(
 
 loom_cc_library(
     name = "testbench",
-    srcs = ["testbench.c"],
+    srcs = [
+        "scenario_plan.c",
+        "scenario_plan.h",
+        "testbench.c",
+    ],
     hdrs = ["testbench.h"],
     deps = [
         "//loom/src/loom/ir",
@@ -166,7 +170,9 @@ loom_cc_test(
         "//loom/src/loom/format/text:parser",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/check",
+        "//loom/src/loom/ops/command",
         "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/ops/pipeline",
         "//loom/src/loom/ops/test",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
@@ -204,6 +210,7 @@ loom_cc_test(
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/check",
         "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/test",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/base/internal:json",

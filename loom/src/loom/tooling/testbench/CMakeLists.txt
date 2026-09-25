@@ -15,6 +15,8 @@ loom_cc_library(
   HDRS
     "testbench.h"
   SRCS
+    "scenario_plan.c"
+    "scenario_plan.h"
     "testbench.c"
   DEPS
     iree::base
@@ -195,7 +197,9 @@ loom_cc_test(
     loom::format::text::parser
     loom::ir
     loom::ops::check
+    loom::ops::command
     loom::ops::kernel
+    loom::ops::pipeline
     loom::ops::test
 )
 
@@ -236,6 +240,7 @@ loom_cc_test(
     loom::ir
     loom::ops::check
     loom::ops::index
+    loom::ops::test
 )
 
 loom_cc_test(
