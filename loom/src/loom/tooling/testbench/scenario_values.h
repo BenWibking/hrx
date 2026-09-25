@@ -24,6 +24,14 @@ enum loom_testbench_scenario_value_flag_bits_e {
   LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_HAS_ORACLE = 1u << 1,
 };
 
+typedef uint8_t loom_testbench_scenario_trial_realization_t;
+enum loom_testbench_scenario_trial_realization_e {
+  // Materializes only the target value graph.
+  LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_ONLY = 0u,
+  // Materializes independent target and oracle value graphs.
+  LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_AND_ORACLE = 1u,
+};
+
 // Exact coordinate needed to replay one scenario trial.
 typedef struct loom_testbench_scenario_trial_identity_t {
   // Campaign entropy root supplied by the runner.
@@ -94,7 +102,9 @@ iree_status_t loom_testbench_scenario_configuration_values_materialize(
 iree_status_t loom_testbench_scenario_trial_values_initialize(
     const loom_module_t* module,
     const loom_testbench_scenario_plan_t* scenario_plan,
-    iree_host_size_t trial_index, iree_allocator_t host_allocator,
+    iree_host_size_t trial_index,
+    loom_testbench_scenario_trial_realization_t realization,
+    iree_allocator_t host_allocator,
     loom_testbench_scenario_trial_values_t* out_values);
 
 // Releases storage owned by |values|.

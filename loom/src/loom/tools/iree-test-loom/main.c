@@ -483,7 +483,8 @@ static iree_status_t iree_test_loom_run_scenario(
     loom_testbench_prepared_scenario_configuration_t prepared = {0};
     if (iree_status_is_ok(status)) {
       status = loom_testbench_prepare_scenario_configuration(
-          execution_options, &configuration, &prepared);
+          execution_options, &configuration,
+          LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS, &prepared);
     }
     for (iree_host_size_t trial_index = 0;
          iree_status_is_ok(status) && trial_index < scenario->trial_count;

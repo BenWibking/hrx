@@ -10,6 +10,7 @@
 #define LOOM_TOOLING_TESTBENCH_SCENARIO_EXECUTOR_H_
 
 #include "iree/base/api.h"
+#include "loom/tooling/execution/benchmark.h"
 #include "loom/tooling/testbench/expectation.h"
 #include "loom/tooling/testbench/scenario_values.h"
 #include "loom/util/stream.h"
@@ -38,6 +39,18 @@ typedef iree_status_t(IREE_API_PTR* loom_testbench_product_execute_fn_t)(
     void* user_data, const loom_testbench_invocation_plan_t* invocation,
     iree_host_size_t call_count, loom_testbench_product_call_t* calls);
 
+// Benchmarks a prepared product over target-local calls.
+//
+// Every call represents one independent physical realization of the same
+// semantic trial. Implementations prepare target-local staging before entering
+// their timing loop and execute exactly |options->batch_size| calls per timed
+// batch. Oracle execution, result comparison, and readback are excluded.
+typedef iree_status_t(IREE_API_PTR* loom_testbench_product_benchmark_fn_t)(
+    void* user_data, const loom_testbench_invocation_plan_t* invocation,
+    iree_host_size_t call_count, loom_testbench_product_call_t* calls,
+    const loom_run_benchmark_options_t* options,
+    iree_allocator_t host_allocator, loom_run_benchmark_result_t* out_result);
+
 typedef void(IREE_API_PTR* loom_testbench_product_destroy_fn_t)(
     void* user_data);
 
@@ -49,6 +62,8 @@ typedef struct loom_testbench_prepared_product_t {
   const loom_testbench_invocation_plan_t* invocation;
   // Executes one bounded batch.
   loom_testbench_product_execute_fn_t execute;
+  // Benchmarks one target-only batch, or NULL when unsupported.
+  loom_testbench_product_benchmark_fn_t benchmark;
   // Optional teardown for |user_data|.
   loom_testbench_product_destroy_fn_t destroy;
   // Product-owned state passed to callbacks.
@@ -74,6 +89,14 @@ typedef struct loom_testbench_execution_profile_t {
   // Profile-owned state passed to |prepare|.
   void* user_data;
 } loom_testbench_execution_profile_t;
+
+typedef uint8_t loom_testbench_scenario_execution_mode_t;
+enum loom_testbench_scenario_execution_mode_e {
+  // Executes target and oracle products and evaluates authored expectations.
+  LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS = 0u,
+  // Realizes and benchmarks only the target product.
+  LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_BENCHMARK = 1u,
+};
 
 typedef struct loom_testbench_scenario_execution_options_t {
   // Profile used for the product under test.
@@ -102,6 +125,8 @@ typedef struct loom_testbench_prepared_scenario_trial_t {
 typedef struct loom_testbench_prepared_scenario_configuration_t {
   // Materialized configuration visible during product preparation.
   const loom_testbench_scenario_configuration_values_t* configuration;
+  // Execution semantics selected while preparing every product.
+  loom_testbench_scenario_execution_mode_t mode;
   // Allocator owning |trials| and passed to product teardown.
   iree_allocator_t host_allocator;
   // Prepared trial domains in source order.
@@ -115,6 +140,7 @@ typedef struct loom_testbench_prepared_scenario_configuration_t {
 iree_status_t loom_testbench_prepare_scenario_configuration(
     const loom_testbench_scenario_execution_options_t* options,
     const loom_testbench_scenario_configuration_values_t* configuration,
+    loom_testbench_scenario_execution_mode_t mode,
     loom_testbench_prepared_scenario_configuration_t* out_prepared);
 
 // Releases all products and bookkeeping owned by |prepared|.
@@ -147,6 +173,8 @@ typedef struct loom_testbench_scenario_trial_executor_t {
   const loom_testbench_prepared_scenario_trial_t* prepared_trial;
   // Materialized configuration shared into each trial recipe.
   const loom_testbench_scenario_configuration_values_t* configuration;
+  // Execution semantics inherited from the prepared configuration.
+  loom_testbench_scenario_execution_mode_t mode;
   // Runtime dependencies used while materializing trial values.
   loom_testbench_value_materializer_options_t materializer_options;
   // Host allocator owning all arrays below.
@@ -200,6 +228,16 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
     loom_testbench_scenario_trial_executor_t* executor,
     iree_host_size_t first_trial_ordinal, iree_host_size_t trial_count,
     loom_testbench_scenario_trial_result_list_t* out_results);
+
+// Benchmarks one semantic trial using a batch of independent target graphs.
+//
+// |options->batch_size| determines both the number of physical target
+// realizations and the number of logical operations normalized into one timed
+// batch. Configuration and trial recipes run before product-local timing.
+iree_status_t loom_testbench_benchmark_scenario_trial(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t trial_ordinal, const loom_run_benchmark_options_t* options,
+    loom_run_benchmark_result_t* out_result);
 
 // Writes one deterministic scenario trial result with its complete replay
 // coordinate and any source-located expectation failures.

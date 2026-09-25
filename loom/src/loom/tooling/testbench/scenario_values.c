@@ -104,7 +104,9 @@ iree_status_t loom_testbench_scenario_configuration_values_materialize(
 iree_status_t loom_testbench_scenario_trial_values_initialize(
     const loom_module_t* module,
     const loom_testbench_scenario_plan_t* scenario_plan,
-    iree_host_size_t trial_index, iree_allocator_t host_allocator,
+    iree_host_size_t trial_index,
+    loom_testbench_scenario_trial_realization_t realization,
+    iree_allocator_t host_allocator,
     loom_testbench_scenario_trial_values_t* out_values) {
   memset(out_values, 0, sizeof(*out_values));
   if (trial_index >= scenario_plan->trial_count) {
@@ -113,6 +115,13 @@ iree_status_t loom_testbench_scenario_trial_values_initialize(
         "trial index %zu exceeds scenario trial domain count %zu", trial_index,
         scenario_plan->trial_count);
   }
+  if (realization != LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_ONLY &&
+      realization !=
+          LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_AND_ORACLE) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "invalid scenario trial realization %u",
+                            (unsigned)realization);
+  }
 
   out_values->scenario_plan = scenario_plan;
   out_values->trial_plan = &scenario_plan->trials[trial_index];
@@ -120,8 +129,16 @@ iree_status_t loom_testbench_scenario_trial_values_initialize(
   iree_status_t status = loom_testbench_value_table_initialize_scenario_trial(
       module, scenario_plan, out_values->trial_plan, host_allocator,
       &out_values->target);
-  if (iree_status_is_ok(status) && out_values->trial_plan->action.kind ==
-                                       LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE) {
+  if (iree_status_is_ok(status) &&
+      realization ==
+          LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_AND_ORACLE) {
+    if (out_values->trial_plan->action.kind !=
+        LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE) {
+      loom_testbench_scenario_trial_values_deinitialize(out_values);
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "only check.compare trials admit target and oracle realization");
+    }
     status = loom_testbench_value_table_initialize_scenario_trial(
         module, scenario_plan, out_values->trial_plan, host_allocator,
         &out_values->oracle);

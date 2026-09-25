@@ -185,7 +185,9 @@ TEST_F(ScenarioValuesTest, MaterializesIndependentPairedAliasGraphs) {
 
   loom_testbench_scenario_trial_values_t values = {};
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_initialize(
-      module, &scenario, /*trial_index=*/0, host_allocator_, &values));
+      module, &scenario, /*trial_index=*/0,
+      LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_AND_ORACLE,
+      host_allocator_, &values));
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_materialize(
       &options, &configuration, /*trial_ordinal=*/2, &values));
   EXPECT_TRUE(iree_all_bits_set(
@@ -296,7 +298,9 @@ TEST_F(ScenarioValuesTest, InvokeMaterializesOnlyTargetValues) {
 
   loom_testbench_scenario_trial_values_t values = {};
   IREE_ASSERT_OK(loom_testbench_scenario_trial_values_initialize(
-      module, &scenario, /*trial_index=*/1, host_allocator_, &values));
+      module, &scenario, /*trial_index=*/1,
+      LOOM_TESTBENCH_SCENARIO_TRIAL_REALIZATION_TARGET_ONLY, host_allocator_,
+      &values));
   EXPECT_FALSE(iree_any_bit_set(values.flags,
                                 LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_HAS_ORACLE));
   EXPECT_EQ(values.oracle.slot_count, 0u);

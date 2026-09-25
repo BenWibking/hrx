@@ -30,10 +30,13 @@ typedef struct TestProfileState {
   iree_host_size_t prepare_count;
   iree_host_size_t execute_count;
   iree_host_size_t last_call_count;
+  iree_host_size_t benchmark_count;
+  iree_host_size_t last_benchmark_call_count;
   iree_host_size_t mismatch_trial_ordinal;
   bool inject_mismatch;
   bool saw_runtime_value_during_prepare;
   bool saw_incomplete_alias;
+  bool saw_shared_replica_storage;
 } TestProfileState;
 
 static iree_status_t ExecuteTestProduct(
@@ -84,6 +87,46 @@ static iree_status_t ExecuteTestProduct(
   return iree_ok_status();
 }
 
+static iree_status_t BenchmarkTestProduct(
+    void* user_data, const loom_testbench_invocation_plan_t* invocation,
+    iree_host_size_t call_count, loom_testbench_product_call_t* calls,
+    const loom_run_benchmark_options_t* options,
+    iree_allocator_t host_allocator, loom_run_benchmark_result_t* out_result) {
+  (void)host_allocator;
+  TestProfileState* state = static_cast<TestProfileState*>(user_data);
+  ++state->benchmark_count;
+  state->last_benchmark_call_count = call_count;
+  if (call_count != options->batch_size) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "test benchmark call count is inconsistent");
+  }
+  if (invocation->result_count == 0 && invocation->input_count == 2) {
+    for (iree_host_size_t call_index = 0; call_index < call_count;
+         ++call_index) {
+      const iree_tooling_buffer_binding_t* storage =
+          &calls[call_index].arguments[0].buffer;
+      const iree_tooling_buffer_binding_t* tail =
+          &calls[call_index].arguments[1].buffer;
+      state->saw_incomplete_alias |=
+          iree_hal_buffer_test_overlap(
+              storage->buffer, 0, IREE_HAL_WHOLE_BUFFER, tail->buffer, 0,
+              IREE_HAL_WHOLE_BUFFER) != IREE_HAL_BUFFER_OVERLAP_PARTIAL;
+      if (call_index != 0) {
+        const iree_tooling_buffer_binding_t* previous_storage =
+            &calls[call_index - 1].arguments[0].buffer;
+        state->saw_shared_replica_storage |=
+            iree_hal_buffer_test_overlap(previous_storage->buffer, 0,
+                                         IREE_HAL_WHOLE_BUFFER, storage->buffer,
+                                         0, IREE_HAL_WHOLE_BUFFER) !=
+            IREE_HAL_BUFFER_OVERLAP_DISJOINT;
+      }
+    }
+  }
+  loom_run_benchmark_result_initialize(out_result);
+  out_result->batch_size = options->batch_size;
+  return iree_ok_status();
+}
+
 static iree_status_t PrepareTestProduct(
     void* user_data, const loom_testbench_invocation_plan_t* invocation,
     const loom_testbench_value_table_t* configuration,
@@ -105,6 +148,7 @@ static iree_status_t PrepareTestProduct(
   }
   *out_product = {};
   out_product->execute = ExecuteTestProduct;
+  out_product->benchmark = BenchmarkTestProduct;
   out_product->user_data = state;
   return iree_ok_status();
 }
@@ -244,7 +288,8 @@ TEST_F(ScenarioExecutorTest, PreparesBeforeMaterializationAndExecutesBatches) {
 
   loom_testbench_prepared_scenario_configuration_t prepared = {};
   IREE_ASSERT_OK(loom_testbench_prepare_scenario_configuration(
-      &execution_options, &configuration, &prepared));
+      &execution_options, &configuration,
+      LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS, &prepared));
   EXPECT_EQ(target_state.prepare_count, 2u);
   EXPECT_EQ(oracle_state.prepare_count, 1u);
   EXPECT_EQ(target_state.execute_count, 0u);
@@ -320,6 +365,110 @@ TEST_F(ScenarioExecutorTest, PreparesBeforeMaterializationAndExecutesBatches) {
   loom_module_free(module);
 }
 
+TEST_F(ScenarioExecutorTest, BenchmarksIndependentTargetOnlyReplicas) {
+  loom_module_t* module = ParseModule();
+  ASSERT_NE(module, nullptr);
+  loom_testbench_module_plan_t plan = PlanModule(module);
+  ASSERT_EQ(plan.issue_count, 0u);
+  ASSERT_EQ(plan.scenario_count, 1u);
+  const loom_testbench_scenario_plan_t& scenario = plan.scenarios[0];
+
+  loom_testbench_value_materializer_options_t materializer =
+      MaterializerOptions();
+  loom_testbench_scenario_configuration_values_t configuration = {};
+  IREE_ASSERT_OK(loom_testbench_scenario_configuration_values_initialize(
+      module, &scenario, host_allocator_, &configuration));
+  const loom_testbench_entropy_t entropy_root =
+      loom_testbench_entropy_root(0x0123456789abcdefull);
+  IREE_ASSERT_OK(loom_testbench_scenario_configuration_values_materialize(
+      &materializer, entropy_root, /*configuration_ordinal=*/1,
+      &configuration));
+
+  ExecutionTimeline timeline = {};
+  TestProfileState target_state = {};
+  target_state.timeline = &timeline;
+  TestProfileState oracle_state = {};
+  oracle_state.timeline = &timeline;
+  loom_testbench_scenario_execution_options_t execution_options = {};
+  loom_testbench_scenario_execution_options_initialize(&execution_options);
+  execution_options.target.name = IREE_SV("test-target");
+  execution_options.target.prepare = PrepareTestProduct;
+  execution_options.target.user_data = &target_state;
+  execution_options.oracle.name = IREE_SV("test-oracle");
+  execution_options.oracle.prepare = PrepareTestProduct;
+  execution_options.oracle.user_data = &oracle_state;
+
+  loom_testbench_prepared_scenario_configuration_t prepared = {};
+  IREE_ASSERT_OK(loom_testbench_prepare_scenario_configuration(
+      &execution_options, &configuration,
+      LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_BENCHMARK, &prepared));
+  EXPECT_EQ(prepared.mode, LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_BENCHMARK);
+  EXPECT_EQ(target_state.prepare_count, 2u);
+  EXPECT_EQ(oracle_state.prepare_count, 0u);
+  EXPECT_EQ(target_state.execute_count, 0u);
+  EXPECT_EQ(oracle_state.execute_count, 0u);
+
+  loom_testbench_scenario_trial_executor_t executor = {};
+  IREE_ASSERT_OK(loom_testbench_scenario_trial_executor_initialize(
+      &prepared, /*trial_index=*/0, &materializer, /*batch_capacity=*/3,
+      &executor));
+  EXPECT_EQ(executor.results, nullptr);
+  EXPECT_EQ(executor.expectation_reports, nullptr);
+  EXPECT_EQ(executor.oracle_calls, nullptr);
+
+  loom_run_benchmark_options_t benchmark_options = {};
+  loom_run_benchmark_options_initialize(&benchmark_options);
+  benchmark_options.batch_size = 3;
+  loom_run_benchmark_result_t benchmark_result = {};
+  IREE_ASSERT_OK(loom_testbench_benchmark_scenario_trial(
+      &executor, /*trial_ordinal=*/2, &benchmark_options, &benchmark_result));
+  EXPECT_EQ(benchmark_result.batch_size, 3u);
+  EXPECT_EQ(target_state.benchmark_count, 1u);
+  EXPECT_EQ(target_state.last_benchmark_call_count, 3u);
+  EXPECT_EQ(target_state.execute_count, 0u);
+  EXPECT_EQ(oracle_state.benchmark_count, 0u);
+  EXPECT_EQ(oracle_state.execute_count, 0u);
+  EXPECT_FALSE(target_state.saw_incomplete_alias);
+  EXPECT_FALSE(target_state.saw_shared_replica_storage);
+
+  const loom_testbench_invocation_plan_t& invocation =
+      scenario.trials[0].action.target;
+  const loom_testbench_value_t* previous_storage = nullptr;
+  for (iree_host_size_t i = 0; i < benchmark_options.batch_size; ++i) {
+    const loom_testbench_scenario_trial_values_t& values =
+        executor.trial_values[i];
+    EXPECT_FALSE(iree_any_bit_set(
+        values.flags, LOOM_TESTBENCH_SCENARIO_VALUE_FLAG_HAS_ORACLE));
+    EXPECT_EQ(values.oracle.slot_count, 0u);
+    EXPECT_EQ(values.identity.entropy_root.low, entropy_root.low);
+    EXPECT_EQ(values.identity.entropy_root.high, entropy_root.high);
+    EXPECT_EQ(values.identity.configuration_ordinal, 1u);
+    EXPECT_EQ(values.identity.trial_index, 0u);
+    EXPECT_EQ(values.identity.trial_ordinal, 2u);
+
+    const loom_testbench_value_t* storage =
+        Lookup(&values.target, invocation.input_value_ids[0]);
+    const loom_testbench_value_t* tail =
+        Lookup(&values.target, invocation.input_value_ids[1]);
+    EXPECT_EQ(iree_hal_buffer_test_overlap(
+                  storage->buffer.buffer, 0, IREE_HAL_WHOLE_BUFFER,
+                  tail->buffer.buffer, 0, IREE_HAL_WHOLE_BUFFER),
+              IREE_HAL_BUFFER_OVERLAP_PARTIAL);
+    if (previous_storage != nullptr) {
+      EXPECT_EQ(iree_hal_buffer_test_overlap(
+                    previous_storage->buffer.buffer, 0, IREE_HAL_WHOLE_BUFFER,
+                    storage->buffer.buffer, 0, IREE_HAL_WHOLE_BUFFER),
+                IREE_HAL_BUFFER_OVERLAP_DISJOINT);
+    }
+    previous_storage = storage;
+  }
+
+  loom_testbench_scenario_trial_executor_deinitialize(&executor);
+  loom_testbench_prepared_scenario_configuration_deinitialize(&prepared);
+  loom_testbench_scenario_configuration_values_deinitialize(&configuration);
+  loom_module_free(module);
+}
+
 TEST_F(ScenarioExecutorTest, ReportsAuthoredExpectationAndReplayIdentity) {
   loom_module_t* module = ParseModule();
   ASSERT_NE(module, nullptr);
@@ -355,7 +504,8 @@ TEST_F(ScenarioExecutorTest, ReportsAuthoredExpectationAndReplayIdentity) {
   execution_options.oracle.user_data = &oracle_state;
   loom_testbench_prepared_scenario_configuration_t prepared = {};
   IREE_ASSERT_OK(loom_testbench_prepare_scenario_configuration(
-      &execution_options, &configuration, &prepared));
+      &execution_options, &configuration,
+      LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS, &prepared));
   loom_testbench_scenario_trial_executor_t executor = {};
   IREE_ASSERT_OK(loom_testbench_scenario_trial_executor_initialize(
       &prepared, /*trial_index=*/0, &materializer, /*batch_capacity=*/3,
