@@ -192,6 +192,20 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "table_legalization",
+    srcs = ["table_legalization.c"],
+    hdrs = ["table_legalization.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/target:legalization",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "target_legalization",
     srcs = ["target_legalization.c"],
     hdrs = ["target_legalization.h"],

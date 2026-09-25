@@ -105,16 +105,17 @@ static bool loom_amdgpu_static_rank1_32bit_vector_shape(
 static bool loom_amdgpu_static_rank1_register_storage_shape(
     loom_type_t type, loom_amdgpu_vector_storage_t* out_storage) {
   *out_storage = (loom_amdgpu_vector_storage_t){0};
-  if (!loom_type_is_vector(type) || loom_type_rank(type) != 1 ||
-      !loom_amdgpu_type_vector_storage(type, out_storage) ||
-      out_storage->register_count == 0 ||
-      out_storage->register_count > LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES) {
-    return false;
-  }
+  return loom_type_is_vector(type) && loom_type_rank(type) == 1 &&
+         loom_amdgpu_type_vector_storage(type, out_storage) &&
+         out_storage->register_count != 0 &&
+         out_storage->register_count <= LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES;
+}
+
+static bool loom_amdgpu_vector_storage_fills_registers(
+    const loom_amdgpu_vector_storage_t* storage) {
   const uint64_t payload_bit_count =
-      (uint64_t)out_storage->element_count * out_storage->element_bit_count;
-  const uint64_t storage_bit_count =
-      (uint64_t)out_storage->register_count * 32u;
+      (uint64_t)storage->element_count * storage->element_bit_count;
+  const uint64_t storage_bit_count = (uint64_t)storage->register_count * 32u;
   return payload_bit_count == storage_bit_count;
 }
 
@@ -205,10 +206,15 @@ static bool loom_amdgpu_vector_concat_plan_from_op(
     const loom_value_id_t input = inputs.values[i];
     const loom_type_t input_type = loom_module_value_type(module, input);
     loom_amdgpu_vector_storage_t input_storage = {0};
+    // Padding in an interior packed input would leave a gap before the next
+    // logical lane. Terminal padding already occupies the result's tail and
+    // preserves the concatenated lane order without a subregister shuffle.
     if (!loom_type_element_type_equals(input_type, result_type) ||
         !loom_amdgpu_static_rank1_register_storage_shape(input_type,
                                                          &input_storage) ||
         input_storage.kind != result_storage.kind ||
+        (i + 1u < inputs.count &&
+         !loom_amdgpu_vector_storage_fills_registers(&input_storage)) ||
         input_storage.register_count > out_plan->result_register_count ||
         total_register_count >
             out_plan->result_register_count - input_storage.register_count) {

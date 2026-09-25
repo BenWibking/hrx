@@ -161,9 +161,11 @@ loom_cc_library(
     legalization
   HDRS
     "legalization.h"
+    "legalization_compare.h"
     "legalization_table.h"
   SRCS
     "legalization.c"
+    "legalization_compare.c"
     "legalization_table.c"
   DEPS
     ::core_descriptors
@@ -629,6 +631,7 @@ loom_check_test_suite(
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/packed_bitfield.loom-test"
     "test/source_low/packed_bitpack.loom-test"
+    "test/source_low/packed_concat_tail.loom-test"
     "test/source_low/packed_dot_integer.loom-test"
     "test/source_low/packed_i8_arithmetic.loom-test"
     "test/source_low/packed_integer_arithmetic.loom-test"
@@ -647,6 +650,7 @@ loom_check_test_suite(
     "test/source_low/vector_comparison.loom-test"
     "test/source_low/vector_concat.loom-test"
     "test/source_low/vector_dot_interleave.loom-test"
+    "test/source_low/vector_float_comparison.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/vector_mask_select.loom-test"
     "test/source_low/vector_memory.loom-test"

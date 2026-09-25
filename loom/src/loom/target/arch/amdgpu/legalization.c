@@ -27,6 +27,7 @@
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/target/arch/amdgpu/target_info_defs.h"
 #include "loom/transforms/vector/packet_legalization.h"
+#include "loom/transforms/vector/table_legalization.h"
 #include "loom/transforms/vector/to_scalar.h"
 #include "loom/transforms/view/target_legalization.h"
 
@@ -152,6 +153,42 @@ static iree_status_t loom_amdgpu_legalize_vector_table_lookup(
            context->module, context->fact_table, context->descriptor_set,
            op))) {
     out_result->action = LOOM_TARGET_LEGALIZER_ACTION_DEFER;
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_amdgpu_legalize_vector_table_quantize(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_amdgpu_legalizer_descriptor_set_is_amdgpu(
+          context->descriptor_set)) {
+    return iree_ok_status();
+  }
+  const loom_scalar_type_t input_element_type =
+      loom_type_element_type(loom_module_value_type(
+          context->module, loom_vector_table_quantize_input(op)));
+  if (input_element_type != LOOM_SCALAR_TYPE_F8E4M3 &&
+      input_element_type != LOOM_SCALAR_TYPE_F8E5M2 &&
+      input_element_type != LOOM_SCALAR_TYPE_F16 &&
+      input_element_type != LOOM_SCALAR_TYPE_BF16 &&
+      input_element_type != LOOM_SCALAR_TYPE_F32) {
+    return iree_ok_status();
+  }
+  const loom_vector_table_quantize_policy_t policy = {
+      .packet_bit_count = LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES * 32u,
+      .comparison_element_type = LOOM_SCALAR_TYPE_F32,
+      .ordinal_element_type = LOOM_SCALAR_TYPE_I32,
+  };
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(
+      loom_vector_table_quantize_rewrite(context, op, &policy, &rewritten));
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
   }
   return iree_ok_status();
 }
@@ -558,6 +595,10 @@ static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_VECTOR_TABLE_LOOKUP,
         .legalize = loom_amdgpu_legalize_vector_table_lookup,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_TABLE_QUANTIZE,
+        .legalize = loom_amdgpu_legalize_vector_table_quantize,
     },
     {
         .root_kind = LOOM_OP_VECTOR_DOTF,
