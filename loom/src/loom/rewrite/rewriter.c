@@ -708,8 +708,9 @@ iree_status_t loom_rewriter_try_fold(loom_rewriter_t* rewriter, loom_op_t* op,
   if (!vtable->infer_facts) {
     return iree_ok_status();
   }
-  if (loom_traits_has_side_effects(
-          loom_op_effective_traits(rewriter->module, op))) {
+  const loom_trait_flags_t traits =
+      loom_op_effective_traits(rewriter->module, op);
+  if (loom_traits_has_side_effects(traits)) {
     return iree_ok_status();
   }
 
@@ -727,6 +728,13 @@ iree_status_t loom_rewriter_try_fold(loom_rewriter_t* rewriter, loom_op_t* op,
   }
   if (op->result_count == 0) {
     return iree_ok_status();
+  }
+
+  if (loom_traits_are_fact_identity(traits) &&
+      rewriter->pending_exact_relations_callback.fn &&
+      loom_value_fact_table_has_pending_exact_relations(rewriter->fact_table)) {
+    IREE_RETURN_IF_ERROR(rewriter->pending_exact_relations_callback.fn(
+        rewriter->pending_exact_relations_callback.user_data, rewriter));
   }
 
   // All results are exact. Materialize constants in the same block
