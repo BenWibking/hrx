@@ -163,9 +163,9 @@ func.def @wide_shift_low_word(%value: i64) -> (i32) {
 
 // ----
 low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @wide_shift_low_word(%value: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr>) asm {
-  %7 = s_mov_b32 6
-  %shifted = s_lshl_b64 %value, %7
-  %result = slice %shifted[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %9 = s_mov_b32 6
+  %10 = slice %value[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %result = s_lshl_b32 %10, %9
   return %result
 }
 
