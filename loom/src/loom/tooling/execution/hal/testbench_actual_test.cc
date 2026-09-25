@@ -989,7 +989,7 @@ check.case @dynamic_case {
   loom_testbench_value_materializer_options_t materializer_options = {};
   loom_testbench_value_materializer_options_initialize(&materializer_options);
   loom_testbench_value_table_t value_table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       run_module.module, case_plan, iree_allocator_system(), &value_table));
   for (iree_host_size_t sample_ordinal = 0; sample_ordinal < 2;
        ++sample_ordinal) {

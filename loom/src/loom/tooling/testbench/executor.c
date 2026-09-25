@@ -62,7 +62,7 @@ iree_status_t loom_testbench_case_executor_initialize(
   out_executor->materializer_options.host_allocator = host_allocator;
   out_executor->device_event_capture = options->device_event_capture;
 
-  iree_status_t status = loom_testbench_value_table_initialize(
+  iree_status_t status = loom_testbench_value_table_initialize_case(
       prepared_case->module, prepared_case->case_plan, host_allocator,
       &out_executor->value_table);
   if (iree_status_is_ok(status)) {
@@ -135,8 +135,8 @@ iree_status_t loom_testbench_run_case_sample(
                sizeof(*executor->expected_device_events));
   }
   if (iree_status_is_ok(status) && !has_sample_issues) {
-    loom_testbench_case_sample_observations_t observations =
-        loom_testbench_case_sample_observations_empty();
+    loom_testbench_sample_observations_t observations =
+        loom_testbench_sample_observations_empty();
     if (executor->device_event_capture != NULL) {
       observations.device_events = &executor->device_events;
       observations.expected_device_events = executor->expected_device_events;

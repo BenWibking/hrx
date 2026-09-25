@@ -1824,7 +1824,7 @@ iree_status_t loom_run_hal_testbench_materialize_invocation_for_sample(
     loom_run_hal_invocation_options_t* out_options,
     loom_run_hal_binding_list_t* out_bindings) {
   loom_testbench_value_table_t table = {0};
-  iree_status_t status = loom_testbench_value_table_initialize(
+  iree_status_t status = loom_testbench_value_table_initialize_case(
       module, case_plan, allocator, &table);
   if (iree_status_is_ok(status)) {
     status = loom_testbench_materialize_case_sample(

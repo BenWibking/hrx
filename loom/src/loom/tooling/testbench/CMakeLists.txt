@@ -61,12 +61,26 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    scenario_entropy
+  HDRS
+    "scenario_entropy.h"
+  SRCS
+    "scenario_entropy.c"
+  DEPS
+    iree::base
+    iree::base::internal
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     value_materializer
   HDRS
     "value_materializer.h"
   SRCS
     "value_materializer.c"
   DEPS
+    ::scenario_entropy
     ::testbench
     iree::base
     iree::base::internal
@@ -76,6 +90,21 @@ loom_cc_library(
     iree::tooling::numpy_io
     iree::tooling::value_io
     loom::ir
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    scenario_values
+  HDRS
+    "scenario_values.h"
+  SRCS
+    "scenario_values.c"
+  DEPS
+    ::scenario_entropy
+    ::testbench
+    ::value_materializer
+    iree::base
   PUBLIC
 )
 
@@ -181,6 +210,28 @@ loom_cc_library(
     iree::base::internal
     iree::hal
   PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    scenario_values_test
+  SRCS
+    "scenario_values_test.cc"
+  DEPS
+    ::expectation
+    ::scenario_entropy
+    ::scenario_values
+    ::testbench
+    ::value_materializer
+    iree::base
+    iree::base::internal::arena
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::ops::check
+    loom::ops::test
 )
 
 loom_cc_test(

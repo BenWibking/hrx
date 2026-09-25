@@ -112,7 +112,7 @@ class ExpectationTest : public ::testing::Test {
     case_plan.expectations = &expectation;
     case_plan.expectation_count = 1;
     loom_testbench_value_table_t table = {};
-    IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+    IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
         module, &case_plan, host_allocator_, &table));
     loom_testbench_value_t actual_value = {};
     actual_value.kind = LOOM_TESTBENCH_VALUE_KIND_SCALAR;
@@ -248,7 +248,7 @@ check.case @scalar_mismatch {
   EXPECT_EQ(case_plan.expectations[0].kind, LOOM_TESTBENCH_EXPECTATION_EQUAL);
 
   loom_testbench_value_table_t table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       module, &case_plan, host_allocator_, &table));
   loom_testbench_value_materializer_options_t materializer_options =
       MaterializerOptions();
@@ -325,7 +325,7 @@ check.case @buffer_expectations {
   EXPECT_EQ(case_plan.expectations[3].kind, LOOM_TESTBENCH_EXPECTATION_CLOSE);
 
   loom_testbench_value_table_t table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       module, &case_plan, host_allocator_, &table));
   loom_testbench_value_materializer_options_t materializer_options =
       MaterializerOptions();
@@ -363,7 +363,7 @@ check.case @buffer_mismatch {
   const loom_testbench_case_plan_t& case_plan = plan.cases[0];
 
   loom_testbench_value_table_t table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       module, &case_plan, host_allocator_, &table));
   loom_testbench_value_materializer_options_t materializer_options =
       MaterializerOptions();
@@ -406,7 +406,7 @@ check.case @device_event {
   EXPECT_EQ(case_plan.expectations[1].kind, LOOM_TESTBENCH_EXPECTATION_EVENT);
 
   loom_testbench_value_table_t table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       module, &case_plan, host_allocator_, &table));
 
   loom_testbench_device_event_capture_t capture = {};
@@ -449,8 +449,8 @@ check.case @device_event {
                               iree_alignof(iree_hal_device_tsan_report_t));
   EXPECT_EQ((uintptr_t)0, (uintptr_t)event_list.records[1].event.payload.data %
                               iree_alignof(iree_hal_device_ubsan_report_t));
-  loom_testbench_case_sample_observations_t observations =
-      loom_testbench_case_sample_observations_empty();
+  loom_testbench_sample_observations_t observations =
+      loom_testbench_sample_observations_empty();
   uint8_t expected_device_events[4] = {0};
   observations.device_events = &event_list;
   observations.expected_device_events = expected_device_events;
@@ -526,11 +526,11 @@ check.case @device_event {
   const loom_testbench_case_plan_t& case_plan = plan.cases[0];
 
   loom_testbench_value_table_t table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       module, &case_plan, host_allocator_, &table));
   loom_testbench_device_event_list_t event_list = {};
-  loom_testbench_case_sample_observations_t observations =
-      loom_testbench_case_sample_observations_empty();
+  loom_testbench_sample_observations_t observations =
+      loom_testbench_sample_observations_empty();
   observations.device_events = &event_list;
 
   loom_testbench_expectation_report_t report = {};
@@ -560,11 +560,11 @@ check.case @device_event {
   const loom_testbench_case_plan_t& case_plan = plan.cases[0];
 
   loom_testbench_value_table_t table = {};
-  IREE_ASSERT_OK(loom_testbench_value_table_initialize(
+  IREE_ASSERT_OK(loom_testbench_value_table_initialize_case(
       module, &case_plan, host_allocator_, &table));
   loom_testbench_device_event_list_t event_list = {};
-  loom_testbench_case_sample_observations_t observations =
-      loom_testbench_case_sample_observations_empty();
+  loom_testbench_sample_observations_t observations =
+      loom_testbench_sample_observations_empty();
   observations.device_events = &event_list;
 
   loom_testbench_expectation_report_t report = {};
