@@ -32,6 +32,10 @@
 // state while avoiding repeated copies as the final action count becomes known.
 #define LOOM_AMDGPU_WAIT_PLAN_ACTION_SEGMENT_BYTE_LENGTH (4u * 1024u)
 
+// Gfx125x TDM issues require an intervening tensorcnt bound at most this value.
+// This issue hazard is independent of particular memory dependency edges.
+#define LOOM_AMDGPU_TENSOR_ISSUE_MAXIMUM_PENDING 10u
+
 // Number of wait actions stored in each append segment.
 #define LOOM_AMDGPU_WAIT_PLAN_ACTIONS_PER_SEGMENT     \
   (LOOM_AMDGPU_WAIT_PLAN_ACTION_SEGMENT_BYTE_LENGTH / \
@@ -303,6 +307,8 @@ typedef struct loom_amdgpu_wait_plan_builder_t {
   uint32_t current_block_full_drain_counter_mask;
   // Counters proven empty since their last issue or opaque control boundary.
   uint32_t known_empty_counter_mask;
+  // A preceding tensor issue has no intervening qualifying tensorcnt bound.
+  bool tensor_issue_requires_drain;
   // Translation group currently represented by outstanding gfx125x XCNT
   // events. Hardware implicitly drains XCNT when this group changes.
   loom_amdgpu_wait_xcnt_group_t xcnt_group;
@@ -435,6 +441,8 @@ iree_string_view_t loom_amdgpu_wait_plan_reason_name(
       return IREE_SV("amdgpu.loop_carried_derived_ssa_use");
     case LOOM_AMDGPU_WAIT_PLAN_REASON_LOOP_CARRIED_CONSERVATIVE_SSA_USE:
       return IREE_SV("amdgpu.loop_carried_conservative_ssa_use");
+    case LOOM_AMDGPU_WAIT_PLAN_REASON_TENSOR_ISSUE_DRAIN:
+      return IREE_SV("amdgpu.tensor_issue_drain");
     case LOOM_AMDGPU_WAIT_PLAN_REASON_UNKNOWN:
     default:
       return IREE_SV("amdgpu.unknown");
@@ -490,6 +498,7 @@ static bool loom_amdgpu_wait_plan_reason_has_consumer(
     case LOOM_AMDGPU_WAIT_PLAN_REASON_LOOP_ENTRY_CONSERVATIVE_SSA_USE:
     case LOOM_AMDGPU_WAIT_PLAN_REASON_LOOP_CARRIED_DERIVED_SSA_USE:
     case LOOM_AMDGPU_WAIT_PLAN_REASON_LOOP_CARRIED_CONSERVATIVE_SSA_USE:
+    case LOOM_AMDGPU_WAIT_PLAN_REASON_TENSOR_ISSUE_DRAIN:
       return true;
     default:
       return false;
@@ -680,6 +689,10 @@ static bool loom_amdgpu_wait_plan_action_is_residual_hazard(
 static iree_status_t loom_amdgpu_wait_plan_append_action(
     loom_amdgpu_wait_plan_builder_t* builder,
     loom_amdgpu_wait_plan_action_t action) {
+  if (action.counter_id == LOOM_AMDGPU_WAIT_COUNTER_TENSOR &&
+      action.target_count <= LOOM_AMDGPU_TENSOR_ISSUE_MAXIMUM_PENDING) {
+    builder->tensor_issue_requires_drain = false;
+  }
   // Logical progress and producer/consumer provenance retain their original
   // nodes. Only concrete insertion shares the boundary before a zero-work run.
   if (action.kind == LOOM_AMDGPU_WAIT_PLAN_ACTION_PLANNED) {
@@ -3619,6 +3632,9 @@ static iree_status_t loom_amdgpu_wait_plan_note_producer(
   const uint32_t counter_mask =
       frontier_node->read_counter_mask | frontier_node->write_counter_mask |
       node_state->trans_result_counter_mask | node_state->source_counter_mask;
+  if (iree_any_bit_set(counter_mask, LOOM_AMDGPU_WAIT_COUNTER_MASK_TENSOR)) {
+    builder->tensor_issue_requires_drain = true;
+  }
   // A pre-control drain completes older work, but an opaque control operation
   // may start new work of its own. Preserve authored waits after that boundary.
   // Keep historical completion separate: older producers remain complete.
@@ -3678,7 +3694,8 @@ static bool loom_amdgpu_wait_plan_partial_bound_orders_producers(
                        loom_amdgpu_wait_counter_mask(counter_id))) {
     return false;
   }
-  if (counter_id == LOOM_AMDGPU_WAIT_COUNTER_LDS) {
+  if (counter_id == LOOM_AMDGPU_WAIT_COUNTER_LDS ||
+      counter_id == LOOM_AMDGPU_WAIT_COUNTER_TENSOR) {
     return true;
   }
   return counter_id == LOOM_AMDGPU_WAIT_COUNTER_VMEM_LOAD &&
@@ -3726,6 +3743,47 @@ static iree_status_t loom_amdgpu_wait_plan_handle_partial_wait(
                                                    counter_id, target_count);
     }
     ++builder->progress_event_count;
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_amdgpu_wait_plan_handle_tensor_issue(
+    loom_amdgpu_wait_plan_builder_t* builder, uint32_t node_index) {
+  const loom_amdgpu_wait_frontier_node_t* frontier_node =
+      &builder->frontier_nodes[node_index];
+  if (!builder->tensor_issue_requires_drain ||
+      !iree_any_bit_set(
+          frontier_node->read_counter_mask | frontier_node->write_counter_mask,
+          LOOM_AMDGPU_WAIT_COUNTER_MASK_TENSOR) ||
+      !loom_amdgpu_processor_properties_have_scheduling(
+          builder->processor_properties,
+          LOOM_AMDGPU_PROCESSOR_SCHEDULING_TENSOR_ISSUE_DRAIN)) {
+    return iree_ok_status();
+  }
+  const loom_low_schedule_node_t* node = &builder->schedule->nodes[node_index];
+  const uint32_t slot =
+      loom_amdgpu_wait_counter_slot_from_id(LOOM_AMDGPU_WAIT_COUNTER_TENSOR);
+  const uint32_t outstanding_before = builder->outstanding_counts[slot];
+  // Preserve the hardware bound even when the local packet count is smaller.
+  // Clamping it would turn an issue-limit wait into a completion wait.
+  IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_append_action(
+      builder, (loom_amdgpu_wait_plan_action_t){
+                   .kind = LOOM_AMDGPU_WAIT_PLAN_ACTION_PLANNED,
+                   .reason = LOOM_AMDGPU_WAIT_PLAN_REASON_TENSOR_ISSUE_DRAIN,
+                   .counter_id = LOOM_AMDGPU_WAIT_COUNTER_TENSOR,
+                   .target_count = LOOM_AMDGPU_TENSOR_ISSUE_MAXIMUM_PENDING,
+                   .block_index = node->block_index,
+                   .node_index = node_index,
+                   .scheduled_ordinal = node->scheduled_ordinal,
+                   .producer_node = LOOM_LOW_SCHEDULE_NODE_NONE,
+                   .consumer_node = node_index,
+                   .outstanding_before = outstanding_before,
+               }));
+  if (outstanding_before > LOOM_AMDGPU_TENSOR_ISSUE_MAXIMUM_PENDING) {
+    loom_amdgpu_wait_plan_apply_counter_progress(
+        builder, node_index, LOOM_LOW_SCHEDULE_NODE_NONE,
+        LOOM_AMDGPU_WAIT_COUNTER_TENSOR,
+        LOOM_AMDGPU_TENSOR_ISSUE_MAXIMUM_PENDING);
   }
   return iree_ok_status();
 }
@@ -3788,6 +3846,8 @@ static iree_status_t loom_amdgpu_wait_plan_process_node(
       loom_amdgpu_wait_plan_handle_barrier(builder, node_index));
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_wait_plan_handle_program_exit(builder, node_index));
+  IREE_RETURN_IF_ERROR(
+      loom_amdgpu_wait_plan_handle_tensor_issue(builder, node_index));
   if (loom_amdgpu_wait_plan_full_wait_is_redundant(builder, node_state)) {
     if (builder->elided_wait_nodes == NULL) {
       const iree_host_size_t word_count =
@@ -3873,6 +3933,13 @@ static iree_status_t loom_amdgpu_wait_plan_build_actions(
     loom_amdgpu_wait_plan_seed_cyclic_frontiers(builder, (uint16_t)block_index);
     loom_amdgpu_wait_frontier_begin_block(&builder->frontier,
                                           (uint16_t)block_index);
+    builder->tensor_issue_requires_drain = iree_any_bit_set(
+        loom_amdgpu_wait_frontier_memory_query(
+            &builder->frontier,
+            loom_amdgpu_wait_memory_space_flag(LOOM_LOW_MEMORY_SPACE_GENERIC),
+            LOOM_AMDGPU_WAIT_MEMORY_ACCESS_FLAG_READ |
+                LOOM_AMDGPU_WAIT_MEMORY_ACCESS_FLAG_WRITE),
+        LOOM_AMDGPU_WAIT_COUNTER_MASK_TENSOR);
     for (uint32_t i = 0; i < block->scheduled_node_count; ++i) {
       const uint32_t packet_index = block->scheduled_node_start + i;
       IREE_ASSERT_LT(packet_index, schedule->scheduled_node_count);

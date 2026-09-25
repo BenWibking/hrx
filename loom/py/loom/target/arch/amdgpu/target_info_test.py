@@ -46,6 +46,7 @@ from loom.target.arch.amdgpu.target_info import (
     AMDGPU_MEMORY_ORDERING_MODEL_GFX12,
     AMDGPU_PROCESSOR_INFOS,
     AMDGPU_PROCESSOR_SCHEDULING_DELAY_ALU,
+    AMDGPU_PROCESSOR_SCHEDULING_TENSOR_ISSUE_DRAIN,
     AMDGPU_TARGET_ID_FEATURE_SUPPORT_NONE,
     AMDGPU_TARGET_ID_FEATURE_SUPPORT_SRAMECC,
     AMDGPU_TARGET_ID_FEATURE_SUPPORT_XNACK,
@@ -271,6 +272,16 @@ def test_descriptor_set_storage_target_lookup_classifies_storage_targets() -> No
             ).generator_target
             == view_info.storage_generator_target
         )
+
+
+def test_tensor_issue_drain_covers_exact_and_generic_gfx125x() -> None:
+    assert {
+        info.processor
+        for info in AMDGPU_PROCESSOR_INFOS
+        if info.features.scheduling & AMDGPU_PROCESSOR_SCHEDULING_TENSOR_ISSUE_DRAIN
+    } == {"gfx1250", "gfx1251", "gfx12-5-generic"}
+    # Stepping overlays inherit their processor's scheduling contract.
+    assert amdgpu_target_info_by_name("gfx1250-a0").processor == "gfx1250"
 
 
 def test_generic_descriptor_sets_have_independent_contracts() -> None:

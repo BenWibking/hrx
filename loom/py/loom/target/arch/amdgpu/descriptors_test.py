@@ -138,6 +138,7 @@ from loom.target.arch.amdgpu.descriptors import (
     amdgpu_encoding_field_id,
 )
 from loom.target.arch.amdgpu.descriptors.api import (
+    _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X,
     _with_instruction_classes,
     _with_storage_lease_rows,
 )
@@ -355,7 +356,7 @@ def _storage_lease_signature(
     )
 
 
-def test_storage_lease_rows_project_memory_dependencies() -> None:
+def test_memory_completion_leases_results_not_sources() -> None:
     schedule_class = ScheduleClass(
         name="amdgpu.test.memory",
         latency_kind=LatencyKind.VARIABLE,
@@ -412,10 +413,6 @@ def test_storage_lease_rows_project_memory_dependencies() -> None:
         StorageLeaseFlag.RELEASE_BEFORE_BOUNDARY,
         StorageLeaseFlag.RELEASE_FOR_PRESSURE,
     )
-    source_flags = (
-        StorageLeaseFlag.STARTS_AT_ISSUE,
-        StorageLeaseFlag.MAY_CARRY_ACROSS_BOUNDARY,
-    )
     assert _storage_lease_signature(descriptor) == (
         (
             StorageLeaseKind.RESULT_WRITE,
@@ -425,24 +422,6 @@ def test_storage_lease_rows_project_memory_dependencies() -> None:
             _COUNTER_VMEM_LOAD,
             "amdgpu.read_result_reuse",
             pressure_flags,
-        ),
-        (
-            StorageLeaseKind.SOURCE_READ,
-            StorageLeaseAttachment.OPERAND,
-            1,
-            4,
-            _COUNTER_VMEM_LOAD,
-            "amdgpu.memory_source_reuse",
-            source_flags,
-        ),
-        (
-            StorageLeaseKind.SOURCE_READ,
-            StorageLeaseAttachment.OPERAND,
-            1,
-            4,
-            _COUNTER_VMEM_STORE,
-            "amdgpu.memory_source_reuse",
-            source_flags,
         ),
     )
 
@@ -479,7 +458,7 @@ def test_storage_lease_rows_project_xcnt_over_packet_inputs() -> None:
     )
 
     descriptor = _with_storage_lease_rows(
-        descriptor_set, enable_gfx125x_xcnt=True
+        descriptor_set, builder_flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X
     ).descriptors[0]
 
     assert tuple(
@@ -6004,6 +5983,10 @@ def test_d16_high_loads_preserve_tied_low_storage_without_consuming_it() -> None
         assert OperandFlag.IMPLICIT in source.flags
         assert OperandFlag.STORAGE_CONTINUATION in source.flags
         assert descriptor.constraints == (Constraint(ConstraintKind.TIED, 0, 1),)
+        assert descriptor.asm_forms
+        for form in descriptor.asm_forms:
+            assert result.field_name in form.results
+            assert source.field_name in form.operands
 
 
 def test_cdna_smem_dwordx4_store_and_scratch_descriptors_cover_xml() -> None:

@@ -210,6 +210,32 @@ TEST(MemoryAccessTest, EqualSummariesIgnoreAbsentIdentityPayloads) {
   EXPECT_FALSE(loom_low_memory_access_summaries_equal(&group, &other));
 }
 
+TEST(MemoryAccessTest, DisjointStorageRequiresOneCapturedEvaluation) {
+  const int scopes[2] = {};
+  loom_low_memory_relative_interval_t intervals[2] = {};
+  loom_low_memory_access_summary_t accesses[2] = {};
+  for (size_t i = 0; i < 2; ++i) {
+    intervals[i].scope = &scopes[0];
+    intervals[i].storage_id = i;
+    intervals[i].disjoint_storage_ordinal = i + 1;
+    intervals[i].upper = 16;
+    loom_symbolic_expr_constant(0, &intervals[i].origin);
+    accesses[i].memory_space = LOOM_LOW_MEMORY_SPACE_WORKGROUP;
+    accesses[i].relative_interval = &intervals[i];
+  }
+  EXPECT_FALSE(loom_low_memory_access_summaries_may_alias(
+      &accesses[0], &accesses[1], LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
+  EXPECT_TRUE(loom_low_memory_access_summaries_may_alias(
+      &accesses[0], &accesses[1], LOOM_LOW_MEMORY_COMPARISON_INDEPENDENT));
+  intervals[1].scope = &scopes[1];
+  EXPECT_TRUE(loom_low_memory_access_summaries_may_alias(
+      &accesses[0], &accesses[1], LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
+  intervals[1].scope = &scopes[0];
+  intervals[1].disjoint_storage_ordinal = 0;
+  EXPECT_TRUE(loom_low_memory_access_summaries_may_alias(
+      &accesses[0], &accesses[1], LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
+}
+
 TEST(MemoryAccessTest, PeriodicBanksRequireOneEvaluationAndCompleteEnvelopes) {
   const int scope = 0;
   const loom_symbolic_term_t phase = {32768, 7, 7};
@@ -295,6 +321,7 @@ TEST_F(MemoryAccessMapTest,
   loom_low_memory_relative_interval_t interval = {};
   interval.scope = source;
   interval.storage_id = 2;
+  interval.disjoint_storage_ordinal = 3;
   interval.origin = periodic.expression;
   interval.origin.facts = loom_value_facts_unknown();
   interval.origin.congruence = &periodic;
@@ -308,6 +335,12 @@ TEST_F(MemoryAccessMapTest,
   interval.upper = 32;
   IREE_ASSERT_OK(
       loom_low_memory_access_map_insert(source, &packets[0], 2, &access));
+  interval.storage_id = 3;
+  interval.disjoint_storage_ordinal = 4;
+  interval.lower = 0;
+  interval.upper = 16;
+  IREE_ASSERT_OK(
+      loom_low_memory_access_map_insert(source, &packets[0], 4, &access));
   EXPECT_EQ(loom_low_memory_access_map_lookup(source, &packets[0], 1), nullptr);
   IREE_ASSERT_OK(
       loom_low_memory_access_map_replace(source, &packets[0], &packets[1]));
@@ -337,6 +370,17 @@ TEST_F(MemoryAccessMapTest,
       left, right, LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
   EXPECT_TRUE(loom_low_memory_access_summaries_may_alias(
       left, other_call, LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
+  const auto* separate_storage =
+      loom_low_memory_access_map_lookup(target, &packets[2], 4);
+  const auto* separate_call_storage =
+      loom_low_memory_access_map_lookup(target, &packets[3], 4);
+  ASSERT_NE(separate_storage, nullptr);
+  ASSERT_NE(separate_call_storage, nullptr);
+  EXPECT_EQ(separate_storage->relative_interval->disjoint_storage_ordinal, 4u);
+  EXPECT_FALSE(loom_low_memory_access_summaries_may_alias(
+      left, separate_storage, LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
+  EXPECT_TRUE(loom_low_memory_access_summaries_may_alias(
+      left, separate_call_storage, LOOM_LOW_MEMORY_COMPARISON_SAME_EVALUATION));
   loom_low_memory_access_map_t* moved = nullptr;
   IREE_ASSERT_OK(loom_low_memory_access_map_create(&target_arena_, &moved));
   IREE_ASSERT_OK(loom_low_memory_access_map_transfer(target, moved));

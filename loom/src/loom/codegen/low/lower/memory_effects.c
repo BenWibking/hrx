@@ -6,6 +6,17 @@
 
 #include "loom/codegen/low/lower/context.h"
 
+iree_status_t loom_low_lower_record_memory_effect(
+    loom_low_lower_context_t* context, const loom_op_t* low_op,
+    uint16_t effect_ordinal, const loom_low_memory_access_summary_t* summary) {
+  if (context->result->memory_accesses == NULL) {
+    IREE_RETURN_IF_ERROR(loom_low_memory_access_map_create(
+        &context->module->arena, &context->result->memory_accesses));
+  }
+  return loom_low_memory_access_map_insert(context->result->memory_accesses,
+                                           low_op, effect_ordinal, summary);
+}
+
 // Reduce participant-varying contributions to an envelope while retaining
 // correlations only between workgroup-uniform values. A lane's SSA identity
 // never licenses canceling the value observed by another lane.
@@ -33,9 +44,18 @@ iree_status_t loom_low_lower_record_memory_packet(
   loom_low_memory_relative_interval_t relative = {
       .scope = context->source_function.op,
       .storage_id = source_plan->root_value_id,
+      .disjoint_storage_ordinal =
+          source_plan->alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE
+              ? source_plan->alias_scope_id + 1u
+              : 0,
   };
-  loom_symbolic_expr_constant(source_plan->static_byte_offset,
-                              &relative.origin);
+  int64_t root_relative_byte_offset = 0;
+  if (!iree_checked_sub_i64(source_plan->static_byte_offset,
+                            source_plan->physical_root_byte_offset,
+                            &root_relative_byte_offset)) {
+    return iree_ok_status();
+  }
+  loom_symbolic_expr_constant(root_relative_byte_offset, &relative.origin);
   loom_value_facts_t varying = additional_offset;
   loom_symbolic_expr_context_t* expressions =
       loom_low_lower_context_symbolic_expr_context(context);
@@ -75,16 +95,12 @@ iree_status_t loom_low_lower_record_memory_packet(
         effect->width_bits / 8 > lane_bytes) {
       continue;
     }
-    if (context->result->memory_accesses == NULL) {
-      IREE_RETURN_IF_ERROR(loom_low_memory_access_map_create(
-          &context->module->arena, &context->result->memory_accesses));
-    }
     const loom_low_memory_access_summary_t summary = {
         .memory_space = effect->memory_space,
         .relative_interval = &relative,
     };
-    IREE_RETURN_IF_ERROR(loom_low_memory_access_map_insert(
-        context->result->memory_accesses, low_op, i, &summary));
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_record_memory_effect(context, low_op, i, &summary));
   }
   return iree_ok_status();
 }

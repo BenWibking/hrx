@@ -15,6 +15,11 @@ TEST(SourceMemoryAccessPlanTest, IncludesPhysicalRootByteOffset) {
   EXPECT_TRUE(
       loom_low_source_memory_access_plan_include_root_byte_offset(&plan, 20));
   EXPECT_EQ(plan.static_byte_offset, 32);
+  EXPECT_EQ(plan.physical_root_byte_offset, 20);
+  EXPECT_TRUE(
+      loom_low_source_memory_access_plan_include_root_byte_offset(&plan, 8));
+  EXPECT_EQ(plan.static_byte_offset - plan.physical_root_byte_offset, 12);
+  EXPECT_EQ(plan.physical_root_byte_offset, 28);
 }
 
 TEST(SourceMemoryAccessPlanTest, RejectsPhysicalRootByteOffsetOverflow) {
@@ -23,6 +28,7 @@ TEST(SourceMemoryAccessPlanTest, RejectsPhysicalRootByteOffsetOverflow) {
   EXPECT_FALSE(
       loom_low_source_memory_access_plan_include_root_byte_offset(&plan, 8));
   EXPECT_EQ(plan.static_byte_offset, INT64_MAX - 4);
+  EXPECT_EQ(plan.physical_root_byte_offset, 0);
 }
 
 TEST_F(SourceMemoryPlanTest, DynamicViewOriginRetainsCompleteAddress) {
@@ -1225,7 +1231,18 @@ TEST_F(SourceMemoryPlanTest, SummaryCapturesStridedPacketSlot) {
   EXPECT_EQ(summary.strided_interval.begin_bytes, 16u);
   EXPECT_EQ(summary.strided_interval.end_bytes, 32u);
 
-  plan.static_byte_offset = 0;
+  ASSERT_TRUE(
+      loom_low_source_memory_access_plan_include_root_byte_offset(&plan, 280));
+  loom_low_byte_interval_t placed_interval = {};
+  loom_low_memory_access_summary_t placed_summary = {};
+  loom_low_source_memory_access_plan_make_summary(&plan, &placed_interval,
+                                                  &placed_summary);
+  EXPECT_EQ(placed_interval.begin_facts.range_lo, 16);
+  EXPECT_EQ(placed_interval.end_facts.range_hi, 32);
+  EXPECT_EQ(placed_summary.strided_interval.begin_bytes, 16u);
+  EXPECT_EQ(placed_summary.strided_interval.end_bytes, 32u);
+
+  plan.static_byte_offset = plan.physical_root_byte_offset;
   loom_low_byte_interval_t preceding_interval = {};
   loom_low_memory_access_summary_t preceding_summary = {};
   loom_low_source_memory_access_plan_make_summary(&plan, &preceding_interval,

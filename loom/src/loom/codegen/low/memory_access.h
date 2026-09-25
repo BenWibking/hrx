@@ -97,6 +97,9 @@ typedef struct loom_low_memory_relative_interval_t {
   const void* scope;
   // Storage equality identity within scope; inequality proves nothing.
   uint32_t storage_id;
+  // One-based disjoint-storage identity within scope, or zero when unknown.
+  // Unequal nonzero identities prove disjointness only in one evaluation.
+  uint32_t disjoint_storage_ordinal;
   // Participant-uniform symbolic origin, with optional periodic guarantees.
   loom_symbolic_expr_t origin;
   // Inclusive lower displacement over all participants and packet elements.
