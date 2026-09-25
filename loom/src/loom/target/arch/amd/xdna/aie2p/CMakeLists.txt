@@ -631,6 +631,7 @@ loom_check_test_suite(
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/packed_bitfield.loom-test"
     "test/source_low/packed_bitpack.loom-test"
+    "test/source_low/packed_concat_tail.loom-test"
     "test/source_low/packed_dot_integer.loom-test"
     "test/source_low/packed_i8_arithmetic.loom-test"
     "test/source_low/packed_integer_arithmetic.loom-test"
