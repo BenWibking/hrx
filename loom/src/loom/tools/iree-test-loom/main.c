@@ -19,6 +19,7 @@
 #include "loom/tooling/cli/help.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/context/context.h"
+#include "loom/tooling/execution/hal/scenario_profile.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/input/flags.h"
 #include "loom/tooling/io/file.h"
@@ -721,6 +722,7 @@ int iree_test_loom_main(int argc, char** argv,
   loom_run_module_t run_module = {0};
   loom_sanitizer_options_t sanitizer_options = {0};
   loom_run_hal_testbench_context_t hal_context = {0};
+  loom_run_hal_testbench_scenario_profile_t hal_scenario_profile = {0};
   loom_testbench_device_event_capture_t device_event_capture = {0};
   bool device_event_capture_initialized = false;
   iree_arena_allocator_t plan_arena;
@@ -938,6 +940,36 @@ int iree_test_loom_main(int argc, char** argv,
       if (iree_test_loom_scenario_matches_selection(&module_plan.scenarios[i],
                                                     selected_case_name)) {
         ++selected_scenario_count;
+      }
+    }
+    if (iree_status_is_ok(status) && selected_scenario_count != 0 &&
+        hal_context.device_provider != NULL) {
+      status = loom_run_hal_testbench_context_ensure_runtime(&hal_context);
+      if (iree_status_is_ok(status)) {
+        execution_options.materializer.device_allocator =
+            iree_hal_device_allocator(hal_context.runtime.device);
+        execution_options.materializer.buffer_params =
+            loom_run_hal_testbench_host_visible_buffer_params();
+        const iree_string_view_t target = iree_make_cstring_view(FLAG_target);
+        const loom_run_hal_testbench_actual_provider_options_t
+            provider_options = {
+                .context = &hal_context,
+                .session = &session,
+                .target_environment = configuration->target_environment,
+                .run_module = &run_module,
+                .pipeline = iree_make_cstring_view(FLAG_pipeline),
+                .target = target,
+                .sanitizer = sanitizer_options,
+                .config_set = &config_set,
+            };
+        loom_run_hal_testbench_scenario_profile_initialize(
+            iree_string_view_is_empty(target)
+                ? hal_context.device_provider->artifact_provider->name
+                : target,
+            &provider_options, &hal_scenario_profile);
+        scenario_execution_options.target =
+            loom_run_hal_testbench_scenario_execution_profile(
+                &hal_scenario_profile);
       }
     }
     iree_host_size_t sample_count = 0;

@@ -976,7 +976,10 @@ check.case @dynamic_case {
   loom_target_facts_t target_facts = {};
   target_facts.storage.snapshot = kIndex32Offset64TargetSnapshot;
   int64_t workload_arguments[1] = {};
+  loom_run_hal_testbench_context_t context = {};
+  context.host_allocator = iree_allocator_system();
   loom_run_hal_testbench_actual_provider_t provider = {};
+  provider.context = &context;
   provider.session = &session_;
   provider.run_module = &run_module;
   provider.kernel_launch = kernel_launch;
@@ -1012,6 +1015,31 @@ check.case @dynamic_case {
         provider.resolved_launch_config.fields,
         LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_COUNT |
             LOOM_KERNEL_LAUNCH_CONFIG_FIELD_FLAG_WORKGROUP_SIZE));
+
+    const loom_testbench_value_t* workload = nullptr;
+    const loom_testbench_value_t* input = nullptr;
+    IREE_ASSERT_OK(loom_testbench_value_table_lookup_borrow(
+        &value_table, kernel_launch->workload_value_ids[0], &workload));
+    IREE_ASSERT_OK(loom_testbench_value_table_lookup_borrow(
+        &value_table, kernel_launch->input_value_ids[0], &input));
+    loom_run_hal_invocation_options_t prepared_options = {};
+    loom_run_hal_binding_list_t prepared_bindings = {};
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_FAILED_PRECONDITION,
+        loom_run_hal_testbench_actual_provider_materialize_invocation(
+            &provider, /*workload_count=*/1, workload, /*input_count=*/1, input,
+            &prepared_options, &prepared_bindings));
+    provider.prepared_candidate_initialized = true;
+    IREE_ASSERT_OK(
+        loom_run_hal_testbench_actual_provider_materialize_invocation(
+            &provider, /*workload_count=*/1, workload, /*input_count=*/1, input,
+            &prepared_options, &prepared_bindings));
+    provider.prepared_candidate_initialized = false;
+    EXPECT_EQ(prepared_options.workgroup_count[0], expected_workgroup_count);
+    EXPECT_EQ(prepared_options.constant_count, 1u);
+    EXPECT_EQ(prepared_options.constants[0], expected_workgroup_count);
+    EXPECT_EQ(prepared_bindings.count, 0u);
+    loom_run_hal_binding_list_deinitialize(&prepared_bindings);
     loom_run_hal_binding_list_deinitialize(&bindings);
   }
 

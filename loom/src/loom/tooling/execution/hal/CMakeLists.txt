@@ -16,6 +16,7 @@ loom_test_module(
     "testdata/buffer_bulk_hal_actual.loom"
     "testdata/dynamic_workgroup_hal_actual.loom"
     "testdata/launch_schedule_hal_actual.loom"
+    "testdata/scenario_batch_hal_actual.loom"
 )
 
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
@@ -206,6 +207,23 @@ loom_cc_library(
     loom::tooling::testbench::requirements
     loom::tooling::testbench::value_materializer
     loom::util::fact_table
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    scenario_profile
+  HDRS
+    "scenario_profile.h"
+  SRCS
+    "scenario_profile.c"
+  DEPS
+    ::invocation
+    ::testbench_actual
+    ::testbench_staging
+    iree::base
+    iree::hal
+    loom::tooling::testbench::scenario_executor
   PUBLIC
 )
 

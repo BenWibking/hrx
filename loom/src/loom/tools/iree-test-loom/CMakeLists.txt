@@ -63,6 +63,7 @@ loom_cc_library(
     loom::tooling::config
     loom::tooling::context
     loom::tooling::execution::hal::device_provider
+    loom::tooling::execution::hal::scenario_profile
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::execution::session
     loom::tooling::input::flags

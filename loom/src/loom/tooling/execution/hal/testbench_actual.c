@@ -1041,6 +1041,64 @@ static iree_status_t loom_run_hal_testbench_evaluate_launch_config(
   return iree_ok_status();
 }
 
+iree_status_t loom_run_hal_testbench_actual_provider_materialize_invocation(
+    loom_run_hal_testbench_actual_provider_t* provider,
+    iree_host_size_t workload_count, const loom_testbench_value_t* workloads,
+    iree_host_size_t input_count, const loom_testbench_value_t* inputs,
+    loom_run_hal_invocation_options_t* out_options,
+    loom_run_hal_binding_list_t* out_bindings) {
+  *out_options = (loom_run_hal_invocation_options_t){0};
+  loom_run_hal_binding_list_initialize(out_bindings);
+  if (!provider->prepared_candidate_initialized) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "HAL actual provider must be prepared before materializing values");
+  }
+  const loom_testbench_invocation_plan_t* invocation = provider->kernel_launch;
+  if (input_count != invocation->input_count) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "HAL kernel launch input count mismatch");
+  }
+  if (workload_count != invocation->workload_count) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "HAL kernel launch workload count mismatch");
+  }
+
+  *out_options = provider->invocation_options;
+  for (iree_host_size_t i = 0; i < workload_count; ++i) {
+    IREE_RETURN_IF_ERROR(loom_testbench_value_as_i64(
+        &workloads[i], &provider->workload_arguments[i]));
+  }
+  IREE_RETURN_IF_ERROR(loom_run_hal_testbench_evaluate_launch_config(
+      provider, workload_count, out_options));
+  IREE_RETURN_IF_ERROR(loom_run_hal_binding_list_initialize_capacity(
+      input_count, provider->context->host_allocator, out_bindings));
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0; iree_status_is_ok(status) && i < input_count;
+       ++i) {
+    const loom_value_id_t input_value_id = invocation->input_value_ids[i];
+    const loom_type_t input_type =
+        loom_module_value_type(provider->run_module->module, input_value_id);
+    const iree_hal_executable_function_parameter_t* parameter =
+        provider->function_parameter_count != 0
+            ? &provider->function_parameters[i]
+            : NULL;
+    status = loom_run_hal_testbench_input_append(
+        out_bindings, &inputs[i], input_type,
+        &provider->launch_config_target_facts->storage.snapshot, parameter,
+        out_options);
+    if (!iree_status_is_ok(status)) {
+      status = iree_status_annotate_f(
+          status, "preparing HAL actual input %" PRIhsz " for value ID %u", i,
+          (unsigned)input_value_id);
+    }
+  }
+  if (!iree_status_is_ok(status)) {
+    loom_run_hal_binding_list_deinitialize(out_bindings);
+  }
+  return status;
+}
+
 iree_status_t loom_run_hal_testbench_actual_invoke(
     void* user_data, const loom_testbench_invocation_plan_t* invocation,
     iree_host_size_t workload_count, const loom_testbench_value_t* workloads,
@@ -1069,47 +1127,17 @@ iree_status_t loom_run_hal_testbench_actual_invoke(
     return iree_ok_status();
   }
 
-  loom_run_hal_invocation_options_t invocation_options =
-      provider->invocation_options;
-  for (iree_host_size_t i = 0; i < workload_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_testbench_value_as_i64(
-        &workloads[i], &provider->workload_arguments[i]));
-  }
-  IREE_RETURN_IF_ERROR(loom_run_hal_testbench_evaluate_launch_config(
-      provider, workload_count, &invocation_options));
+  loom_run_hal_invocation_options_t invocation_options = {0};
   loom_run_hal_binding_list_t bindings = {0};
-  IREE_RETURN_IF_ERROR(loom_run_hal_binding_list_initialize_capacity(
-      input_count, provider->context->host_allocator, &bindings));
-  iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0; iree_status_is_ok(status) && i < input_count;
-       ++i) {
-    const loom_value_id_t input_value_id =
-        provider->kernel_launch->input_value_ids[i];
-    const loom_type_t input_type =
-        loom_module_value_type(provider->run_module->module, input_value_id);
-    const iree_hal_executable_function_parameter_t* parameter =
-        provider->function_parameter_count != 0
-            ? &provider->function_parameters[i]
-            : NULL;
-    status = loom_run_hal_testbench_input_append(
-        &bindings, &inputs[i], input_type,
-        &provider->launch_config_target_facts->storage.snapshot, parameter,
-        &invocation_options);
-    if (!iree_status_is_ok(status)) {
-      status = iree_status_annotate_f(
-          status, "preparing HAL actual input %" PRIhsz " for value ID %u", i,
-          (unsigned)input_value_id);
-    }
-  }
-  if (!iree_status_is_ok(status)) {
-    loom_run_hal_binding_list_deinitialize(&bindings);
-    return status;
-  }
+  IREE_RETURN_IF_ERROR(
+      loom_run_hal_testbench_actual_provider_materialize_invocation(
+          provider, workload_count, workloads, input_count, inputs,
+          &invocation_options, &bindings));
 
   loom_run_hal_invocation_plan_t plan = {0};
   loom_run_hal_iteration_t iteration = {0};
   loom_run_hal_testbench_staging_t staging = {0};
-  status = loom_run_hal_invocation_plan_prepare_from_lists(
+  iree_status_t status = loom_run_hal_invocation_plan_prepare_from_lists(
       &invocation_options, &bindings, /*expected_bindings=*/NULL,
       /*max_output_element_count=*/0, provider->context->host_allocator, &plan);
   loom_run_hal_binding_list_deinitialize(&bindings);

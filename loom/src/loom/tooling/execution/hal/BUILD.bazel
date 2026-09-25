@@ -27,6 +27,7 @@ exports_files([
     "testdata/buffer_bulk_hal_actual.loom",
     "testdata/dynamic_workgroup_hal_actual.loom",
     "testdata/launch_schedule_hal_actual.loom",
+    "testdata/scenario_batch_hal_actual.loom",
 ])
 
 loom_test(
@@ -35,6 +36,7 @@ loom_test(
         "testdata/buffer_bulk_hal_actual.loom",
         "testdata/dynamic_workgroup_hal_actual.loom",
         "testdata/launch_schedule_hal_actual.loom",
+        "testdata/scenario_batch_hal_actual.loom",
     ],
     execution_profiles = GPU_HARDWARE_PROFILES,
 )
@@ -158,6 +160,20 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/tooling:device_util",
+    ],
+)
+
+loom_cc_library(
+    name = "scenario_profile",
+    srcs = ["scenario_profile.c"],
+    hdrs = ["scenario_profile.h"],
+    deps = [
+        ":invocation",
+        ":testbench_actual",
+        ":testbench_staging",
+        "//loom/src/loom/tooling/testbench:scenario_executor",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
     ],
 )
 

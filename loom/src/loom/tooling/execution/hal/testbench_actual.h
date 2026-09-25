@@ -284,6 +284,19 @@ void loom_run_hal_testbench_actual_provider_deinitialize(
 iree_status_t loom_run_hal_testbench_actual_provider_compile(
     loom_run_hal_testbench_actual_provider_t* provider);
 
+// Materializes one invocation of an already-prepared provider.
+//
+// Workload values resolve launch geometry while ordinary inputs become direct
+// constants or retained buffer bindings in HAL ABI order. Compilation is not
+// performed here: |provider| must already own a prepared candidate so callers
+// can keep runtime trial values outside product preparation.
+iree_status_t loom_run_hal_testbench_actual_provider_materialize_invocation(
+    loom_run_hal_testbench_actual_provider_t* provider,
+    iree_host_size_t workload_count, const loom_testbench_value_t* workloads,
+    iree_host_size_t input_count, const loom_testbench_value_t* inputs,
+    loom_run_hal_invocation_options_t* out_options,
+    loom_run_hal_binding_list_t* out_bindings);
+
 // Creates ordered execution over actual providers in source order.
 //
 // Provider objects referenced by |providers| are borrowed until the returned
