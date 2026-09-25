@@ -55,9 +55,10 @@ struct uint3 {
 // accesses.
 [[loom::barrier]] void workgroup_barrier();
 
-// Declares unsigned binding < bound contracts, optionally joined by &&. Bounds
-// are pure integer constant expressions in [1, INT32_MAX]. Conditions are not
-// evaluated at runtime; calls, mutation, and unsupported predicates diagnose.
+// Declares integer truth, comparison, and conjunction contracts. Conditions
+// are retained as Loom facts without runtime evaluation. Calls, mutation,
+// volatile reads, and expressions without a retained scalar identity diagnose
+// at import.
 [[loom::assume]] void assume(bool condition);
 
 // Reads this subgroup's zero-based coordinate within the workgroup.
