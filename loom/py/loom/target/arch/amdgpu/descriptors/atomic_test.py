@@ -179,7 +179,7 @@ def test_flat_atomics_complete_both_domains_without_duplicate_accesses() -> None
                 for lease in descriptor.storage_leases
                 if lease.kind is StorageLeaseKind.SOURCE_READ
             }
-            assert (_COUNTER_X in source_counters) == enable_xcnt
+            assert source_counters == ({_COUNTER_X} if enable_xcnt else set())
             # Counter completion does not duplicate the single read/write access
             # reported for an atomic, including compare-and-swap and wide forms.
             assert len(descriptor.effects) == 2

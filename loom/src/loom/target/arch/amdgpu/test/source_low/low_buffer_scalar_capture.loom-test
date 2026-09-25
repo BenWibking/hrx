@@ -158,7 +158,8 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @buffer_result_overwrite_waits
 // ====
 // RUN: emit amdgpu-assembly @buffer_store_source_lifetime strategy=source fixed=%resource:physical_register:32:4 fixed=%replacement:physical_register:32:1
 
-// Store source lifetimes are a separate contract from buffer-load capture.
+// Store scalar inputs are captured before memory completion too. The store
+// itself still completes before termination.
 amdgpu.target<gfx1151> @target
 
 low.func.def target<amdgpu.rdna3_5.core>(@target) @buffer_store_source_lifetime(%resource: reg<amdgpu.sgpr x4>, %value: reg<amdgpu.vgpr>) -> (reg<amdgpu.sgpr>) asm {
@@ -169,6 +170,6 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @buffer_store_source_lifetime(
 
 // ----
   buffer_store_dword v0, off, s[32:35], 0 offset:0
-  s_waitcnt_vscnt vscnt(0)
   s_mov_b32 s32, 0
+  s_waitcnt_vscnt vscnt(0)
   s_endpgm

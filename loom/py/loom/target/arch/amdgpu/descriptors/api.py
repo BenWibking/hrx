@@ -1108,15 +1108,14 @@ def _amdgpu_effect_counter_mask(
     return _amdgpu_wait_counter_mask(effect.counter_id)
 
 
-def _amdgpu_storage_lease_counter_masks(
+def _amdgpu_storage_lease_result_counter_mask(
     schedule_classes: dict[str, ScheduleClass],
     descriptor: Descriptor,
-) -> tuple[int, int]:
+) -> int:
     hazard_counter_mask = _amdgpu_descriptor_hazard_counter_mask(
         schedule_classes, descriptor
     )
     read_counter_mask = 0
-    write_counter_mask = 0
     for effect in descriptor.effects:
         # External-resource reads can complete asynchronously without aliasing
         # memory. Their explicit counter protects the destination storage too.
@@ -1131,13 +1130,7 @@ def _amdgpu_storage_lease_counter_masks(
                 effect,
                 hazard_counter_mask,
             )
-        elif effect.kind is EffectKind.WRITE:
-            write_counter_mask |= _amdgpu_effect_counter_mask(
-                descriptor,
-                effect,
-                hazard_counter_mask,
-            )
-    return read_counter_mask, write_counter_mask
+    return read_counter_mask
 
 
 def _amdgpu_storage_lease(
@@ -1176,37 +1169,6 @@ def _amdgpu_operand_is_packet_input(operand: Operand) -> bool:
     )
 
 
-def _amdgpu_operand_accepts_sgpr(operand: Operand) -> bool:
-    return any(
-        reg_alt.reg_class == _REG_SGPR
-        and RegClassAltFlag.IMMEDIATE not in reg_alt.flags
-        for reg_alt in operand.reg_alts
-    )
-
-
-def _amdgpu_append_memory_source_leases(
-    storage_leases: list[StorageLease],
-    operand: Operand,
-    packet_operand_index: int,
-    counter_mask: int,
-) -> None:
-    for counter_id, counter_bit in _AMDGPU_WAIT_COUNTER_MASKS.items():
-        if (counter_mask & counter_bit) == 0:
-            continue
-        storage_leases.append(
-            _amdgpu_storage_lease(
-                kind=StorageLeaseKind.SOURCE_READ,
-                attachment=StorageLeaseAttachment.OPERAND,
-                attachment_index=packet_operand_index,
-                unit_count=operand.unit_count,
-                release_class_id=counter_id,
-                release_reason_id=_AMDGPU_WAIT_PLAN_REASON_MEMORY_SOURCE_REUSE,
-                release_reason_name=_AMDGPU_WAIT_PLAN_REASON_MEMORY_SOURCE_REUSE_NAME,
-                flags=_AMDGPU_STORAGE_LEASE_FLAGS,
-            )
-        )
-
-
 def _amdgpu_descriptor_storage_leases(
     schedule_classes: dict[str, ScheduleClass],
     descriptor: Descriptor,
@@ -1217,7 +1179,7 @@ def _amdgpu_descriptor_storage_leases(
         raise ValueError(
             f"AMDGPU descriptor '{descriptor.key}' already has storage lease rows"
         )
-    read_counter_mask, write_counter_mask = _amdgpu_storage_lease_counter_masks(
+    read_counter_mask = _amdgpu_storage_lease_result_counter_mask(
         schedule_classes, descriptor
     )
     storage_leases: list[StorageLease] = []
@@ -1243,35 +1205,14 @@ def _amdgpu_descriptor_storage_leases(
                     flags=_AMDGPU_PRESSURE_STORAGE_LEASE_FLAGS,
                 )
             )
-    memory_source_read_counter_mask = read_counter_mask & (
-        _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_VMEM_LOAD]
-        | _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_TENSOR]
-    )
+    # Memory completion owns result storage, not address inputs. Supported native
+    # families capture scalar inputs independently of completion. Gfx125x
+    # SMEM/VMEM packets retain their inputs until the separate X event; tensor
+    # dgroups do not participate in X. Payload wait states are described by the
+    # independent store-data contract.
     if (
-        builder_flags
-        & _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE
-        and InstructionClass.BUFFER_LOAD in descriptor.instruction_classes
-        and descriptor.schedule_class == _SCHEDULE_VMEM_LOAD
-    ):
-        # These scalar address inputs are captured independently of load
-        # completion. Only the result storage retains the VMEM completion lease.
-        memory_source_read_counter_mask &= ~_AMDGPU_WAIT_COUNTER_MASKS[
-            _COUNTER_VMEM_LOAD
-        ]
-    memory_source_write_counter_mask = write_counter_mask & (
-        _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_VMEM_STORE]
-        | _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_TENSOR]
-    )
-    xcnt_source_counter_mask = (
-        _AMDGPU_WAIT_COUNTER_MASKS[_COUNTER_X]
-        if builder_flags & _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X
+        builder_flags & _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X
         and descriptor.schedule_class in _GFX125X_XCNT_SCHEDULE_CLASSES
-        else 0
-    )
-    if (
-        memory_source_read_counter_mask != 0
-        or memory_source_write_counter_mask != 0
-        or xcnt_source_counter_mask != 0
     ):
         packet_operand_index = 0
         for operand in descriptor.operands[_descriptor_result_count(descriptor) :]:
@@ -1281,20 +1222,18 @@ def _amdgpu_descriptor_storage_leases(
             packet_operand_index += 1
             if operand.unit_count == 0:
                 continue
-            if xcnt_source_counter_mask != 0:
-                _amdgpu_append_memory_source_leases(
-                    storage_leases,
-                    operand,
-                    current_packet_operand_index,
-                    xcnt_source_counter_mask,
+            storage_leases.append(
+                _amdgpu_storage_lease(
+                    kind=StorageLeaseKind.SOURCE_READ,
+                    attachment=StorageLeaseAttachment.OPERAND,
+                    attachment_index=current_packet_operand_index,
+                    unit_count=operand.unit_count,
+                    release_class_id=_COUNTER_X,
+                    release_reason_id=_AMDGPU_WAIT_PLAN_REASON_MEMORY_SOURCE_REUSE,
+                    release_reason_name=_AMDGPU_WAIT_PLAN_REASON_MEMORY_SOURCE_REUSE_NAME,
+                    flags=_AMDGPU_STORAGE_LEASE_FLAGS,
                 )
-            if _amdgpu_operand_accepts_sgpr(operand):
-                _amdgpu_append_memory_source_leases(
-                    storage_leases,
-                    operand,
-                    current_packet_operand_index,
-                    memory_source_read_counter_mask | memory_source_write_counter_mask,
-                )
+            )
     return tuple(storage_leases)
 
 
@@ -1436,7 +1375,6 @@ def _with_instruction_classes(descriptor_set: DescriptorSet) -> DescriptorSet:
 
 
 _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X = 1 << 0
-_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE = 1 << 1
 
 _AMDGPU_CORE_INSTRUCTION_FACT_NAMES = (
     "S_GETPC_B64",
@@ -1514,7 +1452,6 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
         overlay_rows=_gfx11_core_overlays,
         overlay_descriptors=_gfx11_core_overlay_descriptors,
         extra_descriptors=(_s_delay_alu_descriptor(),),
-        flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE,
     ),
     "gfx11_generic": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
@@ -1523,7 +1460,6 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
         overlay_rows=_gfx11_core_overlays,
         overlay_descriptors=_gfx11_core_overlay_descriptors,
         extra_descriptors=(_s_delay_alu_descriptor(),),
-        flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE,
     ),
     "gfx12_generic": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,
@@ -1547,7 +1483,6 @@ _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS = {
         overlay_rows=_gfx115x_core_overlays,
         overlay_descriptors=_gfx115x_core_overlay_descriptors,
         extra_descriptors=(_s_delay_alu_descriptor(),),
-        flags=_AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_BUFFER_LOAD_SGPR_CAPTURE,
     ),
     "rdna4m": _AmdgpuCoreDescriptorSetBuilder(
         valu_sgpr_separation_cycles=5,

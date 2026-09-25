@@ -43,8 +43,8 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @carried_loads_preserve_addres
   return %last
 }
 
-// Available SGPR pairs preserve both assembled addresses until their loads
-// complete. Reserving the next concat must not drain earlier global loads.
+// Both assembled addresses reuse the same captured SGPR pair without waiting.
+// Reserving the next concat must not drain earlier global loads.
 // The loop consumes carried results with the waits required by their order.
 // ----
   s_mov_b32 s3, 0
@@ -70,9 +70,9 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @carried_loads_preserve_addres
   s_add_u32 s6, s0, s4
   s_addc_u32 s7, s1, s3
   global_load_b32 v3, v0, s[6:7] offset:0
-  s_add_u32 s8, s0, s4
-  s_addc_u32 s9, s1, s4
-  global_load_b32 v4, v0, s[8:9] offset:0
+  s_add_u32 s6, s0, s4
+  s_addc_u32 s7, s1, s4
+  global_load_b32 v4, v0, s[6:7] offset:0
   s_add_u32 s5, s5, s4
   s_branch .Lbb1
 .Lbb3:
@@ -124,10 +124,9 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @carried_loads_reuse_address_a
   return %last
 }
 
-// Address-part writes reuse the preceding load's SGPR pair before the concat.
-// The release belongs before the first such write; only the last load remains
-// pending at the backedge. The next iteration can add the first two completed
-// results before waiting for the last.
+// Address-part writes reuse the preceding load's captured SGPR pair before the
+// concat without draining it. The next iteration waits for each carried result
+// at its first consumer, independently of scalar register capacity.
 // ----
   s_mov_b32 s3, 0
   s_mov_b32 s4, 16
@@ -142,6 +141,7 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @carried_loads_reuse_address_a
   s_delay_alu instid0(SALU_CYCLE_1)
   s_cbranch_scc0 .Lbb3
 .Lbb2:
+  s_waitcnt vmcnt(1) lgkmcnt(63)
   v_add_u32 v2, v2, v3
   s_waitcnt vmcnt(0) lgkmcnt(63)
   s_delay_alu instid0(VALU_DEP_1) | instskip(NEXT) | instid1(VALU_DEP_1)
@@ -151,15 +151,14 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @carried_loads_reuse_address_a
   s_add_u32 s6, s0, s4
   s_addc_u32 s7, s1, s3
   global_load_b32 v3, v0, s[6:7] offset:0
-  s_waitcnt vmcnt(0) lgkmcnt(63)
   s_add_u32 s6, s0, s4
   s_addc_u32 s7, s1, s4
   global_load_b32 v4, v0, s[6:7] offset:0
   s_add_u32 s5, s5, s4
   s_branch .Lbb1
 .Lbb3:
-  v_add_u32 v0, v2, v3
   s_waitcnt vmcnt(0) lgkmcnt(63)
+  v_add_u32 v0, v2, v3
   s_delay_alu instid0(VALU_DEP_1) | instskip(NEXT) | instid1(VALU_DEP_1)
   v_add_u32 v0, v0, v4
   v_add_u32 v0, v0, v1
@@ -170,7 +169,7 @@ low.func.def target<amdgpu.rdna3_5.core>(@target) @carried_loads_reuse_address_a
 // RUN: emit amdgpu-assembly @concat_source_at_residency_cliff strategy=source fixed=%pressure:physical_register:0:90 fixed=%base:physical_register:90:2 fixed=%zero:physical_register:92:1 fixed=%increment:physical_register:93:1
 
 // Reserving s96:s97 would lower modeled CDNA occupancy from eight waves
-// to seven. Ordinary placement releases the earlier pair instead.
+// to seven. Captured addresses reuse the earlier pair without a wait.
 amdgpu.target<gfx942> @target
 
 low.func.def target<amdgpu.cdna3.core>(@target) @concat_source_at_residency_cliff(%pressure: reg<amdgpu.sgpr x90>, %base: reg<amdgpu.sgpr x2>, %offset: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.sgpr x90>, reg<amdgpu.sgpr x2>, reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) asm {
@@ -196,7 +195,6 @@ low.func.def target<amdgpu.cdna3.core>(@target) @concat_source_at_residency_clif
   s_add_u32 s94, s90, s93
   s_addc_u32 s95, s91, s92
   global_load_dword v1, v0, s[94:95] offset:0
-  s_waitcnt vmcnt(0) lgkmcnt(15)
   s_add_u32 s94, s90, s93
   s_addc_u32 s95, s91, s93
   global_load_dword v0, v0, s[94:95] offset:0

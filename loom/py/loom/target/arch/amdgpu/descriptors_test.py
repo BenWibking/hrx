@@ -356,7 +356,7 @@ def _storage_lease_signature(
     )
 
 
-def test_storage_lease_rows_project_memory_dependencies() -> None:
+def test_memory_completion_leases_results_not_sources() -> None:
     schedule_class = ScheduleClass(
         name="amdgpu.test.memory",
         latency_kind=LatencyKind.VARIABLE,
@@ -413,10 +413,6 @@ def test_storage_lease_rows_project_memory_dependencies() -> None:
         StorageLeaseFlag.RELEASE_BEFORE_BOUNDARY,
         StorageLeaseFlag.RELEASE_FOR_PRESSURE,
     )
-    source_flags = (
-        StorageLeaseFlag.STARTS_AT_ISSUE,
-        StorageLeaseFlag.MAY_CARRY_ACROSS_BOUNDARY,
-    )
     assert _storage_lease_signature(descriptor) == (
         (
             StorageLeaseKind.RESULT_WRITE,
@@ -426,24 +422,6 @@ def test_storage_lease_rows_project_memory_dependencies() -> None:
             _COUNTER_VMEM_LOAD,
             "amdgpu.read_result_reuse",
             pressure_flags,
-        ),
-        (
-            StorageLeaseKind.SOURCE_READ,
-            StorageLeaseAttachment.OPERAND,
-            1,
-            4,
-            _COUNTER_VMEM_LOAD,
-            "amdgpu.memory_source_reuse",
-            source_flags,
-        ),
-        (
-            StorageLeaseKind.SOURCE_READ,
-            StorageLeaseAttachment.OPERAND,
-            1,
-            4,
-            _COUNTER_VMEM_STORE,
-            "amdgpu.memory_source_reuse",
-            source_flags,
         ),
     )
 
