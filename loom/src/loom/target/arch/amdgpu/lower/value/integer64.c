@@ -15,6 +15,7 @@
 #include "loom/target/arch/amdgpu/lower/descriptor_ref.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
+#include "loom/target/arch/amdgpu/lower/source_integer_representation.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 
 typedef struct loom_amdgpu_descriptor_requirement_span_t {
@@ -838,6 +839,13 @@ static iree_status_t loom_amdgpu_emit_index_cast_range_diagnostic(
                                        IREE_ARRAYSIZE(params));
 }
 
+static loom_amdgpu_index_cast_kind_t loom_amdgpu_index_cast_preserving_kind(
+    bool materialize_vgpr) {
+  return materialize_vgpr
+             ? LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS_TO_VGPR
+             : LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS;
+}
+
 iree_status_t loom_amdgpu_select_index_cast_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_amdgpu_index_cast_plan_t* out_plan, bool* out_selected) {
@@ -862,33 +870,81 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
       loom_type_element_type(source_type);
   const loom_scalar_type_t result_scalar_type =
       loom_type_element_type(result_type);
+  const uint32_t source_unit_count =
+      loom_low_register_type_unit_count(source_low_type);
+  const uint32_t result_unit_count =
+      loom_low_register_type_unit_count(result_low_type);
+  const uint16_t source_register_class =
+      loom_low_register_type_class_id(source_low_type);
+  const uint16_t result_register_class =
+      loom_low_register_type_class_id(result_low_type);
   if (source_scalar_type == LOOM_SCALAR_TYPE_I1 &&
       loom_amdgpu_type_is_address_scalar(result_type)) {
     *out_plan = (loom_amdgpu_index_cast_plan_t){
         .kind = LOOM_AMDGPU_INDEX_CAST_KIND_PREDICATE_TO_INTEGER,
         .source = source,
         .result = result,
+        .result_unit_count = result_unit_count,
     };
     *out_selected = true;
     return iree_ok_status();
   }
   if ((source_scalar_type == LOOM_SCALAR_TYPE_I8 ||
        source_scalar_type == LOOM_SCALAR_TYPE_I16) &&
-      result_scalar_type == LOOM_SCALAR_TYPE_OFFSET) {
-    const loom_amdgpu_descriptor_ref_t descriptor_ref =
-        loom_low_register_type_class_id(result_low_type) ==
-                LOOM_AMDGPU_REG_CLASS_ID_VGPR
-            ? LOOM_AMDGPU_DESCRIPTOR_REF_V_AND_B32_LIT
-            : LOOM_AMDGPU_DESCRIPTOR_REF_S_AND_B32;
-    if (!loom_amdgpu_descriptor_set_has_ref(
-            loom_low_lower_context_descriptor_set(context), descriptor_ref)) {
+      loom_amdgpu_type_is_address_scalar(result_type)) {
+    if (source_register_class != result_register_class ||
+        source_register_class != LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
       return iree_ok_status();
     }
+    const loom_low_representation_id_t required_representation =
+        result_scalar_type == LOOM_SCALAR_TYPE_INDEX
+            ? LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED
+            : LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED;
+    const loom_low_representation_id_t source_representation =
+        loom_amdgpu_source_integer_representation_lookup(context, source);
+    const bool needs_normalization =
+        source_representation != required_representation;
+    const bool sign_extend =
+        required_representation ==
+        LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED;
+    const loom_amdgpu_descriptor_ref_t normalization_descriptor_refs[] = {
+        sign_extend ? LOOM_AMDGPU_DESCRIPTOR_REF_V_LSHLREV_B32_LIT
+                    : LOOM_AMDGPU_DESCRIPTOR_REF_V_AND_B32_LIT,
+        sign_extend ? LOOM_AMDGPU_DESCRIPTOR_REF_V_ASHRREV_I32_LIT
+                    : LOOM_AMDGPU_DESCRIPTOR_REF_NONE,
+    };
+    const loom_low_descriptor_set_t* descriptor_set =
+        loom_low_lower_context_descriptor_set(context);
+    if (needs_normalization &&
+        !loom_amdgpu_descriptor_set_has_all_refs(
+            descriptor_set, normalization_descriptor_refs,
+            IREE_ARRAYSIZE(normalization_descriptor_refs))) {
+      return iree_ok_status();
+    }
+    const loom_amdgpu_descriptor_ref_t extension_descriptor_ref =
+        sign_extend ? kAmdgpuIndexCastSignDescriptorRefs[result_register_class]
+                    : kAmdgpuIndexCastZeroDescriptorRefs[result_register_class];
+    if (result_unit_count == 2 &&
+        !loom_amdgpu_descriptor_set_has_ref(descriptor_set,
+                                            extension_descriptor_ref)) {
+      return iree_ok_status();
+    }
+    loom_amdgpu_index_cast_kind_t kind =
+        LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS;
+    if (needs_normalization) {
+      kind = LOOM_AMDGPU_INDEX_CAST_KIND_NORMALIZING_NARROW;
+    } else if (result_unit_count == 2) {
+      kind = sign_extend ? LOOM_AMDGPU_INDEX_CAST_KIND_SIGN_EXTENDING_LOW_32
+                         : LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_LOW_32;
+    }
     *out_plan = (loom_amdgpu_index_cast_plan_t){
-        .kind = LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_NARROW,
+        .kind = kind,
         .source = source,
         .result = result,
-        .conversion_descriptor_ref = descriptor_ref,
+        .conversion_descriptor_ref = sign_extend
+                                         ? LOOM_AMDGPU_DESCRIPTOR_REF_NONE
+                                         : extension_descriptor_ref,
+        .result_unit_count = result_unit_count,
         .payload_bit_count =
             (uint8_t)loom_scalar_type_bitwidth(source_scalar_type),
     };
@@ -911,14 +967,6 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
     *out_selected = true;
     return iree_ok_status();
   }
-  const uint32_t source_unit_count =
-      loom_low_register_type_unit_count(source_low_type);
-  const uint32_t result_unit_count =
-      loom_low_register_type_unit_count(result_low_type);
-  const uint16_t source_register_class =
-      loom_low_register_type_class_id(source_low_type);
-  const uint16_t result_register_class =
-      loom_low_register_type_class_id(result_low_type);
   if (loom_type_equal(source_low_type, result_low_type)) {
     *out_plan = (loom_amdgpu_index_cast_plan_t){
         .kind = LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS,
@@ -941,10 +989,16 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
     *out_selected = true;
     return iree_ok_status();
   }
-  if (source_register_class > LOOM_AMDGPU_REG_CLASS_ID_VGPR ||
-      source_register_class != result_register_class) {
+  if ((source_register_class != LOOM_AMDGPU_REG_CLASS_ID_SGPR &&
+       source_register_class != LOOM_AMDGPU_REG_CLASS_ID_VGPR) ||
+      (source_register_class != result_register_class &&
+       !(source_register_class == LOOM_AMDGPU_REG_CLASS_ID_SGPR &&
+         result_register_class == LOOM_AMDGPU_REG_CLASS_ID_VGPR))) {
     return iree_ok_status();
   }
+  const bool materialize_vgpr =
+      source_register_class == LOOM_AMDGPU_REG_CLASS_ID_SGPR &&
+      result_register_class == LOOM_AMDGPU_REG_CLASS_ID_VGPR;
 
   loom_value_facts_t source_facts = loom_value_facts_unknown();
   const loom_value_fact_table_t* fact_table =
@@ -979,7 +1033,7 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
         return iree_ok_status();
       }
       *out_plan = (loom_amdgpu_index_cast_plan_t){
-          .kind = LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS,
+          .kind = loom_amdgpu_index_cast_preserving_kind(materialize_vgpr),
           .source = source,
           .result = result,
           .result_unit_count = result_unit_count,
@@ -989,7 +1043,7 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
     }
     if (source_unit_count == 1 && result_unit_count == 2) {
       const loom_amdgpu_descriptor_ref_t extension_descriptor_ref =
-          kAmdgpuIndexCastZeroDescriptorRefs[source_register_class];
+          kAmdgpuIndexCastZeroDescriptorRefs[result_register_class];
       if (!loom_amdgpu_descriptor_set_has_ref(
               loom_low_lower_context_descriptor_set(context),
               extension_descriptor_ref)) {
@@ -1005,6 +1059,45 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
       *out_selected = true;
       return iree_ok_status();
     }
+    return iree_ok_status();
+  }
+
+  if (source_scalar_type == LOOM_SCALAR_TYPE_I32 &&
+      loom_amdgpu_type_is_address_scalar(result_type)) {
+    if (source_unit_count != 1 ||
+        (result_unit_count != 1 && result_unit_count != 2)) {
+      return iree_ok_status();
+    }
+    if (result_unit_count == 1) {
+      *out_plan = (loom_amdgpu_index_cast_plan_t){
+          .kind = loom_amdgpu_index_cast_preserving_kind(materialize_vgpr),
+          .source = source,
+          .result = result,
+          .result_unit_count = result_unit_count,
+      };
+      *out_selected = true;
+      return iree_ok_status();
+    }
+    const bool sign_extend = result_scalar_type == LOOM_SCALAR_TYPE_INDEX;
+    const loom_amdgpu_descriptor_ref_t extension_descriptor_ref =
+        sign_extend ? kAmdgpuIndexCastSignDescriptorRefs[result_register_class]
+                    : kAmdgpuIndexCastZeroDescriptorRefs[result_register_class];
+    if (!loom_amdgpu_descriptor_set_has_ref(
+            loom_low_lower_context_descriptor_set(context),
+            extension_descriptor_ref)) {
+      return iree_ok_status();
+    }
+    *out_plan = (loom_amdgpu_index_cast_plan_t){
+        .kind = sign_extend ? LOOM_AMDGPU_INDEX_CAST_KIND_SIGN_EXTENDING_LOW_32
+                            : LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_LOW_32,
+        .source = source,
+        .result = result,
+        .conversion_descriptor_ref = sign_extend
+                                         ? LOOM_AMDGPU_DESCRIPTOR_REF_NONE
+                                         : extension_descriptor_ref,
+        .result_unit_count = result_unit_count,
+    };
+    *out_selected = true;
     return iree_ok_status();
   }
 
@@ -1032,7 +1125,7 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
         return iree_ok_status();
       }
       *out_plan = (loom_amdgpu_index_cast_plan_t){
-          .kind = LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS,
+          .kind = loom_amdgpu_index_cast_preserving_kind(materialize_vgpr),
           .source = source,
           .result = result,
           .result_unit_count = result_unit_count,
@@ -1045,7 +1138,7 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
       if (result_scalar_type == LOOM_SCALAR_TYPE_I32 &&
           source_unit_count == 2 && result_unit_count == 1) {
         *out_plan = (loom_amdgpu_index_cast_plan_t){
-            .kind = LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS,
+            .kind = loom_amdgpu_index_cast_preserving_kind(materialize_vgpr),
             .source = source,
             .result = result,
             .result_unit_count = result_unit_count,
@@ -1065,8 +1158,8 @@ iree_status_t loom_amdgpu_select_index_cast_plan(
   const bool sign_extend =
       source_scalar_type == LOOM_SCALAR_TYPE_INDEX && source_facts.range_lo < 0;
   const loom_amdgpu_descriptor_ref_t extension_descriptor_ref =
-      sign_extend ? kAmdgpuIndexCastSignDescriptorRefs[source_register_class]
-                  : kAmdgpuIndexCastZeroDescriptorRefs[source_register_class];
+      sign_extend ? kAmdgpuIndexCastSignDescriptorRefs[result_register_class]
+                  : kAmdgpuIndexCastZeroDescriptorRefs[result_register_class];
   if (!loom_amdgpu_descriptor_set_has_ref(
           loom_low_lower_context_descriptor_set(context),
           extension_descriptor_ref)) {

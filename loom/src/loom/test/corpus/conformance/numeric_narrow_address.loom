@@ -13,9 +13,9 @@ kernel.def @varying_narrow_casts() {
   %signed_halfword_output = buffer.view %signed_halfwords[%base] : buffer -> view<256xi32>
   %unsigned_halfword_output = buffer.view %unsigned_halfwords[%base] : buffer -> view<256xi32>
   %raw = view.load %source[%lane] : view<256xi32> -> i32
-  %coordinate = index.cast %raw : i32 to index
-  %byte = index.cast %coordinate : index to i8
-  %signed_byte = scalar.extsi %byte : i8 to i32
+  %byte = scalar.trunci %raw : i32 to i8
+  %byte_coordinate = index.cast %byte : i8 to index
+  %signed_byte = index.cast %byte_coordinate : index to i32
   %byte_offset = index.cast %byte : i8 to offset
   %unsigned_byte = index.cast %byte_offset : offset to i32
   %halfword_bias = scalar.constant 32640 : i32
