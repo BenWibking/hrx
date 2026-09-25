@@ -345,6 +345,21 @@ def _generate_builder_implementation(
                 label=f"{op.name} i64 array attribute",
             )
 
+    block_arg_params_by_region: dict[str, list[dict[str, Any]]] = {}
+    for param in params:
+        if param["kind"] == "block_args":
+            block_arg_params_by_region.setdefault(str(param["region"]), []).append(param)
+    for region, block_arg_params in block_arg_params_by_region.items():
+        if len(block_arg_params) < 2:
+            continue
+        total_count = " + ".join(f"{_c_parameter_name(param['name'])}_count" for param in block_arg_params)
+        _emit_builder_count_check(
+            lines,
+            count=total_count,
+            max_value="UINT16_MAX",
+            label=f"{op.name} {region} block arguments",
+        )
+
     symbol_sets = [param for param in params if param["kind"] == "attr" and param["attr_type"] == "symbol_set"]
     for param in symbol_sets:
         field_name = param["name"]
@@ -669,12 +684,13 @@ def _generate_builder_implementation(
         binding = param.get("binding")
         block_args = param.get("block_args")
         if block_args:
-            block_args_name = _c_parameter_name(block_args)
-            lines.append(f"{inner_indent}for (iree_host_size_t _i = 0; _i < {block_args_name}_count; ++_i) {{")
-            lines.append(f"{inner_indent}  loom_value_id_t _arg_id = LOOM_VALUE_ID_INVALID;")
-            lines.append(f"{inner_indent}  IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(")
-            lines.append(f"{inner_indent}      builder, _block, {block_args_name}[_i], &_arg_id));")
-            lines.append(f"{inner_indent}}}")
+            for block_args_param in block_args:
+                block_args_name = _c_parameter_name(block_args_param["name"])
+                lines.append(f"{inner_indent}for (iree_host_size_t _i = 0; _i < {block_args_name}_count; ++_i) {{")
+                lines.append(f"{inner_indent}  loom_value_id_t _arg_id = LOOM_VALUE_ID_INVALID;")
+                lines.append(f"{inner_indent}  IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(")
+                lines.append(f"{inner_indent}      builder, _block, {block_args_name}[_i], &_arg_id));")
+                lines.append(f"{inner_indent}}}")
         elif binding:
             binding_name = _c_parameter_name(binding["name"])
             binding_kind = binding["binding_kind"]
@@ -1010,6 +1026,21 @@ def _generate_builder_implementation(
         if end_attr_index == 0xFF:
             continue
         cumulative_count = " + ".join(func_arg_count_terms)
+        lines.append(f"  loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
+
+    # BlockArgs boundary attributes are derived from each concatenated region
+    # entry group rather than exposed as redundant builder parameters.
+    block_arg_count_terms_by_region: dict[str, list[str]] = {}
+    for param in params:
+        if param["kind"] != "block_args":
+            continue
+        region = str(param["region"])
+        block_arg_count_terms = block_arg_count_terms_by_region.setdefault(region, [])
+        block_arg_count_terms.append(f"{param['name']}_count")
+        end_attr_index = param["end_attr_index"]
+        if end_attr_index == 0xFF:
+            continue
+        cumulative_count = " + ".join(block_arg_count_terms)
         lines.append(f"  loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
 
     # Define result values in the module's value table.

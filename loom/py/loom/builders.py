@@ -274,7 +274,10 @@ class OpCallable:
                             f"{op.name}: block-argument parameter "
                             f"'{param.name}' has no region field"
                         )
-                    block_args_by_region[region_field] = value or []
+                    region_args = block_args_by_region.setdefault(region_field, [])
+                    region_args.extend(value or [])
+                    if param.end_attr_field is not None:
+                        attributes[param.end_attr_field] = len(region_args)
                 case BuilderParamKind.FUNC_ARGS:
                     func_args.extend(value or [])
                     if param.end_attr_field is not None:

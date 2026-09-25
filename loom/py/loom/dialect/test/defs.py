@@ -1765,6 +1765,46 @@ test_block_args = Op(
     ],
 )
 
+test_block_arg_groups = Op(
+    "test.block_arg_groups",
+    group=test_ops,
+    doc="Test projected groups of one region entry signature.",
+    attrs=[
+        AttrDef(
+            "actual_count",
+            "i64",
+            doc="Number of entry arguments in the actual result group.",
+        ),
+    ],
+    regions=[
+        RegionDef(
+            "body",
+            doc="Body receiving the concatenated actual and expected groups.",
+            single_block=True,
+            terminator="test.yield",
+        )
+    ],
+    traits=[ImplicitTerminator("test.implicit_yield")],
+    format=[
+        kw("actual"),
+        BlockArgs(
+            "body",
+            group="actual",
+            end_attr="actual_count",
+        ),
+        kw("expected"),
+        BlockArgs(
+            "body",
+            group="expected",
+            start_attr="actual_count",
+        ),
+        Region("body"),
+    ],
+    examples=[
+        "test.block_arg_groups actual(%actual: f32) expected(%expected: f32) {\n  test.yield\n}",
+    ],
+)
+
 # ============================================================================
 # test.branch — if/else with both regions present
 # ============================================================================
@@ -3181,4 +3221,5 @@ ALL_TEST_OPS: tuple[Op, ...] = (
     test_module_metadata,
     test_memory_fence,
     test_result_pair,
+    test_block_arg_groups,
 )

@@ -540,9 +540,23 @@ class BlockArgs:
     arguments of the referenced region. The op verifier owns the semantic
     relationship between those block arguments and any operands, terminator
     operands, or result fields.
+
+    ``start_attr`` and ``end_attr`` optionally project a contiguous group from
+    one region entry signature. The referenced i64 attributes store prefix
+    boundaries; an omitted start is zero and an omitted end is the full block
+    argument count. This allows one region signature to expose semantically
+    distinct typed groups without manufacturing operands solely to carry the
+    block argument types.
+
+    ``group`` gives a projected group its semantic builder name. It has no IR
+    storage of its own and defaults to ``region`` for an unpartitioned entry
+    signature.
     """
 
     region: str
+    group: str | None = None
+    start_attr: str | None = None
+    end_attr: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

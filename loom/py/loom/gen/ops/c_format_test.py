@@ -76,6 +76,42 @@ def test_entry_argument_ownership_follows_region_clauses() -> None:
         assert declared == {names.index("body"), names.index("after")}
 
 
+def test_projected_block_arguments_encode_signature_boundaries() -> None:
+    op = Op(
+        "test.partitioned_region",
+        group=Dialect("test"),
+        attrs=[AttrDef("actual_count", ATTR_TYPE_I64)],
+        regions=[RegionDef("body")],
+        format=[
+            BlockArgs(
+                "body",
+                group="actual",
+                end_attr="actual_count",
+            ),
+            BlockArgs(
+                "body",
+                group="expected",
+                start_attr="actual_count",
+            ),
+            Region("body"),
+        ],
+    )
+
+    assert translate_format_elements(op) == [
+        (
+            "LOOM_FORMAT_KIND_BLOCK_ARGS",
+            0,
+            "LOOM_FORMAT_BLOCK_ARGS_DATA(255, 0)",
+        ),
+        (
+            "LOOM_FORMAT_KIND_BLOCK_ARGS",
+            0,
+            "LOOM_FORMAT_BLOCK_ARGS_DATA(0, 255)",
+        ),
+        ("LOOM_FORMAT_KIND_REGION", 0, "LOOM_REGION_SYNTAX_DEFAULT"),
+    ]
+
+
 def test_induction_variable_declaration_belongs_to_next_region() -> None:
     op = Op(
         "test.loop",

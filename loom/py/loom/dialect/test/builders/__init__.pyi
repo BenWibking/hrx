@@ -1161,3 +1161,11 @@ class TestBuilder(DialectBuilder):
         result_names: Sequence[str] | None = ...,
         location_id: int | None = ...,
     ) -> list[ValueRef]: ...
+    def block_arg_groups(
+        self,
+        *,
+        actual_args: Sequence[tuple[str, Type]] = ...,
+        expected_args: Sequence[tuple[str, Type]] = ...,
+        body: Region | None = ...,
+        location_id: int | None = ...,
+    ) -> None: ...

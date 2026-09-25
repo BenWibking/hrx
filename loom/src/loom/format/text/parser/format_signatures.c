@@ -644,7 +644,10 @@ static iree_status_t loom_parse_format_block_arg(loom_parser_t* parser) {
   return loom_parser_add_pending_block_arg(parser, value_id, arg_token);
 }
 
-iree_status_t loom_parse_format_block_args(loom_parser_t* parser) {
+iree_status_t loom_parse_format_block_args(loom_parser_t* parser,
+                                           const loom_format_element_t* element,
+                                           uint16_t pending_block_arg_base,
+                                           loom_parsed_op_t* parsed) {
   LOOM_PARSE_EXPECT(parser, LOOM_TOKEN_LPAREN, NULL);
   IREE_RETURN_IF_ERROR(
       loom_parser_scope_push(parser, parser->scope, &parser->scope));
@@ -674,6 +677,17 @@ iree_status_t loom_parse_format_block_args(loom_parser_t* parser) {
     loom_parser_discard_block_arg_scope(parser);
   }
   loom_parser_scope_pop(parser);
+  const uint8_t end_attr_index =
+      LOOM_FORMAT_BLOCK_ARGS_END_ATTR_INDEX(element->data);
+  if (iree_status_is_ok(status) && parser->error_count == errors_before &&
+      end_attr_index != LOOM_ATTR_INDEX_NONE) {
+    IREE_ASSERT(parser->pending_block_args.count >= pending_block_arg_base);
+    uint16_t boundary =
+        parser->pending_block_args.count - pending_block_arg_base;
+    status = loom_parsed_op_set_attribute(parsed, &parser->parser_arena,
+                                          end_attr_index,
+                                          loom_attr_i64((int64_t)boundary));
+  }
   return status;
 }
 

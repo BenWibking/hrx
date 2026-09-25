@@ -385,6 +385,29 @@ def test_region_helper_creates_block_arguments() -> None:
     assert value.is_block_arg
 
 
+def test_dynamic_builder_concatenates_projected_block_argument_groups() -> None:
+    block, builder = _builder()
+
+    builder.test.block_arg_groups(
+        actual_args=[("actual", F32)],
+        expected_args=[("expected", F32), ("expected_index", INDEX)],
+    )
+
+    operation = block.ops[0]
+    assert operation.attributes["actual_count"] == 1
+    entry = operation.regions[0].blocks[0]
+    assert [builder.module.values[value_id].name for value_id in entry.arg_ids] == [
+        "actual",
+        "expected",
+        "expected_index",
+    ]
+    assert [builder.module.values[value_id].type for value_id in entry.arg_ids] == [
+        F32,
+        F32,
+        INDEX,
+    ]
+
+
 def test_dynamic_builder_constructs_region_bearing_scf_for() -> None:
     module, builder = loom.module_builder()
     function_body = builder.region()

@@ -931,6 +931,7 @@ iree_status_t loom_parser_walk_format(
   uint16_t element_count = format.count;
   bool is_symbol_definition =
       iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE);
+  const uint16_t pending_block_arg_start = parser->pending_block_args.count;
 
   uint32_t errors_before = parser->error_count;
   for (uint16_t i = 0; i < element_count; ++i) {
@@ -1211,7 +1212,8 @@ iree_status_t loom_parser_walk_format(
       }
 
       case LOOM_FORMAT_KIND_BLOCK_ARGS: {
-        IREE_RETURN_IF_ERROR(loom_parse_format_block_args(parser));
+        IREE_RETURN_IF_ERROR(loom_parse_format_block_args(
+            parser, element, pending_block_arg_start, parsed));
         break;
       }
 

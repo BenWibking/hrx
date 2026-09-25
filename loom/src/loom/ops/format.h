@@ -128,6 +128,8 @@ enum loom_format_kind_e {
 
   // Region entry block arguments: (%a: type, %b: type).
   // field_index = region index whose entry block args are printed or parsed.
+  // data optionally packs attribute indices with LOOM_FORMAT_BLOCK_ARGS_DATA.
+  // The boundaries project a contiguous slice of one entry signature.
   LOOM_FORMAT_KIND_BLOCK_ARGS = 26,
 
   // CFG successor block reference: ^label.
@@ -191,6 +193,16 @@ enum loom_format_index_list_data_bits_e {
   ((uint8_t)(((data) >> 8) - 1u))
 #define LOOM_FORMAT_FUNC_ARGS_END_ATTR_INDEX(data) \
   ((uint8_t)(((data) & 0xFFu) - 1u))
+
+// BLOCK_ARGS uses the same packed signature-slice representation as
+// FUNC_ARGS. Separate names keep format consumers explicit about which
+// signature owns the boundary attributes.
+#define LOOM_FORMAT_BLOCK_ARGS_DATA(start_attr_index, end_attr_index) \
+  LOOM_FORMAT_FUNC_ARGS_DATA(start_attr_index, end_attr_index)
+#define LOOM_FORMAT_BLOCK_ARGS_START_ATTR_INDEX(data) \
+  LOOM_FORMAT_FUNC_ARGS_START_ATTR_INDEX(data)
+#define LOOM_FORMAT_BLOCK_ARGS_END_ATTR_INDEX(data) \
+  LOOM_FORMAT_FUNC_ARGS_END_ATTR_INDEX(data)
 
 // Surface syntax selected by a REGION format element. This affects only text
 // parsing/printing; the in-memory representation is always an ordinary

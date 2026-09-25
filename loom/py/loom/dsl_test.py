@@ -18,6 +18,7 @@ from loom.assembly import (
     EQUALS,
     AssemblyFormat,
     Attr,
+    BlockArgs,
     BlockRef,
     Clause,
     EncodingOf,
@@ -3561,6 +3562,107 @@ class TestSymbolKernelContract:
         )
 
         assert op.attr("specialization_count") is not None
+
+    def test_region_signature_may_have_contiguous_argument_groups(self) -> None:
+        op = Op(
+            "test.partitioned_region",
+            attrs=[AttrDef("actual_count", "i64")],
+            regions=[RegionDef("body")],
+            format=[
+                BlockArgs(
+                    "body",
+                    group="actual",
+                    end_attr="actual_count",
+                ),
+                BlockArgs(
+                    "body",
+                    group="expected",
+                    start_attr="actual_count",
+                ),
+                Region("body"),
+            ],
+        )
+
+        assert op.attr("actual_count") is not None
+
+    def test_region_signature_partition_requires_matching_boundaries(self) -> None:
+        with _raises(ValueError, match="must use 'actual_count'"):
+            Op(
+                "test.partitioned_region",
+                attrs=[
+                    AttrDef("actual_count", "i64"),
+                    AttrDef("wrong_count", "i64"),
+                ],
+                regions=[RegionDef("body")],
+                format=[
+                    BlockArgs(
+                        "body",
+                        group="actual",
+                        end_attr="actual_count",
+                    ),
+                    BlockArgs(
+                        "body",
+                        group="expected",
+                        start_attr="wrong_count",
+                    ),
+                    Region("body"),
+                ],
+            )
+
+    def test_region_signature_partition_requires_boundaries(self) -> None:
+        with _raises(ValueError, match="requires an end boundary"):
+            Op(
+                "test.partitioned_region",
+                regions=[RegionDef("body")],
+                format=[
+                    BlockArgs("body", group="actual"),
+                    BlockArgs("body", group="expected"),
+                    Region("body"),
+                ],
+            )
+
+    def test_region_signature_partition_requires_i64_boundary(self) -> None:
+        with _raises(ValueError, match="must name a required i64 attribute"):
+            Op(
+                "test.partitioned_region",
+                attrs=[AttrDef("actual_count", "string")],
+                regions=[RegionDef("body")],
+                format=[
+                    BlockArgs(
+                        "body",
+                        group="actual",
+                        end_attr="actual_count",
+                    ),
+                    BlockArgs(
+                        "body",
+                        group="expected",
+                        start_attr="actual_count",
+                    ),
+                    Region("body"),
+                ],
+            )
+
+    def test_region_signature_partition_requires_explicit_arguments(self) -> None:
+        with _raises(ValueError, match="require explicit entry arguments"):
+            Op(
+                "test.partitioned_region",
+                operands=[Operand("inputs", ANY, variadic=True)],
+                attrs=[AttrDef("actual_count", "i64")],
+                regions=[RegionDef("body", arg_source="inputs")],
+                format=[
+                    BlockArgs(
+                        "body",
+                        group="actual",
+                        end_attr="actual_count",
+                    ),
+                    BlockArgs(
+                        "body",
+                        group="expected",
+                        start_attr="actual_count",
+                    ),
+                    Region("body"),
+                ],
+            )
 
     def test_body_signature_partition_requires_matching_boundaries(self) -> None:
         with _raises(ValueError, match="must use 'specialization_count'"):

@@ -220,6 +220,20 @@ class TestBlockArgs:
     def test_construct(self) -> None:
         args = BlockArgs("body")
         assert args.region == "body"
+        assert args.group is None
+        assert args.start_attr is None
+        assert args.end_attr is None
+
+    def test_construct_projected_group(self) -> None:
+        args = BlockArgs(
+            "body",
+            group="expected",
+            start_attr="actual_count",
+        )
+        assert args.region == "body"
+        assert args.group == "expected"
+        assert args.start_attr == "actual_count"
+        assert args.end_attr is None
 
 
 class TestFuncArgs:
