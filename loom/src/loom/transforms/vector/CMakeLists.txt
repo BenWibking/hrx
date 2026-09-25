@@ -219,6 +219,22 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    shape_legalization
+  HDRS
+    "shape_legalization.h"
+  SRCS
+    "shape_legalization.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::vector
+    loom::rewrite::rewriter
+    loom::target::legalization
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     target_legalization
   HDRS
     "target_legalization.h"
