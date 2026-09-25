@@ -110,6 +110,22 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    scenario_executor
+  HDRS
+    "scenario_executor.h"
+  SRCS
+    "scenario_executor.c"
+  DEPS
+    ::expectation
+    ::scenario_values
+    ::testbench
+    ::value_materializer
+    iree::base
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     device_event
   HDRS
     "device_event.h"
@@ -220,6 +236,28 @@ loom_cc_test(
   DEPS
     ::expectation
     ::scenario_entropy
+    ::scenario_values
+    ::testbench
+    ::value_materializer
+    iree::base
+    iree::base::internal::arena
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::ops::check
+    loom::ops::test
+)
+
+loom_cc_test(
+  NAME
+    scenario_executor_test
+  SRCS
+    "scenario_executor_test.cc"
+  DEPS
+    ::scenario_entropy
+    ::scenario_executor
     ::scenario_values
     ::testbench
     ::value_materializer

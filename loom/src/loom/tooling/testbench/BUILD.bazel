@@ -100,6 +100,19 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "scenario_executor",
+    srcs = ["scenario_executor.c"],
+    hdrs = ["scenario_executor.h"],
+    deps = [
+        ":expectation",
+        ":scenario_values",
+        ":testbench",
+        ":value_materializer",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "device_event",
     srcs = ["device_event.c"],
     hdrs = ["device_event.h"],
@@ -191,6 +204,27 @@ loom_cc_test(
     deps = [
         ":expectation",
         ":scenario_entropy",
+        ":scenario_values",
+        ":testbench",
+        ":value_materializer",
+        "//loom/src/loom/format/text:parser",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/check",
+        "//loom/src/loom/ops/test",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "scenario_executor_test",
+    srcs = ["scenario_executor_test.cc"],
+    deps = [
+        ":scenario_entropy",
+        ":scenario_executor",
         ":scenario_values",
         ":testbench",
         ":value_materializer",
