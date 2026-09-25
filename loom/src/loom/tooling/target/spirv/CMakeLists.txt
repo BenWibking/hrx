@@ -452,6 +452,7 @@ loom_test_module(
     vulkan_extended_types_tests_module
   SRCS
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32_benchmark.loom"
 )
 endif()
 
