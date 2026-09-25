@@ -105,16 +105,25 @@ static iree_status_t loom_check_compile_emit(
 
 static iree_status_t loom_check_compile_request(
     const loom_compile_request_t* request, const loom_module_t* source_module,
-    const loom_compile_pipeline_options_t* pipeline_options,
+    const loom_source_table_resolver_t* source_table,
+    const loom_compile_pipeline_options_t* base_pipeline_options,
     loom_check_diagnostic_collector_t* collector,
     iree_arena_block_pool_t* block_pool, iree_allocator_t allocator) {
   const iree_host_size_t initial_error_count = collector->error_count;
+  loom_source_table_projection_t source_projection = {
+      .table = *source_table, .arena = collector->arena};
+  loom_compile_pipeline_options_t projected_options = *base_pipeline_options;
+  projected_options.source_resolver = (loom_source_resolver_t){
+      .fn = loom_source_table_resolve, .user_data = &source_projection.table};
+  const loom_compile_pipeline_options_t* pipeline_options = &projected_options;
   const loom_module_t* const sources[] = {source_module};
   const loom_link_options_t link_options = {
       .module_name = source_module->name_id < source_module->strings.count
                          ? loom_string_table_get(&source_module->strings,
                                                  source_module->name_id)
                          : iree_string_view_empty(),
+      .source_callback = {.fn = loom_source_table_project,
+                          .user_data = &source_projection},
   };
   loom_module_t* module = NULL;
   iree_status_t status = loom_link_materialized_modules(
@@ -123,9 +132,9 @@ static iree_status_t loom_check_compile_request(
   collector->module = module;
   uint32_t error_count = 0;
   if (iree_status_is_ok(status)) {
-    status =
-        loom_compile_materialize_request(request, pipeline_options, block_pool,
-                                         allocator, &module, &error_count);
+    status = loom_compile_materialize_request(request, pipeline_options,
+                                              &source_projection, block_pool,
+                                              allocator, &module, &error_count);
     collector->module = module;
   }
   loom_compile_pipeline_result_t pipeline_result = {0};
@@ -261,14 +270,14 @@ iree_status_t loom_check_execute_compile(
         const iree_string_view_t root =
             loom_string_table_get(&input.module->strings, symbol->name_id);
         request.roots = (iree_string_view_list_t){.count = 1, .values = &root};
-        status = loom_check_compile_request(&request, input.module,
-                                            &pipeline_options, &collector,
-                                            block_pool, allocator);
+        status = loom_check_compile_request(
+            &request, input.module, &input.sources.table, &pipeline_options,
+            &collector, block_pool, allocator);
       }
     } else {
-      status =
-          loom_check_compile_request(&request, input.module, &pipeline_options,
-                                     &collector, block_pool, allocator);
+      status = loom_check_compile_request(
+          &request, input.module, &input.sources.table, &pipeline_options,
+          &collector, block_pool, allocator);
     }
   }
   if (iree_status_is_ok(status)) {

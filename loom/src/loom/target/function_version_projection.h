@@ -29,6 +29,7 @@ extern "C" {
 // facts through the owning provider. Semantically equivalent but independently
 // produced contexts remain distinct.
 //
+// Source IDs are preserved by the complete module clone.
 // The source module and function versions remain unchanged. A non-target
 // function-version representation is rejected because this layer cannot prove
 // that its compiler-owned semantics survived the clone. The source module and

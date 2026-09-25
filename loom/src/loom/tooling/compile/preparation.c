@@ -12,8 +12,10 @@
 #include "loom/target/module_specialization.h"
 
 static iree_status_t loom_compile_materialize_roots(
-    const loom_compile_request_t* request, iree_arena_block_pool_t* block_pool,
-    iree_allocator_t allocator, loom_module_t** inout_module) {
+    const loom_compile_request_t* request,
+    loom_source_table_projection_t* sources,
+    iree_arena_block_pool_t* block_pool, iree_allocator_t allocator,
+    loom_module_t** inout_module) {
   loom_module_t* module = *inout_module;
   iree_string_view_list_t roots = request->roots;
   iree_string_view_t* implicit_root_values = NULL;
@@ -53,18 +55,23 @@ static iree_status_t loom_compile_materialize_roots(
   if (module->name_id < module->strings.count) {
     module_name = loom_string_table_get(&module->strings, module->name_id);
   }
+  const loom_source_table_resolver_t input_sources = sources->table;
   loom_module_t* linked_module = NULL;
   iree_status_t status = loom_link_materialized_modules(
       source_modules, IREE_ARRAYSIZE(source_modules),
       &(loom_link_options_t){
           .module_name = module_name,
           .root_symbols = roots,
+          .source_callback = {.fn = loom_source_table_project,
+                              .user_data = sources},
       },
       block_pool, allocator, &linked_module);
   iree_allocator_free(allocator, implicit_root_values);
   if (iree_status_is_ok(status)) {
     loom_module_free(module);
     *inout_module = linked_module;
+  } else {
+    sources->table = input_sources;
   }
   return status;
 }
@@ -72,6 +79,7 @@ static iree_status_t loom_compile_materialize_roots(
 iree_status_t loom_compile_materialize_request(
     const loom_compile_request_t* request,
     const loom_compile_pipeline_options_t* options,
+    loom_source_table_projection_t* sources,
     iree_arena_block_pool_t* block_pool, iree_allocator_t allocator,
     loom_module_t** inout_module, uint32_t* out_error_count) {
   *out_error_count = 0;
@@ -90,11 +98,14 @@ iree_status_t loom_compile_materialize_request(
         options->target_environment, request->explicit_target.target_profile,
         loom_target_entry_emitter(&diagnostic_emitter), block_pool, allocator,
         inout_module, out_error_count));
+    // Standalone target specialization is an exact module clone: source IDs
+    // remain unchanged while ownership moves to its replacement.
+    sources->table.module = *inout_module;
   }
   if (*out_error_count != 0) {
     return iree_ok_status();
   }
-  return loom_compile_materialize_roots(request, block_pool, allocator,
+  return loom_compile_materialize_roots(request, sources, block_pool, allocator,
                                         inout_module);
 }
 

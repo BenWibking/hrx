@@ -165,6 +165,27 @@
       }
     },
     {
+      "name": "compiler root materialization retains original source text",
+      "run": {
+        "tool": "loom-compile",
+        "args": [
+          "{srcdir}/source_math.loom",
+          "--root=@exact_sine",
+          "--target=vm:core",
+          "--output={tmp}/output.vm"
+        ]
+      },
+      "exit": {"nonzero": true},
+      "stderr": {
+        "contains": [
+          "source_math.loom:2:3",
+          "vm-math",
+          "scalar.sinf %value : f32",
+          "^"
+        ]
+      }
+    },
+    {
       "name": "benchmark correctness failure reports the authored assertion range",
       "run": {
         "tool": "iree-benchmark-loom",

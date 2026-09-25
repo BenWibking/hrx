@@ -217,8 +217,8 @@ static iree_status_t loom_run_module_clone_sources(
     const loom_module_t* target_module,
     const loom_source_id_t* target_sources) {
   const loom_run_module_clone_sources_t* sources = user_data;
-  return loom_tooling_source_storage_project(sources->target, sources->source,
-                                             target_sources);
+  return loom_tooling_source_storage_project(sources->target, target_module,
+                                             sources->source, target_sources);
 }
 
 iree_status_t loom_run_module_clone(loom_run_session_t* session,

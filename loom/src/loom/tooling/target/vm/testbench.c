@@ -86,6 +86,8 @@ static iree_status_t loom_vm_testbench_compile(loom_vm_testbench_t* testbench,
       }
     }
   }
+  loom_source_table_projection_t sources = {.table = *testbench->sources,
+                                            .arena = &arena};
   loom_module_t* module = NULL;
   if (iree_status_is_ok(status)) {
     status = loom_link_materialized_modules(
@@ -93,6 +95,8 @@ static iree_status_t loom_vm_testbench_compile(loom_vm_testbench_t* testbench,
         &(loom_link_options_t){
             .module_name = IREE_SV("test"),
             .root_symbols = {.count = root_count, .values = roots},
+            .source_callback = {.fn = loom_source_table_project,
+                                .user_data = &sources},
         },
         &pool, testbench->host_allocator, &module);
   }
@@ -142,7 +146,8 @@ static iree_status_t loom_vm_testbench_compile(loom_vm_testbench_t* testbench,
     loom_compile_pipeline_options_t options;
     loom_compile_pipeline_options_initialize(&options);
     options.target_environment = testbench->target_environment;
-    options.source_resolver = testbench->source_resolver;
+    options.source_resolver = (loom_source_resolver_t){
+        .fn = loom_source_table_resolve, .user_data = &sources.table};
     options.target_specializations =
         (loom_target_specialization_request_list_t){requests, request_count};
     options.low_descriptor_registry = &registry;
@@ -530,11 +535,11 @@ static iree_status_t loom_vm_testbench_invoke(
 
 loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
     void* user_data, loom_testbench_case_plan_list_t cases,
-    loom_source_resolver_t source_resolver,
+    const loom_source_table_resolver_t* sources,
     const loom_tooling_config_set_t* config_set) {
   loom_vm_testbench_t* testbench = user_data;
   testbench->cases = cases;
-  testbench->source_resolver = source_resolver;
+  testbench->sources = sources;
   testbench->config_set = config_set;
   return (loom_testbench_invocation_provider_t){
       .invoke = loom_vm_testbench_invoke,

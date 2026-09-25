@@ -23,12 +23,14 @@ extern "C" {
 //
 // The caller owns |*inout_module| on both success and failure. Successful
 // transformations may replace it and free the previous module. Source storage
-// referenced by the diagnostic resolver must outlive this call and the module.
+// referenced by |sources| must outlive this call and the module. Its table
+// follows module replacements and its arena owns the projected entries.
 // Specialization diagnostics are counted in |out_error_count|; status
 // represents allocation, linking, or diagnostic-sink failures.
 iree_status_t loom_compile_materialize_request(
     const loom_compile_request_t* request,
     const loom_compile_pipeline_options_t* options,
+    loom_source_table_projection_t* sources,
     iree_arena_block_pool_t* block_pool, iree_allocator_t allocator,
     loom_module_t** inout_module, uint32_t* out_error_count);
 
