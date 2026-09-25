@@ -121,6 +121,8 @@ loom_cc_library(
     ::testbench
     ::value_materializer
     iree::base
+    loom::util::json
+    loom::util::stream
   PUBLIC
 )
 

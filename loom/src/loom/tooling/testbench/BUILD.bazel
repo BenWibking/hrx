@@ -108,6 +108,8 @@ loom_cc_library(
         ":scenario_values",
         ":testbench",
         ":value_materializer",
+        "//loom/src/loom/util:json",
+        "//loom/src/loom/util:stream",
         "//runtime/src/iree/base",
     ],
 )

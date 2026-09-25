@@ -73,6 +73,9 @@ loom_cc_library(
     loom::tooling::testbench::issue_report
     loom::tooling::testbench::reference
     loom::tooling::testbench::requirements
+    loom::tooling::testbench::scenario_entropy
+    loom::tooling::testbench::scenario_executor
+    loom::tooling::testbench::scenario_values
     loom::util::json
     loom::util::stream
     loom::verify
@@ -137,5 +140,20 @@ iree_execution_test_suite(
   LABELS
     "hostonly"
 )
+
+if(LOOM_TARGET_ARCH_VM)
+iree_execution_test_suite(
+  NAME
+    scenario_execution_test
+  MANIFESTS
+    "scenario_execution.test.json"
+  TOOLS
+    "iree-test-loom=::iree-test-loom"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/scenario_cases.loom"
+  LABELS
+    "hostonly"
+)
+endif()
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

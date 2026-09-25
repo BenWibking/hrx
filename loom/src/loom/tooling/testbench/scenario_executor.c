@@ -6,7 +6,10 @@
 
 #include "loom/tooling/testbench/scenario_executor.h"
 
+#include <inttypes.h>
 #include <string.h>
+
+#include "loom/util/json.h"
 
 static void loom_testbench_prepared_product_deinitialize(
     loom_testbench_prepared_product_t* product) {
@@ -516,6 +519,7 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
         &executor->results[call_index];
     *result = (loom_testbench_scenario_trial_result_t){
         .identity = executor->trial_values[call_index].identity,
+        .scenario_plan = executor->configuration->scenario_plan,
         .trial_plan = trial,
         .passed = true,
     };
@@ -542,4 +546,42 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
   out_results->values = executor->results;
   out_results->count = trial_count;
   return iree_ok_status();
+}
+
+iree_status_t loom_testbench_scenario_trial_result_write_json(
+    const loom_testbench_scenario_trial_result_t* result,
+    loom_output_stream_t* stream) {
+  const char* action =
+      result->trial_plan->action.kind == LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE
+          ? "compare"
+          : "invoke";
+  char entropy[35];
+  const int entropy_length = iree_snprintf(
+      entropy, sizeof(entropy), "0x%016" PRIx64 "%016" PRIx64,
+      result->identity.entropy_root.high, result->identity.entropy_root.low);
+  loom_json_object_writer_t object;
+  IREE_RETURN_IF_ERROR(loom_json_object_begin(stream, &object));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      &object, IREE_SV("scenario"), result->scenario_plan->name));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      &object, IREE_SV("action"), iree_make_cstring_view(action)));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
+      &object, IREE_SV("entropy"),
+      iree_make_string_view(entropy, (iree_host_size_t)entropy_length)));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      &object, IREE_SV("configuration_ordinal"),
+      result->identity.configuration_ordinal));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      &object, IREE_SV("trial_index"), result->identity.trial_index));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+      &object, IREE_SV("trial_ordinal"), result->identity.trial_ordinal));
+  IREE_RETURN_IF_ERROR(loom_json_object_write_bool_field(
+      &object, IREE_SV("passed"), result->passed));
+  if (result->expectation_report != NULL) {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_begin_field(&object, IREE_SV("expectations")));
+    IREE_RETURN_IF_ERROR(loom_testbench_expectation_report_write_json(
+        result->expectation_report, stream));
+  }
+  return loom_json_object_end(&object);
 }

@@ -1,0 +1,19 @@
+func.def @increment(%value: i32) -> (i32) {
+  %increment = scalar.constant 1 : i32
+  %result = scalar.addi %value, %increment : i32
+  func.return %result : i32
+}
+
+check.scenario public @batched_vm {
+  check.trial[3](%trial: index, %entropy: check.entropy) {
+    %input = check.literal value(4) : i32
+    check.compare<@increment>(%input) : (i32) -> [actual(%actual: i32), expected(%expected: i32)] {
+      check.expect.equal actual(%actual) expected(%expected) : i32
+    }
+  }
+  check.trial[2](%trial: index, %entropy: check.entropy) {
+    %input = check.literal value(8) : i32
+    check.invoke<@increment>(%input) : (i32) -> (i32)
+  }
+  check.return
+}

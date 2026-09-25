@@ -12,6 +12,7 @@
 #include "iree/base/api.h"
 #include "loom/tooling/testbench/expectation.h"
 #include "loom/tooling/testbench/scenario_values.h"
+#include "loom/util/stream.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +124,8 @@ void loom_testbench_prepared_scenario_configuration_deinitialize(
 typedef struct loom_testbench_scenario_trial_result_t {
   // Exact coordinate needed to replay this trial.
   loom_testbench_scenario_trial_identity_t identity;
+  // Static scenario that owns this trial result.
+  const loom_testbench_scenario_plan_t* scenario_plan;
   // Static trial domain that produced this result.
   const loom_testbench_trial_plan_t* trial_plan;
   // True when execution completed and every authored expectation passed.
@@ -197,6 +200,12 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
     loom_testbench_scenario_trial_executor_t* executor,
     iree_host_size_t first_trial_ordinal, iree_host_size_t trial_count,
     loom_testbench_scenario_trial_result_list_t* out_results);
+
+// Writes one deterministic scenario trial result with its complete replay
+// coordinate and any source-located expectation failures.
+iree_status_t loom_testbench_scenario_trial_result_write_json(
+    const loom_testbench_scenario_trial_result_t* result,
+    loom_output_stream_t* stream);
 
 #ifdef __cplusplus
 }  // extern "C"
