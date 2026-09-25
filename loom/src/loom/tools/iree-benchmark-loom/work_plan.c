@@ -41,8 +41,13 @@ static iree_status_t iree_benchmark_loom_policy_from_benchmark(
   iree_string_view_t measure = options->measure;
   iree_benchmark_loom_measure_t measure_kind =
       IREE_BENCHMARK_LOOM_MEASURE_CASE_END_TO_END;
-  if (iree_string_view_equal(measure, IREE_SV("case_end_to_end")) ||
-      iree_string_view_equal(measure, IREE_SV("end_to_end"))) {
+  if (iree_string_view_equal(measure, IREE_SV("auto"))) {
+    measure =
+        is_scenario ? IREE_SV("dispatch_complete") : IREE_SV("case_end_to_end");
+    measure_kind = is_scenario ? IREE_BENCHMARK_LOOM_MEASURE_DISPATCH_COMPLETE
+                               : IREE_BENCHMARK_LOOM_MEASURE_CASE_END_TO_END;
+  } else if (iree_string_view_equal(measure, IREE_SV("case_end_to_end")) ||
+             iree_string_view_equal(measure, IREE_SV("end_to_end"))) {
     measure = IREE_SV("case_end_to_end");
     measure_kind = IREE_BENCHMARK_LOOM_MEASURE_CASE_END_TO_END;
   } else if (iree_string_view_equal(measure, IREE_SV("dispatch_complete"))) {

@@ -323,7 +323,6 @@ check.benchmark<@scenario> @second
   iree_benchmark_loom_options_t options = {};
   iree_benchmark_loom_options_initialize(&options);
   options.selected_case = IREE_SV("scenario");
-  options.measure = IREE_SV("dispatch_complete");
   options.sample_ordinal = 4;
 
   iree_benchmark_loom_work_plan_t work_plan = {};
@@ -334,6 +333,11 @@ check.benchmark<@scenario> @second
   EXPECT_EQ(work_plan.selected_benchmarks[0].case_plan, nullptr);
   EXPECT_EQ(work_plan.selected_benchmarks[0].scenario_plan,
             &module_plan.scenarios[0]);
+  EXPECT_EQ(work_plan.selected_benchmarks[0].policy.measure_kind,
+            IREE_BENCHMARK_LOOM_MEASURE_DISPATCH_COMPLETE);
+  EXPECT_TRUE(
+      iree_string_view_equal(work_plan.selected_benchmarks[0].policy.measure,
+                             IREE_SV("dispatch_complete")));
   ASSERT_EQ(work_plan.logical_sample_count, 2u);
   EXPECT_EQ(work_plan.hal_compile_item_count, 0u);
   ASSERT_EQ(work_plan.work_item_count, 1u);
@@ -370,6 +374,7 @@ check.benchmark<@scenario> @scenario_latency
 
   iree_benchmark_loom_options_t options = {};
   iree_benchmark_loom_options_initialize(&options);
+  options.measure = IREE_SV("case_end_to_end");
 
   iree_benchmark_loom_work_plan_t work_plan = {};
   iree::Status status(iree_benchmark_loom_work_plan_initialize(

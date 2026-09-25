@@ -27,6 +27,9 @@ _LOOM_TEST_TOOLCHAIN_TYPE = Label("//loom/build_tools/bazel:test_toolchain_type"
 _LOOM_BENCHMARK_SMOKE_ARGS = [
     "--iterations=1",
     "--warmup-iterations=0",
+    "--min-time-ms=0",
+    "--warmup-time-ms=0",
+    "--max-batches=1",
     "--output-format=jsonl",
     "--compile-report=none",
 ]

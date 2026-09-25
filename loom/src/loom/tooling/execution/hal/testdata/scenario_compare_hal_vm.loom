@@ -26,3 +26,5 @@ check.scenario public @scenario_compare_hal_vm {
   }
   check.return
 }
+
+check.benchmark<@scenario_compare_hal_vm> @scenario_compare_hal_vm_throughput

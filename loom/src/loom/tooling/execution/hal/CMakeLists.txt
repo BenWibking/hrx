@@ -126,6 +126,35 @@ loom_execution_test(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+iree_native_test(
+  NAME
+    "scenario_benchmark_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/execution/hal/testdata/scenario_compare_hal_vm.loom}}"
+    "--device=amdgpu"
+    "--case=@scenario_compare_hal_vm"
+    "--benchmark=@scenario_compare_hal_vm_throughput"
+    "--sample=2"
+    "--batch-size=2"
+    "--iterations=1"
+    "--warmup-iterations=0"
+    "--min-time-ms=0"
+    "--warmup-time-ms=0"
+    "--max-batches=1"
+  SRC
+    loom::tools::iree-benchmark-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/execution/hal/testdata/scenario_compare_hal_vm.loom"
+  LABELS
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "requires-gpu-amd"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
 loom_cc_library(
   NAME
     artifact

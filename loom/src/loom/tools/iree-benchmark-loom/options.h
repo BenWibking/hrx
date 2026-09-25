@@ -104,7 +104,7 @@ typedef struct iree_benchmark_loom_options_t {
   iree_benchmark_loom_artifact_bundle_policy_t artifact_bundle_policy;
   // True when the run stops after planning selected benchmarks.
   bool dry_run;
-  // Measurement mode requested for selected benchmarks.
+  // Requested measurement mode, including automatic subject-based selection.
   iree_string_view_t measure;
   // Structured compile-report request.
   iree_string_view_t compile_report;
