@@ -11,6 +11,7 @@
 
 #include "iree/base/api.h"
 #include "loom/tooling/execution/benchmark.h"
+#include "loom/tooling/testbench/device_event.h"
 #include "loom/tooling/testbench/expectation.h"
 #include "loom/tooling/testbench/scenario_values.h"
 #include "loom/util/stream.h"
@@ -103,6 +104,8 @@ typedef struct loom_testbench_scenario_execution_options_t {
   loom_testbench_execution_profile_t target;
   // Profile used to produce comparison results and state.
   loom_testbench_execution_profile_t oracle;
+  // Shared capture receiving device events during correctness runs.
+  loom_testbench_device_event_capture_t* device_event_capture;
   // Allocator for prepared scenario bookkeeping and provider products.
   iree_allocator_t host_allocator;
 } loom_testbench_scenario_execution_options_t;
@@ -127,6 +130,8 @@ typedef struct loom_testbench_prepared_scenario_configuration_t {
   const loom_testbench_scenario_configuration_values_t* configuration;
   // Execution semantics selected while preparing every product.
   loom_testbench_scenario_execution_mode_t mode;
+  // Shared device-event capture for correctness execution.
+  loom_testbench_device_event_capture_t* device_event_capture;
   // Allocator owning |trials| and passed to product teardown.
   iree_allocator_t host_allocator;
   // Prepared trial domains in source order.
@@ -154,10 +159,17 @@ typedef struct loom_testbench_scenario_trial_result_t {
   const loom_testbench_scenario_plan_t* scenario_plan;
   // Static trial domain that produced this result.
   const loom_testbench_trial_plan_t* trial_plan;
-  // True when execution completed and every authored expectation passed.
+  // True when execution completed without unhandled outcomes and every
+  // authored expectation passed.
   bool passed;
   // Borrowed report owned by the executor, or NULL for check.invoke.
   const loom_testbench_expectation_report_t* expectation_report;
+  // Borrowed target device events owned by the executor.
+  const loom_testbench_device_event_list_t* device_events;
+  // Borrowed event flags set by positive authored expectations.
+  const uint8_t* expected_device_events;
+  // Number of error-severity events with no positive expectation.
+  iree_host_size_t unhandled_device_event_count;
 } loom_testbench_scenario_trial_result_t;
 
 typedef struct loom_testbench_scenario_trial_result_list_t {
@@ -185,6 +197,14 @@ typedef struct loom_testbench_scenario_trial_executor_t {
   loom_testbench_scenario_trial_result_t* results;
   // Reusable expectation reports per batch slot.
   loom_testbench_expectation_report_t* expectation_reports;
+  // Owned target device-event snapshots per batch slot.
+  loom_testbench_device_event_snapshot_t* device_event_snapshots;
+  // Flat positive-expectation event flags per batch slot.
+  uint8_t* expected_device_events;
+  // Number of event flags reserved for each batch slot.
+  iree_host_size_t expected_device_event_capacity;
+  // Shared capture isolating target events and validating oracle execution.
+  loom_testbench_device_event_capture_t* device_event_capture;
   // Target product calls per batch slot.
   loom_testbench_product_call_t* target_calls;
   // Oracle product calls per batch slot, or NULL for check.invoke.

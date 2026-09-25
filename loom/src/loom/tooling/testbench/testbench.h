@@ -417,6 +417,8 @@ typedef struct loom_testbench_scenario_action_plan_t {
   const loom_testbench_expectation_plan_t* expectations;
   // Number of entries in |expectations|.
   iree_host_size_t expectation_count;
+  // True when an expectation consumes target device events.
+  bool expects_device_events;
 } loom_testbench_scenario_action_plan_t;
 
 typedef struct loom_testbench_trial_plan_t {

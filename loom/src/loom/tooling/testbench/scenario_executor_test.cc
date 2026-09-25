@@ -6,6 +6,8 @@
 
 #include "loom/tooling/testbench/scenario_executor.h"
 
+#include <string>
+
 #include "iree/base/internal/arena.h"
 #include "iree/hal/api.h"
 #include "iree/testing/gtest.h"
@@ -33,7 +35,11 @@ typedef struct TestProfileState {
   iree_host_size_t benchmark_count;
   iree_host_size_t last_benchmark_call_count;
   iree_host_size_t mismatch_trial_ordinal;
+  iree_host_size_t device_event_trial_ordinal;
+  iree_hal_device_event_sink_t device_event_sink;
   bool inject_mismatch;
+  bool inject_device_event;
+  bool device_event_changes_in_isolation;
   bool saw_runtime_value_during_prepare;
   bool saw_incomplete_alias;
   bool saw_shared_replica_storage;
@@ -52,6 +58,24 @@ static iree_status_t ExecuteTestProduct(
 
   for (iree_host_size_t call_index = 0; call_index < call_count; ++call_index) {
     loom_testbench_product_call_t* call = &calls[call_index];
+    if (state->inject_device_event &&
+        call->identity->trial_ordinal == state->device_event_trial_ordinal) {
+      iree_hal_device_event_site_t site = iree_hal_device_event_site_default();
+      site.site_id = 17;
+      site.source_file = IREE_SV("event_subject.loom");
+      site.start_line = 23;
+      site.start_column = 5;
+      iree_hal_device_event_t event = iree_hal_device_event_default();
+      event.type = IREE_HAL_DEVICE_EVENT_TYPE_ASAN_REPORT;
+      event.severity =
+          state->device_event_changes_in_isolation && call_count == 1
+              ? IREE_HAL_DEVICE_EVENT_SEVERITY_WARNING
+              : IREE_HAL_DEVICE_EVENT_SEVERITY_ERROR;
+      event.source.driver_id = IREE_SV("test");
+      event.source.device_id = IREE_SV("scenario");
+      event.site = &site;
+      iree_hal_device_event_sink_publish(state->device_event_sink, &event);
+    }
     if (invocation->result_count == 1) {
       if (invocation->input_count != 1 ||
           call->arguments[0].kind != LOOM_TESTBENCH_VALUE_KIND_SCALAR) {
@@ -153,6 +177,66 @@ static iree_status_t PrepareTestProduct(
   return iree_ok_status();
 }
 
+struct DeviceEventScenarioRun {
+  loom_testbench_device_event_capture_t capture = {};
+  loom_testbench_scenario_configuration_values_t configuration = {};
+  ExecutionTimeline timeline = {};
+  TestProfileState target_state = {};
+  TestProfileState oracle_state = {};
+  loom_testbench_prepared_scenario_configuration_t prepared = {};
+  loom_testbench_scenario_trial_executor_t executor = {};
+  loom_testbench_scenario_trial_result_list_t results = {};
+
+  ~DeviceEventScenarioRun() {
+    loom_testbench_scenario_trial_executor_deinitialize(&executor);
+    loom_testbench_prepared_scenario_configuration_deinitialize(&prepared);
+    loom_testbench_scenario_configuration_values_deinitialize(&configuration);
+    loom_testbench_device_event_capture_deinitialize(&capture);
+  }
+};
+
+static iree_status_t InitializeDeviceEventScenarioRun(
+    const loom_module_t* module, const loom_testbench_scenario_plan_t* scenario,
+    const loom_testbench_value_materializer_options_t* materializer,
+    iree_host_size_t device_event_trial_ordinal,
+    bool device_event_changes_in_isolation, iree_allocator_t host_allocator,
+    DeviceEventScenarioRun* out_run) {
+  IREE_RETURN_IF_ERROR(loom_testbench_device_event_capture_initialize(
+      /*record_capacity=*/8, host_allocator, &out_run->capture));
+  IREE_RETURN_IF_ERROR(loom_testbench_scenario_configuration_values_initialize(
+      module, scenario, host_allocator, &out_run->configuration));
+  IREE_RETURN_IF_ERROR(loom_testbench_scenario_configuration_values_materialize(
+      materializer, loom_testbench_entropy_root(0x1122334455667788ull),
+      /*configuration_ordinal=*/0, &out_run->configuration));
+
+  out_run->target_state.timeline = &out_run->timeline;
+  out_run->target_state.device_event_trial_ordinal = device_event_trial_ordinal;
+  out_run->target_state.device_event_sink =
+      loom_testbench_device_event_capture_sink(&out_run->capture);
+  out_run->target_state.inject_device_event = true;
+  out_run->target_state.device_event_changes_in_isolation =
+      device_event_changes_in_isolation;
+  out_run->oracle_state.timeline = &out_run->timeline;
+  loom_testbench_scenario_execution_options_t execution_options = {};
+  loom_testbench_scenario_execution_options_initialize(&execution_options);
+  execution_options.target.name = IREE_SV("test-target");
+  execution_options.target.prepare = PrepareTestProduct;
+  execution_options.target.user_data = &out_run->target_state;
+  execution_options.oracle.name = IREE_SV("test-oracle");
+  execution_options.oracle.prepare = PrepareTestProduct;
+  execution_options.oracle.user_data = &out_run->oracle_state;
+  execution_options.device_event_capture = &out_run->capture;
+  IREE_RETURN_IF_ERROR(loom_testbench_prepare_scenario_configuration(
+      &execution_options, &out_run->configuration,
+      LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS, &out_run->prepared));
+  IREE_RETURN_IF_ERROR(loom_testbench_scenario_trial_executor_initialize(
+      &out_run->prepared, /*trial_index=*/0, materializer,
+      scenario->trials[0].trial_count, &out_run->executor));
+  return loom_testbench_run_scenario_trial_batch(
+      &out_run->executor, /*first_trial_ordinal=*/0,
+      scenario->trials[0].trial_count, &out_run->results);
+}
+
 class ScenarioExecutorTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -224,6 +308,45 @@ check.scenario public @batched configure[2](%configuration: index, %configuratio
     return module;
   }
 
+  loom_module_t* ParseDeviceEventModule() {
+    static const char source[] = R"(
+test.func @update(%storage: tensor<4xi32>, %tail: tensor<2xi32>) {
+  test.yield
+}
+
+check.scenario public @unexpected_device_event {
+  check.trial[3](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.iota offset(0) step(1) : tensor<4xi32>
+    %tail = check.tensor.view %storage offset(8) : tensor<4xi32> -> tensor<2xi32>
+    check.compare<@update>(%storage, %tail) : (tensor<4xi32>, tensor<2xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<4xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario public @expected_device_event {
+  check.trial[2](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.iota offset(0) step(1) : tensor<4xi32>
+    %tail = check.tensor.view %storage offset(8) : tensor<4xi32> -> tensor<2xi32>
+    check.compare<@update>(%storage, %tail) : (tensor<4xi32>, tensor<2xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<4xi32>
+      check.expect.event<device> {type = "asan_report", count = 1}
+    }
+  }
+  check.return
+}
+)";
+    loom_text_parse_options_t options = {};
+    options.max_errors = 20;
+    loom_module_t* module = nullptr;
+    IREE_EXPECT_OK(loom_text_parse(iree_make_cstring_view(source),
+                                   IREE_SV("scenario_device_events.loom"),
+                                   &context_, &block_pool_, &options, &module));
+    EXPECT_NE(module, nullptr);
+    return module;
+  }
+
   loom_testbench_module_plan_t PlanModule(loom_module_t* module) {
     loom_testbench_module_plan_t plan = {};
     IREE_EXPECT_OK(
@@ -244,6 +367,20 @@ check.scenario public @batched configure[2](%configuration: index, %configuratio
     IREE_EXPECT_OK(
         loom_testbench_value_table_lookup_borrow(table, value_id, &value));
     return value;
+  }
+
+  static std::string WriteResultJson(
+      const loom_testbench_scenario_trial_result_t& result) {
+    iree_string_builder_t builder;
+    iree_string_builder_initialize(iree_allocator_system(), &builder);
+    loom_output_stream_t stream;
+    loom_output_stream_for_builder(&builder, &stream);
+    IREE_EXPECT_OK(
+        loom_testbench_scenario_trial_result_write_json(&result, &stream));
+    const iree_string_view_t view = iree_string_builder_view(&builder);
+    std::string json(view.data, view.size);
+    iree_string_builder_deinitialize(&builder);
+    return json;
   }
 
   iree_allocator_t host_allocator_ = iree_allocator_system();
@@ -535,6 +672,146 @@ TEST_F(ScenarioExecutorTest, ReportsAuthoredExpectationAndReplayIdentity) {
   loom_testbench_scenario_trial_executor_deinitialize(&executor);
   loom_testbench_prepared_scenario_configuration_deinitialize(&prepared);
   loom_testbench_scenario_configuration_values_deinitialize(&configuration);
+  loom_module_free(module);
+}
+
+TEST_F(ScenarioExecutorTest, AttributesUnexpectedDeviceErrorsToExactTrial) {
+  loom_module_t* module = ParseDeviceEventModule();
+  ASSERT_NE(module, nullptr);
+  loom_testbench_module_plan_t plan = PlanModule(module);
+  ASSERT_EQ(plan.issue_count, 0u);
+  ASSERT_EQ(plan.scenario_count, 2u);
+  const loom_testbench_scenario_plan_t& scenario = plan.scenarios[0];
+  EXPECT_FALSE(scenario.trials[0].action.expects_device_events);
+
+  loom_testbench_value_materializer_options_t materializer =
+      MaterializerOptions();
+  {
+    DeviceEventScenarioRun run;
+    IREE_ASSERT_OK(InitializeDeviceEventScenarioRun(
+        module, &scenario, &materializer, /*device_event_trial_ordinal=*/1,
+        /*device_event_changes_in_isolation=*/false, host_allocator_, &run));
+
+    ASSERT_EQ(run.results.count, 3u);
+    EXPECT_EQ(run.target_state.execute_count, 4u);
+    EXPECT_EQ(run.target_state.last_call_count, 1u);
+    EXPECT_EQ(run.oracle_state.execute_count, 1u);
+    EXPECT_EQ(run.oracle_state.last_call_count, 3u);
+    EXPECT_TRUE(run.results.values[0].passed);
+    EXPECT_FALSE(run.results.values[1].passed);
+    EXPECT_TRUE(run.results.values[2].passed);
+
+    const loom_testbench_scenario_trial_result_t& failure =
+        run.results.values[1];
+    EXPECT_EQ(failure.identity.trial_ordinal, 1u);
+    ASSERT_NE(failure.device_events, nullptr);
+    ASSERT_EQ(failure.device_events->count, 1u);
+    EXPECT_EQ(failure.device_events->dropped_count, 0u);
+    EXPECT_EQ(failure.unhandled_device_event_count, 1u);
+    EXPECT_EQ(failure.expected_device_events, nullptr);
+    EXPECT_EQ(run.results.values[0].device_events->count, 0u);
+    EXPECT_EQ(run.results.values[2].device_events->count, 0u);
+
+    const std::string json = WriteResultJson(failure);
+    EXPECT_THAT(json, ::testing::HasSubstr("\"trial_ordinal\":1"));
+    EXPECT_THAT(json, ::testing::HasSubstr("\"device_events\":"));
+    EXPECT_THAT(json, ::testing::HasSubstr("\"type\":\"asan_report\""));
+    EXPECT_THAT(json, ::testing::HasSubstr("\"driver\":\"test\""));
+    EXPECT_THAT(json, ::testing::HasSubstr("\"device\":\"scenario\""));
+    EXPECT_THAT(json,
+                ::testing::HasSubstr("\"source_file\":\"event_subject.loom\""));
+    EXPECT_THAT(json, ::testing::HasSubstr("\"source_location\":"));
+    EXPECT_THAT(json, ::testing::HasSubstr(
+                          "\"filename\":\"scenario_device_events.loom\""));
+  }
+  loom_module_free(module);
+}
+
+TEST_F(ScenarioExecutorTest, ConsumesExpectedDeviceErrorsPerTrial) {
+  loom_module_t* module = ParseDeviceEventModule();
+  ASSERT_NE(module, nullptr);
+  loom_testbench_module_plan_t plan = PlanModule(module);
+  ASSERT_EQ(plan.issue_count, 0u);
+  ASSERT_EQ(plan.scenario_count, 2u);
+  const loom_testbench_scenario_plan_t& scenario = plan.scenarios[1];
+  EXPECT_TRUE(scenario.trials[0].action.expects_device_events);
+
+  loom_testbench_value_materializer_options_t materializer =
+      MaterializerOptions();
+  {
+    DeviceEventScenarioRun run;
+    IREE_ASSERT_OK(InitializeDeviceEventScenarioRun(
+        module, &scenario, &materializer, /*device_event_trial_ordinal=*/0,
+        /*device_event_changes_in_isolation=*/false, host_allocator_, &run));
+
+    ASSERT_EQ(run.results.count, 2u);
+    EXPECT_EQ(run.target_state.execute_count, 2u);
+    EXPECT_EQ(run.target_state.last_call_count, 1u);
+    EXPECT_EQ(run.oracle_state.execute_count, 1u);
+    EXPECT_EQ(run.oracle_state.last_call_count, 2u);
+
+    const loom_testbench_scenario_trial_result_t& expected =
+        run.results.values[0];
+    EXPECT_TRUE(expected.passed);
+    ASSERT_NE(expected.expectation_report, nullptr);
+    EXPECT_EQ(expected.expectation_report->expectation_count, 2u);
+    EXPECT_EQ(expected.expectation_report->passed_count, 2u);
+    EXPECT_EQ(expected.expectation_report->failure_count, 0u);
+    ASSERT_NE(expected.device_events, nullptr);
+    ASSERT_EQ(expected.device_events->count, 1u);
+    ASSERT_NE(expected.expected_device_events, nullptr);
+    EXPECT_EQ(expected.expected_device_events[0], 1u);
+    EXPECT_EQ(expected.unhandled_device_event_count, 0u);
+    EXPECT_THAT(WriteResultJson(expected),
+                ::testing::Not(::testing::HasSubstr("\"device_events\":")));
+
+    const loom_testbench_scenario_trial_result_t& absent =
+        run.results.values[1];
+    EXPECT_FALSE(absent.passed);
+    ASSERT_NE(absent.expectation_report, nullptr);
+    EXPECT_EQ(absent.expectation_report->expectation_count, 2u);
+    EXPECT_EQ(absent.expectation_report->passed_count, 1u);
+    ASSERT_EQ(absent.expectation_report->failure_count, 1u);
+    EXPECT_EQ(absent.expectation_report->failures[0].kind,
+              LOOM_TESTBENCH_EXPECTATION_EVENT);
+    EXPECT_EQ(absent.expectation_report->failures[0].expectation,
+              &scenario.trials[0].action.expectations[1]);
+    EXPECT_EQ(absent.expectation_report->failures[0].expectation->op->location,
+              scenario.trials[0].action.expectations[1].op->location);
+    const std::string json = WriteResultJson(absent);
+    EXPECT_THAT(json, ::testing::HasSubstr("\"kind\":\"event\""));
+    EXPECT_THAT(json, ::testing::HasSubstr("\"source_location\":"));
+  }
+  loom_module_free(module);
+}
+
+TEST_F(ScenarioExecutorTest, RejectsChangedBatchEventAttribution) {
+  loom_module_t* module = ParseDeviceEventModule();
+  ASSERT_NE(module, nullptr);
+  loom_testbench_module_plan_t plan = PlanModule(module);
+  ASSERT_EQ(plan.issue_count, 0u);
+  ASSERT_EQ(plan.scenario_count, 2u);
+  const loom_testbench_scenario_plan_t& scenario = plan.scenarios[0];
+
+  loom_testbench_value_materializer_options_t materializer =
+      MaterializerOptions();
+  {
+    DeviceEventScenarioRun run;
+    iree::Status status(InitializeDeviceEventScenarioRun(
+        module, &scenario, &materializer, /*device_event_trial_ordinal=*/1,
+        /*device_event_changes_in_isolation=*/true, host_allocator_, &run));
+    EXPECT_THAT(status,
+                iree::testing::status::StatusIs(iree::StatusCode::kAborted));
+    EXPECT_THAT(status.ToString(),
+                ::testing::HasSubstr("refusing to guess event ownership"));
+    EXPECT_THAT(status.ToString(), ::testing::HasSubstr("range [0, 3)"));
+    EXPECT_THAT(status.ToString(),
+                ::testing::HasSubstr("batch 1 captured/0 dropped, replay 1 "
+                                     "captured/0 dropped"));
+    EXPECT_EQ(run.target_state.execute_count, 4u);
+    EXPECT_EQ(run.target_state.last_call_count, 1u);
+    EXPECT_EQ(run.oracle_state.execute_count, 0u);
+  }
   loom_module_free(module);
 }
 

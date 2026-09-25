@@ -930,6 +930,7 @@ int iree_test_loom_main(int argc, char** argv,
       if (iree_status_is_ok(status)) {
         device_event_capture_initialized = true;
         execution_options.device_event_capture = &device_event_capture;
+        scenario_execution_options.device_event_capture = &device_event_capture;
         loom_run_hal_testbench_context_set_device_event_sink(
             &hal_context,
             loom_testbench_device_event_capture_sink(&device_event_capture));

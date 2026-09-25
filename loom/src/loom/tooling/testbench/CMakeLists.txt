@@ -116,8 +116,10 @@ loom_cc_library(
   SRCS
     "scenario_executor.c"
   DEPS
+    ::device_event
     ::expectation
     ::scenario_values
+    ::source_report
     ::testbench
     ::value_materializer
     iree::base
@@ -138,6 +140,8 @@ loom_cc_library(
     iree::base
     iree::base::threading
     iree::hal
+    loom::util::json
+    loom::util::stream
   PUBLIC
 )
 

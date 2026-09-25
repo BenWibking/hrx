@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <string.h>
 
+#include "loom/tooling/testbench/source_report.h"
 #include "loom/util/json.h"
 
 static void loom_testbench_prepared_product_deinitialize(
@@ -97,6 +98,7 @@ iree_status_t loom_testbench_prepare_scenario_configuration(
   *out_prepared = (loom_testbench_prepared_scenario_configuration_t){
       .configuration = configuration,
       .mode = mode,
+      .device_event_capture = options->device_event_capture,
       .host_allocator = host_allocator,
   };
   iree_status_t status = iree_ok_status();
@@ -227,6 +229,32 @@ static void loom_testbench_scenario_trial_executor_reset_calls(
   }
 }
 
+static uint8_t* loom_testbench_scenario_expected_device_events(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t call_index) {
+  return executor->expected_device_event_capacity == 0
+             ? NULL
+             : executor->expected_device_events +
+                   call_index * executor->expected_device_event_capacity;
+}
+
+static void loom_testbench_scenario_trial_executor_reset_events(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t call_count) {
+  if (executor->device_event_capture == NULL) {
+    return;
+  }
+  for (iree_host_size_t call_index = 0; call_index < call_count; ++call_index) {
+    loom_testbench_device_event_snapshot_deinitialize(
+        &executor->device_event_snapshots[call_index]);
+    if (executor->expected_device_event_capacity != 0) {
+      memset(
+          loom_testbench_scenario_expected_device_events(executor, call_index),
+          0, executor->expected_device_event_capacity);
+    }
+  }
+}
+
 iree_status_t loom_testbench_scenario_trial_executor_initialize(
     const loom_testbench_prepared_scenario_configuration_t* prepared,
     iree_host_size_t trial_index,
@@ -256,6 +284,10 @@ iree_status_t loom_testbench_scenario_trial_executor_initialize(
       .mode = prepared->mode,
       .materializer_options = *materializer_options,
       .host_allocator = prepared->host_allocator,
+      .device_event_capture =
+          prepared->mode == LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS
+              ? prepared->device_event_capture
+              : NULL,
       .batch_capacity = batch_capacity,
   };
   iree_status_t status = loom_testbench_scenario_allocate_array(
@@ -272,6 +304,32 @@ iree_status_t loom_testbench_scenario_trial_executor_initialize(
         out_executor->host_allocator, batch_capacity,
         sizeof(*out_executor->expectation_reports),
         (void**)&out_executor->expectation_reports);
+  }
+  if (iree_status_is_ok(status) &&
+      prepared->mode == LOOM_TESTBENCH_SCENARIO_EXECUTION_MODE_CORRECTNESS &&
+      out_executor->device_event_capture != NULL) {
+    status = loom_testbench_scenario_allocate_array(
+        out_executor->host_allocator, batch_capacity,
+        sizeof(*out_executor->device_event_snapshots),
+        (void**)&out_executor->device_event_snapshots);
+  }
+  if (iree_status_is_ok(status) && out_executor->device_event_capture != NULL &&
+      prepared_trial->trial_plan->action.expects_device_events) {
+    out_executor->expected_device_event_capacity =
+        out_executor->device_event_capture->record_capacity;
+    iree_host_size_t event_flag_count = 0;
+    if (!iree_host_size_checked_mul(
+            batch_capacity, out_executor->expected_device_event_capacity,
+            &event_flag_count)) {
+      status =
+          iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                           "scenario batch device-event flag count overflowed");
+    } else {
+      status = loom_testbench_scenario_allocate_array(
+          out_executor->host_allocator, event_flag_count,
+          sizeof(*out_executor->expected_device_events),
+          (void**)&out_executor->expected_device_events);
+    }
   }
   if (iree_status_is_ok(status)) {
     status = loom_testbench_scenario_allocate_array(
@@ -385,6 +443,13 @@ void loom_testbench_scenario_trial_executor_deinitialize(
     loom_testbench_scenario_trial_values_deinitialize(
         &executor->trial_values[call_index - 1]);
   }
+  for (iree_host_size_t call_index = executor->batch_capacity; call_index > 0;
+       --call_index) {
+    if (executor->device_event_snapshots != NULL) {
+      loom_testbench_device_event_snapshot_deinitialize(
+          &executor->device_event_snapshots[call_index - 1]);
+    }
+  }
   iree_allocator_free(executor->host_allocator, executor->oracle_results);
   iree_allocator_free(executor->host_allocator, executor->oracle_arguments);
   iree_allocator_free(executor->host_allocator,
@@ -395,6 +460,10 @@ void loom_testbench_scenario_trial_executor_deinitialize(
                       executor->target_call_parameters);
   iree_allocator_free(executor->host_allocator, executor->oracle_calls);
   iree_allocator_free(executor->host_allocator, executor->target_calls);
+  iree_allocator_free(executor->host_allocator,
+                      executor->expected_device_events);
+  iree_allocator_free(executor->host_allocator,
+                      executor->device_event_snapshots);
   iree_allocator_free(executor->host_allocator, executor->expectation_reports);
   iree_allocator_free(executor->host_allocator, executor->results);
   iree_allocator_free(executor->host_allocator, executor->trial_values);
@@ -484,6 +553,276 @@ static iree_status_t loom_testbench_scenario_execute_product(
       product->invocation, trial_values, use_oracle, call_count, calls);
 }
 
+static iree_status_t loom_testbench_scenario_materialize_trials(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t first_trial_ordinal, iree_host_size_t trial_count) {
+  for (iree_host_size_t call_index = 0; call_index < trial_count;
+       ++call_index) {
+    IREE_RETURN_IF_ERROR(loom_testbench_scenario_trial_values_materialize(
+        &executor->materializer_options, executor->configuration,
+        first_trial_ordinal + call_index, &executor->trial_values[call_index]));
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_testbench_scenario_device_event_total(
+    const loom_testbench_device_event_list_t* events,
+    iree_host_size_t* out_total) {
+  if (!iree_host_size_checked_add(events->count, events->dropped_count,
+                                  out_total)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "scenario device-event count overflowed");
+  }
+  return iree_ok_status();
+}
+
+static bool loom_testbench_scenario_device_event_key_equal(
+    const loom_testbench_device_event_record_t* lhs,
+    const loom_testbench_device_event_record_t* rhs) {
+  const iree_hal_device_event_t* lhs_event = &lhs->event;
+  const iree_hal_device_event_t* rhs_event = &rhs->event;
+  if (lhs_event->type != rhs_event->type ||
+      lhs_event->severity != rhs_event->severity ||
+      lhs_event->flags != rhs_event->flags ||
+      !iree_string_view_equal(lhs_event->source.driver_id,
+                              rhs_event->source.driver_id) ||
+      !iree_string_view_equal(lhs_event->source.device_id,
+                              rhs_event->source.device_id) ||
+      lhs_event->source.physical_device_ordinal !=
+          rhs_event->source.physical_device_ordinal ||
+      lhs_event->source.queue_ordinal != rhs_event->source.queue_ordinal ||
+      lhs_event->source.executable_id != rhs_event->source.executable_id ||
+      lhs_event->source.export_ordinal != rhs_event->source.export_ordinal ||
+      lhs->has_site != rhs->has_site) {
+    return false;
+  }
+  if (!lhs->has_site) {
+    return true;
+  }
+  return lhs->site.flags == rhs->site.flags &&
+         lhs->site.site_id == rhs->site.site_id &&
+         iree_string_view_equal(lhs->site.source_file, rhs->site.source_file) &&
+         lhs->site.start_line == rhs->site.start_line &&
+         lhs->site.start_column == rhs->site.start_column &&
+         lhs->site.end_line == rhs->site.end_line &&
+         lhs->site.end_column == rhs->site.end_column &&
+         iree_string_view_equal(lhs->site.function_name,
+                                rhs->site.function_name) &&
+         iree_string_view_equal(lhs->site.operation_name,
+                                rhs->site.operation_name);
+}
+
+static iree_host_size_t loom_testbench_scenario_device_event_key_count(
+    const loom_testbench_device_event_list_t* events,
+    const loom_testbench_device_event_record_t* key) {
+  iree_host_size_t count = 0;
+  for (iree_host_size_t i = 0; i < events->count; ++i) {
+    count += loom_testbench_scenario_device_event_key_equal(&events->records[i],
+                                                            key);
+  }
+  return count;
+}
+
+static iree_host_size_t loom_testbench_scenario_isolated_device_event_key_count(
+    const loom_testbench_device_event_snapshot_t* snapshots,
+    iree_host_size_t snapshot_count,
+    const loom_testbench_device_event_record_t* key) {
+  iree_host_size_t count = 0;
+  for (iree_host_size_t i = 0; i < snapshot_count; ++i) {
+    count += loom_testbench_scenario_device_event_key_count(
+        &snapshots[i].events, key);
+  }
+  return count;
+}
+
+static bool loom_testbench_scenario_device_events_reproduced(
+    const loom_testbench_device_event_list_t* batch_events,
+    const loom_testbench_device_event_snapshot_t* isolated_snapshots,
+    iree_host_size_t isolated_snapshot_count) {
+  for (iree_host_size_t i = 0; i < batch_events->count; ++i) {
+    const loom_testbench_device_event_record_t* key = &batch_events->records[i];
+    bool already_counted = false;
+    for (iree_host_size_t j = 0; j < i; ++j) {
+      already_counted |= loom_testbench_scenario_device_event_key_equal(
+          &batch_events->records[j], key);
+    }
+    if (already_counted) {
+      continue;
+    }
+    const iree_host_size_t batch_count =
+        loom_testbench_scenario_device_event_key_count(batch_events, key);
+    const iree_host_size_t isolated_count =
+        loom_testbench_scenario_isolated_device_event_key_count(
+            isolated_snapshots, isolated_snapshot_count, key);
+    if (batch_events->dropped_count == 0 ? isolated_count != batch_count
+                                         : isolated_count < batch_count) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static iree_status_t loom_testbench_scenario_isolated_device_event_counts(
+    const loom_testbench_device_event_snapshot_t* snapshots,
+    iree_host_size_t snapshot_count, iree_host_size_t* out_captured_count,
+    iree_host_size_t* out_dropped_count) {
+  *out_captured_count = 0;
+  *out_dropped_count = 0;
+  for (iree_host_size_t i = 0; i < snapshot_count; ++i) {
+    if (!iree_host_size_checked_add(*out_captured_count,
+                                    snapshots[i].events.count,
+                                    out_captured_count) ||
+        !iree_host_size_checked_add(*out_dropped_count,
+                                    snapshots[i].events.dropped_count,
+                                    out_dropped_count)) {
+      return iree_make_status(
+          IREE_STATUS_OUT_OF_RANGE,
+          "isolated scenario device-event count overflowed");
+    }
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_testbench_scenario_snapshot_device_events(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t call_index) {
+  return loom_testbench_device_event_capture_snapshot(
+      executor->device_event_capture, executor->host_allocator,
+      &executor->device_event_snapshots[call_index]);
+}
+
+static iree_status_t loom_testbench_scenario_execute_target_isolated(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t trial_count) {
+  const loom_testbench_prepared_product_t* target =
+      &executor->prepared_trial->target;
+  for (iree_host_size_t call_index = 0; call_index < trial_count;
+       ++call_index) {
+    loom_testbench_device_event_capture_reset(executor->device_event_capture);
+    IREE_RETURN_IF_ERROR(loom_testbench_scenario_execute_product(
+        target, &executor->trial_values[call_index], /*use_oracle=*/false,
+        /*call_count=*/1, &executor->target_calls[call_index]));
+    IREE_RETURN_IF_ERROR(
+        loom_testbench_scenario_snapshot_device_events(executor, call_index));
+  }
+  loom_testbench_device_event_capture_reset(executor->device_event_capture);
+  return iree_ok_status();
+}
+
+static iree_status_t loom_testbench_scenario_execute_target(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t first_trial_ordinal, iree_host_size_t trial_count) {
+  const loom_testbench_scenario_action_plan_t* action =
+      &executor->prepared_trial->trial_plan->action;
+  const loom_testbench_prepared_product_t* target =
+      &executor->prepared_trial->target;
+  if (executor->device_event_capture == NULL) {
+    return loom_testbench_scenario_execute_product(
+        target, executor->trial_values, /*use_oracle=*/false, trial_count,
+        executor->target_calls);
+  }
+  if (action->expects_device_events) {
+    return loom_testbench_scenario_execute_target_isolated(executor,
+                                                           trial_count);
+  }
+
+  loom_testbench_device_event_capture_reset(executor->device_event_capture);
+  IREE_RETURN_IF_ERROR(loom_testbench_scenario_execute_product(
+      target, executor->trial_values, /*use_oracle=*/false, trial_count,
+      executor->target_calls));
+  loom_testbench_device_event_list_t batch_events = {0};
+  loom_testbench_device_event_capture_events(executor->device_event_capture,
+                                             &batch_events);
+  const bool requires_attribution =
+      batch_events.dropped_count != 0 ||
+      loom_testbench_device_event_unhandled_error_count(&batch_events, NULL) !=
+          0;
+  if (!requires_attribution) {
+    loom_testbench_device_event_capture_reset(executor->device_event_capture);
+    return iree_ok_status();
+  }
+
+  loom_testbench_device_event_snapshot_t batch_snapshot = {0};
+  iree_status_t status = loom_testbench_device_event_capture_snapshot(
+      executor->device_event_capture, executor->host_allocator,
+      &batch_snapshot);
+  iree_host_size_t batch_event_total = 0;
+  if (iree_status_is_ok(status)) {
+    status = loom_testbench_scenario_device_event_total(&batch_snapshot.events,
+                                                        &batch_event_total);
+  }
+  if (iree_status_is_ok(status)) {
+    loom_testbench_scenario_trial_executor_reset_calls(executor, trial_count);
+    status = loom_testbench_scenario_materialize_trials(
+        executor, first_trial_ordinal, trial_count);
+  }
+  if (iree_status_is_ok(status)) {
+    status =
+        loom_testbench_scenario_execute_target_isolated(executor, trial_count);
+  }
+
+  iree_host_size_t isolated_captured_count = 0;
+  iree_host_size_t isolated_dropped_count = 0;
+  if (iree_status_is_ok(status)) {
+    status = loom_testbench_scenario_isolated_device_event_counts(
+        executor->device_event_snapshots, trial_count, &isolated_captured_count,
+        &isolated_dropped_count);
+  }
+  iree_host_size_t isolated_event_total = 0;
+  if (iree_status_is_ok(status) &&
+      !iree_host_size_checked_add(isolated_captured_count,
+                                  isolated_dropped_count,
+                                  &isolated_event_total)) {
+    status =
+        iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                         "isolated scenario device-event count overflowed");
+  }
+  if (iree_status_is_ok(status) &&
+      (isolated_event_total != batch_event_total ||
+       !loom_testbench_scenario_device_events_reproduced(
+           &batch_snapshot.events, executor->device_event_snapshots,
+           trial_count))) {
+    status = iree_make_status(
+        IREE_STATUS_ABORTED,
+        "target batch device events were not reproduced by deterministic "
+        "single-trial replay of configuration %zu trial domain %zu range "
+        "[%zu, %zu) (batch %zu captured/%zu dropped, replay %zu captured/%zu "
+        "dropped); refusing to guess event ownership",
+        executor->configuration->configuration_ordinal,
+        executor->trial_values[0].identity.trial_index, first_trial_ordinal,
+        first_trial_ordinal + trial_count, batch_snapshot.events.count,
+        batch_snapshot.events.dropped_count, isolated_captured_count,
+        isolated_dropped_count);
+  }
+  loom_testbench_device_event_snapshot_deinitialize(&batch_snapshot);
+  return status;
+}
+
+static iree_status_t loom_testbench_scenario_validate_oracle_device_events(
+    loom_testbench_scenario_trial_executor_t* executor,
+    iree_host_size_t first_trial_ordinal, iree_host_size_t trial_count) {
+  if (executor->device_event_capture == NULL) {
+    return iree_ok_status();
+  }
+  loom_testbench_device_event_list_t events = {0};
+  loom_testbench_device_event_capture_events(executor->device_event_capture,
+                                             &events);
+  const iree_host_size_t error_count =
+      loom_testbench_device_event_unhandled_error_count(&events, NULL);
+  if (events.dropped_count != 0 || error_count != 0) {
+    return iree_make_status(
+        IREE_STATUS_ABORTED,
+        "oracle profile emitted %zu error event(s) and dropped %zu event(s) "
+        "while executing configuration %zu trial domain %zu range [%zu, %zu)",
+        error_count, events.dropped_count,
+        executor->configuration->configuration_ordinal,
+        executor->trial_values[0].identity.trial_index, first_trial_ordinal,
+        first_trial_ordinal + trial_count);
+  }
+  loom_testbench_device_event_capture_reset(executor->device_event_capture);
+  return iree_ok_status();
+}
+
 iree_status_t loom_testbench_run_scenario_trial_batch(
     loom_testbench_scenario_trial_executor_t* executor,
     iree_host_size_t first_trial_ordinal, iree_host_size_t trial_count,
@@ -511,6 +850,7 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
         trial->trial_count);
   }
   loom_testbench_scenario_trial_executor_reset_calls(executor, trial_count);
+  loom_testbench_scenario_trial_executor_reset_events(executor, trial_count);
 
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t call_index = 0;
@@ -519,14 +859,14 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
       loom_testbench_expectation_report_reset(
           &executor->expectation_reports[call_index]);
     }
-    status = loom_testbench_scenario_trial_values_materialize(
-        &executor->materializer_options, executor->configuration,
-        first_trial_ordinal + call_index, &executor->trial_values[call_index]);
   }
   if (iree_status_is_ok(status) && trial_count != 0) {
-    status = loom_testbench_scenario_execute_product(
-        &executor->prepared_trial->target, executor->trial_values,
-        /*use_oracle=*/false, trial_count, executor->target_calls);
+    status = loom_testbench_scenario_materialize_trials(
+        executor, first_trial_ordinal, trial_count);
+  }
+  if (iree_status_is_ok(status) && trial_count != 0) {
+    status = loom_testbench_scenario_execute_target(
+        executor, first_trial_ordinal, trial_count);
     if (!iree_status_is_ok(status)) {
       status = iree_status_annotate_f(
           status, "executing target profile '%.*s'",
@@ -546,6 +886,11 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
           executor->prepared_trial->oracle.profile.data);
     }
   }
+  if (iree_status_is_ok(status) && trial_count != 0 &&
+      trial->action.kind == LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE) {
+    status = loom_testbench_scenario_validate_oracle_device_events(
+        executor, first_trial_ordinal, trial_count);
+  }
 
   for (iree_host_size_t call_index = 0;
        iree_status_is_ok(status) && call_index < trial_count; ++call_index) {
@@ -557,16 +902,39 @@ iree_status_t loom_testbench_run_scenario_trial_batch(
         .trial_plan = trial,
         .passed = true,
     };
+    loom_testbench_sample_observations_t observations =
+        loom_testbench_sample_observations_empty();
+    if (executor->device_event_capture != NULL) {
+      loom_testbench_device_event_snapshot_t* snapshot =
+          &executor->device_event_snapshots[call_index];
+      uint8_t* expected_device_events =
+          loom_testbench_scenario_expected_device_events(executor, call_index);
+      observations.device_events = &snapshot->events;
+      observations.expected_device_events = expected_device_events;
+      observations.expected_device_event_capacity =
+          executor->expected_device_event_capacity;
+      result->device_events = &snapshot->events;
+      result->expected_device_events = expected_device_events;
+    }
     if (trial->action.kind == LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE) {
       loom_testbench_expectation_report_t* report =
           &executor->expectation_reports[call_index];
       status = loom_testbench_evaluate_scenario_action_expectations(
           &trial->action, &executor->trial_values[call_index].target,
-          &executor->trial_values[call_index].oracle,
-          /*observations=*/NULL, report);
-      result->passed = report->failure_count == 0;
+          &executor->trial_values[call_index].oracle, &observations, report);
       result->expectation_report = report;
     }
+    if (iree_status_is_ok(status) && result->device_events != NULL) {
+      result->unhandled_device_event_count =
+          loom_testbench_device_event_unhandled_error_count(
+              result->device_events, result->expected_device_events);
+    }
+    result->passed = iree_status_is_ok(status) &&
+                     (result->expectation_report == NULL ||
+                      result->expectation_report->failure_count == 0) &&
+                     (result->device_events == NULL ||
+                      (result->device_events->dropped_count == 0 &&
+                       result->unhandled_device_event_count == 0));
   }
 
   if (!iree_status_is_ok(status)) {
@@ -684,6 +1052,18 @@ iree_status_t loom_testbench_scenario_trial_result_write_json(
         loom_json_object_begin_field(&object, IREE_SV("expectations")));
     IREE_RETURN_IF_ERROR(loom_testbench_expectation_report_write_json(
         result->expectation_report, stream));
+  }
+  if (result->device_events != NULL &&
+      (result->unhandled_device_event_count != 0 ||
+       result->device_events->dropped_count != 0)) {
+    IREE_RETURN_IF_ERROR(
+        loom_json_object_begin_field(&object, IREE_SV("device_events")));
+    IREE_RETURN_IF_ERROR(loom_testbench_device_event_failure_write_json(
+        result->device_events, result->expected_device_events,
+        result->unhandled_device_event_count, stream));
+    IREE_RETURN_IF_ERROR(loom_testbench_write_source_location_json(
+        result->trial_plan->action.target.module,
+        result->trial_plan->action.op->location, &object));
   }
   return loom_json_object_end(&object);
 }
