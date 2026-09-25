@@ -21,6 +21,7 @@ from loom.target.contracts import (
     GuardKind,
     LowerRule,
     SourceValueKind,
+    TypePattern,
     compile_lower_rule_set,
 )
 
@@ -53,6 +54,19 @@ def _rule_descriptor_keys(
     return tuple(
         compiled.emits[emit_index].descriptor.key
         for emit_index in range(rule.emit_start, rule.emit_start + rule.emit_count)
+    )
+
+
+def _rule_type_patterns(
+    compiled: CompiledLowerRuleSet,
+    rule: LowerRule,
+) -> tuple[TypePattern, ...]:
+    return tuple(
+        compiled.type_patterns[guard.type_pattern_index].type_pattern
+        for guard in compiled.guards[
+            rule.guard_start : rule.guard_start + rule.guard_count
+        ]
+        if guard.kind == GuardKind.VALUE_TYPE
     )
 
 
@@ -286,6 +300,57 @@ def test_packed_f32_arithmetic_rules_publish_native_pk_ops() -> None:
     ):
         positions = _descriptor_sequence_positions(compiled, source_op)
         assert positions[(packed_descriptor,)] < positions[(scalar_descriptor,)]
+
+
+def test_32bit_vector_shape_contracts_match_lane_semantics() -> None:
+    compiled = _compiled_arithmetic_rules()
+    rank1_i32_source_ops: set[Op] = set()
+    rank1_f32_descriptors: set[str] = set()
+    static_i32_source_ops: set[Op] = set()
+    static_f32_source_ops: set[Op] = set()
+
+    for rule in compiled.rules:
+        for type_pattern in set(_rule_type_patterns(compiled, rule)):
+            if type_pattern.kind != "vector":
+                continue
+            if type_pattern.minimum_lanes is not None:
+                if type_pattern.element == "i32":
+                    rank1_i32_source_ops.add(rule.source_op)
+                    assert rule.emit_count == 0
+                elif type_pattern.element == "f32":
+                    descriptor_keys = _rule_descriptor_keys(compiled, rule)
+                    assert descriptor_keys
+                    rank1_f32_descriptors.update(descriptor_keys)
+            elif type_pattern.minimum_static_elements is not None:
+                if type_pattern.element == "i32":
+                    static_i32_source_ops.add(rule.source_op)
+                elif type_pattern.element == "f32":
+                    static_f32_source_ops.add(rule.source_op)
+
+    assert rank1_i32_source_ops == {
+        vector.vector_bitpack,
+        vector.vector_bitunpacks,
+        vector.vector_bitunpacku,
+    }
+    assert rank1_f32_descriptors == {
+        "amdgpu.v_pk_add_f32",
+        "amdgpu.v_pk_fma_f32",
+        "amdgpu.v_pk_mul_f32",
+    }
+    assert {
+        vector.vector_addi,
+        vector.vector_bitfield_extractu,
+        vector.vector_fptosi,
+        vector.vector_sitofp,
+    } <= static_i32_source_ops
+    assert {
+        vector.vector_addf,
+        vector.vector_clampf,
+        vector.vector_divf,
+        vector.vector_exp2f,
+        vector.vector_fmaf,
+        vector.vector_mulf,
+    } <= static_f32_source_ops
 
 
 def test_vector_extract_rules_publish_contract_only_shape_rows() -> None:
