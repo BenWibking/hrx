@@ -149,6 +149,8 @@ Its measured 2.05 MB native instruction stream has 3,805 branches and required
 23,185 branch islands. The current source-priority selection applies to all
 AMDGPU kernels; its broader performance effect has not been qualified. Advance
 compilation still takes minutes and emits thousands of spill warnings.
+The [gfx942 Loom versus HIP spill-traffic comparison](SPILL-TRAFFIC-COMPARISON.md)
+records static scratch ISA counts from a ROCm 10.0.0 HIP build.
 
 ```sh
 loom-compile /tmp/chemistry.loom --product=kernel \

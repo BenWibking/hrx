@@ -1,0 +1,9 @@
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    g++ make ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN python -m pip install --no-cache-dir \
+    --index-url https://stable.repo.amd.com/rocm/whl-next/ \
+    'rocm[libraries,devel,device-gfx942]==10.0.0'
+
+WORKDIR /work
