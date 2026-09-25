@@ -1562,7 +1562,7 @@ iree_status_t loom_testbench_plan_module(
         case_plan->op = op;
         case_plan->name = loom_testbench_symbol_name(module, case_plan->symbol);
         case_plan->is_public =
-            loom_check_case_visibility(op) == LOOM_CHECK_CASE_VISIBILITY_PUBLIC;
+            loom_check_case_visibility(op) == LOOM_CHECK_VISIBILITY_PUBLIC;
         ++case_count;
       } else if (loom_check_benchmark_isa(op)) {
         loom_testbench_benchmark_plan_t* benchmark =

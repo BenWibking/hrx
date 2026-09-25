@@ -41,8 +41,6 @@ typedef struct loom_function_contract_boundary_t {
   uint16_t argument_count;
   // Actual result value IDs in signature order.
   const loom_value_id_t* result_ids;
-  // Actual result types when the boundary retains no SSA result IDs.
-  const loom_type_t* result_types;
   // Number of actual results.
   uint16_t result_count;
   // Diagnostic field kind for actual arguments.
@@ -58,9 +56,7 @@ typedef struct loom_function_contract_boundary_t {
 static loom_type_t loom_function_contract_boundary_result_type(
     const loom_module_t* module,
     const loom_function_contract_boundary_t* boundary, uint16_t index) {
-  return boundary->result_types
-             ? boundary->result_types[index]
-             : loom_module_value_type(module, boundary->result_ids[index]);
+  return loom_module_value_type(module, boundary->result_ids[index]);
 }
 
 static bool loom_function_contract_signature_contains_value(
@@ -423,7 +419,7 @@ static iree_status_t loom_function_contract_verify_boundary(
   const loom_type_value_remap_t result_remap = {
       .source_values = signature->result_ids,
       .target_values = boundary->result_ids,
-      .count = boundary->result_ids ? result_count : 0,
+      .count = result_count,
       .flags = LOOM_TYPE_VALUE_REMAP_FLAG_SOURCE_DEFINITION_SLICE,
   };
   // FuncLike arguments form one definition slice. Checking at most two IDs
@@ -520,25 +516,6 @@ iree_status_t loom_function_call_contract_verify(
       .result_field_kind = LOOM_DIAGNOSTIC_FIELD_RESULT,
       .argument_prefix = "operand",
       .result_prefix = "result",
-  };
-  return loom_function_contract_verify_symbol_boundary(module, callee,
-                                                       &boundary, emitter);
-}
-
-iree_status_t loom_function_call_type_contract_verify(
-    const loom_module_t* module, const loom_op_t* op, loom_symbol_ref_t callee,
-    loom_value_slice_t operands, const loom_type_t* result_types,
-    uint16_t result_count, iree_diagnostic_emitter_t emitter) {
-  const loom_function_contract_boundary_t boundary = {
-      .op = op,
-      .argument_ids = operands.values,
-      .argument_count = operands.count,
-      .result_types = result_types,
-      .result_count = result_count,
-      .argument_field_kind = LOOM_DIAGNOSTIC_FIELD_OPERAND,
-      .result_field_kind = LOOM_DIAGNOSTIC_FIELD_NONE,
-      .argument_prefix = "operand",
-      .result_prefix = "declared result",
   };
   return loom_function_contract_verify_symbol_boundary(module, callee,
                                                        &boundary, emitter);
