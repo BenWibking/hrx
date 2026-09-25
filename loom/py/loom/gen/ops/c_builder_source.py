@@ -1026,7 +1026,13 @@ def _generate_builder_implementation(
         if end_attr_index == 0xFF:
             continue
         cumulative_count = " + ".join(func_arg_count_terms)
-        lines.append(f"  loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
+        end_attr = op.attrs[end_attr_index]
+        if end_attr.optional:
+            lines.append(f"  if (({cumulative_count}) != 0) {{")
+            lines.append(f"    loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
+            lines.append("  }")
+        else:
+            lines.append(f"  loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
 
     # BlockArgs boundary attributes are derived from each concatenated region
     # entry group rather than exposed as redundant builder parameters.
@@ -1041,7 +1047,13 @@ def _generate_builder_implementation(
         if end_attr_index == 0xFF:
             continue
         cumulative_count = " + ".join(block_arg_count_terms)
-        lines.append(f"  loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
+        end_attr = op.attrs[end_attr_index]
+        if end_attr.optional:
+            lines.append(f"  if (({cumulative_count}) != 0) {{")
+            lines.append(f"    loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
+            lines.append("  }")
+        else:
+            lines.append(f"  loom_op_attrs(*out_op)[{end_attr_index}] = loom_attr_i64((int64_t)({cumulative_count}));")
 
     # Define result values in the module's value table.
     for param in params:

@@ -304,7 +304,11 @@ def translate_format_elements(op: Op, format_elements: tuple[FormatElement, ...]
                     _field_kind, index = resolve_field(name)
                     elements.append(("LOOM_FORMAT_KIND_PREDICATE_LIST", index, "0"))
 
-                case OptionalGroup(elements=inner, anchor=anchor):
+                case OptionalGroup(
+                    elements=inner,
+                    anchor=anchor,
+                    inverted=inverted,
+                ):
                     # Resolve anchor to determine category.
                     anchor_desc = layout.fields.get(anchor)
                     if anchor_desc is None:
@@ -331,7 +335,7 @@ def translate_format_elements(op: Op, format_elements: tuple[FormatElement, ...]
                     elements.append(("LOOM_FORMAT_KIND_OPTIONAL_GROUP", 0, "0"))
                     walk(inner)
                     inner_count = len(elements) - inner_start - 1
-                    data = f"({inner_count} << 2) | {anchor_category}"
+                    data = f"LOOM_FORMAT_OPTIONAL_GROUP_DATA({inner_count}, {anchor_category}, true)" if inverted else f"({inner_count} << 2) | {anchor_category}"
                     elements[inner_start] = (
                         "LOOM_FORMAT_KIND_OPTIONAL_GROUP",
                         anchor_index,

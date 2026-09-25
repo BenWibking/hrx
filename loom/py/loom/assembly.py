@@ -614,9 +614,9 @@ class PredicateList:
 class OptionalGroup:
     """A conditional group of format elements.
 
-    The elements are printed/parsed only when the anchor field is
-    present (non-empty, non-None, non-zero-length). Used for optional
-    parts of an op's syntax:
+    The elements are printed/parsed when the anchor field is present
+    (non-empty, non-None, non-zero-length), or when it is absent if
+    ``inverted`` is true. Used for conditional parts of an op's syntax:
 
       - else region on scf.if
       - iter_args on scf.for
@@ -630,13 +630,19 @@ class OptionalGroup:
 
     elements: tuple[FormatElement, ...]
     anchor: str
+    inverted: bool
 
     def __init__(
-        self, elements: list[FormatElement] | tuple[FormatElement, ...], anchor: str
+        self,
+        elements: list[FormatElement] | tuple[FormatElement, ...],
+        anchor: str,
+        *,
+        inverted: bool = False,
     ) -> None:
         # Accept list for ergonomics, store as tuple for immutability.
         object.__setattr__(self, "elements", tuple(elements))
         object.__setattr__(self, "anchor", anchor)
+        object.__setattr__(self, "inverted", inverted)
 
 
 @dataclass(frozen=True, slots=True)

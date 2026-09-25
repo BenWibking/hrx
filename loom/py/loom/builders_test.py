@@ -15,7 +15,7 @@ import pytest
 # dialect imports belong in dialect-specific importer/builder coverage, not here.
 import loom
 import loom.dialect as dialect
-from loom.assembly import Attr
+from loom.assembly import Attr, BlockArgs, Region
 from loom.builder import ValueRef, tied
 from loom.builders import LoomBuilder, module_builder
 from loom.builtin_types import ALL_BUILTIN_TYPES
@@ -28,7 +28,16 @@ from loom.dialect.test import (
     test_options_attr,
     test_tile_attr,
 )
-from loom.dsl import AttrDef, Dialect, EnumCase, EnumDef, Op, Result, TypeConstraint
+from loom.dsl import (
+    AttrDef,
+    Dialect,
+    EnumCase,
+    EnumDef,
+    Op,
+    RegionDef,
+    Result,
+    TypeConstraint,
+)
 from loom.format.text.printer import Printer
 from loom.ir import (
     F32,
@@ -406,6 +415,31 @@ def test_dynamic_builder_concatenates_projected_block_argument_groups() -> None:
         F32,
         INDEX,
     ]
+
+
+def test_dynamic_builder_omits_empty_optional_block_argument_boundary() -> None:
+    op = Op(
+        "test.optional_block_arg_groups",
+        group=Dialect("test"),
+        attrs=[AttrDef("actual_count", "i64", optional=True)],
+        regions=[RegionDef("body")],
+        format=[
+            BlockArgs("body", group="actual", end_attr="actual_count"),
+            BlockArgs("body", group="expected", start_attr="actual_count"),
+            Region("body"),
+        ],
+    )
+    block = Block()
+    _module, builder = module_builder(insertion_block=block, ops=[op])
+
+    builder.test.optional_block_arg_groups(
+        actual_args=[],
+        expected_args=[("expected", F32)],
+    )
+
+    operation = block.ops[0]
+    assert "actual_count" not in operation.attributes
+    assert len(operation.regions[0].blocks[0].arg_ids) == 1
 
 
 def test_dynamic_builder_constructs_region_bearing_scf_for() -> None:

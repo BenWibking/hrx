@@ -491,10 +491,10 @@ def _print_descriptor_backed_type(
                     stream.emit("(")
                     walk(inner)
                     stream.emit(")")
-                case OptionalGroup(elements=inner, anchor=anchor):
+                case OptionalGroup(elements=inner, anchor=anchor, inverted=inverted):
                     parameter = type_def.param(anchor)
                     assert isinstance(parameter, AttrDef)
-                    if has(parameter):
+                    if has(parameter) != inverted:
                         walk(inner)
                 case Glue():
                     stream.set_glue()
@@ -2142,8 +2142,8 @@ class Printer:
                             _format_predicate_list(predicates, self._value_name)
                         )
 
-                case OptionalGroup(elements=inner, anchor=anchor):
-                    if fields.is_present(anchor):
+                case OptionalGroup(elements=inner, anchor=anchor, inverted=inverted):
+                    if fields.is_present(anchor) != inverted:
                         stream = self._walk_format_inline(
                             inner,
                             op_decl,
@@ -2383,6 +2383,10 @@ class Printer:
         arg_value_ids = list(entry_block.arg_ids) if entry_block else []
         start = fields.attr(start_attr) if start_attr is not None else 0
         end = fields.attr(end_attr) if end_attr is not None else len(arg_value_ids)
+        if start is None:
+            start = 0
+        if end is None:
+            end = 0
         if (
             not isinstance(start, int)
             or not isinstance(end, int)

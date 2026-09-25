@@ -200,7 +200,7 @@ static iree_status_t loom_parse_format_optional_group(
     loom_parser_t* parser, const loom_op_vtable_t* vtable, loom_format_t format,
     const loom_format_element_t* element, uint16_t element_index,
     const loom_parsed_op_t* parsed, uint16_t* out_skip_count) {
-  uint16_t skip_count = element->data >> 2;
+  uint16_t skip_count = LOOM_FORMAT_OPTIONAL_GROUP_SKIP_COUNT(element->data);
   uint8_t anchor_category = element->data & 3;
   bool present = false;
 

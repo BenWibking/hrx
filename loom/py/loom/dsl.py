@@ -4893,10 +4893,10 @@ def _validate_block_args_partitions(
         if element.end_attr is None:
             continue
         attr = attrs_by_name.get(element.end_attr)
-        if attr is None or attr.attr_type != ATTR_TYPE_I64 or attr.optional:
+        if attr is None or attr.attr_type != ATTR_TYPE_I64:
             raise ValueError(
                 f"Op '{op_name}': BlockArgs boundary '{element.end_attr}' must "
-                "name a required i64 attribute"
+                "name an i64 attribute"
             )
 
 

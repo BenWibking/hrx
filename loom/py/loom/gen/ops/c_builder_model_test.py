@@ -69,6 +69,32 @@ def test_projected_block_argument_builders_derive_group_boundary() -> None:
     assert ("loom_op_attrs(*out_op)[0] = loom_attr_i64((int64_t)(actual_arg_types_count));") in source
 
 
+def test_projected_block_argument_builders_omit_empty_optional_boundary() -> None:
+    op = Op(
+        "test.partitioned_region",
+        group=Dialect("test"),
+        attrs=[AttrDef("actual_count", "i64", optional=True)],
+        regions=[RegionDef("body")],
+        format=[
+            BlockArgs(
+                "body",
+                group="actual",
+                end_attr="actual_count",
+            ),
+            BlockArgs(
+                "body",
+                group="expected",
+                start_attr="actual_count",
+            ),
+            Region("body"),
+        ],
+    )
+
+    source = generate_builders_c("test", [op])
+    assert "if ((actual_arg_types_count) != 0)" in source
+    assert ("loom_op_attrs(*out_op)[0] = loom_attr_i64((int64_t)(actual_arg_types_count));") in source
+
+
 def test_optional_aggregates_have_explicit_presence() -> None:
     op = Op(
         "test.attrs",

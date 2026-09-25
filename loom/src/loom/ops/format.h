@@ -66,8 +66,8 @@ enum loom_format_kind_e {
   // Where-clause predicates: [mul(%M, 16), ...].
   LOOM_FORMAT_KIND_PREDICATE_LIST = 14,
   // Optional group marker. field_index = anchor field index.
-  // data = (skip_count << 2) | anchor_category.
-  // The walker skips |skip_count| elements when the anchor is absent.
+  // data = LOOM_FORMAT_OPTIONAL_GROUP_DATA. The walker skips |skip_count|
+  // elements when the anchor presence does not match the group polarity.
   LOOM_FORMAT_KIND_OPTIONAL_GROUP = 15,
   // Suppress space before the next token.
   LOOM_FORMAT_KIND_GLUE = 16,
@@ -163,6 +163,21 @@ enum loom_format_kind_e {
   LOOM_FORMAT_KIND_ALIGNED_REFS = 32,
 };
 typedef uint8_t loom_format_kind_t;
+
+// The high bit distinguishes groups selected by an absent anchor. Remaining
+// bits hold the child count and two-bit anchor category.
+#define LOOM_FORMAT_OPTIONAL_GROUP_INVERTED ((uint16_t)(1u << 15))
+#define LOOM_FORMAT_OPTIONAL_GROUP_SKIP_MASK \
+  ((uint16_t)~LOOM_FORMAT_OPTIONAL_GROUP_INVERTED)
+#define LOOM_FORMAT_OPTIONAL_GROUP_DATA(skip_count, anchor_category, inverted) \
+  ((uint16_t)((((uint16_t)(skip_count) << 2) &                                 \
+               LOOM_FORMAT_OPTIONAL_GROUP_SKIP_MASK) |                         \
+              (uint16_t)(anchor_category) |                                    \
+              ((inverted) ? LOOM_FORMAT_OPTIONAL_GROUP_INVERTED : 0u)))
+#define LOOM_FORMAT_OPTIONAL_GROUP_SKIP_COUNT(data) \
+  ((uint16_t)(((data) & LOOM_FORMAT_OPTIONAL_GROUP_SKIP_MASK) >> 2))
+#define LOOM_FORMAT_OPTIONAL_GROUP_IS_INVERTED(data) \
+  iree_any_bit_set((data), LOOM_FORMAT_OPTIONAL_GROUP_INVERTED)
 
 // Individual flag bits packed into INDEX_LIST format element data.
 enum loom_format_index_list_data_bits_e {

@@ -266,8 +266,14 @@ class TestOptionalGroup:
     def test_construct_from_list(self) -> None:
         opt = OptionalGroup([kw("else"), Region("else_region")], anchor="else_region")
         assert opt.anchor == "else_region"
+        assert not opt.inverted
         assert isinstance(opt.elements, tuple)
         assert len(opt.elements) == 2
+
+    def test_construct_inverted(self) -> None:
+        opt = OptionalGroup([LPAREN, RPAREN], anchor="results", inverted=True)
+        assert opt.anchor == "results"
+        assert opt.inverted
 
     def test_construct_from_tuple(self) -> None:
         opt = OptionalGroup((COMMA, COLON), anchor="x")

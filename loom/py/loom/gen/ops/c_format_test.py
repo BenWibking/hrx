@@ -8,7 +8,7 @@ from itertools import permutations
 
 import pytest
 
-from loom.assembly import AssemblyFormat, Attr, BindingList, BlockArgs, Clause, OptionalGroup, Ref, Refs, Region
+from loom.assembly import LPAREN, RPAREN, AssemblyFormat, Attr, BindingList, BlockArgs, Clause, OptionalGroup, Ref, Refs, Region
 from loom.dsl import ATTR_TYPE_I64, INTEGER, AttrDef, Dialect, Op, Operand, RegionDef
 from loom.gen.ops.c_format import region_entry_args_declared_by_parent, translate_format_elements
 from loom.gen.ops.c_metadata_tables import generate_tables_c
@@ -109,6 +109,30 @@ def test_projected_block_arguments_encode_signature_boundaries() -> None:
             "LOOM_FORMAT_BLOCK_ARGS_DATA(0, 255)",
         ),
         ("LOOM_FORMAT_KIND_REGION", 0, "LOOM_REGION_SYNTAX_DEFAULT"),
+    ]
+
+
+def test_inverted_optional_group_encodes_anchor_polarity() -> None:
+    op = Op(
+        "test.optional_alternative",
+        group=Dialect("test"),
+        attrs=[AttrDef("count", ATTR_TYPE_I64, optional=True)],
+        format=[
+            OptionalGroup([Attr("count")], anchor="count"),
+            OptionalGroup([LPAREN, RPAREN], anchor="count", inverted=True),
+        ],
+    )
+
+    assert translate_format_elements(op) == [
+        ("LOOM_FORMAT_KIND_OPTIONAL_GROUP", 0, "(1 << 2) | 1"),
+        ("LOOM_FORMAT_KIND_ATTR_VALUE", 0, "0"),
+        (
+            "LOOM_FORMAT_KIND_OPTIONAL_GROUP",
+            0,
+            "LOOM_FORMAT_OPTIONAL_GROUP_DATA(2, 1, true)",
+        ),
+        ("LOOM_FORMAT_KIND_KEYWORD", 0, "LOOM_KW_LPAREN"),
+        ("LOOM_FORMAT_KIND_KEYWORD", 0, "LOOM_KW_RPAREN"),
     ]
 
 

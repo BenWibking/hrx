@@ -3593,6 +3593,28 @@ class TestSymbolKernelContract:
 
         assert op.attr("actual_count") is not None
 
+    def test_region_signature_partition_allows_optional_boundary(self) -> None:
+        op = Op(
+            "test.partitioned_region",
+            attrs=[AttrDef("actual_count", "i64", optional=True)],
+            regions=[RegionDef("body")],
+            format=[
+                BlockArgs(
+                    "body",
+                    group="actual",
+                    end_attr="actual_count",
+                ),
+                BlockArgs(
+                    "body",
+                    group="expected",
+                    start_attr="actual_count",
+                ),
+                Region("body"),
+            ],
+        )
+
+        assert op.attr("actual_count") is not None
+
     def test_region_signature_partition_requires_matching_boundaries(self) -> None:
         with _raises(ValueError, match="must use 'actual_count'"):
             Op(
@@ -3630,7 +3652,7 @@ class TestSymbolKernelContract:
             )
 
     def test_region_signature_partition_requires_i64_boundary(self) -> None:
-        with _raises(ValueError, match="must name a required i64 attribute"):
+        with _raises(ValueError, match="must name an i64 attribute"):
             Op(
                 "test.partitioned_region",
                 attrs=[AttrDef("actual_count", "string")],

@@ -277,11 +277,23 @@ class OpCallable:
                     region_args = block_args_by_region.setdefault(region_field, [])
                     region_args.extend(value or [])
                     if param.end_attr_field is not None:
-                        attributes[param.end_attr_field] = len(region_args)
+                        boundary_attr = op.attr(param.end_attr_field)
+                        if (
+                            region_args
+                            or boundary_attr is None
+                            or not boundary_attr.optional
+                        ):
+                            attributes[param.end_attr_field] = len(region_args)
                 case BuilderParamKind.FUNC_ARGS:
                     func_args.extend(value or [])
                     if param.end_attr_field is not None:
-                        attributes[param.end_attr_field] = len(func_args)
+                        boundary_attr = op.attr(param.end_attr_field)
+                        if (
+                            func_args
+                            or boundary_attr is None
+                            or not boundary_attr.optional
+                        ):
+                            attributes[param.end_attr_field] = len(func_args)
                 case BuilderParamKind.PREDICATE_LIST:
                     if value:
                         attributes[param.name] = value
