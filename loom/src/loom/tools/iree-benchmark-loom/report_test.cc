@@ -183,6 +183,47 @@ TEST(BenchmarkReportTest, WritesScenarioPlanDomain) {
   iree_string_builder_deinitialize(&builder);
 }
 
+TEST(BenchmarkReportTest, WritesScenarioResultCoordinate) {
+  loom_testbench_benchmark_plan_t benchmark_plan = {};
+  benchmark_plan.name = IREE_SV("scenario_throughput");
+  loom_testbench_scenario_plan_t scenario_plan = {};
+  scenario_plan.name = IREE_SV("scenario");
+  iree_benchmark_loom_benchmark_policy_t policy = {};
+  policy.measure = IREE_SV("dispatch_complete");
+  iree_benchmark_loom_benchmark_result_t result = {};
+  result.executed = true;
+  result.passed = true;
+  result.has_benchmark_sample_ordinal = true;
+  result.benchmark_sample_ordinal = 17;
+  result.has_scenario_coordinate = true;
+  result.scenario_coordinate = {2, 3, 5};
+  result.samples_per_iteration = 1;
+
+  iree_string_builder_t builder;
+  iree_string_builder_initialize(iree_allocator_system(), &builder);
+  loom_output_stream_t stream;
+  loom_output_stream_for_builder(&builder, &stream);
+  IREE_ASSERT_OK(iree_benchmark_loom_write_benchmark_result_json(
+      &benchmark_plan, /*case_plan=*/nullptr, &scenario_plan, &policy, &result,
+      /*correctness_sample_count=*/0,
+      /*correctness_failed_sample_count=*/0, &stream));
+
+  const iree_string_view_t root =
+      ParseJsonDocument(iree_string_builder_view(&builder));
+  ExpectObjectValueEquals(root, IREE_SV("benchmark"),
+                          IREE_SV("scenario_throughput"));
+  ExpectObjectValueEquals(root, IREE_SV("scenario"), IREE_SV("scenario"));
+  ExpectObjectValueEquals(root, IREE_SV("benchmark_sample_ordinal"),
+                          IREE_SV("17"));
+  ExpectObjectValueEquals(root, IREE_SV("configuration_ordinal"), IREE_SV("2"));
+  ExpectObjectValueEquals(root, IREE_SV("trial_index"), IREE_SV("3"));
+  ExpectObjectValueEquals(root, IREE_SV("trial_ordinal"), IREE_SV("5"));
+  EXPECT_TRUE(
+      iree_string_view_is_empty(TryLookupObject(root, IREE_SV("case"))));
+
+  iree_string_builder_deinitialize(&builder);
+}
+
 TEST(BenchmarkReportTest, WritesStatusFieldJson) {
   iree_string_builder_t builder;
   iree_string_builder_initialize(iree_allocator_system(), &builder);
@@ -328,7 +369,7 @@ TEST(BenchmarkReportTest, WritesCanonicalCompileReportTree) {
   loom_output_stream_t stream;
   loom_output_stream_for_builder(&builder, &stream);
   IREE_ASSERT_OK(iree_benchmark_loom_write_benchmark_result_json(
-      &benchmark_plan, &case_plan, &policy, &result,
+      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0, &stream));
 
@@ -470,7 +511,7 @@ TEST(BenchmarkReportTest, WritesHalTimingCountsAndWarnings) {
   loom_output_stream_t stream;
   loom_output_stream_for_builder(&builder, &stream);
   IREE_ASSERT_OK(iree_benchmark_loom_write_benchmark_result_json(
-      &benchmark_plan, &case_plan, &policy, &result,
+      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0, &stream));
 
@@ -614,7 +655,7 @@ TEST(BenchmarkReportTest, WritesExactWorkloadAndResolvedLaunchConfig) {
   loom_output_stream_t stream;
   loom_output_stream_for_builder(&builder, &stream);
   IREE_ASSERT_OK(iree_benchmark_loom_write_benchmark_result_json(
-      &benchmark_plan, &case_plan, &policy, &result,
+      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0, &stream));
 
@@ -739,7 +780,7 @@ TEST(BenchmarkReportTest, ScopesComparableDispatchTimingToProfileReplay) {
   loom_output_stream_t stream;
   loom_output_stream_for_builder(&builder, &stream);
   IREE_ASSERT_OK(iree_benchmark_loom_write_benchmark_result_json(
-      &benchmark_plan, &case_plan, &policy, &result,
+      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0, &stream));
 
@@ -809,7 +850,7 @@ TEST(BenchmarkReportTest, ScopesComparableDispatchTimingToProfileReplay) {
   row->last_end_time = 2100;
   iree_string_builder_reset(&builder);
   IREE_ASSERT_OK(iree_benchmark_loom_write_benchmark_result_json(
-      &benchmark_plan, &case_plan, &policy, &result,
+      &benchmark_plan, &case_plan, /*scenario_plan=*/nullptr, &policy, &result,
       /*correctness_sample_count=*/1,
       /*correctness_failed_sample_count=*/0, &stream));
   iree_string_view_t serialized_root =

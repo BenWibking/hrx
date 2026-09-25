@@ -193,6 +193,7 @@ iree_status_t iree_benchmark_loom_write_benchmark_failure_json(
 iree_status_t iree_benchmark_loom_write_benchmark_result_json(
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
+    const loom_testbench_scenario_plan_t* scenario_plan,
     const iree_benchmark_loom_benchmark_policy_t* policy,
     const iree_benchmark_loom_benchmark_result_t* benchmark_result,
     iree_host_size_t correctness_sample_count,
@@ -262,6 +263,7 @@ iree_status_t iree_benchmark_loom_append_benchmark_result(
     iree_host_size_t work_item_index, const loom_module_t* module,
     const loom_testbench_benchmark_plan_t* benchmark_plan,
     const loom_testbench_case_plan_t* case_plan,
+    const loom_testbench_scenario_plan_t* scenario_plan,
     const iree_benchmark_loom_benchmark_policy_t* policy,
     const iree_benchmark_loom_benchmark_result_t* benchmark_result,
     iree_host_size_t correctness_sample_count,

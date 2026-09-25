@@ -324,14 +324,30 @@ static iree_status_t iree_benchmark_loom_snapshot_append_work_item(
   IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
       &object, IREE_SV("work_item_index"), event->work_item_index));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_snapshot_write_benchmark_fields(
-      event->benchmark_plan, event->case_plan, NULL, &object));
+      event->benchmark_plan, event->case_plan, event->scenario_plan, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("state"),
       iree_benchmark_loom_snapshot_result_state(event->benchmark_result)));
-  if (event->benchmark_result->has_sample_ordinal) {
+  if (event->case_plan != NULL && event->benchmark_result->has_sample_ordinal) {
     IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_sample_fields_json(
         event->module, event->case_plan,
         event->benchmark_result->sample_ordinal, &object));
+  }
+  if (event->benchmark_result->has_benchmark_sample_ordinal) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("benchmark_sample_index"),
+        event->benchmark_result->benchmark_sample_ordinal));
+  }
+  if (event->benchmark_result->has_scenario_coordinate) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("configuration_ordinal"),
+        event->benchmark_result->scenario_coordinate.configuration_ordinal));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("trial_index"),
+        event->benchmark_result->scenario_coordinate.trial_index));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("trial_ordinal"),
+        event->benchmark_result->scenario_coordinate.trial_ordinal));
   }
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_write_benchmark_evidence_fields_json(
       event->policy, event->benchmark_result, event->correctness_sample_count,
@@ -354,14 +370,30 @@ static iree_status_t iree_benchmark_loom_snapshot_append_benchmark(
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_snapshot_write_work_item_field(
       event->work_item_index, &object));
   IREE_RETURN_IF_ERROR(iree_benchmark_loom_snapshot_write_benchmark_fields(
-      event->benchmark_plan, event->case_plan, NULL, &object));
+      event->benchmark_plan, event->case_plan, event->scenario_plan, &object));
   IREE_RETURN_IF_ERROR(loom_json_object_write_string_field(
       &object, IREE_SV("state"),
       iree_benchmark_loom_snapshot_result_state(event->benchmark_result)));
-  if (event->benchmark_result->has_sample_ordinal) {
+  if (event->case_plan != NULL && event->benchmark_result->has_sample_ordinal) {
     IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
         &object, IREE_SV("sample_index"),
         event->benchmark_result->sample_ordinal));
+  }
+  if (event->benchmark_result->has_benchmark_sample_ordinal) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("benchmark_sample_index"),
+        event->benchmark_result->benchmark_sample_ordinal));
+  }
+  if (event->benchmark_result->has_scenario_coordinate) {
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("configuration_ordinal"),
+        event->benchmark_result->scenario_coordinate.configuration_ordinal));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("trial_index"),
+        event->benchmark_result->scenario_coordinate.trial_index));
+    IREE_RETURN_IF_ERROR(loom_json_object_write_host_size_field(
+        &object, IREE_SV("trial_ordinal"),
+        event->benchmark_result->scenario_coordinate.trial_ordinal));
   }
   if (event->work_item_index == IREE_BENCHMARK_LOOM_INDEX_INVALID) {
     IREE_RETURN_IF_ERROR(
