@@ -4,9 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""Build-only qualification rules for exhaustive Loom corpus programs."""
+"""Build-only qualification rules for tested Loom corpus programs."""
 
 load("//build_tools/bazel:glob.bzl", "iree_checked_glob")
+load(":loom_linking.bzl", "loom_linking")
 load(
     ":loom_target_profile.bzl",
     "LoomTargetProfileInfo",
@@ -14,6 +15,7 @@ load(
 )
 
 _LOOM_COMPILE_TOOLCHAIN_TYPE = Label("//loom/build_tools/bazel:compile_toolchain_type")
+_LOOM_LINK_TOOLCHAIN_TYPE = Label("//loom/build_tools/bazel:link_toolchain_type")
 
 _LoomCorpusProgramInfo = provider(
     doc = "Outputs and source identity for one corpus program.",
@@ -63,6 +65,17 @@ def _decode_xfails(encoded_xfails, owner):
         if type(diagnostic) != "string" or not diagnostic:
             fail("%s diagnostic xfail %s must name a diagnostic" % (owner, root))
     return xfails
+
+def _declare_subject_module(ctx, source):
+    return loom_linking.declare_test_module(
+        ctx = ctx,
+        root_module = source,
+        dependency_infos = [],
+        output_stem = ctx.label.name + "/subjects",
+        mnemonic = "LoomCorpusLink",
+        progress_message = "Selecting tested corpus subjects from %s" % source.short_path,
+        strip_check = True,
+    )
 
 def _declare_positive_compile(ctx, source, product, profile, xfails):
     profile_info = profile[LoomTargetProfileInfo]
@@ -167,6 +180,7 @@ def _loom_corpus_program_impl(ctx):
             fail("%s cannot both exclude and xfail profile %s" % (ctx.label, label))
         excludes_by_label[label] = reason
 
+    subject_module = _declare_subject_module(ctx, ctx.file.src)
     artifacts = []
     compile_reports = []
     qualification_results = []
@@ -177,7 +191,7 @@ def _loom_corpus_program_impl(ctx):
         xfails = xfails_by_label.get(label, {})
         artifact, compile_report = _declare_positive_compile(
             ctx,
-            ctx.file.src,
+            subject_module,
             ctx.attr.product,
             profile,
             xfails,
@@ -187,7 +201,7 @@ def _loom_corpus_program_impl(ctx):
         for root in sorted(xfails):
             qualification_results.append(_declare_xfail_probe(
                 ctx,
-                ctx.file.src,
+                subject_module,
                 ctx.attr.product,
                 profile,
                 root,
@@ -254,8 +268,11 @@ _loom_corpus_program = rule(
             executable = True,
         ),
     },
-    doc = "Compiles one corpus source independently for every selected profile.",
-    toolchains = [_LOOM_COMPILE_TOOLCHAIN_TYPE],
+    doc = "Selects tested subjects and compiles them independently for every profile.",
+    toolchains = [
+        _LOOM_COMPILE_TOOLCHAIN_TYPE,
+        _LOOM_LINK_TOOLCHAIN_TYPE,
+    ],
 )
 
 def _loom_corpus_aggregate_impl(ctx):
@@ -346,7 +363,8 @@ def loom_corpus(
 
     Args:
       name: Aggregate build target name.
-      srcs: Complete explicit inventory of .loom files in this package.
+      srcs: Complete explicit inventory of .loom files in this package. Each
+        source owns tests that select its deployable callable subjects.
       targets: Central target-set or concrete target-profile labels.
       products: Dictionary mapping every source to its explicit product kind.
       xfails: Target-profile keyed dictionaries mapping '<source>:@<root>' to

@@ -277,8 +277,12 @@ class LoomBuildFileFunctions(bazel_to_cmake_converter.BuildFileFunctions):
             + self._convert_string_list_block("SRCS", srcs, sort=False)
             + self._convert_target_list_block("TARGETS", targets)
             + self._convert_string_list_block("PRODUCTS", product_values, sort=False)
-            + self._convert_string_list_block("XFAILS", xfail_values, sort=False)
-            + self._convert_string_list_block("EXCLUDES", exclude_values, sort=False)
+            + self._convert_string_list_block(
+                "XFAILS", xfail_values or None, sort=False
+            )
+            + self._convert_string_list_block(
+                "EXCLUDES", exclude_values or None, sort=False
+            )
             + ")\n\n"
         )
 

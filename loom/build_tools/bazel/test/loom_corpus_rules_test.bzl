@@ -39,6 +39,20 @@ def _test_program_fans_out_by_profile(name, **kwargs):
 
 def _test_program_fans_out_by_profile_impl(env, target):
     actions = target[TestingAspectInfo].actions
+    link_actions = _actions_with_mnemonic(actions, "LoomCorpusLink")
+    if len(link_actions) != 1:
+        env.fail("expected one subject-selection link action, got %r" % link_actions)
+        return
+    link_action = link_actions[0]
+    for expected_arg in [
+        "--mode=link",
+        "--include-input-tests",
+        "--strip-check",
+        "--to=bc",
+    ]:
+        if expected_arg not in link_action.argv:
+            env.fail("expected %r in link arguments %r" % (expected_arg, link_action.argv))
+
     compile_actions = _actions_with_mnemonic(actions, "LoomCorpusCompile")
     if len(compile_actions) != 2:
         env.fail("expected two profile compile actions, got %r" % compile_actions)
@@ -46,6 +60,7 @@ def _test_program_fans_out_by_profile_impl(env, target):
     profile_a = _action_with_argument(env, compile_actions, "--target=fake:a")
     profile_b = _action_with_argument(env, compile_actions, "--target=fake:b")
     for action in [profile_a, profile_b]:
+        _expect_basename(env, action.inputs.to_list(), "subjects.loombc")
         if "--product=module" not in action.argv:
             env.fail("expected explicit module product in %r" % action.argv)
         if "--compile-report=details" not in action.argv:

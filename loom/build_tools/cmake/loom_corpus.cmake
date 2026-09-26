@@ -4,7 +4,7 @@
 # See https://llvm.org/licenses/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-# Build-only qualification for exhaustive Loom corpus programs.
+# Build-only qualification for tested Loom corpus programs.
 function(loom_corpus)
   cmake_parse_arguments(
     _RULE
@@ -209,6 +209,18 @@ function(loom_corpus)
     set(_PROGRAM_ARTIFACTS)
     set(_PROGRAM_REPORTS)
     set(_PROGRAM_XFAIL_RESULTS)
+    set(_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${_RULE_NAME}_${_SOURCE_STEM}")
+    set(_SUBJECT_MODULE_NAME "${_RULE_NAME}_${_SOURCE_STEM}_subjects")
+    loom_module(
+      NAME "${_SUBJECT_MODULE_NAME}"
+      SRCS "${_SOURCE}"
+      MODE link
+      OUTPUT_FORMAT bc
+      INCLUDE_INPUT_TESTS
+      STRIP_CHECK
+    )
+    iree_package_target_name(_SUBJECT_MODULE_TARGET "::${_SUBJECT_MODULE_NAME}")
+    get_target_property(_SUBJECT_MODULE "${_SUBJECT_MODULE_TARGET}" LOOM_MODULE_FILE)
     set(_AVAILABLE_PROFILE_COUNT 0)
     foreach(_PROFILE IN LISTS _PROFILES)
       get_target_property(_AVAILABLE "${_PROFILE}" LOOM_PROFILE_AVAILABLE)
@@ -256,10 +268,8 @@ function(loom_corpus)
         endif()
       endwhile()
 
-      set(_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${_RULE_NAME}_${_SOURCE_STEM}")
       set(_ARTIFACT "${_OUTPUT_DIR}/${_PROFILE_STEM}.artifact")
       set(_REPORT "${_OUTPUT_DIR}/${_PROFILE_STEM}.compile.json")
-      set(_SOURCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${_SOURCE}")
       set(_EXCLUDE_ARGS)
       foreach(_ROOT IN LISTS _XFAIL_ROOTS)
         list(APPEND _EXCLUDE_ARGS "--exclude-root=${_ROOT}")
@@ -268,14 +278,14 @@ function(loom_corpus)
         OUTPUT "${_ARTIFACT}" "${_REPORT}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${_OUTPUT_DIR}"
         COMMAND "$<TARGET_FILE:loom::tools::loom-compile>"
-          "${_SOURCE_PATH}"
+          "${_SUBJECT_MODULE}"
           "--product=${_PRODUCT}"
           "--target=${_COMPILER_TARGET}"
           ${_EXCLUDE_ARGS}
           "--output=${_ARTIFACT}"
           "--compile-report=details"
           "--compile-report-output=${_REPORT}"
-        DEPENDS loom::tools::loom-compile "${_SOURCE_PATH}"
+        DEPENDS loom::tools::loom-compile "${_SUBJECT_MODULE}"
         COMMENT "Compiling corpus program ${_SOURCE} for ${_COMPILER_TARGET}"
         VERBATIM
       )
@@ -300,14 +310,14 @@ function(loom_corpus)
             "--compiler=$<TARGET_FILE:loom::tools::loom-compile>"
             "--expected-diagnostic=${_DIAGNOSTIC}"
             "--stamp-output=${_XFAIL_RESULT}"
-            "${_SOURCE_PATH}"
+            "${_SUBJECT_MODULE}"
             "--root=${_ROOT}"
             "--product=${_PRODUCT}"
             "--target=${_COMPILER_TARGET}"
           DEPENDS
             loom::build_tools::corpus::loom-corpus-compile-xfail
             loom::tools::loom-compile
-            "${_SOURCE_PATH}"
+            "${_SUBJECT_MODULE}"
           COMMENT "Probing corpus diagnostic xfail ${_ROOT} for ${_COMPILER_TARGET}"
           VERBATIM
         )

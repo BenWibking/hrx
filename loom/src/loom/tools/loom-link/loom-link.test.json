@@ -201,6 +201,32 @@
       ]
     },
     {
+      "name": "stripped input tests reject sources without tested subjects",
+      "steps": [
+        {
+          "name": "write-source",
+          "write": {
+            "path": "{tmp}/untested-subject.loom",
+            "text": "func.def public @untested() -> (i32) {\n  %value = scalar.constant 1 : i32\n  func.return %value : i32\n}\n"
+          }
+        },
+        {
+          "name": "link-subject",
+          "run": {
+            "tool": "loom-link",
+            "args": [
+              "{tmp}/untested-subject.loom",
+              "--mode=link",
+              "--include-input-tests",
+              "--strip-check"
+            ]
+          },
+          "exit": {"nonzero": true},
+          "stderr": {"contains": ["link planning requires at least one root"]}
+        }
+      ]
+    },
+    {
       "name": "separates library availability from final template applicability",
       "steps": [
         {
