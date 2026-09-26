@@ -12,16 +12,16 @@
 // packet selectors consume the resulting table through O(1) root lookups. They
 // do not recover from a missing entry by rescanning source IR.
 
-#include <stdint.h>
+#include "loom/target/arch/amdgpu/lower/source_alloca_layout.h"
+
 #include <string.h>
 
+#include "loom/analysis/source_storage_packing.h"
 #include "loom/analysis/storage_interference.h"
-#include "loom/codegen/low/source_storage_packing.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/ops/buffer/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
-#include "loom/target/arch/amdgpu/lower/topology.h"
 #include "loom/target/low_legality.h"
 
 enum {
@@ -305,8 +305,11 @@ iree_status_t loom_amdgpu_source_alloca_layout_emit_low_storage_roots(
     if (!segment->packing) {
       continue;
     }
-    const loom_source_storage_packing_requirement_t requirement =
-        loom_source_storage_packing_requirement(segment->packing);
+    loom_amdgpu_source_alloca_storage_requirement_t requirement = {0};
+    const bool has_requirement =
+        loom_amdgpu_source_alloca_layout_storage_requirement(
+            layout, (loom_value_fact_memory_space_t)i, &requirement);
+    IREE_ASSERT(has_requirement);
     IREE_ASSERT_EQ(segment->low_storage_value_id, LOOM_VALUE_ID_INVALID);
     loom_op_t* storage_op = NULL;
     IREE_RETURN_IF_ERROR(loom_low_storage_reserve_build(
@@ -350,6 +353,28 @@ iree_status_t loom_amdgpu_source_alloca_layout_record_low_legality_alloca(
       (loom_amdgpu_source_alloca_layout_t*)const_layout;
   return loom_amdgpu_source_alloca_layout_record_allocation(layout, alloca_op,
                                                             byte_length);
+}
+
+bool loom_amdgpu_source_alloca_layout_storage_requirement(
+    const loom_amdgpu_source_alloca_layout_t* layout,
+    loom_value_fact_memory_space_t memory_space,
+    loom_amdgpu_source_alloca_storage_requirement_t* out_requirement) {
+  IREE_ASSERT_ARGUMENT(layout);
+  IREE_ASSERT_ARGUMENT(out_requirement);
+  *out_requirement = (loom_amdgpu_source_alloca_storage_requirement_t){0};
+  if ((uint32_t)memory_space >= IREE_ARRAYSIZE(layout->segments)) {
+    return false;
+  }
+  const loom_amdgpu_source_alloca_layout_segment_t* segment =
+      &layout->segments[memory_space];
+  if (segment->packing == NULL) {
+    return false;
+  }
+  const loom_source_storage_packing_requirement_t packing_requirement =
+      loom_source_storage_packing_requirement(segment->packing);
+  out_requirement->byte_length = packing_requirement.byte_length;
+  out_requirement->byte_alignment = packing_requirement.byte_alignment;
+  return true;
 }
 
 bool loom_amdgpu_source_alloca_layout_lookup_byte_offset(

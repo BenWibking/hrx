@@ -12,17 +12,84 @@ iree_add_all_subdirs()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_library(
   NAME
+    prepare
+  HDRS
+    "prepare.h"
+  SRCS
+    "prepare.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::symbol_facts
+    loom::codegen::low::descriptors
+    loom::codegen::low::diagnostics
+    loom::codegen::low::function
+    loom::codegen::low::target_binding
+    loom::error::emitter
+    loom::error::error_defs
+    loom::ir
+    loom::target::arch::spirv::descriptors
+    loom::target::arch::spirv::module_contract
+    loom::target::emit::spirv::module_builder
+    loom::target::emit::spirv::module_emitter
+    loom::target::emit::spirv::program
+    loom::target::facts
+    loom::target::function_version
+    loom::target::types
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_cc_library(
+  NAME
+    loom_check
+  HDRS
+    "check/loom_check.h"
+  SRCS
+    "check/loom_check.c"
+  DEPS
+    ::prepare
+    iree::base
+    loom::target::entry_selection
+    loom::target::tool::spirv
+    loom::tooling::compile::pipeline
+    loom::tools::loom-check::execute
+    loom::verify
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_cc_library(
+  NAME
+    check_provider
+  HDRS
+    "check/provider.h"
+  SRCS
+    "check/provider.c"
+  DEPS
+    ::loom_check
+    iree::base
+    loom::tools::loom-check::provider
+  PUBLIC
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_cc_library(
+  NAME
     artifact_provider
   HDRS
     "artifact_provider.h"
   SRCS
     "artifact_provider.c"
   DEPS
+    ::prepare
     iree::base
     loom::target::arch::spirv::descriptors::low_registry
     loom::target::arch::spirv::profile
     loom::target::emit::spirv::module_builder
-    loom::target::emit::spirv::module_emitter
     loom::target::entry_selection
     loom::target::function_contract
     loom::target::low_descriptor_registry
@@ -169,13 +236,13 @@ loom_cc_test(
   SRCS
     "module_emitter_test.cc"
   DEPS
+    ::prepare
     ::vulkan_profile
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
     loom::analysis::symbol_facts
     loom::codegen::low::text_asm
-    loom::error::error_defs
     loom::format::text::parser
     loom::ir
     loom::ops::func_symbol_facts
@@ -186,13 +253,11 @@ loom_cc_test(
     loom::target::arch::spirv::features
     loom::target::arch::spirv::ops
     loom::target::arch::spirv::profile
-    loom::target::emit::spirv::module_emitter
     loom::target::facts_builder
     loom::target::function_contract
     loom::target::function_version
     loom::target::profile
     loom::target::types
-    loom::testing::diagnostic_matchers
     loom::testing::module_ptr
   LABELS
     "iree-build-requirement=loom.target.arch.spirv"
@@ -412,7 +477,6 @@ loom_test_module(
     "test/spirv_vulkan_vector_float.loom"
     "test/spirv_vulkan_workgroup_offsets.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/moe_routed_combine_loop_f32.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/atomic_add_f32_subnormals.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/global_atomic_add_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/loop_rotating_values.loom"
@@ -445,6 +509,27 @@ loom_execution_test(
     "gpu-device"
 )
 endif()
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_test_module(
+  NAME
+    vulkan_extended_types_tests_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32_benchmark.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_check_compile_tests(
+  NAME
+    "vulkan_extended_types_tests"
+  SRC
+    "::vulkan_extended_types_tests_module"
+  TARGETS
+    loom::target::spirv::vulkan1.3+bda+extended-types
+)
 endif()
 
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)

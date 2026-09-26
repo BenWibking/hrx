@@ -539,10 +539,58 @@ static iree_status_t loom_testbench_compare_buffer_close(
   return status;
 }
 
-static iree_status_t loom_testbench_compare_equal(
+static iree_status_t loom_testbench_compare_buffer_reference_equal(
     const loom_testbench_value_t* actual,
     const loom_testbench_value_t* expected,
     iree_string_builder_t* detail_builder, bool* out_matched) {
+  *out_matched = false;
+  if (!loom_testbench_value_is_buffer(actual) ||
+      !loom_testbench_value_is_buffer(expected)) {
+    return loom_testbench_append_value_kind_mismatch(actual, expected,
+                                                     detail_builder);
+  }
+  const loom_testbench_buffer_reference_t* actual_reference =
+      &actual->buffer_reference;
+  const loom_testbench_buffer_reference_t* expected_reference =
+      &expected->buffer_reference;
+  if (!actual_reference->is_traceable || !expected_reference->is_traceable) {
+    return iree_string_builder_append_format(
+        detail_builder,
+        "buffer reference is not traceable to a trial allocation "
+        "(actual=%s, expected=%s)",
+        actual_reference->is_traceable ? "traceable" : "untraceable",
+        expected_reference->is_traceable ? "traceable" : "untraceable");
+  }
+  *out_matched =
+      actual_reference->allocation_value_id ==
+          expected_reference->allocation_value_id &&
+      actual_reference->byte_offset == expected_reference->byte_offset &&
+      actual_reference->byte_length == expected_reference->byte_length;
+  if (*out_matched) {
+    return iree_ok_status();
+  }
+  return iree_string_builder_append_format(
+      detail_builder,
+      "actual buffer reference (allocation=%u, offset=%" PRIu64
+      ", length=%" PRIu64
+      ") does not match expected (allocation=%u, offset=%" PRIu64
+      ", length=%" PRIu64 ")",
+      (unsigned)actual_reference->allocation_value_id,
+      actual_reference->byte_offset, actual_reference->byte_length,
+      (unsigned)expected_reference->allocation_value_id,
+      expected_reference->byte_offset, expected_reference->byte_length);
+}
+
+static iree_status_t loom_testbench_compare_equal(
+    const loom_testbench_expectation_plan_t* expectation,
+    const loom_testbench_value_t* actual,
+    const loom_testbench_value_t* expected,
+    iree_string_builder_t* detail_builder, bool* out_matched) {
+  if (loom_type_is_buffer(expectation->type) ||
+      loom_type_is_view(expectation->type)) {
+    return loom_testbench_compare_buffer_reference_equal(
+        actual, expected, detail_builder, out_matched);
+  }
   if (loom_testbench_value_is_scalar(actual) &&
       loom_testbench_value_is_scalar(expected)) {
     return loom_testbench_compare_scalar_equal(actual, expected, detail_builder,
@@ -692,18 +740,19 @@ static iree_status_t loom_testbench_compare_shape(
 
 static iree_status_t loom_testbench_lookup_expectation_values(
     const loom_testbench_expectation_plan_t* expectation,
-    const loom_testbench_value_table_t* table,
+    const loom_testbench_value_table_t* actual_table,
+    const loom_testbench_value_table_t* expected_table,
     const loom_testbench_value_t** out_actual,
     const loom_testbench_value_t** out_expected) {
   *out_actual = NULL;
   *out_expected = NULL;
   IREE_RETURN_IF_ERROR(loom_testbench_value_table_lookup_borrow(
-      table, expectation->actual_value_id, out_actual));
+      actual_table, expectation->actual_value_id, out_actual));
   if (expectation->expected_value_id == LOOM_VALUE_ID_INVALID) {
     return iree_ok_status();
   }
   return loom_testbench_value_table_lookup_borrow(
-      table, expectation->expected_value_id, out_expected);
+      expected_table, expectation->expected_value_id, out_expected);
 }
 
 static iree_string_view_t loom_testbench_module_string(
@@ -1432,7 +1481,7 @@ static iree_status_t loom_testbench_event_record_matches(
 static iree_status_t loom_testbench_evaluate_event_expectation(
     const loom_testbench_expectation_plan_t* expectation,
     const loom_module_t* module,
-    const loom_testbench_case_sample_observations_t* observations,
+    const loom_testbench_sample_observations_t* observations,
     iree_string_builder_t* detail_builder, bool* out_matched) {
   *out_matched = false;
   if (!iree_string_view_equal(expectation->event.provider, IREE_SV("device"))) {
@@ -1519,23 +1568,25 @@ static iree_status_t loom_testbench_evaluate_event_expectation(
 
 static iree_status_t loom_testbench_evaluate_single_expectation(
     const loom_testbench_expectation_plan_t* expectation,
-    const loom_testbench_value_table_t* table,
-    const loom_testbench_case_sample_observations_t* observations,
+    const loom_testbench_value_table_t* actual_table,
+    const loom_testbench_value_table_t* expected_table,
+    const loom_testbench_sample_observations_t* observations,
     iree_string_builder_t* detail_builder, bool* out_matched) {
   if (expectation->kind == LOOM_TESTBENCH_EXPECTATION_EVENT) {
     return loom_testbench_evaluate_event_expectation(
-        expectation, table->module, observations, detail_builder, out_matched);
+        expectation, actual_table->module, observations, detail_builder,
+        out_matched);
   }
 
   const loom_testbench_value_t* actual = NULL;
   const loom_testbench_value_t* expected = NULL;
   IREE_RETURN_IF_ERROR(loom_testbench_lookup_expectation_values(
-      expectation, table, &actual, &expected));
+      expectation, actual_table, expected_table, &actual, &expected));
 
   switch (expectation->kind) {
     case LOOM_TESTBENCH_EXPECTATION_EQUAL:
-      return loom_testbench_compare_equal(actual, expected, detail_builder,
-                                          out_matched);
+      return loom_testbench_compare_equal(expectation, actual, expected,
+                                          detail_builder, out_matched);
     case LOOM_TESTBENCH_EXPECTATION_BITWISE:
       return loom_testbench_compare_bitwise(actual, expected, detail_builder,
                                             out_matched);
@@ -1543,7 +1594,7 @@ static iree_status_t loom_testbench_evaluate_single_expectation(
       return loom_testbench_compare_close(expectation, actual, expected,
                                           detail_builder, out_matched);
     case LOOM_TESTBENCH_EXPECTATION_SHAPE:
-      return loom_testbench_compare_shape(expectation, table, actual,
+      return loom_testbench_compare_shape(expectation, actual_table, actual,
                                           detail_builder, out_matched);
     case LOOM_TESTBENCH_EXPECTATION_EVENT:
       return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
@@ -1580,36 +1631,37 @@ static iree_status_t loom_testbench_append_expectation_failure(
   return iree_ok_status();
 }
 
-iree_status_t loom_testbench_evaluate_case_expectations(
-    const loom_testbench_case_plan_t* case_plan,
-    const loom_testbench_value_table_t* table,
-    const loom_testbench_case_sample_observations_t* observations,
+static iree_status_t loom_testbench_evaluate_expectations(
+    const loom_testbench_expectation_plan_t* expectations,
+    iree_host_size_t expectation_count,
+    const loom_testbench_value_table_t* actual_table,
+    const loom_testbench_value_table_t* expected_table,
+    const loom_testbench_sample_observations_t* observations,
     loom_testbench_expectation_report_t* report) {
-  if (report->failure_capacity < case_plan->expectation_count) {
+  if (report->failure_capacity < expectation_count) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "expectation report capacity %" PRIhsz
-                            " is smaller than case expectation count %" PRIhsz,
-                            report->failure_capacity,
-                            case_plan->expectation_count);
+                            " is smaller than expectation count %" PRIhsz,
+                            report->failure_capacity, expectation_count);
   }
 
   loom_testbench_expectation_report_reset(report);
-  report->module = table->module;
-  report->expectation_count = case_plan->expectation_count;
+  report->module = actual_table->module;
+  report->expectation_count = expectation_count;
   iree_string_builder_t detail_builder;
   iree_string_builder_initialize(report->host_allocator, &detail_builder);
 
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t expectation_index = 0;
-       iree_status_is_ok(status) &&
-       expectation_index < case_plan->expectation_count;
+       iree_status_is_ok(status) && expectation_index < expectation_count;
        ++expectation_index) {
     const loom_testbench_expectation_plan_t* expectation =
-        &case_plan->expectations[expectation_index];
+        &expectations[expectation_index];
     bool matched = false;
     iree_string_builder_reset(&detail_builder);
     status = loom_testbench_evaluate_single_expectation(
-        expectation, table, observations, &detail_builder, &matched);
+        expectation, actual_table, expected_table, observations,
+        &detail_builder, &matched);
     if (iree_status_is_ok(status) && matched) {
       ++report->passed_count;
     } else if (iree_status_is_ok(status)) {
@@ -1621,6 +1673,31 @@ iree_status_t loom_testbench_evaluate_case_expectations(
 
   iree_string_builder_deinitialize(&detail_builder);
   return status;
+}
+
+iree_status_t loom_testbench_evaluate_case_expectations(
+    const loom_testbench_case_plan_t* case_plan,
+    const loom_testbench_value_table_t* table,
+    const loom_testbench_sample_observations_t* observations,
+    loom_testbench_expectation_report_t* report) {
+  return loom_testbench_evaluate_expectations(
+      case_plan->expectations, case_plan->expectation_count, table, table,
+      observations, report);
+}
+
+iree_status_t loom_testbench_evaluate_scenario_action_expectations(
+    const loom_testbench_scenario_action_plan_t* action,
+    const loom_testbench_value_table_t* target_table,
+    const loom_testbench_value_table_t* oracle_table,
+    const loom_testbench_sample_observations_t* observations,
+    loom_testbench_expectation_report_t* report) {
+  if (action->kind != LOOM_TESTBENCH_SCENARIO_ACTION_COMPARE) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "scenario action is not a comparison");
+  }
+  return loom_testbench_evaluate_expectations(
+      action->expectations, action->expectation_count, target_table,
+      oracle_table, observations, report);
 }
 
 static iree_status_t loom_testbench_write_expectation_value_id_json(

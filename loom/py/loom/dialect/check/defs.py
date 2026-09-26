@@ -14,11 +14,16 @@ expected outputs, and checks values.
 from loom.assembly import (
     ARROW,
     COLON,
+    COMMA,
+    GLUE,
+    LBRACKET,
     LPAREN,
+    RBRACKET,
     RPAREN,
     TO,
     Attr,
     AttrDict,
+    BlockArgs,
     Clause,
     FormatElement,
     IndexList,
@@ -27,11 +32,14 @@ from loom.assembly import (
     Ref,
     Refs,
     Region,
+    ResultType,
     ResultTypeList,
+    Scope,
     SymbolRef,
     TemplateParam,
     TypeOf,
     TypesOf,
+    kw,
 )
 from loom.dsl import (
     ANY,
@@ -51,6 +59,9 @@ from loom.dsl import (
     EnumCase,
     EnumDef,
     HasAncestor,
+    HasAnyAncestor,
+    HasParent,
+    ImplicitTerminator,
     LiteralMatchesElementType,
     OffsetCountMatchesRank,
     Op,
@@ -61,9 +72,20 @@ from loom.dsl import (
     SymbolDefinition,
     SymbolDefinitionFlag,
     SymbolReference,
+    TypeDef,
+    TypeSemantic,
 )
 
 check_ops = Dialect("check", dialect_id=0x16, doc="Production testbench operations.")
+
+
+check_entropy_type = TypeDef(
+    "check.entropy",
+    doc=("Immutable counter-based entropy identity. Named forks and indexed reads derive deterministic values without mutable cursor state."),
+    semantic=TypeSemantic.ORDINARY,
+)
+
+ALL_CHECK_TYPES: tuple[TypeDef, ...] = (check_entropy_type,)
 
 
 Visibility = EnumDef(
@@ -105,7 +127,15 @@ _CASE_SYMBOL_ATTRS = [
     AttrDef("visibility", "enum", enum_def=Visibility, optional=True),
 ]
 
-_CASE_BODY_TRAITS = [UNKNOWN_EFFECTS, HasAncestor("check.case")]
+_CHECK_BODY_TRAITS = [
+    UNKNOWN_EFFECTS,
+    HasAnyAncestor("check.case", "check.scenario"),
+]
+
+_EXPECT_BODY_TRAITS = [
+    UNKNOWN_EFFECTS,
+    HasAnyAncestor("check.case", "check.compare"),
+]
 
 _CASE_SYMBOL_DEF = SymbolDefinition(
     field="case_symbol",
@@ -143,10 +173,230 @@ check_case = Op(
 check_return = Op(
     "check.return",
     group=check_ops,
-    doc="Terminates a check.case body.",
-    traits=[TERMINATOR, HasAncestor("check.case")],
+    doc="Terminates a check harness or comparison body.",
+    traits=[TERMINATOR, HasAnyAncestor("check.case", "check.scenario")],
     format=[],
     examples=["check.return"],
+)
+
+check_scenario = Op(
+    "check.scenario",
+    group=check_ops,
+    doc=(
+        "Named differential or target-only execution scenario. An optional "
+        "configuration domain evaluates the body once per compile-visible "
+        "configuration; the body may contain several independent trial domains."
+    ),
+    traits=[SYMBOL_DEFINE, ISOLATED_FROM_ABOVE],
+    attrs=[
+        AttrDef("scenario_symbol", "symbol"),
+        AttrDef("visibility", "enum", enum_def=Visibility, optional=True),
+        AttrDef(
+            "configuration_count",
+            "i64",
+            optional=True,
+            doc="Number of configurations in the finite scenario domain.",
+        ),
+    ],
+    symbol_def=SymbolDefinition(
+        field="scenario_symbol",
+        name="check scenario",
+        interfaces=["record"],
+        bytecode_kind="LOOM_SYMBOL_RECORD",
+        visibility="visibility",
+        flags=[SymbolDefinitionFlag.TEST_ONLY],
+    ),
+    regions=[
+        RegionDef(
+            "body",
+            doc="Configuration recipe and trial declarations.",
+            single_block=True,
+            terminator="check.return",
+        )
+    ],
+    verify="loom_check_scenario_verify",
+    format=[
+        OptionalGroup([Attr("visibility")], anchor="visibility"),
+        SymbolRef("scenario_symbol"),
+        OptionalGroup(
+            [
+                kw("configure"),
+                GLUE,
+                LBRACKET,
+                Attr("configuration_count"),
+                RBRACKET,
+                BlockArgs("body", group="configuration"),
+            ],
+            anchor="configuration_count",
+        ),
+        Region("body"),
+    ],
+    examples=[
+        "check.scenario public @smoke {\n  check.trial[1](%trial: index, %entropy: check.entropy) {\n    check.invoke<@subject>() : () -> ()\n  }\n  check.return\n}",
+        "check.scenario @configured configure[4](%configuration: index, %entropy: check.entropy) {\n  check.trial[1](%trial: index, %trial_entropy: check.entropy) {\n    check.invoke<@subject>[%configuration]() : [index]() -> ()\n  }\n  check.return\n}",
+    ],
+)
+
+check_trial = Op(
+    "check.trial",
+    group=check_ops,
+    doc=("Finite runtime trial domain. Each evaluation materializes one recipe and ends in exactly one comparison or target-only invocation."),
+    attrs=[
+        AttrDef(
+            "trial_count",
+            "i64",
+            doc="Number of trials in this finite runtime domain.",
+        ),
+    ],
+    regions=[
+        RegionDef(
+            "body",
+            doc="Runtime input and mutable-state recipe.",
+            single_block=True,
+        )
+    ],
+    traits=[UNKNOWN_EFFECTS, HasParent("check.scenario")],
+    verify="loom_check_trial_verify",
+    format=[
+        GLUE,
+        LBRACKET,
+        Attr("trial_count"),
+        RBRACKET,
+        BlockArgs("body", group="trial"),
+        Region("body"),
+    ],
+    examples=[
+        "check.trial[32](%trial: index, %entropy: check.entropy) {\n  check.invoke<@subject>() : () -> ()\n}",
+    ],
+)
+
+_SUBJECT_ACTION_OPERANDS = [
+    Operand(
+        "call_parameters",
+        ANY,
+        variadic=True,
+        doc="Kernel workloads or command/pipeline specialization values.",
+    ),
+    Operand("arguments", ANY, variadic=True, doc="Runtime subject arguments."),
+]
+
+_SUBJECT_ACTION_ATTRS = [
+    AttrDef(
+        "callee",
+        "symbol",
+        symbol_ref=SymbolReference(
+            "scenario subject",
+            ["callable", "kernel", "command_program", "pipeline"],
+        ),
+    ),
+]
+
+_SUBJECT_CALL_PREFIX: list[FormatElement] = [
+    TemplateParam("callee"),
+    OptionalGroup(
+        [GLUE, LBRACKET, Refs("call_parameters"), RBRACKET],
+        anchor="call_parameters",
+    ),
+    GLUE,
+    LPAREN,
+    Refs("arguments"),
+    RPAREN,
+    COLON,
+    OptionalGroup(
+        [LBRACKET, TypesOf("call_parameters"), RBRACKET, GLUE],
+        anchor="call_parameters",
+    ),
+]
+
+check_compare = Op(
+    "check.compare",
+    group=check_ops,
+    doc=("Ends a trial by invoking one subject through independent target and oracle realizations and checking their explicit typed observations."),
+    operands=list(_SUBJECT_ACTION_OPERANDS),
+    attrs=[
+        *_SUBJECT_ACTION_ATTRS,
+        AttrDef(
+            "actual_count",
+            "i64",
+            optional=True,
+            doc="Number of leading comparison-region arguments bound to target results.",
+        ),
+    ],
+    regions=[
+        RegionDef(
+            "comparison",
+            doc="Explicit expectations over target and oracle result values.",
+            single_block=True,
+            terminator="check.return",
+        )
+    ],
+    traits=[
+        TERMINATOR,
+        UNKNOWN_EFFECTS,
+        HasParent("check.trial"),
+        ImplicitTerminator("check.return"),
+    ],
+    verify="loom_check_compare_verify",
+    format=[
+        *_SUBJECT_CALL_PREFIX,
+        LPAREN,
+        TypesOf("arguments"),
+        RPAREN,
+        ARROW,
+        OptionalGroup(
+            [
+                LBRACKET,
+                kw("actual"),
+                BlockArgs(
+                    "comparison",
+                    group="actual",
+                    end_attr="actual_count",
+                ),
+                COMMA,
+                kw("expected"),
+                BlockArgs(
+                    "comparison",
+                    group="expected",
+                    start_attr="actual_count",
+                ),
+                RBRACKET,
+            ],
+            anchor="actual_count",
+        ),
+        OptionalGroup(
+            [LPAREN, RPAREN],
+            anchor="actual_count",
+            inverted=True,
+        ),
+        Region("comparison"),
+    ],
+    examples=[
+        "check.compare<@logarithm>(%bits) : (i32) -> [actual(%actual: f32), expected(%expected: f32)] {\n  check.expect.close actual(%actual) expected(%expected) atol(0.0) rtol(1.0e-6) nan(same) : f32\n}",
+        "check.compare<@update>(%storage) : (tensor<256xf32>) -> () {\n  check.expect.bitwise actual(%storage) expected(%storage) : tensor<256xf32>\n}",
+    ],
+)
+
+check_invoke = Op(
+    "check.invoke",
+    group=check_ops,
+    doc=("Ends a trial with one target-only invocation. The complete result signature remains local to the action and does not define surrounding SSA values."),
+    operands=list(_SUBJECT_ACTION_OPERANDS),
+    results=[Result("results", ANY, variadic=True, signature_only=True)],
+    attrs=list(_SUBJECT_ACTION_ATTRS),
+    traits=[TERMINATOR, UNKNOWN_EFFECTS, HasParent("check.trial")],
+    verify="loom_check_invoke_verify",
+    format=[
+        *_SUBJECT_CALL_PREFIX,
+        LPAREN,
+        TypesOf("arguments"),
+        RPAREN,
+        ARROW,
+        Scope([ResultTypeList("results")]),
+    ],
+    examples=[
+        "check.invoke<@logarithm>(%bits) : (i32) -> (f32)",
+        "check.invoke<@update>(%storage) : (tensor<256xf32>) -> ()",
+    ],
 )
 
 
@@ -162,7 +412,7 @@ check_requires = Op(
         AttrDef("provider", "string"),
         AttrDef("attrs", "dict"),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         KeyRef("provider"),
         AttrDict("attrs"),
@@ -179,7 +429,7 @@ check_skip_if = Op(
         AttrDef("attrs", "dict"),
         AttrDef("reason", "string", optional=True),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         KeyRef("provider"),
         AttrDict("attrs"),
@@ -212,7 +462,7 @@ check_param_range = Op(
         LiteralMatchesElementType("upper", "result"),
         LiteralMatchesElementType("step", "result"),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         Attr("policy"),
         Clause("bounds", Attr("lower"), TO, Attr("upper")),
@@ -236,7 +486,7 @@ check_param_choice = Op(
         AttrDef("values", "i64_array"),
         AttrDef("param_name", "string", optional=True),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         Clause("values", Attr("values")),
         OptionalGroup([Clause("name", Attr("param_name"))], anchor="param_name"),
@@ -258,7 +508,7 @@ check_param_seed = Op(
         AttrDef("count", "i64"),
         AttrDef("param_name", "string", optional=True),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         Clause("base", Attr("base")),
         Clause("count", Attr("count")),
@@ -268,6 +518,58 @@ check_param_seed = Op(
     ],
     examples=[
         "%seed = check.param.seed base(0x4c6f6f6d) count(32) : i64",
+    ],
+)
+
+
+# ============================================================================
+# Deterministic entropy
+# ============================================================================
+
+check_entropy_fork = Op(
+    "check.entropy.fork",
+    group=check_ops,
+    doc=("Derives a stable named entropy substream without advancing or mutating the parent identity."),
+    operands=[Operand("entropy", ANY)],
+    results=[Result("result", ANY)],
+    attrs=[AttrDef("fork_name", "string")],
+    constraints=[SameType("entropy", "result")],
+    traits=[PURE, HasAncestor("check.scenario")],
+    verify="loom_check_entropy_fork_verify",
+    format=[
+        Ref("entropy"),
+        Clause("name", Attr("fork_name")),
+        COLON,
+        TypeOf("entropy"),
+    ],
+    examples=[
+        '%pair = check.entropy.fork %entropy name("pair") : check.entropy',
+    ],
+)
+
+check_entropy_read = Op(
+    "check.entropy.read",
+    group=check_ops,
+    doc="Reads one deterministic i64 word at an explicit static or dynamic ordinal.",
+    operands=[
+        Operand("entropy", ANY),
+        Operand("ordinals", INDEX, variadic=True),
+    ],
+    results=[Result("result", INTEGER)],
+    attrs=[AttrDef("static_ordinals", "i64_array")],
+    traits=[PURE, HasAncestor("check.scenario")],
+    verify="loom_check_entropy_read_verify",
+    format=[
+        Ref("entropy"),
+        IndexList("ordinals", "static_ordinals"),
+        COLON,
+        TypeOf("entropy"),
+        ARROW,
+        ResultType("result"),
+    ],
+    examples=[
+        "%word = check.entropy.read %entropy[0] : check.entropy -> i64",
+        "%word = check.entropy.read %entropy[%ordinal] : check.entropy -> i64",
     ],
 )
 
@@ -283,7 +585,7 @@ check_literal = Op(
     results=[Result("result", SCALAR)],
     attrs=[AttrDef("value", "any")],
     constraints=[LiteralMatchesElementType("value", "result")],
-    traits=[PURE, CONSTANT_LIKE, HasAncestor("check.case")],
+    traits=[PURE, CONSTANT_LIKE, HasAnyAncestor("check.case", "check.scenario")],
     format=[
         Clause("value", Attr("value")),
         COLON,
@@ -308,7 +610,7 @@ check_generate_iota = Op(
         LiteralMatchesElementType("offset", "result"),
         LiteralMatchesElementType("step", "result"),
     ],
-    traits=[PURE, HasAncestor("check.case")],
+    traits=[PURE, HasAnyAncestor("check.case", "check.scenario")],
     format=[
         Clause("offset", Attr("offset")),
         Clause("step", Attr("step")),
@@ -329,7 +631,7 @@ check_generate_fill = Op(
     results=[Result("result", ANY)],
     attrs=[AttrDef("value", "any")],
     constraints=[LiteralMatchesElementType("value", "result")],
-    traits=[PURE, HasAncestor("check.case")],
+    traits=[PURE, HasAnyAncestor("check.case", "check.scenario")],
     format=[
         Clause("value", Attr("value")),
         COLON,
@@ -354,7 +656,7 @@ check_generate_random_uniform = Op(
         LiteralMatchesElementType("lower", "result"),
         LiteralMatchesElementType("upper", "result"),
     ],
-    traits=[PURE, HasAncestor("check.case")],
+    traits=[PURE, HasAnyAncestor("check.case", "check.scenario")],
     format=[
         Clause("seed", Ref("seed")),
         Clause("range", Attr("lower"), TO, Attr("upper")),
@@ -372,7 +674,7 @@ check_file_read_npy = Op(
     doc="Reads a typed value from an NPY fixture file.",
     results=[Result("result", ANY)],
     attrs=[AttrDef("path", "string")],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         Clause("path", Attr("path")),
         COLON,
@@ -392,7 +694,7 @@ check_file_write_npy = Op(
         AttrDef("path", "string"),
         AttrDef("mode", "enum", enum_def=FileWriteMode, optional=True),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         Clause("value", Ref("value")),
         Clause("path", Attr("path")),
@@ -423,7 +725,7 @@ check_tensor_view = Op(
             doc=("Non-negative static byte offset from the beginning of the source tensor."),
         ),
     ],
-    traits=[PURE, HasAncestor("check.case")],
+    traits=[PURE, HasAnyAncestor("check.case", "check.scenario")],
     format=[
         Ref("source"),
         Clause("offset", Attr("byte_offset")),
@@ -457,7 +759,7 @@ check_oracle_call = Op(
         ),
     ],
     results=[Result("results", ANY, variadic=True)],
-    traits=_CASE_BODY_TRAITS,
+    traits=_CHECK_BODY_TRAITS,
     format=[
         KeyRef("provider"),
         OptionalGroup([AttrDict("attrs")], anchor="attrs"),
@@ -501,8 +803,8 @@ check_expect_equal = Op(
     group=check_ops,
     doc="Requires actual and expected values to compare equal.",
     operands=_EXPECT_OPERANDS,
-    constraints=[SameType("actual", "expected")],
-    traits=_CASE_BODY_TRAITS,
+    traits=_EXPECT_BODY_TRAITS,
+    verify="loom_check_expect_pair_verify",
     format=_EXPECT_FORMAT,
     examples=[
         "check.expect.equal actual(%actual) expected(%expected) : tensor<[%m]xi32>",
@@ -514,8 +816,8 @@ check_expect_bitwise = Op(
     group=check_ops,
     doc="Requires actual and expected values to match bit-for-bit.",
     operands=_EXPECT_OPERANDS,
-    constraints=[SameType("actual", "expected")],
-    traits=_CASE_BODY_TRAITS,
+    traits=_EXPECT_BODY_TRAITS,
+    verify="loom_check_expect_pair_verify",
     format=_EXPECT_FORMAT,
     examples=[
         "check.expect.bitwise actual(%actual) expected(%expected) : tensor<1024xf32>",
@@ -532,8 +834,8 @@ check_expect_close = Op(
         AttrDef("rtol", "f64"),
         AttrDef("nan", "enum", enum_def=NanPolicy),
     ],
-    constraints=[SameType("actual", "expected")],
-    traits=_CASE_BODY_TRAITS,
+    traits=_EXPECT_BODY_TRAITS,
+    verify="loom_check_expect_pair_verify",
     format=[
         *_EXPECT_VALUE_CLAUSES,
         Clause("atol", Attr("atol")),
@@ -557,7 +859,7 @@ check_expect_shape = Op(
     ],
     attrs=[AttrDef("static_dims", "i64_array")],
     constraints=[OffsetCountMatchesRank("value", "static_dims")],
-    traits=_CASE_BODY_TRAITS,
+    traits=_EXPECT_BODY_TRAITS,
     format=[
         Clause("value", Ref("value")),
         Clause("shape", IndexList("dims", "static_dims")),
@@ -577,7 +879,7 @@ check_expect_event = Op(
         AttrDef("provider", "string"),
         AttrDef("attrs", "dict", optional=True),
     ],
-    traits=_CASE_BODY_TRAITS,
+    traits=_EXPECT_BODY_TRAITS,
     format=[
         KeyRef("provider"),
         AttrDict("attrs"),
@@ -596,7 +898,7 @@ check_expect_event = Op(
 check_benchmark = Op(
     "check.benchmark",
     group=check_ops,
-    doc="Declares a named benchmark slice over a check.case. The required symbol identifies the record in linking, reports, and benchmark selection.",
+    doc="Declares a named benchmark slice over a test record. The required symbol identifies the record in linking, reports, and benchmark selection.",
     traits=[SYMBOL_DEFINE],
     attrs=[
         AttrDef("benchmark", "symbol"),
@@ -648,4 +950,10 @@ ALL_CHECK_OPS = (
     check_benchmark,
     # Append new operations to preserve existing bytecode op ordinals.
     check_tensor_view,
+    check_scenario,
+    check_trial,
+    check_compare,
+    check_invoke,
+    check_entropy_fork,
+    check_entropy_read,
 )

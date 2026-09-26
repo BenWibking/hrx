@@ -266,6 +266,14 @@ class PresubmitTest(unittest.TestCase):
             self.assertFalse(presubmit.is_semgrep_candidate_file("project/src/file.h"))
             self.assertFalse(presubmit.is_semgrep_candidate_file("other/src/file.c"))
 
+    def test_semgrep_candidate_includes_exact_target_diagnostic_catalog(self):
+        self.assertTrue(
+            presubmit.is_semgrep_candidate_file("loom/py/loom/error/target.py")
+        )
+        self.assertFalse(
+            presubmit.is_semgrep_candidate_file("loom/py/loom/error/xdna.py")
+        )
+
     def test_semgrep_scan_command_uses_local_error_rules(self):
         with mock.patch.dict(os.environ, {"IREE_SEMGREP_JOBS": "7"}):
             command = presubmit.semgrep_scan_command(["runtime/src/iree/base/status.c"])
@@ -279,6 +287,15 @@ class PresubmitTest(unittest.TestCase):
         self.assertIn(presubmit.SEMGREP_CONFIG, command)
         self.assertIn("7", command)
         self.assertEqual(command[-1], "runtime/src/iree/base/status.c")
+
+    def test_semgrep_test_command_uses_owned_rule_fixtures(self):
+        command = presubmit.semgrep_test_command()
+
+        self.assertEqual(command[0:2], ["semgrep", "test"])
+        self.assertIn("--strict", command)
+        self.assertIn(presubmit.SEMGREP_CONFIG, command)
+        for path in presubmit.SEMGREP_TEST_PATHS:
+            self.assertIn(path, command)
 
     def test_libamdf_static_analysis_scope_includes_sources_and_headers(self):
         for path in (
@@ -1372,6 +1389,59 @@ class PresubmitTest(unittest.TestCase):
         self.assertIn("[skip]", output.getvalue())
         self.assertIn("[fail]", output.getvalue())
 
+    def test_semgrep_config_change_tests_rules_and_scans_policy_files(self):
+        inputs = input_scope([presubmit.SEMGREP_CONFIG])
+        with (
+            mock.patch.object(presubmit.sys, "platform", "linux"),
+            mock.patch.object(
+                presubmit.shutil, "which", return_value="/usr/bin/semgrep"
+            ),
+            mock.patch.object(
+                presubmit, "run_command", return_value=True
+            ) as run_command,
+            mock.patch.object(
+                presubmit, "run_parallel_commands", return_value=True
+            ) as run_parallel_commands,
+        ):
+            ok = presubmit.run_semgrep(inputs, profile="paranoid", verbose=False)
+
+        self.assertTrue(ok)
+        self.assertEqual(
+            [call.args[1] for call in run_command.call_args_list],
+            ["Semgrep config validation", "Semgrep rule tests"],
+        )
+        scan_commands = run_parallel_commands.call_args.args[0]
+        self.assertTrue(
+            any(
+                policy_path in command
+                for command in scan_commands
+                for policy_path in presubmit.SEMGREP_POLICY_PATHS
+            )
+        )
+
+    def test_semgrep_fixture_change_runs_tests_without_scanning_fixture(self):
+        fixture_path = next(iter(presubmit.SEMGREP_TEST_PATHS))
+        inputs = input_scope([fixture_path])
+        with (
+            mock.patch.object(presubmit.sys, "platform", "linux"),
+            mock.patch.object(
+                presubmit.shutil, "which", return_value="/usr/bin/semgrep"
+            ),
+            mock.patch.object(
+                presubmit, "run_command", return_value=True
+            ) as run_command,
+            mock.patch.object(
+                presubmit, "run_parallel_commands"
+            ) as run_parallel_commands,
+        ):
+            ok = presubmit.run_semgrep(inputs, profile="paranoid", verbose=False)
+
+        self.assertTrue(ok)
+        run_command.assert_called_once_with(
+            presubmit.semgrep_test_command(), "Semgrep rule tests", False
+        )
+        run_parallel_commands.assert_not_called()
+
     def test_semgrep_is_explicitly_delegated_to_linux_on_windows(self):
         output = io.StringIO()
         inputs = input_scope(["runtime/src/iree/base/status.c"])
@@ -1422,6 +1492,14 @@ class PresubmitTest(unittest.TestCase):
             ),
             (
                 ["build_tools/lefthook/presubmit.py"],
+                [presubmit.LEFTHOOK_PRESUBMIT_TEST_TARGET],
+            ),
+            (
+                [presubmit.SEMGREP_CONFIG],
+                [presubmit.LEFTHOOK_PRESUBMIT_TEST_TARGET],
+            ),
+            (
+                [next(iter(presubmit.SEMGREP_TEST_PATHS))],
                 [presubmit.LEFTHOOK_PRESUBMIT_TEST_TARGET],
             ),
             (

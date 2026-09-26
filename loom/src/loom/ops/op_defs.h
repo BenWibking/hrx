@@ -467,6 +467,9 @@ static inline loom_operand_role_mask_t loom_operand_role_mask_bit(
 enum loom_result_flag_bits_e {
   LOOM_RESULT_VARIADIC = 1u << 0,
   LOOM_RESULT_ALLOCATES = 1u << 1,
+  // Result values describe a locally scoped operation signature and are not
+  // visible as SSA definitions after the operation.
+  LOOM_RESULT_SIGNATURE_ONLY = 1u << 2,
 };
 typedef uint8_t loom_result_flags_t;
 
@@ -711,12 +714,19 @@ typedef struct loom_op_placement_descriptor_t {
   const loom_op_kind_t* required_parents;
   // Op kinds that must appear somewhere in the parent-op chain.
   const loom_op_kind_t* required_ancestors;
+  // Alternative op kinds, at least one of which must appear in the parent-op
+  // chain.
+  const loom_op_kind_t* required_any_ancestors;
   // Op kinds that must not appear anywhere in the parent-op chain.
   const loom_op_kind_t* forbidden_ancestors;
+  // Human-readable alternative ancestor names used in diagnostics.
+  const char* required_any_ancestor_names;
   // Number of entries in |required_parents|.
   uint8_t required_parent_count;
   // Number of entries in |required_ancestors|.
   uint8_t required_ancestor_count;
+  // Number of entries in |required_any_ancestors|.
+  uint8_t required_any_ancestor_count;
   // Number of entries in |forbidden_ancestors|.
   uint8_t forbidden_ancestor_count;
 } loom_op_placement_descriptor_t;
@@ -760,6 +770,18 @@ static inline bool loom_op_vtable_has_segmented_operands(
     const loom_op_vtable_t* vtable) {
   return vtable && iree_any_bit_set(vtable->vtable_flags,
                                     LOOM_OP_VTABLE_SEGMENTED_OPERANDS);
+}
+
+// Returns true when the op's result values describe a locally scoped
+// signature instead of defining SSA values in the surrounding block.
+static inline bool loom_op_vtable_has_signature_only_results(
+    const loom_op_vtable_t* vtable) {
+  return vtable && vtable->result_descriptors &&
+         (vtable->fixed_result_count > 0 ||
+          iree_any_bit_set(vtable->vtable_flags,
+                           LOOM_OP_VTABLE_VARIADIC_RESULTS)) &&
+         iree_any_bit_set(vtable->result_descriptors[0].flags,
+                          LOOM_RESULT_SIGNATURE_ONLY);
 }
 
 // Returns the number of operand segment counts stored on an instance of this

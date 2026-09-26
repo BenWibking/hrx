@@ -339,7 +339,7 @@ typedef enum loom_amdgpu_index_cast_kind_e {
   LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_LOW_32 = 2,
   LOOM_AMDGPU_INDEX_CAST_KIND_SIGN_EXTENDING_LOW_32 = 3,
   LOOM_AMDGPU_INDEX_CAST_KIND_DIAGNOSTIC_REJECTED = 4,
-  LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_NARROW = 5,
+  LOOM_AMDGPU_INDEX_CAST_KIND_NORMALIZING_NARROW = 5,
   LOOM_AMDGPU_INDEX_CAST_KIND_PREDICATE_TO_INTEGER = 6,
   LOOM_AMDGPU_INDEX_CAST_KIND_NARROWING_INTEGER = 7,
   LOOM_AMDGPU_INDEX_CAST_KIND_INTEGER_TO_PREDICATE = 8,
@@ -353,7 +353,7 @@ typedef struct loom_amdgpu_index_cast_plan_t {
   loom_value_id_t source;
   // Result value receiving the cast payload.
   loom_value_id_t result;
-  // Descriptor materializing a zero high lane or masking narrow source bits.
+  // Descriptor materializing a zero high lane.
   loom_amdgpu_descriptor_ref_t conversion_descriptor_ref;
   // Selected result width, independent of storage retained by source aliases.
   uint8_t result_unit_count;
@@ -1285,6 +1285,8 @@ typedef struct loom_amdgpu_workgroup_reduce_plan_t {
   uint32_t partition_wavefront_size;
   // Exact flattened workgroup size selected by launch configuration.
   uint32_t flat_workgroup_size;
+  // Exact LDS scratch extent selected for cross-wave staging.
+  uint32_t scratch_byte_length;
   // 32-bit identity element bit pattern used for inactive source lanes.
   uint32_t identity_bits;
   // Cross-lane strategies selected for the two reduction stages.
@@ -1360,6 +1362,8 @@ typedef struct loom_amdgpu_workgroup_scan_plan_t {
   uint32_t partition_wavefront_size;
   // Exact flattened workgroup size selected by launch configuration.
   uint32_t flat_workgroup_size;
+  // Exact LDS scratch extent selected for cross-wave staging.
+  uint32_t scratch_byte_length;
 } loom_amdgpu_workgroup_scan_plan_t;
 
 typedef struct loom_amdgpu_subgroup_active_mask_plan_t {

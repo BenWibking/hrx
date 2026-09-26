@@ -106,10 +106,16 @@ static loom_value_facts_t loom_value_fact_table_clamp_scalar_type_domain(
   if (!loom_type_is_scalar(type)) {
     return facts;
   }
+  const loom_scalar_type_t scalar_type = loom_type_element_type(type);
+  if (loom_scalar_type_is_float(scalar_type)) {
+    // Predicate transfer must distinguish integer intervals from the compact
+    // floating-point payload carried in the same fields.
+    facts.flags |= LOOM_VALUE_FACT_FLOAT;
+    return facts;
+  }
   int64_t lo = 0;
   int64_t hi = 0;
-  if (!loom_value_facts_scalar_type_domain(loom_type_element_type(type), &lo,
-                                           &hi)) {
+  if (!loom_value_facts_scalar_type_domain(scalar_type, &lo, &hi)) {
     return facts;
   }
   return loom_value_facts_clamp_domain(facts, lo, hi);

@@ -1586,17 +1586,21 @@ def validate_descriptor_constraints(
             rhs = descriptor.operands[rhs_operand_index]
             if lhs.role is not OperandRole.OPERAND or rhs.role is not OperandRole.OPERAND:
                 raise ValueError(f"descriptor '{descriptor.key}' commutable constraint requires two operand rows")
-        elif constraint.kind is ConstraintKind.SAME_REGISTER_ORDINAL:
+        elif constraint.kind in (
+            ConstraintKind.SAME_REGISTER_ORDINAL,
+            ConstraintKind.SAME_REGISTER_VALUE_TYPE,
+        ):
+            constraint_name = constraint.kind.name.lower().replace("_", "-")
             rhs_operand_index = _validate_binary_constraint(
                 descriptor,
                 constraint_index,
-                "same-register-ordinal",
+                constraint_name,
                 lhs_operand_index,
                 rhs_operand_index,
             )
             rhs = descriptor.operands[rhs_operand_index]
             if (lhs.role is not OperandRole.RESULT and not operand_role_is_packet_input(lhs.role)) or (rhs.role is not OperandRole.RESULT and not operand_role_is_packet_input(rhs.role)):
-                raise ValueError(f"descriptor '{descriptor.key}' same-register-ordinal constraint requires two result or packet operand rows")
+                raise ValueError(f"descriptor '{descriptor.key}' {constraint_name} constraint requires two result or packet operand rows")
         elif constraint.kind in (
             ConstraintKind.EARLY_CLOBBER,
             ConstraintKind.REMATERIALIZABLE,

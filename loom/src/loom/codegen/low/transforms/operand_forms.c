@@ -16,6 +16,7 @@
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/memory_access.h"
 #include "loom/codegen/low/pipeline/pass_environment.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/storage_relation.h"
 #include "loom/codegen/low/target_binding.h"
 #include "loom/error/error_catalog.h"

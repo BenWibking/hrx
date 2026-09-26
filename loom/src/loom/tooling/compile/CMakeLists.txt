@@ -64,6 +64,22 @@ loom_cc_test(
     loom::testing::module_ptr
 )
 
+loom_cc_test(
+  NAME
+    preparation_test
+  SRCS
+    "preparation_test.cc"
+  DEPS
+    ::preparation
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::testing::context
+    loom::testing::module_ptr
+)
+
 loom_cc_library(
   NAME
     options
@@ -123,7 +139,7 @@ if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
   list(APPEND _configured_platform_deps loom::tooling::target::spirv::artifact_provider)
 endif()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_WASM AND LOOM_EMIT_WASM)
-  list(APPEND _configured_platform_deps loom::target::emit::wasm::artifact_emitter)
+  list(APPEND _configured_platform_deps loom::tooling::target::wasm::artifact_emitter)
 endif()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
   list(APPEND _configured_platform_deps loom::tooling::target::amd::xdna::artifact_provider)

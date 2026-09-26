@@ -14,6 +14,7 @@
 #include "loom/analysis/liveness.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/memory_access.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/schedule/dependency_index.h"
 #include "loom/codegen/low/schedule/resource_calendar.h"
 #include "loom/codegen/low/schedule/setup_order.h"
@@ -292,6 +293,9 @@ typedef struct loom_low_schedule_build_state_t {
   uint32_t* node_pressure_demand_units;
   // Maximum downstream register width needed to advance each node's value.
   uint32_t* node_pressure_activation_units;
+  // Downstream activation footprint indexed by schedule node then bounded
+  // unspillable completion domain.
+  uint32_t* node_unspillable_activation_units;
   // Per-node packing facts retained by the reverse priority analysis. Each
   // table is indexed by schedule node then register-packing resource.
   struct {

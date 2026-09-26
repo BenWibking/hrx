@@ -1,0 +1,32 @@
+// TEMPLATE: loom/src/loom/test/corpus/source_low/numeric_bfloat_narrow.loom
+// RUN: emit source-low target=spirv:vulkan1.3+bda+extended-types output=low control-flow=structured-low
+
+func.def @narrow_bfloat(%input: f32) -> (bf16) {
+  %narrow = scalar.fptrunc %input : f32 to bf16
+  func.return %narrow : bf16
+}
+
+// ----
+low.func.def target<spirv.logical.core> abi(shader_entry_point) @narrow_bfloat(%input: reg<spirv.id : f32>) -> (reg<spirv.id : bf16>) asm {
+  %narrow = OpFConvert.f32.bf16 %input
+  return %narrow
+}
+
+// ====
+
+func.def @store_narrow_bfloat(%input: f32, %output: buffer) {
+  %base = index.constant 0 : offset
+  %target = buffer.view %output[%base] : buffer -> view<1xbf16>
+  %narrow = scalar.fptrunc %input : f32 to bf16
+  view.store %narrow, %target[0] : bf16, view<1xbf16>
+  func.return
+}
+
+// ----
+low.func.def target<spirv.logical.core> abi(shader_entry_point) @store_narrow_bfloat(%input: reg<spirv.id : f32>, %output: reg<spirv.ptr.storage_buffer>) asm {
+  %narrow = OpFConvert.f32.bf16 %input
+  %8 = OpConstant.offset64 0
+  %9 = OpPtrAccessChain.storage_buffer.bf16.byte_offset %output, %8
+  OpStore.storage_buffer.bf16 %9, %narrow
+  return
+}

@@ -29,6 +29,10 @@ _BIT_WIDTHS = {
     "f64": 64,
 }
 
+_FLOAT32_SCALAR_TYPE = next(
+    scalar for scalar in FLOAT_SCALAR_ALU_TYPES if scalar.source_type == "f32"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ScalarConversion:
@@ -270,9 +274,15 @@ DIRECT_SCALAR_CONVERSIONS = (
         mnemonic="OpFConvert",
         opcode="LOOM_SPIRV_OP_F_CONVERT",
         source_type=BFLOAT16_SCALAR_TYPE,
-        result_type=next(
-            scalar for scalar in FLOAT_SCALAR_ALU_TYPES if scalar.source_type == "f32"
-        ),
+        result_type=_FLOAT32_SCALAR_TYPE,
+    ),
+    ScalarConversion(
+        source_op_key="fptrunc",
+        descriptor_suffix="f_convert",
+        mnemonic="OpFConvert",
+        opcode="LOOM_SPIRV_OP_F_CONVERT",
+        source_type=_FLOAT32_SCALAR_TYPE,
+        result_type=BFLOAT16_SCALAR_TYPE,
     ),
     *_signed_integer_to_float_conversions(),
     *_float_to_signed_integer_conversions(),

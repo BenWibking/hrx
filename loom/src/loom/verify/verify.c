@@ -556,6 +556,12 @@ IREE_ATTRIBUTE_ALWAYS_INLINE static inline iree_status_t loom_verify_op(
   if (op->attribute_count) {
     loom_verify_attribute_value_refs(state, op, vtable);
     IREE_RETURN_IF_ERROR(loom_verify_pending_diagnostic_status(state));
+    if (state->result->error_count == initial_error_count &&
+        iree_any_bit_set(vtable->vtable_flags,
+                         LOOM_OP_VTABLE_HAS_PREDICATE_LIST)) {
+      IREE_RETURN_IF_ERROR(loom_verify_predicate_attributes(state, op, vtable));
+      IREE_RETURN_IF_ERROR(loom_verify_pending_diagnostic_status(state));
+    }
   }
 
   // Poison may flow through pure SSA computation, but it must not be consumed
@@ -590,7 +596,7 @@ IREE_ATTRIBUTE_ALWAYS_INLINE static inline iree_status_t loom_verify_op(
   // so that a result cannot appear to dominate its own defining op.
   if (has_signature_scope) {
     loom_verify_pop_scope(state);
-  } else {
+  } else if (!loom_op_vtable_has_signature_only_results(vtable)) {
     for (uint16_t i = 0; i < op->result_count; ++i) {
       IREE_RETURN_IF_ERROR(
           loom_verify_define_value(state, loom_op_const_results(op)[i]));

@@ -63,6 +63,7 @@ loom_cc_library(
     loom::tooling::config
     loom::tooling::context
     loom::tooling::execution::hal::device_provider
+    loom::tooling::execution::hal::scenario_profile
     loom::tooling::execution::hal::testbench_actual
     loom::tooling::execution::session
     loom::tooling::input::flags
@@ -73,6 +74,9 @@ loom_cc_library(
     loom::tooling::testbench::issue_report
     loom::tooling::testbench::reference
     loom::tooling::testbench::requirements
+    loom::tooling::testbench::scenario::entropy
+    loom::tooling::testbench::scenario::executor
+    loom::tooling::testbench::scenario::values
     loom::util::json
     loom::util::stream
     loom::verify
@@ -120,6 +124,21 @@ loom_cc_binary(
     ${_iree_test_loom_platform_deps}
 )
 
+loom_cc_binary(
+  NAME
+    scenario_failure_test_tool
+  SRCS
+    "scenario_failure_test.c"
+  DEPS
+    ::main
+    iree::base
+    iree::hal
+    loom::ir
+    loom::tooling::execution::execution_provider
+    loom::tooling::testbench::scenario::executor
+  TESTONLY
+)
+
 iree_execution_test_suite(
   NAME
     execution_test
@@ -134,6 +153,34 @@ iree_execution_test_suite(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/linked_input_cases.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/requirement_cases.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/scalar_cases.loom"
+  LABELS
+    "hostonly"
+)
+
+if(LOOM_TARGET_ARCH_VM)
+iree_execution_test_suite(
+  NAME
+    scenario_execution_test
+  MANIFESTS
+    "scenario_execution.test.json"
+  TOOLS
+    "iree-test-loom=::iree-test-loom"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/scenario_cases.loom"
+  LABELS
+    "hostonly"
+)
+endif()
+
+iree_execution_test_suite(
+  NAME
+    scenario_failure_test
+  MANIFESTS
+    "scenario_failure.test.json"
+  TOOLS
+    "scenario-failure-test=::scenario_failure_test_tool"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/iree-test-loom/testdata/scenario_failures.loom"
   LABELS
     "hostonly"
 )

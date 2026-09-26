@@ -53,6 +53,7 @@ loom_cc_library(
     ::site_location
     ::site_payload
     iree::base
+    loom::decision::predicate
     loom::error::error_defs
     loom::ir
     loom::ops::index

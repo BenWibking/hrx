@@ -38,6 +38,7 @@ from loom.gen.target.contracts.lower_rules import (
     _intern_rows,
     _validate_c_table_shape,
     generate_lower_rule_set,
+    generate_lower_rule_set_from_compiled,
 )
 from loom.target.contracts import (
     LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS,
@@ -84,6 +85,7 @@ from loom.target.contracts import (
     ValueRef,
     Vector,
     View,
+    compile_lower_rule_set,
 )
 from loom.target.contracts.diagnostics import DiagnosticParamKind
 from loom.target.low_descriptors import Immediate, ImmediateKind
@@ -973,9 +975,13 @@ def test_generate_lower_rule_set_emits_report_key_ordinals() -> None:
         ],
     )
 
-    generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+    compiled = compile_lower_rule_set(
+        table,
+        dialect_ops={"scalar": ALL_SCALAR_OPS},
+    )
+    generated = generate_lower_rule_set_from_compiled(table, compiled=compiled)
 
-    assert "test.scalar_mulf.strategy.native" in generated.source
+    assert [rule.report_key for rule in compiled.rules] == ["test.scalar_mulf.strategy.native"]
     assert "static const loom_string_ref_t" in generated.source
     assert ".report_key_ordinal = 1," in generated.source
     assert ".report_key_string_refs = " in generated.source
@@ -1472,10 +1478,14 @@ def test_generate_lower_rule_set_emits_source_instance_flags_projection() -> Non
         ],
     )
 
-    generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+    compiled = compile_lower_rule_set(
+        table,
+        dialect_ops={"scalar": ALL_SCALAR_OPS},
+    )
+    generated = generate_lower_rule_set_from_compiled(table, compiled=compiled)
 
     assert "LOOM_LOW_LOWER_ATTR_COPY_SOURCE_OP_INSTANCE_FLAGS" in generated.source
-    assert "fast_math_flags" in generated.source
+    assert [attr_copy.target_name for attr_copy in compiled.attr_copies] == ["fast_math_flags"]
     assert ".target_name_string_ref = " in generated.source
 
 

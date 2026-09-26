@@ -480,6 +480,124 @@ CHECK: *"scheduled_node_indices":[0,1,2,3,4,5]*
 CHECK: *{"from":0,"to":1,"kind":"order",*
 
 // ====
+// RUN: with-checks emit low-schedule-json @resource_stall_advances_exact_two_consumer_handoff strategy=resource-stall
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_advances_exact_two_consumer_handoff(%condition: reg<test.i32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>, %other_lhs: reg<test.i32>, %other_rhs: reg<test.i32>) -> (reg<test.i32>, reg<test.i32>) asm {
+  %fixed = copy %condition : reg<test.i32> -> reg<test.fixed.r0>
+  low.schedule.fence
+  // The fixed value has two consumers, so ordinary sole-consumer demand
+  // cannot nominate either one. The first select consumes one branch and
+  // exposes the other as the exact remaining consumer of the full register.
+  %unrelated = test.add.i32 %other_lhs, %other_rhs
+  %handoff = test.fixed.select.i32 %lhs, %rhs, %fixed
+  %completed = test.fixed.select.i32 %handoff, %rhs, %fixed
+  return %completed, %unrelated
+}
+
+// ----
+CHECK: *"scheduled_node_indices":[0,1,3,4,2,5]*
+
+// ====
+// RUN: with-checks emit low-schedule-json @resource_stall_accounts_for_future_unspillable_activation strategy=resource-stall
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_accounts_for_future_unspillable_activation(%live0: reg<test.explicit32>, %live1: reg<test.explicit32>, %live2: reg<test.explicit32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>) -> (reg<test.explicit32>, reg<test.explicit32>, reg<test.explicit32>, reg<test.i32>, reg<test.i32>) asm {
+  // This branch eventually occupies the last explicit register. Keep the
+  // virtual branch ahead until it completes instead of opening that pressure.
+  %physical_path = test.add.i32 %lhs, %rhs
+  %physical = copy %physical_path : reg<test.i32> -> reg<test.explicit32>
+  %physical_result = copy %physical : reg<test.explicit32> -> reg<test.i32>
+  %virtual_path = test.mul.i32 %lhs, %rhs
+  %virtual0 = copy %virtual_path : reg<test.i32> -> reg<test.i32>
+  %virtual1 = copy %virtual0 : reg<test.i32> -> reg<test.i32>
+  return %live0, %live1, %live2, %physical_result, %virtual1
+}
+
+// ----
+CHECK: *"scheduled_node_indices":[3,0,*
+
+// ====
+// RUN: with-checks emit low-schedule-json @resource_stall_accounts_for_non_ssa_unlock_activation strategy=resource-stall
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_accounts_for_non_ssa_unlock_activation(%live0: reg<test.explicit32>, %live1: reg<test.explicit32>, %live2: reg<test.explicit32>, %address: reg<test.ptr>, %value: reg<test.i32 x4>, %lhs: reg<test.i32>, %rhs: reg<test.i32>) -> (reg<test.explicit32>, reg<test.explicit32>, reg<test.explicit32>, reg<test.i32>, reg<test.i32>, reg<test.i32 x4>, reg<test.i32>, reg<test.i32>) asm {
+  // Memory ordering makes the store the last non-SSA predecessor of a load
+  // chain that opens the final explicit register. Carry that activation to
+  // the ready store and finish the virtual branch first.
+  test.store.v4i32 %address, %value
+  %loaded = test.load.v4i32 %address
+  %lane = test.extract_lane.i32 %loaded, 0
+  %physical = copy %lane : reg<test.i32> -> reg<test.explicit32>
+  %physical_result = copy %physical : reg<test.explicit32> -> reg<test.i32>
+  %virtual_path = test.mul.i32 %lhs, %rhs
+  %virtual0 = copy %virtual_path : reg<test.i32> -> reg<test.i32>
+  %virtual1 = copy %virtual0 : reg<test.i32> -> reg<test.i32>
+  return %live0, %live1, %live2, %physical_result, %virtual1, %value, %lhs, %rhs
+}
+
+// ----
+CHECK: *"scheduled_node_indices":[5,0,*
+
+// ====
+// RUN: emit low-schedule-json @resource_stall_excludes_live_ins_from_unspillable_activation strategy=resource-stall diagnostics=candidates output=none
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_excludes_live_ins_from_unspillable_activation(%live0: reg<test.explicit32>, %live1: reg<test.explicit32>, %live2: reg<test.explicit32>, %lhs0: reg<test.i32>, %rhs0: reg<test.i32>, %lhs1: reg<test.i32>, %rhs1: reg<test.i32>) -> (reg<test.explicit32>, reg<test.explicit32>, reg<test.explicit32>, reg<test.i32>, reg<test.i32>) asm {
+  // Block inputs are already part of current pressure. Reaching the return
+  // does not activate three additional physical registers.
+  // REMARK@+1: BACKEND/015 {chosen_packet="test.add.i32", rejected_packet="test.mul.i32", chosen_pressure_cliff_penalty="0", rejected_pressure_cliff_penalty="0"}
+  %first = test.add.i32 %lhs0, %rhs0
+  %second = test.mul.i32 %lhs1, %rhs1
+  return %live0, %live1, %live2, %first, %second
+}
+
+// ====
+// RUN: emit low-schedule-json @resource_stall_excludes_prior_ranges_from_unspillable_activation strategy=resource-stall diagnostics=candidates output=none
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_excludes_prior_ranges_from_unspillable_activation(%seed: reg<test.i32>, %lhs0: reg<test.i32>, %rhs0: reg<test.i32>, %lhs1: reg<test.i32>, %rhs1: reg<test.i32>) -> (reg<test.explicit32>, reg<test.explicit32>, reg<test.explicit32>, reg<test.i32>, reg<test.i32>) asm {
+  %live0 = copy %seed : reg<test.i32> -> reg<test.explicit32>
+  %carry0 = copy %live0 : reg<test.explicit32> -> reg<test.i32>
+  %live1 = copy %carry0 : reg<test.i32> -> reg<test.explicit32>
+  %carry1 = copy %live1 : reg<test.explicit32> -> reg<test.i32>
+  %live2 = copy %carry1 : reg<test.i32> -> reg<test.explicit32>
+  low.schedule.fence
+  // The three physical results are already live when this source range opens.
+  // REMARK@+1: BACKEND/015 {chosen_packet="test.add.i32", rejected_packet="test.mul.i32", chosen_pressure_cliff_penalty="0", rejected_pressure_cliff_penalty="0"}
+  %first = test.add.i32 %lhs0, %rhs0
+  %second = test.mul.i32 %lhs1, %rhs1
+  return %live0, %live1, %live2, %first, %second
+}
+
+// ====
+// RUN: with-checks emit low-schedule-json @resource_stall_excludes_loop_handoffs_from_unspillable_activation strategy=resource-stall
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_excludes_loop_handoffs_from_unspillable_activation(%seed0: reg<test.explicit32>, %seed1: reg<test.explicit32>, %seed2: reg<test.explicit32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>) asm {
+  low.br ^loop(%seed0: reg<test.explicit32>, %seed1: reg<test.explicit32>, %seed2: reg<test.explicit32>)
+^loop(%state0: reg<test.explicit32>, %state1: reg<test.explicit32>, %state2: reg<test.explicit32>):
+  // Each backedge value replaces an already-live loop argument. Keep the
+  // first update moving instead of charging both replacements as new storage.
+  %value0 = copy %state0 : reg<test.explicit32> -> reg<test.i32>
+  %path0 = test.add.i32 %value0, %lhs
+  %next0 = copy %path0 : reg<test.i32> -> reg<test.explicit32>
+  %value1 = copy %state1 : reg<test.explicit32> -> reg<test.i32>
+  %path1 = test.add.i32 %value1, %rhs
+  %next1 = copy %path1 : reg<test.i32> -> reg<test.explicit32>
+  low.br ^loop(%next0: reg<test.explicit32>, %next1: reg<test.explicit32>, %state2: reg<test.explicit32>)
+}
+
+// ----
+CHECK: *"scheduled_node_indices":[0,1,2,*
+
+// ====
 // RUN: emit low-schedule-json @resource_stall_advances_smallest_active_unspillable_completion strategy=resource-stall diagnostics=candidates output=none
 
 test.target<low_core> @test_target
@@ -501,6 +619,23 @@ low.func.def target<test.low.core>(@test_target) @resource_stall_advances_smalle
   %select0 = test.fixed.select.i32 %prepared, %rhs, %fixed0
   %select1 = test.fixed.select.i32 %lhs, %rhs, %fixed1
   return %select0, %select1, %packed0, %packed1
+}
+
+// ====
+// RUN: emit low-schedule-json @resource_stall_advances_tightest_feasible_unspillable_completion strategy=resource-stall diagnostics=candidates output=none
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_advances_tightest_feasible_unspillable_completion(%condition: reg<test.i32>, %lhs: reg<test.i32>, %rhs: reg<test.i32>, %explicit0: reg<test.explicit32>, %explicit1: reg<test.explicit32>, %explicit2: reg<test.explicit32>, %explicit3: reg<test.explicit32>) -> (reg<test.i32>, reg<test.i32>, reg<test.explicit32>, reg<test.explicit32>, reg<test.explicit32>) asm {
+  %fixed = copy %condition : reg<test.i32> -> reg<test.fixed.r0>
+  low.schedule.fence
+  // Both full banks have feasible completion candidates. Close the singleton
+  // bank before the four-register bank, even though its candidate appears
+  // later in source order.
+  %explicit_result = copy %explicit0 : reg<test.explicit32> -> reg<test.i32>
+  // REMARK@+1: BACKEND/015 {scheduled_ordinal="2", chosen_packet="test.fixed.select.i32", rejected_packet="low.copy"}
+  %selected = test.fixed.select.i32 %lhs, %rhs, %fixed
+  return %selected, %explicit_result, %explicit1, %explicit2, %explicit3
 }
 
 // ====
@@ -841,6 +976,23 @@ low.func.def target<test.low.core>(@test_target) @resource_stall_completes_long_
 }
 
 // ====
+// RUN: emit low-schedule-json @resource_stall_preserves_source_order_without_pressure_progress strategy=resource-stall diagnostics=candidates test.i32=6 output=none
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_preserves_source_order_without_pressure_progress(%short_lhs: reg<test.i32>, %short_rhs: reg<test.i32>, %long_lhs: reg<test.i32>, %long_rhs: reg<test.i32>) -> (reg<test.i32>, reg<test.i32>, reg<test.i32>, reg<test.i32>, reg<test.i32>, reg<test.i32>) asm {
+  // Both candidates grow pressure by one unit and issue after one cycle. Keep
+  // the older multiply instead of opening the later add's live range merely
+  // because its delay is a data stall rather than a resource stall.
+  // REMARK@+1: BACKEND/015 {scheduled_ordinal="1", chosen_packet="test.mul.i32", rejected_packet="test.add.i32", chosen_data_ready_stall_cycles="0", chosen_resource_stall_cycles="1", rejected_data_ready_stall_cycles="1", rejected_resource_stall_cycles="0"}
+  %short = test.mul.i32 %short_lhs, %short_rhs
+  // REMARK@+1: BACKEND/015 {scheduled_ordinal="0", chosen_packet="test.add.i32", rejected_packet="test.mul.i32"}
+  %long0 = test.add.i32 %long_lhs, %long_rhs
+  %long1 = test.add.i32 %long0, %long_rhs
+  return %short, %long1, %short_lhs, %short_rhs, %long0, %long_rhs
+}
+
+// ====
 // RUN: emit low-schedule-json @resource_stall_opens_load_on_real_issue_timeline strategy=resource-stall diagnostics=candidates output=none
 
 test.target<low_core> @test_target
@@ -951,6 +1103,21 @@ low.func.def target<test.low.core>(@test_target) @resource_stall_avoids_creating
   // REMARK@+1: BACKEND/015 {scheduled_ordinal="0", chosen_packet="test.move.from.pressure.alias32.x5", rejected_packet="test.move.to.pressure.alias32", chosen_projected_live_units="8", rejected_projected_live_units="8", chosen_pressure_cliff_penalty="0", rejected_pressure_cliff_penalty="1", rejected_pressure_cliff_units="8"}
   %retired_alias = test.move.from.pressure.alias32.x5 %narrow
   return %wide0, %wide1, %new_alias, %retired_alias
+}
+
+// ====
+// RUN: emit low-schedule-json @resource_stall_preserves_cross_bank_headroom strategy=resource-stall diagnostics=candidates output=none
+
+test.target<low_core> @test_target
+
+low.func.def target<test.low.core>(@test_target) @resource_stall_preserves_cross_bank_headroom(%wide0: reg<test.pressure.alias64>, %wide1: reg<test.pressure.alias64>, %alias: reg<test.pressure.alias32 x5>, %alias_source: reg<test.i32>, %phys_lhs: reg<test.phys>, %phys_rhs: reg<test.phys>) -> (reg<test.pressure.alias64>, reg<test.pressure.alias64>, reg<test.pressure.alias32 x5>, reg<test.pressure.alias32>, reg<test.phys>, reg<test.phys>, reg<test.phys>) asm {
+  // Moving a final scalar into the crowded alias bank is aggregate-neutral,
+  // while retaining both add operands grows total live units. The physical
+  // bank with available headroom must decide the order.
+  %new_alias = test.move.to.pressure.alias32 %alias_source
+  // REMARK@+1: BACKEND/015 {scheduled_ordinal="0", chosen_packet="test.add.phys", rejected_packet="test.move.to.pressure.alias32", chosen_pressure_cliff_penalty="0", rejected_pressure_cliff_penalty="1"}
+  %phys = test.add.phys %phys_lhs, %phys_rhs
+  return %wide0, %wide1, %alias, %new_alias, %phys, %phys_lhs, %phys_rhs
 }
 
 // ====

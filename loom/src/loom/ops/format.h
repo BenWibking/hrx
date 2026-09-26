@@ -66,8 +66,8 @@ enum loom_format_kind_e {
   // Where-clause predicates: [mul(%M, 16), ...].
   LOOM_FORMAT_KIND_PREDICATE_LIST = 14,
   // Optional group marker. field_index = anchor field index.
-  // data = (skip_count << 2) | anchor_category.
-  // The walker skips |skip_count| elements when the anchor is absent.
+  // data = LOOM_FORMAT_OPTIONAL_GROUP_DATA. The walker skips |skip_count|
+  // elements when the anchor presence does not match the group polarity.
   LOOM_FORMAT_KIND_OPTIONAL_GROUP = 15,
   // Suppress space before the next token.
   LOOM_FORMAT_KIND_GLUE = 16,
@@ -128,6 +128,8 @@ enum loom_format_kind_e {
 
   // Region entry block arguments: (%a: type, %b: type).
   // field_index = region index whose entry block args are printed or parsed.
+  // data optionally packs attribute indices with LOOM_FORMAT_BLOCK_ARGS_DATA.
+  // The boundaries project a contiguous slice of one entry signature.
   LOOM_FORMAT_KIND_BLOCK_ARGS = 26,
 
   // CFG successor block reference: ^label.
@@ -162,6 +164,21 @@ enum loom_format_kind_e {
 };
 typedef uint8_t loom_format_kind_t;
 
+// The high bit distinguishes groups selected by an absent anchor. Remaining
+// bits hold the child count and two-bit anchor category.
+#define LOOM_FORMAT_OPTIONAL_GROUP_INVERTED ((uint16_t)(1u << 15))
+#define LOOM_FORMAT_OPTIONAL_GROUP_SKIP_MASK \
+  ((uint16_t)~LOOM_FORMAT_OPTIONAL_GROUP_INVERTED)
+#define LOOM_FORMAT_OPTIONAL_GROUP_DATA(skip_count, anchor_category, inverted) \
+  ((uint16_t)((((uint16_t)(skip_count) << 2) &                                 \
+               LOOM_FORMAT_OPTIONAL_GROUP_SKIP_MASK) |                         \
+              (uint16_t)(anchor_category) |                                    \
+              ((inverted) ? LOOM_FORMAT_OPTIONAL_GROUP_INVERTED : 0u)))
+#define LOOM_FORMAT_OPTIONAL_GROUP_SKIP_COUNT(data) \
+  ((uint16_t)(((data) & LOOM_FORMAT_OPTIONAL_GROUP_SKIP_MASK) >> 2))
+#define LOOM_FORMAT_OPTIONAL_GROUP_IS_INVERTED(data) \
+  iree_any_bit_set((data), LOOM_FORMAT_OPTIONAL_GROUP_INVERTED)
+
 // Individual flag bits packed into INDEX_LIST format element data.
 enum loom_format_index_list_data_bits_e {
   LOOM_FORMAT_INDEX_LIST_DATA_NO_LEADING_GLUE = 1u << 15,
@@ -191,6 +208,16 @@ enum loom_format_index_list_data_bits_e {
   ((uint8_t)(((data) >> 8) - 1u))
 #define LOOM_FORMAT_FUNC_ARGS_END_ATTR_INDEX(data) \
   ((uint8_t)(((data) & 0xFFu) - 1u))
+
+// BLOCK_ARGS uses the same packed signature-slice representation as
+// FUNC_ARGS. Separate names keep format consumers explicit about which
+// signature owns the boundary attributes.
+#define LOOM_FORMAT_BLOCK_ARGS_DATA(start_attr_index, end_attr_index) \
+  LOOM_FORMAT_FUNC_ARGS_DATA(start_attr_index, end_attr_index)
+#define LOOM_FORMAT_BLOCK_ARGS_START_ATTR_INDEX(data) \
+  LOOM_FORMAT_FUNC_ARGS_START_ATTR_INDEX(data)
+#define LOOM_FORMAT_BLOCK_ARGS_END_ATTR_INDEX(data) \
+  LOOM_FORMAT_FUNC_ARGS_END_ATTR_INDEX(data)
 
 // Surface syntax selected by a REGION format element. This affects only text
 // parsing/printing; the in-memory representation is always an ordinary

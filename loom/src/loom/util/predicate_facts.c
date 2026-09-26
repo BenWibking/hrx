@@ -199,6 +199,10 @@ static void loom_value_fact_table_apply_alias_predicates_with_map(
         (!lhs_is_alias && !rhs_is_alias)) {
       continue;
     }
+    if (loom_value_facts_is_float(lhs_facts) ||
+        loom_value_facts_is_float(rhs_facts)) {
+      continue;
+    }
 
     loom_value_facts_t* lhs_result =
         lhs_is_alias ? &inout_facts[lhs_ordinal] : NULL;

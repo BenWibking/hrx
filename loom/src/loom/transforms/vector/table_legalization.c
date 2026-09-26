@@ -14,7 +14,7 @@ typedef struct loom_vector_table_quantize_builder_t {
   loom_builder_t* builder;
   // Source location of the quantization operation.
   loom_location_id_t location;
-  // Rank-one input value captured by the source program.
+  // Rank-one view of the input value captured by the source program.
   loom_value_id_t input;
   // Ordered rank-one threshold value captured by the source program.
   loom_value_id_t thresholds;
@@ -197,8 +197,7 @@ iree_status_t loom_vector_table_quantize_rewrite(
       context->module, loom_vector_table_quantize_result(op));
   uint64_t input_count = 0;
   uint64_t threshold_count = 0;
-  if (loom_type_rank(input_type) != 1 ||
-      !loom_type_static_element_count(input_type, &input_count) ||
+  if (!loom_type_static_element_count(input_type, &input_count) ||
       !loom_type_static_element_count(threshold_type, &threshold_count) ||
       input_count == 0 || input_count > INT64_MAX ||
       threshold_count > INT64_MAX) {
@@ -229,6 +228,16 @@ iree_status_t loom_vector_table_quantize_rewrite(
   loom_rewriter_t* rewriter = context->rewriter;
   loom_builder_set_before(&rewriter->builder, op);
   const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
+  const loom_type_t flat_input_type = loom_vector_table_packet_type(
+      loom_type_element_type(input_type), input_count);
+  loom_value_id_t flat_input = input;
+  if (!loom_type_equal(input_type, flat_input_type)) {
+    loom_op_t* bitcast_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_bitcast_build(&rewriter->builder, input,
+                                                   input_type, flat_input_type,
+                                                   op->location, &bitcast_op));
+    flat_input = loom_vector_bitcast_result(bitcast_op);
+  }
   const bool upper = loom_vector_table_quantize_tie(op) ==
                      LOOM_VECTOR_TABLE_QUANTIZE_TIE_UPPER;
   const bool nan_max =
@@ -236,7 +245,7 @@ iree_status_t loom_vector_table_quantize_rewrite(
   loom_vector_table_quantize_builder_t quantize = {
       .builder = &rewriter->builder,
       .location = op->location,
-      .input = input,
+      .input = flat_input,
       .thresholds = thresholds,
       .input_count = input_count,
       .threshold_count = threshold_count,
@@ -257,13 +266,22 @@ iree_status_t loom_vector_table_quantize_rewrite(
     IREE_RETURN_IF_ERROR(loom_vector_table_quantize_packet(
         &quantize, offset, count, &packets[packet]));
   }
+  const loom_type_t flat_result_type =
+      loom_vector_table_packet_type(result_element_type, input_count);
   loom_value_id_t replacement = packets[0];
   if (result_packet_count > 1) {
     loom_op_t* value_op = NULL;
     IREE_RETURN_IF_ERROR(loom_vector_concat_build(
-        quantize.builder, 0, packets, result_packet_count, result_type,
+        quantize.builder, 0, packets, result_packet_count, flat_result_type,
         op->location, &value_op));
     replacement = loom_vector_concat_result(value_op);
+  }
+  if (!loom_type_equal(flat_result_type, result_type)) {
+    loom_op_t* bitcast_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_bitcast_build(
+        quantize.builder, replacement, flat_result_type, result_type,
+        op->location, &bitcast_op));
+    replacement = loom_vector_bitcast_result(bitcast_op);
   }
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
       rewriter, op, &replacement, 1, checkpoint));

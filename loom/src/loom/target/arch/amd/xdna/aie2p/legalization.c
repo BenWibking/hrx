@@ -6,11 +6,15 @@
 
 #include "loom/target/arch/amd/xdna/aie2p/legalization.h"
 
+#include "loom/ops/scalar/ops.h"
 #include "loom/ops/vector/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/legalization_compare.h"
 #include "loom/target/arch/amd/xdna/aie2p/legalization_table.h"
+#include "loom/transforms/scalar/target_legalization.h"
 #include "loom/transforms/vector/packet_legalization.h"
+#include "loom/transforms/vector/shape_legalization.h"
+#include "loom/transforms/vector/table_legalization.h"
 #include "loom/transforms/vector/target_legalization.h"
 #include "loom/transforms/vector/to_scalar.h"
 
@@ -25,6 +29,33 @@ static const loom_vector_packet_policy_t kAie2pVectorPacketPolicy = {
 static bool loom_aie2p_legalizer_descriptor_set_is_core(
     const loom_low_descriptor_set_t* descriptor_set) {
   return descriptor_set == loom_aie2p_core_descriptor_set();
+}
+
+static bool loom_aie2p_match_scalar_multiply_add(
+    const loom_target_legalizer_entry_t* entry,
+    const loom_target_legalization_context_t* context, const loom_op_t* op) {
+  (void)entry;
+  loom_scalar_multiply_add_match_t match = {0};
+  return loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set) &&
+         loom_scalar_match_multiply_add(context->module, op, &match);
+}
+
+static iree_status_t loom_aie2p_legalize_scalar_multiply_add(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  loom_scalar_multiply_add_match_t match = {0};
+  if (!loom_scalar_match_multiply_add(context->module, op, &match)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_scalar_fuse_multiply_add_match(context->rewriter, &match));
+  out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  return iree_ok_status();
 }
 
 // AIE vector registers are linear carriers: logical multidimensional shapes
@@ -90,12 +121,67 @@ static iree_status_t loom_aie2p_legalize_table_lookup(
   }
 
   bool rewritten = false;
-  IREE_RETURN_IF_ERROR(
-      loom_aie2p_table_lookup_rewrite(context, op, &rewritten));
+  IREE_RETURN_IF_ERROR(loom_aie2p_table_lookup_rewrite(
+      context, op, &kAie2pVectorPacketPolicy, &rewritten));
+  if (!rewritten) {
+    IREE_RETURN_IF_ERROR(
+        loom_vector_static_shape_rewrite_op(context, op, &rewritten));
+  }
   if (!rewritten) {
     IREE_RETURN_IF_ERROR(loom_vector_to_scalar_rewrite_op(
         context->pass, context->rewriter, op, &rewritten));
   }
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_legalize_table_quantize(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+  const loom_type_t input_type = loom_module_value_type(
+      context->module, loom_vector_table_quantize_input(op));
+  const loom_type_t result_type = loom_module_value_type(
+      context->module, loom_vector_table_quantize_result(op));
+  const loom_scalar_type_t input_element_type =
+      loom_type_element_type(input_type);
+  const loom_scalar_type_t result_element_type =
+      loom_type_element_type(result_type);
+  const uint32_t result_bit_count =
+      loom_scalar_type_bitwidth(result_element_type);
+  const uint32_t packet_bit_count = 512;
+  if ((input_element_type != LOOM_SCALAR_TYPE_F16 &&
+       input_element_type != LOOM_SCALAR_TYPE_BF16 &&
+       input_element_type != LOOM_SCALAR_TYPE_F32) ||
+      result_bit_count > 64) {
+    return iree_ok_status();
+  }
+  uint64_t input_count = 0;
+  // Native i32-to-i64 widening consumes complete 512-bit result packets; a
+  // partial tail is not a legal VUPS conversion.
+  if (result_bit_count > 32 &&
+      (!loom_type_static_element_count(input_type, &input_count) ||
+       input_count % (packet_bit_count / result_bit_count) != 0)) {
+    return iree_ok_status();
+  }
+  const loom_vector_table_quantize_policy_t policy = {
+      .packet_bit_count = packet_bit_count,
+      .comparison_element_type = input_element_type,
+      .ordinal_element_type =
+          result_bit_count > 32 ? LOOM_SCALAR_TYPE_I32 : result_element_type,
+  };
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(
+      loom_vector_table_quantize_rewrite(context, op, &policy, &rewritten));
   if (rewritten) {
     out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
   }
@@ -219,6 +305,13 @@ static iree_status_t loom_aie2p_legalize_vector_reduce_axes(
 
 static const loom_target_legalizer_rule_t kAie2pLegalizerRules[] = {
     {
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
+        .root_kind = LOOM_OP_SCALAR_MULI,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I32,
+        .match = loom_aie2p_match_scalar_multiply_add,
+        .legalize = loom_aie2p_legalize_scalar_multiply_add,
+    },
+    {
         .root_kind = LOOM_OP_VECTOR_BROADCAST,
         .legalize = loom_aie2p_legalize_vector_to_scalar,
     },
@@ -273,6 +366,10 @@ static const loom_target_legalizer_rule_t kAie2pLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_VECTOR_TABLE_LOOKUP,
         .legalize = loom_aie2p_legalize_table_lookup,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_TABLE_QUANTIZE,
+        .legalize = loom_aie2p_legalize_table_quantize,
     },
     {
         .root_kind = LOOM_OP_VECTOR_FROM_ELEMENTS,

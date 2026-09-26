@@ -459,3 +459,328 @@ void loom_verify_attribute_value_refs(loom_verify_state_t* state,
     }
   }
 }
+
+//===----------------------------------------------------------------------===//
+// Predicate semantic domains
+//===----------------------------------------------------------------------===//
+
+static iree_string_view_t loom_verify_predicate_expected_type(uint8_t kind) {
+  switch ((loom_predicate_kind_t)kind) {
+    case LOOM_PREDICATE_EQ:
+    case LOOM_PREDICATE_NE:
+      return IREE_SV("numeric scalar");
+    case LOOM_PREDICATE_NOT_NAN:
+    case LOOM_PREDICATE_NOT_INF:
+    case LOOM_PREDICATE_FINITE:
+      return IREE_SV("floating-point scalar");
+    case LOOM_PREDICATE_ULT:
+    case LOOM_PREDICATE_ULE:
+    case LOOM_PREDICATE_UGT:
+    case LOOM_PREDICATE_UGE:
+      return IREE_SV("fixed-width integer scalar");
+    default:
+      return IREE_SV("integer, index, or offset scalar");
+  }
+}
+
+static void loom_verify_format_predicate_argument(
+    char* buffer, iree_host_size_t buffer_capacity, iree_string_view_t name,
+    uint16_t predicate_index, uint8_t argument_index) {
+  iree_snprintf(buffer, buffer_capacity, "%.*s[%u].arg[%u]", (int)name.size,
+                name.data, predicate_index, argument_index);
+}
+
+IREE_ATTRIBUTE_NOINLINE IREE_ATTRIBUTE_COLD static void
+loom_verify_emit_predicate_type_constraint(
+    loom_verify_state_t* state, const loom_op_t* op, iree_string_view_t name,
+    uint16_t predicate_index, uint8_t argument_index, loom_type_t actual_type,
+    uint8_t predicate_kind) {
+  char field_name[64];
+  loom_verify_format_predicate_argument(field_name, sizeof(field_name), name,
+                                        predicate_index, argument_index);
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(iree_make_cstring_view(field_name)),
+      loom_param_type(actual_type),
+      loom_param_string(loom_verify_predicate_expected_type(predicate_kind)),
+  };
+  loom_verify_emit_structured(state, op, LOOM_ERR_TYPE_003, params,
+                              IREE_ARRAYSIZE(params));
+}
+
+IREE_ATTRIBUTE_NOINLINE IREE_ATTRIBUTE_COLD static void
+loom_verify_emit_predicate_type_mismatch(
+    loom_verify_state_t* state, const loom_op_t* op, iree_string_view_t name,
+    uint16_t predicate_index, uint8_t expected_argument_index,
+    loom_type_t expected_type, uint8_t actual_argument_index,
+    loom_type_t actual_type) {
+  char expected_field_name[64];
+  char actual_field_name[64];
+  loom_verify_format_predicate_argument(
+      expected_field_name, sizeof(expected_field_name), name, predicate_index,
+      expected_argument_index);
+  loom_verify_format_predicate_argument(actual_field_name,
+                                        sizeof(actual_field_name), name,
+                                        predicate_index, actual_argument_index);
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(iree_make_cstring_view(expected_field_name)),
+      loom_param_type(expected_type),
+      loom_param_string(iree_make_cstring_view(actual_field_name)),
+      loom_param_type(actual_type),
+  };
+  loom_verify_emit_structured(state, op, LOOM_ERR_TYPE_001, params,
+                              IREE_ARRAYSIZE(params));
+}
+
+IREE_ATTRIBUTE_NOINLINE IREE_ATTRIBUTE_COLD static void
+loom_verify_emit_predicate_literal_domain(
+    loom_verify_state_t* state, const loom_op_t* op, iree_string_view_t name,
+    uint16_t predicate_index, uint8_t argument_index, int64_t value) {
+  char field_name[64];
+  loom_verify_format_predicate_argument(field_name, sizeof(field_name), name,
+                                        predicate_index, argument_index);
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(iree_make_cstring_view(field_name)),
+      loom_param_i64(value),
+      loom_param_string(
+          IREE_SV("the canonical numeric domain of the predicate value type")),
+  };
+  loom_verify_emit_structured(state, op, LOOM_ERR_STRUCTURE_014, params,
+                              IREE_ARRAYSIZE(params));
+}
+
+IREE_ATTRIBUTE_NOINLINE IREE_ATTRIBUTE_COLD static void
+loom_verify_emit_predicate_argument_origin(loom_verify_state_t* state,
+                                           const loom_op_t* op,
+                                           iree_string_view_t name,
+                                           uint16_t predicate_index,
+                                           uint8_t argument_index,
+                                           iree_string_view_t required_origin) {
+  char field_name[64];
+  loom_verify_format_predicate_argument(field_name, sizeof(field_name), name,
+                                        predicate_index, argument_index);
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(loom_op_name(state->module, op)),
+      loom_param_string(iree_make_cstring_view(field_name)),
+      loom_param_string(required_origin),
+  };
+  loom_verify_emit_structured(state, op, LOOM_ERR_STRUCTURE_032, params,
+                              IREE_ARRAYSIZE(params));
+}
+
+typedef enum loom_verify_predicate_value_policy_e {
+  LOOM_VERIFY_PREDICATE_VALUES_ANY_VISIBLE = 0,
+  // Every predicate value, beginning with the subject, is an operation operand.
+  LOOM_VERIFY_PREDICATE_VALUES_EXECUTABLE_OPERANDS,
+  // Every predicate value, beginning with the subject, is in the signature.
+  LOOM_VERIFY_PREDICATE_VALUES_FUNCTION_SIGNATURE,
+} loom_verify_predicate_value_policy_t;
+
+static bool loom_verify_predicate_semantic_type(loom_type_t carrier_type,
+                                                loom_type_t* out_type) {
+  if (!loom_type_is_register(carrier_type)) {
+    *out_type = carrier_type;
+    return true;
+  }
+  const loom_type_t* value_type = loom_type_register_value_type(carrier_type);
+  if (value_type == NULL) {
+    return false;
+  }
+  *out_type = *value_type;
+  return true;
+}
+
+static bool loom_verify_predicate_requires_matching_types(
+    uint8_t predicate_kind, loom_verify_predicate_value_policy_t value_policy,
+    loom_type_t first_type, loom_type_t next_type) {
+  if (value_policy == LOOM_VERIFY_PREDICATE_VALUES_EXECUTABLE_OPERANDS) {
+    return true;
+  }
+  switch ((loom_predicate_kind_t)predicate_kind) {
+    case LOOM_PREDICATE_ULT:
+    case LOOM_PREDICATE_ULE:
+    case LOOM_PREDICATE_UGT:
+    case LOOM_PREDICATE_UGE:
+      return true;
+    default:
+      break;
+  }
+  return (loom_type_is_scalar(first_type) &&
+          loom_scalar_type_is_float(loom_type_element_type(first_type))) ||
+         (loom_type_is_scalar(next_type) &&
+          loom_scalar_type_is_float(loom_type_element_type(next_type)));
+}
+
+static void loom_verify_predicate(
+    loom_verify_state_t* state, const loom_op_t* op, iree_string_view_t name,
+    uint16_t predicate_index, const loom_predicate_t* predicate,
+    loom_verify_predicate_value_policy_t value_policy) {
+  const uint8_t expected_argument_count =
+      loom_predicate_kind_argument_count(predicate->kind);
+  if (expected_argument_count == UINT8_MAX ||
+      predicate->arg_count != expected_argument_count ||
+      predicate->arg_count > IREE_ARRAYSIZE(predicate->arg_tags)) {
+    return;
+  }
+  for (uint8_t argument_index = 0; argument_index < predicate->arg_count;
+       ++argument_index) {
+    const uint8_t tag = predicate->arg_tags[argument_index];
+    if (tag <= LOOM_PRED_ARG_NONE || tag >= LOOM_PRED_ARG_COUNT_) {
+      return;
+    }
+  }
+
+  loom_type_t anchor_semantic_type = {0};
+  loom_type_t anchor_carrier_type = {0};
+  uint8_t anchor_argument_index = 0;
+  bool has_type_anchor = false;
+  bool has_compatible_types = true;
+
+  const bool requires_value_subject =
+      value_policy == LOOM_VERIFY_PREDICATE_VALUES_EXECUTABLE_OPERANDS ||
+      value_policy == LOOM_VERIFY_PREDICATE_VALUES_FUNCTION_SIGNATURE;
+  const iree_string_view_t required_origin =
+      value_policy == LOOM_VERIFY_PREDICATE_VALUES_FUNCTION_SIGNATURE
+          ? IREE_SV("a function argument or result")
+          : IREE_SV("an operation operand observed by the predicate");
+  if (requires_value_subject && predicate->arg_tags[0] != LOOM_PRED_ARG_VALUE) {
+    loom_verify_emit_predicate_argument_origin(state, op, name, predicate_index,
+                                               0, required_origin);
+  }
+
+  for (uint8_t argument_index = 0; argument_index < predicate->arg_count;
+       ++argument_index) {
+    if (predicate->arg_tags[argument_index] != LOOM_PRED_ARG_VALUE) {
+      continue;
+    }
+    const loom_value_id_t value_id =
+        (loom_value_id_t)predicate->args[argument_index];
+    if (predicate->args[argument_index] < 0 ||
+        predicate->args[argument_index] > UINT32_MAX ||
+        value_id >= state->module->values.count) {
+      continue;
+    }
+    if (requires_value_subject &&
+        !loom_verify_sorted_values_contains(state, value_id)) {
+      loom_verify_emit_predicate_argument_origin(
+          state, op, name, predicate_index, argument_index, required_origin);
+    }
+
+    const loom_type_t carrier_type =
+        loom_module_value_type(state->module, value_id);
+    loom_type_t semantic_type = {0};
+    if (!loom_verify_predicate_semantic_type(carrier_type, &semantic_type)) {
+      continue;
+    }
+    if (!loom_predicate_kind_accepts_value_type(predicate->kind,
+                                                carrier_type)) {
+      loom_verify_emit_predicate_type_constraint(
+          state, op, name, predicate_index, argument_index, carrier_type,
+          predicate->kind);
+    }
+    if (!has_type_anchor) {
+      anchor_semantic_type = semantic_type;
+      anchor_carrier_type = carrier_type;
+      anchor_argument_index = argument_index;
+      has_type_anchor = true;
+    } else if (!loom_type_equal(anchor_semantic_type, semantic_type) &&
+               loom_verify_predicate_requires_matching_types(
+                   predicate->kind, value_policy, anchor_semantic_type,
+                   semantic_type)) {
+      loom_verify_emit_predicate_type_mismatch(
+          state, op, name, predicate_index, anchor_argument_index,
+          anchor_carrier_type, argument_index, carrier_type);
+      has_compatible_types = false;
+    }
+    if (loom_verify_at_error_limit(state)) {
+      return;
+    }
+  }
+
+  if (!has_type_anchor || !has_compatible_types ||
+      !loom_type_is_scalar(anchor_semantic_type)) {
+    return;
+  }
+  int64_t domain_minimum = 0;
+  int64_t domain_maximum = 0;
+  if (!loom_scalar_type_integer_domain(
+          loom_type_element_type(anchor_semantic_type), &domain_minimum,
+          &domain_maximum)) {
+    return;
+  }
+  for (uint8_t argument_index = 0; argument_index < predicate->arg_count;
+       ++argument_index) {
+    if (predicate->arg_tags[argument_index] != LOOM_PRED_ARG_CONST) {
+      continue;
+    }
+    const int64_t value = predicate->args[argument_index];
+    if (value < domain_minimum || value > domain_maximum) {
+      loom_verify_emit_predicate_literal_domain(
+          state, op, name, predicate_index, argument_index, value);
+      if (loom_verify_at_error_limit(state)) {
+        return;
+      }
+    }
+  }
+}
+
+iree_status_t loom_verify_predicate_attributes(loom_verify_state_t* state,
+                                               const loom_op_t* op,
+                                               const loom_op_vtable_t* vtable) {
+  loom_verify_predicate_value_policy_t prepared_value_policy =
+      LOOM_VERIFY_PREDICATE_VALUES_ANY_VISIBLE;
+  const loom_attribute_t* attributes = loom_op_attrs(op);
+  const uint8_t attribute_count =
+      iree_min(op->attribute_count, vtable->attribute_count);
+  for (uint8_t attribute_index = 0; attribute_index < attribute_count;
+       ++attribute_index) {
+    const loom_attribute_t attribute = attributes[attribute_index];
+    if (attribute.kind != LOOM_ATTR_PREDICATE_LIST || attribute.count == 0) {
+      continue;
+    }
+    if (!attribute.predicate_list) {
+      continue;
+    }
+    loom_verify_predicate_value_policy_t value_policy =
+        LOOM_VERIFY_PREDICATE_VALUES_ANY_VISIBLE;
+    if (loom_verify_has_func_signature_scope(vtable) &&
+        vtable->func_like->predicates_attr_index == attribute_index) {
+      value_policy = LOOM_VERIFY_PREDICATE_VALUES_FUNCTION_SIGNATURE;
+    } else if (iree_any_bit_set(vtable->attr_descriptors[attribute_index].flags,
+                                LOOM_ATTR_EXECUTABLE_PREDICATES)) {
+      // Executable predicates are runtime observations. Attribute edges
+      // retain metadata liveness but cannot substitute for explicit operands.
+      value_policy = LOOM_VERIFY_PREDICATE_VALUES_EXECUTABLE_OPERANDS;
+    }
+    if (value_policy != LOOM_VERIFY_PREDICATE_VALUES_ANY_VISIBLE &&
+        value_policy != prepared_value_policy) {
+      if (value_policy == LOOM_VERIFY_PREDICATE_VALUES_FUNCTION_SIGNATURE) {
+        uint16_t argument_count = 0;
+        const loom_value_id_t* arguments = loom_func_like_arg_ids(
+            (loom_func_like_t){
+                .op = (loom_op_t*)op,
+                .vtable = vtable->func_like,
+            },
+            &argument_count);
+        IREE_RETURN_IF_ERROR(loom_verify_sorted_values_assign_pair(
+            state, arguments, argument_count, loom_op_const_results(op),
+            op->result_count));
+      } else {
+        IREE_RETURN_IF_ERROR(loom_verify_sorted_values_assign(
+            state, loom_op_const_operands(op), op->operand_count));
+      }
+      prepared_value_policy = value_policy;
+    }
+    const iree_string_view_t name =
+        loom_bstring_view(vtable->attr_descriptors[attribute_index].name);
+    for (uint16_t predicate_index = 0; predicate_index < attribute.count;
+         ++predicate_index) {
+      loom_verify_predicate(state, op, name, predicate_index,
+                            &attribute.predicate_list[predicate_index],
+                            value_policy);
+      if (loom_verify_at_error_limit(state)) {
+        return iree_ok_status();
+      }
+    }
+  }
+  return iree_ok_status();
+}

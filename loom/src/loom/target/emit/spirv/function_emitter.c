@@ -6,7 +6,6 @@
 
 #include "loom/target/emit/spirv/function_emitter.h"
 
-#include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/function.h"
 #include "loom/ir/context.h"
 #include "loom/ir/local_value_domain.h"
@@ -63,8 +62,7 @@ static iree_string_view_t loom_spirv_emit_function_name(
 static iree_string_view_t loom_spirv_emit_export_name(
     const loom_spirv_emit_state_t* state) {
   const iree_string_view_t export_symbol =
-      loom_low_resolved_target_bundle(state->target)
-          ->export_plan->export_symbol;
+      state->function_plan->target_bundle->export_plan->export_symbol;
   if (!iree_string_view_is_empty(export_symbol)) {
     return export_symbol;
   }
@@ -147,7 +145,7 @@ static loom_spirv_module_abi_context_t loom_spirv_emit_abi_context(
   return (loom_spirv_module_abi_context_t){
       .module = state->module,
       .function_op = state->function_op,
-      .target = state->target,
+      .function_plan = state->function_plan,
       .scratch_arena = state->scratch_arena,
       .builder = state->builder,
       .type_context = state->type_context,
@@ -936,8 +934,8 @@ static iree_status_t loom_spirv_emit_descriptor_packet(
   for (uint16_t i = 0; i < packet->descriptor->feature_mask_word_count; ++i) {
     const uint32_t feature_mask_row =
         packet->descriptor->feature_mask_word_start + i;
-    const uint64_t feature_bits =
-        state->target->descriptor_set->feature_mask_words[feature_mask_row];
+    const uint64_t feature_bits = state->function_plan->descriptor_set
+                                      ->feature_mask_words[feature_mask_row];
     IREE_ASSERT(i == 0 || feature_bits == 0);
     state->required_feature_bits |= (loom_spirv_feature_bits_t)feature_bits;
     loom_spirv_module_builder_require_feature_bits(
@@ -1051,8 +1049,9 @@ iree_status_t loom_spirv_emit_low_op(loom_spirv_emit_state_t* state,
                                                       &state->abi_plan, op);
   }
   if (loom_low_storage_reserve_isa(op)) {
-    return loom_spirv_module_workgroup_storage_emit_reserve(
+    loom_spirv_module_workgroup_storage_emit_reserve(
         &state->value_domain, &state->workgroup_storage, op);
+    return iree_ok_status();
   }
   if (loom_low_storage_address_isa(op)) {
     loom_spirv_module_value_ref_t value_ref = {0};
@@ -1067,8 +1066,8 @@ iree_status_t loom_spirv_emit_low_op(loom_spirv_emit_state_t* state,
   }
 
   loom_low_descriptor_packet_t packet = {0};
-  loom_low_descriptor_packet_initialize(state->target->descriptor_set, op,
-                                        &packet);
+  loom_low_descriptor_packet_initialize(state->function_plan->descriptor_set,
+                                        op, &packet);
   if (packet.kind == LOOM_LOW_DESCRIPTOR_PACKET_NONE) {
     IREE_CHECK_UNREACHABLE("verified SPIR-V structural op");
     return iree_ok_status();
@@ -1160,17 +1159,6 @@ static iree_status_t loom_spirv_emit_function_signature(
   return iree_ok_status();
 }
 
-static iree_status_t loom_spirv_emit_cfg_op_error(
-    loom_spirv_emit_state_t* state, const loom_op_t* op) {
-  const loom_op_vtable_t* vtable = loom_op_vtable(state->module, op);
-  const iree_string_view_t op_name =
-      vtable != NULL ? loom_op_vtable_name(vtable) : IREE_SV("<unknown>");
-  return iree_make_status(
-      IREE_STATUS_FAILED_PRECONDITION,
-      "verified SPIR-V low function still contains CFG op '%.*s'",
-      (int)op_name.size, op_name.data);
-}
-
 static iree_status_t loom_spirv_emit_function_entry_block(
     loom_spirv_emit_state_t* state, const loom_block_t* block) {
   IREE_RETURN_IF_ERROR(
@@ -1181,8 +1169,6 @@ static iree_status_t loom_spirv_emit_function_entry_block(
   for (const loom_op_t* op = block->first_op; op != NULL; op = op->next_op) {
     if (loom_low_return_isa(op)) {
       IREE_RETURN_IF_ERROR(loom_spirv_emit_return(state, op));
-    } else if (loom_low_br_isa(op) || loom_low_cond_br_isa(op)) {
-      return loom_spirv_emit_cfg_op_error(state, op);
     } else {
       IREE_RETURN_IF_ERROR(loom_spirv_emit_low_op(state, op));
     }
@@ -1240,31 +1226,23 @@ static void loom_spirv_emit_function_state_deinitialize(
 }
 
 static iree_status_t loom_spirv_emit_function_state_initialize(
-    loom_spirv_function_emission_context_t* context, loom_op_t* low_function_op,
-    const loom_low_resolved_target_t* target,
+    loom_spirv_function_emission_context_t* context,
+    const loom_spirv_function_plan_t* function_plan,
     loom_spirv_emit_state_t* out_state) {
+  loom_op_t* low_function_op = function_plan->function_op;
   *out_state = (loom_spirv_emit_state_t){
       .context = context,
       .module = context->module,
       .function_op = low_function_op,
-      .target = target,
+      .function_plan = function_plan,
       .scratch_arena = context->scratch_arena,
       .builder = context->builder,
       .type_context = context->type_context,
   };
 
   const loom_region_t* body = loom_low_function_const_body(low_function_op);
-  iree_status_t status = iree_ok_status();
-  if (body == NULL || body->block_count == 0) {
-    status =
-        iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                         "verified SPIR-V low function has no function body");
-  }
-  if (iree_status_is_ok(status)) {
-    status = loom_local_value_domain_acquire_for_region_tree(
-        context->module, body, context->scratch_arena,
-        &out_state->value_domain);
-  }
+  iree_status_t status = loom_local_value_domain_acquire_for_region_tree(
+      context->module, body, context->scratch_arena, &out_state->value_domain);
   if (iree_status_is_ok(status)) {
     status = loom_spirv_module_workgroup_storage_initialize(
         &out_state->value_domain, &out_state->workgroup_storage,
@@ -1282,26 +1260,13 @@ static iree_status_t loom_spirv_emit_function_state_initialize(
 }
 
 iree_status_t loom_spirv_emit_low_function(
-    loom_spirv_function_emission_context_t* context, loom_op_t* low_function_op,
-    const loom_low_resolved_target_t* target, bool* out_valid) {
-  *out_valid = false;
-  if (!loom_low_function_def_isa(low_function_op)) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "SPIR-V emission requires a low function "
-                            "definition");
-  }
-
+    loom_spirv_function_emission_context_t* context,
+    const loom_spirv_function_plan_t* function_plan) {
   loom_spirv_emit_state_t function_state = {0};
   iree_status_t status = loom_spirv_emit_function_state_initialize(
-      context, low_function_op, target, &function_state);
+      context, function_plan, &function_state);
   if (iree_status_is_ok(status)) {
     status = loom_spirv_emit_function_contents(&function_state);
-  }
-  if (iree_status_is_ok(status)) {
-    status = loom_low_diagnostic_validate_workgroup_storage_limit(
-        context->module, low_function_op, target,
-        function_state.workgroup_storage.layout_sizes.workgroup_bytes,
-        context->diagnostic_emitter, out_valid);
   }
   loom_spirv_emit_function_state_deinitialize(&function_state);
   return status;

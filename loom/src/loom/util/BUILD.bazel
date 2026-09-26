@@ -496,6 +496,17 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "cfg_execution",
+    srcs = ["cfg_execution.c"],
+    hdrs = ["cfg_execution.h"],
+    deps = [
+        ":cfg_control",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "cfg_graph_test_util",
     testonly = True,
     hdrs = ["cfg_graph_test_util.h"],
@@ -524,6 +535,19 @@ loom_cc_test(
         ":cfg_control",
         ":cfg_control_test_util",
         ":cfg_graph_test_util",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_test(
+    name = "cfg_execution_test",
+    srcs = ["cfg_execution_test.cc"],
+    deps = [
+        ":cfg_control",
+        ":cfg_execution",
+        ":cfg_graph_test_util",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],

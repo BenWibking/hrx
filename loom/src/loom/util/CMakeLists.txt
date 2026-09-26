@@ -569,6 +569,20 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    cfg_execution
+  HDRS
+    "cfg_execution.h"
+  SRCS
+    "cfg_execution.c"
+  DEPS
+    ::cfg_control
+    iree::base
+    iree::base::internal::arena
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     cfg_graph_test_util
   HDRS
     "cfg_graph_test_util.h"
@@ -605,6 +619,20 @@ loom_cc_test(
     ::cfg_control
     ::cfg_control_test_util
     ::cfg_graph_test_util
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_test(
+  NAME
+    cfg_execution_test
+  SRCS
+    "cfg_execution_test.cc"
+  DEPS
+    ::cfg_control
+    ::cfg_execution
+    ::cfg_graph_test_util
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
 )

@@ -15,6 +15,7 @@
 #include "loom/ops/cache.h"
 #include "loom/ops/combining.h"
 #include "loom/ops/func/ops.h"
+#include "loom/ops/function_contract_verify.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/ops/target/facts.h"
@@ -112,18 +113,6 @@ static iree_status_t loom_kernel_emit_entry_related(
   return iree_diagnostic_emit(emitter, &emission);
 }
 
-static bool loom_kernel_entry_type_matches(
-    const loom_module_t* module, loom_type_t actual_type,
-    loom_type_t expected_type, const loom_type_value_remap_t* value_remap) {
-  const loom_type_kind_t actual_kind = loom_type_kind(actual_type);
-  if ((actual_kind == LOOM_TYPE_TENSOR || actual_kind == LOOM_TYPE_VIEW) &&
-      loom_type_kind(expected_type) == LOOM_TYPE_BUFFER) {
-    return true;
-  }
-  return loom_type_equal_after_value_remap(module, expected_type, actual_type,
-                                           value_remap);
-}
-
 static iree_status_t loom_kernel_verify_entry_operand_group(
     const loom_module_t* module, const loom_op_t* launch_op,
     const loom_op_t* definition_op, iree_diagnostic_emitter_t emitter,
@@ -153,8 +142,12 @@ static iree_status_t loom_kernel_verify_entry_operand_group(
         loom_module_value_type(module, actual_values.values[i]);
     loom_type_t expected_type =
         loom_module_value_type(module, expected_values[i]);
-    if (loom_kernel_entry_type_matches(module, actual_type, expected_type,
-                                       &value_remap)) {
+    bool matches = false;
+    IREE_RETURN_IF_ERROR(loom_function_call_argument_type_matches(
+        module, actual_type, expected_type, &value_remap,
+        LOOM_FUNCTION_CALL_ARGUMENT_MATCH_FLAG_ALLOW_BUFFER_MATERIALIZATION,
+        &matches));
+    if (matches) {
       continue;
     }
 
@@ -1213,9 +1206,16 @@ static iree_status_t loom_kernel_verify_barrier_controls(
 iree_status_t loom_kernel_def_verify(const loom_module_t* module,
                                      const loom_op_t* op,
                                      iree_diagnostic_emitter_t emitter) {
+  IREE_RETURN_IF_ERROR(loom_function_contract_verify(module, op, emitter));
   IREE_RETURN_IF_ERROR(
       loom_kernel_verify_launch_config_purity(module, op, emitter));
   return loom_kernel_verify_barrier_controls(module, op, emitter);
+}
+
+iree_status_t loom_kernel_decl_verify(const loom_module_t* module,
+                                      const loom_op_t* op,
+                                      iree_diagnostic_emitter_t emitter) {
+  return loom_function_contract_verify(module, op, emitter);
 }
 
 static bool loom_kernel_is_indirect_workgroup_count_type(loom_type_t type) {

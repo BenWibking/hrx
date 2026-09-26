@@ -176,3 +176,47 @@ low.func.def target<spirv.logical.core> abi(shader_entry_point) @correlated_dupl
   %sum3 = OpIAdd %sum2, %b_offset_value
   return %sum3
 }
+
+// ====
+
+// Dynamic view refinements used only by memory accesses remain structural
+// through nested control flow. Their source views need no target SSA storage.
+func.def @nested_dynamic_view_refinement(%input: buffer, %extent_input: index, %position_input: index, %condition: i1) -> (i32) {
+  %extent = index.assume %extent_input [range(%extent_input, 1, 128)] : index
+  %position = index.assume %position_input [range(%position_input, 0, 127), lt(%position_input, %extent)] : index
+  %base = index.constant 0 : offset
+  %aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
+  %view = buffer.view %aligned[%base] : buffer -> view<[%extent]xi32>
+  %result = scf.if %condition -> (i32) {
+    %refined_extent = index.assume %extent [gt(%extent, 0)] : index
+    %refined_view = view.refine %view : view<[%extent]xi32> -> view<[%refined_extent]xi32>
+    %second_extent = index.assume %refined_extent [gt(%refined_extent, 0)] : index
+    %second_view = view.refine %refined_view : view<[%refined_extent]xi32> -> view<[%second_extent]xi32>
+    %value = view.load %second_view[%position] : view<[%second_extent]xi32> -> i32
+    scf.yield %value : i32
+  } else {
+    %value = view.load %view[%position] : view<[%extent]xi32> -> i32
+    scf.yield %value : i32
+  }
+  func.return %result : i32
+}
+
+// ----
+low.func.def target<spirv.logical.core> abi(shader_entry_point) @nested_dynamic_view_refinement(%aligned: reg<spirv.ptr.storage_buffer>, %second_extent: reg<spirv.id : index>, %position: reg<spirv.id : index>, %condition: reg<spirv.id : i1>) -> (reg<spirv.id : i32>) asm {
+  %result = low.scf.if %condition -> (reg<spirv.id : i32>) {
+    %23 = OpSConvert.i32.offset64 %position
+    %24 = OpConstant.offset64 4
+    %25 = OpIMul.offset64 %23, %24
+    %26 = OpPtrAccessChain.storage_buffer.i32.byte_offset %aligned, %25
+    %value = OpLoad.storage_buffer.i32 %26
+    low.scf.yield %value : reg<spirv.id : i32>
+  } else {
+    %28 = OpSConvert.i32.offset64 %position
+    %29 = OpConstant.offset64 4
+    %30 = OpIMul.offset64 %28, %29
+    %31 = OpPtrAccessChain.storage_buffer.i32.byte_offset %aligned, %30
+    %value = OpLoad.storage_buffer.i32 %31
+    low.scf.yield %value : reg<spirv.id : i32>
+  }
+  return %result
+}

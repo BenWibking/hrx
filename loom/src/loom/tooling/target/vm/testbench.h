@@ -13,6 +13,7 @@
 #include "loom/error/source.h"
 #include "loom/target/provider.h"
 #include "loom/tooling/testbench/invocation.h"
+#include "loom/tooling/testbench/scenario/executor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,12 +22,12 @@ extern "C" {
 typedef struct loom_cleanup_pattern_provider_set_t
     loom_cleanup_pattern_provider_set_t;
 
-// Executes ordinary check.case function calls through the VM. One instance
-// serves all cases in one parsed module. Its first call compiles an independent
-// IR copy specialized to the Core profile with the normal pipeline, verifies
-// the emitted bytes, and creates a process; subsequent calls reuse that process
-// and its invocation storage. The authored functions need no target binding.
-// Buffer arguments and results share storage with the case's HAL bindings.
+// Executes semantic functions through the VM. The check.case provider compiles
+// all selected function roots on its first call and reuses one process. The
+// check.scenario profile instead uses this instance as compiler configuration
+// and eagerly creates an independent bytecode module and process per prepared
+// target or oracle product. The authored functions need no target binding.
+// Buffer arguments and results share storage with testbench HAL bindings.
 // Arguments require coherent persistent host mappings; results retain the VM
 // storage until the final binding or alias is released.
 typedef struct loom_vm_testbench_t {
@@ -58,6 +59,8 @@ typedef struct loom_vm_testbench_t {
   iree_vm_variant_t* arguments;
   // Result variants within the IO slab, sized from the immutable case plan.
   iree_vm_variant_t* results;
+  // Retained imported buffer arguments used to trace returned references.
+  iree_vm_buffer_t** argument_buffers;
   // Borrowed Core descriptors whose provider lives with the linked VM runtime.
   iree_vm_ref_types_t ref_types;
 } loom_vm_testbench_t;
@@ -79,6 +82,14 @@ void loom_vm_testbench_deinitialize(loom_vm_testbench_t* testbench);
 loom_testbench_invocation_provider_t loom_vm_testbench_invocation_provider(
     void* user_data, loom_testbench_case_plan_list_t cases,
     const loom_source_table_resolver_t* sources,
+    const loom_tooling_config_set_t* config_set);
+
+// Binds compilation inputs and returns an eager VM execution profile. Every
+// prepared product owns an independently compiled bytecode module and process.
+// Product preparation finishes before any trial-local values are materialized;
+// product execution only marshals batches through that prepared process.
+loom_testbench_execution_profile_t loom_vm_testbench_execution_profile(
+    void* user_data, const loom_source_table_resolver_t* sources,
     const loom_tooling_config_set_t* config_set);
 
 #ifdef __cplusplus

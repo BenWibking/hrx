@@ -137,6 +137,22 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    core_structure
+  HDRS
+    "core_structure.h"
+  SRCS
+    "core_structure.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::low
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     descriptor_encoding
   HDRS
     "descriptors/encoding.h"
@@ -171,9 +187,13 @@ loom_cc_library(
     ::core_descriptors
     iree::base
     loom::ir
+    loom::ops::scalar
     loom::ops::vector
     loom::target::legalization
+    loom::transforms::scalar::target_legalization
     loom::transforms::vector::packet_legalization
+    loom::transforms::vector::shape_legalization
+    loom::transforms::vector::table_legalization
     loom::transforms::vector::target_legalization
     loom::transforms::vector::to_scalar
     loom::util::fact_table
@@ -210,6 +230,8 @@ loom_cc_library(
     "low_verify.c"
   DEPS
     ::array_descriptors
+    ::core_descriptors
+    ::core_structure
     iree::base
     loom::codegen::low::diagnostics
     loom::codegen::low::packet
@@ -218,7 +240,9 @@ loom_cc_library(
     loom::ir
     loom::ops::low
     loom::ops::op_defs
+    loom::target::arch::amd::xdna::error_defs
     loom::target::projection
+    loom::target::registers
   PUBLIC
 )
 endif()
@@ -259,8 +283,8 @@ loom_cc_library(
     loom::analysis::scc
     loom::codegen::low::function_requirements
     loom::codegen::low::packet
+    loom::codegen::low::representation_binding
     loom::codegen::low::storage_layout
-    loom::codegen::low::target_binding
     loom::error::emitter
     loom::error::error_defs
     loom::ir
@@ -270,6 +294,7 @@ loom_cc_library(
     loom::ops::low
     loom::ops::op_defs
     loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::error_defs
     loom::util::fact_table
   PUBLIC
 )
@@ -316,7 +341,6 @@ loom_cc_library(
     loom::rewrite::remap
     loom::rewrite::rewriter
     loom::target::arch::amd::xdna::array_facts
-    loom::target::function_version
     loom::transforms::cfg::block_fusion
     loom::util::cfg_graph
     loom::util::dominance
@@ -368,6 +392,7 @@ loom_cc_library(
     loom::ops::vector
     loom::target::arch::amd::xdna::aie2p::contracts::core
     loom::target::arch::amd::xdna::aie2p::contracts::core_lower_rules
+    loom::target::arch::amd::xdna::error_defs
     loom::util::fact_table
   PUBLIC
 )
@@ -429,6 +454,7 @@ loom_cc_library(
     loom::rewrite::callable
     loom::rewrite::rewriter
     loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::error_defs
     loom::util::fact_table
   PUBLIC
 )
@@ -475,9 +501,11 @@ loom_cc_library(
     ::machine
     ::provider
     iree::base
+    loom::analysis::symbol_facts
     loom::codegen::low::diagnostics
     loom::codegen::low::function_requirements
     loom::codegen::low::storage_layout
+    loom::codegen::low::target_binding
     loom::codegen::low::text_asm
     loom::error::error_defs
     loom::format::text::printer
@@ -514,6 +542,7 @@ loom_check_test_suite(
     "test/array_plan/bank_spans.loom-test"
     "test/array_plan/composed_folds.loom-test"
     "test/array_plan/dma_loopback.loom-test"
+    "test/array_plan/dma_record_limits.loom-test"
     "test/array_plan/dma_service.loom-test"
     "test/array_plan/endpoint_storage.loom-test"
     "test/array_plan/entry_admission.loom-test"
@@ -645,6 +674,8 @@ loom_check_test_suite(
     "test/source_low/selected_payload_transport.loom-test"
     "test/source_low/semantic_assertions.loom-test"
     "test/source_low/shared_conditional_values.loom-test"
+    "test/source_low/table_quantize.loom-test"
+    "test/source_low/target_legalize_scalar_multiply_add.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/vector_bitcast.loom-test"
     "test/source_low/vector_comparison.loom-test"
@@ -675,6 +706,7 @@ loom_cc_library(
     "emit/bundle_plan.c"
   DEPS
     ::core_descriptors
+    ::core_structure
     ::descriptor_encoding
     ::encoding
     ::machine
@@ -824,9 +856,11 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::io::stream
+    loom::analysis::symbol_facts
     loom::codegen::low::descriptors
     loom::codegen::low::diagnostics
     loom::codegen::low::function_requirements
+    loom::codegen::low::target_binding
     loom::ir
     loom::ir::facts
     loom::ops::encoding

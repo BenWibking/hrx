@@ -10,6 +10,7 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test", "test_suite")
 load(
     "//loom/build_tools/bazel:defs.bzl",
     "LoomTargetProfileInfo",
+    "LoomTargetSetInfo",
 )
 
 def _test_amdgpu_profile_is_family_typed(name, **kwargs):
@@ -56,6 +57,28 @@ def _test_generic_profile_preserves_family_identity_impl(env, target):
     env.expect.that_str(profile.family).equals("FakeTargetFamily123")
     env.expect.that_str(profile.selector).equals("FakeTargetSelector123")
 
+def _test_target_set_flattens_profiles_in_order(name, **kwargs):
+    analysis_test(
+        name = name,
+        impl = _test_target_set_flattens_profiles_in_order_impl,
+        target = ":test_nested_target_set",
+        **kwargs
+    )
+
+def _test_target_set_flattens_profiles_in_order_impl(env, target):
+    profiles = target[LoomTargetSetInfo].profiles
+    if len(profiles) != 2:
+        env.fail("expected two deduplicated profiles, got %r" % profiles)
+        return
+    env.expect.that_str(profiles[0].label.name).equals("test_fake_profile")
+    env.expect.that_str(profiles[1].label.name).equals("test_amdgpu_profile")
+    env.expect.that_str(profiles[0][LoomTargetProfileInfo].family).equals(
+        "FakeTargetFamily123",
+    )
+    env.expect.that_str(profiles[1][LoomTargetProfileInfo].family).equals(
+        "amdgpu",
+    )
+
 def loom_target_profile_rules_test_suite(name):
     test_suite(
         name = name,
@@ -63,5 +86,6 @@ def loom_target_profile_rules_test_suite(name):
             _test_amdgpu_profile_is_family_typed,
             _test_builtin_profile_preserves_overlay_identity,
             _test_generic_profile_preserves_family_identity,
+            _test_target_set_flattens_profiles_in_order,
         ],
     )

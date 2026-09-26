@@ -13,6 +13,58 @@
 #include "loom/ops/scf/ops.h"
 #include "loom/rewrite/rewriter.h"
 
+bool loom_scalar_match_multiply_add(
+    const loom_module_t* module, const loom_op_t* multiply_op,
+    loom_scalar_multiply_add_match_t* out_match) {
+  *out_match = (loom_scalar_multiply_add_match_t){0};
+  if (!loom_scalar_muli_isa(multiply_op) ||
+      loom_scalar_muli_overflow(multiply_op) != 0) {
+    return false;
+  }
+
+  const loom_value_id_t product = loom_scalar_muli_result(multiply_op);
+  const loom_value_t* product_value = loom_module_value(module, product);
+  const loom_use_t* product_use = loom_value_single_use(product_value);
+  if (product_use == NULL || loom_value_has_attribute_uses(product_value) ||
+      loom_module_value_has_type_uses(module, product)) {
+    return false;
+  }
+  loom_op_t* add_op = loom_use_user_op(*product_use);
+  if (!loom_scalar_addi_isa(add_op) || loom_scalar_addi_overflow(add_op) != 0) {
+    return false;
+  }
+  const loom_value_id_t addend = loom_scalar_addi_lhs(add_op) == product
+                                     ? loom_scalar_addi_rhs(add_op)
+                                     : loom_scalar_addi_lhs(add_op);
+  *out_match = (loom_scalar_multiply_add_match_t){
+      .multiply_op = (loom_op_t*)multiply_op,
+      .add_op = add_op,
+      .addend = addend,
+  };
+  return true;
+}
+
+iree_status_t loom_scalar_fuse_multiply_add_match(
+    loom_rewriter_t* rewriter, const loom_scalar_multiply_add_match_t* match) {
+  loom_builder_set_before(&rewriter->builder, match->add_op);
+  const loom_value_id_t value_checkpoint =
+      loom_rewriter_value_checkpoint(rewriter);
+  const loom_value_id_t result = loom_scalar_addi_result(match->add_op);
+  loom_op_t* replacement_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_scalar_fmai_build(
+      &rewriter->builder, /*instance_flags=*/0,
+      loom_scalar_muli_lhs(match->multiply_op),
+      loom_scalar_muli_rhs(match->multiply_op), match->addend,
+      loom_module_value_type(rewriter->module, result), match->add_op->location,
+      &replacement_op));
+  loom_value_id_t replacement = loom_scalar_fmai_result(replacement_op);
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, match->add_op, &replacement, 1, value_checkpoint));
+  IREE_RETURN_IF_ERROR(loom_rewriter_replace_all_uses_and_erase(
+      rewriter, match->add_op, &replacement, 1));
+  return loom_rewriter_erase(rewriter, match->multiply_op);
+}
+
 static iree_status_t loom_scalar_legalize_build_scalar_constant(
     loom_builder_t* builder, loom_location_id_t location, loom_type_t type,
     int64_t value, loom_value_id_t* out_value) {

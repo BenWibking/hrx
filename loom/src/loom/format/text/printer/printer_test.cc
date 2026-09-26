@@ -1872,7 +1872,8 @@ TEST(PredicateLayout, AllKindsValid) {
       LOOM_PREDICATE_LE,      LOOM_PREDICATE_GT,     LOOM_PREDICATE_GE,
       LOOM_PREDICATE_MUL,     LOOM_PREDICATE_MIN,    LOOM_PREDICATE_MAX,
       LOOM_PREDICATE_POW2,    LOOM_PREDICATE_RANGE,  LOOM_PREDICATE_NOT_NAN,
-      LOOM_PREDICATE_NOT_INF, LOOM_PREDICATE_FINITE,
+      LOOM_PREDICATE_NOT_INF, LOOM_PREDICATE_FINITE, LOOM_PREDICATE_ULT,
+      LOOM_PREDICATE_ULE,     LOOM_PREDICATE_UGT,    LOOM_PREDICATE_UGE,
   };
   for (int i = 0; i < (int)IREE_ARRAYSIZE(kinds); ++i) {
     loom_predicate_t predicate = {0};
@@ -2167,8 +2168,9 @@ TEST_F(PrintPredicateTest, EmptyPredicateList) {
 TEST_F(PrintPredicateTest, AllPredicateKinds) {
   // Verify all predicate kinds print their correct name.
   const char* expected_names[] = {
-      "eq",  "ne",  "lt",   "le",    "gt",      "ge",      "mul",
-      "min", "max", "pow2", "range", "not_nan", "not_inf", "finite"};
+      "eq",      "ne",     "lt",  "le",   "gt",    "ge",
+      "mul",     "min",    "max", "pow2", "range", "not_nan",
+      "not_inf", "finite", "ult", "ule",  "ugt",   "uge"};
   for (int kind = 0; kind < LOOM_PREDICATE_COUNT_; ++kind) {
     loom_predicate_t predicates[1] = {};
     predicates[0].kind = (uint8_t)kind;

@@ -81,6 +81,9 @@ struct loom_low_schedule_pressure_state_t {
   // Downstream headroom reserved by the current candidate, indexed by
   // register-packing resource.
   uint32_t* candidate_register_packing_activation_units;
+  // Downstream headroom reserved by the current candidate, indexed by bounded
+  // unspillable completion domain.
+  uint32_t* candidate_unspillable_activation_units;
   // Earliest unscheduled completion sink retaining live storage in each
   // register-packing resource.
   uint32_t* active_register_packing_completion_sinks;
@@ -105,6 +108,9 @@ struct loom_low_schedule_pressure_state_t {
     // Downstream activation footprints indexed by producer node then
     // register-packing resource.
     uint32_t* register_packing_activation_units;
+    // Downstream activation footprints indexed by producer node then bounded
+    // unspillable completion domain.
+    uint32_t* unspillable_activation_units;
     // Descriptor-consumer list heads indexed by producer node.
     uint32_t* descriptor_heads;
     // Next descriptor consumer indexed by consumer node.
@@ -142,6 +148,23 @@ static inline const uint32_t* loom_low_schedule_const_register_packing_row(
   return table +
          (iree_host_size_t)node_index *
              state->target.descriptor_set->register_packing_resource_count;
+}
+
+// Returns the row for |node_index| in a bounded unspillable-domain table.
+static inline uint32_t* loom_low_schedule_unspillable_pressure_row(
+    const loom_low_schedule_build_state_t* state, uint32_t* table,
+    uint32_t node_index) {
+  return table + (iree_host_size_t)node_index *
+                     state->pressure_limits.unspillable_completion_domain_count;
+}
+
+// Returns the const row for |node_index| in a bounded unspillable-domain
+// table.
+static inline const uint32_t* loom_low_schedule_const_unspillable_pressure_row(
+    const loom_low_schedule_build_state_t* state, const uint32_t* table,
+    uint32_t node_index) {
+  return table + (iree_host_size_t)node_index *
+                     state->pressure_limits.unspillable_completion_domain_count;
 }
 
 // Returns the bounded completion domain containing |reg_class_id|.
@@ -257,9 +280,12 @@ typedef struct loom_low_schedule_candidate_score_t {
   // Required physical units before the next cliff when no cliff was crossed,
   // or LOOM_LOW_SCHEDULE_PRESSURE_CLIFF_NONE.
   uint32_t units_until_pressure_cliff;
-  // Smallest full unspillable capacity whose active completion chain the
+  // Smallest full unspillable capacity whose selected completion chain the
   // candidate advances, or UINT32_MAX when it advances none.
   uint32_t active_unspillable_completion_capacity;
+  // Smallest full unspillable capacity whose exact next-consumer handoff the
+  // candidate opens, or UINT32_MAX when it opens none.
+  uint32_t opened_unspillable_completion_capacity;
   // Smallest packing-resource capacity whose selected completion chain the
   // candidate advances, or UINT32_MAX when it advances none.
   uint32_t active_register_packing_completion_capacity;

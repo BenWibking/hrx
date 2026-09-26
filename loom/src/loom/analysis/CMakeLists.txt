@@ -129,6 +129,55 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    storage_layout
+  HDRS
+    "storage_layout.h"
+  SRCS
+    "storage_layout.c"
+  DEPS
+    iree::base
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    storage_layout_test
+  SRCS
+    "storage_layout_test.cc"
+  DEPS
+    ::storage_layout
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_library(
+  NAME
+    source_storage_packing
+  HDRS
+    "source_storage_packing.h"
+  SRCS
+    "source_storage_packing.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    source_storage_packing_test
+  SRCS
+    "source_storage_packing_test.cc"
+  DEPS
+    ::source_storage_packing
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+loom_cc_library(
+  NAME
     value_relation
   HDRS
     "value_relation.h"

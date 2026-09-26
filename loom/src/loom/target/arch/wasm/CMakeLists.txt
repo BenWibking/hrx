@@ -77,7 +77,7 @@ loom_cc_test(
   DEPS
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::codegen::low::target_binding
+    loom::codegen::low::representation_binding
     loom::target::arch::wasm::descriptors
     loom::target::registers
   LABELS

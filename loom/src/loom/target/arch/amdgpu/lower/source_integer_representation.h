@@ -72,6 +72,16 @@ void loom_amdgpu_source_integer_representation_observe_callable_boundary(
 loom_low_representation_id_t loom_amdgpu_source_integer_representation_lookup(
     loom_low_lower_context_t* context, loom_value_id_t source_value_id);
 
+// Normalizes the declared i8/i16 payload in |low_source| to
+// |required_representation|. The source and result are one-unit VGPR values;
+// the input is reused when it already carries the required representation.
+iree_status_t loom_amdgpu_normalize_narrow_integer(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_source, uint32_t source_bit_count,
+    loom_low_representation_id_t source_representation,
+    loom_low_representation_id_t required_representation,
+    loom_value_id_t* out_low_result);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -1277,8 +1277,11 @@ static iree_status_t loom_spirv_low_verify_module_contract(
           loom_low_verify_context_provider_module_state(context);
   IREE_ASSERT_ARGUMENT(module_state);
 
-  const loom_spirv_module_contract_t contract =
-      loom_spirv_module_contract_from_target(state->target);
+  const loom_spirv_module_contract_t contract = loom_spirv_module_contract_make(
+      state->target->target_name,
+      loom_low_resolved_target_bundle(state->target),
+      state->target->descriptor_set->stable_id,
+      state->target->descriptor_set_key, state->target->feature_bits);
   if (!iree_any_bit_set(module_state->flags,
                         LOOM_SPIRV_LOW_VERIFY_MODULE_FLAG_HAS_CONTRACT)) {
     module_state->contract = contract;

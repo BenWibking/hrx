@@ -95,7 +95,8 @@ IREE_FLAG_NAMED(bool, include_input_exports, "include-input-exports", false,
                 "In link mode, add exported input symbols as roots.");
 IREE_FLAG_NAMED(
     bool, include_input_tests, "include-input-tests", false,
-    "In link mode, add test/benchmark-only input symbols as roots.");
+    "In link mode, add test/benchmark-only input symbols as roots; with "
+    "--strip-check, retain their direct callable subjects instead.");
 IREE_FLAG_NAMED(bool, strip_check, "strip-check", false,
                 "Strip test/benchmark-only symbols before output.");
 IREE_FLAG_NAMED(

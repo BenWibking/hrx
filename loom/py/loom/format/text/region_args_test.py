@@ -163,6 +163,29 @@ def test_explicit_region_args_can_reference_later_peers() -> None:
         assert view.type.encoding == DynamicEncoding(nested_entry.arg_ids[2])
 
 
+def test_projected_region_argument_groups_round_trip_as_one_entry() -> None:
+    parser, printer = _formats()
+    module = parser.parse(
+        "func.def @f() {\n"
+        "  test.block_arg_groups actual(%actual: f32) "
+        "expected(%expected: f32, %expected_index: index) {\n"
+        "    test.use %actual : f32\n"
+        "    test.use %expected : f32\n"
+        "    test.use %expected_index : index\n"
+        "    test.yield\n"
+        "  }\n"
+        "  func.return\n"
+        "}\n"
+    )
+
+    text = printer.print_module(module)
+    loaded = parser.parse(text)
+    assert printer.print_module(loaded) == text
+    operation = module.body.ops[0].regions[0].blocks[0].ops[0]
+    assert operation.attributes["actual_count"] == 1
+    assert len(operation.regions[0].blocks[0].arg_ids) == 3
+
+
 def test_unresolved_explicit_region_peer_is_rejected() -> None:
     parser, _ = _formats()
     with pytest.raises(

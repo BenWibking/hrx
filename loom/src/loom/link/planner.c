@@ -1511,8 +1511,36 @@ static iree_status_t loom_link_plan_select_input_tests(
         if (!iree_any_bit_set(symbol->flags, LOOM_LINK_SYMBOL_FLAG_TEST_ONLY)) {
           continue;
         }
-        IREE_RETURN_IF_ERROR(
-            loom_link_plan_select_implicit_root(plan, options, symbol));
+        if (options->test_symbol_policy != LOOM_LINK_PLAN_TEST_SYMBOL_STRIP) {
+          IREE_RETURN_IF_ERROR(
+              loom_link_plan_select_implicit_root(plan, options, symbol));
+          continue;
+        }
+
+        // A stripped input test still defines the deployable subjects owned by
+        // that test. Promote its direct non-test callables to roots so they
+        // retain private identity through compilation while their transitive
+        // callees remain ordinary internal dependencies.
+        const uint32_t dependency_first = symbol->dependencies.first;
+        for (uint32_t dependency_index = 0;
+             dependency_index < symbol->dependencies.count;
+             ++dependency_index) {
+          const uint32_t target_symbol_id =
+              module->dependencies.values[dependency_first + dependency_index];
+          IREE_ASSERT_LT(target_symbol_id, module->symbol_count);
+          const loom_link_module_index_symbol_t* target =
+              loom_link_module_index_symbol_at(
+                  plan->index, module->symbol_start_ordinal + target_symbol_id);
+          IREE_ASSERT(target);
+          if (iree_any_bit_set(target->flags,
+                               LOOM_LINK_SYMBOL_FLAG_TEST_ONLY) ||
+              !iree_any_bit_set(target->facets.schema.interfaces,
+                                LOOM_SYMBOL_INTERFACE_FUNC_LIKE)) {
+            continue;
+          }
+          IREE_RETURN_IF_ERROR(
+              loom_link_plan_select_implicit_root(plan, options, target));
+        }
       }
     }
   }

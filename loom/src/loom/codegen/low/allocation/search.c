@@ -88,9 +88,38 @@ loom_low_allocation_search_candidate_assignment(
 
 static bool loom_low_allocation_search_relation_is_location_preference(
     const loom_low_placement_relation_t* relation) {
-  return relation->kind ==
-             LOOM_LOW_PLACEMENT_RELATION_DIFFERENT_MASKED_LOCATION ||
-         relation->kind == LOOM_LOW_PLACEMENT_RELATION_DISJOINT_STORAGE;
+  if (relation->kind == LOOM_LOW_PLACEMENT_RELATION_DIFFERENT_MASKED_LOCATION ||
+      relation->kind == LOOM_LOW_PLACEMENT_RELATION_DISJOINT_STORAGE) {
+    return true;
+  }
+  return relation->kind == LOOM_LOW_PLACEMENT_RELATION_SAME_STORAGE &&
+         (relation->cause == LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY ||
+          relation->cause == LOOM_LOW_PLACEMENT_CAUSE_LOW_MOVE);
+}
+
+static bool loom_low_allocation_search_relation_requires_future_fixed_value(
+    const loom_low_placement_relation_t* relation) {
+  return relation->kind == LOOM_LOW_PLACEMENT_RELATION_SAME_STORAGE;
+}
+
+static const loom_low_allocation_assignment_t*
+loom_low_allocation_search_relation_counterpart(
+    const loom_low_allocation_search_context_t* context,
+    loom_value_ordinal_t counterpart_ordinal, bool* out_is_future_fixed) {
+  *out_is_future_fixed = false;
+  const loom_low_allocation_assignment_t* counterpart =
+      loom_low_allocation_assignment_map_assignment_for_value_ordinal(
+          context->assignment_map, counterpart_ordinal, NULL);
+  if (counterpart) {
+    return counterpart;
+  }
+  const loom_value_id_t counterpart_value_id =
+      loom_low_placement_value_id(context->placement, counterpart_ordinal);
+  const loom_low_allocation_resolved_fixed_value_t* fixed_value =
+      loom_low_allocation_target_constraints_fixed_value_for_value(
+          context->target_constraints, counterpart_value_id);
+  *out_is_future_fixed = fixed_value != NULL;
+  return fixed_value ? &fixed_value->assignment : NULL;
 }
 
 static uint32_t loom_low_allocation_search_relation_penalty(
@@ -103,10 +132,16 @@ static uint32_t loom_low_allocation_search_relation_penalty(
   }
   const loom_value_ordinal_t counterpart_ordinal =
       candidate_is_result ? relation->source_ordinal : relation->result_ordinal;
+  bool counterpart_is_future_fixed = false;
   const loom_low_allocation_assignment_t* counterpart =
-      loom_low_allocation_assignment_map_assignment_for_value_ordinal(
-          context->assignment_map, counterpart_ordinal, NULL);
+      loom_low_allocation_search_relation_counterpart(
+          context, counterpart_ordinal, &counterpart_is_future_fixed);
   if (counterpart == NULL) {
+    return 0;
+  }
+  if (loom_low_allocation_search_relation_requires_future_fixed_value(
+          relation) &&
+      !counterpart_is_future_fixed) {
     return 0;
   }
   const loom_low_allocation_assignment_t* result_assignment =
@@ -130,8 +165,8 @@ typedef struct loom_low_allocation_search_location_query_t {
   loom_low_placement_relation_range_t result_range;
   // Relations where the candidate is the source assignment.
   loom_low_placement_relation_range_t source_range;
-  // One penalty bit per semantic candidate ordinal, or NULL when inert.
-  const uint64_t* physical_domain_words;
+  // Physical-domain candidate ranks retained for this scalar interval.
+  loom_low_allocation_physical_domain_row_t physical_domain;
 } loom_low_allocation_search_location_query_t;
 
 static bool loom_low_allocation_search_relation_is_actionable(
@@ -144,10 +179,16 @@ static bool loom_low_allocation_search_relation_is_actionable(
   }
   const loom_value_ordinal_t counterpart_ordinal =
       candidate_is_result ? relation->source_ordinal : relation->result_ordinal;
+  bool counterpart_is_future_fixed = false;
   const loom_low_allocation_assignment_t* counterpart =
-      loom_low_allocation_assignment_map_assignment_for_value_ordinal(
-          context->assignment_map, counterpart_ordinal, NULL);
+      loom_low_allocation_search_relation_counterpart(
+          context, counterpart_ordinal, &counterpart_is_future_fixed);
   if (counterpart == NULL) {
+    return false;
+  }
+  if (loom_low_allocation_search_relation_requires_future_fixed_value(
+          relation) &&
+      !counterpart_is_future_fixed) {
     return false;
   }
   return loom_low_allocation_storage_assignment_classes_share(
@@ -160,7 +201,9 @@ loom_low_allocation_search_location_query(
     const loom_low_allocation_assignment_t* candidate) {
   loom_low_allocation_search_location_query_t query = {0};
   const loom_low_placement_table_t* placement = context->placement;
-  if (placement == NULL || placement->location_relation_count == 0) {
+  if (placement == NULL ||
+      (placement->location_relation_count == 0 &&
+       context->target_constraints->fixed_value_count == 0)) {
     return query;
   }
   loom_value_ordinal_t value_ordinal = LOOM_VALUE_ORDINAL_INVALID;
@@ -365,9 +408,35 @@ typedef struct loom_low_allocation_search_location_choice_t {
   uint32_t packing_rank;
   // Soft placement penalty for base.
   uint32_t preference_penalty;
-  // True when base and preference_penalty are populated.
+  // Retained physical-domain rank after placement preferences.
+  uint32_t physical_domain_rank;
+  // Whether the candidate consumes reserved narrower-domain capacity.
+  bool physical_domain_reserved;
+  // True when the choice fields are populated.
   bool found;
 } loom_low_allocation_search_location_choice_t;
+
+static bool loom_low_allocation_search_explicit_choice_is_better(
+    bool candidate_reserved, uint32_t candidate_preference_penalty,
+    uint32_t candidate_domain_rank, uint32_t candidate_packing_rank,
+    uint32_t candidate_ordinal,
+    const loom_low_allocation_search_location_choice_t* best) {
+  if (!best->found) {
+    return true;
+  }
+  if (candidate_reserved != best->physical_domain_reserved) {
+    return !candidate_reserved;
+  }
+  if (candidate_preference_penalty != best->preference_penalty) {
+    return candidate_preference_penalty < best->preference_penalty;
+  }
+  if (candidate_domain_rank != best->physical_domain_rank) {
+    return candidate_domain_rank < best->physical_domain_rank;
+  }
+  return candidate_packing_rank < best->packing_rank ||
+         (candidate_packing_rank == best->packing_rank &&
+          candidate_ordinal < best->candidate_ordinal);
+}
 
 static void loom_low_allocation_search_find_location_for_release_policy(
     loom_low_allocation_search_context_t* context,
@@ -537,16 +606,15 @@ loom_low_allocation_search_find_explicit_physical_register_for_release_policy(
       physical_register_id = view->physical_register_id;
     }
     const uint32_t domain_penalty =
-        query->physical_domain_words
-            ? (query->physical_domain_words[candidate_ordinal / 64] >>
-               (candidate_ordinal % 64)) &
-                  1
-            : 0;
-    // Scalars arrive in packing order and every other penalty is nonnegative.
-    // This lower bound cannot beat an earlier choice, even before conflicts
-    // are queried. Pressure release still needs the minimum legal ordinal.
-    if (unit_count == 1 && !needs_first_candidate && out_choice->found &&
-        domain_penalty >= out_choice->preference_penalty) {
+        loom_low_allocation_physical_domain_row_candidate_rank(
+            query->physical_domain, (uint16_t)candidate_ordinal);
+    const bool domain_reserved =
+        loom_low_allocation_physical_domain_row_candidate_is_reserved(
+            query->physical_domain, (uint16_t)candidate_ordinal);
+    // Reserved narrower-domain capacity cannot improve on an already legal
+    // non-reserved choice. Pressure release still needs every legal ordinal.
+    if (!needs_first_candidate && out_choice->found &&
+        !out_choice->physical_domain_reserved && domain_reserved) {
       continue;
     }
     loom_low_allocation_assignment_t candidate = *candidate_template;
@@ -558,36 +626,35 @@ loom_low_allocation_search_find_explicit_physical_register_for_release_policy(
             /*ignored_storage_lease_value_count=*/0, release_policy)) {
       continue;
     }
-    uint32_t preference_penalty =
+    const uint32_t preference_penalty =
         loom_low_allocation_search_location_preference_penalty(context, query,
                                                                &candidate);
-    preference_penalty =
-        iree_math_saturating_add_u32(preference_penalty, domain_penalty);
     const uint32_t first_candidate_ordinal =
         out_choice->found
             ? iree_min(out_choice->first_candidate_ordinal, candidate_ordinal)
             : candidate_ordinal;
-    if (!out_choice->found ||
-        preference_penalty < out_choice->preference_penalty ||
-        (preference_penalty == out_choice->preference_penalty &&
-         (packing_rank < out_choice->packing_rank ||
-          (packing_rank == out_choice->packing_rank &&
-           candidate_ordinal < out_choice->candidate_ordinal)))) {
+    if (loom_low_allocation_search_explicit_choice_is_better(
+            domain_reserved, preference_penalty, domain_penalty, packing_rank,
+            candidate_ordinal, out_choice)) {
       *out_choice = (loom_low_allocation_search_location_choice_t){
           .base = physical_register_id,
           .candidate_ordinal = candidate_ordinal,
           .first_candidate_ordinal = first_candidate_ordinal,
           .packing_rank = packing_rank,
           .preference_penalty = preference_penalty,
+          .physical_domain_rank = domain_penalty,
+          .physical_domain_reserved = domain_reserved,
           .found = true,
       };
     } else {
       out_choice->first_candidate_ordinal = first_candidate_ordinal;
     }
-    // Scalars are visited in packing order, so the first zero-penalty choice
-    // is final unless pressure-release comparison also needs the minimum
-    // semantic ordinal. Views retain physical-ID order for indexed lookup.
-    if (unit_count == 1 && preference_penalty == 0 && !needs_first_candidate) {
+    // Scalars are visited in packing order, so the first unconstrained,
+    // zero-penalty choice is final unless pressure-release comparison also
+    // needs the minimum semantic ordinal. Views retain physical-ID order for
+    // indexed lookup.
+    if (unit_count == 1 && !domain_reserved && preference_penalty == 0 &&
+        domain_penalty == 0 && !needs_first_candidate) {
       return;
     }
   }
@@ -699,9 +766,8 @@ bool loom_low_allocation_search_find_free_location(
             &candidate_template);
   }
   if (uses_explicit_physical_registers && interval->unit_count == 1) {
-    query.physical_domain_words =
-        loom_low_allocation_physical_domains_for_interval(
-            context->physical_domains, context->liveness, interval);
+    query.physical_domain = loom_low_allocation_physical_domains_for_interval(
+        context->physical_domains, context->liveness, interval);
   }
   const uint32_t scalar_packing_frontier =
       loom_low_allocation_search_scalar_packing_frontier(context, interval,

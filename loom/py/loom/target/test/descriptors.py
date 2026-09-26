@@ -74,9 +74,12 @@ _REG_PRESSURE_ALIAS64 = "test.pressure.alias64"
 _REG_EXPLICIT32 = "test.explicit32"
 _REG_SPILLABLE_EXPLICIT32 = "test.spillable.explicit32"
 _REG_FIXED_R0 = "test.fixed.r0"
+_REG_FIXED_R2 = "test.fixed.r2"
 _REG_PACKED_NARROW = "test.packed.narrow"
 _REG_PACKED_WIDE = "test.packed.wide"
 _REG_COINDEXED_PARTNER = "test.coindexed.partner"
+_REG_ATOMIC_NARROW = "test.atomic.narrow"
+_REG_ALIAS_NARROW = "test.alias.narrow"
 
 _REG_PART_I32_LOW16 = "test.i32.low16"
 _REG_PART_I32_HIGH16 = "test.i32.high16"
@@ -876,6 +879,24 @@ TEST_LOW_TIED_ANY_DESCRIPTOR = Descriptor(
     operands=(_i32_i64_result(), _i32_i64_operand("src")),
     constraints=_TIED_RESULT_CONSTRAINTS,
     asm_forms=_asm(results=("dst",), operands=("src",)),
+    schedule_class=_SCHEDULE_SCALAR_ALU,
+    flags=(DescriptorFlag.DEAD_REMOVABLE,),
+)
+
+TEST_LOW_SAME_REGISTER_VALUE_TYPES_DESCRIPTOR = Descriptor(
+    key="test.same.register.value.types",
+    mnemonic="test.same.register.value.types",
+    semantic_tag="test.same.register.value.types",
+    operands=(
+        _i32_i64_result("result"),
+        _i32_i64_operand("lhs"),
+        _i32_i64_operand("rhs"),
+    ),
+    constraints=(
+        Constraint(ConstraintKind.SAME_REGISTER_VALUE_TYPE, 0, 1),
+        Constraint(ConstraintKind.SAME_REGISTER_VALUE_TYPE, 1, 2),
+    ),
+    asm_forms=_asm(results=("result",), operands=("lhs", "rhs")),
     schedule_class=_SCHEDULE_SCALAR_ALU,
     flags=(DescriptorFlag.DEAD_REMOVABLE,),
 )
@@ -2018,6 +2039,39 @@ TEST_LOW_CORE_DESCRIPTOR_SET = DescriptorSet(
             ),
             physical_registers=("test.r2", "test.r3"),
         ),
+        RegClass(
+            _REG_ATOMIC_NARROW,
+            32,
+            SpillSlotSpace.PRIVATE,
+            flags=(
+                RegClassFlag.PHYSICAL,
+                RegClassFlag.UNSPILLABLE,
+                RegClassFlag.EXPLICIT_PHYSICAL_REGISTERS,
+            ),
+            physical_registers=("test.l0",),
+        ),
+        RegClass(
+            _REG_ALIAS_NARROW,
+            32,
+            SpillSlotSpace.PRIVATE,
+            flags=(
+                RegClassFlag.PHYSICAL,
+                RegClassFlag.UNSPILLABLE,
+                RegClassFlag.EXPLICIT_PHYSICAL_REGISTERS,
+            ),
+            physical_registers=("test.a0", "test.a1"),
+        ),
+        RegClass(
+            _REG_FIXED_R2,
+            32,
+            SpillSlotSpace.PRIVATE,
+            flags=(
+                RegClassFlag.PHYSICAL,
+                RegClassFlag.UNSPILLABLE,
+                RegClassFlag.EXPLICIT_PHYSICAL_REGISTERS,
+            ),
+            physical_registers=("test.r2",),
+        ),
     ),
     physical_registers=(
         PhysicalRegister("test.r0", (1,)),
@@ -2027,6 +2081,8 @@ TEST_LOW_CORE_DESCRIPTOR_SET = DescriptorSet(
         PhysicalRegister("test.l0", (1, 3)),
         PhysicalRegister("test.l1", (0, 2)),
         PhysicalRegister("test.q0", (0, 1, 2, 3)),
+        PhysicalRegister("test.a0", (1,)),
+        PhysicalRegister("test.a1", (0,)),
     ),
     physical_register_views=(
         PhysicalRegisterView("test.l0", _REG_EXPLICIT32, ("test.r0", "test.r2")),
@@ -2333,6 +2389,7 @@ TEST_LOW_CORE_DESCRIPTOR_SET = DescriptorSet(
         TEST_LOW_AMBIGUOUS_DESCRIPTOR,
         TEST_LOW_PASS_ANY_DESCRIPTOR,
         TEST_LOW_TIED_ANY_DESCRIPTOR,
+        TEST_LOW_SAME_REGISTER_VALUE_TYPES_DESCRIPTOR,
         TEST_LOW_COINDEXED_RESULTS_DESCRIPTOR,
         TEST_LOW_READ_LOW16_I32_DESCRIPTOR,
         TEST_LOW_READ_HIGH16_I32_DESCRIPTOR,

@@ -28,6 +28,9 @@ enum loom_attr_flag_bits_e {
   LOOM_ATTR_ELIDE_DEFAULT = 1u << 2,
   // Descriptor-aware text formats spell string values as bare identifiers.
   LOOM_ATTR_BARE_IDENTIFIER = 1u << 3,
+  // Predicate values are runtime observations of operation operands. Generic
+  // verification requires exact semantic types and explicit operand edges.
+  LOOM_ATTR_EXECUTABLE_PREDICATES = 1u << 4,
 };
 typedef uint8_t loom_attr_flags_t;
 

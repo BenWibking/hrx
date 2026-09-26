@@ -298,6 +298,9 @@ def _test_execution_profile_contract_impl(env, target):
     if info.benchmark_runner_args != [
         "--iterations=1",
         "--warmup-iterations=0",
+        "--min-time-ms=0",
+        "--warmup-time-ms=0",
+        "--max-batches=1",
         "--output-format=jsonl",
         "--compile-report=none",
         "--max-samples-per-case=1",

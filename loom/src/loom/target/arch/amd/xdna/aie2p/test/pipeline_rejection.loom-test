@@ -99,7 +99,7 @@ pipeline.def<kernel> public retain target(@array_target) @equal_count_different_
 
 aie2p.target<array> @array_target
 
-// ERROR@+1: TARGET/093 {scope="generic"}
+// ERROR@+1: XDNA/008 {scope="generic"}
 pipeline.def target(@array_target) @generic_scope() launch() {
   pipeline.return
 }
@@ -108,7 +108,7 @@ pipeline.def target(@array_target) @generic_scope() launch() {
 
 aie2p.target<array> @array_target
 
-// ERROR@+1: TARGET/093 {scope="command"}
+// ERROR@+1: XDNA/008 {scope="command"}
 pipeline.def<command> target(@array_target) @command_scope() launch() {
   pipeline.return
 }
@@ -136,7 +136,7 @@ func.def target(@core_target) @copy_record(%input: buffer, %output: buffer) {
 }
 
 // The graph fits the physical coordinate domain but not its compute rows.
-// ERROR@+1: TARGET/094 {instance_count="33", compute_tile_count="32"}
+// ERROR@+1: XDNA/009 {instance_count="33", compute_tile_count="32"}
 pipeline.def<kernel> target(@array_target) @too_many_resident_workers() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 33 : index
   %base = index.constant 0 : offset

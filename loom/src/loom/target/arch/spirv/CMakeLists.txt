@@ -297,7 +297,6 @@ loom_cc_library(
     "module_contract.c"
   DEPS
     iree::base
-    loom::codegen::low::target_binding
     loom::target::types
   PUBLIC
 )
@@ -516,6 +515,7 @@ loom_check_test_suite(
     "test/source_low/narrow_float_arguments.loom-test"
     "test/source_low/nested_view_selection.loom-test"
     "test/source_low/numeric_address_widening.loom-test"
+    "test/source_low/numeric_bfloat_narrow.loom-test"
     "test/source_low/numeric_bfloat_widen.loom-test"
     "test/source_low/numeric_boolean_comparison.loom-test"
     "test/source_low/numeric_constant_remainder.loom-test"

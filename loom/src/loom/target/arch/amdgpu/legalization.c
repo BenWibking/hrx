@@ -6,6 +6,7 @@
 
 #include "loom/target/arch/amdgpu/legalization.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "loom/codegen/low/descriptors.h"
@@ -27,6 +28,7 @@
 #include "loom/target/arch/amdgpu/lower/value/vector_transform.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/target/arch/amdgpu/target_info_defs.h"
+#include "loom/transforms/scalar/target_legalization.h"
 #include "loom/transforms/vector/packet_legalization.h"
 #include "loom/transforms/vector/shape_legalization.h"
 #include "loom/transforms/vector/table_legalization.h"
@@ -37,6 +39,125 @@ static bool loom_amdgpu_legalizer_descriptor_set_is_amdgpu(
     const loom_low_descriptor_set_t* descriptor_set) {
   return descriptor_set != NULL &&
          descriptor_set->target_stable_id == LOOM_AMDGPU_TARGET_STABLE_ID;
+}
+
+static bool loom_amdgpu_legalizer_has_descriptor(
+    const loom_target_legalization_context_t* context,
+    iree_string_view_t descriptor_key) {
+  return context->descriptor_set != NULL &&
+         loom_low_descriptor_set_lookup_descriptor(context->descriptor_set,
+                                                   descriptor_key) !=
+             LOOM_LOW_DESCRIPTOR_ORDINAL_NONE;
+}
+
+static bool loom_amdgpu_facts_are_positive_u32_power_of_two(
+    loom_value_facts_t facts) {
+  int64_t value = 0;
+  if (!loom_value_facts_as_exact_i64(facts, &value) || value <= 0 ||
+      (uint64_t)value > UINT32_MAX) {
+    return false;
+  }
+  const uint64_t unsigned_value = (uint64_t)value;
+  return (unsigned_value & (unsigned_value - 1)) == 0;
+}
+
+static bool loom_amdgpu_facts_are_inline_u24(loom_value_facts_t facts) {
+  int64_t value = 0;
+  return loom_value_facts_as_exact_i64(facts, &value) && value >= 0 &&
+         value <= 64;
+}
+
+static bool loom_amdgpu_selected_result_is_vgpr(
+    const loom_low_descriptor_set_t* descriptor_set,
+    const loom_target_contract_query_result_t* query_result) {
+  if (query_result == NULL ||
+      query_result->outcome != LOOM_TARGET_CONTRACT_QUERY_LEGAL ||
+      query_result->selected_descriptor == NULL) {
+    return false;
+  }
+
+  const loom_low_descriptor_t* descriptor = query_result->selected_descriptor;
+  IREE_ASSERT_EQ(descriptor->result_count, 1);
+  IREE_ASSERT_LT(descriptor->operand_start, descriptor_set->operand_count);
+  const loom_low_operand_t* result_operand =
+      &descriptor_set->operands[descriptor->operand_start];
+  IREE_ASSERT_EQ(result_operand->reg_class_alt_count, 1);
+  IREE_ASSERT_LT(result_operand->reg_class_alt_start,
+                 descriptor_set->reg_class_alt_count);
+  return descriptor_set->reg_class_alts[result_operand->reg_class_alt_start]
+             .reg_class_id == LOOM_AMDGPU_REG_CLASS_ID_VGPR;
+}
+
+static bool loom_amdgpu_match_scalar_multiply_add(
+    const loom_target_legalizer_entry_t* entry,
+    const loom_target_legalization_context_t* context, const loom_op_t* op) {
+  (void)entry;
+  if (context->mode != LOOM_TARGET_LEGALIZATION_MODE_FINAL ||
+      !loom_amdgpu_legalizer_descriptor_set_is_amdgpu(
+          context->descriptor_set) ||
+      context->fact_table == NULL) {
+    return false;
+  }
+
+  loom_scalar_multiply_add_match_t match = {0};
+  if (!loom_scalar_match_multiply_add(context->module, op, &match)) {
+    return false;
+  }
+
+  const loom_value_facts_t lhs_facts = loom_value_fact_table_lookup(
+      context->fact_table, loom_scalar_muli_lhs(match.multiply_op));
+  const loom_value_facts_t rhs_facts = loom_value_fact_table_lookup(
+      context->fact_table, loom_scalar_muli_rhs(match.multiply_op));
+  if ((loom_amdgpu_facts_are_positive_u32_power_of_two(lhs_facts) ||
+       loom_amdgpu_facts_are_positive_u32_power_of_two(rhs_facts)) &&
+      loom_amdgpu_legalizer_has_descriptor(
+          context, IREE_SV("amdgpu.v_lshl_add_u32.shift_imm"))) {
+    return true;
+  }
+
+  if (!loom_value_facts_fit_unsigned_bit_count(lhs_facts, 24) ||
+      !loom_value_facts_fit_unsigned_bit_count(rhs_facts, 24)) {
+    return false;
+  }
+  return (loom_amdgpu_facts_are_inline_u24(lhs_facts) &&
+          loom_amdgpu_legalizer_has_descriptor(
+              context, IREE_SV("amdgpu.v_mad_u32_u24.src0_inline"))) ||
+         (loom_amdgpu_facts_are_inline_u24(rhs_facts) &&
+          loom_amdgpu_legalizer_has_descriptor(
+              context, IREE_SV("amdgpu.v_mad_u32_u24.src1_inline")));
+}
+
+static iree_status_t loom_amdgpu_legalize_scalar_multiply_add(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  loom_scalar_multiply_add_match_t match = {0};
+  const bool matched =
+      loom_scalar_match_multiply_add(context->module, op, &match);
+  IREE_ASSERT(matched);
+  (void)matched;
+
+  bool result_is_vgpr = loom_amdgpu_selected_result_is_vgpr(
+      context->descriptor_set, context->contract_query_result);
+  if (!result_is_vgpr) {
+    loom_target_contract_query_result_t add_query_result =
+        loom_target_contract_query_result_empty();
+    IREE_RETURN_IF_ERROR(loom_target_legalization_query_contract(
+        context, match.add_op, &add_query_result));
+    result_is_vgpr = loom_amdgpu_selected_result_is_vgpr(
+        context->descriptor_set, &add_query_result);
+  }
+  if (!result_is_vgpr) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_scalar_fuse_multiply_add_match(context->rewriter, &match));
+  out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  return iree_ok_status();
 }
 
 static bool loom_amdgpu_subgroup_mask_type_covers_wavefront(
@@ -585,6 +706,13 @@ static iree_status_t loom_amdgpu_legalize_kernel_subgroup_match_all(
 }
 
 static const loom_target_legalizer_rule_t kAmdgpuLegalizerRules[] = {
+    {
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
+        .root_kind = LOOM_OP_SCALAR_MULI,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I32,
+        .match = loom_amdgpu_match_scalar_multiply_add,
+        .legalize = loom_amdgpu_legalize_scalar_multiply_add,
+    },
     {
         .root_kind = LOOM_OP_VECTOR_BROADCAST,
         .legalize = loom_amdgpu_legalize_static_vector_shape,

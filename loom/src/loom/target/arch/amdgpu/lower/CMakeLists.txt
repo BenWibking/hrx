@@ -114,6 +114,7 @@ loom_cc_library(
     "sanitizer_report.h"
     "sanitizer_ubsan_report.h"
     "signal.h"
+    "source_alloca_layout.h"
     "source_integer_representation.h"
     "source_representation.h"
     "structural.h"
@@ -131,6 +132,7 @@ loom_cc_library(
     "value/vector_conversion.h"
     "value/vector_transform.h"
     "workgroup.h"
+    "workgroup_storage.h"
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amdgpu/contracts/tables.inl"
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amdgpu/descriptors/lower_capabilities.h"
@@ -239,6 +241,7 @@ loom_cc_library(
     "value/vector_construct.c"
     "value/vector_conversion.c"
     "value/vector_transform.c"
+    "workgroup_storage.c"
   DEPS
     ::kinds
     ::materializers
@@ -247,7 +250,9 @@ loom_cc_library(
     loom::analysis::condition_facts
     loom::analysis::contract_vector
     loom::analysis::control_uniformity
+    loom::analysis::source_storage_packing
     loom::analysis::storage_interference
+    loom::analysis::storage_layout
     loom::analysis::symbolic_expr
     loom::analysis::view_regions
     loom::codegen::low::builder
@@ -257,7 +262,7 @@ loom_cc_library(
     loom::codegen::low::lower::representation_observer
     loom::codegen::low::representation_plan
     loom::codegen::low::source_memory_plan
-    loom::codegen::low::source_storage_packing
+    loom::error::error_defs
     loom::ir
     loom::ir::facts
     loom::ops::atomic

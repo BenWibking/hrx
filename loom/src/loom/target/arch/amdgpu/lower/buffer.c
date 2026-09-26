@@ -10,7 +10,7 @@
 
 #include "loom/ops/buffer/ops.h"
 #include "loom/target/arch/amdgpu/lower/constants.h"
-#include "loom/target/arch/amdgpu/lower/topology.h"
+#include "loom/target/arch/amdgpu/lower/source_alloca_layout.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/util/fact_table.h"
 

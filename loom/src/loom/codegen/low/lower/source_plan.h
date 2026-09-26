@@ -28,6 +28,9 @@ typedef struct loom_low_representation_plan_t loom_low_representation_plan_t;
 enum loom_low_lower_value_storage_flag_bits_e {
   // The source value must be materialized as a target-Low SSA value.
   LOOM_LOW_LOWER_VALUE_STORAGE_REQUIRED = (uint8_t)1u << 0,
+  // One selected memory plan can reuse this source realization. A second plan
+  // requires storage so shared authored arithmetic is not rebuilt per access.
+  LOOM_LOW_LOWER_VALUE_STORAGE_MEMORY_REALIZATION_SEEN = (uint8_t)1u << 1,
 };
 typedef uint8_t loom_low_lower_value_storage_flags_t;
 

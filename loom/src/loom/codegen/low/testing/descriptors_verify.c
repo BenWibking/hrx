@@ -1111,6 +1111,20 @@ static iree_status_t loom_low_verify_descriptor_constraints(
             constraint, "same-register-ordinal"));
         break;
       }
+      case LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE: {
+        IREE_RETURN_IF_ERROR(loom_low_verify_binary_constraint(
+            constraint, "same-register-value-type"));
+        if ((lhs->role != LOOM_LOW_OPERAND_ROLE_RESULT &&
+             !loom_low_operand_role_is_packet_operand(lhs->role)) ||
+            (rhs->role != LOOM_LOW_OPERAND_ROLE_RESULT &&
+             !loom_low_operand_role_is_packet_operand(rhs->role))) {
+          return iree_make_status(
+              IREE_STATUS_INVALID_ARGUMENT,
+              "low same-register-value-type constraint requires two result "
+              "or packet operand rows");
+        }
+        break;
+      }
       case LOOM_LOW_CONSTRAINT_KIND_EARLY_CLOBBER:
         if (constraint->rhs_operand_index != LOOM_LOW_ID_NONE ||
             lhs->role != LOOM_LOW_OPERAND_ROLE_RESULT) {
@@ -1477,6 +1491,7 @@ static bool loom_low_constraint_kind_is_valid(loom_low_constraint_kind_t kind) {
     case LOOM_LOW_CONSTRAINT_KIND_REMATERIALIZABLE:
     case LOOM_LOW_CONSTRAINT_KIND_FOLDABLE:
     case LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_ORDINAL:
+    case LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE:
       return true;
     default:
       return false;

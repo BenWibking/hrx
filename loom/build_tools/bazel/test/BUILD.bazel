@@ -16,6 +16,7 @@ load(
     "loom_library",
     "loom_module",
     "loom_target_profile",
+    "loom_target_set",
     "loom_test",
     "loom_test_module",
 )
@@ -25,6 +26,7 @@ load(
     "loom_binary_rules_test_suite",
 )
 load(":loom_check_rules_test.bzl", "loom_check_rules_test_suite")
+load(":loom_corpus_rules_test.bzl", "loom_corpus_rules_test_suite")
 load(
     ":loom_library_rules_test.bzl",
     "REFERENCE_PROFILE",
@@ -47,6 +49,22 @@ loom_target_profile(
     name = "test_fake_profile",
     family = "FakeTargetFamily123",
     selector = "FakeTargetSelector123",
+)
+
+loom_target_set(
+    name = "test_target_set",
+    targets = [
+        ":test_fake_profile",
+        ":test_amdgpu_profile",
+    ],
+)
+
+loom_target_set(
+    name = "test_nested_target_set",
+    targets = [
+        ":test_fake_profile",
+        ":test_target_set",
+    ],
 )
 
 loom_kernel_library(
@@ -170,6 +188,8 @@ loom_check_test(
 
 loom_check_rules_test_suite(name = "loom_check_rules_tests")
 
+loom_corpus_rules_test_suite(name = "loom_corpus_rules_tests")
+
 loom_library_rules_test_suite(name = "loom_library_rules_tests")
 
 loom_binary_rules_test_suite(name = "loom_binary_rules_tests")
@@ -275,6 +295,7 @@ test_suite(
         ":loom_binary_rules_tests",
         ":loom_check_rules_tests",
         ":loom_check_wrapper_direct_test",
+        ":loom_corpus_rules_tests",
         ":loom_library_aggregate_direct_test",
         ":loom_library_module_direct_test",
         ":loom_library_rules_tests",

@@ -124,6 +124,12 @@ static bool loom_low_schedule_candidate_exceeds_unspillable_capacity(
       LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_EXCEEDS_UNSPILLABLE_CAPACITY);
 }
 
+static uint32_t loom_low_schedule_candidate_unspillable_completion_capacity(
+    const loom_low_schedule_candidate_score_t* score) {
+  return iree_min(score->active_unspillable_completion_capacity,
+                  score->opened_unspillable_completion_capacity);
+}
+
 static int loom_low_schedule_compare_candidate_pressure(
     const loom_low_schedule_candidate_score_t* lhs,
     const loom_low_schedule_candidate_score_t* rhs) {
@@ -269,34 +275,40 @@ static bool loom_low_schedule_candidate_score_less(
   if (lhs_exceeds_unspillable_capacity != rhs_exceeds_unspillable_capacity) {
     return !lhs_exceeds_unspillable_capacity;
   }
-  // When both candidates exceed unspillable capacity, advance the tighter
-  // active completion. Otherwise a full register alone does not justify
-  // overriding pressure reduction in another storage class.
+  // Once hard-capacity feasibility ties, advance the tighter full bank's
+  // pending completion. Waiting until both candidates exceed capacity lets
+  // other chains consume the temporary storage that completion still needs.
   if (state->options->strategy == LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL &&
-      lhs_exceeds_unspillable_capacity &&
-      compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT &&
-      lhs->active_unspillable_completion_capacity !=
-          rhs->active_unspillable_completion_capacity) {
-    return lhs->active_unspillable_completion_capacity <
-           rhs->active_unspillable_completion_capacity;
+      compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT) {
+    const uint32_t lhs_completion_capacity =
+        loom_low_schedule_candidate_unspillable_completion_capacity(lhs);
+    const uint32_t rhs_completion_capacity =
+        loom_low_schedule_candidate_unspillable_completion_capacity(rhs);
+    if (lhs_completion_capacity != rhs_completion_capacity) {
+      return lhs_completion_capacity < rhs_completion_capacity;
+    }
   }
+  // A pinned aggregate completion remains active when pressure recovery
+  // changes modes. Its retained identity keeps later packing transactions
+  // from taking storage needed to finish the current one.
   if (state->options->strategy == LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL &&
-      compare_mode == LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_PACKING_COMPLETION &&
+      compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT &&
       lhs->active_register_packing_completion_capacity !=
           rhs->active_register_packing_completion_capacity) {
     return lhs->active_register_packing_completion_capacity <
            rhs->active_register_packing_completion_capacity;
   }
+  const bool lhs_advances_constrained_completion = iree_any_bit_set(
+      lhs->flags,
+      LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_ADVANCES_CONSTRAINED_COMPLETION);
+  const bool rhs_advances_constrained_completion = iree_any_bit_set(
+      rhs->flags,
+      LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_ADVANCES_CONSTRAINED_COMPLETION);
   if (state->options->strategy == LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL &&
       compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT &&
-      iree_any_bit_set(
-          lhs->flags,
-          LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_ADVANCES_CONSTRAINED_COMPLETION) &&
-      iree_any_bit_set(
-          rhs->flags,
-          LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_ADVANCES_CONSTRAINED_COMPLETION) &&
-      lhs->source_ordinal != rhs->source_ordinal) {
-    return lhs->source_ordinal < rhs->source_ordinal;
+      lhs_advances_constrained_completion !=
+          rhs_advances_constrained_completion) {
+    return lhs_advances_constrained_completion;
   }
   if (lhs_defers_materialization) {
     const bool lhs_unlocks_descriptor =
@@ -325,6 +337,25 @@ static bool loom_low_schedule_candidate_score_less(
       const bool rhs_makes_pressure_progress =
           rhs->pressure_progress_kind !=
           LOOM_LOW_SCHEDULE_PRESSURE_PROGRESS_NONE;
+      // Net live-unit reduction can exchange space in one register bank for
+      // debt in another. Compare physical headroom before aggregate progress
+      // when both candidates perform register work. Operations without any
+      // register activity retain the preference for actionable progress.
+      if ((lhs->killed_live_value_count != 0 ||
+           lhs->produced_live_value_count != 0) &&
+          (rhs->killed_live_value_count != 0 ||
+           rhs->produced_live_value_count != 0) &&
+          lhs->pressure_cliff_penalty != rhs->pressure_cliff_penalty) {
+        return lhs->pressure_cliff_penalty < rhs->pressure_cliff_penalty;
+      }
+      // Keep equally viable constrained transactions in source order without
+      // letting age override a physical register-bank cliff. Selected packing
+      // and unspillable completions were compared by identity above.
+      if (lhs_advances_constrained_completion &&
+          rhs_advances_constrained_completion &&
+          lhs->source_ordinal != rhs->source_ordinal) {
+        return lhs->source_ordinal < rhs->source_ordinal;
+      }
       if (lhs_makes_pressure_progress != rhs_makes_pressure_progress) {
         return lhs_makes_pressure_progress;
       }
@@ -355,6 +386,19 @@ static bool loom_low_schedule_candidate_score_less(
     }
     if (lhs->effective_stall_cycles != rhs->effective_stall_cycles) {
       return lhs->effective_stall_cycles < rhs->effective_stall_cycles;
+    }
+    // Pressure-equivalent candidates that cannot yet retire storage have no
+    // recovery benefit to justify opening a later live range. Preserve source
+    // order once their actual issue delay also ties; the split between data
+    // and resource stalls does not change when either candidate can issue.
+    if (compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT &&
+        lhs->pressure_progress_kind ==
+            LOOM_LOW_SCHEDULE_PRESSURE_PROGRESS_NONE &&
+        rhs->pressure_progress_kind ==
+            LOOM_LOW_SCHEDULE_PRESSURE_PROGRESS_NONE &&
+        pressure_efficiency_order == 0 && pressure_order == 0 &&
+        lhs->source_ordinal != rhs->source_ordinal) {
+      return lhs->source_ordinal < rhs->source_ordinal;
     }
     if (lhs->hazard_stall_cycles != rhs->hazard_stall_cycles) {
       return lhs->hazard_stall_cycles < rhs->hazard_stall_cycles;

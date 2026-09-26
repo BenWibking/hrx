@@ -18,6 +18,7 @@ from loom.assembly import (
     EQUALS,
     AssemblyFormat,
     Attr,
+    BlockArgs,
     BlockRef,
     Clause,
     EncodingOf,
@@ -30,6 +31,7 @@ from loom.assembly import (
     Ref,
     Region,
     ResultType,
+    ResultTypeList,
     ScalarOf,
     Scope,
     ScopedEnumRef,
@@ -126,6 +128,7 @@ from loom.dsl import (
     HasAllStaticRankOneVector,
     HasAllStaticVector,
     HasAncestor,
+    HasAnyAncestor,
     HasBitwiseElement,
     HasBitwiseScalar,
     HasF16OrBf16Element,
@@ -366,6 +369,14 @@ class TestAttrDef:
     def test_elide_default_requires_default(self) -> None:
         with _raises(ValueError, match="elide_default requires default"):
             AttrDef("offset", "i64", elide_default=True)
+
+    def test_executable_predicates_require_predicate_list(self) -> None:
+        predicates = AttrDef("predicates", "predicate_list", executable_predicates=True)
+        assert predicates.executable_predicates
+        with _raises(
+            ValueError, match="executable_predicates requires.*predicate_list"
+        ):
+            AttrDef("predicate", "i64", executable_predicates=True)
 
     def test_enum_attr(self) -> None:
         a = AttrDef("predicate", "enum", enum_def=_cmpi_preds)
@@ -1124,11 +1135,18 @@ class TestTraits:
 
     def test_ancestor_placement_traits(self) -> None:
         required = HasAncestor("low.func.def")
+        alternative = HasAnyAncestor("check.case", "check.scenario")
         forbidden = NoAncestor("low.func.def")
         assert required.name == "HasAncestor"
         assert required.args == ("low.func.def",)
+        assert alternative.name == "HasAnyAncestor"
+        assert alternative.args == ("check.case", "check.scenario")
         assert forbidden.name == "NoAncestor"
         assert forbidden.args == ("low.func.def",)
+
+    def test_any_ancestor_requires_an_alternative(self) -> None:
+        with _raises(ValueError, match="at least one op name"):
+            HasAnyAncestor()
 
     def test_implicit_terminator(self) -> None:
         t = ImplicitTerminator("scf.yield")
@@ -2672,6 +2690,41 @@ class TestOp:
         assert op.result("out") is not None
         assert op.result("missing") is None
 
+    def test_signature_only_results_require_a_local_signature(self) -> None:
+        op = Op(
+            "test.sink",
+            results=[Result("results", ANY, variadic=True, signature_only=True)],
+            format=[Scope([ResultTypeList("results")])],
+        )
+        assert op.has_signature_only_results
+
+        with _raises(ValueError, match="cannot be mixed"):
+            Op(
+                "test.mixed",
+                results=[
+                    Result("signature", ANY, signature_only=True),
+                    Result("value", ANY),
+                ],
+                format=[Scope([ResultType("signature"), ResultType("value")])],
+            )
+        with _raises(ValueError, match=r"inside Scope\(\.\.\.\)"):
+            Op(
+                "test.unscoped",
+                results=[Result("result", ANY, signature_only=True)],
+                format=[ResultType("result")],
+            )
+        with _raises(ValueError, match="require an explicit result type format"):
+            Op(
+                "test.implicit",
+                results=[Result("result", ANY, signature_only=True)],
+            )
+        with _raises(ValueError, match="cannot allocate resources"):
+            Op(
+                "test.allocating",
+                results=[Result("result", ANY, allocates=True, signature_only=True)],
+                format=[Scope([ResultType("result")])],
+            )
+
     def test_lookup_attr(self) -> None:
         op = Op("test.op", attrs=[AttrDef("axis", "i64")])
         assert op.attr("axis") is not None
@@ -3561,6 +3614,129 @@ class TestSymbolKernelContract:
         )
 
         assert op.attr("specialization_count") is not None
+
+    def test_region_signature_may_have_contiguous_argument_groups(self) -> None:
+        op = Op(
+            "test.partitioned_region",
+            attrs=[AttrDef("actual_count", "i64")],
+            regions=[RegionDef("body")],
+            format=[
+                BlockArgs(
+                    "body",
+                    group="actual",
+                    end_attr="actual_count",
+                ),
+                BlockArgs(
+                    "body",
+                    group="expected",
+                    start_attr="actual_count",
+                ),
+                Region("body"),
+            ],
+        )
+
+        assert op.attr("actual_count") is not None
+
+    def test_region_signature_partition_allows_optional_boundary(self) -> None:
+        op = Op(
+            "test.partitioned_region",
+            attrs=[AttrDef("actual_count", "i64", optional=True)],
+            regions=[RegionDef("body")],
+            format=[
+                BlockArgs(
+                    "body",
+                    group="actual",
+                    end_attr="actual_count",
+                ),
+                BlockArgs(
+                    "body",
+                    group="expected",
+                    start_attr="actual_count",
+                ),
+                Region("body"),
+            ],
+        )
+
+        assert op.attr("actual_count") is not None
+
+    def test_region_signature_partition_requires_matching_boundaries(self) -> None:
+        with _raises(ValueError, match="must use 'actual_count'"):
+            Op(
+                "test.partitioned_region",
+                attrs=[
+                    AttrDef("actual_count", "i64"),
+                    AttrDef("wrong_count", "i64"),
+                ],
+                regions=[RegionDef("body")],
+                format=[
+                    BlockArgs(
+                        "body",
+                        group="actual",
+                        end_attr="actual_count",
+                    ),
+                    BlockArgs(
+                        "body",
+                        group="expected",
+                        start_attr="wrong_count",
+                    ),
+                    Region("body"),
+                ],
+            )
+
+    def test_region_signature_partition_requires_boundaries(self) -> None:
+        with _raises(ValueError, match="requires an end boundary"):
+            Op(
+                "test.partitioned_region",
+                regions=[RegionDef("body")],
+                format=[
+                    BlockArgs("body", group="actual"),
+                    BlockArgs("body", group="expected"),
+                    Region("body"),
+                ],
+            )
+
+    def test_region_signature_partition_requires_i64_boundary(self) -> None:
+        with _raises(ValueError, match="must name an i64 attribute"):
+            Op(
+                "test.partitioned_region",
+                attrs=[AttrDef("actual_count", "string")],
+                regions=[RegionDef("body")],
+                format=[
+                    BlockArgs(
+                        "body",
+                        group="actual",
+                        end_attr="actual_count",
+                    ),
+                    BlockArgs(
+                        "body",
+                        group="expected",
+                        start_attr="actual_count",
+                    ),
+                    Region("body"),
+                ],
+            )
+
+    def test_region_signature_partition_requires_explicit_arguments(self) -> None:
+        with _raises(ValueError, match="require explicit entry arguments"):
+            Op(
+                "test.partitioned_region",
+                operands=[Operand("inputs", ANY, variadic=True)],
+                attrs=[AttrDef("actual_count", "i64")],
+                regions=[RegionDef("body", arg_source="inputs")],
+                format=[
+                    BlockArgs(
+                        "body",
+                        group="actual",
+                        end_attr="actual_count",
+                    ),
+                    BlockArgs(
+                        "body",
+                        group="expected",
+                        start_attr="actual_count",
+                    ),
+                    Region("body"),
+                ],
+            )
 
     def test_body_signature_partition_requires_matching_boundaries(self) -> None:
         with _raises(ValueError, match="must use 'specialization_count'"):

@@ -9,7 +9,7 @@
 #include "loom/codegen/low/allocation/live_range.h"
 #include "loom/codegen/low/allocation/storage.h"
 #include "loom/codegen/low/diagnostics.h"
-#include "loom/codegen/low/target_binding.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/op_defs.h"

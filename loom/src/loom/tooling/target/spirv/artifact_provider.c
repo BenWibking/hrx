@@ -9,10 +9,10 @@
 #include "loom/target/arch/spirv/descriptors/low_registry.h"
 #include "loom/target/arch/spirv/profile.h"
 #include "loom/target/emit/spirv/module_builder.h"
-#include "loom/target/emit/spirv/module_emitter.h"
 #include "loom/target/entry_selection.h"
 #include "loom/target/function_contract.h"
 #include "loom/target/reporting/artifact_manifest_collect.h"
+#include "loom/tooling/target/spirv/prepare.h"
 
 typedef struct loom_spirv_compile_artifact_storage_t {
   // Immutable SPIR-V binary module contents.
@@ -61,17 +61,21 @@ static iree_status_t loom_spirv_artifact_provider_emit_entries(
     bool* out_emitted, loom_artifact_t* out_artifact) {
   *out_emitted = false;
 
-  loom_op_t** entry_ops = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      arena, entries.count, sizeof(*entry_ops), (void**)&entry_ops));
+  loom_spirv_compile_entry_t* compile_entries = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, entries.count,
+                                                 sizeof(*compile_entries),
+                                                 (void**)&compile_entries));
   for (uint16_t i = 0; i < entries.count; ++i) {
-    entry_ops[i] = entries.values[i].func.op;
+    compile_entries[i] = (loom_spirv_compile_entry_t){
+        .function_op = entries.values[i].func.op,
+        .target_facts = entries.values[i].target_facts,
+    };
   }
-  loom_spirv_emit_low_module_options_t emit_options = {0};
-  loom_spirv_emit_low_module_options_initialize(&emit_options);
-  emit_options.function_versions = target_options->function_versions;
-  emit_options.entry_ops = entry_ops;
-  emit_options.entry_count = entries.count;
+  loom_spirv_compile_options_t compile_options = {0};
+  loom_spirv_compile_options_initialize(&compile_options);
+  compile_options.function_versions = target_options->function_versions;
+  compile_options.entries = compile_entries;
+  compile_options.entry_count = entries.count;
 
   loom_spirv_compile_artifact_storage_t* storage = NULL;
   IREE_RETURN_IF_ERROR(
@@ -80,10 +84,10 @@ static iree_status_t loom_spirv_artifact_provider_emit_entries(
 
   loom_spirv_module_binary_t module_binary = {0};
   bool module_emitted = false;
-  iree_status_t status = loom_spirv_emit_low_module(
+  iree_status_t status = loom_spirv_compile_module_binary(
       module, &low_registry->registry,
-      loom_target_entry_emitter(diagnostic_emitter), arena, &emit_options,
-      &module_emitted, &module_binary, allocator);
+      loom_target_entry_emitter(diagnostic_emitter), arena, &compile_options,
+      allocator, &module_emitted, &module_binary);
   if (iree_status_is_ok(status) && module_emitted) {
     iree_byte_span_t module_contents = iree_make_byte_span(
         module_binary.words, module_binary.word_count * sizeof(uint32_t));

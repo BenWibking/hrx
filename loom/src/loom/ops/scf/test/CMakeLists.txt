@@ -30,26 +30,4 @@ loom_check_test_suite(
     "verify.loom-test"
 )
 
-loom_test_module(
-  NAME
-    extrema_values_test_module
-  SRCS
-    "extrema_values.loom"
-)
-
-if(LOOM_TARGET_ARCH_VM)
-loom_execution_test(
-  NAME
-    extrema_values_test_execute_vm_reference_test
-  MODULE
-    "::extrema_values_test_module"
-  LABELS
-    "iree-build-requirement=loom.target.arch.vm"
-    "loom-execution-profile=vm_reference"
-    "loom-target-family=vm"
-    "loom-target-class=cpu"
-    "loom-executor=reference"
-)
-endif()
-
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

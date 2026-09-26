@@ -8,7 +8,8 @@
 
 #include <stdint.h>
 
-#include "iree/base/internal/math.h"
+#include "loom/analysis/storage_layout.h"
+#include "loom/error/error_catalog.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/module.h"
 #include "loom/ops/buffer/ops.h"
@@ -194,6 +195,64 @@ void loom_spirv_mark_workgroup_plan_storage_demands(
     }
   }
   IREE_ASSERT_UNREACHABLE("SPIR-V Workgroup plan selected unknown op kind");
+}
+
+static iree_status_t loom_spirv_workgroup_measure_storage(
+    loom_low_lower_context_t* context, uint64_t* out_byte_extent) {
+  *out_byte_extent = 0;
+  const iree_host_size_t storage_root_count =
+      loom_spirv_workgroup_layout_storage_root_count(context);
+  for (iree_host_size_t i = 0; i < storage_root_count; ++i) {
+    const loom_spirv_workgroup_storage_root_requirement_t requirement =
+        loom_spirv_workgroup_layout_storage_root_requirement(context, i);
+    IREE_RETURN_IF_ERROR(loom_storage_layout_append(
+        requirement.byte_length, requirement.byte_alignment, out_byte_extent,
+        /*out_byte_offset=*/NULL));
+  }
+
+  const iree_host_size_t selected_plan_count =
+      loom_low_lower_context_selected_plan_count(context);
+  for (iree_host_size_t i = 0; i < selected_plan_count; ++i) {
+    const loom_low_lower_selected_plan_view_t selected_plan =
+        loom_low_lower_context_selected_plan_view(context, i);
+    if (selected_plan.elided ||
+        selected_plan.plan.id != LOOM_SPIRV_WORKGROUP_PLAN_ALLOCA) {
+      continue;
+    }
+    const loom_spirv_workgroup_alloca_plan_t* alloca_plan =
+        (const loom_spirv_workgroup_alloca_plan_t*)
+            selected_plan.plan.target_data;
+    IREE_ASSERT(alloca_plan != NULL);
+    if (alloca_plan->packed) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(loom_storage_layout_append(
+        (uint64_t)alloca_plan->byte_length,
+        (uint64_t)alloca_plan->byte_alignment, out_byte_extent,
+        /*out_byte_offset=*/NULL));
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_spirv_emit_workgroup_entry_setup(
+    loom_low_lower_context_t* context) {
+  uint64_t byte_extent = 0;
+  IREE_RETURN_IF_ERROR(
+      loom_spirv_workgroup_measure_storage(context, &byte_extent));
+  const uint64_t byte_limit = loom_low_lower_context_bundle(context)
+                                  ->snapshot->max_workgroup_storage_bytes;
+  if (byte_limit != 0 && byte_extent > byte_limit) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_string(loom_low_lower_context_function_name(context)),
+        loom_param_string(loom_low_lower_context_target_key(context)),
+        loom_param_u64(byte_extent),
+        loom_param_u64(byte_limit),
+    };
+    return loom_low_lower_emit_error_ref(
+        context, loom_low_lower_context_source_function(context).op,
+        LOOM_ERR_TARGET_051_REF, params, IREE_ARRAYSIZE(params));
+  }
+  return loom_spirv_workgroup_layout_emit_storage_roots(context);
 }
 
 static iree_status_t loom_spirv_lower_workgroup_alloca(

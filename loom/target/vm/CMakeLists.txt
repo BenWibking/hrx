@@ -20,4 +20,11 @@ loom_target_profile(
     LOOM_TARGET_ARCH_VM
 )
 
+loom_target_set(
+  NAME
+    "all"
+  TARGETS
+    ::core
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

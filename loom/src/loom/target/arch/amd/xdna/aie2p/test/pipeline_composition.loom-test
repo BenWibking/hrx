@@ -4,7 +4,7 @@ aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
 
-// ERROR@+1: TARGET/086 {group="0", flow="2", capacity="2"}
+// ERROR@+1: XDNA/004 {group="0", flow="2", capacity="2"}
 pipeline.def<kernel> public retain target(@array_target) @buffered_composite_array() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %ring_capacity = index.constant 2 : index
@@ -37,7 +37,7 @@ aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
 
-// ERROR@+1: TARGET/084 {group="0"}
+// ERROR@+1: XDNA/002 {group="0"}
 pipeline.def<kernel> public retain target(@array_target) @folded_composite_array() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
@@ -186,7 +186,7 @@ func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
   func.return
 }
 
-// ERROR@+1: TARGET/085 {group="0"}
+// ERROR@+1: XDNA/003 {group="0"}
 pipeline.def<kernel> public retain target(@array_target) @mixed_outputs() launch(%input: buffer, %records_output: buffer, %sum_output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
@@ -259,7 +259,7 @@ func.def target(@second_core) @second_copy(%input: buffer, %output: buffer) {
 }
 
 // Equal target attributes do not replace the exact target identity contract.
-// ERROR@+1: TARGET/095 {group="0", entry="second_copy", actual_target="second_core", expected_target="first_core"}
+// ERROR@+1: XDNA/010 {group="0", entry="second_copy", actual_target="second_core", expected_target="first_core"}
 pipeline.def<kernel> target(@array_target) @different_stage_targets() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
@@ -288,7 +288,7 @@ func.def target(@core_target) @consume_private(%input: buffer, %output: buffer) 
 }
 
 // The private record has a fractional byte; external records remain i32.
-// ERROR@+1: TARGET/096 {group="0", flow="1", tile_type="tile<1xi1>"}
+// ERROR@+1: XDNA/011 {group="0", flow="1", tile_type="tile<1xi1>"}
 pipeline.def<kernel> target(@array_target) @fractional_private_record() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
@@ -317,7 +317,7 @@ func.def target(@core_target) @consume_private(%input: buffer, %output: buffer) 
 }
 
 // Static dimensions fit individually; their record bit count does not.
-// ERROR@+1: TARGET/096 {group="0", flow="1", tile_type="tile<2147483647x2147483647xi64>"}
+// ERROR@+1: XDNA/011 {group="0", flow="1", tile_type="tile<2147483647x2147483647xi64>"}
 pipeline.def<kernel> target(@array_target) @overflowing_private_record() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset
@@ -355,7 +355,7 @@ func.def target(@core_target) @consume_private(%input: buffer, %output: buffer) 
 }
 
 // The first composite is constructed before the later private record fails.
-// ERROR@+1: TARGET/096 {group="1", flow="3", tile_type="tile<1xi1>"}
+// ERROR@+1: XDNA/011 {group="1", flow="3", tile_type="tile<1xi1>"}
 pipeline.def<kernel> target(@array_target) @late_private_record_rejection() launch(%input: buffer, %output: buffer) {
   %lane_count = index.constant 1 : index
   %base = index.constant 0 : offset

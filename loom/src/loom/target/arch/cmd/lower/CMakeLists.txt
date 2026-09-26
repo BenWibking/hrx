@@ -213,7 +213,7 @@ loom_cc_library(
     iree::base::core_headers
     iree::base::internal::arena
     loom::codegen::low::function
-    loom::codegen::low::target_binding
+    loom::codegen::low::representation_binding
     loom::ir
     loom::ops::low
     loom::target::arch::cmd::abi_layout

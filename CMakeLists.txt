@@ -225,6 +225,11 @@ if(LOOM_BUILD)
   add_subdirectory(loom/target)
   add_subdirectory(loom/py/loom)
   add_subdirectory(loom/src)
+  block(SCOPE_FOR VARIABLES)
+    set(IREE_PACKAGE_ROOT_DIR "${PROJECT_SOURCE_DIR}/loom/build_tools")
+    set(IREE_PACKAGE_ROOT_PREFIX "loom/build_tools")
+    add_subdirectory(loom/build_tools/corpus)
+  endblock()
   add_subdirectory(loom/binding/c)
   hrx_installed_tests_install_source_tree(
     "${PROJECT_SOURCE_DIR}/loom/src/loom" "loom/src/loom"

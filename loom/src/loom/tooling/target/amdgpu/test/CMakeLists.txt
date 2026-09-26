@@ -99,19 +99,6 @@ loom_check_compile_tests(
 )
 endif()
 
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "mxfp8_paged_attention_compile_test"
-  SRC
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/mxfp8_paged_attention_f32.loom"
-  TARGETS
-    loom::target::amdgpu::gfx1151
-    loom::target::amdgpu::gfx1250
-    loom::target::amdgpu::gfx942
-)
-endif()
-
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
 iree_execution_test_suite(
   NAME
@@ -1907,7 +1894,6 @@ loom_test_module(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/cooperative_paged_attention_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/grouped_paged_attention_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/moe_routed_combine_loop_f32.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/mxfp8_paged_attention_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/paged_online_softmax_loop_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/routed_row_combine_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/sparse_token_attention_f32.loom"
@@ -1940,6 +1926,66 @@ loom_execution_test(
     "gpu-device"
 )
 endif()
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    split_kv_stage2_access_test_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    split_kv_stage2_access_test_execute_amdgpu_access_test
+  MODULE
+    "::split_kv_stage2_access_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--sanitizer=access"
+  LABELS
+    "notsan"
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_access"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    split_kv_stage2_test_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32_benchmark.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
+loom_check_compile_tests(
+  NAME
+    "split_kv_stage2_test"
+  SRC
+    "::split_kv_stage2_test_module"
+  TARGETS
+    loom::target::amdgpu::gfx1151
+    loom::target::amdgpu::gfx1250
+    loom::target::amdgpu::gfx942
+)
 endif()
 
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)

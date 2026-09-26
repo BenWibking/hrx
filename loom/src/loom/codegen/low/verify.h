@@ -14,6 +14,7 @@
 #define LOOM_CODEGEN_LOW_VERIFY_H_
 
 #include "iree/base/api.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/target_binding.h"
 #include "loom/error/emitter.h"
 #include "loom/ir/function_version.h"

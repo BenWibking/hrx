@@ -1206,9 +1206,19 @@ def _v_mad_u32_u24_overlay(
     *,
     include_literal_forms: bool = True,
 ) -> AmdgpuDescriptorOverlay:
-    operand_forms: tuple[OperandForm, ...] = ()
+    operand_forms = tuple(
+        _literal_operand_form(
+            replacement_descriptor=f"amdgpu.v_mad_u32_u24.{source}_inline",
+            source_operand=operand,
+        )
+        for source, operand in (
+            ("src0", "a"),
+            ("src1", "b"),
+            ("src2", "addend"),
+        )
+    )
     if include_literal_forms:
-        operand_forms = (
+        operand_forms += (
             _literal_operand_form(
                 replacement_descriptor="amdgpu.v_mad_u32_u24.src0_lit",
                 source_operand="a",
@@ -1249,13 +1259,15 @@ def _v_mad_u32_u24_overlay(
     )
 
 
-def _v_mad_u32_u24_literal_overlay(literal_source: str) -> AmdgpuDescriptorOverlay:
+def _v_mad_u32_u24_immediate_operands(
+    immediate_source: str,
+) -> tuple[str, tuple[AmdgpuOperandOverlay, ...], tuple[str, ...]]:
     source_fields = {
         "src0": ("SRC0", "a", _sgpr_vgpr_operand("a"), _U24_SOURCE_SIZE_REASON),
         "src1": ("SRC1", "b", _sgpr_vgpr_operand("b"), _U24_SOURCE_SIZE_REASON),
         "src2": ("SRC2", "addend", _sgpr_vgpr_operand("addend"), None),
     }
-    literal_field = source_fields[literal_source][0]
+    immediate_field = source_fields[immediate_source][0]
     operands = [AmdgpuOperandOverlay("VDST", _vgpr_result())]
     asm_operands = []
     for source_name, (
@@ -1264,7 +1276,7 @@ def _v_mad_u32_u24_literal_overlay(literal_source: str) -> AmdgpuDescriptorOverl
         operand,
         size_reason,
     ) in source_fields.items():
-        if source_name == literal_source:
+        if source_name == immediate_source:
             continue
         asm_operands.append(field_name)
         operands.append(
@@ -1274,6 +1286,39 @@ def _v_mad_u32_u24_literal_overlay(literal_source: str) -> AmdgpuDescriptorOverl
                 size_exception_reason=size_reason,
             )
         )
+    return immediate_field, tuple(operands), tuple(asm_operands)
+
+
+def _v_mad_u32_u24_inline_overlay(
+    inline_source: str,
+) -> AmdgpuDescriptorOverlay:
+    inline_field, operands, asm_operands = _v_mad_u32_u24_immediate_operands(
+        inline_source
+    )
+    return AmdgpuDescriptorOverlay(
+        descriptor_key=f"amdgpu.v_mad_u32_u24.{inline_source}_inline",
+        instruction_name="V_MAD_U32_U24",
+        mnemonic=f"v_mad_u32_u24_{inline_source}_inline",
+        encoding_name="ENC_VOP3",
+        semantic_tag="integer.mad.lo.u24.u32",
+        schedule_class=_SCHEDULE_VALU,
+        operands=operands,
+        asm_forms=_asm(
+            results=("dst",),
+            operands=asm_operands,
+            immediates=("imm32",),
+        ),
+        immediate_fields=(inline_field,),
+        immediates=(_SOURCE_INLINE_U32_IMMEDIATE,),
+        constraints=_REMATERIALIZABLE_RESULT_CONSTRAINTS,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _v_mad_u32_u24_literal_overlay(literal_source: str) -> AmdgpuDescriptorOverlay:
+    literal_field, operands, asm_operands = _v_mad_u32_u24_immediate_operands(
+        literal_source
+    )
     return AmdgpuDescriptorOverlay(
         descriptor_key=f"amdgpu.v_mad_u32_u24.{literal_source}_lit",
         instruction_name="V_MAD_U32_U24",
@@ -1282,10 +1327,10 @@ def _v_mad_u32_u24_literal_overlay(literal_source: str) -> AmdgpuDescriptorOverl
         encoding_format_id=AMDGPU_ENCODING_FORMAT_VOP3_LITERAL,
         semantic_tag="integer.mad.lo.u24.u32",
         schedule_class=_SCHEDULE_VALU,
-        operands=tuple(operands),
+        operands=operands,
         asm_forms=_asm(
             results=("dst",),
-            operands=tuple(asm_operands),
+            operands=asm_operands,
             immediates=("imm32",),
         ),
         immediates=(_LITERAL_U32_IMMEDIATE,),
@@ -7336,6 +7381,7 @@ __all__ = (
     "_v_mad_mixhi_f16_overlays",
     "_v_mad_mixlo_f16_overlays",
     "_v_madmk_f16_overlay",
+    "_v_mad_u32_u24_inline_overlay",
     "_v_mad_u32_u24_literal_overlay",
     "_v_mad_u32_u24_overlay",
     "_v_med3_num_f32_overlay",

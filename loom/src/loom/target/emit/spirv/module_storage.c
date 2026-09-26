@@ -65,15 +65,13 @@ loom_spirv_module_workgroup_storage_lookup_entry(
   return &state->entries[value_ordinal];
 }
 
-iree_status_t loom_spirv_module_workgroup_storage_emit_reserve(
+void loom_spirv_module_workgroup_storage_emit_reserve(
     const loom_local_value_domain_t* value_domain,
     loom_spirv_module_workgroup_storage_state_t* state, const loom_op_t* op) {
   IREE_ASSERT_ARGUMENT(value_domain);
   IREE_ASSERT_ARGUMENT(state);
   IREE_ASSERT_ARGUMENT(op);
 
-  IREE_RETURN_IF_ERROR(loom_low_storage_layout_accumulate_reservation(
-      value_domain->module, op, &state->layout_sizes));
   loom_spirv_module_workgroup_storage_entry_t* entry =
       loom_spirv_module_workgroup_storage_lookup_entry(
           value_domain, state, loom_low_storage_reserve_storage(op));
@@ -81,7 +79,6 @@ iree_status_t loom_spirv_module_workgroup_storage_emit_reserve(
   entry->reserved = true;
   entry->byte_length = loom_low_storage_reserve_byte_length(op);
   entry->byte_alignment = loom_low_storage_reserve_byte_alignment(op);
-  return iree_ok_status();
 }
 
 static uint32_t loom_spirv_module_workgroup_storage_element_byte_count(

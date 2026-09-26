@@ -1369,8 +1369,9 @@ The functions import as scalar constants. `__attribute__((packed))`,
 requests share the same source layout owner. GNU `aligned(N)` raises a packed
 member's alignment, while a pragma pack cap limits member alignment. Record
 alignment can raise the final stride without changing internal member offsets.
-Standard `alignas` retains its own validation rules. Explicit alignment on shared
-arrays reaches the workgroup allocation's `align` operand.
+Standard `alignas` retains its own validation rules. Explicit alignment on
+shared scalar, vector, and fixed scalar-array objects reaches the workgroup
+allocation's `align` operand.
 
 Compound `__builtin_offsetof` designators follow nested members and constant
 array indices. For example, `__builtin_offsetof(Block<unsigned>, words[2])` is
@@ -1449,8 +1450,8 @@ Contracts on leading function declarations carry to the definition; conflicting
 redeclarations and multiple contracts for the same dimension group are errors.
 Import does not guess launch dimensions or select a physical target.
 
-`loom::assume`, also exposed as HIP's `__builtin_assume`, carries unsigned
-integer bounds into Loom's value analysis:
+`loom::assume`, also exposed as HIP's `__builtin_assume`, carries integer
+contracts into Loom's value analysis:
 
 ```cpp
 constexpr unsigned capacity = 28672;
@@ -1458,14 +1459,34 @@ loom::assume(count < ((capacity / sizeof(unsigned) - 16u - 320u) / 16u + 1u) &&
              channel < 256u);
 ```
 
-Each `binding < bound` becomes a `scalar.assume` range on the current value.
-Parentheses and repeated bindings preserve the same refinements as separate
-calls. Narrow unsigned bindings retain their C++ integer promotions before
-refinement. Bounds are pure integer constant expressions in `[1, INT32_MAX]`,
-including named constants, concrete template arguments, integral casts and
-`sizeof`. Source conditions generate no runtime comparisons or branches.
-Calls, mutation, volatile reads, overloaded operators and unsupported predicates
-produce source diagnostics. The program must satisfy every declared bound.
+Builtin `==`, `!=`, `<`, `<=`, `>`, and `>=` comparisons can relate scalar
+integer bindings or pure integer constants and can be joined by `&&`. Bare
+integer and Boolean bindings retain nonzero truth. Every constrained binding is
+rebound through the identity results of `scalar.assume`, including both sides
+of a value relation. Parentheses and repeated bindings preserve the same
+refinements as separate calls. Named constants, concrete template arguments,
+integral casts and `sizeof` retain normal C++ constant evaluation.
+
+C++ integral promotions determine the comparison domain. Signed comparisons
+use Loom's signed relations, while unsigned ordering uses `ult`, `ule`, `ugt`,
+and `uge`. Equality is independent of signedness. Simple unsigned constant
+bounds still normalize to range or nonzero facts when that gives downstream
+analysis a stronger result. For example, both of these produce facts without
+executable comparisons:
+
+```cpp
+loom::assume(tokens <= capacity);  // tokens and capacity are unsigned
+loom::assume(hidden > 0);          // hidden is signed
+```
+
+Fixed-width Loom integers retain their bit pattern in a canonical sign-extended
+64-bit carrier. Unsigned predicates compare those carrier bits as unsigned, so
+they preserve ordering across the sign bit for every promoted integer width
+without storing a separate source width. Calls, mutation, volatile reads,
+overloaded operators, value-changing operand casts, derived runtime expressions
+and disjunction produce source diagnostics. Source conditions generate no
+runtime comparisons or branches. The program must satisfy every declared
+predicate.
 
 Counted unsigned `for` loops accept explicit scheduling attributes:
 
@@ -1651,7 +1672,8 @@ The current translation surface covers scalar and explicit vector arithmetic,
 conversions, typed-pointer indexing and arithmetic, aggregate record values,
 record field storage, local SSA values, automatic scalar, vector, and array storage,
 conditional regions, short-circuit `&&` and `||`, counted and general `for`
-loops, `while` and `do/while` loops, fixed workgroup arrays, and direct calls.
+loops, `while` and `do/while` loops, scalar/vector/fixed-array workgroup
+storage, and direct calls.
 Unsupported reachable types and statements produce source diagnostics. Integral
 subscripts preserve their source width and signedness. Interior pointers carry a
 buffer root and an
@@ -1767,7 +1789,7 @@ edges. Objects with constructors, exceptions, and indirect calls need additional
 storage and control-flow projections before they can be imported.
 
 Volatile scalar and vector accesses through pointers, automatic objects, and
-workgroup arrays become `view.load/store<volatile>` and
+workgroup objects become `view.load/store<volatile>` and
 `vector.load/store<volatile>`. The qualifier belongs to the accessed object:
 a copied pointer or a pointer member
 retains its pointee's observation semantics. Discarded reads, including explicit

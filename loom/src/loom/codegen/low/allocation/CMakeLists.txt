@@ -729,6 +729,7 @@ loom_cc_library(
     loom::analysis::liveness
     loom::codegen::low::descriptors
     loom::codegen::low::placement
+    loom::codegen::low::representation_binding
     loom::codegen::low::target_binding
     loom::ir
     loom::ops::low

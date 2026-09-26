@@ -326,6 +326,9 @@ typedef enum loom_low_constraint_kind_e {
   // Two descriptor values select the same candidate ordinal from distinct
   // explicit physical-register classes.
   LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_ORDINAL = 7,
+  // Two register values carry the same semantic value type. Their carrier
+  // classes and storage remain independent.
+  LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE = 8,
 } loom_low_constraint_kind_t;
 
 // Bitset of descriptor constraint flags.

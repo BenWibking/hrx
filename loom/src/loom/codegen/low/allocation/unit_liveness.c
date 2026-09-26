@@ -11,6 +11,7 @@
 #include "loom/codegen/low/allocation/live_range.h"
 #include "loom/codegen/low/allocation/storage.h"
 #include "loom/codegen/low/descriptors.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
 #include "loom/util/adaptive_sort.h"

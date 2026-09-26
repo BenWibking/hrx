@@ -1585,7 +1585,7 @@ iree_status_t loom_low_func_call_verify(const loom_module_t* module,
   }
   return loom_function_call_contract_verify(
       module, op, callee, loom_low_func_call_operands(op),
-      loom_low_func_call_results(op), emitter);
+      loom_low_func_call_results(op), /*argument_match_flags=*/0, emitter);
 }
 
 iree_status_t loom_low_invoke_verify(const loom_module_t* module,

@@ -16,6 +16,7 @@
 #include "loom/ops/index/ops.h"
 #include "loom/rewrite/callable.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
 
 enum { LOOM_AIE2P_PIPELINE_COMPOSITE_BUFFER_ALIGNMENT = 64 };
 
@@ -51,7 +52,7 @@ static iree_status_t loom_aie2p_pipeline_composition_validate_group(
     const loom_diagnostic_param_t params[] = {loom_param_u32(group_index)};
     const loom_diagnostic_emission_t emission = {
         .op = plan->pipeline.op,
-        .error = LOOM_ERR_TARGET_084,
+        .error = LOOM_ERR_XDNA_002,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
@@ -66,7 +67,7 @@ static iree_status_t loom_aie2p_pipeline_composition_validate_group(
     const loom_diagnostic_param_t params[] = {loom_param_u32(group_index)};
     const loom_diagnostic_emission_t emission = {
         .op = plan->pipeline.op,
-        .error = LOOM_ERR_TARGET_085,
+        .error = LOOM_ERR_XDNA_003,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
@@ -90,7 +91,7 @@ static iree_status_t loom_aie2p_pipeline_composition_validate_group(
         };
         const loom_diagnostic_emission_t emission = {
             .op = plan->pipeline.op,
-            .error = LOOM_ERR_TARGET_086,
+            .error = LOOM_ERR_XDNA_004,
             .params = params,
             .param_count = IREE_ARRAYSIZE(params),
         };
@@ -151,7 +152,7 @@ static iree_status_t loom_aie2p_pipeline_composition_group_target(
       };
       const loom_diagnostic_emission_t emission = {
           .op = plan->pipeline.op,
-          .error = LOOM_ERR_TARGET_095,
+          .error = LOOM_ERR_XDNA_010,
           .params = params,
           .param_count = IREE_ARRAYSIZE(params),
       };
@@ -247,7 +248,7 @@ static iree_status_t loom_aie2p_pipeline_composition_allocate_flow_buffer(
     };
     const loom_diagnostic_emission_t emission = {
         .op = plan->pipeline.op,
-        .error = LOOM_ERR_TARGET_096,
+        .error = LOOM_ERR_XDNA_011,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
@@ -288,7 +289,7 @@ static iree_status_t loom_aie2p_pipeline_composition_build_group(
     };
     const loom_diagnostic_emission_t emission = {
         .op = plan->pipeline.op,
-        .error = LOOM_ERR_TARGET_097,
+        .error = LOOM_ERR_XDNA_012,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };

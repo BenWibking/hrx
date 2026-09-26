@@ -117,6 +117,43 @@ func.def @relation_kinds(%equal: index, %unequal: index, %less: index, %less_equ
 
 // ====
 
+// Unsigned order relations retain their unsigned domain when exact folding
+// moves a literal from the left side to the right side.
+func.def @unsigned_relation_orientation(%less: i32, %less_equal: i32, %greater: i32, %greater_equal: i32) {
+  %c1 = scalar.constant 1 : i32
+  %less_anchor = scalar.assume %c1 [ugt(%c1, %less)] : i32
+  test.use %less_anchor, %less : i32, i32
+  %c2 = scalar.constant 2 : i32
+  %less_equal_anchor = scalar.assume %c2 [uge(%c2, %less_equal)] : i32
+  test.use %less_equal_anchor, %less_equal : i32, i32
+  %c3 = scalar.constant 3 : i32
+  %greater_anchor = scalar.assume %c3 [ult(%c3, %greater)] : i32
+  test.use %greater_anchor, %greater : i32, i32
+  %c4 = scalar.constant 4 : i32
+  %greater_equal_anchor = scalar.assume %c4 [ule(%c4, %greater_equal)] : i32
+  test.use %greater_equal_anchor, %greater_equal : i32, i32
+  func.return
+}
+
+// ----
+func.def @unsigned_relation_orientation(%less: i32, %less_equal: i32, %greater: i32, %greater_equal: i32) {
+  %less_anchor = scalar.constant 1 : i32
+  %less_refined = scalar.assume %less [ult(%less, 1)] : i32
+  test.use %less_anchor, %less_refined : i32, i32
+  %less_equal_anchor = scalar.constant 2 : i32
+  %less_equal_refined = scalar.assume %less_equal [ule(%less_equal, 2)] : i32
+  test.use %less_equal_anchor, %less_equal_refined : i32, i32
+  %greater_anchor = scalar.constant 3 : i32
+  %greater_refined = scalar.assume %greater [ugt(%greater, 3)] : i32
+  test.use %greater_anchor, %greater_refined : i32, i32
+  %greater_equal_anchor = scalar.constant 4 : i32
+  %greater_equal_refined = scalar.assume %greater_equal [uge(%greater_equal, 4)] : i32
+  test.use %greater_equal_anchor, %greater_equal_refined : i32, i32
+  func.return
+}
+
+// ====
+
 // Scalar integer assumptions use the same transport semantics.
 func.def @scalar_relation(%upper: i32) -> (i32, i32) {
   %c0 = scalar.constant 0 : i32

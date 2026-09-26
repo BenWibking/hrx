@@ -28,12 +28,12 @@ typedef enum loom_compile_product_e {
 // Returns the stable public name of |product|.
 iree_string_view_t loom_compile_product_name(loom_compile_product_t product);
 
-// Returns true when |symbol| is selected by |product|'s implicit-root policy.
-// Module products operate on the whole module and therefore have no symbol
-// roots. Explicit roots are classified independently and need not satisfy this
-// policy. Kernel roots include Low kernel entries and public or retained array
-// programs as well as source kernels and kernel-scoped pipelines.
-bool loom_compile_request_symbol_is_implicit_root(
+// Returns true when |symbol| is selected by |product|'s canonical-root policy.
+// Explicit roots are classified independently and need not satisfy this policy.
+// Kernel roots include Low kernel entries and public or retained array programs
+// as well as source kernels and kernel-scoped pipelines. Module roots are
+// public or retained ordinary functions and module-scoped pipelines.
+bool loom_compile_request_symbol_is_canonical_root(
     const loom_module_t* module, loom_compile_product_t product,
     const loom_symbol_t* symbol);
 
@@ -68,6 +68,9 @@ typedef struct loom_compile_request_options_t {
   iree_string_view_t format;
   // Optional family-qualified target profile.
   iree_string_view_t target;
+  // Canonical root names to exclude before specialization and materialization.
+  // Requires an explicit product and cannot be combined with |roots|.
+  iree_string_view_list_t excluded_roots;
 } loom_compile_request_options_t;
 
 // Fully resolved compile request borrowing immutable configured state.
@@ -84,7 +87,18 @@ typedef struct loom_compile_request_t {
   loom_artifact_target_t explicit_target;
   // Effective target fact type, or NULL for target-independent products.
   const loom_target_fact_type_t* target_fact_type;
+  // Canonical roots omitted before specialization and materialization.
+  iree_string_view_list_t excluded_roots;
 } loom_compile_request_t;
+
+// Returns true when |symbol| is excluded by the resolved |request|.
+//
+// Request resolution validates every excluded name and rejects duplicates, so
+// callers may use this as an infallible selection query while preparing the
+// trusted compiler request.
+bool loom_compile_request_symbol_is_excluded(
+    const loom_module_t* module, const loom_compile_request_t* request,
+    const loom_symbol_t* symbol);
 
 // Returns the selected artifact provider, or NULL for other producers.
 static inline const loom_artifact_provider_t*
@@ -108,9 +122,10 @@ static inline bool loom_compile_request_is_command(
 // never probes a producer by compiling. With explicit roots, an explicit
 // product only validates the inferred product and cannot reinterpret them. With
 // no roots, an explicit product selects that product's canonical root policy.
-// An omitted format selects the unique configured kernel artifact provider,
-// the selected target family's canonical module emitter, or the
-// target-independent command format.
+// Excluded roots require that explicit product and are removed before target
+// specialization and dependency materialization. An omitted format selects the
+// unique configured kernel artifact provider, the selected target family's
+// canonical module emitter, or the target-independent command format.
 iree_status_t loom_compile_request_resolve(
     const loom_module_t* module, const loom_compile_request_options_t* options,
     const loom_artifact_provider_registry_t* artifact_provider_registry,

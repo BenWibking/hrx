@@ -12,8 +12,8 @@
 #include "loom/target/arch/amdgpu/facts.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
+#include "loom/target/arch/amdgpu/lower/source_alloca_layout.h"
 #include "loom/target/arch/amdgpu/lower/source_value_analysis.h"
-#include "loom/target/arch/amdgpu/lower/topology.h"
 
 static iree_string_view_t loom_amdgpu_cache_policy_scope_param(
     const loom_vector_memory_cache_policy_t* policy) {

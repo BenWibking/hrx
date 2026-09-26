@@ -116,6 +116,47 @@ loom_cc_test(
 )
 
 loom_cc_library(
+    name = "storage_layout",
+    srcs = ["storage_layout.c"],
+    hdrs = ["storage_layout.h"],
+    deps = [
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "storage_layout_test",
+    srcs = ["storage_layout_test.cc"],
+    deps = [
+        ":storage_layout",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "source_storage_packing",
+    srcs = ["source_storage_packing.c"],
+    hdrs = ["source_storage_packing.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "source_storage_packing_test",
+    srcs = ["source_storage_packing_test.cc"],
+    deps = [
+        ":source_storage_packing",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "value_relation",
     srcs = ["value_relation.c"],
     hdrs = ["value_relation.h"],

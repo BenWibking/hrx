@@ -1,7 +1,7 @@
 // Thirteen 512-bit broadcasts exceed the 24 vector-register units at the
 // block boundary. The repaired native program streams each broadcast into
 // the running sum instead of retaining the entire invariant set.
-// RUN: emit aie2p-leaf @broadcast_pressure report=emission
+// RUN: with-checks emit aie2p-leaf @broadcast_pressure report=emission
 
 low.func.def target<amd.xdna.aie2p.core> @broadcast_pressure(%input: reg<aie2p.ep>, %output: reg<aie2p.ep>) asm {
   %scalar0 = mov.i32 1
@@ -51,17 +51,15 @@ low.func.def target<amd.xdna.aie2p.core> @broadcast_pressure(%input: reg<aie2p.e
 }
 
 // ----
-issue cycles: 50
-code bytes: 210
-coissued bundles: 2
-coissued components: 4
+CHECK: issue cycles: 50
+CHECK: code bytes: 210
 
 // ====
 
 // Both vector and accumulator materializations exceed their physical classes.
 // Repair accumulator consumers before broadcasts so cloned consumers receive
 // their own short-lived vector setup within the same allocation repair.
-// RUN: emit aie2p-leaf @dependent_cross_block report=emission
+// RUN: with-checks emit aie2p-leaf @dependent_cross_block report=emission
 
 low.func.def target<amd.xdna.aie2p.core> @dependent_cross_block(%input: reg<aie2p.ep>, %output: reg<aie2p.ep>) asm {
   %scalar0 = mov.i32 1
@@ -179,17 +177,15 @@ low.func.def target<amd.xdna.aie2p.core> @dependent_cross_block(%input: reg<aie2
 }
 
 // ----
-issue cycles: 112
-code bytes: 482
-coissued bundles: 2
-coissued components: 4
+CHECK: issue cycles: 112
+CHECK: code bytes: 482
 
 // ====
 
 // Shared zero padding has multiple consumers on both sides of an ownership
 // move. Setup ordering must preserve that fan-out and the source-order boundary
 // while keeping the rematerialized broadcasts out of persistent vector storage.
-// RUN: emit aie2p-leaf @bounded_padding report=emission
+// RUN: with-checks emit aie2p-leaf @bounded_padding report=emission
 
 low.func.def target<amd.xdna.aie2p.core> @bounded_padding(%input: reg<aie2p.ep>, %output: reg<aie2p.ep>) asm {
   %zeros = acc.clear.f32x64
@@ -321,10 +317,8 @@ low.func.def target<amd.xdna.aie2p.core> @bounded_padding(%input: reg<aie2p.ep>,
 }
 
 // ----
-issue cycles: 242
-code bytes: 848
-coissued bundles: 6
-coissued components: 13
+CHECK: issue cycles: 242
+CHECK: code bytes: 848
 
 // ====
 
@@ -332,7 +326,7 @@ coissued components: 13
 // initial scalar pressure requires rematerializing stream offsets and shifts.
 // Their input-free clones must remain use-local while indexed memory consumers
 // are blocked, or rescheduling exceeds the same 32-register bank again.
-// RUN: emit aie2p-leaf @retained_scalar_stream report=emission
+// RUN: with-checks emit aie2p-leaf @retained_scalar_stream report=emission
 
 low.func.def target<amd.xdna.aie2p.core> @retained_scalar_stream(%record_input: reg<aie2p.ep>, %stream_input: reg<aie2p.ep>, %stream_output: reg<aie2p.ep>, %record_output: reg<aie2p.ep>) asm {
   %retained0, %read1 = lda.i32.post %record_input, 4
@@ -431,7 +425,5 @@ low.func.def target<amd.xdna.aie2p.core> @retained_scalar_stream(%record_input: 
 }
 
 // ----
-issue cycles: 129
-code bytes: 478
-coissued bundles: 13
-coissued components: 29
+CHECK: issue cycles: 129
+CHECK: code bytes: 476

@@ -301,3 +301,66 @@ check.case public @condition_view_3 {
   check.expect.bitwise actual(%input) expected(%input_expected) : tensor<68xi32>
   check.return
 }
+
+// Each lane starts at its lane index and stops at the first nonpositive input
+// or at the runtime bound. The 37-element input is exact: lanes 37-63 prove
+// that the short-circuited bounds exit skips the guarded load.
+kernel.def @condition_guarded_load() {
+  %unit = index.constant 1 : index
+  %size = index.constant 64 : index
+  kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%size, %unit, %unit) : index
+} launch(%input: buffer, %output: buffer) {
+  %lane = kernel.workitem.id<x> : index
+  %length = index.constant 37 : index
+  %input_base = index.constant 0 : offset
+  %input_view = buffer.view %input[%input_base] : buffer -> view<37xi32>
+  %terminal = scf.while(%before = %lane : index) -> (index) {
+    %inside = index.cmp ult, %before, %length : index
+    %continue = scf.if %inside -> (i1) {
+      %value = view.load %input_view[%before] : view<37xi32> -> i32
+      %c0 = scalar.constant 0 : i32
+      %positive = scalar.cmpi sgt, %value, %c0 : i32
+      scf.yield %positive : i1
+    } else {
+      scf.yield %inside : i1
+    }
+    scf.condition %continue, %before : i1, index
+  } do(%current: index) {
+    %c1 = index.constant 1 : index
+    %next = index.add %current, %c1 : index
+    scf.yield %next : index
+  }
+  %output_base = index.constant 4 : offset
+  %output_view = buffer.view %output[%output_base] : buffer -> view<64xi32>
+  %terminal_i32 = index.cast %terminal : index to i32
+  view.store %terminal_i32, %output_view[%lane] : i32, view<64xi32>
+  kernel.return
+}
+
+check.case public @condition_guarded_load_case {
+  %input = check.generate.iota offset(12) step(-1) period(13) : tensor<37xi32>
+  %input_expected = check.generate.iota offset(12) step(-1) period(13) : tensor<37xi32>
+  %output = check.generate.fill value(-99) : tensor<66xi32>
+  kernel.launch @condition_guarded_load(%input, %output) : (tensor<37xi32>, tensor<66xi32>)
+
+  %first = check.tensor.view %output offset(4) : tensor<66xi32> -> tensor<13xi32>
+  %second = check.tensor.view %output offset(56) : tensor<66xi32> -> tensor<13xi32>
+  %bounded = check.tensor.view %output offset(108) : tensor<66xi32> -> tensor<11xi32>
+  %outside = check.tensor.view %output offset(152) : tensor<66xi32> -> tensor<27xi32>
+  %expected_first = check.generate.fill value(12) : tensor<13xi32>
+  %expected_second = check.generate.fill value(25) : tensor<13xi32>
+  %expected_bounded = check.generate.fill value(37) : tensor<11xi32>
+  %expected_outside = check.generate.iota offset(37) step(1) : tensor<27xi32>
+  check.expect.bitwise actual(%first) expected(%expected_first) : tensor<13xi32>
+  check.expect.bitwise actual(%second) expected(%expected_second) : tensor<13xi32>
+  check.expect.bitwise actual(%bounded) expected(%expected_bounded) : tensor<11xi32>
+  check.expect.bitwise actual(%outside) expected(%expected_outside) : tensor<27xi32>
+
+  %prefix = check.tensor.view %output offset(0) : tensor<66xi32> -> tensor<1xi32>
+  %suffix = check.tensor.view %output offset(260) : tensor<66xi32> -> tensor<1xi32>
+  %guard = check.generate.fill value(-99) : tensor<1xi32>
+  check.expect.bitwise actual(%prefix) expected(%guard) : tensor<1xi32>
+  check.expect.bitwise actual(%suffix) expected(%guard) : tensor<1xi32>
+  check.expect.bitwise actual(%input) expected(%input_expected) : tensor<37xi32>
+  check.return
+}

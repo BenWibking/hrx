@@ -8,8 +8,8 @@
 
 #include <string.h>
 
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/storage_relation.h"
-#include "loom/codegen/low/target_binding.h"
 
 // Composes source -> intermediate and intermediate -> result placement over
 // the units covered by both relations. The returned relation maps the first

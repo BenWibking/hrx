@@ -107,6 +107,11 @@ IREE_FLAG_LIST(string, root,
                "either, public or retained command programs take precedence, "
                "then kernel entries and public or retained kernel-scoped "
                "pipelines or array programs, then the whole module.");
+IREE_FLAG_LIST_NAMED(
+    string, exclude_root, "exclude-root",
+    "Canonical root to omit before target specialization and dependency "
+    "materialization. Repeat for multiple roots. Requires --product and "
+    "cannot be combined with --root.");
 IREE_FLAG(string, pipeline, "default",
           "Pass pipeline to run before artifact emission. Use 'default' or "
           "empty for the selected format's default compile pipeline. 'none' "
@@ -252,8 +257,17 @@ static iree_status_t loom_compile_parse_input_module(
 static iree_status_t loom_compile_verify_input_module(
     const loom_target_low_descriptor_registry_t* low_registry,
     loom_run_module_t* run_module) {
+  loom_compile_diagnostic_sink_t diagnostic_sink = {
+      .run_module = run_module,
+  };
+  loom_low_descriptor_text_print_context_initialize(
+      &low_registry->registry, &diagnostic_sink.type_print_context);
   const loom_target_entry_options_t options = {
-      .diagnostic_sink = {.fn = loom_diagnostic_stderr_sink},
+      .diagnostic_sink =
+          {
+              .fn = loom_compile_diagnostic_sink,
+              .user_data = &diagnostic_sink,
+          },
       .source_resolver = loom_run_module_source_resolver(run_module),
       .max_errors = 20,
   };
@@ -1015,6 +1029,7 @@ int main(int argc, char** argv) {
         .product = iree_make_cstring_view(FLAG_product),
         .format = iree_make_cstring_view(FLAG_format),
         .target = iree_make_cstring_view(FLAG_target),
+        .excluded_roots = FLAG_exclude_root_list(),
     };
     status = loom_compile_request_resolve(
         run_module.module, &request_options,

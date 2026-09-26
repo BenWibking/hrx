@@ -366,6 +366,20 @@ static void loom_verify_emit_placement_diagnostic(
                               IREE_ARRAYSIZE(params));
 }
 
+static void loom_verify_emit_named_placement_diagnostic(
+    loom_verify_state_t* state, const loom_op_t* op,
+    const loom_op_vtable_t* vtable, iree_string_view_t constraint_kind,
+    iree_string_view_t ancestor_names, iree_string_view_t actual_ancestor) {
+  loom_diagnostic_param_t params[] = {
+      loom_param_string(loom_op_vtable_name(vtable)),
+      loom_param_string(constraint_kind),
+      loom_param_string(ancestor_names),
+      loom_param_string(actual_ancestor),
+  };
+  loom_verify_emit_structured(state, op, LOOM_ERR_STRUCTURE_029, params,
+                              IREE_ARRAYSIZE(params));
+}
+
 void loom_verify_op_placement(loom_verify_state_t* state, const loom_op_t* op,
                               const loom_op_vtable_t* vtable) {
   if (iree_any_bit_set(vtable->traits, LOOM_TRAIT_MODULE_SCOPE) &&
@@ -405,6 +419,22 @@ void loom_verify_op_placement(loom_verify_state_t* state, const loom_op_t* op,
     loom_verify_emit_placement_diagnostic(
         state, op, vtable, IREE_SV("required"), ancestor_kind,
         loom_verify_parent_context_name(state, op));
+  }
+  if (placement->required_any_ancestor_count > 0) {
+    bool found_required_ancestor = false;
+    for (uint8_t i = 0; i < placement->required_any_ancestor_count; ++i) {
+      if (loom_verify_find_ancestor(op, placement->required_any_ancestors[i])) {
+        found_required_ancestor = true;
+        break;
+      }
+    }
+    if (!found_required_ancestor &&
+        !loom_verify_has_deferred_required_ancestor(state, op)) {
+      loom_verify_emit_named_placement_diagnostic(
+          state, op, vtable, IREE_SV("one-of-required"),
+          iree_make_cstring_view(placement->required_any_ancestor_names),
+          loom_verify_parent_context_name(state, op));
+    }
   }
   for (uint8_t i = 0; i < placement->forbidden_ancestor_count; ++i) {
     loom_op_kind_t ancestor_kind = placement->forbidden_ancestors[i];
@@ -733,6 +763,18 @@ static void loom_verify_predicate_list_attr(loom_verify_state_t* state,
          ++argument_index) {
       uint8_t tag = predicate->arg_tags[argument_index];
       if (tag > LOOM_PRED_ARG_NONE && tag < LOOM_PRED_ARG_COUNT_) {
+        if (tag == LOOM_PRED_ARG_VALUE &&
+            (predicate->args[argument_index] < 0 ||
+             predicate->args[argument_index] > UINT32_MAX ||
+             (loom_value_id_t)predicate->args[argument_index] >=
+                 state->module->values.count)) {
+          loom_diagnostic_param_t params[] = {
+              loom_param_u32((uint32_t)predicate->args[argument_index]),
+              loom_param_u32((uint32_t)state->module->values.count),
+          };
+          loom_verify_emit_structured(state, op, LOOM_ERR_DOMINANCE_003, params,
+                                      IREE_ARRAYSIZE(params));
+        }
         continue;
       }
       loom_diagnostic_param_t params[] = {
