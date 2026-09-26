@@ -131,12 +131,14 @@ class CompileRequestTest : public ::testing::Test {
     IREE_ASSERT_OK(loom_testing_context_register_all_dialects(&context_));
     IREE_ASSERT_OK(loom_context_finalize(&context_));
     target_provider_.profile_type = &kTargetProfileType;
-    target_provider_.emitter_list = loom_target_emitter_list_make(
-        kTargetEmitters, IREE_ARRAYSIZE(kTargetEmitters));
     target_provider_.target_fact_type = &loom_target_generic_fact_type;
     target_provider_.select_profile = SelectTargetProfile;
+    emission_provider_.emitter_list = loom_target_emitter_list_make(
+        kTargetEmitters, IREE_ARRAYSIZE(kTargetEmitters));
     target_providers_[0] = &target_provider_;
-    target_provider_set_ = loom_target_provider_set_make(target_providers_, 1);
+    target_providers_[1] = &emission_provider_;
+    target_provider_set_ = loom_target_provider_set_make(
+        target_providers_, IREE_ARRAYSIZE(target_providers_));
     IREE_ASSERT_OK(loom_target_environment_initialize(&target_provider_set_,
                                                       &environment_));
   }
@@ -264,7 +266,8 @@ kernel.def @Kernel123() {
   iree_arena_block_pool_t block_pool_;
   loom_context_t context_;
   loom_target_provider_t target_provider_ = {};
-  const loom_target_provider_t* target_providers_[1] = {};
+  loom_target_provider_t emission_provider_ = {};
+  const loom_target_provider_t* target_providers_[2] = {};
   loom_target_provider_set_t target_provider_set_ = {};
   loom_target_environment_t environment_;
 };
@@ -716,7 +719,12 @@ func.def public @Function123() {
       loom_compile_request_resolve(module.get(), &options, &registry,
                                    &environment_, &request));
 
-  target_provider_.canonical_module_emitter = &kDiagnosticEmitter;
+  loom_target_environment_deinitialize(&environment_);
+  emission_provider_.canonical_module_emitter = &kDiagnosticEmitter;
+  emission_provider_.canonical_module_fact_type =
+      &loom_target_generic_fact_type;
+  IREE_ASSERT_OK(
+      loom_target_environment_initialize(&target_provider_set_, &environment_));
   IREE_ASSERT_OK(loom_compile_request_resolve(module.get(), &options, &registry,
                                               &environment_, &request));
   EXPECT_EQ(request.product, LOOM_COMPILE_PRODUCT_MODULE);

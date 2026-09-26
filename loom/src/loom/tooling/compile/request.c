@@ -750,16 +750,15 @@ static iree_status_t loom_compile_request_select_format(
       out_producer->kind = LOOM_COMPILE_PRODUCER_COMMAND;
       return iree_ok_status();
     case LOOM_COMPILE_PRODUCT_MODULE: {
-      const loom_target_provider_t* provider =
+      const loom_target_emitter_t* canonical_emitter =
           target_fact_type != NULL
-              ? loom_target_environment_lookup_fact_provider(target_environment,
-                                                             target_fact_type)
+              ? loom_target_environment_lookup_canonical_module_emitter(
+                    target_environment, target_fact_type)
               : NULL;
-      if (provider != NULL && provider->canonical_module_emitter != NULL) {
+      if (canonical_emitter != NULL) {
         out_producer->kind = LOOM_COMPILE_PRODUCER_TARGET_EMITTER;
-        out_producer->value.target_emitter = provider->canonical_module_emitter;
-        *out_format =
-            provider->canonical_module_emitter->public_artifact_format;
+        out_producer->value.target_emitter = canonical_emitter;
+        *out_format = canonical_emitter->public_artifact_format;
         return iree_ok_status();
       }
       return iree_make_status(

@@ -188,6 +188,59 @@ static iree_status_t loom_target_environment_append_emitters(
   return iree_ok_status();
 }
 
+static const loom_target_fact_type_t* loom_target_provider_fact_type(
+    const loom_target_provider_t* provider) {
+  return provider->target_fact_type != NULL ? provider->target_fact_type
+         : provider->profile_type != NULL   ? provider->profile_type->fact_type
+                                            : NULL;
+}
+
+static iree_status_t loom_target_environment_append_canonical_module_emitter(
+    loom_target_environment_t* environment,
+    const loom_target_provider_t* provider) {
+  const loom_target_emitter_t* emitter = provider->canonical_module_emitter;
+  const loom_target_fact_type_t* target_fact_type =
+      provider->canonical_module_fact_type;
+  if (emitter == NULL && target_fact_type == NULL) {
+    return iree_ok_status();
+  }
+  if (emitter == NULL || target_fact_type == NULL) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "canonical module emitter and target fact type must be paired");
+  }
+  bool emitter_contributed = false;
+  for (iree_host_size_t i = 0; i < provider->emitter_list.count; ++i) {
+    emitter_contributed |= provider->emitter_list.values[i] == emitter;
+  }
+  if (!emitter_contributed) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "canonical module emitter must be in the provider emitter list");
+  }
+  for (iree_host_size_t i = 0; i < environment->canonical_module_emitter_count;
+       ++i) {
+    if (environment->canonical_module_emitters[i].target_fact_type ==
+        target_fact_type) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "target fact type has multiple canonical module emitters");
+    }
+  }
+  if (environment->canonical_module_emitter_count >=
+      IREE_ARRAYSIZE(environment->canonical_module_emitters)) {
+    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                            "canonical module emitter capacity exceeded");
+  }
+  const iree_host_size_t index = environment->canonical_module_emitter_count++;
+  environment->canonical_module_emitters[index] =
+      (loom_target_canonical_module_emitter_entry_t){
+          .target_fact_type = target_fact_type,
+          .emitter = emitter,
+      };
+  return iree_ok_status();
+}
+
 iree_status_t loom_target_environment_initialize(
     const loom_target_provider_set_t* provider_set,
     loom_target_environment_t* out_environment) {
@@ -236,6 +289,9 @@ iree_status_t loom_target_environment_initialize(
         out_environment, provider));
     IREE_RETURN_IF_ERROR(
         loom_target_environment_append_emitters(out_environment, provider));
+    IREE_RETURN_IF_ERROR(
+        loom_target_environment_append_canonical_module_emitter(out_environment,
+                                                                provider));
   }
   IREE_RETURN_IF_ERROR(loom_pass_registry_storage_initialize_from_registries(
       pass_registries, pass_registry_count,
@@ -381,11 +437,26 @@ const loom_target_provider_t* loom_target_environment_lookup_fact_provider(
     const loom_target_provider_t* provider =
         environment->provider_set->providers[i];
     const loom_target_fact_type_t* provider_fact_type =
-        provider->target_fact_type != NULL ? provider->target_fact_type
-        : provider->profile_type != NULL   ? provider->profile_type->fact_type
-                                           : NULL;
+        loom_target_provider_fact_type(provider);
     if (provider_fact_type == fact_type) {
       return provider;
+    }
+  }
+  return NULL;
+}
+
+const loom_target_emitter_t*
+loom_target_environment_lookup_canonical_module_emitter(
+    const loom_target_environment_t* environment,
+    const loom_target_fact_type_t* fact_type) {
+  IREE_ASSERT_ARGUMENT(environment);
+  IREE_ASSERT_ARGUMENT(fact_type);
+  for (iree_host_size_t i = 0; i < environment->canonical_module_emitter_count;
+       ++i) {
+    const loom_target_canonical_module_emitter_entry_t* entry =
+        &environment->canonical_module_emitters[i];
+    if (entry->target_fact_type == fact_type) {
+      return entry->emitter;
     }
   }
   return NULL;

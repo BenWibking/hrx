@@ -6,6 +6,7 @@
 
 #include "loom/tooling/target/wasm/artifact_emitter.h"
 
+#include "loom/target/arch/wasm/ops/ops.h"
 #include "loom/tooling/target/wasm/prepare.h"
 
 static iree_status_t loom_wasm_artifact_emit(
@@ -65,4 +66,6 @@ const loom_target_provider_t loom_wasm_artifact_emitter_provider = {
             .values = kLoomWasmArtifactEmitters,
             .count = IREE_ARRAYSIZE(kLoomWasmArtifactEmitters),
         },
+    .canonical_module_emitter = &loom_wasm_artifact_emitter,
+    .canonical_module_fact_type = &loom_wasm_target_fact_type,
 };

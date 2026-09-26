@@ -90,4 +90,5 @@ const loom_target_provider_t loom_vm_target_provider = {
     .initialize_low_lower_policy_registry =
         loom_vm_low_lower_policy_registry_initialize,
     .target_fact_type = &loom_vm_target_fact_type,
+    .canonical_module_fact_type = &loom_vm_target_fact_type,
 };
