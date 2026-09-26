@@ -291,7 +291,7 @@ TEST_F(CompileRequestTest, ResolvesLowKernelProductsWithImplicitAndNamedRoots) {
     ModulePtr module = BuildLowRoot(kind, LOOM_TARGET_ABI_ARRAY_PROGRAM);
     loom_compile_request_options_t options = {};
     options.target = IREE_SV("TargetFamily123:Target456");
-    EXPECT_TRUE(loom_compile_request_symbol_is_implicit_root(
+    EXPECT_TRUE(loom_compile_request_symbol_is_canonical_root(
         module.get(), LOOM_COMPILE_PRODUCT_KERNEL,
         &module->symbols.entries[0]));
     for (iree_host_size_t root_count : {0, 1}) {
@@ -312,7 +312,7 @@ TEST_F(CompileRequestTest, KeepsOrdinaryLowFunctionsAsModuleProducts) {
   const iree_string_view_t roots[] = {IREE_SV("entry")};
   loom_compile_request_options_t options = {};
   options.format = IREE_SV("DiagnosticFormat123");
-  EXPECT_FALSE(loom_compile_request_symbol_is_implicit_root(
+  EXPECT_FALSE(loom_compile_request_symbol_is_canonical_root(
       module.get(), LOOM_COMPILE_PRODUCT_KERNEL, &module->symbols.entries[0]));
   for (iree_host_size_t root_count : {0, 1}) {
     options.roots = {root_count, roots};
@@ -323,11 +323,195 @@ TEST_F(CompileRequestTest, KeepsOrdinaryLowFunctionsAsModuleProducts) {
   }
 }
 
+TEST_F(CompileRequestTest, ExcludesCanonicalModuleRoot) {
+  ModulePtr module = Parse(R"(
+func.def public @kept() {
+  func.return
+}
+func.def public @excluded() {
+  func.return
+}
+func.def @helper() {
+  func.return
+}
+)");
+  const iree_string_view_t excluded_roots[] = {IREE_SV("@excluded")};
+  loom_compile_request_options_t options = {};
+  options.product = IREE_SV("module");
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_compile_request_t request = Resolve(module.get(), options,
+                                                 /*providers=*/nullptr, 0);
+
+  EXPECT_EQ(request.product, LOOM_COMPILE_PRODUCT_MODULE);
+  EXPECT_EQ(request.excluded_roots.count, 1u);
+  EXPECT_FALSE(loom_compile_request_symbol_is_excluded(
+      module.get(), &request, &module->symbols.entries[0]));
+  EXPECT_TRUE(loom_compile_request_symbol_is_excluded(
+      module.get(), &request, &module->symbols.entries[1]));
+  EXPECT_FALSE(loom_compile_request_symbol_is_canonical_root(
+      module.get(), LOOM_COMPILE_PRODUCT_MODULE, &module->symbols.entries[2]));
+}
+
+TEST_F(CompileRequestTest, ExcludesCanonicalKernelRoot) {
+  ModulePtr module = Parse(R"(
+kernel.def @kept() {
+  %one = index.constant 1 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%one, %one, %one) : index
+} launch() {
+  kernel.return
+}
+kernel.def @excluded() {
+  %one = index.constant 1 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%one, %one, %one) : index
+} launch() {
+  kernel.return
+}
+)");
+  const iree_string_view_t excluded_roots[] = {IREE_SV("excluded")};
+  loom_compile_request_options_t options = {};
+  options.product = IREE_SV("kernel");
+  options.target = IREE_SV("TargetFamily123:Target456");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_artifact_provider_t* providers[] = {&kExecutableProvider};
+  const loom_compile_request_t request =
+      Resolve(module.get(), options, providers, IREE_ARRAYSIZE(providers));
+
+  EXPECT_EQ(request.product, LOOM_COMPILE_PRODUCT_KERNEL);
+  EXPECT_EQ(request.excluded_roots.count, 1u);
+  EXPECT_TRUE(loom_compile_request_symbol_is_excluded(
+      module.get(), &request, &module->symbols.entries[1]));
+}
+
+TEST_F(CompileRequestTest, RequiresProductForExcludedRoots) {
+  ModulePtr module = Parse(R"(
+func.def public @entry() {
+  func.return
+}
+)");
+  const iree_string_view_t excluded_roots[] = {IREE_SV("entry")};
+  loom_compile_request_options_t options = {};
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_artifact_provider_registry_t registry = {};
+  loom_compile_request_t request = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_compile_request_resolve(module.get(), &options, &registry,
+                                   &environment_, &request));
+}
+
+TEST_F(CompileRequestTest, RejectsExplicitAndExcludedRoots) {
+  ModulePtr module = Parse(R"(
+func.def public @entry() {
+  func.return
+}
+func.def public @other() {
+  func.return
+}
+)");
+  const iree_string_view_t roots[] = {IREE_SV("entry")};
+  const iree_string_view_t excluded_roots[] = {IREE_SV("other")};
+  loom_compile_request_options_t options = {};
+  options.roots = {IREE_ARRAYSIZE(roots), roots};
+  options.product = IREE_SV("module");
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_artifact_provider_registry_t registry = {};
+  loom_compile_request_t request = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_compile_request_resolve(module.get(), &options, &registry,
+                                   &environment_, &request));
+}
+
+TEST_F(CompileRequestTest, RejectsMissingExcludedRoot) {
+  ModulePtr module = Parse(R"(
+func.def public @entry() {
+  func.return
+}
+)");
+  const iree_string_view_t excluded_roots[] = {IREE_SV("missing")};
+  loom_compile_request_options_t options = {};
+  options.product = IREE_SV("module");
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_artifact_provider_registry_t registry = {};
+  loom_compile_request_t request = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_NOT_FOUND,
+      loom_compile_request_resolve(module.get(), &options, &registry,
+                                   &environment_, &request));
+}
+
+TEST_F(CompileRequestTest, RejectsNonCanonicalExcludedRoot) {
+  ModulePtr module = Parse(R"(
+func.def public @entry() {
+  func.return
+}
+func.def @private_helper() {
+  func.return
+}
+)");
+  const iree_string_view_t excluded_roots[] = {IREE_SV("private_helper")};
+  loom_compile_request_options_t options = {};
+  options.product = IREE_SV("module");
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_artifact_provider_registry_t registry = {};
+  loom_compile_request_t request = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_compile_request_resolve(module.get(), &options, &registry,
+                                   &environment_, &request));
+}
+
+TEST_F(CompileRequestTest, RejectsRepeatedExcludedRoots) {
+  ModulePtr module = Parse(R"(
+func.def public @entry() {
+  func.return
+}
+)");
+  const loom_artifact_provider_registry_t registry = {};
+  const iree_string_view_t repeated_roots[] = {
+      IREE_SV("entry"),
+      IREE_SV("@entry"),
+  };
+  loom_compile_request_options_t options = {};
+  options.product = IREE_SV("module");
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(repeated_roots), repeated_roots};
+  loom_compile_request_t request = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_compile_request_resolve(module.get(), &options, &registry,
+                                   &environment_, &request));
+}
+
+TEST_F(CompileRequestTest, RejectsExcludingEveryCanonicalRoot) {
+  ModulePtr module = Parse(R"(
+func.def public @entry() {
+  func.return
+}
+)");
+  const iree_string_view_t excluded_roots[] = {IREE_SV("entry")};
+  loom_compile_request_options_t options = {};
+  options.product = IREE_SV("module");
+  options.format = IREE_SV("DiagnosticFormat123");
+  options.excluded_roots = {IREE_ARRAYSIZE(excluded_roots), excluded_roots};
+  const loom_artifact_provider_registry_t registry = {};
+  loom_compile_request_t request = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_compile_request_resolve(module.get(), &options, &registry,
+                                   &environment_, &request));
+}
+
 TEST_F(CompileRequestTest, RequiresExplicitSelectionOfPrivateArrayPrograms) {
   ModulePtr module =
       BuildLowRoot(LOOM_OP_LOW_FUNC_DEF, LOOM_TARGET_ABI_ARRAY_PROGRAM,
                    /*visibility_flags=*/0);
-  EXPECT_FALSE(loom_compile_request_symbol_is_implicit_root(
+  EXPECT_FALSE(loom_compile_request_symbol_is_canonical_root(
       module.get(), LOOM_COMPILE_PRODUCT_KERNEL, &module->symbols.entries[0]));
   const loom_artifact_provider_t* providers[] = {&kExecutableProvider};
   const iree_string_view_t roots[] = {IREE_SV("entry")};

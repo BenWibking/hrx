@@ -64,6 +64,22 @@ loom_cc_test(
     loom::testing::module_ptr
 )
 
+loom_cc_test(
+  NAME
+    preparation_test
+  SRCS
+    "preparation_test.cc"
+  DEPS
+    ::preparation
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::format::text::parser
+    loom::ir
+    loom::testing::context
+    loom::testing::module_ptr
+)
+
 loom_cc_library(
   NAME
     options
