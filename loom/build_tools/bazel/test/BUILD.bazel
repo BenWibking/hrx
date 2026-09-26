@@ -26,6 +26,7 @@ load(
     "loom_binary_rules_test_suite",
 )
 load(":loom_check_rules_test.bzl", "loom_check_rules_test_suite")
+load(":loom_corpus_rules_test.bzl", "loom_corpus_rules_test_suite")
 load(
     ":loom_library_rules_test.bzl",
     "REFERENCE_PROFILE",
@@ -187,6 +188,8 @@ loom_check_test(
 
 loom_check_rules_test_suite(name = "loom_check_rules_tests")
 
+loom_corpus_rules_test_suite(name = "loom_corpus_rules_tests")
+
 loom_library_rules_test_suite(name = "loom_library_rules_tests")
 
 loom_binary_rules_test_suite(name = "loom_binary_rules_tests")
@@ -292,6 +295,7 @@ test_suite(
         ":loom_binary_rules_tests",
         ":loom_check_rules_tests",
         ":loom_check_wrapper_direct_test",
+        ":loom_corpus_rules_tests",
         ":loom_library_aggregate_direct_test",
         ":loom_library_module_direct_test",
         ":loom_library_rules_tests",

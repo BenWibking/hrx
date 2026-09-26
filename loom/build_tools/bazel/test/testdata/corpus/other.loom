@@ -1,0 +1,4 @@
+func.def public @other() -> (i32) {
+  %value = scalar.constant 7 : i32
+  func.return %value : i32
+}

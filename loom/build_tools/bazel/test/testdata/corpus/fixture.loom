@@ -1,0 +1,10 @@
+func.def public @supported() -> (i32) {
+  %value = scalar.constant 42 : i32
+  func.return %value : i32
+}
+
+// ====
+func.def public @unsupported() -> (i32) {
+  %value = scalar.constant 72 : i32
+  func.return %value : i32
+}

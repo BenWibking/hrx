@@ -217,6 +217,71 @@ class LoomBuildFileFunctions(bazel_to_cmake_converter.BuildFileFunctions):
             + ")\n\n"
         )
 
+    def loom_corpus(
+        self,
+        name,
+        srcs,
+        targets,
+        products,
+        xfails=None,
+        excludes=None,
+        tags=None,
+        **kwargs,
+    ):
+        if self._should_skip_target(tags=tags):
+            return
+        self._check_no_unhandled_kwargs("loom_corpus", kwargs)
+
+        product_values = []
+        for source in sorted(products):
+            product_values.extend([source, products[source]])
+
+        xfail_values = []
+        for profile in sorted(xfails or {}):
+            converted_profiles = self._convert_target(profile)
+            if len(converted_profiles) != 1:
+                raise NotImplementedError(f"loom_corpus xfail profile: {profile}")
+            for identity in sorted(xfails[profile]):
+                source, separator, root = identity.partition(":@")
+                if not separator:
+                    raise ValueError(
+                        "loom_corpus xfail identity must use '<source>:@<root>': "
+                        f"{identity}"
+                    )
+                xfail_values.extend(
+                    [
+                        converted_profiles[0],
+                        source,
+                        "@" + root,
+                        xfails[profile][identity],
+                    ]
+                )
+
+        exclude_values = []
+        for profile in sorted(excludes or {}):
+            converted_profiles = self._convert_target(profile)
+            if len(converted_profiles) != 1:
+                raise NotImplementedError(f"loom_corpus exclude profile: {profile}")
+            for source in sorted(excludes[profile]):
+                exclude_values.extend(
+                    [
+                        converted_profiles[0],
+                        source,
+                        excludes[profile][source],
+                    ]
+                )
+
+        self._converter.body += (
+            "loom_corpus(\n"
+            + self._convert_string_arg_block("NAME", name)
+            + self._convert_string_list_block("SRCS", srcs, sort=False)
+            + self._convert_target_list_block("TARGETS", targets)
+            + self._convert_string_list_block("PRODUCTS", product_values, sort=False)
+            + self._convert_string_list_block("XFAILS", xfail_values, sort=False)
+            + self._convert_string_list_block("EXCLUDES", exclude_values, sort=False)
+            + ")\n\n"
+        )
+
     def loom_amdgpu_target_profile(
         self, name, target, target_compatible_with=None, **kwargs
     ):
