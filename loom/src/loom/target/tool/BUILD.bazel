@@ -37,6 +37,7 @@ loom_cc_library(
         "process_win32.c",
     ],
     hdrs = ["process.h"],
+    visibility = ["//loom/build_tools/corpus:__pkg__"],
     deps = [
         "//runtime/src/iree/base",
     ],
