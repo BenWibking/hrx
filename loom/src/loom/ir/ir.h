@@ -940,17 +940,13 @@ enum loom_op_vtable_flag_bits_e {
   // The attr-only module-scope op is canonically projected by its generated
   // string key instead of physical module-body order.
   LOOM_OP_VTABLE_KEYED_MODULE_RECORD = 1u << 7,
+  // One successor alternative is selected by an explicit operand.
+  LOOM_OP_VTABLE_HAS_SUCCESSOR_SELECTOR = 1u << 8,
+  // At least one attribute carries a predicate list requiring semantic
+  // verification after its retained SSA references have been checked.
+  LOOM_OP_VTABLE_HAS_PREDICATE_LIST = 1u << 9,
 };
-typedef uint8_t loom_op_vtable_flags_t;
-
-// Compact control-flow metadata on the op vtable. These flags describe
-// structural successor semantics that are cheaper to store inline than as a
-// pointer-backed interface.
-enum loom_op_control_flow_flag_bits_e {
-  // One operand selects among this op's successor alternatives.
-  LOOM_OP_CONTROL_FLOW_HAS_SUCCESSOR_SELECTOR = 1u << 0,
-};
-typedef uint8_t loom_op_control_flow_flags_t;
+typedef uint16_t loom_op_vtable_flags_t;
 
 // Op-specific verification callback. Called after the standard
 // table-driven checks have established the op's structural invariants.
@@ -1551,12 +1547,10 @@ struct loom_op_vtable_t {
   // Number of operand descriptors when it differs from the implied count.
   // Zero uses fixed_operand_count plus the variadic operand flag.
   uint8_t operand_descriptor_count;
-  // Structural control-flow semantics declared by the op kind.
-  loom_op_control_flow_flags_t control_flow_flags;
   // Bitmask of semantic operand roles present on this op kind.
   uint8_t operand_role_mask;
   // Selector operand index for multi-successor terminators. Valid only when
-  // control_flow_flags has LOOM_OP_CONTROL_FLOW_HAS_SUCCESSOR_SELECTOR.
+  // vtable_flags has LOOM_OP_VTABLE_HAS_SUCCESSOR_SELECTOR.
   uint16_t successor_selector_operand_index;
 
   loom_canonicalize_fn_t canonicalize;

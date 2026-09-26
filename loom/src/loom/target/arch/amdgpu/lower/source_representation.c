@@ -206,6 +206,66 @@ static void loom_amdgpu_address_representation_constrain_value(
                                                   candidates, candidate_count);
 }
 
+static void loom_amdgpu_address_representation_observe_fixed_cast(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_low_lower_representation_recorder_t* recorder) {
+  const loom_module_t* module = loom_low_lower_context_module(context);
+  const loom_value_id_t source = loom_index_cast_input(source_op);
+  const loom_value_id_t result = loom_index_cast_result(source_op);
+  const loom_type_t source_type = loom_module_value_type(module, source);
+  const loom_type_t result_type = loom_module_value_type(module, result);
+  const bool source_is_address =
+      loom_amdgpu_type_is_address_scalar(source_type);
+  const bool result_is_address =
+      loom_amdgpu_type_is_address_scalar(result_type);
+  if (source_is_address == result_is_address) {
+    return;
+  }
+
+  const loom_value_id_t fixed_value = source_is_address ? result : source;
+  const loom_type_t fixed_type = source_is_address ? result_type : source_type;
+  const loom_scalar_type_t fixed_scalar_type =
+      loom_type_element_type(fixed_type);
+  if (!loom_scalar_type_is_integer(fixed_scalar_type) ||
+      fixed_scalar_type == LOOM_SCALAR_TYPE_I1) {
+    return;
+  }
+
+  bool fixed_prefers_vgpr = false;
+  iree_status_t status = loom_amdgpu_context_value_prefers_vgpr(
+      context, fixed_value, &fixed_prefers_vgpr);
+  if (!iree_status_is_ok(status)) {
+    loom_low_lower_representation_record_failure(recorder, status);
+    return;
+  }
+
+  const uint32_t fixed_unit_count =
+      ((uint32_t)loom_scalar_type_bitwidth(fixed_scalar_type) + 31u) / 32u;
+  // The cast materializes one move for each word that crosses register banks.
+  // Charge that cost to the address component so exact address relations can
+  // retain the fixed side's bank across a cast cycle.
+  loom_low_representation_candidate_t bank_crossing_costs[2];
+  iree_host_size_t cost_count = 0;
+  if (fixed_prefers_vgpr) {
+    bank_crossing_costs[cost_count++] = (loom_low_representation_candidate_t){
+        .representation = LOOM_AMDGPU_ADDRESS_REPRESENTATION_NARROW,
+        .cost = {.runtime = 1, .code_size = 1},
+    };
+    bank_crossing_costs[cost_count++] = (loom_low_representation_candidate_t){
+        .representation = LOOM_AMDGPU_ADDRESS_REPRESENTATION_WIDE_SGPR,
+        .cost = {.runtime = fixed_unit_count, .code_size = fixed_unit_count},
+    };
+  } else {
+    bank_crossing_costs[cost_count++] = (loom_low_representation_candidate_t){
+        .representation = LOOM_AMDGPU_ADDRESS_REPRESENTATION_WIDE_VGPR,
+        .cost = {.runtime = fixed_unit_count, .code_size = fixed_unit_count},
+    };
+  }
+  const loom_value_id_t address_value = source_is_address ? source : result;
+  loom_low_lower_representation_record_costs(recorder, address_value,
+                                             bank_crossing_costs, cost_count);
+}
+
 static bool loom_amdgpu_address_representation_relation_is_exact(
     loom_value_relation_kind_t kind) {
   switch (kind) {
@@ -446,6 +506,10 @@ static void loom_amdgpu_source_representation_observe_boundary(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_representation_recorder_t* recorder) {
   (void)user_data;
+  if (source_op->kind == LOOM_OP_INDEX_CAST) {
+    loom_amdgpu_address_representation_observe_fixed_cast(context, source_op,
+                                                          recorder);
+  }
   if (action >=
       LOOM_AMDGPU_SOURCE_INTEGER_REPRESENTATION_ACTION_FLEXIBLE_RESULT) {
     loom_amdgpu_source_integer_representation_observe_boundary(

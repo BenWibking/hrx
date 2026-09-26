@@ -1543,19 +1543,25 @@ class Translator {
           fail(ast, "local storage duration must be automatic or __shared__");
         }
         if (variable->symbol && annotated(variable->symbol, "workgroup")) {
-          auto* array = cxx::type_cast<cxx::BoundedArrayType>(
-              types_.unqualified(variable->symbol->type()));
-          if (!array || variable->initializer ||
-              current_function_.kind != FunctionKind::Kernel) {
-            fail(ast,
-                 "shared storage must be an uninitialized fixed scalar array "
-                 "in the kernel");
+          if (current_function_.kind != FunctionKind::Kernel) {
+            fail(variable, "workgroup storage requires a kernel body");
           }
-          auto allocation =
-              storage_.allocate(array, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
-                                source_variable->explicitAlignment(), variable);
+          if (variable->initializer) {
+            fail(variable, "workgroup storage cannot have an initializer");
+          }
+          auto* source_type = types_.unqualified(variable->symbol->type());
+          auto* array = cxx::type_cast<cxx::BoundedArrayType>(source_type);
+          auto allocation = storage_.allocate(
+              source_type, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+              source_variable->explicitAlignment(), variable);
           auto spelling = cxx::to_string(variable->symbol->name());
-          values_[variable->symbol] = name(Value(allocation.pointer), spelling);
+          if (array) {
+            values_[variable->symbol] =
+                name(Value(allocation.pointer), spelling);
+          } else {
+            name(Value(allocation.pointer), spelling + "_storage");
+            locals_[variable->symbol] = allocation;
+          }
           name(allocation.view, spelling + "_view");
           continue;
         }
@@ -1847,25 +1853,48 @@ class Translator {
       }
       auto* id = cxx::ast_cast<cxx::IdExpressionAST>(call->baseExpression);
       if (id && annotated(id->symbol, "assume")) {
-        auto bounds = assumption_bounds(unit_, diagnostics_, call);
-        for (const auto& bound : bounds) {
-          auto value = expression(bound.value).ssa();
-          auto value_type = types_.get(bound.value->type, ast);
-          loom_predicate_t predicate = {
-              .kind = LOOM_PREDICATE_RANGE,
-              .arg_count = 3,
-              .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
-                           LOOM_PRED_ARG_CONST},
-              .args = {value, 0, bound.upper_bound - 1},
-          };
+        auto predicates = assumption_predicates(unit_, diagnostics_, call);
+        for (const auto& predicate : predicates) {
+          for (size_t i = 0; i < predicate.value_count; ++i) {
+            auto* symbol = predicate.values[i].binding->symbol;
+            if (locals_.contains(symbol)) {
+              fail(predicate.values[i].binding,
+                   "assume cannot retain facts for an addressable binding "
+                   "whose storage may change through an alias");
+            }
+            if (!values_.contains(symbol)) {
+              fail(predicate.values[i].binding,
+                   "assume can retain facts only for an owned automatic "
+                   "scalar binding");
+            }
+          }
+        }
+        for (const auto& admitted : predicates) {
+          std::array<loom_value_id_t, 2> values;
+          std::array<loom_type_t, 2> value_types;
+          for (size_t i = 0; i < admitted.value_count; ++i) {
+            values[i] = expression(admitted.values[i].value).ssa();
+            value_types[i] = types_.get(admitted.values[i].value->type, ast);
+          }
+          loom_predicate_t predicate = admitted.predicate;
+          for (uint8_t i = 0; i < predicate.arg_count; ++i) {
+            if (predicate.arg_tags[i] == LOOM_PRED_ARG_VALUE) {
+              predicate.args[i] = values[predicate.args[i]];
+            }
+          }
           loom_op_t* op;
-          check(loom_scalar_assume_build(&builder_, &value, 1, &predicate, 1,
-                                         &value_type, 1, locations_.get(ast),
-                                         &op));
-          values_[bound.binding->symbol] =
-              name(numeric_convert(result(op), bound.value->type,
-                                   bound.binding->type, ast),
-                   cxx::to_string(bound.binding->symbol->name()));
+          check(loom_scalar_assume_build(
+              &builder_, values.data(), admitted.value_count, &predicate, 1,
+              value_types.data(), admitted.value_count, locations_.get(ast),
+              &op));
+          for (size_t i = 0; i < admitted.value_count; ++i) {
+            const auto& source_value = admitted.values[i];
+            values_[source_value.binding->symbol] =
+                name(numeric_convert(loom_op_results(op)[i],
+                                     source_value.value->type,
+                                     source_value.binding->type, ast),
+                     cxx::to_string(source_value.binding->symbol->name()));
+          }
         }
         return;
       }

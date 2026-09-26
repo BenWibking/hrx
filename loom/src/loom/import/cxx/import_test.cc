@@ -105,7 +105,7 @@ TEST_F(ImportTest, RejectedAssumptionsPublishNoPartialModule) {
   IREE_ASSERT_OK(
       Import(IREE_SV("[[loom::assume]] void assume(bool); "
                      "void entry(unsigned value, unsigned limit) { "
-                     "assume(value < 256u && value < limit); }")));
+                     "assume(value < 256u && value < limit + 1u); }")));
   EXPECT_EQ(module_, nullptr);
   EXPECT_EQ(diagnostic_count_, 1);
 }

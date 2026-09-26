@@ -1872,6 +1872,7 @@ kernel_decl = Op(
             args="args",
         )
     ],
+    verify="loom_kernel_decl_verify",
     format=[
         *_ENTRY_RETAIN_FORMAT,
         *_ENTRY_TARGET_FORMAT,

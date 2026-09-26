@@ -128,6 +128,53 @@ static iree_status_t loom_global_emit(iree_diagnostic_emitter_t emitter,
   return iree_diagnostic_emit(emitter, &emission);
 }
 
+static iree_status_t loom_global_emit_predicate_origin(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter, uint16_t predicate_index,
+    uint8_t argument_index) {
+  char field_name[40];
+  iree_snprintf(field_name, sizeof(field_name), "predicates[%u].arg[%u]",
+                predicate_index, argument_index);
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(loom_op_name(module, op)),
+      loom_param_string(iree_make_cstring_view(field_name)),
+      loom_param_string(IREE_SV("a declaration-local dynamic dimension")),
+  };
+  return loom_global_emit(emitter, op, LOOM_ERR_STRUCTURE_032, params,
+                          IREE_ARRAYSIZE(params));
+}
+
+static iree_status_t loom_global_verify_predicates(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter, loom_value_id_t global_value_id,
+    loom_attribute_t predicates) {
+  const loom_type_t global_type =
+      loom_module_value_type(module, global_value_id);
+  for (uint16_t predicate_index = 0; predicate_index < predicates.count;
+       ++predicate_index) {
+    const loom_predicate_t* predicate =
+        &predicates.predicate_list[predicate_index];
+    if (predicate->arg_tags[0] != LOOM_PRED_ARG_VALUE) {
+      return loom_global_emit_predicate_origin(module, op, emitter,
+                                               predicate_index, 0);
+    }
+    for (uint8_t argument_index = 0; argument_index < predicate->arg_count;
+         ++argument_index) {
+      if (predicate->arg_tags[argument_index] != LOOM_PRED_ARG_VALUE) {
+        continue;
+      }
+      const int64_t encoded_value_id = predicate->args[argument_index];
+      if (encoded_value_id < 0 || encoded_value_id > UINT32_MAX ||
+          !loom_global_type_references_dim_result(
+              global_type, (loom_value_id_t)encoded_value_id)) {
+        return loom_global_emit_predicate_origin(
+            module, op, emitter, predicate_index, argument_index);
+      }
+    }
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_global_verify_result_type(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter, loom_value_slice_t results,
@@ -307,6 +354,9 @@ iree_status_t loom_global_rodata_def_verify(const loom_module_t* module,
 iree_status_t loom_global_constant_verify(const loom_module_t* module,
                                           const loom_op_t* op,
                                           iree_diagnostic_emitter_t emitter) {
+  IREE_RETURN_IF_ERROR(loom_global_verify_predicates(
+      module, op, emitter, loom_global_constant_type(op),
+      loom_global_constant_predicates(op)));
   return loom_global_verify_initializer(module, op, emitter,
                                         loom_global_constant_type(op),
                                         loom_global_constant_initializer(op));
@@ -315,6 +365,9 @@ iree_status_t loom_global_constant_verify(const loom_module_t* module,
 iree_status_t loom_global_variable_verify(const loom_module_t* module,
                                           const loom_op_t* op,
                                           iree_diagnostic_emitter_t emitter) {
+  IREE_RETURN_IF_ERROR(loom_global_verify_predicates(
+      module, op, emitter, loom_global_variable_type(op),
+      loom_global_variable_predicates(op)));
   return loom_global_verify_initializer(module, op, emitter,
                                         loom_global_variable_type(op),
                                         loom_global_variable_initializer(op));

@@ -1882,6 +1882,10 @@ class BytecodeWriter:
         "not_nan": 11,
         "not_inf": 12,
         "finite": 13,
+        "ult": 14,
+        "ule": 15,
+        "ugt": 16,
+        "uge": 17,
     }
 
     def _write_predicate_list(

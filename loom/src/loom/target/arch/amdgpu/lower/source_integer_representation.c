@@ -6,8 +6,12 @@
 
 #include "loom/target/arch/amdgpu/lower/source_integer_representation.h"
 
+#include "iree/base/internal/math.h"
 #include "loom/ops/op_defs.h"
 #include "loom/ops/scalar/ops.h"
+#include "loom/target/arch/amdgpu/lower/bitpack.h"
+#include "loom/target/arch/amdgpu/lower/emit.h"
+#include "loom/target/arch/amdgpu/lower/types.h"
 
 enum loom_amdgpu_narrow_integer_guarantee_bits_e {
   // The declared narrow payload is valid in the low carrier bits.
@@ -265,4 +269,38 @@ loom_low_representation_id_t loom_amdgpu_source_integer_representation_lookup(
               LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED,
       "narrow integer producer must select a carrier representation");
   return representation;
+}
+
+iree_status_t loom_amdgpu_normalize_narrow_integer(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_source, uint32_t source_bit_count,
+    loom_low_representation_id_t source_representation,
+    loom_low_representation_id_t required_representation,
+    loom_value_id_t* out_low_result) {
+  *out_low_result = low_source;
+  if (source_representation == required_representation) {
+    return iree_ok_status();
+  }
+
+  loom_type_t lane_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_make_vgpr_type(context, &lane_type));
+  switch (required_representation) {
+    case LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_LOW_BITS:
+      return iree_ok_status();
+    case LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED:
+      return loom_amdgpu_extract_vgpr_bitfield(
+          context, source_op, low_source, /*bit_offset=*/0, source_bit_count,
+          LOOM_AMDGPU_BITFIELD_EXTRACT_MODE_SIGN_EXTEND, lane_type,
+          out_low_result);
+    case LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED:
+      return loom_amdgpu_emit_vgpr_binary_immediate(
+          context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_V_AND_B32_LIT,
+          low_source,
+          iree_math_mask_low_bits_u32(UINT32_MAX, (int32_t)source_bit_count),
+          lane_type, out_low_result);
+    case LOOM_LOW_REPRESENTATION_ID_NONE:
+      break;
+  }
+  IREE_ASSERT_UNREACHABLE("invalid narrow integer representation");
+  return iree_ok_status();
 }

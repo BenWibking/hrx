@@ -142,5 +142,30 @@ TEST_F(PredicateFactsTest, DuplicateAliasKeepsFirstOrdinalSemantics) {
   EXPECT_TRUE(loom_value_facts_is_unknown(facts[kAliasCount - 1]));
 }
 
+TEST_F(PredicateFactsTest, FloatRelationsDoNotUseIntegerIntervals) {
+  loom_value_fact_table_t table = {0};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&table, &arena_, 2));
+  const loom_value_id_t values[] = {0, 1};
+  loom_value_facts_t facts[] = {loom_value_facts_unknown(),
+                                loom_value_facts_unknown()};
+  facts[0].flags |= LOOM_VALUE_FACT_FLOAT;
+  facts[1].flags |= LOOM_VALUE_FACT_FLOAT;
+  loom_predicate_t predicate = {};
+  predicate.kind = LOOM_PREDICATE_EQ;
+  predicate.arg_count = 2;
+  predicate.arg_tags[0] = LOOM_PRED_ARG_VALUE;
+  predicate.arg_tags[1] = LOOM_PRED_ARG_VALUE;
+  predicate.args[0] = values[0];
+  predicate.args[1] = values[1];
+
+  IREE_ASSERT_OK(loom_value_fact_table_apply_alias_predicates(
+      &table, values, IREE_ARRAYSIZE(values), &predicate, 1, facts));
+
+  EXPECT_TRUE(loom_value_facts_is_float(facts[0]));
+  EXPECT_TRUE(loom_value_facts_is_float(facts[1]));
+  EXPECT_FALSE(loom_value_facts_is_exact(facts[0]));
+  EXPECT_FALSE(loom_value_facts_is_exact(facts[1]));
+}
+
 }  // namespace
 }  // namespace loom

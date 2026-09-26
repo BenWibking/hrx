@@ -992,6 +992,8 @@ def generate_tables_c(
                     flag_names.append("LOOM_ATTR_ELIDE_DEFAULT")
                 if attr_def.open_enum:
                     flag_names.append("LOOM_ATTR_OPEN_ENUM")
+                if attr_def.executable_predicates:
+                    flag_names.append("LOOM_ATTR_EXECUTABLE_PREDICATES")
                 flags = " | ".join(flag_names) if flag_names else "0"
                 if attr_def.attr_type in ("enum", "enum_array", "signed_enum_set") and attr_def.enum_def:
                     enum_names = _enum_names_array_name(op, attr_def, shared_enums)
@@ -1191,6 +1193,7 @@ def generate_tables_c(
 
         # Vtable.
         traits = c_traits.trait_flags(op)
+        successor_selector_operand_index = c_queries.resolve_successor_selector_operand_index(op)
         vtable_flag_bits: list[str] = []
         if layout.segmented_operands:
             vtable_flag_bits.append("LOOM_OP_VTABLE_SEGMENTED_OPERANDS")
@@ -1208,6 +1211,10 @@ def generate_tables_c(
             vtable_flag_bits.append("LOOM_OP_VTABLE_HAS_OPERAND_DICT")
         if op.keyed_module_record_attr is not None:
             vtable_flag_bits.append("LOOM_OP_VTABLE_KEYED_MODULE_RECORD")
+        if successor_selector_operand_index is not None:
+            vtable_flag_bits.append("LOOM_OP_VTABLE_HAS_SUCCESSOR_SELECTOR")
+        if any(attr.attr_type == ATTR_TYPE_PREDICATE_LIST for attr in non_flags):
+            vtable_flag_bits.append("LOOM_OP_VTABLE_HAS_PREDICATE_LIST")
         vtable_flags_str = " | ".join(vtable_flag_bits) if vtable_flag_bits else "0"
 
         sym_kind = _symbol_kind(op)
@@ -1223,7 +1230,6 @@ def generate_tables_c(
         attr_desc_ptr = f"{prefix}_attr_desc" if non_flags else "NULL"
         operand_desc_ptr = f"{prefix}_operand_desc" if op.operands else "NULL"
         operand_descriptor_count = len(op.operands)
-        successor_selector_operand_index = c_queries.resolve_successor_selector_operand_index(op)
         implied_operand_descriptor_count = layout.fixed_operand_count
         if layout.segmented_operands:
             implied_operand_descriptor_count = -1
@@ -1255,7 +1261,6 @@ def generate_tables_c(
         if operand_role_mask_parts:
             lines.append(f"    .operand_role_mask = {' | '.join(sorted(set(operand_role_mask_parts)))},")
         if successor_selector_operand_index is not None:
-            lines.append("    .control_flow_flags = LOOM_OP_CONTROL_FLOW_HAS_SUCCESSOR_SELECTOR,")
             lines.append(f"    .successor_selector_operand_index = {successor_selector_operand_index},")
         if sym_kind != "LOOM_SYMBOL_NONE":
             lines.append(f"    .symbol_kind = {sym_kind},")

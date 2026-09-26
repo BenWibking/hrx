@@ -12,6 +12,7 @@ from loom.assembly import AssemblyFormat, BlockArgs, Region
 from loom.dsl import (
     ANY,
     ATTR_TYPE_I64,
+    ATTR_TYPE_PREDICATE_LIST,
     ATTR_TYPE_SYMBOL,
     INTEGER,
     SYMBOL_DEFINE,
@@ -70,6 +71,24 @@ def test_generate_tables_rejects_non_predicate_value_contract_attr() -> None:
 
     with pytest.raises(ValueError, match="predicates 'predicates' must name a predicate_list"):
         generate_tables_c("test", 0x01, [op])
+
+
+def test_generate_tables_marks_executable_predicates() -> None:
+    op = Op(
+        "test.assert",
+        group=Dialect("test"),
+        attrs=[
+            AttrDef(
+                "predicates",
+                ATTR_TYPE_PREDICATE_LIST,
+                executable_predicates=True,
+            )
+        ],
+    )
+
+    source = generate_tables_c("test", 0x01, [op])
+    assert ".flags = LOOM_ATTR_EXECUTABLE_PREDICATES," in source
+    assert ".vtable_flags = LOOM_OP_VTABLE_HAS_PREDICATE_LIST," in source
 
 
 def test_rejects_duplicate_assembly_mnemonics() -> None:

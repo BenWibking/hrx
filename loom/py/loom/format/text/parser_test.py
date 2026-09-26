@@ -2888,6 +2888,15 @@ class TestPredicateRoundTrip:
             "}\n"
         )
 
+    def test_unsigned_relation_predicates(self) -> None:
+        self._roundtrip_text(
+            "test.func @f(%lhs: i32, %rhs: i32) where "
+            "[ult(%lhs, %rhs), ule(%lhs, %rhs), ugt(%lhs, %rhs), "
+            "uge(%lhs, %rhs)] {\n"
+            "  test.yield\n"
+            "}\n"
+        )
+
     def test_pow2_predicate(self) -> None:
         self._roundtrip_text(
             "test.func @f(%N: index, %a: tensor<[%N]xf32>) where [pow2(%N)] {\n"

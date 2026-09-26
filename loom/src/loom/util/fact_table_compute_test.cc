@@ -259,6 +259,23 @@ TEST_F(FactTableComputeTest, ExactRelationRetentionGrowsWithCandidates) {
   EXPECT_EQ(PendingExactRelations(table_), assumes);
 }
 
+TEST_F(FactTableComputeTest, UnknownFloatResultsRetainTheirTypeDomain) {
+  const loom_type_t f32_type = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
+  const loom_value_id_t input = DefineValue(f32_type);
+  loom_op_t* negation = nullptr;
+  IREE_ASSERT_OK(loom_test_neg_build(&builder_, input, f32_type,
+                                     LOOM_LOCATION_UNKNOWN, &negation));
+
+  IREE_ASSERT_OK(loom_value_fact_table_compute_op(&table_, module_, negation));
+
+  const loom_value_facts_t facts =
+      loom_value_fact_table_lookup(&table_, loom_test_neg_result(negation));
+  EXPECT_TRUE(loom_value_facts_is_float(facts));
+  EXPECT_FALSE(loom_value_facts_is_exact(facts));
+  EXPECT_EQ(facts.range_lo, INT64_MIN);
+  EXPECT_EQ(facts.range_hi, INT64_MAX);
+}
+
 TEST_F(FactTableComputeTest,
        SelectDependenciesPropagateCloneAndTrackOperandMutation) {
   const loom_type_t i1_type = loom_type_scalar(LOOM_SCALAR_TYPE_I1);

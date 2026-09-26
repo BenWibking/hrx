@@ -9,6 +9,7 @@
 #include "loom/ir/context.h"
 #include "loom/target/arch/amdgpu/lower/bitpack.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
+#include "loom/target/arch/amdgpu/lower/source_integer_representation.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/lower/value/integer64.h"
 
@@ -109,12 +110,21 @@ iree_status_t loom_amdgpu_lower_index_cast(
       const loom_module_t* module = loom_low_lower_context_module(context);
       const loom_type_t source_type =
           loom_module_value_type(module, low_source);
-      const loom_type_t lane_type =
+      const loom_type_t source_lane_type =
           loom_low_register_carrier_type_with_unit_count(source_type, 1);
       IREE_RETURN_IF_ERROR(loom_amdgpu_extract_low_register_unit(
           context, source_op, low_source,
-          loom_low_register_type_unit_count(source_type), 0, lane_type,
+          loom_low_register_type_unit_count(source_type), 0, source_lane_type,
           &low_source));
+      loom_type_t result_type = loom_type_none();
+      IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
+          context, source_op, plan->result, &result_type));
+      const loom_type_t result_lane_type =
+          loom_low_register_carrier_type_with_unit_count(result_type, 1);
+      if (!loom_type_equal(source_lane_type, result_lane_type)) {
+        IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32(
+            context, source_op, low_source, &low_source));
+      }
       if (plan->kind == LOOM_AMDGPU_INDEX_CAST_KIND_SIGN_EXTENDING_LOW_32) {
         loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
         IREE_RETURN_IF_ERROR(loom_amdgpu_emit_i64_from_i32(
@@ -123,41 +133,43 @@ iree_status_t loom_amdgpu_lower_index_cast(
       }
       loom_value_id_t low_zero = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_emit_const_u32(
-          context, source_op, plan->conversion_descriptor_ref, 0, lane_type,
-          &low_zero));
+          context, source_op, plan->conversion_descriptor_ref, 0,
+          result_lane_type, &low_zero));
       const loom_value_id_t lanes[] = {
           low_source,
           low_zero,
       };
-      const loom_type_t result_type =
-          loom_low_register_carrier_type_with_unit_count(
-              source_type, plan->result_unit_count);
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_amdgpu_build_low_register_range(
           context, source_op, lanes, IREE_ARRAYSIZE(lanes), result_type,
           &low_result));
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
-    case LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_NARROW: {
-      loom_type_t result_type = loom_type_none();
-      IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-          context, source_op, plan->result, &result_type));
+    case LOOM_AMDGPU_INDEX_CAST_KIND_NORMALIZING_NARROW: {
       loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
+      IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
+          context, source_op, plan->source, &low_source));
+      const loom_module_t* module = loom_low_lower_context_module(context);
+      const loom_scalar_type_t result_scalar_type =
+          loom_type_element_type(loom_module_value_type(module, plan->result));
+      const loom_low_representation_id_t required_representation =
+          result_scalar_type == LOOM_SCALAR_TYPE_INDEX
+              ? LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_SIGN_EXTENDED
+              : LOOM_AMDGPU_NARROW_INTEGER_REPRESENTATION_ZERO_EXTENDED;
       loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
-      const uint32_t mask = (UINT32_C(1) << plan->payload_bit_count) - 1;
-      if (loom_low_register_type_class_id(result_type) ==
-          LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
-        IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_vgpr_i32(
-            context, source_op, plan->source, &low_source));
-        IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr_binary_immediate(
-            context, source_op, plan->conversion_descriptor_ref, low_source,
-            mask, result_type, &low_result));
-      } else {
-        IREE_RETURN_IF_ERROR(
-            loom_low_lower_lookup_value(context, plan->source, &low_source));
-        IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr_binary_immediate(
-            context, source_op, plan->conversion_descriptor_ref, low_source,
-            mask, result_type, &low_result));
+      IREE_RETURN_IF_ERROR(loom_amdgpu_normalize_narrow_integer(
+          context, source_op, low_source, plan->payload_bit_count,
+          loom_amdgpu_source_integer_representation_lookup(context,
+                                                           plan->source),
+          required_representation, &low_result));
+      if (plan->result_unit_count == 2) {
+        if (result_scalar_type == LOOM_SCALAR_TYPE_INDEX) {
+          IREE_RETURN_IF_ERROR(loom_amdgpu_emit_i64_from_i32(
+              context, source_op, low_result, &low_result));
+        } else {
+          IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr64_from_u32(
+              context, source_op, low_result, &low_result));
+        }
       }
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
@@ -169,6 +181,16 @@ iree_status_t loom_amdgpu_lower_index_cast(
       IREE_RETURN_IF_ERROR(loom_amdgpu_lookup_or_materialize_i1_integer(
           context, source_op, plan->source,
           loom_low_register_type_class_id(result_type), &low_result));
+      if (plan->result_unit_count == 2) {
+        if (loom_low_register_type_class_id(result_type) ==
+            LOOM_AMDGPU_REG_CLASS_ID_VGPR) {
+          IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr64_from_u32(
+              context, source_op, low_result, &low_result));
+        } else {
+          IREE_RETURN_IF_ERROR(loom_amdgpu_emit_sgpr64_from_u32(
+              context, source_op, low_result, &low_result));
+        }
+      }
       return loom_low_lower_bind_value(context, plan->result, low_result);
     }
     case LOOM_AMDGPU_INDEX_CAST_KIND_NARROWING_INTEGER: {
