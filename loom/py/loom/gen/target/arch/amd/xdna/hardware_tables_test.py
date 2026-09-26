@@ -21,6 +21,9 @@ def test_hardware_table_family_is_emitted_from_one_materialized_source() -> None
     aie2p_profile_contents = emit_aie2p_target_profiles()
 
     assert "kLoomXdnaNpu2ArrayFamily" in array_contents
+    assert ".maximum_encoded_transfer_length = UINT32_C(0x00003fff)" in array_contents
+    assert ".maximum_encoded_transfer_length = UINT32_C(0x0001ffff)" in array_contents
+    assert ".maximum_encoded_transfer_length = UINT32_C(0xffffffff)" in array_contents
     assert "kLoomXdnaRegisterPatterns" in register_contents
     assert "kLoomXdnaRegisterFieldCount = 410" in register_contents
     assert "loom_xdna_device_profiles" in profile_contents

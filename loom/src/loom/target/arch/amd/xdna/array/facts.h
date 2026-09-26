@@ -133,6 +133,8 @@ typedef uint8_t loom_xdna_dma_feature_bits_t;
 typedef struct loom_xdna_dma_facts_t {
   // Exclusive maximum byte address accepted by the DMA engine.
   uint64_t address_maximum;
+  // Largest value accepted by the encoded transfer-length register field.
+  uint32_t maximum_encoded_transfer_length;
   // Number of buffer descriptors.
   uint16_t buffer_descriptor_count;
   // Maximum actual execution count for one queued DMA task.

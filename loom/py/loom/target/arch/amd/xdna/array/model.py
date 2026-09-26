@@ -116,6 +116,7 @@ class DmaEngineFacts:
     address_encoding_shift: int
     transfer_length_granularity: int
     transfer_length_offset: int
+    transfer_length_field: RegisterField
     memory_to_stream_port_base: int
     memory_to_stream_port_stride: int
     stream_to_memory_port_base: int
@@ -474,6 +475,41 @@ def _validate_registers(family: ArrayFamily) -> None:
             occupied_mask |= field.mask
 
 
+def _resolve_register_field(
+    family: ArrayFamily, expected_field: RegisterField
+) -> tuple[RegisterPattern, RegisterField]:
+    for pattern in family.registers:
+        for field in pattern.fields:
+            if field is expected_field:
+                return pattern, field
+    raise ValueError(f"{expected_field.name!r}: unavailable canonical register field")
+
+
+def _validate_dma_register_field(family: ArrayFamily, tile: TileFacts) -> None:
+    dma = tile.dma
+    if dma is None:
+        return
+    pattern, field = _resolve_register_field(family, dma.transfer_length_field)
+    if pattern.module not in tile.register_modules:
+        raise ValueError(
+            f"{tile.kind.value}: DMA length field uses unavailable register module"
+        )
+    if field.is_signed:
+        raise ValueError(f"{tile.kind.value}: DMA length field must be unsigned")
+    descriptor_dimensions = tuple(
+        dimension
+        for dimension in pattern.dimensions
+        if dimension.name == "buffer_descriptor"
+    )
+    if (
+        len(descriptor_dimensions) != 1
+        or descriptor_dimensions[0].count != dma.buffer_descriptor_count
+    ):
+        raise ValueError(
+            f"{tile.kind.value}: DMA length field does not cover buffer descriptors"
+        )
+
+
 def validate_array_family(family: ArrayFamily) -> None:
     """Validates one complete materialized physical-array fact set."""
     if not family.key or family.revision <= 0:
@@ -520,6 +556,16 @@ def validate_array_family(family: ArrayFamily) -> None:
         raise ValueError(f"{family.key}: invalid event domain")
     _validate_stream_ports(family)
     _validate_registers(family)
+    for tile in family.tiles:
+        _validate_dma_register_field(family, tile)
+
+
+def maximum_encoded_dma_transfer_length(tile: TileFacts) -> int:
+    """Returns the largest transfer-length field value for ``tile``."""
+    dma = tile.dma
+    if dma is None:
+        raise ValueError(f"{tile.kind.value}: tile has no DMA engine")
+    return (1 << dma.transfer_length_field.bit_width) - 1
 
 
 def register_field_count(family: ArrayFamily) -> int:
