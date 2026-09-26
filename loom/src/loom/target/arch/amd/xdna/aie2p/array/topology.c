@@ -11,6 +11,7 @@
 #include "loom/analysis/scc.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/facts.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
 
 // Mutable logical topology under validation before physical planning begins.
 typedef struct loom_aie2p_array_topology_t {
@@ -103,7 +104,7 @@ static iree_status_t loom_aie2p_array_topology_validate_worker_dependencies(
       };
       const loom_diagnostic_emission_t emission = {
           .op = plan->function_op,
-          .error = LOOM_ERR_TARGET_087,
+          .error = LOOM_ERR_XDNA_005,
           .params = params,
           .param_count = IREE_ARRAYSIZE(params),
       };

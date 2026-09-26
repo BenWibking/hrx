@@ -295,7 +295,7 @@ aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
 
-// ERROR@+1: TARGET/088 {channel="0", column="0", row="2", capacity="3", record_bytes="32768"}
+// ERROR@+1: XDNA/006 {channel="0", column="0", row="2", capacity="3", record_bytes="32768"}
 low.func.def public retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) @oversized_ring() asm {
   %one = constant.u32 1 : reg<aie2p.array.scalar : index>
   %zero = constant.u32 0 : reg<aie2p.array.scalar : index>

@@ -21,6 +21,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/array/route.h"
 #include "loom/target/arch/amd/xdna/aie2p/array/topology.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/array_descriptors.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
 #include "loom/util/fact_table.h"
 
 enum {
@@ -442,7 +443,7 @@ static iree_status_t loom_aie2p_array_extract_worker(
     const loom_diagnostic_param_t params[] = {loom_param_string(entry_name)};
     const loom_diagnostic_emission_t emission = {
         .op = op,
-        .error = LOOM_ERR_TARGET_125,
+        .error = LOOM_ERR_XDNA_016,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
@@ -491,7 +492,7 @@ static iree_status_t loom_aie2p_array_extract_worker(
       };
       const loom_diagnostic_emission_t emission = {
           .op = op,
-          .error = LOOM_ERR_TARGET_083,
+          .error = LOOM_ERR_XDNA_001,
           .params = params,
           .param_count = IREE_ARRAYSIZE(params),
       };
@@ -631,7 +632,7 @@ static iree_status_t loom_aie2p_array_extract_location(
     };
     const loom_diagnostic_emission_t emission = {
         .op = op,
-        .error = LOOM_ERR_TARGET_120,
+        .error = LOOM_ERR_XDNA_013,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
@@ -1040,7 +1041,7 @@ static iree_status_t loom_aie2p_array_select_compute_dma(
   };
   const loom_diagnostic_emission_t emission = {
       .op = builder->function_op,
-      .error = LOOM_ERR_TARGET_088,
+      .error = LOOM_ERR_XDNA_006,
       .params = params,
       .param_count = IREE_ARRAYSIZE(params),
   };
@@ -1483,7 +1484,7 @@ static iree_status_t loom_aie2p_array_diagnose_route_capacity(
   const loom_diagnostic_emission_t emission = {
       .op = loom_value_def_op(loom_value_table_const_value(
           &builder->module->values, builder->channels[channel_index].value_id)),
-      .error = LOOM_ERR_TARGET_092,
+      .error = LOOM_ERR_XDNA_007,
       .params = params,
       .param_count = IREE_ARRAYSIZE(params),
   };
@@ -1530,7 +1531,7 @@ static iree_status_t loom_aie2p_array_admit_dma_record_length(
   const loom_diagnostic_emission_t emission = {
       .op = loom_value_def_op(loom_value_table_const_value(
           &builder->module->values, channel->value_id)),
-      .error = LOOM_ERR_TARGET_126,
+      .error = LOOM_ERR_XDNA_017,
       .params = params,
       .param_count = IREE_ARRAYSIZE(params),
   };

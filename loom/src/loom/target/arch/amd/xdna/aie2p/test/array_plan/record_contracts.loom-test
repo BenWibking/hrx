@@ -14,7 +14,7 @@ low.func.def public retain target<amd.xdna.aie2p.array>(@temporal_fold_array_tar
   %row = constant.u32 2 : reg<aie2p.array.scalar : index>
 
   %group = group %lanes
-  // ERROR@+1: TARGET/083 {record_count="0"}
+  // ERROR@+1: XDNA/001 {record_count="0"}
   %worker = worker.fold %group, %lane, %lane, @copy_f32_record, 1, 1, "addf", 0
   %input = binding 0, "read"
   %output = binding 1, "write"

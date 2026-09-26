@@ -20,6 +20,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/array_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/pipeline/composition.h"
 #include "loom/target/arch/amd/xdna/array/facts.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
 
 enum { LOOM_AIE2P_PIPELINE_DEFAULT_CHANNEL_CAPACITY = 2 };
 
@@ -124,7 +125,7 @@ static iree_status_t loom_aie2p_pipeline_placement_initialize(
     };
     const loom_diagnostic_emission_t emission = {
         .op = plan->pipeline.op,
-        .error = LOOM_ERR_TARGET_094,
+        .error = LOOM_ERR_XDNA_009,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
@@ -1036,7 +1037,7 @@ iree_status_t loom_aie2p_pipeline_lower_to_array_low(
     const loom_diagnostic_param_t params[] = {loom_param_string(scope)};
     const loom_diagnostic_emission_t emission = {
         .op = pipeline.op,
-        .error = LOOM_ERR_TARGET_093,
+        .error = LOOM_ERR_XDNA_008,
         .params = params,
         .param_count = IREE_ARRAYSIZE(params),
     };
