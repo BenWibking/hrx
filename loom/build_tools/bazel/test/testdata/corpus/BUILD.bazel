@@ -68,6 +68,7 @@ loom_corpus(
     xfails = {
         ":profile_b": {
             "fixture.loom:@unsupported": "TARGET/072",
+            "fixture.loom:@unsupported_other": "TYPE/001",
         },
     },
 )

@@ -25,9 +25,9 @@ loom_cc_library(
 
 loom_cc_binary(
   NAME
-    loom-corpus-compile-xfail
+    loom-corpus-compile-xfails
   SRCS
-    "compile_xfail.c"
+    "compile_xfails.c"
   DEPS
     ::diagnostic_report
     iree::base
@@ -50,14 +50,14 @@ loom_cc_test(
 
 iree_execution_test_suite(
   NAME
-    compile_xfail_execution_test
+    compile_xfails_execution_test
   MANIFESTS
-    "compile_xfail.test.json"
+    "compile_xfails.test.json"
   TOOLS
     "loom-compile=loom::tools::loom-compile"
-    "loom-corpus-compile-xfail=::loom-corpus-compile-xfail"
+    "loom-corpus-compile-xfails=::loom-corpus-compile-xfails"
   DATA
-    "${PROJECT_SOURCE_DIR}/loom/build_tools/corpus/testdata/diagnostic_xfail.loom"
+    "${PROJECT_SOURCE_DIR}/loom/build_tools/corpus/testdata/diagnostic_xfails.loom"
   LABELS
     "hostonly"
 )

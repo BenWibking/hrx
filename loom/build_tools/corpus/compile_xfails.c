@@ -15,10 +15,14 @@
 #include "loom/target/tool/process.h"
 
 IREE_FLAG(string, compiler, "", "Exact filesystem path to loom-compile.");
-IREE_FLAG_NAMED(string, expected_diagnostic, "expected-diagnostic", "",
-                "Required compiler diagnostic identity as DOMAIN/NNN.");
+IREE_FLAG_LIST_NAMED(string, expected_root, "expected-root",
+                     "Root expected to fail. Repeat once per xfail.");
+IREE_FLAG_LIST_NAMED(
+    string, expected_diagnostic, "expected-diagnostic",
+    "Required compiler diagnostic identity as DOMAIN/NNN. Repeat in the same "
+    "order as --expected-root.");
 IREE_FLAG_NAMED(string, stamp_output, "stamp-output", "",
-                "Output stamp written only after the expected failure.");
+                "Output stamp written only after all expected failures.");
 
 static bool loom_corpus_argument_is_flag(iree_string_view_t argument,
                                          iree_string_view_t flag) {
@@ -37,6 +41,7 @@ static iree_status_t loom_corpus_validate_compiler_arguments(int argument_count,
       IREE_SV("--output"),
       IREE_SV("--compile-report"),
       IREE_SV("--compile-report-output"),
+      IREE_SV("--root"),
   };
   for (int i = 0; i < argument_count; ++i) {
     const iree_string_view_t argument = iree_make_cstring_view(arguments[i]);
@@ -52,26 +57,50 @@ static iree_status_t loom_corpus_validate_compiler_arguments(int argument_count,
   return iree_ok_status();
 }
 
-static iree_status_t loom_corpus_make_output_argument(
-    iree_string_view_t output_path, iree_allocator_t allocator,
-    char** out_argument) {
+static iree_status_t loom_corpus_make_compiler_argument(
+    iree_string_view_t prefix, iree_string_view_t value,
+    iree_allocator_t allocator, char** out_argument) {
   *out_argument = NULL;
-  const iree_string_view_t prefix = IREE_SV("--output=");
   iree_host_size_t argument_length = 0;
   iree_host_size_t allocation_size = 0;
-  if (!iree_host_size_checked_add(prefix.size, output_path.size,
-                                  &argument_length) ||
+  if (!iree_host_size_checked_add(prefix.size, value.size, &argument_length) ||
       !iree_host_size_checked_add(argument_length, 1, &allocation_size)) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "compiler output argument is too long");
+                            "compiler argument is too long");
   }
   char* argument = NULL;
   IREE_RETURN_IF_ERROR(
       iree_allocator_malloc(allocator, allocation_size, (void**)&argument));
   memcpy(argument, prefix.data, prefix.size);
-  memcpy(argument + prefix.size, output_path.data, output_path.size);
+  memcpy(argument + prefix.size, value.data, value.size);
   argument[argument_length] = '\0';
   *out_argument = argument;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_corpus_validate_expectations(
+    iree_flag_string_list_t expected_roots,
+    iree_flag_string_list_t expected_diagnostics) {
+  if (expected_roots.count == 0) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "at least one --expected-root is required");
+  }
+  if (expected_roots.count != expected_diagnostics.count) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "--expected-root and --expected-diagnostic counts must match");
+  }
+  for (iree_host_size_t i = 0; i < expected_roots.count; ++i) {
+    const iree_string_view_t root = expected_roots.values[i];
+    if (iree_string_view_is_empty(root) || root.data[0] != '@') {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "expected root '%.*s' must begin with '@'",
+                              (int)root.size, root.data);
+    }
+    loom_corpus_diagnostic_id_t diagnostic = {0};
+    IREE_RETURN_IF_ERROR(loom_corpus_diagnostic_id_parse(
+        expected_diagnostics.values[i], &diagnostic));
+  }
   return iree_ok_status();
 }
 
@@ -87,20 +116,17 @@ static void loom_corpus_print_compiler_stderr(
   }
 }
 
-static iree_status_t loom_corpus_compile_xfail(int argc, char** argv) {
+static iree_status_t loom_corpus_compile_xfails(int argc, char** argv) {
   const iree_string_view_t compiler_path =
       iree_make_cstring_view(FLAG_compiler);
-  const iree_string_view_t expected_diagnostic_text =
-      iree_make_cstring_view(FLAG_expected_diagnostic);
+  const iree_flag_string_list_t expected_roots = FLAG_expected_root_list();
+  const iree_flag_string_list_t expected_diagnostics =
+      FLAG_expected_diagnostic_list();
   const iree_string_view_t stamp_output_path =
       iree_make_cstring_view(FLAG_stamp_output);
   if (iree_string_view_is_empty(compiler_path)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "--compiler is required");
-  }
-  if (iree_string_view_is_empty(expected_diagnostic_text)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "--expected-diagnostic is required");
   }
   if (iree_string_view_is_empty(stamp_output_path)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -108,10 +134,8 @@ static iree_status_t loom_corpus_compile_xfail(int argc, char** argv) {
   }
   IREE_RETURN_IF_ERROR(
       loom_corpus_validate_compiler_arguments(argc - 1, argv + 1));
-
-  loom_corpus_diagnostic_id_t expected_diagnostic = {0};
-  IREE_RETURN_IF_ERROR(loom_corpus_diagnostic_id_parse(expected_diagnostic_text,
-                                                       &expected_diagnostic));
+  IREE_RETURN_IF_ERROR(
+      loom_corpus_validate_expectations(expected_roots, expected_diagnostics));
 
   iree_allocator_t allocator = iree_allocator_system();
   loom_tool_temp_file_t artifact_file = {0};
@@ -120,15 +144,16 @@ static iree_status_t loom_corpus_compile_xfail(int argc, char** argv) {
   const bool artifact_file_initialized = iree_status_is_ok(status);
   char* output_argument = NULL;
   if (iree_status_is_ok(status)) {
-    status = loom_corpus_make_output_argument(
-        loom_tool_temp_file_path(&artifact_file), allocator, &output_argument);
+    status = loom_corpus_make_compiler_argument(
+        IREE_SV("--output="), loom_tool_temp_file_path(&artifact_file),
+        allocator, &output_argument);
   }
 
   const iree_host_size_t compiler_argument_count = (iree_host_size_t)(argc - 1);
   iree_host_size_t total_argument_count = 0;
   iree_host_size_t argument_storage_size = 0;
   if (iree_status_is_ok(status) &&
-      (!iree_host_size_checked_add(compiler_argument_count, 3,
+      (!iree_host_size_checked_add(compiler_argument_count, 4,
                                    &total_argument_count) ||
        !iree_host_size_checked_mul(total_argument_count,
                                    sizeof(iree_string_view_t),
@@ -153,30 +178,58 @@ static iree_status_t loom_corpus_compile_xfail(int argc, char** argv) {
         iree_make_cstring_view(output_argument);
   }
 
-  loom_tool_process_result_t result = {0};
-  if (iree_status_is_ok(status)) {
-    status = loom_tool_process_run(compiler_path, /*search_path=*/false,
-                                   compiler_arguments, total_argument_count,
-                                   allocator, &result);
-  }
-  if (iree_status_is_ok(status)) {
-    const iree_string_view_t compile_report_json = iree_make_string_view(
-        result.stdout_bytes.data, result.stdout_bytes.length);
-    status = loom_corpus_compile_report_expect_diagnostic(
-        result.exit_code, compile_report_json, expected_diagnostic);
-    if (!iree_status_is_ok(status)) {
-      loom_corpus_print_compiler_stderr(&result.stderr_bytes);
+  iree_string_builder_t stamp_builder;
+  iree_string_builder_initialize(allocator, &stamp_builder);
+  for (iree_host_size_t i = 0;
+       i < expected_roots.count && iree_status_is_ok(status); ++i) {
+    const iree_string_view_t root = expected_roots.values[i];
+    const iree_string_view_t diagnostic_text = expected_diagnostics.values[i];
+    loom_corpus_diagnostic_id_t diagnostic = {0};
+    status = loom_corpus_diagnostic_id_parse(diagnostic_text, &diagnostic);
+
+    char* root_argument = NULL;
+    if (iree_status_is_ok(status)) {
+      status = loom_corpus_make_compiler_argument(IREE_SV("--root="), root,
+                                                  allocator, &root_argument);
     }
+    if (iree_status_is_ok(status)) {
+      compiler_arguments[compiler_argument_count + 3] =
+          iree_make_cstring_view(root_argument);
+    }
+
+    loom_tool_process_result_t result = {0};
+    if (iree_status_is_ok(status)) {
+      status = loom_tool_process_run(compiler_path, /*search_path=*/false,
+                                     compiler_arguments, total_argument_count,
+                                     allocator, &result);
+    }
+    if (iree_status_is_ok(status)) {
+      const iree_string_view_t compile_report_json = iree_make_string_view(
+          result.stdout_bytes.data, result.stdout_bytes.length);
+      status = loom_corpus_compile_report_expect_diagnostic(
+          result.exit_code, compile_report_json, diagnostic);
+      if (!iree_status_is_ok(status)) {
+        loom_corpus_print_compiler_stderr(&result.stderr_bytes);
+        status = iree_status_annotate_f(status, "corpus xfail root %.*s",
+                                        (int)root.size, root.data);
+      }
+    }
+    if (iree_status_is_ok(status)) {
+      status = iree_string_builder_append_format(
+          &stamp_builder, "%.*s %.*s\n", (int)root.size, root.data,
+          (int)diagnostic_text.size, diagnostic_text.data);
+    }
+    loom_tool_process_result_deinitialize(&result, allocator);
+    iree_allocator_free(allocator, root_argument);
   }
   if (iree_status_is_ok(status)) {
+    const iree_string_view_t stamp = iree_string_builder_view(&stamp_builder);
     status = iree_io_file_contents_write(
-        stamp_output_path,
-        iree_make_const_byte_span(expected_diagnostic_text.data,
-                                  expected_diagnostic_text.size),
+        stamp_output_path, iree_make_const_byte_span(stamp.data, stamp.size),
         allocator);
   }
 
-  loom_tool_process_result_deinitialize(&result, allocator);
+  iree_string_builder_deinitialize(&stamp_builder);
   iree_allocator_free(allocator, compiler_arguments);
   iree_allocator_free(allocator, output_argument);
   if (artifact_file_initialized) {
@@ -188,11 +241,12 @@ static iree_status_t loom_corpus_compile_xfail(int argc, char** argv) {
 
 int main(int argc, char** argv) {
   iree_flags_set_usage(
-      "loom-corpus-compile-xfail",
-      "Runs one Loom corpus root and succeeds only for its declared compiler "
-      "diagnostic. Remaining arguments are passed to loom-compile.");
+      "loom-corpus-compile-xfails",
+      "Independently runs Loom corpus roots and succeeds only when each emits "
+      "its declared compiler diagnostic. Remaining arguments are passed to "
+      "loom-compile.");
   iree_flags_parse_checked(IREE_FLAGS_PARSE_MODE_UNDEFINED_OK, &argc, &argv);
-  iree_status_t status = loom_corpus_compile_xfail(argc, argv);
+  iree_status_t status = loom_corpus_compile_xfails(argc, argv);
   if (iree_status_is_ok(status)) {
     return EXIT_SUCCESS;
   }

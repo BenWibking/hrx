@@ -70,6 +70,10 @@ loom_corpus(
     "fixture.loom"
     "@unsupported"
     "TARGET/072"
+    "::profile_b"
+    "fixture.loom"
+    "@unsupported_other"
+    "TYPE/001"
   EXCLUDES
     "::profile_c"
     "fixture.loom"

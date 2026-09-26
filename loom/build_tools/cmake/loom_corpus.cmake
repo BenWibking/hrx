@@ -294,36 +294,39 @@ function(loom_corpus)
       list(APPEND _PROGRAM_REPORTS "${_REPORT}")
 
       list(LENGTH _XFAIL_ROOTS _PROFILE_XFAIL_COUNT)
-      set(_PROFILE_XFAIL_INDEX 0)
-      while(_PROFILE_XFAIL_INDEX LESS _PROFILE_XFAIL_COUNT)
-        list(GET _XFAIL_ROOTS ${_PROFILE_XFAIL_INDEX} _ROOT)
-        list(GET _XFAIL_DIAGNOSTICS ${_PROFILE_XFAIL_INDEX} _DIAGNOSTIC)
-        math(EXPR _PROFILE_XFAIL_INDEX "${_PROFILE_XFAIL_INDEX} + 1")
-        string(REGEX REPLACE "^@" "" _ROOT_STEM "${_ROOT}")
-        string(REGEX REPLACE "[:/]+" "-" _ROOT_STEM "${_ROOT_STEM}")
-        set(_XFAIL_RESULT
-          "${_OUTPUT_DIR}/${_PROFILE_STEM}.${_ROOT_STEM}.xfail")
+      if(_PROFILE_XFAIL_COUNT GREATER 0)
+        set(_XFAIL_ARGS)
+        set(_PROFILE_XFAIL_INDEX 0)
+        while(_PROFILE_XFAIL_INDEX LESS _PROFILE_XFAIL_COUNT)
+          list(GET _XFAIL_ROOTS ${_PROFILE_XFAIL_INDEX} _ROOT)
+          list(GET _XFAIL_DIAGNOSTICS ${_PROFILE_XFAIL_INDEX} _DIAGNOSTIC)
+          math(EXPR _PROFILE_XFAIL_INDEX "${_PROFILE_XFAIL_INDEX} + 1")
+          list(APPEND _XFAIL_ARGS
+            "--expected-root=${_ROOT}"
+            "--expected-diagnostic=${_DIAGNOSTIC}"
+          )
+        endwhile()
+        set(_XFAIL_RESULT "${_OUTPUT_DIR}/${_PROFILE_STEM}.xfails")
         add_custom_command(
           OUTPUT "${_XFAIL_RESULT}"
           COMMAND "${CMAKE_COMMAND}" -E make_directory "${_OUTPUT_DIR}"
-          COMMAND "$<TARGET_FILE:loom::build_tools::corpus::loom-corpus-compile-xfail>"
+          COMMAND "$<TARGET_FILE:loom::build_tools::corpus::loom-corpus-compile-xfails>"
             "--compiler=$<TARGET_FILE:loom::tools::loom-compile>"
-            "--expected-diagnostic=${_DIAGNOSTIC}"
             "--stamp-output=${_XFAIL_RESULT}"
+            ${_XFAIL_ARGS}
             "${_SUBJECT_MODULE}"
-            "--root=${_ROOT}"
             "--product=${_PRODUCT}"
             "--target=${_COMPILER_TARGET}"
           DEPENDS
-            loom::build_tools::corpus::loom-corpus-compile-xfail
+            loom::build_tools::corpus::loom-corpus-compile-xfails
             loom::tools::loom-compile
             "${_SUBJECT_MODULE}"
-          COMMENT "Probing corpus diagnostic xfail ${_ROOT} for ${_COMPILER_TARGET}"
+          COMMENT "Probing corpus diagnostic xfails in ${_SOURCE} for ${_COMPILER_TARGET}"
           VERBATIM
         )
         list(APPEND _PROGRAM_OUTPUTS "${_XFAIL_RESULT}")
         list(APPEND _PROGRAM_XFAIL_RESULTS "${_XFAIL_RESULT}")
-      endwhile()
+      endif()
     endforeach()
 
     if(_AVAILABLE_PROFILE_COUNT GREATER 0 AND NOT _PROGRAM_OUTPUTS)

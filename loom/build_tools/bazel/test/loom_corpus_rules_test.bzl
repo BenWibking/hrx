@@ -71,26 +71,30 @@ def _test_program_fans_out_by_profile_impl(env, target):
         env.fail("profile A inherited profile B's xfail: %r" % profile_a.argv)
     if "--exclude-root=@unsupported" not in profile_b.argv:
         env.fail("profile B did not exclude its xfail: %r" % profile_b.argv)
+    if "--exclude-root=@unsupported_other" not in profile_b.argv:
+        env.fail("profile B did not exclude its second xfail: %r" % profile_b.argv)
 
-def _test_program_exposes_outputs_and_xfail_probe(name, **kwargs):
+def _test_program_exposes_outputs_and_batched_xfails(name, **kwargs):
     analysis_test(
         name = name,
-        impl = _test_program_exposes_outputs_and_xfail_probe_impl,
+        impl = _test_program_exposes_outputs_and_batched_xfails_impl,
         target = _FIXTURE + ":corpus_fixture",
         **kwargs
     )
 
-def _test_program_exposes_outputs_and_xfail_probe_impl(env, target):
+def _test_program_exposes_outputs_and_batched_xfails_impl(env, target):
     actions = target[TestingAspectInfo].actions
-    xfail_actions = _actions_with_mnemonic(actions, "LoomCorpusXfail")
+    xfail_actions = _actions_with_mnemonic(actions, "LoomCorpusXfails")
     if len(xfail_actions) != 1:
-        env.fail("expected one diagnostic xfail probe, got %r" % xfail_actions)
+        env.fail("expected one batched diagnostic-xfail action, got %r" % xfail_actions)
         return
     xfail_action = xfail_actions[0]
     for expected_arg in [
+        "--expected-root=@unsupported",
         "--expected-diagnostic=TARGET/072",
+        "--expected-root=@unsupported_other",
+        "--expected-diagnostic=TYPE/001",
         "--product=module",
-        "--root=@unsupported",
         "--target=fake:b",
     ]:
         if expected_arg not in xfail_action.argv:
@@ -104,7 +108,7 @@ def _test_program_exposes_outputs_and_xfail_probe_impl(env, target):
         "fake-a.compile.json",
         "fake-b.artifact",
         "fake-b.compile.json",
-        "fake-b.unsupported.xfail",
+        "fake-b.xfails",
     ]:
         _expect_basename(env, default_files, basename)
     if len(target[OutputGroupInfo].artifacts.to_list()) != 2:
@@ -159,7 +163,7 @@ def loom_corpus_rules_test_suite(name):
         name = name,
         tests = [
             _test_aggregate_collects_program_outputs,
-            _test_program_exposes_outputs_and_xfail_probe,
+            _test_program_exposes_outputs_and_batched_xfails,
             _test_program_fans_out_by_profile,
             _test_unsupported_product_fails,
         ],

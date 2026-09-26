@@ -22,7 +22,7 @@ _LoomCorpusProgramInfo = provider(
     fields = {
         "artifacts": "Depset of deployable artifacts across target profiles.",
         "compile_reports": "Depset of detailed compile reports.",
-        "qualification_results": "Depset of successful diagnostic-xfail probes.",
+        "qualification_results": "Depset of batched diagnostic-xfail results.",
         "sources": "Depset containing the qualified Loom source.",
     },
 )
@@ -32,7 +32,7 @@ LoomCorpusInfo = provider(
     fields = {
         "artifacts": "Depset of deployable artifacts across programs and profiles.",
         "compile_reports": "Depset of detailed compile reports.",
-        "qualification_results": "Depset of successful diagnostic-xfail probes.",
+        "qualification_results": "Depset of batched diagnostic-xfail results.",
         "sources": "Depset of qualified Loom sources.",
     },
 )
@@ -106,30 +106,28 @@ def _declare_positive_compile(ctx, source, product, profile, xfails):
     )
     return artifact, compile_report
 
-def _declare_xfail_probe(ctx, source, product, profile, root, diagnostic):
+def _declare_xfail_probes(ctx, source, product, profile, xfails):
     profile_info = profile[LoomTargetProfileInfo]
-    root_stem = root[1:].replace(":", "-").replace("/", "-")
     output_stem = ctx.label.name + "/" + _profile_stem(profile)
-    result = ctx.actions.declare_file(
-        "%s.%s.xfail" % (output_stem, root_stem),
-    )
+    result = ctx.actions.declare_file(output_stem + ".xfails")
     compile_tool = ctx.toolchains[_LOOM_COMPILE_TOOLCHAIN_TYPE].tool
     args = ctx.actions.args()
     args.add("--compiler=%s" % compile_tool.executable.path)
-    args.add("--expected-diagnostic=%s" % diagnostic)
     args.add("--stamp-output=%s" % result.path)
+    for root in sorted(xfails):
+        args.add("--expected-root=%s" % root)
+        args.add("--expected-diagnostic=%s" % xfails[root])
     args.add(source)
-    args.add("--root=%s" % root)
     args.add("--product=%s" % product)
     args.add("--target=%s:%s" % (profile_info.family, profile_info.selector))
     ctx.actions.run(
         arguments = [args],
-        executable = ctx.executable._xfail_tool,
+        executable = ctx.executable._xfails_tool,
         inputs = [source],
-        mnemonic = "LoomCorpusXfail",
+        mnemonic = "LoomCorpusXfails",
         outputs = [result],
-        progress_message = "Probing corpus diagnostic xfail %s for %s" % (
-            root,
+        progress_message = "Probing corpus diagnostic xfails in %s for %s" % (
+            source.short_path,
             profile.label,
         ),
         tools = [compile_tool.files_to_run],
@@ -198,14 +196,13 @@ def _loom_corpus_program_impl(ctx):
         )
         artifacts.append(artifact)
         compile_reports.append(compile_report)
-        for root in sorted(xfails):
-            qualification_results.append(_declare_xfail_probe(
+        if xfails:
+            qualification_results.append(_declare_xfail_probes(
                 ctx,
                 subject_module,
                 ctx.attr.product,
                 profile,
-                root,
-                xfails[root],
+                xfails,
             ))
 
     if not artifacts and not qualification_results:
@@ -262,9 +259,9 @@ _loom_corpus_program = rule(
         "xfails": attr.label_keyed_string_dict(
             doc = "Concrete target profiles mapped to encoded root diagnostics.",
         ),
-        "_xfail_tool": attr.label(
+        "_xfails_tool": attr.label(
             cfg = "exec",
-            default = Label("//loom/build_tools/corpus:loom-corpus-compile-xfail"),
+            default = Label("//loom/build_tools/corpus:loom-corpus-compile-xfails"),
             executable = True,
         ),
     },

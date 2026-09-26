@@ -2,17 +2,19 @@
   "version": 1,
   "cases": [
     {
-      "name": "accepts the declared diagnostic",
+      "name": "accepts all declared diagnostics",
       "run": {
-        "tool": "loom-corpus-compile-xfail",
+        "tool": "loom-corpus-compile-xfails",
         "args": [
           "--compiler={tool:loom-compile}",
+          "--expected-root=@uninlined_call",
+          "--expected-diagnostic=TARGET/072",
+          "--expected-root=@second_uninlined_call",
           "--expected-diagnostic=TARGET/072",
           "--stamp-output={tmp}/expected.stamp",
-          "{srcdir}/testdata/diagnostic_xfail.loom",
+          "{srcdir}/testdata/diagnostic_xfails.loom",
           "--pipeline=none",
-          "--product=kernel",
-          "--root=uninlined_call"
+          "--product=kernel"
         ]
       },
       "stdout": {"empty": true},
@@ -20,22 +22,25 @@
       "files": [
         {
           "path": "{tmp}/expected.stamp",
-          "contains": ["TARGET/072"]
+          "contains": [
+            "@uninlined_call TARGET/072",
+            "@second_uninlined_call TARGET/072"
+          ]
         }
       ]
     },
     {
       "name": "rejects the wrong diagnostic",
       "run": {
-        "tool": "loom-corpus-compile-xfail",
+        "tool": "loom-corpus-compile-xfails",
         "args": [
           "--compiler={tool:loom-compile}",
+          "--expected-root=@uninlined_call",
           "--expected-diagnostic=TYPE/001",
           "--stamp-output={tmp}/wrong.stamp",
-          "{srcdir}/testdata/diagnostic_xfail.loom",
+          "{srcdir}/testdata/diagnostic_xfails.loom",
           "--pipeline=none",
-          "--product=kernel",
-          "--root=uninlined_call"
+          "--product=kernel"
         ]
       },
       "exit": 1,
@@ -49,18 +54,20 @@
       "files": [{"path": "{tmp}/wrong.stamp", "exists": false}]
     },
     {
-      "name": "detects xpass",
+      "name": "detects xpass after an expected failure",
       "run": {
-        "tool": "loom-corpus-compile-xfail",
+        "tool": "loom-corpus-compile-xfails",
         "args": [
           "--compiler={tool:loom-compile}",
+          "--expected-root=@uninlined_call",
+          "--expected-diagnostic=TARGET/072",
+          "--expected-root=@valid_array",
           "--expected-diagnostic=TARGET/072",
           "--stamp-output={tmp}/xpass.stamp",
-          "{srcdir}/testdata/diagnostic_xfail.loom",
+          "{srcdir}/testdata/diagnostic_xfails.loom",
           "--pipeline=none",
           "--product=kernel",
-          "--target=amd.xdna.aie2p:amd.xdna.strix_halo.17f0_11",
-          "--root=valid_array"
+          "--target=amd.xdna.aie2p:amd.xdna.strix_halo.17f0_11"
         ]
       },
       "exit": 1,
@@ -70,15 +77,15 @@
     {
       "name": "distinguishes a missing root",
       "run": {
-        "tool": "loom-corpus-compile-xfail",
+        "tool": "loom-corpus-compile-xfails",
         "args": [
           "--compiler={tool:loom-compile}",
+          "--expected-root=@renamed",
           "--expected-diagnostic=TARGET/072",
           "--stamp-output={tmp}/missing.stamp",
-          "{srcdir}/testdata/diagnostic_xfail.loom",
+          "{srcdir}/testdata/diagnostic_xfails.loom",
           "--pipeline=none",
-          "--product=kernel",
-          "--root=renamed"
+          "--product=kernel"
         ]
       },
       "exit": 1,

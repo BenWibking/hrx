@@ -30,8 +30,8 @@ loom_cc_library(
 )
 
 loom_cc_binary(
-    name = "loom-corpus-compile-xfail",
-    srcs = ["compile_xfail.c"],
+    name = "loom-corpus-compile-xfails",
+    srcs = ["compile_xfails.c"],
     visibility = ["//visibility:public"],
     deps = [
         ":diagnostic_report",
@@ -54,14 +54,14 @@ loom_cc_test(
 )
 
 iree_execution_test_suite(
-    name = "compile_xfail_execution_test",
+    name = "compile_xfails_execution_test",
     data = [
-        "testdata/diagnostic_xfail.loom",
+        "testdata/diagnostic_xfails.loom",
     ],
-    manifests = ["compile_xfail.test.json"],
+    manifests = ["compile_xfails.test.json"],
     tags = ["hostonly"],
     tools = {
         "loom-compile": "//loom/src/loom/tools/loom-compile",
-        "loom-corpus-compile-xfail": ":loom-corpus-compile-xfail",
+        "loom-corpus-compile-xfails": ":loom-corpus-compile-xfails",
     },
 )
