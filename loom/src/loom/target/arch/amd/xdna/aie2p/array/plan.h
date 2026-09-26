@@ -217,6 +217,8 @@ typedef struct loom_aie2p_array_worker_plan_t {
   uint32_t first_port;
   // Number of contiguous ports, ordered by their first channel binding.
   uint32_t port_count;
+  // Number of resident ring positions consumed by leaf or generated code.
+  uint32_t resident_state_count;
   // Private ordered-fold state reserved before channel rings are placed.
   loom_aie2p_array_fold_state_plan_t fold_state;
 } loom_aie2p_array_worker_plan_t;
@@ -239,7 +241,7 @@ typedef struct loom_aie2p_array_worker_storage_plan_t {
 typedef struct loom_aie2p_array_worker_port_plan_t {
   // Index of the logical worker owning the port.
   uint32_t worker_index;
-  // Leaf resource import index selected by the port.
+  // Worker ABI port index selected by the topology endpoint.
   uint32_t port;
   // Sender or receiver direction of the worker endpoint.
   loom_aie2p_array_endpoint_direction_t direction;
@@ -247,6 +249,9 @@ typedef struct loom_aie2p_array_worker_port_plan_t {
   uint32_t channel_index;
   // First row of the credit/ready lock pair used by the resident worker.
   uint32_t credit_lock_index;
+  // Worker-local resident state ordinal carrying the ring position, or
+  // UINT32_MAX when neither the leaf nor generated code consumes its address.
+  uint32_t resident_state_ordinal;
 } loom_aie2p_array_worker_port_plan_t;
 
 // One endpoint's physical view of a channel record.
@@ -439,6 +444,9 @@ typedef struct loom_aie2p_array_plan_t {
   // from its requirements. It shares the worker_ports allocation; unused
   // topology ports require synchronization but have no resource-map entry.
   const uint32_t* worker_resource_ports;
+  // Worker-local resident state ordinals in folded-output order. Each worker
+  // range starts at first_port and contains fold_output_count entries.
+  const uint32_t* worker_fold_output_states;
   // Logical channel slots with endpoint-local storage views.
   const loom_aie2p_array_channel_slot_t* channel_slots;
   // Number of logical channel slots.

@@ -112,6 +112,8 @@ typedef struct loom_aie2p_array_plan_builder_t {
   loom_aie2p_array_worker_port_plan_t* worker_ports;
   // Source-resource ordinals mapped to the corresponding physical port row.
   uint32_t* worker_resource_ports;
+  // Fold-output ordinals mapped to worker-local resident state ordinals.
+  uint32_t* worker_fold_output_states;
   loom_aie2p_array_channel_slot_t* channel_slots;
   loom_aie2p_array_lock_plan_t* locks;
   loom_aie2p_array_dma_plan_t* dma_channels;
@@ -1336,6 +1338,7 @@ static void loom_aie2p_array_bind_worker_port(
       .direction = endpoint->direction,
       .channel_index = channel_index,
       .credit_lock_index = credit_lock_index,
+      .resident_state_ordinal = endpoint->worker_resource_ordinal,
   };
 }
 
@@ -1870,13 +1873,17 @@ static iree_status_t loom_aie2p_array_allocate_physical_plan(
       sizeof(*builder->worker_storage), (void**)&builder->worker_storage));
   IREE_RETURN_IF_ERROR(loom_aie2p_array_allocate_array(
       builder->arena, builder->plan->worker_port_count,
-      sizeof(*builder->worker_ports) + sizeof(*builder->worker_resource_ports),
+      sizeof(*builder->worker_ports) + sizeof(*builder->worker_resource_ports) +
+          sizeof(*builder->worker_fold_output_states),
       (void**)&builder->worker_ports));
-  // The two u32-aligned arrays share one allocation. Physical ports retain
-  // channel order; the trailing index array retains source resource order.
+  // The u32-aligned arrays share one allocation. Physical ports retain channel
+  // order; the trailing index arrays retain source resource and folded-output
+  // order.
   if (builder->plan->worker_port_count != 0) {
     builder->worker_resource_ports =
         (uint32_t*)(builder->worker_ports + builder->plan->worker_port_count);
+    builder->worker_fold_output_states =
+        builder->worker_resource_ports + builder->plan->worker_port_count;
   }
   IREE_RETURN_IF_ERROR(loom_aie2p_array_allocate_array(
       builder->arena, builder->plan->channel_slot_count,
@@ -1907,6 +1914,7 @@ static iree_status_t loom_aie2p_array_allocate_physical_plan(
   builder->plan->worker_storage = builder->worker_storage;
   builder->plan->worker_ports = builder->worker_ports;
   builder->plan->worker_resource_ports = builder->worker_resource_ports;
+  builder->plan->worker_fold_output_states = builder->worker_fold_output_states;
   builder->plan->channel_slots = builder->channel_slots;
   builder->plan->locks = builder->locks;
   builder->plan->dma_channels = builder->dma_channels;
@@ -1914,6 +1922,37 @@ static iree_status_t loom_aie2p_array_allocate_physical_plan(
   builder->plan->binding_plans = builder->binding_plans;
   builder->plan->completion_routes = builder->completion_routes;
   return loom_aie2p_array_initialize_tile_states(builder);
+}
+
+static void loom_aie2p_array_finalize_worker_port_states(
+    loom_aie2p_array_plan_builder_t* builder) {
+  for (iree_host_size_t worker_index = 0;
+       worker_index < builder->plan->worker_count; ++worker_index) {
+    const loom_aie2p_array_worker_t* worker = &builder->workers[worker_index];
+    loom_aie2p_array_worker_plan_t* worker_plan =
+        &builder->worker_plans[worker_index];
+    uint32_t next_state_ordinal =
+        (uint32_t)worker_plan->requirements->resource_count;
+    for (uint32_t port_ordinal = 0; port_ordinal < worker_plan->port_count;
+         ++port_ordinal) {
+      loom_aie2p_array_worker_port_plan_t* port =
+          &builder->worker_ports[worker_plan->first_port + port_ordinal];
+      const bool is_fold_output =
+          port->direction == LOOM_AIE2P_ARRAY_ENDPOINT_DIRECTION_SEND &&
+          port->port >= worker->fold_output_port &&
+          port->port - worker->fold_output_port < worker->fold_output_count;
+      if (is_fold_output) {
+        if (port->resident_state_ordinal == UINT32_MAX) {
+          port->resident_state_ordinal = next_state_ordinal++;
+        }
+        builder
+            ->worker_fold_output_states[worker_plan->first_port + port->port -
+                                        worker->fold_output_port] =
+            port->resident_state_ordinal;
+      }
+    }
+    worker_plan->resident_state_count = next_state_ordinal;
+  }
 }
 
 static void loom_aie2p_array_finalize_physical_counts(
@@ -1976,6 +2015,7 @@ iree_status_t loom_aie2p_array_plan_build(
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_fold_states(&builder));
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_channels(&builder));
   if (builder.valid) {
+    loom_aie2p_array_finalize_worker_port_states(&builder);
     loom_aie2p_array_finalize_physical_counts(&builder);
     *out_plan = plan;
     *out_valid = true;
