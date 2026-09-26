@@ -1278,6 +1278,9 @@ def test_pure_integer_valu_results_are_rematerializable() -> None:
         "amdgpu.v_mul_u32_u24.src0_inline",
         "amdgpu.v_mul_u32_u24.lit",
         "amdgpu.v_mad_u32_u24",
+        "amdgpu.v_mad_u32_u24.src0_inline",
+        "amdgpu.v_mad_u32_u24.src1_inline",
+        "amdgpu.v_mad_u32_u24.src2_inline",
         "amdgpu.v_min_i32",
         "amdgpu.v_max_i32",
         "amdgpu.v_min_u32",
@@ -3033,6 +3036,34 @@ def test_vop3_shift_immediate_is_constrained_to_inline_source_selector() -> None
     assert immediate.field_name == "imm32"
     assert immediate.encoding_id == _SOURCE_INLINE_U32_ENCODING_ID
     assert immediate.unsigned_max == 64
+
+
+def test_vop3_integer_mad_uses_inline_then_literal_operand_forms() -> None:
+    for overlays in (
+        _gfx11_core_overlays(),
+        _gfx12_core_overlays(),
+    ):
+        descriptors = {descriptor.descriptor_key: descriptor for descriptor in overlays}
+        descriptor = descriptors["amdgpu.v_mad_u32_u24"]
+        assert tuple(
+            form.replacement_descriptor for form in descriptor.operand_forms
+        ) == (
+            "amdgpu.v_mad_u32_u24.src0_inline",
+            "amdgpu.v_mad_u32_u24.src1_inline",
+            "amdgpu.v_mad_u32_u24.src2_inline",
+            "amdgpu.v_mad_u32_u24.src0_lit",
+            "amdgpu.v_mad_u32_u24.src1_lit",
+            "amdgpu.v_mad_u32_u24.src2_lit",
+        )
+        for source, field in (
+            ("src0", "SRC0"),
+            ("src1", "SRC1"),
+            ("src2", "SRC2"),
+        ):
+            inline = descriptors[f"amdgpu.v_mad_u32_u24.{source}_inline"]
+            assert inline.immediate_fields == (field,)
+            assert len(inline.immediates) == 1
+            assert inline.immediates[0].encoding_id == _SOURCE_INLINE_U32_ENCODING_ID
 
 
 def test_vop3_mixed_inline_literal_immediates_name_both_encoding_fields() -> None:
