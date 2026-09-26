@@ -175,6 +175,7 @@ loom_cc_library(
     hdrs = ["low_verify.h"],
     deps = [
         ":array_descriptors",
+        ":core_descriptors",
         "//loom/src/loom/codegen/low:diagnostics",
         "//loom/src/loom/codegen/low:packet",
         "//loom/src/loom/codegen/low:verify",
@@ -183,6 +184,7 @@ loom_cc_library(
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:projection",
+        "//loom/src/loom/target:registers",
         "//runtime/src/iree/base",
     ],
 )

@@ -65,6 +65,8 @@ typedef struct loom_aie2p_array_resident_builder_t {
   loom_string_id_t vector_index_name;
   // Interned `id` lock-selector field name.
   loom_string_id_t lock_selector_name;
+  // AIE2P endpoint register type carrying resident ring addresses.
+  loom_type_t endpoint_address_type;
   // Scalar register type carrying signed lock deltas.
   loom_type_t lock_delta_type;
   // 512-bit vector register range used to move scalar F32 values.
@@ -78,8 +80,6 @@ typedef struct loom_aie2p_array_resident_builder_t {
 typedef struct loom_aie2p_array_resident_port_state_t {
   // Physical channel port represented by this loop-carried state.
   const loom_aie2p_array_worker_port_plan_t* port;
-  // Low register type carrying endpoint-visible local addresses.
-  loom_type_t address_type;
   // Current local address argument on the firing header.
   loom_value_id_t current_address;
   // Current ring slot argument, or invalid for a single-slot channel.
@@ -563,7 +563,7 @@ static iree_status_t loom_aie2p_array_resident_build_fragment_address(
   return loom_aie2p_array_resident_build_unary(
       builder, ir_builder,
       AIE2P_CORE_DESCRIPTOR_REF_MOVE_SCALAR_TO_LOCAL_ADDRESS, fragment_bits,
-      output->address_type, location, out_address);
+      builder->endpoint_address_type, location, out_address);
 }
 
 // Repeated fragments share one loop body. Only the byte offset crosses its
@@ -581,7 +581,7 @@ static iree_status_t loom_aie2p_array_resident_build_private_fold_span(
       &output_address));
   loom_value_id_t state_address = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_aie2p_array_resident_build_address(
-      builder, ir_builder, output->address_type,
+      builder, ir_builder, builder->endpoint_address_type,
       state->load_address + span->state_byte_offset, location, &state_address));
 
   loom_region_t* region = ir_builder->ip.block->parent_region;
@@ -633,7 +633,7 @@ static iree_status_t loom_aie2p_array_resident_build_private_fold_span(
     IREE_RETURN_IF_ERROR(loom_aie2p_array_resident_build_unary(
         builder, ir_builder,
         AIE2P_CORE_DESCRIPTOR_REF_MOVE_SCALAR_TO_LOCAL_ADDRESS, output_bits,
-        output->address_type, location, &output_address));
+        builder->endpoint_address_type, location, &output_address));
     loom_value_id_t state_bits = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_aie2p_array_resident_build_binary(
         builder, ir_builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, state_base,
@@ -641,7 +641,7 @@ static iree_status_t loom_aie2p_array_resident_build_private_fold_span(
     IREE_RETURN_IF_ERROR(loom_aie2p_array_resident_build_unary(
         builder, ir_builder,
         AIE2P_CORE_DESCRIPTOR_REF_MOVE_SCALAR_TO_LOCAL_ADDRESS, state_bits,
-        output->address_type, location, &state_address));
+        builder->endpoint_address_type, location, &state_address));
   }
 
   const loom_value_id_t source_address =
@@ -848,15 +848,13 @@ static iree_status_t loom_aie2p_array_resident_bind_resources(
           &port_states[port_state_index++];
       *port_state = (loom_aie2p_array_resident_port_state_t){
           .port = port,
-          .address_type =
-              loom_module_value_type(builder->module, resource_value),
           .current_address = LOOM_VALUE_ID_INVALID,
           .current_slot = LOOM_VALUE_ID_INVALID,
           .next_address = LOOM_VALUE_ID_INVALID,
           .next_slot = LOOM_VALUE_ID_INVALID,
       };
       IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
-          ir_builder, firing_header, port_state->address_type,
+          ir_builder, firing_header, builder->endpoint_address_type,
           &port_state->current_address));
       if (channel->capacity > 2) {
         IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
@@ -870,7 +868,7 @@ static iree_status_t loom_aie2p_array_resident_bind_resources(
       loom_op_t* copy_op = NULL;
       IREE_RETURN_IF_ERROR(loom_low_copy_build(
           ir_builder, port_state->current_address, /*detached=*/false,
-          port_state->address_type, op->location, &copy_op));
+          builder->endpoint_address_type, op->location, &copy_op));
       const loom_value_id_t local_address = loom_low_copy_result(copy_op);
       IREE_RETURN_IF_ERROR(loom_module_move_value_name(
           builder->module, resource_value, local_address));
@@ -895,7 +893,7 @@ static iree_status_t loom_aie2p_array_resident_define_state_arguments(
         &builder->plan->channels[source_states[i].port->channel_index];
     out_states[i] = source_states[i];
     IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
-        ir_builder, block, source_states[i].address_type,
+        ir_builder, block, builder->endpoint_address_type,
         &out_states[i].current_address));
     out_states[i].current_slot = LOOM_VALUE_ID_INVALID;
     if (channel->capacity > 2) {
@@ -936,7 +934,7 @@ static iree_status_t loom_aie2p_array_resident_build_initial_state(
     loom_aie2p_array_resident_port_state_t* port_state = &port_states[i];
     loom_value_id_t address = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_aie2p_array_resident_build_address(
-        builder, ir_builder, port_state->address_type,
+        builder, ir_builder, builder->endpoint_address_type,
         loom_aie2p_array_resident_port_slot_address(builder->plan,
                                                     port_state->port, 0),
         location, &address));
@@ -1007,7 +1005,7 @@ static iree_status_t loom_aie2p_array_resident_build_port_advance(
     return loom_aie2p_array_resident_build_unary(
         builder, ir_builder,
         AIE2P_CORE_DESCRIPTOR_REF_MOVE_SCALAR_TO_LOCAL_ADDRESS,
-        next_address_bits, port_state->address_type, location,
+        next_address_bits, builder->endpoint_address_type, location,
         &port_state->next_address);
   }
 
@@ -1035,7 +1033,8 @@ static iree_status_t loom_aie2p_array_resident_build_port_advance(
       loom_region_append_block(builder->module, region, &merge_block));
   loom_value_id_t next_address_arg = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
-      ir_builder, merge_block, port_state->address_type, &next_address_arg));
+      ir_builder, merge_block, builder->endpoint_address_type,
+      &next_address_arg));
   loom_value_id_t next_slot_arg = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
       ir_builder, merge_block, builder->lock_delta_type, &next_slot_arg));
@@ -1063,7 +1062,7 @@ static iree_status_t loom_aie2p_array_resident_build_port_advance(
     loom_builder_set_block(ir_builder, address_blocks[slot]);
     loom_value_id_t address = LOOM_VALUE_ID_INVALID;
     IREE_RETURN_IF_ERROR(loom_aie2p_array_resident_build_address(
-        builder, ir_builder, port_state->address_type,
+        builder, ir_builder, builder->endpoint_address_type,
         loom_aie2p_array_resident_port_slot_address(builder->plan,
                                                     port_state->port, slot),
         location, &address));
@@ -1763,6 +1762,9 @@ iree_status_t loom_aie2p_array_materialize_resident_program(
                                                  &builder.vector_index_name));
   IREE_RETURN_IF_ERROR(loom_module_intern_string(module, IREE_SV("id"),
                                                  &builder.lock_selector_name));
+  IREE_RETURN_IF_ERROR(loom_low_build_register_type(
+      builder.descriptor_set, AIE2P_CORE_REG_CLASS_ID_AIE2P_EP, 1,
+      &builder.endpoint_address_type));
   IREE_RETURN_IF_ERROR(loom_low_build_register_type(
       builder.descriptor_set, AIE2P_CORE_REG_CLASS_ID_AIE2P_ER, 1,
       &builder.lock_delta_type));

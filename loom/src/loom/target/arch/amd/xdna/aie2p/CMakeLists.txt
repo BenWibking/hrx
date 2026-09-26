@@ -210,6 +210,7 @@ loom_cc_library(
     "low_verify.c"
   DEPS
     ::array_descriptors
+    ::core_descriptors
     iree::base
     loom::codegen::low::diagnostics
     loom::codegen::low::packet
@@ -219,6 +220,7 @@ loom_cc_library(
     loom::ops::low
     loom::ops::op_defs
     loom::target::projection
+    loom::target::registers
   PUBLIC
 )
 endif()

@@ -156,6 +156,23 @@ low.func.def target<amd.xdna.aie2p.array>(@array_target) @scalar_payload() asm {
 }
 
 // ====
+// RUN: verify
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @scalar_native_pointer() asm {
+  // ERROR@+1: TYPE/004 {result_name="result", actual_type="reg<aie2p.er>", expected_constraint="register class in [aie2p.ep] with 1 unit(s)"}
+  %input = resource<native_pointer> {index = 0, source_type = buffer} : reg<aie2p.er>
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @wide_native_pointer() asm {
+  // ERROR@+1: TYPE/004 {result_name="result", actual_type="reg<aie2p.ep x2>", expected_constraint="register class in [aie2p.ep] with 1 unit(s)"}
+  %input = resource<native_pointer> {index = 0, source_type = buffer} : reg<aie2p.ep x2>
+  return
+}
+
+// ====
 // RUN: emit aie2p-array-plan @declared_worker
 
 aie2p.target<array> @array_target
