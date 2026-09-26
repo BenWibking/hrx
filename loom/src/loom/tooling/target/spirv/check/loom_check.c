@@ -4,14 +4,14 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/emit/spirv/check/loom_check.h"
+#include "loom/tooling/target/spirv/check/loom_check.h"
 
 #include <stdint.h>
 
-#include "loom/target/emit/spirv/module_emitter.h"
 #include "loom/target/entry_selection.h"
 #include "loom/target/tool/spirv.h"
 #include "loom/tooling/compile/pipeline.h"
+#include "loom/tooling/target/spirv/prepare.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/source_low.h"
 #include "loom/verify/verify.h"
@@ -359,15 +359,15 @@ static iree_status_t loom_spirv_loom_check_emit_provider_execute(
     return status;
   }
 
-  const loom_spirv_emit_low_module_options_t emit_options = {
+  const loom_spirv_compile_options_t compile_options = {
       .function_versions = &pipeline_result.function_versions.list,
   };
   loom_spirv_module_binary_t module = {0};
   bool module_emitted = false;
-  status = loom_spirv_emit_low_module(
+  status = loom_spirv_compile_module_binary(
       request->module, &request->low_registry->registry, diagnostic_emitter,
-      request->case_arena, &emit_options, &module_emitted, &module,
-      request->host_allocator);
+      request->case_arena, &compile_options, request->host_allocator,
+      &module_emitted, &module);
 
   loom_spirv_toolchain_t toolchain;
   loom_spirv_toolchain_initialize_from_environment(&toolchain);

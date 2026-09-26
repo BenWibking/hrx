@@ -4,8 +4,6 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/emit/spirv/module_emitter.h"
-
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/analysis/symbol_facts.h"
@@ -26,6 +24,7 @@
 #include "loom/target/function_version.h"
 #include "loom/target/profile.h"
 #include "loom/testing/module_ptr.h"
+#include "loom/tooling/target/spirv/prepare.h"
 #include "loom/tooling/target/spirv/vulkan_profile.h"
 
 namespace loom {
@@ -183,10 +182,10 @@ low.func.def target<spirv.logical.core>(@generic) abi(shader_entry_point) @kerne
 
   loom_spirv_module_binary_t generic_module = {};
   bool generic_emitted = false;
-  IREE_ASSERT_OK(loom_spirv_emit_low_module(
+  IREE_ASSERT_OK(loom_spirv_compile_module_binary(
       module.get(), &low_registry_.registry, iree_diagnostic_emitter_t{},
-      &arena_, /*options=*/nullptr, &generic_emitted, &generic_module,
-      iree_allocator_system()));
+      &arena_, /*options=*/nullptr, iree_allocator_system(), &generic_emitted,
+      &generic_module));
   ASSERT_TRUE(generic_emitted);
   EXPECT_FALSE(
       SpirvModuleHasCapability(generic_module, LOOM_SPIRV_CAPABILITY_FLOAT16));
@@ -207,16 +206,16 @@ low.func.def target<spirv.logical.core>(@generic) abi(shader_entry_point) @kerne
   loom_function_version_list_t function_versions = {};
   function_versions.values = version_values;
   function_versions.count = IREE_ARRAYSIZE(version_values);
-  loom_spirv_emit_low_module_options_t options = {};
-  loom_spirv_emit_low_module_options_initialize(&options);
+  loom_spirv_compile_options_t options = {};
+  loom_spirv_compile_options_initialize(&options);
   options.function_versions = &function_versions;
 
   loom_spirv_module_binary_t exact_module = {};
   bool exact_emitted = false;
-  IREE_ASSERT_OK(loom_spirv_emit_low_module(
+  IREE_ASSERT_OK(loom_spirv_compile_module_binary(
       module.get(), &low_registry_.registry, iree_diagnostic_emitter_t{},
-      &arena_, &options, &exact_emitted, &exact_module,
-      iree_allocator_system()));
+      &arena_, &options, iree_allocator_system(), &exact_emitted,
+      &exact_module));
   ASSERT_TRUE(exact_emitted);
   EXPECT_TRUE(
       SpirvModuleHasCapability(exact_module, LOOM_SPIRV_CAPABILITY_FLOAT16));

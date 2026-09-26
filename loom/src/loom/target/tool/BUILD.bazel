@@ -16,7 +16,7 @@ package(
     licenses = ["notice"],  # Apache 2.0
 )
 
-_SPIRV_TOOL_VISIBILITY = ["//loom/src/loom/target/emit/spirv:__pkg__"]
+_SPIRV_TOOL_VISIBILITY = ["//loom/src/loom/tooling/target/spirv:__pkg__"]
 
 _WASM_TOOL_VISIBILITY = ["//loom/src/loom/tooling/target/wasm:__pkg__"]
 

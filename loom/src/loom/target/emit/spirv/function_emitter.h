@@ -25,6 +25,7 @@
 #include "loom/target/emit/spirv/module_storage.h"
 #include "loom/target/emit/spirv/module_types.h"
 #include "loom/target/emit/spirv/module_values.h"
+#include "loom/target/emit/spirv/program.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,8 +65,8 @@ typedef struct loom_spirv_emit_state_t {
   loom_op_t* function_op;
   // Target-low function body being emitted.
   const loom_region_t* body;
-  // Resolved target record and descriptor set for function_op.
-  const loom_low_resolved_target_t* target;
+  // Prepared target and representation binding for |function_op|.
+  const loom_spirv_function_plan_t* function_plan;
   // Function-local scratch arena.
   iree_arena_allocator_t* scratch_arena;
   // Sectioned SPIR-V module builder.
@@ -139,12 +140,12 @@ iree_status_t loom_spirv_emit_low_op(loom_spirv_emit_state_t* state,
 
 // Emits one target-low function into |context->builder|.
 //
-// |function_op| and |target| are borrowed for the call. Module-wide IDs and
-// ABI state are retained in |context| for subsequent functions; all
-// function-local state is released before return.
+// |function_plan| is borrowed for the call. Module-wide IDs and ABI state are
+// retained in |context| for subsequent functions; all function-local state is
+// released before return.
 iree_status_t loom_spirv_emit_low_function(
-    loom_spirv_function_emission_context_t* context, loom_op_t* function_op,
-    const loom_low_resolved_target_t* target);
+    loom_spirv_function_emission_context_t* context,
+    const loom_spirv_function_plan_t* function_plan);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -51,7 +51,7 @@
 #include "loom/target/arch/spirv/check/provider.h"
 #endif  // LOOM_CHECK_HAVE_TARGET_SPIRV
 #if LOOM_CHECK_HAVE_EMIT_SPIRV
-#include "loom/target/emit/spirv/check/provider.h"
+#include "loom/tooling/target/spirv/check/provider.h"
 #endif  // LOOM_CHECK_HAVE_EMIT_SPIRV
 #if LOOM_CHECK_HAVE_TARGET_WASM
 #include "loom/target/arch/wasm/check/provider.h"
