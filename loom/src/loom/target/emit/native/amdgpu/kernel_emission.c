@@ -312,10 +312,8 @@ static iree_status_t loom_amdgpu_kernel_emission_record_native_insertions(
     };
     uint64_t execution_multiplier = 0;
     if (insertion->kind != LOOM_AMDGPU_NATIVE_INSERTION_BRANCH_ISLAND_HOP &&
-        dynamic_context.exact &&
         loom_target_compile_report_low_node_execution_multiplier(
-            frame->module, &dynamic_context.fact_table,
-            dynamic_context.block_multipliers, node, &execution_multiplier)) {
+            frame->module, &dynamic_context, node, &execution_multiplier)) {
       row.flags =
           LOOM_TARGET_COMPILE_REPORT_TARGET_INSERTION_FLAG_DYNAMIC_PACKET_COUNT;
       row.dynamic_packet_count = execution_multiplier;

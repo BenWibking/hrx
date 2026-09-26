@@ -19,13 +19,13 @@ extern "C" {
 // Returns true when |block_index| selects a control alternative whose
 // execution frequency is modeled independently by the caller.
 typedef bool (*loom_cfg_execution_selector_is_modeled_fn_t)(
-    void* user_data, uint16_t block_index);
+    const void* user_data, uint16_t block_index);
 
 typedef struct loom_cfg_execution_selector_model_t {
   // Selector classification callback, or NULL when no selector is modeled.
   loom_cfg_execution_selector_is_modeled_fn_t is_modeled;
   // Caller-owned payload passed to |is_modeled|.
-  void* user_data;
+  const void* user_data;
 } loom_cfg_execution_selector_model_t;
 
 // Classifies blocks whose execution count depends on an unmodeled selector.

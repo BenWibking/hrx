@@ -103,6 +103,7 @@ loom_cc_library(
     loom::target::low_legality
     loom::target::registers
     loom::target::types
+    loom::util::cfg_execution
     loom::util::cfg_graph
     loom::util::cfg_loop_nest
     loom::util::fact_table

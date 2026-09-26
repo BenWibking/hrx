@@ -27,7 +27,7 @@ class CfgExecutionTest : public ::testing::Test {
     iree_arena_block_pool_deinitialize(&pool_);
   }
 
-  static bool IsModeled(void* user_data, uint16_t block_index) {
+  static bool IsModeled(const void* user_data, uint16_t block_index) {
     const auto* modeled = static_cast<const std::vector<uint8_t>*>(user_data);
     return block_index < modeled->size() && (*modeled)[block_index] != 0;
   }
