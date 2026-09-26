@@ -391,3 +391,15 @@ def test_validator_rejects_register_provenance_claims_missing_an_oracle() -> Non
 
     with pytest.raises(ValueError, match="register provenance is incomplete"):
         validate_array_family(invalid_family)
+
+
+def test_validator_rejects_register_offsets_outside_tile_aperture() -> None:
+    pattern = NPU2_ARRAY_FAMILY.registers[0]
+    invalid_pattern = replace(pattern, base_offset=1 << NPU2_ARRAY_FAMILY.row_shift)
+    invalid_family = replace(
+        NPU2_ARRAY_FAMILY,
+        registers=(invalid_pattern, *NPU2_ARRAY_FAMILY.registers[1:]),
+    )
+
+    with pytest.raises(ValueError, match="register offset exceeds tile aperture"):
+        validate_array_family(invalid_family)

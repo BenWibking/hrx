@@ -1490,6 +1490,53 @@ static iree_status_t loom_aie2p_array_diagnose_route_capacity(
   return iree_diagnostic_emit(builder->diagnostic_emitter, &emission);
 }
 
+static iree_status_t loom_aie2p_array_admit_dma_record_length(
+    loom_aie2p_array_plan_builder_t* builder, uint32_t channel_index) {
+  loom_aie2p_array_channel_t* channel = &builder->channels[channel_index];
+  const loom_aie2p_array_endpoint_t* sender =
+      &builder->endpoints[channel->sender_endpoint_index];
+  const loom_aie2p_array_endpoint_t* receiver =
+      &builder->endpoints[channel->receiver_endpoint_index];
+  const loom_aie2p_array_endpoint_t* worker_endpoint =
+      sender->owner_kind == LOOM_AIE2P_ARRAY_ENDPOINT_OWNER_WORKER ? sender
+                                                                   : receiver;
+  const loom_xdna_tile_coordinate_t worker_coordinate =
+      builder->workers[worker_endpoint->owner_index].coordinate;
+  const loom_xdna_dma_facts_t* dma_facts =
+      &loom_xdna_array_tile_facts(builder->family, worker_coordinate)->dma;
+  const uint64_t scaled_length =
+      channel->record_byte_length / dma_facts->transfer_length_granularity;
+  const uint64_t minimum_units =
+      iree_max(1u, dma_facts->transfer_length_offset);
+  const uint64_t maximum_units =
+      (uint64_t)dma_facts->maximum_encoded_transfer_length +
+      dma_facts->transfer_length_offset;
+  if (channel->record_byte_length % dma_facts->transfer_length_granularity ==
+          0 &&
+      scaled_length >= minimum_units && scaled_length <= maximum_units) {
+    channel->encoded_dma_record_length =
+        (uint32_t)(scaled_length - dma_facts->transfer_length_offset);
+    return iree_ok_status();
+  }
+
+  builder->valid = false;
+  const loom_diagnostic_param_t params[] = {
+      loom_param_u32(channel_index),
+      loom_param_u32(channel->record_byte_length),
+      loom_param_u64(minimum_units * dma_facts->transfer_length_granularity),
+      loom_param_u64(maximum_units * dma_facts->transfer_length_granularity),
+      loom_param_u32(dma_facts->transfer_length_granularity),
+  };
+  const loom_diagnostic_emission_t emission = {
+      .op = loom_value_def_op(loom_value_table_const_value(
+          &builder->module->values, channel->value_id)),
+      .error = LOOM_ERR_TARGET_126,
+      .params = params,
+      .param_count = IREE_ARRAYSIZE(params),
+  };
+  return iree_diagnostic_emit(builder->diagnostic_emitter, &emission);
+}
+
 static iree_status_t loom_aie2p_array_plan_external_channel(
     loom_aie2p_array_plan_builder_t* builder, uint32_t channel_index,
     const loom_aie2p_array_endpoint_t* sender,
@@ -1803,6 +1850,14 @@ static iree_status_t loom_aie2p_array_allocate_physical_plan(
   iree_host_size_t neighbor_channel_count = 0;
   iree_host_size_t routed_channel_count = 0;
   for (iree_host_size_t i = 0; i < builder->plan->channel_count; ++i) {
+    if (builder->channels[i].transport !=
+        LOOM_AIE2P_ARRAY_CHANNEL_TRANSPORT_NEIGHBOR_MEMORY) {
+      IREE_RETURN_IF_ERROR(
+          loom_aie2p_array_admit_dma_record_length(builder, (uint32_t)i));
+      if (!builder->valid) {
+        return iree_ok_status();
+      }
+    }
     if (!iree_checked_add_u64(channel_slot_count, builder->channels[i].capacity,
                               &channel_slot_count)) {
       return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
@@ -2013,6 +2068,9 @@ iree_status_t loom_aie2p_array_plan_build(
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(loom_aie2p_array_allocate_physical_plan(&builder));
+  if (!builder.valid) {
+    return iree_ok_status();
+  }
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_workers(&builder));
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_fold_states(&builder));
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_channels(&builder));

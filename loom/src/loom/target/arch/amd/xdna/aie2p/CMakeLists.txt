@@ -535,6 +535,7 @@ loom_check_test_suite(
     "test/array_plan/bank_spans.loom-test"
     "test/array_plan/composed_folds.loom-test"
     "test/array_plan/dma_loopback.loom-test"
+    "test/array_plan/dma_record_limits.loom-test"
     "test/array_plan/dma_service.loom-test"
     "test/array_plan/endpoint_storage.loom-test"
     "test/array_plan/entry_admission.loom-test"

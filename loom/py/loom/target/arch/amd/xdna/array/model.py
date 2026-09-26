@@ -445,6 +445,8 @@ def _validate_registers(family: ArrayFamily) -> None:
         offsets = _register_offsets(pattern)
         if len(offsets) != len(set(offsets)) or max(offsets) > 0xFFFFFFFF - 3:
             raise ValueError(f"{pattern.key}: register offsets collide or overflow")
+        if max(offsets) + 4 > 1 << family.row_shift:
+            raise ValueError(f"{pattern.key}: register offset exceeds tile aperture")
         module_offsets = occupied_offsets[pattern.module]
         for offset in offsets:
             previous = module_offsets.get(offset)
