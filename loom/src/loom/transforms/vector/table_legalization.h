@@ -24,13 +24,13 @@ typedef struct loom_vector_table_quantize_policy_t {
 } loom_vector_table_quantize_policy_t;
 
 // Expands a verified vector.table.quantize into lane-parallel comparisons and
-// ordinal selections. Static rank-one input and threshold packets slice the
-// original SSA values; their memory observations are preserved. Each input lane
-// counts the ordered thresholds it passes. Ordinals are converted to the
-// declared unsigned result width, and result packets concatenate in lane order.
+// ordinal selections. Static inputs are flattened in row-major order while
+// rank-one threshold packets slice the original SSA values; their memory
+// observations are preserved. Each input lane counts the ordered thresholds it
+// passes. Ordinals are converted to the declared unsigned result width, result
+// packets concatenate in lane order, and the declared result shape is restored.
 // Predicate results directly use the comparison's mask. Returns false through
-// |out_rewritten| for dynamic shapes, higher-rank inputs, or empty input
-// vectors.
+// |out_rewritten| for dynamic shapes or empty input vectors.
 iree_status_t loom_vector_table_quantize_rewrite(
     loom_target_legalization_context_t* context, loom_op_t* op,
     const loom_vector_table_quantize_policy_t* policy, bool* out_rewritten);

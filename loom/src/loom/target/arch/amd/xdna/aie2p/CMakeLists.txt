@@ -190,6 +190,7 @@ loom_cc_library(
     loom::ops::vector
     loom::target::legalization
     loom::transforms::vector::packet_legalization
+    loom::transforms::vector::table_legalization
     loom::transforms::vector::target_legalization
     loom::transforms::vector::to_scalar
     loom::util::fact_table
@@ -664,6 +665,7 @@ loom_check_test_suite(
     "test/source_low/selected_payload_transport.loom-test"
     "test/source_low/semantic_assertions.loom-test"
     "test/source_low/shared_conditional_values.loom-test"
+    "test/source_low/table_quantize.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/vector_bitcast.loom-test"
     "test/source_low/vector_comparison.loom-test"

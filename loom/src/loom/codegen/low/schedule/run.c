@@ -1254,6 +1254,24 @@ static iree_status_t loom_low_schedule_run_list_scheduler(
           (void**)&state->node_pressure_activation_units));
       memset(state->node_pressure_activation_units, 0,
              node_count * sizeof(*state->node_pressure_activation_units));
+      const uint16_t unspillable_domain_count =
+          state->pressure_limits.unspillable_completion_domain_count;
+      if (unspillable_domain_count != 0) {
+        iree_host_size_t unspillable_entry_count = 0;
+        if (!iree_host_size_checked_mul(node_count, unspillable_domain_count,
+                                        &unspillable_entry_count)) {
+          return iree_make_status(
+              IREE_STATUS_RESOURCE_EXHAUSTED,
+              "low schedule unspillable pressure table size overflow");
+        }
+        IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+            state->scratch_arena, unspillable_entry_count,
+            sizeof(*state->node_unspillable_activation_units),
+            (void**)&state->node_unspillable_activation_units));
+        memset(state->node_unspillable_activation_units, 0,
+               unspillable_entry_count *
+                   sizeof(*state->node_unspillable_activation_units));
+      }
       if (state->target.descriptor_set->register_packing_resource_count != 0) {
         iree_host_size_t packing_entry_count = 0;
         if (!iree_host_size_checked_mul(
