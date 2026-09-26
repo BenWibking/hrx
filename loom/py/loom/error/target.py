@@ -1833,6 +1833,30 @@ ERR_TARGET_125 = ErrorDef(
     ),
 )
 
+# ERR_TARGET_126: A physical DMA cannot represent a channel record size.
+ERR_TARGET_126 = ErrorDef(
+    domain=ErrorDomain.TARGET,
+    code=126,
+    severity=Severity.ERROR,
+    summary="Physical DMA cannot represent a channel record size.",
+    message=(
+        "channel {channel} has {record_bytes} byte records, but the selected "
+        "DMA engine accepts records from {minimum_bytes} through "
+        "{maximum_bytes} bytes in {granularity_bytes}-byte units"
+    ),
+    params=(
+        ErrorParam("channel", ParamKind.U32),
+        ErrorParam("record_bytes", ParamKind.U32),
+        ErrorParam("minimum_bytes", ParamKind.U64),
+        ErrorParam("maximum_bytes", ParamKind.U64),
+        ErrorParam("granularity_bytes", ParamKind.U32),
+    ),
+    fix_hint=(
+        "Pad or split the channel records, or select a transport with a "
+        "compatible record-size domain."
+    ),
+)
+
 ALL_TARGET_ERRORS = (
     ERR_TARGET_001,
     ERR_TARGET_002,
@@ -1925,4 +1949,5 @@ ALL_TARGET_ERRORS = (
     ERR_TARGET_123,
     ERR_TARGET_124,
     ERR_TARGET_125,
+    ERR_TARGET_126,
 )

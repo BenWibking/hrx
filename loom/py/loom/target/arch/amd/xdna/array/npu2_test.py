@@ -17,6 +17,7 @@ from loom.target.arch.amd.xdna.array.model import (
     StreamDirection,
     StreamPort,
     TileKind,
+    maximum_encoded_dma_transfer_length,
     register_field_count,
     validate_array_family,
 )
@@ -168,6 +169,114 @@ def test_npu2_dma_encoding_and_stream_port_mappings_are_exact() -> None:
         compute.stream_to_memory_port_stride,
     ) == (2, 0, 1, 0, 1)
 
+    assert {
+        tile.kind: (
+            tile.dma.transfer_length_field.bit_width,
+            maximum_encoded_dma_transfer_length(tile),
+        )
+        for tile in NPU2_ARRAY_FAMILY.tiles
+        if tile.dma is not None
+    } == {
+        TileKind.SHIM_NOC: (
+            32,
+            0xFFFFFFFF,
+        ),
+        TileKind.MEMORY: (
+            17,
+            0x1FFFF,
+        ),
+        TileKind.COMPUTE: (
+            14,
+            0x3FFF,
+        ),
+    }
+
+
+def test_validator_rejects_dma_length_field_from_another_tile_kind() -> None:
+    shim = NPU2_ARRAY_FAMILY.tiles[0]
+    compute = NPU2_ARRAY_FAMILY.tiles[-1]
+    assert shim.dma is not None
+    assert compute.dma is not None
+    invalid_compute = replace(
+        compute,
+        dma=replace(
+            compute.dma,
+            transfer_length_field=shim.dma.transfer_length_field,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unavailable register module"):
+        validate_array_family(
+            replace(
+                NPU2_ARRAY_FAMILY,
+                tiles=(*NPU2_ARRAY_FAMILY.tiles[:-1], invalid_compute),
+            )
+        )
+
+
+def test_validator_rejects_unregistered_dma_length_field() -> None:
+    compute = NPU2_ARRAY_FAMILY.tiles[-1]
+    assert compute.dma is not None
+    invalid_compute = replace(
+        compute,
+        dma=replace(
+            compute.dma,
+            transfer_length_field=replace(compute.dma.transfer_length_field),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unavailable canonical register field"):
+        validate_array_family(
+            replace(
+                NPU2_ARRAY_FAMILY,
+                tiles=(*NPU2_ARRAY_FAMILY.tiles[:-1], invalid_compute),
+            )
+        )
+
+
+def test_validator_rejects_signed_dma_length_field() -> None:
+    compute = NPU2_ARRAY_FAMILY.tiles[-1]
+    assert compute.dma is not None
+    signed_field = next(
+        field
+        for pattern in NPU2_ARRAY_FAMILY.registers
+        if pattern.key == "compute_memory.dma.bd.word5"
+        for field in pattern.fields
+        if field.name == "lock_acquire_value"
+    )
+    invalid_compute = replace(
+        compute,
+        dma=replace(compute.dma, transfer_length_field=signed_field),
+    )
+
+    with pytest.raises(ValueError, match="DMA length field must be unsigned"):
+        validate_array_family(
+            replace(
+                NPU2_ARRAY_FAMILY,
+                tiles=(*NPU2_ARRAY_FAMILY.tiles[:-1], invalid_compute),
+            )
+        )
+
+
+def test_validator_rejects_dma_length_field_without_descriptor_coverage() -> None:
+    compute = NPU2_ARRAY_FAMILY.tiles[-1]
+    assert compute.dma is not None
+    invalid_compute = replace(
+        compute,
+        dma=replace(
+            compute.dma,
+            buffer_descriptor_count=compute.dma.buffer_descriptor_count + 1,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="does not cover buffer descriptors"):
+        validate_array_family(
+            replace(
+                NPU2_ARRAY_FAMILY,
+                tiles=(*NPU2_ARRAY_FAMILY.tiles[:-1], invalid_compute),
+            )
+        )
+
 
 def test_npu2_direct_dma_loopback_pairs_match_the_stream_switch() -> None:
     # The pinned aie-rt compute and memory validators permit DMA-to-DMA only
@@ -281,4 +390,16 @@ def test_validator_rejects_register_provenance_claims_missing_an_oracle() -> Non
     )
 
     with pytest.raises(ValueError, match="register provenance is incomplete"):
+        validate_array_family(invalid_family)
+
+
+def test_validator_rejects_register_offsets_outside_tile_aperture() -> None:
+    pattern = NPU2_ARRAY_FAMILY.registers[0]
+    invalid_pattern = replace(pattern, base_offset=1 << NPU2_ARRAY_FAMILY.row_shift)
+    invalid_family = replace(
+        NPU2_ARRAY_FAMILY,
+        registers=(invalid_pattern, *NPU2_ARRAY_FAMILY.registers[1:]),
+    )
+
+    with pytest.raises(ValueError, match="register offset exceeds tile aperture"):
         validate_array_family(invalid_family)

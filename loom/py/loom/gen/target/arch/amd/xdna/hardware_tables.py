@@ -25,6 +25,7 @@ from loom.target.arch.amd.xdna.array.model import (
     StreamDirection,
     StreamPort,
     TileKind,
+    maximum_encoded_dma_transfer_length,
     validate_array_family,
 )
 from loom.target.arch.amd.xdna.array.npu2 import (
@@ -112,6 +113,7 @@ def emit_array_facts() -> str:
         register_module_bits = " | ".join(f"LOOM_XDNA_REGISTER_MODULE_BIT({_REGISTER_MODULE_IDS[module]})" for module in tile.register_modules)
         dma = tile.dma
         assert dma is not None
+        maximum_encoded_transfer_length = maximum_encoded_dma_transfer_length(tile)
         dma_flags = (
             int(dma.supports_compression) | (int(dma.supports_padding) << 1) | (int(dma.supports_out_of_order) << 2) | (int(dma.supports_tokens) << 3) | (int(dma.supports_tlast_suppression) << 4)
         )
@@ -137,6 +139,7 @@ def emit_array_facts() -> str:
                 "        },",
                 "        .dma = {",
                 f"            .address_maximum = UINT64_C(0x{dma.address_maximum:016x}),",
+                f"            .maximum_encoded_transfer_length = UINT32_C(0x{maximum_encoded_transfer_length:08x}),",
                 f"            .buffer_descriptor_count = {dma.buffer_descriptor_count},",
                 f"            .maximum_task_repeat_count = {dma.maximum_task_repeat_count},",
                 f"            .channel_count_per_direction = {dma.channel_count_per_direction},",

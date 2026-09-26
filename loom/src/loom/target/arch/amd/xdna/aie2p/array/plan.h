@@ -170,6 +170,9 @@ typedef struct loom_aie2p_array_channel_t {
   uint32_t record_count;
   // Byte length of one statically shaped tile record.
   uint32_t record_byte_length;
+  // Transfer-length field value admitted for DMA-backed transports. Neighbor
+  // memory transport does not consume this value.
+  uint32_t encoded_dma_record_length;
   // Physical transport selected by planning.
   loom_aie2p_array_channel_transport_t transport;
 } loom_aie2p_array_channel_t;
