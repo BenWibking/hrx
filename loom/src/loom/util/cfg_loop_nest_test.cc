@@ -183,6 +183,21 @@ TEST_F(CfgLoopNestTest, UnmodeledPathsDoNotProduceExactCounts) {
   }
 }
 
+TEST_F(CfgLoopNestTest, LoopMultipliersSurviveUnmodeledDiamond) {
+  // Block 1 is a four-trip loop header. Blocks 3 and 4 are alternatives in
+  // the loop body and block 5 is their common latch.
+  CfgGraph fixture({{1}, {2, 6}, {3, 4}, {5}, {5}, {1}, {}});
+  const auto nest = Build(fixture);
+  ASSERT_EQ(nest.loop_count, 1u);
+  const uint64_t trip_count = 4;
+  std::vector<uint64_t> multipliers(7);
+  EXPECT_TRUE(loom_cfg_loop_nest_calculate_block_multipliers(
+      &nest, &trip_count, multipliers.data()));
+  EXPECT_EQ(multipliers, (std::vector<uint64_t>{1, 5, 4, 4, 4, 4, 1}));
+  EXPECT_FALSE(loom_cfg_loop_nest_calculate_block_execution_counts(
+      &nest, &trip_count, multipliers.data()));
+}
+
 TEST_F(CfgLoopNestTest, UnreachableBranchesDoNotInvalidateCounts) {
   CfgGraph fixture({{1}, {}, {1, 3}, {}});
   const auto nest = Build(fixture);
