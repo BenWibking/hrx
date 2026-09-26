@@ -656,9 +656,7 @@ loom_cc_library(
     iree::io::stream
     loom::analysis::symbol_facts
     loom::codegen::low::allocation_materialization
-    loom::codegen::low::diagnostics
     loom::codegen::low::frame
-    loom::codegen::low::storage_layout
     loom::codegen::low::target_binding
     loom::error::diagnostic
     loom::error::source

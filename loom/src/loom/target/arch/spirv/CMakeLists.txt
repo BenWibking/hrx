@@ -297,7 +297,6 @@ loom_cc_library(
     "module_contract.c"
   DEPS
     iree::base
-    loom::codegen::low::target_binding
     loom::target::types
   PUBLIC
 )

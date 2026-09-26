@@ -4,22 +4,18 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// WebAssembly binary module emission from prepared target-low modules.
+// WebAssembly binary module emission from prepared physical programs.
 //
-// This target-owned layer is the Wasm artifact boundary: it walks the input
-// module, assigns Wasm function/type/export indices, allocates target-local
-// values for each wasm.core.simd128 low.func.def, and writes one binary module.
-// Tool validation, disassembly, and execution remain outside this production
-// emitter.
+// This target-owned layer is the Wasm artifact boundary: it serializes prepared
+// function/type/export indices, physical locals, and structured Low bodies into
+// one binary module. Tool validation, disassembly, allocation, and diagnostics
+// remain outside this production emitter.
 
 #ifndef LOOM_TARGET_EMIT_WASM_MODULE_BINARY_H_
 #define LOOM_TARGET_EMIT_WASM_MODULE_BINARY_H_
 
 #include "iree/base/api.h"
-#include "iree/base/internal/arena.h"
-#include "loom/codegen/low/descriptors.h"
-#include "loom/error/emitter.h"
-#include "loom/ir/module.h"
+#include "loom/target/emit/wasm/program.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,22 +43,13 @@ typedef struct loom_wasm_module_binary_t {
 void loom_wasm_module_binary_deinitialize(loom_wasm_module_binary_t* module,
                                           iree_allocator_t allocator);
 
-// Emits a complete Wasm binary module for every wasm.core.simd128 low.func.def
-// in |module|. The emitter preserves module symbol order for Wasm function
-// indices, emits direct low.func.call instructions against those indices, and
-// exports low functions marked public or carrying an explicit export symbol.
-//
-// Imports, kernel entries, and non-wasm low functions currently fail loud. The
-// body emitter walks structured regions in source order. Allocation therefore
-// uses the IR order directly and performs no dependency scheduling. The caller
-// owns source-to-low lowering and target verification. Structured allocation
-// rejection returns OK with |out_emitted| false and no module bytes;
-// infrastructure and output failures return a status and also leave it false.
-iree_status_t loom_wasm_emit_low_module(
-    loom_module_t* module,
-    const loom_low_descriptor_registry_t* descriptor_registry,
-    iree_diagnostic_emitter_t diagnostic_emitter, iree_arena_allocator_t* arena,
-    iree_allocator_t allocator, bool* out_emitted,
+// Emits one complete WebAssembly binary from a compiler-prepared physical
+// program. The writer preserves prepared function/type/local indices and walks
+// trusted structured Low bodies in source order. Allocation, target resolution,
+// diagnostics, and semantic rejection belong to program preparation and are
+// not accepted by this interface.
+iree_status_t loom_wasm_program_emit_binary(
+    const loom_wasm_program_plan_t* plan, iree_allocator_t allocator,
     loom_wasm_module_binary_t* out_module);
 
 #ifdef __cplusplus

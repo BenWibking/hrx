@@ -1276,6 +1276,8 @@ typedef struct loom_amdgpu_workgroup_reduce_plan_t {
   uint32_t partition_wavefront_size;
   // Exact flattened workgroup size selected by launch configuration.
   uint32_t flat_workgroup_size;
+  // Exact LDS scratch extent selected for cross-wave staging.
+  uint32_t scratch_byte_length;
   // 32-bit identity element bit pattern used for inactive source lanes.
   uint32_t identity_bits;
   // Cross-lane strategies selected for the two reduction stages.
@@ -1351,6 +1353,8 @@ typedef struct loom_amdgpu_workgroup_scan_plan_t {
   uint32_t partition_wavefront_size;
   // Exact flattened workgroup size selected by launch configuration.
   uint32_t flat_workgroup_size;
+  // Exact LDS scratch extent selected for cross-wave staging.
+  uint32_t scratch_byte_length;
 } loom_amdgpu_workgroup_scan_plan_t;
 
 typedef struct loom_amdgpu_subgroup_active_mask_plan_t {

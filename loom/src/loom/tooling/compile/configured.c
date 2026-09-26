@@ -39,7 +39,7 @@
 #include "loom/tooling/target/amd/xdna/artifact_provider.h"
 #endif  // LOOM_CONFIG_COMPILE_HAVE_XDNA_ARTIFACTS
 #if LOOM_CONFIG_COMPILE_HAVE_WASM_ARTIFACTS
-#include "loom/target/emit/wasm/artifact_emitter.h"
+#include "loom/tooling/target/wasm/artifact_emitter.h"
 #endif  // LOOM_CONFIG_COMPILE_HAVE_WASM_ARTIFACTS
 
 enum {

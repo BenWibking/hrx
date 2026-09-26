@@ -41,6 +41,33 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    representation_binding
+  HDRS
+    "representation_binding.h"
+  SRCS
+    "representation_binding.c"
+  DEPS
+    ::descriptors
+    iree::base
+    loom::ops::low
+    loom::target::registers
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    representation_binding_test
+  SRCS
+    "representation_binding_test.cc"
+  DEPS
+    ::representation_binding
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::registers
+)
+
 loom_cc_test(
   NAME
     descriptor_traits_test
@@ -200,7 +227,6 @@ loom_cc_library(
     loom::target::facts_builder
     loom::target::function_contract
     loom::target::profile
-    loom::target::registers
     loom::target::types
   PUBLIC
 )
@@ -311,37 +337,12 @@ loom_cc_library(
   DEPS
     iree::base
     iree::base::internal::arena
+    loom::analysis::storage_layout
     loom::ir
     loom::ops::low
     loom::ops::type_registry
     loom::rewrite::rewriter
   PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    source_storage_packing
-  HDRS
-    "source_storage_packing.h"
-  SRCS
-    "source_storage_packing.c"
-  DEPS
-    iree::base
-    iree::base::internal::arena
-    loom::ir
-  PUBLIC
-)
-
-loom_cc_test(
-  NAME
-    source_storage_packing_test
-  SRCS
-    "source_storage_packing_test.cc"
-  DEPS
-    ::source_storage_packing
-    iree::base::internal::arena
-    iree::testing::gtest
-    iree::testing::gtest_main
 )
 
 loom_cc_library(
@@ -514,8 +515,8 @@ loom_cc_library(
   DEPS
     ::descriptors
     ::placement_pair
+    ::representation_binding
     ::storage_relation
-    ::target_binding
     iree::base
     iree::base::internal::arena
     loom::analysis::liveness
@@ -671,6 +672,7 @@ loom_cc_library(
     ::allocation
     ::descriptor_traits
     ::diagnostics
+    ::representation_binding
     ::target_binding
     iree::base
     iree::base::internal::arena
@@ -697,7 +699,7 @@ loom_cc_library(
   DEPS
     ::allocation
     ::diagnostics
-    ::target_binding
+    ::representation_binding
     iree::base
     iree::base::internal::arena
     loom::codegen::low::allocation::live_range
@@ -1154,6 +1156,7 @@ loom_cc_library(
     ::function
     ::packet
     ::register_parts
+    ::representation_binding
     ::storage_layout
     ::target_binding
     iree::base
@@ -1252,10 +1255,8 @@ loom_cc_test(
     "requirements_test.cc"
   DEPS
     ::requirements
-    ::target_binding
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::target::registers
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

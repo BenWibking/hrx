@@ -61,6 +61,8 @@ typedef struct loom_amdgpu_workgroup_collective_shape_t {
   uint32_t flat_workgroup_size;
   // Number of cross-wave partitions spanned by the workgroup.
   uint32_t wave_count;
+  // Exact LDS scratch extent emitted for this collective shape.
+  uint32_t scratch_byte_length;
   // Shape properties derived from the workgroup and partition sizes.
   loom_amdgpu_workgroup_collective_shape_flags_t flags;
 } loom_amdgpu_workgroup_collective_shape_t;

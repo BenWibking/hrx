@@ -11,6 +11,7 @@
 
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/immediates.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/schedule/diagnostics.h"
 #include "loom/codegen/low/schedule/effect_dependencies.h"
 #include "loom/codegen/low/storage_relation.h"

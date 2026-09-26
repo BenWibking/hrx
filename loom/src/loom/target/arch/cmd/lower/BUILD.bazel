@@ -202,7 +202,7 @@ loom_cc_library(
     deps = [
         ":program_plan",
         "//loom/src/loom/codegen/low:function",
-        "//loom/src/loom/codegen/low:target_binding",
+        "//loom/src/loom/codegen/low:representation_binding",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:registers",

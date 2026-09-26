@@ -30,12 +30,24 @@ _LOW_DESCRIPTOR_VISIBILITY = [
     "//loom/src/loom/target/emit:__subpackages__",
     "//loom/src/loom/target/reporting:__pkg__",
     "//loom/src/loom/target/test:__subpackages__",
+    "//loom/src/loom/tooling/target/spirv:__pkg__",
+    "//loom/src/loom/tooling/target/wasm:__pkg__",
     "//loom/src/loom/tools/loom-check:__pkg__",
 ]
 
 _LOW_FORMAT_CODEC_VISIBILITY = [
     "//loom/binding/c:__subpackages__",
     "//loom/src:__subpackages__",
+]
+
+_LOW_REPRESENTATION_BINDING_VISIBILITY = [
+    "//loom/src/loom/codegen/low:__subpackages__",
+    "//loom/src/loom/target/arch/amd/xdna/aie2p:__pkg__",
+    "//loom/src/loom/target/arch/amdgpu/hal:__pkg__",
+    "//loom/src/loom/target/arch/cmd/lower:__pkg__",
+    "//loom/src/loom/target/arch/wasm:__pkg__",
+    "//loom/src/loom/target/emit/spirv:__pkg__",
+    "//loom/src/loom/target/emit/wasm:__pkg__",
 ]
 
 #===------------------------------------------------------------------------===#
@@ -70,6 +82,30 @@ loom_cc_library(
         ":descriptors",
         "//loom/src/loom/ir",
         "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
+    name = "representation_binding",
+    srcs = ["representation_binding.c"],
+    hdrs = ["representation_binding.h"],
+    visibility = _LOW_REPRESENTATION_BINDING_VISIBILITY,
+    deps = [
+        ":descriptors",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target:registers",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "representation_binding_test",
+    srcs = ["representation_binding_test.cc"],
+    deps = [
+        ":representation_binding",
+        "//loom/src/loom/target:registers",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -215,7 +251,6 @@ loom_cc_library(
         "//loom/src/loom/target:facts_builder",
         "//loom/src/loom/target:function_contract",
         "//loom/src/loom/target:profile",
-        "//loom/src/loom/target:registers",
         "//loom/src/loom/target:types",
         "//runtime/src/iree/base",
     ],
@@ -311,34 +346,13 @@ loom_cc_library(
     srcs = ["storage_layout.c"],
     hdrs = ["storage_layout.h"],
     deps = [
+        "//loom/src/loom/analysis:storage_layout",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:type_registry",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/rewrite:rewriter",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
-    ],
-)
-
-loom_cc_library(
-    name = "source_storage_packing",
-    srcs = ["source_storage_packing.c"],
-    hdrs = ["source_storage_packing.h"],
-    deps = [
-        "//loom/src/loom/ir",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal:arena",
-    ],
-)
-
-loom_cc_test(
-    name = "source_storage_packing_test",
-    srcs = ["source_storage_packing_test.cc"],
-    deps = [
-        ":source_storage_packing",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
@@ -486,8 +500,8 @@ loom_cc_library(
     deps = [
         ":descriptors",
         ":placement_pair",
+        ":representation_binding",
         ":storage_relation",
-        ":target_binding",
         "//loom/src/loom/analysis:liveness",
         "//loom/src/loom/ir",
         "//runtime/src/iree/base",
@@ -630,6 +644,7 @@ loom_cc_library(
         ":allocation",
         ":descriptor_traits",
         ":diagnostics",
+        ":representation_binding",
         ":target_binding",
         "//loom/src/loom/codegen/low/allocation:live_range",
         "//loom/src/loom/codegen/low/allocation:storage",
@@ -653,7 +668,7 @@ loom_cc_library(
     deps = [
         ":allocation",
         ":diagnostics",
-        ":target_binding",
+        ":representation_binding",
         "//loom/src/loom/codegen/low/allocation:live_range",
         "//loom/src/loom/codegen/low/allocation:storage",
         "//loom/src/loom/error:emitter",
@@ -1058,6 +1073,7 @@ loom_cc_library(
         ":function",
         ":packet",
         ":register_parts",
+        ":representation_binding",
         ":storage_layout",
         ":target_binding",
         "//loom/src/loom/error:emitter",
@@ -1149,8 +1165,6 @@ loom_cc_test(
     srcs = ["requirements_test.cc"],
     deps = [
         ":requirements",
-        ":target_binding",
-        "//loom/src/loom/target:registers",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],

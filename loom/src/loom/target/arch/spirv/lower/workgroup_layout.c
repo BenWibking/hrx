@@ -9,9 +9,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "loom/analysis/source_storage_packing.h"
 #include "loom/analysis/storage_interference.h"
 #include "loom/codegen/low/source_memory_plan.h"
-#include "loom/codegen/low/source_storage_packing.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/ir/module.h"
@@ -530,12 +530,51 @@ iree_status_t loom_spirv_workgroup_layout_record_alloca(
   return iree_ok_status();
 }
 
+static const loom_spirv_workgroup_layout_t* loom_spirv_workgroup_layout_lookup(
+    const loom_low_lower_context_t* context) {
+  return (const loom_spirv_workgroup_layout_t*)
+      loom_low_lower_lookup_target_state(context,
+                                         &kLoomSpirvWorkgroupLayoutStateKey,
+                                         sizeof(loom_spirv_workgroup_layout_t));
+}
+
+static loom_spirv_scalar_type_t loom_spirv_workgroup_layout_scalar_type_at(
+    const loom_spirv_workgroup_layout_t* layout, iree_host_size_t index) {
+  IREE_ASSERT(layout != NULL && layout->layout_initialized);
+  IREE_ASSERT_LT(index, layout->segment_count);
+  return layout->segment_order[index];
+}
+
+iree_host_size_t loom_spirv_workgroup_layout_storage_root_count(
+    const loom_low_lower_context_t* context) {
+  const loom_spirv_workgroup_layout_t* layout =
+      loom_spirv_workgroup_layout_lookup(context);
+  return layout != NULL && layout->layout_initialized ? layout->segment_count
+                                                      : 0;
+}
+
+loom_spirv_workgroup_storage_root_requirement_t
+loom_spirv_workgroup_layout_storage_root_requirement(
+    const loom_low_lower_context_t* context, iree_host_size_t index) {
+  const loom_spirv_workgroup_layout_t* layout =
+      loom_spirv_workgroup_layout_lookup(context);
+  const loom_spirv_scalar_type_t scalar_type =
+      loom_spirv_workgroup_layout_scalar_type_at(layout, index);
+  const loom_spirv_workgroup_layout_segment_t* segment =
+      &layout->segments[scalar_type];
+  IREE_ASSERT(segment->packing != NULL);
+  const loom_source_storage_packing_requirement_t requirement =
+      loom_source_storage_packing_requirement(segment->packing);
+  return (loom_spirv_workgroup_storage_root_requirement_t){
+      .byte_length = requirement.byte_length,
+      .byte_alignment = requirement.byte_alignment,
+  };
+}
+
 iree_status_t loom_spirv_workgroup_layout_emit_storage_roots(
     loom_low_lower_context_t* context) {
   const loom_spirv_workgroup_layout_t* existing_layout =
-      (const loom_spirv_workgroup_layout_t*)loom_low_lower_lookup_target_state(
-          context, &kLoomSpirvWorkgroupLayoutStateKey,
-          sizeof(*existing_layout));
+      loom_spirv_workgroup_layout_lookup(context);
   if (existing_layout == NULL || !existing_layout->layout_initialized) {
     return iree_ok_status();
   }
@@ -546,7 +585,8 @@ iree_status_t loom_spirv_workgroup_layout_emit_storage_roots(
   const loom_op_t* source_function_op =
       loom_low_lower_context_source_function(context).op;
   for (iree_host_size_t i = 0; i < layout->segment_count; ++i) {
-    const loom_spirv_scalar_type_t scalar_type = layout->segment_order[i];
+    const loom_spirv_scalar_type_t scalar_type =
+        loom_spirv_workgroup_layout_scalar_type_at(layout, i);
     loom_spirv_workgroup_layout_segment_t* segment =
         &layout->segments[scalar_type];
     IREE_ASSERT(segment->packing != NULL);

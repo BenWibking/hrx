@@ -26,6 +26,7 @@
 #include "loom/target/arch/amdgpu/lower/sanitizer.h"
 #include "loom/target/arch/amdgpu/lower/sanitizer_race_report.h"
 #include "loom/target/arch/amdgpu/lower/sanitizer_report.h"
+#include "loom/target/arch/amdgpu/lower/source_alloca_layout.h"
 #include "loom/target/arch/amdgpu/lower/subgroup.h"
 #include "loom/target/arch/amdgpu/lower/sync.h"
 #include "loom/target/arch/amdgpu/lower/system_memory.h"

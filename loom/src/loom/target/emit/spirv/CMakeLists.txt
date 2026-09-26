@@ -94,6 +94,21 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_library(
   NAME
+    program
+  HDRS
+    "program.h"
+  DEPS
+    iree::base
+    loom::codegen::low::descriptors
+    loom::ir
+    loom::target::types
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_cc_library(
+  NAME
     module_instructions
   HDRS
     "module_instructions.h"
@@ -122,9 +137,9 @@ loom_cc_library(
     ::module_instructions
     ::module_types
     ::module_values
+    ::program
     iree::base
     iree::base::internal::arena
-    loom::codegen::low::target_binding
     loom::ir
     loom::ops::low
     loom::target::arch::spirv::descriptors::descriptors_ids
@@ -151,7 +166,6 @@ loom_cc_library(
     ::module_values
     iree::base
     iree::base::internal::arena
-    loom::codegen::low::storage_layout
     loom::ir
     loom::ops::low
     loom::target::arch::spirv::descriptors
@@ -186,59 +200,17 @@ loom_cc_library(
     ::module_storage
     ::module_types
     ::module_values
+    ::program
     iree::base
     iree::base::internal::arena
-    loom::analysis::symbol_facts
-    loom::codegen::low::diagnostics
     loom::codegen::low::function
-    loom::codegen::low::target_binding
-    loom::error::emitter
-    loom::error::error_defs
+    loom::codegen::low::representation_binding
     loom::ir
     loom::ops::low
     loom::target::arch::spirv::descriptors::descriptors_ids
     loom::target::arch::spirv::features
-    loom::target::arch::spirv::module_contract
     loom::target::arch::spirv::packet_rows
-    loom::target::function_version
-    loom::target::low_descriptor_registry
     loom::target::types
-  PUBLIC
-)
-endif()
-
-if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_library(
-  NAME
-    loom_check
-  HDRS
-    "check/loom_check.h"
-  SRCS
-    "check/loom_check.c"
-  DEPS
-    ::module_emitter
-    iree::base
-    loom::target::entry_selection
-    loom::target::tool::spirv
-    loom::tooling::compile::pipeline
-    loom::tools::loom-check::execute
-    loom::verify
-  PUBLIC
-)
-endif()
-
-if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_library(
-  NAME
-    check_provider
-  HDRS
-    "check/provider.h"
-  SRCS
-    "check/provider.c"
-  DEPS
-    ::loom_check
-    iree::base
-    loom::tools::loom-check::provider
   PUBLIC
 )
 endif()

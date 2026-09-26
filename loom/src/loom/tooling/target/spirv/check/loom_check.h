@@ -6,8 +6,8 @@
 
 // loom-check support for SPIR-V binary emission tests.
 
-#ifndef LOOM_TARGET_EMIT_SPIRV_CHECK_LOOM_CHECK_H_
-#define LOOM_TARGET_EMIT_SPIRV_CHECK_LOOM_CHECK_H_
+#ifndef LOOM_TOOLING_TARGET_SPIRV_CHECK_LOOM_CHECK_H_
+#define LOOM_TOOLING_TARGET_SPIRV_CHECK_LOOM_CHECK_H_
 
 #include "loom/tools/loom-check/execute.h"
 
@@ -26,4 +26,4 @@ extern const loom_check_requirement_provider_t
 }  // extern "C"
 #endif
 
-#endif  // LOOM_TARGET_EMIT_SPIRV_CHECK_LOOM_CHECK_H_
+#endif  // LOOM_TOOLING_TARGET_SPIRV_CHECK_LOOM_CHECK_H_

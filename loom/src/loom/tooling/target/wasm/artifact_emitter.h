@@ -4,8 +4,8 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#ifndef LOOM_TARGET_EMIT_WASM_ARTIFACT_EMITTER_H_
-#define LOOM_TARGET_EMIT_WASM_ARTIFACT_EMITTER_H_
+#ifndef LOOM_TOOLING_TARGET_WASM_ARTIFACT_EMITTER_H_
+#define LOOM_TOOLING_TARGET_WASM_ARTIFACT_EMITTER_H_
 
 #include "loom/target/provider.h"
 
@@ -21,4 +21,4 @@ extern const loom_target_provider_t loom_wasm_artifact_emitter_provider;
 }  // extern "C"
 #endif
 
-#endif  // LOOM_TARGET_EMIT_WASM_ARTIFACT_EMITTER_H_
+#endif  // LOOM_TOOLING_TARGET_WASM_ARTIFACT_EMITTER_H_

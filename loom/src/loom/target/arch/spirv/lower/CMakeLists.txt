@@ -29,11 +29,12 @@ loom_cc_library(
     iree::base
     iree::base::internal
     loom::analysis::contract_vector
+    loom::analysis::source_storage_packing
     loom::analysis::storage_interference
+    loom::analysis::storage_layout
     loom::codegen::low::descriptors
     loom::codegen::low::lower
     loom::codegen::low::source_memory_plan
-    loom::codegen::low::source_storage_packing
     loom::error::error_defs
     loom::ir
     loom::ir::facts

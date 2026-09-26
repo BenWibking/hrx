@@ -20,8 +20,10 @@
 #include "loom/target/arch/amdgpu/lower/legality.h"
 #include "loom/target/arch/amdgpu/lower/matrix_fragment_repack.h"
 #include "loom/target/arch/amdgpu/lower/sanitizer_race.h"
+#include "loom/target/arch/amdgpu/lower/source_alloca_layout.h"
 #include "loom/target/arch/amdgpu/lower/topology.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
+#include "loom/target/arch/amdgpu/lower/workgroup_storage.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 
 #define LOOM_AMDGPU_PACKED_WORKITEM_ID_DIMENSION_BITS 10u
@@ -1849,6 +1851,7 @@ iree_status_t loom_amdgpu_emit_current_workgroup_linear_id(
 iree_status_t loom_amdgpu_emit_entry_setup(void* user_data,
                                            loom_low_lower_context_t* context) {
   (void)user_data;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_validate_workgroup_storage(context));
   IREE_RETURN_IF_ERROR(loom_amdgpu_cluster_preamble_emit_entry_setup(context));
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_source_alloca_layout_emit_low_storage_roots(context));

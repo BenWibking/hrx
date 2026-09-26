@@ -17,7 +17,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
-#include "loom/codegen/low/target_binding.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/ir/ir.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/target/emit/spirv/module_abi.h"
@@ -25,6 +25,7 @@
 #include "loom/target/emit/spirv/module_storage.h"
 #include "loom/target/emit/spirv/module_types.h"
 #include "loom/target/emit/spirv/module_values.h"
+#include "loom/target/emit/spirv/program.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,8 +49,6 @@ typedef struct loom_spirv_function_emission_context_t {
   loom_spirv_module_shared_bda_root_t* shared_bda_root;
   // Module-wide Input variable IDs indexed by supported builtin kind.
   uint32_t* builtin_variable_ids;
-  // Structured diagnostic emitter for final target resource validation.
-  iree_diagnostic_emitter_t diagnostic_emitter;
 } loom_spirv_function_emission_context_t;
 
 // Mutable state for one function emission.
@@ -66,8 +65,8 @@ typedef struct loom_spirv_emit_state_t {
   loom_op_t* function_op;
   // Target-low function body being emitted.
   const loom_region_t* body;
-  // Resolved target record and descriptor set for function_op.
-  const loom_low_resolved_target_t* target;
+  // Prepared target and representation binding for |function_op|.
+  const loom_spirv_function_plan_t* function_plan;
   // Function-local scratch arena.
   iree_arena_allocator_t* scratch_arena;
   // Sectioned SPIR-V module builder.
@@ -141,13 +140,12 @@ iree_status_t loom_spirv_emit_low_op(loom_spirv_emit_state_t* state,
 
 // Emits one target-low function into |context->builder|.
 //
-// |function_op| and |target| are borrowed for the call. Module-wide IDs and
-// ABI state are retained in |context| for subsequent functions; all
-// function-local state is released before return. |out_valid| is false when
-// final target resource validation emits an error diagnostic.
+// |function_plan| is borrowed for the call. Module-wide IDs and ABI state are
+// retained in |context| for subsequent functions; all function-local state is
+// released before return.
 iree_status_t loom_spirv_emit_low_function(
-    loom_spirv_function_emission_context_t* context, loom_op_t* function_op,
-    const loom_low_resolved_target_t* target, bool* out_valid);
+    loom_spirv_function_emission_context_t* context,
+    const loom_spirv_function_plan_t* function_plan);
 
 #ifdef __cplusplus
 }  // extern "C"

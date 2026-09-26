@@ -11,6 +11,7 @@
 #include "loom/codegen/low/descriptors.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/pipeline/pass_environment.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/target_binding.h"
 #include "loom/ir/module.h"
 #include "loom/ops/op_defs.h"

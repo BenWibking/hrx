@@ -194,6 +194,10 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     loom_op_t* dead_op = nullptr;
     IREE_ASSERT_OK(loom_scalar_addi_build(&body_builder, 0, lhs, rhs, i32_type,
                                           LOOM_LOCATION_UNKNOWN, &dead_op));
+    // Fresh identity prevents commoning but does not make an unused result
+    // observable. The source plan must agree with canonical DCE on that
+    // distinction.
+    dead_op->traits |= LOOM_TRAIT_UNIQUE_IDENTITY;
     const loom_value_id_t dead = loom_scalar_addi_result(dead_op);
     loom_op_t* dead_identity_op = nullptr;
     IREE_ASSERT_OK(loom_scalar_assume_build(
@@ -242,7 +246,7 @@ class LowLowerSourcePlanTest : public ::testing::Test {
 };
 
 TEST_F(LowLowerSourcePlanTest,
-       ElidesDeadIdentityChainAndRetainsReturnedIdentityChain) {
+       ElidesDeadUniqueIdentityChainAndRetainsReturnedIdentityChain) {
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
   ASSERT_EQ(result_.error_count, 0u);
