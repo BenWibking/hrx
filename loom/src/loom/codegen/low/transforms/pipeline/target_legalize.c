@@ -901,13 +901,16 @@ static iree_status_t loom_low_target_legalize_record_report_source_op(
 static bool loom_low_target_legalize_entry_matches(
     const loom_low_target_legalize_function_state_t* state,
     const loom_target_legalizer_entry_t* entry, const loom_op_t* op) {
-  if (!entry->first_operand_element_types) {
-    return true;
+  if (entry->first_operand_element_types) {
+    const loom_type_t operand_type =
+        loom_module_value_type(state->module, loom_op_operands(op)[0]);
+    if (!loom_scalar_type_set_contains(entry->first_operand_element_types,
+                                       loom_type_element_type(operand_type))) {
+      return false;
+    }
   }
-  const loom_type_t operand_type =
-      loom_module_value_type(state->module, loom_op_operands(op)[0]);
-  return loom_scalar_type_set_contains(entry->first_operand_element_types,
-                                       loom_type_element_type(operand_type));
+  return entry->match == NULL ||
+         entry->match(entry, &state->legalization_context, op);
 }
 
 // Filters a nonempty registry span to its first applicable row, or an empty
@@ -1435,6 +1438,8 @@ static iree_status_t loom_low_target_legalize_rewrite_op(
     return iree_ok_status();
   }
 
+  state->legalization_context.fact_table = driver->fact_table;
+
   loom_target_legalizer_op_entry_t op_entry =
       loom_target_legalizer_registry_lookup_kind(state->legalizer_registry,
                                                  op->kind);
@@ -1454,7 +1459,6 @@ static iree_status_t loom_low_target_legalize_rewrite_op(
                         : iree_string_view_empty();
   const uint32_t source_op_kind = op->kind;
 
-  state->legalization_context.fact_table = driver->fact_table;
   state->legalization_context.rewriter = &driver->rewriter;
   state->legalization_context.arena = driver->scratch_arena;
   loom_target_contract_query_result_t query_result =
@@ -1691,8 +1695,6 @@ static iree_status_t loom_low_target_legalize_function(
           descriptor_registry,
           loom_low_source_selection_target_bundle(selection),
           &state.descriptor_set));
-  IREE_RETURN_IF_ERROR(
-      loom_low_target_legalize_capture_report_source_ops(&state));
 
   const loom_pass_value_fact_scope_t fact_scope =
       loom_pass_value_fact_scope_function_for_target(selection->func,
@@ -1711,12 +1713,6 @@ static iree_status_t loom_low_target_legalize_function(
       .max_errors = pass_state->max_errors,
   };
 
-  iree_arena_allocator_t rewrite_arena;
-  iree_arena_initialize(module->arena.block_pool, &rewrite_arena);
-  loom_greedy_rewrite_driver_t rewrite_driver;
-  loom_greedy_rewrite_driver_initialize(module, &rewrite_arena, fact_table,
-                                        &rewrite_driver);
-
   state.legalization_context = (loom_target_legalization_context_t){
       .pass = pass,
       .module = module,
@@ -1725,12 +1721,21 @@ static iree_status_t loom_low_target_legalize_function(
       .descriptor_set = state.descriptor_set,
       .mode = pass_state->mode,
       .policy = pass_state->policy,
+      .fact_table = fact_table,
       .contract_query =
           {
               .fn = loom_low_target_legalize_query_contract,
               .user_data = &state,
           },
   };
+  IREE_RETURN_IF_ERROR(
+      loom_low_target_legalize_capture_report_source_ops(&state));
+
+  iree_arena_allocator_t rewrite_arena;
+  iree_arena_initialize(module->arena.block_pool, &rewrite_arena);
+  loom_greedy_rewrite_driver_t rewrite_driver;
+  loom_greedy_rewrite_driver_initialize(module, &rewrite_arena, fact_table,
+                                        &rewrite_driver);
   const loom_greedy_rewrite_options_t rewrite_options = {
       .max_iterations = pass_state->max_iterations,
       .math_policy = loom_target_math_policy_registry_lookup_for_bundle(

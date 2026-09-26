@@ -54,6 +54,7 @@ TEST(LowLegalizerRegistryTest, TargetProvidersPrecedeGenericProviders) {
       {/*.flags=*/LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
        /*.root_kind=*/LOOM_OP_SCALAR_EXTF,
        /*.first_operand_element_types=*/0,
+       /*.match=*/nullptr,
        /*.legalize=*/TargetLegalize},
   };
   const loom_target_legalizer_provider_t target_provider = {

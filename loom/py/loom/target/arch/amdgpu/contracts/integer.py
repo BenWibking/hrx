@@ -78,6 +78,8 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.v_sub_u32",
     "amdgpu.v_mul_lo_u32",
     "amdgpu.v_mul_hi_u32",
+    "amdgpu.v_mad_u32_u24.src0_inline",
+    "amdgpu.v_mad_u32_u24.src1_inline",
     "amdgpu.v_lshl_add_u32.shift_imm",
     "amdgpu.v_min_i32",
     "amdgpu.v_max_i32",
@@ -257,6 +259,100 @@ def _sgpr_binary_rule(
 
 def _materialized_operand(field: str, materializer: ValueMaterializer) -> ValueRef:
     return ValueRef.operand(field, materializer=materializer.name)
+
+
+def _scalar_fmai_typed_guards() -> tuple[Guard, ...]:
+    return tuple(Guard.value_type(field, _I32) for field in ("a", "b", "c", "result"))
+
+
+def _scalar_fmai_input_guard(field: str, sgpr_source: str | None) -> Guard:
+    register_class = "amdgpu.sgpr" if field == sgpr_source else "amdgpu.vgpr"
+    return Guard.low_value_register_class(field, register_class)
+
+
+def _scalar_fmai_power_of_two_rule(
+    *, scale_source: str, value_source: str, sgpr_source: str | None
+) -> DescriptorRule:
+    descriptor = _descriptor("amdgpu.v_lshl_add_u32.shift_imm")
+    return DescriptorRule(
+        source_op=scalar_arithmetic.scalar_fmai,
+        descriptor=descriptor,
+        guards=(
+            *_scalar_fmai_typed_guards(),
+            Guard.low_value_register_class("result", "amdgpu.vgpr"),
+            Guard.value_exact_power_of_two_i64(scale_source),
+            Guard.value_unsigned_bit_count(scale_source, 32),
+            _scalar_fmai_input_guard(value_source, sgpr_source),
+            _scalar_fmai_input_guard("c", sgpr_source),
+            Guard.descriptor_available(descriptor),
+        ),
+        emit=(
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={
+                    "value": ValueRef.operand(value_source),
+                    "addend": ValueRef.operand("c"),
+                },
+                results={"dst": ValueRef.result("result")},
+                immediates={"shift": ValueProject.exact_i64_log2(scale_source)},
+            ),
+        ),
+    )
+
+
+def _scalar_fmai_inline_u24_rule(
+    *, scale_source: str, value_source: str, sgpr_source: str | None
+) -> DescriptorRule:
+    descriptor_source = "src0" if scale_source == "a" else "src1"
+    descriptor = _descriptor(f"amdgpu.v_mad_u32_u24.{descriptor_source}_inline")
+    return DescriptorRule(
+        source_op=scalar_arithmetic.scalar_fmai,
+        descriptor=descriptor,
+        guards=(
+            *_scalar_fmai_typed_guards(),
+            Guard.low_value_register_class("result", "amdgpu.vgpr"),
+            Guard.value_unsigned_bit_count("a", 24),
+            Guard.value_unsigned_bit_count("b", 24),
+            Guard.value_exact_i64(scale_source),
+            Guard.value_i64_range(scale_source, 0, 64),
+            _scalar_fmai_input_guard(value_source, sgpr_source),
+            _scalar_fmai_input_guard("c", sgpr_source),
+            Guard.descriptor_available(descriptor),
+        ),
+        emit=(
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={
+                    value_source: ValueRef.operand(value_source),
+                    "addend": ValueRef.operand("c"),
+                },
+                results={"dst": ValueRef.result("result")},
+                immediates={"imm32": ValueProject.exact_i64(scale_source)},
+            ),
+        ),
+    )
+
+
+def _scalar_fmai_rules() -> tuple[DescriptorRule, ...]:
+    rules = [
+        _scalar_fmai_power_of_two_rule(
+            scale_source=scale_source,
+            value_source=value_source,
+            sgpr_source=sgpr_source,
+        )
+        for scale_source, value_source in (("a", "b"), ("b", "a"))
+        for sgpr_source in ("c", value_source, None)
+    ]
+    rules.extend(
+        _scalar_fmai_inline_u24_rule(
+            scale_source=scale_source,
+            value_source=value_source,
+            sgpr_source=sgpr_source,
+        )
+        for scale_source, value_source in (("a", "b"), ("b", "a"))
+        for sgpr_source in ("c", value_source, None)
+    )
+    return tuple(rules)
 
 
 def _vgpr_binary_rule(
@@ -1509,6 +1605,7 @@ def _rules() -> tuple[DescriptorRule, ...]:
             "amdgpu.v_mul_lo_u32",
         )
     )
+    rules.extend(_scalar_fmai_rules())
     rules.extend(
         _i1_scalar_bool_bitwise_rules(
             scalar_bitwise.scalar_andi,
