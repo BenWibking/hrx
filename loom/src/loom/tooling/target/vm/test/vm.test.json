@@ -372,6 +372,29 @@
       ]
     },
     {
+      "name": "excludes module roots before dependency materialization",
+      "steps": [
+        {
+          "name": "compile",
+          "run": {
+            "tool": "loom-compile",
+            "args": ["{srcdir}/module.loom", "--product=module", "--exclude-root=swap", "--target=vm:core", "--output={tmp}/excluded.vm"]
+          }
+        },
+        {
+          "name": "disassemble",
+          "run": {
+            "tool": "vm-dis",
+            "args": ["{tmp}/excluded.vm"]
+          },
+          "stdout": {
+            "contains": ["\"arithmetic\"", "control.call", "integer.mul.i32"],
+            "not_contains": ["\"swap\""]
+          }
+        }
+      ]
+    },
+    {
       "name": "rejects colliding host export names",
       "run": {
         "tool": "loom-compile",

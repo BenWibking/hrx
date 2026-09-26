@@ -24,6 +24,13 @@ LoomTargetProfileInfo = provider(
     },
 )
 
+LoomTargetSetInfo = provider(
+    doc = "Ordered collection of immutable Loom target profiles.",
+    fields = {
+        "profiles": "Ordered, deduplicated list of target-profile targets.",
+    },
+)
+
 def _loom_target_profile_impl(ctx):
     return [
         LoomTargetProfileInfo(
@@ -66,6 +73,57 @@ def loom_target_profile(name, family, selector, **kwargs):
         name = name,
         family = family,
         selector = selector,
+        **kwargs
+    )
+
+def _loom_target_set_impl(ctx):
+    profiles = []
+    seen_labels = {}
+    for target in ctx.attr.targets:
+        target_profiles = (
+            [target] if LoomTargetProfileInfo in target else target[LoomTargetSetInfo].profiles
+        )
+        for profile in target_profiles:
+            label = str(profile.label)
+            if label not in seen_labels:
+                seen_labels[label] = None
+                profiles.append(profile)
+    if not profiles:
+        fail("%s must contain at least one target profile" % ctx.label)
+    return [LoomTargetSetInfo(profiles = profiles)]
+
+_loom_target_set = rule(
+    implementation = _loom_target_set_impl,
+    attrs = {
+        "targets": attr.label_list(
+            mandatory = True,
+            providers = [
+                [LoomTargetProfileInfo],
+                [LoomTargetSetInfo],
+            ],
+            doc = "Target profiles or target sets collected in declaration order.",
+        ),
+    },
+    doc = "Collects immutable target profiles for exhaustive build fanout.",
+)
+
+def loom_target_set(name, targets, **kwargs):
+    """Declares an ordered set of target profiles.
+
+    Nested target sets are flattened and duplicate profiles retain their first
+    position. Adding a profile to a central set therefore extends every corpus
+    that consumes the set without changing those corpus packages.
+
+    Args:
+      name: Bazel target name.
+      targets: Target profile or target set labels.
+      **kwargs: Common rule attributes forwarded to the target-set rule.
+    """
+    if not targets:
+        fail("Loom target set must contain at least one target")
+    _loom_target_set(
+        name = name,
+        targets = targets,
         **kwargs
     )
 

@@ -27,7 +27,7 @@ func.def @boolean_extrema(%value: i1) -> (i1, i1, i1, i1) {
   func.return %smin, %smax, %umin, %umax : i1, i1, i1, i1
 }
 
-check.case public @sign_boundary {
+check.case @sign_boundary {
   %lhs = check.literal value(-9223372036854775808) : i64
   %rhs = check.literal value(9223372036854775807) : i64
   %smin, %smax, %umin, %umax = func.call @extrema(%lhs, %rhs) : (i64, i64) -> (i64, i64, i64, i64)
@@ -38,7 +38,7 @@ check.case public @sign_boundary {
   check.return
 }
 
-check.case public @zero_and_all_ones {
+check.case @zero_and_all_ones {
   %lhs = check.literal value(0) : i64
   %rhs = check.literal value(-1) : i64
   %smin, %smax, %umin, %umax = func.call @extrema(%lhs, %rhs) : (i64, i64) -> (i64, i64, i64, i64)
@@ -49,7 +49,7 @@ check.case public @zero_and_all_ones {
   check.return
 }
 
-check.case public @equal_sign_bits {
+check.case @equal_sign_bits {
   %lhs = check.literal value(-9223372036854775808) : i64
   %rhs = check.literal value(-9223372036854775808) : i64
   %smin, %smax, %umin, %umax = func.call @extrema(%lhs, %rhs) : (i64, i64) -> (i64, i64, i64, i64)
@@ -60,7 +60,7 @@ check.case public @equal_sign_bits {
   check.return
 }
 
-check.case public @signed_boolean_order {
+check.case @signed_boolean_order {
   %true = check.literal value(true) : i1
   %false = check.literal value(false) : i1
   %smin, %smax, %umin, %umax = func.call @boolean_extrema(%true) : (i1) -> (i1, i1, i1, i1)

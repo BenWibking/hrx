@@ -19,10 +19,13 @@ static iree_status_t loom_compile_materialize_roots(
   loom_module_t* module = *inout_module;
   iree_string_view_list_t roots = request->roots;
   iree_string_view_t* implicit_root_values = NULL;
-  if (roots.count == 0 && request->product == LOOM_COMPILE_PRODUCT_KERNEL) {
+  if (roots.count == 0 && (request->product == LOOM_COMPILE_PRODUCT_KERNEL ||
+                           request->excluded_roots.count != 0)) {
     for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
-      if (loom_compile_request_symbol_is_implicit_root(
-              module, request->product, &module->symbols.entries[i])) {
+      if (loom_compile_request_symbol_is_canonical_root(
+              module, request->product, &module->symbols.entries[i]) &&
+          !loom_compile_request_symbol_is_excluded(
+              module, request, &module->symbols.entries[i])) {
         ++roots.count;
       }
     }
@@ -38,8 +41,9 @@ static iree_status_t loom_compile_materialize_roots(
     iree_host_size_t root_ordinal = 0;
     for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
       const loom_symbol_t* symbol = &module->symbols.entries[i];
-      if (loom_compile_request_symbol_is_implicit_root(module, request->product,
-                                                       symbol)) {
+      if (loom_compile_request_symbol_is_canonical_root(
+              module, request->product, symbol) &&
+          !loom_compile_request_symbol_is_excluded(module, request, symbol)) {
         implicit_root_values[root_ordinal++] =
             loom_string_table_get(&module->strings, symbol->name_id);
       }
@@ -83,6 +87,8 @@ iree_status_t loom_compile_materialize_request(
     iree_arena_block_pool_t* block_pool, iree_allocator_t allocator,
     loom_module_t** inout_module, uint32_t* out_error_count) {
   *out_error_count = 0;
+  IREE_RETURN_IF_ERROR(loom_compile_materialize_roots(
+      request, sources, block_pool, allocator, inout_module));
   if (request->product == LOOM_COMPILE_PRODUCT_KERNEL &&
       request->explicit_target.target_profile != NULL) {
     const loom_target_entry_options_t diagnostic_options = {
@@ -105,8 +111,7 @@ iree_status_t loom_compile_materialize_request(
   if (*out_error_count != 0) {
     return iree_ok_status();
   }
-  return loom_compile_materialize_roots(request, sources, block_pool, allocator,
-                                        inout_module);
+  return iree_ok_status();
 }
 
 iree_status_t loom_compile_run_request_pipeline(

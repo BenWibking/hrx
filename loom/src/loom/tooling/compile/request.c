@@ -242,7 +242,29 @@ static bool loom_compile_request_is_concrete_kernel_entry(
           loom_compile_request_is_array_program(module, symbol));
 }
 
-bool loom_compile_request_symbol_is_implicit_root(
+static bool loom_compile_request_is_concrete_module_function(
+    const loom_module_t* module, const loom_symbol_t* symbol) {
+  if (symbol->defining_op == NULL ||
+      loom_symbol_definition_is_declaration(symbol->definition) ||
+      !iree_any_bit_set(symbol->flags,
+                        LOOM_SYMBOL_FLAG_PUBLIC | LOOM_SYMBOL_FLAG_RETAIN) ||
+      !loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_FUNC_LIKE)) {
+    return false;
+  }
+  if (loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_PIPELINE)) {
+    const loom_symbol_product_carrier_t carrier =
+        loom_symbol_definition_product_carrier(symbol->definition,
+                                               symbol->defining_op);
+    return carrier == LOOM_SYMBOL_PRODUCT_CARRIER_UNCLASSIFIED || carrier == 0;
+  }
+  return !loom_symbol_implements(symbol,
+                                 LOOM_SYMBOL_INTERFACE_COMMAND_PROGRAM) &&
+         !loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_KERNEL) &&
+         !loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_KERNEL_ENTRY) &&
+         !loom_compile_request_is_array_program(module, symbol);
+}
+
+bool loom_compile_request_symbol_is_canonical_root(
     const loom_module_t* module, loom_compile_product_t product,
     const loom_symbol_t* symbol) {
   switch (product) {
@@ -254,32 +276,77 @@ bool loom_compile_request_symbol_is_implicit_root(
       return loom_compile_request_is_concrete_kernel_entry(module, symbol) ||
              loom_compile_request_is_concrete_scoped_pipeline(
                  symbol, LOOM_PIPELINE_DEF_SCOPE_KERNEL);
-    case LOOM_COMPILE_PRODUCT_INVALID:
     case LOOM_COMPILE_PRODUCT_MODULE:
+      return loom_compile_request_is_concrete_module_function(module, symbol);
+    case LOOM_COMPILE_PRODUCT_INVALID:
       return false;
   }
   return false;
 }
 
+static bool loom_compile_request_root_name_equal(iree_string_view_t lhs,
+                                                 iree_string_view_t rhs) {
+  return iree_string_view_equal(loom_target_entry_normalize_symbol_name(lhs),
+                                loom_target_entry_normalize_symbol_name(rhs));
+}
+
+static bool loom_compile_request_root_list_contains(
+    iree_string_view_list_t roots, iree_string_view_t root_name) {
+  for (iree_host_size_t i = 0; i < roots.count; ++i) {
+    if (loom_compile_request_root_name_equal(roots.values[i], root_name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool loom_compile_request_symbol_is_excluded(
+    const loom_module_t* module, const loom_compile_request_t* request,
+    const loom_symbol_t* symbol) {
+  if (request->excluded_roots.count == 0) {
+    return false;
+  }
+  const iree_string_view_t symbol_name =
+      loom_string_table_get(&module->strings, symbol->name_id);
+  return loom_compile_request_root_list_contains(request->excluded_roots,
+                                                 symbol_name);
+}
+
+static bool loom_compile_request_name_is_excluded(
+    const loom_module_t* module, iree_string_view_list_t excluded_roots,
+    const loom_symbol_t* symbol) {
+  if (excluded_roots.count == 0) {
+    return false;
+  }
+  const iree_string_view_t symbol_name =
+      loom_string_table_get(&module->strings, symbol->name_id);
+  return loom_compile_request_root_list_contains(excluded_roots, symbol_name);
+}
+
 static void loom_compile_request_collect_implicit_commands(
-    const loom_module_t* module, loom_compile_root_summary_t* summary) {
+    const loom_module_t* module, iree_string_view_list_t excluded_roots,
+    loom_compile_root_summary_t* summary) {
   summary->product = LOOM_COMPILE_PRODUCT_COMMAND;
   for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
     const loom_symbol_t* symbol = &module->symbols.entries[i];
-    if (loom_compile_request_symbol_is_implicit_root(
-            module, LOOM_COMPILE_PRODUCT_COMMAND, symbol)) {
+    if (loom_compile_request_symbol_is_canonical_root(
+            module, LOOM_COMPILE_PRODUCT_COMMAND, symbol) &&
+        !loom_compile_request_name_is_excluded(module, excluded_roots,
+                                               symbol)) {
       ++summary->root_count;
     }
   }
 }
 
 static iree_status_t loom_compile_request_collect_implicit_kernels(
-    const loom_module_t* module, loom_compile_root_summary_t* summary) {
+    const loom_module_t* module, iree_string_view_list_t excluded_roots,
+    loom_compile_root_summary_t* summary) {
   summary->product = LOOM_COMPILE_PRODUCT_KERNEL;
   for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
     const loom_symbol_t* symbol = &module->symbols.entries[i];
-    if (!loom_compile_request_symbol_is_implicit_root(
-            module, LOOM_COMPILE_PRODUCT_KERNEL, symbol)) {
+    if (!loom_compile_request_symbol_is_canonical_root(
+            module, LOOM_COMPILE_PRODUCT_KERNEL, symbol) ||
+        loom_compile_request_name_is_excluded(module, excluded_roots, symbol)) {
       continue;
     }
     ++summary->root_count;
@@ -287,6 +354,21 @@ static iree_status_t loom_compile_request_collect_implicit_kernels(
         loom_compile_request_merge_kernel_target(module, symbol, summary));
   }
   return iree_ok_status();
+}
+
+static void loom_compile_request_collect_implicit_modules(
+    const loom_module_t* module, iree_string_view_list_t excluded_roots,
+    loom_compile_root_summary_t* summary) {
+  summary->product = LOOM_COMPILE_PRODUCT_MODULE;
+  for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
+    const loom_symbol_t* symbol = &module->symbols.entries[i];
+    if (loom_compile_request_symbol_is_canonical_root(
+            module, LOOM_COMPILE_PRODUCT_MODULE, symbol) &&
+        !loom_compile_request_name_is_excluded(module, excluded_roots,
+                                               symbol)) {
+      ++summary->root_count;
+    }
+  }
 }
 
 static iree_status_t loom_compile_request_validate_product(
@@ -308,8 +390,74 @@ static iree_status_t loom_compile_request_validate_product(
       explicit_name.data);
 }
 
+static iree_status_t loom_compile_request_validate_excluded_roots(
+    const loom_module_t* module, iree_string_view_list_t roots,
+    iree_string_view_list_t excluded_roots,
+    loom_compile_product_t explicit_product) {
+  if (excluded_roots.count == 0) {
+    return iree_ok_status();
+  }
+  if (excluded_roots.values == NULL) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "excluded root count is nonzero but excluded roots are NULL");
+  }
+  if (roots.count != 0) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "--root and --exclude-root cannot be combined");
+  }
+  if (explicit_product == LOOM_COMPILE_PRODUCT_INVALID) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "--exclude-root requires an explicit --product");
+  }
+  for (iree_host_size_t i = 0; i < excluded_roots.count; ++i) {
+    const iree_string_view_t excluded_name = excluded_roots.values[i];
+    for (iree_host_size_t j = 0; j < i; ++j) {
+      if (loom_compile_request_root_name_equal(excluded_name,
+                                               excluded_roots.values[j])) {
+        const iree_string_view_t normalized_name =
+            loom_target_entry_normalize_symbol_name(excluded_name);
+        return iree_make_status(
+            IREE_STATUS_INVALID_ARGUMENT, "excluded root '@%.*s' is repeated",
+            (int)normalized_name.size, normalized_name.data);
+      }
+    }
+    const loom_symbol_t* symbol = NULL;
+    IREE_RETURN_IF_ERROR(
+        loom_compile_request_lookup_root(module, excluded_name, &symbol));
+    loom_compile_product_t product = LOOM_COMPILE_PRODUCT_INVALID;
+    IREE_RETURN_IF_ERROR(
+        loom_compile_request_classify_symbol(module, symbol, &product));
+    if (product != explicit_product) {
+      const iree_string_view_t normalized_name =
+          loom_target_entry_normalize_symbol_name(excluded_name);
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "excluded root '@%.*s' has product '%.*s', expected '%.*s'",
+          (int)normalized_name.size, normalized_name.data,
+          (int)loom_compile_product_name(product).size,
+          loom_compile_product_name(product).data,
+          (int)loom_compile_product_name(explicit_product).size,
+          loom_compile_product_name(explicit_product).data);
+    }
+    if (!loom_compile_request_symbol_is_canonical_root(module, product,
+                                                       symbol)) {
+      const iree_string_view_t normalized_name =
+          loom_target_entry_normalize_symbol_name(excluded_name);
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "excluded root '@%.*s' is not selected by product '%.*s'",
+          (int)normalized_name.size, normalized_name.data,
+          (int)loom_compile_product_name(product).size,
+          loom_compile_product_name(product).data);
+    }
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_compile_request_select_roots(
     const loom_module_t* module, iree_string_view_list_t roots,
+    iree_string_view_list_t excluded_roots,
     loom_compile_product_t explicit_product,
     loom_compile_root_summary_t* out_summary) {
   *out_summary = (loom_compile_root_summary_t){0};
@@ -330,7 +478,8 @@ static iree_status_t loom_compile_request_select_roots(
   }
 
   if (explicit_product == LOOM_COMPILE_PRODUCT_COMMAND) {
-    loom_compile_request_collect_implicit_commands(module, out_summary);
+    loom_compile_request_collect_implicit_commands(module, excluded_roots,
+                                                   out_summary);
     if (out_summary->root_count == 0) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
@@ -340,8 +489,8 @@ static iree_status_t loom_compile_request_select_roots(
     return iree_ok_status();
   }
   if (explicit_product == LOOM_COMPILE_PRODUCT_KERNEL) {
-    IREE_RETURN_IF_ERROR(
-        loom_compile_request_collect_implicit_kernels(module, out_summary));
+    IREE_RETURN_IF_ERROR(loom_compile_request_collect_implicit_kernels(
+        module, excluded_roots, out_summary));
     if (out_summary->root_count == 0) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
@@ -351,18 +500,30 @@ static iree_status_t loom_compile_request_select_roots(
     return iree_ok_status();
   }
   if (explicit_product == LOOM_COMPILE_PRODUCT_MODULE) {
-    out_summary->product = LOOM_COMPILE_PRODUCT_MODULE;
+    if (excluded_roots.count == 0) {
+      out_summary->product = LOOM_COMPILE_PRODUCT_MODULE;
+      return iree_ok_status();
+    }
+    loom_compile_request_collect_implicit_modules(module, excluded_roots,
+                                                  out_summary);
+    if (out_summary->root_count == 0) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "excluded roots remove every canonical module root; use a "
+          "whole-file exclusion instead");
+    }
     return iree_ok_status();
   }
 
-  loom_compile_request_collect_implicit_commands(module, out_summary);
+  loom_compile_request_collect_implicit_commands(
+      module, iree_string_view_list_empty(), out_summary);
   if (out_summary->root_count != 0) {
     return iree_ok_status();
   }
 
   *out_summary = (loom_compile_root_summary_t){0};
-  IREE_RETURN_IF_ERROR(
-      loom_compile_request_collect_implicit_kernels(module, out_summary));
+  IREE_RETURN_IF_ERROR(loom_compile_request_collect_implicit_kernels(
+      module, iree_string_view_list_empty(), out_summary));
   if (out_summary->root_count != 0) {
     return iree_ok_status();
   }
@@ -589,16 +750,15 @@ static iree_status_t loom_compile_request_select_format(
       out_producer->kind = LOOM_COMPILE_PRODUCER_COMMAND;
       return iree_ok_status();
     case LOOM_COMPILE_PRODUCT_MODULE: {
-      const loom_target_provider_t* provider =
+      const loom_target_emitter_t* canonical_emitter =
           target_fact_type != NULL
-              ? loom_target_environment_lookup_fact_provider(target_environment,
-                                                             target_fact_type)
+              ? loom_target_environment_lookup_canonical_module_emitter(
+                    target_environment, target_fact_type)
               : NULL;
-      if (provider != NULL && provider->canonical_module_emitter != NULL) {
+      if (canonical_emitter != NULL) {
         out_producer->kind = LOOM_COMPILE_PRODUCER_TARGET_EMITTER;
-        out_producer->value.target_emitter = provider->canonical_module_emitter;
-        *out_format =
-            provider->canonical_module_emitter->public_artifact_format;
+        out_producer->value.target_emitter = canonical_emitter;
+        *out_format = canonical_emitter->public_artifact_format;
         return iree_ok_status();
       }
       return iree_make_status(
@@ -626,9 +786,12 @@ iree_status_t loom_compile_request_resolve(
   loom_compile_product_t explicit_product = LOOM_COMPILE_PRODUCT_INVALID;
   IREE_RETURN_IF_ERROR(
       loom_compile_request_parse_product(options->product, &explicit_product));
+  IREE_RETURN_IF_ERROR(loom_compile_request_validate_excluded_roots(
+      module, options->roots, options->excluded_roots, explicit_product));
   loom_compile_root_summary_t root_summary = {0};
   IREE_RETURN_IF_ERROR(loom_compile_request_select_roots(
-      module, options->roots, explicit_product, &root_summary));
+      module, options->roots, options->excluded_roots, explicit_product,
+      &root_summary));
 
   loom_artifact_target_t explicit_target = {0};
   IREE_RETURN_IF_ERROR(loom_compile_request_select_explicit_target(
@@ -687,6 +850,7 @@ iree_status_t loom_compile_request_resolve(
       .roots = options->roots,
       .explicit_target = explicit_target,
       .target_fact_type = target_fact_type,
+      .excluded_roots = options->excluded_roots,
   };
   IREE_RETURN_IF_ERROR(loom_compile_request_select_format(
       request.product, options->format, request.target_fact_type,

@@ -11,6 +11,7 @@ load(
     "loom_cc_binary",
     "loom_cc_library",
     "loom_cc_test",
+    "loom_config_compatible_with",
 )
 
 package(
@@ -123,6 +124,19 @@ iree_execution_test_suite(
     ],
     manifests = ["loom-compile.test.json"],
     tags = ["hostonly"],
+    tools = {
+        "loom-compile": ":loom-compile",
+    },
+)
+
+iree_execution_test_suite(
+    name = "wasm_module_execution_test",
+    manifests = ["wasm-module.test.json"],
+    tags = ["hostonly"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/emit:wasm",
+        "//loom/config/target/arch:wasm",
+    ]),
     tools = {
         "loom-compile": ":loom-compile",
     },

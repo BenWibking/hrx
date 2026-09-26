@@ -120,4 +120,17 @@ iree_execution_test_suite(
     "hostonly"
 )
 
+if(LOOM_EMIT_WASM AND LOOM_TARGET_ARCH_WASM)
+iree_execution_test_suite(
+  NAME
+    wasm_module_execution_test
+  MANIFESTS
+    "wasm-module.test.json"
+  TOOLS
+    "loom-compile=::loom-compile"
+  LABELS
+    "hostonly"
+)
+endif()
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

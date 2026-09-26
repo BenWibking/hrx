@@ -16,10 +16,12 @@
 extern "C" {
 #endif
 
-// Specializes kernel entries for the explicit target, then materializes the
-// selected roots and their dependency closure. Root materialization establishes
-// the deployment ABI independently of any check launches in the input module.
-// Module products without explicit roots keep the whole module.
+// Materializes the selected roots and their dependency closure, then
+// specializes the retained kernel entries for the explicit target. Root
+// materialization establishes the deployment ABI independently of any check
+// launches in the input module and ensures excluded roots cannot participate in
+// specialization. Module products without explicit or excluded roots keep the
+// whole module.
 //
 // The caller owns |*inout_module| on both success and failure. Successful
 // transformations may replace it and free the previous module. Source storage

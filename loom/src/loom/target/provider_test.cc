@@ -343,6 +343,127 @@ TEST_F(TargetProviderTest, LooksUpProviderWithoutProfileByFactType) {
   loom_target_environment_deinitialize(&environment);
 }
 
+TEST_F(TargetProviderTest, ComposesCanonicalModuleEmitterByFactType) {
+  static const loom_target_fact_type_t kFactType = {};
+  static const loom_target_emitter_t kEmitter = {
+      /*.name=*/IREE_SVL("module-emitter"),
+  };
+  static const loom_target_emitter_t* const kEmitters[] = {&kEmitter};
+  loom_target_provider_t target_provider = {};
+  target_provider.target_fact_type = &kFactType;
+  loom_target_provider_t emission_provider = {};
+  emission_provider.emitter_list =
+      loom_target_emitter_list_make(kEmitters, IREE_ARRAYSIZE(kEmitters));
+  emission_provider.canonical_module_emitter = &kEmitter;
+  emission_provider.canonical_module_fact_type = &kFactType;
+  const loom_target_provider_t* providers[] = {
+      &target_provider,
+      &emission_provider,
+  };
+  const loom_target_provider_set_t provider_set =
+      loom_target_provider_set_make(providers, IREE_ARRAYSIZE(providers));
+  loom_target_environment_t environment = {};
+  IREE_ASSERT_OK(
+      loom_target_environment_initialize(&provider_set, &environment));
+
+  EXPECT_EQ(
+      loom_target_environment_lookup_fact_provider(&environment, &kFactType),
+      &target_provider);
+  EXPECT_EQ(loom_target_environment_lookup_canonical_module_emitter(
+                &environment, &kFactType),
+            &kEmitter);
+
+  loom_target_environment_deinitialize(&environment);
+}
+
+TEST_F(TargetProviderTest, RejectsCanonicalModuleEmitterWithoutFactType) {
+  static const loom_target_emitter_t kEmitter = {
+      /*.name=*/IREE_SVL("module-emitter"),
+  };
+  static const loom_target_emitter_t* const kEmitters[] = {&kEmitter};
+  loom_target_provider_t provider = {};
+  provider.emitter_list =
+      loom_target_emitter_list_make(kEmitters, IREE_ARRAYSIZE(kEmitters));
+  provider.canonical_module_emitter = &kEmitter;
+  const loom_target_provider_t* providers[] = {&provider};
+  const loom_target_provider_set_t provider_set =
+      loom_target_provider_set_make(providers, IREE_ARRAYSIZE(providers));
+  loom_target_environment_t environment = {};
+
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_target_environment_initialize(&provider_set, &environment));
+}
+
+TEST_F(TargetProviderTest, RejectsCanonicalModuleFactTypeWithoutEmitter) {
+  static const loom_target_fact_type_t kFactType = {};
+  loom_target_provider_t provider = {};
+  provider.canonical_module_fact_type = &kFactType;
+  const loom_target_provider_t* providers[] = {&provider};
+  const loom_target_provider_set_t provider_set =
+      loom_target_provider_set_make(providers, IREE_ARRAYSIZE(providers));
+  loom_target_environment_t environment = {};
+
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_target_environment_initialize(&provider_set, &environment));
+}
+
+TEST_F(TargetProviderTest, RejectsUncontributedCanonicalModuleEmitter) {
+  static const loom_target_fact_type_t kFactType = {};
+  static const loom_target_emitter_t kEmitter = {
+      /*.name=*/IREE_SVL("module-emitter"),
+  };
+  loom_target_provider_t provider = {};
+  provider.canonical_module_emitter = &kEmitter;
+  provider.canonical_module_fact_type = &kFactType;
+  const loom_target_provider_t* providers[] = {&provider};
+  const loom_target_provider_set_t provider_set =
+      loom_target_provider_set_make(providers, IREE_ARRAYSIZE(providers));
+  loom_target_environment_t environment = {};
+
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_target_environment_initialize(&provider_set, &environment));
+}
+
+TEST_F(TargetProviderTest, RejectsDuplicateCanonicalModuleEmitter) {
+  static const loom_target_fact_type_t kFactType = {};
+  static const loom_target_emitter_t kFirstEmitter = {
+      /*.name=*/IREE_SVL("first-module-emitter"),
+  };
+  static const loom_target_emitter_t kSecondEmitter = {
+      /*.name=*/IREE_SVL("second-module-emitter"),
+  };
+  static const loom_target_emitter_t* const kFirstEmitters[] = {
+      &kFirstEmitter,
+  };
+  static const loom_target_emitter_t* const kSecondEmitters[] = {
+      &kSecondEmitter,
+  };
+  loom_target_provider_t first_provider = {};
+  first_provider.emitter_list = loom_target_emitter_list_make(
+      kFirstEmitters, IREE_ARRAYSIZE(kFirstEmitters));
+  first_provider.canonical_module_emitter = &kFirstEmitter;
+  first_provider.canonical_module_fact_type = &kFactType;
+  loom_target_provider_t second_provider = {};
+  second_provider.emitter_list = loom_target_emitter_list_make(
+      kSecondEmitters, IREE_ARRAYSIZE(kSecondEmitters));
+  second_provider.canonical_module_emitter = &kSecondEmitter;
+  second_provider.canonical_module_fact_type = &kFactType;
+  const loom_target_provider_t* providers[] = {
+      &first_provider,
+      &second_provider,
+  };
+  const loom_target_provider_set_t provider_set =
+      loom_target_provider_set_make(providers, IREE_ARRAYSIZE(providers));
+  loom_target_environment_t environment = {};
+
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      loom_target_environment_initialize(&provider_set, &environment));
+}
+
 TEST_F(TargetProviderTest, RejectsMismatchedProfileAndProviderFactTypes) {
   static const loom_target_fact_type_t kProfileFactType = {};
   static const loom_target_fact_type_t kProviderFactType = {};

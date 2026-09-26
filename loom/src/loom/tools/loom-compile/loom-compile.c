@@ -107,6 +107,11 @@ IREE_FLAG_LIST(string, root,
                "either, public or retained command programs take precedence, "
                "then kernel entries and public or retained kernel-scoped "
                "pipelines or array programs, then the whole module.");
+IREE_FLAG_LIST_NAMED(
+    string, exclude_root, "exclude-root",
+    "Canonical root to omit before target specialization and dependency "
+    "materialization. Repeat for multiple roots. Requires --product and "
+    "cannot be combined with --root.");
 IREE_FLAG(string, pipeline, "default",
           "Pass pipeline to run before artifact emission. Use 'default' or "
           "empty for the selected format's default compile pipeline. 'none' "
@@ -1024,6 +1029,7 @@ int main(int argc, char** argv) {
         .product = iree_make_cstring_view(FLAG_product),
         .format = iree_make_cstring_view(FLAG_format),
         .target = iree_make_cstring_view(FLAG_target),
+        .excluded_roots = FLAG_exclude_root_list(),
     };
     status = loom_compile_request_resolve(
         run_module.module, &request_options,

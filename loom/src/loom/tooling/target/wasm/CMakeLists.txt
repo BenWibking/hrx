@@ -46,6 +46,7 @@ loom_cc_library(
   DEPS
     ::prepare
     iree::base
+    loom::target::arch::wasm::ops
     loom::target::provider
   PUBLIC
 )

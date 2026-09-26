@@ -134,6 +134,34 @@
       ]
     },
     {
+      "name": "excludes kernel roots before target specialization",
+      "run": {
+        "tool": "loom-compile",
+        "args": [
+          "{srcdir}/selected_root_amdgpu.loom",
+          "--product=kernel",
+          "--exclude-root=configured_targetless_store_i32",
+          "--target=amdgpu:gfx1151",
+          "--format=amdgpu-hsaco",
+          "--output={tmp}/excluded.hal",
+          "--emit-target-artifact={tmp}/excluded.hsaco",
+          "--compile-report=summary",
+          "--compile-report-output={tmp}/excluded.json"
+        ]
+      },
+      "files": [
+        {
+          "path": "{tmp}/excluded.json",
+          "contains": ["selected_store_i32", "targetless_math_f32"],
+          "not_contains": ["configured_targetless_store_i32"]
+        },
+        {
+          "path": "{tmp}/excluded.hsaco",
+          "non_empty": true
+        }
+      ]
+    },
+    {
       "name": "preserves independent motif scopes and partial waits in native compilation",
       "run": {
         "tool": "loom-compile",

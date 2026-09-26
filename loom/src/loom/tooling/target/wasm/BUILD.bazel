@@ -46,6 +46,7 @@ loom_cc_library(
     deps = [
         ":prepare",
         "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/arch/wasm/ops",
         "//runtime/src/iree/base",
     ],
 )
