@@ -9,6 +9,7 @@
 
 iree_add_all_subdirs()
 
+if(LOOM_TARGET_ARCH_WASM AND LOOM_EMIT_WASM)
 loom_cc_library(
   NAME
     prepare
@@ -32,7 +33,9 @@ loom_cc_library(
     loom::target::registers
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_WASM AND LOOM_EMIT_WASM)
 loom_cc_library(
   NAME
     artifact_emitter
@@ -46,7 +49,9 @@ loom_cc_library(
     loom::target::provider
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_WASM AND LOOM_EMIT_WASM)
 loom_cc_library(
   NAME
     loom_check
@@ -61,7 +66,9 @@ loom_cc_library(
     loom::tools::loom-check::execute
   PUBLIC
 )
+endif()
 
+if(LOOM_TARGET_ARCH_WASM AND LOOM_EMIT_WASM)
 loom_cc_library(
   NAME
     check_provider
@@ -75,5 +82,6 @@ loom_cc_library(
     loom::tools::loom-check::provider
   PUBLIC
 )
+endif()
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
