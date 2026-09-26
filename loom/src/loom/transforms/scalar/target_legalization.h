@@ -15,11 +15,24 @@
 extern "C" {
 #endif
 
-// Fuses an unflagged scalar.muli owned solely by an unflagged scalar.addi into
-// scalar.fmai. The caller establishes that its target can retain the fused type
-// and operand domain before invoking the rewrite.
-iree_status_t loom_scalar_fuse_multiply_add_rewrite_op(
-    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_rewritten);
+typedef struct loom_scalar_multiply_add_match_t {
+  // Unflagged multiply whose result is owned by add_op.
+  loom_op_t* multiply_op;
+  // Unflagged add consuming the multiply result.
+  loom_op_t* add_op;
+  // Other add operand accumulated into the product.
+  loom_value_id_t addend;
+} loom_scalar_multiply_add_match_t;
+
+// Matches an unflagged scalar.muli owned solely by |add_op|. Attribute and type
+// observers retain the multiply and prevent a match.
+bool loom_scalar_match_multiply_add(
+    const loom_module_t* module, const loom_op_t* add_op,
+    loom_scalar_multiply_add_match_t* out_match);
+
+// Replaces a multiply-add match with scalar.fmai.
+iree_status_t loom_scalar_fuse_multiply_add_match(
+    loom_rewriter_t* rewriter, const loom_scalar_multiply_add_match_t* match);
 
 // Returns the generic scalar legalizer provider. Pipelines should compose this
 // after target-specific providers so native target rewrites win before scalar

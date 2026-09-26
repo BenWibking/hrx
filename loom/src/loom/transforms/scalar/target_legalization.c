@@ -14,8 +14,8 @@
 #include "loom/rewrite/rewriter.h"
 
 static loom_op_t* loom_scalar_owned_wrapping_multiply(
-    const loom_rewriter_t* rewriter, loom_value_id_t result) {
-  const loom_value_t* value = loom_module_value(rewriter->module, result);
+    const loom_module_t* module, loom_value_id_t result) {
+  const loom_value_t* value = loom_module_value(module, result);
   if (loom_value_is_block_arg(value)) {
     return NULL;
   }
@@ -23,49 +23,58 @@ static loom_op_t* loom_scalar_owned_wrapping_multiply(
   if (!loom_scalar_muli_isa(op) || loom_scalar_muli_overflow(op) != 0 ||
       !loom_value_has_single_use(value) ||
       loom_value_has_attribute_uses(value) ||
-      loom_module_value_has_type_uses(rewriter->module, result)) {
+      loom_module_value_has_type_uses(module, result)) {
     return NULL;
   }
   return op;
 }
 
-iree_status_t loom_scalar_fuse_multiply_add_rewrite_op(
-    loom_rewriter_t* rewriter, loom_op_t* op, bool* out_rewritten) {
-  *out_rewritten = false;
-  if (!loom_scalar_addi_isa(op) || loom_scalar_addi_overflow(op) != 0) {
-    return iree_ok_status();
+bool loom_scalar_match_multiply_add(
+    const loom_module_t* module, const loom_op_t* add_op,
+    loom_scalar_multiply_add_match_t* out_match) {
+  *out_match = (loom_scalar_multiply_add_match_t){0};
+  if (!loom_scalar_addi_isa(add_op) || loom_scalar_addi_overflow(add_op) != 0) {
+    return false;
   }
 
-  loom_value_id_t addend = loom_scalar_addi_rhs(op);
+  loom_value_id_t addend = loom_scalar_addi_rhs(add_op);
   loom_op_t* multiply_op =
-      loom_scalar_owned_wrapping_multiply(rewriter, loom_scalar_addi_lhs(op));
+      loom_scalar_owned_wrapping_multiply(module, loom_scalar_addi_lhs(add_op));
   if (multiply_op == NULL) {
-    addend = loom_scalar_addi_lhs(op);
-    multiply_op =
-        loom_scalar_owned_wrapping_multiply(rewriter, loom_scalar_addi_rhs(op));
+    addend = loom_scalar_addi_lhs(add_op);
+    multiply_op = loom_scalar_owned_wrapping_multiply(
+        module, loom_scalar_addi_rhs(add_op));
   }
   if (multiply_op == NULL) {
-    return iree_ok_status();
+    return false;
   }
+  *out_match = (loom_scalar_multiply_add_match_t){
+      .multiply_op = multiply_op,
+      .add_op = (loom_op_t*)add_op,
+      .addend = addend,
+  };
+  return true;
+}
 
-  loom_builder_set_before(&rewriter->builder, op);
+iree_status_t loom_scalar_fuse_multiply_add_match(
+    loom_rewriter_t* rewriter, const loom_scalar_multiply_add_match_t* match) {
+  loom_builder_set_before(&rewriter->builder, match->add_op);
   const loom_value_id_t value_checkpoint =
       loom_rewriter_value_checkpoint(rewriter);
-  const loom_value_id_t result = loom_scalar_addi_result(op);
+  const loom_value_id_t result = loom_scalar_addi_result(match->add_op);
   loom_op_t* replacement_op = NULL;
   IREE_RETURN_IF_ERROR(loom_scalar_fmai_build(
       &rewriter->builder, /*instance_flags=*/0,
-      loom_scalar_muli_lhs(multiply_op), loom_scalar_muli_rhs(multiply_op),
-      addend, loom_module_value_type(rewriter->module, result), op->location,
+      loom_scalar_muli_lhs(match->multiply_op),
+      loom_scalar_muli_rhs(match->multiply_op), match->addend,
+      loom_module_value_type(rewriter->module, result), match->add_op->location,
       &replacement_op));
   loom_value_id_t replacement = loom_scalar_fmai_result(replacement_op);
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
-      rewriter, op, &replacement, 1, value_checkpoint));
-  IREE_RETURN_IF_ERROR(
-      loom_rewriter_replace_all_uses_and_erase(rewriter, op, &replacement, 1));
-  IREE_RETURN_IF_ERROR(loom_rewriter_erase(rewriter, multiply_op));
-  *out_rewritten = true;
-  return iree_ok_status();
+      rewriter, match->add_op, &replacement, 1, value_checkpoint));
+  IREE_RETURN_IF_ERROR(loom_rewriter_replace_all_uses_and_erase(
+      rewriter, match->add_op, &replacement, 1));
+  return loom_rewriter_erase(rewriter, match->multiply_op);
 }
 
 static iree_status_t loom_scalar_legalize_build_scalar_constant(

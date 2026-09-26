@@ -152,6 +152,12 @@ typedef iree_status_t (*loom_target_legalizer_fn_t)(
     loom_target_legalization_context_t* context, loom_op_t* op,
     loom_target_legalizer_result_t* out_result);
 
+// Returns true when a legalizer entry applies to |op|. Matchers run before the
+// target contract query and must remain cheap, allocation-free, and read-only.
+typedef bool (*loom_target_legalizer_match_fn_t)(
+    const loom_target_legalizer_entry_t* entry,
+    const loom_target_legalization_context_t* context, const loom_op_t* op);
+
 // Provider-owned rule copied into a composed legalizer registry.
 struct loom_target_legalizer_rule_t {
   // Entry-specific behavior flags.
@@ -162,6 +168,9 @@ struct loom_target_legalizer_rule_t {
   // A constrained rule's root kind must have at least one operand. Dispatch
   // checks this domain before querying the target contract or applying policy.
   loom_scalar_type_set_t first_operand_element_types;
+  // Optional target-owned applicability predicate evaluated before querying
+  // the target contract. NULL applies to every matching root and type.
+  loom_target_legalizer_match_fn_t match;
   // Rewriter callback for root_kind.
   loom_target_legalizer_fn_t legalize;
 };
@@ -179,6 +188,8 @@ struct loom_target_legalizer_entry_t {
   iree_string_view_t provider_name;
   // Rewrite strategy attached while composing the dense registry.
   loom_target_legalizer_strategy_t provider_strategy;
+  // Optional target-owned applicability predicate copied from the rule.
+  loom_target_legalizer_match_fn_t match;
   // Rewriter callback for root_kind.
   loom_target_legalizer_fn_t legalize;
 };

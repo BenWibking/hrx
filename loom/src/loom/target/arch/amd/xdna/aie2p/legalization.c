@@ -30,6 +30,15 @@ static bool loom_aie2p_legalizer_descriptor_set_is_core(
   return descriptor_set == loom_aie2p_core_descriptor_set();
 }
 
+static bool loom_aie2p_match_scalar_multiply_add(
+    const loom_target_legalizer_entry_t* entry,
+    const loom_target_legalization_context_t* context, const loom_op_t* op) {
+  (void)entry;
+  loom_scalar_multiply_add_match_t match = {0};
+  return loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set) &&
+         loom_scalar_match_multiply_add(context->module, op, &match);
+}
+
 static iree_status_t loom_aie2p_legalize_scalar_multiply_add(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
@@ -38,16 +47,13 @@ static iree_status_t loom_aie2p_legalize_scalar_multiply_add(
   *out_result = (loom_target_legalizer_result_t){
       .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
   };
-  if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
+  loom_scalar_multiply_add_match_t match = {0};
+  if (!loom_scalar_match_multiply_add(context->module, op, &match)) {
     return iree_ok_status();
   }
-
-  bool rewritten = false;
-  IREE_RETURN_IF_ERROR(loom_scalar_fuse_multiply_add_rewrite_op(
-      context->rewriter, op, &rewritten));
-  if (rewritten) {
-    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
-  }
+  IREE_RETURN_IF_ERROR(
+      loom_scalar_fuse_multiply_add_match(context->rewriter, &match));
+  out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
   return iree_ok_status();
 }
 
@@ -297,6 +303,7 @@ static const loom_target_legalizer_rule_t kAie2pLegalizerRules[] = {
         .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
         .root_kind = LOOM_OP_SCALAR_ADDI,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I32,
+        .match = loom_aie2p_match_scalar_multiply_add,
         .legalize = loom_aie2p_legalize_scalar_multiply_add,
     },
     {
