@@ -634,7 +634,7 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
       .residency_model = residency_model,
       .schedule_pair_affinities = schedule_pair_affinities,
       .schedule_structural_state_reads = schedule_state_reads,
-      .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY,
+      .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL,
       .memory_accesses = plan->memory_accesses,
       .allocation_fixed_values = plan->abi_verify.fixed_values,
       .allocation_fixed_value_count = plan->abi_verify.fixed_value_count,

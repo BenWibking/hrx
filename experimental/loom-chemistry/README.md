@@ -142,13 +142,13 @@ tracks all three. Native AMDGPU emission still has no device-library call/link
 path for OCML, so these operations use target recipes.
 
 Both unmodified kernel roots now emit gfx942 HSACO files from a fresh import:
-about 21 KB for prepare and 2.1 MB for advance. The advance kernel needs
-source-priority scheduling, a 16-round spill-materialization limit, sparse
-storage-lifetime-aware scratch selection, and scalable branch-island layout.
-Its measured 2.05 MB native instruction stream has 3,805 branches and required
-23,185 branch islands. The current source-priority selection applies to all
-AMDGPU kernels; its broader performance effect has not been qualified. Advance
-compilation still takes minutes and emits thousands of spill warnings.
+about 21 KB for prepare and 2.3 MB for advance. The advance kernel needs a
+16-round spill-materialization limit, sparse storage-lifetime-aware scratch
+selection, and scalable branch-island layout. The earlier source-priority
+build measured a 2.05 MB native instruction stream with 3,805 branches and
+23,185 branch islands. The current AMDGPU kernel path uses upstream's
+resource-stall schedule; its broader performance effect has not been qualified.
+Advance compilation still takes minutes and emits thousands of spill warnings.
 The [gfx942 Loom versus HIP spill-traffic comparison](SPILL-TRAFFIC-COMPARISON.md)
 records static scratch ISA counts from a ROCm 10.0.0 HIP build.
 
@@ -161,7 +161,7 @@ loom-compile /tmp/chemistry.loom --product=kernel \
   --target=amdgpu:gfx942 --output=/tmp/chemistry-advance.hsaco
 ```
 
-The earlier resource-stall schedule could fail after extensive VGPR spilling
+Earlier resource-stall builds could fail after extensive VGPR spilling
 with `BACKEND/005 spill-traffic-register-exhausted`, or exhaust the original
 eight-round spill-materialization limit. The
 `repro/amdgpu-sgpr-spill-traffic` branch contains a standalone Low-IR
@@ -178,6 +178,17 @@ under an experimental direct-call policy still needs target-specific control
 flow, call emission, and ABI support before it can relieve this kernel's
 inlining pressure. The emitted HSACO files have not been run on an AMD GPU;
 device numerical behavior and performance remain unverified.
+
+## Pinned HIP gfx942 code object
+
+[`reference-gfx942-device.hsaco`](reference-gfx942-device.hsaco) contains the
+HIP prepare and advance kernels from `reference.cpp` (SHA256
+`6c7ca23933b211980e831e8d2bfc4328245ab0e3c75f6b07a5e0ed40307843d0`).
+It was compiled on 2026-09-25 with TheRock ROCm 10.0.0 `hipcc`, using
+`--offload-arch=gfx942 -std=c++20 -O3 -ffp-contract=off
+-DPRIMORDIAL_ROS2S_ENABLE_HIP=1 -DPRIMORDIAL_ROS2S_NO_MAIN=1 --genco`, then
+extracted from the `hipv4-amdgcn-amd-amdhsa--gfx942` offload bundle. Its
+SHA256 is `ad2e65d465a63c1703105b48b11835a995164b890558ea3edaabe1d4d2734a13`.
 
 ## ROCm VM comparison
 
