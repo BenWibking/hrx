@@ -88,7 +88,7 @@ _EMIT_WASM_CHECK_COPTS = iree_select({
 
 _EMIT_WASM_CHECK_DEPS = iree_select({
     "//loom/config/emit:wasm": [
-        "//loom/src/loom/target/emit/wasm:check_provider",
+        "//loom/src/loom/tooling/target/wasm:check_provider",
     ],
     "//conditions:default": [],
 })

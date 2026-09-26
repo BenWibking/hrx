@@ -4,9 +4,9 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/emit/wasm/artifact_emitter.h"
+#include "loom/tooling/target/wasm/artifact_emitter.h"
 
-#include "loom/target/emit/wasm/module_binary.h"
+#include "loom/tooling/target/wasm/prepare.h"
 
 static iree_status_t loom_wasm_artifact_emit(
     const loom_target_emit_request_t* request, bool* out_emitted,
@@ -22,7 +22,7 @@ static iree_status_t loom_wasm_artifact_emit(
 
   loom_wasm_module_binary_t module = {0};
   bool module_emitted = false;
-  IREE_RETURN_IF_ERROR(loom_wasm_emit_low_module(
+  IREE_RETURN_IF_ERROR(loom_wasm_compile_module_binary(
       request->module, request->low_descriptor_registry,
       request->diagnostic_emitter, request->scratch_arena, request->allocator,
       &module_emitted, &module));

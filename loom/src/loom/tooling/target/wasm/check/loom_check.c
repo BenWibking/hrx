@@ -4,10 +4,10 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/emit/wasm/check/loom_check.h"
+#include "loom/tooling/target/wasm/check/loom_check.h"
 
-#include "loom/target/emit/wasm/module_binary.h"
 #include "loom/target/tool/wasm.h"
+#include "loom/tooling/target/wasm/prepare.h"
 #include "loom/tools/loom-check/diagnostics.h"
 
 static bool loom_wasm_loom_check_case_has_requirement(
@@ -214,7 +214,7 @@ static iree_status_t loom_wasm_loom_check_emit_provider_execute(
   };
   loom_wasm_module_binary_t module = {0};
   bool module_emitted = false;
-  iree_status_t status = loom_wasm_emit_low_module(
+  iree_status_t status = loom_wasm_compile_module_binary(
       request->module, &request->low_registry->registry, diagnostic_emitter,
       request->case_arena, request->host_allocator, &module_emitted, &module);
 

@@ -60,7 +60,7 @@
 #include "loom/target/arch/vm/check.h"
 #endif  // LOOM_CHECK_HAVE_TARGET_VM
 #if LOOM_CHECK_HAVE_EMIT_WASM
-#include "loom/target/emit/wasm/check/provider.h"
+#include "loom/tooling/target/wasm/check/provider.h"
 #endif  // LOOM_CHECK_HAVE_EMIT_WASM
 #if LOOM_CHECK_HAVE_TARGET_X86
 #include "loom/target/arch/x86/check/provider.h"
