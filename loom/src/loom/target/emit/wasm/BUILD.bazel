@@ -76,7 +76,7 @@ loom_cc_library(
         ":program",
         ":types",
         "//loom/src/loom/codegen/low:descriptors",
-        "//loom/src/loom/codegen/low:target_binding",
+        "//loom/src/loom/codegen/low:representation_binding",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/low",
@@ -103,10 +103,10 @@ iree_assert_dependency_boundary(
     name = "module_binary_analysis_boundary",
     allowed_dependencies = [
         "//loom/src/loom/codegen/low:descriptors",
-        "//loom/src/loom/codegen/low:target_binding",
+        "//loom/src/loom/codegen/low:representation_binding",
     ],
     forbidden_subtrees = ["//loom/src/loom/codegen/low/..."],
-    message = "Wasm binary emission may decode verified descriptor packets but must not run compiler analysis or preparation",
+    message = "Wasm binary emission may consume verified Low representation bindings but must not run target resolution or compiler preparation",
     target = ":module_binary",
 )
 

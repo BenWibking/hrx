@@ -9,7 +9,7 @@
 #include <inttypes.h>
 #include <string.h>
 
-#include "loom/codegen/low/target_binding.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"

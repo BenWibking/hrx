@@ -279,8 +279,8 @@ loom_cc_library(
     loom::analysis::scc
     loom::codegen::low::function_requirements
     loom::codegen::low::packet
+    loom::codegen::low::representation_binding
     loom::codegen::low::storage_layout
-    loom::codegen::low::target_binding
     loom::error::emitter
     loom::error::error_defs
     loom::ir

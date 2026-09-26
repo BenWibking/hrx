@@ -17,7 +17,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
-#include "loom/codegen/low/target_binding.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/ir/ir.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/target/emit/spirv/module_abi.h"

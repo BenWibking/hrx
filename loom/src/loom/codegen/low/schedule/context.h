@@ -14,6 +14,7 @@
 #include "loom/analysis/liveness.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/memory_access.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/schedule/dependency_index.h"
 #include "loom/codegen/low/schedule/resource_calendar.h"
 #include "loom/codegen/low/schedule/setup_order.h"

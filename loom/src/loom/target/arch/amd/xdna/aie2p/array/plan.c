@@ -10,8 +10,8 @@
 #include <string.h>
 
 #include "loom/codegen/low/packet.h"
+#include "loom/codegen/low/representation_binding.h"
 #include "loom/codegen/low/storage_layout.h"
-#include "loom/codegen/low/target_binding.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/module.h"

@@ -175,6 +175,7 @@ loom_cc_library(
     loom::codegen::low::immediates
     loom::codegen::low::memory_access
     loom::codegen::low::placement
+    loom::codegen::low::representation_binding
     loom::codegen::low::storage_layout
     loom::codegen::low::storage_relation
     loom::codegen::low::target_binding
@@ -220,6 +221,7 @@ loom_cc_test(
     loom::analysis::liveness
     loom::codegen::low::function
     loom::codegen::low::memory_access
+    loom::codegen::low::representation_binding
     loom::codegen::low::storage_relation
     loom::codegen::low::target_binding
     loom::ir

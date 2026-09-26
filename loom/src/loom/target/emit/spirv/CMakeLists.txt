@@ -190,6 +190,7 @@ loom_cc_library(
     loom::analysis::symbol_facts
     loom::codegen::low::diagnostics
     loom::codegen::low::function
+    loom::codegen::low::representation_binding
     loom::codegen::low::target_binding
     loom::error::emitter
     loom::error::error_defs

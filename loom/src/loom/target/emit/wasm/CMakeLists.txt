@@ -89,7 +89,7 @@ loom_cc_library(
     ::types
     iree::base
     loom::codegen::low::descriptors
-    loom::codegen::low::target_binding
+    loom::codegen::low::representation_binding
     loom::ir
     loom::ops::low
     loom::ops::op_defs

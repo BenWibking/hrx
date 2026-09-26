@@ -80,7 +80,7 @@ loom_cc_test(
     name = "registers_test",
     srcs = ["registers_test.cc"],
     deps = [
-        "//loom/src/loom/codegen/low:target_binding",
+        "//loom/src/loom/codegen/low:representation_binding",
         "//loom/src/loom/target:registers",
         "//loom/src/loom/target/arch/wasm/descriptors",
         "//runtime/src/iree/testing:gtest",
