@@ -105,14 +105,6 @@ bool loom_amdgpu_collective_resolve_workgroup_shape(
     return false;
   }
 
-  const uint64_t scratch_byte_length =
-      (uint64_t)wave_count * register_count * 4u;
-  if (scratch_byte_length > UINT32_MAX) {
-    *out_failure =
-        LOOM_AMDGPU_WORKGROUP_COLLECTIVE_SHAPE_FAILURE_SCRATCH_BYTE_LENGTH;
-    return false;
-  }
-
   loom_amdgpu_workgroup_collective_shape_flags_t flags = 0;
   if (flat_workgroup_size > partition_lane_count) {
     flags |= LOOM_AMDGPU_WORKGROUP_COLLECTIVE_SHAPE_MULTI_WAVE;
@@ -120,10 +112,21 @@ bool loom_amdgpu_collective_resolve_workgroup_shape(
       flags |= LOOM_AMDGPU_WORKGROUP_COLLECTIVE_SHAPE_PARTIAL_TAIL;
     }
   }
+  const uint64_t scratch_byte_length =
+      iree_all_bits_set(flags,
+                        LOOM_AMDGPU_WORKGROUP_COLLECTIVE_SHAPE_MULTI_WAVE)
+          ? (uint64_t)wave_count * register_count * 4u
+          : 0;
+  if (scratch_byte_length > UINT32_MAX) {
+    *out_failure =
+        LOOM_AMDGPU_WORKGROUP_COLLECTIVE_SHAPE_FAILURE_SCRATCH_BYTE_LENGTH;
+    return false;
+  }
 
   *out_shape = (loom_amdgpu_workgroup_collective_shape_t){
       .flat_workgroup_size = flat_workgroup_size,
       .wave_count = wave_count,
+      .scratch_byte_length = (uint32_t)scratch_byte_length,
       .flags = flags,
   };
   return true;

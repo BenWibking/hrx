@@ -14,9 +14,7 @@
 #include "iree/io/vec_stream.h"
 #include "loom/analysis/symbol_facts.h"
 #include "loom/codegen/low/allocation_materialization.h"
-#include "loom/codegen/low/diagnostics.h"
 #include "loom/codegen/low/frame.h"
-#include "loom/codegen/low/storage_layout.h"
 #include "loom/codegen/low/target_binding.h"
 #include "loom/error/source.h"
 #include "loom/ir/context.h"
@@ -590,20 +588,6 @@ static iree_status_t loom_amdgpu_hal_kernel_library_lower_spill_traffic(
   return iree_ok_status();
 }
 
-static iree_status_t
-loom_amdgpu_hal_kernel_library_validate_final_workgroup_storage(
-    void* user_data, const loom_low_emission_frame_t* frame,
-    iree_arena_allocator_t* table_arena, bool* out_accepted) {
-  (void)table_arena;
-  const uint64_t workgroup_bytes =
-      frame->schedule.requirements.storage_layout.space_sizes.workgroup_bytes;
-  const iree_diagnostic_emitter_t* emitter =
-      (const iree_diagnostic_emitter_t*)user_data;
-  return loom_low_diagnostic_validate_workgroup_storage_limit(
-      frame->module, frame->function_op, &frame->target, workgroup_bytes,
-      *emitter, out_accepted);
-}
-
 static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
     loom_module_t* module,
     const loom_target_low_descriptor_registry_t* low_registry,
@@ -651,7 +635,6 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
       spill_lowering_context = {
           .descriptor_set = plan->target.descriptor_set,
       };
-  iree_diagnostic_emitter_t final_validation_emitter = frame_options.emitter;
   const loom_low_emission_frame_spill_free_options_t spill_free_options = {
       .materialization_options =
           {
@@ -666,9 +649,6 @@ static iree_status_t loom_amdgpu_hal_kernel_library_build_kernel_contribution(
           },
       .lower_spill_traffic = loom_amdgpu_hal_kernel_library_lower_spill_traffic,
       .lower_spill_traffic_user_data = &spill_lowering_context,
-      .validate_frame =
-          loom_amdgpu_hal_kernel_library_validate_final_workgroup_storage,
-      .validate_frame_user_data = (void*)&final_validation_emitter,
   };
   bool frame_accepted = false;
   IREE_RETURN_IF_ERROR(loom_low_emission_frame_build_spill_free(
