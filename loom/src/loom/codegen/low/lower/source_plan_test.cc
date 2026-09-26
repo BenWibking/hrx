@@ -32,7 +32,7 @@ class LowLowerSourcePlanTest : public ::testing::Test {
   };
 
   struct SourcePlanObservation {
-    loom_op_kind_t op_kinds[4] = {};
+    loom_op_kind_t op_kinds[6] = {};
     iree_host_size_t op_count = 0;
     uint8_t phase = 0;
     bool invalid_lifecycle = false;
@@ -194,14 +194,27 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     loom_op_t* dead_op = nullptr;
     IREE_ASSERT_OK(loom_scalar_addi_build(&body_builder, 0, lhs, rhs, i32_type,
                                           LOOM_LOCATION_UNKNOWN, &dead_op));
+    const loom_value_id_t dead = loom_scalar_addi_result(dead_op);
+    loom_op_t* dead_identity_op = nullptr;
+    IREE_ASSERT_OK(loom_scalar_assume_build(
+        &body_builder, &dead, 1, /*predicates=*/nullptr,
+        /*predicates_count=*/0, &i32_type, 1, LOOM_LOCATION_UNKNOWN,
+        &dead_identity_op));
     loom_op_t* dependency_op = nullptr;
     IREE_ASSERT_OK(loom_scalar_addi_build(&body_builder, 0, lhs, rhs, i32_type,
                                           LOOM_LOCATION_UNKNOWN,
                                           &dependency_op));
     const loom_value_id_t dependency = loom_scalar_addi_result(dependency_op);
+    loom_op_t* dependency_identity_op = nullptr;
+    IREE_ASSERT_OK(loom_scalar_assume_build(
+        &body_builder, &dependency, 1, /*predicates=*/nullptr,
+        /*predicates_count=*/0, &i32_type, 1, LOOM_LOCATION_UNKNOWN,
+        &dependency_identity_op));
+    const loom_value_id_t dependency_identity =
+        loom_scalar_assume_results(dependency_identity_op).values[0];
     loom_op_t* result_op = nullptr;
-    IREE_ASSERT_OK(loom_scalar_addi_build(&body_builder, 0, dependency, rhs,
-                                          i32_type, LOOM_LOCATION_UNKNOWN,
+    IREE_ASSERT_OK(loom_scalar_addi_build(&body_builder, 0, dependency_identity,
+                                          rhs, i32_type, LOOM_LOCATION_UNKNOWN,
                                           &result_op));
     const loom_value_id_t result = loom_scalar_addi_result(result_op);
     loom_op_t* return_op = nullptr;
@@ -229,7 +242,7 @@ class LowLowerSourcePlanTest : public ::testing::Test {
 };
 
 TEST_F(LowLowerSourcePlanTest,
-       ElidesDeadPlanAndRetainsReturnedDependencyChain) {
+       ElidesDeadIdentityChainAndRetainsReturnedIdentityChain) {
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
   ASSERT_EQ(result_.error_count, 0u);
@@ -246,11 +259,13 @@ TEST_F(LowLowerSourcePlanTest,
   EXPECT_EQ(observer_.source_plan.phase, 2u);
   EXPECT_FALSE(observer_.source_plan.invalid_lifecycle);
   EXPECT_FALSE(observer_.source_plan.selection_started);
-  ASSERT_EQ(observer_.source_plan.op_count, 4u);
+  ASSERT_EQ(observer_.source_plan.op_count, 6u);
   EXPECT_EQ(observer_.source_plan.op_kinds[0], LOOM_OP_SCALAR_ADDI);
-  EXPECT_EQ(observer_.source_plan.op_kinds[1], LOOM_OP_SCALAR_ADDI);
+  EXPECT_EQ(observer_.source_plan.op_kinds[1], LOOM_OP_SCALAR_ASSUME);
   EXPECT_EQ(observer_.source_plan.op_kinds[2], LOOM_OP_SCALAR_ADDI);
-  EXPECT_EQ(observer_.source_plan.op_kinds[3], LOOM_OP_FUNC_RETURN);
+  EXPECT_EQ(observer_.source_plan.op_kinds[3], LOOM_OP_SCALAR_ASSUME);
+  EXPECT_EQ(observer_.source_plan.op_kinds[4], LOOM_OP_SCALAR_ADDI);
+  EXPECT_EQ(observer_.source_plan.op_kinds[5], LOOM_OP_FUNC_RETURN);
 }
 
 TEST_F(LowLowerSourcePlanTest, PropagatesObserverEndFailureBeforeSelection) {

@@ -408,6 +408,25 @@ loom_test(
 )
 
 loom_test(
+    name = "split_kv_stage2_access_test",
+    srcs = ["//loom/src/loom/test/corpus/checked_benchmarks:split_kv_online_softmax_combine_f32.loom"],
+    execution_profiles = [AMDGPU_ACCESS_PROFILE],
+)
+
+loom_test(
+    name = "split_kv_stage2_test",
+    srcs = [
+        "//loom/src/loom/test/corpus/checked_benchmarks:split_kv_online_softmax_combine_f32.loom",
+        "//loom/src/loom/test/corpus/checked_benchmarks:split_kv_online_softmax_combine_f32_benchmark.loom",
+    ],
+    compile_targets = [
+        "//loom/target/amdgpu:gfx942",
+        "//loom/target/amdgpu:gfx1151",
+        "//loom/target/amdgpu:gfx1250",
+    ],
+)
+
+loom_test(
     name = "predicate_control_test",
     srcs = ["amdgpu_predicate_control.loom"],
     compile_targets = [

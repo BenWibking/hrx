@@ -481,9 +481,9 @@ func.def @scf_select_i1_assume_second_condition(%values: vector<2xi32>, %limit: 
 
 // ----
 low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @scf_select_i1_assume_second_condition(%values: reg<amdgpu.vgpr x2>, %limit: reg<amdgpu.sgpr>, %upper: reg<amdgpu.sgpr>, %true_value: reg<amdgpu.vgpr>, %false_value: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
-  %21 = v_mov_b32_copy %limit
-  %22 = v_mov_b32_copy %upper
-  %checked_scalar_condition = v_cmp_lt_i32 %21, %22
+  %18 = v_mov_b32_copy %limit
+  %19 = v_mov_b32_copy %upper
+  %checked_scalar_condition = v_cmp_lt_i32 %18, %19
   %result = v_cndmask_b32 %false_value, %true_value, %checked_scalar_condition
   return %result
 }

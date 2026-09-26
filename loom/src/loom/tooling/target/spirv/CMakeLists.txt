@@ -412,7 +412,6 @@ loom_test_module(
     "test/spirv_vulkan_vector_float.loom"
     "test/spirv_vulkan_workgroup_offsets.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/moe_routed_combine_loop_f32.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/atomic_add_f32_subnormals.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/global_atomic_add_f32.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/loop_rotating_values.loom"
@@ -445,6 +444,27 @@ loom_execution_test(
     "gpu-device"
 )
 endif()
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_test_module(
+  NAME
+    vulkan_extended_types_tests_module
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/split_kv_online_softmax_combine_f32_benchmark.loom"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_check_compile_tests(
+  NAME
+    "vulkan_extended_types_tests"
+  SRC
+    "::vulkan_extended_types_tests_module"
+  TARGETS
+    loom::target::spirv::vulkan1.3+bda+extended-types
+)
 endif()
 
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
