@@ -34,7 +34,7 @@ loom_cc_library(
     loom::tooling::compile::pipeline
     loom::tooling::config
     loom::tooling::testbench::invocation
-    loom::tooling::testbench::scenario_executor
+    loom::tooling::testbench::scenario::executor
   PUBLIC
 )
 endif()

@@ -74,9 +74,9 @@ loom_cc_library(
     loom::tooling::testbench::issue_report
     loom::tooling::testbench::reference
     loom::tooling::testbench::requirements
-    loom::tooling::testbench::scenario_entropy
-    loom::tooling::testbench::scenario_executor
-    loom::tooling::testbench::scenario_values
+    loom::tooling::testbench::scenario::entropy
+    loom::tooling::testbench::scenario::executor
+    loom::tooling::testbench::scenario::values
     loom::util::json
     loom::util::stream
     loom::verify
@@ -135,7 +135,7 @@ loom_cc_binary(
     iree::hal
     loom::ir
     loom::tooling::execution::execution_provider
-    loom::tooling::testbench::scenario_executor
+    loom::tooling::testbench::scenario::executor
   TESTONLY
 )
 

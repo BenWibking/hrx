@@ -11,9 +11,9 @@
 #include "iree/hal/api.h"
 #include "loom/tooling/execution/hal/scenario_profile.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
-#include "loom/tooling/testbench/scenario_entropy.h"
-#include "loom/tooling/testbench/scenario_executor.h"
-#include "loom/tooling/testbench/scenario_values.h"
+#include "loom/tooling/testbench/scenario/entropy.h"
+#include "loom/tooling/testbench/scenario/executor.h"
+#include "loom/tooling/testbench/scenario/values.h"
 #include "loom/tools/iree-benchmark-loom/case_execution.h"
 
 struct iree_benchmark_loom_scenario_execution_t {

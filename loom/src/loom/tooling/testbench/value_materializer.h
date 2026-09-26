@@ -18,7 +18,7 @@
 #include "iree/hal/api.h"
 #include "iree/io/stream.h"
 #include "iree/tooling/value_io.h"
-#include "loom/tooling/testbench/scenario_entropy.h"
+#include "loom/tooling/testbench/scenario/entropy.h"
 #include "loom/tooling/testbench/testbench.h"
 
 #ifdef __cplusplus

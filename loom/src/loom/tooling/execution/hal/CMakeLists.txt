@@ -290,6 +290,7 @@ loom_cc_library(
     loom::tooling::execution::session
     loom::tooling::io::source
     loom::tooling::testbench
+    loom::tooling::testbench::api
     loom::tooling::testbench::invocation
     loom::tooling::testbench::requirements
     loom::tooling::testbench::value_materializer
@@ -316,7 +317,7 @@ loom_cc_library(
     loom::ops::kernel
     loom::ops::op_defs
     loom::tooling::execution::benchmark
-    loom::tooling::testbench::scenario_executor
+    loom::tooling::testbench::scenario::executor
   PUBLIC
 )
 
@@ -476,6 +477,7 @@ loom_cc_test(
     loom::testing::module_ptr
     loom::tooling::execution::session
     loom::tooling::testbench
+    loom::tooling::testbench::api
     loom::transforms::cleanup::configured
 )
 

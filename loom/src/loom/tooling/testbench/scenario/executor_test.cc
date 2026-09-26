@@ -4,7 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/tooling/testbench/scenario_executor.h"
+#include "loom/tooling/testbench/scenario/executor.h"
 
 #include <string>
 

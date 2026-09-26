@@ -30,7 +30,7 @@ loom_cc_library(
         "//loom/src/loom/tooling/compile:pipeline",
         "//loom/src/loom/tooling/config",
         "//loom/src/loom/tooling/testbench:invocation",
-        "//loom/src/loom/tooling/testbench:scenario_executor",
+        "//loom/src/loom/tooling/testbench/scenario:executor",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/vm",

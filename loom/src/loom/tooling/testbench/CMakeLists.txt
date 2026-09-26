@@ -11,20 +11,42 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
-    testbench
+    api
   HDRS
     "testbench.h"
-  SRCS
-    "scenario_plan.c"
-    "scenario_plan.h"
-    "testbench.c"
   DEPS
     iree::base
     iree::base::internal::arena
     loom::ir
     loom::ops::check
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    operation_plan
+  SRCS
+    "operation_plan.c"
+  DEPS
+    ::api
+    loom::ir
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    testbench
+  SRCS
+    "testbench.c"
+  DEPS
+    ::api
+    ::operation_plan
+    iree::base
+    iree::base::internal::arena
+    loom::ir
     loom::ops::kernel
     loom::ops::op_defs
+    loom::tooling::testbench::scenario::plan
   PUBLIC
 )
 
@@ -50,25 +72,13 @@ loom_cc_library(
   SRCS
     "issue_report.c"
   DEPS
+    ::api
     ::source_report
     ::testbench
     iree::base
     loom::ir
     loom::util::json
     loom::util::stream
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    scenario_entropy
-  HDRS
-    "scenario_entropy.h"
-  SRCS
-    "scenario_entropy.c"
-  DEPS
-    iree::base
-    iree::base::internal
   PUBLIC
 )
 
@@ -80,7 +90,7 @@ loom_cc_library(
   SRCS
     "value_materializer.c"
   DEPS
-    ::scenario_entropy
+    ::api
     ::testbench
     iree::base
     iree::base::internal
@@ -90,42 +100,7 @@ loom_cc_library(
     iree::tooling::numpy_io
     iree::tooling::value_io
     loom::ir
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    scenario_values
-  HDRS
-    "scenario_values.h"
-  SRCS
-    "scenario_values.c"
-  DEPS
-    ::scenario_entropy
-    ::testbench
-    ::value_materializer
-    iree::base
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    scenario_executor
-  HDRS
-    "scenario_executor.h"
-  SRCS
-    "scenario_executor.c"
-  DEPS
-    ::device_event
-    ::expectation
-    ::scenario_values
-    ::source_report
-    ::testbench
-    ::value_materializer
-    iree::base
-    loom::tooling::execution::benchmark
-    loom::util::json
-    loom::util::stream
+    loom::tooling::testbench::scenario::entropy
   PUBLIC
 )
 
@@ -213,6 +188,7 @@ loom_cc_library(
   SRCS
     "requirements.c"
   DEPS
+    ::api
     ::testbench
     iree::base
     loom::ir
@@ -237,54 +213,11 @@ loom_cc_library(
 
 loom_cc_test(
   NAME
-    scenario_values_test
-  SRCS
-    "scenario_values_test.cc"
-  DEPS
-    ::expectation
-    ::scenario_entropy
-    ::scenario_values
-    ::testbench
-    ::value_materializer
-    iree::base
-    iree::base::internal::arena
-    iree::hal
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::format::text::parser
-    loom::ir
-    loom::ops::check
-    loom::ops::test
-)
-
-loom_cc_test(
-  NAME
-    scenario_executor_test
-  SRCS
-    "scenario_executor_test.cc"
-  DEPS
-    ::scenario_entropy
-    ::scenario_executor
-    ::scenario_values
-    ::testbench
-    ::value_materializer
-    iree::base
-    iree::base::internal::arena
-    iree::hal
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::format::text::parser
-    loom::ir
-    loom::ops::check
-    loom::ops::test
-)
-
-loom_cc_test(
-  NAME
     testbench_test
   SRCS
     "testbench_test.cc"
   DEPS
+    ::api
     ::testbench
     iree::base
     iree::base::internal::arena

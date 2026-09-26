@@ -11,7 +11,7 @@
 #define LOOM_TOOLING_EXECUTION_HAL_SCENARIO_PROFILE_H_
 
 #include "loom/tooling/execution/hal/testbench_actual.h"
-#include "loom/tooling/testbench/scenario_executor.h"
+#include "loom/tooling/testbench/scenario/executor.h"
 
 #ifdef __cplusplus
 extern "C" {

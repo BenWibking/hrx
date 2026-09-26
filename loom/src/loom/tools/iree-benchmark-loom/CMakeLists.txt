@@ -113,15 +113,16 @@ loom_cc_library(
     loom::tooling::input::flags
     loom::tooling::io::file
     loom::tooling::testbench
+    loom::tooling::testbench::api
     loom::tooling::testbench::device_event
     loom::tooling::testbench::executor
     loom::tooling::testbench::invocation
     loom::tooling::testbench::issue_report
     loom::tooling::testbench::reference
     loom::tooling::testbench::requirements
-    loom::tooling::testbench::scenario_entropy
-    loom::tooling::testbench::scenario_executor
-    loom::tooling::testbench::scenario_values
+    loom::tooling::testbench::scenario::entropy
+    loom::tooling::testbench::scenario::executor
+    loom::tooling::testbench::scenario::values
     loom::tooling::testbench::value_materializer
     loom::util::json
     loom::util::stream

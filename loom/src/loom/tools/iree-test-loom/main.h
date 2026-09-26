@@ -15,7 +15,7 @@
 #include "loom/tooling/execution/session.h"
 #include "loom/tooling/testbench/invocation.h"
 #include "loom/tooling/testbench/requirements.h"
-#include "loom/tooling/testbench/scenario_executor.h"
+#include "loom/tooling/testbench/scenario/executor.h"
 
 #ifdef __cplusplus
 extern "C" {

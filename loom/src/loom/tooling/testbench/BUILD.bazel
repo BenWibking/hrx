@@ -17,18 +17,35 @@ package(
 )
 
 loom_cc_library(
-    name = "testbench",
-    srcs = [
-        "scenario_plan.c",
-        "scenario_plan.h",
-        "testbench.c",
-    ],
+    name = "api",
     hdrs = ["testbench.h"],
     deps = [
         "//loom/src/loom/ir",
-        "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/check",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "operation_plan",
+    srcs = ["operation_plan.c"],
+    deps = [
+        ":api",
+        "//loom/src/loom/ir",
+    ],
+)
+
+loom_cc_library(
+    name = "testbench",
+    srcs = ["testbench.c"],
+    deps = [
+        ":api",
+        ":operation_plan",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/tooling/testbench/scenario:plan",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],
@@ -50,22 +67,13 @@ loom_cc_library(
     srcs = ["issue_report.c"],
     hdrs = ["issue_report.h"],
     deps = [
+        ":api",
         ":source_report",
         ":testbench",
         "//loom/src/loom/ir",
         "//loom/src/loom/util:json",
         "//loom/src/loom/util:stream",
         "//runtime/src/iree/base",
-    ],
-)
-
-loom_cc_library(
-    name = "scenario_entropy",
-    srcs = ["scenario_entropy.c"],
-    hdrs = ["scenario_entropy.h"],
-    deps = [
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal",
     ],
 )
 
@@ -74,9 +82,10 @@ loom_cc_library(
     srcs = ["value_materializer.c"],
     hdrs = ["value_materializer.h"],
     deps = [
-        ":scenario_entropy",
+        ":api",
         ":testbench",
         "//loom/src/loom/ir",
+        "//loom/src/loom/tooling/testbench/scenario:entropy",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:prng",
@@ -84,36 +93,6 @@ loom_cc_library(
         "//runtime/src/iree/io:stream",
         "//runtime/src/iree/tooling:numpy_io",
         "//runtime/src/iree/tooling:value_io",
-    ],
-)
-
-loom_cc_library(
-    name = "scenario_values",
-    srcs = ["scenario_values.c"],
-    hdrs = ["scenario_values.h"],
-    deps = [
-        ":scenario_entropy",
-        ":testbench",
-        ":value_materializer",
-        "//runtime/src/iree/base",
-    ],
-)
-
-loom_cc_library(
-    name = "scenario_executor",
-    srcs = ["scenario_executor.c"],
-    hdrs = ["scenario_executor.h"],
-    deps = [
-        ":device_event",
-        ":expectation",
-        ":scenario_values",
-        ":source_report",
-        ":testbench",
-        ":value_materializer",
-        "//loom/src/loom/tooling/execution:benchmark",
-        "//loom/src/loom/util:json",
-        "//loom/src/loom/util:stream",
-        "//runtime/src/iree/base",
     ],
 )
 
@@ -186,6 +165,7 @@ loom_cc_library(
     srcs = ["requirements.c"],
     hdrs = ["requirements.h"],
     deps = [
+        ":api",
         ":testbench",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/check",
@@ -206,51 +186,10 @@ loom_cc_library(
 )
 
 loom_cc_test(
-    name = "scenario_values_test",
-    srcs = ["scenario_values_test.cc"],
-    deps = [
-        ":expectation",
-        ":scenario_entropy",
-        ":scenario_values",
-        ":testbench",
-        ":value_materializer",
-        "//loom/src/loom/format/text:parser",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/ops/check",
-        "//loom/src/loom/ops/test",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-    ],
-)
-
-loom_cc_test(
-    name = "scenario_executor_test",
-    srcs = ["scenario_executor_test.cc"],
-    deps = [
-        ":scenario_entropy",
-        ":scenario_executor",
-        ":scenario_values",
-        ":testbench",
-        ":value_materializer",
-        "//loom/src/loom/format/text:parser",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/ops/check",
-        "//loom/src/loom/ops/test",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-    ],
-)
-
-loom_cc_test(
     name = "testbench_test",
     srcs = ["testbench_test.cc"],
     deps = [
+        ":api",
         ":testbench",
         "//loom/src/loom/format/text:parser",
         "//loom/src/loom/ir",

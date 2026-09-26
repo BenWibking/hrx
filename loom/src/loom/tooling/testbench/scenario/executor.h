@@ -13,7 +13,7 @@
 #include "loom/tooling/execution/benchmark.h"
 #include "loom/tooling/testbench/device_event.h"
 #include "loom/tooling/testbench/expectation.h"
-#include "loom/tooling/testbench/scenario_values.h"
+#include "loom/tooling/testbench/scenario/values.h"
 #include "loom/util/stream.h"
 
 #ifdef __cplusplus
