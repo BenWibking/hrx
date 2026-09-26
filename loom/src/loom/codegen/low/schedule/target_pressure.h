@@ -57,12 +57,6 @@ uint64_t loom_low_schedule_register_packing_contribution(
     uint64_t register_units,
     const loom_low_register_packing_resource_member_t* member);
 
-// Returns the packing-resource units read by unique node operands.
-uint64_t loom_low_schedule_node_register_packing_operand_units(
-    const loom_low_schedule_build_state_t* state,
-    const loom_low_schedule_node_t* node,
-    const loom_low_register_packing_resource_t* resource);
-
 // Returns the retained packing-resource footprint of the node results.
 uint64_t loom_low_schedule_node_register_packing_result_units(
     const loom_low_schedule_build_state_t* state, uint32_t node_index,
@@ -88,6 +82,13 @@ void loom_low_schedule_target_pressure_remove_packing_completion_value(
 void loom_low_schedule_target_pressure_repair_packing_completions(
     const loom_low_schedule_build_state_t* state,
     loom_low_schedule_pressure_state_t* pressure_state, uint32_t node_index);
+
+// Returns the capacity of |completion_domain_id| when its live pressure is at
+// or above that hard limit, or UINT32_MAX while it still has headroom.
+uint32_t loom_low_schedule_target_pressure_full_unspillable_completion_capacity(
+    const loom_low_schedule_build_state_t* state,
+    const loom_low_schedule_pressure_state_t* pressure_state,
+    uint16_t completion_domain_id);
 
 // Returns the smallest register-packing capacity whose selected live
 // completion is reached by |candidate_node|, or UINT32_MAX when none is.

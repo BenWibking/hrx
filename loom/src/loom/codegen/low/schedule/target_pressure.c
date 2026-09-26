@@ -223,7 +223,7 @@ static void loom_low_schedule_score_candidate_pressure_limit(
     loom_low_schedule_candidate_score_t* score, uint16_t reg_class_id,
     uint32_t limit_units, uint64_t current_live_units, int64_t delta_units,
     uint64_t early_added_units, uint32_t packing_reserve_units,
-    bool is_unspillable) {
+    uint32_t unspillable_activation_units, bool is_unspillable) {
   if (limit_units == UINT32_MAX) {
     return;
   }
@@ -238,18 +238,34 @@ static void loom_low_schedule_score_candidate_pressure_limit(
         candidate_live_units,
         iree_math_saturating_add_u64(current_live_units, early_added_units));
   }
-  const uint64_t activation_units =
-      delta_units > 0 ? score->activation_reserve_units : 0;
   if (is_unspillable && candidate_live_units > limit_units &&
       candidate_live_units > current_live_units) {
     score->flags |=
         LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_EXCEEDS_UNSPILLABLE_CAPACITY;
   }
-  uint64_t required_live_units =
-      iree_math_saturating_add_u64(projected_live_units, activation_units);
+  const uint64_t activation_reserve_units =
+      delta_units > 0 ? score->activation_reserve_units : 0;
+  const uint64_t unspillable_activated_live_units =
+      iree_math_saturating_add_u64(projected_live_units,
+                                   unspillable_activation_units);
+  uint64_t required_live_units = iree_math_saturating_add_u64(
+      projected_live_units, activation_reserve_units);
   required_live_units = iree_max(required_live_units, candidate_live_units);
   required_live_units =
       iree_math_saturating_add_u64(required_live_units, packing_reserve_units);
+  uint64_t unspillable_required_live_units =
+      iree_max(unspillable_activated_live_units, candidate_live_units);
+  unspillable_required_live_units = iree_math_saturating_add_u64(
+      unspillable_required_live_units, packing_reserve_units);
+  // Retained per-domain activation is an exact warning about a hard capacity,
+  // while the generic activation reserve still defines ordinary distance to
+  // that capacity. Let domain activation add debt when it reaches the limit,
+  // but do not let a fitting downstream transaction switch the whole ready
+  // frontier into pressure recovery early.
+  if (unspillable_required_live_units >= limit_units) {
+    required_live_units =
+        iree_max(required_live_units, unspillable_required_live_units);
+  }
   if (projected_live_units >= limit_units) {
     const uint64_t persistent_limit_debt =
         projected_live_units - limit_units + 1;
@@ -295,11 +311,20 @@ static void loom_low_schedule_score_candidate_pressure_limit_for_class(
           ? pressure_state
                 ->candidate_early_added_units_by_reg_class[reg_class_id]
           : 0;
+  const uint16_t completion_domain_id =
+      loom_low_schedule_unspillable_completion_domain_id(state, reg_class_id);
+  const uint32_t unspillable_activation_units =
+      completion_domain_id != UINT16_MAX &&
+              pressure_state->candidate_unspillable_activation_units != NULL
+          ? pressure_state
+                ->candidate_unspillable_activation_units[completion_domain_id]
+          : 0;
   loom_low_schedule_score_candidate_pressure_limit(
       score, reg_class_id, state->pressure_limits.by_reg_class[reg_class_id],
       pressure_state->current_live_units_by_reg_class[reg_class_id],
       delta_units, early_added_units,
       pressure_state->packing_reserve_units_by_reg_class[reg_class_id],
+      unspillable_activation_units,
       iree_all_bits_set(
           state->target.descriptor_set->reg_classes[reg_class_id].flags,
           LOOM_LOW_REG_CLASS_FLAG_UNSPILLABLE));
@@ -311,13 +336,22 @@ static void loom_low_schedule_score_candidate_pressure_limit_for_alias_set(
     loom_low_schedule_candidate_score_t* score, uint16_t alias_set_id) {
   const loom_low_schedule_alias_pressure_record_t* record =
       &pressure_state->alias_sets.records[alias_set_id];
+  const uint16_t reg_class_id = state->pressure_limits.alias_sets[alias_set_id]
+                                    .representative_reg_class_id;
+  const uint16_t completion_domain_id =
+      loom_low_schedule_unspillable_completion_domain_id(state, reg_class_id);
+  const uint32_t unspillable_activation_units =
+      completion_domain_id != UINT16_MAX &&
+              pressure_state->candidate_unspillable_activation_units != NULL
+          ? pressure_state
+                ->candidate_unspillable_activation_units[completion_domain_id]
+          : 0;
   loom_low_schedule_score_candidate_pressure_limit(
-      score,
-      state->pressure_limits.alias_sets[alias_set_id]
-          .representative_reg_class_id,
+      score, reg_class_id,
       state->pressure_limits.alias_sets[alias_set_id].live_unit_limit,
       record->current_live_units, record->candidate_delta_units,
       record->candidate_early_added_units, record->packing_reserve_units,
+      unspillable_activation_units,
       state->pressure_limits.alias_sets[alias_set_id].all_classes_unspillable);
 }
 
@@ -577,46 +611,6 @@ void loom_low_schedule_target_pressure_repair_packing_completions(
   }
 }
 
-uint64_t loom_low_schedule_node_register_packing_operand_units(
-    const loom_low_schedule_build_state_t* state,
-    const loom_low_schedule_node_t* node,
-    const loom_low_register_packing_resource_t* resource) {
-  uint64_t resource_units = 0;
-  const loom_value_ordinal_t* operand_ordinals =
-      loom_low_schedule_node_const_operand_ordinals(node);
-  const uint16_t member_end = resource->member_start + resource->member_count;
-  for (uint16_t member_index = resource->member_start;
-       member_index < member_end; ++member_index) {
-    const loom_low_register_packing_resource_member_t* member =
-        &state->target.descriptor_set
-             ->register_packing_resource_members[member_index];
-    uint64_t register_units = 0;
-    for (uint16_t operand_index = 0; operand_index < node->operand_count;
-         ++operand_index) {
-      const loom_value_ordinal_t operand_ordinal =
-          operand_ordinals[operand_index];
-      bool is_duplicate = false;
-      for (uint16_t previous_index = 0; previous_index < operand_index;
-           ++previous_index) {
-        if (operand_ordinals[previous_index] == operand_ordinal) {
-          is_duplicate = true;
-          break;
-        }
-      }
-      const loom_low_schedule_value_record_t* value =
-          &state->values[operand_ordinal];
-      if (!is_duplicate && value->register_class_id == member->reg_class_id) {
-        register_units =
-            iree_math_saturating_add_u64(register_units, value->unit_count);
-      }
-    }
-    resource_units = iree_math_saturating_add_u64(
-        resource_units, loom_low_schedule_register_packing_contribution(
-                            register_units, member));
-  }
-  return resource_units;
-}
-
 uint64_t loom_low_schedule_node_register_packing_result_units(
     const loom_low_schedule_build_state_t* state, uint32_t node_index,
     uint16_t resource_id) {
@@ -777,6 +771,24 @@ uint32_t loom_low_schedule_target_pressure_active_packing_completion_capacity(
   return active_capacity;
 }
 
+uint32_t loom_low_schedule_target_pressure_full_unspillable_completion_capacity(
+    const loom_low_schedule_build_state_t* state,
+    const loom_low_schedule_pressure_state_t* pressure_state,
+    uint16_t completion_domain_id) {
+  const loom_low_schedule_completion_domain_t* domain =
+      &state->pressure_limits
+           .unspillable_completion_domains[completion_domain_id];
+  const uint16_t reg_class_id = domain->reg_class_id;
+  const loom_low_reg_class_t* reg_class =
+      &state->target.descriptor_set->reg_classes[reg_class_id];
+  const uint64_t current_live_units =
+      reg_class->alias_set_id != 0
+          ? pressure_state->alias_sets.records[reg_class->alias_set_id]
+                .current_live_units
+          : pressure_state->current_live_units_by_reg_class[reg_class_id];
+  return current_live_units >= domain->capacity ? domain->capacity : UINT32_MAX;
+}
+
 uint32_t
 loom_low_schedule_target_pressure_active_unspillable_completion_capacity(
     const loom_low_schedule_build_state_t* state,
@@ -794,25 +806,16 @@ loom_low_schedule_target_pressure_active_unspillable_completion_capacity(
     if (capacity >= active_capacity) {
       continue;
     }
-    const uint16_t reg_class_id = domain->reg_class_id;
-    const loom_low_reg_class_t* reg_class =
-        &state->target.descriptor_set->reg_classes[reg_class_id];
-    const uint64_t current_live_units =
-        reg_class->alias_set_id != 0
-            ? pressure_state->alias_sets.records[reg_class->alias_set_id]
-                  .current_live_units
-            : pressure_state->current_live_units_by_reg_class[reg_class_id];
-    if (current_live_units < capacity) {
+    if (loom_low_schedule_target_pressure_full_unspillable_completion_capacity(
+            state, pressure_state, completion_domain_id) == UINT32_MAX) {
       continue;
     }
     const uint32_t active_completion_sink =
         loom_low_schedule_completion_demand_select(
             &pressure_state->unspillable_completion_demand, state->nodes,
             completion_domain_id);
-    if (active_completion_sink == LOOM_LOW_SCHEDULE_NODE_NONE) {
-      continue;
-    }
-    if (loom_low_schedule_completion_demand_contains(
+    if (active_completion_sink != LOOM_LOW_SCHEDULE_NODE_NONE &&
+        loom_low_schedule_completion_demand_contains(
             &pressure_state->unspillable_completion_demand,
             completion_domain_id, candidate_node)) {
       active_capacity = capacity;
