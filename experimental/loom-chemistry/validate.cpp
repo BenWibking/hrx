@@ -32,14 +32,14 @@ struct SingularProblem {
 };
 namespace singular_case {
 using namespace chemistry;
-inline void eval_jacobian(ScratchRecord* s, Real) {
+inline void eval_jacobian(ScratchView s, Real) {
     SingularProblem::jacobian_type jac{};
     SingularProblem::state_type y{};
     SingularProblem::jacobian(0., y, jac);
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[n][m] = jac[n][m];
-    s->n_jac += 1;
+    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[n * 15 + m] = jac[n][m];
+    s.n_jac[0] += 1;
 }
-inline void rhs(Real, const Real*, Real*, ScratchRecord*) { std::abort(); }
+inline void rhs(Real, const Real*, Real*, ScratchView) { std::abort(); }
 #define CHEM_EVAL_JACOBIAN singular_case::eval_jacobian
 #define CHEM_RHS singular_case::rhs
 #include "integrate.inc"
@@ -120,11 +120,11 @@ static void test_math_and_chemistry() {
             equal(pc::rhs_eint(c.current, X, 30.), lc::rhs_eint(b->T, b->xn, 30.), "rhs energy");
             pc::PrimordialChem::jacobian_type jac{};
             pc::JacobianAdapter adapter{jac};
-            double actual_jac[15][15] = {};
+            double actual_jac[225] = {};
             pc::jac_nuc(c.current, adapter, X, 30.);
             lc::jac_nuc(b->T, actual_jac, b->xn, 30.);
             for (int i = 0; i < 15; ++i)
-                for (int j = 0; j < 15; ++j) equal(jac[i][j], actual_jac[i][j], "jacobian");
+                for (int j = 0; j < 15; ++j) equal(jac[i][j], actual_jac[i * 15 + j], "jacobian");
         }
     }
     // Preserve min/max first-operand semantics for NaNs and signed zeros.
@@ -148,7 +148,7 @@ static void test_lu() {
                 a[i][j] = matrix[i][j] = x;
             }
         int info = integrators::linalg::lu_decomposition<15>(a, ip);
-        integer(info, lc::lu_decomposition(matrix, fp), "LU info");
+        integer(info, lc::lu_decomposition(&matrix[0][0], fp), "LU info");
         for (int i = 0; i < 15; ++i) {
             integer(ip[i], fp[i], "pivot");
             for (int j = 0; j < 15; ++j) equal(a[i][j], matrix[i][j], "LU matrix");
@@ -157,7 +157,7 @@ static void test_lu() {
             std::array<double, 15> x{}; double fx[15];
             for (int n = 0; n < 15; ++n) x[n] = fx[n] = n+1.;
             integrators::linalg::lu_solve<15>(a, ip, x);
-            lc::lu_solve(matrix, fp, fx);
+            lc::lu_solve(&matrix[0][0], fp, fx);
             for (int n = 0; n < 15; ++n) equal(x[n], fx[n], "LU solution");
         }
     }
@@ -186,7 +186,7 @@ static void test_integrator() {
         if (variant == 9) old.safe = .1;
         lc::ScratchRecord storage{};
         auto* s = &storage;
-        lc::initialize_solver(s);
+        lc::initialize_solver(lc::scratch_view(s));
         // Copy every original field, including matrices and all default values.
 #define COPY_SCALAR(n) s->n = old.n
         COPY_SCALAR(t); COPY_SCALAR(tout); COPY_SCALAR(dt);
@@ -200,7 +200,7 @@ static void test_integrator() {
 #undef COPY_ARRAY
         Ros2sIntegrator integrator;
         int result = static_cast<int>(integrator.integrate(old));
-        integer(result, lc::integrate(s), "integrator result");
+        integer(result, lc::integrate(lc::scratch_view(s)), "integrator result");
 #define CHECK_SCALAR(n) equal(old.n, s->n, #n)
         CHECK_SCALAR(t); CHECK_SCALAR(tout); CHECK_SCALAR(dt); CHECK_SCALAR(uround);
         CHECK_SCALAR(fac_min); CHECK_SCALAR(fac_max); CHECK_SCALAR(safe);
@@ -226,7 +226,6 @@ static void test_grid(int limit) {
     constexpr int count = 4;
     std::vector<CollapseState> old(count);
     std::vector<lc::CellRecord> cells(count);
-    std::vector<lc::ScratchRecord> scratch(count);
     for (int n = 0; n < count; ++n) {
         old[n] = make_collapse_state();
         old[n].current.T *= 1. + n*.25;
@@ -241,7 +240,7 @@ static void test_grid(int limit) {
             reference_prepare_grid_timestep_kernel(old.data(), count, completed, time, step,
                 true, expected, &original_failure, lane);
             lc::prepare_grid_timestep_kernel(cells.data(),
-                scratch.data(), count, completed, time, step, true, candidates, &failure, lane);
+                count, completed, time, step, true, candidates, &failure, lane);
         }
         integer(original_failure, failure, "prepare failure");
         double dt = MAX_DOUBLE;
@@ -257,7 +256,7 @@ static void test_grid(int limit) {
             reference_advance_collapse_gridwide_kernel(old.data(), count, completed, next,
                 dt, &original_integrated, &original_failure, lane);
             lc::advance_collapse_gridwide_kernel(cells.data(),
-                scratch.data(), count, completed, next, dt, &integrated, &failure, lane);
+                count, completed, next, dt, &integrated, &failure, lane);
         }
         integer(original_failure, failure, "advance failure");
         integer(original_integrated, integrated, "integrated");
@@ -277,12 +276,12 @@ static void test_singular_exit() {
     old.dt = 1.; old.tout = 10.;
     lc::ScratchRecord storage{};
     auto* s = &storage;
-    lc::initialize_solver(s); lc::configure_ros2s(s);
+    lc::initialize_solver(lc::scratch_view(s)); lc::configure_ros2s(lc::scratch_view(s));
     s->dt = 1.; s->tout = 10.;
     integrators::RODAS<SingularProblem> integrator;
     int result = static_cast<int>(integrator.integrate(old));
     integer(-7, result, "singular fixture triggers fifth failure");
-    integer(result, singular_case::integrate(s), "singular result");
+    integer(result, singular_case::integrate(lc::scratch_view(s)), "singular result");
     equal(old.t, s->t, "singular t"); equal(old.dt, s->dt, "singular dt");
     integer(old.n_jac, s->n_jac, "singular Jacobian count");
     integer(old.n_decomp, s->n_decomp, "singular decomposition count");
@@ -306,18 +305,17 @@ static void test_kernel_guards() {
             c.current.rho = pc::density(c.current.xn);
             c.density_driver = c.current.rho;
         }
-        lc::ScratchRecord scratch{};
         auto record = pack(c);
         int f = variant == 6 ? -7 : 1, old_f = f;
         double dt = -99., old_dt = dt;
         reference_prepare_grid_timestep_kernel(&c, 1, 0, 0., 1, false, &old_dt, &old_f, 0);
-        lc::prepare_grid_timestep_kernel(&record, &scratch,
+        lc::prepare_grid_timestep_kernel(&record,
                                          1, 0, 0., 1, false, &dt, &f, 0);
         integer(old_f, f, "guard failure"); equal(old_dt, dt, "guard candidate");
         check_cell(c, record);
         int count = 0, old_count = 0;
         reference_advance_collapse_gridwide_kernel(&c, 1, 0, 100., 100., &old_count, &old_f, 0);
-        lc::advance_collapse_gridwide_kernel(&record, &scratch,
+        lc::advance_collapse_gridwide_kernel(&record,
                                              1, 0, 100., 100., &count, &f, 0);
         integer(old_f, f, "advance guard failure"); integer(old_count, count, "advance guard count");
         check_cell(c, record);

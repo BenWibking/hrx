@@ -101,6 +101,64 @@ for kind, fields in [('Real', real_fields), ('int', int_fields)]:
             declaration = f'{kind} {name}[{count}]'
         parts.append(f'  {declaration};\n')
 parts.append('};\nstatic_assert(sizeof(ScratchRecord) == 4960);\n')
+parts.append('struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };\n')
+parts.append('struct ScratchView {\n')
+for name, _, _ in real_fields + int_fields:
+    if name == 'burn':
+        parts.append('  BurnView burn;\n')
+    else:
+        kind = 'int' if name in {field for field, _, _ in int_fields} else 'Real'
+        parts.append(f'  {kind}* {name};\n')
+parts.append('};\n')
+
+
+def scratch_view_access(text):
+    """Project a pointer-only view without changing source arithmetic."""
+    for field in ('rho', 'T', 'e'):
+        text = text.replace(f's->burn.{field}', f's.burn.{field}[0]')
+    text = text.replace('s->burn.xn', 's.burn.xn')
+    scalar_fields = {name for name, count, _ in real_fields + int_fields
+                     if count == 1 and name != 'burn'}
+    for name, _, _ in real_fields + int_fields:
+        if name == 'burn':
+            continue
+        replacement = f's.{name}[0]' if name in scalar_fields else f's.{name}'
+        text = re.sub(r'\bs->' + name + r'\b', replacement, text)
+    assert not re.search(r'\bs->', text)
+    return text
+
+
+def flatten_matrix_access(text, names):
+    for name in names:
+        pattern = r'\b' + re.escape(name) + r'\[([^\[\]]+)\]\[([^\[\]]+)\]'
+        text = re.sub(pattern, lambda m: f'{name}[matrix_index({m[1]}, {m[2]})]', text)
+    return text
+
+
+def scratch_view_initializer(local):
+    fields = []
+    for name, _, _ in real_fields + int_fields:
+        if name == 'burn':
+            if local:
+                fields.append('{&burn_rho, &burn_T, &burn_e, burn_xn}')
+            else:
+                fields.append('{&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}')
+        elif local:
+            fields.append('&' + name if name in scalar_scratch_fields else name)
+        else:
+            fields.append('&s->' + name if name in scalar_scratch_fields else
+                          ('&s->' + name + '[0][0]' if name in ('fjac', 'e') else 's->' + name))
+    return '{' + ', '.join(fields) + '}'
+
+
+scalar_scratch_fields = {name for name, count, _ in real_fields + int_fields
+                         if count == 1 and name != 'burn'}
+parts.append('DEVICE ScratchView scratch_view(ScratchRecord* s) {\n')
+parts.append('  return ' + scratch_view_initializer(False) + ';\n}\n')
+parts.append('DEVICE size_type matrix_index(size_type row, size_type column) {\n'
+             '  size_type index = row * 15 + column;\n'
+             '  __builtin_assume(index < 225);\n'
+             '  return index;\n}\n')
 for name in ('small_number_density_floor', 'species_mass', 'species_gamma'):
     emit('Real ' + name + ('(int n)' if name != 'small_number_density_floor' else '()'), body(name))
 emit('Real density(const Real* xn)', replace(body('density'), 'xn.size()', 'NumSpec'))
@@ -112,6 +170,8 @@ emit('EosSums eos_sums_from_number_densities(const Real* xn)', eos)
 for name in ('eos_rt', 'eos_re'):
     routine = body(name).replace('state.xn', 'b->xn').replace('state.e', 'b->e').replace('state.T', 'b->T')
     emit('void ' + name + '(BurnRecord* b)', routine)
+routine = body('eos_re').replace('state.xn', 'b.xn').replace('state.e', 'b.e[0]').replace('state.T', 'b.T[0]')
+emit('void eos_re_view(BurnView b)', routine)
 emit('void balance_charge(BurnRecord* b)', body('balance_charge').replace('state.xn', 'b->xn'))
 normalize = replace(body('normalize_number_densities_to_density'), 'std::array<Real, NumSpec> mass_fractions{};', '')
 normalize = normalize.replace('mass_fractions.size()', 'NumSpec').replace('state.xn', 'b->xn').replace('state.rho', 'b->rho')
@@ -166,8 +226,11 @@ def shallow_conditionals(name, text):
 
 for name, signature in [('rhs_specie', 'void rhs_specie(Real temperature, Real* out, const Real* xn, Real z)'),
                          ('rhs_eint', 'Real rhs_eint(Real temperature, const Real* xn, Real z)'),
-                         ('jac_nuc', 'void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z)')]:
-    emit(signature, shallow_conditionals(name, body(name).replace('state.T', 'temperature')))
+                         ('jac_nuc', 'void jac_nuc(Real temperature, Real* out, const Real* xn, Real z)')]:
+    routine = shallow_conditionals(name, body(name).replace('state.T', 'temperature'))
+    if name == 'jac_nuc':
+        routine = flatten_matrix_access(common(routine), ('out',))
+    emit(signature, routine)
 # The source value-initializes burn_t, but species and e are overwritten here,
 # and eos_re writes T. Only rho must retain its zero initialization.
 emit('void burn_state_from_y(const Real* y, BurnRecord* b)', '''
@@ -176,36 +239,53 @@ emit('void burn_state_from_y(const Real* y, BurnRecord* b)', '''
     b->e = y[NumSpec];
     eos_re(b);
 ''')
-emit('void rhs(Real t, const Real* y, Real* out, ScratchRecord* s)', '''
-    BurnRecord* b = &s->burn;
-    burn_state_from_y(y, b);
-    rhs_specie(b->T, out, b->xn, default_redshift);
-    Real edot = rhs_eint(b->T, b->xn, default_redshift);
+emit('void burn_state_from_y_view(const Real* y, BurnView b)', '''
+    b.rho[0] = 0.0;
+    for (int n = 0; n < NumSpec; ++n) b.xn[n] = math::max(y[n], small_number_density_floor());
+    b.e[0] = y[NumSpec];
+    eos_re_view(b);
+''')
+emit('void rhs(Real t, const Real* y, Real* out, ScratchView s)', '''
+    BurnView b = s.burn;
+    burn_state_from_y_view(y, b);
+    rhs_specie(b.T[0], out, b.xn, default_redshift);
+    Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
     out[14] = edot;
 ''')
-emit('void eval_jacobian(ScratchRecord* s, Real x)', '''
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[n][m] = 0.0;
-    BurnRecord* b = &s->burn;
-    burn_state_from_y(s->y, b);
-    jac_nuc(b->T, s->fjac, b->xn, default_redshift);
-    s->n_jac += 1;
+emit('void eval_jacobian(ScratchView s, Real x)', '''
+    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
+    BurnView b = s.burn;
+    burn_state_from_y_view(s.y, b);
+    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    s.n_jac[0] += 1;
 ''')
-for name, signature in [('lu_decomposition', 'int lu_decomposition(Real (*A)[15], int* ipvt)'),
-                         ('lu_solve', 'void lu_solve(const Real (*LU)[15], const int* ipvt, Real* x)')]:
-    emit(signature, body(name))
+for name, signature, matrix in [('lu_decomposition', 'int lu_decomposition(Real* A, int* ipvt)', 'A'),
+                                ('lu_solve', 'void lu_solve(const Real* LU, const int* ipvt, Real* x)', 'LU')]:
+    routine = flatten_matrix_access(body(name), (matrix,))
+    if name == 'lu_decomposition':
+        routine = replace(routine, 'ipvt[k] = static_cast<int>(pivot_row);',
+                          'ipvt[k] = static_cast<int>(pivot_row);\n            __builtin_assume(pivot_row < 15);')
+    else:
+        routine = replace(routine, 'const auto pivot_row = static_cast<size_type>(ipvt[k]);',
+                          'const auto pivot_row = static_cast<size_type>(ipvt[k]);\n            __builtin_assume(pivot_row < 15);')
+        routine = routine.replace('for (size_type j = k + 1; j < N; ++j) {',
+                                  'for (size_type j = k + 1; j < N; ++j) {\n                __builtin_assume(j < 15);')
+        routine = routine.replace('for (size_type j = 0; j < k; ++j) {',
+                                  'for (size_type j = 0; j < k; ++j) {\n            __builtin_assume(j < 15);')
+    emit(signature, routine)
 
 
 def scratch_access(text):
     return re.sub(r'\bs\.(\w+)', r's->\1', text)
 
 
-for name, signature in [('decompose', 'int decompose(ScratchRecord* s, Real fac)'),
-                         ('solve', 'void solve(ScratchRecord* s, Real* ak)'),
-                         ('error_norm', 'Real error_norm(const ScratchRecord* s)')]:
+for name, signature in [('decompose', 'int decompose(ScratchView s, Real fac)'),
+                         ('solve', 'void solve(ScratchView s, Real* ak)'),
+                         ('error_norm', 'Real error_norm(ScratchView s)')]:
     text = scratch_access(body(name))
     text = text.replace('linalg::', '').replace('<N>', '')
     text = text.replace('atol_for(s, i)', 's->atol_vec[i]').replace('rtol_for(s, i)', 's->rtol_vec[i]')
-    emit(signature, text)
+    emit(signature, flatten_matrix_access(scratch_view_access(text), ('e', 'fjac')))
 
 # Retain arithmetic in the original solver body. Only replace its control
 # transfers and state representation; exact matching protects these edits.
@@ -217,6 +297,8 @@ text = replace(text, 'return IntegratorResult::TOO_MUCH_ACCURACY_REQUESTED;', 'r
 # after the first failing element, just as in the original.
 first = text.index('for (size_type i = 0; i < N; ++i)')
 text = text[:first] + text[first:].replace('i < N;', 'i < N && !done;', 1)
+text = replace(text, 'for (size_type i = 0; i < N && !done; ++i) {',
+               'for (size_type i = 0; i < N && !done; ++i) {\n            __builtin_assume(i < N);')
 text = replace(text, '\n        const Real hmaxn', '\n        if (done) return result;\n        const Real hmaxn')
 text = replace(text, 'for (;;) {', 'while (!done) {', count=2)
 text = replace(text, 'return IntegratorResult::TOO_MANY_STEPS;', 'result = TOO_MANY_STEPS; done = true;')
@@ -245,7 +327,7 @@ solver_control += '#ifndef CHEM_EVAL_JACOBIAN\n#define CHEM_EVAL_JACOBIAN eval_j
 solver_control += '#ifndef CHEM_RHS\n#define CHEM_RHS rhs\n#endif\n'
 text = text.replace('eval_jacobian(s, x);', 'CHEM_EVAL_JACOBIAN(s, x);')
 text = text.replace('rhs(', 'CHEM_RHS(')
-solver_control += 'DEVICE int integrate(ScratchRecord* s) {\n' + common(text) + '\n}\n'
+solver_control += 'DEVICE int integrate(ScratchView s) {\n' + flatten_matrix_access(scratch_view_access(common(text)), ('e', 'fjac')) + '\n}\n'
 solver_control += '#undef CHEM_EVAL_JACOBIAN\n#undef CHEM_RHS\n'
 # Reindent this small transformed block so the new control nesting is reviewable.
 # There are no string literals, braced initializers, or comments containing braces.
@@ -267,17 +349,17 @@ parts.append('#include "integrate.inc"\n')
 initialization = []
 for name, count, value in real_fields + int_fields:
     if name == 'burn':
-        initialization.extend(f's->burn.{field} = 0.0;' for field in ('rho', 'T', 'e'))
-        initialization.append('for (int n = 0; n < 14; ++n) s->burn.xn[n] = 0.0;')
+        initialization.extend(f's.burn.{field}[0] = 0.0;' for field in ('rho', 'T', 'e'))
+        initialization.append('for (int n = 0; n < 14; ++n) s.burn.xn[n] = 0.0;')
     elif name in ('fjac', 'e'):
-        initialization.append(f'for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->{name}[n][m] = {value};')
+        initialization.append(f'for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.{name}[matrix_index(n, m)] = {value};')
     elif count == 1:
-        initialization.append(f's->{name} = {value};')
+        initialization.append(f's.{name}[0] = {value};')
     else:
-        initialization.append(f'for (int n = 0; n < {count}; ++n) s->{name}[n] = {value};')
-emit('void initialize_solver(ScratchRecord* s)', '\n'.join(initialization))
+        initialization.append(f'for (int n = 0; n < {count}; ++n) s.{name}[n] = {value};')
+emit('void initialize_solver(ScratchView s)', '\n'.join(initialization))
 configure = body('configure_ros2s').replace('state.', 's.')
-emit('void configure_ros2s(ScratchRecord* s)', scratch_access(configure))
+emit('void configure_ros2s(ScratchView s)', scratch_view_access(scratch_access(configure)))
 burn = body('burn_ros2s')
 burn = replace(burn, 'pc::eos_rt(state);', 'eos_rt(b);')
 burn = replace(burn, 'Ros2sIntegrator integrator;\n    Ros2sIntegrator::State ros2s_state;', 'initialize_solver(s);')
@@ -286,7 +368,7 @@ burn = burn.replace('ros2s_state.', 's.')
 burn = replace(burn, 'integrator.integrate(ros2s_state)', 'integrate(s)')
 burn = burn.replace('stats.', 'stats->')
 burn = burn.replace('state.xn', 'b->xn').replace('state.e', 'b->e')
-emit('int burn_ros2s(BurnRecord* b, Real dt, IntegratorStats* stats, ScratchRecord* s)', scratch_access(burn))
+emit('int burn_ros2s(BurnRecord* b, Real dt, IntegratorStats* stats, ScratchView s)', scratch_view_access(scratch_access(burn)))
 emit('u64 splitmix64(u64 value)', body('splitmix64'))
 emit('Real perturbation_factor(int cell, int step)', body('perturbation_factor'))
 emit('bool valid_positive(Real value)', body('valid_positive'))
@@ -297,27 +379,35 @@ def collapse(text, var):
     text = text.replace(var + '.density_driver', 'record->density_driver').replace(var + '.time', 'record->time')
     text = text.replace(var + '.completed_steps', 'record->completed_steps')
     text = text.replace(var + '.current', 'b').replace(var + '.stats', 'record->stats')
-    text = text.replace('floor_and_normalize_number_densities(b)', 'floor_and_normalize_number_densities(b, s->mass)')
+    text = text.replace('floor_and_normalize_number_densities(b)', 'floor_and_normalize_number_densities(b, mass)')
     return text
 
 
 perturb = collapse(body('apply_perturbation'), 'collapse')
 perturb = replace(perturb, 'for (auto& xn : b->xn) {\n        xn *= factor;', 'for (int n = 0; n < NumSpec; ++n) {\n        b->xn[n] *= factor;')
-emit('void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, ScratchRecord* s)',
+emit('void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, Real* mass)',
      'BurnRecord* b = &record->current;\n' + perturb)
 emit('Real collapse_timestep(const BurnRecord* b)', collapse(body('collapse_timestep'), 'collapse'))
+local_scratch = []
+for name, count, _ in real_fields + int_fields:
+    kind = 'int' if name in {field for field, _, _ in int_fields} else 'Real'
+    if name == 'burn':
+        local_scratch += ['Real burn_rho;', 'Real burn_T;', 'Real burn_e;', 'Real burn_xn[14];']
+    elif count == 1:
+        local_scratch.append(f'{kind} {name};')
+    else:
+        local_scratch.append(f'{kind} {name}[{count}];')
+local_scratch.append('ScratchView s = ' + scratch_view_initializer(True) + ';')
 for name in ('prepare_grid_timestep_kernel', 'advance_collapse_gridwide_kernel'):
     text = body(name)
     text = replace(text, 'const int cell = blockIdx.x * blockDim.x + threadIdx.x;', '''
     const int cell = CELL_INDEX;
     ''')
-    text = replace(text, 'CollapseState& state = cells[cell];', '''
-    CellRecord* record = cells + cell;
-    BurnRecord* b = &record->current;
-    ScratchRecord* s = scratch + cell;
-    ''')
+    declarations = '\n'.join(local_scratch) if name.startswith('advance') else 'Real mass[14];'
+    text = replace(text, 'CollapseState& state = cells[cell];',
+                   'CellRecord* record = cells + cell;\nBurnRecord* b = &record->current;\n' + declarations)
     text = collapse(text, 'state')
-    text = text.replace('apply_perturbation(state, cell, step, perturb)', 'apply_perturbation(record, cell, step, perturb, s)')
+    text = text.replace('apply_perturbation(state, cell, step, perturb)', 'apply_perturbation(record, cell, step, perturb, mass)')
     text = text.replace('collapse_timestep(state)', 'collapse_timestep(b)')
     text = text.replace('burn_ros2s(b, dt_grid, record->stats)', 'burn_ros2s(b, dt_grid, &record->stats, s)')
     text = text.replace('std::numeric_limits<integrators::Real>::max()', 'MAX_DOUBLE')
@@ -327,7 +417,7 @@ for name in ('prepare_grid_timestep_kernel', 'advance_collapse_gridwide_kernel')
         extra = 'Real next_grid_time, Real dt_grid, int* integrated_count'
     else:
         extra = 'Real grid_time, int step, bool perturb, Real* dt_candidates'
-    parts.append('KERNEL void ' + name + '(CellRecord* cells, ScratchRecord* scratch, int num_cells, int completed_global_steps, ' + extra + ', int* failure_code CELL_PARAMETER) {\n' + common(text) + '\n}\n')
+    parts.append('KERNEL void ' + name + '(CellRecord* cells, int num_cells, int completed_global_steps, ' + extra + ', int* failure_code CELL_PARAMETER) {\n' + common(text) + '\n}\n')
 parts.append('} // namespace chemistry\n')
 
 parser = argparse.ArgumentParser()

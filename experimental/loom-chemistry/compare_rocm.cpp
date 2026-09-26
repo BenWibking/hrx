@@ -17,7 +17,6 @@
 namespace lc = chemistry;
 static_assert(sizeof(CollapseState) == sizeof(lc::CellRecord));
 static_assert(sizeof(lc::CellRecord) == 216);
-static_assert(sizeof(lc::ScratchRecord) == 4960);
 
 static void hip_check(hipError_t result, const char* action) {
     if (result != hipSuccess) throw std::runtime_error(std::string(action) + ": " + hipGetErrorString(result));
@@ -64,7 +63,6 @@ struct Backend {
     int blocks;
     DeviceBuffer<CollapseState> original;
     DeviceBuffer<lc::CellRecord> cells;
-    DeviceBuffer<lc::ScratchRecord> scratch;
     DeviceBuffer<double> candidates;
     DeviceBuffer<int> failure;
     DeviceBuffer<int> integrated;
@@ -72,7 +70,7 @@ struct Backend {
     Module* advance;
     Backend(bool use_loom, int count, Module* p, Module* a)
         : loom(use_loom), n(count), blocks((count + 127) / 128), original(count), cells(count),
-          scratch(count), candidates(count), failure(1), integrated(1), prepare(p), advance(a) {}
+          candidates(count), failure(1), integrated(1), prepare(p), advance(a) {}
     void reset(const std::vector<CollapseState>& init, const std::vector<lc::CellRecord>& packed) {
         if (loom) cells.put(packed.data(), n); else original.put(init.data(), n);
         int one = 1, zero = 0;
@@ -84,7 +82,7 @@ struct Backend {
                                                            perturb, candidates.ptr, failure.ptr);
             hip_check(hipGetLastError(), "original prepare launch");
         } else {
-            void* args[] = {&cells.ptr, &scratch.ptr, &n, &completed, &time, &step,
+            void* args[] = {&cells.ptr, &n, &completed, &time, &step,
                             &perturb, &candidates.ptr, &failure.ptr};
             hip_check(hipModuleLaunchKernel(prepare->function, blocks, 1, 1, 128, 1, 1,
                                             0, nullptr, args, nullptr), "Loom prepare launch");
@@ -96,7 +94,7 @@ struct Backend {
                                                                integrated.ptr, failure.ptr);
             hip_check(hipGetLastError(), "original advance launch");
         } else {
-            void* args[] = {&cells.ptr, &scratch.ptr, &n, &completed, &next, &dt,
+            void* args[] = {&cells.ptr, &n, &completed, &next, &dt,
                             &integrated.ptr, &failure.ptr};
             hip_check(hipModuleLaunchKernel(advance->function, blocks, 1, 1, 128, 1, 1,
                                             0, nullptr, args, nullptr), "Loom advance launch");

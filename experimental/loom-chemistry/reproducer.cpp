@@ -75,6 +75,45 @@ struct ScratchRecord {
   int ip[15];
 };
 static_assert(sizeof(ScratchRecord) == 4960);
+struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };
+struct ScratchView {
+  Real* t;
+  Real* tout;
+  Real* dt;
+  Real* y;
+  Real* rtol_vec;
+  Real* atol_vec;
+  Real* uround;
+  Real* fac_min;
+  Real* fac_max;
+  Real* safe;
+  Real* ynew;
+  Real* ak1;
+  Real* ak2;
+  Real* work;
+  Real* fjac;
+  Real* e;
+  Real* dy;
+  BurnView burn;
+  Real* mass;
+  int* n_step;
+  int* n_rhs;
+  int* n_jac;
+  int* n_accept;
+  int* n_reject;
+  int* n_decomp;
+  int* n_solve;
+  int* max_steps;
+  int* ip;
+};
+DEVICE ScratchView scratch_view(ScratchRecord* s) {
+  return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, s->mass, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
+}
+DEVICE size_type matrix_index(size_type row, size_type column) {
+  size_type index = row * 15 + column;
+  __builtin_assume(index < 225);
+  return index;
+}
 DEVICE Real small_number_density_floor() {
  return 1.0e-100;
 }
@@ -143,6 +182,12 @@ DEVICE void eos_re(BurnRecord* b) {
 
     const EosSums sums = eos_sums_from_number_densities(b->xn);
     b->T = b->e / (sums.sum_gammasinv * sums.gasconstant * sums.sum_Abarinv);
+
+}
+DEVICE void eos_re_view(BurnView b) {
+
+    const EosSums sums = eos_sums_from_number_densities(b.xn);
+    b.T[0] = b.e[0] / (sums.sum_gammasinv * sums.gasconstant * sums.sum_Abarinv);
 
 }
 DEVICE void balance_charge(BurnRecord* b) {
@@ -4014,7 +4059,7 @@ return ((x201) ? (
    0
 ));
 }
-DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
+DEVICE void jac_nuc(Real temperature, Real* out, const Real* xn, Real z) {
 
 
     Real T = temperature;
@@ -4731,49 +4776,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x88 = x12*x41;
 
-    out[0][0] = -xn[1]*x53 - xn[12]*x32 + 3.8571873359681582e-209*xn[12]*x47*x48 + 4.3524079114767552e-117*xn[13]*x45*x46 + 5.9082438637265071e-70*xn[2]*x43*x44 + 3.7903999274394518e-18*xn[3]*x33*x42 - xn[4]*x0 - xn[6]*x27 - xn[9]*x3 - x11*x9 - x14*x15 - x21*x22 - x5*x7;
+    out[matrix_index(0, 0)] = -xn[1]*x53 - xn[12]*x32 + 3.8571873359681582e-209*xn[12]*x47*x48 + 4.3524079114767552e-117*xn[13]*x45*x46 + 5.9082438637265071e-70*xn[2]*x43*x44 + 3.7903999274394518e-18*xn[3]*x33*x42 - xn[4]*x0 - xn[6]*x27 - xn[9]*x3 - x11*x9 - x14*x15 - x21*x22 - x5*x7;
 
 
-    out[0][1] = -xn[0]*x53 + xn[3]*x54;
+    out[matrix_index(0, 1)] = -xn[0]*x53 + xn[3]*x54;
 
 
-    out[0][2] = -xn[0]*x4*x7 + xn[0]*x44*x60 + xn[3]*x59 + xn[3]*x64 + xn[7]*x55;
+    out[matrix_index(0, 2)] = -xn[0]*x4*x7 + xn[0]*x44*x60 + xn[3]*x59 + xn[3]*x64 + xn[7]*x55;
 
 
-    out[0][3] = xn[0]*x42*x65 + xn[1]*x54 + xn[2]*x59 + xn[2]*x64 + xn[5]*x55;
+    out[matrix_index(0, 3)] = xn[0]*x42*x65 + xn[1]*x54 + xn[2]*x59 + xn[2]*x64 + xn[5]*x55;
 
 
-    out[0][4] = -xn[0]*x0;
+    out[matrix_index(0, 4)] = -xn[0]*x0;
 
 
-    out[0][5] = -xn[0]*x11*x8 + xn[3]*x55;
+    out[matrix_index(0, 5)] = -xn[0]*x11*x8 + xn[3]*x55;
 
 
-    out[0][6] = -xn[0]*x27;
+    out[matrix_index(0, 6)] = -xn[0]*x27;
 
 
-    out[0][7] = xn[2]*x55;
+    out[matrix_index(0, 7)] = xn[2]*x55;
 
 
-    out[0][8] = -xn[0]*x13*x15;
+    out[matrix_index(0, 8)] = -xn[0]*x13*x15;
 
 
-    out[0][9] = -xn[0]*x3;
+    out[matrix_index(0, 9)] = -xn[0]*x3;
 
 
-    out[0][10] = 0;
+    out[matrix_index(0, 10)] = 0;
 
 
-    out[0][11] = -x19*x22*x66;
+    out[matrix_index(0, 11)] = -x19*x22*x66;
 
 
-    out[0][12] = -xn[0]*x32 + xn[0]*x67;
+    out[matrix_index(0, 12)] = -xn[0]*x32 + xn[0]*x67;
 
 
-    out[0][13] = xn[0]*x46*x68;
+    out[matrix_index(0, 13)] = xn[0]*x46*x68;
 
 
-    out[0][14] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*x76 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*x76 + 1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] - 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*x74 - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*x75 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*x78 + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*x79 + 1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*x80 + 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*x48*x81 - xn[0]*xn[1]*jac_nuc_choice_4(T, x12, x35, x37, x38, x39, x49, x50, x52, x82, x84, x85, x87, x88) - xn[0]*xn[6]*jac_nuc_choice_5(T, x23, x24, x25, x26) + 3.0451686126851684e-13*xn[0]*x12*math::exp((-2.7523999999999997)*math::log(math::abs(x16)))*x20 + xn[0]*x60*x79*(4.6894649399999997*x12*x35 + 0.1741279885*x12*x37 + 0.00078368076500000001*x12*x39 - 11.478657500000001*x84 - 1.1508224*x85 - 0.015791857020000001*x86 - 1.6313198799999999e-5*x87) + xn[0]*x65*x78*(0.048699499187009998*x12*x35 + 0.058916489135550004*x12*x37 + 0.00074779264187460007*x12*x39 - 0.56548861234079995*x84 - 0.13460048125451995*x85 - 0.009937168197024001*x86 - 2.1050286473655998e-5*x87) + xn[0]*x68*x80*(9.1741162500000009*x12*x35 + 0.33976956150000004*x12*x37 + 0.001447065312*x12*x39 - 21.506460400000002*x84 - 2.2740475600000001*x85 - 0.030054336600000002*x86 - 2.9193291280000001e-5*x87) + 2.3410580000000002e-11*xn[11]*x12*math::exp((-1.2476)*math::log(math::abs(x18)))*x66 - xn[2]*xn[7]*x72 - xn[3]*xn[5]*x72 + 3.5999999999999998e-8*xn[9]*x73 + 1.4270531560759686e-22*x10*x75 + 2.8942185892741411e-10*x21*x73 + x57*x77*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + 8.6419753086419757e-23*x6*x74 + x67*x81*(14.104879460277006*x12*x35 + 0.40565210486515002*x12*x37 + 0.0013829937185547*x12*x39 - 36.961339871360003*x84 - 3.0769865337967999*x85 - 0.031944123769722006*x86 - 2.5324648525320001e-5*x87) + x77*jac_nuc_choice_6(T, x12, x35, x37, x38, x39, x40, x61, x62, x63, x84, x85, x88) - x81*jac_nuc_choice_7(T, x12, x30, x31, x82, x83) + x58*x77*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x56)*(x56)))/(xn[0]*x70 + xn[1]*x70 + xn[10]*x71 + xn[11]*x70 + xn[12]*x70 + xn[13]*x70 + xn[2]*x70 + xn[3]*x70 + xn[4]*x70 + xn[5]*x70 + xn[6]*x71 + xn[7]*x70 + xn[8]*x71 + xn[9]*x71);
+    out[matrix_index(0, 14)] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*x76 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*x76 + 1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] - 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*x74 - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*x75 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*x78 + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*x79 + 1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*x80 + 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*x48*x81 - xn[0]*xn[1]*jac_nuc_choice_4(T, x12, x35, x37, x38, x39, x49, x50, x52, x82, x84, x85, x87, x88) - xn[0]*xn[6]*jac_nuc_choice_5(T, x23, x24, x25, x26) + 3.0451686126851684e-13*xn[0]*x12*math::exp((-2.7523999999999997)*math::log(math::abs(x16)))*x20 + xn[0]*x60*x79*(4.6894649399999997*x12*x35 + 0.1741279885*x12*x37 + 0.00078368076500000001*x12*x39 - 11.478657500000001*x84 - 1.1508224*x85 - 0.015791857020000001*x86 - 1.6313198799999999e-5*x87) + xn[0]*x65*x78*(0.048699499187009998*x12*x35 + 0.058916489135550004*x12*x37 + 0.00074779264187460007*x12*x39 - 0.56548861234079995*x84 - 0.13460048125451995*x85 - 0.009937168197024001*x86 - 2.1050286473655998e-5*x87) + xn[0]*x68*x80*(9.1741162500000009*x12*x35 + 0.33976956150000004*x12*x37 + 0.001447065312*x12*x39 - 21.506460400000002*x84 - 2.2740475600000001*x85 - 0.030054336600000002*x86 - 2.9193291280000001e-5*x87) + 2.3410580000000002e-11*xn[11]*x12*math::exp((-1.2476)*math::log(math::abs(x18)))*x66 - xn[2]*xn[7]*x72 - xn[3]*xn[5]*x72 + 3.5999999999999998e-8*xn[9]*x73 + 1.4270531560759686e-22*x10*x75 + 2.8942185892741411e-10*x21*x73 + x57*x77*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + 8.6419753086419757e-23*x6*x74 + x67*x81*(14.104879460277006*x12*x35 + 0.40565210486515002*x12*x37 + 0.0013829937185547*x12*x39 - 36.961339871360003*x84 - 3.0769865337967999*x85 - 0.031944123769722006*x86 - 2.5324648525320001e-5*x87) + x77*jac_nuc_choice_6(T, x12, x35, x37, x38, x39, x40, x61, x62, x63, x84, x85, x88) - x81*jac_nuc_choice_7(T, x12, x30, x31, x82, x83) + x58*x77*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x56)*(x56)))/(xn[0]*x70 + xn[1]*x70 + xn[10]*x71 + xn[11]*x70 + xn[12]*x70 + xn[13]*x70 + xn[2]*x70 + xn[3]*x70 + xn[4]*x70 + xn[5]*x70 + xn[6]*x71 + xn[7]*x70 + xn[8]*x71 + xn[9]*x71);
 
 
     x0 = 8.6173430000000006e-5*T;
@@ -4914,49 +4959,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x68 = x18*x7;
 
-    out[1][0] = -xn[1]*x15 + xn[2]*x11*x9;
+    out[matrix_index(1, 0)] = -xn[1]*x15 + xn[2]*x11*x9;
 
 
-    out[1][1] = -xn[0]*x15 - xn[10]*x20 - xn[13]*x24 - xn[2]*x47 - xn[3]*x17 - xn[3]*x31 - xn[5]*x27 - xn[7]*x16 - xn[8]*x54 - x40;
+    out[matrix_index(1, 1)] = -xn[0]*x15 - xn[10]*x20 - xn[13]*x24 - xn[2]*x47 - xn[3]*x17 - xn[3]*x31 - xn[5]*x27 - xn[7]*x16 - xn[8]*x54 - x40;
 
 
-    out[1][2] = xn[0]*x11*x9 - xn[1]*x47 + xn[12]*x55 + xn[4]*x57 + 6.0e-10*xn[6] + 6.3999999999999996e-10*xn[9];
+    out[matrix_index(1, 2)] = xn[0]*x11*x9 - xn[1]*x47 + xn[12]*x55 + xn[4]*x57 + 6.0e-10*xn[6] + 6.3999999999999996e-10*xn[9];
 
 
-    out[1][3] = -xn[1]*x17 - xn[1]*x31;
+    out[matrix_index(1, 3)] = -xn[1]*x17 - xn[1]*x31;
 
 
-    out[1][4] = xn[2]*x57 + xn[8]*x58;
+    out[matrix_index(1, 4)] = xn[2]*x57 + xn[8]*x58;
 
 
-    out[1][5] = -xn[1]*x27 - xn[1]*x39;
+    out[matrix_index(1, 5)] = -xn[1]*x27 - xn[1]*x39;
 
 
-    out[1][6] = 6.0e-10*xn[2];
+    out[matrix_index(1, 6)] = 6.0e-10*xn[2];
 
 
-    out[1][7] = -xn[1]*x16;
+    out[matrix_index(1, 7)] = -xn[1]*x16;
 
 
-    out[1][8] = -xn[1]*x54 + xn[4]*x58;
+    out[matrix_index(1, 8)] = -xn[1]*x54 + xn[4]*x58;
 
 
-    out[1][9] = 6.3999999999999996e-10*xn[2];
+    out[matrix_index(1, 9)] = 6.3999999999999996e-10*xn[2];
 
 
-    out[1][10] = -xn[1]*x20;
+    out[matrix_index(1, 10)] = -xn[1]*x20;
 
 
-    out[1][11] = 0;
+    out[matrix_index(1, 11)] = 0;
 
 
-    out[1][12] = xn[2]*x55;
+    out[matrix_index(1, 12)] = xn[2]*x55;
 
 
-    out[1][13] = -xn[1]*x24;
+    out[matrix_index(1, 13)] = -xn[1]*x24;
 
 
-    out[1][14] = (3.9837168574084181e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[1]*xn[7] + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*xn[2]*x9 - xn[0]*xn[1]*jac_nuc_choice_15(T, x12, x13, x14, x18, x2, x4, x5, x6, x66, x67, x68, x8) + 5.9082438637265071e-70*xn[0]*xn[2]*x10*x9*(4.6894649399999997*x18*x2 + 0.1741279885*x18*x4 - 0.015791857020000001*x18*x5 + 0.00078368076500000001*x18*x6 - 11.478657500000001*x66 - 1.1508224*x67 - 1.6313198799999999e-5*x68) - 4.5700000000000003e-7*xn[1]*xn[10]*x19*x62 - xn[1]*xn[13]*jac_nuc_choice_16(T, x22, x23) - xn[1]*xn[2]*jac_nuc_choice_17(T, x18, x32, x33, x41, x42, x44, x46, x64, x65) - xn[1]*xn[3]*jac_nuc_choice_18(T, x29, x30) - xn[1]*xn[5]*jac_nuc_choice_19(T, x25, x26) - xn[1]*xn[8]*jac_nuc_choice_20(x18, x43, x48, x49, x50, x51, x52, x53, x62, x63, x65) - xn[1]*x40*(5.1485802679346868*x18*math::exp((1.0)*math::log(math::abs(x32)))*x37 - 0.87659414490283338*x18*x36*x38 - 3.5068370966299316*x64) + 7.2084342424042629e-17*xn[12]*xn[2]*x21 + xn[2]*xn[4]*jac_nuc_choice_21(T, x26, x56) + xn[4]*xn[8]*(8.4600000000000008e-10*x18*x34 - 2.7400000000000004e-10*x44*x63))/(xn[0]*x60 + xn[1]*x60 + xn[10]*x61 + xn[11]*x60 + xn[12]*x60 + xn[13]*x60 + xn[2]*x60 + xn[3]*x60 + xn[4]*x60 + xn[5]*x60 + xn[6]*x61 + xn[7]*x60 + xn[8]*x61 + xn[9]*x61);
+    out[matrix_index(1, 14)] = (3.9837168574084181e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[1]*xn[7] + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*xn[2]*x9 - xn[0]*xn[1]*jac_nuc_choice_15(T, x12, x13, x14, x18, x2, x4, x5, x6, x66, x67, x68, x8) + 5.9082438637265071e-70*xn[0]*xn[2]*x10*x9*(4.6894649399999997*x18*x2 + 0.1741279885*x18*x4 - 0.015791857020000001*x18*x5 + 0.00078368076500000001*x18*x6 - 11.478657500000001*x66 - 1.1508224*x67 - 1.6313198799999999e-5*x68) - 4.5700000000000003e-7*xn[1]*xn[10]*x19*x62 - xn[1]*xn[13]*jac_nuc_choice_16(T, x22, x23) - xn[1]*xn[2]*jac_nuc_choice_17(T, x18, x32, x33, x41, x42, x44, x46, x64, x65) - xn[1]*xn[3]*jac_nuc_choice_18(T, x29, x30) - xn[1]*xn[5]*jac_nuc_choice_19(T, x25, x26) - xn[1]*xn[8]*jac_nuc_choice_20(x18, x43, x48, x49, x50, x51, x52, x53, x62, x63, x65) - xn[1]*x40*(5.1485802679346868*x18*math::exp((1.0)*math::log(math::abs(x32)))*x37 - 0.87659414490283338*x18*x36*x38 - 3.5068370966299316*x64) + 7.2084342424042629e-17*xn[12]*xn[2]*x21 + xn[2]*xn[4]*jac_nuc_choice_21(T, x26, x56) + xn[4]*xn[8]*(8.4600000000000008e-10*x18*x34 - 2.7400000000000004e-10*x44*x63))/(xn[0]*x60 + xn[1]*x60 + xn[10]*x61 + xn[11]*x60 + xn[12]*x60 + xn[13]*x60 + xn[2]*x60 + xn[3]*x60 + xn[4]*x60 + xn[5]*x60 + xn[6]*x61 + xn[7]*x60 + xn[8]*x61 + xn[9]*x61);
 
 
     x0 = math::sqrt(T);
@@ -5439,49 +5484,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x239 = -2.3025850929940459*x111*(-0.77462909999999996*x218 - 9.4070299999999989*x226 - 588180.10479140002*x236 + 70.138370000000009*x59*x7 - 160821.97128249999*x231/x112) + 3816.3275589792611*x121*x169 + x124*(x125*x238 + x237*math::log(x118)) + x129*(x130*x238 + x237*math::log(x107)) + 49431.413233526648*x169 + 98.337445626384849*x216 - 1.783649418259394*x218 - 9.3363608541157479*x226 - 1354334.7412883535*x236;
 
-    out[2][0] = xn[1]*x40 + xn[6]*x18 + xn[9]*x2 + x10*x9 + x12*x13 + x31 - x35 - x4*x6;
+    out[matrix_index(2, 0)] = xn[1]*x40 + xn[6]*x18 + xn[9]*x2 + x10*x9 + x12*x13 + x31 - x35 - x4*x6;
 
 
-    out[2][1] = xn[0]*x40 + xn[13]*x43 - xn[2]*x65 + xn[3]*x67 + xn[5]*x46 + 7.9674337148168363e-7*xn[7]*x69 + xn[8]*x56 + x161;
+    out[matrix_index(2, 1)] = xn[0]*x40 + xn[13]*x43 - xn[2]*x65 + xn[3]*x67 + xn[5]*x46 + 7.9674337148168363e-7*xn[7]*x69 + xn[8]*x56 + x161;
 
 
-    out[2][2] = -xn[0]*x3*x6 - xn[0]*x32*x34 - xn[1]*x65 - xn[10]*x172 - xn[12]*x164 + xn[2]*xn[8]*x133 + xn[2]*xn[8]*x135 + 2*xn[2]*xn[8]*x167 - xn[3]*x183 + xn[3]*x187 - xn[4]*x174 - 1.0e-25*xn[5] - 6.0e-10*xn[6] - xn[7]*x162 - xn[7]*x165 + xn[8]*x188 + xn[8]*x191 - 6.3999999999999996e-10*xn[9] + 2.0*x137*x140*x146*x148*x152*x154 - x160 + 3*x168*(-1.8e-31*x166 - 6.0000000000000005e-31*x69) + 3*x168*(6.0000000000000001e-32*x166 + 2.0000000000000002e-31*x69) - x179;
+    out[matrix_index(2, 2)] = -xn[0]*x3*x6 - xn[0]*x32*x34 - xn[1]*x65 - xn[10]*x172 - xn[12]*x164 + xn[2]*xn[8]*x133 + xn[2]*xn[8]*x135 + 2*xn[2]*xn[8]*x167 - xn[3]*x183 + xn[3]*x187 - xn[4]*x174 - 1.0e-25*xn[5] - 6.0e-10*xn[6] - xn[7]*x162 - xn[7]*x165 + xn[8]*x188 + xn[8]*x191 - 6.3999999999999996e-10*xn[9] + 2.0*x137*x140*x146*x148*x152*x154 - x160 + 3*x168*(-1.8e-31*x166 - 6.0000000000000005e-31*x69) + 3*x168*(6.0000000000000001e-32*x166 + 2.0000000000000002e-31*x69) - x179;
 
 
-    out[2][3] = xn[0]*x28*x30 + xn[1]*x67 - xn[2]*x183 + xn[2]*x187 + xn[5]*x165 + xn[6]*x192 + x161;
+    out[matrix_index(2, 3)] = xn[0]*x28*x30 + xn[1]*x67 - xn[2]*x183 + xn[2]*x187 + xn[5]*x165 + xn[6]*x192 + x161;
 
 
-    out[2][4] = -xn[2]*x174 - xn[2]*x178;
+    out[matrix_index(2, 4)] = -xn[2]*x174 - xn[2]*x178;
 
 
-    out[2][5] = xn[1]*x46 - 1.0e-25*xn[2] + xn[3]*x165 + xn[8]*x198;
+    out[matrix_index(2, 5)] = xn[1]*x46 - 1.0e-25*xn[2] + xn[3]*x165 + xn[8]*x198;
 
 
-    out[2][6] = xn[0]*x18 - 6.0e-10*xn[2] + xn[3]*x192 + x202;
+    out[matrix_index(2, 6)] = xn[0]*x18 - 6.0e-10*xn[2] + xn[3]*x192 + x202;
 
 
-    out[2][7] = 7.9674337148168363e-7*xn[1]*x69 - xn[2]*x162 - xn[2]*x165;
+    out[matrix_index(2, 7)] = 7.9674337148168363e-7*xn[1]*x69 - xn[2]*x162 - xn[2]*x165;
 
 
-    out[2][8] = xn[0]*x10*x8 + xn[0]*x11*x13 + xn[1]*x56 + xn[2]*x188 + xn[2]*x191 + xn[5]*x198 + 4*xn[8]*x155 + x167*x168 + x202;
+    out[matrix_index(2, 8)] = xn[0]*x10*x8 + xn[0]*x11*x13 + xn[1]*x56 + xn[2]*x188 + xn[2]*x191 + xn[5]*x198 + 4*xn[8]*x155 + x167*x168 + x202;
 
 
-    out[2][9] = xn[0]*x2 - 6.3999999999999996e-10*xn[2] + x161;
+    out[matrix_index(2, 9)] = xn[0]*x2 - 6.3999999999999996e-10*xn[2] + x161;
 
 
-    out[2][10] = -xn[2]*x172 + x161;
+    out[matrix_index(2, 10)] = -xn[2]*x172 + x161;
 
 
-    out[2][11] = 0;
+    out[matrix_index(2, 11)] = 0;
 
 
-    out[2][12] = -xn[2]*x164;
+    out[matrix_index(2, 12)] = -xn[2]*x164;
 
 
-    out[2][13] = xn[1]*x43;
+    out[matrix_index(2, 13)] = xn[1]*x43;
 
 
-    out[2][14] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*x211 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*x211 + 8.9351999999999994e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*x212 + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*x207 + 3.0659999999999995e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*x212 - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*x210 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*x29 - 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*x33 + xn[0]*xn[1]*jac_nuc_choice_33(T, x21, x222, x223, x225, x227, x23, x24, x25, x36, x37, x39, x7) + 2*xn[0]*xn[6]*jac_nuc_choice_34(T, x14, x15, x16, x17) - 3.5999999999999998e-8*xn[0]*xn[9]*x209 + xn[0]*x31*(0.048699499187009998*x21*x7 - 0.56548861234079995*x222 - 0.13460048125451995*x223 - 0.009937168197024001*x224 - 2.1050286473655998e-5*x225 + 0.058916489135550004*x23*x7 + 0.00074779264187460007*x25*x7) - xn[0]*x35*(4.6894649399999997*x21*x7 - 11.478657500000001*x222 - 1.1508224*x223 - 0.015791857020000001*x224 - 1.6313198799999999e-5*x225 + 0.1741279885*x23*x7 + 0.00078368076500000001*x25*x7) + xn[1]*xn[13]*jac_nuc_choice_35(T, x17, x42) - xn[1]*xn[2]*jac_nuc_choice_36(T, x216, x218, x48, x57, x58, x63, x64, x7) + 2*xn[1]*xn[3]*jac_nuc_choice_37(x1, x209, x66) + xn[1]*xn[5]*jac_nuc_choice_38(T, x44, x45) - 3.9837168574084181e-7*xn[1]*xn[7]*x206 + xn[1]*xn[8]*jac_nuc_choice_39(x169, x217, x219, x220, x221, x47, x52, x53, x54, x55, x7) - xn[10]*xn[2]*jac_nuc_choice_40(x15, x169, x170, x171) - 7.2084342424042629e-17*xn[12]*xn[2]*x41 - xn[2]*xn[4]*jac_nuc_choice_41(T, x173, x45) - xn[2]*x179*(-0.87659414490283338*x175*x177*x7 + 5.1485802679346868*x176*math::exp((1.0)*math::log(math::abs(x48)))*x7 - 3.5068370966299316*x216) + xn[3]*xn[5]*x208 - 2.4999999999999998e-6*xn[3]*xn[6]*x209 + xn[5]*xn[8]*jac_nuc_choice_42(x169, x193, x194, x195, x196, x197, x216, x218, x220, x221, x226, x58) + xn[8]*x168*(2.5000000000000002e-32*x206 + 3.75e-33*x214) + x134*(-x122*x239 - x235*x92) + x134*(x189*x235 + x190*x239) - x181*x215*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - x207*x208 + 8.6419753086419757e-23*x210*x5 + x213*(-1.0000000000000001e-31*x206 - 1.5e-32*x214) + x213*(3.0000000000000003e-31*x206 + 4.5e-32*x214) + x215*jac_nuc_choice_43(T, x184, x185, x186, x21, x222, x223, x227, x23, x24, x25, x26, x7) + x229*(x147*x228 + 12307692.307692308*x153*x68*(0.0042250000000000005*x141*x143*x230 - 4.0625000000000001e-8*x144*x206 - 0.00048750000000000003*x230*math::exp(-58000.0*x7))*math::exp(x142)/x141) + x229*(69500.0*x150*x169 - x159*x228) - x182*x215*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x180)*(x180)))/(xn[0]*x204 + xn[1]*x204 + xn[10]*x205 + xn[11]*x204 + xn[12]*x204 + xn[13]*x204 + xn[2]*x204 + xn[3]*x204 + xn[4]*x204 + xn[5]*x204 + xn[6]*x205 + xn[7]*x204 + xn[8]*x205 + xn[9]*x205);
+    out[matrix_index(2, 14)] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*x211 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*x211 + 8.9351999999999994e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*x212 + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*x207 + 3.0659999999999995e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*x212 - 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*x210 + 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*x29 - 7.997727392299023e-69*math::exp((12.536555999999999)*math::log(math::abs(T)))*xn[0]*x33 + xn[0]*xn[1]*jac_nuc_choice_33(T, x21, x222, x223, x225, x227, x23, x24, x25, x36, x37, x39, x7) + 2*xn[0]*xn[6]*jac_nuc_choice_34(T, x14, x15, x16, x17) - 3.5999999999999998e-8*xn[0]*xn[9]*x209 + xn[0]*x31*(0.048699499187009998*x21*x7 - 0.56548861234079995*x222 - 0.13460048125451995*x223 - 0.009937168197024001*x224 - 2.1050286473655998e-5*x225 + 0.058916489135550004*x23*x7 + 0.00074779264187460007*x25*x7) - xn[0]*x35*(4.6894649399999997*x21*x7 - 11.478657500000001*x222 - 1.1508224*x223 - 0.015791857020000001*x224 - 1.6313198799999999e-5*x225 + 0.1741279885*x23*x7 + 0.00078368076500000001*x25*x7) + xn[1]*xn[13]*jac_nuc_choice_35(T, x17, x42) - xn[1]*xn[2]*jac_nuc_choice_36(T, x216, x218, x48, x57, x58, x63, x64, x7) + 2*xn[1]*xn[3]*jac_nuc_choice_37(x1, x209, x66) + xn[1]*xn[5]*jac_nuc_choice_38(T, x44, x45) - 3.9837168574084181e-7*xn[1]*xn[7]*x206 + xn[1]*xn[8]*jac_nuc_choice_39(x169, x217, x219, x220, x221, x47, x52, x53, x54, x55, x7) - xn[10]*xn[2]*jac_nuc_choice_40(x15, x169, x170, x171) - 7.2084342424042629e-17*xn[12]*xn[2]*x41 - xn[2]*xn[4]*jac_nuc_choice_41(T, x173, x45) - xn[2]*x179*(-0.87659414490283338*x175*x177*x7 + 5.1485802679346868*x176*math::exp((1.0)*math::log(math::abs(x48)))*x7 - 3.5068370966299316*x216) + xn[3]*xn[5]*x208 - 2.4999999999999998e-6*xn[3]*xn[6]*x209 + xn[5]*xn[8]*jac_nuc_choice_42(x169, x193, x194, x195, x196, x197, x216, x218, x220, x221, x226, x58) + xn[8]*x168*(2.5000000000000002e-32*x206 + 3.75e-33*x214) + x134*(-x122*x239 - x235*x92) + x134*(x189*x235 + x190*x239) - x181*x215*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - x207*x208 + 8.6419753086419757e-23*x210*x5 + x213*(-1.0000000000000001e-31*x206 - 1.5e-32*x214) + x213*(3.0000000000000003e-31*x206 + 4.5e-32*x214) + x215*jac_nuc_choice_43(T, x184, x185, x186, x21, x222, x223, x227, x23, x24, x25, x26, x7) + x229*(x147*x228 + 12307692.307692308*x153*x68*(0.0042250000000000005*x141*x143*x230 - 4.0625000000000001e-8*x144*x206 - 0.00048750000000000003*x230*math::exp(-58000.0*x7))*math::exp(x142)/x141) + x229*(69500.0*x150*x169 - x159*x228) - x182*x215*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x180)*(x180)))/(xn[0]*x204 + xn[1]*x204 + xn[10]*x205 + xn[11]*x204 + xn[12]*x204 + xn[13]*x204 + xn[2]*x204 + xn[3]*x204 + xn[4]*x204 + xn[5]*x204 + xn[6]*x205 + xn[7]*x204 + xn[8]*x205 + xn[9]*x205);
 
 
     x0 = math::exp(-6.1728395061728397e-5*T);
@@ -5572,49 +5617,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x43 = x10*x4;
 
-    out[3][0] = x1*x3 - x19 + x6*x7;
+    out[matrix_index(3, 0)] = x1*x3 - x19 + x6*x7;
 
 
-    out[3][1] = -xn[3]*x20 - xn[3]*x24;
+    out[matrix_index(3, 1)] = -xn[3]*x20 - xn[3]*x24;
 
 
-    out[3][2] = xn[0]*x0*x3 - xn[3]*x29 - xn[3]*x33 + xn[7]*x25;
+    out[matrix_index(3, 2)] = xn[0]*x0*x3 - xn[3]*x29 - xn[3]*x33 + xn[7]*x25;
 
 
-    out[3][3] = -xn[0]*x16*x18 - xn[1]*x20 - xn[1]*x24 - xn[2]*x29 - xn[2]*x33 - xn[5]*x25 - xn[5]*x34 - xn[6]*x35;
+    out[matrix_index(3, 3)] = -xn[0]*x16*x18 - xn[1]*x20 - xn[1]*x24 - xn[2]*x29 - xn[2]*x33 - xn[5]*x25 - xn[5]*x34 - xn[6]*x35;
 
 
-    out[3][4] = 0;
+    out[matrix_index(3, 4)] = 0;
 
 
-    out[3][5] = -xn[3]*x25 - xn[3]*x34;
+    out[matrix_index(3, 5)] = -xn[3]*x25 - xn[3]*x34;
 
 
-    out[3][6] = -xn[3]*x35;
+    out[matrix_index(3, 6)] = -xn[3]*x35;
 
 
-    out[3][7] = xn[2]*x25;
+    out[matrix_index(3, 7)] = xn[2]*x25;
 
 
-    out[3][8] = xn[0]*x5*x7;
+    out[matrix_index(3, 8)] = xn[0]*x5*x7;
 
 
-    out[3][9] = 0;
+    out[matrix_index(3, 9)] = 0;
 
 
-    out[3][10] = 0;
+    out[matrix_index(3, 10)] = 0;
 
 
-    out[3][11] = 0;
+    out[matrix_index(3, 11)] = 0;
 
 
-    out[3][12] = 0;
+    out[matrix_index(3, 12)] = 0;
 
 
-    out[3][13] = 0;
+    out[matrix_index(3, 13)] = 0;
 
 
-    out[3][14] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*xn[0]*xn[8]*x5 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*xn[0]*x6 + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] + 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*xn[0]*xn[2]*x0 - 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*x17 - 8.6419753086419757e-23*xn[0]*x1*x2 - xn[0]*x19*(0.058916489135550004*x11*x4 - 0.009937168197024001*x12*x4 + 0.00074779264187460007*x13*x4 - 2.1050286473655998e-5*x14*x4 + 0.048699499187009998*x4*x9 - 0.56548861234079995*x42 - 0.13460048125451995*x43) - xn[1]*xn[3]*jac_nuc_choice_46(x22, x23, x40) + 2.5313028975878652e-10*xn[2]*xn[7]*x39 - 2.5313028975878652e-10*xn[3]*xn[5]*x39 + 2.4999999999999998e-6*xn[3]*xn[6]*x40 - x27*x41*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - x41*jac_nuc_choice_47(T, x11, x12, x13, x14, x15, x30, x31, x32, x4, x42, x43, x9) - x28*x41*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x26)*(x26)))/(xn[0]*x37 + xn[1]*x37 + xn[10]*x38 + xn[11]*x37 + xn[12]*x37 + xn[13]*x37 + xn[2]*x37 + xn[3]*x37 + xn[4]*x37 + xn[5]*x37 + xn[6]*x38 + xn[7]*x37 + xn[8]*x38 + xn[9]*x38);
+    out[matrix_index(3, 14)] = (1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*xn[0]*xn[8]*x5 - 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*xn[0]*x6 + 4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] + 1.2992000000000002e-18*math::exp((-0.071999999999999953)*math::log(math::abs(T)))*xn[0]*xn[2]*x0 - 8.9485740404797324e-18*math::exp((1.360852208681)*math::log(math::abs(T)))*xn[0]*x17 - 8.6419753086419757e-23*xn[0]*x1*x2 - xn[0]*x19*(0.058916489135550004*x11*x4 - 0.009937168197024001*x12*x4 + 0.00074779264187460007*x13*x4 - 2.1050286473655998e-5*x14*x4 + 0.048699499187009998*x4*x9 - 0.56548861234079995*x42 - 0.13460048125451995*x43) - xn[1]*xn[3]*jac_nuc_choice_46(x22, x23, x40) + 2.5313028975878652e-10*xn[2]*xn[7]*x39 - 2.5313028975878652e-10*xn[3]*xn[5]*x39 + 2.4999999999999998e-6*xn[3]*xn[6]*x40 - x27*x41*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - x41*jac_nuc_choice_47(T, x11, x12, x13, x14, x15, x30, x31, x32, x4, x42, x43, x9) - x28*x41*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x26)*(x26)))/(xn[0]*x37 + xn[1]*x37 + xn[10]*x38 + xn[11]*x37 + xn[12]*x37 + xn[13]*x37 + xn[2]*x37 + xn[3]*x37 + xn[4]*x37 + xn[5]*x37 + xn[6]*x38 + xn[7]*x37 + xn[8]*x38 + xn[9]*x38);
 
 
     x0 = 2.5950363272655348e-10*math::exp((-0.75)*math::log(math::abs(T)));
@@ -5667,49 +5712,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x24 = 3.4767371836380304e-16*x22;
 
-    out[4][0] = -xn[4]*x0;
+    out[matrix_index(4, 0)] = -xn[4]*x0;
 
 
-    out[4][1] = xn[10]*x3 + xn[5]*x6;
+    out[matrix_index(4, 1)] = xn[10]*x3 + xn[5]*x6;
 
 
-    out[4][2] = -xn[4]*x8 - x17;
+    out[matrix_index(4, 2)] = -xn[4]*x8 - x17;
 
 
-    out[4][3] = 0;
+    out[matrix_index(4, 3)] = 0;
 
 
-    out[4][4] = -xn[0]*x0 - xn[2]*x16 - xn[2]*x8 - xn[7]*x18 + xn[8]*x20;
+    out[matrix_index(4, 4)] = -xn[0]*x0 - xn[2]*x16 - xn[2]*x8 - xn[7]*x18 + xn[8]*x20;
 
 
-    out[4][5] = xn[1]*x6;
+    out[matrix_index(4, 5)] = xn[1]*x6;
 
 
-    out[4][6] = 0;
+    out[matrix_index(4, 6)] = 0;
 
 
-    out[4][7] = -xn[4]*x18;
+    out[matrix_index(4, 7)] = -xn[4]*x18;
 
 
-    out[4][8] = xn[4]*x20;
+    out[matrix_index(4, 8)] = xn[4]*x20;
 
 
-    out[4][9] = 0;
+    out[matrix_index(4, 9)] = 0;
 
 
-    out[4][10] = xn[1]*x3;
+    out[matrix_index(4, 10)] = xn[1]*x3;
 
 
-    out[4][11] = 0;
+    out[matrix_index(4, 11)] = 0;
 
 
-    out[4][12] = 0;
+    out[matrix_index(4, 12)] = 0;
 
 
-    out[4][13] = 0;
+    out[matrix_index(4, 13)] = 0;
 
 
-    out[4][14] = (1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 4.9363448015713007e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[4]*xn[7] + xn[1]*xn[5]*jac_nuc_choice_50(T, x4, x5) - xn[2]*xn[4]*jac_nuc_choice_51(T, x5, x7) - xn[2]*x17*(5.1485802679346868*x1*math::exp((1.0)*math::log(math::abs(x11)))*x14 - 0.87659414490283338*x1*x13*x15 - 3.5068370966299316*x21) + xn[4]*xn[8]*(2.7400000000000004e-10*x1*x11*x19 - 8.4600000000000008e-10*x21) + 4.5700000000000003e-7*xn[1]*xn[10]*x2/((T)*(T)))/(xn[0]*x23 + xn[1]*x23 + xn[10]*x24 + xn[11]*x23 + xn[12]*x23 + xn[13]*x23 + xn[2]*x23 + xn[3]*x23 + xn[4]*x23 + xn[5]*x23 + xn[6]*x24 + xn[7]*x23 + xn[8]*x24 + xn[9]*x24);
+    out[matrix_index(4, 14)] = (1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 4.9363448015713007e-7*math::exp((-1.5)*math::log(math::abs(T)))*xn[4]*xn[7] + xn[1]*xn[5]*jac_nuc_choice_50(T, x4, x5) - xn[2]*xn[4]*jac_nuc_choice_51(T, x5, x7) - xn[2]*x17*(5.1485802679346868*x1*math::exp((1.0)*math::log(math::abs(x11)))*x14 - 0.87659414490283338*x1*x13*x15 - 3.5068370966299316*x21) + xn[4]*xn[8]*(2.7400000000000004e-10*x1*x11*x19 - 8.4600000000000008e-10*x21) + 4.5700000000000003e-7*xn[1]*xn[10]*x2/((T)*(T)))/(xn[0]*x23 + xn[1]*x23 + xn[10]*x24 + xn[11]*x23 + xn[12]*x23 + xn[13]*x23 + xn[2]*x23 + xn[3]*x23 + xn[4]*x23 + xn[5]*x23 + xn[6]*x24 + xn[7]*x23 + xn[8]*x24 + xn[9]*x24);
 
 
     x0 = 2.5950363272655348e-10*math::exp((-0.75)*math::log(math::abs(T)));
@@ -5802,49 +5847,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x44 = 3.4767371836380304e-16*x42;
 
-    out[5][0] = xn[4]*x0 + xn[9]*x1 - x3*x5;
+    out[matrix_index(5, 0)] = xn[4]*x0 + xn[9]*x1 - x3*x5;
 
 
-    out[5][1] = -xn[5]*x10 + 7.9674337148168363e-7*xn[7]*x6 - x19;
+    out[matrix_index(5, 1)] = -xn[5]*x10 + 7.9674337148168363e-7*xn[7]*x6 - x19;
 
 
-    out[5][2] = xn[10]*x24 + xn[4]*x26 - 1.0e-25*xn[5] + xn[7]*x20;
+    out[matrix_index(5, 2)] = xn[10]*x24 + xn[4]*x26 - 1.0e-25*xn[5] + xn[7]*x20;
 
 
-    out[5][3] = -xn[5]*x20 - xn[5]*x27;
+    out[matrix_index(5, 3)] = -xn[5]*x20 - xn[5]*x27;
 
 
-    out[5][4] = xn[0]*x0 + xn[2]*x26 + 1.9745379206285203e-6*xn[7]*x6;
+    out[matrix_index(5, 4)] = xn[0]*x0 + xn[2]*x26 + 1.9745379206285203e-6*xn[7]*x6;
 
 
-    out[5][5] = -xn[0]*x2*x5 - xn[1]*x10 - xn[1]*x18 - 1.0e-25*xn[2] - xn[3]*x20 - xn[3]*x27 - xn[8]*x38;
+    out[matrix_index(5, 5)] = -xn[0]*x2*x5 - xn[1]*x10 - xn[1]*x18 - 1.0e-25*xn[2] - xn[3]*x20 - xn[3]*x27 - xn[8]*x38;
 
 
-    out[5][6] = 0;
+    out[matrix_index(5, 6)] = 0;
 
 
-    out[5][7] = 7.9674337148168363e-7*xn[1]*x6 + xn[2]*x20 + 1.9745379206285203e-6*xn[4]*x6;
+    out[matrix_index(5, 7)] = 7.9674337148168363e-7*xn[1]*x6 + xn[2]*x20 + 1.9745379206285203e-6*xn[4]*x6;
 
 
-    out[5][8] = -xn[5]*x38;
+    out[matrix_index(5, 8)] = -xn[5]*x38;
 
 
-    out[5][9] = xn[0]*x1;
+    out[matrix_index(5, 9)] = xn[0]*x1;
 
 
-    out[5][10] = xn[2]*x24;
+    out[matrix_index(5, 10)] = xn[2]*x24;
 
 
-    out[5][11] = 0;
+    out[matrix_index(5, 11)] = 0;
 
 
-    out[5][12] = 0;
+    out[matrix_index(5, 12)] = 0;
 
 
-    out[5][13] = 0;
+    out[matrix_index(5, 13)] = 0;
 
 
-    out[5][14] = (-1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*xn[0]*x3 + 1.4270531560759686e-22*xn[0]*xn[5]*x2*x4 - xn[1]*xn[5]*jac_nuc_choice_56(T, x8, x9) - xn[1]*x19*(5.1485802679346868*math::exp((1.0)*math::log(math::abs(x13)))*x16*x7 - 0.87659414490283338*x15*x17*x7 - 3.5068370966299316*x41) - 3.9837168574084181e-7*xn[1]*x39 + xn[10]*xn[2]*jac_nuc_choice_57(T, x21, x22, x23) + xn[2]*xn[4]*jac_nuc_choice_58(T, x25, x9) + 2.5313028975878652e-10*xn[2]*xn[7]*x40 - 2.5313028975878652e-10*xn[3]*xn[5]*x40 - 9.8726896031426014e-7*xn[4]*x39 - xn[5]*xn[8]*jac_nuc_choice_59(x11, x13, x21, x28, x29, x30, x31, x32, x33, x34, x35, x36, x37, x41, x7) - 3.5999999999999998e-8*xn[0]*xn[9]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x43 + xn[1]*x43 + xn[10]*x44 + xn[11]*x43 + xn[12]*x43 + xn[13]*x43 + xn[2]*x43 + xn[3]*x43 + xn[4]*x43 + xn[5]*x43 + xn[6]*x44 + xn[7]*x43 + xn[8]*x44 + xn[9]*x44);
+    out[matrix_index(5, 14)] = (-1.9462772454491511e-10*math::exp((-1.75)*math::log(math::abs(T)))*xn[0]*xn[4] + 2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*xn[3]*xn[5] - 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*xn[0]*x3 + 1.4270531560759686e-22*xn[0]*xn[5]*x2*x4 - xn[1]*xn[5]*jac_nuc_choice_56(T, x8, x9) - xn[1]*x19*(5.1485802679346868*math::exp((1.0)*math::log(math::abs(x13)))*x16*x7 - 0.87659414490283338*x15*x17*x7 - 3.5068370966299316*x41) - 3.9837168574084181e-7*xn[1]*x39 + xn[10]*xn[2]*jac_nuc_choice_57(T, x21, x22, x23) + xn[2]*xn[4]*jac_nuc_choice_58(T, x25, x9) + 2.5313028975878652e-10*xn[2]*xn[7]*x40 - 2.5313028975878652e-10*xn[3]*xn[5]*x40 - 9.8726896031426014e-7*xn[4]*x39 - xn[5]*xn[8]*jac_nuc_choice_59(x11, x13, x21, x28, x29, x30, x31, x32, x33, x34, x35, x36, x37, x41, x7) - 3.5999999999999998e-8*xn[0]*xn[9]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x43 + xn[1]*x43 + xn[10]*x44 + xn[11]*x43 + xn[12]*x43 + xn[13]*x43 + xn[2]*x43 + xn[3]*x43 + xn[4]*x43 + xn[5]*x43 + xn[6]*x44 + xn[7]*x43 + xn[8]*x44 + xn[9]*x44);
 
 
     x0 = ((T)*(T));
@@ -5905,49 +5950,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x28 = 3.4767371836380304e-16*x26;
 
-    out[6][0] = -xn[6]*x4;
+    out[matrix_index(6, 0)] = -xn[6]*x4;
 
 
-    out[6][1] = xn[2]*x15 + xn[3]*x5 + xn[8]*x23;
+    out[matrix_index(6, 1)] = xn[2]*x15 + xn[3]*x5 + xn[8]*x23;
 
 
-    out[6][2] = xn[1]*x15 - 6.0e-10*xn[6];
+    out[matrix_index(6, 2)] = xn[1]*x15 - 6.0e-10*xn[6];
 
 
-    out[6][3] = xn[1]*x5 - xn[6]*x24;
+    out[matrix_index(6, 3)] = xn[1]*x5 - xn[6]*x24;
 
 
-    out[6][4] = 0;
+    out[matrix_index(6, 4)] = 0;
 
 
-    out[6][5] = 0;
+    out[matrix_index(6, 5)] = 0;
 
 
-    out[6][6] = -xn[0]*x4 - 6.0e-10*xn[2] - xn[3]*x24;
+    out[matrix_index(6, 6)] = -xn[0]*x4 - 6.0e-10*xn[2] - xn[3]*x24;
 
 
-    out[6][7] = 0;
+    out[matrix_index(6, 7)] = 0;
 
 
-    out[6][8] = xn[1]*x23;
+    out[matrix_index(6, 8)] = xn[1]*x23;
 
 
-    out[6][9] = 0;
+    out[matrix_index(6, 9)] = 0;
 
 
-    out[6][10] = 0;
+    out[matrix_index(6, 10)] = 0;
 
 
-    out[6][11] = 0;
+    out[matrix_index(6, 11)] = 0;
 
 
-    out[6][12] = 0;
+    out[matrix_index(6, 12)] = 0;
 
 
-    out[6][13] = 0;
+    out[matrix_index(6, 13)] = 0;
 
 
-    out[6][14] = (-4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - xn[0]*xn[6]*jac_nuc_choice_63(T, x0, x1, x2, x3) + xn[1]*xn[2]*jac_nuc_choice_64(T, x10, x12, x14, x16, x25, x6, x7, x8, x9) + xn[1]*xn[8]*jac_nuc_choice_65(x0, x11, x16, x17, x18, x19, x20, x21, x22, x25, x7) + 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x27 + xn[1]*x27 + xn[10]*x28 + xn[11]*x27 + xn[12]*x27 + xn[13]*x27 + xn[2]*x27 + xn[3]*x27 + xn[4]*x27 + xn[5]*x27 + xn[6]*x28 + xn[7]*x27 + xn[8]*x28 + xn[9]*x28);
+    out[matrix_index(6, 14)] = (-4.0000000000000002e-9*math::exp((-1.3999999999999999)*math::log(math::abs(T)))*xn[1]*xn[3] - xn[0]*xn[6]*jac_nuc_choice_63(T, x0, x1, x2, x3) + xn[1]*xn[2]*jac_nuc_choice_64(T, x10, x12, x14, x16, x25, x6, x7, x8, x9) + xn[1]*xn[8]*jac_nuc_choice_65(x0, x11, x16, x17, x18, x19, x20, x21, x22, x25, x7) + 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x27 + xn[1]*x27 + xn[10]*x28 + xn[11]*x27 + xn[12]*x27 + xn[13]*x27 + xn[2]*x27 + xn[3]*x27 + xn[4]*x27 + xn[5]*x27 + xn[6]*x28 + xn[7]*x27 + xn[8]*x28 + xn[9]*x28);
 
 
     x0 = math::exp(-0.00010729613733905579*T);
@@ -5980,49 +6025,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x14 = 3.4767371836380304e-16*x12;
 
-    out[7][0] = x1*x3;
+    out[matrix_index(7, 0)] = x1*x3;
 
 
-    out[7][1] = -7.9674337148168363e-7*x5;
+    out[matrix_index(7, 1)] = -7.9674337148168363e-7*x5;
 
 
-    out[7][2] = -xn[7]*x6 - xn[7]*x7;
+    out[matrix_index(7, 2)] = -xn[7]*x6 - xn[7]*x7;
 
 
-    out[7][3] = xn[5]*x7;
+    out[matrix_index(7, 3)] = xn[5]*x7;
 
 
-    out[7][4] = -9.8726896031426014e-7*x5;
+    out[matrix_index(7, 4)] = -9.8726896031426014e-7*x5;
 
 
-    out[7][5] = xn[0]*x0*x3 + xn[3]*x7;
+    out[matrix_index(7, 5)] = xn[0]*x0*x3 + xn[3]*x7;
 
 
-    out[7][6] = 0;
+    out[matrix_index(7, 6)] = 0;
 
 
-    out[7][7] = -7.9674337148168363e-7*xn[1]*x4 - xn[2]*x6 - xn[2]*x7 - 9.8726896031426014e-7*xn[4]*x4;
+    out[matrix_index(7, 7)] = -7.9674337148168363e-7*xn[1]*x4 - xn[2]*x6 - xn[2]*x7 - 9.8726896031426014e-7*xn[4]*x4;
 
 
-    out[7][8] = 0;
+    out[matrix_index(7, 8)] = 0;
 
 
-    out[7][9] = 0;
+    out[matrix_index(7, 9)] = 0;
 
 
-    out[7][10] = 0;
+    out[matrix_index(7, 10)] = 0;
 
 
-    out[7][11] = 0;
+    out[matrix_index(7, 11)] = 0;
 
 
-    out[7][12] = 0;
+    out[matrix_index(7, 12)] = 0;
 
 
-    out[7][13] = 0;
+    out[matrix_index(7, 13)] = 0;
 
 
-    out[7][14] = (2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*x9 + 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*x11 + 3.9837168574084181e-7*xn[1]*x8 + xn[3]*xn[5]*x10 + 4.9363448015713007e-7*xn[4]*x8 - x10*x9 - 1.4270531560759686e-22*x11*x2)/(xn[0]*x13 + xn[1]*x13 + xn[10]*x14 + xn[11]*x13 + xn[12]*x13 + xn[13]*x13 + xn[2]*x13 + xn[3]*x13 + xn[4]*x13 + xn[5]*x13 + xn[6]*x14 + xn[7]*x13 + xn[8]*x14 + xn[9]*x14);
+    out[matrix_index(7, 14)] = (2.6534040307116389e-10*math::exp((-1.1000000000000001)*math::log(math::abs(T)))*x9 + 1.2635128643896626e-18*math::exp((-0.050000000000000044)*math::log(math::abs(T)))*x11 + 3.9837168574084181e-7*xn[1]*x8 + xn[3]*xn[5]*x10 + 4.9363448015713007e-7*xn[4]*x8 - x10*x9 - 1.4270531560759686e-22*x11*x2)/(xn[0]*x13 + xn[1]*x13 + xn[10]*x14 + xn[11]*x13 + xn[12]*x13 + xn[13]*x13 + xn[2]*x13 + xn[3]*x13 + xn[4]*x13 + xn[5]*x13 + xn[6]*x14 + xn[7]*x13 + xn[8]*x14 + xn[9]*x14);
 
 
     x0 = 1.0/T;
@@ -6355,49 +6400,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x164 = x89*(1710.9588792001557*x115 + 5.6735903924031659*x148 - 0.91456607567139814*x150);
 
-    out[8][0] = -x2*x3 - x5*x6;
+    out[matrix_index(8, 0)] = -x2*x3 - x5*x6;
 
 
-    out[8][1] = xn[10]*x18 - xn[8]*x16 + x114;
+    out[matrix_index(8, 1)] = xn[10]*x18 - xn[8]*x16 + x114;
 
 
-    out[8][2] = xn[10]*x118 + xn[3]*x125 + 6.0e-10*xn[6] + xn[8]*x119 + x114 + 3*x120*(6.0000000000000001e-32*x121 + 2.0000000000000002e-31*x37) + x126*x127 + x127*x128;
+    out[matrix_index(8, 2)] = xn[10]*x118 + xn[3]*x125 + 6.0e-10*xn[6] + xn[8]*x119 + x114 + 3*x120*(6.0000000000000001e-32*x121 + 2.0000000000000002e-31*x37) + x126*x127 + x127*x128;
 
 
-    out[8][3] = xn[2]*x125 + xn[6]*x129 + x114;
+    out[matrix_index(8, 3)] = xn[2]*x125 + xn[6]*x129 + x114;
 
 
-    out[8][4] = xn[8]*x130;
+    out[matrix_index(8, 4)] = xn[8]*x130;
 
 
-    out[8][5] = -xn[8]*x136;
+    out[matrix_index(8, 5)] = -xn[8]*x136;
 
 
-    out[8][6] = 6.0e-10*xn[2] + xn[3]*x129 + x113*x139 + x137*x20 - x138;
+    out[matrix_index(8, 6)] = 6.0e-10*xn[2] + xn[3]*x129 + x113*x139 + x137*x20 - x138;
 
 
-    out[8][7] = 0;
+    out[matrix_index(8, 7)] = 0;
 
 
-    out[8][8] = -xn[0]*x1*x3 - xn[0]*x4*x6 - xn[1]*x16 + xn[2]*xn[8]*x139 + xn[2]*x119 + xn[4]*x130 - xn[5]*x136 - 2*xn[8]*x45 + x120*x126 + x120*x128 - x138 + 2.0*x20*x26*x29*x32*x35*x44;
+    out[matrix_index(8, 8)] = -xn[0]*x1*x3 - xn[0]*x4*x6 - xn[1]*x16 + xn[2]*xn[8]*x139 + xn[2]*x119 + xn[4]*x130 - xn[5]*x136 - 2*xn[8]*x45 + x120*x126 + x120*x128 - x138 + 2.0*x20*x26*x29*x32*x35*x44;
 
 
-    out[8][9] = x114;
+    out[matrix_index(8, 9)] = x114;
 
 
-    out[8][10] = xn[1]*x18 + xn[2]*x118 + x114;
+    out[matrix_index(8, 10)] = xn[1]*x18 + xn[2]*x118 + x114;
 
 
-    out[8][11] = 0;
+    out[matrix_index(8, 11)] = 0;
 
 
-    out[8][12] = 0;
+    out[matrix_index(8, 12)] = 0;
 
 
-    out[8][13] = 0;
+    out[matrix_index(8, 13)] = 0;
 
 
-    out[8][14] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*x143 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*x143 - 4.4675999999999997e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*x144 - 1.5329999999999998e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*x144 + 4.5700000000000003e-7*xn[1]*xn[10]*x115*x17 - xn[1]*xn[8]*jac_nuc_choice_69(x0, x115, x12, x13, x14, x149, x15, x152, x153, x154, x7) + xn[10]*xn[2]*jac_nuc_choice_70(T, x115, x116, x117) + ((xn[2])*(xn[2])*(xn[2]))*(-1.0000000000000001e-31*x145 - 1.5e-32*x146) + xn[4]*xn[8]*(-8.4600000000000008e-10*x148 + 2.7400000000000004e-10*x150) - xn[5]*xn[8]*jac_nuc_choice_71(x115, x131, x132, x133, x134, x135, x148, x150, x153, x154, x155, x23) + x113*(-x103*(3816.3275589792611*x102*x115 + x105*(x106*x164 + x163*math::log(x99)) + x110*(x111*x164 + x163*math::log(x88)) + 49431.413233526648*x115 + 98.337445626384849*x148 - 9.3363608541157479*x150 - 1.783649418259394*x155 - 1354334.7412883535*x162 - 2.3025850929940459*x92*(70.138370000000009*x0*x24 - 9.4070299999999989*x150 - 0.77462909999999996*x155 - 160821.97128249999*x158/x93 - 588180.10479140002*x162)) - x74*(4790.3210533157426*x115*x73 + 54584.391438988954*x115 - 157.54846734442862*x148 + 198.95454259823751*x150 - 32.004783802655837*x155 - 6559375.6154640894*x159 - 2.3025850929940459*x60*(75.773826*x0*x25*x8 - 14.509090000000008*x148 - 13.899501000000001*x155 - 331159.79815649998*x158/x62 - 2848700.6345267999*x159) + x76*(x160*math::log(x70) + x161*x77) + x82*(x160*math::log(x54) + x161*x83))) + x123*x151*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + x147*(-2.5000000000000002e-32*x145 - 3.75e-33*x146) + x147*(1.2500000000000001e-32*x145 + 1.875e-33*x146) - x46*(69500.0*x115*x33 - x156*x31) - x46*(x156*x49 + 12307692.307692308*x36*x43*(-4.0625000000000001e-8*x145*x41 + 0.0042250000000000005*x157*x38*x40 - 0.00048750000000000003*x157*math::exp(-58000.0*x0))*math::exp(x39)/x38) + x124*x151*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x122)*(x122)) - 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x141 + xn[1]*x141 + xn[10]*x142 + xn[11]*x141 + xn[12]*x141 + xn[13]*x141 + xn[2]*x141 + xn[3]*x141 + xn[4]*x141 + xn[5]*x141 + xn[6]*x142 + xn[7]*x141 + xn[8]*x142 + xn[9]*x142);
+    out[matrix_index(8, 14)] = (-1658098.5*math::exp((-4.2799999999999994)*math::log(math::abs(T)))*x143 + 80.939999999999998*math::exp((-3.2799999999999998)*math::log(math::abs(T)))*x143 - 4.4675999999999997e-5*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*x144 - 1.5329999999999998e-10*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*x144 + 4.5700000000000003e-7*xn[1]*xn[10]*x115*x17 - xn[1]*xn[8]*jac_nuc_choice_69(x0, x115, x12, x13, x14, x149, x15, x152, x153, x154, x7) + xn[10]*xn[2]*jac_nuc_choice_70(T, x115, x116, x117) + ((xn[2])*(xn[2])*(xn[2]))*(-1.0000000000000001e-31*x145 - 1.5e-32*x146) + xn[4]*xn[8]*(-8.4600000000000008e-10*x148 + 2.7400000000000004e-10*x150) - xn[5]*xn[8]*jac_nuc_choice_71(x115, x131, x132, x133, x134, x135, x148, x150, x153, x154, x155, x23) + x113*(-x103*(3816.3275589792611*x102*x115 + x105*(x106*x164 + x163*math::log(x99)) + x110*(x111*x164 + x163*math::log(x88)) + 49431.413233526648*x115 + 98.337445626384849*x148 - 9.3363608541157479*x150 - 1.783649418259394*x155 - 1354334.7412883535*x162 - 2.3025850929940459*x92*(70.138370000000009*x0*x24 - 9.4070299999999989*x150 - 0.77462909999999996*x155 - 160821.97128249999*x158/x93 - 588180.10479140002*x162)) - x74*(4790.3210533157426*x115*x73 + 54584.391438988954*x115 - 157.54846734442862*x148 + 198.95454259823751*x150 - 32.004783802655837*x155 - 6559375.6154640894*x159 - 2.3025850929940459*x60*(75.773826*x0*x25*x8 - 14.509090000000008*x148 - 13.899501000000001*x155 - 331159.79815649998*x158/x62 - 2848700.6345267999*x159) + x76*(x160*math::log(x70) + x161*x77) + x82*(x160*math::log(x54) + x161*x83))) + x123*x151*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) + x147*(-2.5000000000000002e-32*x145 - 3.75e-33*x146) + x147*(1.2500000000000001e-32*x145 + 1.875e-33*x146) - x46*(69500.0*x115*x33 - x156*x31) - x46*(x156*x49 + 12307692.307692308*x36*x43*(-4.0625000000000001e-8*x145*x41 + 0.0042250000000000005*x157*x38*x40 - 0.00048750000000000003*x157*math::exp(-58000.0*x0))*math::exp(x39)/x38) + x124*x151*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x122)*(x122)) - 2.4999999999999998e-6*xn[3]*xn[6]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x141 + xn[1]*x141 + xn[10]*x142 + xn[11]*x141 + xn[12]*x141 + xn[13]*x141 + xn[2]*x141 + xn[3]*x141 + xn[4]*x141 + xn[5]*x141 + xn[6]*x142 + xn[7]*x141 + xn[8]*x142 + xn[9]*x142);
 
 
     x0 = 7.1999999999999996e-8/math::sqrt(T);
@@ -6430,49 +6475,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x14 = 3.4767371836380304e-16*x12;
 
-    out[9][0] = -xn[9]*x0;
+    out[matrix_index(9, 0)] = -xn[9]*x0;
 
 
-    out[9][1] = x8;
+    out[matrix_index(9, 1)] = x8;
 
 
-    out[9][2] = -6.3999999999999996e-10*xn[9] + x9;
+    out[matrix_index(9, 2)] = -6.3999999999999996e-10*xn[9] + x9;
 
 
-    out[9][3] = 0;
+    out[matrix_index(9, 3)] = 0;
 
 
-    out[9][4] = xn[2]*x7;
+    out[matrix_index(9, 4)] = xn[2]*x7;
 
 
-    out[9][5] = xn[1]*x7;
+    out[matrix_index(9, 5)] = xn[1]*x7;
 
 
-    out[9][6] = 0;
+    out[matrix_index(9, 6)] = 0;
 
 
-    out[9][7] = 0;
+    out[matrix_index(9, 7)] = 0;
 
 
-    out[9][8] = 0;
+    out[matrix_index(9, 8)] = 0;
 
 
-    out[9][9] = -xn[0]*x0 - 6.3999999999999996e-10*xn[2];
+    out[matrix_index(9, 9)] = -xn[0]*x0 - 6.3999999999999996e-10*xn[2];
 
 
-    out[9][10] = 0;
+    out[matrix_index(9, 10)] = 0;
 
 
-    out[9][11] = 0;
+    out[matrix_index(9, 11)] = 0;
 
 
-    out[9][12] = 0;
+    out[matrix_index(9, 12)] = 0;
 
 
-    out[9][13] = 0;
+    out[matrix_index(9, 13)] = 0;
 
 
-    out[9][14] = (xn[1]*x11*x8 + xn[2]*x11*x9 + 3.5999999999999998e-8*xn[0]*xn[9]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x13 + xn[1]*x13 + xn[10]*x14 + xn[11]*x13 + xn[12]*x13 + xn[13]*x13 + xn[2]*x13 + xn[3]*x13 + xn[4]*x13 + xn[5]*x13 + xn[6]*x14 + xn[7]*x13 + xn[8]*x14 + xn[9]*x14);
+    out[matrix_index(9, 14)] = (xn[1]*x11*x8 + xn[2]*x11*x9 + 3.5999999999999998e-8*xn[0]*xn[9]/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x13 + xn[1]*x13 + xn[10]*x14 + xn[11]*x13 + xn[12]*x13 + xn[13]*x13 + xn[2]*x13 + xn[3]*x13 + xn[4]*x13 + xn[5]*x13 + xn[6]*x14 + xn[7]*x13 + xn[8]*x14 + xn[9]*x14);
 
 
     x0 = 1.0/T;
@@ -6535,49 +6580,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x29 = 3.4767371836380304e-16*x27;
 
-    out[10][0] = 0;
+    out[matrix_index(10, 0)] = 0;
 
 
-    out[10][1] = -xn[10]*x2;
+    out[matrix_index(10, 1)] = -xn[10]*x2;
 
 
-    out[10][2] = -xn[10]*x7 + 1.0e-25*xn[5] + xn[7]*x3 + 6.3999999999999996e-10*xn[9];
+    out[matrix_index(10, 2)] = -xn[10]*x7 + 1.0e-25*xn[5] + xn[7]*x3 + 6.3999999999999996e-10*xn[9];
 
 
-    out[10][3] = xn[5]*x3;
+    out[matrix_index(10, 3)] = xn[5]*x3;
 
 
-    out[10][4] = xn[8]*x15;
+    out[matrix_index(10, 4)] = xn[8]*x15;
 
 
-    out[10][5] = 1.0e-25*xn[2] + xn[3]*x3 + xn[8]*x24;
+    out[matrix_index(10, 5)] = 1.0e-25*xn[2] + xn[3]*x3 + xn[8]*x24;
 
 
-    out[10][6] = 0;
+    out[matrix_index(10, 6)] = 0;
 
 
-    out[10][7] = xn[2]*x3;
+    out[matrix_index(10, 7)] = xn[2]*x3;
 
 
-    out[10][8] = xn[4]*x15 + xn[5]*x24;
+    out[matrix_index(10, 8)] = xn[4]*x15 + xn[5]*x24;
 
 
-    out[10][9] = 6.3999999999999996e-10*xn[2];
+    out[matrix_index(10, 9)] = 6.3999999999999996e-10*xn[2];
 
 
-    out[10][10] = -xn[1]*x2 - xn[2]*x7;
+    out[matrix_index(10, 10)] = -xn[1]*x2 - xn[2]*x7;
 
 
-    out[10][11] = 0;
+    out[matrix_index(10, 11)] = 0;
 
 
-    out[10][12] = 0;
+    out[matrix_index(10, 12)] = 0;
 
 
-    out[10][13] = 0;
+    out[matrix_index(10, 13)] = 0;
 
 
-    out[10][14] = (-4.5700000000000003e-7*xn[1]*xn[10]*x1*x4 - xn[10]*xn[2]*jac_nuc_choice_74(T, x4, x5, x6) - xn[2]*xn[7]*x25 - xn[3]*xn[5]*x25 + xn[4]*xn[8]*(8.4600000000000008e-10*x0*x9 - 2.7400000000000004e-10*x26) + xn[5]*xn[8]*jac_nuc_choice_75(x0, x13, x16, x17, x18, x19, x20, x21, x22, x23, x26, x4, x8, x9))/(xn[0]*x28 + xn[1]*x28 + xn[10]*x29 + xn[11]*x28 + xn[12]*x28 + xn[13]*x28 + xn[2]*x28 + xn[3]*x28 + xn[4]*x28 + xn[5]*x28 + xn[6]*x29 + xn[7]*x28 + xn[8]*x29 + xn[9]*x29);
+    out[matrix_index(10, 14)] = (-4.5700000000000003e-7*xn[1]*xn[10]*x1*x4 - xn[10]*xn[2]*jac_nuc_choice_74(T, x4, x5, x6) - xn[2]*xn[7]*x25 - xn[3]*xn[5]*x25 + xn[4]*xn[8]*(8.4600000000000008e-10*x0*x9 - 2.7400000000000004e-10*x26) + xn[5]*xn[8]*jac_nuc_choice_75(x0, x13, x16, x17, x18, x19, x20, x21, x22, x23, x26, x4, x8, x9))/(xn[0]*x28 + xn[1]*x28 + xn[10]*x29 + xn[11]*x28 + xn[12]*x28 + xn[13]*x28 + xn[2]*x28 + xn[3]*x28 + xn[4]*x28 + xn[5]*x28 + xn[6]*x29 + xn[7]*x28 + xn[8]*x29 + xn[9]*x29);
 
 
     x0 = math::sqrt(T);
@@ -6628,49 +6673,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x23 = 3.4767371836380304e-16*x21;
 
-    out[11][0] = x18 - x6*x7;
+    out[matrix_index(11, 0)] = x18 - x6*x7;
 
 
-    out[11][1] = 0;
+    out[matrix_index(11, 1)] = 0;
 
 
-    out[11][2] = 0;
+    out[matrix_index(11, 2)] = 0;
 
 
-    out[11][3] = 0;
+    out[matrix_index(11, 3)] = 0;
 
 
-    out[11][4] = 0;
+    out[matrix_index(11, 4)] = 0;
 
 
-    out[11][5] = 0;
+    out[matrix_index(11, 5)] = 0;
 
 
-    out[11][6] = 0;
+    out[matrix_index(11, 6)] = 0;
 
 
-    out[11][7] = 0;
+    out[matrix_index(11, 7)] = 0;
 
 
-    out[11][8] = 0;
+    out[matrix_index(11, 8)] = 0;
 
 
-    out[11][9] = 0;
+    out[matrix_index(11, 9)] = 0;
 
 
-    out[11][10] = 0;
+    out[matrix_index(11, 10)] = 0;
 
 
-    out[11][11] = -x19*x4*x7;
+    out[matrix_index(11, 11)] = -x19*x4*x7;
 
 
-    out[11][12] = xn[0]*x15*x17;
+    out[matrix_index(11, 12)] = xn[0]*x15*x17;
 
 
-    out[11][13] = 0;
+    out[matrix_index(11, 13)] = 0;
 
 
-    out[11][14] = (1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*xn[0]*x16 + 3.0451686126851684e-13*xn[0]*math::exp((-2.7523999999999997)*math::log(math::abs(x1)))*x20*x5 + xn[0]*x18*(-3.0769865337967999*x10*x20 + 0.40565210486515002*x11*x20 - 0.031944123769722006*x12*x20 + 0.0013829937185547*x13*x20 - 2.5324648525320001e-5*x14*x20 - 36.961339871360003*x20*x8 + 14.104879460277006*x20*x9) + 2.3410580000000002e-11*xn[11]*x19*x20*math::exp((-1.2476)*math::log(math::abs(x3))) + 2.8942185892741411e-10*xn[0]*x6/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x22 + xn[1]*x22 + xn[10]*x23 + xn[11]*x22 + xn[12]*x22 + xn[13]*x22 + xn[2]*x22 + xn[3]*x22 + xn[4]*x22 + xn[5]*x22 + xn[6]*x23 + xn[7]*x22 + xn[8]*x23 + xn[9]*x23);
+    out[matrix_index(11, 14)] = (1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*xn[0]*x16 + 3.0451686126851684e-13*xn[0]*math::exp((-2.7523999999999997)*math::log(math::abs(x1)))*x20*x5 + xn[0]*x18*(-3.0769865337967999*x10*x20 + 0.40565210486515002*x11*x20 - 0.031944123769722006*x12*x20 + 0.0013829937185547*x13*x20 - 2.5324648525320001e-5*x14*x20 - 36.961339871360003*x20*x8 + 14.104879460277006*x20*x9) + 2.3410580000000002e-11*xn[11]*x19*x20*math::exp((-1.2476)*math::log(math::abs(x3))) + 2.8942185892741411e-10*xn[0]*x6/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x22 + xn[1]*x22 + xn[10]*x23 + xn[11]*x22 + xn[12]*x22 + xn[13]*x22 + xn[2]*x22 + xn[3]*x22 + xn[4]*x22 + xn[5]*x22 + xn[6]*x23 + xn[7]*x22 + xn[8]*x23 + xn[9]*x23);
 
 
     x0 = math::sqrt(T);
@@ -6759,49 +6804,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x42 = 3.4767371836380304e-16*x40;
 
-    out[12][0] = -xn[12]*x13 - xn[12]*x26 + xn[13]*x22*x24 + x6*x7;
+    out[matrix_index(12, 0)] = -xn[12]*x13 - xn[12]*x26 + xn[13]*x22*x24 + x6*x7;
 
 
-    out[12][1] = xn[13]*x30;
+    out[matrix_index(12, 1)] = xn[13]*x30;
 
 
-    out[12][2] = -xn[12]*x31;
+    out[matrix_index(12, 2)] = -xn[12]*x31;
 
 
-    out[12][3] = 0;
+    out[matrix_index(12, 3)] = 0;
 
 
-    out[12][4] = 0;
+    out[matrix_index(12, 4)] = 0;
 
 
-    out[12][5] = 0;
+    out[matrix_index(12, 5)] = 0;
 
 
-    out[12][6] = 0;
+    out[matrix_index(12, 6)] = 0;
 
 
-    out[12][7] = 0;
+    out[matrix_index(12, 7)] = 0;
 
 
-    out[12][8] = 0;
+    out[matrix_index(12, 8)] = 0;
 
 
-    out[12][9] = 0;
+    out[matrix_index(12, 9)] = 0;
 
 
-    out[12][10] = 0;
+    out[matrix_index(12, 10)] = 0;
 
 
-    out[12][11] = x32*x4*x7;
+    out[matrix_index(12, 11)] = x32*x4*x7;
 
 
-    out[12][12] = -xn[0]*x13 - xn[0]*x26 - xn[2]*x31;
+    out[matrix_index(12, 12)] = -xn[0]*x13 - xn[0]*x26 - xn[2]*x31;
 
 
-    out[12][13] = xn[0]*x22*x24 + xn[1]*x30;
+    out[matrix_index(12, 13)] = xn[0]*x22*x24 + xn[1]*x30;
 
 
-    out[12][14] = (1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*x22 - 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*x25*x33 + 4.3524079114767552e-117*xn[0]*xn[13]*x22*x23*(9.1741162500000009*x11*x15 + 0.33976956150000004*x11*x17 + 0.001447065312*x11*x19 - 21.506460400000002*x36 - 2.2740475600000001*x37 - 0.030054336600000002*x38 - 2.9193291280000001e-5*x39) - 3.0451686126851684e-13*xn[0]*math::exp((-2.7523999999999997)*math::log(math::abs(x1)))*x11*x5 + xn[1]*xn[13]*jac_nuc_choice_78(T, x28, x29) - 2.3410580000000002e-11*xn[11]*x11*math::exp((-1.2476)*math::log(math::abs(x3)))*x32 - 7.2084342424042629e-17*xn[12]*xn[2]*x27 - x26*x33*(14.104879460277006*x11*x15 + 0.40565210486515002*x11*x17 + 0.0013829937185547*x11*x19 - 36.961339871360003*x36 - 3.0769865337967999*x37 - 0.031944123769722006*x38 - 2.5324648525320001e-5*x39) - x33*jac_nuc_choice_79(T, x10, x11, x12, x34, x35) - 2.8942185892741411e-10*xn[0]*x6/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x41 + xn[1]*x41 + xn[10]*x42 + xn[11]*x41 + xn[12]*x41 + xn[13]*x41 + xn[2]*x41 + xn[3]*x41 + xn[4]*x41 + xn[5]*x41 + xn[6]*x42 + xn[7]*x41 + xn[8]*x42 + xn[9]*x42);
+    out[matrix_index(12, 14)] = (1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*xn[13]*x22 - 1.694596485110541e-207*math::exp((42.933476326349997)*math::log(math::abs(T)))*x25*x33 + 4.3524079114767552e-117*xn[0]*xn[13]*x22*x23*(9.1741162500000009*x11*x15 + 0.33976956150000004*x11*x17 + 0.001447065312*x11*x19 - 21.506460400000002*x36 - 2.2740475600000001*x37 - 0.030054336600000002*x38 - 2.9193291280000001e-5*x39) - 3.0451686126851684e-13*xn[0]*math::exp((-2.7523999999999997)*math::log(math::abs(x1)))*x11*x5 + xn[1]*xn[13]*jac_nuc_choice_78(T, x28, x29) - 2.3410580000000002e-11*xn[11]*x11*math::exp((-1.2476)*math::log(math::abs(x3)))*x32 - 7.2084342424042629e-17*xn[12]*xn[2]*x27 - x26*x33*(14.104879460277006*x11*x15 + 0.40565210486515002*x11*x17 + 0.0013829937185547*x11*x19 - 36.961339871360003*x36 - 3.0769865337967999*x37 - 0.031944123769722006*x38 - 2.5324648525320001e-5*x39) - x33*jac_nuc_choice_79(T, x10, x11, x12, x34, x35) - 2.8942185892741411e-10*xn[0]*x6/math::exp((3.0/2.0)*math::log(math::abs(T))))/(xn[0]*x41 + xn[1]*x41 + xn[10]*x42 + xn[11]*x41 + xn[12]*x41 + xn[13]*x41 + xn[2]*x41 + xn[3]*x41 + xn[4]*x41 + xn[5]*x41 + xn[6]*x42 + xn[7]*x41 + xn[8]*x42 + xn[9]*x42);
 
 
     x0 = 1.4981088130721367e-10*math::exp((-0.63529999999999998)*math::log(math::abs(T)));
@@ -6858,49 +6903,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x26 = 3.4767371836380304e-16*x24;
 
-    out[13][0] = xn[12]*x5 - x16;
+    out[matrix_index(13, 0)] = xn[12]*x5 - x16;
 
 
-    out[13][1] = -xn[13]*x20;
+    out[matrix_index(13, 1)] = -xn[13]*x20;
 
 
-    out[13][2] = xn[12]*x21;
+    out[matrix_index(13, 2)] = xn[12]*x21;
 
 
-    out[13][3] = 0;
+    out[matrix_index(13, 3)] = 0;
 
 
-    out[13][4] = 0;
+    out[matrix_index(13, 4)] = 0;
 
 
-    out[13][5] = 0;
+    out[matrix_index(13, 5)] = 0;
 
 
-    out[13][6] = 0;
+    out[matrix_index(13, 6)] = 0;
 
 
-    out[13][7] = 0;
+    out[matrix_index(13, 7)] = 0;
 
 
-    out[13][8] = 0;
+    out[matrix_index(13, 8)] = 0;
 
 
-    out[13][9] = 0;
+    out[matrix_index(13, 9)] = 0;
 
 
-    out[13][10] = 0;
+    out[matrix_index(13, 10)] = 0;
 
 
-    out[13][11] = 0;
+    out[matrix_index(13, 11)] = 0;
 
 
-    out[13][12] = xn[0]*x5 + xn[2]*x21;
+    out[matrix_index(13, 12)] = xn[0]*x5 + xn[2]*x21;
 
 
-    out[13][13] = -xn[0]*x13*x15 - xn[1]*x20;
+    out[matrix_index(13, 13)] = -xn[0]*x13*x15 - xn[1]*x20;
 
 
-    out[13][14] = (-1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*x14 + xn[0]*xn[12]*jac_nuc_choice_82(T, x2, x22, x23, x3, x4) - xn[0]*x16*(-0.030054336600000002*x10*x3 + 0.001447065312*x11*x3 - 2.9193291280000001e-5*x12*x3 - 21.506460400000002*x3*x6 + 9.1741162500000009*x3*x7 - 2.2740475600000001*x3*x8 + 0.33976956150000004*x3*x9) - xn[1]*xn[13]*jac_nuc_choice_83(T, x18, x19) + 7.2084342424042629e-17*xn[12]*xn[2]*x17)/(xn[0]*x25 + xn[1]*x25 + xn[10]*x26 + xn[11]*x25 + xn[12]*x25 + xn[13]*x25 + xn[2]*x25 + xn[3]*x25 + xn[4]*x25 + xn[5]*x25 + xn[6]*x26 + xn[7]*x25 + xn[8]*x26 + xn[9]*x26);
+    out[matrix_index(13, 14)] = (-1.0409203801861816e-115*math::exp((22.915965629999999)*math::log(math::abs(T)))*xn[0]*x14 + xn[0]*xn[12]*jac_nuc_choice_82(T, x2, x22, x23, x3, x4) - xn[0]*x16*(-0.030054336600000002*x10*x3 + 0.001447065312*x11*x3 - 2.9193291280000001e-5*x12*x3 - 21.506460400000002*x3*x6 + 9.1741162500000009*x3*x7 - 2.2740475600000001*x3*x8 + 0.33976956150000004*x3*x9) - xn[1]*xn[13]*jac_nuc_choice_83(T, x18, x19) + 7.2084342424042629e-17*xn[12]*xn[2]*x17)/(xn[0]*x25 + xn[1]*x25 + xn[10]*x26 + xn[11]*x25 + xn[12]*x25 + xn[13]*x25 + xn[2]*x25 + xn[3]*x25 + xn[4]*x25 + xn[5]*x25 + xn[6]*x26 + xn[7]*x25 + xn[8]*x26 + xn[9]*x26);
 
 
     x0 = 0.00013612213614898791*xn[0] + 0.24994102282436673*xn[1] + 0.75007714496081457*xn[10] + 0.99972775572710437*xn[11] + 0.99986387786355213*xn[12] + xn[13] + 0.25007714496081457*xn[2] + 0.25021326709726244*xn[3] + 0.49986387786355219*xn[4] + 0.5*xn[5] + 0.50001816778518127*xn[6] + 0.50013612213644787*xn[7] + 0.50015428992162914*xn[8] + 0.7499410228243667*xn[9];
@@ -7971,49 +8016,49 @@ DEVICE void jac_nuc(Real temperature, Real (*out)[15], const Real* xn, Real z) {
 
     x533 = x239*jac_nuc_choice_241(x291, x294, x296, x297, x512, x523, x524, x525, x526, x527, x528, x529) + x250*x531 + x250*(4.8223900769399082*x101*x8 + 3.0182298984217999*x134*x246*x8 - 3.5529549287336835*x523 - 0.3872755400043702*x527 - 1.3735579540080118*x528) + x298*x531 + jac_nuc_choice_242(x254, x257, x264, x512, x523, x527, x528, x529, x532) + jac_nuc_choice_243(x257, x266, x268, x512, x523, x527, x528, x529, x532) + jac_nuc_choice_246(x101, x270, x271, x273, x274, x276, x277, x278, x279, x280, x281, x283, x512, x523, x527, x528, x529, x8);
 
-    out[14][0] = -2.0340826846270714e+19*x365 + x95*(8581161392004762.0*T*x2*x92*x93*x94*x96 - xn[12]*x43 - x12 - x15 - x18 - 2.0661437223616499e-31*x228 - x27 - x34 - x36 - 1.0019999999999999e-26*x366*x64 - 1.82e-26*x366*x70 - x367 - x368*x74 - x368*x78 - x370*x371 - x379*jac_nuc_choice_248(x207, x216, x370, x372, x373, x374, x375, x376, x377, x378) - x60*x67 - x7 - x82 - jac_nuc_choice_250(x230, x239, x316, x318, x362, x380, x381, x382, x383));
+    out[matrix_index(14, 0)] = -2.0340826846270714e+19*x365 + x95*(8581161392004762.0*T*x2*x92*x93*x94*x96 - xn[12]*x43 - x12 - x15 - x18 - 2.0661437223616499e-31*x228 - x27 - x34 - x36 - 1.0019999999999999e-26*x366*x64 - 1.82e-26*x366*x70 - x367 - x368*x74 - x368*x78 - x370*x371 - x379*jac_nuc_choice_248(x207, x216, x370, x372, x373, x374, x375, x376, x377, x378) - x60*x67 - x7 - x82 - jac_nuc_choice_250(x230, x239, x316, x318, x362, x380, x381, x382, x383));
 
 
-    out[14][1] = -3.7348863387551538e+22*x365 + x95*(1.5756322344156688e+19*T*x2*x92*x93*x94*x96 - xn[0]*x33 - 3.7937552985797361e-28*x228 - x367 - x371*x385 - x379*jac_nuc_choice_252(x207, x216, x372, x373, x374, x375, x376, x377, x378, x385) - x384 - x415 - jac_nuc_choice_254(x230, x316, x318, x362, x380, x382, x383, x386));
+    out[matrix_index(14, 1)] = -3.7348863387551538e+22*x365 + x95*(1.5756322344156688e+19*T*x2*x92*x93*x94*x96 - xn[0]*x33 - 3.7937552985797361e-28*x228 - x367 - x371*x385 - x379*jac_nuc_choice_252(x207, x216, x372, x373, x374, x375, x376, x377, x378, x385) - x384 - x415 - jac_nuc_choice_254(x230, x316, x318, x362, x380, x382, x383, x386));
 
 
-    out[14][2] = -3.7369204214442467e+22*x365 + x95*(xn[2]*x435*x56*x87 + xn[6]*x429 - x166 - 3.7958214423066343e-28*x228 - x26*x57 - x371*x440 - x379*jac_nuc_choice_256(x207, x216, x372, x373, x374, x375, x376, x377, x378, x440) + x418 + x432*x437 + x432*x443 + x433*x434 + x433*x441 + x438*x439 + 1.5764903505567533e+19*x444 + x446 + 2.1533251622400001e-11*x56*x85*x86 - x57*x81 - jac_nuc_choice_258(x230, x316, x318, x362, x380, x382, x383, x419) - jac_nuc_choice_259(x101, x179, x182, x183, x184, x185, x186, x188, x190, x191, x193, x194, x195, x196, x197, x198, x200, x201, x420, x421, x422, x423, x424, x425, x426, x427, x428));
+    out[matrix_index(14, 2)] = -3.7369204214442467e+22*x365 + x95*(xn[2]*x435*x56*x87 + xn[6]*x429 - x166 - 3.7958214423066343e-28*x228 - x26*x57 - x371*x440 - x379*jac_nuc_choice_256(x207, x216, x372, x373, x374, x375, x376, x377, x378, x440) + x418 + x432*x437 + x432*x443 + x433*x434 + x433*x441 + x438*x439 + 1.5764903505567533e+19*x444 + x446 + 2.1533251622400001e-11*x56*x85*x86 - x57*x81 - jac_nuc_choice_258(x230, x316, x318, x362, x380, x382, x383, x419) - jac_nuc_choice_259(x101, x179, x182, x183, x184, x185, x186, x188, x190, x191, x193, x194, x195, x196, x197, x198, x200, x201, x420, x421, x422, x423, x424, x425, x426, x427, x428));
 
 
-    out[14][3] = -3.7389545041333399e+22*x365 + x95*(-3.7978875860335321e-28*x228 - x371*x448 - x379*jac_nuc_choice_261(x207, x216, x372, x373, x374, x375, x376, x377, x378, x448) + 1.5773484666978378e+19*x444 + x447*x88 + x456);
+    out[matrix_index(14, 3)] = -3.7389545041333399e+22*x365 + x95*(-3.7978875860335321e-28*x228 - x371*x448 - x379*jac_nuc_choice_261(x207, x216, x372, x373, x374, x375, x376, x377, x378, x448) + 1.5773484666978378e+19*x444 + x447*x88 + x456);
 
 
-    out[14][4] = -7.4695011950145084e+22*x365 + x95*(3.151149938820873e+19*T*x2*x92*x93*x94*x96 - 7.5872348355797369e-28*x228 - x371*x457 - x379*jac_nuc_choice_263(x207, x216, x372, x373, x374, x375, x376, x377, x378, x457) - x459);
+    out[matrix_index(14, 4)] = -7.4695011950145084e+22*x365 + x95*(3.151149938820873e+19*T*x2*x92*x93*x94*x96 - 7.5872348355797369e-28*x228 - x371*x457 - x379*jac_nuc_choice_263(x207, x216, x372, x373, x374, x375, x376, x377, x378, x457) - x459);
 
 
-    out[14][5] = -7.4715352777036004e+22*x365 + x95*(3.1520080549619573e+19*T*x2*x92*x93*x94*x96 - 7.5893009793066334e-28*x228 - x371*x460 - x379*jac_nuc_choice_265(x207, x216, x372, x373, x374, x375, x376, x377, x378, x460) - x458);
+    out[matrix_index(14, 5)] = -7.4715352777036004e+22*x365 + x95*(3.1520080549619573e+19*T*x2*x92*x93*x94*x96 - 7.5893009793066334e-28*x228 - x371*x460 - x379*jac_nuc_choice_265(x207, x216, x372, x373, x374, x375, x376, x377, x378, x460) - x458);
 
 
-    out[14][6] = -7.4718067601993997e+22*x365 + x95*(xn[2]*x429 - 7.5895767408863695e-28*x228 - x371*x462 - x379*jac_nuc_choice_267(x207, x216, x372, x373, x374, x375, x376, x377, x378, x462) + 3.1521225849724215e+19*x444 + x445*x463 + 3.5888752704000004e-18*x450 + 8.7959487653999994e-28*x451 + 3.5888752704000004e-18*x452 + 2.8278414518999996e-18*x453 + x455 - x461 - x464);
+    out[matrix_index(14, 6)] = -7.4718067601993997e+22*x365 + x95*(xn[2]*x429 - 7.5895767408863695e-28*x228 - x371*x462 - x379*jac_nuc_choice_267(x207, x216, x372, x373, x374, x375, x376, x377, x378, x462) + 3.1521225849724215e+19*x444 + x445*x463 + 3.5888752704000004e-18*x450 + 8.7959487653999994e-28*x451 + 3.5888752704000004e-18*x452 + 2.8278414518999996e-18*x453 + x455 - x461 - x464);
 
 
-    out[14][7] = -7.4735693603926949e+22*x365 + x95*(3.1528661711030424e+19*T*x2*x92*x93*x94*x96 - 7.5913671230335325e-28*x228 - x371*x465 - x379*jac_nuc_choice_269(x207, x216, x372, x373, x374, x375, x376, x377, x378, x465) - x458);
+    out[matrix_index(14, 7)] = -7.4735693603926949e+22*x365 + x95*(3.1528661711030424e+19*T*x2*x92*x93*x94*x96 - 7.5913671230335325e-28*x228 - x371*x465 - x379*jac_nuc_choice_269(x207, x216, x372, x373, x374, x375, x376, x377, x378, x465) - x458);
 
 
-    out[14][8] = -7.4738408428884933e+22*x365 + x95*(3.1529807011135066e+19*T*x2*x92*x93*x94*x96 - xn[0]*x11*x9 + 5.6556829037999991e-24*xn[2]*xn[3]*x414*x466*x88*x90 + 1.7591897530800001e-33*xn[2]*xn[6]*x414*x466 - xn[2]*x165 + 7.1777505407999997e-24*xn[8]*x414*x466*x86*x87 + 1.4355501081600001e-11*x103*x108*x115*x408*x412*x97 - x116*x435 - 7.5916428846132686e-28*x228 - x367 - x371*x467 - x379*jac_nuc_choice_271(x207, x216, x372, x373, x374, x375, x376, x377, x378, x467) + 7.1777505407999997e-24*x414*x466*x83*x85 - x461 - x464 + 7.1777505408000004e-12*x56*x86*x87 - jac_nuc_choice_273(x230, x239, x248, x249, x316, x318, x362, x364, x380, x382, x383));
+    out[matrix_index(14, 8)] = -7.4738408428884933e+22*x365 + x95*(3.1529807011135066e+19*T*x2*x92*x93*x94*x96 - xn[0]*x11*x9 + 5.6556829037999991e-24*xn[2]*xn[3]*x414*x466*x88*x90 + 1.7591897530800001e-33*xn[2]*xn[6]*x414*x466 - xn[2]*x165 + 7.1777505407999997e-24*xn[8]*x414*x466*x86*x87 + 1.4355501081600001e-11*x103*x108*x115*x408*x412*x97 - x116*x435 - 7.5916428846132686e-28*x228 - x367 - x371*x467 - x379*jac_nuc_choice_271(x207, x216, x372, x373, x374, x375, x376, x377, x378, x467) + 7.1777505407999997e-24*x414*x466*x83*x85 - x461 - x464 + 7.1777505408000004e-12*x56*x86*x87 - jac_nuc_choice_273(x230, x239, x248, x249, x316, x318, x362, x364, x380, x382, x383));
 
 
-    out[14][9] = -1.1206421616458753e+23*x365 + x95*(-1.1383056277886369e-27*x228 - x371*x468 - x379*jac_nuc_choice_275(x207, x216, x372, x373, x374, x375, x376, x377, x378, x468) + 4.7276402893776257e+19*x444 + x456);
+    out[matrix_index(14, 9)] = -1.1206421616458753e+23*x365 + x95*(-1.1383056277886369e-27*x228 - x371*x468 - x379*jac_nuc_choice_275(x207, x216, x372, x373, x374, x375, x376, x377, x378, x468) + 4.7276402893776257e+19*x444 + x456);
 
 
-    out[14][10] = -1.1208455699147847e+23*x365 + x95*(4.7284984055187104e+19*T*x2*x92*x93*x94*x96 - 1.1385122421613269e-27*x228 - x371*x469 - x379*jac_nuc_choice_277(x207, x216, x372, x373, x374, x375, x376, x377, x378, x469) - x415 - x458 - jac_nuc_choice_278(x199, x201));
+    out[matrix_index(14, 10)] = -1.1208455699147847e+23*x365 + x95*(4.7284984055187104e+19*T*x2*x92*x93*x94*x96 - 1.1385122421613269e-27*x228 - x371*x469 - x379*jac_nuc_choice_277(x207, x216, x372, x373, x374, x375, x376, x377, x378, x469) - x415 - x458 - jac_nuc_choice_278(x199, x201));
 
 
-    out[14][11] = -1.4939002390029017e+23*x365 + x95*(6.302299877641746e+19*T*x2*x92*x93*x94*x96 - xn[0]*x35 - 8.5199999999999994e-27*xn[0]*x5 - 1.5174469671159474e-27*x228 - x371*x470 - x379*jac_nuc_choice_280(x207, x216, x372, x373, x374, x375, x376, x377, x378, x470) - x458);
+    out[matrix_index(14, 11)] = -1.4939002390029017e+23*x365 + x95*(6.302299877641746e+19*T*x2*x92*x93*x94*x96 - xn[0]*x35 - 8.5199999999999994e-27*xn[0]*x5 - 1.5174469671159474e-27*x228 - x371*x470 - x379*jac_nuc_choice_280(x207, x216, x372, x373, x374, x375, x376, x377, x378, x470) - x458);
 
 
-    out[14][12] = -1.4941036472718107e+23*x365 + x95*(6.3031579937828299e+19*T*x2*x92*x93*x94*x96 - xn[0]*x17 - xn[0]*x43 - 1.5176535814886368e-27*x228 - x371*x471 - x379*jac_nuc_choice_282(x207, x216, x372, x373, x374, x375, x376, x377, x378, x471) - x459 - x472*x65 - x472*x71 - x61 - x73*x75);
+    out[matrix_index(14, 12)] = -1.4941036472718107e+23*x365 + x95*(6.3031579937828299e+19*T*x2*x92*x93*x94*x96 - xn[0]*x17 - xn[0]*x43 - 1.5176535814886368e-27*x228 - x371*x471 - x379*jac_nuc_choice_282(x207, x216, x372, x373, x374, x375, x376, x377, x378, x471) - x459 - x472*x65 - x472*x71 - x61 - x73*x75);
 
 
-    out[14][13] = -1.4943070555407201e+23*x365 + x95*(6.3040161099239145e+19*T*x2*x92*x93*x94*x96 - 1.5178601958613267e-27*x228 - x367 - x371*x473 - x379*jac_nuc_choice_284(x207, x216, x372, x373, x374, x375, x376, x377, x378, x473) - x75*x77 - jac_nuc_choice_286(x230, x316, x318, x362, x380, x382, x383, x474));
+    out[matrix_index(14, 13)] = -1.4943070555407201e+23*x365 + x95*(6.3040161099239145e+19*T*x2*x92*x93*x94*x96 - 1.5178601958613267e-27*x228 - x367 - x371*x473 - x379*jac_nuc_choice_284(x207, x216, x372, x373, x374, x375, x376, x377, x378, x473) - x75*x77 - jac_nuc_choice_286(x230, x316, x318, x362, x380, x382, x383, x474));
 
 
-    out[14][14] = x95*(-3.2067318316078082e-16*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*x477 - 1.10034915790464e-21*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*x477 - xn[0]*x14 - 1.0649999999999999e-27*xn[0]*x4*x47 + 2.185341195413336e-30*xn[1]*x495 + 8.741364781653344e-30*xn[11]*x495 + 3.12599925e-16*xn[12]*x500*x72 + xn[2]*xn[3]*x439*x88*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x89)*(x89)) + xn[3]*x447*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - x118*(69500.0*x106*x48 - x445*x505) - x118*(x409*x505 + 12307692.307692308*x114*x5*(0.0042250000000000005*x109*x111*x488 - 4.0625000000000001e-8*x112*x38 - 0.00048750000000000003*x488*math::exp(-58000.0*x8))*math::exp(x110)/x109) + 1.5653274417833479e-24*x20*x497*x72 - 0.00090725967999999999*x218*x225*x304*x94 - 1.2700000000000001e-21*x23*x483*x79 + 2.62395452e-11*x366*x478*x59 - 5.5399999999999998e-17*x366*x58*jac_nuc_choice_287(T, x16) - x37*x42*jac_nuc_choice_288(x16, x488) - 1.5499999999999999e-26*x37*jac_nuc_choice_289(T, x16) - x379*jac_nuc_choice_290(x216, x222, x378, x481, x91, x94) + 5.8280000000000003e-8*x40*x41*x479 + x405*x56*x86*(-1.2500000000000001e-32*x38 - 1.875e-33*x496) - x406*(x145*(-2.3025850929940459*x131*(75.773826*x102*x119*x8 - 14.509090000000008*x512 - 13.899501000000001*x515 - 2848700.6345267999*x517 - 331159.79815649998*x516/x133) + 4790.3210533157426*x144*x48 + x388*(x389*x519 + x518*math::log(x141)) + x393*(x394*x519 + x518*math::log(x125)) + 54584.391438988954*x48 - 157.54846734442862*x512 + 198.95454259823751*x513 - 32.004783802655837*x515 - 6559375.6154640894*x517) + x164*(-2.3025850929940459*x153*(70.138370000000009*x101*x8 - 9.4070299999999989*x513 - 0.77462909999999996*x515 - 588180.10479140002*x520 - 160821.97128249999*x516/x154) + 3816.3275589792611*x163*x48 + x397*(x398*x522 + x521*math::log(x160)) + x402*(x403*x522 + x521*math::log(x149)) + 49431.413233526648*x48 + 98.337445626384849*x512 - 9.3363608541157479*x513 - 1.783649418259394*x515 - 1354334.7412883535*x520)) + 0.00084373771595996178*x416*x93 + 7.1777505407999997e-24*x434*x503 + x437*x503 + 7.1777505407999997e-24*x441*x503 + x443*x503 + 3.4968000000000002e-9*x479*math::exp(-564000.0*x24) - x480*x484 - x480*x487 - x484*x485 - x485*x487 + 2.9662164452379397e-24*x486*x491*x501 - x489*x74 - x489*x78 + 2.3717082451262844e-21*x490*x492 + 8.8760999999999989e-14*x490*x493 + 4.0160926284138423e-24*x492*x502 + 2.0041755700000002e-16*x493*x502 - 5.0099999999999997e-27*x494*x63 - 9.1000000000000001e-27*x494*x69 + 1.7519018237332822e-19*x497*x59 + 1.5843011077443579e-29*x498*x64 + 2.8776726707532255e-29*x498*x70 + 2.7724337999999999e-22*x499*x64 + 1.199289e-22*x499*x70 + 2.6764460520000001e-16*x500*x501 + 7.1777505408000004e-12*x56*x83*(-1.0000000000000001e-31*x38 - 1.5e-32*x496) - jac_nuc_choice_292(x230, x299, x318, x319, x362, x382, x383, x530, x533) - jac_nuc_choice_293(x101, x168, x171, x172, x179, x181, x183, x184, x185, x186, x187, x189, x190, x192, x193, x194, x196, x197, x198, x200, x201, x421, x423, x425, x428, x506, x507, x508, x509, x510, x511))/(xn[0]*x475 + xn[1]*x475 + xn[10]*x476 + xn[11]*x475 + xn[12]*x475 + xn[13]*x475 + xn[2]*x475 + xn[3]*x475 + xn[4]*x475 + xn[5]*x475 + xn[6]*x476 + xn[7]*x475 + xn[8]*x476 + xn[9]*x476);
+    out[matrix_index(14, 14)] = x95*(-3.2067318316078082e-16*math::exp((-1.6499999999999999)*math::log(math::abs(T)))*x477 - 1.10034915790464e-21*math::exp((-0.65000000000000002)*math::log(math::abs(T)))*x477 - xn[0]*x14 - 1.0649999999999999e-27*xn[0]*x4*x47 + 2.185341195413336e-30*xn[1]*x495 + 8.741364781653344e-30*xn[11]*x495 + 3.12599925e-16*xn[12]*x500*x72 + xn[2]*xn[3]*x439*x88*(-0.0064764051000000007*math::exp((0.04610000000000003)*math::log(math::abs(T))) - 2.7293978880000002e-10*math::exp((2.0424000000000002)*math::log(math::abs(T))) - 1.229450816e-13*math::exp((2.7740999999999998)*math::log(math::abs(T))))/((x89)*(x89)) + xn[3]*x447*(1.3296555000000001e-10*math::exp((-0.90150700000000006)*math::log(math::abs(T))) + 2.466314622e-10*math::exp((-0.44389999999999996)*math::log(math::abs(T))) + 8.1647792100000001e-16*math::exp((1.1825999999999999)*math::log(math::abs(T)))) - x118*(69500.0*x106*x48 - x445*x505) - x118*(x409*x505 + 12307692.307692308*x114*x5*(0.0042250000000000005*x109*x111*x488 - 4.0625000000000001e-8*x112*x38 - 0.00048750000000000003*x488*math::exp(-58000.0*x8))*math::exp(x110)/x109) + 1.5653274417833479e-24*x20*x497*x72 - 0.00090725967999999999*x218*x225*x304*x94 - 1.2700000000000001e-21*x23*x483*x79 + 2.62395452e-11*x366*x478*x59 - 5.5399999999999998e-17*x366*x58*jac_nuc_choice_287(T, x16) - x37*x42*jac_nuc_choice_288(x16, x488) - 1.5499999999999999e-26*x37*jac_nuc_choice_289(T, x16) - x379*jac_nuc_choice_290(x216, x222, x378, x481, x91, x94) + 5.8280000000000003e-8*x40*x41*x479 + x405*x56*x86*(-1.2500000000000001e-32*x38 - 1.875e-33*x496) - x406*(x145*(-2.3025850929940459*x131*(75.773826*x102*x119*x8 - 14.509090000000008*x512 - 13.899501000000001*x515 - 2848700.6345267999*x517 - 331159.79815649998*x516/x133) + 4790.3210533157426*x144*x48 + x388*(x389*x519 + x518*math::log(x141)) + x393*(x394*x519 + x518*math::log(x125)) + 54584.391438988954*x48 - 157.54846734442862*x512 + 198.95454259823751*x513 - 32.004783802655837*x515 - 6559375.6154640894*x517) + x164*(-2.3025850929940459*x153*(70.138370000000009*x101*x8 - 9.4070299999999989*x513 - 0.77462909999999996*x515 - 588180.10479140002*x520 - 160821.97128249999*x516/x154) + 3816.3275589792611*x163*x48 + x397*(x398*x522 + x521*math::log(x160)) + x402*(x403*x522 + x521*math::log(x149)) + 49431.413233526648*x48 + 98.337445626384849*x512 - 9.3363608541157479*x513 - 1.783649418259394*x515 - 1354334.7412883535*x520)) + 0.00084373771595996178*x416*x93 + 7.1777505407999997e-24*x434*x503 + x437*x503 + 7.1777505407999997e-24*x441*x503 + x443*x503 + 3.4968000000000002e-9*x479*math::exp(-564000.0*x24) - x480*x484 - x480*x487 - x484*x485 - x485*x487 + 2.9662164452379397e-24*x486*x491*x501 - x489*x74 - x489*x78 + 2.3717082451262844e-21*x490*x492 + 8.8760999999999989e-14*x490*x493 + 4.0160926284138423e-24*x492*x502 + 2.0041755700000002e-16*x493*x502 - 5.0099999999999997e-27*x494*x63 - 9.1000000000000001e-27*x494*x69 + 1.7519018237332822e-19*x497*x59 + 1.5843011077443579e-29*x498*x64 + 2.8776726707532255e-29*x498*x70 + 2.7724337999999999e-22*x499*x64 + 1.199289e-22*x499*x70 + 2.6764460520000001e-16*x500*x501 + 7.1777505408000004e-12*x56*x83*(-1.0000000000000001e-31*x38 - 1.5e-32*x496) - jac_nuc_choice_292(x230, x299, x318, x319, x362, x382, x383, x530, x533) - jac_nuc_choice_293(x101, x168, x171, x172, x179, x181, x183, x184, x185, x186, x187, x189, x190, x192, x193, x194, x196, x197, x198, x200, x201, x421, x423, x425, x428, x506, x507, x508, x509, x510, x511))/(xn[0]*x475 + xn[1]*x475 + xn[10]*x476 + xn[11]*x475 + xn[12]*x475 + xn[13]*x475 + xn[2]*x475 + xn[3]*x475 + xn[4]*x475 + xn[5]*x475 + xn[6]*x476 + xn[7]*x475 + xn[8]*x476 + xn[9]*x476);
 
 
 
@@ -8028,62 +8073,71 @@ DEVICE void burn_state_from_y(const Real* y, BurnRecord* b) {
     eos_re(b);
 
 }
-DEVICE void rhs(Real t, const Real* y, Real* out, ScratchRecord* s) {
+DEVICE void burn_state_from_y_view(const Real* y, BurnView b) {
 
-    BurnRecord* b = &s->burn;
-    burn_state_from_y(y, b);
-    rhs_specie(b->T, out, b->xn, default_redshift);
-    Real edot = rhs_eint(b->T, b->xn, default_redshift);
+    b.rho[0] = 0.0;
+    for (int n = 0; n < NumSpec; ++n) b.xn[n] = math::max(y[n], small_number_density_floor());
+    b.e[0] = y[NumSpec];
+    eos_re_view(b);
+
+}
+DEVICE void rhs(Real t, const Real* y, Real* out, ScratchView s) {
+
+    BurnView b = s.burn;
+    burn_state_from_y_view(y, b);
+    rhs_specie(b.T[0], out, b.xn, default_redshift);
+    Real edot = rhs_eint(b.T[0], b.xn, default_redshift);
     out[14] = edot;
 
 }
-DEVICE void eval_jacobian(ScratchRecord* s, Real x) {
+DEVICE void eval_jacobian(ScratchView s, Real x) {
 
-    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[n][m] = 0.0;
-    BurnRecord* b = &s->burn;
-    burn_state_from_y(s->y, b);
-    jac_nuc(b->T, s->fjac, b->xn, default_redshift);
-    s->n_jac += 1;
+    for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
+    BurnView b = s.burn;
+    burn_state_from_y_view(s.y, b);
+    jac_nuc(b.T[0], s.fjac, b.xn, default_redshift);
+    s.n_jac[0] += 1;
 
 }
-DEVICE int lu_decomposition(Real (*A)[15], int* ipvt) {
+DEVICE int lu_decomposition(Real* A, int* ipvt) {
 
     int info = 0;
 
     if constexpr (N > 1) {
         for (size_type k = 0; k < N - 1; ++k) {
             size_type pivot_row = k;
-            Real max_val = math::abs(A[k][k]);
+            Real max_val = math::abs(A[matrix_index(k, k)]);
             for (size_type i = k + 1; i < N; ++i) {
-                const Real val = math::abs(A[i][k]);
+                const Real val = math::abs(A[matrix_index(i, k)]);
                 if (val > max_val) {
                     max_val = val;
                     pivot_row = i;
                 }
             }
             ipvt[k] = static_cast<int>(pivot_row);
+            __builtin_assume(pivot_row < 15);
 
-            if (A[pivot_row][k] != 0.0) {
+            if (A[matrix_index(pivot_row, k)] != 0.0) {
                 if (pivot_row != k) {
-                    const Real t = A[pivot_row][k];
-                    A[pivot_row][k] = A[k][k];
-                    A[k][k] = t;
+                    const Real t = A[matrix_index(pivot_row, k)];
+                    A[matrix_index(pivot_row, k)] = A[matrix_index(k, k)];
+                    A[matrix_index(k, k)] = t;
                     for (size_type j = k + 1; j < N; ++j) {
-                        const Real trailing = A[pivot_row][j];
-                        A[pivot_row][j] = A[k][j];
-                        A[k][j] = trailing;
+                        const Real trailing = A[matrix_index(pivot_row, j)];
+                        A[matrix_index(pivot_row, j)] = A[matrix_index(k, j)];
+                        A[matrix_index(k, j)] = trailing;
                     }
                 }
 
-                const Real multiplier = -1.0 / A[k][k];
+                const Real multiplier = -1.0 / A[matrix_index(k, k)];
                 for (size_type i = k + 1; i < N; ++i) {
-                    A[i][k] *= multiplier;
+                    A[matrix_index(i, k)] *= multiplier;
                 }
 
                 for (size_type j = k + 1; j < N; ++j) {
-                    const Real t = A[k][j];
+                    const Real t = A[matrix_index(k, j)];
                     for (size_type i = k + 1; i < N; ++i) {
-                        A[i][j] += t * A[i][k];
+                        A[matrix_index(i, j)] += t * A[matrix_index(i, k)];
                     }
                 }
             } else {
@@ -8094,7 +8148,7 @@ DEVICE int lu_decomposition(Real (*A)[15], int* ipvt) {
 
     if constexpr (N > 0) {
         ipvt[N - 1] = static_cast<int>(N - 1);
-        if (A[N - 1][N - 1] == 0.0) {
+        if (A[matrix_index(N - 1, N - 1)] == 0.0) {
             info = static_cast<int>(N);
         }
     }
@@ -8102,11 +8156,12 @@ DEVICE int lu_decomposition(Real (*A)[15], int* ipvt) {
     return info;
 
 }
-DEVICE void lu_solve(const Real (*LU)[15], const int* ipvt, Real* x) {
+DEVICE void lu_solve(const Real* LU, const int* ipvt, Real* x) {
 
     if constexpr (N > 1) {
         for (size_type k = 0; k < N - 1; ++k) {
             const auto pivot_row = static_cast<size_type>(ipvt[k]);
+            __builtin_assume(pivot_row < 15);
             Real t = x[pivot_row];
             if (pivot_row != k) {
                 x[pivot_row] = x[k];
@@ -8114,131 +8169,133 @@ DEVICE void lu_solve(const Real (*LU)[15], const int* ipvt, Real* x) {
             }
 
             for (size_type j = k + 1; j < N; ++j) {
-                x[j] += t * LU[j][k];
+                __builtin_assume(j < 15);
+                x[j] += t * LU[matrix_index(j, k)];
             }
         }
     }
 
     for (size_type kb = 0; kb < N; ++kb) {
         const size_type k = N - 1 - kb;
-        x[k] /= LU[k][k];
+        x[k] /= LU[matrix_index(k, k)];
         const Real t = -x[k];
         for (size_type j = 0; j < k; ++j) {
-            x[j] += t * LU[j][k];
+            __builtin_assume(j < 15);
+            x[j] += t * LU[matrix_index(j, k)];
         }
     }
 
 }
-DEVICE int decompose(ScratchRecord* s, Real fac) {
+DEVICE int decompose(ScratchView s, Real fac) {
 
         for (size_type i = 0; i < N; ++i) {
             for (size_type j = 0; j < N; ++j) {
-                s->e[i][j] = -s->fjac[i][j];
+                s.e[matrix_index(i, j)] = -s.fjac[matrix_index(i, j)];
             }
-            s->e[i][i] += fac;
+            s.e[matrix_index(i, i)] += fac;
         }
-        const int info = lu_decomposition(s->e, s->ip);
+        const int info = lu_decomposition(s.e, s.ip);
         if (info == 0) {
-            s->n_decomp += 1;
+            s.n_decomp[0] += 1;
         }
         return info;
 
 }
-DEVICE void solve(ScratchRecord* s, Real* ak) {
+DEVICE void solve(ScratchView s, Real* ak) {
 
-        lu_solve(s->e, s->ip, ak);
-        s->n_solve += 1;
+        lu_solve(s.e, s.ip, ak);
+        s.n_solve[0] += 1;
 
 }
-DEVICE Real error_norm(const ScratchRecord* s) {
+DEVICE Real error_norm(ScratchView s) {
 
         Real err = 0.0;
         for (size_type i = 0; i < N; ++i) {
-            const Real sk = s->atol_vec[i] + s->rtol_vec[i] * math::max(math::abs(s->y[i]), math::abs(s->ynew[i]));
-            const Real term = s->work[i] / sk;
+            const Real sk = s.atol_vec[i] + s.rtol_vec[i] * math::max(math::abs(s.y[i]), math::abs(s.ynew[i]));
+            const Real term = s.work[i] / sk;
             err += term * term;
         }
         return math::sqrt(err / static_cast<Real>(N));
 
 }
 #include "integrate.inc"
-DEVICE void initialize_solver(ScratchRecord* s) {
-s->t = 0.0;
-s->tout = 0.0;
-s->dt = 0.0;
-for (int n = 0; n < 15; ++n) s->y[n] = 0.0;
-for (int n = 0; n < 15; ++n) s->rtol_vec[n] = 0.0;
-for (int n = 0; n < 15; ++n) s->atol_vec[n] = 0.0;
-s->uround = 1.e-16;
-s->fac_min = 0.2;
-s->fac_max = 6.0;
-s->safe = 0.9;
-for (int n = 0; n < 15; ++n) s->ynew[n] = 0.0;
-for (int n = 0; n < 15; ++n) s->ak1[n] = 0.0;
-for (int n = 0; n < 15; ++n) s->ak2[n] = 0.0;
-for (int n = 0; n < 15; ++n) s->work[n] = 0.0;
-for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->fjac[n][m] = 0.0;
-for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s->e[n][m] = 0.0;
-for (int n = 0; n < 15; ++n) s->dy[n] = 0.0;
-s->burn.rho = 0.0;
-s->burn.T = 0.0;
-s->burn.e = 0.0;
-for (int n = 0; n < 14; ++n) s->burn.xn[n] = 0.0;
-for (int n = 0; n < 14; ++n) s->mass[n] = 0.0;
-s->n_step = 0;
-s->n_rhs = 0;
-s->n_jac = 0;
-s->n_accept = 0;
-s->n_reject = 0;
-s->n_decomp = 0;
-s->n_solve = 0;
-s->max_steps = 100000;
-for (int n = 0; n < 15; ++n) s->ip[n] = 0;
+DEVICE void initialize_solver(ScratchView s) {
+s.t[0] = 0.0;
+s.tout[0] = 0.0;
+s.dt[0] = 0.0;
+for (int n = 0; n < 15; ++n) s.y[n] = 0.0;
+for (int n = 0; n < 15; ++n) s.rtol_vec[n] = 0.0;
+for (int n = 0; n < 15; ++n) s.atol_vec[n] = 0.0;
+s.uround[0] = 1.e-16;
+s.fac_min[0] = 0.2;
+s.fac_max[0] = 6.0;
+s.safe[0] = 0.9;
+for (int n = 0; n < 15; ++n) s.ynew[n] = 0.0;
+for (int n = 0; n < 15; ++n) s.ak1[n] = 0.0;
+for (int n = 0; n < 15; ++n) s.ak2[n] = 0.0;
+for (int n = 0; n < 15; ++n) s.work[n] = 0.0;
+for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
+for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.e[matrix_index(n, m)] = 0.0;
+for (int n = 0; n < 15; ++n) s.dy[n] = 0.0;
+s.burn.rho[0] = 0.0;
+s.burn.T[0] = 0.0;
+s.burn.e[0] = 0.0;
+for (int n = 0; n < 14; ++n) s.burn.xn[n] = 0.0;
+for (int n = 0; n < 14; ++n) s.mass[n] = 0.0;
+s.n_step[0] = 0;
+s.n_rhs[0] = 0;
+s.n_jac[0] = 0;
+s.n_accept[0] = 0;
+s.n_reject[0] = 0;
+s.n_decomp[0] = 0;
+s.n_solve[0] = 0;
+s.max_steps[0] = 100000;
+for (int n = 0; n < 15; ++n) s.ip[n] = 0;
 }
-DEVICE void configure_ros2s(ScratchRecord* s) {
+DEVICE void configure_ros2s(ScratchView s) {
 
     for (int n = 0; n < NumSpec; ++n) {
-        s->rtol_vec[static_cast<size_type>(n)] = rtol_spec;
-        s->atol_vec[static_cast<size_type>(n)] = atol_spec;
+        s.rtol_vec[static_cast<size_type>(n)] = rtol_spec;
+        s.atol_vec[static_cast<size_type>(n)] = atol_spec;
     }
-    s->rtol_vec[NumSpec] = rtol_energy;
-    s->atol_vec[NumSpec] = atol_energy;
-    s->max_steps = 10000000;
+    s.rtol_vec[NumSpec] = rtol_energy;
+    s.atol_vec[NumSpec] = atol_energy;
+    s.max_steps[0] = 10000000;
 
 }
-DEVICE int burn_ros2s(BurnRecord* b, Real dt, IntegratorStats* stats, ScratchRecord* s) {
+DEVICE int burn_ros2s(BurnRecord* b, Real dt, IntegratorStats* stats, ScratchView s) {
 
     eos_rt(b);
 
     initialize_solver(s);
     configure_ros2s(s);
 
-    s->t = 0.0;
-    s->tout = dt;
-    s->dt = dt;
+    s.t[0] = 0.0;
+    s.tout[0] = dt;
+    s.dt[0] = dt;
     for (int n = 0; n < NumSpec; ++n) {
-        s->y[static_cast<size_type>(n)] = b->xn[static_cast<size_type>(n)];
+        s.y[static_cast<size_type>(n)] = b->xn[static_cast<size_type>(n)];
     }
-    s->y[NumSpec] = b->e;
+    s.y[NumSpec] = b->e;
 
     const auto result = integrate(s);
 
-    stats->internal_steps += static_cast<u64>(math::max(0, s->n_step));
-    stats->rhs_calls += static_cast<u64>(math::max(0, s->n_rhs));
-    stats->jacobian_calls += static_cast<u64>(math::max(0, s->n_jac));
-    stats->decompositions += static_cast<u64>(math::max(0, s->n_decomp));
-    stats->linear_solves += static_cast<u64>(math::max(0, s->n_solve));
-    stats->accepted_steps += static_cast<u64>(math::max(0, s->n_accept));
-    stats->rejected_steps += static_cast<u64>(math::max(0, s->n_reject));
+    stats->internal_steps += static_cast<u64>(math::max(0, s.n_step[0]));
+    stats->rhs_calls += static_cast<u64>(math::max(0, s.n_rhs[0]));
+    stats->jacobian_calls += static_cast<u64>(math::max(0, s.n_jac[0]));
+    stats->decompositions += static_cast<u64>(math::max(0, s.n_decomp[0]));
+    stats->linear_solves += static_cast<u64>(math::max(0, s.n_solve[0]));
+    stats->accepted_steps += static_cast<u64>(math::max(0, s.n_accept[0]));
+    stats->rejected_steps += static_cast<u64>(math::max(0, s.n_reject[0]));
 
     if (result != SUCCESS) {
         return result;
     }
 
     for (int n = 0; n < NumSpec; ++n) {
-        b->xn[static_cast<size_type>(n)] = s->y[static_cast<size_type>(n)];
+        b->xn[static_cast<size_type>(n)] = s.y[static_cast<size_type>(n)];
     }
-    b->e = s->y[NumSpec];
+    b->e = s.y[NumSpec];
     return result;
 
 }
@@ -8265,7 +8322,7 @@ DEVICE bool valid_positive(Real value) {
     return value > 0.0 && math::isfinite(value);
 
 }
-DEVICE void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, ScratchRecord* s) {
+DEVICE void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, Real* mass) {
 BurnRecord* b = &record->current;
 
     if (!enabled || step == 0 || step % perturbation_interval != 0) {
@@ -8279,9 +8336,9 @@ BurnRecord* b = &record->current;
         b->xn[n] *= factor;
     }
 
-    floor_and_normalize_number_densities(b, s->mass);
+    floor_and_normalize_number_densities(b, mass);
     balance_charge(b);
-    floor_and_normalize_number_densities(b, s->mass);
+    floor_and_normalize_number_densities(b, mass);
     eos_re(b);
 
 }
@@ -8299,7 +8356,7 @@ DEVICE Real collapse_timestep(const BurnRecord* b) {
     return valid_positive(dt) ? dt : -1.0;
 
 }
-KERNEL void prepare_grid_timestep_kernel(CellRecord* cells, ScratchRecord* scratch, int num_cells, int completed_global_steps, Real grid_time, int step, bool perturb, Real* dt_candidates, int* failure_code CELL_PARAMETER) {
+KERNEL void prepare_grid_timestep_kernel(CellRecord* cells, int num_cells, int completed_global_steps, Real grid_time, int step, bool perturb, Real* dt_candidates, int* failure_code CELL_PARAMETER) {
 
 
     const int cell = CELL_INDEX;
@@ -8312,11 +8369,9 @@ KERNEL void prepare_grid_timestep_kernel(CellRecord* cells, ScratchRecord* scrat
         return;
     }
 
-
     CellRecord* record = cells + cell;
-    BurnRecord* b = &record->current;
-    ScratchRecord* s = scratch + cell;
-
+BurnRecord* b = &record->current;
+Real mass[14];
     if (record->completed_steps < completed_global_steps) {
         return;
     }
@@ -8326,7 +8381,7 @@ KERNEL void prepare_grid_timestep_kernel(CellRecord* cells, ScratchRecord* scrat
         return;
     }
 
-    apply_perturbation(record, cell, step, perturb, s);
+    apply_perturbation(record, cell, step, perturb, mass);
     const Real dt = collapse_timestep(b);
     if (!valid_positive(dt) || !valid_positive(record->density_driver)) {
         atomic_cas(failure_code, static_cast<int>(SUCCESS),
@@ -8341,7 +8396,7 @@ KERNEL void prepare_grid_timestep_kernel(CellRecord* cells, ScratchRecord* scrat
     dt_candidates[cell] = dt;
 
 }
-KERNEL void advance_collapse_gridwide_kernel(CellRecord* cells, ScratchRecord* scratch, int num_cells, int completed_global_steps, Real next_grid_time, Real dt_grid, int* integrated_count, int* failure_code CELL_PARAMETER) {
+KERNEL void advance_collapse_gridwide_kernel(CellRecord* cells, int num_cells, int completed_global_steps, Real next_grid_time, Real dt_grid, int* integrated_count, int* failure_code CELL_PARAMETER) {
 
 
     const int cell = CELL_INDEX;
@@ -8351,11 +8406,40 @@ KERNEL void advance_collapse_gridwide_kernel(CellRecord* cells, ScratchRecord* s
         return;
     }
 
-
     CellRecord* record = cells + cell;
-    BurnRecord* b = &record->current;
-    ScratchRecord* s = scratch + cell;
-
+BurnRecord* b = &record->current;
+Real t;
+Real tout;
+Real dt;
+Real y[15];
+Real rtol_vec[15];
+Real atol_vec[15];
+Real uround;
+Real fac_min;
+Real fac_max;
+Real safe;
+Real ynew[15];
+Real ak1[15];
+Real ak2[15];
+Real work[15];
+Real fjac[225];
+Real e[225];
+Real dy[15];
+Real burn_rho;
+Real burn_T;
+Real burn_e;
+Real burn_xn[14];
+Real mass[14];
+int n_step;
+int n_rhs;
+int n_jac;
+int n_accept;
+int n_reject;
+int n_decomp;
+int n_solve;
+int max_steps;
+int ip[15];
+ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, mass, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
     if (record->completed_steps != completed_global_steps) {
         return;
     }
@@ -8382,9 +8466,9 @@ KERNEL void advance_collapse_gridwide_kernel(CellRecord* cells, ScratchRecord* s
     if (result != SUCCESS) {
         failure = result;
     } else {
-        floor_and_normalize_number_densities(b, s->mass);
+        floor_and_normalize_number_densities(b, mass);
         balance_charge(b);
-        floor_and_normalize_number_densities(b, s->mass);
+        floor_and_normalize_number_densities(b, mass);
         eos_re(b);
         record->time = next_grid_time;
         record->completed_steps = completed_global_steps + 1;

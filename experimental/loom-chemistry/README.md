@@ -2,8 +2,7 @@
 
 `reproducer.cpp` contains both rewritten device kernels and their reachable
 chemistry/ROS2S routines. It imports into verified Loom High IR with native
-`double` math operations and real integer atomics. Target compilation of f64 math
-remains unresolved. This is a device-source rewrite, not a complete
+`double` math operations and real integer atomics. This is a device-source rewrite, not a complete
 Loom GPU application or a replacement HIP runtime.
 
 The original `/Users/benwibking/amrex_codes/mojo-chemistry/reproducer.cpp` is
@@ -16,13 +15,17 @@ driver and host-only adjustable redshift are not the selected program.
 
 ## Source organization
 
+See [HIP to Loom C++ rewrites](HIP-TO-LOOM-REWRITES.md) for a direct comparison
+with the pinned HIP source and the current reason for each transformation.
+
 - `generate.py` extracts the original bodies and applies checked transformations.
   A pinned digest and exact-match replacements reject source drift. No chemistry
   coefficients or floating-point expressions are manually re-derived.
 - `CellRecord` groups a named `BurnRecord`, time, step count, and statistics.
-  `ScratchRecord` holds per-cell solver arrays, both 15×15 matrices, a temporary
-  `BurnRecord`, and integer counters. Generated code accesses these named
-  fields directly. Initialization follows the original solver defaults.
+  The advance kernel declares solver scalars and arrays as thread-local storage,
+  including both flattened 15×15 matrices. A pointer-only `ScratchView` passes
+  them to the solver routines. `ScratchRecord` remains a native test fixture for
+  inspecting every solver field. Initialization follows the original defaults.
 - `integrate.inc` retains the solver arithmetic and replaces nested loop exits
   with `done`, `retry`, and a result code. No additional solver iteration executes
   after an original return, break, or continue point.
@@ -49,21 +52,20 @@ python3 experimental/loom-chemistry/generate.py --check
 
 ## Buffer and launch contract
 
-Both kernels take the following leading arguments. Allocate disjoint, correctly
-aligned buffers for the whole grid; each cell owns its indicated record.
+Both kernels take `cells` as their first argument, followed by `num_cells` and
+`completed_global_steps`. Allocate a disjoint, correctly aligned `CellRecord`
+for each cell.
 
 | Argument | Elements per cell | Contents |
 | --- | ---: | --- |
 | `cells` | 1 `CellRecord` (216 bytes under LP64) | Named rho, T, e, species 0–13, time, density_driver, completed_steps, and seven unsigned 64-bit counters |
-| `scratch` | 1 `ScratchRecord` (4,960 bytes under LP64) | Solver state and counters, two 15×15 matrices, temporary burn state, and normalization workspace |
 
 Persistent cell fields and counters must be packed from the original initialized
-states. Scratch need not be initialized by the caller: the solver initializes
-its fields on every burn; preparation writes its normalization workspace before
-reading it. Per-cell scratch is global storage, not shared between lanes. The
-record includes four bytes of tail padding under LP64 and is intentionally not
-optimized for memory footprint or performance. Buffer sizes and the original
-integer cell index/launch bounds remain caller responsibilities.
+states. The solver initializes its local state on every burn; preparation uses
+a separate local normalization workspace. The compiler imports these arrays as
+private storage, whose eventual register or private-segment placement is decided
+by target lowering and allocation. Buffer sizes and the original integer cell
+index/launch bounds remain caller responsibilities.
 
 The remaining arguments retain the original kernel meanings. Supply
 `ceil(num_cells / 128)` workgroups along x and one along y/z; specialize the
@@ -141,16 +143,27 @@ direct arguments in SGPR pairs. Strict f64 math legalization handles `expf`,
 tracks all three. Native AMDGPU emission still has no device-library call/link
 path for OCML, so these operations use target recipes.
 
-Both unmodified kernel roots now emit gfx942 HSACO files from a fresh import:
-about 21 KB for prepare and 2.3 MB for advance. The advance kernel needs a
+Before the local-state refactor, both kernel roots emitted gfx942 HSACO files:
+about 21 KB for prepare and 2.3 MB for advance. The old advance kernel needed a
 16-round spill-materialization limit, sparse storage-lifetime-aware scratch
 selection, and scalable branch-island layout. The earlier source-priority
 build measured a 2.05 MB native instruction stream with 3,805 branches and
 23,185 branch islands. The current AMDGPU kernel path uses upstream's
 resource-stall schedule; its broader performance effect has not been qualified.
-Advance compilation still takes minutes and emits thousands of spill warnings.
+That advance compilation took minutes and emitted thousands of spill warnings.
 The [gfx942 Loom versus HIP spill-traffic comparison](SPILL-TRAFFIC-COMPARISON.md)
-records static scratch ISA counts from a ROCm 10.0.0 HIP build.
+records static scratch ISA counts from the earlier global-scratch Loom build and
+a ROCm 10.0.0 HIP build. Recompile to measure the local-state version.
+
+With the local-state rewrite and the 2026-09-26 compiler build, both roots
+again emit gfx942 code objects. Static disassembly has 2,839 prepare and
+365,061 advance instructions, compared with 2,925 and 402,355 for the prior
+global-scratch Loom objects. The new advance object reports 0 bytes of LDS,
+102 SGPRs, 256 VGPRs, and 52,604 private bytes per lane; the prior object
+reported 0, 102, 256, and 50,328 respectively. Local storage removes the
+global scratch argument and lowers static instruction count, but register
+pressure and private-segment use remain high. These counts do not establish
+runtime speed or numerical behavior on a GPU.
 
 ```sh
 loom-compile /tmp/chemistry.loom --product=kernel \

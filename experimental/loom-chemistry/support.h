@@ -24,7 +24,7 @@ namespace chemistry {
 using Real = double;
 using size_type = unsigned long;
 using u64 = unsigned long long;
-#define MAX_DOUBLE 1.7976931348623157e+308
+#define MAX_DOUBLE __DBL_MAX__
 
 namespace math {
 // Preserve the source template's multiplication grouping.

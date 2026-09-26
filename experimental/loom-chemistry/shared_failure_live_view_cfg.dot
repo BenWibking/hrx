@@ -1,0 +1,22 @@
+digraph shared_failure_live_view_cfg {
+  graph [
+    rankdir=TB,
+    nodesep=0.5,
+    ranksep=0.65
+  ];
+  node [shape=box, style=rounded, fontname="Helvetica"];
+  edge [fontname="Helvetica"];
+
+  entry [label="entry\nload first value\n%bad = !%valid"];
+  check_second [label="^check_second\nload second value\ndefine %success_view\ncompute %second_bad"];
+  failure [label="^failure\nstore failure code", color="#b42318"];
+  success [label="^success\nstore through %success_view", color="#027a48"];
+  done [label="^done\nkernel.return"];
+
+  entry -> failure [label="%bad = true"];
+  entry -> check_second [label="%bad = false"];
+  check_second -> failure [label="%second_bad = true"];
+  check_second -> success [label="%second_bad = false"];
+  failure -> done;
+  success -> done;
+}
