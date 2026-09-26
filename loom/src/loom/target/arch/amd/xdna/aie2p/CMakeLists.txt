@@ -137,6 +137,22 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    core_structure
+  HDRS
+    "core_structure.h"
+  SRCS
+    "core_structure.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::low
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     descriptor_encoding
   HDRS
     "descriptors/encoding.h"
@@ -211,6 +227,7 @@ loom_cc_library(
   DEPS
     ::array_descriptors
     ::core_descriptors
+    ::core_structure
     iree::base
     loom::codegen::low::diagnostics
     loom::codegen::low::packet
@@ -677,6 +694,7 @@ loom_cc_library(
     "emit/bundle_plan.c"
   DEPS
     ::core_descriptors
+    ::core_structure
     ::descriptor_encoding
     ::encoding
     ::machine

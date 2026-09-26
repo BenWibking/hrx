@@ -173,6 +173,39 @@ low.func.def target<amd.xdna.aie2p.core>(@core_target) @wide_native_pointer() as
 }
 
 // ====
+// RUN: verify
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @callee() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @residual_call() asm {
+  // ERROR@+1: TARGET/072 {target_key="core_target", export_name="residual_call", config_key="core_target", function_name="residual_call", op_name="low.func.call", callee_name="callee", reason="the selected target requires every Low call to be inlined before emission"}
+  low.func.call @callee() : ()
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @structured_control() asm {
+  %condition = mov.short 1
+  // ERROR@+1: TARGET/001 {target_key="core_target", export_name="structured_control", config_key="core_target", function_name="structured_control", op_name="low.scf.if"}
+  low.scf.if %condition {
+  }
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @explicit_spill() asm {
+  %slot = storage {byte_alignment = 4, byte_length = 4} : low.storage<private>
+  %value = mov.short 1
+  // ERROR@+1: TARGET/001 {target_key="core_target", export_name="explicit_spill", config_key="core_target", function_name="explicit_spill", op_name="low.spill"}
+  low.spill %value, %slot : reg<aie2p.er>, low.storage<private>
+  // ERROR@+1: TARGET/001 {target_key="core_target", export_name="explicit_spill", config_key="core_target", function_name="explicit_spill", op_name="low.reload"}
+  %reloaded = low.reload %slot : low.storage<private> -> reg<aie2p.er>
+  return
+}
+
+// ====
 // RUN: emit aie2p-array-plan @declared_worker
 
 aie2p.target<array> @array_target

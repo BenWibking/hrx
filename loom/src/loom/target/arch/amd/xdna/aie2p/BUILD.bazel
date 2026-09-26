@@ -114,6 +114,17 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "core_structure",
+    srcs = ["core_structure.c"],
+    hdrs = ["core_structure.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/low",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "descriptor_encoding",
     srcs = ["descriptors/encoding.c"],
     hdrs = ["descriptors/encoding.h"],
@@ -176,6 +187,7 @@ loom_cc_library(
     deps = [
         ":array_descriptors",
         ":core_descriptors",
+        ":core_structure",
         "//loom/src/loom/codegen/low:diagnostics",
         "//loom/src/loom/codegen/low:packet",
         "//loom/src/loom/codegen/low:verify",
@@ -599,6 +611,7 @@ loom_cc_library(
     hdrs = ["emit/bundle_plan.h"],
     deps = [
         ":core_descriptors",
+        ":core_structure",
         ":descriptor_encoding",
         ":encoding",
         ":machine",

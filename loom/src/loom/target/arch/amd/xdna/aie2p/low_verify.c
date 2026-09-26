@@ -13,6 +13,7 @@
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
 #include "loom/ops/op_defs.h"
+#include "loom/target/arch/amd/xdna/aie2p/core_structure.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/array_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/projection.h"
@@ -130,6 +131,74 @@ static iree_status_t loom_aie2p_low_verify_core_resource(
   };
   return loom_low_verify_context_emit(context, op, LOOM_ERR_TYPE_004, params,
                                       IREE_ARRAYSIZE(params));
+}
+
+static bool loom_aie2p_low_verify_is_core_body_op(
+    const loom_low_verify_context_t* context, const loom_op_t* op) {
+  const loom_region_t* function_body =
+      loom_low_verify_context_function_body(context);
+  return op->parent_block->parent_region == function_body;
+}
+
+static iree_status_t loom_aie2p_low_verify_emit_call_policy_error(
+    loom_low_verify_context_t* context,
+    const loom_aie2p_low_verify_state_t* state, const loom_op_t* op) {
+  const loom_symbol_ref_t callee = loom_low_func_call_callee(op);
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(loom_low_diagnostic_target_key(state->target)),
+      loom_param_string(loom_low_diagnostic_export_name(state->target)),
+      loom_param_string(loom_low_diagnostic_config_key(state->target)),
+      loom_param_string(state->function_name),
+      loom_param_string(loom_low_diagnostic_operation_name(state->module, op)),
+      loom_param_with_field_ref(
+          loom_param_string(
+              loom_low_diagnostic_symbol_name(state->module, callee)),
+          loom_low_func_call_callee_diagnostic_ref()),
+      loom_param_string(IREE_SV(
+          "the selected target requires every Low call to be inlined before "
+          "emission")),
+  };
+  return loom_low_verify_context_emit(context, op, LOOM_ERR_TARGET_072, params,
+                                      IREE_ARRAYSIZE(params));
+}
+
+static iree_status_t loom_aie2p_low_verify_emit_unsupported_core_op(
+    loom_low_verify_context_t* context,
+    const loom_aie2p_low_verify_state_t* state, const loom_op_t* op) {
+  const loom_diagnostic_param_t params[] = {
+      loom_param_string(loom_low_diagnostic_target_key(state->target)),
+      loom_param_string(loom_low_diagnostic_export_name(state->target)),
+      loom_param_string(loom_low_diagnostic_config_key(state->target)),
+      loom_param_string(state->function_name),
+      loom_param_string(loom_low_diagnostic_operation_name(state->module, op)),
+  };
+  return loom_low_verify_context_emit(context, op, LOOM_ERR_TARGET_001, params,
+                                      IREE_ARRAYSIZE(params));
+}
+
+static iree_status_t loom_aie2p_low_verify_core_op(
+    loom_low_verify_context_t* context,
+    const loom_aie2p_low_verify_state_t* state,
+    const loom_low_descriptor_packet_t* packet) {
+  // AIE2P core emission consumes flat CFG body operations. Any nested op is
+  // owned by an unsupported outer structural operation diagnosed at this
+  // boundary, so descending into it would only produce redundant errors.
+  if (!loom_aie2p_low_verify_is_core_body_op(context, packet->op)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_aie2p_low_verify_core_resource(context, state, packet->op));
+  if (packet->kind != LOOM_LOW_DESCRIPTOR_PACKET_NONE ||
+      loom_aie2p_core_structure_classify(packet->op) !=
+          LOOM_AIE2P_CORE_STRUCTURE_UNSUPPORTED) {
+    return iree_ok_status();
+  }
+  if (loom_low_func_call_isa(packet->op)) {
+    return loom_aie2p_low_verify_emit_call_policy_error(context, state,
+                                                        packet->op);
+  }
+  return loom_aie2p_low_verify_emit_unsupported_core_op(context, state,
+                                                        packet->op);
 }
 
 static const loom_named_attr_t* loom_aie2p_low_find_packet_attr(
@@ -276,7 +345,7 @@ static iree_status_t loom_aie2p_low_verify_op(
     return iree_ok_status();
   }
   if (state->program_kind == LOOM_AIE2P_LOW_VERIFY_PROGRAM_CORE) {
-    return loom_aie2p_low_verify_core_resource(context, state, packet->op);
+    return loom_aie2p_low_verify_core_op(context, state, packet);
   }
   if (packet->kind == LOOM_LOW_DESCRIPTOR_PACKET_NONE) {
     if (loom_low_return_isa(packet->op)) {

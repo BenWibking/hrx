@@ -14,6 +14,7 @@
 #include "loom/codegen/low/schedule/physical_issue.h"
 #include "loom/codegen/low/storage_layout.h"
 #include "loom/ops/low/ops.h"
+#include "loom/target/arch/amd/xdna/aie2p/core_structure.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/encoding.h"
 
@@ -182,23 +183,9 @@ static uint8_t loom_aie2p_bundle_plan_single_slot_byte_length(
   return format_info.bit_count / 8;
 }
 
-static bool loom_aie2p_bundle_plan_structural_move_isa(const loom_op_t* op) {
-  return loom_low_copy_isa(op) || loom_low_move_isa(op) ||
-         loom_low_slice_isa(op) || loom_low_concat_isa(op);
-}
-
-static bool loom_aie2p_bundle_plan_non_emitting_structural_isa(
-    const loom_op_t* op) {
-  return loom_low_live_in_isa(op) || loom_low_resource_isa(op) ||
-         loom_low_storage_reserve_isa(op) || loom_low_storage_view_isa(op);
-}
-
 static const loom_low_allocation_packet_move_group_t*
 loom_aie2p_bundle_plan_packet_move_group(const loom_low_emission_frame_t* frame,
                                          const loom_low_packet_view_t* packet) {
-  if (!loom_aie2p_bundle_plan_structural_move_isa(packet->node->op)) {
-    return NULL;
-  }
   return loom_low_allocation_find_packet_move_group_by_source_ordinal(
       &frame->allocation, packet->node->source_ordinal);
 }
@@ -216,18 +203,19 @@ static bool loom_aie2p_bundle_plan_physical_control_descriptor(
   }
 }
 
-static loom_aie2p_block_terminator_t loom_aie2p_bundle_plan_block_terminator(
-    const loom_op_t* op) {
-  if (loom_low_br_isa(op)) {
-    return LOOM_AIE2P_BLOCK_TERMINATOR_BRANCH;
+static loom_aie2p_block_terminator_t
+loom_aie2p_bundle_plan_terminator_from_structure_kind(
+    loom_aie2p_core_structure_kind_t structure_kind) {
+  switch (structure_kind) {
+    case LOOM_AIE2P_CORE_STRUCTURE_BRANCH:
+      return LOOM_AIE2P_BLOCK_TERMINATOR_BRANCH;
+    case LOOM_AIE2P_CORE_STRUCTURE_CONDITIONAL_BRANCH:
+      return LOOM_AIE2P_BLOCK_TERMINATOR_CONDITIONAL_BRANCH;
+    case LOOM_AIE2P_CORE_STRUCTURE_RETURN:
+      return LOOM_AIE2P_BLOCK_TERMINATOR_RETURN;
+    default:
+      return LOOM_AIE2P_BLOCK_TERMINATOR_NONE;
   }
-  if (loom_low_cond_br_isa(op)) {
-    return LOOM_AIE2P_BLOCK_TERMINATOR_CONDITIONAL_BRANCH;
-  }
-  if (loom_low_return_isa(op)) {
-    return LOOM_AIE2P_BLOCK_TERMINATOR_RETURN;
-  }
-  return LOOM_AIE2P_BLOCK_TERMINATOR_NONE;
 }
 
 static iree_host_size_t loom_aie2p_bundle_plan_move_slot_count(
@@ -323,7 +311,9 @@ static iree_status_t loom_aie2p_bundle_plan_analyze(
             "AIE2P physical control is materialized from structural Low CFG; "
             "descriptor-backed control packets are not accepted");
       }
-      if (loom_low_storage_address_isa(packet.node->op)) {
+      const loom_aie2p_core_structure_kind_t structure_kind =
+          loom_aie2p_core_structure_classify(packet.node->op);
+      if (structure_kind == LOOM_AIE2P_CORE_STRUCTURE_STORAGE_ADDRESS) {
         if (out_analysis->storage_fixup_count == IREE_HOST_SIZE_MAX) {
           return iree_make_status(
               IREE_STATUS_OUT_OF_RANGE,
@@ -332,7 +322,7 @@ static iree_status_t loom_aie2p_bundle_plan_analyze(
         ++out_analysis->storage_fixup_count;
         continue;
       }
-      if (loom_aie2p_bundle_plan_structural_move_isa(packet.node->op)) {
+      if (structure_kind == LOOM_AIE2P_CORE_STRUCTURE_REGISTER_MOVE) {
         const loom_low_allocation_packet_move_group_t* group =
             loom_aie2p_bundle_plan_packet_move_group(frame, &packet);
         if (group != NULL) {
@@ -342,17 +332,17 @@ static iree_status_t loom_aie2p_bundle_plan_analyze(
         }
         continue;
       }
-      if (loom_aie2p_bundle_plan_non_emitting_structural_isa(packet.node->op)) {
+      if (structure_kind == LOOM_AIE2P_CORE_STRUCTURE_DECLARATION) {
         continue;
       }
 
       const loom_aie2p_block_terminator_t terminator =
-          loom_aie2p_bundle_plan_block_terminator(packet.node->op);
+          loom_aie2p_bundle_plan_terminator_from_structure_kind(structure_kind);
       if (terminator == LOOM_AIE2P_BLOCK_TERMINATOR_NONE) {
-        return iree_make_status(
-            IREE_STATUS_UNIMPLEMENTED,
-            "AIE2P core emission does not lower structural operation %u",
-            (unsigned)packet.node->op->kind);
+        IREE_ASSERT_UNREACHABLE(
+            "AIE2P core verification must reject unsupported structural "
+            "operations");
+        IREE_BUILTIN_UNREACHABLE();
       }
       if (block_analysis->terminator != LOOM_AIE2P_BLOCK_TERMINATOR_NONE) {
         return iree_make_status(
@@ -1657,9 +1647,7 @@ static iree_status_t loom_aie2p_bundle_plan_build_impl(
           const uint32_t packet_index = group->scheduled_node_start + i;
           const loom_low_packet_view_t packet =
               loom_low_packet_at(&frame->schedule, packet_index);
-          if (loom_low_packet_is_compile_time_only(&packet) ||
-              loom_aie2p_bundle_plan_block_terminator(packet.node->op) !=
-                  LOOM_AIE2P_BLOCK_TERMINATOR_NONE) {
+          if (loom_low_packet_is_compile_time_only(&packet)) {
             continue;
           }
           if (packet.descriptor != NULL) {
@@ -1677,7 +1665,13 @@ static iree_status_t loom_aie2p_bundle_plan_build_impl(
                 NULL));
             continue;
           }
-          if (loom_low_storage_address_isa(packet.node->op)) {
+          const loom_aie2p_core_structure_kind_t structure_kind =
+              loom_aie2p_core_structure_classify(packet.node->op);
+          if (loom_aie2p_bundle_plan_terminator_from_structure_kind(
+                  structure_kind) != LOOM_AIE2P_BLOCK_TERMINATOR_NONE) {
+            continue;
+          }
+          if (structure_kind == LOOM_AIE2P_CORE_STRUCTURE_STORAGE_ADDRESS) {
             loom_aie2p_encoded_slot_t encoded_slot;
             loom_storage_space_t storage_space = LOOM_STORAGE_SPACE_STACK;
             uint64_t storage_byte_offset = 0;
@@ -1700,9 +1694,15 @@ static iree_status_t loom_aie2p_bundle_plan_build_impl(
                 &builder, packet_index, storage_space, storage_byte_offset));
             continue;
           }
-          if (loom_aie2p_bundle_plan_non_emitting_structural_isa(
-                  packet.node->op)) {
+          if (structure_kind == LOOM_AIE2P_CORE_STRUCTURE_DECLARATION) {
             continue;
+          }
+
+          if (structure_kind != LOOM_AIE2P_CORE_STRUCTURE_REGISTER_MOVE) {
+            IREE_ASSERT_UNREACHABLE(
+                "AIE2P bundle analysis must admit every emitted structural "
+                "operation");
+            IREE_BUILTIN_UNREACHABLE();
           }
 
           const loom_low_allocation_packet_move_group_t* move_group =
