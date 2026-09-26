@@ -31,6 +31,7 @@ iree_py_library(
     "type.py"
     "wasm.py"
     "x86.py"
+    "xdna.py"
   DEPS
     loom::py::loom::core
 )

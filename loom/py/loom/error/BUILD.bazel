@@ -32,6 +32,7 @@ iree_py_library(
         "type.py",
         "wasm.py",
         "x86.py",
+        "xdna.py",
     ],
     deps = ["//loom/py/loom:core"],
 )

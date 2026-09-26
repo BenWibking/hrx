@@ -44,6 +44,8 @@ from loom.error.wasm import *  # noqa: F403
 from loom.error.wasm import ALL_WASM_ERRORS
 from loom.error.x86 import *  # noqa: F403
 from loom.error.x86 import ALL_X86_ERRORS
+from loom.error.xdna import *  # noqa: F403
+from loom.error.xdna import ALL_XDNA_ERRORS
 from loom.errors import ErrorDef
 
 ALL_ERRORS: tuple[ErrorDef, ...] = (
@@ -64,4 +66,5 @@ ALL_ERRORS: tuple[ErrorDef, ...] = (
     *ALL_X86_ERRORS,
     *ALL_WASM_ERRORS,
     *ALL_SPIRV_ERRORS,
+    *ALL_XDNA_ERRORS,
 )

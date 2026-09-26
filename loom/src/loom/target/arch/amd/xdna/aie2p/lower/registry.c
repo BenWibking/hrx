@@ -4,7 +4,6 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/error/error_catalog.h"
 #include "loom/ir/module.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/target/arch/amd/xdna/aie2p/contracts/core.h"
@@ -14,6 +13,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/lower/lower.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/matrix.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/storage.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
 
 static bool loom_aie2p_source_type_supported(void* user_data,
                                              const loom_module_t* module,
@@ -222,7 +222,7 @@ static iree_status_t loom_aie2p_emit_op(void* user_data,
 
 static const loom_low_lower_policy_t kAie2pCoreLowLowerPolicy = {
     .name = IREE_SVL("amd-xdna-aie2p-core-low-lower"),
-    .error_catalog = &loom_error_catalog_core,
+    .error_catalog = &loom_xdna_error_catalog,
     .source_type_supported =
         {
             .fn = loom_aie2p_source_type_supported,

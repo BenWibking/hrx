@@ -16,6 +16,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/core_structure.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/array_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
 #include "loom/target/projection.h"
 #include "loom/target/registers.h"
 
@@ -354,9 +355,8 @@ static iree_status_t loom_aie2p_low_verify_op(
     const loom_diagnostic_param_t params[] = {
         loom_param_string(loom_op_name(state->module, packet->op)),
     };
-    return loom_low_verify_context_emit(context, packet->op,
-                                        LOOM_ERR_TARGET_123, params,
-                                        IREE_ARRAYSIZE(params));
+    return loom_low_verify_context_emit(context, packet->op, LOOM_ERR_XDNA_014,
+                                        params, IREE_ARRAYSIZE(params));
   }
   switch (packet->descriptor_ordinal) {
     case AIE2P_ARRAY_DESCRIPTOR_REF_ARRAY_SENDER:
@@ -389,7 +389,7 @@ static iree_status_t loom_aie2p_low_verify_op(
               loom_diagnostic_field_ref(LOOM_DIAGNOSTIC_FIELD_RESULT, 0)),
       };
       return loom_low_verify_context_emit(context, packet->op,
-                                          LOOM_ERR_TARGET_124, params,
+                                          LOOM_ERR_XDNA_015, params,
                                           IREE_ARRAYSIZE(params));
     }
     default:

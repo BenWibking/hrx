@@ -238,6 +238,7 @@ loom_cc_library(
     loom::ir
     loom::ops::low
     loom::ops::op_defs
+    loom::target::arch::amd::xdna::error_defs
     loom::target::projection
     loom::target::registers
   PUBLIC
@@ -291,6 +292,7 @@ loom_cc_library(
     loom::ops::low
     loom::ops::op_defs
     loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::error_defs
     loom::util::fact_table
   PUBLIC
 )
@@ -388,6 +390,7 @@ loom_cc_library(
     loom::ops::vector
     loom::target::arch::amd::xdna::aie2p::contracts::core
     loom::target::arch::amd::xdna::aie2p::contracts::core_lower_rules
+    loom::target::arch::amd::xdna::error_defs
     loom::util::fact_table
   PUBLIC
 )
@@ -449,6 +452,7 @@ loom_cc_library(
     loom::rewrite::callable
     loom::rewrite::rewriter
     loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::error_defs
     loom::util::fact_table
   PUBLIC
 )
