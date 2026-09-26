@@ -187,8 +187,10 @@ loom_cc_library(
     ::core_descriptors
     iree::base
     loom::ir
+    loom::ops::scalar
     loom::ops::vector
     loom::target::legalization
+    loom::transforms::scalar::target_legalization
     loom::transforms::vector::packet_legalization
     loom::transforms::vector::table_legalization
     loom::transforms::vector::target_legalization
@@ -668,6 +670,7 @@ loom_check_test_suite(
     "test/source_low/semantic_assertions.loom-test"
     "test/source_low/shared_conditional_values.loom-test"
     "test/source_low/table_quantize.loom-test"
+    "test/source_low/target_legalize_scalar_multiply_add.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/vector_bitcast.loom-test"
     "test/source_low/vector_comparison.loom-test"
