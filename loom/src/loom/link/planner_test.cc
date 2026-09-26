@@ -1886,6 +1886,62 @@ check.benchmark<@library_case> @library_benchmark
   EXPECT_FALSE(ContainsSymbol(plan.get(), library_benchmark));
 }
 
+TEST_F(LinkPlannerTest, StrippedInputTestsRetainPrivateSubjects) {
+  loom_module_t* module = Parse(IREE_SV(R"(
+func.def @helper(%x: i32) -> (i32) {
+  func.return %x : i32
+}
+
+func.def @subject(%x: i32) -> (i32) {
+  %result = func.call @helper(%x) : (i32) -> (i32)
+  func.return %result : i32
+}
+
+check.scenario @subject_scenario {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.literal value(1) : i32
+    check.compare<@subject>(%input) : (i32) -> [actual(%actual: i32), expected(%expected: i32)] {
+      check.expect.equal actual(%actual) expected(%expected) : i32
+    }
+  }
+  check.return
+}
+)"));
+
+  IndexPtr index = CreateIndex();
+  AddMaterialized(index.get(), module, IREE_SV("input"),
+                  LOOM_LINK_PROVIDER_ROLE_INPUT);
+  loom_link_plan_options_t options = {
+      /*.mode=*/LOOM_LINK_PLAN_LINK,
+  };
+  options.test_symbol_policy = LOOM_LINK_PLAN_TEST_SYMBOL_STRIP;
+  options.include_input_tests = true;
+  PlanPtr plan = BuildPlan(index.get(), &options);
+
+  const loom_link_module_index_module_t* indexed_module =
+      loom_link_module_index_module_at(index.get(), 0);
+  ASSERT_NE(indexed_module, nullptr);
+  const loom_link_module_index_symbol_t* helper =
+      loom_link_module_index_lookup_private(index.get(), indexed_module,
+                                            IREE_SV("helper"));
+  const loom_link_module_index_symbol_t* subject =
+      loom_link_module_index_lookup_private(index.get(), indexed_module,
+                                            IREE_SV("subject"));
+  const loom_link_module_index_symbol_t* scenario =
+      loom_link_module_index_lookup_private(index.get(), indexed_module,
+                                            IREE_SV("subject_scenario"));
+
+  EXPECT_TRUE(ContainsSymbol(plan.get(), helper));
+  EXPECT_TRUE(ContainsSymbol(plan.get(), subject));
+  EXPECT_FALSE(ContainsSymbol(plan.get(), scenario));
+  ASSERT_NE(FindPlannedSymbol(plan.get(), helper), nullptr);
+  ASSERT_NE(FindPlannedSymbol(plan.get(), subject), nullptr);
+  EXPECT_EQ(FindPlannedSymbol(plan.get(), helper)->reason,
+            LOOM_LINK_PLAN_LIVE_DEPENDENCY);
+  EXPECT_EQ(FindPlannedSymbol(plan.get(), subject)->reason,
+            LOOM_LINK_PLAN_LIVE_ROOT);
+}
+
 TEST_F(LinkPlannerTest, TestSymbolStripPolicyRejectsStrippedRoots) {
   loom_module_t* module = Parse(Fixture(
       IREE_SV("test_symbol_strip_policy_rejects_stripped_roots_module.loom")));
