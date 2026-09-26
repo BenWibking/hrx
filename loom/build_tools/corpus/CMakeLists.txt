@@ -48,6 +48,7 @@ loom_cc_test(
     iree::testing::gtest_main
 )
 
+if(LOOM_TARGET_ARCH_VM)
 iree_execution_test_suite(
   NAME
     compile_xfails_execution_test
@@ -61,5 +62,6 @@ iree_execution_test_suite(
   LABELS
     "hostonly"
 )
+endif()
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

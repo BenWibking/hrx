@@ -10,6 +10,7 @@ load(
     "loom_cc_binary",
     "loom_cc_library",
     "loom_cc_test",
+    "loom_config_compatible_with",
 )
 
 package(
@@ -60,6 +61,7 @@ iree_execution_test_suite(
     ],
     manifests = ["compile_xfails.test.json"],
     tags = ["hostonly"],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/target/arch:vm"]),
     tools = {
         "loom-compile": "//loom/src/loom/tools/loom-compile",
         "loom-corpus-compile-xfails": ":loom-corpus-compile-xfails",
