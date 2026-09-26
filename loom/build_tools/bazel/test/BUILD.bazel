@@ -16,6 +16,7 @@ load(
     "loom_library",
     "loom_module",
     "loom_target_profile",
+    "loom_target_set",
     "loom_test",
     "loom_test_module",
 )
@@ -47,6 +48,22 @@ loom_target_profile(
     name = "test_fake_profile",
     family = "FakeTargetFamily123",
     selector = "FakeTargetSelector123",
+)
+
+loom_target_set(
+    name = "test_target_set",
+    targets = [
+        ":test_fake_profile",
+        ":test_amdgpu_profile",
+    ],
+)
+
+loom_target_set(
+    name = "test_nested_target_set",
+    targets = [
+        ":test_fake_profile",
+        ":test_target_set",
+    ],
 )
 
 loom_kernel_library(

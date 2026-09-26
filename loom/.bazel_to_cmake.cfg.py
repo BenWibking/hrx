@@ -208,6 +208,15 @@ class LoomBuildFileFunctions(bazel_to_cmake_converter.BuildFileFunctions):
             + ")\n\n"
         )
 
+    def loom_target_set(self, name, targets, **kwargs):
+        self._check_no_unhandled_kwargs("loom_target_set", kwargs)
+        self._converter.body += (
+            "loom_target_set(\n"
+            + self._convert_string_arg_block("NAME", name)
+            + self._convert_target_list_block("TARGETS", targets)
+            + ")\n\n"
+        )
+
     def loom_amdgpu_target_profile(
         self, name, target, target_compatible_with=None, **kwargs
     ):
