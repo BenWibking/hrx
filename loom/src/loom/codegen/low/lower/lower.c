@@ -209,10 +209,6 @@ static iree_status_t loom_low_lower_prepare_branches(
     if (source_terminator == NULL || source_terminator->successor_count == 0) {
       continue;
     }
-    if (loom_low_lower_source_plan_cfg_cond_br_exact_bool(
-            context, source_terminator, NULL)) {
-      continue;
-    }
     status = context->policy->prepare_branch.fn(
         context->policy->prepare_branch.user_data, context, source_terminator,
         &analysis_arena);
