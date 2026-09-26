@@ -61,7 +61,6 @@ static bool loom_low_lower_source_op_requires_emission_with_traits(
     return true;
   }
   if (iree_any_bit_set(traits, LOOM_TRAIT_TERMINATOR | LOOM_TRAIT_HINT |
-                                   LOOM_TRAIT_UNIQUE_IDENTITY |
                                    LOOM_TRAIT_CONVERGENT |
                                    LOOM_TRAIT_OBSERVABLE_EFFECT)) {
     return true;
