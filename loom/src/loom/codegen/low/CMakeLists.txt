@@ -311,37 +311,12 @@ loom_cc_library(
   DEPS
     iree::base
     iree::base::internal::arena
+    loom::analysis::storage_layout
     loom::ir
     loom::ops::low
     loom::ops::type_registry
     loom::rewrite::rewriter
   PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    source_storage_packing
-  HDRS
-    "source_storage_packing.h"
-  SRCS
-    "source_storage_packing.c"
-  DEPS
-    iree::base
-    iree::base::internal::arena
-    loom::ir
-  PUBLIC
-)
-
-loom_cc_test(
-  NAME
-    source_storage_packing_test
-  SRCS
-    "source_storage_packing_test.cc"
-  DEPS
-    ::source_storage_packing
-    iree::base::internal::arena
-    iree::testing::gtest
-    iree::testing::gtest_main
 )
 
 loom_cc_library(

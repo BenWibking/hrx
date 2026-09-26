@@ -35,10 +35,11 @@ loom_cc_library(
     visibility = _SPIRV_ROOT_VISIBILITY,
     deps = [
         "//loom/src/loom/analysis:contract_vector",
+        "//loom/src/loom/analysis:source_storage_packing",
         "//loom/src/loom/analysis:storage_interference",
+        "//loom/src/loom/analysis:storage_layout",
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:source_memory_plan",
-        "//loom/src/loom/codegen/low:source_storage_packing",
         "//loom/src/loom/codegen/low/lower",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",

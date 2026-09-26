@@ -311,34 +311,13 @@ loom_cc_library(
     srcs = ["storage_layout.c"],
     hdrs = ["storage_layout.h"],
     deps = [
+        "//loom/src/loom/analysis:storage_layout",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:type_registry",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/rewrite:rewriter",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
-    ],
-)
-
-loom_cc_library(
-    name = "source_storage_packing",
-    srcs = ["source_storage_packing.c"],
-    hdrs = ["source_storage_packing.h"],
-    deps = [
-        "//loom/src/loom/ir",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base/internal:arena",
-    ],
-)
-
-loom_cc_test(
-    name = "source_storage_packing_test",
-    srcs = ["source_storage_packing_test.cc"],
-    deps = [
-        ":source_storage_packing",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 

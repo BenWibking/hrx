@@ -9,9 +9,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "loom/analysis/source_storage_packing.h"
 #include "loom/analysis/storage_interference.h"
 #include "loom/codegen/low/source_memory_plan.h"
-#include "loom/codegen/low/source_storage_packing.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/ir/module.h"

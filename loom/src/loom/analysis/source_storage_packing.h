@@ -6,8 +6,8 @@
 
 // Stable byte-range packing for source function storage.
 
-#ifndef LOOM_CODEGEN_LOW_SOURCE_STORAGE_PACKING_H_
-#define LOOM_CODEGEN_LOW_SOURCE_STORAGE_PACKING_H_
+#ifndef LOOM_ANALYSIS_SOURCE_STORAGE_PACKING_H_
+#define LOOM_ANALYSIS_SOURCE_STORAGE_PACKING_H_
 
 #include <stdint.h>
 
@@ -81,4 +81,4 @@ loom_source_storage_packing_requirement(
 }  // extern "C"
 #endif
 
-#endif  // LOOM_CODEGEN_LOW_SOURCE_STORAGE_PACKING_H_
+#endif  // LOOM_ANALYSIS_SOURCE_STORAGE_PACKING_H_

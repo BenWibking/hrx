@@ -247,6 +247,7 @@ loom_cc_library(
     loom::analysis::condition_facts
     loom::analysis::contract_vector
     loom::analysis::control_uniformity
+    loom::analysis::source_storage_packing
     loom::analysis::storage_interference
     loom::analysis::symbolic_expr
     loom::analysis::view_regions
@@ -257,7 +258,6 @@ loom_cc_library(
     loom::codegen::low::lower::representation_observer
     loom::codegen::low::representation_plan
     loom::codegen::low::source_memory_plan
-    loom::codegen::low::source_storage_packing
     loom::ir
     loom::ir::facts
     loom::ops::atomic

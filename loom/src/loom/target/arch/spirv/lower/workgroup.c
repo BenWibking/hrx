@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-#include "iree/base/internal/math.h"
+#include "loom/analysis/storage_layout.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/module.h"
@@ -197,25 +197,6 @@ void loom_spirv_mark_workgroup_plan_storage_demands(
   IREE_ASSERT_UNREACHABLE("SPIR-V Workgroup plan selected unknown op kind");
 }
 
-static iree_status_t loom_spirv_workgroup_append_storage_requirement(
-    uint64_t byte_length, uint64_t byte_alignment,
-    uint64_t* inout_byte_extent) {
-  uint64_t aligned_byte_extent = 0;
-  if (!iree_checked_align_u64(*inout_byte_extent, byte_alignment,
-                              &aligned_byte_extent)) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "SPIR-V Workgroup storage alignment overflows");
-  }
-  uint64_t next_byte_extent = 0;
-  if (!iree_checked_add_u64(aligned_byte_extent, byte_length,
-                            &next_byte_extent)) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "SPIR-V Workgroup storage extent overflows");
-  }
-  *inout_byte_extent = next_byte_extent;
-  return iree_ok_status();
-}
-
 static iree_status_t loom_spirv_workgroup_measure_storage(
     loom_low_lower_context_t* context, uint64_t* out_byte_extent) {
   *out_byte_extent = 0;
@@ -224,8 +205,9 @@ static iree_status_t loom_spirv_workgroup_measure_storage(
   for (iree_host_size_t i = 0; i < storage_root_count; ++i) {
     const loom_spirv_workgroup_storage_root_requirement_t requirement =
         loom_spirv_workgroup_layout_storage_root_requirement(context, i);
-    IREE_RETURN_IF_ERROR(loom_spirv_workgroup_append_storage_requirement(
-        requirement.byte_length, requirement.byte_alignment, out_byte_extent));
+    IREE_RETURN_IF_ERROR(loom_storage_layout_append(
+        requirement.byte_length, requirement.byte_alignment, out_byte_extent,
+        /*out_byte_offset=*/NULL));
   }
 
   const iree_host_size_t selected_plan_count =
@@ -244,9 +226,10 @@ static iree_status_t loom_spirv_workgroup_measure_storage(
     if (alloca_plan->packed) {
       continue;
     }
-    IREE_RETURN_IF_ERROR(loom_spirv_workgroup_append_storage_requirement(
+    IREE_RETURN_IF_ERROR(loom_storage_layout_append(
         (uint64_t)alloca_plan->byte_length,
-        (uint64_t)alloca_plan->byte_alignment, out_byte_extent));
+        (uint64_t)alloca_plan->byte_alignment, out_byte_extent,
+        /*out_byte_offset=*/NULL));
   }
   return iree_ok_status();
 }
