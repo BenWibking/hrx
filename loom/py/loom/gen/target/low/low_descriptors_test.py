@@ -2293,6 +2293,52 @@ def test_generator_rejects_exact_type_for_tied_asm_result() -> None:
         generate_descriptor_set(descriptor_set)
 
 
+def test_generator_accepts_exact_type_for_same_register_value_type_result() -> None:
+    descriptor = replace(
+        TEST_LOW_ADD_I32_DESCRIPTOR,
+        constraints=(Constraint(ConstraintKind.SAME_REGISTER_VALUE_TYPE, 0, 1),),
+        asm_forms=(
+            AsmForm(
+                results=("dst",),
+                operands=("lhs", "rhs"),
+                result_value_types=(AsmResultValueType(ScalarTypeKind.I32),),
+            ),
+        ),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    generated = generate_descriptor_set(descriptor_set)
+
+    assert "LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE" in generated.source
+    assert "LOOM_LOW_ASM_RESULT_VALUE_TYPE_KIND_SCALAR" in generated.source
+
+
+def test_generator_accepts_same_register_value_type_between_operands() -> None:
+    descriptor = replace(
+        TEST_LOW_ADD_I32_DESCRIPTOR,
+        constraints=(Constraint(ConstraintKind.SAME_REGISTER_VALUE_TYPE, 1, 2),),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    generated = generate_descriptor_set(descriptor_set)
+
+    assert "LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE" in generated.source
+
+
+def test_generator_rejects_same_register_value_type_without_rhs() -> None:
+    descriptor = replace(
+        TEST_LOW_ADD_I32_DESCRIPTOR,
+        constraints=(Constraint(ConstraintKind.SAME_REGISTER_VALUE_TYPE, 0),),
+    )
+    descriptor_set = replace(TEST_LOW_CORE_DESCRIPTOR_SET, descriptors=(descriptor,))
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape("descriptor 'test.add.i32' same-register-value-type constraint 0 requires an rhs operand"),
+    ):
+        generate_descriptor_set(descriptor_set)
+
+
 def test_generator_rejects_low_const_with_no_result() -> None:
     descriptor = replace(
         TEST_LOW_CONST_I32_DESCRIPTOR,

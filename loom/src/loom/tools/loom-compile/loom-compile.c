@@ -252,8 +252,17 @@ static iree_status_t loom_compile_parse_input_module(
 static iree_status_t loom_compile_verify_input_module(
     const loom_target_low_descriptor_registry_t* low_registry,
     loom_run_module_t* run_module) {
+  loom_compile_diagnostic_sink_t diagnostic_sink = {
+      .run_module = run_module,
+  };
+  loom_low_descriptor_text_print_context_initialize(
+      &low_registry->registry, &diagnostic_sink.type_print_context);
   const loom_target_entry_options_t options = {
-      .diagnostic_sink = {.fn = loom_diagnostic_stderr_sink},
+      .diagnostic_sink =
+          {
+              .fn = loom_compile_diagnostic_sink,
+              .user_data = &diagnostic_sink,
+          },
       .source_resolver = loom_run_module_source_resolver(run_module),
       .max_errors = 20,
   };

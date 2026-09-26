@@ -18,6 +18,28 @@
       "files": [{"path": "{tmp}/invalid.bin", "exists": false}]
     },
     {
+      "name": "renders exact carried types for invalid Low",
+      "run": {
+        "tool": "loom-compile",
+        "args": [
+          "--pipeline=none",
+          "--output={tmp}/invalid.xdna"
+        ],
+        "stdin": {
+          "text": "aie2p.target<array> @array_target\n\nlow.func.def public retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) @invalid_channel() asm {\n  %one = constant.u32 1 : reg<aie2p.array.scalar : index>\n  %input = binding 0, \"read\"\n  %output = binding 1, \"write\"\n  %sender = sender %input, 0 : reg<aie2p.array.sender : tile<1xi32>>\n  %receiver = receiver %output, 0 : reg<aie2p.array.receiver : tile<1xi32>>\n  %channel = channel %sender, %receiver, %one, %one : reg<aie2p.array.channel : tile<2xi32>>\n  return\n}\n"
+        }
+      },
+      "exit": 1,
+      "stderr": {
+        "contains": [
+          "TYPE/001",
+          "'result' type tile<2xi32> does not match 'sender' type tile<1xi32>",
+          "input module failed Low verification"
+        ]
+      },
+      "files": [{"path": "{tmp}/invalid.xdna", "exists": false}]
+    },
+    {
       "name": "prints agent documentation",
       "run": {
         "tool": "loom-compile",

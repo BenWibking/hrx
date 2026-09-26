@@ -529,6 +529,9 @@ TEST(LowDescriptorsTest, EnumNamesAreStableDiagnosticSpellings) {
   EXPECT_EQ(StringViewToString(loom_low_constraint_kind_name(
                 LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_ORDINAL)),
             "same_register_ordinal");
+  EXPECT_EQ(StringViewToString(loom_low_constraint_kind_name(
+                LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE)),
+            "same_register_value_type");
 
   EXPECT_EQ(StringViewToString(
                 loom_low_latency_kind_name(LOOM_LOW_LATENCY_KIND_UNKNOWN)),
@@ -1080,6 +1083,35 @@ TEST(LowDescriptorsTest, RejectsDestructiveConstraintWithoutResultLhs) {
   InitializeTestTables(&tables);
   AddAddDescriptorConstraint(&tables, LOOM_LOW_CONSTRAINT_KIND_DESTRUCTIVE, 1,
                              2);
+
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        loom_low_descriptor_set_verify(&tables.set));
+}
+
+TEST(LowDescriptorsTest, AcceptsSameRegisterValueTypeResultAndOperand) {
+  TestTables tables;
+  InitializeTestTables(&tables);
+  AddAddDescriptorConstraint(
+      &tables, LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE, 0, 1);
+
+  IREE_ASSERT_OK(loom_low_descriptor_set_verify(&tables.set));
+}
+
+TEST(LowDescriptorsTest, AcceptsSameRegisterValueTypeOperands) {
+  TestTables tables;
+  InitializeTestTables(&tables);
+  AddAddDescriptorConstraint(
+      &tables, LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE, 1, 2);
+
+  IREE_ASSERT_OK(loom_low_descriptor_set_verify(&tables.set));
+}
+
+TEST(LowDescriptorsTest, RejectsSameRegisterValueTypeWithoutRhs) {
+  TestTables tables;
+  InitializeTestTables(&tables);
+  AddAddDescriptorConstraint(&tables,
+                             LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE,
+                             0, LOOM_LOW_ID_NONE);
 
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         loom_low_descriptor_set_verify(&tables.set));
