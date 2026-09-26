@@ -41,6 +41,10 @@ _GENERIC_COMPATIBLE_WITH = loom_config_compatible_with([
     "//loom/config/execute:amdgpu_hal",
 ])
 
+_AMDGPU_SOURCE_COMPATIBLE_WITH = loom_config_compatible_with([
+    "//loom/config/target:amdgpu",
+])
+
 _GFX11_GENERIC_REPRESENTATION = LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.gfx11.generic.core"]
 
 _GFX11_ARTIFACT_COMPATIBLE_WITH = loom_amdgpu_descriptor_set_compatible_with(
@@ -58,6 +62,15 @@ _CDNA3_COMPATIBLE_WITH = loom_config_compatible_with([
     "//loom/config/execute:amdgpu_hal",
     "//loom/config/target/amdgpu:iree_hal_descriptor_set_cdna3_core",
 ])
+
+_CDNA4_REPRESENTATION = LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_KEY["amdgpu.cdna4.core"]
+
+_CDNA4_ARTIFACT_COMPATIBLE_WITH = (
+    _AMDGPU_SOURCE_COMPATIBLE_WITH +
+    loom_amdgpu_descriptor_set_compatible_with(
+        _CDNA4_REPRESENTATION,
+    )
+)
 
 _CDNA4_COMPATIBLE_WITH = loom_config_compatible_with([
     "//loom/config/execute:amdgpu_hal",
@@ -233,6 +246,7 @@ iree_executable_test(
 loom_test_module(
     name = "gfx950_v4_lds_shared_qk_module",
     srcs = ["gfx950/v4_lds_shared_qk.loom"],
+    target_compatible_with = _CDNA4_ARTIFACT_COMPATIBLE_WITH,
 )
 
 loom_test(
