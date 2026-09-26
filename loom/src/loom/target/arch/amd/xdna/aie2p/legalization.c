@@ -301,7 +301,7 @@ static iree_status_t loom_aie2p_legalize_vector_reduce_axes(
 static const loom_target_legalizer_rule_t kAie2pLegalizerRules[] = {
     {
         .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
-        .root_kind = LOOM_OP_SCALAR_ADDI,
+        .root_kind = LOOM_OP_SCALAR_MULI,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I32,
         .match = loom_aie2p_match_scalar_multiply_add,
         .legalize = loom_aie2p_legalize_scalar_multiply_add,

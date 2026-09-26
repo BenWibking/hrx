@@ -13,44 +13,32 @@
 #include "loom/ops/scf/ops.h"
 #include "loom/rewrite/rewriter.h"
 
-static loom_op_t* loom_scalar_owned_wrapping_multiply(
-    const loom_module_t* module, loom_value_id_t result) {
-  const loom_value_t* value = loom_module_value(module, result);
-  if (loom_value_is_block_arg(value)) {
-    return NULL;
-  }
-  loom_op_t* op = loom_value_def_op(value);
-  if (!loom_scalar_muli_isa(op) || loom_scalar_muli_overflow(op) != 0 ||
-      !loom_value_has_single_use(value) ||
-      loom_value_has_attribute_uses(value) ||
-      loom_module_value_has_type_uses(module, result)) {
-    return NULL;
-  }
-  return op;
-}
-
 bool loom_scalar_match_multiply_add(
-    const loom_module_t* module, const loom_op_t* add_op,
+    const loom_module_t* module, const loom_op_t* multiply_op,
     loom_scalar_multiply_add_match_t* out_match) {
   *out_match = (loom_scalar_multiply_add_match_t){0};
+  if (!loom_scalar_muli_isa(multiply_op) ||
+      loom_scalar_muli_overflow(multiply_op) != 0) {
+    return false;
+  }
+
+  const loom_value_id_t product = loom_scalar_muli_result(multiply_op);
+  const loom_value_t* product_value = loom_module_value(module, product);
+  const loom_use_t* product_use = loom_value_single_use(product_value);
+  if (product_use == NULL || loom_value_has_attribute_uses(product_value) ||
+      loom_module_value_has_type_uses(module, product)) {
+    return false;
+  }
+  loom_op_t* add_op = loom_use_user_op(*product_use);
   if (!loom_scalar_addi_isa(add_op) || loom_scalar_addi_overflow(add_op) != 0) {
     return false;
   }
-
-  loom_value_id_t addend = loom_scalar_addi_rhs(add_op);
-  loom_op_t* multiply_op =
-      loom_scalar_owned_wrapping_multiply(module, loom_scalar_addi_lhs(add_op));
-  if (multiply_op == NULL) {
-    addend = loom_scalar_addi_lhs(add_op);
-    multiply_op = loom_scalar_owned_wrapping_multiply(
-        module, loom_scalar_addi_rhs(add_op));
-  }
-  if (multiply_op == NULL) {
-    return false;
-  }
+  const loom_value_id_t addend = loom_scalar_addi_lhs(add_op) == product
+                                     ? loom_scalar_addi_rhs(add_op)
+                                     : loom_scalar_addi_lhs(add_op);
   *out_match = (loom_scalar_multiply_add_match_t){
-      .multiply_op = multiply_op,
-      .add_op = (loom_op_t*)add_op,
+      .multiply_op = (loom_op_t*)multiply_op,
+      .add_op = add_op,
       .addend = addend,
   };
   return true;

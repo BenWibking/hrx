@@ -24,10 +24,10 @@ typedef struct loom_scalar_multiply_add_match_t {
   loom_value_id_t addend;
 } loom_scalar_multiply_add_match_t;
 
-// Matches an unflagged scalar.muli owned solely by |add_op|. Attribute and type
-// observers retain the multiply and prevent a match.
+// Matches an unflagged |multiply_op| owned solely by an unflagged scalar.addi.
+// Attribute and type observers retain the multiply and prevent a match.
 bool loom_scalar_match_multiply_add(
-    const loom_module_t* module, const loom_op_t* add_op,
+    const loom_module_t* module, const loom_op_t* multiply_op,
     loom_scalar_multiply_add_match_t* out_match);
 
 // Replaces a multiply-add match with scalar.fmai.
