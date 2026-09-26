@@ -1290,16 +1290,16 @@ ERR_TARGET_071 = ErrorDef(
     ),
 )
 
-# ERR_TARGET_072: Low invocation cannot preserve the helper contract.
+# ERR_TARGET_072: Low invocation violates the target call policy.
 ERR_TARGET_072 = ErrorDef(
     domain=ErrorDomain.TARGET,
     code=72,
     severity=Severity.ERROR,
-    summary="Low invocation cannot preserve the helper contract.",
+    summary="Low invocation violates the target call policy.",
     message=(
         "target '{target_key}' export '{export_name}' config '{config_key}' "
         "rejected '{op_name}' in '@{function_name}': low helper "
-        "'@{callee_name}' cannot be inlined because {reason}"
+        "'@{callee_name}' does not satisfy the call policy because {reason}"
     ),
     params=(
         *_TARGET_CONTEXT_PARAMS,
@@ -1307,8 +1307,8 @@ ERR_TARGET_072 = ErrorDef(
         ErrorParam("reason", ParamKind.STRING),
     ),
     fix_hint=(
-        "Use a module-local, single-block low.func.def with virtual register "
-        "allocation and no function-entry resource imports"
+        "Use a compatible module-local low.func.def and inline it before "
+        "target emission when the selected target has no direct Low call ABI"
     ),
 )
 

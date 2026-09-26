@@ -353,15 +353,15 @@ static iree_status_t loom_low_verify_emit_enum_domain_mismatch(
 
 static iree_status_t loom_low_verify_emit_constraint_type_mismatch(
     loom_low_function_verify_state_t* function_state, const loom_op_t* op,
-    const loom_low_packet_field_t* lhs_field,
-    const loom_low_packet_field_t* rhs_field) {
+    const loom_low_packet_field_t* lhs_field, loom_type_t lhs_type,
+    const loom_low_packet_field_t* rhs_field, loom_type_t rhs_type) {
   loom_diagnostic_param_t params[] = {
       loom_param_with_field_ref(loom_param_string(lhs_field->field_name),
                                 lhs_field->field_ref),
-      loom_param_type(lhs_field->type),
+      loom_param_type(lhs_type),
       loom_param_with_field_ref(loom_param_string(rhs_field->field_name),
                                 rhs_field->field_ref),
-      loom_param_type(rhs_field->type),
+      loom_param_type(rhs_type),
   };
   return loom_low_verify_emit(function_state->state, op, LOOM_ERR_TYPE_001,
                               params, IREE_ARRAYSIZE(params), NULL, 0);
@@ -793,7 +793,8 @@ static iree_status_t loom_low_verify_descriptor_immediates(
 static bool loom_low_verify_constraint_requires_matching_types(
     loom_low_constraint_kind_t kind) {
   return kind == LOOM_LOW_CONSTRAINT_KIND_TIED ||
-         kind == LOOM_LOW_CONSTRAINT_KIND_DESTRUCTIVE;
+         kind == LOOM_LOW_CONSTRAINT_KIND_DESTRUCTIVE ||
+         kind == LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE;
 }
 
 static iree_status_t loom_low_verify_descriptor_packet_operand_field(
@@ -1350,6 +1351,7 @@ static iree_status_t loom_low_verify_descriptor_constraints(
     const loom_low_descriptor_t* descriptor) {
   const loom_low_descriptor_set_t* descriptor_set =
       function_state->target->descriptor_set;
+  uint16_t diagnosed_register_value_type_lhs = LOOM_LOW_ID_NONE;
   for (uint16_t i = 0; i < descriptor->constraint_count; ++i) {
     const uint32_t constraint_row = descriptor->constraint_start + i;
     if (constraint_row >= descriptor_set->constraint_count) {
@@ -1361,6 +1363,10 @@ static iree_status_t loom_low_verify_descriptor_constraints(
     const loom_low_constraint_t* constraint =
         &descriptor_set->constraints[constraint_row];
     if (!loom_low_verify_constraint_requires_matching_types(constraint->kind)) {
+      continue;
+    }
+    if (constraint->kind == LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE &&
+        constraint->lhs_operand_index == diagnosed_register_value_type_lhs) {
       continue;
     }
     if (constraint->rhs_operand_index == LOOM_LOW_ID_NONE) {
@@ -1378,11 +1384,29 @@ static iree_status_t loom_low_verify_descriptor_constraints(
     IREE_RETURN_IF_ERROR(loom_low_verify_descriptor_packet_field(
         function_state, op, descriptor, constraint->rhs_operand_index,
         &rhs_field));
-    if (loom_type_equal(lhs_field.type, rhs_field.type)) {
+    loom_type_t lhs_type = lhs_field.type;
+    loom_type_t rhs_type = rhs_field.type;
+    if (constraint->kind == LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE) {
+      const loom_type_t* lhs_value_type =
+          loom_type_register_value_type(lhs_field.type);
+      const loom_type_t* rhs_value_type =
+          loom_type_register_value_type(rhs_field.type);
+      // Register-field verification or target admission owns a missing carried
+      // type. This relation diagnoses disagreement between present payloads.
+      if (lhs_value_type == NULL || rhs_value_type == NULL) {
+        continue;
+      }
+      lhs_type = *lhs_value_type;
+      rhs_type = *rhs_value_type;
+    }
+    if (loom_type_equal(lhs_type, rhs_type)) {
       continue;
     }
     IREE_RETURN_IF_ERROR(loom_low_verify_emit_constraint_type_mismatch(
-        function_state, op, &lhs_field, &rhs_field));
+        function_state, op, &lhs_field, lhs_type, &rhs_field, rhs_type));
+    if (constraint->kind == LOOM_LOW_CONSTRAINT_KIND_SAME_REGISTER_VALUE_TYPE) {
+      diagnosed_register_value_type_lhs = constraint->lhs_operand_index;
+    }
     if (loom_low_verify_should_stop(function_state->state)) {
       return iree_ok_status();
     }
