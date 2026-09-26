@@ -24,6 +24,10 @@ typedef struct loom_cfg_loop_build_state_t {
   uint32_t boundary_xor;
   // XOR of external header entry edge indices plus one.
   uint32_t entry_xor;
+  // Sum of boundary edge target indices, with entries contributing negatively.
+  int64_t boundary_target_sum;
+  // Sum of squared boundary target indices with the same signed convention.
+  int64_t boundary_target_square_sum;
 } loom_cfg_loop_build_state_t;
 
 static uint16_t loom_cfg_loop_find_root(loom_cfg_loop_build_state_t* states,
@@ -59,6 +63,7 @@ static iree_host_size_t loom_cfg_loop_discover(
     loom_cfg_natural_loop_t loop = {
         .header_index = header,
         .parent_loop_index = LOOM_CFG_LOOP_NEST_NONE,
+        .continuation_index = LOOM_CFG_LOOP_CONTINUATION_NONE,
         .entries.unique_index = LOOM_CFG_EDGE_INDEX_INVALID,
         .backedges.unique_index = LOOM_CFG_EDGE_INDEX_INVALID,
         .exits.unique_index = LOOM_CFG_EDGE_INDEX_INVALID,
@@ -124,10 +129,36 @@ static iree_host_size_t loom_cfg_loop_discover(
   return loop_count;
 }
 
+static void loom_cfg_loop_link_tree(iree_host_size_t loop_count,
+                                    loom_cfg_loop_build_state_t* states,
+                                    const loom_cfg_natural_loop_t* loops) {
+  for (iree_host_size_t i = 0; i < loop_count; ++i) {
+    uint16_t parent = loops[i].parent_loop_index;
+    if (parent == LOOM_CFG_LOOP_NEST_NONE) {
+      continue;
+    }
+    states[i].next_sibling = states[parent].first_child;
+    states[parent].first_child = (uint16_t)i;
+  }
+}
+
+static bool loom_cfg_loop_contains_innermost(
+    const loom_cfg_natural_loop_t* loops, uint16_t loop_index,
+    uint16_t innermost_loop_index) {
+  if (loop_index == LOOM_CFG_LOOP_NEST_NONE ||
+      innermost_loop_index == LOOM_CFG_LOOP_NEST_NONE) {
+    return false;
+  }
+  uint32_t interval = loops[loop_index].interval;
+  uint16_t position = (uint16_t)loops[innermost_loop_index].interval;
+  return (uint16_t)interval <= position && position <= (interval >> 16);
+}
+
 // Edge balances cancel at the least common ancestor of their endpoints. A
 // natural loop has no side entries, so its external header entries account for
-// every remaining negative contribution. Their count and XOR recover the exit
-// summary without walking each edge through all enclosing loops.
+// every remaining negative contribution. Their count, edge XOR, and target
+// moments recover the exit summary without walking each edge through all
+// enclosing loops.
 static bool loom_cfg_loop_summarize_boundaries(
     const loom_cfg_graph_t* graph, const loom_cfg_dominance_t* dominance,
     const uint16_t* innermost, iree_host_size_t loop_count,
@@ -137,13 +168,13 @@ static bool loom_cfg_loop_summarize_boundaries(
     const loom_cfg_edge_info_t* edge = &graph->edges[i];
     const loom_cfg_block_info_t* source =
         &graph->blocks[edge->source_block_index];
-    const loom_cfg_block_info_t* target =
+    const loom_cfg_block_info_t* target_block =
         &graph->blocks[edge->target_block_index];
     if (!source->reachable) {
       continue;
     }
-    if (target->preorder <= source->preorder &&
-        source->preorder < target->preorder_end &&
+    if (target_block->preorder <= source->preorder &&
+        source->preorder < target_block->preorder_end &&
         !loom_cfg_dominance_block_dominates(dominance, edge->target_block_index,
                                             edge->source_block_index)) {
       reducible = false;
@@ -153,13 +184,22 @@ static bool loom_cfg_loop_summarize_boundaries(
     if (from == to) {
       continue;
     }
+    const int64_t target_index = edge->target_block_index;
+    const int64_t target_square = target_index * target_index;
     if (from != LOOM_CFG_LOOP_NEST_NONE) {
       ++states[from].boundary_balance;
       states[from].boundary_xor ^= (uint32_t)i + 1;
+      states[from].boundary_target_sum += target_index;
+      states[from].boundary_target_square_sum += target_square;
+      if (!loom_cfg_loop_contains_innermost(loops, from, to)) {
+        ++loops[from].direct_exit_count;
+      }
     }
     if (to != LOOM_CFG_LOOP_NEST_NONE) {
       --states[to].boundary_balance;
       states[to].boundary_xor ^= (uint32_t)i + 1;
+      states[to].boundary_target_sum -= target_index;
+      states[to].boundary_target_square_sum -= target_square;
     }
   }
   for (iree_host_size_t i = 0; i < loop_count; ++i) {
@@ -169,12 +209,28 @@ static bool loom_cfg_loop_summarize_boundaries(
       loom_cfg_loop_build_state_t* parent = &states[loop->parent_loop_index];
       parent->boundary_balance += state->boundary_balance;
       parent->boundary_xor ^= state->boundary_xor;
-      state->next_sibling = parent->first_child;
-      parent->first_child = (uint16_t)i;
+      parent->boundary_target_sum += state->boundary_target_sum;
+      parent->boundary_target_square_sum += state->boundary_target_square_sum;
     }
     loop->exits.count = state->boundary_balance + loop->entries.count;
     if (loop->exits.count == 1) {
       loop->exits.unique_index = (state->boundary_xor ^ state->entry_xor) - 1;
+    }
+    if (loop->exits.count != 0) {
+      const int64_t header = loop->header_index;
+      const int64_t exit_target_sum =
+          state->boundary_target_sum + loop->entries.count * header;
+      const int64_t exit_target_square_sum =
+          state->boundary_target_square_sum +
+          loop->entries.count * header * header;
+      const int64_t exit_count = loop->exits.count;
+      if (exit_target_sum % exit_count == 0) {
+        const int64_t candidate = exit_target_sum / exit_count;
+        if (candidate >= 0 && candidate < graph->block_count &&
+            exit_target_square_sum == exit_count * candidate * candidate) {
+          loop->continuation_index = (uint16_t)candidate;
+        }
+      }
     }
   }
   return reducible;
@@ -227,12 +283,13 @@ static iree_status_t loom_cfg_loop_nest_build_impl(
   memset(innermost, 0xFF, graph->block_count * sizeof(*innermost));
   iree_host_size_t loop_count =
       loom_cfg_loop_discover(graph, dominance, stack, innermost, states, loops);
+  loom_cfg_loop_link_tree(loop_count, states, loops);
+  loom_cfg_loop_number_tree(loop_count, stack, states, loops);
   out_nest->reducible = loom_cfg_loop_summarize_boundaries(
       graph, dominance, innermost, loop_count, states, loops);
   if (loop_count == 0) {
     return iree_ok_status();
   }
-  loom_cfg_loop_number_tree(loop_count, stack, states, loops);
   loom_cfg_natural_loop_t* retained_loops = NULL;
   uint16_t* retained_innermost = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
