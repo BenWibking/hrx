@@ -268,24 +268,15 @@ iree_status_t loom_cfg_loop_nest_build(const loom_cfg_graph_t* graph,
   return status;
 }
 
-bool loom_cfg_loop_nest_calculate_block_execution_counts(
+bool loom_cfg_loop_nest_calculate_block_multipliers(
     const loom_cfg_loop_nest_t* nest, const uint64_t* trip_counts,
-    uint64_t* out_block_counts) {
+    uint64_t* out_block_multipliers) {
   if (!nest->reducible) {
     return false;
   }
   const loom_cfg_graph_t* graph = nest->graph;
   for (iree_host_size_t i = 0; i < graph->block_count; ++i) {
-    out_block_counts[i] = graph->blocks[i].reachable ? 1 : 0;
-    if (!graph->blocks[i].reachable) {
-      continue;
-    }
-    uint16_t loop_index = loom_cfg_loop_nest_innermost(nest, (uint16_t)i);
-    if (graph->blocks[i].successor_count > 1 &&
-        (loop_index == LOOM_CFG_LOOP_NEST_NONE ||
-         nest->loops[loop_index].header_index != i)) {
-      return false;
-    }
+    out_block_multipliers[i] = graph->blocks[i].reachable ? 1 : 0;
   }
   // Header slots temporarily hold the body count. Parents precede children in
   // this reverse traversal, so each child's entry multiplier is available.
@@ -300,10 +291,10 @@ bool loom_cfg_loop_nest_calculate_block_execution_counts(
     uint64_t parent_count =
         loop->parent_loop_index == LOOM_CFG_LOOP_NEST_NONE
             ? 1
-            : out_block_counts[nest->loops[loop->parent_loop_index]
-                                   .header_index];
+            : out_block_multipliers[nest->loops[loop->parent_loop_index]
+                                        .header_index];
     if (!iree_checked_mul_u64(parent_count, trip_counts[i - 1],
-                              &out_block_counts[loop->header_index])) {
+                              &out_block_multipliers[loop->header_index])) {
       return false;
     }
   }
@@ -311,8 +302,8 @@ bool loom_cfg_loop_nest_calculate_block_execution_counts(
     uint16_t loop_index = loom_cfg_loop_nest_innermost(nest, (uint16_t)i);
     if (loop_index != LOOM_CFG_LOOP_NEST_NONE &&
         nest->loops[loop_index].header_index != i) {
-      out_block_counts[i] =
-          out_block_counts[nest->loops[loop_index].header_index];
+      out_block_multipliers[i] =
+          out_block_multipliers[nest->loops[loop_index].header_index];
     }
   }
   // Finalize child headers before overwriting their parent's body multiplier.
@@ -321,14 +312,35 @@ bool loom_cfg_loop_nest_calculate_block_execution_counts(
     uint64_t parent_count =
         loop->parent_loop_index == LOOM_CFG_LOOP_NEST_NONE
             ? 1
-            : out_block_counts[nest->loops[loop->parent_loop_index]
-                                   .header_index];
+            : out_block_multipliers[nest->loops[loop->parent_loop_index]
+                                        .header_index];
     uint64_t header_count = 0;
     if (!iree_checked_add_u64(trip_counts[i], 1, &header_count) ||
         !iree_checked_mul_u64(parent_count, header_count,
-                              &out_block_counts[loop->header_index])) {
+                              &out_block_multipliers[loop->header_index])) {
       return false;
     }
   }
   return true;
+}
+
+bool loom_cfg_loop_nest_calculate_block_execution_counts(
+    const loom_cfg_loop_nest_t* nest, const uint64_t* trip_counts,
+    uint64_t* out_block_counts) {
+  if (!nest->reducible) {
+    return false;
+  }
+  const loom_cfg_graph_t* graph = nest->graph;
+  for (iree_host_size_t i = 0; i < graph->block_count; ++i) {
+    if (!graph->blocks[i].reachable || graph->blocks[i].successor_count <= 1) {
+      continue;
+    }
+    const uint16_t loop_index = loom_cfg_loop_nest_innermost(nest, (uint16_t)i);
+    if (loop_index == LOOM_CFG_LOOP_NEST_NONE ||
+        nest->loops[loop_index].header_index != i) {
+      return false;
+    }
+  }
+  return loom_cfg_loop_nest_calculate_block_multipliers(nest, trip_counts,
+                                                        out_block_counts);
 }

@@ -102,6 +102,16 @@ bool loom_cfg_loop_nest_calculate_block_execution_counts(
     const loom_cfg_loop_nest_t* nest, const uint64_t* trip_counts,
     uint64_t* out_block_counts);
 
+// Expands exact loop trip counts into the execution multiplier contributed by
+// enclosing loops for each block. Unlike exact execution counts, multipliers
+// remain useful in a CFG with data-dependent alternatives: a separate control
+// analysis can mark branch-local blocks unknown while retaining the multiplier
+// for blocks after reconvergence. Returns false for unsupported loop structure
+// or arithmetic overflow. Expansion takes O(B+L) time without extra storage.
+bool loom_cfg_loop_nest_calculate_block_multipliers(
+    const loom_cfg_loop_nest_t* nest, const uint64_t* trip_counts,
+    uint64_t* out_block_multipliers);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
