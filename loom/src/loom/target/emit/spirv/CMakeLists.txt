@@ -151,7 +151,6 @@ loom_cc_library(
     ::module_values
     iree::base
     iree::base::internal::arena
-    loom::codegen::low::storage_layout
     loom::ir
     loom::ops::low
     loom::target::arch::spirv::descriptors

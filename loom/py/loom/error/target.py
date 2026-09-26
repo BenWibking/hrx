@@ -830,14 +830,14 @@ ERR_TARGET_050 = ErrorDef(
     ),
 )
 
-# ERR_TARGET_051: Low workgroup storage use exceeds target limit.
+# ERR_TARGET_051: Function workgroup storage use exceeds target limit.
 ERR_TARGET_051 = ErrorDef(
     domain=ErrorDomain.TARGET,
     code=51,
     severity=Severity.ERROR,
-    summary="Low workgroup storage use exceeds target limit.",
+    summary="Function workgroup storage use exceeds target limit.",
     message=(
-        "low function '@{function_name}' target '@{target_name}' reserves "
+        "function '@{function_name}' target '@{target_name}' reserves "
         "{reserved_bytes} byte(s) of workgroup storage, exceeding target limit "
         "{limit_bytes}"
     ),

@@ -175,7 +175,6 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::analysis::symbol_facts
     loom::codegen::low::text_asm
-    loom::error::error_defs
     loom::format::text::parser
     loom::ir
     loom::ops::func_symbol_facts
@@ -192,7 +191,6 @@ loom_cc_test(
     loom::target::function_version
     loom::target::profile
     loom::target::types
-    loom::testing::diagnostic_matchers
     loom::testing::module_ptr
   LABELS
     "iree-build-requirement=loom.target.arch.spirv"

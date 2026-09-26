@@ -48,8 +48,6 @@ typedef struct loom_spirv_function_emission_context_t {
   loom_spirv_module_shared_bda_root_t* shared_bda_root;
   // Module-wide Input variable IDs indexed by supported builtin kind.
   uint32_t* builtin_variable_ids;
-  // Structured diagnostic emitter for final target resource validation.
-  iree_diagnostic_emitter_t diagnostic_emitter;
 } loom_spirv_function_emission_context_t;
 
 // Mutable state for one function emission.
@@ -143,11 +141,10 @@ iree_status_t loom_spirv_emit_low_op(loom_spirv_emit_state_t* state,
 //
 // |function_op| and |target| are borrowed for the call. Module-wide IDs and
 // ABI state are retained in |context| for subsequent functions; all
-// function-local state is released before return. |out_valid| is false when
-// final target resource validation emits an error diagnostic.
+// function-local state is released before return.
 iree_status_t loom_spirv_emit_low_function(
     loom_spirv_function_emission_context_t* context, loom_op_t* function_op,
-    const loom_low_resolved_target_t* target, bool* out_valid);
+    const loom_low_resolved_target_t* target);
 
 #ifdef __cplusplus
 }  // extern "C"

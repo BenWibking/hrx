@@ -139,7 +139,6 @@ loom_cc_library(
         ":module_builder",
         ":module_types",
         ":module_values",
-        "//loom/src/loom/codegen/low:storage_layout",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:registers",

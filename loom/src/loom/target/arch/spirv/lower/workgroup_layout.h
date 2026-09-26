@@ -31,12 +31,29 @@ iree_status_t loom_spirv_resolve_workgroup_contract_view_reg_class(
     uint16_t* out_reg_class_id);
 
 // Records one selected Workgroup allocation in its exact-carrier physical
-// arena. Provably unused roots are omitted by demand pruning; incompatible or
-// unrepresentable roots remain on the dedicated-storage path. All three cases
-// return false in |out_packed|.
+// arena when it has a supported carrier and a potentially accessed footprint.
+// Footprint-free, incompatible, or unrepresentable roots remain on the
+// dedicated-storage path; subsequent source-plan demand analysis may elide an
+// unused plan. |out_packed| is true only when the root joined an arena.
 iree_status_t loom_spirv_workgroup_layout_record_alloca(
     loom_low_lower_context_t* context, const loom_op_t* alloca_op,
     uint64_t byte_length, uint64_t byte_alignment, bool* out_packed);
+
+typedef struct loom_spirv_workgroup_storage_root_requirement_t {
+  // Physical byte length of the emitted storage root.
+  uint64_t byte_length;
+  // Required base alignment of the emitted storage root.
+  uint64_t byte_alignment;
+} loom_spirv_workgroup_storage_root_requirement_t;
+
+// Returns the number of retained physical storage roots in emission order.
+iree_host_size_t loom_spirv_workgroup_layout_storage_root_count(
+    const loom_low_lower_context_t* context);
+
+// Returns one retained physical storage-root requirement in emission order.
+loom_spirv_workgroup_storage_root_requirement_t
+loom_spirv_workgroup_layout_storage_root_requirement(
+    const loom_low_lower_context_t* context, iree_host_size_t index);
 
 // Emits one physical Low Workgroup storage root for every populated scalar
 // carrier arena.

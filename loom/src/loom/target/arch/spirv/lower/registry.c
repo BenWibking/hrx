@@ -347,7 +347,7 @@ static iree_status_t loom_spirv_emit_op(void* user_data,
 static iree_status_t loom_spirv_emit_entry_setup(
     void* user_data, loom_low_lower_context_t* context) {
   (void)user_data;
-  return loom_spirv_workgroup_layout_emit_storage_roots(context);
+  return loom_spirv_emit_workgroup_entry_setup(context);
 }
 
 static void loom_spirv_mark_plan_storage_demands(
