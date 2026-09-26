@@ -1451,6 +1451,41 @@ test_invoke = Op(
 )
 
 # ============================================================================
+# test.signature_sink — locally scoped call result signature
+# ============================================================================
+
+test_signature_sink = Op(
+    "test.signature_sink",
+    group=test_ops,
+    doc=("Test terminal-style signature results that retain result identities for dependent types without exposing SSA values to following ops."),
+    operands=[Operand("operands", ANY, variadic=True)],
+    results=[
+        Result(
+            "results",
+            ANY,
+            variadic=True,
+            signature_only=True,
+        )
+    ],
+    traits=[UNKNOWN_EFFECTS],
+    format=[
+        GLUE,
+        LPAREN,
+        Refs("operands"),
+        RPAREN,
+        COLON,
+        LPAREN,
+        TypesOf("operands"),
+        RPAREN,
+        ARROW,
+        Scope([ResultTypeList("results")]),
+    ],
+    examples=[
+        "test.signature_sink() : () -> (%width: index, vector<[%width]xf32>)",
+    ],
+)
+
+# ============================================================================
 # test.low_call / test.low_invoke — non-semantic call-like kind fixtures
 # ============================================================================
 
@@ -1762,6 +1797,46 @@ test_block_args = Op(
     ],
     examples=[
         "test.block_args %value : i32 do(%arg: i32) {\n  test.yield\n}",
+    ],
+)
+
+test_block_arg_groups = Op(
+    "test.block_arg_groups",
+    group=test_ops,
+    doc="Test projected groups of one region entry signature.",
+    attrs=[
+        AttrDef(
+            "actual_count",
+            "i64",
+            doc="Number of entry arguments in the actual result group.",
+        ),
+    ],
+    regions=[
+        RegionDef(
+            "body",
+            doc="Body receiving the concatenated actual and expected groups.",
+            single_block=True,
+            terminator="test.yield",
+        )
+    ],
+    traits=[ImplicitTerminator("test.implicit_yield")],
+    format=[
+        kw("actual"),
+        BlockArgs(
+            "body",
+            group="actual",
+            end_attr="actual_count",
+        ),
+        kw("expected"),
+        BlockArgs(
+            "body",
+            group="expected",
+            start_attr="actual_count",
+        ),
+        Region("body"),
+    ],
+    examples=[
+        "test.block_arg_groups actual(%actual: f32) expected(%expected: f32) {\n  test.yield\n}",
     ],
 )
 
@@ -3181,4 +3256,6 @@ ALL_TEST_OPS: tuple[Op, ...] = (
     test_module_metadata,
     test_memory_fence,
     test_result_pair,
+    test_block_arg_groups,
+    test_signature_sink,
 )

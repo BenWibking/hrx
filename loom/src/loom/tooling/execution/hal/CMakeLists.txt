@@ -16,6 +16,7 @@ loom_test_module(
     "testdata/buffer_bulk_hal_actual.loom"
     "testdata/dynamic_workgroup_hal_actual.loom"
     "testdata/launch_schedule_hal_actual.loom"
+    "testdata/scenario_batch_hal_actual.loom"
 )
 
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
@@ -64,6 +65,93 @@ loom_execution_test(
     "loom-executor=hardware"
   RESOURCE_GROUP
     "gpu-device"
+)
+endif()
+
+loom_test_module(
+  NAME
+    scenario_compare_test_module
+  SRCS
+    "testdata/scenario_compare_hal_vm.loom"
+)
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    scenario_compare_test_execute_amdgpu_hardware_vm_oracle_test
+  MODULE
+    "::scenario_compare_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu_hardware_vm_oracle"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    scenario_compare_test_execute_spirv_vulkan_hardware_vm_oracle_test
+  MODULE
+    "::scenario_compare_test_module"
+  RUNNER_ARGS
+    "--device=vulkan"
+    "--vulkan_validation_layers=false"
+  LABELS
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.vulkan"
+    "iree-build-requirement=loom.target.arch.vm"
+    "iree-run-requirement=vulkan.resource.device"
+    "runtime-resource=vulkan-device"
+    "loom-execution-profile=spirv_vulkan_hardware_vm_oracle"
+    "loom-target-family=spirv"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+iree_native_test(
+  NAME
+    "scenario_benchmark_test"
+  ARGS
+    "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/execution/hal/testdata/scenario_compare_hal_vm.loom}}"
+    "--device=amdgpu"
+    "--case=@scenario_compare_hal_vm"
+    "--benchmark=@scenario_compare_hal_vm_throughput"
+    "--sample=2"
+    "--batch-size=2"
+    "--iterations=1"
+    "--warmup-iterations=0"
+    "--min-time-ms=0"
+    "--warmup-time-ms=0"
+    "--max-batches=1"
+  SRC
+    loom::tools::iree-benchmark-loom
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/execution/hal/testdata/scenario_compare_hal_vm.loom"
+  LABELS
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "requires-gpu-amd"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
 )
 endif()
 
@@ -202,10 +290,34 @@ loom_cc_library(
     loom::tooling::execution::session
     loom::tooling::io::source
     loom::tooling::testbench
+    loom::tooling::testbench::api
     loom::tooling::testbench::invocation
     loom::tooling::testbench::requirements
     loom::tooling::testbench::value_materializer
     loom::util::fact_table
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    scenario_profile
+  HDRS
+    "scenario_profile.h"
+  SRCS
+    "scenario_profile.c"
+  DEPS
+    ::invocation
+    ::testbench_actual
+    ::testbench_staging
+    iree::base
+    iree::hal
+    loom::ir
+    loom::ops::func
+    loom::ops::index
+    loom::ops::kernel
+    loom::ops::op_defs
+    loom::tooling::execution::benchmark
+    loom::tooling::testbench::scenario::executor
   PUBLIC
 )
 
@@ -365,6 +477,7 @@ loom_cc_test(
     loom::testing::module_ptr
     loom::tooling::execution::session
     loom::tooling::testbench
+    loom::tooling::testbench::api
     loom::transforms::cleanup::configured
 )
 

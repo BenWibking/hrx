@@ -1157,7 +1157,8 @@ static iree_status_t loom_parse_parameterized_type_contents(
       }
       case LOOM_TYPE_FMT_OPTIONAL:
         if (!loom_parse_type_optional_group_is_present(parser, descriptor, i)) {
-          i = (uint16_t)(i + (element->data >> 8));
+          i = (uint16_t)(i +
+                         LOOM_TYPE_FORMAT_OPTIONAL_SKIP_COUNT(element->data));
         }
         break;
       case LOOM_TYPE_FMT_GLUE:

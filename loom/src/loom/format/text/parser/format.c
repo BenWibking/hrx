@@ -200,7 +200,7 @@ static iree_status_t loom_parse_format_optional_group(
     loom_parser_t* parser, const loom_op_vtable_t* vtable, loom_format_t format,
     const loom_format_element_t* element, uint16_t element_index,
     const loom_parsed_op_t* parsed, uint16_t* out_skip_count) {
-  uint16_t skip_count = element->data >> 2;
+  uint16_t skip_count = LOOM_FORMAT_OPTIONAL_GROUP_SKIP_COUNT(element->data);
   uint8_t anchor_category = element->data & 3;
   bool present = false;
 
@@ -929,8 +929,10 @@ iree_status_t loom_parser_walk_format(
   *out_func_args_consumed_by_region = false;
   const loom_format_element_t* elements = format.elements;
   uint16_t element_count = format.count;
-  bool is_symbol_definition =
-      iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE);
+  const bool defines_signature_results =
+      iree_any_bit_set(vtable->traits, LOOM_TRAIT_SYMBOL_DEFINE) ||
+      loom_op_vtable_has_signature_only_results(vtable);
+  const uint16_t pending_block_arg_start = parser->pending_block_args.count;
 
   uint32_t errors_before = parser->error_count;
   for (uint16_t i = 0; i < element_count; ++i) {
@@ -1142,14 +1144,14 @@ iree_status_t loom_parser_walk_format(
       case LOOM_FORMAT_KIND_RESULT_TYPE_SINGLE: {
         IREE_RETURN_IF_ERROR(loom_parse_format_result_type(
             parser, vtable, op_name_token, element, parsed,
-            is_symbol_definition));
+            defines_signature_results));
         break;
       }
 
       case LOOM_FORMAT_KIND_RESULT_TYPE_LIST: {
         IREE_RETURN_IF_ERROR(loom_parse_format_result_type_list(
             parser, vtable, op_name_token, element, parsed,
-            is_symbol_definition));
+            defines_signature_results));
         break;
       }
 
@@ -1211,7 +1213,8 @@ iree_status_t loom_parser_walk_format(
       }
 
       case LOOM_FORMAT_KIND_BLOCK_ARGS: {
-        IREE_RETURN_IF_ERROR(loom_parse_format_block_args(parser));
+        IREE_RETURN_IF_ERROR(loom_parse_format_block_args(
+            parser, element, pending_block_arg_start, parsed));
         break;
       }
 

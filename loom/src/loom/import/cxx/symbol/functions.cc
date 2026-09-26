@@ -563,7 +563,7 @@ FunctionBody Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     launches_.reject_ordinary_function(symbol);
     check(loom_check_case_build(
         builder, LOOM_CHECK_CASE_BUILD_FLAG_HAS_VISIBILITY,
-        LOOM_CHECK_CASE_VISIBILITY_PUBLIC, callees_.at(symbol->canonical()),
+        LOOM_CHECK_VISIBILITY_PUBLIC, callees_.at(symbol->canonical()),
         locations.get(definition), &op));
   } else if (kernel) {
     if (!returns_void) {

@@ -2314,6 +2314,8 @@ class Parser:
                 return name == attr_name
             case FuncArgs(start_attr=start_attr, end_attr=end_attr):
                 return start_attr == attr_name or end_attr == attr_name
+            case BlockArgs(start_attr=start_attr, end_attr=end_attr):
+                return start_attr == attr_name or end_attr == attr_name
             case (
                 OperandDict(names=name) | AttrTable(keys=name) | RegionTable(keys=name)
             ):
@@ -3202,8 +3204,10 @@ class Parser:
                 case BindingList(field=name, kind=binding_kind):
                     self._parse_binding_list(parsed, op_decl, name, binding_kind)
 
-                case BlockArgs(region=name):
+                case BlockArgs(region=name, end_attr=end_attr):
                     self._parse_block_args(parsed, name)
+                    if end_attr is not None:
+                        parsed.attributes[end_attr] = len(parsed.region_arg_ids)
 
                 case FuncArgs(field=name, end_attr=end_attr):
                     tok.expect(TokenKind.LPAREN)

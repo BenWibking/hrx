@@ -11,6 +11,7 @@ load(
     "loom_cc_binary",
     "loom_cc_library",
     "loom_cc_test",
+    "loom_config_compatible_with",
 )
 
 package(
@@ -119,6 +120,7 @@ loom_cc_library(
         "//loom/src/loom/tooling/context",
         "//loom/src/loom/tooling/execution:session",
         "//loom/src/loom/tooling/execution/hal:device_provider",
+        "//loom/src/loom/tooling/execution/hal:scenario_profile",
         "//loom/src/loom/tooling/execution/hal:testbench_actual",
         "//loom/src/loom/tooling/input:flags",
         "//loom/src/loom/tooling/io:file",
@@ -128,6 +130,9 @@ loom_cc_library(
         "//loom/src/loom/tooling/testbench:issue_report",
         "//loom/src/loom/tooling/testbench:reference",
         "//loom/src/loom/tooling/testbench:requirements",
+        "//loom/src/loom/tooling/testbench/scenario:entropy",
+        "//loom/src/loom/tooling/testbench/scenario:executor",
+        "//loom/src/loom/tooling/testbench/scenario:values",
         "//loom/src/loom/util:json",
         "//loom/src/loom/util:stream",
         "//loom/src/loom/verify",
@@ -151,6 +156,20 @@ loom_cc_binary(
     ] + _IREE_TEST_LOOM_TARGET_DEPS,
 )
 
+loom_cc_binary(
+    name = "scenario_failure_test_tool",
+    testonly = True,
+    srcs = ["scenario_failure_test.c"],
+    deps = [
+        ":main",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/tooling/execution:execution_provider",
+        "//loom/src/loom/tooling/testbench/scenario:executor",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+    ],
+)
+
 iree_execution_test_suite(
     name = "execution_test",
     data = [
@@ -165,5 +184,26 @@ iree_execution_test_suite(
     tools = {
         "iree-test-loom": ":iree-test-loom",
         "loom-link": "//loom/src/loom/tools/loom-link",
+    },
+)
+
+iree_execution_test_suite(
+    name = "scenario_execution_test",
+    data = ["testdata/scenario_cases.loom"],
+    manifests = ["scenario_execution.test.json"],
+    tags = ["hostonly"],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/target/arch:vm"]),
+    tools = {
+        "iree-test-loom": ":iree-test-loom",
+    },
+)
+
+iree_execution_test_suite(
+    name = "scenario_failure_test",
+    data = ["testdata/scenario_failures.loom"],
+    manifests = ["scenario_failure.test.json"],
+    tags = ["hostonly"],
+    tools = {
+        "scenario-failure-test": ":scenario_failure_test_tool",
     },
 )

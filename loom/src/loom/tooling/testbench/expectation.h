@@ -22,19 +22,19 @@
 extern "C" {
 #endif
 
-typedef struct loom_testbench_case_sample_observations_t {
+typedef struct loom_testbench_sample_observations_t {
   // Device events captured while executing the sample's kernel launches.
   const loom_testbench_device_event_list_t* device_events;
   // Mutable byte flags set for events matched by positive event expectations.
   uint8_t* expected_device_events;
   // Number of entries available in |expected_device_events|.
   iree_host_size_t expected_device_event_capacity;
-} loom_testbench_case_sample_observations_t;
+} loom_testbench_sample_observations_t;
 
 // Returns empty sample observations.
-static inline loom_testbench_case_sample_observations_t
-loom_testbench_case_sample_observations_empty(void) {
-  loom_testbench_case_sample_observations_t observations = {0};
+static inline loom_testbench_sample_observations_t
+loom_testbench_sample_observations_empty(void) {
+  loom_testbench_sample_observations_t observations = {0};
   return observations;
 }
 
@@ -107,7 +107,18 @@ iree_string_view_t loom_testbench_expectation_failure_detail(
 iree_status_t loom_testbench_evaluate_case_expectations(
     const loom_testbench_case_plan_t* case_plan,
     const loom_testbench_value_table_t* table,
-    const loom_testbench_case_sample_observations_t* observations,
+    const loom_testbench_sample_observations_t* observations,
+    loom_testbench_expectation_report_t* report);
+
+// Evaluates a comparison action against independent target and oracle value
+// tables. Actual operands resolve in |target_table| and expected operands
+// resolve in |oracle_table|; lexical captures therefore select the matching
+// realization even when both operands carry the same Loom SSA value ID.
+iree_status_t loom_testbench_evaluate_scenario_action_expectations(
+    const loom_testbench_scenario_action_plan_t* action,
+    const loom_testbench_value_table_t* target_table,
+    const loom_testbench_value_table_t* oracle_table,
+    const loom_testbench_sample_observations_t* observations,
     loom_testbench_expectation_report_t* report);
 
 // Writes a deterministic JSON object for |report|. The schema is stable

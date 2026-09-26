@@ -196,11 +196,15 @@ int main(int argc, char** argv) {
   loom_vm_testbench_initialize(configuration.target_environment,
                                configuration.cleanup_pattern_provider_set,
                                iree_allocator_system(), &vm_testbench);
-  configuration.function_call_provider =
-      (loom_testbench_function_call_provider_callback_t){
-          .fn = loom_vm_testbench_invocation_provider,
-          .user_data = &vm_testbench,
-      };
+  configuration.function_call_provider.fn =
+      loom_vm_testbench_invocation_provider;
+  configuration.function_call_provider.user_data = &vm_testbench;
+  configuration.scenario_target_profile.fn =
+      loom_vm_testbench_execution_profile;
+  configuration.scenario_target_profile.user_data = &vm_testbench;
+  configuration.scenario_oracle_profile.fn =
+      loom_vm_testbench_execution_profile;
+  configuration.scenario_oracle_profile.user_data = &vm_testbench;
 #endif  // IREE_TEST_LOOM_HAVE_VM
   int exit_code = iree_test_loom_main(argc, argv, &configuration);
 #if IREE_TEST_LOOM_HAVE_VM

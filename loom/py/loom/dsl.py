@@ -49,7 +49,7 @@ from loom.assembly import AssemblyFormat, FormatElement, OptionalGroup
 from loom.errors import ErrorDef
 
 if TYPE_CHECKING:
-    from loom.assembly import FuncArgs
+    from loom.assembly import BlockArgs, FuncArgs
 
 __all__ = [
     # Type constraints.
@@ -171,6 +171,7 @@ __all__ = [
     # Trait constructors.
     "AllTypesMatch",
     "HasAncestor",
+    "HasAnyAncestor",
     "HasParent",
     "ImplicitTerminator",
     "NoAncestor",
@@ -490,6 +491,8 @@ class Result:
     variadic: If True, this is zero-or-more result values.
     allocates: If True, this result is a freshly allocated resource
         that cannot alias any pre-existing resource.
+    signature_only: If True, this result describes a locally scoped signature
+        value rather than an SSA value visible after the operation.
     """
 
     name: str
@@ -497,6 +500,7 @@ class Result:
     doc: str = ""
     variadic: bool = False
     allocates: bool = False
+    signature_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1667,6 +1671,13 @@ def KeyedModuleRecord(key_attr: str) -> Trait:
 def HasAncestor(op_name: str) -> Trait:
     """This op must be nested under the named op at any depth."""
     return Trait("HasAncestor", op_name)
+
+
+def HasAnyAncestor(*op_names: str) -> Trait:
+    """This op must be nested under at least one named op at any depth."""
+    if not op_names:
+        raise ValueError("HasAnyAncestor requires at least one op name")
+    return Trait("HasAnyAncestor", *op_names)
 
 
 def HasParent(op_name: str) -> Trait:
@@ -4611,8 +4622,18 @@ def _collect_format_fields(elements: tuple[FormatElement, ...]) -> set[str]:
                 fields.add(f)
             case Region(field=f):
                 fields.add(f)
-            case BindingList(field=f) | BlockArgs(region=f):
+            case BindingList(field=f):
                 fields.add(f)
+            case BlockArgs(
+                region=f,
+                start_attr=start_attr,
+                end_attr=end_attr,
+            ):
+                fields.add(f)
+                if start_attr is not None:
+                    fields.add(start_attr)
+                if end_attr is not None:
+                    fields.add(end_attr)
             case FuncArgs(field=f, start_attr=start_attr, end_attr=end_attr):
                 fields.add(f)
                 if start_attr is not None:
@@ -4778,6 +4799,107 @@ def _validate_func_args_partitions(
             raise ValueError(
                 f"Op '{op_name}': FuncArgs boundary '{element.end_attr}' must "
                 "name a required i64 attribute"
+            )
+
+
+def _collect_block_args_elements(
+    elements: tuple[FormatElement, ...],
+) -> tuple[BlockArgs, ...]:
+    """Collects BlockArgs elements in assembly order."""
+    from loom.assembly import BlockArgs, Clause, OptionalGroup, Scope
+
+    block_args: list[BlockArgs] = []
+    for element in elements:
+        match element:
+            case BlockArgs():
+                block_args.append(element)
+            case (
+                Clause(elements=nested)
+                | OptionalGroup(elements=nested)
+                | Scope(elements=nested)
+            ):
+                block_args.extend(_collect_block_args_elements(nested))
+            case _:
+                pass
+    return tuple(block_args)
+
+
+def _validate_block_args_partitions(
+    op_name: str,
+    format_elements: tuple[FormatElement, ...],
+    attrs: tuple[AttrDef, ...],
+    regions: tuple[RegionDef, ...],
+) -> None:
+    """Validates contiguous region entry argument partitions."""
+    block_args = _collect_block_args_elements(format_elements)
+    if not any(
+        element.group is not None
+        or element.start_attr is not None
+        or element.end_attr is not None
+        for element in block_args
+    ) and len({element.region for element in block_args}) == len(block_args):
+        return
+
+    effective_groups = [element.group or element.region for element in block_args]
+    if any(not group for group in effective_groups) or len(
+        set(effective_groups)
+    ) != len(effective_groups):
+        raise ValueError(
+            f"Op '{op_name}': projected BlockArgs groups require distinct "
+            "non-empty group names"
+        )
+
+    groups_by_region: dict[str, list[BlockArgs]] = {}
+    for element in block_args:
+        groups_by_region.setdefault(element.region, []).append(element)
+    region_defs = {region.name: region for region in regions}
+    for region, region_groups in groups_by_region.items():
+        has_boundaries = any(
+            element.start_attr is not None or element.end_attr is not None
+            for element in region_groups
+        )
+        if len(region_groups) == 1 and not has_boundaries:
+            continue
+        region_def = region_defs.get(region)
+        if region_def is not None and (
+            region_def.arg_source or region_def.implicit_args
+        ):
+            raise ValueError(
+                f"Op '{op_name}': projected BlockArgs for region '{region}' "
+                "require explicit entry arguments"
+            )
+        previous_end: str | None = None
+        for index, element in enumerate(region_groups):
+            group = element.group or region
+            if element.start_attr != previous_end:
+                expected = (
+                    repr(previous_end) if previous_end is not None else "no start attr"
+                )
+                raise ValueError(
+                    f"Op '{op_name}': BlockArgs group '{group}' must use "
+                    f"{expected} as its start boundary"
+                )
+            if index + 1 < len(region_groups) and element.end_attr is None:
+                raise ValueError(
+                    f"Op '{op_name}': BlockArgs group '{group}' requires an "
+                    "end boundary before the next group"
+                )
+            previous_end = element.end_attr
+        if previous_end is not None:
+            raise ValueError(
+                f"Op '{op_name}': the final projected BlockArgs group for "
+                f"region '{region}' must extend to the end of the entry signature"
+            )
+
+    attrs_by_name = {attr.name: attr for attr in attrs}
+    for element in block_args:
+        if element.end_attr is None:
+            continue
+        attr = attrs_by_name.get(element.end_attr)
+        if attr is None or attr.attr_type != ATTR_TYPE_I64:
+            raise ValueError(
+                f"Op '{op_name}': BlockArgs boundary '{element.end_attr}' must "
+                "name an i64 attribute"
             )
 
 
@@ -4971,6 +5093,7 @@ def _validate_op_formats(op: Op) -> None:
         _validate_scoped_enum_fields(op.name, elements, op.attrs)
         _validate_attr_params_fields(op.name, elements, op.attrs)
         _validate_func_args_partitions(op.name, elements, op.attrs)
+        _validate_block_args_partitions(op.name, elements, op.attrs, op.regions)
         _validate_operand_dictionaries(
             op.name, op.operands, op.attrs, op.constraints, elements
         )
@@ -6051,6 +6174,71 @@ def _validate_keyed_module_record(
         )
 
 
+def _validate_signature_only_results(
+    op_name: str,
+    results: tuple[Result | TiedResult, ...],
+    traits: tuple[Trait, ...],
+    format_elements: tuple[FormatElement, ...],
+) -> None:
+    """Validates locally scoped result signatures."""
+    from loom.assembly import Clause, OptionalGroup, ResultType, ResultTypeList, Scope
+
+    signature_results = [
+        result for result in results if getattr(result, "signature_only", False)
+    ]
+    if not signature_results:
+        return
+    if len(signature_results) != len(results):
+        raise ValueError(
+            f"Op '{op_name}': signature-only and SSA-visible results cannot be mixed"
+        )
+    if any(isinstance(result, TiedResult) for result in results):
+        raise ValueError(
+            f"Op '{op_name}': signature-only results cannot be tied to operands"
+        )
+    if any(result.allocates for result in signature_results):
+        raise ValueError(
+            f"Op '{op_name}': signature-only results cannot allocate resources"
+        )
+    if any(trait.name == "SymbolDefine" for trait in traits):
+        raise ValueError(
+            f"Op '{op_name}': symbol results are already locally scoped and "
+            "must not be marked signature-only"
+        )
+
+    result_names = {result.name for result in signature_results}
+    scoped_result_fields: set[str] = set()
+    unscoped_result_fields: set[str] = set()
+
+    def collect(
+        elements: tuple[FormatElement, ...], inside_scope: bool = False
+    ) -> None:
+        for element in elements:
+            if isinstance(element, Scope):
+                collect(element.elements, True)
+            elif isinstance(element, Clause | OptionalGroup):
+                collect(element.elements, inside_scope)
+            elif isinstance(element, ResultType | ResultTypeList):
+                if element.field not in result_names:
+                    continue
+                (scoped_result_fields if inside_scope else unscoped_result_fields).add(
+                    element.field
+                )
+
+    collect(format_elements)
+    if unscoped_result_fields:
+        raise ValueError(
+            f"Op '{op_name}': signature-only result fields must be printed "
+            f"inside Scope(...): {sorted(unscoped_result_fields)}"
+        )
+    missing_result_fields = result_names - scoped_result_fields
+    if missing_result_fields:
+        raise ValueError(
+            f"Op '{op_name}': signature-only result fields require an explicit "
+            f"result type format: {sorted(missing_result_fields)}"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Op:
     """A complete operation declaration.
@@ -6395,6 +6583,9 @@ class Op:
             frozen_effects,
             frozen_ownership_effects,
         )
+        _validate_signature_only_results(
+            name, frozen_results, tuple(traits), frozen_format
+        )
         _validate_op_formats(self)
         if frozen_legacy_formats:
             _validate_legacy_formats(
@@ -6418,6 +6609,14 @@ class Op:
         return f"Op({self.name!r})"
 
     # --- Lookup helpers ---
+
+    @property
+    def has_signature_only_results(self) -> bool:
+        """Whether every result is local to the operation's signature."""
+        return bool(self.results) and all(
+            isinstance(result, Result) and result.signature_only
+            for result in self.results
+        )
 
     def operand(self, name: str) -> Operand | None:
         """Find an operand by name."""

@@ -13,6 +13,7 @@ load(
     "EMIT_AMDGPU",
     "EXECUTE_IREE_HAL",
     "TARGET_ARCH_AMDGPU",
+    "TARGET_ARCH_VM",
 )
 load(
     "//runtime/requirements:defs.bzl",
@@ -20,7 +21,11 @@ load(
     "HAL_AMDGPU",
 )
 
-def amdgpu_execution_profile(name, runner_args = [], tags = []):
+def amdgpu_execution_profile(
+        name,
+        runner_args = [],
+        tags = [],
+        additional_build_requirements = []):
     """Defines AMDGPU execution with shared device and resource requirements.
 
     Callers own instrumentation and diagnostic reporting.
@@ -33,7 +38,7 @@ def amdgpu_execution_profile(name, runner_args = [], tags = []):
             EMIT_AMDGPU,
             EXECUTE_IREE_HAL,
             HAL_AMDGPU,
-        ],
+        ] + additional_build_requirements,
         executor = "hardware",
         resource_group = GPU_DEVICE_RESOURCE_GROUP,
         run_requirements = [AMDGPU_RESOURCE],
@@ -45,6 +50,11 @@ def amdgpu_execution_profile(name, runner_args = [], tags = []):
 
 AMDGPU_HARDWARE_PROFILE = amdgpu_execution_profile(
     name = "amdgpu_hardware",
+)
+
+AMDGPU_HARDWARE_VM_ORACLE_PROFILE = amdgpu_execution_profile(
+    name = "amdgpu_hardware_vm_oracle",
+    additional_build_requirements = [TARGET_ARCH_VM],
 )
 
 AMDGPU_ACCESS_PROFILE = amdgpu_execution_profile(

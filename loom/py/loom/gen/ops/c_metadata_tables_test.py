@@ -9,7 +9,25 @@
 import pytest
 
 from loom.assembly import AssemblyFormat, BlockArgs, Region
-from loom.dsl import ANY, ATTR_TYPE_I64, ATTR_TYPE_SYMBOL, INTEGER, SYMBOL_DEFINE, AttrDef, Dialect, EnumCase, EnumDef, Op, Operand, RegionDef, Result, SameType, SymbolDefinition, SymbolValueContract
+from loom.dsl import (
+    ANY,
+    ATTR_TYPE_I64,
+    ATTR_TYPE_SYMBOL,
+    INTEGER,
+    SYMBOL_DEFINE,
+    AttrDef,
+    Dialect,
+    EnumCase,
+    EnumDef,
+    HasAnyAncestor,
+    Op,
+    Operand,
+    RegionDef,
+    Result,
+    SameType,
+    SymbolDefinition,
+    SymbolValueContract,
+)
 from loom.gen.ops.c_metadata_tables import generate_tables_c
 
 
@@ -103,6 +121,38 @@ def test_generate_tables_rejects_unknown_region_argument_uniform_scope() -> None
         r"arg_uniform_scope 'device'",
     ):
         generate_tables_c("test", 0, [op])
+
+
+def test_generate_tables_emits_alternative_required_ancestors() -> None:
+    dialect = Dialect("test")
+    first = Op("test.first", group=dialect)
+    second = Op("test.second", group=dialect)
+    nested = Op(
+        "test.nested",
+        group=dialect,
+        traits=[HasAnyAncestor("test.first", "test.second")],
+    )
+
+    source = generate_tables_c("test", 0, [first, second, nested])
+
+    assert "loom_test_nested_required_any_ancestors[]" in source
+    assert "LOOM_OP_TEST_FIRST" in source
+    assert "LOOM_OP_TEST_SECOND" in source
+    assert '.required_any_ancestor_names = "test.first or test.second"' in source
+    assert ".required_any_ancestor_count = IREE_ARRAYSIZE(" in source
+
+
+def test_generate_tables_rejects_duplicate_alternative_ancestors() -> None:
+    dialect = Dialect("test")
+    context = Op("test.context", group=dialect)
+    nested = Op(
+        "test.nested",
+        group=dialect,
+        traits=[HasAnyAncestor("test.context", "test.context")],
+    )
+
+    with pytest.raises(ValueError, match="contains duplicate op names"):
+        generate_tables_c("test", 0, [context, nested])
 
 
 def test_constraint_count_fits_vtable_storage() -> None:
