@@ -176,7 +176,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initia
 
 aie2p.target<configuration> @configuration_target
 
-// ERROR@+1: XDNA/037 {function_name="entry", expected_count="1", actual_count="0"}
+// ERROR@+1: XDNA/039 {function_name="entry", expected_count="1", actual_count="0"}
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @entry() asm {
   return
 }
@@ -186,7 +186,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) abi(arr
 
 aie2p.target<configuration> @configuration_target
 
-// ERROR@+1: XDNA/032 {function_name="configure", argument_count="1", result_count="0"}
+// ERROR@+1: XDNA/034 {function_name="configure", argument_count="1", result_count="0"}
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @configure(%runtime: reg<aie2p.config.scalar : i64>) asm {
   return
 }
@@ -196,7 +196,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @config
 
 aie2p.target<configuration> @configuration_target
 
-// ERROR@+1: XDNA/033 {function_name="configure", op_name="low.func.def"}
+// ERROR@+1: XDNA/035 {function_name="configure", op_name="low.func.def"}
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @configure() asm {
   low.br ^next
 ^next:
@@ -213,7 +213,7 @@ aie2p.target<core> @core_target
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
   %zero = constant 0 : reg<aie2p.config.scalar : i64>
   %row = constant 2 : reg<aie2p.config.scalar : i64>
-  // ERROR@+1: XDNA/035 {field_name="program", symbol_name="worker", argument_count="1", result_count="0"}
+  // ERROR@+1: XDNA/037 {field_name="program", symbol_name="worker", argument_count="1", result_count="0"}
   program.load %zero, %row, @worker
   return
 }
@@ -255,7 +255,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initia
 }
 
 low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
-  // ERROR@+1: XDNA/038 {function_name="worker", op_name="low.storage.reserve"}
+  // ERROR@+1: XDNA/040 {function_name="worker", op_name="low.storage.reserve"}
   %scratch = storage {byte_alignment = 16, byte_length = 64} : low.storage<private>
   return
 }
@@ -275,7 +275,7 @@ low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
   %zero = constant 0 : reg<aie2p.config.scalar : i64>
   %row = constant 2 : reg<aie2p.config.scalar : i64>
-  // ERROR@+1: XDNA/036 {function_name="invoke", phase="invocation", command="amd.xdna.aie2p.configuration.program.load"}
+  // ERROR@+1: XDNA/038 {function_name="invoke", phase="invocation", command="amd.xdna.aie2p.configuration.program.load"}
   program.load %zero, %row, @worker
   return
 }
@@ -324,7 +324,7 @@ func.def target(@core_target) @worker(%argument: i32) {
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
   %zero = constant 0 : reg<aie2p.config.scalar : i64>
   %row = constant 2 : reg<aie2p.config.scalar : i64>
-  // ERROR@+1: XDNA/035 {field_name="program", symbol_name="worker", argument_count="1", result_count="0"}
+  // ERROR@+1: XDNA/037 {field_name="program", symbol_name="worker", argument_count="1", result_count="0"}
   program.load %zero, %row, @worker
   return
 }
@@ -342,7 +342,7 @@ func.decl target(@core_target) @worker()
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
   %zero = constant 0 : reg<aie2p.config.scalar : i64>
   %row = constant 2 : reg<aie2p.config.scalar : i64>
-  // ERROR@+1: XDNA/034 {field_name="program", symbol_name="worker", definition_kind="source or Low function"}
+  // ERROR@+1: XDNA/036 {field_name="program", symbol_name="worker", definition_kind="source or Low function"}
   program.load %zero, %row, @worker
   return
 }
@@ -363,7 +363,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @stream() asm {
   %one = constant 1 : reg<aie2p.config.scalar : i64>
-  // ERROR@+1: XDNA/034 {field_name="initialize", symbol_name="initialize", definition_kind="Low function"}
+  // ERROR@+1: XDNA/036 {field_name="initialize", symbol_name="initialize", definition_kind="Low function"}
   entry %one, @initialize, @invoke
   return
 }
