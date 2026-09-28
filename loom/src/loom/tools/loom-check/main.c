@@ -374,6 +374,7 @@ int loom_check_main(
       "    Lines are relative to the case input. Annotations target the main\n"
       "    source; diagnostics from included files retain their own identity.\n"
       "    Expected CHECK patterns may use CHECK: or // CHECK: spelling.\n"
+      "    CHECK-COUNT-N: requires exactly N matching output lines.\n"
       "\n"
       "Examples:\n"
       "  # Round-trip: print output must match input exactly.\n"

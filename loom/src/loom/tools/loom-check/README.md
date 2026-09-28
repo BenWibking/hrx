@@ -130,11 +130,16 @@ CHECK-NOT: COMPILE-REPORT: source_low[*] * execution_count=0
 ```
 
 Each `CHECK:` must match a whole output line after trimming outer whitespace;
-`CHECK-NOT:` rejects any matching line. Checks are independent and unordered.
+`CHECK-NOT:` rejects any matching line. `CHECK-COUNT-N:` requires exactly N
+matching lines across the complete output, where N is a positive decimal count.
+For example, `CHECK-COUNT-2: * = buffer.alloca*` verifies distinct allocation
+operations without fixing their generated SSA names. Checks are independent and
+unordered.
 `*` matches any sequence within a line and `?` matches one character. Other
 characters are literal. A terminal `count=5` cannot match `count=50`. Blank lines
 and standalone `//` comments are ignored. At least one positive check is required;
-empty patterns and unknown directives are errors.
+empty patterns and unknown directives are errors. A positive counted check also
+satisfies the requirement for a positive check.
 
 This modifier works with every textual-output mode; `verify` uses diagnostic
 annotations. Exact goldens remain useful for canonical formatting and complete
