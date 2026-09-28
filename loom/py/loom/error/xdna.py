@@ -881,21 +881,6 @@ ERR_XDNA_048 = ErrorDef(
     params=(ErrorParam("alignment", ParamKind.U64),),
 )
 
-ERR_XDNA_049 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=49,
-    severity=Severity.ERROR,
-    summary="Loaded tile program contains an unexpanded function call.",
-    message=(
-        "loaded tile program '@{function_name}' contains '{op_name}'; "
-        "function calls must be materialized before placing the complete program"
-    ),
-    params=(
-        ErrorParam("function_name", ParamKind.STRING),
-        ErrorParam("op_name", ParamKind.STRING),
-    ),
-)
-
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_002,
@@ -946,5 +931,4 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_046,
     ERR_XDNA_047,
     ERR_XDNA_048,
-    ERR_XDNA_049,
 )

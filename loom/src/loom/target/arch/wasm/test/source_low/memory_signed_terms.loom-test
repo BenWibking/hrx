@@ -34,6 +34,7 @@ low.func.def target<wasm.core.simd128> abi(wasm_function) @signed_dynamic_stride
 
 // ====
 
+// RUN: with-checks emit source-low target=wasm:simd128 output=low
 func.def @dynamic_stride_static_bias(%table: buffer, %position0: index, %stride0: index) -> (i8) {
   %position = index.assume %position0 [range(%position0, 0, 31)] : index
   %stride = index.assume %stride0 [range(%stride0, 1, 16)] : index
@@ -45,12 +46,11 @@ func.def @dynamic_stride_static_bias(%table: buffer, %position0: index, %stride0
 }
 
 // ----
-low.func.def target<wasm.core.simd128> abi(wasm_function) @dynamic_stride_static_bias(%view: reg<wasm.i32>, %position: reg<wasm.i32>, %stride: reg<wasm.i32>) -> (reg<wasm.i32>) asm {
-  %14 = i32.mul %position, %stride
-  %15 = i32.add %view, %14
-  %value = i32.load8_u %15 {offset = 128}
-  return %value
-}
+// The dynamic stride product remains separate from the folded byte bias.
+CHECK: * = i32.mul %position, %stride
+CHECK: * = i32.add %table, *
+CHECK: *%value = i32.load8_u * {offset = 128}
+CHECK: *return %value
 
 // ====
 

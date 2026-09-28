@@ -504,7 +504,9 @@ static iree_status_t loom_aie2p_xdna_compile_resident_entries(
       request->module, resident_module, array_plans, entry_count,
       request->scratch_arena, resident_programs));
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
-    if (array_plans[i].function_op == NULL) continue;
+    if (array_plans[i].function_op == NULL) {
+      continue;
+    }
     const loom_aie2p_array_resident_program_t* resident_program =
         &resident_programs[i];
     loom_aie2p_xdna_tile_t* tiles = NULL;
@@ -616,14 +618,6 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
 
   loom_aie2p_array_leaf_t* source_leaves = NULL;
   iree_host_size_t source_leaf_count = 0;
-  bool source_leaves_valid = false;
-  IREE_RETURN_IF_ERROR(loom_aie2p_xdna_collect_source_leaves(
-      request, &symbol_facts, &versions, &source_leaves, &source_leaf_count,
-      &source_leaves_valid));
-  if (!source_leaves_valid) {
-    return iree_ok_status();
-  }
-
   loom_aie2p_array_plan_t* array_plans = NULL;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(request->scratch_arena, entry_count,
@@ -653,6 +647,15 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
     if (request->compile_report != NULL) {
       loom_target_compile_report_record_low_kernel_workload(
           request->compile_report, source_entry->function_op);
+    }
+    if (source_leaves == NULL) {
+      bool source_leaves_valid = false;
+      IREE_RETURN_IF_ERROR(loom_aie2p_xdna_collect_source_leaves(
+          request, &symbol_facts, &versions, &source_leaves, &source_leaf_count,
+          &source_leaves_valid));
+      if (!source_leaves_valid) {
+        return iree_ok_status();
+      }
     }
     bool valid = false;
     IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_build(
@@ -712,7 +715,9 @@ iree_status_t loom_aie2p_xdna_compile_artifact(
   }
 
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
-    if (array_plans[i].function_op == NULL) continue;
+    if (array_plans[i].function_op == NULL) {
+      continue;
+    }
     IREE_RETURN_IF_ERROR(loom_aie2p_array_report_record(
         request->module, product_entries[i].name, &array_plans[i],
         product_entries[i].tiles, request->compile_report,

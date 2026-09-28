@@ -69,13 +69,13 @@ typedef struct loom_aie2p_configuration_emitter_t {
 } loom_aie2p_configuration_emitter_t;
 
 static iree_status_t loom_aie2p_configuration_schedule(
-    loom_aie2p_configuration_emitter_t* emitter, loom_op_t* function,
+    loom_aie2p_configuration_emitter_t* emitter, const loom_op_t* function,
     loom_low_schedule_table_t* out_schedule) {
   const loom_aie2p_xdna_artifact_request_t* request = emitter->request;
   const loom_target_function_version_t* version =
       loom_target_function_version_list_find(
           request->function_versions,
-          loom_func_like_cast(request->module, function));
+          loom_func_like_const_cast(request->module, function));
   loom_low_function_model_t model = {0};
   iree_status_t status = loom_low_function_model_initialize(
       request->module, function,
@@ -174,7 +174,7 @@ static iree_status_t loom_aie2p_configuration_load(
     const loom_target_function_version_t* version =
         loom_target_function_version_list_find(
             request->function_versions,
-            loom_func_like_cast(request->module, function));
+            loom_func_like_const_cast(request->module, function));
     loom_target_compile_report_t report;
     loom_target_compile_report_t* report_ptr = NULL;
     if (request->compile_report) {
@@ -191,9 +191,10 @@ static iree_status_t loom_aie2p_configuration_load(
         .diagnostic_emitter = request->diagnostic_emitter,
         .compile_report = report_ptr,
     };
-    iree_status_t status =
-        loom_aie2p_leaf_compile(request->module, function, &options,
-                                request->scratch_arena, &worker->contribution);
+    bool compiled = false;
+    iree_status_t status = loom_aie2p_leaf_compile(
+        request->module, function, &options, request->scratch_arena, &compiled,
+        &worker->contribution);
     if (report_ptr) {
       status = iree_status_join(status,
                                 loom_target_compile_report_record_entry_report(
@@ -201,6 +202,10 @@ static iree_status_t loom_aie2p_configuration_load(
       loom_target_compile_report_deinitialize(report_ptr);
     }
     IREE_RETURN_IF_ERROR(status);
+    if (!compiled) {
+      ++emitter->error_count;
+      return iree_ok_status();
+    }
     const loom_aie2p_tile_link_layout_t layout = {
         .program_address = tile->memory.program_base,
         .program_byte_capacity = tile->memory.program_capacity,
@@ -251,7 +256,7 @@ static iree_status_t loom_aie2p_configuration_check_address(
 }
 
 static iree_status_t loom_aie2p_configuration_phase_emit(
-    loom_aie2p_configuration_emitter_t* emitter, loom_op_t* function,
+    loom_aie2p_configuration_emitter_t* emitter, const loom_op_t* function,
     loom_aie2p_configuration_phase_t phase) {
   const loom_aie2p_xdna_artifact_request_t* request = emitter->request;
   iree_arena_allocator_t* arena = request->scratch_arena;
@@ -602,13 +607,13 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
 }
 
 iree_status_t loom_aie2p_configuration_emit(
-    const loom_aie2p_xdna_artifact_request_t* request, loom_op_t* entry_op,
-    const loom_xdna_device_profile_t* device_profile,
+    const loom_aie2p_xdna_artifact_request_t* request,
+    const loom_op_t* entry_op, const loom_xdna_device_profile_t* device_profile,
     loom_aie2p_xdna_entry_t* out_entry, bool* out_valid) {
   *out_valid = false;
   *out_entry = (loom_aie2p_xdna_entry_t){0};
   const loom_func_like_t function =
-      loom_func_like_cast(request->module, entry_op);
+      loom_func_like_const_cast(request->module, entry_op);
   loom_aie2p_xdna_entry_t entry = {0};
   entry.name = loom_string_table_get(
       &request->module->strings,

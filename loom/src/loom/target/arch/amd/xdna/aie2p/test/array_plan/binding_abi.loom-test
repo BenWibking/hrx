@@ -4,16 +4,15 @@ aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
 
-pipeline.def<kernel> public retain target(@array_target) @interior_hole() launch(%input: buffer, %unused: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @interior_hole() run(%input: buffer, %unused: buffer, %output: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x1xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x1xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x1xi32>, group -> pipeline.flow<tile<1xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x1xi32>, group<[%lanes]> -> pipeline.flow<tile<1xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<1xi32>>, view<1x1xi32>
-  pipeline.return
 }
 
 func.def target(@core_target) @copy(%input: buffer, %output: buffer) {
@@ -40,16 +39,15 @@ aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
 
-pipeline.def<kernel> public retain target(@array_target) @trailing_hole() launch(%input: buffer, %output: buffer, %unused: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @trailing_hole() run(%input: buffer, %output: buffer, %unused: buffer) {
   %lanes = index.constant 1 : index
   %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
+  %workers = group.create %lanes : index -> group<[%lanes]>
   %input_view = buffer.view %input[%base] : buffer -> view<1x1xi32>
   %output_view = buffer.view %output[%base] : buffer -> view<1x1xi32>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x1xi32>, group -> pipeline.flow<tile<1xi32>>
-  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x1xi32>, group<[%lanes]> -> pipeline.flow<tile<1xi32>>
+  %output_flow = pipeline.stage @copy on %workers(%input_flow) : (group<[%lanes]>, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<1xi32>>, view<1x1xi32>
-  pipeline.return
 }
 
 func.def target(@core_target) @copy(%input: buffer, %output: buffer) {

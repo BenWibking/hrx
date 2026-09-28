@@ -221,8 +221,7 @@ kernel.decl @update(%workload: index) launch(%storage: buffer, %tail: buffer)
 
 command.program.decl @program(%configuration: index) launch(%storage: buffer)
 
-pipeline.def @pipeline(%configuration: index) launch(%storage: buffer) {
-  pipeline.return
+pipeline.def @pipeline(%configuration: index) run(%storage: buffer) {
 }
 
 check.scenario public @configured configure[2](%configuration: index, %configuration_entropy: check.entropy) {

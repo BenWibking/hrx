@@ -114,9 +114,10 @@ static iree_status_t loom_aie2p_artifact_check_execute(
       .allocator = request->host_allocator,
   };
   iree_byte_sequence_t* contents = NULL;
+  bool emitted = false;
   iree_status_t status =
-      loom_aie2p_xdna_artifact_emit(&emit_request, &contents);
-  if (iree_status_is_ok(status) && !contents) {
+      loom_aie2p_xdna_artifact_emit(&emit_request, &emitted, &contents);
+  if (iree_status_is_ok(status) && !emitted) {
     return iree_ok_status();
   }
   iree_byte_span_t bytes = iree_byte_span_empty();

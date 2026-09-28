@@ -38,8 +38,6 @@ typedef struct loom_aie2p_low_function_contract_t {
   const loom_op_t* function;
   // First unbound resource import or storage reservation, when present.
   const loom_op_t* unbound_resource;
-  // First function call awaiting shared materialization, when present.
-  const loom_op_t* unexpanded_call;
   // First command unavailable in each configuration phase, when present.
   const loom_op_t* phase_conflicts[3];
   // Number of entry commands in this function.
@@ -218,8 +216,8 @@ static iree_status_t loom_aie2p_low_verify_begin_function(
   state->contract->function = function;
   *out_provider_state = state;
   if (target->descriptor_set->stable_id == AIE2P_ARRAY_DESCRIPTOR_SET_ID) {
-    IREE_RETURN_IF_ERROR(loom_aie2p_low_verify_array_abi_layout(
-        context, state, function));
+    IREE_RETURN_IF_ERROR(
+        loom_aie2p_low_verify_array_abi_layout(context, state, function));
     if (!state->abi_layout_valid) {
       return iree_ok_status();
     }
@@ -595,10 +593,6 @@ static iree_status_t loom_aie2p_low_verify_op(
          loom_low_storage_reserve_isa(packet->op))) {
       state->contract->unbound_resource = packet->op;
     }
-    if (!state->contract->unexpanded_call &&
-        loom_low_func_call_isa(packet->op)) {
-      state->contract->unexpanded_call = packet->op;
-    }
     return loom_aie2p_low_verify_core_op(context, state, packet);
   }
   if (state->target->descriptor_set->stable_id ==
@@ -769,16 +763,6 @@ static iree_status_t loom_aie2p_low_verify_end_module(
         };
         IREE_RETURN_IF_ERROR(loom_low_verify_module_context_emit(
             context, contract->unbound_resource, LOOM_ERR_XDNA_040, params,
-            IREE_ARRAYSIZE(params)));
-      }
-      if (contract->unexpanded_call) {
-        const loom_diagnostic_param_t params[] = {
-            loom_param_string(name),
-            loom_param_string(loom_low_diagnostic_operation_name(
-                module, contract->unexpanded_call)),
-        };
-        IREE_RETURN_IF_ERROR(loom_low_verify_module_context_emit(
-            context, contract->unexpanded_call, LOOM_ERR_XDNA_049, params,
             IREE_ARRAYSIZE(params)));
       }
     } else if (contract->phase_conflicts[reference->kind]) {

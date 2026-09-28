@@ -74,8 +74,8 @@ extern "C" {
 // authored configuration, unresolved physical values and native code/storage
 // overflow fail before any artifact is returned.
 iree_status_t loom_aie2p_configuration_emit(
-    const loom_aie2p_xdna_artifact_request_t* request, loom_op_t* entry_op,
-    const loom_xdna_device_profile_t* device_profile,
+    const loom_aie2p_xdna_artifact_request_t* request,
+    const loom_op_t* entry_op, const loom_xdna_device_profile_t* device_profile,
     loom_aie2p_xdna_entry_t* out_entry, bool* out_valid);
 
 #ifdef __cplusplus
