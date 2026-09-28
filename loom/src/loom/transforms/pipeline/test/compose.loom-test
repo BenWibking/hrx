@@ -63,6 +63,33 @@ CHECK-NOT: pipeline.compose *
 CHECK-NOT: pipeline.def @child*
 
 // ====
+// RUN: with-checks pass inline-callables,cse
+
+// Composed helpers preserve the supplied pool. Two allocations in the same
+// pool remain fresh, and another pool is never replaced with the first one.
+func.decl @stamp(%storage: buffer, %value: i32)
+
+pipeline.def @pooled_child(%memory: pool, %bytes: offset) run(%value: i32) {
+  %storage = buffer.alloca<workgroup> pool(%memory) align(64) %bytes : buffer
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    func.call @stamp(%storage, %value) : (buffer, i32)
+  }
+}
+
+pipeline.def public @pooled_children(%left_memory: pool, %right_memory: pool, %bytes: offset) run(%value: i32) {
+  pipeline.compose @pooled_child[%left_memory, %bytes](%value) : [pool, offset](i32)
+  pipeline.compose @pooled_child[%right_memory, %bytes](%value) : [pool, offset](i32)
+  pipeline.compose @pooled_child[%left_memory, %bytes](%value) : [pool, offset](i32)
+}
+
+// ----
+CHECK-COUNT-2: * = buffer.alloca<workgroup> pool(%left_memory) align(64) %bytes : buffer
+CHECK-COUNT-1: * = buffer.alloca<workgroup> pool(%right_memory) align(64) %bytes : buffer
+CHECK-COUNT-3: func.call @stamp(*, %value) : (buffer, i32)
+CHECK-NOT: pipeline.compose *
+CHECK-NOT: pipeline.def @pooled_child(*
+
+// ====
 // RUN: with-checks pass inline-callables
 
 // A child target or artifact boundary cannot disappear into an unconstrained

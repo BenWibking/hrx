@@ -773,6 +773,16 @@ ERR_LOWERING_064 = ErrorDef(
     ),
 )
 
+# ERR_LOWERING_065: Command transient storage cannot be placed.
+ERR_LOWERING_065 = ErrorDef(
+    domain=ErrorDomain.LOWERING,
+    code=65,
+    severity=Severity.ERROR,
+    summary="Command transient storage cannot be placed.",
+    message="command-program transient storage requires {requirement}",
+    params=(ErrorParam("requirement", ParamKind.STRING),),
+)
+
 ALL_LOWERING_ERRORS: tuple[ErrorDef, ...] = (
     ERR_LOWERING_022,
     ERR_LOWERING_023,
@@ -814,4 +824,5 @@ ALL_LOWERING_ERRORS: tuple[ErrorDef, ...] = (
     ERR_LOWERING_062,
     ERR_LOWERING_063,
     ERR_LOWERING_064,
+    ERR_LOWERING_065,
 )

@@ -260,11 +260,11 @@ static iree_status_t loom_aie2p_pipeline_composition_allocate_flow_buffer(
       builder, loom_attr_i64((int64_t)byte_length),
       loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET), location, &byte_length_op));
   loom_op_t* alloca_op = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_buffer_alloca_build(builder, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
-                               LOOM_AIE2P_PIPELINE_COMPOSITE_BUFFER_ALIGNMENT,
-                               loom_index_constant_result(byte_length_op),
-                               loom_type_buffer(), location, &alloca_op));
+  IREE_RETURN_IF_ERROR(loom_buffer_alloca_build(
+      builder, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
+      LOOM_VALUE_ID_INVALID, LOOM_AIE2P_PIPELINE_COMPOSITE_BUFFER_ALIGNMENT,
+      loom_index_constant_result(byte_length_op), loom_type_buffer(), location,
+      &alloca_op));
   *out_buffer = loom_buffer_alloca_result(alloca_op);
   *out_valid = true;
   return iree_ok_status();

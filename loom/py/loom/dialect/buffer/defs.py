@@ -20,6 +20,7 @@ from loom.assembly import (
     Attr,
     AttrDict,
     Clause,
+    OptionalGroup,
     Ref,
     Refs,
     ResultType,
@@ -41,11 +42,13 @@ from loom.dsl import (
     I32,
     MEMORY_FENCE,
     OFFSET,
+    POOL,
     PURE,
     REFINABLE_RESULT_TYPE_REFS,
     SAFE_TO_SPECULATE,
     VIEW,
     AttrDef,
+    Borrow,
     BorrowedResult,
     CachePolicyInterface,
     Dialect,
@@ -88,9 +91,21 @@ buffer_alloca = Op(
         "alignment of the root storage base. Target lowering determines which "
         "allocatable spaces are legal for the containing program kind. The "
         "execution frame owns the allocation; the result borrows that storage "
-        "and has no explicit release obligation."
+        "and has no explicit release obligation. An explicit pool selects the "
+        "backing allocation resource; memory_space remains an access requirement "
+        "that resource must satisfy. The pool is borrowed and does not extend "
+        "the allocation lifetime. Omitting it uses the containing execution's "
+        "allocation resource for that space, which must be unambiguous before "
+        "materialization. Lowering cannot replace an explicit pool with an "
+        "ambient allocation resource."
     ),
     operands=[
+        Operand(
+            "pool",
+            POOL,
+            optional=True,
+            doc="Borrowed resource providing the allocation's backing storage.",
+        ),
         Operand(
             "byte_length",
             OFFSET,
@@ -119,10 +134,11 @@ buffer_alloca = Op(
         ),
     ],
     verify="loom_buffer_alloca_verify",
-    ownership_effects=[BorrowedResult("result")],
+    ownership_effects=[Borrow("pool"), BorrowedResult("result")],
     facts="loom_buffer_alloca_facts",
     format=[
         TemplateParam("memory_space"),
+        OptionalGroup([Clause("pool", Ref("pool"))], anchor="pool"),
         Clause("align", Attr("base_alignment")),
         Ref("byte_length"),
         COLON,
@@ -130,6 +146,7 @@ buffer_alloca = Op(
     ],
     examples=[
         "%scratch = buffer.alloca<workgroup> align(64) %bytes : buffer",
+        "%packets = buffer.alloca<workgroup> pool(%tile_memory) align(64) %bytes : buffer",
     ],
 )
 

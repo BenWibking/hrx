@@ -113,6 +113,8 @@ loom_cc_library(
     hdrs = ["transients.h"],
     deps = [
         ":schedule",
+        "//loom/src/loom/error:emitter",
+        "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops/buffer",

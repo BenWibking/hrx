@@ -912,11 +912,13 @@ TEST_F(ViewRegionsTest, AllocationFreshnessRelationships) {
   loom_op_t* first_allocation = nullptr;
   loom_op_t* second_allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, 64, bytes,
-      loom_type_buffer(), LOOM_LOCATION_UNKNOWN, &first_allocation));
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+      LOOM_VALUE_ID_INVALID, 64, bytes, loom_type_buffer(),
+      LOOM_LOCATION_UNKNOWN, &first_allocation));
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, 64, bytes,
-      loom_type_buffer(), LOOM_LOCATION_UNKNOWN, &second_allocation));
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+      LOOM_VALUE_ID_INVALID, 64, bytes, loom_type_buffer(),
+      LOOM_LOCATION_UNKNOWN, &second_allocation));
   const loom_value_id_t roots[] = {
       loom_buffer_alloca_result(first_allocation),
       loom_buffer_alloca_result(second_allocation),

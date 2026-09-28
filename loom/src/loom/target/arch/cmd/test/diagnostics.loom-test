@@ -125,3 +125,32 @@ command.program.def public @unplaced_indirect_dispatch(%byte_offset: offset) lau
   kernel.dispatch @unplaced_counts[%counts]() : [view<3xi32>]()
   command.return
 }
+
+// ====
+
+// RUN: emit command-program @unbounded_scratch
+
+kernel.entry.decl @consume_scratch(%scratch: buffer)
+
+command.program.def public @unbounded_scratch(%byte_length: offset) launch() {
+  %workgroups = index.constant 1 : index
+  // ERROR@+1: LOWERING/065 {requirement="a finite positive byte-length maximum"}
+  %scratch = buffer.alloca<global> align(64) %byte_length : buffer
+  kernel.dispatch @consume_scratch[%workgroups](%scratch) : [index](buffer)
+  command.return
+}
+
+// ====
+
+// RUN: emit command-program @local_scratch
+
+kernel.entry.decl @consume_scratch(%scratch: buffer)
+
+command.program.def public @local_scratch() launch() {
+  %workgroups = index.constant 1 : index
+  %byte_length = index.constant 64 : offset
+  // ERROR@+1: LOWERING/065 {requirement="global memory"}
+  %scratch = buffer.alloca<workgroup> align(64) %byte_length : buffer
+  kernel.dispatch @consume_scratch[%workgroups](%scratch) : [index](buffer)
+  command.return
+}

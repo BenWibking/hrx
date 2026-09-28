@@ -1075,8 +1075,9 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
   loom_builder_set_block(&builder_, header);
   loom_op_t* allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, 16, length_id, buffer,
-      LOOM_LOCATION_UNKNOWN, &allocation));
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
+      LOOM_VALUE_ID_INVALID, 16, length_id, buffer, LOOM_LOCATION_UNKNOWN,
+      &allocation));
   const loom_value_id_t allocation_id = loom_buffer_alloca_result(allocation);
   loom_op_t* use = nullptr;
   IREE_ASSERT_OK(loom_test_use_build(&builder_, &allocation_id, 1,
@@ -1091,8 +1092,9 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
       &builder_, nested_owner, loom_test_block_args_body(nested_owner));
   loom_op_t* nested_allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, 16, length_id, buffer,
-      LOOM_LOCATION_UNKNOWN, &nested_allocation));
+      &builder_, /*build_flags=*/0, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE,
+      LOOM_VALUE_ID_INVALID, 16, length_id, buffer, LOOM_LOCATION_UNKNOWN,
+      &nested_allocation));
   const loom_value_id_t nested_id =
       loom_buffer_alloca_result(nested_allocation);
   IREE_ASSERT_OK(loom_test_use_build(&builder_, &nested_id, 1,
@@ -1199,8 +1201,9 @@ TEST_P(TemporalFactsRewriteTest, TracksSelectorsAndMovedObservers) {
                             loom_test_block_args_body(created_owner));
   loom_op_t* created_allocation = nullptr;
   IREE_ASSERT_OK(loom_buffer_alloca_build(
-      &rewriter.builder, LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, 16, length_id,
-      buffer, LOOM_LOCATION_UNKNOWN, &created_allocation));
+      &rewriter.builder, /*build_flags=*/0,
+      LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE, LOOM_VALUE_ID_INVALID, 16,
+      length_id, buffer, LOOM_LOCATION_UNKNOWN, &created_allocation));
   const loom_value_id_t created_id =
       loom_buffer_alloca_result(created_allocation);
   EXPECT_TRUE(loom_value_facts_is_cluster_uniform(
