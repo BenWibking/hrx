@@ -682,6 +682,36 @@ loom_cc_test(
 )
 
 loom_cc_library(
+    name = "pipeline_resources",
+    srcs = ["pipeline_resources.c"],
+    hdrs = ["pipeline_resources.h"],
+    deps = [
+        ":source_storage_packing",
+        "//loom/src/loom/error:emitter",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/buffer",
+        "//loom/src/loom/ops/pipeline",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "pipeline_resources_test",
+    srcs = ["pipeline_resources_test.cc"],
+    deps = [
+        ":pipeline_resources",
+        ":source_storage_packing",
+        "//loom/src/loom/error:error_defs",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "pipeline_plan",
     srcs = ["pipeline_plan.c"],
     hdrs = ["pipeline_plan.h"],

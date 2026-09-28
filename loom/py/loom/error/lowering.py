@@ -783,6 +783,33 @@ ERR_LOWERING_065 = ErrorDef(
     params=(ErrorParam("requirement", ParamKind.STRING),),
 )
 
+# ERR_LOWERING_066: Pipeline storage cannot be placed.
+ERR_LOWERING_066 = ErrorDef(
+    domain=ErrorDomain.LOWERING,
+    code=66,
+    severity=Severity.ERROR,
+    summary="Pipeline storage cannot be placed.",
+    message="pipeline storage placement requires {requirement}",
+    params=(ErrorParam("requirement", ParamKind.STRING),),
+)
+
+# ERR_LOWERING_067: Pipeline backing storage is exhausted.
+ERR_LOWERING_067 = ErrorDef(
+    domain=ErrorDomain.LOWERING,
+    code=67,
+    severity=Severity.ERROR,
+    summary="Pipeline backing storage is exhausted.",
+    message=(
+        "pipeline pool {pool} requires {required_bytes} bytes; "
+        "capacity is {capacity_bytes} bytes"
+    ),
+    params=(
+        ErrorParam("pool", ParamKind.U64),
+        ErrorParam("required_bytes", ParamKind.U64),
+        ErrorParam("capacity_bytes", ParamKind.U64),
+    ),
+)
+
 ALL_LOWERING_ERRORS: tuple[ErrorDef, ...] = (
     ERR_LOWERING_022,
     ERR_LOWERING_023,
@@ -825,4 +852,6 @@ ALL_LOWERING_ERRORS: tuple[ErrorDef, ...] = (
     ERR_LOWERING_063,
     ERR_LOWERING_064,
     ERR_LOWERING_065,
+    ERR_LOWERING_066,
+    ERR_LOWERING_067,
 )

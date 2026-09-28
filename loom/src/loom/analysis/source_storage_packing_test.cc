@@ -16,14 +16,20 @@ namespace loom {
 namespace {
 
 struct NoninterferencePair {
+  // First allocation whose lifetime is disjoint from the second.
   loom_value_id_t lhs_root_value_id;
+  // Second allocation whose lifetime is disjoint from the first.
   loom_value_id_t rhs_root_value_id;
 };
 
 struct InterferenceQueryState {
+  // Retained noninterference facts supplied by the test's allocation owner.
   NoninterferencePair noninterference_pairs[8];
+  // Number of populated entries in noninterference_pairs.
   iree_host_size_t noninterference_pair_count = 0;
+  // First root of a query that models a fallible analysis allocation.
   loom_value_id_t failure_lhs_root_value_id = LOOM_VALUE_ID_INVALID;
+  // Second root of the fallible analysis query.
   loom_value_id_t failure_rhs_root_value_id = LOOM_VALUE_ID_INVALID;
 };
 
@@ -69,7 +75,7 @@ class SourceStoragePackingTest : public ::testing::Test {
     IREE_ASSERT_OK(loom_source_storage_packing_create(
         loom_source_storage_packing_interference_callback_make(
             QueryInterference, &query_state_),
-        &arena_, &packing_));
+        nullptr, 0, &arena_, &packing_));
   }
 
   void TearDown() override {
@@ -199,19 +205,79 @@ TEST_F(SourceStoragePackingTest, ExtentOverflowDoesNotChangeRequirement) {
   EXPECT_EQ(requirement.byte_alignment, 1u);
 }
 
-TEST_F(SourceStoragePackingTest, InvalidAlignmentDoesNotChangeRequirement) {
-  uint64_t failed_offset = UINT64_MAX;
-  iree_status_t status = loom_source_storage_packing_append(
-      packing_, /*root_value_id=*/1, /*byte_length=*/64,
-      /*byte_alignment=*/3, &failed_offset);
+TEST_F(SourceStoragePackingTest, FixedRangesAndWorkerStorageShareOnePacking) {
+  const loom_source_storage_packing_range_t fixed[] = {{64, 32}, {192, 16}};
+  IREE_ASSERT_OK(loom_source_storage_packing_create(
+      {}, fixed, IREE_ARRAYSIZE(fixed), &arena_, &packing_));
+  EXPECT_EQ(Append(1, 80, 16), 96u);
+  EXPECT_EQ(Append(2, 48, 16), 0u);
+
+  uint64_t worker_offset = UINT64_MAX;
+  IREE_ASSERT_OK(
+      loom_source_storage_packing_reserve(packing_, 16, 16, &worker_offset));
+  EXPECT_EQ(worker_offset, 48u);
+  EXPECT_EQ(Append(3, 32, 16), 208u);
+  EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
+            240u);
+}
+
+TEST_F(SourceStoragePackingTest, FixedReservationsSurviveSourceLifetimeReuse) {
+  const loom_source_storage_packing_range_t fixed[] = {{32, 16}};
+  IREE_ASSERT_OK(loom_source_storage_packing_create(
+      loom_source_storage_packing_interference_callback_make(QueryInterference,
+                                                             &query_state_),
+      fixed, IREE_ARRAYSIZE(fixed), &arena_, &packing_));
+  AddNoninterference(2, 1);
+  EXPECT_EQ(Append(1, 32, 16), 0u);
+  EXPECT_EQ(Append(2, 64, 16), 48u);
+
+  uint64_t worker_offset = UINT64_MAX;
+  IREE_ASSERT_OK(
+      loom_source_storage_packing_reserve(packing_, 48, 16, &worker_offset));
+  EXPECT_EQ(worker_offset, 112u);
+  AddNoninterference(3, 1);
+  AddNoninterference(3, 2);
+  EXPECT_EQ(Append(3, 80, 16), 160u);
+}
+
+TEST_F(SourceStoragePackingTest, FixedTailCountsWithoutOccupyingPrefix) {
+  const loom_source_storage_packing_range_t fixed[] = {{960, 64}};
+  IREE_ASSERT_OK(loom_source_storage_packing_create(
+      {}, fixed, IREE_ARRAYSIZE(fixed), &arena_, &packing_));
+  EXPECT_EQ(Append(1, 512, 64), 0u);
+  EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
+            1024u);
+  uint64_t worker_offset = UINT64_MAX;
+  IREE_ASSERT_OK(
+      loom_source_storage_packing_reserve(packing_, 448, 64, &worker_offset));
+  EXPECT_EQ(worker_offset, 512u);
+  EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
+            1024u);
+  EXPECT_EQ(Append(2, 16, 16), 1024u);
+}
+
+TEST_F(SourceStoragePackingTest, EmptyAllocationsDoNotOccupyStorage) {
+  const loom_source_storage_packing_range_t fixed[] = {{0, 64}};
+  IREE_ASSERT_OK(loom_source_storage_packing_create(
+      {}, fixed, IREE_ARRAYSIZE(fixed), &arena_, &packing_));
+  EXPECT_EQ(Append(1, 0, 16), 0u);
+  uint64_t empty_offset = UINT64_MAX;
+  IREE_ASSERT_OK(
+      loom_source_storage_packing_reserve(packing_, 0, 16, &empty_offset));
+  EXPECT_EQ(empty_offset, 0u);
+  EXPECT_EQ(Append(2, 16, 16), 64u);
+}
+
+TEST_F(SourceStoragePackingTest, ReservationOverflowPreservesSourcePlacement) {
+  EXPECT_EQ(Append(1, INT64_MAX, 1), 0u);
+  uint64_t offset = UINT64_MAX;
+  iree_status_t status =
+      loom_source_storage_packing_reserve(packing_, 1, 1, &offset);
   EXPECT_EQ(iree_status_code(status), IREE_STATUS_OUT_OF_RANGE);
   iree_status_free(status);
-  EXPECT_EQ(failed_offset, 0u);
-
-  const loom_source_storage_packing_requirement_t requirement =
-      loom_source_storage_packing_requirement(packing_);
-  EXPECT_EQ(requirement.byte_length, 0u);
-  EXPECT_EQ(requirement.byte_alignment, 0u);
+  EXPECT_EQ(offset, 0u);
+  EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
+            static_cast<uint64_t>(INT64_MAX));
 }
 
 }  // namespace

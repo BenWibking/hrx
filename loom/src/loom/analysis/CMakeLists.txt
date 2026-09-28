@@ -767,6 +767,40 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    pipeline_resources
+  HDRS
+    "pipeline_resources.h"
+  SRCS
+    "pipeline_resources.c"
+  DEPS
+    ::source_storage_packing
+    iree::base
+    iree::base::internal::arena
+    loom::error::emitter
+    loom::error::error_defs
+    loom::ir
+    loom::ops::buffer
+    loom::ops::pipeline
+    loom::util::fact_table
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    pipeline_resources_test
+  SRCS
+    "pipeline_resources_test.cc"
+  DEPS
+    ::pipeline_resources
+    ::source_storage_packing
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::error::error_defs
+)
+
+loom_cc_library(
+  NAME
     pipeline_plan
   HDRS
     "pipeline_plan.h"
