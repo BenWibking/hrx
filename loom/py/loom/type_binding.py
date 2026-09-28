@@ -20,7 +20,6 @@ from loom.ir import (
     ParameterizedAttr,
     ParameterizedAttrArray,
     ParameterizedType,
-    PoolType,
     Predicate,
     PredicateArg,
     PredicateListAttr,
@@ -34,8 +33,6 @@ def binding_children(value: Any) -> Iterable[Any]:
     match value:
         case ShapedType(dims=dims, encoding=encoding):
             return (*dims, encoding)
-        case PoolType(block_size=dimension):
-            return (dimension,)
         case GroupType(dims=dimensions):
             return dimensions
         case FunctionType(arg_types=args, result_types=results):
@@ -132,8 +129,6 @@ def remap_value_bindings(
         match value:
             case ShapedType():
                 result = replace(value, dims=mapped[:-1], encoding=mapped[-1])
-            case PoolType():
-                result = replace(value, block_size=mapped[0])
             case GroupType():
                 result = replace(value, dims=mapped)
             case FunctionType(arg_types=args):

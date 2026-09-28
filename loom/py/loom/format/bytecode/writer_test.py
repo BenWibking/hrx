@@ -985,14 +985,8 @@ class TestTypesSection:
         dialect_type = DialectType("test.ref", (I32,))
         self._roundtrip_type(_test_ptr_register_type(value_type=dialect_type))
 
-    def test_pool_static(self) -> None:
-        self._roundtrip_type(PoolType(StaticDim(65536)))
-
-    def test_pool_static_small(self) -> None:
-        self._roundtrip_type(PoolType(StaticDim(4096)))
-
-    def test_pool_dynamic(self) -> None:
-        self._roundtrip_type(PoolType(DynamicDim(0)), bindings=(INDEX,))
+    def test_pool(self) -> None:
+        self._roundtrip_type(PoolType())
 
     def test_group_static(self) -> None:
         self._roundtrip_type(GroupType((StaticDim(8),)))

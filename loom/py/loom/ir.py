@@ -675,33 +675,18 @@ ENCODING_TRANSFORM_TYPE = EncodingType(EncodingRole.TRANSFORM)
 
 @dataclass(frozen=True, slots=True)
 class PoolType:
-    """A block-managed device memory pool: pool<[%block_size]>.
+    """An opaque allocation resource: pool.
 
-    One parameter: the block size in bytes, which may be static or
-    dynamic. The pool carries no capacity, no element type, no
-    encoding — it's untyped bytes. Element type and encoding are
-    imposed by pool ops at access time.
-
-    A dynamic block_size carries the index-typed SSA value that supplies its
-    size, just like a dynamic dimension in a shaped type.
+    The value selects backing storage. Device identity, memory-space
+    capabilities, capacity and allocation strategy are not type parameters.
     """
-
-    block_size: Dim
 
     @property
     def type_kind(self) -> TypeKind:
         return TypeKind.POOL
 
-    @property
-    def has_dynamic_block_size(self) -> bool:
-        return isinstance(self.block_size, DynamicDim)
-
     def __repr__(self) -> str:
-        match self.block_size:
-            case StaticDim(size=size):
-                return f"pool<{size}>"
-            case DynamicDim():
-                return "pool<?>"
+        return "pool"
 
 
 @dataclass(frozen=True, slots=True)

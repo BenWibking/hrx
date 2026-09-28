@@ -760,29 +760,6 @@ static iree_status_t loom_parse_shaped_type(
                                  out_type);
 }
 
-//===----------------------------------------------------------------------===//
-// Pool type parsing
-//===----------------------------------------------------------------------===//
-
-// Parses a pool type from the token stream. Called after LANGLE has
-// been consumed. Consumes tokens through RANGLE. Pool types have a
-// single dimension and no element type or encoding.
-static iree_status_t loom_parse_pool_type(loom_parser_t* parser,
-                                          loom_type_parse_mode_t mode,
-                                          loom_type_t* out_type) {
-  loom_token_t token = loom_tokenizer_peek(&parser->tokenizer);
-  if (token.kind != LOOM_TOKEN_INTEGER && token.kind != LOOM_TOKEN_LBRACKET) {
-    return loom_parser_emit_unexpected_token(parser, token,
-                                             IREE_SV("integer or '['"));
-  }
-  uint64_t dim = 0;
-  IREE_RETURN_IF_ERROR(loom_parse_dim(parser, mode, &dim));
-  LOOM_PARSE_EXPECT(parser, LOOM_TOKEN_RANGLE, NULL);
-
-  *out_type = loom_type_pool(dim);
-  return loom_assign_type_binding_types(parser, *out_type);
-}
-
 // Parses a shaped communication group with one or more dimensions and no
 // element type or encoding attachment.
 static iree_status_t loom_parse_group_type(loom_parser_t* parser,
@@ -1071,8 +1048,6 @@ static iree_status_t loom_parse_compact_shape_type(
   iree_status_t status;
   if (descriptor->ir_kind == LOOM_TYPE_GROUP) {
     status = loom_parse_group_type(parser, mode, out_type);
-  } else if (descriptor->ir_kind == LOOM_TYPE_POOL) {
-    status = loom_parse_pool_type(parser, mode, out_type);
   } else {
     status = loom_parse_shaped_type(parser, descriptor, mode, out_type);
   }
@@ -1318,6 +1293,10 @@ static iree_status_t loom_parse_registered_type(loom_parser_t* parser,
   }
 
   switch (descriptor->ir_kind) {
+    case LOOM_TYPE_POOL:
+      loom_tokenizer_next(&parser->tokenizer);
+      *out_type = loom_type_pool();
+      return iree_ok_status();
     case LOOM_TYPE_BUFFER:
       loom_tokenizer_next(&parser->tokenizer);
       *out_type = loom_type_buffer();

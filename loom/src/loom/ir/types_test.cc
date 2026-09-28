@@ -295,8 +295,7 @@ TEST(TypesTest, MayReferenceValuesConservativelyClassifiesTypes) {
       LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_F32, loom_dim_pack_static(4), 0);
   dynamic_view.encoding_id = 9;
   dynamic_view.encoding_flags = LOOM_ENCODING_FLAG_SSA;
-  loom_type_t static_pool = loom_type_pool(loom_dim_pack_static(4096));
-  loom_type_t dynamic_pool = loom_type_pool(loom_dim_pack_dynamic(11));
+  loom_type_t pool = loom_type_pool();
   loom_type_t static_group =
       loom_type_group_2d(loom_dim_pack_static(2), loom_dim_pack_static(4));
   loom_type_t dynamic_group = loom_type_group_1d(loom_dim_pack_dynamic(13));
@@ -314,13 +313,12 @@ TEST(TypesTest, MayReferenceValuesConservativelyClassifiesTypes) {
   EXPECT_FALSE(loom_type_may_reference_values(loom_type_none()));
   EXPECT_FALSE(loom_type_may_reference_values(scalar));
   EXPECT_FALSE(loom_type_may_reference_values(static_vector));
-  EXPECT_FALSE(loom_type_may_reference_values(static_pool));
+  EXPECT_FALSE(loom_type_may_reference_values(pool));
   EXPECT_FALSE(loom_type_may_reference_values(static_group));
   EXPECT_FALSE(
       loom_type_may_reference_values(loom_type_register_payload(42, 4)));
   EXPECT_TRUE(loom_type_may_reference_values(dynamic_vector));
   EXPECT_TRUE(loom_type_may_reference_values(dynamic_view));
-  EXPECT_TRUE(loom_type_may_reference_values(dynamic_pool));
   EXPECT_TRUE(loom_type_may_reference_values(dynamic_group));
   EXPECT_TRUE(loom_type_may_reference_values(
       loom_type_register_payload_with_value_type(&register_data)));

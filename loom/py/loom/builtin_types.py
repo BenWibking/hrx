@@ -8,9 +8,8 @@
 
 These TypeDefs define the textual format for the core loom types.
 Scalar types (f32, i32, index) are keywords, not TypeDefs. Core named types
-such as encoding, tile<...>, tensor<...>, vector<...>, view<...>, bare buffer,
-and pool<...>, plus dotted dialect types such as hal.buffer and test.ref<...>,
-are TypeDefs.
+such as encoding, tile<...>, tensor<...>, vector<...>, view<...>, buffer and pool,
+plus dotted dialect types such as hal.buffer and test.ref<...>, are TypeDefs.
 
 Dialect-specific types are declared in their respective dialect files
 (e.g., dialect/hal/ and dialect/kernel/) using the same TypeDef pattern.
@@ -220,19 +219,17 @@ buffer_type = TypeDef(
 )
 
 # ============================================================================
-# pool<...> — block-managed device memory pool
+# pool — opaque allocation resource
 # ============================================================================
 
 pool_type = TypeDef(
     name="pool",
-    doc="Block-managed device memory pool with a single block size dimension.",
+    doc=(
+        "Opaque allocation resource. Its value selects backing storage; device, "
+        "memory-space capabilities, capacity and allocation strategy are value "
+        "properties rather than type parameters."
+    ),
     ir_kind="pool",
-    params=[
-        ShapeParam("block_size"),
-    ],
-    format=[
-        ShapeOf("block_size"),
-    ],
 )
 
 # ============================================================================

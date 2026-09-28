@@ -89,8 +89,8 @@ TEST(TypeConstraintTest, Group) {
       loom_type_group_2d(loom_dim_pack_static(2), loom_dim_pack_static(4));
   EXPECT_TRUE(
       loom_type_satisfies_constraint(group, LOOM_TYPE_CONSTRAINT_GROUP));
-  EXPECT_FALSE(loom_type_satisfies_constraint(
-      loom_type_pool(loom_dim_pack_static(8)), LOOM_TYPE_CONSTRAINT_GROUP));
+  EXPECT_FALSE(loom_type_satisfies_constraint(loom_type_pool(),
+                                              LOOM_TYPE_CONSTRAINT_GROUP));
 }
 
 }  // namespace

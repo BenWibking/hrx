@@ -796,21 +796,21 @@ func.def @if_factors_tail_and_preserves_branch_effects(%cond: i1, %a: i32, %b: i
 // The common-tail rewrite is not speculation: the tail op executed on every
 // branch before the rewrite, so an effectful result-producing tail can move
 // after the branch once the branch yields its operands.
-func.def @if_factors_common_side_effecting_tail(%cond: i1, %pool: pool<16>, %a: i32, %b: i32) -> (i32) {
+func.def @if_factors_common_side_effecting_tail(%cond: i1, %pool: pool, %a: i32, %b: i32) -> (i32) {
   %result = scf.if %cond -> (i32) {
-    %then = test.mutate_resource %pool, %a : pool<16>, i32 -> i32
+    %then = test.mutate_resource %pool, %a : pool, i32 -> i32
     scf.yield %then : i32
   } else {
-    %else = test.mutate_resource %pool, %b : pool<16>, i32 -> i32
+    %else = test.mutate_resource %pool, %b : pool, i32 -> i32
     scf.yield %else : i32
   }
   func.return %result : i32
 }
 
 // ----
-func.def @if_factors_common_side_effecting_tail(%cond: i1, %pool: pool<16>, %a: i32, %b: i32) -> (i32) {
+func.def @if_factors_common_side_effecting_tail(%cond: i1, %pool: pool, %a: i32, %b: i32) -> (i32) {
   %12 = scf.select %cond, %a, %b : i32
-  %result = test.mutate_resource %pool, %12 : pool<16>, i32 -> i32
+  %result = test.mutate_resource %pool, %12 : pool, i32 -> i32
   func.return %result : i32
 }
 

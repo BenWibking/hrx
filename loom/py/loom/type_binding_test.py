@@ -47,7 +47,7 @@ def test_nested_type_and_attribute_bindings_translate_together() -> None:
     roots = [
         DialectType("test.ref", (register,)),
         view,
-        PoolType(DynamicDim(2)),
+        PoolType(),
         GroupType((DynamicDim(1), StaticDim(8))),
     ]
     mapped, mapped_view, mapped_pool, mapped_group = remap_value_bindings(
@@ -67,7 +67,7 @@ def test_nested_type_and_attribute_bindings_translate_together() -> None:
     )
     assert not mapped_array.has("alignment")
     assert mapped_view.encoding == DynamicEncoding(13)
-    assert mapped_pool.block_size == DynamicDim(12)
+    assert mapped_pool is roots[2]
     assert mapped_group.dims == (DynamicDim(11), StaticDim(8))
     assert vector.dims == (DynamicDim(1),)
     assert (

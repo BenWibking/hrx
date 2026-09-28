@@ -361,7 +361,7 @@ TEST_F(BuilderTest, MemoryFenceHasOrderingWithoutMemoryAccess) {
 }
 
 TEST_F(BuilderTest, DirectWriteEffectSummaryUpdatesOnErase) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -402,7 +402,7 @@ TEST_F(BuilderTest, UnknownOpEffectsAreConservative) {
 }
 
 TEST_F(BuilderTest, NestedWriteEffectSummaryPropagatesToAncestors) {
-  loom_type_t pool_type = loom_type_pool(loom_dim_pack_static(4096));
+  loom_type_t pool_type = loom_type_pool();
   loom_type_t i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
 
   loom_value_id_t pool_id = LOOM_VALUE_ID_INVALID;
@@ -1296,7 +1296,7 @@ TEST_F(BuilderTest, OpErase) {
 TEST_F(BuilderTest, EraseDeclarationDropsOwnedArgumentTypeUses) {
   const loom_type_t argument_types[] = {
       loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
-      loom_type_pool(loom_dim_pack_static(4)),
+      loom_type_group_1d(loom_dim_pack_static(4)),
   };
   loom_op_t* declarations[2] = {};
   const iree_string_view_t names[] = {IREE_SV("erased"), IREE_SV("retained")};
@@ -1314,7 +1314,7 @@ TEST_F(BuilderTest, EraseDeclarationDropsOwnedArgumentTypeUses) {
         LOOM_LOCATION_UNKNOWN, &declarations[i]));
     const loom_value_slice_t arguments = loom_test_decl_args(declarations[i]);
     const loom_type_t storage_type =
-        loom_type_pool(loom_dim_pack_dynamic(arguments.values[0]));
+        loom_type_group_1d(loom_dim_pack_dynamic(arguments.values[0]));
     IREE_ASSERT_OK(
         loom_module_set_value_type(module_, arguments.values[1], storage_type));
     IREE_ASSERT_OK(loom_module_set_value_type(

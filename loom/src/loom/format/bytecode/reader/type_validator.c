@@ -697,32 +697,9 @@ static iree_status_t loom_bytecode_type_plan_decode_entry(
       direct_type = loom_type_encoding_with_role((loom_encoding_role_t)role);
       break;
     }
-    case LOOM_TYPE_POOL: {
-      uint8_t is_dynamic = 0;
-      uint64_t dim_offset =
-          loom_bytecode_reader_cursor_absolute_position(cursor);
-      IREE_RETURN_IF_ERROR(
-          loom_bytecode_reader_read_u8(decoder, cursor, &is_dynamic));
-      if (is_dynamic == 0) {
-        uint64_t size = 0;
-        IREE_RETURN_IF_ERROR(
-            loom_bytecode_reader_read_uvarint(decoder, cursor, &size));
-        if (size > LOOM_DIM_MAX_STATIC_SIZE) {
-          return loom_bytecode_reader_emit_invalid_field(
-              decoder, IREE_SV("TYPES"), IREE_SV("type"), type_index,
-              IREE_SV("block_size"), dim_offset,
-              IREE_SV("static_pool_block_size_exceeds_loom_maximum"));
-        }
-        direct_type = loom_type_pool(loom_dim_pack_static((int64_t)size));
-      } else if (is_dynamic == 1) {
-        direct_type =
-            loom_type_pool(loom_dim_pack_dynamic(LOOM_VALUE_ID_INVALID));
-      } else {
-        return loom_bytecode_reader_emit_enum_value(
-            decoder, IREE_SV("is_dynamic"), is_dynamic, 2, dim_offset);
-      }
+    case LOOM_TYPE_POOL:
+      direct_type = loom_type_pool();
       break;
-    }
     case LOOM_TYPE_BUFFER:
       direct_type = loom_type_buffer();
       break;

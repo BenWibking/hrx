@@ -255,21 +255,9 @@ iree_status_t loom_bytecode_write_types_section(
         break;
       }
       case LOOM_TYPE_BUFFER:
-        // No additional data.
+      case LOOM_TYPE_POOL:
+        // Opaque types have no additional data.
         break;
-      case LOOM_TYPE_POOL: {
-        uint64_t dim = loom_type_dim(type, 0);
-        if (loom_dim_is_dynamic(dim)) {
-          IREE_RETURN_IF_ERROR(
-              loom_bytecode_page_writer_write_u8(page_writer, 1));
-        } else {
-          IREE_RETURN_IF_ERROR(
-              loom_bytecode_page_writer_write_u8(page_writer, 0));
-          IREE_RETURN_IF_ERROR(loom_bytecode_page_writer_write_uvarint(
-              page_writer, (uint64_t)loom_dim_static_size(dim)));
-        }
-        break;
-      }
       case LOOM_TYPE_GROUP: {
         const uint8_t rank = loom_type_rank(type);
         IREE_RETURN_IF_ERROR(

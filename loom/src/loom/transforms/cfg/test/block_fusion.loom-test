@@ -120,7 +120,7 @@ func.def @ancestor_types_and_attributes(%choose: i1, %element: f32) {
   cfg.br ^tail
 ^tail:
   scf.if %choose {
-    test.decl @nested_signature(%storage: pool<[%width]>) -> (i32)
+    test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
     %annotated = test.attrs %element {shape = #test.options<mode = fast, element_type = vector<[%width]xf32>>} : f32
   } else {
     %c0 = index.constant 0 : index
@@ -135,7 +135,7 @@ func.def @ancestor_types_and_attributes(%choose: i1, %element: f32) {
   %width = index.constant 16 : index
   test.use %width : index
   scf.if %choose {
-    test.decl @nested_signature(%storage: pool<[%width]>) -> (i32)
+    test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
     %annotated = test.attrs %element {shape = #test.options<mode = fast, element_type = vector<[%width]xf32>>} : f32
   } else {
     %c0 = index.constant 0 : index

@@ -49,7 +49,7 @@ def _identity_values() -> list[object]:
         ShapedType(TypeKind.VECTOR, F32, (StaticDim(1),)),
         ShapedType(TypeKind.TILE, F32, (DynamicDim(1),), DynamicEncoding(2)),
         ShapedType(TypeKind.TILE, F32, (DynamicDim(1),), DynamicEncoding(3)),
-        PoolType(DynamicDim(1)),
+        PoolType(),
         GroupType((DynamicDim(1), StaticDim(4))),
         GroupType((DynamicDim(2), StaticDim(4))),
         FunctionType((vector, vector), (I32,)),

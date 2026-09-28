@@ -988,7 +988,7 @@ iree_status_t loom_test_reduce_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_READ_RESOURCE: Test op that reads from a resource operand.
-// %tile = test.read_resource %pool : pool<[%BS]> -> tile<4xf32>
+// %tile = test.read_resource %pool : pool -> tile<4xf32>
 LOOM_DEFINE_ISA(loom_test_read_resource_isa, LOOM_OP_TEST_READ_RESOURCE)
 LOOM_DEFINE_OPERAND(loom_test_read_resource_source, 0)
 LOOM_DEFINE_RESULT(loom_test_read_resource_result, 0)
@@ -1000,7 +1000,7 @@ iree_status_t loom_test_read_resource_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_WRITE_RESOURCE: Test op that writes to a resource operand.
-// test.write_resource %pool, %tile : pool<[%BS]>, tile<4xf32>
+// test.write_resource %pool, %tile : pool, tile<4xf32>
 LOOM_DEFINE_ISA(loom_test_write_resource_isa, LOOM_OP_TEST_WRITE_RESOURCE)
 LOOM_DEFINE_OPERAND(loom_test_write_resource_target, 0)
 LOOM_DEFINE_OPERAND(loom_test_write_resource_data, 1)
@@ -1012,7 +1012,7 @@ iree_status_t loom_test_write_resource_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_MUTATE_RESOURCE: Test op that atomically reads and writes a resource operand.
-// %old = test.mutate_resource %pool, %delta : pool<[%BS]>, i32 -> i32
+// %old = test.mutate_resource %pool, %delta : pool, i32 -> i32
 LOOM_DEFINE_ISA(loom_test_mutate_resource_isa, LOOM_OP_TEST_MUTATE_RESOURCE)
 LOOM_DEFINE_OPERAND(loom_test_mutate_resource_target, 0)
 LOOM_DEFINE_OPERAND(loom_test_mutate_resource_value, 1)
@@ -1026,7 +1026,7 @@ iree_status_t loom_test_mutate_resource_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_ALLOC: Test allocation op. Each execution produces a distinct identity even with identical operands. Prevents CSE but allows DCE when unused.
-// %pool = test.alloc %sz : index -> pool<[%BS]>
+// %pool = test.alloc %sz : index -> pool
 LOOM_DEFINE_ISA(loom_test_alloc_isa, LOOM_OP_TEST_ALLOC)
 LOOM_DEFINE_OPERAND(loom_test_alloc_size, 0)
 LOOM_DEFINE_RESULT(loom_test_alloc_result, 0)
@@ -1988,7 +1988,7 @@ iree_status_t loom_target_record_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_TEST_RESOURCE_ALLOC: Test owned-resource allocation.
-// %resource = test.resource.alloc %sz : index -> pool<[%BS]>
+// %resource = test.resource.alloc %sz : index -> pool
 LOOM_DEFINE_ISA(loom_test_resource_alloc_isa, LOOM_OP_TEST_RESOURCE_ALLOC)
 LOOM_DEFINE_OPERAND(loom_test_resource_alloc_size, 0)
 LOOM_DEFINE_RESULT(loom_test_resource_alloc_result, 0)
@@ -2000,7 +2000,7 @@ iree_status_t loom_test_resource_alloc_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_BORROW: Test borrowed use of an owned resource.
-// test.resource.borrow %resource : pool<[%BS]>
+// test.resource.borrow %resource : pool
 LOOM_DEFINE_ISA(loom_test_resource_borrow_isa, LOOM_OP_TEST_RESOURCE_BORROW)
 LOOM_DEFINE_OPERAND(loom_test_resource_borrow_resource, 0)
 iree_status_t loom_test_resource_borrow_build(
@@ -2010,7 +2010,7 @@ iree_status_t loom_test_resource_borrow_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_BORROW_REF: Test borrowed by-reference use of an owned resource carrier.
-// test.resource.borrow_ref %resource : pool<[%BS]>
+// test.resource.borrow_ref %resource : pool
 LOOM_DEFINE_ISA(loom_test_resource_borrow_ref_isa, LOOM_OP_TEST_RESOURCE_BORROW_REF)
 LOOM_DEFINE_OPERAND(loom_test_resource_borrow_ref_resource, 0)
 iree_status_t loom_test_resource_borrow_ref_build(
@@ -2020,7 +2020,7 @@ iree_status_t loom_test_resource_borrow_ref_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_CONSUME: Test consuming use of an owned resource.
-// test.resource.consume %resource : pool<[%BS]>
+// test.resource.consume %resource : pool
 LOOM_DEFINE_ISA(loom_test_resource_consume_isa, LOOM_OP_TEST_RESOURCE_CONSUME)
 LOOM_DEFINE_OPERAND(loom_test_resource_consume_resource, 0)
 iree_status_t loom_test_resource_consume_build(
@@ -2030,7 +2030,7 @@ iree_status_t loom_test_resource_consume_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_RETAIN: Test retaining an additional owned reference to a resource.
-// %retained = test.resource.retain %resource : pool<[%BS]> -> pool<[%BS]>
+// %retained = test.resource.retain %resource : pool -> pool
 LOOM_DEFINE_ISA(loom_test_resource_retain_isa, LOOM_OP_TEST_RESOURCE_RETAIN)
 LOOM_DEFINE_OPERAND(loom_test_resource_retain_resource, 0)
 LOOM_DEFINE_RESULT(loom_test_resource_retain_result, 0)
@@ -2042,7 +2042,7 @@ iree_status_t loom_test_resource_retain_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_RELEASE: Test releasing an owned resource.
-// test.resource.release %resource : pool<[%BS]>
+// test.resource.release %resource : pool
 LOOM_DEFINE_ISA(loom_test_resource_release_isa, LOOM_OP_TEST_RESOURCE_RELEASE)
 LOOM_DEFINE_OPERAND(loom_test_resource_release_resource, 0)
 iree_status_t loom_test_resource_release_build(
@@ -2052,7 +2052,7 @@ iree_status_t loom_test_resource_release_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_DISCARD: Test discarding compiler ownership without releasing the resource.
-// test.resource.discard %resource : pool<[%BS]>
+// test.resource.discard %resource : pool
 LOOM_DEFINE_ISA(loom_test_resource_discard_isa, LOOM_OP_TEST_RESOURCE_DISCARD)
 LOOM_DEFINE_OPERAND(loom_test_resource_discard_resource, 0)
 iree_status_t loom_test_resource_discard_build(
@@ -2062,7 +2062,7 @@ iree_status_t loom_test_resource_discard_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_ESCAPE: Test transferring a resource to an untracked owner.
-// test.resource.escape %resource : pool<[%BS]>
+// test.resource.escape %resource : pool
 LOOM_DEFINE_ISA(loom_test_resource_escape_isa, LOOM_OP_TEST_RESOURCE_ESCAPE)
 LOOM_DEFINE_OPERAND(loom_test_resource_escape_resource, 0)
 iree_status_t loom_test_resource_escape_build(
@@ -2072,7 +2072,7 @@ iree_status_t loom_test_resource_escape_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_ALIAS: Test producing a borrowed alias of a resource.
-// %alias = test.resource.alias %resource : pool<[%BS]> -> pool<[%BS]>
+// %alias = test.resource.alias %resource : pool -> pool
 LOOM_DEFINE_ISA(loom_test_resource_alias_isa, LOOM_OP_TEST_RESOURCE_ALIAS)
 LOOM_DEFINE_OPERAND(loom_test_resource_alias_resource, 0)
 LOOM_DEFINE_RESULT(loom_test_resource_alias_result, 0)
@@ -2084,7 +2084,7 @@ iree_status_t loom_test_resource_alias_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_BORROWED: Test materializing a borrowed resource result.
-// %borrowed = test.resource.borrowed %resource : pool<[%BS]> -> pool<[%BS]>
+// %borrowed = test.resource.borrowed %resource : pool -> pool
 LOOM_DEFINE_ISA(loom_test_resource_borrowed_isa, LOOM_OP_TEST_RESOURCE_BORROWED)
 LOOM_DEFINE_OPERAND(loom_test_resource_borrowed_resource, 0)
 LOOM_DEFINE_RESULT(loom_test_resource_borrowed_result, 0)
@@ -2096,7 +2096,7 @@ iree_status_t loom_test_resource_borrowed_build(
     loom_op_t** out_op);
 
 // LOOM_OP_TEST_RESOURCE_MOVE: Test moving the exact ownership state of a resource.
-// %moved = test.resource.move %resource : pool<[%BS]> -> pool<[%BS]>
+// %moved = test.resource.move %resource : pool -> pool
 LOOM_DEFINE_ISA(loom_test_resource_move_isa, LOOM_OP_TEST_RESOURCE_MOVE)
 LOOM_DEFINE_OPERAND(loom_test_resource_move_source, 0)
 LOOM_DEFINE_RESULT(loom_test_resource_move_result, 0)

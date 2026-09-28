@@ -1087,22 +1087,8 @@ class BytecodeWriter:
             case EncodingType(role=role):
                 buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.ENCODING])
                 buf.write_u8(role.value)
-            case PoolType(block_size=block_size):
+            case PoolType():
                 buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.POOL])
-                if values is not None:
-                    buf.write_varint(
-                        1
-                        + self._value_number_or_error(
-                            values, block_size.value_id, "pool dimension"
-                        )
-                    )
-                    return
-                match block_size:
-                    case StaticDim(size=size):
-                        buf.write_u8(0)  # static
-                        buf.write_varint(size)
-                    case DynamicDim():
-                        buf.write_u8(1)  # dynamic
             case GroupType(dims=dims):
                 buf.write_u8(BYTECODE_TYPE_KIND_BY_IR_KIND[TypeKind.GROUP])
                 buf.write_u8(len(dims))

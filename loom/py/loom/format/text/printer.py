@@ -300,9 +300,7 @@ def print_type(
         case BufferType():
             return "buffer"
         case PoolType():
-            return _print_pool_type(
-                ir_type, _compact_shape_type_definition(ir_type), context
-            )
+            return "pool"
         case GroupType():
             return _print_group_type(
                 ir_type, _compact_shape_type_definition(ir_type), context
@@ -359,7 +357,7 @@ def _compact_type_definition(
 
 
 def _compact_shape_type_definition(
-    ir_type: ShapedType | PoolType | GroupType,
+    ir_type: ShapedType | GroupType,
 ) -> TypeDef:
     """Resolves a compact shape representation to its declaration."""
 
@@ -562,24 +560,6 @@ def _print_shaped_type(
     if shaped.alignment is not None:
         inner += f", align({shaped.alignment})"
     return f"{type_def.name}<{inner}>"
-
-
-def _print_pool_type(
-    pool: PoolType,
-    type_def: TypeDef,
-    context: TypePrintContext | None = None,
-) -> str:
-    """Print pool<[%block_size]> or pool<N>."""
-    match pool.block_size:
-        case StaticDim(size=size):
-            return f"{type_def.name}<{size}>"
-        case DynamicDim(value_id=value_id):
-            if value_id is not None:
-                dim_name = context.value_name(value_id) if context else f"%{value_id}"
-                return f"{type_def.name}<[{dim_name}]>"
-            return f"{type_def.name}<?>"
-        case _:
-            raise TypeError(f"unexpected dim type: {type(pool.block_size)}")
 
 
 def _print_group_type(

@@ -61,19 +61,6 @@ static iree_status_t loom_bytecode_read_complete_type(
     return LOOM_BYTECODE_ATTRIBUTE_DECODE_COMPLETE_TYPE(materializer, cursor,
                                                         scope, out_type);
   }
-  if (kind == LOOM_TYPE_POOL) {
-    uint64_t reference = 0;
-    IREE_RETURN_IF_ERROR(loom_bytecode_reader_read_uvarint(
-        materializer->decoder, cursor, &reference));
-    if (reference > scope->value_count) {
-      return loom_bytecode_complete_type_invalid(materializer, cursor,
-                                                 IREE_SV("pool_dimension"));
-    }
-    const loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(
-        reference ? scope->values[reference - 1] : LOOM_VALUE_ID_INVALID));
-    return loom_module_intern_topological_type_id(materializer->output_module,
-                                                  type, NULL, 0, out_type);
-  }
   if (kind == LOOM_TYPE_GROUP) {
     uint64_t rank = 0;
     IREE_RETURN_IF_ERROR(loom_bytecode_reader_read_uvarint(

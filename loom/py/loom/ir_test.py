@@ -442,34 +442,17 @@ class TestShapedTypeWithDynamicEncoding:
 
 
 class TestPoolType:
-    def test_static_block_size(self) -> None:
-        t = PoolType(block_size=StaticDim(65536))
+    def test_opaque_pool(self) -> None:
+        t = PoolType()
         assert t.type_kind == TypeKind.POOL
-        assert not t.has_dynamic_block_size
-        assert repr(t) == "pool<65536>"
+        assert repr(t) == "pool"
 
-    def test_dynamic_block_size(self) -> None:
-        t = PoolType(block_size=DynamicDim())
-        assert t.type_kind == TypeKind.POOL
-        assert t.has_dynamic_block_size
-        assert repr(t) == "pool<?>"
-
-    def test_equality(self) -> None:
-        a = PoolType(block_size=StaticDim(4096))
-        b = PoolType(block_size=StaticDim(4096))
-        c = PoolType(block_size=StaticDim(65536))
+    def test_equality_and_hash(self) -> None:
+        a = PoolType()
+        b = PoolType()
         assert a == b
-        assert a != c
-
-    def test_hashable(self) -> None:
-        a = PoolType(block_size=StaticDim(4096))
-        b = PoolType(block_size=StaticDim(4096))
         assert len({a, b}) == 1
-
-    def test_dynamic_vs_static(self) -> None:
-        a = PoolType(block_size=DynamicDim())
-        b = PoolType(block_size=StaticDim(4096))
-        assert a != b
+        assert a != BUFFER_TYPE
 
 
 # ============================================================================

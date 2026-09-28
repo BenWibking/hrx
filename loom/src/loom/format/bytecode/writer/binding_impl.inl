@@ -29,17 +29,6 @@ static iree_status_t loom_bytecode_emit_complete_type(
   IREE_RETURN_IF_ERROR(
       loom_bytecode_emit_u8(sink, loom_bytecode_type_kind_byte(kind)));
   switch (kind) {
-    case LOOM_TYPE_POOL: {
-      const uint64_t dimension = loom_type_dim(type, 0);
-      uint64_t reference = 0;
-      if (loom_dim_value_id(dimension) != LOOM_VALUE_ID_INVALID) {
-        uint32_t number = 0;
-        IREE_RETURN_IF_ERROR(loom_bytecode_resolve_value_number(
-            values, loom_dim_value_id(dimension), &number));
-        reference = (uint64_t)number + 1;
-      }
-      return loom_bytecode_emit_uvarint(sink, reference);
-    }
     case LOOM_TYPE_GROUP: {
       IREE_RETURN_IF_ERROR(
           loom_bytecode_emit_uvarint(sink, loom_type_rank(type)));

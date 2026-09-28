@@ -163,7 +163,7 @@ func.def @rewrite_dead_attribute_dimension(%extent: index, %stride: index, %valu
 // releases those types' providers in the same DCE run.
 func.def @dead_signature_dimension() {
   %width = index.constant 16 : index
-  test.decl @nested_signature(%storage: pool<[%width]>) -> (i32)
+  test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
   func.return
 }
 
@@ -179,7 +179,7 @@ func.def @dead_signature_dimension() {
 // Rewriter-driven deletion follows the same signature ownership contract.
 func.def @rewrite_dead_signature_dimension(%extent: index, %stride: index) {
   %width = index.add %extent, %stride : index
-  test.decl @nested_signature(%storage: pool<[%width]>) -> (i32)
+  test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
   func.return
 }
 

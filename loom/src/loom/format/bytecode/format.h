@@ -368,9 +368,7 @@ typedef enum loom_bytecode_section_kind_e {
 //       For each param: [type_index: varint])
 //     (ENCODING:
 //       [role: byte]                (loom_bytecode_encoding_role_t))
-//     (POOL:
-//       [is_dynamic: byte]          (0 = static, 1 = dynamic)
-//       (if static: [size: varint]) (block size in bytes))
+//     (POOL: no additional data)
 //     (GROUP:
 //       [rank: byte]
 //       For each dim (rank times):

@@ -259,7 +259,7 @@ enum loom_type_kind_e {
   LOOM_TYPE_FUNCTION = 5,   // (types) -> (types)
   LOOM_TYPE_DIALECT = 6,    // hal.buffer, test.ref<T>, etc.
   LOOM_TYPE_ENCODING = 7,   // encoding<role> (first-class SSA encoding value)
-  LOOM_TYPE_POOL = 8,       // pool<[%block_size]> (block-managed memory)
+  LOOM_TYPE_POOL = 8,       // pool (opaque allocation resource)
   LOOM_TYPE_VECTOR = 9,     // vector<[%M]xf32> (register lane grid)
   LOOM_TYPE_VIEW = 10,      // view<[%M]xf32, %layout> (buffer projection)
   LOOM_TYPE_BUFFER = 11,    // buffer (opaque storage identity)
@@ -670,11 +670,10 @@ static inline bool loom_type_is_shaped(loom_type_t type) {
 }
 
 // Returns true if the type carries rank and dimensions. Element-bearing shaped
-// values, pools, and communication groups all use the same packed dimension
+// values and communication groups use the same packed dimension
 // representation while retaining distinct semantics.
 static inline bool loom_type_has_dimensions(loom_type_t type) {
-  return loom_type_is_shaped(type) || loom_type_is_pool(type) ||
-         loom_type_is_group(type);
+  return loom_type_is_shaped(type) || loom_type_is_group(type);
 }
 
 // Returns true if the type kind can carry the shared encoding/layout
@@ -758,7 +757,7 @@ bool loom_type_static_element_count(loom_type_t type,
 
 // Returns true if two types are structurally equal.
 //
-// Shaped/pool types compare kind, element type, rank, dimensions, and
+// Shaped/group types compare kind, element type, rank, dimensions, and
 // encoding. Function types compare argument/result type sequences
 // recursively. Dialect types compare the dialect type name and parameter
 // list recursively. Register types compare carrier payloads and an optional
@@ -803,7 +802,7 @@ typedef iree_status_t (*loom_type_value_ref_callback_t)(
 
 // Walks SSA value references embedded in |type|.
 //
-// This includes dynamic shape dimensions, dynamic pool sizes, SSA
+// This includes dynamic shape and group dimensions, SSA
 // encoding/layout attachments, and references in nested function, dialect, or
 // register value types. References are reported in structural order and are
 // not deduplicated: a type that mentions the same value twice emits two
@@ -976,17 +975,12 @@ static inline bool loom_type_may_reference_values(loom_type_t type) {
   }
 }
 
-// Creates a pool type with a single block_size dimension.
-// Uses rank=1 and stores the packed dim in dims[0], following the same
-// packing as shaped types (loom_dim_pack_static / loom_dim_pack_dynamic).
-static inline loom_type_t loom_type_pool(uint64_t block_size_dim) {
-  uint8_t flags = LOOM_TYPE_FLAG_INLINE_DIMS;
-  if (!loom_dim_is_dynamic(block_size_dim)) {
-    flags |= LOOM_TYPE_FLAG_ALL_STATIC;
-  }
+// Creates an opaque allocation-resource type. Backing identity and allocation
+// capabilities are properties of the pool value, not type parameters.
+static inline loom_type_t loom_type_pool(void) {
   loom_type_t type = {0};
-  type.header = loom_type_make_raw_header(LOOM_TYPE_POOL, 0, 1, flags);
-  type.dims[0] = block_size_dim;
+  type.header = loom_type_make_raw_header(LOOM_TYPE_POOL, 0, 0,
+                                          LOOM_TYPE_FLAG_ALL_STATIC);
   return type;
 }
 

@@ -1379,7 +1379,7 @@ TEST_F(ModuleTest, TypeUseTableRebuildRetainsDeclarationArguments) {
   const loom_symbol_ref_t callee = {/*.module_id=*/0, /*.symbol_id=*/symbol_id};
   const loom_type_t argument_types[] = {
       loom_type_scalar(LOOM_SCALAR_TYPE_INDEX),
-      loom_type_pool(loom_dim_pack_static(4)),
+      loom_type_group_1d(loom_dim_pack_static(4)),
   };
   loom_op_t* declaration = nullptr;
   IREE_ASSERT_OK(loom_test_decl_build(
@@ -1391,7 +1391,7 @@ TEST_F(ModuleTest, TypeUseTableRebuildRetainsDeclarationArguments) {
   const loom_value_id_t extent = arguments.values[0];
   const loom_value_id_t storage = arguments.values[1];
   IREE_ASSERT_OK(loom_module_set_value_type(
-      module, storage, loom_type_pool(loom_dim_pack_dynamic(extent))));
+      module, storage, loom_type_group_1d(loom_dim_pack_dynamic(extent))));
   EXPECT_EQ(loom_module_value(module, storage)->use_count, 1u);
   EXPECT_EQ(loom_value_def_op(loom_module_value(module, storage)), nullptr);
   ASSERT_TRUE(loom_module_value_has_type_uses(module, extent));
@@ -1408,7 +1408,7 @@ TEST_F(ModuleTest, TypeUseTableRebuildRetainsDeclarationArguments) {
   IREE_ASSERT_OK(loom_module_recompute_type_uses(module));
   EXPECT_FALSE(loom_module_has_active_type_uses(module));
   IREE_ASSERT_OK(loom_module_set_value_type(
-      module, storage, loom_type_pool(loom_dim_pack_dynamic(extent))));
+      module, storage, loom_type_group_1d(loom_dim_pack_dynamic(extent))));
   IREE_ASSERT_OK(loom_module_recompute_type_uses(module));
   EXPECT_TRUE(loom_module_value_has_type_uses(module, extent));
 

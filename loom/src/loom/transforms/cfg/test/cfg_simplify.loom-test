@@ -1011,7 +1011,7 @@ func.def @closed_signature_carrier() {
   func.return
 ^unused:
   %width = index.constant 16 : index
-  test.decl @nested_signature(%storage: pool<[%width]>) -> (i32)
+  test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
   cfg.br ^exit
 }
 

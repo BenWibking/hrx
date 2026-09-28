@@ -68,7 +68,7 @@ func.def @valid_launch(%count: index, %output: tensor<4xi32>) {
 // ====
 
 // Each bodyless signature owns its local dependent types.
-kernel.decl @dependent_signatures(%workload_count: index, %host_storage: pool<[%workload_count]>) launch(%abi_count: index, %device_storage: pool<[%abi_count]>)
+kernel.decl @dependent_signatures(%workload_count: index, %host_group: group<[%workload_count]>) launch(%abi_count: index, %device_group: group<[%abi_count]>)
 
 // ====
 

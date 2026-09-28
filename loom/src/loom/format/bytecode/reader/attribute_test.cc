@@ -198,8 +198,8 @@ TEST_F(BytecodeAttributeTest, CompleteBindingsSurviveAttributeScratchReset) {
       /*.bindings=*/&bindings,
   };
   loom_bytecode_attribute_materializer_t materializer = MakeMaterializer();
-  // A complete pool record, then a later attribute reusing its scoped node.
-  const uint8_t first[] = {1, 4, 1, LOOM_BYTECODE_TYPE_POOL, 1, 1};
+  // A complete group record, then a later attribute reusing its scoped node.
+  const uint8_t first[] = {1, 6, 1, LOOM_BYTECODE_TYPE_GROUP, 1, 1, 1, 1};
   const uint8_t second[] = {1, 2, 0, 1};
   loom_bytecode_reader_cursor_t first_cursor = MakeCursor(first, sizeof(first));
   loom_attribute_t first_attr = loom_attr_absent();
@@ -224,7 +224,7 @@ TEST_F(BytecodeAttributeTest, CompleteBindingsSurviveAttributeScratchReset) {
   iree_arena_block_pool_trim(&block_pool_);
   const loom_type_t type =
       loom_type_table_get(&module_->types, second_attr.type_id);
-  EXPECT_EQ(loom_type_kind(type), LOOM_TYPE_POOL);
+  EXPECT_EQ(loom_type_kind(type), LOOM_TYPE_GROUP);
   EXPECT_EQ(loom_dim_value_id(loom_type_dim(type, 0)), width);
   EXPECT_EQ(error_count_, 0u);
 }
@@ -375,11 +375,9 @@ TEST_F(BytecodeAttributeTest, ScopedDialectNameUsesFullStringOrdinal) {
       /*.bindings=*/&bindings,
   };
   const uint8_t data[] = {
-      1,    10,
-      2,    LOOM_BYTECODE_TYPE_POOL,
-      1,    LOOM_BYTECODE_TYPE_DIALECT,
-      0x80, 0x80,
-      0x04, 1,
+      1,    12,   2,    LOOM_BYTECODE_TYPE_GROUP,
+      1,    1,    1,    LOOM_BYTECODE_TYPE_DIALECT,
+      0x80, 0x80, 0x04, 1,
       1,    2,
   };
   loom_bytecode_attribute_materializer_t materializer = MakeMaterializer();

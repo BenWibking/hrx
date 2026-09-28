@@ -2664,39 +2664,19 @@ class TestParseDynamicEncoding:
 
 
 class TestParsePoolType:
-    def test_static_pool(self) -> None:
-        """pool<65536> parses to PoolType with static block size."""
+    def test_pool(self) -> None:
         from loom.ir import PoolType
 
-        pool_type = _parse_type("pool<65536>")
-        assert isinstance(pool_type, PoolType)
-        assert pool_type.block_size == StaticDim(65536)
-
-    def test_dynamic_pool(self) -> None:
-        """pool<[%BS]> parses to PoolType with dynamic block size."""
-        from loom.ir import PoolType
-
-        module = Module()
-        scope = NameScope()
-        bs_id = module.add_value(Value(name="BS", type=INDEX))
-        scope.define("BS", bs_id)
-        pool_type = _parse_type("pool<[%BS]>", scope=scope, module=module)
-        assert isinstance(pool_type, PoolType)
-        assert pool_type.has_dynamic_block_size
-        assert pool_type.block_size == DynamicDim(bs_id)
+        assert _parse_type("pool") == PoolType()
 
     def test_pool_roundtrip(self) -> None:
-        """pool<[%BS]> round-trips through parse → print in a function."""
         text = (
-            "test.func @use_pool(%BS: index, %pool: pool<[%BS]>) -> (pool<[%BS]>) {\n"
-            "  test.yield %pool : pool<[%BS]>\n"
+            "test.func @use_pool(%pool: pool) -> (pool) {\n"
+            "  test.yield %pool : pool\n"
             "}\n"
         )
         module = _op_parser().parse(text)
-        printed = _op_printer().print_module(module)
-        assert printed == text, (
-            f"Round-trip failed.\nInput:\n{text}\nOutput:\n{printed}"
-        )
+        assert _op_printer().print_module(module) == text
 
 
 # ============================================================================
@@ -3059,10 +3039,10 @@ class TestDynamicDimScoping:
             " -> (tile<[%M]xf32>)\n"
         )
 
-    def test_dynamic_pool_references_earlier_arg(self) -> None:
-        """Dynamic pool block size references earlier index arg."""
+    def test_dynamic_group_references_earlier_arg(self) -> None:
+        """Dynamic group dimension references earlier index arg."""
         self._roundtrip_text(
-            "test.decl @p(%BS: index, %pool: pool<[%BS]>) -> (pool<[%BS]>)\n"
+            "test.decl @group(%width: index, %members: group<[%width]>) -> (group<[%width]>)\n"
         )
 
     def test_dynamic_encoding_references_earlier_arg(self) -> None:
@@ -3073,10 +3053,10 @@ class TestDynamicDimScoping:
         )
 
     def test_all_dynamic_in_one_signature(self) -> None:
-        """Dynamic dims, encoding, and pool all in one function."""
+        """Dynamic dimensions and encoding alongside an opaque pool."""
         self._roundtrip_text(
             "test.decl @kitchen_sink(%M: index, %N: index, %enc: encoding,"
-            " %t: tile<[%M]x[%N]xf32, %enc>, %p: pool<[%M]>)"
+            " %t: tile<[%M]x[%N]xf32, %enc>, %p: pool)"
             " -> (tile<[%M]x[%N]xf32, %enc>)\n"
         )
 

@@ -861,21 +861,7 @@ class BytecodeReader:
                     else EncodingType(role)
                 )
             case TypeKind.POOL:
-                if values is not None:
-                    reference, offset = decode_varint(data, offset)
-                    value_id = (
-                        self._map_value_ref(reference - 1, values)
-                        if reference
-                        else None
-                    )
-                    return PoolType(DynamicDim(value_id)), offset
-                is_dynamic = data[offset]
-                offset += 1
-                if is_dynamic:
-                    ir_type = PoolType(block_size=DynamicDim())
-                else:
-                    size, offset = decode_varint(data, offset)
-                    ir_type = PoolType(block_size=StaticDim(size))
+                ir_type = PoolType()
             case TypeKind.GROUP:
                 rank, offset = self._read_type_field(data, offset, values)
                 if rank == 0 or rank > 15:

@@ -43,7 +43,7 @@ func.def @nested_ordered_effect(%input: view<8xf32>, %initial: f32) -> (f32) {
 
 // ====
 
-func.def @nested_non_load_read(%input: view<8xi32>, %pool: pool<16>, %initial: i32, %condition: i1) -> (i32) {
+func.def @nested_non_load_read(%input: view<8xi32>, %pool: pool, %initial: i32, %condition: i1) -> (i32) {
   %begin = index.constant 0 : index
   %end = index.constant 4 : index
   %step = index.constant 1 : index
@@ -54,7 +54,7 @@ func.def @nested_non_load_read(%input: view<8xi32>, %pool: pool<16>, %initial: i
       %loaded = view.load %input[%i] : view<8xi32> -> i32
       scf.yield %loaded : i32
     } else {
-      %loaded = test.read_resource %pool : pool<16> -> i32
+      %loaded = test.read_resource %pool : pool -> i32
       scf.yield %loaded : i32
     }
     %next = scalar.addi %sum, %value : i32

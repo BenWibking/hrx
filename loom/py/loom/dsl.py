@@ -4213,9 +4213,7 @@ type TypeParamDef = (
 )
 
 
-_COMPACT_SHAPE_IR_KINDS = frozenset(
-    ("group", "pool", "tile", "tensor", "vector", "view")
-)
+_COMPACT_SHAPE_IR_KINDS = frozenset(("group", "tile", "tensor", "vector", "view"))
 
 
 def _validate_compact_shape_format(
@@ -4240,7 +4238,7 @@ def _validate_compact_shape_format(
         kw,
     )
 
-    if ir_kind in ("group", "pool"):
+    if ir_kind == "group":
         if len(params) != 1 or not isinstance(params[0], ShapeParam):
             raise ValueError(
                 f"TypeDef '{name}': {ir_kind} representation requires one "
