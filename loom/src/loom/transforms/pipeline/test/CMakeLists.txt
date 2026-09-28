@@ -13,6 +13,7 @@ loom_check_test_suite(
   NAME
     test
   SRCS
+    "compose.loom-test"
     "outline.loom-test"
 )
 

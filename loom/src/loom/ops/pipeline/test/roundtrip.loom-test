@@ -53,3 +53,18 @@ pipeline.def @placed(%column: index, %width: index) run(%input: channel<tile<[%w
     func.call @process(%width, %input, %count) : (index, channel<tile<[%width]xi32>>, index)
   }
 }
+
+// ====
+
+// Composition carries specialization operands separately from invocation
+// bindings while retaining dependent channel types across text and bytecode.
+pipeline.def @consume(%width: index) run(%input: channel<tile<[%width]xi32>>) {
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %read, %payload = channel.acquire %input : channel<tile<[%width]xi32>> -> (read<tile<[%width]xi32>>, view<[%width]xi32>)
+    channel.release %read : read<tile<[%width]xi32>>
+  }
+}
+
+pipeline.def @parent(%width: index) run(%input: channel<tile<[%width]xi32>>) {
+  pipeline.compose @consume[%width](%input) : [index](channel<tile<[%width]xi32>>)
+}

@@ -31,7 +31,8 @@ enum {
   LOOM_OP_PIPELINE_FINISH = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 8),
   LOOM_OP_PIPELINE_STRAND = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 9),
   LOOM_OP_PIPELINE_END = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 10),
-  LOOM_OP_PIPELINE_COUNT_ = 11,
+  LOOM_OP_PIPELINE_COMPOSE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 11),
+  LOOM_OP_PIPELINE_COUNT_ = 12,
 };
 
 // IEEE 754 fast-math relaxation flags for float operations.
@@ -291,6 +292,25 @@ iree_status_t loom_pipeline_end_build(
     loom_builder_t* builder,
     loom_location_id_t location,
     loom_op_t** out_op);
+
+// LOOM_OP_PIPELINE_COMPOSE: Compose a child pipeline into the enclosing invocation. Each composition constructs fresh child storage and independently progressing strands; it neither submits another invocation nor waits for child completion. Specialization and run operands substitute the child's complete typed signature. Child target and materialization requirements remain binding.
+// pipeline.compose @column[%column](%input, %output) : [index](channel<tile<16xi32>>, channel<tile<16xi32>>)
+LOOM_DEFINE_ISA(loom_pipeline_compose_isa, LOOM_OP_PIPELINE_COMPOSE)
+LOOM_DEFINE_SEGMENTED_OPERANDS(loom_pipeline_compose_specializations, 0)
+LOOM_DEFINE_SEGMENTED_OPERANDS(loom_pipeline_compose_bindings, 1)
+LOOM_DEFINE_ATTR_SYMBOL(loom_pipeline_compose_callee, 0)
+iree_status_t loom_pipeline_compose_build(
+    loom_builder_t* builder,
+    loom_symbol_ref_t callee,
+    const loom_value_id_t* specializations,
+    iree_host_size_t specializations_count,
+    const loom_value_id_t* bindings,
+    iree_host_size_t bindings_count,
+    loom_location_id_t location,
+    loom_op_t** out_op);
+iree_status_t loom_pipeline_compose_verify(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter);
 
 // Returns the vtable array for the pipeline dialect.
 const loom_op_vtable_t* const* loom_pipeline_dialect_vtables(

@@ -1121,6 +1121,9 @@ enum loom_call_like_kind_e {
   LOOM_CALL_LIKE_KIND_COMMAND_PROGRAM = 4,
   // Exact compile-time template implementation call.
   LOOM_CALL_LIKE_KIND_TEMPLATE = 5,
+  // Structural composition within the enclosing execution and lifetime scope.
+  // Flattening preserves the callee's target and product boundary requirements.
+  LOOM_CALL_LIKE_KIND_COMPOSITION = 6,
 };
 
 // Interface descriptor for direct symbol call-like ops. The operand field and

@@ -5690,6 +5690,8 @@ class CallLikeKind(Enum):
     COMMAND_PROGRAM = "command_program"
     # Exact compile-time template implementation call.
     TEMPLATE = "template"
+    # Structural composition sharing the enclosing execution and lifetime scope.
+    COMPOSITION = "composition"
 
 
 class InlinePolicy(Enum):

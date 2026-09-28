@@ -176,3 +176,25 @@ pipeline.def @negative_worker_count() run() {
   pipeline.strand workers([0], [-1], [1]) {
   }
 }
+
+// ====
+
+// Matching flattened types do not permit changing which arguments specialize
+// a child and which are supplied with each invocation.
+pipeline.def @child(%width: index) run(%count: index) {
+}
+
+pipeline.def @wrong_staging(%width: index) run(%count: index) {
+  // ERROR@+1: STRUCTURE/013 "specialization" "0" "pipeline specialization argument" "1"
+  pipeline.compose @child(%width, %count) : (index, index)
+}
+
+// ====
+
+pipeline.def @child(%width: index) run(%input: channel<tile<[%width]xi32>>) {
+}
+
+pipeline.def @wrong_record_width(%width: index, %other_width: index) run(%input: channel<tile<[%other_width]xi32>>) {
+  // ERROR@+1: TYPE/001 {field_a="operand 1", field_b="contract argument 1"}
+  pipeline.compose @child[%width](%input) : [index](channel<tile<[%other_width]xi32>>)
+}

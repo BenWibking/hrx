@@ -11,7 +11,9 @@ from loom.assembly import (
     COLON,
     COMMA,
     GLUE,
+    LBRACKET,
     LPAREN,
+    RBRACKET,
     RPAREN,
     Attr,
     FuncArgs,
@@ -49,6 +51,8 @@ from loom.dsl import (
     UNKNOWN_EFFECTS,
     VIEW,
     AttrDef,
+    CallLikeInterface,
+    CallLikeKind,
     Dialect,
     EnumCase,
     EnumDef,
@@ -197,6 +201,61 @@ pipeline_def = Op(
 )
 
 _PIPELINE_GRAPH_TRAITS = [HasAncestor("pipeline.def")]
+
+pipeline_compose = Op(
+    "pipeline.compose",
+    group=pipeline_ops,
+    doc=(
+        "Compose a child pipeline into the enclosing invocation. Each composition "
+        "constructs fresh child storage and independently progressing strands; "
+        "it neither submits another invocation nor waits for child completion. "
+        "Specialization and run operands substitute the child's complete typed "
+        "signature. Child target and materialization requirements remain binding."
+    ),
+    operands=[
+        Operand("specializations", ANY, variadic=True),
+        Operand("bindings", ANY, variadic=True),
+    ],
+    attrs=[
+        AttrDef(
+            "callee",
+            "symbol",
+            symbol_ref=SymbolReference("pipeline", ["pipeline"]),
+        ),
+    ],
+    traits=[UNKNOWN_EFFECTS, *_PIPELINE_GRAPH_TRAITS],
+    interfaces=[
+        CallLikeInterface(
+            callee="callee",
+            operands="specializations",
+            results=None,
+            kind=CallLikeKind.COMPOSITION,
+        ),
+    ],
+    verify="loom_pipeline_compose_verify",
+    format=[
+        SymbolRef("callee"),
+        OptionalGroup(
+            [GLUE, LBRACKET, Refs("specializations"), RBRACKET],
+            anchor="specializations",
+        ),
+        GLUE,
+        LPAREN,
+        Refs("bindings"),
+        RPAREN,
+        COLON,
+        OptionalGroup(
+            [LBRACKET, TypesOf("specializations"), RBRACKET, GLUE],
+            anchor="specializations",
+        ),
+        LPAREN,
+        TypesOf("bindings"),
+        RPAREN,
+    ],
+    examples=[
+        "pipeline.compose @column[%column](%input, %output) : [index](channel<tile<16xi32>>, channel<tile<16xi32>>)",
+    ],
+)
 
 pipeline_strand = Op(
     "pipeline.strand",
@@ -545,4 +604,5 @@ ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_finish,
     pipeline_strand,
     pipeline_end,
+    pipeline_compose,
 )

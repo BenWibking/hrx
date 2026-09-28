@@ -254,6 +254,38 @@ iree_status_t loom_pipeline_def_verify(const loom_module_t* module,
   return iree_ok_status();
 }
 
+iree_status_t loom_pipeline_compose_verify(const loom_module_t* module,
+                                           const loom_op_t* op,
+                                           iree_diagnostic_emitter_t emitter) {
+  const loom_symbol_ref_t callee = loom_pipeline_compose_callee(op);
+  if (callee.module_id == 0 && callee.symbol_id < module->symbols.count) {
+    const loom_func_like_t definition = loom_func_like_const_cast(
+        module, module->symbols.entries[callee.symbol_id].defining_op);
+    if (loom_func_like_isa(definition)) {
+      uint16_t argument_count = 0;
+      loom_func_like_arg_ids(definition, &argument_count);
+      const int64_t specialization_count =
+          loom_func_like_specialization_count(definition);
+      if (specialization_count < 0 || specialization_count > argument_count) {
+        // The definition owns this diagnostic, even if a use is visited first.
+        return iree_ok_status();
+      }
+      const loom_value_slice_t specializations =
+          loom_pipeline_compose_specializations(op);
+      if (specialization_count != specializations.count) {
+        return loom_pipeline_emit_count_mismatch(
+            emitter, op, IREE_SV("specialization"), specializations.count,
+            IREE_SV("pipeline specialization argument"),
+            (uint32_t)specialization_count);
+      }
+    }
+  }
+  const loom_call_like_t call = loom_call_like_const_cast(module, op);
+  return loom_function_call_contract_verify(
+      module, op, callee, loom_call_like_operands(call),
+      loom_call_like_results(call), 0, emitter);
+}
+
 iree_status_t loom_pipeline_scatter_verify(const loom_module_t* module,
                                            const loom_op_t* op,
                                            iree_diagnostic_emitter_t emitter) {

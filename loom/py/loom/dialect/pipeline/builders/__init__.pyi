@@ -123,3 +123,11 @@ class PipelineBuilder(DialectBuilder):
         *,
         location_id: int | None = ...,
     ) -> None: ...
+    def compose(
+        self,
+        *,
+        callee: str,
+        specializations: list[ValueRef] = ...,
+        bindings: list[ValueRef] = ...,
+        location_id: int | None = ...,
+    ) -> None: ...
