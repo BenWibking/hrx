@@ -767,6 +767,41 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    channel_plan
+  HDRS
+    "channel_plan.h"
+  SRCS
+    "channel_plan.c"
+  DEPS
+    ::value_relation
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::type_registry
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    channel_plan_test
+  SRCS
+    "channel_plan_test.cc"
+  DEPS
+    ::channel_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::index
+    loom::ops::type_registry
+)
+
+loom_cc_library(
+  NAME
     pipeline_resources
   HDRS
     "pipeline_resources.h"

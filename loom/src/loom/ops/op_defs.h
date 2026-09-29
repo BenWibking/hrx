@@ -1862,6 +1862,14 @@ iree_status_t loom_op_remove_results(loom_module_t* module, loom_op_t* op,
 // IREE_STATUS_FAILED_PRECONDITION if any result still has uses.
 iree_status_t loom_op_erase(loom_module_t* module, loom_op_t* op);
 
+// Erases a producer-proven closed set of disjoint operation subtrees. Results
+// may reference other members, but no live operation or type outside the set
+// may use a removed value. The consuming rewrite establishes that closure
+// before calling; this path does not repeat its use/def analysis. Unlike
+// repeated single-op erasure, source order need not be reverse topological.
+void loom_op_erase_closed_set(loom_module_t* module, loom_op_t* const* ops,
+                              iree_host_size_t count);
+
 // Removes a closed set of non-entry blocks from |region| and compacts the
 // region block table in place.
 //

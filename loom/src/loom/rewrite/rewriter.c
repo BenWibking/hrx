@@ -1238,6 +1238,23 @@ iree_status_t loom_rewriter_erase(loom_rewriter_t* rewriter, loom_op_t* op) {
   return iree_ok_status();
 }
 
+iree_status_t loom_rewriter_erase_closed_set(loom_rewriter_t* rewriter,
+                                             loom_op_t* const* ops,
+                                             iree_host_size_t count) {
+  for (iree_host_size_t i = 0; i < count; ++i) {
+    IREE_RETURN_IF_ERROR(
+        loom_rewriter_add_subtree_providers_to_worklist(rewriter, ops[i]));
+    IREE_RETURN_IF_ERROR(
+        loom_rewriter_add_parent_summary_ops_to_worklist(rewriter, ops[i]));
+  }
+  loom_op_erase_closed_set(rewriter->module, ops, count);
+  rewriter->erased_op_count += count;
+  if (count) {
+    rewriter->flags |= LOOM_REWRITER_FLAG_CHANGED;
+  }
+  return iree_ok_status();
+}
+
 static bool loom_rewriter_op_is_ancestor_of(const loom_op_t* ancestor,
                                             const loom_op_t* op) {
   for (const loom_op_t* current = op; current; current = current->parent_op) {

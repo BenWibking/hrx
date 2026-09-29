@@ -11,6 +11,24 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    channel_materialization
+  HDRS
+    "channel_materialization.h"
+  SRCS
+    "channel_materialization.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::channel_plan
+    loom::ir
+    loom::ops::cfg
+    loom::ops::func
+    loom::rewrite::rewriter
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     outline
   HDRS
     "outline.h"

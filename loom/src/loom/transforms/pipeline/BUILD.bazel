@@ -13,6 +13,21 @@ package(
 )
 
 loom_cc_library(
+    name = "channel_materialization",
+    srcs = ["channel_materialization.c"],
+    hdrs = ["channel_materialization.h"],
+    deps = [
+        "//loom/src/loom/analysis:channel_plan",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/cfg",
+        "//loom/src/loom/ops/func",
+        "//loom/src/loom/rewrite:rewriter",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "outline",
     srcs = ["outline.c"],
     hdrs = ["outline.h"],
