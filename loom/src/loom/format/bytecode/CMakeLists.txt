@@ -188,6 +188,23 @@ loom_cc_library(
 
 loom_cc_test(
   NAME
+    cfg_roundtrip_test
+  SRCS
+    "cfg_roundtrip_test.cc"
+  DEPS
+    ::reader
+    ::writer
+    iree::base::internal::arena
+    iree::io::stream
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::cfg
+    loom::ops::test
+)
+
+loom_cc_test(
+  NAME
     reader_test
   SRCS
     "function_projection_reader_test.cc"

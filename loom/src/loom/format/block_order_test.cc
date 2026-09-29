@@ -4,7 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/format/text/printer/block_order.h"
+#include "loom/format/block_order.h"
 
 #include <vector>
 
@@ -74,22 +74,22 @@ class BlockOrderTest : public ::testing::Test {
             LOOM_LOCATION_UNKNOWN, &terminator));
       }
     }
-    loom_print_block_order_t order = {};
-    IREE_CHECK_OK(loom_print_block_order_initialize(module_, region, &order));
+    loom_format_block_order_t order = {};
+    IREE_CHECK_OK(loom_format_block_order_initialize(module_, region, &order));
     std::vector<uint16_t> result;
     for (uint16_t position = 0; position < region->block_count; ++position) {
-      result.push_back(loom_print_block_order_index(&order, position));
+      result.push_back(loom_format_block_order_index(&order, position));
       EXPECT_EQ(loom_region_block(region, position), original[position]);
       EXPECT_EQ(loom_block_region_index(original[position]), position);
     }
     if (region->block_count == 1) {
       EXPECT_EQ(order.arena.block_pool, nullptr);
     }
-    loom_print_block_order_deinitialize(&order);
+    loom_format_block_order_deinitialize(&order);
     return result;
   }
 
-  // Storage pool shared by the module and transient printer plans.
+  // Storage pool shared by the module and transient serialization plans.
   iree_arena_block_pool_t pool_;
   // Minimal dialect registry for the constructed CFG terminators.
   loom_context_t context_;

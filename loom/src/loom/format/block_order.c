@@ -4,7 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/format/text/printer/block_order.h"
+#include "loom/format/block_order.h"
 
 #include <string.h>
 
@@ -12,9 +12,9 @@
 #include "loom/util/cfg_dominance.h"
 #include "loom/util/cfg_graph.h"
 
-static iree_status_t loom_print_block_order_build(
+static iree_status_t loom_format_block_order_build(
     const loom_module_t* module, const loom_region_t* region,
-    loom_print_block_order_t* order) {
+    loom_format_block_order_t* order) {
   loom_cfg_graph_t graph = {0};
   loom_cfg_dominance_t dominance = {0};
   IREE_RETURN_IF_ERROR(
@@ -80,23 +80,23 @@ static iree_status_t loom_print_block_order_build(
   return iree_ok_status();
 }
 
-iree_status_t loom_print_block_order_initialize(
+iree_status_t loom_format_block_order_initialize(
     const loom_module_t* module, const loom_region_t* region,
-    loom_print_block_order_t* out_order) {
+    loom_format_block_order_t* out_order) {
   memset(out_order, 0, sizeof(*out_order));
   if (!region || region->block_count <= 1) {
     return iree_ok_status();
   }
   iree_arena_initialize(module->arena.block_pool, &out_order->arena);
   iree_status_t status =
-      loom_print_block_order_build(module, region, out_order);
+      loom_format_block_order_build(module, region, out_order);
   if (!iree_status_is_ok(status)) {
-    loom_print_block_order_deinitialize(out_order);
+    loom_format_block_order_deinitialize(out_order);
   }
   return status;
 }
 
-void loom_print_block_order_deinitialize(loom_print_block_order_t* order) {
+void loom_format_block_order_deinitialize(loom_format_block_order_t* order) {
   iree_arena_deinitialize(&order->arena);
   memset(order, 0, sizeof(*order));
 }
