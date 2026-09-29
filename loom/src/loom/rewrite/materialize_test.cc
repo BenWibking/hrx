@@ -229,7 +229,8 @@ TEST_F(MaterializeTest, ClonesSharedArgumentTypesWithTargetOwnedPayloads) {
   loom_value_id_t dimension;
   IREE_ASSERT_OK(loom_module_define_value(source_, index, &dimension));
   IREE_ASSERT_OK(loom_block_add_arg(source_, source_block, dimension));
-  loom_type_t type = loom_type_pool(loom_dim_pack_dynamic(dimension));
+  loom_type_t type = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                                         loom_dim_pack_dynamic(dimension), 0);
   constexpr int kDepth = 64;
   for (int i = 0; i < kDepth; ++i) {
     IREE_ASSERT_OK(
