@@ -53,6 +53,26 @@ typedef struct loom_pipeline_resource_allocation_t {
   uint64_t byte_alignment;
 } loom_pipeline_resource_allocation_t;
 
+typedef struct loom_pipeline_resource_channel_t {
+  // Fresh protocol binding, independent of its backing allocation identity.
+  loom_op_t* binding;
+  // Source identity selected by strand captures and channel actions.
+  loom_value_id_t value_id;
+  // Complete slot-view projection retained from the construction's facts.
+  // The footprint is an envelope, not a promise of dense record placement.
+  loom_value_fact_view_reference_t storage;
+  // Specialized number of records in the authored binding.
+  uint64_t capacity;
+} loom_pipeline_resource_channel_t;
+
+typedef struct loom_pipeline_resource_strand_t {
+  // Source declaration retaining target and worker-domain geometry.
+  loom_op_t* declaration;
+  // Outlined ordinary call whose operands supply the actual captures.
+  // Its operand order is the callee's formal order, not a resource ABI.
+  loom_op_t* call;
+} loom_pipeline_resource_strand_t;
+
 typedef struct loom_pipeline_resources_t {
   // Borrowed canonical backing rows; the admitting plan outlives this result.
   const loom_pipeline_resource_pool_t* pools;
@@ -66,23 +86,37 @@ typedef struct loom_pipeline_resources_t {
   const loom_pipeline_resource_allocation_t* allocations;
   // Number of source placements.
   iree_host_size_t allocation_count;
+  // Fresh channel bindings, sorted by source identity for indexed lookup.
+  const loom_pipeline_resource_channel_t* channels;
+  // Number of retained local channel bindings.
+  iree_host_size_t channel_count;
+  // Nonempty outlined strands in construction order.
+  const loom_pipeline_resource_strand_t* strands;
+  // Number of retained strand calls.
+  iree_host_size_t strand_count;
 } loom_pipeline_resources_t;
 
 // Resolves invocation-owned allocations in a specialized pipeline construction.
 // The caller has composed child construction and supplied canonical pool
-// bindings. This owner visits construction once, consumes retained buffer
-// facts, and keeps every allocation live throughout the invocation.
+// bindings. This owner visits construction once, consumes retained storage
+// facts, and retains channel identities and outlined strand calls alongside
+// allocation placements. Every allocation stays live throughout the invocation.
 // Strand-local storage remains with worker compilation and joins the same
 // packings using source_storage_packing_reserve before capacity admission.
 //
-// Allocation construction must be straight-line with finite specialized sizes;
+// Allocation construction must be straight-line with finite specialized sizes
+// and capacities. Strand bodies must have been outlined into ordinary calls;
 // executable control flow inside strands is unrestricted by this analysis.
+// Other construction operations must be pure. Observable initialization must
+// have its own execution placement before this resource-only boundary.
 // Unresolved authored bindings, extents, or construction are diagnostics with
 // out_valid false. Statuses carry allocation and layout-arithmetic failures.
 // No IR mutation occurs. Source mutation invalidates this result; a consuming
 // rewrite must retain or translate its source correspondence before erasure.
+// The fact table and its extension storage outlive this result.
 iree_status_t loom_pipeline_resources_build(
-    loom_func_like_t pipeline, const loom_value_fact_table_t* facts,
+    loom_module_t* module, loom_func_like_t pipeline,
+    const loom_value_fact_table_t* facts,
     const loom_pipeline_resource_pool_t* pools, iree_host_size_t pool_count,
     const loom_pipeline_resource_pool_binding_t* bindings,
     iree_host_size_t binding_count,
@@ -95,6 +129,13 @@ iree_status_t loom_pipeline_resources_build(
 const loom_pipeline_resource_allocation_t*
 loom_pipeline_resources_lookup_allocation(
     const loom_pipeline_resources_t* resources, loom_value_id_t root_value_id);
+
+// Returns the local channel binding for an actual captured source identity.
+// NULL means this construction does not directly define the binding; the
+// enclosing admission must resolve it. Equal storage roots never substitute
+// for this explicit protocol correspondence.
+const loom_pipeline_resource_channel_t* loom_pipeline_resources_lookup_channel(
+    const loom_pipeline_resources_t* resources, loom_value_id_t value_id);
 
 // Checks the complete pool budgets after source, transport and worker storage
 // have joined the packings. Failure names the canonical pool, required extent,

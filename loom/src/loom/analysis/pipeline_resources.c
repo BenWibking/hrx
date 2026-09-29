@@ -10,6 +10,8 @@
 
 #include "loom/error/error_catalog.h"
 #include "loom/ops/buffer/ops.h"
+#include "loom/ops/channel/ops.h"
+#include "loom/ops/func/ops.h"
 #include "loom/ops/pipeline/ops.h"
 
 static iree_status_t loom_pipeline_resources_reject(
@@ -34,8 +36,18 @@ static int loom_pipeline_resources_compare_root(const void* lhs,
   return (lhs_root > rhs_root) - (lhs_root < rhs_root);
 }
 
+static int loom_pipeline_resources_compare_channel(const void* lhs,
+                                                   const void* rhs) {
+  const loom_value_id_t lhs_id =
+      ((const loom_pipeline_resource_channel_t*)lhs)->value_id;
+  const loom_value_id_t rhs_id =
+      ((const loom_pipeline_resource_channel_t*)rhs)->value_id;
+  return (lhs_id > rhs_id) - (lhs_id < rhs_id);
+}
+
 iree_status_t loom_pipeline_resources_build(
-    loom_func_like_t pipeline, const loom_value_fact_table_t* facts,
+    loom_module_t* module, loom_func_like_t pipeline,
+    const loom_value_fact_table_t* facts,
     const loom_pipeline_resource_pool_t* pools, iree_host_size_t pool_count,
     const loom_pipeline_resource_pool_binding_t* bindings,
     iree_host_size_t binding_count,
@@ -67,9 +79,34 @@ iree_status_t loom_pipeline_resources_build(
 
   loom_pipeline_resource_allocation_t* allocations = NULL;
   iree_host_size_t allocation_capacity = 0;
+  loom_pipeline_resource_channel_t* channels = NULL;
+  iree_host_size_t channel_capacity = 0;
+  loom_pipeline_resource_strand_t* strands = NULL;
+  iree_host_size_t strand_capacity = 0;
   const loom_block_t* entry = loom_region_const_entry_block(body);
-  for (const loom_op_t* op = entry->first_op; op; op = op->next_op) {
+  for (loom_op_t* op = entry->first_op; op; op = op->next_op) {
     if (loom_pipeline_strand_isa(op)) {
+      const loom_region_t* strand_body = loom_pipeline_strand_body(op);
+      loom_op_t* call = loom_region_const_entry_block(strand_body)->first_op;
+      if (strand_body->block_count == 1 && loom_pipeline_end_isa(call)) {
+        continue;
+      }
+      if (strand_body->block_count != 1 || !loom_func_call_isa(call) ||
+          !loom_pipeline_end_isa(call->next_op)) {
+        return loom_pipeline_resources_reject(
+            op,
+            IREE_SV("outlined strand bodies with explicit callable captures"),
+            diagnostic_emitter);
+      }
+      if (resources.strand_count == strand_capacity) {
+        IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+            arena, resources.strand_count, resources.strand_count + 1,
+            sizeof(*strands), &strand_capacity, (void**)&strands));
+      }
+      strands[resources.strand_count++] = (loom_pipeline_resource_strand_t){
+          .declaration = op,
+          .call = call,
+      };
       continue;
     }
     if (op->region_count || loom_pipeline_compose_isa(op)) {
@@ -77,7 +114,50 @@ iree_status_t loom_pipeline_resources_build(
           op, IREE_SV("composed and specialized allocation construction"),
           diagnostic_emitter);
     }
+    if (loom_channel_bind_isa(op)) {
+      loom_pipeline_resource_channel_t channel = {
+          .binding = op,
+          .value_id = loom_channel_bind_result(op),
+      };
+      if (!loom_value_facts_query_view_reference(
+              &facts->context,
+              loom_value_fact_table_lookup(facts,
+                                           loom_channel_bind_storage(op)),
+              &channel.storage)) {
+        return loom_pipeline_resources_reject(
+            op, IREE_SV("an explicit storage projection for channel slots"),
+            diagnostic_emitter);
+      }
+      int64_t capacity = 0;
+      if (!loom_value_facts_as_exact_i64(
+              loom_value_fact_table_lookup(facts,
+                                           loom_channel_bind_capacity(op)),
+              &capacity) ||
+          capacity <= 0) {
+        return loom_pipeline_resources_reject(
+            op, IREE_SV("a positive specialized channel capacity"),
+            diagnostic_emitter);
+      }
+      channel.capacity = (uint64_t)capacity;
+      if (resources.channel_count == channel_capacity) {
+        IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+            arena, resources.channel_count, resources.channel_count + 1,
+            sizeof(*channels), &channel_capacity, (void**)&channels));
+      }
+      channels[resources.channel_count++] = channel;
+      continue;
+    }
     if (!loom_buffer_alloca_isa(op)) {
+      const loom_trait_flags_t traits = loom_op_effective_traits(module, op);
+      if (!loom_pipeline_finish_isa(op) &&
+          (!iree_any_bit_set(traits, LOOM_TRAIT_PURE) ||
+           loom_traits_may_read(traits) || loom_traits_may_write(traits) ||
+           iree_any_bit_set(
+               traits, LOOM_TRAIT_OBSERVABLE_EFFECT | LOOM_TRAIT_CONVERGENT))) {
+        return loom_pipeline_resources_reject(
+            op, IREE_SV("an execution placement for construction effects"),
+            diagnostic_emitter);
+      }
       continue;
     }
 
@@ -134,9 +214,35 @@ iree_status_t loom_pipeline_resources_build(
           loom_pipeline_resources_compare_root);
   }
   resources.allocations = allocations;
+  if (resources.channel_count > 1) {
+    qsort(channels, resources.channel_count, sizeof(*channels),
+          loom_pipeline_resources_compare_channel);
+  }
+  resources.channels = channels;
+  resources.strands = strands;
   *out_resources = resources;
   *out_valid = true;
   return iree_ok_status();
+}
+
+const loom_pipeline_resource_channel_t* loom_pipeline_resources_lookup_channel(
+    const loom_pipeline_resources_t* resources, loom_value_id_t value_id) {
+  iree_host_size_t begin = 0;
+  iree_host_size_t end = resources->channel_count;
+  while (begin < end) {
+    const iree_host_size_t middle = begin + (end - begin) / 2;
+    const loom_pipeline_resource_channel_t* channel =
+        &resources->channels[middle];
+    if (channel->value_id == value_id) {
+      return channel;
+    }
+    if (channel->value_id < value_id) {
+      begin = middle + 1;
+    } else {
+      end = middle;
+    }
+  }
+  return NULL;
 }
 
 const loom_pipeline_resource_allocation_t*

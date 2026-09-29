@@ -815,6 +815,8 @@ loom_cc_library(
     loom::error::error_defs
     loom::ir
     loom::ops::buffer
+    loom::ops::channel
+    loom::ops::func
     loom::ops::pipeline
     loom::util::fact_table
   PUBLIC
@@ -832,6 +834,14 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::error::error_defs
+    loom::ir
+    loom::ops::buffer
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::index
+    loom::ops::pipeline
+    loom::ops::type_registry
+    loom::util::fact_table
 )
 
 loom_cc_library(
