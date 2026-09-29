@@ -767,6 +767,44 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    channel_handoff
+  HDRS
+    "channel_handoff.h"
+  SRCS
+    "channel_handoff.c"
+  DEPS
+    ::channel_plan
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::channel
+    loom::ops::type_registry
+    loom::util::cfg_graph
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    channel_handoff_test
+  SRCS
+    "channel_handoff_test.cc"
+  DEPS
+    ::channel_handoff
+    ::channel_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::cfg
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::type_registry
+    loom::ops::view
+    loom::util::cfg_graph
+)
+
+loom_cc_library(
+  NAME
     channel_plan
   HDRS
     "channel_plan.h"
