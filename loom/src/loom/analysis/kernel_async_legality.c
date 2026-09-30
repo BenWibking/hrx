@@ -228,6 +228,57 @@ static iree_status_t loom_kernel_async_legality_fail_newer_groups(
                                          params, IREE_ARRAYSIZE(params));
 }
 
+static iree_status_t loom_kernel_async_legality_fail_memory_space(
+    loom_kernel_async_legality_state_t* state, const loom_op_t* op,
+    iree_string_view_t operand_name, const loom_movement_endpoint_t* endpoint,
+    iree_string_view_t expected_constraint) {
+  loom_diagnostic_param_t params[] = {
+      loom_param_string(operand_name),
+      loom_param_type(endpoint->type),
+      loom_param_string(expected_constraint),
+  };
+  return loom_kernel_async_legality_emit(state, op, LOOM_ERR_TYPE_003, params,
+                                         IREE_ARRAYSIZE(params));
+}
+
+// Endpoint placement is checked after composition and specialization, using the
+// same retained movement facts as the lifetime checks below. Source helpers can
+// borrow views whose memory spaces are supplied by their callers.
+static iree_status_t loom_kernel_async_legality_check_memory_spaces(
+    loom_kernel_async_legality_state_t* state,
+    const loom_movement_request_t* request) {
+  const loom_value_fact_memory_space_t source_space =
+      request->source.memory_space;
+  const loom_value_fact_memory_space_t dest_space = request->dest.memory_space;
+  if (request->direction == LOOM_KERNEL_DIRECTION_WORKGROUP_TO_GLOBAL) {
+    if (source_space != LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
+      return loom_kernel_async_legality_fail_memory_space(
+          state, request->op, IREE_SV("source"), &request->source,
+          IREE_SV("workgroup memory-space fact"));
+    }
+    if (dest_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
+        dest_space != LOOM_VALUE_FACT_MEMORY_SPACE_DESCRIPTOR) {
+      return loom_kernel_async_legality_fail_memory_space(
+          state, request->op, IREE_SV("dest"), &request->dest,
+          IREE_SV("global or descriptor memory-space fact"));
+    }
+  } else {
+    if (source_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
+        source_space != LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT &&
+        source_space != LOOM_VALUE_FACT_MEMORY_SPACE_DESCRIPTOR) {
+      return loom_kernel_async_legality_fail_memory_space(
+          state, request->op, IREE_SV("source"), &request->source,
+          IREE_SV("global, constant, or descriptor memory-space fact"));
+    }
+    if (dest_space != LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP) {
+      return loom_kernel_async_legality_fail_memory_space(
+          state, request->op, IREE_SV("dest"), &request->dest,
+          IREE_SV("workgroup memory-space fact"));
+    }
+  }
+  return iree_ok_status();
+}
+
 static bool loom_kernel_async_legality_use_is_wait(const loom_use_t* use) {
   return loom_kernel_async_wait_isa(loom_use_user_op(*use));
 }
@@ -615,6 +666,11 @@ static iree_status_t loom_kernel_async_legality_append_transfer(
       producer_op->result_count != 1) {
     return loom_kernel_async_legality_fail(state, producer_op,
                                            LOOM_ERR_LOWERING_025);
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_kernel_async_legality_check_memory_spaces(state, &request));
+  if (state->failed) {
+    return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(loom_kernel_async_legality_check_cluster_request(
       state, producer_op, &request));

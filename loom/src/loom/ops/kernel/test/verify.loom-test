@@ -1127,39 +1127,6 @@ kernel.def @async_copy_accepts_noalias_kernel_buffer_memory_space() {
 
 // ====
 
-func.def @async_copy_rejects_unknown_source_memory(%buffer: buffer, %offset: offset) {
-  %base = index.constant 0 : offset
-  %bytes = index.constant 1024 : offset
-  %layout = encoding.layout.dense : encoding<layout>
-  %source = buffer.view %buffer[%offset] : buffer -> view<16xi8, %layout>
-  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
-  %dest = buffer.view %scratch[%base] : buffer -> view<16xi8, %layout>
-  // ERROR@+1: TYPE/003 "source" "global, constant, or descriptor memory-space fact"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
-  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
-  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
-  func.return
-}
-
-// ====
-
-func.def @async_copy_rejects_direction_memory_mismatch(%buffer: buffer, %offset: offset) {
-  %base = index.constant 0 : offset
-  %bytes = index.constant 1024 : offset
-  %layout = encoding.layout.dense : encoding<layout>
-  %global = buffer.assume.memory_space<global> %buffer : buffer
-  %source = buffer.view %global[%offset] : buffer -> view<16xi8, %layout>
-  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
-  %dest = buffer.view %scratch[%base] : buffer -> view<16xi8, %layout>
-  // ERROR@+1: TYPE/003 "source" "workgroup memory-space fact"
-  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<16xi8, %layout> to view<16xi8, %layout> -> kernel.async.token
-  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
-  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
-  func.return
-}
-
-// ====
-
 func.def @async_copy_rejects_global_store_last_use_cache(%buffer: buffer, %offset: offset) {
   %base = index.constant 0 : offset
   %bytes = index.constant 1024 : offset
@@ -1359,21 +1326,6 @@ func.def @async_gather_requires_static_lane_footprint(%buffer: buffer, %offset: 
 
 // ====
 
-func.def @async_gather_rejects_workgroup_source(%bytes: offset) {
-  %base = index.constant 0 : offset
-  %layout = encoding.layout.dense : encoding<layout>
-  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
-  %source = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
-  %dest = buffer.view %scratch[%base] : buffer -> view<64x4xi8, %layout>
-  // ERROR@+1: TYPE/003 "source" "global, constant, or descriptor memory-space fact"
-  %copy = kernel.async.gather %source to %dest {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<64x4xi8, %layout> -> kernel.async.token
-  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
-  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
-  func.return
-}
-
-// ====
-
 func.def @async_cluster_gather_rejects_wrong_mask_type(%buffer: buffer, %offset: offset) {
   %base = index.constant 0 : offset
   %bytes = index.constant 1024 : offset
@@ -1421,37 +1373,6 @@ func.def @async_cluster_gather_rejects_mismatched_width(%buffer: buffer, %offset
   %dest = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
   // ERROR@+1: TYPE/003 "dest" "same static byte footprint as source"
   %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = cu, cache_temporal = regular} : view<8xi8, %layout> to view<4xi8, %layout>, i32 -> kernel.async.token
-  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
-  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
-  func.return
-}
-
-// ====
-
-func.def @async_cluster_gather_rejects_workgroup_source(%bytes: offset) {
-  %base = index.constant 0 : offset
-  %layout = encoding.layout.dense : encoding<layout>
-  %cluster_mask = scalar.constant 15 : i32
-  %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
-  %source = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
-  %dest = buffer.view %scratch[%base] : buffer -> view<4xi8, %layout>
-  // ERROR@+1: TYPE/003 "source" "global, constant, or descriptor memory-space fact"
-  %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<4xi8, %layout>, i32 -> kernel.async.token
-  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
-  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
-  func.return
-}
-
-// ====
-
-func.def @async_cluster_gather_rejects_global_dest(%buffer: buffer, %offset: offset) {
-  %layout = encoding.layout.dense : encoding<layout>
-  %cluster_mask = scalar.constant 15 : i32
-  %global = buffer.assume.memory_space<global> %buffer : buffer
-  %source = buffer.view %global[%offset] : buffer -> view<4xi8, %layout>
-  %dest = buffer.view %global[%offset] : buffer -> view<4xi8, %layout>
-  // ERROR@+1: TYPE/003 "dest" "workgroup memory-space fact"
-  %copy = kernel.async.cluster.gather %source to %dest using %cluster_mask {cache_scope = cu, cache_temporal = regular} : view<4xi8, %layout> to view<4xi8, %layout>, i32 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
@@ -1524,27 +1445,6 @@ func.def @async_tensor_load_rejects_rank_mismatch(%buffer: buffer, %offset: offs
 
 // ====
 
-func.def @async_tensor_store_rejects_constant_dest(%buffer: buffer, %offset: offset) {
-  %base = index.constant 0 : offset
-  %bytes = index.constant 16384 : offset
-  %layout = encoding.layout.dense : encoding<layout>
-  %descriptor_fill_value = scalar.constant 0 : i32
-  %d0 = vector.splat %descriptor_fill_value : vector<4xi32>
-  %d1 = vector.splat %descriptor_fill_value : vector<8xi32>
-  %desc = kernel.tensor.lds.descriptor dgroups(%d0, %d1) : vector<4xi32>, vector<8xi32> -> kernel.tensor.lds.descriptor
-  %scratch = buffer.alloca<workgroup> align(256) %bytes : buffer
-  %source = buffer.view %scratch[%base] : buffer -> view<64x64xf32, %layout>
-  %constant = buffer.assume.memory_space<constant> %buffer : buffer
-  %dest = buffer.view %constant[%offset] : buffer -> view<64x64xf32, %layout>
-  // ERROR@+1: TYPE/003 "dest" "global or descriptor memory-space fact"
-  %copy = kernel.async.tensor.store.from.lds %source to %dest using %desc {cache_scope = device, cache_temporal = non_temporal_writeback} : view<64x64xf32, %layout> to view<64x64xf32, %layout>, kernel.tensor.lds.descriptor -> kernel.async.token
-  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
-  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
-  func.return
-}
-
-// ====
-
 // Kernel declarations expose the same function-like predicate contract as
 // ordinary source functions.
 // ERROR@+1: TYPE/003 "predicates[0].arg[0]" "f32" "integer, index, or offset scalar"
@@ -1569,4 +1469,13 @@ kernel.def @bad_definition_predicate() {
   kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%c1, %c1, %c1) : index
 } launch(%value: i32) where [eq(4, %value)] {
   kernel.return
+}
+
+// ====
+
+func.def @async_copy_borrows_view_arguments(%source: view<256xi8>, %destination: view<64xi32>) {
+  %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<256xi8> to view<64xi32> -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
 }

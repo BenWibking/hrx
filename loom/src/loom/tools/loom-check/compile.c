@@ -346,7 +346,7 @@ static iree_status_t loom_check_compile_select_source_function(
   }
 
   iree_host_size_t definition_count = 0;
-  iree_host_size_t public_count = 0;
+  iree_host_size_t entry_count = 0;
   for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
     const loom_symbol_t* symbol = &module->symbols.entries[i];
     const loom_func_like_t function =
@@ -355,20 +355,22 @@ static iree_status_t loom_check_compile_select_source_function(
       continue;
     }
     ++definition_count;
-    const bool is_public =
-        iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC);
-    public_count += is_public;
-    if (definition_count == 1 || is_public) {
+    const bool is_entry =
+        iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC) ||
+        loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_KERNEL_ENTRY);
+    entry_count += is_entry;
+    if (definition_count == 1 || is_entry) {
       function_name = loom_string_table_get(&module->strings, symbol->name_id);
     }
   }
-  if (definition_count == 0 || (definition_count > 1 && public_count != 1)) {
+  if (definition_count == 0 || (definition_count > 1 && entry_count != 1)) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
         "target compile option requires one function definition or one public "
-        "entry with private helpers; specify @function for an ambiguous "
-        "module (got %" PRIhsz " definitions and %" PRIhsz " public entries)",
-        definition_count, public_count);
+        "function or kernel entry with private helpers; specify @function for "
+        "an ambiguous module (got %" PRIhsz " definitions and %" PRIhsz
+        " entries)",
+        definition_count, entry_count);
   }
   *out_function_name = function_name;
   return iree_ok_status();

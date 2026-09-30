@@ -173,8 +173,9 @@ unsigned entry(unsigned value) { return value + 1u; }
 In a `.cxx-test`, import produces the source function and specialization supplies
 its target facts, including reachable helpers. The same request works with
 `.loom-test` source IR. With `target=...`, omitting `@entry` selects the sole
-function definition or the unique public entry among private helpers. This lets
-a file-level RUN select one target across cases with different entry names.
+function definition or the unique public function or kernel entry among private
+helpers. This lets a file-level RUN select one target across cases with different
+entry names.
 `output=low` compares the resulting Low assembly;
 `output=module` includes the rest of the module, and `output=none` checks only
 source-located diagnostics. Functions with authored target bindings can use the
@@ -188,7 +189,8 @@ comparison. Input verification errors use the same diagnostic annotations as
 
 Pass, pass-report, and compile-report modes accept the same target selection
 before the pipeline. An optional `entry=@function` selects an explicit entry;
-otherwise the sole definition or unique public entry is selected:
+otherwise the sole definition or unique public function or kernel entry is
+selected:
 
 ```text
 // RUN: with-checks compile-report target=vm:core source-to-low,low-dce
