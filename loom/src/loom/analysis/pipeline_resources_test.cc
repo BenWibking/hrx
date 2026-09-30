@@ -181,6 +181,23 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
   IREE_ASSERT_OK(loom_func_return_build(&builder_, nullptr, 0,
                                         LOOM_LOCATION_UNKNOWN, &terminator));
 
+  // This child has an independently materialized execution boundary. Its
+  // repeated invocations retain the caller's channels in actual-operand order.
+  loom_builder_set_block(&builder_, loom_module_block(module_));
+  builder_.ip.parent_op = nullptr;
+  const auto child_symbol = Symbol("child");
+  const loom_type_t child_arguments[] = {
+      loom_type_scalar(LOOM_SCALAR_TYPE_INDEX), channel_type, channel_type};
+  loom_op_t* child;
+  IREE_ASSERT_OK(loom_pipeline_def_build(
+      &builder_, LOOM_PIPELINE_DEF_BUILD_FLAG_HAS_SCOPE,
+      LOOM_PIPELINE_DEF_SCOPE_KERNEL, 0, 1, loom_symbol_ref_null(),
+      child_symbol, child_arguments, 3, nullptr, 0, nullptr, 0,
+      LOOM_LOCATION_UNKNOWN, &child));
+  loom_builder_enter_region(&builder_, child, loom_pipeline_def_body(child));
+  IREE_ASSERT_OK(loom_pipeline_finish_build(&builder_, LOOM_LOCATION_UNKNOWN,
+                                            &terminator));
+
   loom_builder_set_block(&builder_, loom_module_block(module_));
   builder_.ip.parent_op = nullptr;
   loom_op_t* pipeline;
@@ -235,6 +252,14 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
         loom_pipeline_end_build(&builder_, LOOM_LOCATION_UNKNOWN, &terminator));
   }
   loom_builder_enter_region(&builder_, pipeline, body);
+  const auto column = Constant(7, LOOM_SCALAR_TYPE_INDEX);
+  loom_op_t* compositions[2];
+  for (size_t i = 0; i < 2; ++i) {
+    const loom_value_id_t actuals[] = {channels[i], channels[1 - i]};
+    IREE_ASSERT_OK(loom_pipeline_compose_build(
+        &builder_, child_symbol, &column, 1, actuals, 2, LOOM_LOCATION_UNKNOWN,
+        &compositions[i]));
+  }
   IREE_ASSERT_OK(loom_pipeline_finish_build(&builder_, LOOM_LOCATION_UNKNOWN,
                                             &terminator));
 
@@ -256,7 +281,23 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
   ASSERT_EQ(resources.allocation_count, 1u);
   ASSERT_EQ(resources.channel_count, 2u);
   ASSERT_EQ(resources.strand_count, 2u);
+  ASSERT_EQ(resources.composition_count, 2u);
   for (size_t i = 0; i < 2; ++i) {
+    EXPECT_EQ(resources.compositions[i], compositions[i]);
+    const auto composed = loom_call_like_operands(
+        loom_call_like_cast(module_, resources.compositions[i]));
+    ASSERT_EQ(composed.count, 3u);
+    EXPECT_EQ(composed.values[0], column);
+    const auto* first =
+        loom_pipeline_resources_lookup_channel(&resources, composed.values[1]);
+    const auto* second =
+        loom_pipeline_resources_lookup_channel(&resources, composed.values[2]);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(first->value_id, channels[i]);
+    EXPECT_EQ(second->value_id, channels[1 - i]);
+    EXPECT_NE(first, second);
+    EXPECT_EQ(first->storage.root_value_id, second->storage.root_value_id);
     EXPECT_EQ(resources.strands[i].call, calls[i]);
     const auto captures = loom_func_call_operands(resources.strands[i].call);
     EXPECT_EQ(captures.values[0], channels[i]);

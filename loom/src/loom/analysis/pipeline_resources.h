@@ -112,17 +112,29 @@ typedef struct loom_pipeline_resources_t {
   const loom_pipeline_resource_strand_t* strands;
   // Number of retained strand calls.
   iree_host_size_t strand_count;
+  // Child compositions retained at independent execution boundaries. Each call
+  // supplies the actual arguments for a distinct child construction; equal
+  // callee symbols or targets do not identify one resource instance. The
+  // enclosing planner consumes these edges before erasing their source IR.
+  loom_op_t* const* compositions;
+  // Number of retained child compositions.
+  iree_host_size_t composition_count;
 } loom_pipeline_resources_t;
 
 // Resolves invocation-owned allocations in a specialized pipeline construction.
-// The caller has composed child construction within one execution boundary and
+// The caller has inlined child construction sharing one execution boundary and
 // supplied canonical backing rows, selectable memories, and incoming pool
 // bindings. Memory selections in construction resolve against that invocation's
 // catalog. Each (memory space, coordinates) selection has one canonical
 // backing; several selections or incoming values may name the same backing.
 // This owner visits construction once, consumes retained storage
-// facts, and retains channel identities and outlined strand calls alongside
-// allocation placements. Every allocation stays live throughout the invocation.
+// facts, and retains channel identities, outlined strand calls, and child
+// compositions alongside allocation placements. Child execution boundaries
+// remain separate: the enclosing planner binds their formal arguments using
+// these retained calls and plans each child's construction with its own
+// admitted resources. This result describes this construction's resources,
+// not the transitive resources of its children. Every allocation stays live
+// throughout the invocation.
 // Strand-local storage remains with worker compilation and joins the same
 // packings using source_storage_packing_reserve before capacity admission.
 //

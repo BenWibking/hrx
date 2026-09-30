@@ -146,6 +146,8 @@ iree_status_t loom_pipeline_resources_build(
   iree_host_size_t channel_capacity = 0;
   loom_pipeline_resource_strand_t* strands = NULL;
   iree_host_size_t strand_capacity = 0;
+  loom_op_t** compositions = NULL;
+  iree_host_size_t composition_capacity = 0;
   loom_pipeline_resource_pool_binding_t* pool_bindings = NULL;
   iree_host_size_t pool_binding_capacity = 0;
   if (binding_count) {
@@ -202,7 +204,17 @@ iree_status_t loom_pipeline_resources_build(
       };
       continue;
     }
-    if (op->region_count || loom_pipeline_compose_isa(op)) {
+    if (loom_pipeline_compose_isa(op)) {
+      if (resources.composition_count == composition_capacity) {
+        IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+            arena, resources.composition_count, resources.composition_count + 1,
+            sizeof(*compositions), &composition_capacity,
+            (void**)&compositions));
+      }
+      compositions[resources.composition_count++] = op;
+      continue;
+    }
+    if (op->region_count) {
       return loom_pipeline_resources_reject(
           op, IREE_SV("composed and specialized allocation construction"),
           diagnostic_emitter);
@@ -313,6 +325,7 @@ iree_status_t loom_pipeline_resources_build(
   }
   resources.channels = channels;
   resources.strands = strands;
+  resources.compositions = compositions;
   if (resources.pool_binding_count > 1) {
     qsort(pool_bindings, resources.pool_binding_count, sizeof(*pool_bindings),
           loom_pipeline_resources_compare_pool);
