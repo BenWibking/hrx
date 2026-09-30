@@ -254,7 +254,6 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   loom_aie2p_array_program_t array_program = {};
   array_program.array_records = records;
   array_program.array_record_count = IREE_ARRAYSIZE(records);
-  array_program.tile_program_count = 1;
 
   const loom_aie2p_xdna_entry_t entry = {
       /*.name=*/IREE_SV("entry"),
