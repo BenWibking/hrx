@@ -14,6 +14,7 @@ loom_check_test_suite(
     test
   SRCS
     "callgraph_specialization.loom-test"
+    "strand_callgraph.loom-test"
 )
 
 loom_low_descriptor_cc_library(

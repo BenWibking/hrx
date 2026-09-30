@@ -101,7 +101,6 @@ loom_cc_library(
         "//loom/src/loom/ops/target",
         "//loom/src/loom/pass:types",
         "//loom/src/loom/rewrite:callable",
-        "//loom/src/loom/util:walk",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],

@@ -19,7 +19,10 @@ package(
 
 loom_check_test_suite(
     name = "test",
-    srcs = ["callgraph_specialization.loom-test"],
+    srcs = [
+        "callgraph_specialization.loom-test",
+        "strand_callgraph.loom-test",
+    ],
 )
 
 _TEST_LOW_LOWER_VISIBILITY = [

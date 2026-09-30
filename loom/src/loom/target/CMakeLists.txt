@@ -113,7 +113,6 @@ loom_cc_library(
     loom::ops::target
     loom::pass::types
     loom::rewrite::callable
-    loom::util::walk
   PUBLIC
 )
 
