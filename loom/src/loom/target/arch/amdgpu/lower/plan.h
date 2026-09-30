@@ -32,6 +32,8 @@
 extern "C" {
 #endif
 
+typedef struct loom_low_lower_realization_t loom_low_lower_realization_t;
+
 typedef enum loom_amdgpu_constant_plan_kind_e {
   LOOM_AMDGPU_CONSTANT_PLAN_KIND_NONE = 0,
   LOOM_AMDGPU_CONSTANT_PLAN_KIND_U32_BITS = 1,
@@ -480,6 +482,7 @@ typedef struct loom_amdgpu_scalar_cttz_plan_t {
 typedef enum loom_amdgpu_scalar_conversion_kind_e {
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NONE = 0,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_ALIAS,
+  LOOM_AMDGPU_SCALAR_CONVERSION_KIND_INTEGER_TO_PREDICATE,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_TRUNCATE_LOW_32,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT,
   LOOM_AMDGPU_SCALAR_CONVERSION_KIND_NARROW_RESULT_LOW_32,
@@ -1226,16 +1229,20 @@ typedef enum loom_amdgpu_kernel_barrier_lowering_kind_e {
   // Converged wave execution supplies the rendezvous; memory ordering is
   // separate.
   LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_CONVERGED_SUBGROUP = 4,
+  // Emit the arrival packet for an authored split-barrier phase.
+  LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_ARRIVE = 5,
+  // Emit the wait packet for an authored split-barrier phase.
+  LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_WAIT = 6,
 } loom_amdgpu_kernel_barrier_lowering_kind_t;
 
 typedef struct loom_amdgpu_kernel_barrier_plan_t {
-  // Concrete synchronization packet path selected for kernel.barrier.
+  // Concrete synchronization packet path selected for a kernel barrier op.
   loom_amdgpu_kernel_barrier_lowering_kind_t kind;
   // Explicit wait packet selected when |kind| is LDS_WAIT.
   loom_amdgpu_explicit_packet_plan_t wait;
-  // Explicit signal packet selected when |kind| is SPLIT_BARRIER.
+  // Explicit signal packet selected for SPLIT_BARRIER or SPLIT_ARRIVE.
   loom_amdgpu_explicit_packet_plan_t split_signal;
-  // Explicit wait packet selected when |kind| is SPLIT_BARRIER.
+  // Explicit wait packet selected for SPLIT_BARRIER or SPLIT_WAIT.
   loom_amdgpu_explicit_packet_plan_t split_wait;
 } loom_amdgpu_kernel_barrier_plan_t;
 
@@ -1497,6 +1504,19 @@ typedef struct loom_amdgpu_memory_access_t {
   // Mixed-bank realizations that fit u32 VADDR and eliminate dynamic SOFFSET.
   // Bits index source.dynamic_realizations; promotion requires the entire set.
   uint8_t vaddr_realization_mask;
+  // Operand path selected for source.retained_component, or NONE when the
+  // packet keeps its canonical terms. Selection establishes the complete bound.
+  loom_amdgpu_memory_dynamic_index_kind_t retained_component_kind;
+  // Shared physical values, independent of canonical source memory effects.
+  struct {
+    // Invariant or loop-carried dynamic vector offset, or NULL for direct
+    // emission.
+    const loom_low_lower_realization_t* vaddr;
+    // Bounds-checked buffer descriptor incorporating the scalar dynamic offset.
+    const loom_low_lower_realization_t* descriptor;
+    // Invariant scalar byte offset not covered by the packet's immediate.
+    const loom_low_lower_realization_t* soffset;
+  } realization;
   // Static byte offset folded into the scalar base pointer.
   uint64_t scalar_base_byte_offset;
   // Location selected for scalar dynamic and static address terms.
@@ -1671,6 +1691,17 @@ typedef struct loom_amdgpu_fragment_memory_narrowed_result_plan_t {
 static_assert(sizeof(loom_amdgpu_fragment_memory_narrowed_result_plan_t) == 16,
               "narrowed-result plans must stay compact");
 
+// Full-width origin contributions folded into a global fragment's scalar base.
+// All remaining source and fragment-coordinate contributions fit U32 VADDR.
+typedef struct loom_amdgpu_fragment_memory_scalar_base_t {
+  // Static source bytes added to the binding pointer instead of VADDR.
+  uint64_t byte_offset;
+  // Source dynamic terms added to the pointer, indexed by canonical term.
+  uint32_t dynamic_term_mask;
+} loom_amdgpu_fragment_memory_scalar_base_t;
+static_assert(LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY <= 32,
+              "fragment scalar-base mask must cover all source terms");
+
 typedef struct loom_amdgpu_fragment_memory_plan_t {
   // Direction of the fragment memory movement.
   loom_low_source_memory_operation_kind_t operation_kind;
@@ -1680,8 +1711,12 @@ typedef struct loom_amdgpu_fragment_memory_plan_t {
   loom_amdgpu_matrix_fragment_layout_kind_t layout_kind;
   // Target-independent source view access plan.
   loom_low_source_memory_access_plan_t source;
+  // Retained full-width origin partition; zero for narrow-only addressing.
+  loom_amdgpu_fragment_memory_scalar_base_t scalar_base;
   // Whether every dynamic source-address term is subgroup-uniform.
   bool dynamic_base_is_subgroup_uniform;
+  // Shared carried dynamic/lane address, or NULL for direct address emission.
+  const loom_low_lower_realization_t* address_realization;
   // Decode strategy and retained facts for an FP8 load payload.
   loom_amdgpu_fp8_decode_action_t fp8_load_decode;
   // Source store payload or load result SSA value.

@@ -57,7 +57,8 @@ typedef enum loom_target_math_op_e {
   LOOM_TARGET_MATH_OP_ROUNDF = 21,
   LOOM_TARGET_MATH_OP_ROUNDEVENF = 22,
   LOOM_TARGET_MATH_OP_TRUNCF = 23,
-  LOOM_TARGET_MATH_OP_CBRTF = 24,
+  LOOM_TARGET_MATH_OP_SUBF = 24,
+  LOOM_TARGET_MATH_OP_CBRTF = 25,
 } loom_target_math_op_t;
 
 typedef enum loom_target_math_lane_domain_e {

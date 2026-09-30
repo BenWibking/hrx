@@ -121,6 +121,9 @@ loom_low_placement_pair_use_list_empty(void) {
   return (loom_low_placement_pair_use_list_t){0};
 }
 
+// Sentinel used when a relation source is not an operand of the observed op.
+#define LOOM_LOW_PLACEMENT_SOURCE_OPERAND_NONE UINT16_MAX
+
 // One directional placement relation keyed by result and source value ordinals.
 typedef struct loom_low_placement_relation_t {
   // Operation that introduced this relation.
@@ -149,7 +152,18 @@ typedef struct loom_low_placement_relation_t {
   loom_low_placement_relation_flags_t flags;
   // Relative benefit of satisfying this relation.
   uint16_t priority;
+  // Flat operand index of |source_ordinal| on |op|, or
+  // LOOM_LOW_PLACEMENT_SOURCE_OPERAND_NONE when the source is not an operand.
+  uint16_t source_operand_index;
 } loom_low_placement_relation_t;
+
+#if UINTPTR_MAX == UINT64_MAX
+static_assert(sizeof(loom_low_placement_relation_t) == 40,
+              "placement relations must remain compact");
+#else
+static_assert(sizeof(loom_low_placement_relation_t) == 36,
+              "placement relations must remain compact");
+#endif  // UINTPTR_MAX == UINT64_MAX
 
 // Composes two retained relations over their overlapping intermediate units.
 // Returns false for different intermediate values or disjoint unit ranges.
@@ -189,6 +203,11 @@ typedef struct loom_low_placement_table_t {
   loom_low_placement_relation_t* relations;
   // Number of relation records.
   iree_host_size_t relation_count;
+  // Indices into |relations| for whole-value control-flow edge payloads, in
+  // liveness operation order.
+  const uint32_t* edge_relation_indices;
+  // Number of entries in |edge_relation_indices|.
+  uint32_t edge_relation_count;
   // Number of relations constraining concrete location choice.
   iree_host_size_t location_relation_count;
   // Number of hard relations constraining concrete location choice.
@@ -224,6 +243,11 @@ typedef struct loom_low_placement_table_t {
   // ordinal. Unconnected values name themselves. NULL when the function has no
   // tied storage.
   const loom_value_ordinal_t* tied_storage_origins_by_value_ordinal;
+  // Required instruction alignment exponents indexed by liveness interval.
+  // Exact tied-storage components share their strongest requirement. NULL
+  // when no packet requires alignment beyond one allocation unit.
+  // Optional slice/concat aliases are checked at their concrete derived base.
+  const uint8_t* unit_alignment_log2_by_interval;
 } loom_low_placement_table_t;
 
 // Returns true when |relation| can justify overlapping target-visible storage.

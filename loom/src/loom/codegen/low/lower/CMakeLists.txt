@@ -20,6 +20,8 @@ loom_cc_library(
     "function_boundary.h"
     "lower.h"
     "module_state.h"
+    "participation.h"
+    "realization.h"
     "report.h"
     "representation_projection.h"
     "rule_descriptor.h"
@@ -29,6 +31,7 @@ loom_cc_library(
     "rule_value.h"
     "rules.h"
     "source_call.h"
+    "source_memory.h"
     "source_plan.h"
     "source_query.h"
     "visibility.h"
@@ -41,7 +44,9 @@ loom_cc_library(
     "lower.c"
     "memory_effects.c"
     "module_state.c"
+    "participation.c"
     "policy.c"
+    "realization.c"
     "report.c"
     "representation_projection.c"
     "rule_descriptor.c"
@@ -51,6 +56,7 @@ loom_cc_library(
     "rule_source_memory_materialize.c"
     "rule_value.c"
     "source_call.c"
+    "source_memory.c"
     "source_plan.c"
     "source_query.c"
     "visibility.c"
@@ -60,8 +66,11 @@ loom_cc_library(
     iree::base::internal::arena
     loom::analysis::cfg_value_identity
     loom::analysis::condition_facts
+    loom::analysis::consumption
     loom::analysis::contract_vector
+    loom::analysis::control_uniformity
     loom::analysis::kernel_async_legality
+    loom::analysis::kernel_barrier_lifetime
     loom::analysis::native_layout
     loom::analysis::symbol_facts
     loom::analysis::symbolic_expr
@@ -106,6 +115,7 @@ loom_cc_library(
     loom::util::cfg_execution
     loom::util::cfg_graph
     loom::util::cfg_loop_nest
+    loom::util::dominance
     loom::util::fact_table
     loom::util::string_pool
   PUBLIC
@@ -207,6 +217,7 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::analysis::consumption
     loom::codegen::low::testing::source_workload
     loom::ir
     loom::ops::index

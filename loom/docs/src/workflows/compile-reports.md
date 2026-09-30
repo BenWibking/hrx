@@ -129,8 +129,10 @@ remain visible instead of manufacturing geometry.
 Explicit loop pipeline policies appear under **Source loop pipelines**. Each
 policy records its compiled function, loop ordinal, applied depth, queue shape,
 and ordinary read count. Detailed reports include each source operation's
-producer or consumer stage and its lookahead in original iterations. Depth one
-records the author's serial policy. Unannotated loops produce no pipeline rows.
+producer or consumer stage and its lookahead in original iterations. A guarded
+conditional partition appears at one source position with separate producer
+and consumer rows. Depth one records the author's serial policy. Unannotated
+loops produce no pipeline rows.
 Loop ordinals distinguish applied policies within a function; they are not
 source locations or stable identifiers across arbitrary source edits.
 
@@ -211,8 +213,23 @@ can broadcast. AMD's [LDS bank-conflict explanation](https://rocm.blogs.amd.com/
 describes the CDNA3 b128 groups; the
 [ROCm programming guide](https://rocm-handbook.amd.com/_/downloads/amd-rocm-programming-guide/en/docs-7.2.3/pdf/)
 describes identical-address broadcast. Wide-access analysis requires proven
-alignment and full-subgroup participation. Fragment accesses use their compiled
+alignment and an exact active-lane set. Fragment accesses use their compiled
 lane/register layout, including repeated lane addresses.
+
+A branch such as `lane / 16 == 1` can select sixteen lanes of a wave64
+subgroup. When every entry into the memory operation comes from that branch,
+and the branch itself executes with a full subgroup, the report evaluates its
+complete comparison for every lane and wave. It also accounts for the false
+branch's complementary mask. A b64 access by one quarter-wave occupies one
+sixteen-lane service phase on gfx1100/gfx1151; inactive phases contribute zero
+rounds. Substituting a full wave would count four occupied phases instead.
+
+The active set must be nonempty and identical across waves for this proof.
+Opaque predicates, additional varying guards, and loop entries with multiple
+incoming edges retain unknown participation unless a separate uniform-execution
+proof applies. Knowing only that `lane < 16` follows from a larger condition
+is insufficient: an additional predicate may select fewer lanes. This affects
+report coverage, not the generated kernel or its supported control flow.
 
 Source accesses can combine workitem coordinates, subgroup-lane coordinates,
 and subgroup-uniform offsets. The analysis uses native X-fastest workitem order,
@@ -434,12 +451,14 @@ experiment; it does not establish a gain. Expected whole-value fragments,
 untouched banks, very large decompositions, peer rejection, and generic
 transport rejection remain visible in `show` without speculative advice.
 
-Nested `scf.if` and `scf.for` appear as intact operations in the reported
-producer/consumer schedule. The read count includes static load operations
-inside their regions, including alternative branches; it is not a count of
-dynamic memory transactions. Independently pipelined inner loops have their
-own policy rows. Their transformed bodies then participate in the enclosing
-loop's schedule.
+Nested `scf.if` and `scf.for` normally appear as intact operations in the
+reported producer/consumer schedule. A retained guarded partition instead
+reports the same `scf.if` source position twice with `partition=guarded`, once
+for its read closure and once for its ordered remainder. The read count includes
+static load operations inside scheduled regions; it is not a count of dynamic
+memory transactions. Independently pipelined inner loops have their own policy
+rows. Their transformed bodies then participate in the enclosing loop's
+schedule.
 
 This source advice works across target families. When target-specific advice is
 unavailable, the result retains its reason in `target_unavailable_reason` while

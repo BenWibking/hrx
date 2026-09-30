@@ -27,9 +27,13 @@ loom_check_test_suite(
     "bitcast.cxx-test"
     "bitcast_folding.cxx-test"
     "bitcast_invalid.cxx-test"
+    "boolean_storage.cxx-test"
+    "boolean_storage_cleanup.cxx-test"
     "check.cxx-test"
     "check_records.cxx-test"
     "check_resources.cxx-test"
+    "class_conversions.cxx-test"
+    "class_conversions_invalid.cxx-test"
     "condition_declarations.cxx-test"
     "conditionals.cxx-test"
     "config.cxx-test"
@@ -67,6 +71,7 @@ loom_check_test_suite(
     "locations.cxx-test"
     "loops.cxx-test"
     "macro_operators.cxx-test"
+    "narrow_float_subtraction.cxx-test"
     "offsetof.cxx-test"
     "offsetof_roundtrip.cxx-test"
     "opaque_pointers.cxx-test"
@@ -97,7 +102,11 @@ loom_check_test_suite(
     "subgroups_invalid.cxx-test"
     "symbols.cxx-test"
     "symbols_invalid.cxx-test"
+    "template_addresses.cxx-test"
+    "template_addresses_invalid.cxx-test"
     "template_calls.cxx-test"
+    "template_conversions.cxx-test"
+    "template_conversions_invalid.cxx-test"
     "vector_constants.cxx-test"
     "vector_conversion.cxx-test"
     "vector_conversion_invalid.cxx-test"
@@ -121,6 +130,32 @@ loom_check_test_suite(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/record_layout.h"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/record_values.cxx"
 )
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+loom_test_module(
+  NAME
+    boolean_storage_test_module
+  SRCS
+    "boolean_storage.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_VM)
+loom_execution_test(
+  NAME
+    boolean_storage_test_execute_vm_reference_test
+  MODULE
+    "::boolean_storage_test_module"
+  LABELS
+    "iree-build-requirement=loom.target.arch.vm"
+    "loom-execution-profile=vm_reference"
+    "loom-target-family=vm"
+    "loom-target-class=cpu"
+    "loom-executor=reference"
+)
+endif()
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
@@ -1068,6 +1103,15 @@ loom_check_test_suite(
 )
 endif()
 
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_X86)
+loom_check_test_suite(
+  NAME
+    x86_compiler_test
+  SRCS
+    "x86_lowering.cxx-test"
+)
+endif()
+
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_WASM)
 loom_check_test_suite(
   NAME
@@ -1086,6 +1130,16 @@ loom_test_module(
   SRCS
     "atomic_builtins.cxx"
     "atomics.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    boolean_storage_module
+  SRCS
+    "boolean_storage.cxx"
+    "boolean_storage_kernels.loom"
 )
 endif()
 

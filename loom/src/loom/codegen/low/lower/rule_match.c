@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "iree/base/internal/math.h"
+#include "loom/analysis/consumption.h"
 #include "loom/analysis/symbolic_expr_proof.h"
 #include "loom/codegen/low/lower/context.h"
 #include "loom/codegen/low/lower/rule_source_memory.h"
@@ -699,14 +700,11 @@ static bool loom_low_lower_rule_value_facts_i64_range_ge(
   return facts.range_lo >= other_facts.range_hi;
 }
 
-static bool loom_low_lower_rule_value_storage_element_format(
+static bool loom_low_lower_rule_value_storage_schema(
     const loom_low_lower_rule_match_context_t* match_context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
     uint16_t value_ref_index,
-    loom_value_fact_numeric_format_flags_t expected_format) {
-  if (expected_format == LOOM_VALUE_FACT_NUMERIC_FORMAT_UNKNOWN) {
-    return false;
-  }
+    loom_value_fact_storage_schema_t* out_storage_schema) {
   const loom_value_id_t value_id = loom_low_lower_rule_source_value(
       match_context->module, rule_set, source_op, value_ref_index);
   if (match_context->fact_table != NULL) {
@@ -715,8 +713,8 @@ static bool loom_low_lower_rule_value_storage_element_format(
             &match_context->fact_table->context,
             loom_value_fact_table_lookup(match_context->fact_table, value_id),
             &summary)) {
-      return summary.storage_schema.encoded_operand.element_format ==
-             expected_format;
+      *out_storage_schema = summary.storage_schema;
+      return true;
     }
   }
   const loom_type_t type =
@@ -724,10 +722,36 @@ static bool loom_low_lower_rule_value_storage_element_format(
   const loom_fact_context_t* fact_context =
       match_context->fact_table != NULL ? &match_context->fact_table->context
                                         : NULL;
-  loom_value_fact_storage_schema_t storage_schema = {0};
   return loom_encoding_query_type_storage_schema(
-             fact_context, match_context->module, type, &storage_schema) &&
+      fact_context, match_context->module, type, out_storage_schema);
+}
+
+static bool loom_low_lower_rule_value_storage_element_format(
+    const loom_low_lower_rule_match_context_t* match_context,
+    const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
+    uint16_t value_ref_index,
+    loom_value_fact_numeric_format_flags_t expected_format) {
+  if (expected_format == LOOM_VALUE_FACT_NUMERIC_FORMAT_UNKNOWN) {
+    return false;
+  }
+  loom_value_fact_storage_schema_t storage_schema = {0};
+  return loom_low_lower_rule_value_storage_schema(match_context, rule_set,
+                                                  source_op, value_ref_index,
+                                                  &storage_schema) &&
          storage_schema.encoded_operand.element_format == expected_format;
+}
+
+static bool loom_low_lower_rule_value_storage_operand_schema(
+    const loom_low_lower_rule_match_context_t* match_context,
+    const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
+    uint16_t value_ref_index,
+    loom_value_fact_encoded_operand_schema_t expected_schema) {
+  loom_value_fact_storage_schema_t storage_schema = {0};
+  return loom_low_lower_rule_value_storage_schema(match_context, rule_set,
+                                                  source_op, value_ref_index,
+                                                  &storage_schema) &&
+         loom_value_fact_encoded_operand_schema_equal(
+             storage_schema.encoded_operand, expected_schema);
 }
 
 static bool loom_low_lower_rule_value_memory_space_matches(
@@ -1073,6 +1097,11 @@ static iree_status_t loom_low_lower_rule_guard_matches(
           match_context, rule_set, source_op, guard->value_ref_index,
           guard->payload.u64);
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_OPERAND_SCHEMA:
+      *out_matches = loom_low_lower_rule_value_storage_operand_schema(
+          match_context, rule_set, source_op, guard->value_ref_index,
+          rule_set->storage_operand_schemas[guard->index.element_index]);
+      return iree_ok_status();
     case LOOM_LOW_LOWER_GUARD_VALUE_MEMORY_SPACE:
       *out_matches = loom_low_lower_rule_value_memory_space_matches(
           match_context, rule_set, source_op, guard->value_ref_index,
@@ -1095,6 +1124,21 @@ static iree_status_t loom_low_lower_rule_guard_matches(
           loom_module_value(match_context->module, value_id));
       return iree_ok_status();
     }
+    case LOOM_LOW_LOWER_GUARD_VALUE_NO_USES_AFTER: {
+      if (match_context->consumption_query == NULL) {
+        *out_matches = false;
+        return iree_ok_status();
+      }
+      const loom_value_id_t value_id = loom_low_lower_rule_source_value(
+          match_context->module, rule_set, source_op, guard->value_ref_index);
+      loom_consumption_use_t use = {0};
+      bool use_found = false;
+      IREE_RETURN_IF_ERROR(loom_consumption_find_use_after(
+          match_context->consumption_query, source_op, value_id, &use,
+          &use_found));
+      *out_matches = !use_found;
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_VECTOR_EXTRACT_SHAPE:
       *out_matches = loom_low_lower_rule_vector_extract_shape_matches(
           match_context, rule_set, source_op, guard);
@@ -1107,6 +1151,14 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       *out_matches =
           !iree_any_bit_set(source_op->instance_flags, guard->payload.u64);
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_TARGET_SUBGROUP_SIZE_RANGE: {
+      const int64_t subgroup_size =
+          (int64_t)match_context->bundle->snapshot->subgroup_size;
+      *out_matches = subgroup_size != 0 &&
+                     subgroup_size >= guard->payload.i64_range.minimum &&
+                     subgroup_size <= guard->payload.i64_range.maximum;
+      return iree_ok_status();
+    }
     default:
       IREE_ASSERT_UNREACHABLE("unknown generated lower guard kind");
       IREE_BUILTIN_UNREACHABLE();

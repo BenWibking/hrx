@@ -9,6 +9,7 @@
 #include "iree/base/internal/arena.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/analysis/consumption.h"
 #include "loom/codegen/low/testing/source_workload.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -59,6 +60,7 @@ class LowLowerRuleMatchTest : public ::testing::Test {
   void SetUp() override {
     iree_arena_block_pool_initialize(4096, iree_allocator_system(),
                                      &block_pool_);
+    iree_arena_initialize(&block_pool_, &query_arena_);
     loom_context_initialize(iree_allocator_system(), &context_);
     IREE_ASSERT_OK(loom_low_source_workload_register_dialects(&context_));
     IREE_ASSERT_OK(loom_context_finalize(&context_));
@@ -72,6 +74,7 @@ class LowLowerRuleMatchTest : public ::testing::Test {
   void TearDown() override {
     loom_module_free(module_);
     loom_context_deinitialize(&context_);
+    iree_arena_deinitialize(&query_arena_);
     iree_arena_block_pool_deinitialize(&block_pool_);
   }
 
@@ -188,11 +191,73 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     return result;
   }
 
+  bool SelectValueNoUsesAfter(
+      const loom_op_t* source_op,
+      loom_consumption_region_query_t* consumption_query) {
+    loom_low_lower_guard_t guard = {};
+    guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_NO_USES_AFTER;
+    guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+    const loom_low_lower_guard_ref_t guard_ref = 0;
+    loom_low_lower_value_ref_t value_ref = {};
+    value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_OPERAND;
+    loom_low_lower_rule_t rule = {};
+    rule.source_op_kind = source_op->kind;
+    rule.guard_count = 1;
+    const loom_low_lower_rule_span_t span = {
+        /*.source_op_kind=*/source_op->kind,
+        /*.rule_start=*/0,
+        /*.rule_count=*/1,
+    };
+    loom_low_lower_rule_set_t rule_set = {};
+    rule_set.spans = &span;
+    rule_set.span_count = 1;
+    rule_set.rules = &rule;
+    rule_set.rule_count = 1;
+    rule_set.guards = &guard;
+    rule_set.guard_count = 1;
+    rule_set.guard_refs = &guard_ref;
+    rule_set.guard_ref_count = 1;
+    rule_set.value_refs = &value_ref;
+    rule_set.value_ref_count = 1;
+    loom_low_lower_rule_match_context_t match_context = {};
+    match_context.module = module_;
+    match_context.consumption_query = consumption_query;
+    loom_low_lower_rule_selection_t selection = {};
+    IREE_EXPECT_OK(loom_low_lower_rule_set_select_with_match_context(
+        &match_context, &rule_set, source_op, &selection));
+    return selection.rule != nullptr;
+  }
+
   iree_arena_block_pool_t block_pool_;
+  iree_arena_allocator_t query_arena_;
   loom_context_t context_;
   loom_module_t* module_ = nullptr;
   loom_builder_t builder_;
 };
+
+TEST_F(LowLowerRuleMatchTest, MatchesValueWithNoDynamicallyLaterUses) {
+  const loom_value_id_t available_lhs =
+      loom_scalar_constant_result(BuildScalarConstant(1));
+  const loom_value_id_t available_rhs =
+      loom_scalar_constant_result(BuildScalarConstant(2));
+  BuildMultiply(available_lhs, available_rhs);
+  const loom_op_t* available_source = BuildAdd(available_lhs, available_rhs);
+
+  const loom_value_id_t observed_lhs =
+      loom_scalar_constant_result(BuildScalarConstant(3));
+  const loom_value_id_t observed_rhs =
+      loom_scalar_constant_result(BuildScalarConstant(4));
+  BuildMultiply(observed_lhs, observed_rhs);
+  const loom_op_t* observed_source = BuildAdd(observed_lhs, observed_rhs);
+  BuildMultiply(observed_lhs, observed_rhs);
+
+  loom_consumption_region_query_t consumption_query;
+  loom_consumption_region_query_initialize(module_, module_->body,
+                                           &query_arena_, &consumption_query);
+  EXPECT_TRUE(SelectValueNoUsesAfter(available_source, &consumption_query));
+  EXPECT_FALSE(SelectValueNoUsesAfter(observed_source, &consumption_query));
+  EXPECT_FALSE(SelectValueNoUsesAfter(available_source, nullptr));
+}
 
 TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
   loom_low_lower_guard_t guards[2] = {};
@@ -330,6 +395,92 @@ TEST_F(LowLowerRuleMatchTest, MatchesBiasedPowersWithoutSignedOverflow) {
     EXPECT_EQ(selection.rule != nullptr, test_case.matches)
         << "value=" << test_case.value << " addend=" << test_case.addend;
   }
+}
+
+TEST_F(LowLowerRuleMatchTest, MatchesCompleteStorageOperandSchema) {
+  const loom_op_t* source_op = BuildScalarConstant(7);
+  const loom_value_fact_encoded_operand_schema_t actual_schema = {
+      /*.element_format=*/LOOM_VALUE_FACT_NUMERIC_FORMAT_F8_E4M3FN,
+      /*.scale_format=*/LOOM_VALUE_FACT_NUMERIC_FORMAT_F8_E8M0,
+      /*.secondary_scale_format=*/{},
+      /*.payload_packing=*/LOOM_VALUE_FACT_PAYLOAD_PACKING_DENSE_LANES,
+      /*.scale_topology=*/LOOM_VALUE_FACT_SCALE_TOPOLOGY_BLOCK_1D,
+      /*.affine_policy=*/LOOM_VALUE_FACT_AFFINE_POLICY_SCALE_ONLY,
+      /*.rounding_policy=*/{},
+      /*.codebook_policy=*/{},
+      /*.sparsity_policy=*/{},
+      /*.flags=*/{},
+      /*.sparsity_group=*/{},
+      /*.payload_register_count=*/{},
+      /*.payload_element_count=*/8,
+      /*.scale_group=*/
+      {
+          /*.element_count=*/8,
+          /*.shape=*/{8},
+      },
+      /*.scale_operand_count=*/1,
+  };
+  loom_value_fact_table_t facts = {};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&facts, &module_->arena,
+                                                  module_->values.count));
+  loom_value_facts_t source_facts = {};
+  const loom_value_fact_encoding_summary_t summary = {
+      /*.role=*/LOOM_ENCODING_ROLE_STORAGE_SCHEMA,
+      /*.static_spec_encoding_id=*/{},
+      /*.address_layout=*/{},
+      /*.storage_schema=*/
+      {
+          /*.static_spec_encoding_id=*/{},
+          /*.encoded_operand=*/actual_schema,
+      },
+  };
+  IREE_ASSERT_OK(loom_value_facts_make_encoding_summary(&facts.context, summary,
+                                                        &source_facts));
+  IREE_ASSERT_OK(loom_value_fact_table_define(
+      &facts, loom_scalar_constant_result(source_op), source_facts));
+
+  loom_low_lower_guard_t guard = {};
+  guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_OPERAND_SCHEMA;
+  guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+  const loom_low_lower_guard_ref_t guard_ref = 0;
+  loom_low_lower_value_ref_t value_ref = {};
+  value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
+  loom_low_lower_rule_t rule = {};
+  rule.source_op_kind = LOOM_OP_SCALAR_CONSTANT;
+  rule.guard_count = 1;
+  const loom_low_lower_rule_span_t span = {
+      /*.source_op_kind=*/LOOM_OP_SCALAR_CONSTANT,
+      /*.rule_start=*/0,
+      /*.rule_count=*/1,
+  };
+  loom_value_fact_encoded_operand_schema_t expected_schema = actual_schema;
+  loom_low_lower_rule_set_t rule_set = {};
+  rule_set.spans = &span;
+  rule_set.span_count = 1;
+  rule_set.rules = &rule;
+  rule_set.rule_count = 1;
+  rule_set.guards = &guard;
+  rule_set.guard_count = 1;
+  rule_set.storage_operand_schemas = &expected_schema;
+  rule_set.storage_operand_schema_count = 1;
+  rule_set.guard_refs = &guard_ref;
+  rule_set.guard_ref_count = 1;
+  rule_set.value_refs = &value_ref;
+  rule_set.value_ref_count = 1;
+  loom_low_lower_rule_match_context_t match_context = {};
+  match_context.module = module_;
+  match_context.fact_table = &facts;
+
+  loom_low_lower_rule_selection_t selection = {};
+  IREE_ASSERT_OK(loom_low_lower_rule_set_select_with_match_context(
+      &match_context, &rule_set, source_op, &selection));
+  EXPECT_EQ(selection.rule, &rule);
+
+  expected_schema.scale_group.element_count = 4;
+  expected_schema.scale_group.shape[0] = 4;
+  IREE_ASSERT_OK(loom_low_lower_rule_set_select_with_match_context(
+      &match_context, &rule_set, source_op, &selection));
+  EXPECT_EQ(selection.rule, nullptr);
 }
 
 TEST_F(LowLowerRuleMatchTest, ContractQueriesMaySelectContractOnlyRules) {

@@ -64,9 +64,11 @@ loom_cc_library(
     srcs = ["control_uniformity.c"],
     hdrs = ["control_uniformity.h"],
     deps = [
+        ":condition_facts",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/cfg",
         "//loom/src/loom/util:cfg_control",
         "//loom/src/loom/util:cfg_dominance",
         "//loom/src/loom/util:cfg_graph",
@@ -290,10 +292,12 @@ loom_cc_library(
         ":integer_relation",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
-        "//loom/src/loom/ops/index",
-        "//loom/src/loom/ops/scalar",
+        "//loom/src/loom/ops/index:comparison",
+        "//loom/src/loom/ops/index:op_defs",
+        "//loom/src/loom/ops/scalar:comparison",
+        "//loom/src/loom/ops/scalar:op_defs",
         "//loom/src/loom/util:adaptive_sort",
-        "//loom/src/loom/util:fact_table",
+        "//loom/src/loom/util:fact_table_api",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],
@@ -316,11 +320,25 @@ loom_cc_test(
 )
 
 loom_cc_library(
+    name = "condition_edge_projection",
+    srcs = ["condition_edge_projection.c"],
+    hdrs = ["condition_edge_projection.h"],
+    deps = [
+        ":condition_facts",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/util:adaptive_sort",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "condition_fact_scope",
     srcs = ["condition_fact_scope.c"],
     hdrs = ["condition_fact_scope.h"],
     deps = [
         ":cfg_condition_facts",
+        ":condition_edge_projection",
         ":condition_facts",
         "//loom/src/loom/util:fact_table",
         "//runtime/src/iree/base",
@@ -353,6 +371,7 @@ loom_cc_test(
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/cfg",
         "//loom/src/loom/ops/scalar",
+        "//loom/src/loom/ops/scf",
         "//loom/src/loom/ops/test",
         "//loom/src/loom/pass:value_facts",
         "//runtime/src/iree/testing:gtest",
@@ -374,9 +393,11 @@ loom_cc_benchmark(
     name = "condition_facts_benchmark",
     srcs = ["condition_facts_benchmark.cc"],
     deps = [
+        ":condition_edge_projection",
         ":condition_facts",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/scalar",
+        "//loom/src/loom/ops/scf",
         "//loom/src/loom/util:fact_table",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:benchmark_main",
@@ -526,6 +547,7 @@ loom_cc_library(
     hdrs = ["consumption.h"],
     deps = [
         ":liveness",
+        ":ownership",
         "//loom/src/loom/ir",
         "//loom/src/loom/util:cfg_graph",
         "//runtime/src/iree/base",
@@ -597,6 +619,41 @@ loom_cc_library(
         "//loom/src/loom/util:fact_table",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
+    name = "kernel_barrier_lifetime",
+    srcs = ["kernel_barrier_lifetime.c"],
+    hdrs = ["kernel_barrier_lifetime.h"],
+    deps = [
+        "//loom/src/loom/error:emitter",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/util:cfg_graph",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "kernel_barrier_lifetime_test",
+    srcs = ["kernel_barrier_lifetime_test.cc"],
+    deps = [
+        ":kernel_barrier_lifetime",
+        "//loom/src/loom/format/text:parser",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/testing:context",
+        "//loom/src/loom/testing:module_ptr",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 

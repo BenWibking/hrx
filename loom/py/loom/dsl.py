@@ -65,6 +65,7 @@ __all__ = [
     "INTEGER",
     "PAYLOAD_SCALAR",
     "BYTE_PATTERN_SCALAR",
+    "BYTE_PATTERN_ELEMENT",
     "INDEX_OR_NON_I1_INTEGER_SCALAR",
     "INTEGER_ELEMENT",
     "INDEX_OR_NON_I1_INTEGER_ELEMENT",
@@ -214,6 +215,7 @@ __all__ = [
     "HasFloatElement",
     "HasBitwiseScalar",
     "HasBitwiseElement",
+    "HasBytePatternElement",
     "HasIndexOrNonI1IntegerScalar",
     "HasIndexOrNonI1IntegerElement",
     "HasI1Element",
@@ -244,9 +246,9 @@ __all__ = [
     "BlockArgsMatchElementTypes",
     "ConditionForwardedCountMatchesBlockArgs",
     "ConditionForwardedTypesMatchBlockArgs",
-    "YieldCountMatchesResults",
-    "YieldTypesMatchResults",
-    "YieldElementTypesMatchResults",
+    "YieldCountMatches",
+    "YieldTypesMatch",
+    "YieldElementTypesMatch",
     "VariadicValuesMatch",
     "IterArgsMatchResults",
     "AttrMatchesElementType",
@@ -327,6 +329,7 @@ class TypeConstraint(Enum):
       INTEGER_ELEMENT → ShapedType with integer element type
       FLOAT_ELEMENT   → ShapedType with float element type
       BITWISE_ELEMENT → ShapedType with index, non-i1 integer, or float element
+      BYTE_PATTERN_ELEMENT → ShapedType with 8/16/32/64-bit integer or float element
       INDEX_OR_NON_I1_INTEGER_ELEMENT → ShapedType index or non-i1 integer element
       I1_ELEMENT      → ShapedType with element type i1
       I8_ELEMENT      → ShapedType with element type i8
@@ -374,6 +377,7 @@ class TypeConstraint(Enum):
     INTEGER_ELEMENT = "integer_element"
     FLOAT_ELEMENT = "float_element"
     BITWISE_ELEMENT = "bitwise_element"
+    BYTE_PATTERN_ELEMENT = "byte_pattern_element"
     INDEX_OR_NON_I1_INTEGER_ELEMENT = "index_or_non_i1_integer_element"
     I1_ELEMENT = "i1_element"
     I8_ELEMENT = "i8_element"
@@ -415,6 +419,7 @@ INDEX_OR_NON_I1_INTEGER_SCALAR = TypeConstraint.INDEX_OR_NON_I1_INTEGER_SCALAR
 INTEGER_ELEMENT = TypeConstraint.INTEGER_ELEMENT
 FLOAT_ELEMENT = TypeConstraint.FLOAT_ELEMENT
 BITWISE_ELEMENT = TypeConstraint.BITWISE_ELEMENT
+BYTE_PATTERN_ELEMENT = TypeConstraint.BYTE_PATTERN_ELEMENT
 INDEX_OR_NON_I1_INTEGER_ELEMENT = TypeConstraint.INDEX_OR_NON_I1_INTEGER_ELEMENT
 I1_ELEMENT = TypeConstraint.I1_ELEMENT
 I8_ELEMENT = TypeConstraint.I8_ELEMENT
@@ -2176,6 +2181,21 @@ def _type_satisfies_field_constraint(
             ScalarTypeKind.F32,
             ScalarTypeKind.F64,
         }
+    if constraint == BYTE_PATTERN_SCALAR:
+        if not isinstance(value_type, ScalarType):
+            return False
+        return value_type.kind in {
+            ScalarTypeKind.I8,
+            ScalarTypeKind.I16,
+            ScalarTypeKind.I32,
+            ScalarTypeKind.I64,
+            ScalarTypeKind.F8E4M3,
+            ScalarTypeKind.F8E5M2,
+            ScalarTypeKind.F16,
+            ScalarTypeKind.BF16,
+            ScalarTypeKind.F32,
+            ScalarTypeKind.F64,
+        }
     if not isinstance(value_type, ShapedType):
         return False
     element_kind = value_type.element_type.kind
@@ -2189,6 +2209,19 @@ def _type_satisfies_field_constraint(
         }
     if constraint == BITWISE_ELEMENT:
         return element_kind == ScalarTypeKind.INDEX or element_kind in {
+            ScalarTypeKind.I8,
+            ScalarTypeKind.I16,
+            ScalarTypeKind.I32,
+            ScalarTypeKind.I64,
+            ScalarTypeKind.F8E4M3,
+            ScalarTypeKind.F8E5M2,
+            ScalarTypeKind.F16,
+            ScalarTypeKind.BF16,
+            ScalarTypeKind.F32,
+            ScalarTypeKind.F64,
+        }
+    if constraint == BYTE_PATTERN_ELEMENT:
+        return element_kind in {
             ScalarTypeKind.I8,
             ScalarTypeKind.I16,
             ScalarTypeKind.I32,
@@ -2286,6 +2319,12 @@ def HasBitwiseElement(field: str) -> Constraint:
     """A shaped field must have an element type with a non-i1 bitwise payload."""
 
     return _has_element_constraint(field, BITWISE_ELEMENT)
+
+
+def HasBytePatternElement(field: str) -> Constraint:
+    """A shaped field must have a fixed-width byte-addressable element type."""
+
+    return _has_element_constraint(field, BYTE_PATTERN_ELEMENT)
 
 
 def HasIndexOrNonI1IntegerScalar(field: str) -> Constraint:
@@ -2999,34 +3038,34 @@ def ConditionForwardedTypesMatchBlockArgs(
     )
 
 
-def YieldCountMatchesResults(region: str, results: str) -> Constraint:
-    """Region terminator must yield the same number of values as results."""
+def YieldCountMatches(region: str, target: str) -> Constraint:
+    """Region terminator must yield a value field or region entry's count."""
 
     from loom.error.structure import ERR_STRUCTURE_008
 
     return Constraint(
-        "YieldCountMatchesResults",
-        (region, results),
+        "YieldCountMatches",
+        (region, target),
         error=ERR_STRUCTURE_008,
-        validate=constraint_validation.yield_count(region, results),
+        validate=constraint_validation.yield_count(region, target),
     )
 
 
-def YieldTypesMatchResults(region: str, results: str) -> Constraint:
-    """Yielded value types must match result types."""
+def YieldTypesMatch(region: str, target: str) -> Constraint:
+    """Yielded value types must match a value field or region entry tuple."""
 
     from loom.error.type import ERR_TYPE_009
 
     return Constraint(
-        "YieldTypesMatchResults",
-        (region, results),
+        "YieldTypesMatch",
+        (region, target),
         error=ERR_TYPE_009,
-        validate=constraint_validation.yield_types(region, results),
+        validate=constraint_validation.yield_types(region, target),
     )
 
 
-def YieldElementTypesMatchResults(region: str, results: str) -> Constraint:
-    """Yielded value element types must match result element types.
+def YieldElementTypesMatch(region: str, target: str) -> Constraint:
+    """Yielded value element types must match target element types.
 
     For elementwise ops where the body operates at scalar granularity:
     the yield produces scalar values and the result is a shaped type.
@@ -3037,10 +3076,10 @@ def YieldElementTypesMatchResults(region: str, results: str) -> Constraint:
     from loom.error.type import ERR_TYPE_009
 
     return Constraint(
-        "YieldElementTypesMatchResults",
-        (region, results),
+        "YieldElementTypesMatch",
+        (region, target),
         error=ERR_TYPE_009,
-        validate=constraint_validation.yield_types(region, results, element_types=True),
+        validate=constraint_validation.yield_types(region, target, element_types=True),
     )
 
 
@@ -3064,7 +3103,7 @@ def IterArgsMatchResults(iter_args: str, results: str) -> Constraint:
     scf.for): the iter_args operands provide initial values, the body
     yields the next iteration's values, and the results expose the
     final values. The yield-to-results match is enforced by
-    YieldTypesMatchResults; this constraint enforces that iter_args
+    YieldTypesMatch; this constraint enforces that iter_args
     and results agree directly so a count or type mismatch is reported
     on the loop op itself, not just the terminator.
 
@@ -5768,23 +5807,17 @@ class TargetLikeInterface(NamedTuple):
 class LoopLikeInterface(NamedTuple):
     """Interface for loop-like ops that iterate a body region.
 
-    The variadic iter_args operand is the complete loop-carried state domain.
-    Implementing ops have one matching variadic result field and exactly one
-    required single-block body whose carried block arguments follow any
-    induction variable. Each entry instantiates the result type scheme with its
-    own argument identities. The shared verifier checks that tuple and the
-    counted induction variable type. IterArgsMatchResults,
-    YieldCountMatchesResults, and YieldTypesMatchResults constraints check the
-    incoming and yielded state.
+    Implementing ops have one variadic initial-state operand, one variadic
+    result field, and exactly one required single-block body. Counted loops use
+    one state domain: iter_args, body arguments after the induction variable,
+    body yields, and results agree positionally.
 
     Condition-controlled loops have exactly one additional required
-    single-block condition region. Its entry arguments are the initial and
-    backedge state. Operand zero of its terminator is the condition, and the
-    remaining operands form the complete state tuple forwarded to the body and
-    results.
-    ConditionForwardedCountMatchesBlockArgs and
-    ConditionForwardedTypesMatchBlockArgs check this edge against the recurring
-    result scheme instantiated at the body entry.
+    single-block condition region and two independent state domains. Initial
+    operands and body yields enter the condition region's header tuple. The
+    values forwarded after its condition enter the body and define loop
+    results. Either domain may have a different arity and dependent-type
+    scheme. The shared verifier checks all four edges.
 
     Each field is the name of a region, an implicit block argument, or an
     operand on the op (or None where applicable). Exactly one control form is
@@ -5804,6 +5837,10 @@ class LoopLikeInterface(NamedTuple):
     # upper_bound, step; for scf.while iter_args are the only
     # operands and this names that variadic.
     iter_args: str
+    # Variadic result field. For counted loops this is the same positional
+    # state domain as iter_args. For condition loops it is the independently
+    # forwarded body/result domain.
+    results: str
     # Implicit block argument name for the induction variable on the
     # body region's entry block. None for loops without an IV (while
     # loops). For scf.for this is "iv" — the implicit_args entry on

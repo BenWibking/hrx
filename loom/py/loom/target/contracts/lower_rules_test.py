@@ -19,7 +19,7 @@ from loom.dialect.scalar import comparison as scalar_comparison
 from loom.dialect.scalar import conversion as scalar_conversion
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.vector import defs as vector
-from loom.dsl import Op
+from loom.dsl import EncodingOperandSummaryDef, Op
 from loom.target.contracts import (
     LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS,
     LOWER_EMIT_FLAG_RESULT_DESCRIPTOR_TYPE,
@@ -35,6 +35,7 @@ from loom.target.contracts import (
     EmitDescriptorOp,
     EmitRegisterConcat,
     EmitRegisterCopy,
+    EmitRegisterMove,
     EmitRegisterSlice,
     Guard,
     GuardDiagnostic,
@@ -61,6 +62,7 @@ from loom.target.contracts import (
     TypePattern,
     ValueAliasRule,
     ValueElideRule,
+    ValueMaterializer,
     ValueProject,
     ValueRef,
     ValueTypeProject,
@@ -70,6 +72,7 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import EnumDomain, EnumValue, Immediate, ImmediateKind
 from loom.target.test.descriptors import (
+    TEST_LOW_ACCUMULATE_V8I32_DESCRIPTOR,
     TEST_LOW_ADD_F32_DESCRIPTOR,
     TEST_LOW_ADD_I32_DESCRIPTOR,
     TEST_LOW_AMBIGUOUS_DESCRIPTOR,
@@ -80,6 +83,7 @@ from loom.target.test.descriptors import (
     TEST_LOW_LOAD_V4I32_DESCRIPTOR,
     TEST_LOW_MUL_I32_DESCRIPTOR,
     TEST_LOW_REMATERIALIZE_I32_DESCRIPTOR,
+    TEST_LOW_TIED_ANY_DESCRIPTOR,
 )
 
 
@@ -159,8 +163,13 @@ def test_compile_structural_register_emits() -> None:
                         unit_offset=1,
                         unit_count=1,
                     ),
-                    EmitRegisterSlice(
+                    EmitRegisterMove(
                         source=ValueRef.temporary("element"),
+                        result=ValueRef.temporary("reclassified"),
+                        result_type=ValueRef.temporary("element"),
+                    ),
+                    EmitRegisterSlice(
+                        source=ValueRef.temporary("reclassified"),
                         result=ValueRef.result("result"),
                     ),
                 ),
@@ -208,6 +217,7 @@ def test_compile_structural_register_emits() -> None:
     ]
     assert tuple(emit.kind for emit in slice_emits) == (
         LowerEmitKind.REGISTER_SLICE,
+        LowerEmitKind.REGISTER_MOVE,
         LowerEmitKind.REGISTER_SLICE,
     )
     assert slice_emits[0].operand_ref_count == 1
@@ -216,8 +226,11 @@ def test_compile_structural_register_emits() -> None:
     assert slice_emits[0].flags == 0
     typed_slice_result = compiled.value_refs[slice_emits[0].result_bind_ref_start]
     assert typed_slice_result.kind is SourceValueKind.TEMPORARY
-    assert slice_emits[1].operand_ref_count == 1
-    assert slice_emits[1].structural_offset == 0
+    temporary_type_ref = compiled.value_refs[slice_emits[1].result_ref_start]
+    assert temporary_type_ref.kind is SourceValueKind.TEMPORARY
+    assert temporary_type_ref.index == typed_slice_result.index
+    assert slice_emits[2].operand_ref_count == 1
+    assert slice_emits[2].structural_offset == 0
 
     copy_emit = compiled.emits[
         rules_by_source_op[scalar_conversion.scalar_bitcast].emit_start
@@ -1032,6 +1045,229 @@ def test_compile_lower_rule_set_compiles_guarded_value_elide_cases() -> None:
     assert compiled.guards[0].value_ref_index == compiled.rules[0].elide_ref_start
     assert len(compiled.value_refs) == 1
     assert compiled.spans[0].source_op is vector.vector_extract
+
+
+def test_compile_lower_rule_set_compiles_value_no_uses_after_guard() -> None:
+    table = ContractFragment(
+        name="test.consume",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            RecipeRule(
+                source_op=vector.vector_addi,
+                guards=(Guard.value_no_uses_after("lhs"),),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"vector": ALL_VECTOR_OPS})
+
+    assert len(compiled.rules) == 1
+    assert compiled.rules[0].guard_count == 1
+    assert len(compiled.guards) == 1
+    assert compiled.guards[0].kind == GuardKind.VALUE_NO_USES_AFTER
+    value_ref = compiled.value_refs[compiled.guards[0].value_ref_index]
+    assert value_ref.kind == SourceValueKind.OPERAND
+    assert value_ref.index == 0
+
+
+def _tied_any_emit(
+    source: ValueRef,
+    result: ValueRef,
+    *,
+    copy_operands: tuple[str, ...] = (),
+) -> EmitDescriptorOp:
+    return EmitDescriptorOp(
+        descriptor=TEST_LOW_TIED_ANY_DESCRIPTOR,
+        operands={"src": source},
+        results={"dst": result},
+        result_types=(
+            {"dst": Scalar("i32")} if result.kind is SourceValueKind.TEMPORARY else None
+        ),
+        copy_operands=copy_operands,
+    )
+
+
+def _compile_scalar_rule_copy_masks(
+    rule: DescriptorRule,
+    *,
+    materializers: tuple[ValueMaterializer, ...] = (),
+) -> tuple[int, ...]:
+    table = ContractFragment(
+        name="test.destructive-ownership",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(rule,),
+        materializers=materializers,
+    )
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+    return tuple(emit.copy_operand_mask for emit in compiled.emits)
+
+
+def test_compile_lower_rule_set_transfers_guarded_destructive_source() -> None:
+    def make_rule(*, guarded: bool, force_copy: bool = False) -> DescriptorRule:
+        return DescriptorRule(
+            source_op=scalar_arithmetic.scalar_subi,
+            descriptor=TEST_LOW_TIED_ANY_DESCRIPTOR,
+            guards=(
+                Guard.value_type("result", Scalar("i32")),
+                *((Guard.value_no_uses_after("lhs"),) if guarded else ()),
+            ),
+            emit=(
+                _tied_any_emit(
+                    ValueRef.operand("lhs"),
+                    ValueRef.result("result"),
+                    copy_operands=("src",) if force_copy else (),
+                ),
+            ),
+        )
+
+    assert _compile_scalar_rule_copy_masks(make_rule(guarded=True)) == (0,)
+    assert _compile_scalar_rule_copy_masks(make_rule(guarded=False)) == (1,)
+    assert _compile_scalar_rule_copy_masks(
+        make_rule(guarded=True, force_copy=True)
+    ) == (1,)
+
+
+def test_compile_lower_rule_set_transfers_only_final_temporary_use() -> None:
+    carrier = ValueRef.temporary("carrier")
+    rule = DescriptorRule(
+        source_op=scalar_arithmetic.scalar_subi,
+        descriptor=TEST_LOW_TIED_ANY_DESCRIPTOR,
+        guards=(Guard.value_type("result", Scalar("i32")),),
+        emit=(
+            EmitRegisterCopy(
+                source=ValueRef.operand("lhs"),
+                result=carrier,
+                result_type=Scalar("i32"),
+            ),
+            _tied_any_emit(carrier, ValueRef.temporary("first_result")),
+            _tied_any_emit(carrier, ValueRef.result("result")),
+        ),
+    )
+
+    assert _compile_scalar_rule_copy_masks(rule) == (0, 1, 0)
+
+
+def test_compile_lower_rule_set_tracks_materialized_source_identity() -> None:
+    materializer = ValueMaterializer(
+        name="test_materializer",
+        can_materialize="test_can_materialize",
+        materialize="test_materialize",
+        header="test/materialize.h",
+    )
+    rule = DescriptorRule(
+        source_op=scalar_arithmetic.scalar_subi,
+        descriptor=TEST_LOW_TIED_ANY_DESCRIPTOR,
+        guards=(
+            Guard.value_type("result", Scalar("i32")),
+            Guard.value_no_uses_after("lhs"),
+        ),
+        emit=(
+            _tied_any_emit(
+                ValueRef.operand("lhs", materializer=materializer.name),
+                ValueRef.temporary("updated"),
+            ),
+            EmitRegisterCopy(
+                source=ValueRef.operand("lhs"),
+                result=ValueRef.result("result"),
+            ),
+        ),
+    )
+
+    assert _compile_scalar_rule_copy_masks(rule, materializers=(materializer,)) == (
+        1,
+        0,
+    )
+
+
+def test_compile_lower_rule_set_preserves_same_emit_alias() -> None:
+    carrier = ValueRef.temporary("carrier")
+    rule = DescriptorRule(
+        source_op=vector.vector_addi,
+        descriptor=TEST_LOW_ACCUMULATE_V8I32_DESCRIPTOR,
+        guards=(Guard.value_type("result", Vector("i32", lanes=8)),),
+        emit=(
+            EmitRegisterCopy(
+                source=ValueRef.operand("lhs"),
+                result=carrier,
+                result_type=Vector("i32", lanes=8),
+            ),
+            EmitDescriptorOp(
+                descriptor=TEST_LOW_ACCUMULATE_V8I32_DESCRIPTOR,
+                operands={
+                    "lhs": carrier,
+                    "rhs": ValueRef.operand("rhs"),
+                    "acc": carrier,
+                },
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+    )
+    table = ContractFragment(
+        name="test.same-emit-alias",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(rule,),
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"vector": ALL_VECTOR_OPS})
+    assert tuple(emit.copy_operand_mask for emit in compiled.emits) == (0, 4)
+
+
+def test_compile_lower_rule_set_tracks_joined_source_value_identity() -> None:
+    source_node = SourceNode.adjacent_unique_user(
+        "consumer",
+        source_op=scalar_arithmetic.scalar_muli,
+        parent_result=ValueRef.result("result"),
+        node_operand=ValueRef.operand("lhs"),
+        guards=(
+            Guard.value_type("result", Scalar("i32")),
+            Guard.value_no_uses_after("lhs"),
+        ),
+    )
+    rule = DescriptorRule(
+        source_op=scalar_arithmetic.scalar_addi,
+        descriptor=TEST_LOW_TIED_ANY_DESCRIPTOR,
+        source_nodes=(source_node,),
+        emit=(
+            _tied_any_emit(
+                ValueRef.result("result"),
+                ValueRef.temporary("early_result"),
+            ),
+            EmitDescriptorOp(
+                descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                operands={
+                    "lhs": ValueRef.operand("lhs", source_node="consumer"),
+                    "rhs": ValueRef.operand("rhs", source_node="consumer"),
+                },
+                results={"dst": ValueRef.temporary("middle_result")},
+                result_types={"dst": Scalar("i32")},
+            ),
+            _tied_any_emit(
+                ValueRef.result("result"),
+                ValueRef.result("result", source_node="consumer"),
+            ),
+        ),
+    )
+
+    assert _compile_scalar_rule_copy_masks(rule) == (1, 0, 0)
+
+
+def test_compile_lower_rule_set_requires_exact_guarded_value_element() -> None:
+    rule = DescriptorRule(
+        source_op=scalar_analysis.scalar_assume,
+        descriptor=TEST_LOW_TIED_ANY_DESCRIPTOR,
+        guards=(
+            Guard.operand_segment_count("values", 2),
+            Guard.value_no_uses_after("values"),
+        ),
+        emit=(
+            _tied_any_emit(
+                ValueRef.operand("values", element=1),
+                ValueRef.temporary("result"),
+            ),
+        ),
+    )
+
+    assert _compile_scalar_rule_copy_masks(rule) == (1,)
 
 
 def test_compile_lower_rule_set_compiles_recipe_cases() -> None:
@@ -2533,6 +2769,54 @@ def test_compile_lower_rule_set_compiles_storage_element_format_guard() -> None:
     assert compiled.guards[0].u64_c_expression == "LOOM_VALUE_FACT_NUMERIC_FORMAT_U8"
 
 
+def test_compile_lower_rule_set_compiles_exact_storage_operand_schema_guard() -> None:
+    schema = EncodingOperandSummaryDef(
+        element_format=0x20,
+        scale_format=0x40,
+        payload_packing=0x2,
+        scale_topology=0x4,
+        affine_policy=0x8,
+        payload_element_count=8,
+        scale_group_shape=(8,),
+        scale_operand_count=1,
+    )
+    table = ContractFragment(
+        name="test.exact-storage-schema",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            DescriptorRule(
+                source_op=vector.vector_fragment_load,
+                descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                guards=(
+                    Guard.value_storage_operand_schema("view", schema),
+                    Guard.value_type("result", Vector("i32", lanes=4)),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                        operands={
+                            "lhs": ValueRef.result("result"),
+                            "rhs": ValueRef.result("result"),
+                        },
+                        results={"dst": ValueRef.result("result")},
+                    ),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"vector": ALL_VECTOR_OPS})
+
+    assert compiled.guards[0].kind == GuardKind.VALUE_STORAGE_OPERAND_SCHEMA
+    assert compiled.guards[0].value_ref_index == 0
+    assert compiled.guards[0].storage_operand_schema == schema
+
+
+def test_exact_storage_operand_schema_guard_rejects_unknown_schema() -> None:
+    with pytest.raises(ValueError, match="cannot match an unknown operand schema"):
+        Guard.value_storage_operand_schema("schema", EncodingOperandSummaryDef())
+
+
 def test_compile_lower_rule_set_compiles_value_memory_space_guard() -> None:
     table = ContractFragment(
         name="test.value-memory-space",
@@ -2560,6 +2844,32 @@ def test_compile_lower_rule_set_compiles_value_memory_space_guard() -> None:
         "global",
         "descriptor",
     )
+
+
+def test_compile_lower_rule_set_compiles_target_subgroup_size_range_guard() -> None:
+    table = ContractFragment(
+        name="test.target-subgroup-size",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=[
+            RecipeRule(
+                source_op=scalar_arithmetic.scalar_addi,
+                guards=(
+                    Guard.target_subgroup_size_range(1, 32),
+                    Guard.value_type("lhs", Scalar("i32")),
+                    Guard.value_type("rhs", Scalar("i32")),
+                    Guard.value_type("result", Scalar("i32")),
+                ),
+            )
+        ],
+    )
+
+    compiled = compile_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
+
+    guard = compiled.guards[0]
+    assert guard.kind == GuardKind.TARGET_SUBGROUP_SIZE_RANGE
+    assert guard.minimum_i64 == 1
+    assert guard.maximum_i64 == 32
+    assert guard.diagnostic_index != 0xFFFF
 
 
 def test_compile_lower_rule_set_compiles_packed_integer_storage_guards() -> None:

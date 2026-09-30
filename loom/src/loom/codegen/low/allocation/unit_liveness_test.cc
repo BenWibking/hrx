@@ -64,6 +64,16 @@ class LowAllocationUnitLivenessTest : public ::testing::Test {
     }
   }
 
+  void RetainAndPropagateStorage(
+      loom_low_allocation_unit_liveness_t* unit_liveness,
+      const loom_liveness_analysis_t* liveness,
+      const loom_low_placement_table_t* placement) {
+    IREE_ASSERT_OK(loom_low_allocation_unit_liveness_retain_tied_storage(
+        unit_liveness, liveness, placement, &arena_));
+    loom_low_allocation_unit_liveness_propagate_storage_relations(unit_liveness,
+                                                                  placement);
+  }
+
   iree_arena_block_pool_t block_pool_;
   iree_arena_allocator_t arena_;
   loom_context_t context_;
@@ -138,8 +148,7 @@ TEST_F(LowAllocationUnitLivenessTest, InitializesUnitStartsAndBoundaryUses) {
 
   loom_low_allocation_unit_liveness_t unit_liveness = {};
   IREE_ASSERT_OK(loom_low_allocation_unit_liveness_initialize(
-      module, &target, nullptr, &value_domain, &liveness, &arena_,
-      &unit_liveness));
+      &target, nullptr, &value_domain, &liveness, &arena_, &unit_liveness));
 
   EXPECT_EQ(loom_low_allocation_unit_liveness_point_start_for_value_ordinal(
                 &unit_liveness, &liveness, /*value_ordinal=*/0),
@@ -207,8 +216,7 @@ TEST_F(LowAllocationUnitLivenessTest, ExtendsTiedResultSourceUnits) {
 
   loom_low_allocation_unit_liveness_t unit_liveness = {};
   IREE_ASSERT_OK(loom_low_allocation_unit_liveness_initialize(
-      module, &target, nullptr, &value_domain, &liveness, &arena_,
-      &unit_liveness));
+      &target, nullptr, &value_domain, &liveness, &arena_, &unit_liveness));
   ASSERT_EQ(unit_liveness.point_count, 4u);
   EXPECT_EQ(unit_liveness.end_points[0], 1u);
   EXPECT_EQ(unit_liveness.end_points[1], 1u);
@@ -247,8 +255,7 @@ TEST_F(LowAllocationUnitLivenessTest, ExtendsTiedResultSourceUnits) {
   placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
   placement.tied_storage_origins_by_value_ordinal = tied_origins;
 
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_propagate_storage_relations(
-      &unit_liveness, &liveness, &placement, &arena_));
+  RetainAndPropagateStorage(&unit_liveness, &liveness, &placement);
   EXPECT_EQ(unit_liveness.start_points[2], 0u);
   EXPECT_EQ(unit_liveness.start_points[3], 0u);
   EXPECT_EQ(unit_liveness.end_points[0], 8u);
@@ -258,9 +265,64 @@ TEST_F(LowAllocationUnitLivenessTest, ExtendsTiedResultSourceUnits) {
           &unit_liveness, &liveness, /*value_ordinal=*/0)
           .count,
       0u);
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/1,
+      /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/4));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/1,
+          /*unit_offset=*/0, /*unit_count=*/2, /*program_point=*/8));
 
   loom_local_value_domain_release(&value_domain);
   loom_module_free(module);
+}
+
+TEST_F(LowAllocationUnitLivenessTest, QueriesComponentStoragePerUnit) {
+  const loom_value_id_t value_ids[] = {0};
+  const uint32_t interval_indices[] = {0};
+  const loom_liveness_interval_t intervals[] = {
+      RegisterInterval(0, 0, 8, 2),
+  };
+  loom_liveness_block_info_t block = {};
+  block.end_point = 8;
+  loom_liveness_analysis_t liveness =
+      Liveness(value_ids, IREE_ARRAYSIZE(value_ids), interval_indices,
+               intervals, IREE_ARRAYSIZE(intervals), &block, 1);
+  const loom_liveness_segment_t segments[] = {{0, 8}};
+  const loom_liveness_segment_range_t segment_ranges[] = {{0, 1}};
+  liveness.segments = segments;
+  liveness.segment_count = IREE_ARRAYSIZE(segments);
+  liveness.value_segment_ranges = segment_ranges;
+
+  uint32_t point_starts[] = {0};
+  uint32_t starts[] = {0, 0};
+  uint32_t ends[] = {8, 4};
+  uint64_t incomplete_words[] = {0};
+  loom_low_allocation_unit_liveness_t unit_liveness = {};
+  unit_liveness.point_starts_by_value_ordinal = point_starts;
+  unit_liveness.start_points = starts;
+  unit_liveness.end_points = ends;
+  unit_liveness.point_count = IREE_ARRAYSIZE(ends);
+  unit_liveness.values_with_incomplete_storage_segments = {
+      IREE_ARRAYSIZE(value_ids), incomplete_words};
+  unit_liveness.storage_segments.entries = segments;
+  loom_low_placement_table_t placement = {};
+  placement.value_count = IREE_ARRAYSIZE(value_ids);
+
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/0,
+      /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/6));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/0,
+          /*unit_offset=*/1, /*unit_count=*/1, /*program_point=*/6));
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/0,
+      /*unit_offset=*/0, /*unit_count=*/2, /*program_point=*/6));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/0,
+          /*unit_offset=*/0, /*unit_count=*/2, /*program_point=*/8));
 }
 
 TEST_F(LowAllocationUnitLivenessTest, PropagatesTiedStorageAcrossOrdinalOrder) {
@@ -315,8 +377,7 @@ TEST_F(LowAllocationUnitLivenessTest, PropagatesTiedStorageAcrossOrdinalOrder) {
   placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
   placement.tied_storage_origins_by_value_ordinal = tied_origins;
 
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_propagate_storage_relations(
-      &unit_liveness, &liveness, &placement, &arena_));
+  RetainAndPropagateStorage(&unit_liveness, &liveness, &placement);
   EXPECT_EQ(ends[3], 40u);
   EXPECT_EQ(ends[1], 31u);
   EXPECT_EQ(ends[4], 36u);
@@ -393,8 +454,7 @@ TEST_F(LowAllocationUnitLivenessTest,
   placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
   placement.tied_storage_origins_by_value_ordinal = tied_origins;
 
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_propagate_storage_relations(
-      &unit_liveness, &liveness, &placement, &arena_));
+  RetainAndPropagateStorage(&unit_liveness, &liveness, &placement);
   const loom_liveness_segment_range_t source =
       loom_low_allocation_unit_liveness_storage_segment_range_for_value_ordinal(
           &unit_liveness, &liveness, 0);
@@ -412,6 +472,22 @@ TEST_F(LowAllocationUnitLivenessTest,
   EXPECT_EQ(reservations[1].end_point, 12u);
   EXPECT_EQ(ends[0], 12u);
   EXPECT_EQ(ends[1], 7u);
+  // Every chain member reaches the retained component lifetime even when the
+  // value ordinals run opposite the storage flow.
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/2,
+      /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/7));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/2,
+          /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/9));
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/0,
+      /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/10));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/0,
+          /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/12));
 }
 
 TEST_F(LowAllocationUnitLivenessTest,
@@ -458,8 +534,7 @@ TEST_F(LowAllocationUnitLivenessTest,
 
   loom_low_allocation_unit_liveness_t unit_liveness = {};
   IREE_ASSERT_OK(loom_low_allocation_unit_liveness_initialize(
-      module, &target, nullptr, &value_domain, &liveness, &arena_,
-      &unit_liveness));
+      &target, nullptr, &value_domain, &liveness, &arena_, &unit_liveness));
 
   loom_low_placement_relation_t relations[] = {
       {
@@ -517,8 +592,7 @@ TEST_F(LowAllocationUnitLivenessTest,
   placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
   placement.tied_storage_origins_by_value_ordinal = tied_origins;
 
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_propagate_storage_relations(
-      &unit_liveness, &liveness, &placement, &arena_));
+  RetainAndPropagateStorage(&unit_liveness, &liveness, &placement);
   const uint32_t* concat_start_points =
       loom_low_allocation_unit_liveness_start_points_for_value_ordinal(
           &unit_liveness, &liveness, /*value_ordinal=*/3);
@@ -596,8 +670,7 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
   placement.storage_value_order = storage_order;
   placement.storage_value_order_count = IREE_ARRAYSIZE(storage_order);
   placement.tied_storage_origins_by_value_ordinal = tied_origins;
-  IREE_ASSERT_OK(loom_low_allocation_unit_liveness_propagate_storage_relations(
-      &unit_liveness, &liveness, &placement, &arena_));
+  RetainAndPropagateStorage(&unit_liveness, &liveness, &placement);
 
   const loom_liveness_segment_range_t source =
       loom_low_allocation_unit_liveness_storage_segment_range_for_value_ordinal(
@@ -630,6 +703,22 @@ TEST_F(LowAllocationUnitLivenessTest, RetainsSparseTiedStorageReservations) {
           &unit_liveness, &liveness, 1);
   EXPECT_EQ(result.start, ranges[1].start);
   EXPECT_EQ(result.count, ranges[1].count);
+  // A fanout result observes storage retained by its sibling branch, while the
+  // gap between component segments and an independent component stay free.
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/1,
+      /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/9));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/1,
+          /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/5));
+  EXPECT_TRUE(loom_low_allocation_unit_liveness_storage_component_live_at_point(
+      &unit_liveness, &liveness, &placement, /*value_ordinal=*/5,
+      /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/18));
+  EXPECT_FALSE(
+      loom_low_allocation_unit_liveness_storage_component_live_at_point(
+          &unit_liveness, &liveness, &placement, /*value_ordinal=*/5,
+          /*unit_offset=*/0, /*unit_count=*/1, /*program_point=*/14));
   EXPECT_EQ(liveness.segments, segments);
   EXPECT_EQ(liveness.value_segment_ranges, ranges);
   EXPECT_EQ(liveness.segment_count, IREE_ARRAYSIZE(segments));

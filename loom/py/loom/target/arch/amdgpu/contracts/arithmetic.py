@@ -2777,11 +2777,6 @@ def _index_madd_power_of_two_rule(
         descriptor=shift,
         guards=(
             *_typed_guards(("a", "b", "c", "result"), _INDEX),
-            Guard.value_unsigned_bit_count(
-                "result",
-                32,
-                diagnostic=_ADDRESS_U32_DIAGNOSTIC,
-            ),
             Guard.low_value_register_class(
                 "result",
                 "amdgpu.vgpr",
@@ -2847,11 +2842,6 @@ def _index_madd_power_of_two_lshl_add_rule(
         descriptor=descriptor,
         guards=(
             *_typed_guards(("a", "b", "c", "result"), _INDEX),
-            Guard.value_unsigned_bit_count(
-                "result",
-                32,
-                diagnostic=_ADDRESS_U32_DIAGNOSTIC,
-            ),
             Guard.low_value_register_class(
                 "result",
                 "amdgpu.vgpr",
@@ -2897,11 +2887,6 @@ def _index_madd_literal_rule() -> DescriptorRule:
         descriptor=multiply,
         guards=(
             *_typed_guards(("a", "b", "c", "result"), _INDEX),
-            Guard.value_unsigned_bit_count(
-                "result",
-                32,
-                diagnostic=_ADDRESS_U32_DIAGNOSTIC,
-            ),
             Guard.low_value_register_class(
                 "result",
                 "amdgpu.vgpr",
@@ -2968,11 +2953,6 @@ def _index_madd_u24_mad_rule(
         descriptor=descriptor,
         guards=(
             *_typed_guards(("a", "b", "c", "result"), _INDEX),
-            Guard.value_unsigned_bit_count(
-                "result",
-                32,
-                diagnostic=_ADDRESS_U32_DIAGNOSTIC,
-            ),
             Guard.low_value_register_class(
                 "result",
                 "amdgpu.vgpr",
@@ -3081,11 +3061,6 @@ def _index_madd_u24_mad_literal_rule(
         descriptor=descriptor,
         guards=(
             *_typed_guards(("a", "b", "c", "result"), _INDEX),
-            Guard.value_unsigned_bit_count(
-                "result",
-                32,
-                diagnostic=_ADDRESS_U32_DIAGNOSTIC,
-            ),
             Guard.low_value_register_class(
                 "result",
                 "amdgpu.vgpr",
@@ -3127,11 +3102,6 @@ def _index_madd_rule() -> DescriptorRule:
         descriptor=multiply,
         guards=(
             *_typed_guards(("a", "b", "c", "result"), _INDEX),
-            Guard.value_unsigned_bit_count(
-                "result",
-                32,
-                diagnostic=_ADDRESS_U32_DIAGNOSTIC,
-            ),
             Guard.low_value_register_class(
                 "result",
                 "amdgpu.vgpr",
@@ -3486,6 +3456,8 @@ def _packed_float_binary_rule(
     descriptor_key: str,
     type_pattern: TypePattern,
     diagnostic: GuardDiagnostic,
+    *,
+    negate_rhs: bool = False,
 ) -> DescriptorRule:
     descriptor = _descriptor(descriptor_key)
     return DescriptorRule(
@@ -3508,6 +3480,7 @@ def _packed_float_binary_rule(
                     "rhs": ValueRef.operand("rhs"),
                 },
                 results={"dst": ValueRef.result("result")},
+                immediates={"neg_lo": 2, "neg_hi": 2} if negate_rhs else {},
                 form=DescriptorEmitForm.PER_LANE,
             ),
         ),
@@ -3999,6 +3972,13 @@ def _rules() -> tuple[ContractCase, ...]:
                 _VEC_F16_PACKED_DIAGNOSTIC,
             ),
             _packed_float_binary_rule(
+                vector.vector_subf,
+                "amdgpu.v_pk_add_f16",
+                _VEC_F16_PACKED,
+                _VEC_F16_PACKED_DIAGNOSTIC,
+                negate_rhs=True,
+            ),
+            _packed_float_binary_rule(
                 vector.vector_mulf,
                 "amdgpu.v_pk_mul_f16",
                 _VEC_F16_PACKED,
@@ -4045,6 +4025,13 @@ def _rules() -> tuple[ContractCase, ...]:
                 "amdgpu.v_pk_add_bf16",
                 _VEC_BF16_PACKED,
                 _VEC_BF16_PACKED_DIAGNOSTIC,
+            ),
+            _packed_float_binary_rule(
+                vector.vector_subf,
+                "amdgpu.v_pk_add_bf16",
+                _VEC_BF16_PACKED,
+                _VEC_BF16_PACKED_DIAGNOSTIC,
+                negate_rhs=True,
             ),
             _packed_float_binary_rule(
                 vector.vector_mulf,

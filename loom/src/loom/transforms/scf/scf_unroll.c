@@ -743,7 +743,7 @@ static iree_status_t loom_scf_unroll_reserve_result_scheme(
           .remap_symbol = loom_ir_remap_symbol_callback_empty(),
       },
       &remap));
-  IREE_RETURN_IF_ERROR(loom_builder_reserve_results(
+  IREE_RETURN_IF_ERROR(loom_builder_reserve_values(
       &context->rewriter->builder, source->result_count, reserved_results));
   IREE_RETURN_IF_ERROR(
       loom_ir_remap_map_values(&remap, loom_op_const_results(source),
@@ -1909,7 +1909,7 @@ static iree_status_t loom_scf_unroll_process_function_once(
   }
   IREE_RETURN_IF_ERROR(loom_pass_value_facts_acquire(
       context->pass, context->module,
-      loom_pass_value_fact_scope_function_for_target(
+      loom_pass_value_fact_scope_conditioned_function_for_target(
           function, loom_target_function_version_target_facts(
                         context->pass->function_version)),
       &context->fact_table));

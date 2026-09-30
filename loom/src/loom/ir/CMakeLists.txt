@@ -17,6 +17,7 @@ loom_cc_library(
     "float_facts.h"
   SRCS
     "facts.c"
+    "facts_division.c"
     "float_facts.c"
   DEPS
     ::ir
@@ -31,6 +32,7 @@ loom_cc_test(
     facts_test
   SRCS
     "facts_bitwise_test.cc"
+    "facts_division_test.cc"
     "facts_test.cc"
     "float_facts_test.cc"
   DEPS
@@ -212,6 +214,7 @@ loom_cc_test(
     "intern_table_test.cc"
     "module_block_order_test.cc"
     "module_dictionary_test.cc"
+    "module_encoding_test.cc"
     "module_location_test.cc"
     "module_source_test.cc"
     "module_string_test.cc"
@@ -223,6 +226,7 @@ loom_cc_test(
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::ops::encoding
     loom::ops::test
     loom::ops::type_registry
 )

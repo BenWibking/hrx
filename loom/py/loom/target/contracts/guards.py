@@ -19,6 +19,7 @@ from loom.dsl import (
     ATTR_TYPE_FLAGS,
     ATTR_TYPE_I64,
     ATTR_TYPE_I64_ARRAY,
+    EncodingOperandSummaryDef,
     EnumCase,
     Op,
 )
@@ -70,14 +71,17 @@ class GuardKind(Enum):
     VALUE_I64_RANGE_GE = "value_i64_range_ge"
     VALUE_FLOAT_EQUALS = "value_float_equals"
     VALUE_STORAGE_ELEMENT_FORMAT = "value_storage_element_format"
+    VALUE_STORAGE_OPERAND_SCHEMA = "value_storage_operand_schema"
     VALUE_PACKED_INTEGER_PAYLOAD_FROM_LANES = "value_packed_integer_payload_from_lanes"
     VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD = "value_packed_integer_lanes_from_payload"
     VALUE_NO_USES = "value_no_uses"
+    VALUE_NO_USES_AFTER = "value_no_uses_after"
     INSTANCE_FLAGS_HAS_ALL = "instance_flags_has_all"
     INSTANCE_FLAGS_HAS_NONE = "instance_flags_has_none"
     VECTOR_EXTRACT_SHAPE = "vector_extract_shape"
     VALUE_STATIC_ELEMENT_COUNT_EQ = "value_static_element_count_eq"
     VALUE_MEMORY_SPACE = "value_memory_space"
+    TARGET_SUBGROUP_SIZE_RANGE = "target_subgroup_size_range"
 
 
 _LOW_VALUE_GUARD_KINDS = (
@@ -137,6 +141,7 @@ class Guard:
     addend: int = 0
     f64_value: float | None = None
     numeric_format_c_expression: str | None = None
+    storage_operand_schema: EncodingOperandSummaryDef | None = None
     descriptor: Descriptor | None = None
     register_class: str | None = None
     materializer: str | None = None
@@ -514,6 +519,23 @@ class Guard:
         )
 
     @classmethod
+    def value_storage_operand_schema(
+        cls,
+        field: str,
+        schema: EncodingOperandSummaryDef,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires a value's complete encoded-operand schema to match."""
+
+        return cls(
+            kind=GuardKind.VALUE_STORAGE_OPERAND_SCHEMA,
+            field=field,
+            storage_operand_schema=schema,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
     def value_memory_space(
         cls,
         field: str,
@@ -525,6 +547,22 @@ class Guard:
             kind=GuardKind.VALUE_MEMORY_SPACE,
             field=field,
             memory_spaces=tuple(memory_spaces),
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def target_subgroup_size_range(
+        cls,
+        minimum: int,
+        maximum: int,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        return cls(
+            kind=GuardKind.TARGET_SUBGROUP_SIZE_RANGE,
+            field="subgroup_size",
+            minimum=minimum,
+            maximum=maximum,
             diagnostic=diagnostic,
         )
 
@@ -581,6 +619,19 @@ class Guard:
     ) -> Self:
         return cls(
             kind=GuardKind.VALUE_NO_USES,
+            field=field,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def value_no_uses_after(
+        cls,
+        field: str,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        return cls(
+            kind=GuardKind.VALUE_NO_USES_AFTER,
             field=field,
             diagnostic=diagnostic,
         )
@@ -680,6 +731,13 @@ class Guard:
             raise ValueError(f"{self.kind.value} guard cannot carry a memory-space set")
         if self.kind == GuardKind.VALUE_FLOAT_EQUALS and self.f64_value is None:
             raise ValueError(f"{self.kind.value} guard needs an f64 value")
+        if self.kind == GuardKind.TARGET_SUBGROUP_SIZE_RANGE and (
+            self.minimum is None
+            or self.maximum is None
+            or self.minimum <= 0
+            or self.maximum > _MAX_U32
+        ):
+            raise ValueError(f"{self.kind.value} guard needs a positive u32 range")
         if (
             self.kind == GuardKind.VALUE_STORAGE_ELEMENT_FORMAT
             and not self.numeric_format_c_expression
@@ -687,9 +745,18 @@ class Guard:
             raise ValueError(
                 f"{self.kind.value} guard needs a numeric format C expression"
             )
+        if self.kind == GuardKind.VALUE_STORAGE_OPERAND_SCHEMA:
+            if self.storage_operand_schema is None:
+                raise ValueError(f"{self.kind.value} guard needs an operand schema")
+            if self.storage_operand_schema == EncodingOperandSummaryDef():
+                raise ValueError(
+                    f"{self.kind.value} guard cannot match an unknown operand schema"
+                )
 
     def validate(self, source_op: Op) -> None:
         subject = f"guard {self.kind.value}"
+        if self.kind == GuardKind.TARGET_SUBGROUP_SIZE_RANGE:
+            return
         if self.kind == GuardKind.VALUE_TYPE:
             _require_value(source_op, self.field, subject)
             value_ref = (
@@ -771,6 +838,7 @@ class Guard:
             GuardKind.VALUE_I64_RANGE_GE,
             GuardKind.VALUE_FLOAT_EQUALS,
             GuardKind.VALUE_STORAGE_ELEMENT_FORMAT,
+            GuardKind.VALUE_STORAGE_OPERAND_SCHEMA,
             GuardKind.VALUE_MEMORY_SPACE,
             GuardKind.VALUE_PACKED_INTEGER_PAYLOAD_FROM_LANES,
             GuardKind.VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD,
@@ -778,7 +846,10 @@ class Guard:
         ):
             _validate_value_fact_guard(self, source_op, subject)
             return
-        if self.kind == GuardKind.VALUE_NO_USES:
+        if self.kind in (
+            GuardKind.VALUE_NO_USES,
+            GuardKind.VALUE_NO_USES_AFTER,
+        ):
             _require_value(source_op, self.field, subject)
             return
         if self.kind == GuardKind.VECTOR_EXTRACT_SHAPE:

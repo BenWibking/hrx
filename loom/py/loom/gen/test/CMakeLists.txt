@@ -31,44 +31,11 @@ iree_py_library(
 
 iree_py_library(
   NAME
-    packed_vector_select
+    narrow_float_subtraction
   MAIN
-    "packed_vector_select.py"
+    "narrow_float_subtraction.py"
   SRCS
-    "packed_vector_select.py"
-  DEPS
-    loom::py::loom::gen::test::kernel_fixture
-)
-
-iree_py_library(
-  NAME
-    predicate_bitwise
-  MAIN
-    "predicate_bitwise.py"
-  SRCS
-    "predicate_bitwise.py"
-  DEPS
-    loom::py::loom::gen::test::kernel_fixture
-)
-
-iree_py_library(
-  NAME
-    predicate_select
-  MAIN
-    "predicate_select.py"
-  SRCS
-    "predicate_select.py"
-  DEPS
-    loom::py::loom::gen::test::kernel_fixture
-)
-
-iree_py_library(
-  NAME
-    vector_i64_bitwise
-  MAIN
-    "vector_i64_bitwise.py"
-  SRCS
-    "vector_i64_bitwise.py"
+    "narrow_float_subtraction.py"
   DEPS
     loom::py::loom::gen::test::kernel_fixture
 )
@@ -86,28 +53,6 @@ iree_py_library(
     loom::py::loom::dialect::encoding::encoding
     loom::py::loom::gen::bootstrap
     loom::py::loom::gen::support::support
-)
-
-iree_py_library(
-  NAME
-    subgroup_transport
-  MAIN
-    "subgroup_transport.py"
-  SRCS
-    "subgroup_transport.py"
-  DEPS
-    loom::py::loom::gen::test::kernel_fixture
-)
-
-iree_py_library(
-  NAME
-    scalar_float_conversion
-  MAIN
-    "scalar_float_conversion.py"
-  SRCS
-    "scalar_float_conversion.py"
-  DEPS
-    loom::py::loom::gen::test::kernel_fixture
 )
 
 iree_py_test(

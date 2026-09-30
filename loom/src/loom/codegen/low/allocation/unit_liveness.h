@@ -70,7 +70,7 @@ typedef struct loom_low_allocation_unit_liveness_t {
 // target allocation units for low.slice, descriptor early-clobber hazards, and
 // structured loop backedges.
 iree_status_t loom_low_allocation_unit_liveness_initialize(
-    const loom_module_t* module, const loom_low_resolved_target_t* target,
+    const loom_low_resolved_target_t* target,
     const loom_low_placement_table_t* placement,
     const loom_local_value_domain_t* value_domain,
     const loom_liveness_analysis_t* liveness, iree_arena_allocator_t* arena,
@@ -109,16 +109,34 @@ loom_low_allocation_unit_liveness_storage_segment_range_for_value_ordinal(
     const loom_liveness_analysis_t* liveness,
     loom_value_ordinal_t value_ordinal);
 
-// Propagates storage lifetimes across structural placement relations. One
-// origin assignment retains each exact tied component through its terminal
-// end, and source starts flow into tied results. Contiguous aggregate parts
-// carry source starts into potential result reservations. Sparse tied-source
-// reservations retain the component union without occupying gaps between
-// mutually exclusive paths.
-iree_status_t loom_low_allocation_unit_liveness_propagate_storage_relations(
+// Completes physical lifetime facts for mandatory tied-storage components.
+// Component origins retain every member's per-unit end and sparse segments so
+// destructive-reuse refinement can query exact old-content observations before
+// deciding which optional storage relations remain aliasable.
+iree_status_t loom_low_allocation_unit_liveness_retain_tied_storage(
     loom_low_allocation_unit_liveness_t* unit_liveness,
     const loom_liveness_analysis_t* liveness,
     const loom_low_placement_table_t* placement, iree_arena_allocator_t* arena);
+
+// Returns true when any unit in |unit_offset, unit_count| of |value_ordinal|'s
+// required tied component retains concrete storage across |program_point|.
+// The retained component origin owns the complete per-unit ends and sparse
+// physical segments after retain_tied_storage, making the query independent of
+// tied-chain depth.
+bool loom_low_allocation_unit_liveness_storage_component_live_at_point(
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    const loom_liveness_analysis_t* liveness,
+    const loom_low_placement_table_t* placement,
+    loom_value_ordinal_t value_ordinal, uint32_t unit_offset,
+    uint32_t unit_count, uint32_t program_point);
+
+// Propagates storage starts across the final structural placement relations.
+// Sources flow into tied results, and contiguous aggregate parts carry source
+// starts into accepted result reservations. Call after optional alias
+// permissions have been refined.
+void loom_low_allocation_unit_liveness_propagate_storage_relations(
+    loom_low_allocation_unit_liveness_t* unit_liveness,
+    const loom_low_placement_table_t* placement);
 
 #ifdef __cplusplus
 }  // extern "C"

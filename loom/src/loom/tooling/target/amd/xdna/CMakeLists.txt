@@ -26,6 +26,22 @@ endif()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_IMPORT_CXX)
 iree_native_test(
   NAME
+    "boolean_storage_lowering"
+  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
+  ARGS
+    "{{${CMAKE_CURRENT_SOURCE_DIR}/test/boolean_storage.cxx-test}}"
+  SRC
+    loom::tools::loom-check
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/boolean_storage.cxx"
+  LABELS
+    "loom-check"
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND LOOM_IMPORT_CXX)
+iree_native_test(
+  NAME
     "vector_lookup_lowering"
   WORKING_DIRECTORY "${IREE_ROOT_DIR}"
   ARGS
@@ -57,6 +73,32 @@ loom_cc_library(
     loom::target::entry_selection
     loom::tooling::compile::artifact
   PUBLIC
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND AMDF_BUILD)
+loom_cc_test(
+  NAME
+    artifact_provider_test
+  SRCS
+    "artifact_provider_test.cc"
+  DEPS
+    ::artifact_provider
+    iree::base
+    iree::hal::drivers::amd::xdna::image
+    iree::hal::drivers::amd::xdna::image::aie2p::npu2
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::codegen::low::text_asm
+    loom::format::text::parser
+    loom::ir
+    loom::ops::op_registry
+    loom::target::arch::amd::xdna::aie2p::low_registry
+    loom::target::arch::amd::xdna::aie2p::provider
+    loom::target::arch::amd::xdna::aie2p::target_profile
+    loom::testing::module_ptr
+  LABELS
+    "iree-build-requirement=libamdf"
 )
 endif()
 

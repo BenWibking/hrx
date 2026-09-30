@@ -9,8 +9,8 @@
 from loom.dialect.vector import defs as vector
 from loom.target.arch.amd.xdna.aie2p.contracts.packet_conversion import (
     I4_UNPACK_SOURCE_LANE_COUNTS,
-    INTEGER_PACK_CASES,
-    INTEGER_WIDEN_CASES,
+    INTEGER_PACK_INSTRUCTIONS,
+    INTEGER_WIDEN_INSTRUCTIONS,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.packet_memory import (
     AIE2P_PACKET_MEMORY_RULES,
@@ -33,6 +33,16 @@ _MEMORY_ROOTS = (
         ("unknown", "generic", "private", "workgroup"),
     ),
 )
+
+
+def _expected_memory_spaces(
+    operation: SourceMemoryOperation, memory_spaces: tuple[str, ...]
+) -> tuple[str, ...]:
+    return (
+        (*memory_spaces, "constant")
+        if operation is SourceMemoryOperation.LOAD
+        else memory_spaces
+    )
 
 
 def _source_memory_emit(rule) -> EmitDescriptorOp:
@@ -127,22 +137,22 @@ def test_fused_packet_memory_rules_cover_the_native_shape_matrix() -> None:
                 SourceMemoryOperation.LOAD,
                 (
                     f"native_memory_load_{signedness}_"
-                    f"{widen_case.input_element}x{widen_case.lane_count}_to_"
-                    f"{widen_case.result_element}x{widen_case.lane_count}"
+                    f"{instruction.input_element}x{instruction.native_lane_count}_to_"
+                    f"{instruction.result_element}x{instruction.native_lane_count}"
                 ),
                 (
-                    f"amd.xdna.aie2p.load.widen.{widen_case.physical_shape}."
+                    f"amd.xdna.aie2p.load.widen.{instruction.physical_shape}."
                     f"{signedness}.configured"
                 ),
-                int(widen_case.input_element[1:]) // 8,
-                widen_case.lane_count,
-                widen_case.memory_width_bits,
+                int(instruction.input_element[1:]) // 8,
+                instruction.native_lane_count,
+                instruction.memory_width_bits,
             )
             for source_op, signedness in (
                 (vector.vector_extui, "unsigned"),
                 (vector.vector_extsi, "signed"),
             )
-            for widen_case in INTEGER_WIDEN_CASES
+            for instruction in INTEGER_WIDEN_INSTRUCTIONS
         ),
         *(
             (
@@ -161,19 +171,19 @@ def test_fused_packet_memory_rules_cover_the_native_shape_matrix() -> None:
         *(
             (
                 vector.vector_store,
-                pack_case.source_op,
+                pack_instruction.source_op,
                 SourceNodeRelation.ADJACENT_DEFINITION,
                 SourceMemoryOperation.STORE,
-                f"native_memory_store_{pack_case.report_key}",
+                f"native_memory_store_{pack_instruction.report_key}",
                 (
-                    f"amd.xdna.aie2p.store.pack.{pack_case.physical_width}."
+                    f"amd.xdna.aie2p.store.pack.{pack_instruction.physical_width}."
                     "trunc.configured"
                 ),
-                1,
-                pack_case.result_lanes,
-                pack_case.memory_width_bits,
+                int(pack_instruction.result_element[1:]) // 8,
+                pack_instruction.result_lanes,
+                pack_instruction.memory_width_bits,
             )
-            for pack_case in INTEGER_PACK_CASES
+            for pack_instruction in INTEGER_PACK_INSTRUCTIONS
         ),
     ]
     expected_identities = set()
@@ -211,7 +221,7 @@ def test_fused_packet_memory_rules_cover_the_native_shape_matrix() -> None:
                             ),
                             operation,
                             root_kind,
-                            memory_spaces,
+                            _expected_memory_spaces(operation, memory_spaces),
                             element_byte_count,
                             lane_count,
                             width_bits // 8,

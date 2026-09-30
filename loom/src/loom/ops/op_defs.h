@@ -241,15 +241,15 @@ enum loom_constraint_relation_e {
   // ConditionForwardedTypesMatchBlockArgs.
   LOOM_RELATION_CONDITION_FORWARD_MATCH,
 
-  // A region's terminator (yield) operand count matches the element
-  // count of a variadic value field. Args: (region field, variadic
-  // value field). Used by YieldCountMatchesResults.
+  // A region's terminator (yield) operand count matches a value field or
+  // region entry tuple. Args: (region field, target value or region field).
+  // Used by YieldCountMatches.
   LOOM_RELATION_YIELD_COUNT,
 
-  // Each region terminator (yield) operand's property matches the
-  // corresponding element of a variadic value field at the same
-  // position. Args: (region field, variadic value field). Used by
-  // YieldTypesMatchResults and YieldElementTypesMatchResults.
+  // Each region terminator (yield) operand's property matches the corresponding
+  // element of a value field or region entry tuple. Args: (region field,
+  // target value or region field). Used by YieldTypesMatch and
+  // YieldElementTypesMatch.
   LOOM_RELATION_YIELD_MATCH,
 
   // Two variadic value fields agree position-by-position. The two
@@ -518,8 +518,9 @@ typedef struct loom_operand_descriptor_t {
   loom_operand_role_t role;
 } loom_operand_descriptor_t;
 
-static_assert(sizeof(loom_operand_descriptor_t) == 16,
-              "loom_operand_descriptor_t must be 16 bytes");
+static_assert(sizeof(loom_operand_descriptor_t) ==
+                  (IREE_PTR_SIZE == 8 ? 16 : 12),
+              "loom_operand_descriptor_t must remain compact");
 
 // Per-result metadata in the op vtable.
 typedef struct loom_result_descriptor_t {
@@ -535,8 +536,9 @@ typedef struct loom_result_descriptor_t {
   uint8_t ownership_source_operand_index;
 } loom_result_descriptor_t;
 
-static_assert(sizeof(loom_result_descriptor_t) == 16,
-              "loom_result_descriptor_t must be 16 bytes");
+static_assert(sizeof(loom_result_descriptor_t) ==
+                  (IREE_PTR_SIZE == 8 ? 16 : 12),
+              "loom_result_descriptor_t must remain compact");
 
 typedef uint16_t loom_symbol_definition_flags_t;
 
@@ -583,8 +585,9 @@ typedef struct loom_symbol_definition_descriptor_t {
   const loom_symbol_fact_domain_t* fact_domain;
 } loom_symbol_definition_descriptor_t;
 
-static_assert(sizeof(loom_symbol_definition_descriptor_t) == 32,
-              "loom_symbol_definition_descriptor_t must be 32 bytes");
+static_assert(sizeof(loom_symbol_definition_descriptor_t) ==
+                  (IREE_PTR_SIZE == 8 ? 32 : 24),
+              "loom_symbol_definition_descriptor_t must remain compact");
 
 static inline iree_string_view_t loom_symbol_definition_descriptor_name(
     const loom_symbol_definition_descriptor_t* descriptor) {
@@ -844,14 +847,6 @@ bool loom_op_first_operand_with_role(const loom_module_t* module,
 
 // Returns true when |op| defines |value_id| as one of its results.
 bool loom_op_defines_value(const loom_op_t* op, loom_value_id_t value_id);
-
-// Binding kind for BindingList format elements.
-typedef enum loom_binding_kind_e {
-  // Block arg has the same type as the operand.
-  LOOM_BINDING_CAPTURE = 0,
-  // Block arg has the element type of the operand.
-  LOOM_BINDING_ELEMENT = 1,
-} loom_binding_kind_t;
 
 //===----------------------------------------------------------------------===//
 // Effect query helpers
@@ -1206,6 +1201,11 @@ loom_region_t* loom_loop_like_body(loom_loop_like_t loop);
 // without a separate condition region (scf.for) or if |loop| is not
 // valid. For scf.while this returns the "before" region.
 loom_region_t* loom_loop_like_condition_region(loom_loop_like_t loop);
+
+// Returns the continuation predicate of a verified condition-controlled loop,
+// or LOOM_VALUE_ID_INVALID for counted loops or an invalid interface. The
+// condition region's single-block terminator exposes this as operand zero.
+loom_value_id_t loom_loop_like_condition(loom_loop_like_t loop);
 
 // Returns the induction variable value ID for a loop-like op, or
 // LOOM_VALUE_ID_INVALID for loops without an induction variable
@@ -1583,13 +1583,13 @@ typedef struct loom_builder_t {
   iree_arena_allocator_t* arena;
   loom_builder_ip_t ip;
   loom_builder_callback_t on_op_finalized;
-  // Pre-allocated result value_ids for the next op build. When
-  // reserved_result_count > 0, loom_builder_define_value consumes
-  // from this array instead of allocating new value_ids. Cleared
-  // by loom_builder_finalize_op after verifying all were consumed.
-  const loom_value_id_t* reserved_result_ids;
-  iree_host_size_t reserved_result_count;
-  iree_host_size_t reserved_result_next;
+  // Pre-allocated value IDs for the next op build. When
+  // reserved_value_count > 0, loom_builder_define_value consumes from this
+  // array instead of allocating new value IDs. Cleared by
+  // loom_builder_finalize_op after verifying all were consumed.
+  const loom_value_id_t* reserved_value_ids;
+  iree_host_size_t reserved_value_count;
+  iree_host_size_t reserved_value_next;
 } loom_builder_t;
 
 // Initializes a builder that appends to |block|.
@@ -1639,34 +1639,37 @@ loom_builder_ip_t loom_builder_save(const loom_builder_t* builder);
 // Restores a previously saved insertion point.
 void loom_builder_restore(loom_builder_t* builder, loom_builder_ip_t ip);
 
-// Pre-allocates |count| result value_ids in the module's value table.
-// The values are real entries with uninitialized types. The next |count|
-// calls to loom_builder_define_value (typically from a generated builder)
-// will assign types to these values instead of allocating fresh ones.
-// loom_builder_finalize_op verifies all reserved results were consumed.
-// Callable builders consume argument signature identities before result
-// identities. Other region entry arguments are fresh, independent definitions.
+// Pre-allocates |count| value IDs in the module's value table. The values are
+// real entries with uninitialized types. The next |count| calls to
+// loom_builder_define_value (typically from a generated builder) assign types
+// to these values instead of allocating fresh IDs. loom_builder_finalize_op
+// verifies all reserved values were consumed.
+//
+// Generated builders consume identities in declaration order. Function
+// arguments precede function results. Independently typed region bindings
+// precede operation results. Other region entry arguments are fresh
+// definitions and do not consume reservations.
 //
 // This enables constructing result types that reference other results
 // by value_id before the build call:
 //
 //   loom_value_id_t result_ids[2];
-//   loom_builder_reserve_results(&builder, 2, result_ids);
+//   loom_builder_reserve_values(&builder, 2, result_ids);
 //   loom_type_t output_type = loom_type_shaped_1d(
 //       LOOM_TYPE_TENSOR, LOOM_SCALAR_TYPE_F32,
 //       loom_dim_pack_dynamic(result_ids[1]), 0);
 //   loom_type_t result_types[] = {output_type, index_type};
 //   loom_test_deflate_build(&builder, input, result_types, 2, ...);
 //
-iree_status_t loom_builder_reserve_results(loom_builder_t* builder,
-                                           iree_host_size_t count,
-                                           loom_value_id_t* out_result_ids);
+iree_status_t loom_builder_reserve_values(loom_builder_t* builder,
+                                          iree_host_size_t count,
+                                          loom_value_id_t* out_value_ids);
 
 // Creates a fresh value in the module's value table with the given type.
-// Returns the value ID. The value has no defining op yet (set by the
-// builder when the op is inserted). If results were reserved via
-// loom_builder_reserve_results, consumes the next reserved id and
-// assigns the type to it.
+// Returns the value ID. The value has no defining op yet (set by the builder
+// when the op is inserted). If values were reserved via
+// loom_builder_reserve_values, consumes the next reserved ID and assigns the
+// type to it.
 iree_status_t loom_builder_define_value(loom_builder_t* builder,
                                         loom_type_t type,
                                         loom_value_id_t* out_value_id);

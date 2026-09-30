@@ -20,6 +20,7 @@ from loom.dialect.scalar import arithmetic as scalar_arithmetic
 from loom.dialect.scalar import bitwise as scalar_bitwise
 from loom.dialect.scalar import comparison as scalar_comparison
 from loom.dialect.scalar import conversion as scalar_conversion
+from loom.dialect.scalar import math as scalar_math
 from loom.dialect.scf import ALL_SCF_OPS
 from loom.dialect.scf import defs as scf
 from loom.dialect.vector import ALL_VECTOR_OPS
@@ -349,6 +350,24 @@ def _binary_rule(
     )
 
 
+def _unary_rule(
+    source_op: Op, type_pattern: TypePattern, descriptor_key: str
+) -> DescriptorRule:
+    descriptor = _descriptor(descriptor_key)
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=descriptor,
+        guards=_typed_guards(("input", "result"), type_pattern),
+        emit=(
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={"input": ValueRef.operand("input")},
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+    )
+
+
 def _index_madd_rule() -> DescriptorRule:
     multiply = _descriptor("wasm.i32.mul")
     add = _descriptor("wasm.i32.add")
@@ -603,6 +622,8 @@ def _compare_rule(
     predicate: str,
     operand_type: TypePattern,
     descriptor_key: str,
+    *,
+    guards: tuple[Guard, ...] = (),
 ) -> DescriptorRule:
     descriptor = _descriptor(descriptor_key)
     return DescriptorRule(
@@ -613,6 +634,7 @@ def _compare_rule(
             _value_type("lhs", operand_type),
             _value_type("rhs", operand_type),
             _value_type("result", _V4I1),
+            *guards,
         ),
         emit=(
             EmitDescriptorOp(
@@ -632,6 +654,8 @@ def _scalar_compare_rule(
     predicate: str,
     operand_type: TypePattern,
     descriptor_key: str,
+    *,
+    guards: tuple[Guard, ...] = (),
 ) -> DescriptorRule:
     descriptor = _descriptor(descriptor_key)
     return DescriptorRule(
@@ -642,6 +666,7 @@ def _scalar_compare_rule(
             _value_type("lhs", operand_type),
             _value_type("rhs", operand_type),
             _value_type("result", _I1),
+            *guards,
         ),
         emit=(
             EmitDescriptorOp(
@@ -1011,6 +1036,9 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (scalar_arithmetic.scalar_addi, "add"),
                 (scalar_arithmetic.scalar_subi, "sub"),
                 (scalar_arithmetic.scalar_muli, "mul"),
+                (scalar_arithmetic.scalar_divsi, "div_s"),
+                (scalar_arithmetic.scalar_divui, "div_u"),
+                (scalar_arithmetic.scalar_remsi, "rem_s"),
                 (scalar_arithmetic.scalar_remui, "rem_u"),
                 (scalar_bitwise.scalar_andi, "and"),
                 (scalar_bitwise.scalar_ori, "or"),
@@ -1028,7 +1056,63 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (scalar_bitwise.scalar_xori, "xor"),
             )
         ),
-        _binary_rule(scalar_arithmetic.scalar_addf, _F32, "wasm.f32.add"),
+        *(
+            _binary_rule(source_op, _F32, f"wasm.f32.{operation}")
+            for source_op, operation in (
+                (scalar_arithmetic.scalar_addf, "add"),
+                (scalar_arithmetic.scalar_subf, "sub"),
+                (scalar_arithmetic.scalar_mulf, "mul"),
+                (scalar_arithmetic.scalar_divf, "div"),
+                (scalar_arithmetic.scalar_minimumf, "min"),
+                (scalar_arithmetic.scalar_maximumf, "max"),
+                (scalar_arithmetic.scalar_copysignf, "copysign"),
+            )
+        ),
+        *(
+            _unary_rule(source_op, _F32, f"wasm.f32.{operation}")
+            for source_op, operation in (
+                (scalar_arithmetic.scalar_absf, "abs"),
+                (scalar_arithmetic.scalar_negf, "neg"),
+                (scalar_math.scalar_ceilf, "ceil"),
+                (scalar_math.scalar_floorf, "floor"),
+                (scalar_math.scalar_truncf, "trunc"),
+                (scalar_math.scalar_roundevenf, "nearest"),
+                (scalar_math.scalar_sqrtf, "sqrt"),
+            )
+        ),
+        *(
+            _scalar_compare_rule(
+                scalar_comparison.scalar_cmpf,
+                predicate,
+                _F32,
+                f"wasm.f32.{operation}",
+            )
+            for predicate, operation in (
+                ("oeq", "eq"),
+                ("ogt", "gt"),
+                ("oge", "ge"),
+                ("olt", "lt"),
+                ("ole", "le"),
+                ("une", "ne"),
+            )
+        ),
+        *(
+            _scalar_compare_rule(
+                scalar_comparison.scalar_cmpf,
+                predicate,
+                _F32,
+                f"wasm.f32.{operation}",
+                guards=(Guard.instance_flags_has_all("fastmath", "nnan"),),
+            )
+            for predicate, operation in (
+                ("one", "ne"),
+                ("ueq", "eq"),
+                ("ugt", "gt"),
+                ("uge", "ge"),
+                ("ult", "lt"),
+                ("ule", "le"),
+            )
+        ),
         *(
             _scalar_compare_rule(
                 scalar_comparison.scalar_cmpi,
@@ -1167,13 +1251,62 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _compare_rule(vector.vector_cmpi, "ule", _V4I32, "wasm.i32x4.le_u"),
         _compare_rule(vector.vector_cmpi, "ugt", _V4I32, "wasm.i32x4.gt_u"),
         _compare_rule(vector.vector_cmpi, "uge", _V4I32, "wasm.i32x4.ge_u"),
-        _compare_rule(vector.vector_cmpf, "oeq", _V4F32, "wasm.f32x4.eq"),
-        _compare_rule(vector.vector_cmpf, "ogt", _V4F32, "wasm.f32x4.gt"),
-        _compare_rule(vector.vector_cmpf, "oge", _V4F32, "wasm.f32x4.ge"),
-        _compare_rule(vector.vector_cmpf, "olt", _V4F32, "wasm.f32x4.lt"),
-        _compare_rule(vector.vector_cmpf, "ole", _V4F32, "wasm.f32x4.le"),
-        _binary_rule(vector.vector_addf, _V4F32, "wasm.f32x4.add"),
-        _binary_rule(vector.vector_mulf, _V4F32, "wasm.f32x4.mul"),
+        *(
+            _compare_rule(
+                vector.vector_cmpf,
+                predicate,
+                _V4F32,
+                f"wasm.f32x4.{operation}",
+            )
+            for predicate, operation in (
+                ("oeq", "eq"),
+                ("ogt", "gt"),
+                ("oge", "ge"),
+                ("olt", "lt"),
+                ("ole", "le"),
+                ("une", "ne"),
+            )
+        ),
+        *(
+            _compare_rule(
+                vector.vector_cmpf,
+                predicate,
+                _V4F32,
+                f"wasm.f32x4.{operation}",
+                guards=(Guard.instance_flags_has_all("fastmath", "nnan"),),
+            )
+            for predicate, operation in (
+                ("one", "ne"),
+                ("ueq", "eq"),
+                ("ugt", "gt"),
+                ("uge", "ge"),
+                ("ult", "lt"),
+                ("ule", "le"),
+            )
+        ),
+        *(
+            _binary_rule(source_op, _V4F32, f"wasm.f32x4.{operation}")
+            for source_op, operation in (
+                (vector.vector_addf, "add"),
+                (vector.vector_subf, "sub"),
+                (vector.vector_mulf, "mul"),
+                (vector.vector_divf, "div"),
+                (vector.vector_minimumf, "min"),
+                (vector.vector_maximumf, "max"),
+            )
+        ),
+        *(
+            _unary_rule(source_op, _V4F32, f"wasm.f32x4.{operation}")
+            for source_op, operation in (
+                (vector.vector_absf, "abs"),
+                (vector.vector_negf, "neg"),
+                (vector.vector_ceilf, "ceil"),
+                (vector.vector_floorf, "floor"),
+                (vector.vector_truncf, "trunc"),
+                (vector.vector_roundevenf, "nearest"),
+                (vector.vector_sqrtf, "sqrt"),
+            )
+        ),
         _binary_rule(vector.vector_addi, _V4I32, "wasm.i32x4.add"),
         _binary_rule(vector.vector_subi, _V4I32, "wasm.i32x4.sub"),
         _binary_rule(vector.vector_muli, _V4I32, "wasm.i32x4.mul"),
@@ -1255,14 +1388,20 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (index.index_shrui, "shr_u"),
             )
         ),
-        _binary_rule(
-            index.index_rem,
-            _INDEX,
-            "wasm.i32.rem_u",
-            guards=tuple(
-                Guard.value_i64_range(field, 0, (1 << 32) - 1)
-                for field in ("lhs", "rhs")
-            ),
+        *(
+            _binary_rule(
+                source_op,
+                _INDEX,
+                descriptor_key,
+                guards=tuple(
+                    Guard.value_i64_range(field, 0, (1 << 32) - 1)
+                    for field in ("lhs", "rhs")
+                ),
+            )
+            for source_op, descriptor_key in (
+                (index.index_div, "wasm.i32.div_u"),
+                (index.index_rem, "wasm.i32.rem_u"),
+            )
         ),
         _extract_rule(_V4I1, _I1, "wasm.i32x4.extract_lane"),
         _extract_rule(_V4I32, _I32, "wasm.i32x4.extract_lane"),

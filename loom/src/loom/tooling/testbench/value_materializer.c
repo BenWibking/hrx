@@ -1311,6 +1311,14 @@ static iree_status_t loom_testbench_copy_buffer_view_to_params(
       status = iree_hal_semaphore_wait(completion_semaphore, completion_value,
                                        iree_infinite_timeout(),
                                        IREE_ASYNC_WAIT_FLAG_NONE);
+      if (!iree_status_is_ok(status)) {
+        // A failed HAL wait may carry only a code. Query before releasing the
+        // semaphore so the materialization error includes its saved diagnostic.
+        uint64_t semaphore_value = 0;
+        iree_status_t query_status =
+            iree_hal_semaphore_query(completion_semaphore, &semaphore_value);
+        status = iree_status_join(query_status, status);
+      }
     }
   }
 
@@ -1548,8 +1556,8 @@ static iree_status_t loom_testbench_materialize_tensor_view(
           source_value->buffer.byte_length - source->tensor_view.byte_offset) {
     return iree_make_status(
         IREE_STATUS_OUT_OF_RANGE,
-        "check.tensor.view byte range [%" PRIu64 ", %" PRIu64
-        ") exceeds source byte length %" PRIu64,
+        "check.tensor.view byte range [%" PRIdsz ", %" PRIdsz
+        ") exceeds source byte length %" PRIdsz,
         source->tensor_view.byte_offset,
         source->tensor_view.byte_offset + result_byte_length,
         source_value->buffer.byte_length);

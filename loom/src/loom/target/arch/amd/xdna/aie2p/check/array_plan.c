@@ -228,10 +228,10 @@ static iree_status_t loom_aie2p_array_plan_check_format(
   IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
       builder,
       "array @%.*s family=%s groups=%" PRIhsz " workers=%" PRIhsz
-      " bindings=%" PRIhsz " channels=%" PRIhsz " slots=%" PRIhsz
+      " bindings=%" PRIu32 " channels=%" PRIhsz " slots=%" PRIhsz
       " locks=%" PRIhsz " dma=%" PRIhsz " routes=%" PRIhsz "\n",
       (int)function_name.size, function_name.data, plan->family->key,
-      plan->group_count, plan->worker_count, plan->binding_count,
+      plan->group_count, plan->worker_count, plan->binding_slot_count,
       plan->channel_count, plan->channel_slot_count, plan->lock_count,
       plan->dma_channel_count, plan->route_count));
 
@@ -303,6 +303,17 @@ static iree_status_t loom_aie2p_array_plan_check_format(
         " load-address=0x%05" PRIx32 " bytes=%" PRIu32 "\n",
         storage->worker_index, storage->storage_space, storage->owner_offset,
         storage->load_address, storage->byte_length));
+  }
+  for (iree_host_size_t i = 0; i < plan->read_only_data_count; ++i) {
+    const loom_aie2p_array_read_only_data_plan_t* data =
+        &plan->read_only_data[i];
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+        builder,
+        "worker-rodata worker=%" PRIu32 " requirement=%" PRIu32
+        " offset=0x%05" PRIx32 " load-address=0x%05" PRIx32 " bytes=%" PRIu32
+        "\n",
+        data->worker_index, data->requirement_ordinal, data->owner_offset,
+        data->load_address, data->byte_length));
   }
   for (iree_host_size_t i = 0; i < plan->worker_plan_count; ++i) {
     const loom_aie2p_array_fold_state_plan_t* state =
@@ -642,8 +653,9 @@ static iree_status_t loom_aie2p_array_plan_check_resident_program_in_module(
     loom_module_t* resident_module, const loom_aie2p_array_plan_t* plan,
     iree_diagnostic_emitter_t diagnostic_emitter) {
   loom_aie2p_array_resident_program_t program = {0};
-  IREE_RETURN_IF_ERROR(loom_aie2p_array_materialize_resident_program(
-      request->module, resident_module, plan, request->case_arena, &program));
+  IREE_RETURN_IF_ERROR(loom_aie2p_array_materialize_resident_programs(
+      request->module, resident_module, plan, /*plan_count=*/1,
+      request->case_arena, &program));
   IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
       &request->result->actual_output,
       "\nresident-program workers=%" PRIhsz "\n", program.worker_count));

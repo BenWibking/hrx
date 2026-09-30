@@ -282,6 +282,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::ir
+    loom::ops::global
     loom::ops::low
   PUBLIC
 )
@@ -530,9 +531,14 @@ loom_cc_test(
   SRCS
     "placement_test.cc"
   DEPS
+    ::builder
     ::placement
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::ir
+    loom::ops::low
+    loom::target::registers
 )
 
 loom_cc_library(
@@ -603,6 +609,7 @@ loom_cc_benchmark(
     iree::base::internal::arena
     iree::testing::benchmark_main
     loom::analysis::liveness
+    loom::codegen::low::allocation::unit_liveness
     loom::format::text::parser
     loom::ir
     loom::ops::func
@@ -676,6 +683,7 @@ loom_cc_library(
     ::target_binding
     iree::base
     iree::base::internal::arena
+    loom::analysis::consumption
     loom::codegen::low::allocation::live_range
     loom::codegen::low::allocation::storage
     loom::error::emitter
@@ -702,6 +710,7 @@ loom_cc_library(
     ::representation_binding
     iree::base
     iree::base::internal::arena
+    loom::analysis::consumption
     loom::codegen::low::allocation::live_range
     loom::codegen::low::allocation::storage
     loom::error::emitter
@@ -907,6 +916,17 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_test(
+  NAME
+    guarded_motion_test
+  SRCS
+    "guarded_motion_test.cc"
+  DEPS
+    ::guarded_motion
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 loom_cc_library(
   NAME
     frame
@@ -949,6 +969,7 @@ loom_cc_test(
     "frame_test.cc"
   DEPS
     ::frame
+    ::guarded_motion
     ::packet
     ::text_asm
     iree::base::internal::arena

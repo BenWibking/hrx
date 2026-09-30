@@ -82,17 +82,20 @@ static bool loom_low_schedule_candidate_defers_storage_setup(
          !iree_any_bit_set(score->flags, actionable_flags);
 }
 
-// Defers operand-free materializations while completing a packing transaction.
-// Ordinary pressure relief already compares live growth and allocation debt:
-// suppressing every leaf there can postpone an operand needed to close a live
-// consumer chain while unrelated work grows pressure instead.
+// Defers operand-free materializations during pressure recovery unless they
+// make their consumer ready or complete storage directly. A leaf can lie on a
+// constrained completion path without advancing its executable frontier: for
+// example, its consumer may remain serialized behind a target-state access.
+// Materializing several such leaves opens unrelated live ranges while the
+// constrained storage remains unchanged.
 static bool loom_low_schedule_candidate_defers_rematerializable_leaf(
     loom_low_schedule_candidate_compare_mode_t compare_mode,
     const loom_low_schedule_candidate_score_t* score) {
-  if (compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_PACKING_COMPLETION) {
+  if (compare_mode == LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT) {
     return false;
   }
   const uint16_t actionable_flags =
+      LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_UNLOCKS_DESCRIPTOR |
       LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_ADVANCES_STORAGE |
       LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_EXACT_PACKING_COMPLETION;
   return score->produced_live_value_count != 0 &&
@@ -280,6 +283,11 @@ static bool loom_low_schedule_candidate_score_less(
   // other chains consume the temporary storage that completion still needs.
   if (state->options->strategy == LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL &&
       compare_mode != LOOM_LOW_SCHEDULE_CANDIDATE_COMPARE_DEFAULT) {
+    if (lhs->active_unspillable_transaction_final_capacity !=
+        rhs->active_unspillable_transaction_final_capacity) {
+      return lhs->active_unspillable_transaction_final_capacity <
+             rhs->active_unspillable_transaction_final_capacity;
+    }
     const uint32_t lhs_completion_capacity =
         loom_low_schedule_candidate_unspillable_completion_capacity(lhs);
     const uint32_t rhs_completion_capacity =

@@ -25,6 +25,7 @@ from loom.dsl import (
     ATTR_TYPE_ENUM,
     ATTR_TYPE_FLAGS,
     ATTR_TYPE_I64_ARRAY,
+    BYTE_PATTERN_SCALAR,
     FACT_IDENTITY,
     HINT,
     INDEX,
@@ -39,7 +40,6 @@ from loom.dsl import (
     Dialect,
     EnumCase,
     EnumDef,
-    HasBitwiseScalar,
     MemoryAccessInterface,
     Op,
     Operand,
@@ -381,7 +381,7 @@ view_atomic_reduce = Op(
         "lowering."
     ),
     operands=[
-        Operand("value", SCALAR, doc="Scalar contribution."),
+        Operand("value", BYTE_PATTERN_SCALAR, doc="Fixed-width byte-addressable scalar contribution."),
         Operand("view", VIEW, doc="Typed destination view."),
         Operand("indices", INDEX, doc="Dynamic logical element indices.", variadic=True),
     ],
@@ -413,7 +413,7 @@ view_atomic_rmw = Op(
     group=view_ops,
     doc=("Atomically read one scalar view element, combine it with a scalar update value, write the combined value back, and return the old value observed by that atomic operation."),
     operands=[
-        Operand("value", SCALAR, doc="Scalar update value."),
+        Operand("value", BYTE_PATTERN_SCALAR, doc="Fixed-width byte-addressable scalar update value."),
         Operand("view", VIEW, doc="Typed destination view."),
         Operand("indices", INDEX, doc="Dynamic logical element indices.", variadic=True),
     ],
@@ -427,6 +427,7 @@ view_atomic_rmw = Op(
     contracts=[ContractFamily.MEMORY_ATOMIC],
     interfaces=[CachePolicyInterface(), _atomic_memory_access_interface(value="value")],
     verify="loom_view_atomic_rmw_verify",
+    facts="loom_view_atomic_observation_facts",
     format=[
         TemplateParamFlags("kind", "memory_flags"),
         Ref("value"),
@@ -456,15 +457,14 @@ view_atomic_cmpxchg = Op(
         "accepted element type."
     ),
     operands=[
-        Operand("expected", SCALAR, doc="Scalar value compared against memory."),
-        Operand("replacement", SCALAR, doc="Scalar value written on success."),
+        Operand("expected", BYTE_PATTERN_SCALAR, doc="Fixed-width byte-addressable scalar compared against memory."),
+        Operand("replacement", SCALAR, doc="Matching scalar value written on success."),
         Operand("view", VIEW, doc="Typed destination view."),
         Operand("indices", INDEX, doc="Dynamic logical element indices.", variadic=True),
     ],
     results=[Result("old", SCALAR, doc="Old memory value observed by the atomic operation.")],
     attrs=_atomic_cmpxchg_memory_attrs(),
     constraints=[
-        HasBitwiseScalar("expected"),
         SameElementType("expected", "replacement", "view", "old"),
         SameType("expected", "replacement", "old"),
     ],
@@ -481,6 +481,7 @@ view_atomic_cmpxchg = Op(
         ),
     ],
     verify="loom_view_atomic_cmpxchg_verify",
+    facts="loom_view_atomic_observation_facts",
     format=[
         Ref("expected"),
         COMMA,
@@ -568,7 +569,7 @@ view_atomic_load = Op(
         Operand("view", VIEW, doc="Typed source view."),
         Operand("indices", INDEX, doc="Dynamic logical element indices.", variadic=True),
     ],
-    results=[Result("result", SCALAR, doc="Scalar value observed by the atomic load.")],
+    results=[Result("result", BYTE_PATTERN_SCALAR, doc="Fixed-width byte-addressable scalar observed by the atomic load.")],
     attrs=_atomic_load_store_attrs(AtomicLoadOrdering),
     constraints=[SameElementType("view", "result")],
     traits=[OBSERVABLE_EFFECT],
@@ -577,6 +578,7 @@ view_atomic_load = Op(
     interfaces=[CachePolicyInterface(), _memory_access_interface(atomic_ordering="ordering", atomic_scope="scope")],
     effective_traits="loom_view_atomic_load_effective_traits",
     verify="loom_view_atomic_load_verify",
+    facts="loom_view_atomic_observation_facts",
     format=[Ref("view"), IndexList("indices", "static_indices"), AttrDict(), COLON, TypeOf("view"), ARROW, ResultType("result")],
     examples=[
         "%generation = view.atomic.load %progress[0] {ordering = acquire, scope = system} : view<1xi32> -> i32",
@@ -593,7 +595,7 @@ view_atomic_store = Op(
         "width and atomicity at the requested scope without an exchange."
     ),
     operands=[
-        Operand("value", SCALAR, doc="Scalar value to publish."),
+        Operand("value", BYTE_PATTERN_SCALAR, doc="Fixed-width byte-addressable scalar to publish."),
         Operand("view", VIEW, doc="Typed destination view."),
         Operand("indices", INDEX, doc="Dynamic logical element indices.", variadic=True),
     ],

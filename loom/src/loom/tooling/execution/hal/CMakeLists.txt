@@ -19,7 +19,7 @@ loom_test_module(
     "testdata/scenario_batch_hal_actual.loom"
 )
 
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
 loom_execution_test(
   NAME
     hardware_test_execute_amdgpu_hardware_test
@@ -75,10 +75,10 @@ loom_test_module(
     "testdata/scenario_compare_hal_vm.loom"
 )
 
-if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
 loom_execution_test(
   NAME
-    scenario_compare_test_execute_amdgpu_hardware_vm_oracle_test
+    scenario_compare_test_execute_amdgpu_hardware_test
   MODULE
     "::scenario_compare_test_module"
   RUNNER_ARGS
@@ -88,10 +88,9 @@ loom_execution_test(
     "iree-build-requirement=loom.emit.amdgpu"
     "iree-build-requirement=loom.execute.iree_hal"
     "iree-build-requirement=runtime.hal.amdgpu"
-    "iree-build-requirement=loom.target.arch.vm"
     "iree-run-requirement=runtime.resource.amd_gpu"
     "runtime-resource=amd-gpu"
-    "loom-execution-profile=amdgpu_hardware_vm_oracle"
+    "loom-execution-profile=amdgpu_hardware"
     "loom-target-family=amdgpu"
     "loom-target-class=gpu"
     "loom-executor=hardware"
@@ -100,10 +99,10 @@ loom_execution_test(
 )
 endif()
 
-if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_VM)
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
 loom_execution_test(
   NAME
-    scenario_compare_test_execute_spirv_vulkan_hardware_vm_oracle_test
+    scenario_compare_test_execute_spirv_vulkan_hardware_test
   MODULE
     "::scenario_compare_test_module"
   RUNNER_ARGS
@@ -114,10 +113,9 @@ loom_execution_test(
     "iree-build-requirement=loom.emit.spirv"
     "iree-build-requirement=loom.execute.iree_hal"
     "iree-build-requirement=runtime.hal.vulkan"
-    "iree-build-requirement=loom.target.arch.vm"
     "iree-run-requirement=vulkan.resource.device"
     "runtime-resource=vulkan-device"
-    "loom-execution-profile=spirv_vulkan_hardware_vm_oracle"
+    "loom-execution-profile=spirv_vulkan_hardware"
     "loom-target-family=spirv"
     "loom-target-class=gpu"
     "loom-executor=hardware"
@@ -364,6 +362,24 @@ loom_cc_library(
     loom::tooling::io::file
   PUBLIC
 )
+
+if(IREE_HAL_DRIVER_TASK)
+loom_cc_test(
+  NAME
+    runtime_test
+  SRCS
+    "runtime_test.cc"
+  DEPS
+    ::runtime
+    iree::async
+    iree::async::platform
+    iree::base
+    iree::hal
+    iree::hal::drivers::task::semaphore
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+endif()
 
 if(IREE_HAL_DRIVER_TASK)
 loom_cc_test(

@@ -9,10 +9,12 @@
 #include "iree/base/internal/arena.h"
 #include "loom/analysis/contract_vector.h"
 #include "loom/analysis/kernel_async_legality.h"
+#include "loom/analysis/kernel_barrier_lifetime.h"
 #include "loom/analysis/vector_memory_footprint.h"
 #include "loom/codegen/low/lower/context.h"
 #include "loom/codegen/low/lower/contract_query.h"
 #include "loom/codegen/low/lower/function_boundary.h"
+#include "loom/codegen/low/lower/realization.h"
 #include "loom/codegen/low/lower/report.h"
 #include "loom/codegen/low/lower/rule_emit.h"
 #include "loom/codegen/low/lower/rule_source_memory.h"
@@ -156,7 +158,7 @@ static iree_status_t loom_low_lower_map_blocks(
           context, source_block->arg_ids[arg_index], low_arg));
     }
   }
-  return iree_ok_status();
+  return loom_low_lower_realizations_map_blocks(context);
 }
 
 static iree_status_t loom_low_lower_emit_preamble(
@@ -279,26 +281,56 @@ static iree_status_t loom_low_lower_emit_region_ops(
     loom_low_lower_context_t* context, loom_region_t* source_region,
     bool map_source_blocks);
 
-static iree_status_t loom_low_lower_map_op_result_types(
+static iree_status_t loom_low_lower_map_value_types(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_type_t** out_result_types) {
-  *out_result_types = NULL;
-  if (source_op->result_count == 0) {
+    const loom_value_id_t* source_values, uint16_t source_value_count,
+    loom_type_t** out_low_types) {
+  *out_low_types = NULL;
+  if (source_value_count == 0) {
     return iree_ok_status();
   }
-  loom_type_t* result_types = NULL;
+  loom_type_t* low_types = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-      context, source_op->result_count, sizeof(*result_types),
-      (void**)&result_types));
-  const loom_value_id_t* source_results = loom_op_const_results(source_op);
-  for (uint16_t i = 0; i < source_op->result_count; ++i) {
+      context, source_value_count, sizeof(*low_types), (void**)&low_types));
+  for (uint16_t i = 0; i < source_value_count; ++i) {
     IREE_RETURN_IF_ERROR(loom_low_lower_map_value(
-        context, source_op, source_results[i], &result_types[i]));
-    if (loom_type_kind(result_types[i]) == LOOM_TYPE_NONE) {
+        context, source_op, source_values[i], &low_types[i]));
+    if (loom_type_kind(low_types[i]) == LOOM_TYPE_NONE) {
       return iree_ok_status();
     }
   }
-  *out_result_types = result_types;
+  *out_low_types = low_types;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_low_lower_map_op_result_types(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_type_t** out_result_types) {
+  return loom_low_lower_map_value_types(
+      context, source_op, loom_op_const_results(source_op),
+      source_op->result_count, out_result_types);
+}
+
+// Rebinds tuple-local SSA references retained by a target register type from
+// source identities to the Low identities that will own the type scheme.
+static iree_status_t loom_low_lower_remap_type_scheme(
+    loom_low_lower_context_t* context, const loom_value_id_t* source_values,
+    const loom_value_id_t* low_values, uint16_t value_count,
+    loom_type_t* low_types) {
+  if (value_count == 0) {
+    return iree_ok_status();
+  }
+  const loom_ir_remap_options_t options = {.allow_unmapped_values = true};
+  loom_ir_remap_t remap = {0};
+  IREE_RETURN_IF_ERROR(
+      loom_ir_remap_initialize(context->module, context->module,
+                               &context->emission_arena, &options, &remap));
+  IREE_RETURN_IF_ERROR(
+      loom_ir_remap_map_values(&remap, source_values, low_values, value_count));
+  for (uint16_t i = 0; i < value_count; ++i) {
+    IREE_RETURN_IF_ERROR(
+        loom_ir_remap_type(&remap, low_types[i], &low_types[i]));
+  }
   return iree_ok_status();
 }
 
@@ -477,16 +509,62 @@ static iree_status_t loom_low_lower_emit_scf_for(
 static iree_status_t loom_low_lower_emit_scf_while(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
   const loom_value_slice_t iter_args = loom_scf_while_iter_args(source_op);
+  const loom_block_t* source_before =
+      loom_region_const_entry_block(loom_scf_while_before(source_op));
+
+  loom_type_t* header_types = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_map_value_types(context, source_op, source_before->arg_ids,
+                                     source_before->arg_count, &header_types));
+  if (source_before->arg_count != 0 && header_types == NULL) {
+    return iree_ok_status();
+  }
+
+  loom_type_t* result_types = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_map_op_result_types(context, source_op, &result_types));
+  if (source_op->result_count != 0 && result_types == NULL) {
+    return iree_ok_status();
+  }
+
+  const iree_host_size_t identity_count =
+      (iree_host_size_t)source_before->arg_count + source_op->result_count;
+  loom_value_id_t* identities = NULL;
+  if (identity_count != 0) {
+    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
+        context, identity_count, sizeof(*identities), (void**)&identities));
+    IREE_RETURN_IF_ERROR(loom_builder_reserve_values(
+        &context->builder, identity_count, identities));
+  }
+  loom_value_id_t* result_identities =
+      identities ? identities + source_before->arg_count : NULL;
+  IREE_RETURN_IF_ERROR(loom_low_lower_remap_type_scheme(
+      context, source_before->arg_ids, identities, source_before->arg_count,
+      header_types));
+  IREE_RETURN_IF_ERROR(loom_low_lower_remap_type_scheme(
+      context, loom_op_const_results(source_op), result_identities,
+      source_op->result_count, result_types));
+
   loom_value_id_t* low_iter_args = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
-      context, source_op, iter_args.values, iter_args.count,
-      /*required_types=*/NULL, &low_iter_args));
+      context, source_op, iter_args.values, iter_args.count, header_types,
+      &low_iter_args));
 
   loom_op_t* low_while_op = NULL;
   IREE_RETURN_IF_ERROR(loom_low_scf_while_build(
-      &context->builder, low_iter_args, iter_args.count, /*result_types=*/NULL,
+      &context->builder, low_iter_args, iter_args.count, header_types,
+      result_types, source_op->result_count,
       /*tied_results=*/NULL, /*tied_result_count=*/0, source_op->location,
       &low_while_op));
+  const loom_block_t* low_before =
+      loom_region_const_entry_block(loom_low_scf_while_before(low_while_op));
+  for (uint16_t i = 0; i < source_before->arg_count; ++i) {
+    IREE_ASSERT_EQ(low_before->arg_ids[i], identities[i]);
+  }
+  for (uint16_t i = 0; i < source_op->result_count; ++i) {
+    IREE_ASSERT_EQ(loom_op_const_results(low_while_op)[i],
+                   result_identities[i]);
+  }
   IREE_RETURN_IF_ERROR(
       loom_low_lower_bind_op_results(context, source_op, low_while_op));
   IREE_RETURN_IF_ERROR(loom_low_lower_bind_region_entry_args(
@@ -563,12 +641,14 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
       IREE_RETURN_IF_ERROR(loom_low_lower_lookup_successor_dest(
           context, source_op, 0, &low_dest));
       loom_value_slice_t args = loom_cfg_br_args(source_op);
-      loom_value_id_t* low_args = NULL;
+      loom_value_slice_t low_args = {0};
+      IREE_RETURN_IF_ERROR(
+          loom_low_lower_realizations_emit_edge(context, source_op));
       IREE_RETURN_IF_ERROR(loom_low_lower_remap_successor_args(
           context, source_op, 0, low_dest, args.values, args.count, &low_args));
       loom_op_t* low_br_op = NULL;
-      return loom_low_br_build(&context->builder, low_dest, low_args,
-                               args.count, source_op->location, &low_br_op);
+      return loom_low_br_build(&context->builder, low_dest, low_args.values,
+                               low_args.count, source_op->location, &low_br_op);
     }
     case LOOM_OP_CFG_COND_BR: {
       loom_block_t* low_true_dest = NULL;
@@ -1044,11 +1124,21 @@ static iree_status_t loom_low_lower_emit_region_ops(
           "emission");
       IREE_BUILTIN_UNREACHABLE();
     }
+    loom_low_lower_emission_scope_begin(context);
+    status = loom_low_lower_realizations_emit_entry(context, source_block);
+    loom_low_lower_emission_scope_end(context);
+    if (!iree_status_is_ok(status)) {
+      break;
+    }
     loom_op_t* source_op = NULL;
     loom_block_for_each_op(source_block, source_op) {
       const uint32_t before_error_count = context->result->error_count;
       loom_low_lower_emission_scope_begin(context);
       status = loom_low_lower_emit_source_op(context, source_op);
+      if (iree_status_is_ok(status) &&
+          context->result->error_count == before_error_count) {
+        status = loom_low_lower_realizations_emit_after(context, source_op);
+      }
       // Builders copy all caller-provided arrays and attribute payloads into
       // module-owned storage. Nested structured emission may reset this arena
       // while its parent is active because the parent builder has already
@@ -1293,6 +1383,27 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
   }
   if (iree_status_is_ok(status)) {
     out_result->error_count += async_legality_result.error_count;
+  }
+  if (iree_status_is_ok(status) && out_result->error_count != 0) {
+    loom_low_lowering_frame_deinitialize(&context);
+    iree_arena_deinitialize(&context.function_arena);
+    return iree_ok_status();
+  }
+
+  loom_kernel_barrier_lifetime_result_t barrier_lifetime_result = {0};
+  if (iree_status_is_ok(status)) {
+    const loom_kernel_barrier_lifetime_options_t barrier_lifetime_options = {
+        .value_domain = &context.lowering.value_domain,
+        .fact_table = context.lowering.fact_table,
+        .emitter = options->emitter,
+        .phase_name = IREE_SV("source-low"),
+    };
+    status = loom_kernel_barrier_lifetime_verify_function(
+        module, source_function, &barrier_lifetime_options,
+        &barrier_lifetime_result);
+  }
+  if (iree_status_is_ok(status)) {
+    out_result->error_count += barrier_lifetime_result.error_count;
   }
   if (iree_status_is_ok(status) && out_result->error_count != 0) {
     loom_low_lowering_frame_deinitialize(&context);

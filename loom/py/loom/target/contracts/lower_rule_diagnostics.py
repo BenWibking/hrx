@@ -273,8 +273,20 @@ def _storage_element_format_diagnostic(field: str) -> DiagnosticRef:
     return _named_constraint_diagnostic("value", field, "storage_schema.element_format")
 
 
+def _storage_operand_schema_diagnostic(field: str) -> DiagnosticRef:
+    return _named_constraint_diagnostic(
+        "value", field, "storage_schema.encoded_operand"
+    )
+
+
 def _value_no_uses_diagnostic(field: str) -> DiagnosticRef:
     return _named_constraint_diagnostic("value", field, "no_ordinary_uses")
+
+
+def _value_no_uses_after_diagnostic(field: str) -> DiagnosticRef:
+    return _named_constraint_diagnostic(
+        "value", field, "no_ordinary_uses_after_source_op"
+    )
 
 
 def _instance_flags_diagnostic(

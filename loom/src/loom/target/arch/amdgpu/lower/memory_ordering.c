@@ -8,6 +8,7 @@
 
 #include "loom/ops/atomic.h"
 #include "loom/ops/buffer/ops.h"
+#include "loom/target/arch/amdgpu/lower/descriptor_ref.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
 #include "loom/target/arch/amdgpu/lower/memory.h"
@@ -32,7 +33,8 @@ static bool loom_amdgpu_memory_ordering_available(
 }
 
 static bool loom_amdgpu_memory_ordering_scope_supported(uint8_t scope) {
-  return scope == LOOM_ATOMIC_SCOPE_DEVICE || scope == LOOM_ATOMIC_SCOPE_SYSTEM;
+  return scope == LOOM_ATOMIC_SCOPE_WORKGROUP ||
+         scope == LOOM_ATOMIC_SCOPE_DEVICE || scope == LOOM_ATOMIC_SCOPE_SYSTEM;
 }
 
 loom_low_lower_visibility_model_t loom_amdgpu_memory_visibility_model(
@@ -52,10 +54,14 @@ loom_low_lower_visibility_model_t loom_amdgpu_memory_visibility_model(
 iree_string_view_t loom_amdgpu_atomic_memory_rejection_key(
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_low_source_memory_access_plan_t* source) {
-  if (source->memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL) {
+  const bool is_workgroup =
+      source->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP;
+  if (source->memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL &&
+      source->memory_space != LOOM_VALUE_FACT_MEMORY_SPACE_GENERIC &&
+      !is_workgroup) {
     return IREE_SV("atomic.memory_space");
   }
-  // Each observation uses one naturally aligned 32- or 64-bit VMEM packet.
+  // Each observation uses one naturally aligned 32- or 64-bit memory packet.
   if (source->vector_lane_count != 1 ||
       (source->element_byte_count != 4 && source->element_byte_count != 8)) {
     return IREE_SV("atomic.value_type");
@@ -63,7 +69,9 @@ iree_string_view_t loom_amdgpu_atomic_memory_rejection_key(
   if (source->minimum_alignment < source->element_byte_count) {
     return IREE_SV("atomic.alignment");
   }
-  if (!loom_amdgpu_memory_ordering_scope_supported(source->atomic.scope)) {
+  if (is_workgroup ? source->atomic.scope != LOOM_ATOMIC_SCOPE_WORKGROUP
+                   : !loom_amdgpu_memory_ordering_scope_supported(
+                         source->atomic.scope)) {
     return IREE_SV("atomic.scope");
   }
   if (!loom_amdgpu_memory_ordering_available(descriptor_set)) {
@@ -72,7 +80,8 @@ iree_string_view_t loom_amdgpu_atomic_memory_rejection_key(
   return iree_string_view_empty();
 }
 
-static iree_status_t loom_amdgpu_emit_memory_wait(
+// Keep wait expansion shared across memory observations and fences.
+IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_amdgpu_emit_memory_wait(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     uint32_t counter_mask) {
   loom_amdgpu_wait_packet_selection_t selection = {0};
@@ -103,12 +112,21 @@ static iree_status_t loom_amdgpu_emit_memory_release(
   const loom_amdgpu_memory_coherence_rule_t* rule =
       loom_amdgpu_memory_coherence_rule(
           loom_low_lower_context_descriptor_set(context));
+  if (scope == LOOM_ATOMIC_SCOPE_WORKGROUP) {
+    for (uint8_t i = 0; i < rule->workgroup.release_wait_count; ++i) {
+      IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_wait(
+          context, source_op, rule->workgroup.release_wait_masks[i]));
+    }
+    return iree_ok_status();
+  }
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_emit_memory_wait(context, source_op, rule->local_wait_mask));
   return loom_amdgpu_system_memory_build_release_ordering_scoped(
       loom_low_lower_context_builder(context),
       loom_low_lower_context_descriptor_set(context),
-      loom_amdgpu_memory_coherence_scope(scope), source_op->location);
+      loom_amdgpu_memory_coherence_scope(
+          loom_low_lower_context_descriptor_set(context), scope),
+      source_op->location);
 }
 
 iree_status_t loom_amdgpu_emit_memory_ordering_prefix(
@@ -129,12 +147,64 @@ iree_status_t loom_amdgpu_emit_memory_ordering_prefix(
   return iree_ok_status();
 }
 
+static iree_status_t loom_amdgpu_emit_workgroup_memory_acquire(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    uint32_t counter_mask) {
+  IREE_RETURN_IF_ERROR(
+      loom_amdgpu_emit_memory_wait(context, source_op, counter_mask));
+  const loom_low_descriptor_set_t* descriptor_set =
+      loom_low_lower_context_descriptor_set(context);
+  const loom_amdgpu_memory_coherence_rule_t* rule =
+      loom_amdgpu_memory_coherence_rule(descriptor_set);
+  if (!rule->workgroup.invalidate ||
+      loom_low_lower_context_read_visibility_scope(context) !=
+          LOOM_ATOMIC_SCOPE_THREAD) {
+    return iree_ok_status();
+  }
+  loom_amdgpu_memory_coherence_attr_t
+      attrs[LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_CAPACITY];
+  const uint8_t count = loom_amdgpu_memory_coherence_select_attrs(
+      rule->cache_attrs[rule->workgroup.cache_scope],
+      (loom_cache_scope_t)rule->workgroup.cache_scope, attrs);
+  loom_amdgpu_explicit_packet_immediate_template_t
+      immediates[LOOM_AMDGPU_MEMORY_COHERENCE_ATTR_CAPACITY];
+  for (uint8_t i = 0; i < count; ++i) {
+    immediates[i] = (loom_amdgpu_explicit_packet_immediate_template_t){
+        .name = attrs[i].name,
+        .value = attrs[i].value,
+    };
+  }
+  loom_amdgpu_explicit_packet_plan_t plan = {0};
+  IREE_RETURN_IF_ERROR(loom_amdgpu_resolve_explicit_packet_row_plan(
+      context,
+      loom_amdgpu_lookup_descriptor_ref(descriptor_set,
+                                        rule->workgroup.invalidate),
+      immediates, count, &plan));
+  return loom_amdgpu_emit_explicit_packet_plan(context, source_op, &plan);
+}
+
 iree_status_t loom_amdgpu_emit_memory_ordering_suffix(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_low_source_memory_access_plan_t* source) {
   if (source->operation_kind != LOOM_MEMORY_ACCESS_OPERATION_ATOMIC_LOAD ||
       source->atomic.ordering == LOOM_ATOMIC_ORDERING_RELAXED) {
     return iree_ok_status();
+  }
+  if (source->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_GENERIC) {
+    // A flat observation can complete through either global or LDS memory.
+    // Complete the local path before acquisition even if its value is unused.
+    const loom_amdgpu_memory_coherence_rule_t* rule =
+        loom_amdgpu_memory_coherence_rule(
+            loom_low_lower_context_descriptor_set(context));
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_wait(context, source_op,
+                                                      rule->local_wait_mask));
+  }
+  if (source->atomic.scope == LOOM_ATOMIC_SCOPE_WORKGROUP) {
+    return loom_amdgpu_emit_workgroup_memory_acquire(
+        context, source_op,
+        source->memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP
+            ? LOOM_AMDGPU_WAIT_COUNTER_MASK_LDS
+            : LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_LOAD);
   }
   if (loom_low_lower_context_read_visibility_scope(context) !=
       LOOM_ATOMIC_SCOPE_THREAD) {
@@ -145,7 +215,8 @@ iree_status_t loom_amdgpu_emit_memory_ordering_suffix(
   return loom_amdgpu_system_memory_build_acquire_ordering_scoped(
       loom_low_lower_context_builder(context),
       loom_low_lower_context_descriptor_set(context),
-      loom_amdgpu_memory_coherence_scope(source->atomic.scope),
+      loom_amdgpu_memory_coherence_scope(
+          loom_low_lower_context_descriptor_set(context), source->atomic.scope),
       source_op->location);
 }
 
@@ -190,6 +261,10 @@ iree_status_t loom_amdgpu_lower_memory_fence(
   if (plan->ordering == LOOM_ATOMIC_ORDERING_RELEASE) {
     return iree_ok_status();
   }
+  if (plan->scope == LOOM_ATOMIC_SCOPE_WORKGROUP) {
+    return loom_amdgpu_emit_workgroup_memory_acquire(
+        context, source_op, LOOM_AMDGPU_WAIT_COUNTER_MASK_VMEM_LOAD);
+  }
   if (loom_low_lower_context_read_visibility_scope(context) !=
       LOOM_ATOMIC_SCOPE_THREAD) {
     return loom_amdgpu_system_memory_build_load_wait(
@@ -199,7 +274,9 @@ iree_status_t loom_amdgpu_lower_memory_fence(
   return loom_amdgpu_system_memory_build_acquire_ordering_scoped(
       loom_low_lower_context_builder(context),
       loom_low_lower_context_descriptor_set(context),
-      loom_amdgpu_memory_coherence_scope(plan->scope), source_op->location);
+      loom_amdgpu_memory_coherence_scope(
+          loom_low_lower_context_descriptor_set(context), plan->scope),
+      source_op->location);
 }
 
 iree_status_t loom_amdgpu_low_legality_verify_memory_fence(

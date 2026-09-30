@@ -34,11 +34,8 @@ loom_cc_library(
     "types.c"
   DEPS
     iree::base
-    iree::base::internal::arena
     loom::ir
     loom::ops::type_registry
-    loom::util::adaptive_sort
-    loom::util::segmented_storage
   PUBLIC
 )
 endif()
@@ -65,34 +62,6 @@ endif()
 if(LOOM_TARGET_ARCH_VM)
 loom_cc_library(
   NAME
-    module
-  HDRS
-    "function.h"
-    "module.h"
-  SRCS
-    "function.c"
-    "module.c"
-  DEPS
-    ::types
-    iree::base
-    iree::io::stream
-    iree::vm::bytecode::wire
-    loom::codegen::low::allocation::move_sequence
-    loom::codegen::low::frame
-    loom::codegen::low::storage_layout
-    loom::ir
-    loom::ops::global
-    loom::ops::low
-    loom::target::arch::vm::descriptors
-    loom::target::function_version
-    loom::target::provider
-  PUBLIC
-)
-endif()
-
-if(LOOM_TARGET_ARCH_VM)
-loom_cc_library(
-  NAME
     provider
   HDRS
     "lower.h"
@@ -105,7 +74,6 @@ loom_cc_library(
     "math_policy.c"
     "provider.c"
   DEPS
-    ::module
     ::records
     ::types
     iree::base
@@ -159,7 +127,7 @@ loom_check_test_suite(
     "test/source_low/memory_subview.loom-test"
     "test/source_low/memory_vector_atomic.loom-test"
     "test/source_low/memory_wide_carriers.loom-test"
-    "test/source_low/memory_word.loom-test"
+    "test/source_low/narrow_float_subtraction.loom-test"
     "test/source_low/nested_view_selection.loom-test"
     "test/source_low/numeric_address_widening.loom-test"
     "test/source_low/numeric_bfloat_widen.loom-test"
@@ -184,6 +152,7 @@ loom_check_test_suite(
     "test/source_low/numeric_reciprocal.loom-test"
     "test/source_low/numeric_scalar_conversion.loom-test"
     "test/source_low/numeric_scalar_f32.loom-test"
+    "test/source_low/numeric_scalar_f32_values.loom-test"
     "test/source_low/numeric_scalar_i32.loom-test"
     "test/source_low/numeric_scalar_i64.loom-test"
     "test/source_low/numeric_scalar_i64_shift_counts.loom-test"
@@ -202,6 +171,7 @@ loom_check_test_suite(
     "test/source_low/semantic_assertions.loom-test"
     "test/source_low/shared_conditional_values.loom-test"
     "test/source_low/source_low_diagnostics.loom-test"
+    "test/source_low/split_barrier.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/vector_selection.loom-test"
@@ -251,7 +221,7 @@ loom_check_compile_tests(
     "test/source_low/memory_subview.loom-test"
     "test/source_low/memory_vector_atomic.loom-test"
     "test/source_low/memory_wide_carriers.loom-test"
-    "test/source_low/memory_word.loom-test"
+    "test/source_low/narrow_float_subtraction.loom-test"
     "test/source_low/nested_view_selection.loom-test"
     "test/source_low/numeric_address_widening.loom-test"
     "test/source_low/numeric_bfloat_widen.loom-test"
@@ -276,6 +246,7 @@ loom_check_compile_tests(
     "test/source_low/numeric_reciprocal.loom-test"
     "test/source_low/numeric_scalar_conversion.loom-test"
     "test/source_low/numeric_scalar_f32.loom-test"
+    "test/source_low/numeric_scalar_f32_values.loom-test"
     "test/source_low/numeric_scalar_i32.loom-test"
     "test/source_low/numeric_scalar_i64.loom-test"
     "test/source_low/numeric_scalar_i64_shift_counts.loom-test"
@@ -294,6 +265,7 @@ loom_check_compile_tests(
     "test/source_low/semantic_assertions.loom-test"
     "test/source_low/shared_conditional_values.loom-test"
     "test/source_low/source_low_diagnostics.loom-test"
+    "test/source_low/split_barrier.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/vector_selection.loom-test"
@@ -303,25 +275,6 @@ loom_check_compile_tests(
     "test/storage.loom-test"
   TARGETS
     loom::target::vm::core
-)
-endif()
-
-if(LOOM_TARGET_ARCH_VM)
-loom_cc_library(
-  NAME
-    check
-  HDRS
-    "check.h"
-  SRCS
-    "check.c"
-  DEPS
-    ::module
-    ::provider
-    iree::base
-    iree::vm::bytecode::disassembler
-    loom::tools::loom-check::execute
-    loom::tools::loom-check::provider
-  PUBLIC
 )
 endif()
 

@@ -14,6 +14,7 @@ iree_py_library(
     contracts
   SRCS
     "__init__.py"
+    "accumulator_structural.py"
     "conversion.py"
     "core.py"
     "core_contract.py"
@@ -37,6 +38,8 @@ iree_py_library(
   DEPS
     loom::py::loom::core
     loom::py::loom::dialect::buffer::buffer
+    loom::py::loom::dialect::encoding::encoding
+    loom::py::loom::dialect::globals::globals
     loom::py::loom::dialect::index::index
     loom::py::loom::dialect::scalar::scalar
     loom::py::loom::dialect::scf::scf
@@ -97,6 +100,7 @@ iree_py_test(
   MAIN
     "../../../../../../tools/pytest_style_runner.py"
   SRCS
+    "accumulator_structural_test.py"
     "core_test.py"
     "floating_test.py"
     "i64_test.py"
@@ -105,6 +109,7 @@ iree_py_test(
     "structural_test.py"
     "../../../../../../tools/pytest_style_runner.py"
   ARGS
+    "loom.target.arch.amd.xdna.aie2p.contracts.accumulator_structural_test"
     "loom.target.arch.amd.xdna.aie2p.contracts.core_test"
     "loom.target.arch.amd.xdna.aie2p.contracts.floating_test"
     "loom.target.arch.amd.xdna.aie2p.contracts.i64_test"

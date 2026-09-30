@@ -31,6 +31,7 @@ _LOW_DESCRIPTOR_VISIBILITY = [
     "//loom/src/loom/target/reporting:__pkg__",
     "//loom/src/loom/target/test:__subpackages__",
     "//loom/src/loom/tooling/target/spirv:__pkg__",
+    "//loom/src/loom/tooling/target/vm:__pkg__",
     "//loom/src/loom/tooling/target/wasm:__pkg__",
     "//loom/src/loom/tools/loom-check:__pkg__",
 ]
@@ -298,6 +299,7 @@ loom_cc_library(
     deps = [
         ":storage_layout",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/low",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
@@ -513,7 +515,12 @@ loom_cc_test(
     name = "placement_test",
     srcs = ["placement_test.cc"],
     deps = [
+        ":builder",
         ":placement",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target:registers",
+        "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
@@ -581,6 +588,7 @@ loom_cc_benchmark(
         ":text_asm",
         ":verify",
         "//loom/src/loom/analysis:liveness",
+        "//loom/src/loom/codegen/low/allocation:unit_liveness",
         "//loom/src/loom/format/text:parser",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/func",
@@ -646,6 +654,7 @@ loom_cc_library(
         ":diagnostics",
         ":representation_binding",
         ":target_binding",
+        "//loom/src/loom/analysis:consumption",
         "//loom/src/loom/codegen/low/allocation:live_range",
         "//loom/src/loom/codegen/low/allocation:storage",
         "//loom/src/loom/error:emitter",
@@ -669,6 +678,7 @@ loom_cc_library(
         ":allocation",
         ":diagnostics",
         ":representation_binding",
+        "//loom/src/loom/analysis:consumption",
         "//loom/src/loom/codegen/low/allocation:live_range",
         "//loom/src/loom/codegen/low/allocation:storage",
         "//loom/src/loom/error:emitter",
@@ -845,6 +855,16 @@ loom_cc_library(
     ],
 )
 
+loom_cc_test(
+    name = "guarded_motion_test",
+    srcs = ["guarded_motion_test.cc"],
+    deps = [
+        ":guarded_motion",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 loom_cc_library(
     name = "frame",
     srcs = ["frame.c"],
@@ -882,6 +902,7 @@ loom_cc_test(
     srcs = ["frame_test.cc"],
     deps = [
         ":frame",
+        ":guarded_motion",
         ":packet",
         ":text_asm",
         "//loom/src/loom/codegen/low/schedule",

@@ -38,6 +38,7 @@ from urllib.request import url2pathname
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from build_tools.devtools import project_presubmit
 from build_tools.devtools.bazel import clang_tidy_configuration_args
 from build_tools.devtools.source_lock import (
     NonEmptyTrackedFileSnapshot,
@@ -76,6 +77,12 @@ COMMAND_LINE_CHARACTER_LIMIT = 16_000
 C_FORMAT_BATCH_SIZE = 64
 C_FORMAT_DEFAULT_MAX_JOBS = 16
 SEMGREP_CONFIG = "build_tools/static_analysis/semgrep/iree.yml"
+SEMGREP_DOCUMENTATION_CONFIG = "build_tools/static_analysis/semgrep/amd-docs.yml"
+SEMGREP_DOCUMENTATION_TEST = "build_tools/static_analysis/semgrep/amd_docs_test.py"
+SEMGREP_CONFIGS = (
+    SEMGREP_CONFIG,
+    SEMGREP_DOCUMENTATION_CONFIG,
+)
 SEMGREP_EXTENSIONS = C_ANALYSIS_EXTENSIONS
 # Exact non-C policy surfaces scanned without broadening Semgrep to all Python.
 SEMGREP_POLICY_PATHS = frozenset(
@@ -244,6 +251,13 @@ LEFTHOOK_TEST_PATHS = frozenset(
         "build_tools/devtools/source_lock.py",
     }
 )
+CHANGE_SCOPE_TEST_PATHS = frozenset(
+    {
+        "build_tools/ci/BUILD.bazel",
+        "build_tools/ci/change_scope.py",
+        "build_tools/ci/change_scope_test.py",
+    }
+)
 VULKAN_ENVIRONMENT_TEST_PATHS = frozenset(
     {
         ".github/scripts/check_vulkan_hardware_environment.sh",
@@ -256,6 +270,7 @@ VULKAN_ENVIRONMENT_TEST_PATHS = frozenset(
 )
 DEVTOOLS_PRESUBMIT_TEST_TARGET = "//build_tools/devtools:presubmit_tests"
 LEFTHOOK_PRESUBMIT_TEST_TARGET = "//build_tools/lefthook:presubmit_tests"
+CHANGE_SCOPE_TEST_TARGET = "//build_tools/ci:change_scope_test"
 VULKAN_ENVIRONMENT_TEST_TARGET = "//build_tools/ci:vulkan_environment_test"
 ROCM_ENVIRONMENT_TEST_PATHS = frozenset(
     {
@@ -1082,9 +1097,15 @@ def is_c_format_file(path: str) -> bool:
 
 
 def is_semgrep_candidate_file(path: str) -> bool:
-    return path in SEMGREP_POLICY_PATHS or (
-        path.startswith(SEMGREP_PATH_PREFIXES)
-        and Path(path).suffix in SEMGREP_EXTENSIONS
+    return (
+        path in SEMGREP_POLICY_PATHS
+        or path.startswith("docs/reference/amd/")
+        or path.startswith("libamdf/docs/")
+        or path == "libamdf/README.md"
+        or (
+            path.startswith(SEMGREP_PATH_PREFIXES)
+            and Path(path).suffix in SEMGREP_EXTENSIONS
+        )
     )
 
 
@@ -1292,8 +1313,7 @@ def semgrep_scan_command(files: list[str]) -> list[str]:
         "ERROR",
         "--jobs",
         str(semgrep_jobs()),
-        "--config",
-        SEMGREP_CONFIG,
+        *[arg for config in SEMGREP_CONFIGS for arg in ("--config", config)],
         "--",
         *files,
     ]
@@ -1307,8 +1327,7 @@ def semgrep_validate_command() -> list[str]:
         "--disable-version-check",
         "--strict",
         "--validate",
-        "--config",
-        SEMGREP_CONFIG,
+        *[arg for config in SEMGREP_CONFIGS for arg in ("--config", config)],
     ]
 
 
@@ -1490,6 +1509,7 @@ def is_bazel_to_cmake_global_trigger(path: str) -> bool:
         or path.startswith(
             (
                 "build_tools/bazel_to_cmake/",
+                "loom/build_tools/bazel_to_cmake/",
                 "loom/requirements/",
                 "runtime/requirements/",
             )
@@ -1666,6 +1686,8 @@ def repository_tool_test_targets(paths: list[str]) -> list[str]:
         targets.append(DEVTOOLS_PRESUBMIT_TEST_TARGET)
     if any(is_lefthook_test_trigger(path) for path in paths):
         targets.append(LEFTHOOK_PRESUBMIT_TEST_TARGET)
+    if sys.platform == "linux" and CHANGE_SCOPE_TEST_PATHS.intersection(paths):
+        targets.append(CHANGE_SCOPE_TEST_TARGET)
     if sys.platform == "linux" and VULKAN_ENVIRONMENT_TEST_PATHS.intersection(paths):
         targets.append(VULKAN_ENVIRONMENT_TEST_TARGET)
     if sys.platform == "linux" and ROCM_ENVIRONMENT_TEST_PATHS.intersection(paths):
@@ -1689,6 +1711,7 @@ def run_repository_tool_tests(paths: list[str], verbose: bool) -> bool:
                 "bazel",
                 "test",
                 "--config=presubmit",
+                *project_presubmit.bazel_config_args(),
                 *test_targets,
             ],
             "Repository tool Bazel tests",
@@ -1754,13 +1777,16 @@ def is_lefthook_test_trigger(path: str) -> bool:
 
 def run_semgrep(inputs: PresubmitInputs, profile: str, verbose: bool) -> bool:
     paths = inputs.selected_paths
-    validate_config = SEMGREP_CONFIG in paths
-    test_rules = validate_config or bool(SEMGREP_TEST_PATHS.intersection(paths))
+    validate_config = any(config in paths for config in SEMGREP_CONFIGS)
+    test_rules = SEMGREP_CONFIG in paths or bool(SEMGREP_TEST_PATHS.intersection(paths))
+    test_documentation = (
+        SEMGREP_DOCUMENTATION_CONFIG in paths or SEMGREP_DOCUMENTATION_TEST in paths
+    )
     candidate_paths = [path for path in paths if is_semgrep_candidate_file(path)]
-    if validate_config:
+    if SEMGREP_CONFIG in paths:
         candidate_paths.extend(SEMGREP_POLICY_PATHS)
     files = existing_files(candidate_paths)
-    if not files and not validate_config and not test_rules:
+    if not files and not validate_config and not test_rules and not test_documentation:
         return skip_step("Semgrep", "no selected policy inputs")
     if sys.platform == "win32":
         return skip_step(
@@ -1778,6 +1804,15 @@ def run_semgrep(inputs: PresubmitInputs, profile: str, verbose: bool) -> bool:
         )
     if test_rules:
         ok = run_command(semgrep_test_command(), "Semgrep rule tests", verbose) and ok
+    if test_documentation:
+        ok = (
+            run_command(
+                [sys.executable, SEMGREP_DOCUMENTATION_TEST],
+                "Semgrep documentation rule tests",
+                verbose,
+            )
+            and ok
+        )
     if files:
         commands = command_argument_batches(semgrep_scan_command([]), files)
         ok = (
@@ -1814,6 +1849,7 @@ def clang_tidy_bazel_command(
     command += [
         CLANG_TIDY_REPO_ENV,
         *clang_tidy_configuration_args(targets),
+        *project_presubmit.bazel_config_args(),
         f"--aspects={CLANG_TIDY_ASPECT}",
         f"--output_groups={','.join(output_groups)}",
     ]
@@ -2498,6 +2534,7 @@ def run_clang_tidy(
                     "bazel",
                     "test",
                     "--config=presubmit",
+                    *project_presubmit.bazel_config_args(),
                     CLANG_TIDY_REPO_ENV,
                     "//build_tools/clang_tidy:plugin_tests",
                 ],
@@ -2511,6 +2548,7 @@ def run_clang_tidy(
                 [
                     "bazel",
                     "build",
+                    *project_presubmit.bazel_config_args(),
                     CLANG_TIDY_REPO_ENV,
                     "//build_tools/clang_tidy:action_smoke",
                 ],
@@ -2628,6 +2666,10 @@ def print_plan(
         scopes.append("clang-tidy")
     print("presubmit plan:")
     print(f"  lane: {args.lane}")
+    if args.lane == "bazel":
+        bazel_configs = project_presubmit.bazel_configs_from_environment()
+        if bazel_configs:
+            print(f"  bazel configs: {', '.join(bazel_configs)}")
     print(f"  profile: {args.profile}")
     print(f"  mode: {mutation}")
     print(f"  validation input: {input_mode} ({len(paths)} path(s))")
@@ -2675,6 +2717,11 @@ def dev_py_rerun_command(args: argparse.Namespace, verbose: bool) -> list[str]:
             command.append("--commit")
         elif args.staged or args.paths:
             command.append("--staged")
+    if args.lane == "bazel":
+        command += [
+            f"--bazel-config={config}"
+            for config in project_presubmit.bazel_configs_from_environment()
+        ]
     if verbose:
         command.append("--verbose")
     return command

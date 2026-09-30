@@ -785,6 +785,7 @@ class AmdgpuMemoryDescriptorDomain(CEnum):
     GLOBAL_FLAT = "LOOM_AMDGPU_MEMORY_DESCRIPTOR_DOMAIN_GLOBAL_FLAT"
     GLOBAL_SMEM = "LOOM_AMDGPU_MEMORY_DESCRIPTOR_DOMAIN_GLOBAL_SMEM"
     SCRATCH = "LOOM_AMDGPU_MEMORY_DESCRIPTOR_DOMAIN_SCRATCH"
+    GENERIC_FLAT = "LOOM_AMDGPU_MEMORY_DESCRIPTOR_DOMAIN_GENERIC_FLAT"
 
 
 class AmdgpuMemoryOperationKind(CEnum):
@@ -821,6 +822,7 @@ class AmdgpuAtomicKind(CEnum):
     ORI = "LOOM_ATOMIC_KIND_ORI"
     XORI = "LOOM_ATOMIC_KIND_XORI"
     XCHGI = "LOOM_ATOMIC_KIND_XCHGI"
+    XCHGF = "LOOM_ATOMIC_KIND_XCHGF"
     ADDF = "LOOM_ATOMIC_KIND_ADDF"
     MINNUMF = "LOOM_ATOMIC_KIND_MINNUMF"
     MAXNUMF = "LOOM_ATOMIC_KIND_MAXNUMF"
@@ -2503,6 +2505,11 @@ _WORKGROUP_BARRIER_EFFECT = Effect(
     flags=(EffectFlag.ORDERED, EffectFlag.DEPENDENCY),
 )
 
+_EXECUTION_BARRIER_EFFECT = Effect(
+    EffectKind.BARRIER,
+    flags=(EffectFlag.ORDERED,),
+)
+
 _CACHE_CONTROL_EFFECT = Effect(
     EffectKind.BARRIER,
     memory_space=MemorySpace.GENERIC,
@@ -3650,6 +3657,7 @@ __all__ = (
     "_X_WAIT_EFFECT",
     "_X_WAIT_HAZARDS",
     "_WORKGROUP_BARRIER_EFFECT",
+    "_EXECUTION_BARRIER_EFFECT",
     "_amdgpu_camel_case",
     "_amdgpu_core_descriptor_set",
     "_amdgpu_core_descriptor_set_intersection",

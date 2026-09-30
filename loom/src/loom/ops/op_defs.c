@@ -1092,6 +1092,15 @@ loom_region_t* loom_loop_like_condition_region(loom_loop_like_t loop) {
   return loom_op_regions(loop.op)[loop.vtable->condition_region_index];
 }
 
+loom_value_id_t loom_loop_like_condition(loom_loop_like_t loop) {
+  const loom_region_t* region = loom_loop_like_condition_region(loop);
+  if (!region) {
+    return LOOM_VALUE_ID_INVALID;
+  }
+  const loom_op_t* terminator = loom_region_const_entry_block(region)->last_op;
+  return loom_op_const_operands(terminator)[0];
+}
+
 loom_value_id_t loom_loop_like_iv(loom_loop_like_t loop) {
   if (!loop.vtable) {
     return LOOM_VALUE_ID_INVALID;
@@ -1614,9 +1623,9 @@ void loom_builder_initialize(loom_module_t* module,
   out_builder->ip.before_op = NULL;
   out_builder->on_op_finalized.fn = NULL;
   out_builder->on_op_finalized.user_data = NULL;
-  out_builder->reserved_result_ids = NULL;
-  out_builder->reserved_result_count = 0;
-  out_builder->reserved_result_next = 0;
+  out_builder->reserved_value_ids = NULL;
+  out_builder->reserved_value_count = 0;
+  out_builder->reserved_value_next = 0;
 }
 
 void loom_builder_set_block(loom_builder_t* builder, loom_block_t* block) {
@@ -1654,32 +1663,32 @@ void loom_builder_restore(loom_builder_t* builder, loom_builder_ip_t ip) {
   builder->ip = ip;
 }
 
-iree_status_t loom_builder_reserve_results(loom_builder_t* builder,
-                                           iree_host_size_t count,
-                                           loom_value_id_t* out_result_ids) {
-  if (builder->reserved_result_count > 0) {
+iree_status_t loom_builder_reserve_values(loom_builder_t* builder,
+                                          iree_host_size_t count,
+                                          loom_value_id_t* out_value_ids) {
+  if (builder->reserved_value_count > 0) {
     return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "cannot reserve results: %" PRIhsz
-                            " results already reserved",
-                            builder->reserved_result_count);
+                            "cannot reserve values: %" PRIhsz
+                            " values already reserved",
+                            builder->reserved_value_count);
   }
   loom_type_t none_type = {0};
   for (iree_host_size_t i = 0; i < count; ++i) {
     IREE_RETURN_IF_ERROR(loom_module_define_value(builder->module, none_type,
-                                                  &out_result_ids[i]));
+                                                  &out_value_ids[i]));
   }
-  builder->reserved_result_ids = out_result_ids;
-  builder->reserved_result_count = count;
-  builder->reserved_result_next = 0;
+  builder->reserved_value_ids = out_value_ids;
+  builder->reserved_value_count = count;
+  builder->reserved_value_next = 0;
   return iree_ok_status();
 }
 
 iree_status_t loom_builder_define_value(loom_builder_t* builder,
                                         loom_type_t type,
                                         loom_value_id_t* out_value_id) {
-  if (builder->reserved_result_next < builder->reserved_result_count) {
+  if (builder->reserved_value_next < builder->reserved_value_count) {
     loom_value_id_t id =
-        builder->reserved_result_ids[builder->reserved_result_next++];
+        builder->reserved_value_ids[builder->reserved_value_next++];
     IREE_RETURN_IF_ERROR(loom_module_set_value_type(builder->module, id, type));
     *out_value_id = id;
     return iree_ok_status();
@@ -3040,22 +3049,22 @@ void loom_module_link_symbol_defining_op(loom_module_t* module, loom_op_t* op,
 }
 
 iree_status_t loom_builder_finalize_op(loom_builder_t* builder, loom_op_t* op) {
-  // Verify reserved results were fully consumed.
-  if (builder->reserved_result_count > 0) {
-    if (builder->reserved_result_next != builder->reserved_result_count) {
-      iree_host_size_t consumed = builder->reserved_result_next;
-      iree_host_size_t reserved = builder->reserved_result_count;
-      builder->reserved_result_ids = NULL;
-      builder->reserved_result_count = 0;
-      builder->reserved_result_next = 0;
+  // Verify reserved values were fully consumed.
+  if (builder->reserved_value_count > 0) {
+    if (builder->reserved_value_next != builder->reserved_value_count) {
+      iree_host_size_t consumed = builder->reserved_value_next;
+      iree_host_size_t reserved = builder->reserved_value_count;
+      builder->reserved_value_ids = NULL;
+      builder->reserved_value_count = 0;
+      builder->reserved_value_next = 0;
       return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
                               "reserved %" PRIhsz
-                              " result(s) but op consumed %" PRIhsz,
+                              " value(s) but op consumed %" PRIhsz,
                               reserved, consumed);
     }
-    builder->reserved_result_ids = NULL;
-    builder->reserved_result_count = 0;
-    builder->reserved_result_next = 0;
+    builder->reserved_value_ids = NULL;
+    builder->reserved_value_count = 0;
+    builder->reserved_value_next = 0;
   }
 
   // Register operand uses.

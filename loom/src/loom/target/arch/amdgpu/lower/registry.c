@@ -39,6 +39,7 @@
 #include "loom/target/arch/amdgpu/descriptors/lower_capabilities.h"
 #include "loom/target/arch/amdgpu/error_catalog.h"
 #include "loom/target/arch/amdgpu/lower/abi.h"
+#include "loom/target/arch/amdgpu/lower/address_realization.h"
 #include "loom/target/arch/amdgpu/lower/arithmetic.h"
 #include "loom/target/arch/amdgpu/lower/async.h"
 #include "loom/target/arch/amdgpu/lower/bitpack.h"
@@ -423,6 +424,15 @@ static iree_status_t loom_amdgpu_select_kernel_barrier_dispatch(
   return loom_amdgpu_select_kernel_barrier_plan(context, source_op, out_plan);
 }
 
+static iree_status_t loom_amdgpu_select_kernel_split_barrier_dispatch(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_amdgpu_lower_dispatch_row_t* row,
+    loom_low_lower_plan_t* out_plan) {
+  (void)row;
+  return loom_amdgpu_select_kernel_split_barrier_plan(context, source_op,
+                                                      out_plan);
+}
+
 static iree_status_t loom_amdgpu_select_memory_fence_dispatch(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_lower_dispatch_row_t* row,
@@ -440,6 +450,15 @@ static iree_status_t loom_amdgpu_emit_kernel_barrier_dispatch(
     const loom_amdgpu_lower_dispatch_row_t* row, loom_low_lower_plan_t plan) {
   (void)row;
   return loom_amdgpu_lower_kernel_barrier(
+      context, source_op,
+      (const loom_amdgpu_kernel_barrier_plan_t*)plan.target_data);
+}
+
+static iree_status_t loom_amdgpu_emit_kernel_split_barrier_dispatch(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_amdgpu_lower_dispatch_row_t* row, loom_low_lower_plan_t plan) {
+  (void)row;
+  return loom_amdgpu_lower_kernel_split_barrier(
       context, source_op,
       (const loom_amdgpu_kernel_barrier_plan_t*)plan.target_data);
 }
@@ -616,9 +635,27 @@ LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_scalar_clampf_dispatch,
                              loom_amdgpu_clampf_plan_t,
                              loom_amdgpu_lower_clampf)
 
-LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_vector_fragment_load_dispatch,
-                               loom_amdgpu_fragment_memory_plan_t,
-                               loom_amdgpu_select_vector_fragment_load_plan)
+static iree_status_t loom_amdgpu_select_vector_fragment_load_dispatch(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    const loom_amdgpu_lower_dispatch_row_t* row,
+    loom_low_lower_plan_t* out_plan) {
+  (void)row;
+  loom_amdgpu_fragment_memory_plan_t candidate = {0};
+  bool selected = false;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_select_vector_fragment_load_plan(
+      context, source_op, &candidate, &selected));
+  if (!selected) {
+    return iree_ok_status();
+  }
+  loom_amdgpu_fragment_memory_plan_t* plan = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_allocate_plan_data(context, sizeof(*plan), (void**)&plan));
+  *plan = candidate;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_prepare_fragment_address_realization(
+      context, source_op, plan));
+  *out_plan = loom_low_lower_plan_make(source_op->kind, plan);
+  return iree_ok_status();
+}
 
 LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_vector_fragment_load_dispatch,
                              loom_amdgpu_fragment_memory_plan_t,
@@ -1358,6 +1395,21 @@ static iree_status_t loom_amdgpu_preselect_op(void* user_data,
   }
 }
 
+static iree_status_t loom_amdgpu_prepare_source_memory(
+    void* user_data, loom_low_lower_context_t* context,
+    const loom_op_t* source_op, loom_low_lower_plan_t* out_plan) {
+  (void)user_data;
+  const loom_amdgpu_lower_dispatch_row_t* row =
+      loom_amdgpu_find_lower_dispatch_row(source_op->kind);
+  const loom_amdgpu_storage_policy_t storage =
+      loom_amdgpu_dispatch_row_storage_policy(row);
+  if (storage == LOOM_AMDGPU_STORAGE_MEMORY_PLAN ||
+      storage == LOOM_AMDGPU_STORAGE_FRAGMENT_MEMORY) {
+    return loom_amdgpu_select_dispatch_row(context, source_op, row, out_plan);
+  }
+  return iree_ok_status();
+}
+
 static void loom_amdgpu_mark_plan_storage_demands(
     void* user_data, loom_low_lower_context_t* context,
     const loom_op_t* source_op, loom_low_lower_plan_t plan) {
@@ -1489,6 +1541,10 @@ static iree_string_view_t loom_amdgpu_kernel_barrier_plan_key(
     case LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_BARRIER:
       return IREE_SV(
           "amdgpu.kernel_barrier.strategy.split_barrier.workgroup_rendezvous");
+    case LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_ARRIVE:
+      return IREE_SV("amdgpu.kernel_barrier.strategy.split_barrier.arrive");
+    case LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_SPLIT_WAIT:
+      return IREE_SV("amdgpu.kernel_barrier.strategy.split_barrier.wait");
     case LOOM_AMDGPU_KERNEL_BARRIER_LOWERING_KIND_NONE:
       return iree_string_view_empty();
   }
@@ -1772,6 +1828,7 @@ static const loom_low_lower_policy_t kAmdgpuLowLowerPolicy = {
             .user_data = NULL,
         },
     .source_plan_observer = &loom_amdgpu_source_representation_observer,
+    .prepare_source_memory = {.fn = loom_amdgpu_prepare_source_memory},
     .visibility_model = loom_amdgpu_memory_visibility_model,
     .preselect_op = {.fn = loom_amdgpu_preselect_op, .user_data = NULL},
     .select_op = {.fn = loom_amdgpu_select_op, .user_data = NULL},

@@ -12,6 +12,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/lower/encode.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/lower.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/matrix.h"
+#include "loom/target/arch/amd/xdna/aie2p/lower/rodata.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/storage.h"
 #include "loom/target/arch/amd/xdna/error_catalog.h"
 
@@ -71,21 +72,22 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
     }
     const loom_scalar_type_t element_type = loom_type_element_type(source_type);
     const bool is_rank_one = loom_type_rank(source_type) == 1;
-    // Full-width integer matrix and VUPS results remain in the accumulator
-    // file so their 2048 payload bits do not require four vector-file moves.
-    if (is_rank_one &&
-        ((element_count == 64 && element_type == LOOM_SCALAR_TYPE_I32) ||
-         (element_count == 32 && element_type == LOOM_SCALAR_TYPE_I64))) {
-      return loom_low_lower_make_register_type(
-          context, AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS, 4, out_low_type);
-    }
+    const int32_t element_bits = loom_scalar_type_bitwidth(element_type);
     if (is_rank_one && element_count == 32 &&
         element_type == LOOM_SCALAR_TYPE_F32) {
       return loom_low_lower_make_register_type(
           context, AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS, 2, out_low_type);
     }
-    if (is_rank_one && element_count == 64 &&
-        element_type == LOOM_SCALAR_TYPE_F32) {
+    // Rank-one accumulator values above 1024 bits retain the containing
+    // four-unit physical view. AIE2P has no allocatable three-unit MBMS view;
+    // units beyond the source vector's logical extent remain unobservable.
+    const bool has_accumulator_element_type =
+        element_type == LOOM_SCALAR_TYPE_I32 ||
+        element_type == LOOM_SCALAR_TYPE_I64 ||
+        element_type == LOOM_SCALAR_TYPE_F32;
+    if (is_rank_one && has_accumulator_element_type && element_bits > 0 &&
+        element_count > 1024 / (uint32_t)element_bits &&
+        element_count <= 2048 / (uint32_t)element_bits) {
       return loom_low_lower_make_register_type(
           context, AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS, 4, out_low_type);
     }
@@ -93,7 +95,6 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
       return loom_low_lower_make_register_type(
           context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE, 1, out_low_type);
     }
-    const int32_t element_bits = loom_scalar_type_bitwidth(element_type);
     if (element_bits > 0 && element_count > 512 / (uint32_t)element_bits &&
         element_count <= 1024 / (uint32_t)element_bits) {
       // Ordinary wide vectors retain the same ordered W-register payload
@@ -174,6 +175,11 @@ static iree_status_t loom_aie2p_preselect_op(void* user_data,
   if (!loom_low_lower_plan_is_empty(*out_plan)) {
     return iree_ok_status();
   }
+  IREE_RETURN_IF_ERROR(
+      loom_aie2p_select_rodata_plan(context, source_op, out_plan));
+  if (!loom_low_lower_plan_is_empty(*out_plan)) {
+    return iree_ok_status();
+  }
   return loom_aie2p_select_storage_plan(context, source_op, out_plan);
 }
 
@@ -183,6 +189,8 @@ static void loom_aie2p_mark_plan_storage_demands(
   (void)user_data;
   if (loom_aie2p_matrix_plan_isa(plan)) {
     loom_aie2p_mark_matrix_plan_demands(context, source_op, plan);
+  } else if (loom_aie2p_rodata_plan_isa(plan)) {
+    loom_aie2p_mark_rodata_plan_demands(context, source_op, plan);
   } else if (loom_aie2p_storage_plan_isa(plan)) {
     loom_aie2p_mark_storage_plan_demands(context, source_op, plan);
   } else {
@@ -198,6 +206,8 @@ static void loom_aie2p_describe_plan(void* user_data,
   (void)user_data;
   if (loom_aie2p_matrix_plan_isa(plan)) {
     loom_aie2p_describe_matrix_plan(context, source_op, plan, out_report);
+  } else if (loom_aie2p_rodata_plan_isa(plan)) {
+    loom_aie2p_describe_rodata_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_storage_plan_isa(plan)) {
     loom_aie2p_describe_storage_plan(context, source_op, plan, out_report);
   } else {
@@ -212,6 +222,9 @@ static iree_status_t loom_aie2p_emit_op(void* user_data,
   (void)user_data;
   if (loom_aie2p_matrix_plan_isa(plan)) {
     return loom_aie2p_emit_matrix_plan(context, source_op, plan);
+  }
+  if (loom_aie2p_rodata_plan_isa(plan)) {
+    return loom_aie2p_emit_rodata_plan(context, source_op, plan);
   }
   if (loom_aie2p_storage_plan_isa(plan)) {
     return loom_aie2p_emit_storage_plan(context, source_op, plan);

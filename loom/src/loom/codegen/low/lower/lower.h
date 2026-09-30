@@ -566,6 +566,9 @@ typedef struct loom_low_lower_memory_subgroup_access_report_t {
   iree_string_view_t unknown_reason;
   // Number of lanes in the modeled subgroup.
   uint8_t subgroup_size;
+  // Proven number of participating lanes, or zero when participation is
+  // unknown.
+  uint8_t active_lane_count;
   // Number of populated lane-address terms with compile-time byte strides.
   uint8_t lane_term_count;
   // Relative address terms with compile-time byte strides, in array order.
@@ -869,6 +872,10 @@ typedef struct loom_low_lower_policy_t {
   // generated source-memory rule matching.
   loom_low_lower_source_memory_root_byte_offset_callback_t
       source_memory_root_byte_offset;
+  // Optional memory-plan preparation after representation observation. The
+  // shared owner iterates retained canonical access records once, before
+  // per-operation selection; target callbacks never traverse the function.
+  loom_low_lower_select_op_callback_t prepare_source_memory;
   // Optional capability/cost query for the common acquire visibility planner.
   // It supplies target facts without traversing source operations.
   loom_low_lower_visibility_model_t (*visibility_model)(
@@ -1315,7 +1322,7 @@ iree_status_t loom_low_lower_remap_successor_args(
     loom_low_lower_context_t* context, const loom_op_t* source_terminator,
     uint8_t successor_index, loom_block_t* low_dest,
     const loom_value_id_t* source_args, uint16_t source_arg_count,
-    loom_value_id_t** out_low_args);
+    loom_value_slice_t* out_low_args);
 
 // Resolves source values to their Low mappings and materializes each value for
 // a structural operation boundary. |required_types| may be NULL to retain each

@@ -40,9 +40,13 @@ loom_check_test_suite(
         "bitcast.cxx-test",
         "bitcast_folding.cxx-test",
         "bitcast_invalid.cxx-test",
+        "boolean_storage.cxx-test",
+        "boolean_storage_cleanup.cxx-test",
         "check.cxx-test",
         "check_records.cxx-test",
         "check_resources.cxx-test",
+        "class_conversions.cxx-test",
+        "class_conversions_invalid.cxx-test",
         "condition_declarations.cxx-test",
         "conditionals.cxx-test",
         "config.cxx-test",
@@ -80,6 +84,7 @@ loom_check_test_suite(
         "locations.cxx-test",
         "loops.cxx-test",
         "macro_operators.cxx-test",
+        "narrow_float_subtraction.cxx-test",
         "offsetof.cxx-test",
         "offsetof_roundtrip.cxx-test",
         "opaque_pointers.cxx-test",
@@ -110,7 +115,11 @@ loom_check_test_suite(
         "subgroups_invalid.cxx-test",
         "symbols.cxx-test",
         "symbols_invalid.cxx-test",
+        "template_addresses.cxx-test",
+        "template_addresses_invalid.cxx-test",
         "template_calls.cxx-test",
+        "template_conversions.cxx-test",
+        "template_conversions_invalid.cxx-test",
         "vector_constants.cxx-test",
         "vector_conversion.cxx-test",
         "vector_conversion_invalid.cxx-test",
@@ -159,6 +168,13 @@ _HOST_COMPATIBILITY = loom_config_compatible_with([
     "//loom/config/import:cxx",
     "//loom/config/target/arch:vm",
 ])
+
+loom_test(
+    name = "boolean_storage_test",
+    srcs = ["boolean_storage.cxx"],
+    execution_profiles = [VM_REFERENCE_PROFILE],
+    target_compatible_with = _HOST_COMPATIBILITY,
+)
 
 loom_test(
     name = "check_record_values_test",
@@ -325,6 +341,15 @@ loom_check_test_suite(
 )
 
 loom_check_test_suite(
+    name = "x86_compiler_test",
+    srcs = ["x86_lowering.cxx-test"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+        "//loom/config/target/arch:x86",
+    ]),
+)
+
+loom_check_test_suite(
     name = "wasm_compiler_test",
     srcs = [
         "wasm_lowering.cxx-test",
@@ -342,6 +367,15 @@ loom_test_module(
     srcs = [
         "atomic_builtins.cxx",
         "atomics.cxx",
+    ],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
+loom_test_module(
+    name = "boolean_storage_module",
+    srcs = [
+        "boolean_storage.cxx",
+        "boolean_storage_kernels.loom",
     ],
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )

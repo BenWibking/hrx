@@ -12,6 +12,8 @@ from collections.abc import Sequence
 
 from loom.dialect.buffer import ALL_BUFFER_OPS
 from loom.dialect.buffer import defs as buffer
+from loom.dialect.globals import ALL_GLOBAL_OPS
+from loom.dialect.globals.defs import global_load
 from loom.dialect.index import ALL_INDEX_OPS
 from loom.dialect.index import defs as index
 from loom.dialect.scalar import ALL_SCALAR_OPS
@@ -68,6 +70,7 @@ from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
 from loom.target.contracts import (
     ContractCase,
     ContractFragment,
+    DescriptorEmitForm,
     DescriptorMatrixRule,
     Guard,
     RecipeRule,
@@ -81,6 +84,15 @@ from loom.target.contracts import (
 def aie2p_core_cases() -> Sequence[ContractCase]:
     # Priorities order specialized cases for the same source op; authored order
     # remains the stable tie break within each priority.
+    full_i32_constant = "amd.xdna.aie2p.constant.i32"
+    short_i32_constant = "amd.xdna.aie2p.constant.i32.short"
+    i8_range = (core_rules._I8_MIN, core_rules._I8_MAX)
+    i16_range = (core_rules._I16_MIN, core_rules._I16_MAX)
+    i32_range = (core_rules._I32_MIN, core_rules._I32_MAX)
+    short_range = (core_rules._SHORT_MIN, core_rules._SHORT_MAX)
+    float_bits = ValueProject.float_bits("result")
+    f32_bits = ValueProject.float_as_f32_i32("result")
+    vector_register_guard = Guard.low_value_register_class("result", "aie2p.vec256")
     return (
         ValueAliasRule(
             source_op=buffer.buffer_view,
@@ -97,6 +109,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
             source=ValueRef.operand("source"),
             result=ValueRef.result("result"),
         ),
+        RecipeRule(source_op=global_load),
         *AIE2P_BF16_MATRIX_RULES,
         DescriptorMatrixRule(
             source_op=vector.vector_mma,
@@ -346,6 +359,48 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
             core_rules._F32_VECTOR,
             "amd.xdna.aie2p.splat.i32x16",
             ValueProject.float_as_f32_i32("result"),
+        ),
+        *(
+            core_rules._vector_constant_rule(
+                Vector(
+                    element_type,
+                    minimum_static_elements=native_lanes + 1,
+                    maximum_static_elements=native_lanes * 2,
+                ),
+                descriptor_key,
+                f"amd.xdna.aie2p.splat.i{width}x{native_lanes}",
+                *value_range,
+                carrier=core_rules._VectorConstantCarrier.WIDE,
+                unit_count=2,
+            )
+            for element_type, width, native_lanes, descriptor_key, value_range in (
+                ("i8", 8, 64, short_i32_constant, i8_range),
+                ("i16", 16, 32, short_i32_constant, short_range),
+                ("i16", 16, 32, full_i32_constant, i16_range),
+                ("i32", 32, 16, short_i32_constant, short_range),
+                ("i32", 32, 16, full_i32_constant, i32_range),
+            )
+        ),
+        *(
+            core_rules._float_vector_constant_rule(
+                Vector(
+                    element_type,
+                    minimum_static_elements=native_lanes + 1,
+                    maximum_static_elements=native_lanes * 2,
+                ),
+                f"amd.xdna.aie2p.splat.i{width}x{native_lanes}",
+                bits,
+                carrier=core_rules._VectorConstantCarrier.WIDE,
+                unit_count=2,
+                extra_guards=extra_guards,
+            )
+            for element_type, width, native_lanes, bits, extra_guards in (
+                ("f8E4M3", 8, 64, float_bits, ()),
+                ("f8E5M2", 8, 64, float_bits, ()),
+                ("f16", 16, 32, float_bits, ()),
+                ("bf16", 16, 32, float_bits, ()),
+                ("f32", 32, 16, f32_bits, (vector_register_guard,)),
+            )
         ),
         *core_rules._vector_broadcast_alias_rules(),
         *(
@@ -655,6 +710,18 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
                 f"amd.xdna.aie2p.{operation}.{signedness}.i{width}x{512 // width}",
             )
         ),
+        *(
+            core_rules._vector_binary_rule(
+                source_op,
+                core_rules._I8X128_VECTOR,
+                f"amd.xdna.aie2p.{operation}.signed.i8x64",
+                form=DescriptorEmitForm.PER_LANE,
+            )
+            for source_op, operation in (
+                (vector.vector_minsi, "min"),
+                (vector.vector_maxsi, "max"),
+            )
+        ),
         core_rules._vector_multiply_i16_rule(),
         core_rules._vector_bitunpack_i1_alias_rule(),
         *AIE2P_F32_COMPARE_RULES,
@@ -663,6 +730,30 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
         *AIE2P_NONLINEAR_RULES,
         core_rules._matrix_accumulator_zero_rule(),
         *AIE2P_FLOATING_RULES,
+        *(
+            core_rules._vector_constant_rule(
+                core_rules._I32_MATRIX_ACCUMULATOR,
+                descriptor_key,
+                "amd.xdna.aie2p.splat.i32x16",
+                *value_range,
+                carrier=core_rules._VectorConstantCarrier.ACCUMULATOR,
+                unit_count=4,
+            )
+            for descriptor_key, value_range in (
+                (short_i32_constant, short_range),
+                (full_i32_constant, i32_range),
+            )
+        ),
+        *(
+            core_rules._float_vector_constant_rule(
+                Vector("f32", lanes=lanes),
+                "amd.xdna.aie2p.splat.i32x16",
+                f32_bits,
+                carrier=core_rules._VectorConstantCarrier.ACCUMULATOR,
+                unit_count=unit_count,
+            )
+            for lanes, unit_count in ((32, 2), (64, 4))
+        ),
         *(
             core_rules._vector_binary_rule(source_op, type_pattern, descriptor_key)
             for source_op, type_pattern, descriptor_key in (
@@ -762,14 +853,15 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
                 (core_rules._F32_VECTOR, "amd.xdna.aie2p.select.i32x16.mask64"),
             )
         ),
-        core_rules._vector_predicate_select_rule(),
+        *core_rules._vector_predicate_select_rules(),
         *(
-            core_rules._vector_predicate_binary_rule(source_op, operation)
+            rule
             for source_op, operation in (
                 (vector.vector_andi, "and"),
                 (vector.vector_ori, "or"),
                 (vector.vector_xori, "xor"),
             )
+            for rule in core_rules._vector_predicate_binary_rules(source_op, operation)
         ),
         *(
             core_rules._vector_compare_rule(predicate, operand_type, width)
@@ -986,6 +1078,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
 
 AIE2P_CORE_CONTRACT_DIALECT_OPS = {
     "buffer": ALL_BUFFER_OPS,
+    "global": ALL_GLOBAL_OPS,
     "index": ALL_INDEX_OPS,
     "scalar": ALL_SCALAR_OPS,
     "scf": ALL_SCF_OPS,

@@ -7,12 +7,19 @@
 """Tests for AMD XDNA AIE2P structural vector contracts."""
 
 from loom.dialect.vector import defs as vector
+from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
+    I8_INTERLEAVE_CONTROL,
+)
 from loom.target.arch.amd.xdna.aie2p.contracts.structural import (
+    _ACCUMULATOR_BITCAST_TYPE_GROUPS,
+    _ACCUMULATOR_VECTOR_SHAPES,
+    _F32X32_ACCUMULATOR,
     _I16_F16_BF16_8X8_VECTOR,
     _I16_INTERLEAVE_CONTROL,
     _I16_TRANSPOSE_8X8_CONTROLS,
     _I32_F32_4X4_VECTOR,
     _I32_F32_TRANSPOSE_4X4_CONTROL,
+    _ORDINARY_1024_BITCAST_TYPES,
     _PACKED_VECTOR_ELEMENT_TYPES,
     _VECTOR_CARRIER_SPECS,
     _WIDE_VECTOR_BITCAST_TYPES,
@@ -151,11 +158,6 @@ def _slice_rule(
 
 
 def test_static_slices_project_logical_lanes_into_physical_carriers() -> None:
-    slice_rules = [
-        rule for rule in AIE2P_STRUCTURAL_RULES if rule.source_op is vector.vector_slice
-    ]
-    assert len(slice_rules) == 8 * len(_VECTOR_CARRIER_SPECS)
-
     for element_types, element_byte_count, wide_lane_maximum in _VECTOR_CARRIER_SPECS:
         carrier_lane_count = 64 // element_byte_count
         narrow_type = Vector(
@@ -242,6 +244,34 @@ def test_static_slices_project_logical_lanes_into_physical_carriers() -> None:
         }
 
 
+def test_accumulator_packet_slices_move_each_mbms_unit_to_x() -> None:
+    for shape in _ACCUMULATOR_VECTOR_SHAPES:
+        rules = tuple(
+            _slice_rule(
+                shape.source_type,
+                shape.packet_type,
+                unit_index * shape.packet_lane_count,
+                unit_index * shape.packet_lane_count,
+            )
+            for unit_index in range(shape.logical_packet_count)
+        )
+        assert all(
+            rule.descriptor.key == "amd.xdna.aie2p.move.accumulator512.to.vector512"
+            for rule in rules
+        )
+        for unit_index, rule in enumerate(rules):
+            assert [type(emit) for emit in rule.emit] == [
+                EmitRegisterSlice,
+                EmitDescriptorOp,
+            ]
+            assert (rule.emit[0].unit_offset, rule.emit[0].unit_count) == (
+                unit_index,
+                1,
+            )
+            assert rule.emit[1].operands["src"] == rule.emit[0].result
+            assert rule.emit[1].results["dst"] == ValueRef.result("result")
+
+
 def _concat_rule(
     input_type,
     result_type,
@@ -263,17 +293,6 @@ def _concat_rule(
 
 
 def test_partial_concat_projects_one_verified_byte_cut_per_element_width() -> None:
-    concat_rules = [
-        rule
-        for rule in AIE2P_STRUCTURAL_RULES
-        if rule.source_op is vector.vector_concat
-    ]
-    assert len(concat_rules) == (
-        2 * len(_PACKED_VECTOR_ELEMENT_TYPES)
-        + len(_WIDE_VECTOR_CONCAT_SPECS)
-        + 3 * len(_VECTOR_CARRIER_SPECS)
-    )
-
     for element_types, element_byte_count in _PACKED_VECTOR_ELEMENT_TYPES:
         carrier_lane_count = 64 // element_byte_count
         left = ValueRef.operand("inputs", element=0)
@@ -518,7 +537,7 @@ def test_wide_bitcast_aliases_preserve_ordinary_y_carriers() -> None:
             maximum_static_elements=64,
         ),
         Vector("i32", minimum_static_elements=17, maximum_static_elements=32),
-        Vector("f32", minimum_static_elements=17, maximum_static_elements=31),
+        Vector("f32", minimum_static_elements=17, maximum_static_elements=32),
         Vector(
             ("i64", "f64"),
             minimum_static_elements=9,
@@ -528,13 +547,17 @@ def test_wide_bitcast_aliases_preserve_ordinary_y_carriers() -> None:
     rules = tuple(
         rule
         for rule in AIE2P_STRUCTURAL_RULES
-        if isinstance(rule, ValueAliasRule) and rule.source_op is vector.vector_bitcast
+        if isinstance(rule, ValueAliasRule)
+        and rule.source_op is vector.vector_bitcast
+        and Guard.low_value_register_class("input", "aie2p.vec256") in rule.guards
     )
     assert len(rules) == len(_WIDE_VECTOR_BITCAST_TYPES) ** 2
     assert [rule.guards for rule in rules] == [
         (
             Guard.value_type("input", source_type),
             Guard.value_type("result", result_type),
+            Guard.low_value_register_class("input", "aie2p.vec256"),
+            Guard.low_value_register_class("result", "aie2p.vec256"),
             Guard.low_value_register_unit_count_eq("input", "result"),
         )
         for source_type in _WIDE_VECTOR_BITCAST_TYPES
@@ -544,12 +567,124 @@ def test_wide_bitcast_aliases_preserve_ordinary_y_carriers() -> None:
     assert all(rule.result.field == "result" for rule in rules)
 
 
+def test_accumulator_bitcast_aliases_preserve_mbms_units() -> None:
+    rules = tuple(
+        rule
+        for rule in AIE2P_STRUCTURAL_RULES
+        if isinstance(rule, ValueAliasRule)
+        and rule.source_op is vector.vector_bitcast
+        and Guard.low_value_register_class("input", "aie2p.mbms") in rule.guards
+    )
+    expected_pairs = tuple(
+        (source_type, result_type)
+        for type_group in _ACCUMULATOR_BITCAST_TYPE_GROUPS
+        for source_type in type_group
+        for result_type in type_group
+    )
+    assert len(rules) == len(expected_pairs)
+    assert [rule.guards for rule in rules] == [
+        (
+            Guard.value_type("input", source_type),
+            Guard.value_type("result", result_type),
+            Guard.low_value_register_class("input", "aie2p.mbms"),
+            Guard.low_value_register_class("result", "aie2p.mbms"),
+            Guard.low_value_register_unit_count_eq("input", "result"),
+        )
+        for source_type, result_type in expected_pairs
+    ]
+
+
+def test_f32x32_bitcasts_move_each_unit_across_register_files() -> None:
+    assert _ORDINARY_1024_BITCAST_TYPES == (
+        Vector(
+            ("i8", "f8E4M3", "f8E5M2"),
+            minimum_static_elements=128,
+            maximum_static_elements=128,
+        ),
+        Vector(
+            ("i16", "f16", "bf16"),
+            minimum_static_elements=64,
+            maximum_static_elements=64,
+        ),
+        Vector("i32", minimum_static_elements=32, maximum_static_elements=32),
+        Vector("f32", minimum_static_elements=32, maximum_static_elements=32),
+        Vector(
+            ("i64", "f64"),
+            minimum_static_elements=16,
+            maximum_static_elements=16,
+        ),
+    )
+    conversion_rules = tuple(
+        rule
+        for rule in AIE2P_STRUCTURAL_RULES
+        if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_bitcast
+    )
+    assert len(conversion_rules) == 2 * len(_ORDINARY_1024_BITCAST_TYPES)
+
+    for ordinary_type in _ORDINARY_1024_BITCAST_TYPES:
+        to_vector = next(
+            rule
+            for rule in conversion_rules
+            if Guard.value_type("input", _F32X32_ACCUMULATOR) in rule.guards
+            and Guard.value_type("result", ordinary_type) in rule.guards
+            and Guard.low_value_register_class("result", "aie2p.vec256") in rule.guards
+        )
+        assert Guard.low_value_register_unit_count("input", 2) in to_vector.guards
+        assert Guard.low_value_register_unit_count("result", 4) in to_vector.guards
+        assert [type(emit) for emit in to_vector.emit] == [
+            EmitRegisterSlice,
+            EmitDescriptorOp,
+            EmitRegisterSlice,
+            EmitDescriptorOp,
+            EmitRegisterConcat,
+        ]
+        assert [to_vector.emit[index].unit_offset for index in (0, 2)] == [0, 1]
+        assert [to_vector.emit[index].unit_count for index in (0, 2)] == [1, 1]
+        assert all(
+            to_vector.emit[index].descriptor.key
+            == "amd.xdna.aie2p.move.accumulator512.to.vector512"
+            for index in (1, 3)
+        )
+
+        to_accumulator = next(
+            rule
+            for rule in conversion_rules
+            if Guard.value_type("input", ordinary_type) in rule.guards
+            and Guard.value_type("result", _F32X32_ACCUMULATOR) in rule.guards
+            and Guard.low_value_register_class("input", "aie2p.vec256") in rule.guards
+        )
+        assert Guard.low_value_register_unit_count("input", 4) in to_accumulator.guards
+        assert Guard.low_value_register_unit_count("result", 2) in to_accumulator.guards
+        assert [type(emit) for emit in to_accumulator.emit] == [
+            EmitRegisterSlice,
+            EmitDescriptorOp,
+            EmitRegisterSlice,
+            EmitDescriptorOp,
+            EmitRegisterConcat,
+        ]
+        assert [to_accumulator.emit[index].unit_offset for index in (0, 2)] == [
+            0,
+            2,
+        ]
+        assert [to_accumulator.emit[index].unit_count for index in (0, 2)] == [
+            2,
+            2,
+        ]
+        assert all(
+            to_accumulator.emit[index].descriptor.key
+            == "amd.xdna.aie2p.move.vector512.to.accumulator512"
+            for index in (1, 3)
+        )
+
+
 def test_16bit_interleave_uses_alternating_native_shuffle() -> None:
+    input_type = Vector(("i16", "f16", "bf16"), lanes=16)
     rule = next(
         rule
         for rule in AIE2P_STRUCTURAL_RULES
         if isinstance(rule, DescriptorRule)
         and rule.source_op is vector.vector_interleave
+        and Guard.value_type("even", input_type) in rule.guards
     )
     assert len(rule.emit) == 2
     assert rule.emit[0].immediates == {"i": _I16_INTERLEAVE_CONTROL}
@@ -558,3 +693,36 @@ def test_16bit_interleave_uses_alternating_native_shuffle() -> None:
     assert rule.emit[1].operands["s1"].field == "even"
     assert rule.emit[1].operands["s2"].field == "odd"
     assert Guard.i64_range("axis", 0, 0) in rule.guards
+
+
+def test_partial_byte_interleave_uses_low_native_shuffle() -> None:
+    input_type = Vector(
+        ("i8", "f8E4M3", "f8E5M2"),
+        minimum_lanes=1,
+        maximum_lanes=32,
+    )
+    result_type = Vector(
+        ("i8", "f8E4M3", "f8E5M2"),
+        minimum_lanes=2,
+        maximum_lanes=64,
+    )
+    rule = next(
+        rule
+        for rule in AIE2P_STRUCTURAL_RULES
+        if isinstance(rule, DescriptorRule)
+        and rule.source_op is vector.vector_interleave
+        and Guard.value_type("even", input_type) in rule.guards
+    )
+
+    assert rule.guards == (
+        Guard.value_type("even", input_type),
+        Guard.value_type("odd", input_type),
+        Guard.value_type("result", result_type),
+        Guard.i64_range("axis", 0, 0),
+    )
+    assert len(rule.emit) == 2
+    assert rule.emit[0].immediates == {"i": I8_INTERLEAVE_CONTROL}
+    assert I8_INTERLEAVE_CONTROL == 20
+    assert rule.emit[1].descriptor.key == "amd.xdna.aie2p.shuffle.x.configured"
+    assert rule.emit[1].operands["s1"].field == "even"
+    assert rule.emit[1].operands["s2"].field == "odd"

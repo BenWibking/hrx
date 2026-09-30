@@ -39,6 +39,8 @@ typedef struct loom_low_emission_frame_materialization_summary_t {
   uint64_t spill_storage_count;
   // Cumulative materialized spill storage byte size.
   uint64_t spill_storage_bytes;
+  // Strongest byte alignment required by materialized spill storage.
+  uint64_t spill_storage_minimum_alignment;
   // Cumulative low.spill stores materialized while building the final frame.
   uint64_t spill_store_count;
   // Cumulative materialized low.spill store byte traffic.
@@ -213,6 +215,13 @@ static iree_status_t loom_low_emission_frame_build_impl(
   if (iree_status_is_ok(status) && model.body->block_count > 1 &&
       options->schedule_strategy == LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL) {
     schedule_options.flags |= LOOM_LOW_SCHEDULE_FLAG_RETAIN_BLOCK_PRESSURE;
+    if (retained_blocks == NULL &&
+        loom_low_function_schedule(low_func_op) != LOOM_LOW_SCHEDULE_LOCKED &&
+        loom_low_function_allocation(low_func_op) !=
+            LOOM_LOW_ALLOCATION_FIXED) {
+      schedule_options.flags |=
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_SOURCE_SUFFIX_BOUNDS;
+    }
   }
   if (iree_status_is_ok(status)) {
     status = loom_low_schedule_function(&model, &schedule_options, arena,
@@ -324,6 +333,9 @@ static void loom_low_emission_frame_accumulate_materialization(
     loom_low_emission_frame_materialization_summary_t* summary) {
   summary->spill_storage_count += result->storage_count;
   summary->spill_storage_bytes += result->storage_bytes;
+  summary->spill_storage_minimum_alignment =
+      iree_max(summary->spill_storage_minimum_alignment,
+               result->storage_minimum_alignment);
   summary->spill_store_count += result->spill_count;
   summary->spill_store_bytes += result->spill_bytes;
   summary->reload_count += result->reload_count;
@@ -557,8 +569,8 @@ static iree_status_t loom_low_emission_frame_try_guarded_motion(
                         options->residency_model,
                         frame->allocation.physical_extents.ends_by_reg_class,
                         &trial.allocation) ||
-                    !loom_low_guarded_motion_improves_schedule(&frame->schedule,
-                                                               &trial.schedule);
+                    !loom_low_guarded_motion_improves_schedule(
+                        &plan, &frame->schedule, &trial.schedule);
     if (!rejected &&
         loom_target_residency_model_is_empty(options->residency_model)) {
       for (uint16_t i = 0; i < trial.allocation.physical_extents.count; ++i) {
@@ -715,6 +727,8 @@ static iree_status_t loom_low_emission_frame_apply_materialization_summary(
     iree_arena_allocator_t* arena, loom_low_emission_frame_t* frame) {
   frame->materialized_spill_storage_count = summary->spill_storage_count;
   frame->materialized_spill_storage_bytes = summary->spill_storage_bytes;
+  frame->materialized_spill_storage_minimum_alignment =
+      summary->spill_storage_minimum_alignment;
   frame->materialized_spill_store_count = summary->spill_store_count;
   frame->materialized_spill_store_bytes = summary->spill_store_bytes;
   frame->materialized_reload_count = summary->reload_count;

@@ -139,6 +139,7 @@ from loom.target.arch.amdgpu.descriptors import (
 )
 from loom.target.arch.amdgpu.descriptors.api import (
     _AMDGPU_CORE_DESCRIPTOR_SET_BUILDER_FLAG_GFX125X,
+    _order_descriptor_sets_for_shared_views,
     _with_instruction_classes,
     _with_storage_lease_rows,
 )
@@ -284,6 +285,50 @@ def test_generic_descriptor_contracts_are_member_intersections() -> None:
         overlay
         for overlay in gfx125x_overlays
         if not (overlay.semantic_tag or "").startswith("matrix.swmmac.")
+    )
+
+
+def test_exact_descriptor_storage_orders_portable_view_as_prefix() -> None:
+    portable_a = Descriptor(
+        key="amdgpu.test.a",
+        mnemonic="portable_a",
+        semantic_tag=None,
+        operands=(),
+        schedule_class="amdgpu.test",
+    )
+    portable_b = replace(
+        portable_a,
+        key="amdgpu.test.b",
+        mnemonic="portable_b",
+    )
+    exact_a = replace(portable_a, mnemonic="exact_a")
+    exact_b = replace(portable_b, mnemonic="exact_b")
+    exact_only = replace(
+        portable_a,
+        key="amdgpu.test.exact_only",
+        mnemonic="exact_only",
+    )
+    portable_set = replace(
+        _AMDGPU_GFX11_GENERIC_CORE_DESCRIPTOR_SET_BASE,
+        descriptors=(portable_b, portable_a),
+    )
+    exact_set = replace(
+        _AMDGPU_RDNA3_5_CORE_DESCRIPTOR_SET_BASE,
+        descriptors=(exact_only, exact_a, exact_b),
+    )
+
+    ordered_sets = _order_descriptor_sets_for_shared_views(
+        {
+            "gfx11_generic": portable_set,
+            "rdna3_5": exact_set,
+        }
+    )
+
+    assert ordered_sets["gfx11_generic"] is portable_set
+    assert ordered_sets["rdna3_5"].descriptors == (
+        exact_b,
+        exact_a,
+        exact_only,
     )
 
 
@@ -2484,7 +2529,7 @@ def test_scalar_carry_forms_preserve_native_unsigned_addition() -> None:
         assert OperandFlag.STATE_READ in carry_in.flags
 
 
-def test_scalar_borrow_forms_preserve_scc_dependencies() -> None:
+def test_scalar_carry_and_borrow_forms_preserve_scc_dependencies() -> None:
     for overlays in (
         _gfx940_core_overlays(),
         _gfx950_core_overlays(),
@@ -2493,9 +2538,10 @@ def test_scalar_borrow_forms_preserve_scc_dependencies() -> None:
         _gfx125x_core_overlays(),
     ):
         descriptors = {row.descriptor_key: row for row in overlays}
-        for mnemonic, instruction in (
-            ("s_sub_co_u32", "S_SUB_U32"),
-            ("s_subb_u32", "S_SUBB_U32"),
+        for mnemonic, instruction, state_name in (
+            ("s_addc_u32", "S_ADDC_U32", "carry"),
+            ("s_sub_co_u32", "S_SUB_U32", "borrow"),
+            ("s_subb_u32", "S_SUBB_U32", "borrow"),
         ):
             base = descriptors[f"amdgpu.{mnemonic}"]
             for suffix in ("", ".lhs_inline", ".rhs_inline"):
@@ -2503,14 +2549,14 @@ def test_scalar_borrow_forms_preserve_scc_dependencies() -> None:
                 assert descriptor.instruction_name == instruction
                 assert descriptor.implicit_operands == base.implicit_operands
                 assert descriptor.asm_forms[0].results == base.asm_forms[0].results
-                borrow = descriptor.implicit_operands[0].descriptor_operand
-                assert borrow.role is OperandRole.RESULT
-                assert OperandFlag.STATE_WRITE in borrow.flags
-                if mnemonic == "s_subb_u32":
-                    borrow_in = descriptor.implicit_operands[1].descriptor_operand
-                    assert borrow_in.role is OperandRole.PREDICATE
-                    assert OperandFlag.STATE_READ in borrow_in.flags
-                    assert "borrow_in" in descriptor.asm_forms[0].operands
+                state = descriptor.implicit_operands[0].descriptor_operand
+                assert state.role is OperandRole.RESULT
+                assert OperandFlag.STATE_WRITE in state.flags
+                if mnemonic in ("s_addc_u32", "s_subb_u32"):
+                    state_in = descriptor.implicit_operands[1].descriptor_operand
+                    assert state_in.role is OperandRole.PREDICATE
+                    assert OperandFlag.STATE_READ in state_in.flags
+                    assert f"{state_name}_in" in descriptor.asm_forms[0].operands
                 if suffix:
                     assert (
                         descriptor.asm_forms[0].native_assembly_mnemonic
@@ -2649,7 +2695,7 @@ def test_feedback_atomic64_descriptors_cover_execution_families() -> None:
         _assert_feedback_atomic64_overlay(
             descriptors["amdgpu.global_atomic_swap_u64_rtn_saddr"],
             mnemonic=f"global_atomic_swap_{'x2' if wide_mnemonic_suffix == 'x2' else 'b64'}",
-            semantic_tag="memory.global.atomic.exchange.u64.return",
+            semantic_tag="memory.global.atomic.exchange.b64.return",
             memory_space=MemorySpace.GLOBAL,
             payload_field_name="value",
             payload_units=2,

@@ -80,6 +80,8 @@ from loom.target.arch.spirv.contracts.memory import (
 from loom.target.arch.spirv.contracts.ordinary_vector import (
     SPIRV_ORDINARY_VECTOR_CONTRACT_CASES,
 )
+from loom.target.arch.spirv.contracts.predicate import integer_to_boolean_rule
+from loom.target.arch.spirv.contracts.subgroup import SPIRV_SUBGROUP_CONTRACT_CASES
 from loom.target.arch.spirv.cooperative_matrix import (
     COOPERATIVE_MATRIX_CASES,
     CooperativeMatrixCase,
@@ -823,16 +825,17 @@ def _cooperative_matrix_memory(
     operation: SourceMemoryOperation,
     *,
     element_byte_width: int,
-    lane_count: int,
     minimum_alignment: int,
 ) -> SourceMemoryConstraint:
+    # Source memory supplies the logical origin. The descriptor owns the
+    # cooperative tile footprint; its fragment payload is not contiguous IO.
     return SourceMemoryConstraint(
         operation=operation,
         root_kind=SourceMemoryRootKind.ANY,
         address_layout=SourceMemoryAddressLayout.COMPACT_ROW_MAJOR,
         memory_spaces=_STORAGE_BUFFER_MEMORY_SPACES,
         element_byte_count=element_byte_width,
-        vector_lane_count=lane_count,
+        vector_lane_count=1,
         vector_lane_byte_stride=element_byte_width,
         static_byte_offset_minimum=0,
         static_byte_offset_maximum=(2**63) - 1,
@@ -931,7 +934,6 @@ def _cooperative_matrix_load_rule(
                 source_memory=_cooperative_matrix_memory(
                     SourceMemoryOperation.LOAD,
                     element_byte_width=scalar.byte_width,
-                    lane_count=result_lanes,
                     minimum_alignment=16,
                 ),
                 source_memory_address_materializer=address_materializer,
@@ -984,7 +986,6 @@ def _cooperative_matrix_store_rule(
                 source_memory=_cooperative_matrix_memory(
                     SourceMemoryOperation.STORE,
                     element_byte_width=scalar.byte_width,
-                    lane_count=value_lanes,
                     minimum_alignment=16,
                 ),
                 source_memory_address_materializer=address_materializer,
@@ -1424,6 +1425,10 @@ def _vector_float_binary_rules() -> tuple[DescriptorRule, ...]:
 def _conversion_rules() -> tuple[DescriptorRule, ...]:
     rules = [_conversion_rule(row) for row in DIRECT_SCALAR_CONVERSIONS]
     rules.extend(_unsigned_conversion_rule(row) for row in UNSIGNED_SCALAR_CONVERSIONS)
+    rules.extend(
+        integer_to_boolean_rule(scalar_conversion.scalar_trunci, scalar.source_type)
+        for scalar in SIGNED_INTEGER_SCALAR_ALU_TYPES
+    )
     return tuple(rules)
 
 
@@ -1496,6 +1501,7 @@ SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT = ContractFragment(
         _raw_storage_buffer_byte_store_rule(),
         *_storage_buffer_rules(),
         *SPIRV_ATOMIC_CONTRACT_CASES,
+        *SPIRV_SUBGROUP_CONTRACT_CASES,
         *_control_barrier_rules(),
         *_cooperative_matrix_rules(),
         DescriptorMatrixRule(

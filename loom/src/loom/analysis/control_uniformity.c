@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+#include "loom/ops/cfg/ops.h"
 #include "loom/ops/op_defs.h"
 #include "loom/util/cfg_dominance.h"
 #include "loom/util/cfg_graph.h"
@@ -195,6 +196,38 @@ static iree_status_t loom_control_uniformity_cfg_region(
   return iree_ok_status();
 }
 
+bool loom_control_uniformity_prove_single_entry(
+    const loom_control_uniformity_info_t* info, const loom_block_t* block,
+    loom_value_fact_uniform_scope_t required_scope,
+    loom_condition_assumption_t* out_condition) {
+  const loom_value_fact_cfg_region_t* region =
+      loom_value_fact_table_lookup_cfg_region(info->fact_table,
+                                              block->parent_region);
+  if (!region || block->region_index == 0) {
+    return false;
+  }
+  const loom_cfg_graph_t* graph = &region->graph;
+  if (!graph->blocks[block->region_index].reachable) {
+    return false;
+  }
+  const loom_cfg_edge_index_span_t incoming =
+      loom_cfg_graph_predecessor_edges(graph, block->region_index);
+  if (incoming.count != 1) {
+    return false;
+  }
+  const loom_cfg_edge_info_t* edge = &graph->edges[incoming.values[0]];
+  if (!loom_cfg_cond_br_isa(edge->terminator) ||
+      !loom_control_uniformity_prove_execution(info, edge->terminator,
+                                               required_scope, NULL)) {
+    return false;
+  }
+  *out_condition = (loom_condition_assumption_t){
+      .condition = edge->selector_value_id,
+      .assumed_truth = edge->successor_index == 0,
+  };
+  return true;
+}
+
 static bool loom_control_uniformity_prove_value(
     const loom_control_uniformity_info_t* info, const loom_op_t* control_op,
     loom_value_id_t control_value, loom_control_uniformity_source_t source,
@@ -326,11 +359,13 @@ bool loom_control_uniformity_prove_execution(
       continue;
     }
     if (!loom_loop_like_has_counted_range(loop)) {
-      loom_control_uniformity_prove_value(
-          info, ancestor_op, LOOM_VALUE_ID_INVALID,
-          LOOM_CONTROL_UNIFORMITY_SOURCE_LOOP_CONDITION, required_scope,
-          out_failure);
-      return false;
+      if (!loom_control_uniformity_prove_value(
+              info, ancestor_op, loom_loop_like_condition(loop),
+              LOOM_CONTROL_UNIFORMITY_SOURCE_LOOP_CONDITION, required_scope,
+              out_failure)) {
+        return false;
+      }
+      continue;
     }
     if (!loom_control_uniformity_prove_value(
             info, ancestor_op, loom_loop_like_lower_bound(loop),

@@ -449,6 +449,8 @@ class RegisterPart:
 class RegClassAlt:
     reg_class: str | None
     flags: tuple[RegClassAltFlag, ...] = (RegClassAltFlag.PREFERRED,)
+    # Required power-of-two base alignment in allocation units for this operand.
+    unit_alignment: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -739,6 +741,7 @@ class DescriptorSet:
     resources: tuple[Resource, ...]
     schedule_classes: tuple[ScheduleClass, ...]
     descriptors: tuple[Descriptor, ...]
+    # Dense target-table storage ordinal shared by views over the same tables.
     descriptor_set_ordinal: int | None = None
     physical_registers: tuple[PhysicalRegister, ...] = ()
     physical_register_views: tuple[PhysicalRegisterView, ...] = ()

@@ -29,6 +29,7 @@ load(":loom_check_rules_test.bzl", "loom_check_rules_test_suite")
 load(":loom_corpus_rules_test.bzl", "loom_corpus_rules_test_suite")
 load(
     ":loom_library_rules_test.bzl",
+    "EXPLICIT_RUNNER_PROFILE",
     "REFERENCE_PROFILE",
     "SERIALIZED_REFERENCE_PROFILE",
     "loom_library_rules_test_suite",
@@ -65,6 +66,12 @@ loom_target_set(
         ":test_fake_profile",
         ":test_target_set",
     ],
+)
+
+loom_target_set(
+    name = "test_empty_target_set",
+    allow_empty = True,
+    targets = [],
 )
 
 loom_kernel_library(
@@ -168,6 +175,7 @@ loom_test(
     args = ["--sample=0"],
     case = "benchmark_case",
     execution_profiles = [
+        EXPLICIT_RUNNER_PROFILE,
         REFERENCE_PROFILE,
         SERIALIZED_REFERENCE_PROFILE,
     ],
@@ -177,6 +185,15 @@ loom_test(
         "all": {"case": ""},
         "selected": {},
     },
+)
+
+loom_test(
+    name = "correctness_only_test",
+    benchmark_smoke = False,
+    case = "benchmark_case",
+    execution_profiles = [REFERENCE_PROFILE],
+    module = ":profiled_module",
+    tags = ["manual"],
 )
 
 loom_check_test(
