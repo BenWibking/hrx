@@ -21,6 +21,7 @@ loom_check_test_suite(
     "symbol_dce.loom-test"
     "template_application.loom-test"
     "template_cfg_relations.loom-test"
+    "template_execution_scope.loom-test"
     "template_expansion.loom-test"
     "template_motion.loom-test"
     "template_relations.loom-test"

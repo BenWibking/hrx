@@ -638,9 +638,7 @@ static iree_status_t loom_inline_build_plan(
       const loom_inline_callables_eligibility_callback_t callback =
           state->options.template_eligibility;
       if (callback.fn) {
-        IREE_RETURN_IF_ERROR(callback.fn(callback.user_data,
-                                         entry->source_symbol_id,
-                                         entry->call_op, &eligible));
+        IREE_RETURN_IF_ERROR(callback.fn(callback.user_data, edge, &eligible));
       }
       if (!eligible) {
         ++state->statistics.kept_edges;

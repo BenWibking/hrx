@@ -20,8 +20,9 @@ extern "C" {
 // or moved. Allocation/analysis failures propagate separately from eligibility.
 typedef struct loom_inline_callables_eligibility_callback_t {
   // Called once per reachable template call during plan construction.
-  iree_status_t (*fn)(void* user_data, loom_symbol_id_t source_symbol_id,
-                      loom_op_t* call_op, bool* out_eligible);
+  iree_status_t (*fn)(void* user_data,
+                      const loom_symbol_reference_occurrence_t* occurrence,
+                      bool* out_eligible);
   // Borrowed state owned by the producer of applicability decisions.
   void* user_data;
 } loom_inline_callables_eligibility_callback_t;

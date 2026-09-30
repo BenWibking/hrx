@@ -40,6 +40,11 @@ typedef uint32_t loom_template_demand_id_t;
 // Sentinel for occurrences not attached to a concrete op attribute.
 #define LOOM_SYMBOL_REFERENCE_ATTR_INDEX_NONE ((uint8_t)UINT8_MAX)
 
+// Independent execution region ordinal plus one in execution_targets. Zero
+// inherits the owning function's context, including its specialized version.
+// A nonzero scope with a null target denotes an as-yet-unbound worker.
+typedef uint32_t loom_symbol_reference_execution_scope_id_t;
+
 // Classifies where a symbol reference occurrence was found.
 typedef enum loom_symbol_reference_occurrence_kind_e {
   // Invalid default used only for zero-initialized storage.
@@ -84,12 +89,14 @@ typedef struct loom_symbol_reference_occurrence_t {
   loom_symbol_reference_role_t role;
   // Root region slot on the source symbol plus one, or zero for its contract.
   uint8_t source_root_region_index_plus_one;
+  // Execution context retained by the structural reference traversal.
+  loom_symbol_reference_execution_scope_id_t execution_scope;
   // Operation that owns the occurrence, or NULL for module-root records.
   const loom_op_t* user_op;
 } loom_symbol_reference_occurrence_t;
 
 static_assert(sizeof(loom_symbol_reference_occurrence_t) ==
-                  (IREE_PTR_SIZE == 8 ? 32 : 24),
+                  (IREE_PTR_SIZE == 8 ? 32 : 28),
               "symbol reference occurrences must remain compact");
 
 // Shift mapping an occurrence ID to its fixed-size segment.
@@ -126,9 +133,11 @@ typedef struct loom_template_demand_t {
   // True under structured conditions or in a non-entry CFG block. Applicability
   // may depend on path facts that are not available at the function boundary.
   bool has_path_condition;
+  // Execution context at the application, independent of captured-value facts.
+  loom_symbol_reference_execution_scope_id_t execution_scope;
 } loom_template_demand_t;
 
-static_assert(sizeof(loom_template_demand_t) == (IREE_PTR_SIZE == 8 ? 24 : 16),
+static_assert(sizeof(loom_template_demand_t) == (IREE_PTR_SIZE == 8 ? 24 : 20),
               "template demands must remain compact");
 
 // Incoming/outgoing occurrence-list heads for one referenced symbol.
@@ -182,6 +191,15 @@ typedef struct loom_symbol_reference_table_t {
   loom_symbol_reference_call_counts_t calls;
   // Number of valid module-local template providers.
   uint32_t template_provider_count;
+  // Targets selected by independently executing regions. Ordinary regions
+  // inherit their enclosing scope without adding rows. A null target records
+  // an independent region whose execution environment is not yet selected.
+  struct {
+    // Target references borrowed from the analyzed module, in traversal order.
+    const loom_symbol_ref_t* values;
+    // Number of independent execution regions.
+    iree_host_size_t count;
+  } execution_targets;
   // Abstract template.apply provider demands owned by module symbols.
   struct {
     // Demand records owned by the caller-provided arena.
