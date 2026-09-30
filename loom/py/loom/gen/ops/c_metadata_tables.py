@@ -1051,7 +1051,17 @@ def generate_tables_c(
                 flags = " | ".join(region_flags) if region_flags else "0"
                 terminator = c_traits.region_terminator_kind(op, region_def, ops_by_name)
                 execution = c_traits.region_execution(op, region_def)
-                lines.append(f"    {{{terminator}, {implicit_terminator}, {flags}, {execution}}},")
+                execution_target = region_def.execution_target
+                target_index_plus_one = 0
+                if execution_target is not None:
+                    target_index = next((i for i, attr in enumerate(non_flags) if attr.name == execution_target), None)
+                    if target_index is None:
+                        raise ValueError(f"Op '{op.name}' region '{region_def.name}' execution_target '{execution_target}' does not name an attribute")
+                    target_attr = non_flags[target_index]
+                    if target_attr.attr_type != "symbol" or target_attr.symbol_ref is None or "target" not in target_attr.symbol_ref.interfaces:
+                        raise ValueError(f"Op '{op.name}' region '{region_def.name}' execution_target '{execution_target}' must reference a target symbol")
+                    target_index_plus_one = target_index + 1
+                lines.append(f"    {{{terminator}, {implicit_terminator}, {flags}, {execution}, {target_index_plus_one}}},")
             lines.append("};")
 
         # Constraint table.

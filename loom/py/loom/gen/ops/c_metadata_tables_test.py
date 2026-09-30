@@ -192,6 +192,29 @@ def test_generate_tables_rejects_unknown_region_argument_uniform_scope() -> None
         generate_tables_c("test", 0, [op])
 
 
+def test_generate_tables_rejects_missing_region_execution_target() -> None:
+    op = Op(
+        "test.worker",
+        group=Dialect("test"),
+        regions=[RegionDef("body", execution_target="target")],
+        format=[Region("body")],
+    )
+    with pytest.raises(ValueError, match="execution_target 'target' does not name an attribute"):
+        generate_tables_c("test", 0, [op])
+
+
+def test_generate_tables_rejects_non_target_region_execution_target() -> None:
+    op = Op(
+        "test.worker",
+        group=Dialect("test"),
+        attrs=[AttrDef("target", ATTR_TYPE_I64)],
+        regions=[RegionDef("body", execution_target="target")],
+        format=[Region("body")],
+    )
+    with pytest.raises(ValueError, match="execution_target 'target' must reference a target symbol"):
+        generate_tables_c("test", 0, [op])
+
+
 def test_generate_tables_emits_alternative_required_ancestors() -> None:
     dialect = Dialect("test")
     first = Op("test.first", group=dialect)

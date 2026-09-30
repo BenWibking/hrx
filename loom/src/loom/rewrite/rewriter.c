@@ -128,11 +128,13 @@ static iree_status_t loom_rewriter_recompute_op_facts(loom_rewriter_t* rewriter,
 
 // Region owners publish inherited context before their children are built or
 // revisited. Cyclic summaries refresh it again when control facts change.
-static iree_status_t loom_rewriter_seed_nested_temporal_scope(
+static iree_status_t loom_rewriter_seed_nested_execution_scope(
     loom_rewriter_t* rewriter, loom_op_t* op) {
   if (!rewriter->fact_table || !op->region_count) {
     return iree_ok_status();
   }
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_seed_nested_target_scopes(
+      rewriter->fact_table, rewriter->module, op));
   const loom_value_facts_t scope = loom_value_fact_table_block_temporal_scope(
       rewriter->fact_table, op->parent_block);
   const bool may_repeat =
@@ -160,7 +162,7 @@ static iree_status_t loom_rewriter_on_op_finalized(void* user_data,
   loom_rewriter_t* rewriter = (loom_rewriter_t*)user_data;
   ++rewriter->created_op_count;
   IREE_RETURN_IF_ERROR(loom_rewriter_add_to_worklist(rewriter, op));
-  IREE_RETURN_IF_ERROR(loom_rewriter_seed_nested_temporal_scope(rewriter, op));
+  IREE_RETURN_IF_ERROR(loom_rewriter_seed_nested_execution_scope(rewriter, op));
   // Newly defined results have no users yet. Only a terminator changes an
   // existing control or payload equation before its results are connected.
   if (iree_any_bit_set(op->traits, LOOM_TRAIT_TERMINATOR)) {
@@ -183,7 +185,7 @@ static iree_status_t loom_rewriter_on_op_finalized(void* user_data,
 static iree_status_t loom_rewriter_record_subtree(loom_rewriter_t* rewriter,
                                                   loom_op_t* op) {
   loom_module_record_op_summaries(rewriter->module, op);
-  IREE_RETURN_IF_ERROR(loom_rewriter_seed_nested_temporal_scope(rewriter, op));
+  IREE_RETURN_IF_ERROR(loom_rewriter_seed_nested_execution_scope(rewriter, op));
   loom_region_t** regions = loom_op_regions(op);
   for (uint8_t region_index = 0; region_index < op->region_count;
        ++region_index) {
@@ -1772,6 +1774,22 @@ iree_status_t loom_rewriter_set_attr(loom_rewriter_t* rewriter, loom_op_t* op,
   IREE_RETURN_IF_ERROR(
       loom_op_set_attr(rewriter->module, op, (uint8_t)attr_index, value));
   IREE_RETURN_IF_ERROR(loom_rewriter_recompute_op_facts(rewriter, op));
+  if (rewriter->fact_table && op->region_count) {
+    const loom_op_vtable_t* vtable = loom_op_vtable(rewriter->module, op);
+    for (uint8_t i = 0; i < op->region_count; ++i) {
+      const loom_region_descriptor_t* descriptor =
+          loom_op_vtable_region_descriptor(vtable, i);
+      if (descriptor &&
+          descriptor->execution_target_attr_index_plus_one == attr_index + 1) {
+        // Target binding can change every fact in the region. Publish the new
+        // facts before any queued user can fold against the old environment.
+        IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_region_tree(
+            rewriter->fact_table, rewriter->module, loom_op_regions(op)[i],
+            op));
+        IREE_RETURN_IF_ERROR(loom_rewriter_record_subtree(rewriter, op));
+      }
+    }
+  }
   IREE_RETURN_IF_ERROR(
       loom_rewriter_add_result_users_to_worklist(rewriter, op));
   IREE_RETURN_IF_ERROR(loom_rewriter_add_summary_ops_to_worklist(rewriter, op));

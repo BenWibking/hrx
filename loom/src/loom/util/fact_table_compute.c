@@ -1275,7 +1275,7 @@ iree_status_t loom_value_fact_table_compute_op(loom_value_fact_table_t* table,
   return loom_value_fact_table_compute_op_and_report(table, module, op, NULL);
 }
 
-iree_status_t loom_value_fact_table_compute_op_and_report(
+static iree_status_t loom_value_fact_table_compute_scoped_op(
     loom_value_fact_table_t* table, const loom_module_t* module,
     const loom_op_t* op, bool* out_changed) {
   if (out_changed) {
@@ -1365,9 +1365,31 @@ iree_status_t loom_value_fact_table_compute_op_and_report(
                                                  out_changed);
 }
 
+iree_status_t loom_value_fact_table_compute_op_and_report(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_op_t* op, bool* out_changed) {
+  IREE_RETURN_IF_ERROR(
+      loom_value_fact_table_seed_nested_target_scopes(table, module, op));
+  if (!table->regions.has_independent_targets) {
+    return loom_value_fact_table_compute_scoped_op(table, module, op,
+                                                   out_changed);
+  }
+  const loom_target_facts_t* parent_target = table->context.target_facts;
+  table->context.target_facts =
+      loom_value_fact_table_block_target_facts(table, op->parent_block);
+  iree_status_t status =
+      loom_value_fact_table_compute_scoped_op(table, module, op, out_changed);
+  table->context.target_facts = parent_target;
+  return status;
+}
+
 iree_status_t loom_value_fact_table_compute_region(
     loom_value_fact_table_t* table, const loom_module_t* module,
     loom_func_like_t function, loom_region_t* region, loom_op_t* parent_op) {
+  if (region) {
+    IREE_RETURN_IF_ERROR(loom_value_fact_table_seed_root_target_scope(
+        table, module, region, parent_op));
+  }
   table->context.function = function;
   table->context.reference_origin = (loom_value_fact_reference_origin_t){0};
   if (loom_func_like_isa(function) && parent_op == function.op) {

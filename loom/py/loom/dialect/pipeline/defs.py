@@ -341,6 +341,7 @@ pipeline_strand = Op(
             "body",
             doc="One complete strand instance, with lexical captures.",
             terminator="pipeline.end",
+            execution_target="target",
         ),
     ],
     traits=[

@@ -143,9 +143,26 @@ iree_status_t loom_greedy_rewrite_run_region(
       if (!callbacks || !callbacks->rewrite_op) {
         continue;
       }
+      // Patterns and any operations they create use the current region's
+      // target. Optional math choices require that target's own policy.
+      driver->rewriter.math_policy = options ? options->math_policy : NULL;
+      const loom_target_facts_t* enclosing_target =
+          driver->fact_table ? driver->fact_table->context.target_facts : NULL;
+      if (driver->fact_table &&
+          driver->fact_table->regions.has_independent_targets) {
+        driver->fact_table->context.target_facts =
+            loom_value_fact_table_block_target_facts(driver->fact_table,
+                                                     op->parent_block);
+        if (driver->fact_table->context.target_facts != enclosing_target) {
+          driver->rewriter.math_policy = NULL;
+        }
+      }
       bool changed = false;
       status = callbacks->rewrite_op(callbacks->user_data, driver, op, &result,
                                      &changed);
+      if (driver->fact_table) {
+        driver->fact_table->context.target_facts = enclosing_target;
+      }
       if (!iree_status_is_ok(status)) {
         break;
       }

@@ -1092,6 +1092,10 @@ class RegionDef:
         allows recurrence without reentering the owner; EXIT never continues
         after the owner. LoopLike supplies REPEATED for its regions and does
         not permit an override. Other regions default to ONCE.
+    execution_target: Optional target-symbol attribute selecting an independent
+        execution environment for this region. An absent attribute leaves that
+        environment unresolved; it does not inherit the surrounding execution
+        target. Regions without this contract execute in their parent's context.
     """
 
     name: str
@@ -1106,6 +1110,7 @@ class RegionDef:
     arg_uniform_scope: str | None = None
     command_effects_only: bool = False
     execution: RegionExecution | None = None
+    execution_target: str | None = None
 
 
 # ============================================================================

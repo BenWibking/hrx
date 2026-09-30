@@ -16,6 +16,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
+#include "loom/analysis/symbol_facts.h"
 #include "loom/ir/ir.h"
 #include "loom/pass/types.h"
 #include "loom/util/fact_table.h"
@@ -163,6 +164,9 @@ struct loom_pass_value_fact_owner_t {
   const loom_module_t* module;
   // Reusable value-id-addressed fact table.
   loom_value_fact_table_t table;
+  // Authored execution targets projected lazily for independent regions.
+  // Entries share the current value-fact scope's transient arena and lifetime.
+  loom_symbol_fact_table_t target_symbols;
   // Active populated fact scope, or NONE when table entries are not valid.
   loom_pass_value_fact_scope_t active_scope;
   // Owner state flags.

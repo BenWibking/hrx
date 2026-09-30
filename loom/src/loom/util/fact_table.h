@@ -141,6 +141,18 @@ struct loom_fact_context_t {
   // domains access family-owned data through their checked fact cast.
   const loom_target_facts_t* target_facts;
 
+  // Resolves an authored region target through its owner's symbol-fact cache.
+  // The returned immutable facts outlive this populated scope. Missing target
+  // definitions or an absent resolver leave the independent region unbound.
+  struct {
+    // Owner of the symbol-fact projection cache.
+    void* user_data;
+    // Projects a verified target reference; only allocation may fail.
+    iree_status_t (*fn)(void* user_data, const loom_module_t* module,
+                        loom_symbol_ref_t target,
+                        const loom_target_facts_t** out_facts);
+  } resolve_region_target;
+
   // Optional type-domain resolver installed by layers that own registered type
   // descriptors. The fact table itself intentionally does not depend on the
   // generated type registry; callers that can map |type| to a descriptor can
@@ -215,6 +227,9 @@ struct loom_value_fact_table_t {
     iree_host_size_t count;
     // Number of published CFG snapshots, used to skip CFG-only rewrite work.
     iree_host_size_t cfg_count;
+    // True after encountering an independent execution target. Ordinary
+    // function inference bypasses per-operation region target lookup.
+    bool has_independent_targets;
     // Intrusive list of all entries for bucket-table rehashing.
     loom_value_fact_region_entry_t* entries;
   } regions;
@@ -472,6 +487,25 @@ loom_value_facts_t loom_value_fact_table_block_temporal_scope(
 // Consumes retained enclosing repetition and the block's own CFG component.
 // Missing context cannot prove single execution and returns true.
 bool loom_value_fact_table_block_may_repeat(
+    const loom_value_fact_table_t* table, const loom_block_t* block);
+
+// Publishes the root context before a region solve. The caller supplies the
+// enclosing target through context.target_facts; an independent target on
+// |parent_op|'s region descriptor takes precedence.
+iree_status_t loom_value_fact_table_seed_root_target_scope(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_region_t* region, const loom_op_t* parent_op);
+
+// Resolves direct child region targets once at their owning operation. Ordinary
+// structured regions inherit the operation's retained context; independently
+// executing regions use their own authored target, or remain unresolved.
+iree_status_t loom_value_fact_table_seed_nested_target_scopes(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_op_t* op);
+
+// Returns the retained execution target of |block|. This lookup never walks
+// ancestors. Unregistered blocks in a mixed-target solve have no target facts.
+const loom_target_facts_t* loom_value_fact_table_block_target_facts(
     const loom_value_fact_table_t* table, const loom_block_t* block);
 
 // Publishes condition facts and their SSA mapping onto |region| arguments. The

@@ -10,6 +10,7 @@
 
 #include "loom/analysis/conditioned_value_facts.h"
 #include "loom/ops/op_defs.h"
+#include "loom/ops/target/facts.h"
 #include "loom/ops/type_registry.h"
 
 static bool loom_pass_value_fact_scope_equal(loom_pass_value_fact_scope_t lhs,
@@ -81,7 +82,22 @@ static void loom_pass_value_fact_owner_clear_scope(
   loom_pass_value_fact_owner_record_scope_clear(owner);
   loom_value_fact_table_clear_scope(&owner->table);
   iree_arena_reset(&owner->transient_arena);
+  loom_symbol_fact_table_initialize(&owner->target_symbols,
+                                    &owner->transient_arena);
   owner->active_scope = loom_pass_value_fact_scope_none();
+}
+
+static iree_status_t loom_pass_value_fact_resolve_region_target(
+    void* user_data, const loom_module_t* module, loom_symbol_ref_t target,
+    const loom_target_facts_t** out_facts) {
+  loom_pass_value_fact_owner_t* owner = user_data;
+  const loom_symbol_facts_base_t* base_facts = NULL;
+  IREE_RETURN_IF_ERROR(loom_symbol_fact_table_lookup_ref(
+      &owner->target_symbols, module, target, &base_facts));
+  const loom_target_symbol_facts_t* facts =
+      loom_target_symbol_facts_cast(base_facts);
+  *out_facts = facts ? facts->projection : NULL;
+  return iree_ok_status();
 }
 
 static iree_status_t loom_pass_value_fact_owner_ensure_table(
@@ -104,6 +120,11 @@ static iree_status_t loom_pass_value_fact_owner_ensure_table(
       &owner->table, &owner->storage_arena, &owner->transient_arena,
       loom_value_table_capacity(&module->values)));
   loom_type_registry_configure_fact_context(&owner->table.context);
+  loom_symbol_fact_table_initialize(&owner->target_symbols,
+                                    &owner->transient_arena);
+  owner->table.context.resolve_region_target.fn =
+      loom_pass_value_fact_resolve_region_target;
+  owner->table.context.resolve_region_target.user_data = owner;
   owner->flags |= LOOM_PASS_VALUE_FACT_OWNER_FLAG_TABLE_INITIALIZED;
   return iree_ok_status();
 }

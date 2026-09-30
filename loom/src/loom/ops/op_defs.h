@@ -724,10 +724,14 @@ typedef struct loom_region_descriptor_t {
   // Recurrence and continuation contract supplied by the region declaration
   // or its owning control-flow interface.
   loom_region_execution_t execution;
+  // Target-symbol attribute index plus one for an independently executing
+  // region. Zero inherits the surrounding execution context. An absent target
+  // attribute starts an unresolved context until worker binding selects it.
+  uint8_t execution_target_attr_index_plus_one;
 } loom_region_descriptor_t;
 
-static_assert(sizeof(loom_region_descriptor_t) == 6,
-              "loom_region_descriptor_t must be 6 bytes");
+static_assert(sizeof(loom_region_descriptor_t) == 8,
+              "loom_region_descriptor_t must be 8 bytes");
 
 // Matches a materialized terminator against a region's declared kinds. Whether
 // authored or synthesized, an implicit terminator obeys the same yield tuple

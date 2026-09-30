@@ -36,6 +36,8 @@ struct loom_value_fact_region_entry_t {
   uint8_t branch_truth;
   // Whether enclosing control may execute this region repeatedly.
   bool may_repeat;
+  // Immutable target selected for operations executing in this region.
+  const loom_target_facts_t* target_facts;
   // CFG and forwarding components retained for the populated fact scope.
   const loom_value_fact_cfg_region_t* structure;
   // Condition-loop equation retained for the populated fact scope, when
@@ -409,6 +411,7 @@ void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
   table->regions.bucket_count = 0;
   table->regions.count = 0;
   table->regions.cfg_count = 0;
+  table->regions.has_independent_targets = false;
   table->regions.entries = NULL;
   table->uniform_element_origins.touched_count = 0;
   table->static_lane_origins.touched_count = 0;
@@ -568,6 +571,85 @@ iree_status_t loom_value_fact_table_set_region_temporal_scope(
   entry->temporal_distribution =
       scope.flags & LOOM_VALUE_FACT_DISTRIBUTION_MASK;
   entry->may_repeat = may_repeat;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_value_fact_table_set_region_target_scope(
+    loom_value_fact_table_t* table, const loom_region_t* region,
+    const loom_target_facts_t* target_facts) {
+  loom_value_fact_region_entry_t* entry = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_value_fact_table_ensure_region_entry(table, region, &entry));
+  entry->target_facts = target_facts;
+  return iree_ok_status();
+}
+
+const loom_target_facts_t* loom_value_fact_table_block_target_facts(
+    const loom_value_fact_table_t* table, const loom_block_t* block) {
+  if (!table->regions.has_independent_targets) {
+    return table->context.target_facts;
+  }
+  const loom_value_fact_region_entry_t* entry =
+      block && block->parent_region ? loom_value_fact_table_lookup_region_entry(
+                                          table, block->parent_region)
+                                    : NULL;
+  return entry ? entry->target_facts : NULL;
+}
+
+static iree_status_t loom_value_fact_table_seed_region_target(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_op_t* op, uint8_t region_index,
+    const loom_target_facts_t* inherited) {
+  const loom_region_descriptor_t* descriptor = loom_op_vtable_region_descriptor(
+      loom_op_vtable(module, op), region_index);
+  const loom_target_facts_t* target_facts = inherited;
+  if (descriptor && descriptor->execution_target_attr_index_plus_one) {
+    table->regions.has_independent_targets = true;
+    target_facts = NULL;
+    const loom_attribute_t target = loom_op_const_attrs(
+        op)[descriptor->execution_target_attr_index_plus_one - 1];
+    if (!loom_attr_is_absent(target) &&
+        table->context.resolve_region_target.fn) {
+      IREE_RETURN_IF_ERROR(table->context.resolve_region_target.fn(
+          table->context.resolve_region_target.user_data, module,
+          loom_attr_as_symbol(target), &target_facts));
+    }
+  }
+  return loom_value_fact_table_set_region_target_scope(
+      table, loom_op_regions(op)[region_index], target_facts);
+}
+
+iree_status_t loom_value_fact_table_seed_root_target_scope(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_region_t* region, const loom_op_t* parent_op) {
+  if (parent_op) {
+    for (uint8_t i = 0; i < parent_op->region_count; ++i) {
+      if (loom_op_regions(parent_op)[i] == region) {
+        return loom_value_fact_table_seed_region_target(
+            table, module, parent_op, i, table->context.target_facts);
+      }
+    }
+  }
+  return loom_value_fact_table_set_region_target_scope(
+      table, region, table->context.target_facts);
+}
+
+iree_status_t loom_value_fact_table_seed_nested_target_scopes(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_op_t* op) {
+  if (!op->region_count) {
+    return iree_ok_status();
+  }
+  const loom_target_facts_t* inherited =
+      loom_value_fact_table_block_target_facts(table, op->parent_block);
+  loom_region_t* const* regions = loom_op_regions(op);
+  for (uint8_t i = 0; i < op->region_count; ++i) {
+    if (!regions[i]) {
+      continue;
+    }
+    IREE_RETURN_IF_ERROR(loom_value_fact_table_seed_region_target(
+        table, module, op, i, inherited));
+  }
   return iree_ok_status();
 }
 
