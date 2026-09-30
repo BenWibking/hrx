@@ -44,6 +44,14 @@ static iree_status_t CaptureCapacity(
   return iree_ok_status();
 }
 
+static iree_status_t CapturePlacementRejection(
+    void* user_data, const loom_diagnostic_emission_t* emission) {
+  auto* count = static_cast<uint32_t*>(user_data);
+  EXPECT_EQ(emission->error, LOOM_ERR_LOWERING_066);
+  ++*count;
+  return iree_ok_status();
+}
+
 TEST(PipelineResourcesTest, CapacityIncludesFixedAndCompiledReservations) {
   iree_arena_block_pool_t blocks;
   iree_arena_block_pool_initialize(4096, iree_allocator_system(), &blocks);
@@ -242,8 +250,8 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
   loom_pipeline_resources_t resources;
   bool valid = false;
   IREE_ASSERT_OK(loom_pipeline_resources_build(module_, function, &facts, pools,
-                                               1, bindings, 1, {}, &arena_,
-                                               &resources, &valid));
+                                               1, nullptr, 0, bindings, 1, {},
+                                               &arena_, &resources, &valid));
   ASSERT_TRUE(valid);
   ASSERT_EQ(resources.allocation_count, 1u);
   ASSERT_EQ(resources.channel_count, 2u);
@@ -269,6 +277,98 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
                                               &offset));
     EXPECT_EQ(offset, 64);
   }
+}
+
+TEST_F(PipelineConstructionTest, MemorySelectionsShareBackingNotAllocations) {
+  loom_op_t* pipeline;
+  const auto pool_type = loom_type_pool();
+  IREE_ASSERT_OK(loom_pipeline_def_build(
+      &builder_, LOOM_PIPELINE_DEF_BUILD_FLAG_HAS_SCOPE,
+      LOOM_PIPELINE_DEF_SCOPE_KERNEL, 0, 0, loom_symbol_ref_null(),
+      Symbol("pipeline"), &pool_type, 1, nullptr, 0, nullptr, 0,
+      LOOM_LOCATION_UNKNOWN, &pipeline));
+  auto* body = loom_pipeline_def_body(pipeline);
+  const auto incoming_pool = loom_region_entry_block(body)->arg_ids[0];
+  loom_builder_enter_region(&builder_, pipeline, body);
+  const auto column = Constant(1, LOOM_SCALAR_TYPE_INDEX);
+  const auto length = Constant(48, LOOM_SCALAR_TYPE_OFFSET);
+  loom_value_id_t selected_pools[4];
+  loom_value_id_t roots[4];
+  for (size_t i = 0; i < 4; ++i) {
+    // Two identical queries, an aliasing selection, and a different backing.
+    const int64_t coordinates[] = {INT64_MIN, int64_t(i < 2 ? 2 : i + 1)};
+    loom_op_t* memory;
+    IREE_ASSERT_OK(loom_pipeline_memory_build(
+        &builder_, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, &column, 1,
+        coordinates, 2, pool_type, LOOM_LOCATION_UNKNOWN, &memory));
+    selected_pools[i] = loom_pipeline_memory_result(memory);
+    loom_op_t* allocation;
+    IREE_ASSERT_OK(loom_buffer_alloca_build(
+        &builder_, LOOM_BUFFER_ALLOCA_BUILD_FLAG_HAS_POOL,
+        LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, selected_pools[i], 64, length,
+        loom_type_buffer(), LOOM_LOCATION_UNKNOWN, &allocation));
+    roots[i] = loom_buffer_alloca_result(allocation);
+  }
+  loom_op_t* terminator;
+  IREE_ASSERT_OK(loom_pipeline_finish_build(&builder_, LOOM_LOCATION_UNKNOWN,
+                                            &terminator));
+
+  loom_value_fact_table_t facts = {};
+  IREE_ASSERT_OK(
+      loom_value_fact_table_initialize(&facts, &arena_, module_->values.count));
+  loom_type_registry_configure_fact_context(&facts.context);
+  const auto function = loom_func_like_cast(module_, pipeline);
+  IREE_ASSERT_OK(loom_value_fact_table_compute(&facts, module_, function));
+  const loom_pipeline_resource_pool_t pools[] = {
+      {LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, 256, nullptr, 0},
+      {LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP, 256, nullptr, 0},
+  };
+  const uint64_t coordinates[][2] = {{1, 2}, {1, 3}, {1, 4}};
+  const loom_pipeline_resource_memory_t memories[] = {
+      {coordinates[0], 2, 1},
+      {coordinates[1], 2, 1},
+      {coordinates[2], 2, 0},
+  };
+  const loom_pipeline_resource_pool_binding_t bindings[] = {{incoming_pool, 1}};
+  loom_pipeline_resources_t resources;
+  bool valid = false;
+  IREE_ASSERT_OK(loom_pipeline_resources_build(
+      module_, function, &facts, pools, IREE_ARRAYSIZE(pools), memories,
+      IREE_ARRAYSIZE(memories), bindings, IREE_ARRAYSIZE(bindings), {}, &arena_,
+      &resources, &valid));
+  ASSERT_TRUE(valid);
+  ASSERT_EQ(resources.allocation_count, 4u);
+  ASSERT_EQ(resources.pool_binding_count, 5u);
+  const auto* incoming =
+      loom_pipeline_resources_lookup_pool(&resources, incoming_pool);
+  ASSERT_NE(incoming, nullptr);
+  EXPECT_EQ(incoming->pool_index, 1u);
+  for (size_t i = 0; i < 4; ++i) {
+    const auto* selection =
+        loom_pipeline_resources_lookup_pool(&resources, selected_pools[i]);
+    ASSERT_NE(selection, nullptr);
+    EXPECT_EQ(selection->pool_index, i == 3 ? 0u : 1u);
+    const auto* allocation =
+        loom_pipeline_resources_lookup_allocation(&resources, roots[i]);
+    ASSERT_NE(allocation, nullptr);
+    EXPECT_EQ(allocation->pool_index, selection->pool_index);
+    EXPECT_EQ(allocation->byte_offset, i == 3 ? 0u : i * 64u);
+    EXPECT_EQ(allocation->byte_length, 48u);
+  }
+
+  // Another admitted invocation need not expose the fourth selection. A miss
+  // must reject construction instead of substituting its first local pool or
+  // publishing the allocations accumulated before the unsupported query.
+  uint32_t rejection_count = 0;
+  IREE_ASSERT_OK(loom_pipeline_resources_build(
+      module_, function, &facts, pools, IREE_ARRAYSIZE(pools), memories, 2,
+      bindings, IREE_ARRAYSIZE(bindings),
+      {CapturePlacementRejection, &rejection_count}, &arena_, &resources,
+      &valid));
+  EXPECT_FALSE(valid);
+  EXPECT_EQ(rejection_count, 1u);
+  EXPECT_EQ(resources.allocation_count, 0u);
+  EXPECT_EQ(resources.pool_binding_count, 0u);
 }
 
 }  // namespace

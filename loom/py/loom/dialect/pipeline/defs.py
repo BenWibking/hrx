@@ -36,6 +36,7 @@ from loom.assembly import (
 )
 from loom.dialect.combining import CombiningKind
 from loom.dialect.func.defs import Retain, Visibility
+from loom.dialect.memory import MemorySpace
 from loom.dialect.scalar import FastMathFlags
 from loom.dsl import (
     ANY,
@@ -45,6 +46,7 @@ from loom.dsl import (
     ATTR_TYPE_I64_ARRAY,
     INDEX,
     ISOLATED_FROM_ABOVE,
+    POOL,
     PURE,
     SYMBOL_DEFINE,
     TERMINATOR,
@@ -60,6 +62,7 @@ from loom.dsl import (
     HasAncestor,
     HasParent,
     ImplicitTerminator,
+    NoAncestor,
     Op,
     Operand,
     OpPhase,
@@ -201,6 +204,42 @@ pipeline_def = Op(
 )
 
 _PIPELINE_GRAPH_TRAITS = [HasAncestor("pipeline.def")]
+
+pipeline_memory = Op(
+    "pipeline.memory",
+    group=pipeline_ops,
+    doc=(
+        "Select a borrowed memory pool at worker coordinates in the enclosing "
+        "kernel pipeline invocation. Coordinates use the strand worker domain; "
+        "the invocation supplies the execution instance, not the target symbol. "
+        "Repeated selections of the same memory identify the same pool. The "
+        "query neither allocates storage nor synchronizes access: buffer.alloca "
+        "creates fresh allocation roots and channel operations govern record "
+        "ownership. Each accessing worker must have a legal mapping to the "
+        "selected backing. The pool remains valid for the invocation and may "
+        "be passed to generic construction helpers. Selection belongs to "
+        "construction outside strand bodies, within an explicit kernel scope."
+    ),
+    operands=[Operand("coordinates", INDEX, variadic=True)],
+    results=[Result("result", POOL, doc="Borrowed invocation-local memory pool.")],
+    attrs=[
+        AttrDef("memory_space", ATTR_TYPE_ENUM, enum_def=MemorySpace),
+        AttrDef(
+            "static_coordinates",
+            ATTR_TYPE_I64_ARRAY,
+            doc="Worker coordinates; INT64_MIN entries refer to dynamic coordinates.",
+        ),
+    ],
+    traits=[PURE, *_PIPELINE_GRAPH_TRAITS, NoAncestor("pipeline.strand")],
+    verify="loom_pipeline_memory_verify",
+    format=[
+        TemplateParam("memory_space"),
+        IndexList("coordinates", "static_coordinates"),
+        COLON,
+        ResultType("result"),
+    ],
+    examples=["%memory = pipeline.memory<workgroup>[%column, 3] : pool"],
+)
 
 pipeline_compose = Op(
     "pipeline.compose",
@@ -605,4 +644,5 @@ ALL_PIPELINE_OPS: tuple[Op, ...] = (
     pipeline_strand,
     pipeline_end,
     pipeline_compose,
+    pipeline_memory,
 )

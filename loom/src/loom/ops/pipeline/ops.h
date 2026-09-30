@@ -13,6 +13,7 @@
 #define LOOM_OPS_PIPELINE_OPS_H_
 
 #include "loom/ops/op_defs.h"
+#include "loom/ir/facts.h"
 #include "loom/ops/combining.h"
 
 #ifdef __cplusplus
@@ -32,7 +33,8 @@ enum {
   LOOM_OP_PIPELINE_STRAND = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 9),
   LOOM_OP_PIPELINE_END = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 10),
   LOOM_OP_PIPELINE_COMPOSE = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 11),
-  LOOM_OP_PIPELINE_COUNT_ = 12,
+  LOOM_OP_PIPELINE_MEMORY = LOOM_OP_KIND(LOOM_DIALECT_PIPELINE, 12),
+  LOOM_OP_PIPELINE_COUNT_ = 13,
 };
 
 // IEEE 754 fast-math relaxation flags for float operations.
@@ -309,6 +311,27 @@ iree_status_t loom_pipeline_compose_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_pipeline_compose_verify(
+    const loom_module_t* module, const loom_op_t* op,
+    iree_diagnostic_emitter_t emitter);
+
+// LOOM_OP_PIPELINE_MEMORY: Select a borrowed memory pool at worker coordinates in the enclosing kernel pipeline invocation. Coordinates use the strand worker domain; the invocation supplies the execution instance, not the target symbol. Repeated selections of the same memory identify the same pool. The query neither allocates storage nor synchronizes access: buffer.alloca creates fresh allocation roots and channel operations govern record ownership. Each accessing worker must have a legal mapping to the selected backing. The pool remains valid for the invocation and may be passed to generic construction helpers. Selection belongs to construction outside strand bodies, within an explicit kernel scope.
+// %memory = pipeline.memory<workgroup>[%column, 3] : pool
+LOOM_DEFINE_ISA(loom_pipeline_memory_isa, LOOM_OP_PIPELINE_MEMORY)
+LOOM_DEFINE_VARIADIC_OPERANDS(loom_pipeline_memory_coordinates, 0)
+LOOM_DEFINE_RESULT(loom_pipeline_memory_result, 0)
+LOOM_DEFINE_ATTR_ENUM_TYPED(loom_pipeline_memory_memory_space, 0, loom_value_fact_memory_space_t)
+LOOM_DEFINE_ATTR_I64_ARRAY(loom_pipeline_memory_static_coordinates, 1)
+iree_status_t loom_pipeline_memory_build(
+    loom_builder_t* builder,
+    loom_value_fact_memory_space_t memory_space,
+    const loom_value_id_t* coordinates,
+    iree_host_size_t coordinates_count,
+    const int64_t* static_coordinates,
+    iree_host_size_t static_coordinates_count,
+    loom_type_t result_type,
+    loom_location_id_t location,
+    loom_op_t** out_op);
+iree_status_t loom_pipeline_memory_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
 

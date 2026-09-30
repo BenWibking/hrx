@@ -7,6 +7,7 @@
 #include "loom/analysis/pipeline_resources.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "loom/error/error_catalog.h"
 #include "loom/ops/buffer/ops.h"
@@ -45,10 +46,72 @@ static int loom_pipeline_resources_compare_channel(const void* lhs,
   return (lhs_id > rhs_id) - (lhs_id < rhs_id);
 }
 
+static int loom_pipeline_resources_compare_pool(const void* lhs,
+                                                const void* rhs) {
+  const loom_value_id_t lhs_id =
+      ((const loom_pipeline_resource_pool_binding_t*)lhs)->value_id;
+  const loom_value_id_t rhs_id =
+      ((const loom_pipeline_resource_pool_binding_t*)rhs)->value_id;
+  return (lhs_id > rhs_id) - (lhs_id < rhs_id);
+}
+
+static iree_status_t loom_pipeline_resources_select_memory(
+    const loom_op_t* op, const loom_value_fact_table_t* facts,
+    const loom_pipeline_resource_pool_t* pools,
+    const loom_pipeline_resource_memory_t* memories,
+    iree_host_size_t memory_count, iree_diagnostic_emitter_t diagnostic_emitter,
+    iree_arena_allocator_t* arena, uint32_t* out_pool_index) {
+  *out_pool_index = UINT32_MAX;
+  const loom_attribute_t static_coordinates =
+      loom_pipeline_memory_static_coordinates(op);
+  const loom_value_slice_t dynamic_coordinates =
+      loom_pipeline_memory_coordinates(op);
+  uint64_t* coordinates = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(arena, static_coordinates.count,
+                                sizeof(*coordinates), (void**)&coordinates));
+  uint16_t dynamic_index = 0;
+  for (uint32_t i = 0; i < static_coordinates.count; ++i) {
+    int64_t coordinate = static_coordinates.i64_array[i];
+    if (coordinate == INT64_MIN &&
+        !loom_value_facts_as_exact_i64(
+            loom_value_fact_table_lookup(
+                facts, dynamic_coordinates.values[dynamic_index++]),
+            &coordinate)) {
+      return loom_pipeline_resources_reject(
+          op, IREE_SV("specialized memory-selection coordinates"),
+          diagnostic_emitter);
+    }
+    if (coordinate < 0) {
+      return loom_pipeline_resources_reject(
+          op, IREE_SV("nonnegative memory-selection coordinates"),
+          diagnostic_emitter);
+    }
+    coordinates[i] = (uint64_t)coordinate;
+  }
+  const loom_value_fact_memory_space_t memory_space =
+      loom_pipeline_memory_memory_space(op);
+  for (iree_host_size_t i = 0; i < memory_count; ++i) {
+    const loom_pipeline_resource_memory_t* memory = &memories[i];
+    if (memory->rank == static_coordinates.count &&
+        pools[memory->pool_index].memory_space == memory_space &&
+        memcmp(memory->coordinates, coordinates,
+               memory->rank * sizeof(*coordinates)) == 0) {
+      *out_pool_index = memory->pool_index;
+      return iree_ok_status();
+    }
+  }
+  return loom_pipeline_resources_reject(
+      op, IREE_SV("memory at the selected coordinates in this invocation"),
+      diagnostic_emitter);
+}
+
 iree_status_t loom_pipeline_resources_build(
     loom_module_t* module, loom_func_like_t pipeline,
     const loom_value_fact_table_t* facts,
     const loom_pipeline_resource_pool_t* pools, iree_host_size_t pool_count,
+    const loom_pipeline_resource_memory_t* memories,
+    iree_host_size_t memory_count,
     const loom_pipeline_resource_pool_binding_t* bindings,
     iree_host_size_t binding_count,
     iree_diagnostic_emitter_t diagnostic_emitter, iree_arena_allocator_t* arena,
@@ -83,8 +146,38 @@ iree_status_t loom_pipeline_resources_build(
   iree_host_size_t channel_capacity = 0;
   loom_pipeline_resource_strand_t* strands = NULL;
   iree_host_size_t strand_capacity = 0;
+  loom_pipeline_resource_pool_binding_t* pool_bindings = NULL;
+  iree_host_size_t pool_binding_capacity = 0;
+  if (binding_count) {
+    IREE_RETURN_IF_ERROR(
+        iree_arena_grow_array(arena, 0, binding_count, sizeof(*pool_bindings),
+                              &pool_binding_capacity, (void**)&pool_bindings));
+    memcpy(pool_bindings, bindings, binding_count * sizeof(*pool_bindings));
+    resources.pool_binding_count = binding_count;
+  }
   const loom_block_t* entry = loom_region_const_entry_block(body);
   for (loom_op_t* op = entry->first_op; op; op = op->next_op) {
+    if (loom_pipeline_memory_isa(op)) {
+      uint32_t pool_index = UINT32_MAX;
+      IREE_RETURN_IF_ERROR(loom_pipeline_resources_select_memory(
+          op, facts, pools, memories, memory_count, diagnostic_emitter, arena,
+          &pool_index));
+      if (pool_index == UINT32_MAX) {
+        return iree_ok_status();
+      }
+      if (resources.pool_binding_count == pool_binding_capacity) {
+        IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+            arena, resources.pool_binding_count,
+            resources.pool_binding_count + 1, sizeof(*pool_bindings),
+            &pool_binding_capacity, (void**)&pool_bindings));
+      }
+      pool_bindings[resources.pool_binding_count++] =
+          (loom_pipeline_resource_pool_binding_t){
+              .value_id = loom_pipeline_memory_result(op),
+              .pool_index = pool_index,
+          };
+      continue;
+    }
     if (loom_pipeline_strand_isa(op)) {
       const loom_region_t* strand_body = loom_pipeline_strand_body(op);
       loom_op_t* call = loom_region_const_entry_block(strand_body)->first_op;
@@ -163,17 +256,17 @@ iree_status_t loom_pipeline_resources_build(
 
     const loom_value_id_t pool_value_id = loom_buffer_alloca_pool(op);
     iree_host_size_t binding = 0;
-    for (; binding < binding_count; ++binding) {
-      if (bindings[binding].value_id == pool_value_id) {
+    for (; binding < resources.pool_binding_count; ++binding) {
+      if (pool_bindings[binding].value_id == pool_value_id) {
         break;
       }
     }
-    if (binding == binding_count) {
+    if (binding == resources.pool_binding_count) {
       return loom_pipeline_resources_reject(
           op, IREE_SV("an explicit admitted binding for the allocation pool"),
           diagnostic_emitter);
     }
-    const uint32_t pool_index = bindings[binding].pool_index;
+    const uint32_t pool_index = pool_bindings[binding].pool_index;
     if (loom_buffer_alloca_memory_space(op) != pools[pool_index].memory_space) {
       return loom_pipeline_resources_reject(
           op, IREE_SV("an allocation memory space matching its selected pool"),
@@ -220,9 +313,35 @@ iree_status_t loom_pipeline_resources_build(
   }
   resources.channels = channels;
   resources.strands = strands;
+  if (resources.pool_binding_count > 1) {
+    qsort(pool_bindings, resources.pool_binding_count, sizeof(*pool_bindings),
+          loom_pipeline_resources_compare_pool);
+  }
+  resources.pool_bindings = pool_bindings;
   *out_resources = resources;
   *out_valid = true;
   return iree_ok_status();
+}
+
+const loom_pipeline_resource_pool_binding_t*
+loom_pipeline_resources_lookup_pool(const loom_pipeline_resources_t* resources,
+                                    loom_value_id_t value_id) {
+  iree_host_size_t begin = 0;
+  iree_host_size_t end = resources->pool_binding_count;
+  while (begin < end) {
+    const iree_host_size_t middle = begin + (end - begin) / 2;
+    const loom_pipeline_resource_pool_binding_t* binding =
+        &resources->pool_bindings[middle];
+    if (binding->value_id == value_id) {
+      return binding;
+    }
+    if (binding->value_id < value_id) {
+      begin = middle + 1;
+    } else {
+      end = middle;
+    }
+  }
+  return NULL;
 }
 
 const loom_pipeline_resource_channel_t* loom_pipeline_resources_lookup_channel(

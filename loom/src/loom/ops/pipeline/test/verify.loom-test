@@ -1,5 +1,48 @@
 // RUN: verify
 
+pipeline.def<kernel> @select_memory(%column: index) run() {
+  %memory = pipeline.memory<workgroup>[%column, 3] : pool
+}
+
+// ====
+
+pipeline.def @ambiguous_memory(%column: index) run() {
+  // ERROR@+1: STRUCTURE/029 "pipeline.def<kernel>"
+  %memory = pipeline.memory<workgroup>[%column, 3] : pool
+}
+
+// ====
+
+pipeline.def<command> @command_memory() run() {
+  // ERROR@+1: STRUCTURE/029 "pipeline.def<kernel>"
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+}
+
+// ====
+
+pipeline.def<kernel> @negative_memory_coordinate() run() {
+  // ERROR@+1: STRUCTURE/014 "coordinates" "-1"
+  %memory = pipeline.memory<workgroup>[0, -1] : pool
+}
+
+// ====
+
+pipeline.def<kernel> @missing_memory_coordinates() run() {
+  // ERROR@+1: STRUCTURE/014 "worker rank" "0"
+  %memory = pipeline.memory<workgroup>[] : pool
+}
+
+// ====
+
+pipeline.def<kernel> @memory_inside_worker() run() {
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    // ERROR@+1: STRUCTURE/029 "pipeline.strand"
+    %memory = pipeline.memory<workgroup>[0, 2] : pool
+  }
+}
+
+// ====
+
 func.def @copy(%input: buffer, %output: buffer) {
   func.return
 }

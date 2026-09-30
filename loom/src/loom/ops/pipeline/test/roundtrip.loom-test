@@ -68,3 +68,21 @@ pipeline.def @consume(%width: index) run(%input: channel<tile<[%width]xi32>>) {
 pipeline.def @parent(%width: index) run(%input: channel<tile<[%width]xi32>>) {
   pipeline.compose @consume[%width](%input) : [index](channel<tile<[%width]xi32>>)
 }
+
+// ====
+
+// Pool selection belongs to one invocation and uses mixed static/SSA worker
+// coordinates. The allocation and its channel retain independent identities.
+pipeline.def<kernel> @local_storage(%column: index) run() {
+  %memory = pipeline.memory<workgroup>[%column, 3] : pool
+  %bytes = index.constant 128 : offset
+  %buffer = buffer.alloca<workgroup> pool(%memory) align(64) %bytes : buffer
+  %offset = index.constant 0 : offset
+  %slots = buffer.view %buffer[%offset] : buffer -> view<2x16xi32>
+  %capacity = index.constant 2 : index
+  %channel = channel.bind<fifo> %slots, %capacity : view<2x16xi32>, index -> channel<tile<16xi32>>
+  pipeline.strand workers([%column, 2], [1, 1], [1, 1]) {
+    %write, %payload = channel.reserve %channel : channel<tile<16xi32>> -> (write<tile<16xi32>>, view<16xi32>)
+    channel.publish %write : write<tile<16xi32>>
+  }
+}

@@ -6,6 +6,7 @@
 
 #include "loom/error/emitter.h"
 #include "loom/error/error_catalog.h"
+#include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/function_contract_verify.h"
 #include "loom/ops/pipeline/ops.h"
@@ -515,6 +516,42 @@ static iree_status_t loom_pipeline_verify_worker_axis_list(
                                              expected_dynamic_count);
   }
   return iree_ok_status();
+}
+
+iree_status_t loom_pipeline_memory_verify(const loom_module_t* module,
+                                          const loom_op_t* op,
+                                          iree_diagnostic_emitter_t emitter) {
+  const loom_op_t* pipeline = op->parent_op;
+  while (pipeline && !loom_pipeline_def_isa(pipeline)) {
+    pipeline = pipeline->parent_op;
+  }
+  if (!pipeline || !loom_pipeline_def_has_scope(pipeline) ||
+      loom_pipeline_def_scope(pipeline) != LOOM_PIPELINE_DEF_SCOPE_KERNEL) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_string(loom_op_name(module, op)),
+        loom_param_string(IREE_SV("required")),
+        loom_param_string(IREE_SV("pipeline.def<kernel>")),
+        loom_param_string(pipeline
+                              ? IREE_SV("pipeline.def without kernel scope")
+                              : IREE_SV("none")),
+    };
+    return loom_pipeline_emit(emitter, op, LOOM_ERR_STRUCTURE_029, params,
+                              IREE_ARRAYSIZE(params));
+  }
+  const loom_attribute_t coordinates =
+      loom_pipeline_memory_static_coordinates(op);
+  if (coordinates.count == 0) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_string(IREE_SV("worker rank")),
+        loom_param_i64(0),
+        loom_param_string(IREE_SV("at least one worker dimension")),
+    };
+    return loom_pipeline_emit(emitter, op, LOOM_ERR_STRUCTURE_014, params,
+                              IREE_ARRAYSIZE(params));
+  }
+  return loom_pipeline_verify_worker_axis_list(
+      op, emitter, IREE_SV("coordinates"), coordinates,
+      loom_pipeline_memory_coordinates(op).count, coordinates.count, 0);
 }
 
 iree_status_t loom_pipeline_strand_verify(const loom_module_t* module,

@@ -15,11 +15,12 @@
 extern "C" {
 #endif
 
-// One backing store selected by the admitting caller. The caller supplies one
-// row per distinct resource instance, not per target, memory space, coordinate,
-// or source pool value. Several pool values may bind to the same row. Target
-// placement retains its execution binding and owner alongside this table;
-// this analysis neither chooses a device nor interprets physical addresses.
+// One backing store selected by the admitting compiler plan. The plan supplies
+// one row per distinct resource instance, not per target, memory space,
+// coordinate, or source pool value. Several pool values may bind to the same
+// row. Target placement retains its execution binding and owner alongside this
+// table; this analysis neither chooses a device nor interprets physical
+// addresses.
 typedef struct loom_pipeline_resource_pool_t {
   // Addressing scope requested by allocations using this pool.
   loom_value_fact_memory_space_t memory_space;
@@ -31,8 +32,21 @@ typedef struct loom_pipeline_resource_pool_t {
   iree_host_size_t reserved_range_count;
 } loom_pipeline_resource_pool_t;
 
+// One selectable memory in this invocation's worker domain. Several selections
+// may name the same backing row. The execution owner supplies this catalog from
+// its admitted resources; source analysis never interprets target addresses or
+// treats a target profile as a device identity.
+typedef struct loom_pipeline_resource_memory_t {
+  // Borrowed, nonnegative worker coordinates identifying this selection.
+  const uint64_t* coordinates;
+  // Number of worker dimensions in coordinates.
+  iree_host_size_t rank;
+  // Canonical backing row, which also supplies the selected memory space.
+  uint32_t pool_index;
+} loom_pipeline_resource_memory_t;
+
 typedef struct loom_pipeline_resource_pool_binding_t {
-  // Source pool value explicitly resolved by the admitting caller.
+  // Source pool value resolved from an incoming argument or memory selection.
   loom_value_id_t value_id;
   // Canonical backing row in the caller's resource-pool table.
   uint32_t pool_index;
@@ -82,6 +96,10 @@ typedef struct loom_pipeline_resources_t {
   loom_source_storage_packing_t** packings;
   // Number of pools and packings.
   iree_host_size_t pool_count;
+  // Incoming and selected pool identities, sorted by source value for lookup.
+  const loom_pipeline_resource_pool_binding_t* pool_bindings;
+  // Number of retained pool bindings.
+  iree_host_size_t pool_binding_count;
   // Arena-owned source placements, sorted by root identity for indexed lookup.
   const loom_pipeline_resource_allocation_t* allocations;
   // Number of source placements.
@@ -97,8 +115,12 @@ typedef struct loom_pipeline_resources_t {
 } loom_pipeline_resources_t;
 
 // Resolves invocation-owned allocations in a specialized pipeline construction.
-// The caller has composed child construction and supplied canonical pool
-// bindings. This owner visits construction once, consumes retained storage
+// The caller has composed child construction within one execution boundary and
+// supplied canonical backing rows, selectable memories, and incoming pool
+// bindings. Memory selections in construction resolve against that invocation's
+// catalog. Each (memory space, coordinates) selection has one canonical
+// backing; several selections or incoming values may name the same backing.
+// This owner visits construction once, consumes retained storage
 // facts, and retains channel identities and outlined strand calls alongside
 // allocation placements. Every allocation stays live throughout the invocation.
 // Strand-local storage remains with worker compilation and joins the same
@@ -118,10 +140,19 @@ iree_status_t loom_pipeline_resources_build(
     loom_module_t* module, loom_func_like_t pipeline,
     const loom_value_fact_table_t* facts,
     const loom_pipeline_resource_pool_t* pools, iree_host_size_t pool_count,
+    const loom_pipeline_resource_memory_t* memories,
+    iree_host_size_t memory_count,
     const loom_pipeline_resource_pool_binding_t* bindings,
     iree_host_size_t binding_count,
     iree_diagnostic_emitter_t diagnostic_emitter, iree_arena_allocator_t* arena,
     loom_pipeline_resources_t* out_resources, bool* out_valid);
+
+// Returns an incoming or selected pool's retained canonical binding, or NULL
+// when this construction has no binding for the value. Helpers can receive any
+// pool without knowing whether its origin was an argument or memory selection.
+const loom_pipeline_resource_pool_binding_t*
+loom_pipeline_resources_lookup_pool(const loom_pipeline_resources_t* resources,
+                                    loom_value_id_t value_id);
 
 // Returns the retained placement for a source allocation root, or NULL when
 // the root is external to this construction. This is an indexed table lookup;
