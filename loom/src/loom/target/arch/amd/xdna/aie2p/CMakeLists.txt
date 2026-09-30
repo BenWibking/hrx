@@ -951,6 +951,7 @@ loom_check_test_suite(
     "test/source_low/vector_splat.loom-test"
     "test/source_low/vector_structural.loom-test"
     "test/source_low/vector_transpose.loom-test"
+    "test/source_low/view_bitcast.loom-test"
     "test/target_legalize_report.loom-test"
     "test/vector_float_extrema.loom-test"
     "test/vector_insert_packetization.loom-test"

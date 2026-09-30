@@ -694,14 +694,14 @@ static iree_status_t loom_view_region_build_subview(
   return iree_ok_status();
 }
 
-static iree_status_t loom_view_region_build_refine(
+static iree_status_t loom_view_region_build_reinterpret(
     loom_view_region_table_t* table, loom_value_id_t value_id,
-    const loom_op_t* op, loom_type_t view_type,
+    loom_value_id_t source_value_id, loom_type_t view_type,
     loom_value_fact_view_reference_t reference,
     loom_view_region_t* out_region) {
   const loom_view_region_t* source_region = NULL;
-  IREE_RETURN_IF_ERROR(loom_view_region_get_source(
-      table, loom_view_refine_source(op), &source_region));
+  IREE_RETURN_IF_ERROR(
+      loom_view_region_get_source(table, source_value_id, &source_region));
   IREE_RETURN_IF_ERROR(loom_view_region_build_default(
       table, value_id, view_type, reference, out_region));
   if (!source_region) {
@@ -755,9 +755,10 @@ static iree_status_t loom_view_region_build_for_value(
     return loom_view_region_build_subview(table, value_id, defining_op,
                                           view_type, reference, out_region);
   }
-  if (loom_view_refine_isa(defining_op)) {
-    return loom_view_region_build_refine(table, value_id, defining_op,
-                                         view_type, reference, out_region);
+  if (loom_view_refine_isa(defining_op) || loom_view_bitcast_isa(defining_op)) {
+    return loom_view_region_build_reinterpret(
+        table, value_id, loom_op_const_operands(defining_op)[0], view_type,
+        reference, out_region);
   }
   return loom_view_region_build_default(table, value_id, view_type, reference,
                                         out_region);

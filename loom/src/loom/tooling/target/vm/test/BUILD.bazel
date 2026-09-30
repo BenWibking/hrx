@@ -43,6 +43,12 @@ loom_test(
     execution_profiles = [VM_REFERENCE_PROFILE],
 )
 
+loom_test(
+    name = "view_bitcast_test",
+    srcs = ["view_bitcast.loom"],
+    execution_profiles = [VM_REFERENCE_PROFILE],
+)
+
 iree_execution_test_suite(
     name = "tools_test",
     data = [
