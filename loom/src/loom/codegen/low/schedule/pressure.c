@@ -204,7 +204,10 @@ iree_status_t loom_low_schedule_pressure_initialize(
                 state->pressure_cliffs, reg_class_id);
         out_pressure_state
             ->first_actionable_pressure_cliff_indices[reg_class_id] =
-            range.start;
+            range.start +
+            (uint32_t)loom_target_residency_cliff_start_below_tier(
+                &state->pressure_cliffs->cliffs[range.start], range.count,
+                state->options->residency.tier_limit);
       }
     }
     memset(out_pressure_state->candidate_delta_units_by_reg_class, 0,
@@ -307,8 +310,16 @@ iree_status_t loom_low_schedule_pressure_initialize(
            resource_count * sizeof(*out_pressure_state->resources.records));
     for (uint16_t resource_id = 0; resource_id < resource_count;
          ++resource_id) {
+      const loom_target_residency_derived_resource_t* resource =
+          &state->pressure_resources->resources[resource_id];
       out_pressure_state->resources.records[resource_id].next_cliff_index =
-          state->pressure_resources->resources[resource_id].cliff_start;
+          resource->cliff_start;
+      if (resource->cliff_count != 0) {
+        out_pressure_state->resources.records[resource_id].next_cliff_index +=
+            (uint16_t)loom_target_residency_cliff_start_below_tier(
+                &state->pressure_resources->cliffs[resource->cliff_start],
+                resource->cliff_count, state->options->residency.tier_limit);
+      }
     }
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
         state->scratch_arena, resource_count,
@@ -427,7 +438,9 @@ static void loom_low_schedule_advance_resource_cliffs(
       break;
     }
     if (mode == LOOM_LOW_SCHEDULE_RESOURCE_HIGH_WATER_SCHEDULED) {
-      const uint32_t penalty = cliff->tier_before - cliff->tier_after;
+      const uint32_t penalty =
+          iree_min(cliff->tier_before, state->options->residency.tier_limit) -
+          cliff->tier_after;
       record->pressure_cliff_penalty =
           iree_math_saturating_add_u32(record->pressure_cliff_penalty, penalty);
       pressure_state->resources.pressure_cliff_penalty =
@@ -574,7 +587,8 @@ static void loom_low_schedule_nominate_unspillable_completion(
     loom_value_ordinal_t value_ordinal) {
   const loom_low_schedule_value_record_t* value = &state->values[value_ordinal];
   const uint16_t reg_class_id = value->register_class_id;
-  if (!iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_LIVE)) {
+  if (!iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_LIVE) ||
+      iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_FORWARDED)) {
     return;
   }
   const uint16_t completion_domain_id =
@@ -799,7 +813,8 @@ void loom_low_schedule_pressure_initialize_block(
     state->values[ordinal].flags &=
         ~(LOOM_LOW_SCHEDULE_VALUE_FLAG_PRESSURE_TOUCHED |
           LOOM_LOW_SCHEDULE_VALUE_FLAG_LIVE |
-          LOOM_LOW_SCHEDULE_VALUE_FLAG_ACTIVE_PRESSURE_ALIAS);
+          LOOM_LOW_SCHEDULE_VALUE_FLAG_ACTIVE_PRESSURE_ALIAS |
+          LOOM_LOW_SCHEDULE_VALUE_FLAG_FORWARDED);
   }
   pressure_state->block_value_count = 0;
   if (pressure_state->current_live_units_by_reg_class) {
@@ -807,6 +822,8 @@ void loom_low_schedule_pressure_initialize_block(
            state->target.descriptor_set->reg_class_count *
                sizeof(*pressure_state->current_live_units_by_reg_class));
   }
+  loom_low_schedule_storage_lifetimes_set_forwarded_values(
+      state, block_record->block->region_index, true);
 
   const uint32_t block_node_end =
       block_record->node_start + block_record->node_count;
@@ -1658,7 +1675,7 @@ void loom_low_schedule_pressure_score_candidate(
   uint32_t killed_live_value_count = 0;
   uint64_t produced_live_units = 0;
   uint32_t produced_live_value_count = 0;
-  bool is_per_user_rematerialization = false;
+  bool has_per_user_placement = false;
   bool rematerializable_leaf =
       node->descriptor != NULL && node->operand_count == 0 &&
       !iree_any_bit_set(node->traits, LOOM_TRAIT_OBSERVABLE_EFFECT);
@@ -1702,8 +1719,8 @@ void loom_low_schedule_pressure_score_candidate(
   }
   const loom_value_ordinal_t* result_ordinals =
       loom_low_schedule_node_const_result_ordinals(node);
-  const iree_bitmap_t per_user_rematerialized_values =
-      state->options->per_user_rematerialized_values;
+  const iree_bitmap_t per_user_placement_values =
+      state->options->per_user_placement_values;
   for (uint16_t result_index = 0; result_index < node->result_count;
        ++result_index) {
     const loom_low_schedule_value_record_t* value =
@@ -1720,12 +1737,12 @@ void loom_low_schedule_pressure_score_candidate(
     const uint32_t unit_count = value->unit_count - alias_units;
     produced_live_units += unit_count;
     if (unit_count != 0) {
-      // Repair shortened this result's lifetime by placing it next to its
-      // consumer. Keep that placement for input-free clones too; the ready
-      // policy can still advance them to complete live storage groups.
-      is_per_user_rematerialization |=
-          value->value_id < per_user_rematerialized_values.bit_count &&
-          iree_bitmap_test(per_user_rematerialized_values, value->value_id);
+      // Repair retained this result's private consumer placement. Keep that
+      // placement for input-free clones too; the ready policy can still
+      // advance them to complete live storage groups.
+      has_per_user_placement |=
+          value->value_id < per_user_placement_values.bit_count &&
+          iree_bitmap_test(per_user_placement_values, value->value_id);
       ++produced_live_value_count;
       rematerializable_leaf =
           rematerializable_leaf &&
@@ -1819,7 +1836,7 @@ void loom_low_schedule_pressure_score_candidate(
                (uint16_t)((node->flags &
                            LOOM_LOW_SCHEDULE_NODE_FLAG_PAIR_TRANSPARENT)
                           << 1u) |
-               ((is_storage_setup || is_per_user_rematerialization)
+               ((is_storage_setup || has_per_user_placement)
                     ? LOOM_LOW_SCHEDULE_CANDIDATE_FLAG_STORAGE_SETUP
                     : 0) |
                (rematerializable_leaf && produced_live_value_count != 0

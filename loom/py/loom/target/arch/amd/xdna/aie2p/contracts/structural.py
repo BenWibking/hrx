@@ -10,7 +10,7 @@ from loom.dialect.vector import defs as vector
 from loom.target.arch.amd.xdna.aie2p.contracts.accumulator_structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
     _ACCUMULATOR_CONCAT_RULES,
-    _ACCUMULATOR_VECTOR_SHAPES,
+    _ACCUMULATOR_VECTOR_SLICE_RULES,
     _F32X32_ACCUMULATOR,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
@@ -41,6 +41,9 @@ from loom.target.low_descriptors import Descriptor
 
 _I8X32_VECTOR = Vector("i8", lanes=32)
 _I8X64_VECTOR = Vector("i8", lanes=64)
+_I1_VECTOR = Vector("i1", minimum_lanes=1, maximum_lanes=64)
+_WIDE_PREDICATE_VECTOR = Vector("i1", minimum_lanes=65, maximum_lanes=128)
+_PREDICATE_VECTOR = Vector("i1", minimum_static_elements=1, maximum_static_elements=128)
 _I32_F32_4X4_VECTOR = Vector(("i32", "f32"), dims=(4, 4))
 _I16_F16_BF16_8X8_VECTOR = Vector(("i16", "f16", "bf16"), dims=(8, 8))
 _I32 = Scalar("i32")
@@ -613,6 +616,23 @@ def _wide_vector_bitcast_alias_rules() -> tuple[ValueAliasRule, ...]:
     )
 
 
+def _predicate_bitcast_alias_rule() -> ValueAliasRule:
+    # Predicate shape changes preserve the same eL bits and never cross into
+    # the ordinary vector register file.
+    return ValueAliasRule(
+        source_op=vector.vector_bitcast,
+        source=ValueRef.operand("input"),
+        result=ValueRef.result("result"),
+        guards=(
+            Guard.value_type("input", _PREDICATE_VECTOR),
+            Guard.value_type("result", _PREDICATE_VECTOR),
+            Guard.low_value_register_class("input", "aie2p.elpredicate"),
+            Guard.low_value_register_class("result", "aie2p.elpredicate"),
+            Guard.low_value_register_unit_count_eq("input", "result"),
+        ),
+    )
+
+
 def _accumulator_bitcast_alias_rules() -> tuple[ValueAliasRule, ...]:
     # Equal-width accumulator forms retain the same ordered MBMS units. The
     # 2048-bit group includes the F32, I32, and I64 logical interpretations.
@@ -761,6 +781,57 @@ def _vector_slice_alias_rule(
     )
 
 
+def _predicate_slice_rule(
+    offset: int,
+    maximum_result_lanes: int,
+) -> DescriptorRule:
+    """Projects one packet-aligned predicate word interval into low bits."""
+
+    word_offset = offset % 32
+    word = "high32" if offset >= 32 else "low32"
+    constant = _descriptor("amd.xdna.aie2p.constant.i32.short")
+    shift = _descriptor(f"amd.xdna.aie2p.predicate.shift.{word}")
+    complete = _descriptor("amd.xdna.aie2p.predicate.complete.zero.high32")
+    shift_count = ValueRef.temporary("shift_count")
+    packet_bits = ValueRef.temporary("packet_bits")
+    emits: list[ContractEmit] = [
+        EmitDescriptorOp(
+            descriptor=constant,
+            results={"dst": shift_count},
+            result_types={"dst": DescriptorResultType()},
+            immediates={"i": -word_offset},
+            form=DescriptorEmitForm.CONST,
+        ),
+        EmitDescriptorOp(
+            descriptor=shift,
+            operands={"s0": ValueRef.operand("source"), "s1": shift_count},
+            results={"d0": packet_bits},
+            result_types={"d0": DescriptorResultType()},
+            form=DescriptorEmitForm.OP,
+        ),
+    ]
+    emits.append(
+        EmitDescriptorOp(
+            descriptor=complete,
+            operands={"storage": packet_bits},
+            results={"dst": ValueRef.result("result")},
+            immediates={"i": 0},
+            form=DescriptorEmitForm.OP,
+        )
+    )
+    return DescriptorRule(
+        source_op=vector.vector_slice,
+        descriptor=complete,
+        guards=_vector_slice_guards(
+            _I1_VECTOR,
+            Vector("i1", minimum_lanes=1, maximum_lanes=maximum_result_lanes),
+            offset,
+            offset,
+        ),
+        emit=tuple(emits),
+    )
+
+
 def _vector_slice_shift_rule(
     source_type: TypePattern,
     result_type: TypePattern,
@@ -854,42 +925,6 @@ def _vector_slice_carrier_rule(
                 unit_offset=source_unit_offset,
             ),
         ),
-    )
-
-
-def _accumulator_vector_slice_rules(
-    source_type: TypePattern,
-    result_type: TypePattern,
-    packet_lane_count: int,
-    unit_count: int,
-) -> tuple[DescriptorRule, ...]:
-    move = _descriptor("amd.xdna.aie2p.move.accumulator512.to.vector512")
-    return tuple(
-        DescriptorRule(
-            source_op=vector.vector_slice,
-            descriptor=move,
-            guards=_vector_slice_guards(
-                source_type,
-                result_type,
-                unit_index * packet_lane_count,
-                unit_index * packet_lane_count,
-            ),
-            emit=(
-                EmitRegisterSlice(
-                    source=ValueRef.operand("source"),
-                    result=ValueRef.temporary("accumulator_unit"),
-                    unit_offset=unit_index,
-                    unit_count=1,
-                ),
-                EmitDescriptorOp(
-                    descriptor=move,
-                    operands={"src": ValueRef.temporary("accumulator_unit")},
-                    results={"dst": ValueRef.result("result")},
-                    form=DescriptorEmitForm.OP,
-                ),
-            ),
-        )
-        for unit_index in range(unit_count)
     )
 
 
@@ -1414,6 +1449,29 @@ def _register_concat_pair_rule(
 
 
 AIE2P_STRUCTURAL_RULES = (
+    _vector_slice_alias_rule(_I1_VECTOR, _I1_VECTOR),
+    _vector_slice_carrier_rule(
+        _WIDE_PREDICATE_VECTOR,
+        _I1_VECTOR,
+        0,
+        source_unit_offset=0,
+    ),
+    _vector_slice_carrier_rule(
+        _WIDE_PREDICATE_VECTOR,
+        _I1_VECTOR,
+        64,
+        source_unit_offset=1,
+    ),
+    *(
+        _predicate_slice_rule(offset, maximum_result_lanes)
+        for offset, maximum_result_lanes in (
+            (8, 8),
+            (16, 16),
+            (24, 8),
+            (32, 32),
+            (48, 16),
+        )
+    ),
     *(
         rule
         for (
@@ -1447,16 +1505,7 @@ AIE2P_STRUCTURAL_RULES = (
             ),
         )
     ),
-    *(
-        rule
-        for shape in _ACCUMULATOR_VECTOR_SHAPES
-        for rule in _accumulator_vector_slice_rules(
-            shape.source_type,
-            shape.packet_type,
-            shape.packet_lane_count,
-            shape.logical_packet_count,
-        )
-    ),
+    *_ACCUMULATOR_VECTOR_SLICE_RULES,
     *(
         rule
         for element_types, element_byte_count, wide_lane_maximum in (
@@ -1483,6 +1532,10 @@ AIE2P_STRUCTURAL_RULES = (
         )
     ),
     *_ACCUMULATOR_CONCAT_RULES,
+    _register_concat_pair_rule(
+        Vector("i1", lanes=64),
+        _WIDE_PREDICATE_VECTOR,
+    ),
     *(
         _register_concat_pair_rule(input_type, result_type)
         for input_type, result_type in _WIDE_VECTOR_CONCAT_SPECS
@@ -1529,4 +1582,5 @@ AIE2P_STRUCTURAL_RULES = (
     ),
     *_accumulator_bitcast_alias_rules(),
     *_wide_vector_bitcast_alias_rules(),
+    _predicate_bitcast_alias_rule(),
 )

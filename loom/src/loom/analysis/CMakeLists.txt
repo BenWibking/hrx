@@ -452,8 +452,10 @@ loom_cc_benchmark(
     iree::base::internal::arena
     iree::testing::benchmark_main
     loom::ir
+    loom::ops::func
     loom::ops::scalar
     loom::ops::scf
+    loom::pass::value_facts
     loom::util::fact_table
   TESTONLY
 )
@@ -1440,6 +1442,8 @@ loom_cc_library(
     "symbolic_expr.c"
     "symbolic_expr_proof.c"
     "symbolic_projection.c"
+    "symbolic_quotient.c"
+    "symbolic_quotient.h"
     "symbolic_value.c"
     "symbolic_value.h"
   DEPS

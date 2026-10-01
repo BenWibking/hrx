@@ -1346,6 +1346,13 @@ def validate_descriptor_operands(descriptor: Descriptor) -> DescriptorOperandLay
                 raise ValueError(f"descriptor '{descriptor.key}' narrowing mask '{operand.field_name}' must write implicit state")
             if not any(OperandFlag.EXECUTION_MASK in other.flags and other.reg_alts == operand.reg_alts for other in descriptor.operands):
                 raise ValueError(f"descriptor '{descriptor.key}' narrowing mask '{operand.field_name}' must read the same execution mask")
+        if OperandFlag.COMMUTATIVE_STATE_UPDATE in operand.flags:
+            if operand.role is not OperandRole.IMPLICIT or state_flags != {OperandFlag.STATE_WRITE}:
+                raise ValueError(f"descriptor '{descriptor.key}' commutative update '{operand.field_name}' must be an implicit state write without a state read")
+            if operand.unit_count != 1 or operand.register_part is not None:
+                raise ValueError(f"descriptor '{descriptor.key}' commutative update '{operand.field_name}' must update a whole state register")
+            if DescriptorFlag.STATE_ASSIGNMENT in descriptor.flags:
+                raise ValueError(f"descriptor '{descriptor.key}' state assignment cannot promise commutative updates")
     if variadic_operand_index is not None:
         if descriptor.constraints:
             raise ValueError(f"descriptor '{descriptor.key}' with variadic operands cannot declare descriptor constraints")
@@ -1372,6 +1379,32 @@ def validate_descriptor_speculation(descriptor: Descriptor) -> None:
     for operand in descriptor.operands:
         if OperandFlag.STATE_WRITE in operand.flags:
             raise ValueError(f"descriptor '{descriptor.key}' speculation cannot write architectural state")
+
+
+def validate_descriptor_state_assignment(descriptor: Descriptor, register_classes: Mapping[str, RegClass]) -> None:
+    """Checks the shape promised by a deterministic whole-state replacement."""
+    if DescriptorFlag.STATE_ASSIGNMENT not in descriptor.flags:
+        return
+    description = f"descriptor '{descriptor.key}' state assignment"
+    forbidden = {DescriptorFlag.TERMINATOR, DescriptorFlag.BARRIER, DescriptorFlag.UNIQUE_IDENTITY, DescriptorFlag.VARIADIC_OPERANDS, DescriptorFlag.SAFE_TO_SPECULATE}
+    if forbidden.intersection(descriptor.flags) or descriptor.effects or descriptor.storage_leases:
+        raise ValueError(f"{description} must have no other effects")
+    writes = [operand for operand in descriptor.operands if OperandFlag.STATE_WRITE in operand.flags]
+    if len(writes) != 1:
+        raise ValueError(f"{description} must replace exactly one state register")
+    write = writes[0]
+    if write.role not in (OperandRole.RESULT, OperandRole.IMPLICIT) or write.unit_count != 1 or write.register_part is not None:
+        raise ValueError(f"{description} must replace the whole state register")
+    if write.role is OperandRole.IMPLICIT and DescriptorFlag.SIDE_EFFECTING not in descriptor.flags:
+        raise ValueError(f"{description} without an SSA result must retain its side effect")
+    register_class = register_classes[write.reg_alts[0].reg_class]
+    if _register_class_allocatable_count(register_class) != 1:
+        raise ValueError(f"{description} must name singleton architectural state")
+    for operand in descriptor.operands:
+        if OperandFlag.STATE_READ in operand.flags:
+            raise ValueError(f"{description} cannot depend on architectural state")
+        if operand is not write and operand.role is not OperandRole.OPERAND:
+            raise ValueError(f"{description} may only have explicit inputs and the assigned state result")
 
 
 def validate_register_part(part: RegisterPart) -> None:
@@ -1516,6 +1549,7 @@ def _validate_binary_constraint(
 def _validate_rematerializable_result(
     descriptor: Descriptor,
     result_index: int,
+    mutable_state_classes: frozenset[str],
 ) -> None:
     description = f"descriptor '{descriptor.key}' rematerializable result {result_index}"
     if DescriptorFlag.DEAD_REMOVABLE not in descriptor.flags:
@@ -1540,12 +1574,21 @@ def _validate_rematerializable_result(
             continue
         if OperandFlag.SCHEDULE_ONLY_STATE in operand.flags:
             continue
+        if state_flags == {OperandFlag.STATE_READ}:
+            # Replaying a state-dependent instruction is stable when no
+            # instruction in the descriptor set can change that state storage.
+            # The set-wide alias-aware check keeps this local promise honest as
+            # targets acquire state-assignment forms later.
+            state_class = operand.reg_alts[0].reg_class
+            if state_class not in mutable_state_classes:
+                continue
         if state_flags != {OperandFlag.STATE_WRITE} or operand.role is not OperandRole.RESULT or operand_index != result_index:
             raise ValueError(f"{description} cannot replay target state operand '{operand.field_name}'")
 
 
 def validate_descriptor_constraints(
     descriptor: Descriptor,
+    mutable_state_classes: frozenset[str],
 ) -> tuple[int, ...]:
     """Validates constraints and returns rematerializable result indices."""
 
@@ -1611,7 +1654,11 @@ def validate_descriptor_constraints(
             if constraint.kind is ConstraintKind.REMATERIALIZABLE:
                 if lhs_operand_index in rematerializable_results:
                     raise ValueError(f"descriptor '{descriptor.key}' repeats rematerializable result {lhs_operand_index}")
-                _validate_rematerializable_result(descriptor, lhs_operand_index)
+                _validate_rematerializable_result(
+                    descriptor,
+                    lhs_operand_index,
+                    mutable_state_classes,
+                )
                 rematerializable_results.add(lhs_operand_index)
 
     return tuple(sorted(rematerializable_results))
@@ -1768,6 +1815,8 @@ def validate_descriptor_storage_leases(
             raise ValueError(f"{description} has zero release action id")
         if lease.release_reason_id == LOW_DESCRIPTOR_ENCODING_ID_NONE:
             raise ValueError(f"{description} has no release reason id")
+        if StorageLeaseFlag.STARTS_AT_ISSUE not in lease.flags:
+            raise ValueError(f"{description} must start at issue")
         if StorageLeaseFlag.RELEASE_BEFORE_BOUNDARY in lease.flags and StorageLeaseFlag.MAY_CARRY_ACROSS_BOUNDARY in lease.flags:
             raise ValueError(f"{description} cannot both release before and carry across a boundary")
         unit_count = attachment_unit_counts.get((lease.attachment, lease.attachment_index))

@@ -447,7 +447,7 @@ logical coordinates and one semantic layout value instead of reproducing each
 candidate as flattened address arithmetic.
 
 The [checked strided-layout
-case](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/test/corpus/conformance/strided_layout_recurrence.loom)
+case](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/test/corpus/memory/view/strided_recurrence.loom)
 selects between two runtime pitches, rotates them through counted and condition
 loops, and verifies the resulting addresses through a nonzero buffer origin.
 When a carried view's type refers to the layout, carry the layout beside the
@@ -480,7 +480,7 @@ keeps an initial or body-local identity on the wrong edge is rejected instead
 of being treated as a static annotation.
 
 The [checked shrinking-view
-case](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/test/corpus/conformance/shrinking_view.loom)
+case](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/test/corpus/memory/view/shrinking.loom)
 changes the row extent while carrying its strided layout, consumes the view in
 the loop body, and checks the final view after zero, one, and three iterations
 on AMDGPU and Vulkan. Pipelining, unrolling, fusion, and other loop
@@ -511,6 +511,13 @@ are insufficient, the request fails with the unresolved bounds rather than
 silently leaving a loop that the author required to be unrolled. More specific
 unroll schedules can express linear, interleaved, or recurrence-aware body
 ordering without changing the logical loop.
+
+An enclosing structured condition participates in that proof. Inside the true
+region of `%remaining >= %tile_size`, a loop ending at
+`index.min %remaining, %tile_size` has the exact full-tile bound. Bare `unroll`
+can materialize it directly; the source does not need to restate the guard with
+`index.assume`. The complementary region remains a runtime tail unless another
+visible fact makes its trip count exact.
 
 `unroll(%factor)` requests partial unrolling with a specialized positive factor.
 The two-slot example uses factor two with a runtime trip count. Each copied
@@ -664,7 +671,12 @@ form this interior cut receives a diagnostic. Runtime bounds on the requested
 collective loop also receive a diagnostic; depth one preserves the original
 loop.
 
-The [checked collective recurrence](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/test/corpus/conformance/collective_loop_state.loom)
+Exactness may come from an enclosing structured edge. A full-tile `scf.if`
+guard can make a derived inner bound exact in its true region without an
+`index.assume`; its false region only proves a partial tail and cannot safely
+pipeline a convergent loop at depth greater than one from that fact alone.
+
+The [checked collective recurrence](https://github.com/ROCm/hrx-system/blob/main/loom/src/loom/test/corpus/kernel/workgroup/loop_state.loom)
 applies one template with serial and pipelined policies. It combines 16-lane
 cluster reductions, workgroup reductions, ragged reads, and a nested runtime
 consumer loop, checking each schedule against independent integer results.

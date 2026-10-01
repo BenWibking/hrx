@@ -201,7 +201,7 @@ static loomc_status_t loomc_compile_run_pass_program(
     pass_environment = loom_pass_environment_make(
         extended_capabilities, pass_environment.capability_count + 1);
   }
-  loom_pass_interpreter_options_t interpreter_options = {
+  const loom_pass_interpreter_options_t interpreter_options = {
       .block_pool = loomc_workspace_block_pool(workspace),
       .predicate_provider = predicate_provider,
       .diagnostic_emitter =
@@ -213,13 +213,24 @@ static loomc_status_t loomc_compile_run_pass_program(
       .function_versions = &function_version_owner->list,
   };
   loom_pass_run_result_t run_result = {0};
-  LOOMC_RETURN_IF_ERROR(loomc_status_from_iree(loom_pass_interpreter_run_module(
-      loomc_pass_program_loom_pass_program(pass_program), internal_module,
-      &interpreter_options, &run_result)));
-  if (run_result.error_count != 0) {
-    return loomc_result_set_state(result, LOOMC_RESULT_STATE_FAILED);
+  loomc_status_t status =
+      loomc_status_from_iree(loom_pass_interpreter_run_program(
+          loomc_pass_program_loom_pass_program(pass_program), internal_module,
+          &interpreter_options, &run_result));
+  if (!loomc_status_is_ok(status)) {
+    if (!loomc_status_is_result_diagnostic(status)) {
+      return status;
+    }
+    if (run_result.error_count == 0) {
+      return loomc_result_fail_status_diagnostic_consume(
+          result, /*source=*/NULL, LOOMC_DIAGNOSTIC_SEVERITY_ERROR,
+          loomc_make_cstring_view("PASS_PROGRAM/EXECUTION"), status);
+    }
+    loomc_status_free(status);
   }
-  return loomc_ok_status();
+  return run_result.error_count != 0
+             ? loomc_result_set_state(result, LOOMC_RESULT_STATE_FAILED)
+             : loomc_ok_status();
 }
 
 static loomc_status_t loomc_compile_specialize_functions(
@@ -241,7 +252,7 @@ static loomc_status_t loomc_compile_specialize_functions(
       .result = result,
       .module = module,
   };
-  loom_target_specialization_result_t specialization_result = {0};
+  uint32_t error_count = 0;
   LOOMC_RETURN_IF_ERROR(loomc_status_from_iree(loom_target_specialize_functions(
       loomc_target_environment_loom_target_environment(target_environment),
       module, requests, bindings,
@@ -249,50 +260,9 @@ static loomc_status_t loomc_compile_specialize_functions(
           .fn = loomc_compile_capture_diagnostic_emission,
           .user_data = &capture,
       },
-      arena, &specialization_result)));
-  if (specialization_result.error_count != 0) {
+      function_versions, &error_count)));
+  if (error_count != 0) {
     return loomc_result_set_state(result, LOOMC_RESULT_STATE_FAILED);
-  }
-  if (function_versions->list.count == 0) {
-    *function_versions = specialization_result.function_versions;
-    return loomc_ok_status();
-  }
-
-  // A subsequent invocation refines the same live functions. Preserve their
-  // captured lowering products while replacing the requested target contexts.
-  loom_target_function_version_snapshot_t previous = {0};
-  LOOMC_RETURN_IF_ERROR(
-      loomc_status_from_iree(loom_target_function_version_snapshot_build(
-          module, &function_versions->list, arena, &previous)));
-  const loom_function_version_list_t* replacements =
-      &specialization_result.function_versions.list;
-  for (iree_host_size_t i = 0; i < replacements->count; ++i) {
-    loom_target_function_version_t* replacement =
-        loom_target_function_version_cast(replacements->values[i]);
-    const iree_host_size_t context_ordinal =
-        previous.target_context_capacity + replacement->target_context_ordinal;
-    if (context_ordinal >= LOOM_TARGET_CONTEXT_ORDINAL_INVALID) {
-      return loomc_make_status(
-          LOOMC_STATUS_RESOURCE_EXHAUSTED,
-          "continued compilation exceeds target context capacity");
-    }
-    replacement->target_context_ordinal =
-        (loom_target_context_ordinal_t)context_ordinal;
-    loom_target_function_version_t* existing =
-        loom_target_function_version_cast(
-            loom_target_function_version_snapshot_handle_at(
-                &previous,
-                loom_func_like_callee(replacement->base.function).symbol_id));
-    if (existing != NULL) {
-      replacement->base.flags |= existing->base.flags;
-      replacement->memory_accesses = existing->memory_accesses;
-      replacement->loop_pipelines = existing->loop_pipelines;
-      *existing = *replacement;
-    } else {
-      LOOMC_RETURN_IF_ERROR(
-          loomc_status_from_iree(loom_function_version_owner_append(
-              function_versions, &replacement->base)));
-    }
   }
   return loomc_ok_status();
 }

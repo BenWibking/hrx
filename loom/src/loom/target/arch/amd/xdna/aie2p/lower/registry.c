@@ -6,10 +6,12 @@
 
 #include "loom/ir/module.h"
 #include "loom/ir/scalar_type.h"
+#include "loom/ops/vector/fragment.h"
 #include "loom/target/arch/amd/xdna/aie2p/contracts/core.h"
 #include "loom/target/arch/amd/xdna/aie2p/contracts/core_lower_rules.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
-#include "loom/target/arch/amd/xdna/aie2p/lower/encode.h"
+#include "loom/target/arch/amd/xdna/aie2p/gather.h"
+#include "loom/target/arch/amd/xdna/aie2p/lower/gather.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/lower.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/matrix.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/rodata.h"
@@ -91,9 +93,12 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
       return loom_low_lower_make_register_type(
           context, AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS, 4, out_low_type);
     }
-    if (element_count <= 64 && element_type == LOOM_SCALAR_TYPE_I1) {
+    if (element_count <= 128 && element_type == LOOM_SCALAR_TYPE_I1) {
+      const uint32_t predicate_register_count =
+          (uint32_t)((element_count + 63u) / 64u);
       return loom_low_lower_make_register_type(
-          context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE, 1, out_low_type);
+          context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE,
+          predicate_register_count, out_low_type);
     }
     if (element_bits > 0 && element_count > 512 / (uint32_t)element_bits &&
         element_count <= 1024 / (uint32_t)element_bits) {
@@ -113,6 +118,32 @@ static iree_status_t loom_aie2p_map_type(void* user_data,
   }
   return loom_low_lower_emit_source_type_unsupported(
       context, source_op, IREE_SV("source"), source_type);
+}
+
+// Native BFP operands carry 64 signed mantissa bytes followed by eight shared
+// exponent bytes in EX. Other schemas retain their ordinary vector carrier.
+static bool loom_aie2p_value_has_bfp_storage(
+    const loom_value_fact_table_t* fact_table, loom_value_id_t value) {
+  const loom_value_fact_encoded_operand_schema_t native = {
+      .element_format = LOOM_VALUE_FACT_NUMERIC_FORMAT_BFP16EBS8,
+      .payload_packing = LOOM_VALUE_FACT_PAYLOAD_PACKING_TARGET_FRAGMENT,
+      .rounding_policy = LOOM_VALUE_FACT_ROUNDING_POLICY_FLUSH_SUBNORMAL,
+      .payload_register_count = 18,
+      .payload_element_count = 64,
+  };
+  const loom_value_facts_t facts =
+      loom_value_fact_table_lookup(fact_table, value);
+  loom_value_fact_encoding_summary_t summary = {0};
+  if (loom_value_facts_query_encoding_summary(&fact_table->context, facts,
+                                              &summary)) {
+    return loom_value_fact_encoded_operand_schema_equal(
+        summary.storage_schema.encoded_operand, native);
+  }
+  loom_vector_fragment_fact_t fragment;
+  return loom_vector_fragment_fact_query_value_facts(&fact_table->context,
+                                                     facts, &fragment) &&
+         loom_value_fact_encoded_operand_schema_equal(fragment.encoded_operand,
+                                                      native);
 }
 
 static iree_status_t loom_aie2p_map_value(void* user_data,
@@ -176,6 +207,11 @@ static iree_status_t loom_aie2p_preselect_op(void* user_data,
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(
+      loom_aie2p_select_gather_plan(context, source_op, out_plan));
+  if (!loom_low_lower_plan_is_empty(*out_plan)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
       loom_aie2p_select_rodata_plan(context, source_op, out_plan));
   if (!loom_low_lower_plan_is_empty(*out_plan)) {
     return iree_ok_status();
@@ -189,6 +225,8 @@ static void loom_aie2p_mark_plan_storage_demands(
   (void)user_data;
   if (loom_aie2p_matrix_plan_isa(plan)) {
     loom_aie2p_mark_matrix_plan_demands(context, source_op, plan);
+  } else if (loom_aie2p_gather_plan_isa(plan)) {
+    loom_aie2p_mark_gather_plan_demands(context, source_op, plan);
   } else if (loom_aie2p_rodata_plan_isa(plan)) {
     loom_aie2p_mark_rodata_plan_demands(context, source_op, plan);
   } else if (loom_aie2p_storage_plan_isa(plan)) {
@@ -206,6 +244,8 @@ static void loom_aie2p_describe_plan(void* user_data,
   (void)user_data;
   if (loom_aie2p_matrix_plan_isa(plan)) {
     loom_aie2p_describe_matrix_plan(context, source_op, plan, out_report);
+  } else if (loom_aie2p_gather_plan_isa(plan)) {
+    loom_aie2p_describe_gather_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_rodata_plan_isa(plan)) {
     loom_aie2p_describe_rodata_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_storage_plan_isa(plan)) {
@@ -223,6 +263,9 @@ static iree_status_t loom_aie2p_emit_op(void* user_data,
   if (loom_aie2p_matrix_plan_isa(plan)) {
     return loom_aie2p_emit_matrix_plan(context, source_op, plan);
   }
+  if (loom_aie2p_gather_plan_isa(plan)) {
+    return loom_aie2p_emit_gather_plan(context, source_op, plan);
+  }
   if (loom_aie2p_rodata_plan_isa(plan)) {
     return loom_aie2p_emit_rodata_plan(context, source_op, plan);
   }
@@ -231,6 +274,14 @@ static iree_status_t loom_aie2p_emit_op(void* user_data,
   }
   IREE_ASSERT_UNREACHABLE("AIE2P emission has unknown plan kind");
   IREE_BUILTIN_UNREACHABLE();
+}
+
+static iree_status_t loom_aie2p_finalize_module(
+    void* user_data, loom_module_t* module,
+    loom_low_lower_module_state_t* module_state,
+    iree_arena_allocator_t* scratch_arena) {
+  (void)user_data;
+  return loom_aie2p_finalize_gather_module(module, module_state, scratch_arena);
 }
 
 static const loom_low_lower_policy_t kAie2pCoreLowLowerPolicy = {
@@ -245,6 +296,11 @@ static const loom_low_lower_policy_t kAie2pCoreLowLowerPolicy = {
     .map_value = {.fn = loom_aie2p_map_value, .user_data = NULL},
     .map_argument = {.fn = loom_aie2p_map_argument, .user_data = NULL},
     .contract = LOOM_AIE2P_CORE_CONTRACT,
+    .query_op_contract =
+        {
+            .fn = loom_aie2p_query_gather_contract,
+            .user_data = NULL,
+        },
     .descriptor_matrix =
         {
             .options = loom_aie2p_descriptor_matrix_options,
@@ -260,6 +316,7 @@ static const loom_low_lower_policy_t kAie2pCoreLowLowerPolicy = {
         },
     .describe_plan = {.fn = loom_aie2p_describe_plan, .user_data = NULL},
     .emit_op = {.fn = loom_aie2p_emit_op, .user_data = NULL},
+    .finalize_module = {.fn = loom_aie2p_finalize_module, .user_data = NULL},
 };
 
 const loom_low_lower_policy_t* loom_aie2p_core_low_lower_policy(void) {

@@ -866,8 +866,13 @@ static iree_status_t loom_low_lower_rule_guard_matches(
   *out_matches = false;
   switch (guard->kind) {
     case LOOM_LOW_LOWER_GUARD_VALUE_TYPE: {
-      loom_value_id_t value_id = loom_low_lower_rule_source_value(
-          match_context->module, rule_set, source_op, guard->value_ref_index);
+      loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
+      if (!loom_low_lower_rule_resolve_source_value_from_nodes(
+              match_context->module, match_context->fact_table, rule_set,
+              source_op, /*source_nodes=*/NULL, /*source_node_count=*/1,
+              guard->value_ref_index, &value_id)) {
+        return iree_ok_status();
+      }
       loom_type_t type =
           loom_module_value_type(match_context->module, value_id);
       *out_matches = loom_low_lower_rule_type_matches(
@@ -1072,6 +1077,14 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       *out_matches = loom_low_lower_rule_value_facts_exact_float(
           match_context, rule_set, source_op, guard->value_ref_index);
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_VALUE_NOT_NAN: {
+      const loom_value_id_t value_id = loom_low_lower_rule_source_value(
+          match_context->module, rule_set, source_op, guard->value_ref_index);
+      *out_matches = match_context->fact_table &&
+                     loom_value_facts_is_not_nan(loom_value_fact_table_lookup(
+                         match_context->fact_table, value_id));
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_VALUE_I64_RANGE:
       *out_matches = loom_low_lower_rule_value_facts_i64_range(
           match_context, rule_set, source_op, guard->value_ref_index,

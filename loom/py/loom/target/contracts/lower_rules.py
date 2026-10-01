@@ -79,14 +79,12 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _integer_range_relation_diagnostic,
     _materializer_diagnostic,
     _named_constraint_diagnostic,
+    _not_nan_diagnostic,
     _operand_segment_count_diagnostic,
     _register_class_diagnostic,
     _register_unit_count_diagnostic,
     _register_unit_count_exact_diagnostic,
-    _source_memory_address_diagnostic,
-    _source_memory_address_layout_diagnostic,
-    _source_memory_byte_offset_diagnostic,
-    _source_memory_diagnostic,
+    _source_memory_diagnostics,
     _static_dim0_multiple_diagnostic,
     _static_element_count_relation_diagnostic,
     _storage_element_format_diagnostic,
@@ -141,7 +139,6 @@ from loom.target.contracts.rules import (
 )
 from loom.target.contracts.source import ValueRef
 from loom.target.contracts.source_memory import (
-    SourceMemoryAddressLayout,
     SourceMemoryAddressMaterializer,
     SourceMemoryByteOffsetMaterializer,
     SourceMemoryConstraint,
@@ -619,7 +616,8 @@ class _LowerRuleSetCompiler:
                     kind=guard.kind,
                     value_ref_index=self._append_value_ref(
                         source_op,
-                        _value_ref_for_source_field(
+                        guard.value_ref
+                        or _value_ref_for_source_field(
                             source_op,
                             guard.field,
                             element=element,
@@ -897,6 +895,7 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
             GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
             GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
             GuardKind.VALUE_I64_RANGE_GE,
@@ -1210,7 +1209,7 @@ class _LowerRuleSetCompiler:
                 )
             )
             return
-        if guard.kind == GuardKind.VALUE_EXACT_FLOAT:
+        if guard.kind in (GuardKind.VALUE_EXACT_FLOAT, GuardKind.VALUE_NOT_NAN):
             self._guards.append(
                 LowerGuard(
                     kind=guard.kind,
@@ -1219,7 +1218,9 @@ class _LowerRuleSetCompiler:
                         source_op,
                         _guard_diagnostic(
                             guard,
-                            _exact_float_diagnostic(guard.field),
+                            _exact_float_diagnostic(guard.field)
+                            if guard.kind == GuardKind.VALUE_EXACT_FLOAT
+                            else _not_nan_diagnostic(guard.field),
                         ),
                     ),
                 )
@@ -1786,28 +1787,12 @@ class _LowerRuleSetCompiler:
     ) -> int:
         row = LowerSourceMemory(
             constraint,
-            diagnostic_index=self._append_diagnostic_ref(
-                source_op,
-                _source_memory_diagnostic(constraint),
-            ),
-            byte_offset_diagnostic_index=self._append_diagnostic_ref(
-                source_op,
-                _source_memory_byte_offset_diagnostic(constraint),
-            ),
-            address_layout_diagnostic_index=(
-                0xFFFF
-                if constraint.address_layout == SourceMemoryAddressLayout.ANY
-                else self._append_diagnostic_ref(
-                    source_op,
-                    _source_memory_address_layout_diagnostic(constraint),
-                )
-            ),
-            address_diagnostic_index=self._append_diagnostic_ref(
-                source_op,
-                _source_memory_address_diagnostic(
+            rejection_diagnostic_indices=tuple(
+                self._append_diagnostic_ref(source_op, diagnostic)
+                for diagnostic in _source_memory_diagnostics(
                     constraint,
                     address_materializer,
-                ),
+                )
             ),
             byte_offset_materializer=byte_offset_materializer,
             address_materializer=address_materializer,
@@ -1869,7 +1854,14 @@ class _LowerRuleSetCompiler:
                     f"{source_op.name}: source value field '{value_ref.field}' "
                     f"references unknown source node '{value_ref.source_node}'"
                 )
-        if value_ref.kind == SourceValueKind.OPERAND and not allow_variadic_span:
+        if (
+            value_ref.kind
+            in (
+                SourceValueKind.OPERAND,
+                SourceValueKind.EXACT_LANE_ORIGIN_OPERAND,
+            )
+            and not allow_variadic_span
+        ):
             operand = referenced_op.operand(value_ref.field)
             if operand is not None and operand.variadic:
                 expected_count = self._operand_segment_counts.get(

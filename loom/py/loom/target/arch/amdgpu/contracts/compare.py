@@ -20,6 +20,7 @@ from loom.target.arch.amdgpu.contracts.materializers import (
     F32_VGPR_MATERIALIZER,
     F64_VGPR_MATERIALIZER,
     I32_VGPR_MATERIALIZER,
+    REGISTERS_VGPR_MATERIALIZER,
 )
 from loom.target.arch.amdgpu.descriptors import (
     AMDGPU_SOURCE_INLINE_F32_VALUES,
@@ -95,14 +96,12 @@ _FLOAT_COMPARE_MASK_DESCRIPTOR_KEYS = tuple(
     descriptor_key
     for predicate in _CMP_FLOAT_SCALAR_PREDICATES
     for descriptor_key in (
+        f"amdgpu.v_cmp_{predicate}_f16",
         f"amdgpu.v_cmp_{predicate}_f32",
+        f"amdgpu.v_cmp_{predicate}_f64",
         f"amdgpu.v_cmp_{predicate}_f32.src0_inline",
         f"amdgpu.v_cmp_{predicate}_f32.src1_inline",
     )
-)
-_F64_COMPARE_MASK_DESCRIPTOR_KEYS = tuple(
-    f"amdgpu.v_cmp_{predicate}_f64"
-    for predicate in _CMP_FLOAT_SCALAR_PREDICATES
 )
 _DESCRIPTOR_KEYS = (
     "amdgpu.s_mov_b32",
@@ -110,7 +109,6 @@ _DESCRIPTOR_KEYS = (
     *_COMPARE_DESCRIPTOR_KEYS,
     *_FLOAT_COMPARE_DESCRIPTOR_KEYS,
     *_FLOAT_COMPARE_MASK_DESCRIPTOR_KEYS,
-    *_F64_COMPARE_MASK_DESCRIPTOR_KEYS,
     *(descriptor_key for _, descriptor_key in _CMP_I64_SCALAR_CASES),
 )
 
@@ -490,7 +488,20 @@ def _float_mask_rules() -> tuple[DescriptorRule, ...]:
         )
         for predicate in _CMP_FLOAT_SCALAR_PREDICATES
     )
-    return inline_rules + register_rules
+    other_register_rules = tuple(
+        _mask_rule(
+            scalar.scalar_cmpf,
+            type_pattern,
+            ValueRef.operand("lhs", materializer=REGISTERS_VGPR_MATERIALIZER.name),
+            ValueRef.operand("rhs", materializer=REGISTERS_VGPR_MATERIALIZER.name),
+            REGISTERS_VGPR_MATERIALIZER.name,
+            predicate,
+            _descriptor(f"amdgpu.v_cmp_{predicate}_f{bit_width}"),
+        )
+        for type_pattern, bit_width in ((_F16, 16), (_F64, 64))
+        for predicate in _CMP_FLOAT_SCALAR_PREDICATES
+    )
+    return inline_rules + register_rules + other_register_rules
 
 
 def _mask_inline_rule(
@@ -702,6 +713,7 @@ AMDGPU_COMPARE_CONTRACT_FRAGMENT = ContractFragment(
     public_header="loom/target/arch/amdgpu/contracts/compare.h",
     materializers=(
         I32_VGPR_MATERIALIZER,
+        REGISTERS_VGPR_MATERIALIZER,
         F32_VGPR_MATERIALIZER,
         F64_VGPR_MATERIALIZER,
         ADDRESS_VGPR_MATERIALIZER,

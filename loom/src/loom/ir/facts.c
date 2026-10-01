@@ -6,6 +6,8 @@
 
 #include "loom/ir/facts.h"
 
+#include <string.h>
+
 #include "iree/base/internal/math.h"
 
 // Computes flags from integer range facts. Does not set floating-point, float
@@ -90,6 +92,64 @@ void loom_value_facts_propagate_ternary_distribution(loom_value_facts_t a,
         iree_min(loom_value_facts_uniform_scope(a),
                  iree_min(loom_value_facts_uniform_scope(b),
                           loom_value_facts_uniform_scope(c)));
+    loom_value_facts_mark_uniform_at_scope(out, uniform_scope);
+  }
+}
+
+static bool loom_value_facts_decode_finite_float_range(loom_value_facts_t facts,
+                                                       double* out_lo,
+                                                       double* out_hi) {
+  if (!loom_value_facts_is_float(facts) || !loom_value_facts_is_finite(facts) ||
+      (facts.range_lo == INT64_MIN && facts.range_hi == INT64_MAX)) {
+    return false;
+  }
+  memcpy(out_lo, &facts.range_lo, sizeof(*out_lo));
+  memcpy(out_hi, &facts.range_hi, sizeof(*out_hi));
+  return true;
+}
+
+void loom_value_facts_meet_float(const loom_value_facts_t* a,
+                                 const loom_value_facts_t* b,
+                                 loom_value_facts_t* out) {
+  // Preserve inputs before writing because meet permits an aliased output.
+  const loom_value_facts_t lhs = *a;
+  const loom_value_facts_t rhs = *b;
+  *out = loom_value_facts_unknown();
+  if (loom_value_facts_is_float(lhs) && loom_value_facts_is_float(rhs)) {
+    out->flags = LOOM_VALUE_FACT_FLOAT |
+                 (lhs.flags & rhs.flags &
+                  (LOOM_VALUE_FACT_NAN | LOOM_VALUE_FACT_INF |
+                   LOOM_VALUE_FACT_NOT_NAN | LOOM_VALUE_FACT_NOT_INF |
+                   LOOM_VALUE_FACT_FINITE | LOOM_VALUE_FACT_NOT_SUBNORMAL));
+
+    double lhs_lo = 0.0;
+    double lhs_hi = 0.0;
+    double rhs_lo = 0.0;
+    double rhs_hi = 0.0;
+    if (loom_value_facts_decode_finite_float_range(lhs, &lhs_lo, &lhs_hi) &&
+        loom_value_facts_decode_finite_float_range(rhs, &rhs_lo, &rhs_hi)) {
+      const double range_lo = lhs_lo < rhs_lo ? lhs_lo : rhs_lo;
+      const double range_hi = lhs_hi > rhs_hi ? lhs_hi : rhs_hi;
+      memcpy(&out->range_lo, &range_lo, sizeof(range_lo));
+      memcpy(&out->range_hi, &range_hi, sizeof(range_hi));
+    }
+    if (loom_value_facts_is_exact(lhs) && loom_value_facts_is_exact(rhs) &&
+        lhs.range_lo == rhs.range_lo && lhs.range_hi == rhs.range_hi) {
+      out->range_lo = lhs.range_lo;
+      out->range_hi = lhs.range_hi;
+      out->flags |= LOOM_VALUE_FACT_EXACT;
+    }
+  }
+
+  if (loom_value_facts_is_exact(*out)) {
+    loom_value_facts_mark_cluster_uniform(out);
+  } else if (loom_value_facts_is_lane_varying(lhs) ||
+             loom_value_facts_is_lane_varying(rhs)) {
+    loom_value_facts_mark_lane_varying(out);
+  } else {
+    const loom_value_fact_uniform_scope_t uniform_scope =
+        iree_min(loom_value_facts_uniform_scope(lhs),
+                 loom_value_facts_uniform_scope(rhs));
     loom_value_facts_mark_uniform_at_scope(out, uniform_scope);
   }
 }
@@ -368,6 +428,48 @@ loom_value_facts_t loom_value_facts_sign_extend(loom_value_facts_t source_facts,
       loom_value_facts_as_exact_raw_bits(source_facts, 1, &raw_bits)
           ? loom_value_facts_make_signed_raw_bits(raw_bits, 1)
           : loom_value_facts_make(-1, 0, 1);
+  loom_value_facts_propagate_unary_distribution(source_facts, &result_facts);
+  return result_facts;
+}
+
+loom_value_facts_t loom_value_facts_zero_extend(loom_value_facts_t source_facts,
+                                                int32_t source_bit_count) {
+  if (source_bit_count <= 0 || source_bit_count >= 63 ||
+      loom_value_facts_is_float(source_facts)) {
+    return loom_value_facts_unknown();
+  }
+
+  uint64_t raw_bits = 0;
+  loom_value_facts_t result_facts = loom_value_facts_unknown();
+  if (loom_value_facts_as_exact_raw_bits(source_facts, source_bit_count,
+                                         &raw_bits)) {
+    if (!loom_value_facts_make_unsigned_raw_bits(raw_bits, source_bit_count,
+                                                 &result_facts)) {
+      return loom_value_facts_unknown();
+    }
+    loom_value_facts_propagate_unary_distribution(source_facts, &result_facts);
+    return result_facts;
+  }
+
+  const loom_value_facts_t source_domain =
+      source_bit_count == 1
+          ? loom_value_facts_make(0, 1, 1)
+          : loom_value_facts_make_signed_bit_count_range(source_bit_count);
+  const loom_value_facts_t clamped = loom_value_facts_clamp_domain(
+      source_facts, source_domain.range_lo, source_domain.range_hi);
+  if (clamped.range_lo >= 0) {
+    return clamped;
+  }
+
+  const int64_t unsigned_extent = INT64_C(1) << source_bit_count;
+  if (clamped.range_hi < 0) {
+    result_facts = loom_value_facts_make(
+        clamped.range_lo + unsigned_extent, clamped.range_hi + unsigned_extent,
+        iree_math_gcd_i64(clamped.known_divisor, unsigned_extent));
+  } else {
+    result_facts =
+        loom_value_facts_make(0, unsigned_extent - 1, /*known_divisor=*/1);
+  }
   loom_value_facts_propagate_unary_distribution(source_facts, &result_facts);
   return result_facts;
 }
@@ -827,9 +929,10 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
     }
   }
 
-  // This scalar fact lattice can consume predicates with literal bounds. Value
-  // operands are still useful to symbolic relation analysis, but treating a
-  // value ID as an integer literal here would corrupt range facts.
+  // This scalar fact lattice consumes literal bounds. RANGE retains either
+  // literal endpoint independently; higher-level relation analysis supplies
+  // facts for value endpoints. Treating a value ID as an integer literal here
+  // would corrupt range facts.
   if (predicate->kind == LOOM_PREDICATE_POW2 ||
       predicate->kind == LOOM_PREDICATE_NOT_NAN ||
       predicate->kind == LOOM_PREDICATE_NOT_INF ||
@@ -840,9 +943,7 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
     }
   } else if (predicate->kind == LOOM_PREDICATE_RANGE) {
     if (predicate->arg_count < 3 ||
-        predicate->arg_tags[0] != LOOM_PRED_ARG_VALUE ||
-        predicate->arg_tags[1] != LOOM_PRED_ARG_CONST ||
-        predicate->arg_tags[2] != LOOM_PRED_ARG_CONST) {
+        predicate->arg_tags[0] != LOOM_PRED_ARG_VALUE) {
       return;
     }
   } else if (predicate->arg_count < 2 ||
@@ -954,10 +1055,15 @@ void loom_value_facts_apply_predicate(loom_value_facts_t* facts,
       return;
 
     case LOOM_PREDICATE_RANGE: {
-      int64_t lo = predicate->args[1];
-      int64_t hi = predicate->args[2];
-      facts->range_lo = iree_max(facts->range_lo, lo);
-      facts->range_hi = iree_min(facts->range_hi, hi);
+      // A dynamic endpoint does not invalidate a literal endpoint on the
+      // other side. Higher-level fact producers refine value endpoints from
+      // their retained intervals.
+      if (predicate->arg_tags[1] == LOOM_PRED_ARG_CONST) {
+        facts->range_lo = iree_max(facts->range_lo, predicate->args[1]);
+      }
+      if (predicate->arg_tags[2] == LOOM_PRED_ARG_CONST) {
+        facts->range_hi = iree_min(facts->range_hi, predicate->args[2]);
+      }
       break;
     }
 
@@ -975,6 +1081,10 @@ bool loom_value_facts_refine_relation(uint8_t predicate_kind,
                                       loom_value_facts_t rhs_facts,
                                       loom_value_facts_t* lhs_result,
                                       loom_value_facts_t* rhs_result) {
+  const uint32_t lhs_preserved_flags =
+      lhs_facts.flags & LOOM_VALUE_FACT_NON_ZERO;
+  const uint32_t rhs_preserved_flags =
+      rhs_facts.flags & LOOM_VALUE_FACT_NON_ZERO;
   if (predicate_kind == LOOM_PREDICATE_ULT ||
       predicate_kind == LOOM_PREDICATE_ULE ||
       predicate_kind == LOOM_PREDICATE_UGT ||
@@ -1053,9 +1163,11 @@ bool loom_value_facts_refine_relation(uint8_t predicate_kind,
   }
   if (lhs_result) {
     loom_value_facts_recompute_flags(lhs_result);
+    lhs_result->flags |= lhs_preserved_flags;
   }
   if (rhs_result && rhs_result != lhs_result) {
     loom_value_facts_recompute_flags(rhs_result);
+    rhs_result->flags |= rhs_preserved_flags;
   }
   return true;
 }

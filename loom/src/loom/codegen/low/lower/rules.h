@@ -112,6 +112,10 @@ enum loom_low_lower_value_ref_kind_e {
   LOOM_LOW_LOWER_VALUE_REF_SOURCE_MEMORY_ROOT = 7,
   // Complete byte offset including the selected source-memory static bias.
   LOOM_LOW_LOWER_VALUE_REF_SOURCE_MEMORY_BYTE_OFFSET = 8,
+  // Exact whole-vector lane origin of source operand field |index|, element
+  // |element_index|. Selection proves the origin is available and identity
+  // mapped before emission consumes it.
+  LOOM_LOW_LOWER_VALUE_REF_EXACT_LANE_ORIGIN_OPERAND = 9,
   // Maximum value-ref kind plus one.
   LOOM_LOW_LOWER_VALUE_REF_COUNT_,
 };
@@ -574,16 +578,11 @@ static_assert(sizeof(loom_low_lower_source_memory_address_materializer_t) ==
 
 // Interned diagnostic selection for one source-memory constraint family.
 typedef struct loom_low_lower_source_memory_diagnostics_t {
-  // Diagnostic emitted when the base source-memory constraint rejects.
-  uint16_t constraint_diagnostic_index;
-  // Diagnostic emitted when either byte-offset width check rejects.
-  uint16_t byte_offset_diagnostic_index;
-  // Diagnostic emitted when the address-layout classification rejects.
-  uint16_t address_layout_diagnostic_index;
-  // Diagnostic emitted when complete address materialization rejects.
-  uint16_t address_diagnostic_index;
+  // Diagnostic selected for each exact source-memory rejection reason.
+  uint16_t rejection_diagnostic_indices
+      [LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_COUNT];
 } loom_low_lower_source_memory_diagnostics_t;
-static_assert(sizeof(loom_low_lower_source_memory_diagnostics_t) == 8,
+static_assert(sizeof(loom_low_lower_source_memory_diagnostics_t) == 60,
               "source-memory diagnostic rows must remain compact");
 
 typedef struct loom_low_lower_source_memory_t {
@@ -730,6 +729,8 @@ typedef enum loom_low_lower_guard_kind_e {
   // Source value's complete encoded-operand schema must equal the rule-set
   // storage_operand_schemas row selected by index.element_index.
   LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_OPERAND_SCHEMA = 36,
+  // Retained source value facts prove that the value cannot be NaN.
+  LOOM_LOW_LOWER_GUARD_VALUE_NOT_NAN = 37,
   // Maximum guard kind value plus one.
   LOOM_LOW_LOWER_GUARD_COUNT_,
 } loom_low_lower_guard_kind_t;

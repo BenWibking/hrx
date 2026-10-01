@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from loom.gen.support.string_pool import CStringPool
@@ -58,6 +58,7 @@ from loom.target.low_descriptors import (
     OperandForm,
     OperandFormImmediateAction,
     OperandRole,
+    PhysicalRegister,
     PhysicalRegisterView,
     PressureDelta,
     RegClass,
@@ -70,6 +71,44 @@ from loom.target.low_descriptors import (
     StorageLease,
     descriptor_stable_id,
 )
+
+
+def _derive_mutable_state_classes(
+    descriptors: Sequence[Descriptor],
+    register_classes: Mapping[str, RegClass],
+    physical_registers: Mapping[str, PhysicalRegister],
+) -> frozenset[str]:
+    """Returns every register class that may alias descriptor-written state."""
+
+    written_classes = {
+        alternative.reg_class
+        for descriptor in descriptors
+        for operand in descriptor.operands
+        if OperandFlag.STATE_WRITE in operand.flags
+        for alternative in operand.reg_alts
+        if alternative.reg_class is not None
+    }
+    written_alias_sets: set[int] = set()
+    written_atomic_units: set[int] = set()
+    for class_name in written_classes:
+        register_class = register_classes.get(class_name)
+        if register_class is None:
+            continue
+        if register_class.alias_set_id:
+            written_alias_sets.add(register_class.alias_set_id)
+        if RegClassFlag.EXPLICIT_PHYSICAL_REGISTERS in register_class.flags:
+            written_atomic_units.update(atomic_unit for register_name in register_class.physical_registers for atomic_unit in physical_registers[register_name].atomic_units)
+
+    mutable_classes = set(written_classes)
+    for register_class in register_classes.values():
+        if register_class.alias_set_id and register_class.alias_set_id in written_alias_sets:
+            mutable_classes.add(register_class.name)
+            continue
+        if RegClassFlag.EXPLICIT_PHYSICAL_REGISTERS not in register_class.flags:
+            continue
+        if any(atomic_unit in written_atomic_units for register_name in register_class.physical_registers for atomic_unit in physical_registers[register_name].atomic_units):
+            mutable_classes.add(register_class.name)
+    return frozenset(mutable_classes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +145,9 @@ def _physical_register_packing_order(reg_class: RegClass, views: Sequence[Physic
     Larger views group the bank first, then smaller views group their pieces.
     For nested register views this visits siblings before opening another
     aggregate. Overlapping non-nested views use the first containing group at
-    each width as a deterministic preference, not a legality restriction.
+    each width as a deterministic preference, not a legality restriction. A
+    group stays at its earliest semantic ordinal so a partial view does not
+    outrank unrelated candidates that precede it.
     """
 
     ordinals = {name: index for index, name in enumerate(reg_class.physical_registers)}
@@ -117,14 +158,15 @@ def _physical_register_packing_order(reg_class: RegClass, views: Sequence[Physic
     group_keys: list[dict[int, int]] = []
     for width in sorted(groups_by_width, reverse=True):
         keys: dict[int, int] = {}
-        for group_index, group in enumerate(sorted(set(groups_by_width[width]))):
+        for group in sorted(set(groups_by_width[width])):
+            group_anchor = min(group)
             for ordinal in group:
-                keys.setdefault(ordinal, group_index)
+                keys.setdefault(ordinal, group_anchor)
         group_keys.append(keys)
     return sorted(
         range(len(ordinals)),
         key=lambda ordinal: (
-            *(keys.get(ordinal, len(ordinals) + ordinal) for keys in group_keys),
+            *(keys.get(ordinal, ordinal) for keys in group_keys),
             ordinal,
         ),
     )
@@ -327,8 +369,9 @@ def derive_minimum_issue_cycles(
 def _compile_resource_calendars(
     resources: Sequence[Resource],
     schedule_classes: Sequence[ScheduleClass],
+    lookback_cycles: int,
 ) -> tuple[list[CompiledResourceCalendar], int]:
-    """Retains occupancy horizons and common instruction-issue demand."""
+    """Retains bounded issue history, forward horizons and common demand."""
 
     groups = {resource.name: resource.contention_group_id or -index - 1 for index, resource in enumerate(resources)}
     horizons: dict[int, int] = dict.fromkeys(groups.values(), 0)
@@ -345,7 +388,7 @@ def _compile_resource_calendars(
     calendars: dict[int, CompiledResourceCalendar] = {}
     slot_count = 0
     for group, horizon in horizons.items():
-        length = 1 << (horizon - 1).bit_length() if horizon else 0
+        length = 1 << (horizon + lookback_cycles - 1).bit_length() if horizon else 0
         calendars[group] = CompiledResourceCalendar(slot_start=slot_count, slot_mask=max(length - 1, 0), minimum_issue_units=minimum_issue_units.get(group, 0))
         slot_count += length
     validation.validate_u32(slot_count, "resource calendar slot count")
@@ -1060,6 +1103,11 @@ def compile_descriptor_set(
     schedule_inputs = _dedupe_by_name(spec.schedule_classes, lambda item: item.name)
     enum_domain_inputs = _dedupe_by_name(spec.enum_domains, lambda item: item.name)
     _dedupe_by_name(spec.descriptors, lambda item: item.key)
+    mutable_state_classes = _derive_mutable_state_classes(
+        spec.descriptors,
+        reg_class_inputs,
+        physical_register_inputs,
+    )
 
     operand_layouts_by_descriptor: dict[str, validation.DescriptorOperandLayout] = {}
     rematerializable_results_by_descriptor: dict[str, tuple[int, ...]] = {}
@@ -1068,13 +1116,17 @@ def compile_descriptor_set(
     for descriptor in spec.descriptors:
         operand_layout = validation.validate_descriptor_operands(descriptor)
         validation.validate_descriptor_speculation(descriptor)
+        validation.validate_descriptor_state_assignment(descriptor, reg_class_inputs)
         operand_layouts_by_descriptor[descriptor.key] = operand_layout
         result_count = operand_layout.result_count
         source_value_indices_by_descriptor[descriptor.key] = validation.descriptor_operand_source_value_indices(
             descriptor,
             result_count,
         )
-        rematerializable_results_by_descriptor[descriptor.key] = validation.validate_descriptor_constraints(descriptor)
+        rematerializable_results_by_descriptor[descriptor.key] = validation.validate_descriptor_constraints(
+            descriptor,
+            mutable_state_classes,
+        )
         validation.validate_descriptor_op_kind(descriptor, result_count)
         validation.validate_allocation_move_descriptor(
             descriptor,
@@ -1734,7 +1786,8 @@ def compile_descriptor_set(
             raise ValueError(f"descriptor '{descriptor.key}' stable ID collides with '{previous_key}'")
         seen_stable_ids[stable_id] = descriptor.key
 
-    resource_calendars, resource_calendar_slot_count = _compile_resource_calendars(resources, schedule_classes)
+    resource_calendar_lookback_cycles = max((max(0, -row.minimum_issue_separation_cycles) for row in event_separations), default=0)
+    resource_calendars, resource_calendar_slot_count = _compile_resource_calendars(resources, schedule_classes, resource_calendar_lookback_cycles)
     return CompiledDescriptorSet(
         spec=spec,
         source_descriptors=source_descriptors,
@@ -1759,6 +1812,7 @@ def compile_descriptor_set(
         resources=resources,
         resource_calendars=resource_calendars,
         resource_calendar_slot_count=resource_calendar_slot_count,
+        resource_calendar_lookback_cycles=resource_calendar_lookback_cycles,
         schedule_classes=schedule_classes,
         timing_events=timing_events,
         event_separations=event_separations,

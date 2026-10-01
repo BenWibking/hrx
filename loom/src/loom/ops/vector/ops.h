@@ -2868,6 +2868,11 @@ iree_status_t loom_vector_extui_build(
     loom_builder_t* builder, loom_value_id_t input,
     loom_type_t input_type, loom_type_t result_type,
     loom_location_id_t location, loom_op_t** out_op);
+iree_status_t loom_vector_extui_facts(
+    loom_fact_context_t* context,
+    const loom_module_t* module, const loom_op_t* op,
+    const loom_value_facts_t* operand_facts,
+    loom_value_facts_t* result_facts);
 
 // LOOM_OP_VECTOR_TRUNCI: Lanewise integer truncation. Source and result shapes match exactly, and each lane keeps the low bits required by the result element width.
 // vector.trunci
@@ -2904,6 +2909,11 @@ iree_status_t loom_vector_uitofp_build(
     loom_builder_t* builder, loom_value_id_t input,
     loom_type_t input_type, loom_type_t result_type,
     loom_location_id_t location, loom_op_t** out_op);
+iree_status_t loom_vector_uitofp_facts(
+    loom_fact_context_t* context,
+    const loom_module_t* module, const loom_op_t* op,
+    const loom_value_facts_t* operand_facts,
+    loom_value_facts_t* result_facts);
 
 // LOOM_OP_VECTOR_FPTOSI: Lanewise floating-point to signed integer conversion with unchanged shape.
 // vector.fptosi
@@ -3085,7 +3095,7 @@ iree_status_t loom_vector_dotf_facts(
     const loom_value_facts_t* operand_facts,
     loom_value_facts_t* result_facts);
 
-// LOOM_OP_VECTOR_DOT2F: Group adjacent two-lane f16 or bf16 products along the last axis and add each two-product fused sum into an f32 accumulator lane. Semantics are equivalent to extending each source lane to f32, then accumulating scalar.fmaf(lhs0_f32, rhs0_f32, acc) followed by scalar.fmaf(lhs1_f32, rhs1_f32, partial) for each result lane. This models AMDGPU fdot2-style widened register dots without making f16 dot accumulation implicit in vector.dotf.
+// LOOM_OP_VECTOR_DOT2F: Group adjacent two-lane f16 or bf16 products along the last axis and accumulate each pair into an f32 lane using native grouped-dot arithmetic. Intermediate precision, rounding, and subnormal handling follow the selected target's arithmetic contract; an f32 result does not promise the bits of two ordered f32 fused multiply-adds. Target-independent facts, constant folding, and scalar expansion use the reference evaluation: extend each input to f32 and apply scalar.fmaf to the first pair of inputs and accumulator, then to the second pair and partial result. Reference evaluation remains permitted even when native execution differs. Use explicit scalar.fmaf operations or vector.dotf on widened f32 inputs when ordered f32 fused accumulation is required.
 // %r = vector.dot2f %lhs, %rhs, %acc : vector<16xf16>, vector<16xf16>, vector<8xf32>
 LOOM_DEFINE_ISA(loom_vector_dot2f_isa, LOOM_OP_VECTOR_DOT2F)
 LOOM_DEFINE_OPERAND(loom_vector_dot2f_lhs, 0)

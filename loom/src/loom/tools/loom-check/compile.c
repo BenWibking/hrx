@@ -6,11 +6,11 @@
 
 #include "loom/tools/loom-check/compile.h"
 
-#include "iree/base/byte_sequence.h"
 #include "loom/codegen/low/repr.h"
+#include "loom/compile/request.h"
 #include "loom/link/linker.h"
 #include "loom/target/entry_selection.h"
-#include "loom/tooling/compile/preparation.h"
+#include "loom/tooling/compile/pipeline.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/input.h"
 
@@ -46,37 +46,12 @@ static iree_status_t loom_check_compile_emit(
     iree_arena_block_pool_t* block_pool, iree_allocator_t allocator,
     bool* out_compiled) {
   *out_compiled = false;
-  loom_compile_options_t compile_options;
-  loom_compile_options_initialize(&compile_options);
-  compile_options.target_pipeline_options =
-      pipeline_options->target_pipeline_options;
-  compile_options.diagnostic_sink = pipeline_options->diagnostic_sink;
-  compile_options.source_resolver = pipeline_options->source_resolver;
-  compile_options.function_versions = &pipeline_result->function_versions.list;
-  if (request->producer.kind == LOOM_COMPILE_PRODUCER_ARTIFACT) {
-    loom_artifact_candidate_t candidate = {0};
-    iree_status_t status = loom_artifact_candidate_emit_target(
-        request->producer.value.artifact_provider, &request->explicit_target,
-        module, &compile_options, allocator, &candidate);
-    if (iree_status_is_ok(status)) {
-      *out_compiled =
-          candidate.compiled &&
-          candidate.artifact.target_artifact_data != NULL &&
-          iree_byte_sequence_length(candidate.artifact.target_artifact_data) >
-              0 &&
-          candidate.artifact.executable_data != NULL &&
-          iree_byte_sequence_length(candidate.artifact.executable_data) > 0;
-    }
-    loom_artifact_candidate_deinitialize(&candidate);
-    return status;
-  }
-
-  const loom_target_emitter_t* emitter = request->producer.value.target_emitter;
+  const loom_target_emitter_t* emitter = request->target_emitter;
   const loom_target_entry_options_t entry_options = {
-      .function_versions = compile_options.function_versions,
-      .diagnostic_sink = compile_options.diagnostic_sink,
-      .source_resolver = compile_options.source_resolver,
-      .max_errors = compile_options.max_errors,
+      .function_versions = &pipeline_result->function_versions.list,
+      .diagnostic_sink = pipeline_options->diagnostic_sink,
+      .source_resolver = pipeline_options->source_resolver,
+      .max_errors = pipeline_options->max_errors,
   };
   loom_target_entry_diagnostic_emitter_t diagnostic_emitter;
   loom_target_entry_diagnostic_emitter_initialize(
@@ -91,7 +66,7 @@ static iree_status_t loom_check_compile_emit(
       .low_descriptor_registry =
           &pipeline_options->low_descriptor_registry->registry,
       .module = module,
-      .function_versions = compile_options.function_versions,
+      .function_versions = &pipeline_result->function_versions.list,
       .identifier = emitter->default_identifier,
       .diagnostic_emitter = loom_target_entry_emitter(&diagnostic_emitter),
       .scratch_arena = &scratch_arena,
@@ -136,17 +111,25 @@ static iree_status_t loom_check_compile_request(
       &module);
   collector->module = module;
   uint32_t error_count = 0;
+  loom_target_specialization_request_list_t target_specializations = {0};
   if (iree_status_is_ok(status)) {
-    status = loom_compile_materialize_request(request, pipeline_options,
-                                              &source_projection, block_pool,
-                                              allocator, &module, &error_count);
+    const loom_target_entry_options_t entry_options = {
+        .diagnostic_sink = pipeline_options->diagnostic_sink,
+        .source_resolver = pipeline_options->source_resolver,
+        .max_errors = pipeline_options->max_errors,
+    };
+    status = loom_compile_request_materialize(
+        request, pipeline_options->target_environment, &entry_options,
+        &source_projection, collector->arena, block_pool, &module,
+        &target_specializations, &error_count);
     collector->module = module;
+    projected_options.target_specializations = target_specializations;
   }
   loom_compile_pipeline_result_t pipeline_result = {0};
   if (iree_status_is_ok(status) &&
       collector->error_count == initial_error_count) {
-    status = loom_compile_run_request_pipeline(
-        request, module, pipeline_options, block_pool, &pipeline_result);
+    status = loom_compile_run_pipeline(module, pipeline_options, block_pool,
+                                       &pipeline_result);
   }
   if (iree_status_is_ok(status) &&
       collector->error_count == initial_error_count) {
@@ -240,8 +223,7 @@ iree_status_t loom_check_execute_compile(
     };
     status = loom_compile_request_resolve(
         input.module, &request_options,
-        options->environment->artifact_provider_registry,
-        options->environment->target_environment, &request);
+        options->environment->target_environment, &arena, &request);
     if (iree_status_is_ok(status) &&
         loom_compile_request_is_command(&request)) {
       status = iree_make_status(
@@ -252,29 +234,22 @@ iree_status_t loom_check_execute_compile(
     }
     if (iree_status_is_ok(status)) {
       pipeline_options.target_pipeline_options =
-          request.producer.kind == LOOM_COMPILE_PRODUCER_ARTIFACT
-              ? request.producer.value.artifact_provider
-                    ->default_pipeline_options
-              : request.producer.value.target_emitter->default_pipeline_options;
+          request.target_emitter->default_pipeline_options;
       pipeline_options.target_pipeline_options.sanitizer = options->sanitizer;
     }
   }
   if (iree_status_is_ok(status) && input.module != NULL &&
       collector.error_count == 0) {
-    if (request.product == LOOM_COMPILE_PRODUCT_KERNEL) {
+    if (request.selection.product == LOOM_COMPILE_PRODUCT_KERNEL) {
       // Testbench launches are independent deployment units. Compiling their
       // roots separately also preserves targets with per-artifact dispatch
       // ABIs.
-      for (iree_host_size_t i = 0;
-           iree_status_is_ok(status) && i < input.module->symbols.count; ++i) {
-        const loom_symbol_t* symbol = &input.module->symbols.entries[i];
-        if (!loom_compile_request_default_root_set_contains(
-                input.module, request.product, symbol)) {
-          continue;
-        }
-        const iree_string_view_t root =
-            loom_string_table_get(&input.module->strings, symbol->name_id);
-        request.roots = (iree_string_view_list_t){.count = 1, .values = &root};
+      const iree_string_view_list_t roots = request.selection.roots;
+      for (iree_host_size_t i = 0; iree_status_is_ok(status) && i < roots.count;
+           ++i) {
+        const iree_string_view_t root = roots.values[i];
+        request.selection.roots =
+            (iree_string_view_list_t){.count = 1, .values = &root};
         status = loom_check_compile_request(
             &request, input.module, &input.sources.table, &pipeline_options,
             &collector, block_pool, allocator);

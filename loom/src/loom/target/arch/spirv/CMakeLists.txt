@@ -241,6 +241,22 @@ endif()
 if(LOOM_TARGET_ARCH_SPIRV)
 loom_cc_library(
   NAME
+    compiler_provider
+  HDRS
+    "compiler_provider.h"
+  SRCS
+    "compiler_provider.c"
+  DEPS
+    ::facts
+    loom::target::emit::spirv::module_compiler
+    loom::target::provider
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_SPIRV)
+loom_cc_library(
+  NAME
     profile
   HDRS
     "profile.h"
@@ -501,17 +517,10 @@ loom_check_test_suite(
     "test/source_low/memory_access_flags.loom-test"
     "test/source_low/memory_biased_offsets.loom-test"
     "test/source_low/memory_float8.loom-test"
-    "test/source_low/memory_integer_terms.loom-test"
-    "test/source_low/memory_packed_tails.loom-test"
     "test/source_low/memory_scalar_addressing.loom-test"
-    "test/source_low/memory_scalar_wide_offsets.loom-test"
     "test/source_low/memory_shared_components.loom-test"
-    "test/source_low/memory_signed_terms.loom-test"
-    "test/source_low/memory_subview.loom-test"
     "test/source_low/memory_tiled_channel.loom-test"
-    "test/source_low/memory_vector_atomic_workgroup.loom-test"
     "test/source_low/memory_wide_carriers.loom-test"
-    "test/source_low/memory_wide_offsets.loom-test"
     "test/source_low/memory_workgroup_scalar_addressing.loom-test"
     "test/source_low/narrow_float_arguments.loom-test"
     "test/source_low/narrow_float_subtraction.loom-test"
@@ -523,7 +532,6 @@ loom_check_test_suite(
     "test/source_low/numeric_constant_remainder.loom-test"
     "test/source_low/numeric_conversion.loom-test"
     "test/source_low/numeric_conversion_float8.loom-test"
-    "test/source_low/numeric_conversion_wide.loom-test"
     "test/source_low/numeric_extended_math.loom-test"
     "test/source_low/numeric_float_arithmetic.loom-test"
     "test/source_low/numeric_float_comparison_flags.loom-test"
@@ -533,14 +541,12 @@ loom_check_test_suite(
     "test/source_low/numeric_integer_widening.loom-test"
     "test/source_low/numeric_minmax.loom-test"
     "test/source_low/numeric_narrow_address.loom-test"
-    "test/source_low/numeric_offset_wide.loom-test"
+    "test/source_low/numeric_narrow_float_signs.loom-test"
     "test/source_low/numeric_reciprocal.loom-test"
     "test/source_low/numeric_scalar_f32.loom-test"
     "test/source_low/numeric_scalar_f32_values.loom-test"
     "test/source_low/numeric_scalar_i32.loom-test"
     "test/source_low/numeric_scalar_i64.loom-test"
-    "test/source_low/numeric_scalar_i64_shift_counts.loom-test"
-    "test/source_low/numeric_scalar_i64_subtract.loom-test"
     "test/source_low/numeric_unsigned_constant_division.loom-test"
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/ordinary_vector_float.loom-test"

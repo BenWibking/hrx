@@ -20,12 +20,14 @@ from loom.dialect.scalar import math as scalar_math
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.vector import defs as vector
 from loom.dsl import Op
+from loom.target.arch.amdgpu.contracts.bfloat import bfloat_narrow_rules
 from loom.target.arch.amdgpu.contracts.materializers import (
     ADDRESS_VGPR_MATERIALIZER,
     F32_VGPR_MATERIALIZER,
     F64_VGPR_MATERIALIZER,
     I1_NATIVE_MASK_MATERIALIZER,
     REGISTERS_VGPR_MATERIALIZER,
+    VOP3_BINARY_RHS_MATERIALIZER,
 )
 from loom.target.arch.amdgpu.contracts.packed_i8 import (
     PACKED_I8_TYPE as _VEC_I8_PACKED,
@@ -66,6 +68,7 @@ from loom.target.contracts import (
 from loom.target.low_descriptors import Descriptor
 
 _DESCRIPTOR_KEYS = (
+    "amdgpu.s_mov_b32",
     "amdgpu.s_add_f16",
     "amdgpu.s_sub_f16",
     "amdgpu.s_mul_f16",
@@ -215,6 +218,7 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.v_and_b32.lit",
     "amdgpu.v_or_b32",
     "amdgpu.v_or_b32.lit",
+    "amdgpu.v_cmp_uno_f32",
     "amdgpu.v_xor_b32",
     "amdgpu.v_xor_b32.lit",
     "amdgpu.v_lshlrev_b32",
@@ -225,6 +229,7 @@ _DESCRIPTOR_KEYS = (
     "amdgpu.v_bfe_u32.offset_0_width_16_low16",
     "amdgpu.v_bfe_i32.offset_width_inline",
     "amdgpu.v_bfe_u32.offset_width_inline",
+    "amdgpu.v_bfi_b32",
     "amdgpu.v_bfi_b32.src0_lit",
     "amdgpu.v_ashrrev_i32",
     "amdgpu.v_ashrrev_i32.src0_inline",
@@ -343,7 +348,6 @@ _INDEX = Scalar("index")
 _F32_ABS_MASK = 0x7FFFFFFF
 _F32_ONE_BITS = 0x3F800000
 _F32_SIGN_MASK = 0x80000000
-_BF16_ROUND_BIAS = 0x7FFF
 
 _VEC_I32_DIAGNOSTIC = GuardDiagnostic(
     subject_role="type",
@@ -663,17 +667,24 @@ def _binary_rule(
     source_rhs: str = "rhs",
     f32_operands: bool = False,
     f32_rhs: bool = False,
+    rhs_materializer: ValueMaterializer | None = None,
     extra_guards: tuple[Guard, ...] = (),
     report_key: str = "",
 ) -> DescriptorRule:
+    if rhs_materializer is not None and (f32_operands or f32_rhs):
+        raise ValueError("binary RHS cannot use two materializers")
     descriptor = _descriptor(descriptor_key)
+    if f32_operands or f32_rhs:
+        rhs_operand = _f32_vgpr_operand(source_rhs)
+    elif rhs_materializer is not None:
+        rhs_operand = _materialized_operand(source_rhs, rhs_materializer)
+    else:
+        rhs_operand = ValueRef.operand(source_rhs)
     operands = {
         descriptor_lhs: _f32_vgpr_operand(source_lhs)
         if f32_operands
         else ValueRef.operand(source_lhs),
-        descriptor_rhs: _f32_vgpr_operand(source_rhs)
-        if f32_operands or f32_rhs
-        else ValueRef.operand(source_rhs),
+        descriptor_rhs: rhs_operand,
     }
     return DescriptorRule(
         source_op=source_op,
@@ -820,28 +831,73 @@ def _f32_abs_rule(
     )
 
 
-def _f32_copysign_rule(
+def _f32_copysign_rules(
     source_op: Op,
     type_pattern: TypePattern,
-) -> DescriptorRule:
-    descriptor = _descriptor("amdgpu.v_bfi_b32.src0_lit")
-    return DescriptorRule(
-        source_op=source_op,
-        descriptor=descriptor,
-        guards=(
-            *_typed_guards(("lhs", "rhs", "result"), type_pattern),
-            Guard.descriptor_available(descriptor),
+) -> tuple[DescriptorRule, ...]:
+    literal_insert = _descriptor("amdgpu.v_bfi_b32.src0_lit")
+    move = _descriptor("amdgpu.s_mov_b32")
+    register_insert = _descriptor("amdgpu.v_bfi_b32")
+    typed_guards = _typed_guards(("lhs", "rhs", "result"), type_pattern)
+    emit_form = _emit_form(type_pattern)
+    register_emit_form = (
+        DescriptorEmitForm.PER_LANE_SEQUENCE
+        if type_pattern.kind == "vector"
+        else DescriptorEmitForm.OP
+    )
+    register_insert_operand = (
+        ValueRef.operand("lhs")
+        if type_pattern.kind == "vector"
+        else _f32_vgpr_operand("lhs")
+    )
+    register_base_operand = (
+        ValueRef.operand("rhs")
+        if type_pattern.kind == "vector"
+        else _f32_vgpr_operand("rhs")
+    )
+    return (
+        DescriptorRule(
+            source_op=source_op,
+            descriptor=literal_insert,
+            guards=(*typed_guards, Guard.descriptor_available(literal_insert)),
+            emit=(
+                EmitDescriptorOp(
+                    descriptor=literal_insert,
+                    operands={
+                        "insert": _f32_vgpr_operand("lhs"),
+                        "base": _f32_vgpr_operand("rhs"),
+                    },
+                    results={"dst": ValueRef.result("result")},
+                    immediates={"imm32": _F32_ABS_MASK},
+                    form=emit_form,
+                ),
+            ),
         ),
-        emit=(
-            EmitDescriptorOp(
-                descriptor=descriptor,
-                operands={
-                    "insert": _f32_vgpr_operand("lhs"),
-                    "base": _f32_vgpr_operand("rhs"),
-                },
-                results={"dst": ValueRef.result("result")},
-                immediates={"imm32": _F32_ABS_MASK},
-                form=_emit_form(type_pattern),
+        DescriptorRule(
+            source_op=source_op,
+            descriptor=register_insert,
+            guards=(
+                *typed_guards,
+                Guard.descriptor_available(move),
+                Guard.descriptor_available(register_insert),
+            ),
+            emit=(
+                EmitDescriptorOp(
+                    descriptor=move,
+                    results={"dst": ValueRef.temporary("magnitude_mask")},
+                    result_types={"dst": _I32},
+                    immediates={"imm32": _F32_ABS_MASK},
+                ),
+                EmitDescriptorOp(
+                    descriptor=register_insert,
+                    operands={
+                        "mask": ValueRef.temporary("magnitude_mask"),
+                        "insert": register_insert_operand,
+                        "base": register_base_operand,
+                    },
+                    results={"dst": ValueRef.result("result")},
+                    form=register_emit_form,
+                ),
             ),
         ),
     )
@@ -2517,68 +2573,6 @@ def _bf16_extf_rule() -> DescriptorRule:
     )
 
 
-def _bf16_fptrunc_rule() -> DescriptorRule:
-    shift_down = _descriptor("amdgpu.v_lshrrev_b32.src0_inline")
-    and_bits = _descriptor("amdgpu.v_and_b32.lit")
-    add_literal = _descriptor("amdgpu.v_add_u32.lit")
-    add = _descriptor("amdgpu.v_add_u32")
-    return DescriptorRule(
-        source_op=scalar_conversion.scalar_fptrunc,
-        descriptor=shift_down,
-        guards=(
-            _value_type("input", _F32),
-            _value_type("result", _BF16),
-            Guard.descriptor_available(shift_down),
-            Guard.descriptor_available(and_bits),
-            Guard.descriptor_available(add_literal),
-            Guard.descriptor_available(add),
-        ),
-        emit=(
-            EmitDescriptorOp(
-                descriptor=shift_down,
-                operands={"value": _f32_vgpr_operand("input")},
-                results={"dst": ValueRef.temporary("upper")},
-                result_types={"dst": ValueRef.result("result")},
-                immediates={"imm32": 16},
-                form=DescriptorEmitForm.OP,
-            ),
-            EmitDescriptorOp(
-                descriptor=and_bits,
-                operands={"rhs": ValueRef.temporary("upper")},
-                results={"dst": ValueRef.temporary("lsb")},
-                result_types={"dst": ValueRef.result("result")},
-                immediates={"imm32": 1},
-                form=DescriptorEmitForm.OP,
-            ),
-            EmitDescriptorOp(
-                descriptor=add_literal,
-                operands={"rhs": ValueRef.temporary("lsb")},
-                results={"dst": ValueRef.temporary("bias")},
-                result_types={"dst": ValueRef.result("result")},
-                immediates={"imm32": _BF16_ROUND_BIAS},
-                form=DescriptorEmitForm.OP,
-            ),
-            EmitDescriptorOp(
-                descriptor=add,
-                operands={
-                    "lhs": _f32_vgpr_operand("input"),
-                    "rhs": ValueRef.temporary("bias"),
-                },
-                results={"dst": ValueRef.temporary("rounded")},
-                result_types={"dst": ValueRef.result("result")},
-                form=DescriptorEmitForm.OP,
-            ),
-            EmitDescriptorOp(
-                descriptor=shift_down,
-                operands={"value": ValueRef.temporary("rounded")},
-                results={"dst": ValueRef.result("result")},
-                immediates={"imm32": 16},
-                form=DescriptorEmitForm.OP,
-            ),
-        ),
-    )
-
-
 def _constant_binary_rule(
     source_op: Op,
     descriptor_key: str,
@@ -3189,6 +3183,39 @@ def _commutative_f32_binary_rules(
     )
 
 
+def _commutative_f64_vop3_binary_rules(
+    source_op: Op,
+    type_pattern: TypePattern,
+    descriptor_key: str,
+    *,
+    extra_guards: tuple[Guard, ...] = (),
+    report_key: str = "",
+) -> tuple[DescriptorRule, DescriptorRule]:
+    return (
+        _binary_rule(
+            source_op,
+            type_pattern,
+            descriptor_key,
+            source_lhs="rhs",
+            source_rhs="lhs",
+            extra_guards=(
+                *extra_guards,
+                _register_class("lhs", "amdgpu.vgpr"),
+                _register_class("rhs", "amdgpu.sgpr"),
+            ),
+            report_key=report_key,
+        ),
+        _binary_rule(
+            source_op,
+            type_pattern,
+            descriptor_key,
+            rhs_materializer=VOP3_BINARY_RHS_MATERIALIZER,
+            extra_guards=extra_guards,
+            report_key=report_key,
+        ),
+    )
+
+
 def _f32_fma_rule(
     source_op: Op,
     type_pattern: TypePattern,
@@ -3630,129 +3657,169 @@ def _f32_vector_sub_literal_rules() -> tuple[DescriptorRule, ...]:
     )
 
 
-def _f32_number_extrema_rules() -> tuple[DescriptorRule, ...]:
+def _direct_number_extrema_rules(
+    rule: DescriptorRule, ieee_descriptor_key: str
+) -> tuple[DescriptorRule, ...]:
+    # Legacy min/max propagates signaling NaNs in IEEE mode. The newer IEEE
+    # extrema family also supplies number-preferring instructions that ignore
+    # signaling NaNs without first quieting the operands.
+    return tuple(
+        replace(rule, guards=(*rule.guards, semantic_guard))
+        for semantic_guard in (
+            Guard.instance_flags_has_all("fastmath", "nnan"),
+            Guard.descriptor_available(_descriptor(ieee_descriptor_key)),
+        )
+    )
+
+
+def _quiet_number_extrema_rule(
+    rule: DescriptorRule, canonicalize_key: str, operands: tuple[ValueRef, ...]
+) -> DescriptorRule:
+    canonicalize = _descriptor(canonicalize_key)
+    quiet_values = {
+        operand: ValueRef.temporary(operand.field + "_quiet") for operand in operands
+    }
+    return replace(
+        rule,
+        guards=(*rule.guards, Guard.descriptor_available(canonicalize)),
+        emit=(
+            *(
+                EmitDescriptorOp(
+                    descriptor=canonicalize,
+                    operands={"lhs": operand, "rhs": operand},
+                    results={"dst": quiet_values[operand]},
+                    result_types={"dst": ValueRef.result("result")},
+                    form=rule.emit[0].form,
+                )
+                for operand in operands
+            ),
+            *(
+                replace(
+                    emit,
+                    operands={
+                        field: quiet_values.get(value, value)
+                        for field, value in emit.operands.items()
+                    },
+                )
+                for emit in rule.emit
+            ),
+        ),
+    )
+
+
+def _number_extrema_rules(
+    type_suffix: str, scalar_type: TypePattern, vector_type: TypePattern
+) -> tuple[DescriptorRule, ...]:
     rules: list[DescriptorRule] = []
     for scalar_op, vector_op, operation in (
         (scalar_arithmetic.scalar_minnumf, vector.vector_minnumf, "min"),
         (scalar_arithmetic.scalar_maxnumf, vector.vector_maxnumf, "max"),
     ):
         for source_op, type_pattern in (
-            (scalar_op, _F32),
-            (vector_op, _VEC_F32_STATIC),
+            (scalar_op, scalar_type),
+            (vector_op, vector_type),
         ):
-            descriptor_key = f"amdgpu.v_{operation}_f32"
-            native_rules = (
-                *(
-                    (
-                        _scalar_float_binary_rule(
-                            source_op, _F32, f"amdgpu.s_{operation}_f32"
+            descriptor_key = f"amdgpu.v_{operation}_{type_suffix}"
+            vector_rule = _binary_rule(source_op, type_pattern, descriptor_key)
+            if type_suffix == "f16":
+                vector_rule = replace(
+                    vector_rule,
+                    emit=(
+                        replace(
+                            vector_rule.emit[0],
+                            operands={
+                                field: _materialized_operand(
+                                    field, REGISTERS_VGPR_MATERIALIZER
+                                )
+                                for field in ("lhs", "rhs")
+                            },
                         ),
+                    ),
+                )
+            native_rules: list[DescriptorRule] = []
+            if type_pattern in (_F16, _F32):
+                native_rules.append(
+                    _scalar_float_binary_rule(
+                        source_op, type_pattern, f"amdgpu.s_{operation}_{type_suffix}"
                     )
-                    if type_pattern == _F32
-                    else ()
-                ),
-                *_commutative_f32_literal_rules(
-                    source_op, type_pattern, descriptor_key + ".lit"
-                ),
-                *_commutative_f32_binary_rules(source_op, type_pattern, descriptor_key),
-            )
+                )
+            if type_suffix == "f32":
+                native_rules.extend(
+                    _commutative_f32_literal_rules(
+                        source_op, type_pattern, descriptor_key + ".lit"
+                    )
+                )
+                native_rules.extend(
+                    _commutative_f32_binary_rules(
+                        source_op, type_pattern, descriptor_key
+                    )
+                )
+            elif type_suffix == "f64":
+                native_rules.extend(
+                    _commutative_f64_vop3_binary_rules(
+                        source_op, type_pattern, descriptor_key
+                    )
+                )
+            else:
+                native_rules.append(vector_rule)
             for native_rule in native_rules:
-                # Legacy min/max propagates signaling NaNs in IEEE mode. The
-                # newer IEEE extrema family provides minimumNumber semantics
-                # directly, including the numeric result for a signaling NaN.
                 rules.extend(
-                    replace(native_rule, guards=(*native_rule.guards, semantic_guard))
-                    for semantic_guard in (
-                        Guard.instance_flags_has_all("fastmath", "nnan"),
-                        Guard.descriptor_available(_descriptor("amdgpu.v_minimum_f32")),
+                    _direct_number_extrema_rules(
+                        native_rule, f"amdgpu.v_minimum_{type_suffix}"
                     )
                 )
 
-            for register_file in ("s", "v") if type_pattern == _F32 else ("v",):
-                descriptor = _descriptor(f"amdgpu.{register_file}_{operation}_f32")
-                canonicalize = _descriptor(f"amdgpu.{register_file}_max_f32")
-                register_class = f"amdgpu.{register_file}gpr"
-                guards = (_register_class("result", register_class),)
+            for register_file in ("s", "v") if type_pattern in (_F16, _F32) else ("v",):
+                guards = (_register_class("result", f"amdgpu.{register_file}gpr"),)
                 if register_file == "s":
                     guards += tuple(
-                        _register_class(field, register_class)
+                        _register_class(field, "amdgpu.sgpr")
                         for field in ("lhs", "rhs")
                     )
+                base_rule = _binary_rule(
+                    source_op,
+                    type_pattern,
+                    f"amdgpu.{register_file}_{operation}_{type_suffix}",
+                    extra_guards=guards,
+                    f32_operands=register_file == "v" and type_suffix == "f32",
+                )
+                if register_file == "v" and type_suffix == "f16":
+                    base_rule = replace(base_rule, emit=vector_rule.emit)
                 rules.append(
-                    DescriptorRule(
-                        source_op=source_op,
-                        descriptor=descriptor,
-                        guards=(
-                            *_typed_guards(("lhs", "rhs", "result"), type_pattern),
-                            *guards,
-                            Guard.descriptor_available(descriptor),
-                            Guard.descriptor_available(canonicalize),
-                        ),
-                        emit=(
-                            *(
-                                EmitDescriptorOp(
-                                    descriptor=canonicalize,
-                                    operands={
-                                        "lhs": _f32_vgpr_operand(field)
-                                        if register_file == "v"
-                                        else ValueRef.operand(field),
-                                        "rhs": _f32_vgpr_operand(field)
-                                        if register_file == "v"
-                                        else ValueRef.operand(field),
-                                    },
-                                    results={
-                                        "dst": ValueRef.temporary(field + "_quiet")
-                                    },
-                                    result_types={"dst": ValueRef.result("result")},
-                                    form=_emit_form(type_pattern),
-                                )
-                                for field in ("lhs", "rhs")
-                            ),
-                            EmitDescriptorOp(
-                                descriptor=descriptor,
-                                operands={
-                                    "lhs": ValueRef.temporary("lhs_quiet"),
-                                    "rhs": ValueRef.temporary("rhs_quiet"),
-                                },
-                                results={"dst": ValueRef.result("result")},
-                                form=_emit_form(type_pattern),
-                            ),
-                        ),
+                    _quiet_number_extrema_rule(
+                        base_rule,
+                        f"amdgpu.{register_file}_max_{type_suffix}",
+                        tuple(base_rule.emit[0].operands.values()),
                     )
                 )
     return tuple(rules)
 
 
-def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
+def _packed_number_extrema_rules() -> tuple[DescriptorRule, ...]:
     rules: list[DescriptorRule] = []
-    for source_op, descriptor_operation in (
-        (scalar_arithmetic.scalar_minnumf, "min"),
-        (scalar_arithmetic.scalar_maxnumf, "max"),
-    ):
-        for type_pattern, type_suffix in ((_F16, "f16"), (_F64, "f64")):
-            rules.append(
-                _binary_rule(
-                    source_op,
-                    type_pattern,
-                    f"amdgpu.v_{descriptor_operation}_{type_suffix}",
-                )
-            )
-    for source_op, descriptor_operation in (
+    for source_op, operation in (
         (vector.vector_minnumf, "min"),
         (vector.vector_maxnumf, "max"),
     ):
-        for type_pattern, type_suffix in (
-            (_VEC_F16_PACKED_STORAGE, "f16"),
-            (_VEC_F64_STATIC, "f64"),
-        ):
-            rules.append(
-                _binary_rule(
-                    source_op,
-                    type_pattern,
-                    f"amdgpu.v_{descriptor_operation}_{type_suffix}",
-                )
+        native = _packed_float_binary_rule(
+            source_op,
+            f"amdgpu.v_pk_{operation}num_f16",
+            _VEC_F16_PACKED,
+            _VEC_F16_PACKED_DIAGNOSTIC,
+        )
+        rules.extend(_direct_number_extrema_rules(native, "amdgpu.v_pk_minimum_f16"))
+        rules.append(
+            _quiet_number_extrema_rule(
+                native,
+                "amdgpu.v_pk_maxnum_f16",
+                (ValueRef.operand("lhs"), ValueRef.operand("rhs")),
             )
+        )
+    return tuple(rules)
 
+
+def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
+    rules: list[DescriptorRule] = []
     for source_op, descriptor_operation in (
         (scalar_arithmetic.scalar_minimumf, "minimum"),
         (scalar_arithmetic.scalar_maximumf, "maximum"),
@@ -3762,12 +3829,13 @@ def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
             (_F32, "f32"),
             (_F64, "f64"),
         ):
-            rules.append(
-                _binary_rule(
-                    source_op,
-                    type_pattern,
-                    f"amdgpu.v_{descriptor_operation}_{type_suffix}",
+            descriptor_key = f"amdgpu.v_{descriptor_operation}_{type_suffix}"
+            rules.extend(
+                _commutative_f64_vop3_binary_rules(
+                    source_op, type_pattern, descriptor_key
                 )
+                if type_suffix == "f64"
+                else (_binary_rule(source_op, type_pattern, descriptor_key),)
             )
     for source_op, descriptor_operation in (
         (vector.vector_minimumf, "minimum"),
@@ -3778,12 +3846,13 @@ def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
             (_VEC_F32_STATIC, "f32"),
             (_VEC_F64_STATIC, "f64"),
         ):
-            rules.append(
-                _binary_rule(
-                    source_op,
-                    type_pattern,
-                    f"amdgpu.v_{descriptor_operation}_{type_suffix}",
+            descriptor_key = f"amdgpu.v_{descriptor_operation}_{type_suffix}"
+            rules.extend(
+                _commutative_f64_vop3_binary_rules(
+                    source_op, type_pattern, descriptor_key
                 )
+                if type_suffix == "f64"
+                else (_binary_rule(source_op, type_pattern, descriptor_key),)
             )
 
     for source_op, type_pattern, type_suffix in (
@@ -3809,10 +3878,18 @@ def _minmax_family_rules() -> tuple[DescriptorRule, ...]:
         )
     rules.extend(
         (
-            _packed_f16_clampf_rule(
-                "number",
+            *_direct_number_extrema_rules(
+                _packed_f16_clampf_rule(
+                    "number", "amdgpu.v_pk_maxnum_f16", "amdgpu.v_pk_minnum_f16"
+                ),
+                "amdgpu.v_pk_minimum_f16",
+            ),
+            _quiet_number_extrema_rule(
+                _packed_f16_clampf_rule(
+                    "number", "amdgpu.v_pk_maxnum_f16", "amdgpu.v_pk_minnum_f16"
+                ),
                 "amdgpu.v_pk_maxnum_f16",
-                "amdgpu.v_pk_minnum_f16",
+                tuple(ValueRef.operand(field) for field in ("value", "lower", "upper")),
             ),
             _packed_f16_clampf_rule(
                 "ieee",
@@ -3831,11 +3908,7 @@ def _rules() -> tuple[ContractCase, ...]:
             (scalar_arithmetic.scalar_addf, "add"),
             (scalar_arithmetic.scalar_subf, "sub"),
             (scalar_arithmetic.scalar_mulf, "mul"),
-            (scalar_arithmetic.scalar_minnumf, "min"),
-            (scalar_arithmetic.scalar_maxnumf, "max"),
         ):
-            if type_pattern == _F32 and instruction in ("min", "max"):
-                continue
             rules.append(
                 _scalar_float_binary_rule(
                     source_op,
@@ -3985,18 +4058,6 @@ def _rules() -> tuple[ContractCase, ...]:
                 _VEC_F16_PACKED_DIAGNOSTIC,
             ),
             _packed_float_binary_rule(
-                vector.vector_minnumf,
-                "amdgpu.v_pk_minnum_f16",
-                _VEC_F16_PACKED,
-                _VEC_F16_PACKED_DIAGNOSTIC,
-            ),
-            _packed_float_binary_rule(
-                vector.vector_maxnumf,
-                "amdgpu.v_pk_maxnum_f16",
-                _VEC_F16_PACKED,
-                _VEC_F16_PACKED_DIAGNOSTIC,
-            ),
-            _packed_float_binary_rule(
                 vector.vector_minimumf,
                 "amdgpu.v_pk_minimum_f16",
                 _VEC_F16_PACKED,
@@ -4041,8 +4102,16 @@ def _rules() -> tuple[ContractCase, ...]:
             ),
         )
     )
+    rules.extend(_packed_number_extrema_rules())
     rules.extend(_minmax_family_rules())
-    rules.extend(_f32_number_extrema_rules())
+    rules.extend(_number_extrema_rules("f16", _F16, _VEC_F16_PACKED_STORAGE))
+    rules.extend(_number_extrema_rules("f32", _F32, _VEC_F32_STATIC))
+    rules.extend(_number_extrema_rules("f64", _F64, _VEC_F64_STATIC))
+    rules.extend(
+        _commutative_f64_vop3_binary_rules(
+            scalar_arithmetic.scalar_addf, _F64, "amdgpu.v_add_f64"
+        )
+    )
     for source_op, descriptor_key in (
         (vector.vector_addf, "amdgpu.v_add_f32.lit"),
         (vector.vector_mulf, "amdgpu.v_mul_f32.lit"),
@@ -4071,7 +4140,7 @@ def _rules() -> tuple[ContractCase, ...]:
             ),
             _f32_neg_rule(vector.vector_negf, _VEC_F32_STATIC, f32_operand=True),
             _f32_abs_rule(vector.vector_absf, _VEC_F32_STATIC, f32_operand=True),
-            _f32_copysign_rule(vector.vector_copysignf, _VEC_F32_STATIC),
+            *_f32_copysign_rules(vector.vector_copysignf, _VEC_F32_STATIC),
             _divf_arcp_one_rule(vector.vector_divf, _VEC_F32_STATIC),
             _divf_arcp_literal_lhs_rule(vector.vector_divf, _VEC_F32_STATIC),
             _divf_arcp_rule(vector.vector_divf, _VEC_F32_STATIC),
@@ -4317,11 +4386,6 @@ def _rules() -> tuple[ContractCase, ...]:
             ),
             _binary_rule(
                 scalar_arithmetic.scalar_addf,
-                _F64,
-                "amdgpu.v_add_f64",
-            ),
-            _binary_rule(
-                scalar_arithmetic.scalar_addf,
                 _F16,
                 "amdgpu.v_add_f16",
             ),
@@ -4374,7 +4438,7 @@ def _rules() -> tuple[ContractCase, ...]:
                     Guard.descriptor_available(_descriptor("amdgpu.v_and_b32.lit")),
                 ),
             ),
-            _f32_copysign_rule(scalar_arithmetic.scalar_copysignf, _F32),
+            *_f32_copysign_rules(scalar_arithmetic.scalar_copysignf, _F32),
             _divf_arcp_one_rule(scalar_arithmetic.scalar_divf, _F32),
             _divf_arcp_literal_lhs_rule(scalar_arithmetic.scalar_divf, _F32),
             _divf_arcp_rule(scalar_arithmetic.scalar_divf, _F32),
@@ -4455,7 +4519,7 @@ def _rules() -> tuple[ContractCase, ...]:
                 "amdgpu.v_cvt_f16_f32",
                 input_materializer=F32_VGPR_MATERIALIZER,
             ),
-            _bf16_fptrunc_rule(),
+            *bfloat_narrow_rules(_DESCRIPTOR_SET),
             _cast_rule(
                 scalar_conversion.scalar_sitofp,
                 _I32,
@@ -4640,6 +4704,7 @@ AMDGPU_ARITHMETIC_CONTRACT_FRAGMENT = ContractFragment(
         F64_VGPR_MATERIALIZER,
         I1_NATIVE_MASK_MATERIALIZER,
         REGISTERS_VGPR_MATERIALIZER,
+        VOP3_BINARY_RHS_MATERIALIZER,
     ),
     cases=_rules(),
 )

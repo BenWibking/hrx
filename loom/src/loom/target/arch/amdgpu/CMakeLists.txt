@@ -326,41 +326,6 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU)
 loom_cc_library(
   NAME
-    runtime_requirements
-  HDRS
-    "runtime_requirements.h"
-  SRCS
-    "runtime_requirements.c"
-  DEPS
-    iree::base
-    loom::ir
-    loom::target::arch::amdgpu::abi::asan
-    loom::target::arch::amdgpu::abi::feedback
-    loom::target::arch::amdgpu::abi::tsan
-  PUBLIC
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_cc_test(
-  NAME
-    runtime_requirements_test
-  SRCS
-    "runtime_requirements_test.cc"
-  DEPS
-    ::runtime_requirements
-    iree::base::internal::arena
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::ir
-  LABELS
-    "iree-build-requirement=loom.target.arch.amdgpu"
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_cc_library(
-  NAME
     legalization
   HDRS
     "legalization.h"
@@ -371,6 +336,7 @@ loom_cc_library(
     iree::base
     loom::analysis::symbolic_expr
     loom::codegen::low::descriptors
+    loom::codegen::low::source_memory_plan
     loom::ir
     loom::ops::atomic
     loom::ops::index
@@ -391,7 +357,7 @@ loom_cc_library(
     loom::transforms::vector::shape_legalization
     loom::transforms::vector::table_legalization
     loom::transforms::vector::to_scalar
-    loom::transforms::view::target_legalization
+    loom::transforms::view::atomic
   PUBLIC
 )
 endif()
@@ -708,111 +674,6 @@ loom_check_compile_tests(
     "source_low_memory_atomic_observations_gfx9_4_generic"
   SRC
     "test/source_low/source_low_memory_atomic_observations_gfx9_4_generic.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx9-4-generic
-    loom::target::amdgpu::gfx942
-    loom::target::amdgpu::gfx950
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_atomic_publication_gfx1200"
-  SRC
-    "test/source_low/source_low_memory_atomic_publication_gfx1200.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx12-generic
-    loom::target::amdgpu::gfx1200
-    loom::target::amdgpu::gfx1201
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_atomic_publication_gfx1250"
-  SRC
-    "test/source_low/source_low_memory_atomic_publication_gfx1250.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx12-5-generic
-    loom::target::amdgpu::gfx1250
-    loom::target::amdgpu::gfx1251
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_atomic_publication_gfx9_4_generic"
-  SRC
-    "test/source_low/source_low_memory_atomic_publication_gfx9_4_generic.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx9-4-generic
-    loom::target::amdgpu::gfx942
-    loom::target::amdgpu::gfx950
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_atomic_scopes_gfx1200"
-  SRC
-    "test/source_low/source_low_memory_atomic_scopes_gfx1200.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx12-generic
-    loom::target::amdgpu::gfx1200
-    loom::target::amdgpu::gfx1201
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_atomic_scopes_gfx1250"
-  SRC
-    "test/source_low/source_low_memory_atomic_scopes_gfx1250.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx12-5-generic
-    loom::target::amdgpu::gfx1250
-    loom::target::amdgpu::gfx1251
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_atomic_scopes_gfx9_4_generic"
-  SRC
-    "test/source_low/source_low_memory_atomic_scopes_gfx9_4_generic.loom-test"
-  REGISTERED_SRCS
-    "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
-  TARGETS
-    loom::target::amdgpu::gfx9-4-generic
-    loom::target::amdgpu::gfx942
-    loom::target::amdgpu::gfx950
-)
-endif()
-
-if(LOOM_TARGET_ARCH_AMDGPU)
-loom_check_compile_tests(
-  NAME
-    "source_low_memory_global_atomic_gfx9_4_generic"
-  SRC
-    "test/source_low/source_low_memory_global_atomic_gfx9_4_generic.loom-test"
   REGISTERED_SRCS
     "${_GLOB_TEST_SOURCE_LOW_X_LOOM_TEST_49E0437B}"
   TARGETS

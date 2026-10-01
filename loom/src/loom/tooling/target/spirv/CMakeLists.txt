@@ -9,37 +9,6 @@
 
 iree_add_all_subdirs()
 
-if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_library(
-  NAME
-    prepare
-  HDRS
-    "prepare.h"
-  SRCS
-    "prepare.c"
-  DEPS
-    iree::base
-    iree::base::internal::arena
-    loom::analysis::symbol_facts
-    loom::codegen::low::descriptors
-    loom::codegen::low::diagnostics
-    loom::codegen::low::function
-    loom::codegen::low::target_binding
-    loom::error::emitter
-    loom::error::error_defs
-    loom::ir
-    loom::target::arch::spirv::descriptors
-    loom::target::arch::spirv::module_contract
-    loom::target::emit::spirv::module_builder
-    loom::target::emit::spirv::module_emitter
-    loom::target::emit::spirv::program
-    loom::target::facts
-    loom::target::function_version
-    loom::target::types
-  PUBLIC
-)
-endif()
-
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_library(
   NAME
@@ -49,8 +18,8 @@ loom_cc_library(
   SRCS
     "check/loom_check.c"
   DEPS
-    ::prepare
     iree::base
+    loom::target::emit::spirv::module_compiler
     loom::target::entry_selection
     loom::target::tool::spirv
     loom::tooling::compile::pipeline
@@ -85,11 +54,10 @@ loom_cc_library(
   SRCS
     "artifact_provider.c"
   DEPS
-    ::prepare
     iree::base
     loom::target::arch::spirv::descriptors::low_registry
     loom::target::arch::spirv::profile
-    loom::target::emit::spirv::module_builder
+    loom::target::emit::spirv::module_compiler
     loom::target::entry_selection
     loom::target::function_contract
     loom::target::low_descriptor_registry
@@ -199,6 +167,7 @@ loom_cc_test(
     loom::ops::op_registry
     loom::target::arch::spirv::descriptors::low_registry
     loom::target::arch::spirv::ops
+    loom::target::arch::spirv::profile
     loom::testing::byte_sequence
     loom::testing::module_ptr
   LABELS
@@ -232,15 +201,13 @@ loom_cc_test(
 )
 endif()
 
-if(IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_test(
   NAME
-    module_emitter_test
+    module_compiler_test
   SRCS
-    "module_emitter_test.cc"
+    "module_compiler_test.cc"
   DEPS
-    ::prepare
-    ::vulkan_profile
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
@@ -256,6 +223,7 @@ loom_cc_test(
     loom::target::arch::spirv::features
     loom::target::arch::spirv::ops
     loom::target::arch::spirv::profile
+    loom::target::emit::spirv::module_compiler
     loom::target::facts_builder
     loom::target::function_contract
     loom::target::function_version
@@ -398,6 +366,33 @@ if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
 loom_execution_test(
   NAME
+    cxx_pointer_origins_test_execute_spirv_vulkan_hardware_test
+  MODULE
+    "loom::import::cxx::test::pointer_origins_module"
+  RUNNER_ARGS
+    "--device=vulkan"
+    "--vulkan_validation_layers=false"
+  LABELS
+    "iree-build-requirement=loom.target.arch.spirv"
+    "iree-build-requirement=loom.emit.spirv"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.vulkan"
+    "iree-run-requirement=vulkan.resource.device"
+    "runtime-resource=vulkan-device"
+    "loom-execution-profile=spirv_vulkan_hardware"
+    "loom-target-family=spirv"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
+loom_execution_test(
+  NAME
     cxx_vector_lookup_test_execute_spirv_vulkan_hardware_test
   MODULE
     "loom::import::cxx::test::vector_lookup_module"
@@ -481,10 +476,6 @@ loom_test_module(
     "test/spirv_vulkan_vector_float.loom"
     "test/spirv_vulkan_workgroup_offsets.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/checked_benchmarks/moe_routed_combine_loop_f32.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/atomic_add_f32_subnormals.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/global_atomic_add_f32.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/loop_rotating_values.loom"
-    "${PROJECT_SOURCE_DIR}/loom/src/loom/test/corpus/conformance/loop_rotating_views.loom"
 )
 endif()
 

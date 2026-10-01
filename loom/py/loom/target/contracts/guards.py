@@ -66,6 +66,7 @@ class GuardKind(Enum):
     VALUE_EXACT_POWER_OF_TWO_I64 = "value_exact_power_of_two_i64"
     VALUE_U32_DIVISOR_MAGIC_IS_ADD = "value_u32_divisor_magic_is_add"
     VALUE_EXACT_FLOAT = "value_exact_float"
+    VALUE_NOT_NAN = "value_not_nan"
     VALUE_I64_RANGE = "value_i64_range"
     VALUE_I64_RANGE_LE = "value_i64_range_le"
     VALUE_I64_RANGE_GE = "value_i64_range_ge"
@@ -131,6 +132,7 @@ class Guard:
     other_field: str | None = None
     attr_field: str | None = None
     type_pattern: TypePattern | None = None
+    value_ref: ValueRef | None = None
     attr_type: str | None = None
     enum_keyword: str | None = None
     count: int | None = None
@@ -162,6 +164,28 @@ class Guard:
             field=field,
             element=element,
             type_pattern=type_pattern,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def exact_lane_origin_type(
+        cls,
+        field: str,
+        type_pattern: TypePattern,
+        *,
+        element: int = 0,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        """Requires an operand's exact whole-vector origin to have a type."""
+        return cls(
+            kind=GuardKind.VALUE_TYPE,
+            field=field,
+            element=element,
+            type_pattern=type_pattern,
+            value_ref=ValueRef.exact_lane_origin_operand(
+                field,
+                element=element,
+            ),
             diagnostic=diagnostic,
         )
 
@@ -437,6 +461,19 @@ class Guard:
     ) -> Self:
         return cls(
             kind=GuardKind.VALUE_EXACT_FLOAT,
+            field=field,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def value_not_nan(
+        cls,
+        field: str,
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        return cls(
+            kind=GuardKind.VALUE_NOT_NAN,
             field=field,
             diagnostic=diagnostic,
         )
@@ -731,6 +768,8 @@ class Guard:
             raise ValueError(f"{self.kind.value} guard cannot carry a memory-space set")
         if self.kind == GuardKind.VALUE_FLOAT_EQUALS and self.f64_value is None:
             raise ValueError(f"{self.kind.value} guard needs an f64 value")
+        if self.value_ref is not None and self.kind != GuardKind.VALUE_TYPE:
+            raise ValueError(f"{self.kind.value} guard cannot carry a value ref")
         if self.kind == GuardKind.TARGET_SUBGROUP_SIZE_RANGE and (
             self.minimum is None
             or self.maximum is None
@@ -759,7 +798,7 @@ class Guard:
             return
         if self.kind == GuardKind.VALUE_TYPE:
             _require_value(source_op, self.field, subject)
-            value_ref = (
+            value_ref = self.value_ref or (
                 ValueRef.operand(self.field, element=self.element or 0)
                 if source_op.operand(self.field) is not None
                 else ValueRef.result(self.field, element=self.element or 0)
@@ -833,6 +872,7 @@ class Guard:
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
             GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
             GuardKind.VALUE_EXACT_FLOAT,
+            GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
             GuardKind.VALUE_I64_RANGE_LE,
             GuardKind.VALUE_I64_RANGE_GE,

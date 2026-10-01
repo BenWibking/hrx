@@ -11,77 +11,6 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
-    request
-  HDRS
-    "request.h"
-  SRCS
-    "request.c"
-  DEPS
-    ::artifact
-    iree::base
-    loom::ir
-    loom::ops::op_defs
-    loom::ops::pipeline
-    loom::target::entry_selection
-    loom::target::projection
-    loom::target::provider
-    loom::target::selection
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    preparation
-  HDRS
-    "preparation.h"
-  SRCS
-    "preparation.c"
-  DEPS
-    ::pipeline
-    ::request
-    loom::link::linker
-    loom::ops::op_defs
-    loom::target::entry_selection
-    loom::target::module_specialization
-  PUBLIC
-)
-
-loom_cc_test(
-  NAME
-    request_test
-  SRCS
-    "request_test.cc"
-  DEPS
-    ::request
-    iree::base::internal::arena
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::format::text::parser
-    loom::ir
-    loom::ops::low
-    loom::ops::target
-    loom::testing::context
-    loom::testing::module_ptr
-)
-
-loom_cc_test(
-  NAME
-    preparation_test
-  SRCS
-    "preparation_test.cc"
-  DEPS
-    ::preparation
-    iree::base::internal::arena
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::format::text::parser
-    loom::ir
-    loom::testing::context
-    loom::testing::module_ptr
-)
-
-loom_cc_library(
-  NAME
     options
   HDRS
     "options.h"
@@ -136,19 +65,19 @@ if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
 endif()
 set(_configured_platform_deps "")
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU)
-  list(APPEND _configured_platform_deps loom::tooling::target::amdgpu::artifact_provider)
+  list(APPEND _configured_platform_deps loom::target::emit::native::amdgpu::hal_kernel_library)
 endif()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-  list(APPEND _configured_platform_deps loom::tooling::target::spirv::artifact_provider)
+  list(APPEND _configured_platform_deps loom::target::arch::spirv::compiler_provider)
 endif()
 if(LOOM_TARGET_ARCH_VM)
-  list(APPEND _configured_platform_deps loom::tooling::target::vm::artifact_emitter)
+  list(APPEND _configured_platform_deps loom::target::emit::vm::module_compiler)
 endif()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_WASM AND LOOM_EMIT_WASM)
-  list(APPEND _configured_platform_deps loom::tooling::target::wasm::artifact_emitter)
+  list(APPEND _configured_platform_deps loom::target::emit::wasm::module_compiler)
 endif()
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
-  list(APPEND _configured_platform_deps loom::tooling::target::amd::xdna::artifact_provider)
+  list(APPEND _configured_platform_deps loom::target::arch::amd::xdna::aie2p::artifact)
 endif()
 loom_cc_library(
   NAME
@@ -160,10 +89,8 @@ loom_cc_library(
   SRCS
     "configured.c"
   DEPS
-    ::artifact
     iree::base
     iree::base::threading
-    loom::target::arch::cmd::provider
     loom::target::configured::provider_set
     loom::target::provider
     loom::transforms::cleanup::configured

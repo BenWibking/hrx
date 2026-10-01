@@ -810,11 +810,12 @@ def test_scalar_and_can_preserve_its_nonzero_condition() -> None:
 def test_trans_descriptors_use_descriptor_specific_schedule_classes() -> None:
     overlays = {
         overlay.descriptor_key: overlay
-        for overlay in _gfx11_core_overlays()
+        for builder in _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS.values()
+        for overlay in builder.overlay_rows()
         if overlay.descriptor_key in _AMDGPU_TRANS_DESCRIPTOR_KEYS
     }
 
-    assert tuple(overlays) == _AMDGPU_TRANS_DESCRIPTOR_KEYS
+    assert set(overlays) == set(_AMDGPU_TRANS_DESCRIPTOR_KEYS)
     for descriptor_key, overlay in overlays.items():
         assert overlay.schedule_class == _amdgpu_trans_schedule_class_name(
             descriptor_key
@@ -3162,6 +3163,40 @@ def test_vop2_f32_uses_inline_then_literal_operand_forms() -> None:
             f"{descriptor_key}.src0_inline",
             f"{descriptor_key}.lit",
         )
+
+
+def test_integer_extrema_publish_inline_and_literal_forms() -> None:
+    for overlays in (
+        _gfx940_core_overlays(),
+        _gfx950_core_overlays(),
+        _gfx11_core_overlays(),
+        _gfx115x_core_overlays(),
+        _gfx12_core_overlays(),
+        _gfx125x_core_overlays(),
+    ):
+        descriptors = {descriptor.descriptor_key: descriptor for descriptor in overlays}
+        for register_prefix, inline_suffix, immediate_field in (
+            ("s", "rhs_inline", "SSRC1"),
+            ("v", "src0_inline", "SRC0"),
+        ):
+            for operation in ("min_i32", "max_i32", "min_u32", "max_u32"):
+                descriptor_key = f"amdgpu.{register_prefix}_{operation}"
+                base = descriptors[descriptor_key]
+                assert tuple(
+                    form.replacement_descriptor for form in base.operand_forms
+                ) == (
+                    f"{descriptor_key}.{inline_suffix}",
+                    f"{descriptor_key}.lit",
+                )
+
+                inline = descriptors[f"{descriptor_key}.{inline_suffix}"]
+                assert inline.immediate_fields == (immediate_field,)
+                assert (
+                    inline.immediates[0].encoding_id == _SOURCE_INLINE_U32_ENCODING_ID
+                )
+
+                literal = descriptors[f"{descriptor_key}.lit"]
+                assert literal.immediate_fields == ("LITERAL",)
 
 
 def test_v_perm_b32_literal_forms_cover_selector_and_zero_source() -> None:

@@ -67,22 +67,21 @@ loom_cc_binary(
     iree::base::tooling::flags
     iree::io::file_handle
     loom::codegen::low::text_asm
+    loom::compile::request
     loom::error::diagnostic
     loom::format::text::printer
     loom::ir
+    loom::pass::pipeline_snapshot
     loom::sanitizer::options
     loom::target::arch::cmd::artifact_set
     loom::target::entry_selection
     loom::target::low_descriptor_registry
     loom::target::reporting::artifact_manifest
     loom::tooling::cli::help
-    loom::tooling::compile::artifact
     loom::tooling::compile::configured
     loom::tooling::compile::options
     loom::tooling::compile::pipeline
-    loom::tooling::compile::preparation
     loom::tooling::compile::report_capture
-    loom::tooling::compile::request
     loom::tooling::config
     loom::tooling::context
     loom::tooling::execution::session
@@ -116,6 +115,7 @@ iree_execution_test_suite(
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/loom-compile/testdata/command_artifacts.loom"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/loom-compile/testdata/command_kernel_requests.loom"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tools/loom-compile/testdata/resident_xdna.loom"
   LABELS
     "hostonly"
 )

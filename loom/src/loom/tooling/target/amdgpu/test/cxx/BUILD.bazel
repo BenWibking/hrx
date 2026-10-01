@@ -57,10 +57,13 @@ _MODULES = [
     "increment_values",
     "integer_increment",
     "llama_rms_norm",
+    "mxfp_group_dot",
     "packed_byte_arithmetic",
     "packed_float16_conversion",
     "packed_float8_conversion",
+    "packed_group_dot",
     "packed_memory",
+    "pointer_origins",
     "pointer_walk",
     "record_memory",
     "record_values",
@@ -74,6 +77,7 @@ _MODULES = [
     "vector_depth",
     "vector_initializers",
     "vector_lookup",
+    "vector_math",
     "vector_values",
     "volatile_memory",
 ]
@@ -144,6 +148,17 @@ loom_test(
     ],
     execution_profiles = _EXECUTION_PROFILES,
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+)
+
+loom_check_test(
+    name = "mxfp_group_dot_lowering",
+    src = "mxfp_group_dot.cxx-test",
+    data = ["//loom/src/loom/import/cxx/test:mxfp_group_dot.cxx"],
+    runner = "//loom/src/loom/tools/loom-check",
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+        "//loom/config/target/arch:amdgpu",
+    ]),
 )
 
 loom_check_test(

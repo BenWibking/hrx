@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "iree/base/internal/math.h"
+#include "loom/ir/float_facts.h"
 #include "loom/ir/structural_hash.h"
 #include "loom/util/fact_table.h"
 
@@ -125,6 +127,12 @@ static uint32_t loom_value_fact_hash_buffer_reference(
   hash = loom_structural_hash_mix_u64(hash, reference.minimum_alignment);
   hash = loom_structural_hash_mix_u32(hash, (uint32_t)reference.memory_space);
   hash = loom_structural_hash_mix_u32(hash, reference.root_value_id);
+  hash = loom_structural_hash_mix_u32(hash, reference.has_root_symbol);
+  if (reference.has_root_symbol) {
+    hash = loom_structural_hash_mix_u32(
+        hash, reference.root_symbol.module_id |
+                  ((uint32_t)reference.root_symbol.symbol_id << 16));
+  }
   hash = loom_structural_hash_mix_u32(hash, reference.alias_scope_id);
   hash = loom_structural_hash_mix_u32(hash, reference.nullability);
   return loom_value_fact_hash_reference_origin(reference.origin, hash);
@@ -161,6 +169,10 @@ static bool loom_value_fact_buffer_reference_equal(
          lhs.minimum_alignment == rhs.minimum_alignment &&
          lhs.memory_space == rhs.memory_space &&
          lhs.root_value_id == rhs.root_value_id &&
+         lhs.has_root_symbol == rhs.has_root_symbol &&
+         (!lhs.has_root_symbol ||
+          (lhs.root_symbol.module_id == rhs.root_symbol.module_id &&
+           lhs.root_symbol.symbol_id == rhs.root_symbol.symbol_id)) &&
          lhs.alias_scope_id == rhs.alias_scope_id &&
          lhs.nullability == rhs.nullability &&
          loom_value_fact_reference_origin_equal(lhs.origin, rhs.origin);
@@ -652,6 +664,10 @@ static bool loom_value_fact_table_buffer_reference_equal(
          lhs.minimum_alignment == rhs.minimum_alignment &&
          lhs.memory_space == rhs.memory_space &&
          lhs.root_value_id == rhs.root_value_id &&
+         lhs.has_root_symbol == rhs.has_root_symbol &&
+         (!lhs.has_root_symbol ||
+          (lhs.root_symbol.module_id == rhs.root_symbol.module_id &&
+           lhs.root_symbol.symbol_id == rhs.root_symbol.symbol_id)) &&
          lhs.alias_scope_id == rhs.alias_scope_id &&
          lhs.nullability == rhs.nullability &&
          loom_value_fact_reference_origin_equal(lhs.origin, rhs.origin);
@@ -910,6 +926,100 @@ bool loom_value_facts_query_vector_iota(const loom_fact_context_t* context,
   return true;
 }
 
+static bool loom_value_facts_bounded_integer_range(loom_value_facts_t facts,
+                                                   int64_t* out_lower,
+                                                   int64_t* out_upper) {
+  if (loom_value_facts_is_float(facts) ||
+      (!loom_value_facts_is_exact(facts) &&
+       (facts.range_lo == INT64_MIN || facts.range_hi == INT64_MAX))) {
+    return false;
+  }
+  *out_lower = facts.range_lo;
+  *out_upper = facts.range_hi;
+  return true;
+}
+
+bool loom_value_facts_query_vector_integer_bounds(
+    const loom_fact_context_t* context, loom_value_facts_t facts,
+    uint64_t maximum_lane_count, int64_t* out_lower, int64_t* out_upper) {
+  const loom_value_fact_extension_entry_t* entry =
+      loom_value_facts_lookup_extension(context, facts);
+  if (!entry) {
+    return false;
+  }
+
+  switch (entry->kind) {
+    case LOOM_VALUE_FACT_EXTENSION_UNIFORM_ELEMENT:
+      return loom_value_facts_bounded_integer_range(
+          entry->payload.uniform_element.element, out_lower, out_upper);
+    case LOOM_VALUE_FACT_EXTENSION_SMALL_STATIC_LANES: {
+      loom_value_fact_small_static_lanes_t lanes =
+          entry->payload.small_static_lanes;
+      if (lanes.count == 0) {
+        *out_lower = 0;
+        *out_upper = -1;
+        return true;
+      }
+      int64_t lower = INT64_MAX;
+      int64_t upper = INT64_MIN;
+      for (iree_host_size_t i = 0; i < lanes.count; ++i) {
+        int64_t lane_lower = 0;
+        int64_t lane_upper = 0;
+        if (!loom_value_facts_bounded_integer_range(lanes.lanes[i], &lane_lower,
+                                                    &lane_upper)) {
+          return false;
+        }
+        lower = iree_min(lower, lane_lower);
+        upper = iree_max(upper, lane_upper);
+      }
+      *out_lower = lower;
+      *out_upper = upper;
+      return true;
+    }
+    case LOOM_VALUE_FACT_EXTENSION_VECTOR_IOTA: {
+      if (maximum_lane_count == UINT64_MAX) {
+        return false;
+      }
+      if (maximum_lane_count == 0) {
+        *out_lower = 0;
+        *out_upper = -1;
+        return true;
+      }
+
+      loom_value_fact_vector_iota_t iota = entry->payload.vector_iota;
+      int64_t base_lower = 0;
+      int64_t base_upper = 0;
+      int64_t step = 0;
+      if (!loom_value_facts_bounded_integer_range(iota.base, &base_lower,
+                                                  &base_upper) ||
+          !loom_value_facts_as_exact_i64(iota.step, &step) ||
+          maximum_lane_count - 1 > INT64_MAX) {
+        return false;
+      }
+
+      int64_t last_delta = 0;
+      if (!iree_checked_mul_i64((int64_t)(maximum_lane_count - 1), step,
+                                &last_delta)) {
+        return false;
+      }
+      if (step >= 0) {
+        if (!iree_checked_add_i64(base_upper, last_delta, out_upper)) {
+          return false;
+        }
+        *out_lower = base_lower;
+      } else {
+        if (!iree_checked_add_i64(base_lower, last_delta, out_lower)) {
+          return false;
+        }
+        *out_upper = base_upper;
+      }
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 iree_status_t loom_value_facts_make_vector_prefix_mask(
     loom_fact_context_t* context, loom_value_fact_vector_prefix_mask_t mask,
     loom_value_facts_t* out) {
@@ -968,6 +1078,9 @@ bool loom_value_facts_query_encoding_summary(
 iree_status_t loom_value_facts_make_buffer_reference(
     loom_fact_context_t* context, loom_value_fact_buffer_reference_t reference,
     loom_value_facts_t* out) {
+  if (!reference.has_root_symbol) {
+    reference.root_symbol = loom_symbol_ref_null();
+  }
   loom_value_fact_extension_entry_t entry = {0};
   entry.kind = LOOM_VALUE_FACT_EXTENSION_BUFFER_REFERENCE;
   entry.payload.buffer_reference = reference;
@@ -1249,10 +1362,27 @@ iree_status_t loom_value_fact_table_widen_for_type(
                                                next_table, next, out_facts);
   }
 
-  // Floating classifications have finite height and need no interval widening.
   loom_value_facts_meet(&previous, &next, out_facts);
-  if (!loom_value_facts_is_float(previous) &&
-      !loom_value_facts_is_float(next)) {
+  if (loom_value_facts_is_float(previous) || loom_value_facts_is_float(next)) {
+    // Classifications have finite height. Retained intervals do not: a loop
+    // can expand one endpoint on every visit. Keep a stable interval, but
+    // forget changing bounds after the two precise join iterations above.
+    const loom_scalar_type_t scalar_type = loom_type_element_type(type);
+    double previous_lo = 0.0;
+    double previous_hi = 0.0;
+    double next_lo = 0.0;
+    double next_hi = 0.0;
+    const bool previous_has_range = loom_value_facts_as_float_range(
+        scalar_type, previous, &previous_lo, &previous_hi);
+    const bool next_has_range =
+        loom_value_facts_as_float_range(scalar_type, next, &next_lo, &next_hi);
+    if ((previous_has_range || next_has_range) &&
+        (previous_has_range != next_has_range ||
+         previous.range_lo != next.range_lo ||
+         previous.range_hi != next.range_hi)) {
+      loom_value_facts_drop_float_range(out_facts);
+    }
+  } else {
     // Range growth does not invalidate divisibility. Its join descends through
     // positive divisors, so it converges independently of interval widening.
     const int64_t known_divisor = out_facts->known_divisor;

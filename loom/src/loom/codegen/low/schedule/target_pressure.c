@@ -120,11 +120,12 @@ static void loom_low_schedule_score_candidate_resource_pressure(
     const loom_target_residency_cliff_t* cliffs =
         &state->pressure_resources->cliffs[record->next_cliff_index];
     const iree_host_size_t cliff_count = cliff_end - record->next_cliff_index;
+    const uint32_t initial_tier =
+        iree_min(cliffs[0].tier_before, state->options->residency.tier_limit);
     loom_target_residency_cliff_evaluation_t evaluation;
-    loom_target_residency_evaluate_cliffs(cliffs, cliff_count,
-                                          cliffs[0].tier_before,
+    loom_target_residency_evaluate_cliffs(cliffs, cliff_count, initial_tier,
                                           projected_peak_units, &evaluation);
-    const uint32_t penalty = cliffs[0].tier_before - evaluation.tier;
+    const uint32_t penalty = initial_tier - evaluation.tier;
     resource_penalty = iree_math_saturating_add_u32(resource_penalty, penalty);
     if (penalty != 0) {
       loom_low_schedule_record_crossed_pressure_cliff(
@@ -170,14 +171,16 @@ static void loom_low_schedule_score_candidate_pressure_cliffs_for_class(
   }
   const loom_target_residency_cliff_t* cliffs =
       &state->pressure_cliffs->cliffs[first_actionable_cliff];
+  const uint32_t initial_tier =
+      iree_min(cliffs[0].tier_before, state->options->residency.tier_limit);
   loom_target_residency_cliff_evaluation_t evaluation;
   loom_target_residency_evaluate_cliffs(
-      cliffs, cliff_end - first_actionable_cliff, cliffs[0].tier_before,
+      cliffs, cliff_end - first_actionable_cliff, initial_tier,
       projected_live_units, &evaluation);
   // Protect target tiers that the source order preserves. Cliffs already
   // crossed by the authored function are excluded so greedy local decisions
   // do not attempt a global residency recovery.
-  const uint32_t penalty = cliffs[0].tier_before - evaluation.tier;
+  const uint32_t penalty = initial_tier - evaluation.tier;
   score->pressure_cliff_penalty =
       iree_math_saturating_add_u32(score->pressure_cliff_penalty, penalty);
   if (penalty != 0) {
@@ -440,8 +443,10 @@ static bool loom_low_schedule_register_packing_resource_has_aggregate_member(
 static uint32_t loom_low_schedule_value_register_packing_completion_sink(
     const loom_low_schedule_build_state_t* state,
     loom_value_ordinal_t value_ordinal, uint16_t resource_id) {
-  const uint32_t producer_node = state->values[value_ordinal].producer_node;
-  if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE) {
+  const loom_low_schedule_value_record_t* value = &state->values[value_ordinal];
+  const uint32_t producer_node = value->producer_node;
+  if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
+      iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_FORWARDED)) {
     return LOOM_LOW_SCHEDULE_NODE_NONE;
   }
   return loom_low_schedule_const_register_packing_row(

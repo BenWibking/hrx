@@ -4,11 +4,13 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+load("//libamdf/requirements:defs.bzl", "LIBAMDF")
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
     "loom_cc_binary",
     "loom_cc_library",
     "loom_cc_test",
+    "loom_config_compatible_with",
     "loom_generated_file_family",
 )
 load(
@@ -21,6 +23,12 @@ package(
     features = ["layering_check"],
     licenses = ["notice"],  # Apache 2.0
 )
+
+_XDNA_IMAGE_COMPATIBLE_WITH = loom_config_compatible_with([
+    "//loom/config/target:xdna_artifacts",
+]) + loom_config_compatible_with([
+    LIBAMDF.enabled_by,
+])
 
 loom_generated_file_family(
     name = "target_tables_gen",
@@ -137,6 +145,22 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "gather",
+    srcs = ["gather.c"],
+    hdrs = ["gather.h"],
+    deps = [
+        "//loom/src/loom/codegen/low:source_memory_plan",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ir:facts",
+        "//loom/src/loom/ops/global",
+        "//loom/src/loom/ops/vector",
+        "//loom/src/loom/target:contract",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_library(
     name = "descriptor_encoding",
     srcs = ["descriptors/encoding.c"],
     hdrs = ["descriptors/encoding.h"],
@@ -166,6 +190,8 @@ loom_cc_library(
     ],
     deps = [
         ":core_descriptors",
+        ":gather",
+        "//loom/src/loom/codegen/low:source_memory_plan",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/scalar",
         "//loom/src/loom/ops/vector",
@@ -338,14 +364,14 @@ loom_cc_library(
 loom_cc_library(
     name = "lower",
     srcs = [
-        "lower/encode.c",
+        "lower/gather.c",
         "lower/matrix.c",
         "lower/registry.c",
         "lower/rodata.c",
         "lower/storage.c",
     ],
     hdrs = [
-        "lower/encode.h",
+        "lower/gather.h",
         "lower/lower.h",
         "lower/matrix.h",
         "lower/rodata.h",
@@ -354,6 +380,7 @@ loom_cc_library(
     textual_hdrs = ["//loom/src/loom/target/arch/amd/xdna/aie2p/contracts:core_index.inl"],
     deps = [
         ":core_descriptors",
+        ":gather",
         "//loom/src/loom/analysis:contract_vector",
         "//loom/src/loom/codegen/low/lower",
         "//loom/src/loom/error:error_defs",
@@ -517,6 +544,7 @@ loom_check_test_suite(
         "test/array_plan/packed_record.loom-test",
         "test/array_plan/pipeline_record_shapes.loom-test",
         "test/array_plan/pipeline_views.loom-test",
+        "test/array_plan/private_atomics.loom-test",
         "test/array_plan/read_only_data.loom-test",
         "test/array_plan/record_contracts.loom-test",
         "test/array_plan/ring_wrap.loom-test",
@@ -574,7 +602,9 @@ loom_check_test_suite(
         "test/source_low/carried_counter_store.loom-test",
         "test/source_low/function_storage.loom-test",
         "test/source_low/fused_packet_memory.loom-test",
+        "test/source_low/immutable_gather.loom-test",
         "test/source_low/index_conversion.loom-test",
+        "test/source_low/integer_float_conversion.loom-test",
         "test/source_low/lookup_table.loom-test",
         "test/source_low/lookup_table_vector.loom-test",
         "test/source_low/loop_counter_offset.loom-test",
@@ -597,6 +627,7 @@ loom_check_test_suite(
         "test/source_low/nested_view_selection.loom-test",
         "test/source_low/numeric_address_widening.loom-test",
         "test/source_low/numeric_bf16_maximum.loom-test",
+        "test/source_low/numeric_bf16_origin_multiply.loom-test",
         "test/source_low/numeric_bfloat_widen.loom-test",
         "test/source_low/numeric_bitwise_constants.loom-test",
         "test/source_low/numeric_boolean_comparison.loom-test",
@@ -606,6 +637,7 @@ loom_check_test_suite(
         "test/source_low/numeric_conversion_f16.loom-test",
         "test/source_low/numeric_conversion_float8.loom-test",
         "test/source_low/numeric_conversion_fp8_packet.loom-test",
+        "test/source_low/numeric_conversion_materialized.loom-test",
         "test/source_low/numeric_conversion_wide.loom-test",
         "test/source_low/numeric_decode_mxfp8.loom-test",
         "test/source_low/numeric_f32.loom-test",
@@ -656,6 +688,7 @@ loom_check_test_suite(
         "test/source_low/table_quantize.loom-test",
         "test/source_low/target_legalize_scalar_multiply_add.loom-test",
         "test/source_low/uniform_predicate_control.loom-test",
+        "test/source_low/vector_accumulator_slice.loom-test",
         "test/source_low/vector_bitcast.loom-test",
         "test/source_low/vector_comparison.loom-test",
         "test/source_low/vector_concat.loom-test",
@@ -668,6 +701,7 @@ loom_check_test_suite(
         "test/source_low/vector_memory.loom-test",
         "test/source_low/vector_partial_carriers.loom-test",
         "test/source_low/vector_predicate.loom-test",
+        "test/source_low/vector_select_packetization.loom-test",
         "test/source_low/vector_slice.loom-test",
         "test/source_low/vector_splat.loom-test",
         "test/source_low/vector_structural.loom-test",
@@ -803,7 +837,7 @@ loom_cc_library(
     hdrs = ["emit/artifact.h"],
     visibility = [
         "//loom/binding/c/target/amd/xdna:__pkg__",
-        "//loom/src/loom/tooling/target/amd/xdna:__pkg__",
+        "//loom/src/loom/tooling/compile:__pkg__",
     ],
     deps = [
         ":array_plan",
@@ -811,6 +845,7 @@ loom_cc_library(
         ":array_resident",
         ":leaf_compile",
         ":target_facts",
+        ":target_profile",
         ":tile_link",
         ":xdna_product",
         "//loom/src/loom/analysis:symbol_facts",
@@ -832,6 +867,29 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/io:stream",
+    ],
+)
+
+loom_cc_test(
+    name = "artifact_test",
+    srcs = ["emit/artifact_test.cc"],
+    tags = ["iree-build-requirement=%s" % LIBAMDF.id],
+    target_compatible_with = _XDNA_IMAGE_COMPATIBLE_WITH,
+    deps = [
+        ":artifact",
+        ":low_registry",
+        ":provider",
+        "//loom/src/loom/codegen/low:text_asm",
+        "//loom/src/loom/format/text:parser",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_registry",
+        "//loom/src/loom/target/reporting:report",
+        "//loom/src/loom/testing:module_ptr",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal/drivers/amd/xdna/image",
+        "//runtime/src/iree/hal/drivers/amd/xdna/image/aie2p:npu2",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 

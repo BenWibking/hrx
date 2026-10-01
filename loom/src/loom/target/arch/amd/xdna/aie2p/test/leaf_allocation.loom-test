@@ -1,3 +1,87 @@
+// A pointer fixed to p1 selects the matching lf1/r25 FIFO tuple.
+// RUN: emit aie2p-leaf @fixed_fifo_tuple fixed=%pointer:physical_register:201:1 registers=p0,p1,lf0,lf1,r24,r25
+
+low.func.def target<amd.xdna.aie2p.core> @fixed_fifo_tuple(%pointer: reg<aie2p.eps>, %initial_fifo: reg<aie2p.eldfiforeg>) -> (reg<aie2p.vec256 x2>) asm {
+  %position = mova.fifo.position 0
+  %filled_pointer, %filled_fifo, %filled_position = vldb.fill.512 %pointer, %initial_fifo, %position
+  %data, %final_pointer, %final_fifo, %final_position = vldb.pop.512.i8x64 %filled_pointer, %filled_fifo, %filled_position
+  return %data
+}
+
+// ----
+p0: preserved
+p1: written
+lf0: preserved
+lf1: written
+r24: preserved
+r25: written
+
+// ====
+
+// A constraint on a pointer identity reaches its already assigned p1 owner.
+// RUN: emit aie2p-leaf @identity_fifo_tuple fixed=%pointer:physical_register:201:1 registers=p0,p1,lf0,lf1,r24,r25
+
+low.func.def target<amd.xdna.aie2p.core> @identity_fifo_tuple(%pointer: reg<aie2p.eps>, %initial_fifo: reg<aie2p.eldfiforeg>) -> (reg<aie2p.vec256 x2>) asm {
+  %pointer_identity = low.assume %pointer [range(%pointer, 0, 1024)] : reg<aie2p.eps>
+  %position = mova.fifo.position 0
+  %filled_pointer, %filled_fifo, %filled_position = vldb.fill.512 %pointer_identity, %initial_fifo, %position
+  %data, %final_pointer, %final_fifo, %final_position = vldb.pop.512.i8x64 %filled_pointer, %filled_fifo, %filled_position
+  return %data
+}
+
+// ----
+p0: preserved
+p1: written
+lf0: preserved
+lf1: written
+r24: preserved
+r25: written
+
+// ====
+
+// The FIFO is allocated before the fixed pointer, whose resolved binding still
+// selects tuple ordinal 1 before either interval has an assignment.
+// RUN: emit aie2p-leaf @fifo_before_fixed_pointer fixed=%pointer:physical_register:201:1 registers=p0,p1,lf0,lf1,r24,r25
+
+low.func.def target<amd.xdna.aie2p.core> @fifo_before_fixed_pointer(%initial_fifo: reg<aie2p.eldfiforeg>, %pointer: reg<aie2p.eps>) -> (reg<aie2p.vec256 x2>) asm {
+  %position = mova.fifo.position 0
+  %filled_pointer, %filled_fifo, %filled_position = vldb.fill.512 %pointer, %initial_fifo, %position
+  %data, %final_pointer, %final_fifo, %final_position = vldb.pop.512.i8x64 %filled_pointer, %filled_fifo, %filled_position
+  return %data
+}
+
+// ----
+p0: preserved
+p1: written
+lf0: preserved
+lf1: written
+r24: preserved
+r25: written
+
+// ====
+
+// A constraint introduced on a future identity participates in its origin's
+// initial placement, using the FIFO's resolved lf1 binding.
+// RUN: emit aie2p-leaf @identity_before_fixed_fifo fixed=%initial_fifo:physical_register:184:1 registers=p0,p1,lf0,lf1,r24,r25
+
+low.func.def target<amd.xdna.aie2p.core> @identity_before_fixed_fifo(%pointer: reg<aie2p.eps>, %initial_fifo: reg<aie2p.eldfiforeg>) -> (reg<aie2p.vec256 x2>) asm {
+  %pointer_identity = low.assume %pointer [range(%pointer, 0, 1024)] : reg<aie2p.eps>
+  %position = mova.fifo.position 0
+  %filled_pointer, %filled_fifo, %filled_position = vldb.fill.512 %pointer_identity, %initial_fifo, %position
+  %data, %final_pointer, %final_fifo, %final_position = vldb.pop.512.i8x64 %filled_pointer, %filled_fifo, %filled_position
+  return %data
+}
+
+// ----
+p0: preserved
+p1: written
+lf0: preserved
+lf1: written
+r24: preserved
+r25: written
+
+// ====
+
 // Reversed parameter order must preserve two independent FIFO tuples.
 // RUN: with-checks emit low-allocation @fifo_pair diagnostics=placement-decisions
 
@@ -246,7 +330,7 @@ coissued components: 70
 // A broadcast retains its table until the final use. Opening every leaf before
 // preparing the predicates exceeds vector capacity even though the selection
 // tree fits when its live branches can retire incrementally.
-// RUN: with-checks emit aie2p-leaf @selection_tree report=emission
+// RUN: emit aie2p-leaf @selection_tree report=emission
 
 low.func.def target<amd.xdna.aie2p.core> @selection_tree(%input: reg<aie2p.ep>, %output: reg<aie2p.ep>) asm {
   %table = vlda.512.i8x64 %input, 0
@@ -305,7 +389,10 @@ low.func.def target<amd.xdna.aie2p.core> @selection_tree(%input: reg<aie2p.ep>, 
 }
 
 // ----
-CHECK: code bytes: 224
+issue cycles: 55
+code bytes: 218
+coissued bundles: 2
+coissued components: 5
 
 // ====
 
@@ -412,5 +499,44 @@ low.func.def target<amd.xdna.aie2p.core> @index_repair_population(%output: reg<a
 // ----
 issue cycles: 43
 code bytes: 142
+coissued bundles: 2
+coissued components: 4
+
+// ====
+
+// Four loaded-C fragments leave one DM register for conversion scratch. The
+// upper half is produced before the lower half's address prerequisites, so the
+// concat sources are not a compact cluster. Reserving their declared physical
+// view places the first source in the upper half; ordinary first-fit would
+// require a swap with no scratch register when the lower half arrives.
+// RUN: emit aie2p-leaf @noncompact_upper_half_first report=emission
+
+low.func.def target<amd.xdna.aie2p.core> @noncompact_upper_half_first(%source: reg<aie2p.ep>, %reduction_cell: reg<aie2p.er>, %first_upper_bf16: reg<aie2p.vec256 x2>, %second_lower_bf16: reg<aie2p.vec256 x2>, %second_upper_bf16: reg<aie2p.vec256 x2>, %accumulator00: reg<aie2p.mbms x4>, %accumulator01: reg<aie2p.mbms x4>, %accumulator10: reg<aie2p.mbms x4>, %accumulator11: reg<aie2p.mbms x4>, %other_lhs: reg<aie2p.mexa>, %other_rhs: reg<aie2p.mexa>) -> (reg<aie2p.mbms x4>, reg<aie2p.mbms x4>, reg<aie2p.mbms x4>, reg<aie2p.mbms x4>) asm {
+  %first_upper = vconv.fp32.bf16 %first_upper_bf16
+  %lower_half_offset = mov.static-byte-offset 1024
+  %row_stride_bytes = mov.i32 128
+  %lower_half_position = mac %lower_half_offset, %reduction_cell, %row_stride_bytes
+  %lower_half_address = mov.address-index %lower_half_position
+  %first_lower_bf16 = vlda.512.bf16x32.index %source, %lower_half_address
+  %first_lower = vconv.fp32.bf16 %first_lower_bf16
+  %first_float = concat(%first_lower, %first_upper) : (reg<aie2p.mbms x2>, reg<aie2p.mbms x2>) -> reg<aie2p.mbms x4>
+  set.rounding 12
+  %lhs = vconv.bfp16ebs8.fp32 %first_float
+  %second_lower = vconv.fp32.bf16 %second_lower_bf16
+  %second_upper = vconv.fp32.bf16 %second_upper_bf16
+  %second_float = concat(%second_lower, %second_upper) : (reg<aie2p.mbms x2>, reg<aie2p.mbms x2>) -> reg<aie2p.mbms x4>
+  set.rounding 12
+  %rhs = vconv.bfp16ebs8.fp32 %second_float
+  %matrix_control = mova.i32 780
+  %next00 = mma.bfp16ebs8.m8n8k8 %accumulator00, %other_lhs, %rhs, %matrix_control
+  %next01 = mma.bfp16ebs8.m8n8k8 %accumulator01, %other_lhs, %other_rhs, %matrix_control
+  %next10 = mma.bfp16ebs8.m8n8k8 %accumulator10, %lhs, %rhs, %matrix_control
+  %next11 = mma.bfp16ebs8.m8n8k8 %accumulator11, %lhs, %other_rhs, %matrix_control
+  return %next00, %next01, %next10, %next11
+}
+
+// ----
+issue cycles: 30
+code bytes: 106
 coissued bundles: 2
 coissued components: 4

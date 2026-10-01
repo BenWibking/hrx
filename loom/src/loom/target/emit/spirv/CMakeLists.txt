@@ -101,6 +101,7 @@ loom_cc_library(
     iree::base
     loom::codegen::low::descriptors
     loom::ir
+    loom::target::facts
     loom::target::types
   PUBLIC
 )
@@ -215,6 +216,40 @@ loom_cc_library(
 )
 endif()
 
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
+loom_cc_library(
+  NAME
+    module_compiler
+  HDRS
+    "module_compiler.h"
+  SRCS
+    "module_compiler.c"
+  DEPS
+    ::module_builder
+    ::module_emitter
+    ::program
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::symbol_facts
+    loom::codegen::low::descriptors
+    loom::codegen::low::diagnostics
+    loom::codegen::low::function
+    loom::codegen::low::target_binding
+    loom::error::emitter
+    loom::error::error_defs
+    loom::ir
+    loom::ops::op_defs
+    loom::target::arch::spirv::descriptors
+    loom::target::arch::spirv::module_contract
+    loom::target::facts
+    loom::target::function_version
+    loom::target::provider
+    loom::target::reporting::artifact_manifest_collect
+    loom::target::types
+  PUBLIC
+)
+endif()
+
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_test(
   NAME
@@ -284,7 +319,6 @@ loom_check_test_suite(
     "test/schedule_scopes.loom-test"
     "test/source_low/buffer_selection.loom-test"
     "test/source_low/index_numeric.loom-test"
-    "test/source_low/memory_integer_terms.loom-test"
     "test/source_low/memory_scalar_addressing.loom-test"
     "test/source_low/memory_workgroup_scalar_addressing.loom-test"
     "test/source_low/numeric_bfloat_narrow.loom-test"

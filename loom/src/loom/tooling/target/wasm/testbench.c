@@ -12,15 +12,12 @@
 #include "iree/hal/buffer.h"
 #include "loom/link/linker.h"
 #include "loom/ops/op_defs.h"
+#include "loom/target/emit/wasm/module_compiler.h"
 #include "loom/target/entry_selection.h"
 #include "loom/target/selection.h"
 #include "loom/tooling/compile/pipeline.h"
-#include "loom/tooling/compile/preparation.h"
-#include "loom/tooling/compile/request.h"
 #include "loom/tooling/config/config.h"
-#include "loom/tooling/target/wasm/artifact_emitter.h"
 #include "loom/tooling/target/wasm/host.h"
-#include "loom/tooling/target/wasm/prepare.h"
 
 enum {
   LOOM_WASM_TESTBENCH_ROOT_ALIGNMENT = 16,
@@ -67,6 +64,7 @@ void loom_wasm_testbench_initialize(
   *out_testbench = (loom_wasm_testbench_t){
       .target_environment = target_environment,
       .cleanup_pattern_provider_set = cleanup_pattern_provider_set,
+      .diagnostic_sink = {.fn = loom_diagnostic_stderr_sink},
       .host_allocator = host_allocator,
   };
 }
@@ -273,10 +271,19 @@ static iree_status_t loom_wasm_testbench_compile_product(
   }
   loom_compile_pipeline_options_t pipeline_options;
   loom_compile_pipeline_options_initialize(&pipeline_options);
+  pipeline_options.diagnostic_sink = testbench->diagnostic_sink;
   pipeline_options.target_pipeline_options =
-      loom_wasm_artifact_emitter_provider.canonical_module_emitter
-          ->default_pipeline_options;
+      loom_wasm_module_emitter.default_pipeline_options;
   pipeline_options.target_environment = testbench->target_environment;
+  const loom_target_specialization_request_t target_specialization = {
+      .function_name = function_name,
+      .target_profile = target_profile,
+  };
+  pipeline_options.target_specializations =
+      (loom_target_specialization_request_list_t){
+          .values = &target_specialization,
+          .count = 1,
+      };
   pipeline_options.low_descriptor_registry = &low_registry;
   pipeline_options.cleanup_pattern_provider_set =
       testbench->cleanup_pattern_provider_set;
@@ -284,17 +291,10 @@ static iree_status_t loom_wasm_testbench_compile_product(
       .fn = loom_source_table_resolve,
       .user_data = &sources.table,
   };
-  const loom_compile_request_t request = {
-      .product = LOOM_COMPILE_PRODUCT_MODULE,
-      .roots = {.count = IREE_ARRAYSIZE(roots), .values = roots},
-      .explicit_target = {.target_profile = target_profile},
-      .target_fact_type =
-          target_profile != NULL ? target_profile->type->fact_type : NULL,
-  };
   loom_compile_pipeline_result_t pipeline = {0};
   if (iree_status_is_ok(status)) {
-    status = loom_compile_run_request_pipeline(
-        &request, module, &pipeline_options, &block_pool, &pipeline);
+    status = loom_compile_run_pipeline(module, &pipeline_options, &block_pool,
+                                       &pipeline);
   }
   if (iree_status_is_ok(status) && pipeline.pass.error_count != 0) {
     status = iree_make_status(
@@ -317,10 +317,10 @@ static iree_status_t loom_wasm_testbench_compile_product(
     loom_target_entry_diagnostic_emitter_t entry_emitter;
     loom_target_entry_diagnostic_emitter_initialize(
         module, &entry_options, LOOM_EMITTER_VERIFIER, &entry_emitter);
-    status = loom_wasm_program_plan_prepare(
-        module, &low_registry.registry,
-        loom_target_entry_emitter(&entry_emitter), &arena, &program_accepted,
-        &program);
+    status =
+        loom_wasm_program_plan_build(module, &low_registry.registry,
+                                     loom_target_entry_emitter(&entry_emitter),
+                                     &arena, &program_accepted, &program);
   }
   if (iree_status_is_ok(status) && !program_accepted) {
     status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
@@ -342,7 +342,7 @@ static iree_status_t loom_wasm_testbench_compile_product(
             : program.function_indices_by_symbol[symbol_id];
     if (function_index == LOOM_WASM_PROGRAM_INDEX_NONE) {
       status = iree_make_status(IREE_STATUS_NOT_FOUND,
-                                "Wasm scenario subject '%.*s' was not prepared",
+                                "Wasm scenario subject '%.*s' was not planned",
                                 (int)function_name.size, function_name.data);
     } else {
       function = &program.functions[function_index];
@@ -796,10 +796,12 @@ static iree_status_t loom_wasm_testbench_product_prepare(
 
 loom_testbench_execution_profile_t loom_wasm_testbench_execution_profile(
     void* user_data, const loom_source_table_resolver_t* sources,
-    const loom_tooling_config_set_t* config_set) {
+    const loom_tooling_config_set_t* config_set,
+    loom_diagnostic_sink_t diagnostic_sink) {
   loom_wasm_testbench_t* testbench = user_data;
   testbench->sources = sources;
   testbench->config_set = config_set;
+  testbench->diagnostic_sink = diagnostic_sink;
   return (loom_testbench_execution_profile_t){
       .name = IREE_SV("wasm:simd128"),
       .prepare = loom_wasm_testbench_product_prepare,

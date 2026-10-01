@@ -9,6 +9,7 @@
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/vector/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
+#include "loom/target/arch/amd/xdna/aie2p/gather.h"
 #include "loom/target/arch/amd/xdna/aie2p/legalization_compare.h"
 #include "loom/target/arch/amd/xdna/aie2p/legalization_table.h"
 #include "loom/transforms/scalar/target_legalization.h"
@@ -138,6 +139,100 @@ static iree_status_t loom_aie2p_legalize_vector_splat(
   return iree_ok_status();
 }
 
+static iree_status_t loom_aie2p_legalize_vector_select(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(loom_vector_packet_legalize_elementwise(
+      context, op, &kAie2pVectorPacketPolicy, &rewritten));
+  if (!rewritten) {
+    IREE_RETURN_IF_ERROR(
+        loom_vector_static_shape_rewrite_op(context, op, &rewritten));
+  }
+  if (!rewritten) {
+    IREE_RETURN_IF_ERROR(loom_vector_to_scalar_rewrite_op(
+        context->pass, context->rewriter, op, &rewritten));
+  }
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_legalize_vector_elementwise_packet(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+
+  bool rewritten = false;
+  IREE_RETURN_IF_ERROR(loom_vector_packet_legalize_elementwise(
+      context, op, &kAie2pVectorPacketPolicy, &rewritten));
+  if (rewritten) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_legalize_vector_concat(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+
+  const loom_value_slice_t inputs = loom_vector_concat_inputs(op);
+  if (inputs.count <= 2) {
+    return iree_ok_status();
+  }
+
+  // AIE2P contracts describe binary carrier transitions. Normalize static
+  // variadic inputs through the shared adjacent-pair canonicalizer before
+  // selecting those contracts.
+  const loom_type_t result_type =
+      loom_module_value_type(context->module, loom_vector_concat_result(op));
+  const int64_t axis = loom_vector_concat_axis(op);
+  if (axis < 0 || axis >= loom_type_rank(result_type)) {
+    return iree_ok_status();
+  }
+  bool has_nonempty_input = false;
+  for (iree_host_size_t i = 0; i < inputs.count; ++i) {
+    const loom_type_t input_type =
+        loom_module_value_type(context->module, inputs.values[i]);
+    if (loom_type_dim_is_dynamic_at(input_type, (uint8_t)axis)) {
+      return iree_ok_status();
+    }
+    has_nonempty_input |=
+        loom_type_dim_static_size_at(input_type, (uint8_t)axis) != 0;
+  }
+  if (has_nonempty_input) {
+    IREE_RETURN_IF_ERROR(
+        loom_vector_concat_canonicalize(op, context->rewriter));
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_aie2p_legalize_table_lookup(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
@@ -238,6 +333,30 @@ static iree_status_t loom_aie2p_legalize_vector_load(
   return iree_ok_status();
 }
 
+static iree_status_t loom_aie2p_legalize_vector_gather(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  if (!loom_aie2p_legalizer_descriptor_set_is_core(context->descriptor_set)) {
+    return iree_ok_status();
+  }
+
+  loom_low_source_memory_access_plan_t access = {0};
+  loom_low_source_memory_access_diagnostic_t diagnostic = {0};
+  loom_aie2p_immutable_gather_match_t match = {0};
+  if (loom_low_source_memory_access_plan_build(context->view_regions, op,
+                                               &access, &diagnostic) &&
+      loom_aie2p_match_immutable_gather(context->module, context->fact_table,
+                                        op, &access, &match)) {
+    out_result->action = LOOM_TARGET_LEGALIZER_ACTION_DEFER;
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_aie2p_legalize_vector_store(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
@@ -296,10 +415,15 @@ static iree_status_t loom_aie2p_legalize_vector_reduce(
     return iree_ok_status();
   }
 
-  bool rewritten = false;
+  loom_vector_packet_reduce_result_t packet_result =
+      LOOM_VECTOR_PACKET_REDUCE_RESULT_NONE;
   IREE_RETURN_IF_ERROR(loom_vector_packet_legalize_reduce(
-      context, op, &kAie2pVectorPacketPolicy, &rewritten));
-  if (!rewritten) {
+      context, op, &kAie2pVectorPacketPolicy, &packet_result));
+  bool rewritten = packet_result == LOOM_VECTOR_PACKET_REDUCE_RESULT_REWRITTEN;
+  if (packet_result == LOOM_VECTOR_PACKET_REDUCE_RESULT_CAPTURE_INPUT) {
+    IREE_RETURN_IF_ERROR(loom_vector_reduce_captured_to_scalar_rewrite_op(
+        context->pass, context->rewriter, op, &rewritten));
+  } else if (!rewritten) {
     IREE_RETURN_IF_ERROR(loom_vector_reduce_to_scalar_rewrite_op(
         context->pass, context->rewriter, op, &rewritten));
   }
@@ -371,8 +495,32 @@ static const loom_target_legalizer_rule_t kAie2pLegalizerRules[] = {
         .legalize = loom_aie2p_legalize_vector_to_scalar,
     },
     {
-        .root_kind = LOOM_OP_VECTOR_SELECT,
+        .root_kind = LOOM_OP_VECTOR_SITOFP,
         .legalize = loom_aie2p_legalize_vector_to_scalar,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_UITOFP,
+        .legalize = loom_aie2p_legalize_vector_to_scalar,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_FPTOSI,
+        .legalize = loom_aie2p_legalize_vector_to_scalar,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_FPTOUI,
+        .legalize = loom_aie2p_legalize_vector_to_scalar,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_SELECT,
+        .legalize = loom_aie2p_legalize_vector_select,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_CMPI,
+        .legalize = loom_aie2p_legalize_vector_elementwise_packet,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_CONCAT,
+        .legalize = loom_aie2p_legalize_vector_concat,
     },
     {
         .root_kind = LOOM_OP_VECTOR_MINNUMF,
@@ -421,6 +569,11 @@ static const loom_target_legalizer_rule_t kAie2pLegalizerRules[] = {
     {
         .root_kind = LOOM_OP_VECTOR_LOAD,
         .legalize = loom_aie2p_legalize_vector_load,
+    },
+    {
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,
+        .root_kind = LOOM_OP_VECTOR_GATHER,
+        .legalize = loom_aie2p_legalize_vector_gather,
     },
     {
         .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REWRITE_LEGAL,

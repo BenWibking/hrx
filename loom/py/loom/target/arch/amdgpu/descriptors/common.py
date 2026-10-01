@@ -726,6 +726,9 @@ _GLOBAL_SADDR_OFFSET_ONLY_SIZE_REASON = (
     "saddr-enabled-global-address-uses-one-offset-vgpr"
 )
 _D16_PARTIAL_REGISTER_SIZE_REASON = AMDGPU_D16_PARTIAL_REGISTER_SIZE_REASON
+_BYTE_STORE_PARTIAL_REGISTER_SIZE_REASON = (
+    "byte-store-reads-low-8-bits-of-low16-register-part"
+)
 _D16_PARTIAL_REGISTER_ADDRESSABLE_UNIT_COUNT = (
     AMDGPU_D16_PARTIAL_REGISTER_ADDRESSABLE_UNIT_COUNT
 )
@@ -834,6 +837,7 @@ class AmdgpuAtomicValueKind(CEnum):
     B64 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_B64"
     I32 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_I32"
     F32 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_F32"
+    F64 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_F64"
     I64 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_I64"
     PACKED_F16 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_PACKED_F16"
     PACKED_BF16 = "LOOM_AMDGPU_ATOMIC_VALUE_KIND_PACKED_BF16"
@@ -2049,7 +2053,7 @@ def _manual_scalar_descriptors(
             schedule_class=_SCHEDULE_SALU,
             encoding_format_id=AMDGPU_ENCODING_FORMAT_SOP1,
             encoding_id=s_mov_b32_opcode,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            flags=(DescriptorFlag.DEAD_REMOVABLE, DescriptorFlag.STATE_ASSIGNMENT),
         ),
         Descriptor(
             key="amdgpu.s_mov_b32_m0.imm",
@@ -2077,7 +2081,7 @@ def _manual_scalar_descriptors(
             schedule_class=_SCHEDULE_SALU,
             encoding_format_id=AMDGPU_ENCODING_FORMAT_SOP1,
             encoding_id=s_mov_b32_opcode,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            flags=(DescriptorFlag.DEAD_REMOVABLE, DescriptorFlag.STATE_ASSIGNMENT),
         ),
         Descriptor(
             key="amdgpu.s_mov_b64_exec",
@@ -3430,6 +3434,7 @@ __all__ = (
     "_AMDGPU_TRANS_DESCRIPTOR_LATENCY_CYCLES",
     "_AMDGPU_TRANS_PROXY_LATENCY_CYCLES",
     "_BUFFER_ATOMIC_VDATA_INPUT_REASON",
+    "_BYTE_STORE_PARTIAL_REGISTER_SIZE_REASON",
     "_CACHE_CONTROL_EFFECT",
     "_CDNA_SMEM_OFFSET_ONLY_FIXED_FIELDS",
     "_CDNA_SMEM_SGPR_IMM_FIXED_FIELDS",

@@ -362,10 +362,10 @@ def _cdna_core_overlays(
         _s_mul_i32_rhs_inline_overlay(),
         _s_mulk_i32_overlay(),
         _s_mul_hi_u32_overlay(),
-        _s_min_i32_overlay(),
-        _s_max_i32_overlay(),
-        _s_min_u32_overlay(),
-        _s_max_u32_overlay(),
+        *_s_min_i32_overlays(),
+        *_s_max_i32_overlays(),
+        *_s_min_u32_overlays(),
+        *_s_max_u32_overlays(),
         _s_cselect_b32_overlay(),
         *_s_cmp_i32_overlays(),
         *_s_cmp_u64_overlays(),
@@ -399,10 +399,10 @@ def _cdna_core_overlays(
         _v_mad_u32_u24_inline_overlay("src0"),
         _v_mad_u32_u24_inline_overlay("src1"),
         _v_mad_u32_u24_inline_overlay("src2"),
-        _v_min_i32_overlay(),
-        _v_max_i32_overlay(),
-        _v_min_u32_overlay(),
-        _v_max_u32_overlay(),
+        *_v_min_i32_overlays(),
+        *_v_max_i32_overlays(),
+        *_v_min_u32_overlays(),
+        *_v_max_u32_overlays(),
         _v_readfirstlane_b32_overlay(),
         _v_readlane_b32_src1_inline_overlay(),
         *_integer_bitwise_shift_overlays(include_vop3_literal_forms=False),
@@ -471,7 +471,6 @@ def _cdna_core_overlays(
         _v_cvt_i32_f32_overlay(),
         _v_cvt_u32_f32_overlay(),
         *_v_cmp_overlays(),
-        *_v_cmp_f64_overlays(),
         *_v_cmp_i32_equality_vcc_overlays(),
         *_v_cndmask_b32_overlays(include_literal_forms=False),
         _v_cndmask_b32_dpp_legacy_overlay(),
@@ -902,7 +901,7 @@ def _cdna_core_overlays(
         *_ds_memory_overlays(
             cmpxchg_expected_field="DATA0",
             cmpxchg_replacement_field="DATA1",
-            include_packed_half_atomic_add=True,
+            float_atomic_add_types=("f32", "f64", "pk2.f16", "pk2.bf16"),
             # SRAM ECC can make D16 loads overwrite the complementary half.
             # Paired loads require the preserving descriptors exposed on RDNA.
             include_u16_d16_loads=False,
@@ -1030,10 +1029,10 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _s_mul_i32_rhs_inline_overlay(),
         _s_mulk_i32_overlay(),
         _s_mul_hi_u32_overlay(),
-        _s_min_i32_overlay(),
-        _s_max_i32_overlay(),
-        _s_min_u32_overlay(),
-        _s_max_u32_overlay(),
+        *_s_min_i32_overlays(),
+        *_s_max_i32_overlays(),
+        *_s_min_u32_overlays(),
+        *_s_max_u32_overlays(),
         _s_cselect_b32_overlay(),
         *_s_cmp_i32_overlays(),
         *_s_cmp_u64_overlays(),
@@ -1068,10 +1067,10 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _v_mad_u32_u24_literal_overlay("src0"),
         _v_mad_u32_u24_literal_overlay("src1"),
         _v_mad_u32_u24_literal_overlay("src2"),
-        _v_min_i32_overlay(),
-        _v_max_i32_overlay(),
-        _v_min_u32_overlay(),
-        _v_max_u32_overlay(),
+        *_v_min_i32_overlays(),
+        *_v_max_i32_overlays(),
+        *_v_min_u32_overlays(),
+        *_v_max_u32_overlays(),
         _v_readfirstlane_b32_overlay(),
         _v_readlane_b32_src1_inline_overlay(),
         _v_readlane_b32_src1_sgpr_overlay(),
@@ -1079,6 +1078,7 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         *_integer_bitwise_permute_overlays(),
         _v_permlanex16_b32_src12_inline_overlay(),
         *_v_binary_f32_overlays(),
+        *_v_binary_f64_overlays(),
         *_v_binary_f16_overlays(),
         _v_med3_num_f32_overlay(),
         *_v_binary_f32_dpp16_overlays(),
@@ -1836,16 +1836,19 @@ def _rdna4m_core_overlay_descriptors(
 
 
 @cache
-def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
+def _rdna4_core_overlays(
+    *, include_f64_atomic_arithmetic: bool = False
+) -> tuple[AmdgpuDescriptorOverlay, ...]:
     return (
         *(
             _v_commutative_binary_vop3_float_overlay(
-                descriptor_key=f"amdgpu.v_{operation}_f32",
-                instruction_name=f"V_{operation.upper()}_F32",
-                mnemonic=f"v_{operation}_f32",
-                semantic_tag=f"float.{operation}.f32",
-                element_bit_width=32,
+                descriptor_key=f"amdgpu.v_{operation}_f{bit_width}",
+                instruction_name=f"V_{operation.upper()}_F{bit_width}",
+                mnemonic=f"v_{operation}_f{bit_width}",
+                semantic_tag=f"float.{operation}.f{bit_width}",
+                element_bit_width=bit_width,
             )
+            for bit_width in (32, 64)
             for operation in ("minimum", "maximum")
         ),
         _s_add_u32_overlay(),
@@ -1870,10 +1873,10 @@ def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _s_mul_i32_rhs_inline_overlay(),
         _s_mulk_i32_overlay(),
         _s_mul_hi_u32_overlay(),
-        _s_min_i32_overlay(),
-        _s_max_i32_overlay(),
-        _s_min_u32_overlay(),
-        _s_max_u32_overlay(),
+        *_s_min_i32_overlays(),
+        *_s_max_i32_overlays(),
+        *_s_min_u32_overlays(),
+        *_s_max_u32_overlays(),
         _s_cselect_b32_overlay(),
         *_s_cmp_i32_overlays(),
         *_s_cmp_u64_overlays(),
@@ -1908,16 +1911,17 @@ def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _v_mad_u32_u24_literal_overlay("src0"),
         _v_mad_u32_u24_literal_overlay("src1"),
         _v_mad_u32_u24_literal_overlay("src2"),
-        _v_min_i32_overlay(),
-        _v_max_i32_overlay(),
-        _v_min_u32_overlay(),
-        _v_max_u32_overlay(),
+        *_v_min_i32_overlays(),
+        *_v_max_i32_overlays(),
+        *_v_min_u32_overlays(),
+        *_v_max_u32_overlays(),
         _v_readfirstlane_b32_overlay(),
         _v_readlane_b32_src1_inline_overlay(),
         *_integer_bitwise_shift_overlays(),
         *_integer_bitwise_permute_overlays(),
         _v_permlanex16_b32_src12_inline_overlay(),
         *_v_binary_f32_overlays(),
+        *_v_binary_f64_overlays(minmax_instruction_suffix="_NUM"),
         *_v_binary_f16_overlays(),
         _v_med3_num_f32_overlay(
             instruction_name="V_MED3_NUM_F32",
@@ -2028,7 +2032,12 @@ def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
             fixed_soffset_native_spelling="null",
         ),
         *_buffer_atomic_overlays(
-            rows=_BUFFER_ATOMIC_GFX12_ROWS,
+            rows=_BUFFER_ATOMIC_GFX12_ROWS
+            + (
+                _float64_atomic_rows("BUFFER", number_extrema=True)
+                if include_f64_atomic_arithmetic
+                else ()
+            ),
             encoding_name="ENC_VBUFFER",
             resource_field_name="RSRC",
             offset_field_name="IOFFSET",
@@ -2142,7 +2151,12 @@ def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
             cache_fields=_GFX12_VECTOR_CACHE_FIELDS,
         ),
         *_global_atomic_overlays(
-            rows=_GLOBAL_ATOMIC_GFX12_ROWS,
+            rows=_GLOBAL_ATOMIC_GFX12_ROWS
+            + (
+                _float64_atomic_rows("GLOBAL", number_extrema=True)
+                if include_f64_atomic_arithmetic
+                else ()
+            ),
             encoding_name="ENC_VGLOBAL",
             address_field_name="VADDR",
             data_field_name="VSRC",
@@ -2172,7 +2186,12 @@ def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
             cache_fields=_GFX12_VECTOR_CACHE_FIELDS,
         ),
         *_flat_atomic_overlays(
-            rows=_FLAT_ATOMIC_GFX12_ROWS,
+            rows=_FLAT_ATOMIC_GFX12_ROWS
+            + (
+                _float64_atomic_rows("FLAT", number_extrema=True)
+                if include_f64_atomic_arithmetic
+                else ()
+            ),
             cmpswap_instruction_name="FLAT_ATOMIC_CMPSWAP_B32",
             encoding_name="ENC_VFLAT",
             address_field_name="VADDR",
@@ -2192,7 +2211,8 @@ def _rdna4_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
             cmpxchg_replacement_field="DATA0",
             encoding_name="ENC_VDS",
             fixed_encoding_fields=(("OFFSET1", 0),),
-            include_packed_half_atomic_add=True,
+            float_atomic_add_types=("f32", "pk2.f16", "pk2.bf16")
+            + (("f64",) if include_f64_atomic_arithmetic else ()),
             include_u16_d16_loads=True,
         ),
         *_ds_crosslane_overlays(
@@ -2269,7 +2289,7 @@ def _gfx125x_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
     return (
         *(
             overlay
-            for overlay in _rdna4_core_overlays()
+            for overlay in _rdna4_core_overlays(include_f64_atomic_arithmetic=True)
             if not (overlay.semantic_tag or "").startswith(
                 ("float.interpolation.", "matrix.wmma.")
             )
@@ -2682,7 +2702,10 @@ def _gfx125x_spec_with_supplemental_instruction_facts(
     existing_instruction_names = spec.instruction_map(include_aliases=True)
     supplemental_instructions = tuple(
         instruction
-        for instruction in _GFX125X_SUPPLEMENTAL_INSTRUCTIONS
+        for instruction in (
+            *_GFX125X_SUPPLEMENTAL_INSTRUCTIONS,
+            *_gfx125x_atomic_instruction_facts(spec),
+        )
         if instruction.name not in existing_instruction_names
     )
     if not supplemental_instructions:

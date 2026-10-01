@@ -54,6 +54,7 @@ from loom.target.contracts import (
     SourceMemoryDynamicIndexSource,
     SourceMemoryOperation,
     SourceMemoryProject,
+    SourceMemoryRejectionReason,
     SourceMemoryRootKind,
     SourceNode,
     SourceNodeRelation,
@@ -70,6 +71,7 @@ from loom.target.contracts import (
     binary_descriptor_rules,
     compile_lower_rule_set,
 )
+from loom.target.contracts.lower_rule_diagnostics import _source_memory_diagnostics
 from loom.target.low_descriptors import EnumDomain, EnumValue, Immediate, ImmediateKind
 from loom.target.test.descriptors import (
     TEST_LOW_ACCUMULATE_V8I32_DESCRIPTOR,
@@ -238,6 +240,48 @@ def test_compile_structural_register_emits() -> None:
     assert copy_emit.kind is LowerEmitKind.REGISTER_COPY
     assert copy_emit.operand_ref_count == 1
     assert copy_emit.result_ref_count == 1
+
+
+def test_compile_exact_lane_origin_operand_reference() -> None:
+    fragment = ContractFragment(
+        name="test.exact-lane-origin",
+        descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        cases=(
+            DescriptorRule(
+                source_op=vector.vector_mulf,
+                descriptor=TEST_LOW_ADD_F32_DESCRIPTOR,
+                guards=(
+                    Guard.exact_lane_origin_type(
+                        "lhs",
+                        Vector("bf16", lanes=16),
+                    ),
+                    Guard.value_type("rhs", Vector("f32", lanes=16)),
+                    Guard.value_type("result", Vector("f32", lanes=16)),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=TEST_LOW_ADD_F32_DESCRIPTOR,
+                        operands={
+                            "lhs": ValueRef.exact_lane_origin_operand("lhs"),
+                            "rhs": ValueRef.operand("rhs"),
+                        },
+                        results={"dst": ValueRef.result("result")},
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    compiled = compile_lower_rule_set(
+        fragment,
+        dialect_ops={"vector": ALL_VECTOR_OPS},
+    )
+
+    origin_guard_ref = compiled.value_refs[compiled.guards[0].value_ref_index]
+    assert origin_guard_ref.kind is SourceValueKind.EXACT_LANE_ORIGIN_OPERAND
+    emit = compiled.emits[compiled.rules[0].emit_start]
+    origin_operand_ref = compiled.value_refs[emit.operand_ref_start]
+    assert origin_operand_ref.kind is SourceValueKind.EXACT_LANE_ORIGIN_OPERAND
 
 
 def test_compile_variadic_result_element_refs() -> None:
@@ -816,17 +860,8 @@ def test_compile_lower_rule_set_compiles_setup_before_per_lane_sequence() -> Non
                             "lhs": ValueRef.operand("lhs"),
                             "rhs": ValueRef.temporary("bias"),
                         },
-                        results={"dst": ValueRef.temporary("partial")},
-                        result_types={"dst": ValueRef.result("result")},
-                        form=DescriptorEmitForm.PER_LANE_SEQUENCE,
-                    ),
-                    EmitDescriptorOp(
-                        descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
-                        operands={
-                            "lhs": ValueRef.temporary("partial"),
-                            "rhs": ValueRef.operand("rhs"),
-                        },
                         results={"dst": ValueRef.result("result")},
+                        result_types={"dst": ValueRef.result("result")},
                         form=DescriptorEmitForm.PER_LANE_SEQUENCE,
                     ),
                 ),
@@ -840,7 +875,27 @@ def test_compile_lower_rule_set_compiles_setup_before_per_lane_sequence() -> Non
     assert tuple(emit.kind for emit in compiled.emits) == (
         LowerEmitKind.DESCRIPTOR_CONST,
         LowerEmitKind.DESCRIPTOR_OP_PER_LANE_SEQUENCE,
-        LowerEmitKind.DESCRIPTOR_OP_PER_LANE_SEQUENCE,
+    )
+
+
+def test_descriptor_rule_rejects_single_per_lane_sequence_without_setup() -> None:
+    _expect_value_error(
+        lambda: DescriptorRule(
+            source_op=vector.vector_addi,
+            descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+            emit=(
+                EmitDescriptorOp(
+                    descriptor=TEST_LOW_ADD_I32_DESCRIPTOR,
+                    operands={
+                        "lhs": ValueRef.operand("lhs"),
+                        "rhs": ValueRef.operand("rhs"),
+                    },
+                    results={"dst": ValueRef.result("result")},
+                    form=DescriptorEmitForm.PER_LANE_SEQUENCE,
+                ),
+            ),
+        ).validate(TEST_LOW_CORE_DESCRIPTOR_SET),
+        "a single per-lane-sequence emit requires shared setup",
     )
 
 
@@ -1679,6 +1734,88 @@ def test_source_memory_constraint_rejects_unused_address_layout_diagnostic() -> 
             static_byte_offset=0,
         ),
         "unconstrained source memory cannot have an address-layout diagnostic",
+    )
+
+
+def test_source_memory_constraint_rejects_unused_alignment_diagnostic() -> None:
+    diagnostic = GuardDiagnostic(
+        subject_role="source-memory",
+        subject_name="access",
+        constraint_key="source_memory.minimum_alignment",
+    )
+    _expect_value_error(
+        lambda: SourceMemoryConstraint(
+            operation=SourceMemoryOperation.LOAD,
+            memory_spaces=("global",),
+            element_byte_count=4,
+            vector_lane_count=1,
+            vector_lane_byte_stride=4,
+            static_byte_offset=0,
+            alignment_diagnostic=diagnostic,
+        ),
+        "unconstrained source memory cannot have an alignment diagnostic",
+    )
+
+
+def test_source_memory_alignment_diagnostic_overrides_only_alignment() -> None:
+    general_diagnostic = GuardDiagnostic(
+        subject_role="source-memory",
+        subject_name="general",
+        constraint_key="test.general",
+    )
+    alignment_diagnostic = GuardDiagnostic(
+        subject_role="source-memory",
+        subject_name="alignment",
+        constraint_key="test.alignment",
+    )
+    constraint = SourceMemoryConstraint(
+        operation=SourceMemoryOperation.LOAD,
+        memory_spaces=("global",),
+        element_byte_count=4,
+        vector_lane_count=1,
+        vector_lane_byte_stride=4,
+        static_byte_offset=0,
+        minimum_alignment=4,
+        diagnostic=general_diagnostic,
+        alignment_diagnostic=alignment_diagnostic,
+    )
+
+    diagnostics_by_reason = dict(
+        zip(
+            SourceMemoryRejectionReason,
+            _source_memory_diagnostics(constraint, None),
+            strict=True,
+        )
+    )
+
+    assert (
+        diagnostics_by_reason[SourceMemoryRejectionReason.MINIMUM_ALIGNMENT]
+        is alignment_diagnostic.ref
+    )
+    assert (
+        diagnostics_by_reason[SourceMemoryRejectionReason.MEMORY_SPACE]
+        is general_diagnostic.ref
+    )
+    default_constraint = replace(
+        constraint,
+        diagnostic=None,
+        alignment_diagnostic=None,
+    )
+    default_diagnostics = dict(
+        zip(
+            SourceMemoryRejectionReason,
+            _source_memory_diagnostics(default_constraint, None),
+            strict=True,
+        )
+    )
+    memory_space_ref = default_diagnostics[SourceMemoryRejectionReason.MEMORY_SPACE]
+    assert (
+        next(
+            param.string_value
+            for param in memory_space_ref.params
+            if param.name == "constraint_key"
+        )
+        == "source_memory.memory_space"
     )
 
 

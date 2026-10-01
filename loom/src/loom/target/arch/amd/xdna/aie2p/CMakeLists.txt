@@ -170,6 +170,27 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    gather
+  HDRS
+    "gather.h"
+  SRCS
+    "gather.c"
+  DEPS
+    iree::base
+    loom::codegen::low::source_memory_plan
+    loom::ir
+    loom::ir::facts
+    loom::ops::global
+    loom::ops::vector
+    loom::target::contract
+    loom::util::fact_table
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     descriptor_encoding
   HDRS
     "descriptors/encoding.h"
@@ -202,7 +223,9 @@ loom_cc_library(
     "legalization_table.c"
   DEPS
     ::core_descriptors
+    ::gather
     iree::base
+    loom::codegen::low::source_memory_plan
     loom::ir
     loom::ops::scalar
     loom::ops::vector
@@ -408,7 +431,7 @@ loom_cc_library(
   NAME
     lower
   HDRS
-    "lower/encode.h"
+    "lower/gather.h"
     "lower/lower.h"
     "lower/matrix.h"
     "lower/rodata.h"
@@ -416,13 +439,14 @@ loom_cc_library(
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/amd/xdna/aie2p/contracts/core_index.inl"
   SRCS
-    "lower/encode.c"
+    "lower/gather.c"
     "lower/matrix.c"
     "lower/registry.c"
     "lower/rodata.c"
     "lower/storage.c"
   DEPS
     ::core_descriptors
+    ::gather
     iree::base
     loom::analysis::contract_vector
     loom::codegen::low::lower
@@ -602,6 +626,7 @@ loom_check_test_suite(
     "test/array_plan/packed_record.loom-test"
     "test/array_plan/pipeline_record_shapes.loom-test"
     "test/array_plan/pipeline_views.loom-test"
+    "test/array_plan/private_atomics.loom-test"
     "test/array_plan/read_only_data.loom-test"
     "test/array_plan/record_contracts.loom-test"
     "test/array_plan/ring_wrap.loom-test"
@@ -659,7 +684,9 @@ loom_check_test_suite(
     "test/source_low/carried_counter_store.loom-test"
     "test/source_low/function_storage.loom-test"
     "test/source_low/fused_packet_memory.loom-test"
+    "test/source_low/immutable_gather.loom-test"
     "test/source_low/index_conversion.loom-test"
+    "test/source_low/integer_float_conversion.loom-test"
     "test/source_low/lookup_table.loom-test"
     "test/source_low/lookup_table_vector.loom-test"
     "test/source_low/loop_counter_offset.loom-test"
@@ -682,6 +709,7 @@ loom_check_test_suite(
     "test/source_low/nested_view_selection.loom-test"
     "test/source_low/numeric_address_widening.loom-test"
     "test/source_low/numeric_bf16_maximum.loom-test"
+    "test/source_low/numeric_bf16_origin_multiply.loom-test"
     "test/source_low/numeric_bfloat_widen.loom-test"
     "test/source_low/numeric_bitwise_constants.loom-test"
     "test/source_low/numeric_boolean_comparison.loom-test"
@@ -691,6 +719,7 @@ loom_check_test_suite(
     "test/source_low/numeric_conversion_f16.loom-test"
     "test/source_low/numeric_conversion_float8.loom-test"
     "test/source_low/numeric_conversion_fp8_packet.loom-test"
+    "test/source_low/numeric_conversion_materialized.loom-test"
     "test/source_low/numeric_conversion_wide.loom-test"
     "test/source_low/numeric_decode_mxfp8.loom-test"
     "test/source_low/numeric_f32.loom-test"
@@ -741,6 +770,7 @@ loom_check_test_suite(
     "test/source_low/table_quantize.loom-test"
     "test/source_low/target_legalize_scalar_multiply_add.loom-test"
     "test/source_low/uniform_predicate_control.loom-test"
+    "test/source_low/vector_accumulator_slice.loom-test"
     "test/source_low/vector_bitcast.loom-test"
     "test/source_low/vector_comparison.loom-test"
     "test/source_low/vector_concat.loom-test"
@@ -753,6 +783,7 @@ loom_check_test_suite(
     "test/source_low/vector_memory.loom-test"
     "test/source_low/vector_partial_carriers.loom-test"
     "test/source_low/vector_predicate.loom-test"
+    "test/source_low/vector_select_packetization.loom-test"
     "test/source_low/vector_slice.loom-test"
     "test/source_low/vector_splat.loom-test"
     "test/source_low/vector_structural.loom-test"
@@ -930,6 +961,7 @@ loom_cc_library(
     ::array_resident
     ::leaf_compile
     ::target_facts
+    ::target_profile
     ::tile_link
     ::xdna_product
     iree::base
@@ -952,6 +984,33 @@ loom_cc_library(
     loom::target::reporting::report
     loom::util::fact_table
   PUBLIC
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA)
+loom_cc_test(
+  NAME
+    artifact_test
+  SRCS
+    "emit/artifact_test.cc"
+  DEPS
+    ::artifact
+    ::low_registry
+    ::provider
+    iree::base
+    iree::hal::drivers::amd::xdna::image
+    iree::hal::drivers::amd::xdna::image::aie2p::npu2
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::codegen::low::text_asm
+    loom::format::text::parser
+    loom::ir
+    loom::ops::op_registry
+    loom::target::reporting::report
+    loom::testing::module_ptr
+  LABELS
+    "iree-build-requirement=libamdf"
+    "iree-build-requirement=loom.target.arch.xdna"
 )
 endif()
 

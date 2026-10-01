@@ -814,13 +814,12 @@ iree_status_t loom_scalar_sitofp_facts(loom_fact_context_t* context,
                                        const loom_op_t* op,
                                        const loom_value_facts_t* operand_facts,
                                        loom_value_facts_t* result_facts) {
-  if (!loom_value_facts_is_exact(operand_facts[0])) {
-    result_facts[0] = loom_value_facts_unknown();
-    return iree_ok_status();
-  }
-  result_facts[0] =
-      loom_value_facts_exact_float(loom_scalar_result_element_type(module, op),
-                                   (double)operand_facts[0].range_lo);
+  const loom_scalar_type_t source_type = loom_type_element_type(
+      loom_module_value_type(module, loom_scalar_sitofp_input(op)));
+  loom_value_facts_eval_integer_to_float(
+      source_type, loom_scalar_result_element_type(module, op),
+      LOOM_FLOAT_INTEGER_CONVERSION_SIGNED, &operand_facts[0],
+      &result_facts[0]);
   return iree_ok_status();
 }
 
@@ -829,22 +828,12 @@ iree_status_t loom_scalar_uitofp_facts(loom_fact_context_t* context,
                                        const loom_op_t* op,
                                        const loom_value_facts_t* operand_facts,
                                        loom_value_facts_t* result_facts) {
-  if (!loom_value_facts_is_exact(operand_facts[0])) {
-    result_facts[0] = loom_value_facts_unknown();
-    return iree_ok_status();
-  }
-  loom_type_t source_type =
-      loom_module_value_type(module, loom_scalar_uitofp_input(op));
-  const int32_t source_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(source_type));
-  uint64_t source_bits = 0;
-  if (!loom_value_facts_as_exact_raw_bits(operand_facts[0], source_bit_count,
-                                          &source_bits)) {
-    result_facts[0] = loom_value_facts_unknown();
-    return iree_ok_status();
-  }
-  result_facts[0] = loom_value_facts_exact_float(
-      loom_scalar_result_element_type(module, op), (double)source_bits);
+  const loom_scalar_type_t source_type = loom_type_element_type(
+      loom_module_value_type(module, loom_scalar_uitofp_input(op)));
+  loom_value_facts_eval_integer_to_float(
+      source_type, loom_scalar_result_element_type(module, op),
+      LOOM_FLOAT_INTEGER_CONVERSION_UNSIGNED, &operand_facts[0],
+      &result_facts[0]);
   return iree_ok_status();
 }
 
@@ -946,15 +935,6 @@ static loom_value_facts_t loom_scalar_integer_domain_facts(
   return result_facts;
 }
 
-static bool loom_scalar_zero_extend_exact_i64(int64_t value, int32_t bitwidth,
-                                              int64_t* out_value) {
-  if (bitwidth <= 0 || bitwidth >= 63) {
-    return false;
-  }
-  *out_value = (int64_t)iree_math_mask_low_bits_u64((uint64_t)value, bitwidth);
-  return true;
-}
-
 static bool loom_scalar_truncate_exact_i64(
     int64_t value, loom_scalar_type_t result_scalar_type, int64_t* out_value) {
   const int32_t bitwidth = loom_scalar_type_bitwidth(result_scalar_type);
@@ -1013,42 +993,11 @@ iree_status_t loom_scalar_extui_facts(loom_fact_context_t* context,
   }
   (void)result_scalar_type;
 
-  const int32_t input_bitwidth = loom_scalar_type_bitwidth(input_scalar_type);
-  int64_t exact_value = 0;
-  if (loom_value_facts_as_exact_i64(operand_facts[0], &exact_value) &&
-      loom_scalar_zero_extend_exact_i64(exact_value, input_bitwidth,
-                                        &exact_value)) {
-    result_facts[0] = loom_value_facts_exact_i64(exact_value);
-    return iree_ok_status();
-  }
-
-  loom_value_facts_t input_facts =
-      loom_value_facts_clamp_domain(operand_facts[0], input_lo, input_hi);
-  if (input_facts.range_lo >= 0) {
-    result_facts[0] =
-        loom_value_facts_clamp_domain(input_facts, result_lo, result_hi);
-    return iree_ok_status();
-  }
-  if (input_bitwidth > 0 && input_bitwidth < 63 && input_facts.range_hi < 0) {
-    const int64_t unsigned_extent = INT64_C(1) << input_bitwidth;
-    result_facts[0] = loom_value_facts_make(
-        input_facts.range_lo + unsigned_extent,
-        input_facts.range_hi + unsigned_extent,
-        iree_math_gcd_i64(input_facts.known_divisor, unsigned_extent));
-    loom_value_facts_propagate_unary_distribution(operand_facts[0],
-                                                  &result_facts[0]);
-    result_facts[0] =
-        loom_value_facts_clamp_domain(result_facts[0], result_lo, result_hi);
-    return iree_ok_status();
-  }
-
-  int64_t unsigned_hi = result_hi;
-  if (input_bitwidth > 0 && input_bitwidth < 63) {
-    const int64_t input_unsigned_hi = (INT64_C(1) << input_bitwidth) - 1;
-    unsigned_hi = input_unsigned_hi < result_hi ? input_unsigned_hi : result_hi;
-  }
+  result_facts[0] = loom_value_facts_zero_extend(
+      loom_value_facts_clamp_domain(operand_facts[0], input_lo, input_hi),
+      loom_scalar_type_bitwidth(input_scalar_type));
   result_facts[0] =
-      loom_scalar_integer_domain_facts(operand_facts[0], 0, unsigned_hi);
+      loom_value_facts_clamp_domain(result_facts[0], result_lo, result_hi);
   return iree_ok_status();
 }
 
