@@ -1132,11 +1132,14 @@ bool loom_amdgpu_low_value_defines_vgpr_low16(loom_low_lower_context_t* context,
   }
   const loom_low_operand_t* result_operand =
       &descriptor_set->operands[operand_index];
-  if (result_operand->register_part_id >= descriptor_set->register_part_count) {
+  const loom_low_reg_class_alt_t* alternative = loom_low_operand_reg_class_alt(
+      descriptor_set, result_operand, LOOM_AMDGPU_REG_CLASS_ID_VGPR);
+  if (alternative == NULL ||
+      alternative->register_part_id >= descriptor_set->register_part_count) {
     return false;
   }
   const loom_low_register_part_t* register_part =
-      &descriptor_set->register_parts[result_operand->register_part_id];
+      &descriptor_set->register_parts[alternative->register_part_id];
   return register_part->reg_class_id == LOOM_AMDGPU_REG_CLASS_ID_VGPR &&
          register_part->mask == LOOM_AMDGPU_REGISTER_PART_MASK_LOW16;
 }
@@ -1172,8 +1175,7 @@ iree_status_t loom_amdgpu_materialize_low_vgpr_b32_registers(
   const uint32_t unit_count = loom_low_register_type_unit_count(low_type);
   const bool is_vgpr = loom_amdgpu_low_type_is_register_class(
       context, low_type, LOOM_AMDGPU_REG_CLASS_ID_VGPR);
-  if (is_vgpr && unit_count != 0 &&
-      unit_count <= LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES) {
+  if (is_vgpr && unit_count != 0) {
     return iree_ok_status();
   }
 

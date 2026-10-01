@@ -45,7 +45,6 @@ _NO_DEVICE_SUBJECTS = [
     "memory/view/selection.loom",
     "numeric/conversion/conversion.loom",
     "numeric/conversion/narrow.loom",
-    "numeric/conversion/narrow_arithmetic.loom",
     "numeric/conversion/paths.loom",
     "numeric/float/arithmetic.loom",
     "numeric/float/comparison.loom",
@@ -83,21 +82,26 @@ _ADAPTER_ONLY_SCENARIOS = [
     "numeric/conversion/bfloat_rounding.loom",
     "numeric/conversion/f32_narrowing.loom",
     "numeric/conversion/integer_float8.loom",
+    "numeric/conversion/narrow_arithmetic.loom",
     "numeric/conversion/narrow_integer_float.loom",
     "numeric/conversion/narrow_widening.loom",
     "numeric/conversion/scalar_float.loom",
+    "numeric/float/clamp.loom",
     "numeric/float/half_extrema.loom",
     "numeric/float/scalar_f32.loom",
     "numeric/float/scalar_float64.loom",
     "numeric/float/sign.loom",
     "numeric/integer/scalar_observations.loom",
+    "numeric/integer/constant_unsigned_division.loom",
     "numeric/integer/widening.loom",
+    "numeric/integer/wide/observations.loom",
     "numeric/predicate/lanes.loom",
     "numeric/predicate/selection.loom",
     "numeric/predicate/truncation.loom",
     "numeric/predicate/vector_logic.loom",
     "numeric/vector/f32.loom",
     "numeric/vector/integer_bitwise.loom",
+    "numeric/vector/packed_arithmetic.loom",
     "numeric/vector/packed_selection.loom",
 ]
 
@@ -192,11 +196,13 @@ _NO_HARDWARE_SUBJECT_EXCLUDES = {
 
 loom_corpus_build(
     name = "all",
+    all_roots_xfail = {"//loom/target/amdgpu:all": ["numeric/conversion/float8_facts.loom"]},
     catalog = LOOM_CORPUS,
     excludes = {"//loom/target/amdgpu:all": _NO_KERNEL_ARTIFACT_EXCLUDES},
     profiles = ["//loom/target/amdgpu:all"],
     xfails = {
         "//loom/target/amdgpu:all": {
+            "numeric/conversion/float8_facts.loom:@float8_facts": "TARGET/034",
             "numeric/vector/conversion.loom:@pack_nibbles": "AMDGPU/023,TARGET/003",
             "numeric/vector/conversion.loom:@truncate_halfwords": "AMDGPU/023,TARGET/003",
         },
@@ -214,6 +220,9 @@ loom_corpus_test(
     profile_sources = {AMDGPU_ACCESS_PROFILE.name: _ACCESS_SOURCES},
     xfails = {
         AMDGPU_HARDWARE_PROFILE.name: {
+            "numeric/conversion/float8_facts.loom:@float8_fact_values": "TARGET/034",
+            "numeric/float/clamp.loom:@clamp_ieee_f32_values": "TARGET/003",
+            "numeric/integer/constant_unsigned_division.loom:@constant_scalar_quotient_values": "TARGET/001",
             "numeric/vector/conversion.loom:@halfword_truncation_values": "AMDGPU/023,TARGET/003",
             "numeric/vector/conversion.loom:@packed_nibble_values": "AMDGPU/023,TARGET/003",
         },

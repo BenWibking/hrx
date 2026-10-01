@@ -885,11 +885,15 @@ def _low_operand(
     return Operand(
         field_name=operand.name,
         role=role,
-        reg_alts=(RegClassAlt(_operand_register_class(spec, operand)),),
+        reg_alts=(
+            RegClassAlt(
+                _operand_register_class(spec, operand),
+                register_part=register_parts.get(operand.name),
+            ),
+        ),
         unit_count=_operand_unit_count(spec, operand),
         encoding_field_id=encoding_field_id,
         encoding_adapter_id=encoding_adapter_id,
-        register_part=register_parts.get(operand.name),
         read_stage=read_stage,
         ready_stage=ready_stage,
         read_event=read_event,
@@ -929,9 +933,8 @@ def _storage_continuation_operand(
     return Operand(
         field_name="storage",
         role=OperandRole.OPERAND,
-        reg_alts=(RegClassAlt(part.reg_class),),
+        reg_alts=(RegClassAlt(part.reg_class, register_part=part.name),),
         flags=(OperandFlag.IMPLICIT, OperandFlag.STORAGE_CONTINUATION),
-        register_part=part.name,
     )
 
 
@@ -1651,6 +1654,23 @@ def _endpoint_itinerary(endpoint: tuple[int, str | None]) -> Itinerary:
     )
 
 
+def _physical_war_separation(producer: Itinerary, consumer: Itinerary) -> int:
+    # The signed LLVM anti-dependency latency assumes that its scheduler
+    # preserves topological issue order. Loom's physical issuer can backfill a
+    # later accepted instruction into an earlier issue cycle, so preserve the
+    # accepted read-before-overwrite order in the shared event table.
+    return max(
+        0,
+        dependency_separation(
+            producer,
+            0,
+            consumer,
+            0,
+            DependencyKind.WAR,
+        ),
+    )
+
+
 def _event_separations() -> tuple[EventSeparation, ...]:
     result = []
     endpoint_itineraries = {
@@ -1677,12 +1697,9 @@ def _event_separations() -> tuple[EventSeparation, ...]:
                     EventSeparation(
                         _register_event_name("read", *producer),
                         _register_event_name("write", *consumer),
-                        dependency_separation(
+                        _physical_war_separation(
                             producer_itinerary,
-                            0,
                             consumer_itinerary,
-                            0,
-                            DependencyKind.WAR,
                         ),
                         ModelQuality.EXACT,
                     ),

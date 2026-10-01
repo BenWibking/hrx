@@ -36,6 +36,7 @@ from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     _low_register_class_name,
     _memory_event_name,
     _pipeline_resource_name,
+    _register_event_name,
     _slot_resource_name,
     _validate_control_issue_timing,
 )
@@ -1366,13 +1367,17 @@ def test_vector_predicates_use_one_partially_addressable_el_value() -> None:
             f"amd.xdna.aie2p.cmp.lt.signed.i{width}x{512 // width}.el.low32"
         ]
         assert compare.operands[0].reg_alts[0].reg_class == "aie2p.elpredicate"
-        assert compare.operands[0].register_part == "aie2p.elpredicate.low32"
+        assert (
+            compare.operands[0].reg_alts[0].register_part == "aie2p.elpredicate.low32"
+        )
         assert compare.operands[0].encoding_adapter_id != 0
 
         select = descriptors[f"amd.xdna.aie2p.select.i{width}x{512 // width}.mask64"]
         assert select.operands[-1].field_name == "sel"
         assert select.operands[-1].reg_alts[0].reg_class == "aie2p.elpredicate"
-        assert select.operands[-1].register_part == "aie2p.elpredicate.low32"
+        assert (
+            select.operands[-1].reg_alts[0].register_part == "aie2p.elpredicate.low32"
+        )
         assert select.operands[-1].encoding_adapter_id != 0
 
     rematerializable = Constraint(ConstraintKind.REMATERIALIZABLE, 0)
@@ -1389,11 +1394,11 @@ def test_vector_predicates_use_one_partially_addressable_el_value() -> None:
         high = descriptors[f"amd.xdna.aie2p.predicate.{operation}.high32"]
         tied_high = descriptors[f"amd.xdna.aie2p.predicate.{operation}.high32.rhs_tied"]
         assert all(
-            operand.register_part == "aie2p.elpredicate.low32"
+            operand.reg_alts[0].register_part == "aie2p.elpredicate.low32"
             for operand in low.operands
         )
         assert all(
-            operand.register_part == "aie2p.elpredicate.low32"
+            operand.reg_alts[0].register_part == "aie2p.elpredicate.low32"
             for operand in tied_low.operands
         )
         assert tied_low.constraints == (
@@ -1402,18 +1407,18 @@ def test_vector_predicates_use_one_partially_addressable_el_value() -> None:
         )
         assert tied_low.asm_forms[0].operands == ("s0", "s1")
         assert all(
-            operand.register_part == "aie2p.elpredicate.high32"
+            operand.reg_alts[0].register_part == "aie2p.elpredicate.high32"
             for operand in tied_high.operands
         )
         assert tied_high.constraints == (Constraint(ConstraintKind.TIED, 0, 2),)
         assert tied_high.asm_forms[0].operands == ("s0", "s1")
         assert all(
-            operand.register_part == "aie2p.elpredicate.high32"
+            operand.reg_alts[0].register_part == "aie2p.elpredicate.high32"
             for operand in high.operands[:3]
         )
         continuation = high.operands[3]
         assert continuation.field_name == "storage"
-        assert continuation.register_part == "aie2p.elpredicate.low32"
+        assert continuation.reg_alts[0].register_part == "aie2p.elpredicate.low32"
         assert set(continuation.flags) == {
             OperandFlag.IMPLICIT,
             OperandFlag.STORAGE_CONTINUATION,
@@ -1435,17 +1440,17 @@ def test_vector_predicates_use_one_partially_addressable_el_value() -> None:
             "s1",
         ]
         assert shift.operands[0].reg_alts[0].reg_class == "aie2p.elpredicate"
-        assert shift.operands[0].register_part == "aie2p.elpredicate.low32"
+        assert shift.operands[0].reg_alts[0].register_part == "aie2p.elpredicate.low32"
         assert shift.operands[0].encoding_adapter_id != 0
         assert shift.operands[1].reg_alts[0].reg_class == "aie2p.elpredicate"
-        assert shift.operands[1].register_part == source_part
+        assert shift.operands[1].reg_alts[0].register_part == source_part
         assert shift.operands[1].encoding_adapter_id != 0
         assert shift.operands[2].reg_alts[0].reg_class == "aie2p.er"
         assert shift.asm_forms[0].mnemonic == f"predicate.shift.{word}"
 
     complete = descriptors["amd.xdna.aie2p.predicate.complete.zero.high32"]
-    assert complete.operands[0].register_part == "aie2p.elpredicate.high32"
-    assert complete.operands[1].register_part == "aie2p.elpredicate.low32"
+    assert complete.operands[0].reg_alts[0].register_part == "aie2p.elpredicate.high32"
+    assert complete.operands[1].reg_alts[0].register_part == "aie2p.elpredicate.low32"
     assert OperandFlag.STORAGE_CONTINUATION in complete.operands[1].flags
     assert rematerializable in complete.constraints
     complete_ties = [
@@ -2173,6 +2178,23 @@ def test_seed_schedule_contract_retains_endpoint_events_and_separations() -> Non
     assert separations[vector_write, vector_write] == 1
     assert separations[vector_read, vector_write] == 0
     assert separations[vector_write, vector_store_read] == 2
+
+    # The physical issuer may backfill later accepted instructions. A later
+    # overwrite therefore cannot inherit LLVM's negative anti-dependency
+    # latency, which assumes topological issue order.
+    assert all(
+        separation >= 0
+        for (producer_event, consumer_event), separation in separations.items()
+        if producer_event.startswith("amd.xdna.aie2p.operand.read.")
+        and consumer_event.startswith("amd.xdna.aie2p.operand.write.")
+    )
+    assert (
+        separations[
+            _register_event_name("read", 1, None),
+            _register_event_name("write", 2, None),
+        ]
+        == 0
+    )
 
     memory_write = next(
         row.producer_event

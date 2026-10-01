@@ -1506,9 +1506,8 @@ def _sgpr_result(
     return Operand(
         field_name,
         OperandRole.RESULT,
-        _SGPR_ALT,
+        (replace(_SGPR_ALT[0], register_part=register_part),),
         unit_count=units,
-        register_part=register_part,
     )
 
 
@@ -1518,9 +1517,8 @@ def _sgpr_operand(
     return Operand(
         field_name,
         OperandRole.OPERAND,
-        _SGPR_ALT,
+        (replace(_SGPR_ALT[0], register_part=register_part),),
         unit_count=units,
-        register_part=register_part,
     )
 
 
@@ -1732,11 +1730,10 @@ def _vgpr_result(
     return Operand(
         field_name,
         OperandRole.RESULT,
-        _VGPR_ALT,
+        (replace(_VGPR_ALT[0], register_part=register_part),),
         unit_count=units,
         address_map_kind=address_map_kind,
         addressable_unit_count=addressable_unit_count,
-        register_part=register_part,
     )
 
 
@@ -1751,11 +1748,10 @@ def _vgpr_operand(
     return Operand(
         field_name,
         OperandRole.OPERAND,
-        _VGPR_ALT,
+        (replace(_VGPR_ALT[0], register_part=register_part),),
         unit_count=units,
         address_map_kind=address_map_kind,
         addressable_unit_count=addressable_unit_count,
-        register_part=register_part,
     )
 
 
@@ -1791,8 +1787,23 @@ def _vgpr_agpr_result(field_name: str = "dst", *, units: int = 1) -> Operand:
     return Operand(field_name, OperandRole.RESULT, _VGPR_AGPR_ALT, unit_count=units)
 
 
-def _vgpr_agpr_operand(field_name: str, *, units: int = 1) -> Operand:
-    return Operand(field_name, OperandRole.OPERAND, _VGPR_AGPR_ALT, unit_count=units)
+def _vgpr_agpr_operand(
+    field_name: str,
+    *,
+    units: int = 1,
+    vgpr_register_part: str | None = None,
+) -> Operand:
+    return Operand(
+        field_name,
+        OperandRole.OPERAND,
+        tuple(
+            replace(alternative, register_part=vgpr_register_part)
+            if alternative.reg_class == _REG_VGPR
+            else alternative
+            for alternative in _VGPR_AGPR_ALT
+        ),
+        unit_count=units,
+    )
 
 
 def _vgpr_agpr_const_operand(field_name: str, *, units: int = 1) -> Operand:

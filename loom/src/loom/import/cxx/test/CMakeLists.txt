@@ -14,6 +14,7 @@ loom_check_test_suite(
   NAME
     compiler_test
   SRCS
+    "aggregate_constants.cxx-test"
     "assembly.cxx-test"
     "assembly_invalid.cxx-test"
     "assumptions.cxx-test"
@@ -42,6 +43,7 @@ loom_check_test_suite(
     "config_cleanup.cxx-test"
     "config_invalid.cxx-test"
     "const.cxx-test"
+    "const_default_initialization.cxx-test"
     "constexpr.cxx-test"
     "constexpr_bitcast.cxx-test"
     "constexpr_bitcast_cleanup.cxx-test"
@@ -113,6 +115,7 @@ loom_check_test_suite(
     "template_calls.cxx-test"
     "template_conversions.cxx-test"
     "template_conversions_invalid.cxx-test"
+    "value_initialization.cxx-test"
     "vector_constants.cxx-test"
     "vector_conversion.cxx-test"
     "vector_conversion_invalid.cxx-test"
