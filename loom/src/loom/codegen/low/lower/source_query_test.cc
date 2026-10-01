@@ -294,9 +294,7 @@ TEST_F(LowLowerSourceQueryTest, RejectedNativeCandidateAllowsFollowingRule) {
   guard.payload.u64 = 1;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_rule_t rules[2] = {};
-  rules[0].source_op_kind = constant->kind;
   rules[0].guard_count = 1;
-  rules[1].source_op_kind = constant->kind;
   const loom_low_lower_rule_span_t span = {constant->kind, 0, 2};
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.spans = &span;

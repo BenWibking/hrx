@@ -951,7 +951,7 @@ static_assert(sizeof(loom_low_lower_emit_t) == 24,
 // Ordinal into a rule set's interned emit table.
 typedef uint16_t loom_low_lower_emit_ref_t;
 
-typedef uint16_t loom_low_lower_rule_flags_t;
+typedef uint8_t loom_low_lower_rule_flags_t;
 
 // Rule row is a read-only target contract case and must not be selected as an
 // emission program by source-to-low.
@@ -969,10 +969,6 @@ typedef uint16_t loom_low_lower_rule_flags_t;
 #define LOOM_LOW_LOWER_RULE_PRIMARY_EMIT_NONE ((uint16_t)UINT16_MAX)
 
 typedef struct loom_low_lower_rule_t {
-  // Source op kind this rule accepts.
-  loom_op_kind_t source_op_kind;
-  // Rule behavior flags.
-  loom_low_lower_rule_flags_t flags;
   // One-based report-key table ordinal. Zero means the selected rule has no
   // stable strategy key for compile reports.
   uint16_t report_key_ordinal;
@@ -983,8 +979,6 @@ typedef struct loom_low_lower_rule_t {
   uint16_t source_node_span;
   // First guard-ref row for this rule.
   uint16_t guard_start;
-  // Number of guard refs for this rule.
-  uint16_t guard_count;
   // Rule action range selected by its nonzero count.
   union {
     // First emit-reference row for this rule's program.
@@ -1011,9 +1005,13 @@ typedef struct loom_low_lower_rule_t {
       uint8_t elide_ref_count;
     } value;
   } metadata;
+  // Rule behavior flags.
+  loom_low_lower_rule_flags_t flags;
+  // Number of guard refs for this rule.
+  uint8_t guard_count;
 } loom_low_lower_rule_t;
-static_assert(sizeof(loom_low_lower_rule_t) == 20,
-              "loom_low_lower_rule_t must be 20 bytes");
+static_assert(sizeof(loom_low_lower_rule_t) == 16,
+              "loom_low_lower_rule_t must be 16 bytes");
 
 static inline uint16_t loom_low_lower_rule_source_node_start(
     const loom_low_lower_rule_t* rule) {

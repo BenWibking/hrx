@@ -321,7 +321,6 @@ TEST(LowContractQueryTest, ContractIndexDescriptorRuleSelectsLegalCase) {
   emit.descriptor_ref = 0;
   const loom_low_lower_emit_ref_t emit_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = kSourceOpKind;
   rule.emit_count = 1;
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.string_pool = kRuleStringPool;
@@ -468,7 +467,6 @@ TEST(LowContractQueryTest, TargetSubgroupSizeRangeRequiresKnownInRangeSize) {
   emit.descriptor_ref = 0;
   const loom_low_lower_emit_ref_t emit_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = kSourceOpKind;
   rule.guard_count = 1;
   rule.emit_count = 1;
   loom_low_lower_rule_set_t rule_set = {};
@@ -580,7 +578,6 @@ TEST(LowContractQueryTest, ContractIndexDescriptorRuleReportsRejectedCase) {
   diagnostic.error_ref = LOOM_ERR_TARGET_003_REF;
   diagnostic.param_count = IREE_ARRAYSIZE(diagnostic_params);
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = kSourceOpKind;
   rule.guard_count = 1;
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.string_pool = kRuleStringPool;
@@ -717,7 +714,6 @@ TEST_F(LowContractQuerySourceMemoryTest,
   emit.source_memory_ordinal = 1;
   const loom_low_lower_emit_ref_t emit_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_VECTOR_LOAD;
   rule.emit_count = 1;
 
   loom_low_lower_rule_set_t rule_set = {};

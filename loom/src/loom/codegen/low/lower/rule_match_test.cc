@@ -221,7 +221,6 @@ class LowLowerRuleMatchTest : public ::testing::Test {
       source_node.guard_count = 1;
     }
     loom_low_lower_rule_t rule = {};
-    rule.source_op_kind = source_op->kind;
     rule.source_node_span = LOOM_LOW_LOWER_SOURCE_NODE_SPAN(0, 1);
     const loom_low_lower_rule_span_t span = {
         /*.source_op_kind=*/source_op->kind,
@@ -272,7 +271,6 @@ class LowLowerRuleMatchTest : public ::testing::Test {
     loom_low_lower_value_ref_t value_ref = {};
     value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_OPERAND;
     loom_low_lower_rule_t rule = {};
-    rule.source_op_kind = source_op->kind;
     rule.guard_count = 1;
     const loom_low_lower_rule_span_t span = {
         /*.source_op_kind=*/source_op->kind,
@@ -344,10 +342,8 @@ TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
   guards[1].payload.i64_range.maximum = 8;
   const loom_low_lower_guard_ref_t guard_refs[] = {0, 1};
   loom_low_lower_rule_t rules[2] = {};
-  rules[0].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rules[0].guard_start = 0;
   rules[0].guard_count = 1;
-  rules[1].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rules[1].guard_start = 1;
   rules[1].guard_count = 1;
   const loom_low_lower_rule_span_t span = {
@@ -407,7 +403,6 @@ TEST_F(LowLowerRuleMatchTest, MatchesBiasedPowersWithoutSignedOverflow) {
   loom_low_lower_value_ref_t value_ref = {};
   value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rule.guard_count = 1;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_INDEX_CONSTANT,
@@ -517,7 +512,6 @@ TEST_F(LowLowerRuleMatchTest, MatchesCompleteStorageOperandSchema) {
   loom_low_lower_value_ref_t value_ref = {};
   value_ref.kind = LOOM_LOW_LOWER_VALUE_REF_RESULT;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_SCALAR_CONSTANT;
   rule.guard_count = 1;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_SCALAR_CONSTANT,
@@ -556,9 +550,7 @@ TEST_F(LowLowerRuleMatchTest, MatchesCompleteStorageOperandSchema) {
 
 TEST_F(LowLowerRuleMatchTest, ContractQueriesMaySelectContractOnlyRules) {
   loom_low_lower_rule_t rules[2] = {};
-  rules[0].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   rules[0].flags = LOOM_LOW_LOWER_RULE_FLAG_CONTRACT_ONLY;
-  rules[1].source_op_kind = LOOM_OP_INDEX_CONSTANT;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_INDEX_CONSTANT,
       /*.rule_start=*/0,

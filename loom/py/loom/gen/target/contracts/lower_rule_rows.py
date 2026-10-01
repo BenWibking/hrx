@@ -923,7 +923,6 @@ def rule_row(
     report_key_ordinals: Mapping[str, int],
 ) -> list[str]:
     fields: list[str] = []
-    _append_field(fields, "source_op_kind", lower_rule_spelling.op_c_name(row.source_op), always=True)
     if row.flags:
         _append_field(fields, "flags", _rule_flags_c_expression(row.flags), always=True)
     if row.report_key:

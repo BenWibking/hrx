@@ -1095,6 +1095,7 @@ def _validate_c_table_shape(
 
     for index, row in enumerate(table.rules):
         row_subject = f"{subject} rule {index}"
+        _require_u8(row.flags, f"{row_subject} flags")
         action_range_count = int(row.emit_count != 0) + int(row.alias_ref_count != 0) + int(row.elide_ref_count != 0)
         if action_range_count > 1:
             raise ValueError(f"{row_subject} cannot carry more than one action range")
@@ -1151,7 +1152,7 @@ def _validate_c_table_shape(
             f"{row_subject} aggregate guard count",
         )
         _require_u16(row.guard_start, f"{row_subject} guard start")
-        _require_u16(row.guard_count, f"{row_subject} guard count")
+        _require_u8(row.guard_count, f"{row_subject} guard count")
         _require_table_range(
             row.guard_start,
             row.guard_count,
