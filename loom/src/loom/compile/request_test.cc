@@ -668,11 +668,9 @@ TEST_F(CompileRequestTest, RoutesKernelPipelineByEntryCategory) {
 target.generic<reference> @Target789 {
   subgroup_size = 32
 }
-pipeline.def<kernel> public retain target(@Target789) @KernelPipeline() launch() {
-  pipeline.return
+pipeline.def<kernel> public retain target(@Target789) @KernelPipeline() run() {
 }
-pipeline.def @GenericPipeline() launch() {
-  pipeline.return
+pipeline.def @GenericPipeline() run() {
 }
 )");
 

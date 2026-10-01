@@ -13,9 +13,10 @@ pipeline.def @ambiguous_memory(%column: index) run() {
 
 // ====
 
-pipeline.def<command> @command_memory() run() {
-  // ERROR@+1: STRUCTURE/029 "pipeline.def<kernel>"
+command.program.def @command_memory() launch() {
+  // ERROR@+1: STRUCTURE/029 "pipeline.def" "command.program.def"
   %memory = pipeline.memory<workgroup>[0, 3] : pool
+  command.return
 }
 
 // ====

@@ -92,11 +92,11 @@ static iree_status_t loom_aie2p_artifact_check_execute(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
   (void)provider;
-  const loom_xdna_device_profile_t* profile = loom_xdna_device_profile_lookup(
-      iree_string_view_trim(request->target_options));
-  if (!profile) {
+  if (!iree_string_view_is_empty(
+          iree_string_view_trim(request->target_options))) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "aie2p-xdna requires an exact device profile");
+                            "aie2p-xdna selects device profiles from IR and "
+                            "accepts no emission options");
   }
   loom_check_diagnostic_emitter_capture_t capture = {
       .diagnostic_collector = request->diagnostic_collector,
@@ -107,7 +107,6 @@ static iree_status_t loom_aie2p_artifact_check_execute(
   const loom_aie2p_xdna_artifact_request_t emit_request = {
       .module = request->module,
       .low_descriptor_registry = &request->low_registry->registry,
-      .device_profile = profile,
       .diagnostic_emitter = {loom_check_diagnostic_emitter_capture_emit,
                              &capture},
       .scratch_arena = request->case_arena,
@@ -116,7 +115,7 @@ static iree_status_t loom_aie2p_artifact_check_execute(
   iree_byte_sequence_t* contents = NULL;
   bool emitted = false;
   iree_status_t status =
-      loom_aie2p_xdna_artifact_emit(&emit_request, &emitted, &contents);
+      loom_aie2p_xdna_compile_artifact(&emit_request, &emitted, &contents);
   if (iree_status_is_ok(status) && !emitted) {
     return iree_ok_status();
   }

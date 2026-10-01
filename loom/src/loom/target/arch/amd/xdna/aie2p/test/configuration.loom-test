@@ -1,4 +1,4 @@
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 // The worker owns the complete acquire/consume/release loop. Configuration
 // only places its image and initializes the physical resources it addresses.
@@ -77,7 +77,7 @@ entry 0: 1 bindings, 4 dynamic relocations
   invocation 1: bytes=128 next=1
 
 // ====
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 

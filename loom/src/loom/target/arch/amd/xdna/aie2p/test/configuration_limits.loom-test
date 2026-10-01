@@ -1,5 +1,5 @@
 // Register words retain their declared 32-bit physical width.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -25,7 +25,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // A write cannot straddle the tile aperture.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -51,7 +51,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // Relocated ranges stay within their declared binding extent.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -83,7 +83,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // A binding contract must provide the alignment required by its address use.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -113,7 +113,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // Binding indices identify invocation arguments in declaration order.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -139,7 +139,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // Invocation binding alignment is a power-of-two contract.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -167,7 +167,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // A DMA wait cannot include columns outside the partition.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -194,7 +194,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // Shim address bits are supplied by the relocation, not by flags.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -225,7 +225,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // Register writes address complete words.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 
@@ -251,7 +251,7 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 
 // ====
 // A memory tile cannot execute a core image.
-// RUN: emit aie2p-xdna amd.xdna.strix_halo.17f0_11
+// RUN: emit aie2p-xdna
 
 aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
 

@@ -74,16 +74,15 @@ func.def target(@core_target) @private_atomic_worker(%input_arg: buffer, %output
   func.return
 }
 
-pipeline.def<kernel> public retain target(@array_target) @private_atomic_array() launch(%input: buffer, %output: buffer) {
+pipeline.def<kernel> public retain target(@array_target) @private_atomic_array() run(%input: buffer, %output: buffer) {
   %worker_count = index.constant 1 : index
   %origin = index.constant 0 : offset
-  %workers = group.create %worker_count : index -> group
+  %workers = group.create %worker_count : index -> group<[%worker_count]>
   %input_view = buffer.view %input[%origin] : buffer -> view<1x1x40xi8>
   %output_view = buffer.view %output[%origin] : buffer -> view<1x1x72xi8>
-  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x40xi8>, group -> pipeline.flow<tile<40xi8>>
-  %output_flow = pipeline.stage @private_atomic_worker on %workers(%input_flow) : (group, pipeline.flow<tile<40xi8>>) -> (pipeline.flow<tile<72xi8>>)
+  %input_flow = pipeline.scatter %input_view across %workers : view<1x1x40xi8>, group<[%worker_count]> -> pipeline.flow<tile<40xi8>>
+  %output_flow = pipeline.stage @private_atomic_worker on %workers(%input_flow) : (group<[%worker_count]>, pipeline.flow<tile<40xi8>>) -> (pipeline.flow<tile<72xi8>>)
   pipeline.write %output_flow to %output_view : pipeline.flow<tile<72xi8>>, view<1x1x72xi8>
-  pipeline.return
 }
 
 // ----
