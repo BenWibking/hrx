@@ -70,7 +70,7 @@ for name, code in [('SUCCESS', 1), ('BAD_INPUTS', -1), ('DT_UNDERFLOW', -2),
                    ('LU_DECOMPOSITION_ERROR', -7)]:
     parts.append(f'constexpr int {name} = {code};\n')
 coef = SOURCE[SOURCE.index('struct ROS2SCoefficients'):SOURCE.index('} // namespace detail', SOURCE.index('struct ROS2SCoefficients'))]
-parts.append('namespace C {\n' + '\n'.join(re.findall(r'static (constexpr Real [^;]+;)', coef)) + '\n}\n')
+parts.append(coef + '\nusing C = ROS2SCoefficients;\n')
 parts.append('struct EosSums { Real sum_Abarinv; Real sum_gammasinv; Real gasconstant; };\n')
 parts.append('struct IntegratorStats { u64 internal_steps; u64 rhs_calls; u64 jacobian_calls; '
              'u64 decompositions; u64 linear_solves; u64 accepted_steps; u64 rejected_steps; };\n')
@@ -85,12 +85,12 @@ real_fields = [('t', 1, '0.0'), ('tout', 1, '0.0'), ('dt', 1, '0.0'),
                ('uround', 1, '1.e-16'), ('fac_min', 1, '0.2'), ('fac_max', 1, '6.0'), ('safe', 1, '0.9')]
 real_fields += [(n, 225 if n in ('fjac', 'e') else 15, '0.0')
                 for n in ('ynew', 'ak1', 'ak2', 'work', 'fjac', 'e', 'dy')]
-real_fields += [('burn', 17, '0.0'), ('mass', 14, '0.0')]
+real_fields += [('burn', 17, '0.0')]
 int_fields = [(n, 1, '0') for n in ('n_step', 'n_rhs', 'n_jac', 'n_accept', 'n_reject', 'n_decomp', 'n_solve')]
 int_fields += [('max_steps', 1, '100000'), ('ip', 15, '0')]
 parts.append('struct ScratchRecord {\n')
 for kind, fields in [('Real', real_fields), ('int', int_fields)]:
-    for name, count, _ in fields:
+    for name, count, value in fields:
         if name == 'burn':
             declaration = 'BurnRecord burn'
         elif name in ('fjac', 'e'):
@@ -99,8 +99,9 @@ for kind, fields in [('Real', real_fields), ('int', int_fields)]:
             declaration = f'{kind} {name}'
         else:
             declaration = f'{kind} {name}[{count}]'
-        parts.append(f'  {declaration};\n')
-parts.append('};\nstatic_assert(sizeof(ScratchRecord) == 4960);\n')
+        initializer = value if count == 1 else '{}'
+        parts.append(f'  {declaration} = {initializer};\n')
+parts.append('};\nstatic_assert(sizeof(ScratchRecord) == 4848);\n')
 parts.append('struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };\n')
 parts.append('struct ScratchView {\n')
 for name, _, _ in real_fields + int_fields:
@@ -346,29 +347,33 @@ assert depth == parens == 0
 solver_control = '\n'.join(solver_lines).rstrip() + '\n'
 parts.append('#include "integrate.inc"\n')
 
-initialization = []
+local_scratch = []
 for name, count, value in real_fields + int_fields:
+    kind = 'int' if name in {field for field, _, _ in int_fields} else 'Real'
     if name == 'burn':
-        initialization.extend(f's.burn.{field}[0] = 0.0;' for field in ('rho', 'T', 'e'))
-        initialization.append('for (int n = 0; n < 14; ++n) s.burn.xn[n] = 0.0;')
-    elif name in ('fjac', 'e'):
-        initialization.append(f'for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.{name}[matrix_index(n, m)] = {value};')
+        local_scratch += ['Real burn_rho = 0.0;', 'Real burn_T = 0.0;',
+                          'Real burn_e = 0.0;', 'Real burn_xn[14]{};']
     elif count == 1:
-        initialization.append(f's.{name}[0] = {value};')
+        local_scratch.append(f'{kind} {name} = {value};')
     else:
-        initialization.append(f'for (int n = 0; n < {count}; ++n) s.{name}[n] = {value};')
-emit('void initialize_solver(ScratchView s)', '\n'.join(initialization))
+        assert value in ('0', '0.0'), 'array defaults require zero initialization'
+        local_scratch.append(f'{kind} {name}[{count}]{{}};')
+local_scratch.append('ScratchView s = ' + scratch_view_initializer(True) + ';')
 configure = body('configure_ros2s').replace('state.', 's.')
 emit('void configure_ros2s(ScratchView s)', scratch_view_access(scratch_access(configure)))
 burn = body('burn_ros2s')
 burn = replace(burn, 'pc::eos_rt(state);', 'eos_rt(b);')
-burn = replace(burn, 'Ros2sIntegrator integrator;\n    Ros2sIntegrator::State ros2s_state;', 'initialize_solver(s);')
+# Keep construction at the source lifetime boundary, after EOS and on every burn.
+# Rename the duration argument to leave the original scratch field name dt free.
+burn = replace(burn, 'ros2s_state.tout = dt;', 'ros2s_state.tout = duration;')
+burn = replace(burn, 'ros2s_state.dt = dt;', 'ros2s_state.dt = duration;')
+burn = replace(burn, 'Ros2sIntegrator integrator;\n    Ros2sIntegrator::State ros2s_state;', '\n    '.join(local_scratch))
 burn = replace(burn, 'configure_ros2s(ros2s_state);', 'configure_ros2s(s);')
 burn = burn.replace('ros2s_state.', 's.')
 burn = replace(burn, 'integrator.integrate(ros2s_state)', 'integrate(s)')
 burn = burn.replace('stats.', 'stats->')
 burn = burn.replace('state.xn', 'b->xn').replace('state.e', 'b->e')
-emit('int burn_ros2s(BurnRecord* b, Real dt, IntegratorStats* stats, ScratchView s)', scratch_view_access(scratch_access(burn)))
+emit('int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats)', scratch_view_access(scratch_access(burn)))
 emit('u64 splitmix64(u64 value)', body('splitmix64'))
 emit('Real perturbation_factor(int cell, int step)', body('perturbation_factor'))
 emit('bool valid_positive(Real value)', body('valid_positive'))
@@ -388,28 +393,17 @@ perturb = replace(perturb, 'for (auto& xn : b->xn) {\n        xn *= factor;', 'f
 emit('void apply_perturbation(CellRecord* record, int cell, int step, bool enabled, Real* mass)',
      'BurnRecord* b = &record->current;\n' + perturb)
 emit('Real collapse_timestep(const BurnRecord* b)', collapse(body('collapse_timestep'), 'collapse'))
-local_scratch = []
-for name, count, _ in real_fields + int_fields:
-    kind = 'int' if name in {field for field, _, _ in int_fields} else 'Real'
-    if name == 'burn':
-        local_scratch += ['Real burn_rho;', 'Real burn_T;', 'Real burn_e;', 'Real burn_xn[14];']
-    elif count == 1:
-        local_scratch.append(f'{kind} {name};')
-    else:
-        local_scratch.append(f'{kind} {name}[{count}];')
-local_scratch.append('ScratchView s = ' + scratch_view_initializer(True) + ';')
 for name in ('prepare_grid_timestep_kernel', 'advance_collapse_gridwide_kernel'):
     text = body(name)
     text = replace(text, 'const int cell = blockIdx.x * blockDim.x + threadIdx.x;', '''
     const int cell = CELL_INDEX;
     ''')
-    declarations = '\n'.join(local_scratch) if name.startswith('advance') else 'Real mass[14];'
     text = replace(text, 'CollapseState& state = cells[cell];',
-                   'CellRecord* record = cells + cell;\nBurnRecord* b = &record->current;\n' + declarations)
+                   'CellRecord* record = cells + cell;\nBurnRecord* b = &record->current;\nReal mass[14];')
     text = collapse(text, 'state')
     text = text.replace('apply_perturbation(state, cell, step, perturb)', 'apply_perturbation(record, cell, step, perturb, mass)')
     text = text.replace('collapse_timestep(state)', 'collapse_timestep(b)')
-    text = text.replace('burn_ros2s(b, dt_grid, record->stats)', 'burn_ros2s(b, dt_grid, &record->stats, s)')
+    text = text.replace('burn_ros2s(b, dt_grid, record->stats)', 'burn_ros2s(b, dt_grid, &record->stats)')
     text = text.replace('std::numeric_limits<integrators::Real>::max()', 'MAX_DOUBLE')
     text = text.replace('atomicCAS(', 'atomic_cas(').replace('atomicAdd(', 'atomic_add(')
     if name.startswith('advance'):

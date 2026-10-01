@@ -23,58 +23,60 @@ constexpr int DT_UNDERFLOW = -2;
 constexpr int TOO_MANY_STEPS = -4;
 constexpr int TOO_MUCH_ACCURACY_REQUESTED = -5;
 constexpr int LU_DECOMPOSITION_ERROR = -7;
-namespace C {
-constexpr Real gamma = 0.292893218813452;
-constexpr Real ct2 = 0.585786437626905;
-constexpr Real a21 = 2.0000000000000036;
-constexpr Real a31 = 6.828427124746214;
-constexpr Real a32 = 3.4142135623731007;
-constexpr Real c21 = -6.828427124746214;
-constexpr Real c31 = -10.949747468305889;
-constexpr Real c32 = -7.535533905932761;
-constexpr Real b1 = 6.828427124746214;
-constexpr Real b2 = 3.414213562373101;
-constexpr Real b3 = 1.0;
-constexpr Real e1 = -0.23570226039551292;
-constexpr Real e2 = -0.23570226039551567;
-constexpr Real e3 = -0.13807118745769906;
-}
+struct ROS2SCoefficients {
+    static constexpr Real gamma = 0.292893218813452;
+    static constexpr Real ct2 = 0.585786437626905;
+    static constexpr Real a21 = 2.0000000000000036;
+    static constexpr Real a31 = 6.828427124746214;
+    static constexpr Real a32 = 3.4142135623731007;
+    static constexpr Real c21 = -6.828427124746214;
+    static constexpr Real c31 = -10.949747468305889;
+    static constexpr Real c32 = -7.535533905932761;
+    static constexpr Real b1 = 6.828427124746214;
+    static constexpr Real b2 = 3.414213562373101;
+    static constexpr Real b3 = 1.0;
+    static constexpr Real e1 = -0.23570226039551292;
+    static constexpr Real e2 = -0.23570226039551567;
+    static constexpr Real e3 = -0.13807118745769906;
+};
+
+
+using C = ROS2SCoefficients;
 struct EosSums { Real sum_Abarinv; Real sum_gammasinv; Real gasconstant; };
 struct IntegratorStats { u64 internal_steps; u64 rhs_calls; u64 jacobian_calls; u64 decompositions; u64 linear_solves; u64 accepted_steps; u64 rejected_steps; };
 struct BurnRecord { Real rho; Real T; Real e; Real xn[14]; };
 struct CellRecord { BurnRecord current; Real time; Real density_driver; int completed_steps; IntegratorStats stats; };
 static_assert(sizeof(CellRecord) == 216);
 struct ScratchRecord {
-  Real t;
-  Real tout;
-  Real dt;
-  Real y[15];
-  Real rtol_vec[15];
-  Real atol_vec[15];
-  Real uround;
-  Real fac_min;
-  Real fac_max;
-  Real safe;
-  Real ynew[15];
-  Real ak1[15];
-  Real ak2[15];
-  Real work[15];
-  Real fjac[15][15];
-  Real e[15][15];
-  Real dy[15];
-  BurnRecord burn;
-  Real mass[14];
-  int n_step;
-  int n_rhs;
-  int n_jac;
-  int n_accept;
-  int n_reject;
-  int n_decomp;
-  int n_solve;
-  int max_steps;
-  int ip[15];
+  Real t = 0.0;
+  Real tout = 0.0;
+  Real dt = 0.0;
+  Real y[15] = {};
+  Real rtol_vec[15] = {};
+  Real atol_vec[15] = {};
+  Real uround = 1.e-16;
+  Real fac_min = 0.2;
+  Real fac_max = 6.0;
+  Real safe = 0.9;
+  Real ynew[15] = {};
+  Real ak1[15] = {};
+  Real ak2[15] = {};
+  Real work[15] = {};
+  Real fjac[15][15] = {};
+  Real e[15][15] = {};
+  Real dy[15] = {};
+  BurnRecord burn = {};
+  int n_step = 0;
+  int n_rhs = 0;
+  int n_jac = 0;
+  int n_accept = 0;
+  int n_reject = 0;
+  int n_decomp = 0;
+  int n_solve = 0;
+  int max_steps = 100000;
+  int ip[15] = {};
 };
-static_assert(sizeof(ScratchRecord) == 4960);
+static_assert(sizeof(ScratchRecord) == 4848);
 struct BurnView { Real* rho; Real* T; Real* e; Real* xn; };
 struct ScratchView {
   Real* t;
@@ -95,7 +97,6 @@ struct ScratchView {
   Real* e;
   Real* dy;
   BurnView burn;
-  Real* mass;
   int* n_step;
   int* n_rhs;
   int* n_jac;
@@ -107,7 +108,7 @@ struct ScratchView {
   int* ip;
 };
 DEVICE ScratchView scratch_view(ScratchRecord* s) {
-  return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, s->mass, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
+  return {&s->t, &s->tout, &s->dt, s->y, s->rtol_vec, s->atol_vec, &s->uround, &s->fac_min, &s->fac_max, &s->safe, s->ynew, s->ak1, s->ak2, s->work, &s->fjac[0][0], &s->e[0][0], s->dy, {&s->burn.rho, &s->burn.T, &s->burn.e, s->burn.xn}, &s->n_step, &s->n_rhs, &s->n_jac, &s->n_accept, &s->n_reject, &s->n_decomp, &s->n_solve, &s->max_steps, s->ip};
 }
 DEVICE size_type matrix_index(size_type row, size_type column) {
   size_type index = row * 15 + column;
@@ -8219,39 +8220,6 @@ DEVICE Real error_norm(ScratchView s) {
 
 }
 #include "integrate.inc"
-DEVICE void initialize_solver(ScratchView s) {
-s.t[0] = 0.0;
-s.tout[0] = 0.0;
-s.dt[0] = 0.0;
-for (int n = 0; n < 15; ++n) s.y[n] = 0.0;
-for (int n = 0; n < 15; ++n) s.rtol_vec[n] = 0.0;
-for (int n = 0; n < 15; ++n) s.atol_vec[n] = 0.0;
-s.uround[0] = 1.e-16;
-s.fac_min[0] = 0.2;
-s.fac_max[0] = 6.0;
-s.safe[0] = 0.9;
-for (int n = 0; n < 15; ++n) s.ynew[n] = 0.0;
-for (int n = 0; n < 15; ++n) s.ak1[n] = 0.0;
-for (int n = 0; n < 15; ++n) s.ak2[n] = 0.0;
-for (int n = 0; n < 15; ++n) s.work[n] = 0.0;
-for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.fjac[matrix_index(n, m)] = 0.0;
-for (int n = 0; n < 15; ++n) for (int m = 0; m < 15; ++m) s.e[matrix_index(n, m)] = 0.0;
-for (int n = 0; n < 15; ++n) s.dy[n] = 0.0;
-s.burn.rho[0] = 0.0;
-s.burn.T[0] = 0.0;
-s.burn.e[0] = 0.0;
-for (int n = 0; n < 14; ++n) s.burn.xn[n] = 0.0;
-for (int n = 0; n < 14; ++n) s.mass[n] = 0.0;
-s.n_step[0] = 0;
-s.n_rhs[0] = 0;
-s.n_jac[0] = 0;
-s.n_accept[0] = 0;
-s.n_reject[0] = 0;
-s.n_decomp[0] = 0;
-s.n_solve[0] = 0;
-s.max_steps[0] = 100000;
-for (int n = 0; n < 15; ++n) s.ip[n] = 0;
-}
 DEVICE void configure_ros2s(ScratchView s) {
 
     for (int n = 0; n < NumSpec; ++n) {
@@ -8263,16 +8231,46 @@ DEVICE void configure_ros2s(ScratchView s) {
     s.max_steps[0] = 10000000;
 
 }
-DEVICE int burn_ros2s(BurnRecord* b, Real dt, IntegratorStats* stats, ScratchView s) {
+DEVICE int burn_ros2s(BurnRecord* b, Real duration, IntegratorStats* stats) {
 
     eos_rt(b);
 
-    initialize_solver(s);
+    Real t = 0.0;
+    Real tout = 0.0;
+    Real dt = 0.0;
+    Real y[15]{};
+    Real rtol_vec[15]{};
+    Real atol_vec[15]{};
+    Real uround = 1.e-16;
+    Real fac_min = 0.2;
+    Real fac_max = 6.0;
+    Real safe = 0.9;
+    Real ynew[15]{};
+    Real ak1[15]{};
+    Real ak2[15]{};
+    Real work[15]{};
+    Real fjac[225]{};
+    Real e[225]{};
+    Real dy[15]{};
+    Real burn_rho = 0.0;
+    Real burn_T = 0.0;
+    Real burn_e = 0.0;
+    Real burn_xn[14]{};
+    int n_step = 0;
+    int n_rhs = 0;
+    int n_jac = 0;
+    int n_accept = 0;
+    int n_reject = 0;
+    int n_decomp = 0;
+    int n_solve = 0;
+    int max_steps = 100000;
+    int ip[15]{};
+    ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
     configure_ros2s(s);
 
     s.t[0] = 0.0;
-    s.tout[0] = dt;
-    s.dt[0] = dt;
+    s.tout[0] = duration;
+    s.dt[0] = duration;
     for (int n = 0; n < NumSpec; ++n) {
         s.y[static_cast<size_type>(n)] = b->xn[static_cast<size_type>(n)];
     }
@@ -8408,38 +8406,7 @@ KERNEL void advance_collapse_gridwide_kernel(CellRecord* cells, int num_cells, i
 
     CellRecord* record = cells + cell;
 BurnRecord* b = &record->current;
-Real t;
-Real tout;
-Real dt;
-Real y[15];
-Real rtol_vec[15];
-Real atol_vec[15];
-Real uround;
-Real fac_min;
-Real fac_max;
-Real safe;
-Real ynew[15];
-Real ak1[15];
-Real ak2[15];
-Real work[15];
-Real fjac[225];
-Real e[225];
-Real dy[15];
-Real burn_rho;
-Real burn_T;
-Real burn_e;
-Real burn_xn[14];
 Real mass[14];
-int n_step;
-int n_rhs;
-int n_jac;
-int n_accept;
-int n_reject;
-int n_decomp;
-int n_solve;
-int max_steps;
-int ip[15];
-ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_max, &safe, ynew, ak1, ak2, work, fjac, e, dy, {&burn_rho, &burn_T, &burn_e, burn_xn}, mass, &n_step, &n_rhs, &n_jac, &n_accept, &n_reject, &n_decomp, &n_solve, &max_steps, ip};
     if (record->completed_steps != completed_global_steps) {
         return;
     }
@@ -8462,7 +8429,7 @@ ScratchView s = {&t, &tout, &dt, y, rtol_vec, atol_vec, &uround, &fac_min, &fac_
     b->rho *= density_ratio;
 
     auto failure = SUCCESS;
-    const auto result = burn_ros2s(b, dt_grid, &record->stats, s);
+    const auto result = burn_ros2s(b, dt_grid, &record->stats);
     if (result != SUCCESS) {
         failure = result;
     } else {

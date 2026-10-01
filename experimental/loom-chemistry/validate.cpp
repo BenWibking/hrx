@@ -186,7 +186,6 @@ static void test_integrator() {
         if (variant == 9) old.safe = .1;
         lc::ScratchRecord storage{};
         auto* s = &storage;
-        lc::initialize_solver(lc::scratch_view(s));
         // Copy every original field, including matrices and all default values.
 #define COPY_SCALAR(n) s->n = old.n
         COPY_SCALAR(t); COPY_SCALAR(tout); COPY_SCALAR(dt);
@@ -276,7 +275,7 @@ static void test_singular_exit() {
     old.dt = 1.; old.tout = 10.;
     lc::ScratchRecord storage{};
     auto* s = &storage;
-    lc::initialize_solver(lc::scratch_view(s)); lc::configure_ros2s(lc::scratch_view(s));
+    lc::configure_ros2s(lc::scratch_view(s));
     s->dt = 1.; s->tout = 10.;
     integrators::RODAS<SingularProblem> integrator;
     int result = static_cast<int>(integrator.integrate(old));

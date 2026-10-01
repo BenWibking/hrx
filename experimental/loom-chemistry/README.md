@@ -22,10 +22,13 @@ with the pinned HIP source and the current reason for each transformation.
   A pinned digest and exact-match replacements reject source drift. No chemistry
   coefficients or floating-point expressions are manually re-derived.
 - `CellRecord` groups a named `BurnRecord`, time, step count, and statistics.
-  The advance kernel declares solver scalars and arrays as thread-local storage,
-  including both flattened 15×15 matrices. A pointer-only `ScratchView` passes
-  them to the solver routines. `ScratchRecord` remains a native test fixture for
-  inspecting every solver field. Initialization follows the original defaults.
+  `burn_ros2s` declares solver scalars and arrays as thread-local storage,
+  including both flattened 15×15 matrices. Declaration initializers reset them
+  on every burn, at the original state-construction point after EOS.
+  A pointer-only `ScratchView` passes them to the solver routines.
+  `ScratchRecord` remains a native test fixture for
+  inspecting every solver field, with member initializers for the same defaults.
+  The original `ROS2SCoefficients` struct is retained directly.
 - `integrate.inc` retains the solver arithmetic and replaces nested loop exits
   with `done`, `retry`, and a result code. No additional solver iteration executes
   after an original return, break, or continue point.
