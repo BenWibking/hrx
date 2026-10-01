@@ -1180,6 +1180,27 @@ loom_cc_library(
 )
 endif()
 
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_test(
+  NAME
+    xdna_product_test
+  SRCS
+    "emit/xdna_product_test.cc"
+  DEPS
+    ::executable_program
+    ::xdna_product
+    iree::base
+    iree::base::internal::arena
+    iree::io::stream
+    iree::schemas::xdna_executable
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::amd::xdna::device_profile
+  LABELS
+    "iree-build-requirement=loom.target.arch.xdna"
+)
+endif()
+
 if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND AMDF_BUILD AND LOOM_TARGET_ARCH_XDNA)
 loom_cc_test(
   NAME
@@ -1203,27 +1224,6 @@ loom_cc_test(
     loom::testing::module_ptr
   LABELS
     "iree-build-requirement=libamdf"
-    "iree-build-requirement=loom.target.arch.xdna"
-)
-endif()
-
-if(LOOM_TARGET_ARCH_XDNA)
-loom_cc_test(
-  NAME
-    xdna_product_test
-  SRCS
-    "emit/xdna_product_test.cc"
-  DEPS
-    ::executable_program
-    ::xdna_product
-    iree::base
-    iree::base::internal::arena
-    iree::io::stream
-    iree::schemas::xdna_executable
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::target::arch::amd::xdna::device_profile
-  LABELS
     "iree-build-requirement=loom.target.arch.xdna"
 )
 endif()

@@ -891,6 +891,7 @@ loom_corpus_test(
     "memory/packed/transport.loom"
     "memory/storage/word.loom"
     "memory/view/access.loom"
+    "memory/view/borrowed_transport.loom"
     "memory/view/boundary_transport.loom"
     "memory/view/nested_selection.loom"
     "memory/view/offset_recurrence.loom"
