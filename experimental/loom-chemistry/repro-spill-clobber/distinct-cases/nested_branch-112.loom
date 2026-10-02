@@ -1,0 +1,1068 @@
+// High-level IR diagnostic: nested_branch-112; no explicit spills.
+kernel.def @pressure() {
+  %one = index.constant 1 : index
+  %four = index.constant 4 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%four, %one, %one) : index
+} launch(%input: buffer, %output: buffer, %mode: buffer) {
+  %lane = kernel.workitem.id<x> : index
+  %base = index.constant 0 : offset
+  %iv = buffer.view %input[%base] : buffer -> view<448xi32>
+  %ov = buffer.view %output[%base] : buffer -> view<448xi32>
+  %stride = index.constant 112 : index
+  %row = index.mul %lane, %stride : index
+  %li = index.cast %lane : index to i32
+  %four_i = scalar.constant 4 : i32
+  %mode_view = buffer.view %mode[%base] : buffer -> view<1xi32>
+  %flag = view.load %mode_view[0] : view<1xi32> -> i32
+  %effective_lane = scalar.muli %li, %flag : i32
+  %bound = scalar.subi %four_i, %effective_lane : i32
+  %zero = scalar.constant 0 : i32
+  %one_i = scalar.constant 1 : i32
+  %j0 = index.constant 0 : index
+  %ix0 = index.add %row, %j0 : index
+  %v0 = view.load %iv[%ix0] : view<448xi32> -> i32
+  %j1 = index.constant 1 : index
+  %ix1 = index.add %row, %j1 : index
+  %v1 = view.load %iv[%ix1] : view<448xi32> -> i32
+  %j2 = index.constant 2 : index
+  %ix2 = index.add %row, %j2 : index
+  %v2 = view.load %iv[%ix2] : view<448xi32> -> i32
+  %j3 = index.constant 3 : index
+  %ix3 = index.add %row, %j3 : index
+  %v3 = view.load %iv[%ix3] : view<448xi32> -> i32
+  %j4 = index.constant 4 : index
+  %ix4 = index.add %row, %j4 : index
+  %v4 = view.load %iv[%ix4] : view<448xi32> -> i32
+  %j5 = index.constant 5 : index
+  %ix5 = index.add %row, %j5 : index
+  %v5 = view.load %iv[%ix5] : view<448xi32> -> i32
+  %j6 = index.constant 6 : index
+  %ix6 = index.add %row, %j6 : index
+  %v6 = view.load %iv[%ix6] : view<448xi32> -> i32
+  %j7 = index.constant 7 : index
+  %ix7 = index.add %row, %j7 : index
+  %v7 = view.load %iv[%ix7] : view<448xi32> -> i32
+  %j8 = index.constant 8 : index
+  %ix8 = index.add %row, %j8 : index
+  %v8 = view.load %iv[%ix8] : view<448xi32> -> i32
+  %j9 = index.constant 9 : index
+  %ix9 = index.add %row, %j9 : index
+  %v9 = view.load %iv[%ix9] : view<448xi32> -> i32
+  %j10 = index.constant 10 : index
+  %ix10 = index.add %row, %j10 : index
+  %v10 = view.load %iv[%ix10] : view<448xi32> -> i32
+  %j11 = index.constant 11 : index
+  %ix11 = index.add %row, %j11 : index
+  %v11 = view.load %iv[%ix11] : view<448xi32> -> i32
+  %j12 = index.constant 12 : index
+  %ix12 = index.add %row, %j12 : index
+  %v12 = view.load %iv[%ix12] : view<448xi32> -> i32
+  %j13 = index.constant 13 : index
+  %ix13 = index.add %row, %j13 : index
+  %v13 = view.load %iv[%ix13] : view<448xi32> -> i32
+  %j14 = index.constant 14 : index
+  %ix14 = index.add %row, %j14 : index
+  %v14 = view.load %iv[%ix14] : view<448xi32> -> i32
+  %j15 = index.constant 15 : index
+  %ix15 = index.add %row, %j15 : index
+  %v15 = view.load %iv[%ix15] : view<448xi32> -> i32
+  %j16 = index.constant 16 : index
+  %ix16 = index.add %row, %j16 : index
+  %v16 = view.load %iv[%ix16] : view<448xi32> -> i32
+  %j17 = index.constant 17 : index
+  %ix17 = index.add %row, %j17 : index
+  %v17 = view.load %iv[%ix17] : view<448xi32> -> i32
+  %j18 = index.constant 18 : index
+  %ix18 = index.add %row, %j18 : index
+  %v18 = view.load %iv[%ix18] : view<448xi32> -> i32
+  %j19 = index.constant 19 : index
+  %ix19 = index.add %row, %j19 : index
+  %v19 = view.load %iv[%ix19] : view<448xi32> -> i32
+  %j20 = index.constant 20 : index
+  %ix20 = index.add %row, %j20 : index
+  %v20 = view.load %iv[%ix20] : view<448xi32> -> i32
+  %j21 = index.constant 21 : index
+  %ix21 = index.add %row, %j21 : index
+  %v21 = view.load %iv[%ix21] : view<448xi32> -> i32
+  %j22 = index.constant 22 : index
+  %ix22 = index.add %row, %j22 : index
+  %v22 = view.load %iv[%ix22] : view<448xi32> -> i32
+  %j23 = index.constant 23 : index
+  %ix23 = index.add %row, %j23 : index
+  %v23 = view.load %iv[%ix23] : view<448xi32> -> i32
+  %j24 = index.constant 24 : index
+  %ix24 = index.add %row, %j24 : index
+  %v24 = view.load %iv[%ix24] : view<448xi32> -> i32
+  %j25 = index.constant 25 : index
+  %ix25 = index.add %row, %j25 : index
+  %v25 = view.load %iv[%ix25] : view<448xi32> -> i32
+  %j26 = index.constant 26 : index
+  %ix26 = index.add %row, %j26 : index
+  %v26 = view.load %iv[%ix26] : view<448xi32> -> i32
+  %j27 = index.constant 27 : index
+  %ix27 = index.add %row, %j27 : index
+  %v27 = view.load %iv[%ix27] : view<448xi32> -> i32
+  %j28 = index.constant 28 : index
+  %ix28 = index.add %row, %j28 : index
+  %v28 = view.load %iv[%ix28] : view<448xi32> -> i32
+  %j29 = index.constant 29 : index
+  %ix29 = index.add %row, %j29 : index
+  %v29 = view.load %iv[%ix29] : view<448xi32> -> i32
+  %j30 = index.constant 30 : index
+  %ix30 = index.add %row, %j30 : index
+  %v30 = view.load %iv[%ix30] : view<448xi32> -> i32
+  %j31 = index.constant 31 : index
+  %ix31 = index.add %row, %j31 : index
+  %v31 = view.load %iv[%ix31] : view<448xi32> -> i32
+  %j32 = index.constant 32 : index
+  %ix32 = index.add %row, %j32 : index
+  %v32 = view.load %iv[%ix32] : view<448xi32> -> i32
+  %j33 = index.constant 33 : index
+  %ix33 = index.add %row, %j33 : index
+  %v33 = view.load %iv[%ix33] : view<448xi32> -> i32
+  %j34 = index.constant 34 : index
+  %ix34 = index.add %row, %j34 : index
+  %v34 = view.load %iv[%ix34] : view<448xi32> -> i32
+  %j35 = index.constant 35 : index
+  %ix35 = index.add %row, %j35 : index
+  %v35 = view.load %iv[%ix35] : view<448xi32> -> i32
+  %j36 = index.constant 36 : index
+  %ix36 = index.add %row, %j36 : index
+  %v36 = view.load %iv[%ix36] : view<448xi32> -> i32
+  %j37 = index.constant 37 : index
+  %ix37 = index.add %row, %j37 : index
+  %v37 = view.load %iv[%ix37] : view<448xi32> -> i32
+  %j38 = index.constant 38 : index
+  %ix38 = index.add %row, %j38 : index
+  %v38 = view.load %iv[%ix38] : view<448xi32> -> i32
+  %j39 = index.constant 39 : index
+  %ix39 = index.add %row, %j39 : index
+  %v39 = view.load %iv[%ix39] : view<448xi32> -> i32
+  %j40 = index.constant 40 : index
+  %ix40 = index.add %row, %j40 : index
+  %v40 = view.load %iv[%ix40] : view<448xi32> -> i32
+  %j41 = index.constant 41 : index
+  %ix41 = index.add %row, %j41 : index
+  %v41 = view.load %iv[%ix41] : view<448xi32> -> i32
+  %j42 = index.constant 42 : index
+  %ix42 = index.add %row, %j42 : index
+  %v42 = view.load %iv[%ix42] : view<448xi32> -> i32
+  %j43 = index.constant 43 : index
+  %ix43 = index.add %row, %j43 : index
+  %v43 = view.load %iv[%ix43] : view<448xi32> -> i32
+  %j44 = index.constant 44 : index
+  %ix44 = index.add %row, %j44 : index
+  %v44 = view.load %iv[%ix44] : view<448xi32> -> i32
+  %j45 = index.constant 45 : index
+  %ix45 = index.add %row, %j45 : index
+  %v45 = view.load %iv[%ix45] : view<448xi32> -> i32
+  %j46 = index.constant 46 : index
+  %ix46 = index.add %row, %j46 : index
+  %v46 = view.load %iv[%ix46] : view<448xi32> -> i32
+  %j47 = index.constant 47 : index
+  %ix47 = index.add %row, %j47 : index
+  %v47 = view.load %iv[%ix47] : view<448xi32> -> i32
+  %j48 = index.constant 48 : index
+  %ix48 = index.add %row, %j48 : index
+  %v48 = view.load %iv[%ix48] : view<448xi32> -> i32
+  %j49 = index.constant 49 : index
+  %ix49 = index.add %row, %j49 : index
+  %v49 = view.load %iv[%ix49] : view<448xi32> -> i32
+  %j50 = index.constant 50 : index
+  %ix50 = index.add %row, %j50 : index
+  %v50 = view.load %iv[%ix50] : view<448xi32> -> i32
+  %j51 = index.constant 51 : index
+  %ix51 = index.add %row, %j51 : index
+  %v51 = view.load %iv[%ix51] : view<448xi32> -> i32
+  %j52 = index.constant 52 : index
+  %ix52 = index.add %row, %j52 : index
+  %v52 = view.load %iv[%ix52] : view<448xi32> -> i32
+  %j53 = index.constant 53 : index
+  %ix53 = index.add %row, %j53 : index
+  %v53 = view.load %iv[%ix53] : view<448xi32> -> i32
+  %j54 = index.constant 54 : index
+  %ix54 = index.add %row, %j54 : index
+  %v54 = view.load %iv[%ix54] : view<448xi32> -> i32
+  %j55 = index.constant 55 : index
+  %ix55 = index.add %row, %j55 : index
+  %v55 = view.load %iv[%ix55] : view<448xi32> -> i32
+  %j56 = index.constant 56 : index
+  %ix56 = index.add %row, %j56 : index
+  %v56 = view.load %iv[%ix56] : view<448xi32> -> i32
+  %j57 = index.constant 57 : index
+  %ix57 = index.add %row, %j57 : index
+  %v57 = view.load %iv[%ix57] : view<448xi32> -> i32
+  %j58 = index.constant 58 : index
+  %ix58 = index.add %row, %j58 : index
+  %v58 = view.load %iv[%ix58] : view<448xi32> -> i32
+  %j59 = index.constant 59 : index
+  %ix59 = index.add %row, %j59 : index
+  %v59 = view.load %iv[%ix59] : view<448xi32> -> i32
+  %j60 = index.constant 60 : index
+  %ix60 = index.add %row, %j60 : index
+  %v60 = view.load %iv[%ix60] : view<448xi32> -> i32
+  %j61 = index.constant 61 : index
+  %ix61 = index.add %row, %j61 : index
+  %v61 = view.load %iv[%ix61] : view<448xi32> -> i32
+  %j62 = index.constant 62 : index
+  %ix62 = index.add %row, %j62 : index
+  %v62 = view.load %iv[%ix62] : view<448xi32> -> i32
+  %j63 = index.constant 63 : index
+  %ix63 = index.add %row, %j63 : index
+  %v63 = view.load %iv[%ix63] : view<448xi32> -> i32
+  %j64 = index.constant 64 : index
+  %ix64 = index.add %row, %j64 : index
+  %v64 = view.load %iv[%ix64] : view<448xi32> -> i32
+  %j65 = index.constant 65 : index
+  %ix65 = index.add %row, %j65 : index
+  %v65 = view.load %iv[%ix65] : view<448xi32> -> i32
+  %j66 = index.constant 66 : index
+  %ix66 = index.add %row, %j66 : index
+  %v66 = view.load %iv[%ix66] : view<448xi32> -> i32
+  %j67 = index.constant 67 : index
+  %ix67 = index.add %row, %j67 : index
+  %v67 = view.load %iv[%ix67] : view<448xi32> -> i32
+  %j68 = index.constant 68 : index
+  %ix68 = index.add %row, %j68 : index
+  %v68 = view.load %iv[%ix68] : view<448xi32> -> i32
+  %j69 = index.constant 69 : index
+  %ix69 = index.add %row, %j69 : index
+  %v69 = view.load %iv[%ix69] : view<448xi32> -> i32
+  %j70 = index.constant 70 : index
+  %ix70 = index.add %row, %j70 : index
+  %v70 = view.load %iv[%ix70] : view<448xi32> -> i32
+  %j71 = index.constant 71 : index
+  %ix71 = index.add %row, %j71 : index
+  %v71 = view.load %iv[%ix71] : view<448xi32> -> i32
+  %j72 = index.constant 72 : index
+  %ix72 = index.add %row, %j72 : index
+  %v72 = view.load %iv[%ix72] : view<448xi32> -> i32
+  %j73 = index.constant 73 : index
+  %ix73 = index.add %row, %j73 : index
+  %v73 = view.load %iv[%ix73] : view<448xi32> -> i32
+  %j74 = index.constant 74 : index
+  %ix74 = index.add %row, %j74 : index
+  %v74 = view.load %iv[%ix74] : view<448xi32> -> i32
+  %j75 = index.constant 75 : index
+  %ix75 = index.add %row, %j75 : index
+  %v75 = view.load %iv[%ix75] : view<448xi32> -> i32
+  %j76 = index.constant 76 : index
+  %ix76 = index.add %row, %j76 : index
+  %v76 = view.load %iv[%ix76] : view<448xi32> -> i32
+  %j77 = index.constant 77 : index
+  %ix77 = index.add %row, %j77 : index
+  %v77 = view.load %iv[%ix77] : view<448xi32> -> i32
+  %j78 = index.constant 78 : index
+  %ix78 = index.add %row, %j78 : index
+  %v78 = view.load %iv[%ix78] : view<448xi32> -> i32
+  %j79 = index.constant 79 : index
+  %ix79 = index.add %row, %j79 : index
+  %v79 = view.load %iv[%ix79] : view<448xi32> -> i32
+  %j80 = index.constant 80 : index
+  %ix80 = index.add %row, %j80 : index
+  %v80 = view.load %iv[%ix80] : view<448xi32> -> i32
+  %j81 = index.constant 81 : index
+  %ix81 = index.add %row, %j81 : index
+  %v81 = view.load %iv[%ix81] : view<448xi32> -> i32
+  %j82 = index.constant 82 : index
+  %ix82 = index.add %row, %j82 : index
+  %v82 = view.load %iv[%ix82] : view<448xi32> -> i32
+  %j83 = index.constant 83 : index
+  %ix83 = index.add %row, %j83 : index
+  %v83 = view.load %iv[%ix83] : view<448xi32> -> i32
+  %j84 = index.constant 84 : index
+  %ix84 = index.add %row, %j84 : index
+  %v84 = view.load %iv[%ix84] : view<448xi32> -> i32
+  %j85 = index.constant 85 : index
+  %ix85 = index.add %row, %j85 : index
+  %v85 = view.load %iv[%ix85] : view<448xi32> -> i32
+  %j86 = index.constant 86 : index
+  %ix86 = index.add %row, %j86 : index
+  %v86 = view.load %iv[%ix86] : view<448xi32> -> i32
+  %j87 = index.constant 87 : index
+  %ix87 = index.add %row, %j87 : index
+  %v87 = view.load %iv[%ix87] : view<448xi32> -> i32
+  %j88 = index.constant 88 : index
+  %ix88 = index.add %row, %j88 : index
+  %v88 = view.load %iv[%ix88] : view<448xi32> -> i32
+  %j89 = index.constant 89 : index
+  %ix89 = index.add %row, %j89 : index
+  %v89 = view.load %iv[%ix89] : view<448xi32> -> i32
+  %j90 = index.constant 90 : index
+  %ix90 = index.add %row, %j90 : index
+  %v90 = view.load %iv[%ix90] : view<448xi32> -> i32
+  %j91 = index.constant 91 : index
+  %ix91 = index.add %row, %j91 : index
+  %v91 = view.load %iv[%ix91] : view<448xi32> -> i32
+  %j92 = index.constant 92 : index
+  %ix92 = index.add %row, %j92 : index
+  %v92 = view.load %iv[%ix92] : view<448xi32> -> i32
+  %j93 = index.constant 93 : index
+  %ix93 = index.add %row, %j93 : index
+  %v93 = view.load %iv[%ix93] : view<448xi32> -> i32
+  %j94 = index.constant 94 : index
+  %ix94 = index.add %row, %j94 : index
+  %v94 = view.load %iv[%ix94] : view<448xi32> -> i32
+  %j95 = index.constant 95 : index
+  %ix95 = index.add %row, %j95 : index
+  %v95 = view.load %iv[%ix95] : view<448xi32> -> i32
+  %j96 = index.constant 96 : index
+  %ix96 = index.add %row, %j96 : index
+  %v96 = view.load %iv[%ix96] : view<448xi32> -> i32
+  %j97 = index.constant 97 : index
+  %ix97 = index.add %row, %j97 : index
+  %v97 = view.load %iv[%ix97] : view<448xi32> -> i32
+  %j98 = index.constant 98 : index
+  %ix98 = index.add %row, %j98 : index
+  %v98 = view.load %iv[%ix98] : view<448xi32> -> i32
+  %j99 = index.constant 99 : index
+  %ix99 = index.add %row, %j99 : index
+  %v99 = view.load %iv[%ix99] : view<448xi32> -> i32
+  %j100 = index.constant 100 : index
+  %ix100 = index.add %row, %j100 : index
+  %v100 = view.load %iv[%ix100] : view<448xi32> -> i32
+  %j101 = index.constant 101 : index
+  %ix101 = index.add %row, %j101 : index
+  %v101 = view.load %iv[%ix101] : view<448xi32> -> i32
+  %j102 = index.constant 102 : index
+  %ix102 = index.add %row, %j102 : index
+  %v102 = view.load %iv[%ix102] : view<448xi32> -> i32
+  %j103 = index.constant 103 : index
+  %ix103 = index.add %row, %j103 : index
+  %v103 = view.load %iv[%ix103] : view<448xi32> -> i32
+  %j104 = index.constant 104 : index
+  %ix104 = index.add %row, %j104 : index
+  %v104 = view.load %iv[%ix104] : view<448xi32> -> i32
+  %j105 = index.constant 105 : index
+  %ix105 = index.add %row, %j105 : index
+  %v105 = view.load %iv[%ix105] : view<448xi32> -> i32
+  %j106 = index.constant 106 : index
+  %ix106 = index.add %row, %j106 : index
+  %v106 = view.load %iv[%ix106] : view<448xi32> -> i32
+  %j107 = index.constant 107 : index
+  %ix107 = index.add %row, %j107 : index
+  %v107 = view.load %iv[%ix107] : view<448xi32> -> i32
+  %j108 = index.constant 108 : index
+  %ix108 = index.add %row, %j108 : index
+  %v108 = view.load %iv[%ix108] : view<448xi32> -> i32
+  %j109 = index.constant 109 : index
+  %ix109 = index.add %row, %j109 : index
+  %v109 = view.load %iv[%ix109] : view<448xi32> -> i32
+  %j110 = index.constant 110 : index
+  %ix110 = index.add %row, %j110 : index
+  %v110 = view.load %iv[%ix110] : view<448xi32> -> i32
+  %j111 = index.constant 111 : index
+  %ix111 = index.add %row, %j111 : index
+  %v111 = view.load %iv[%ix111] : view<448xi32> -> i32
+  %three = scalar.constant 3 : i32
+  %outer = scalar.cmpi slt, %effective_lane, %three : i32
+  %y0, %y1, %y2, %y3, %y4, %y5, %y6, %y7, %y8, %y9, %y10, %y11, %y12, %y13, %y14, %y15, %y16, %y17, %y18, %y19, %y20, %y21, %y22, %y23, %y24, %y25, %y26, %y27, %y28, %y29, %y30, %y31, %y32, %y33, %y34, %y35, %y36, %y37, %y38, %y39, %y40, %y41, %y42, %y43, %y44, %y45, %y46, %y47, %y48, %y49, %y50, %y51, %y52, %y53, %y54, %y55, %y56, %y57, %y58, %y59, %y60, %y61, %y62, %y63, %y64, %y65, %y66, %y67, %y68, %y69, %y70, %y71, %y72, %y73, %y74, %y75, %y76, %y77, %y78, %y79, %y80, %y81, %y82, %y83, %y84, %y85, %y86, %y87, %y88, %y89, %y90, %y91, %y92, %y93, %y94, %y95, %y96, %y97, %y98, %y99, %y100, %y101, %y102, %y103, %y104, %y105, %y106, %y107, %y108, %y109, %y110, %y111 = scf.if %outer -> (i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32) {
+    %two = scalar.constant 2 : i32
+    %branch = scalar.cmpi slt, %effective_lane, %two : i32
+    %inner0, %inner1, %inner2, %inner3, %inner4, %inner5, %inner6, %inner7, %inner8, %inner9, %inner10, %inner11, %inner12, %inner13, %inner14, %inner15, %inner16, %inner17, %inner18, %inner19, %inner20, %inner21, %inner22, %inner23, %inner24, %inner25, %inner26, %inner27, %inner28, %inner29, %inner30, %inner31, %inner32, %inner33, %inner34, %inner35, %inner36, %inner37, %inner38, %inner39, %inner40, %inner41, %inner42, %inner43, %inner44, %inner45, %inner46, %inner47, %inner48, %inner49, %inner50, %inner51, %inner52, %inner53, %inner54, %inner55, %inner56, %inner57, %inner58, %inner59, %inner60, %inner61, %inner62, %inner63, %inner64, %inner65, %inner66, %inner67, %inner68, %inner69, %inner70, %inner71, %inner72, %inner73, %inner74, %inner75, %inner76, %inner77, %inner78, %inner79, %inner80, %inner81, %inner82, %inner83, %inner84, %inner85, %inner86, %inner87, %inner88, %inner89, %inner90, %inner91, %inner92, %inner93, %inner94, %inner95, %inner96, %inner97, %inner98, %inner99, %inner100, %inner101, %inner102, %inner103, %inner104, %inner105, %inner106, %inner107, %inner108, %inner109, %inner110, %inner111 = scf.if %branch -> (i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32) {
+      %a0 = scalar.addi %v0, %v1 : i32
+      %a1 = scalar.addi %v1, %v2 : i32
+      %a2 = scalar.addi %v2, %v3 : i32
+      %a3 = scalar.addi %v3, %v4 : i32
+      %a4 = scalar.addi %v4, %v5 : i32
+      %a5 = scalar.addi %v5, %v6 : i32
+      %a6 = scalar.addi %v6, %v7 : i32
+      %a7 = scalar.addi %v7, %v8 : i32
+      %a8 = scalar.addi %v8, %v9 : i32
+      %a9 = scalar.addi %v9, %v10 : i32
+      %a10 = scalar.addi %v10, %v11 : i32
+      %a11 = scalar.addi %v11, %v12 : i32
+      %a12 = scalar.addi %v12, %v13 : i32
+      %a13 = scalar.addi %v13, %v14 : i32
+      %a14 = scalar.addi %v14, %v15 : i32
+      %a15 = scalar.addi %v15, %v16 : i32
+      %a16 = scalar.addi %v16, %v17 : i32
+      %a17 = scalar.addi %v17, %v18 : i32
+      %a18 = scalar.addi %v18, %v19 : i32
+      %a19 = scalar.addi %v19, %v20 : i32
+      %a20 = scalar.addi %v20, %v21 : i32
+      %a21 = scalar.addi %v21, %v22 : i32
+      %a22 = scalar.addi %v22, %v23 : i32
+      %a23 = scalar.addi %v23, %v24 : i32
+      %a24 = scalar.addi %v24, %v25 : i32
+      %a25 = scalar.addi %v25, %v26 : i32
+      %a26 = scalar.addi %v26, %v27 : i32
+      %a27 = scalar.addi %v27, %v28 : i32
+      %a28 = scalar.addi %v28, %v29 : i32
+      %a29 = scalar.addi %v29, %v30 : i32
+      %a30 = scalar.addi %v30, %v31 : i32
+      %a31 = scalar.addi %v31, %v32 : i32
+      %a32 = scalar.addi %v32, %v33 : i32
+      %a33 = scalar.addi %v33, %v34 : i32
+      %a34 = scalar.addi %v34, %v35 : i32
+      %a35 = scalar.addi %v35, %v36 : i32
+      %a36 = scalar.addi %v36, %v37 : i32
+      %a37 = scalar.addi %v37, %v38 : i32
+      %a38 = scalar.addi %v38, %v39 : i32
+      %a39 = scalar.addi %v39, %v40 : i32
+      %a40 = scalar.addi %v40, %v41 : i32
+      %a41 = scalar.addi %v41, %v42 : i32
+      %a42 = scalar.addi %v42, %v43 : i32
+      %a43 = scalar.addi %v43, %v44 : i32
+      %a44 = scalar.addi %v44, %v45 : i32
+      %a45 = scalar.addi %v45, %v46 : i32
+      %a46 = scalar.addi %v46, %v47 : i32
+      %a47 = scalar.addi %v47, %v48 : i32
+      %a48 = scalar.addi %v48, %v49 : i32
+      %a49 = scalar.addi %v49, %v50 : i32
+      %a50 = scalar.addi %v50, %v51 : i32
+      %a51 = scalar.addi %v51, %v52 : i32
+      %a52 = scalar.addi %v52, %v53 : i32
+      %a53 = scalar.addi %v53, %v54 : i32
+      %a54 = scalar.addi %v54, %v55 : i32
+      %a55 = scalar.addi %v55, %v56 : i32
+      %a56 = scalar.addi %v56, %v57 : i32
+      %a57 = scalar.addi %v57, %v58 : i32
+      %a58 = scalar.addi %v58, %v59 : i32
+      %a59 = scalar.addi %v59, %v60 : i32
+      %a60 = scalar.addi %v60, %v61 : i32
+      %a61 = scalar.addi %v61, %v62 : i32
+      %a62 = scalar.addi %v62, %v63 : i32
+      %a63 = scalar.addi %v63, %v64 : i32
+      %a64 = scalar.addi %v64, %v65 : i32
+      %a65 = scalar.addi %v65, %v66 : i32
+      %a66 = scalar.addi %v66, %v67 : i32
+      %a67 = scalar.addi %v67, %v68 : i32
+      %a68 = scalar.addi %v68, %v69 : i32
+      %a69 = scalar.addi %v69, %v70 : i32
+      %a70 = scalar.addi %v70, %v71 : i32
+      %a71 = scalar.addi %v71, %v72 : i32
+      %a72 = scalar.addi %v72, %v73 : i32
+      %a73 = scalar.addi %v73, %v74 : i32
+      %a74 = scalar.addi %v74, %v75 : i32
+      %a75 = scalar.addi %v75, %v76 : i32
+      %a76 = scalar.addi %v76, %v77 : i32
+      %a77 = scalar.addi %v77, %v78 : i32
+      %a78 = scalar.addi %v78, %v79 : i32
+      %a79 = scalar.addi %v79, %v80 : i32
+      %a80 = scalar.addi %v80, %v81 : i32
+      %a81 = scalar.addi %v81, %v82 : i32
+      %a82 = scalar.addi %v82, %v83 : i32
+      %a83 = scalar.addi %v83, %v84 : i32
+      %a84 = scalar.addi %v84, %v85 : i32
+      %a85 = scalar.addi %v85, %v86 : i32
+      %a86 = scalar.addi %v86, %v87 : i32
+      %a87 = scalar.addi %v87, %v88 : i32
+      %a88 = scalar.addi %v88, %v89 : i32
+      %a89 = scalar.addi %v89, %v90 : i32
+      %a90 = scalar.addi %v90, %v91 : i32
+      %a91 = scalar.addi %v91, %v92 : i32
+      %a92 = scalar.addi %v92, %v93 : i32
+      %a93 = scalar.addi %v93, %v94 : i32
+      %a94 = scalar.addi %v94, %v95 : i32
+      %a95 = scalar.addi %v95, %v96 : i32
+      %a96 = scalar.addi %v96, %v97 : i32
+      %a97 = scalar.addi %v97, %v98 : i32
+      %a98 = scalar.addi %v98, %v99 : i32
+      %a99 = scalar.addi %v99, %v100 : i32
+      %a100 = scalar.addi %v100, %v101 : i32
+      %a101 = scalar.addi %v101, %v102 : i32
+      %a102 = scalar.addi %v102, %v103 : i32
+      %a103 = scalar.addi %v103, %v104 : i32
+      %a104 = scalar.addi %v104, %v105 : i32
+      %a105 = scalar.addi %v105, %v106 : i32
+      %a106 = scalar.addi %v106, %v107 : i32
+      %a107 = scalar.addi %v107, %v108 : i32
+      %a108 = scalar.addi %v108, %v109 : i32
+      %a109 = scalar.addi %v109, %v110 : i32
+      %a110 = scalar.addi %v110, %v111 : i32
+      %a111 = scalar.addi %v111, %v0 : i32
+      scf.yield %a0, %a1, %a2, %a3, %a4, %a5, %a6, %a7, %a8, %a9, %a10, %a11, %a12, %a13, %a14, %a15, %a16, %a17, %a18, %a19, %a20, %a21, %a22, %a23, %a24, %a25, %a26, %a27, %a28, %a29, %a30, %a31, %a32, %a33, %a34, %a35, %a36, %a37, %a38, %a39, %a40, %a41, %a42, %a43, %a44, %a45, %a46, %a47, %a48, %a49, %a50, %a51, %a52, %a53, %a54, %a55, %a56, %a57, %a58, %a59, %a60, %a61, %a62, %a63, %a64, %a65, %a66, %a67, %a68, %a69, %a70, %a71, %a72, %a73, %a74, %a75, %a76, %a77, %a78, %a79, %a80, %a81, %a82, %a83, %a84, %a85, %a86, %a87, %a88, %a89, %a90, %a91, %a92, %a93, %a94, %a95, %a96, %a97, %a98, %a99, %a100, %a101, %a102, %a103, %a104, %a105, %a106, %a107, %a108, %a109, %a110, %a111 : i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32
+    } else {
+      %c0 = scalar.addi %v0, %v1 : i32
+      %d0 = scalar.addi %c0, %c0 : i32
+      %c1 = scalar.addi %v1, %v2 : i32
+      %d1 = scalar.addi %c1, %c1 : i32
+      %c2 = scalar.addi %v2, %v3 : i32
+      %d2 = scalar.addi %c2, %c2 : i32
+      %c3 = scalar.addi %v3, %v4 : i32
+      %d3 = scalar.addi %c3, %c3 : i32
+      %c4 = scalar.addi %v4, %v5 : i32
+      %d4 = scalar.addi %c4, %c4 : i32
+      %c5 = scalar.addi %v5, %v6 : i32
+      %d5 = scalar.addi %c5, %c5 : i32
+      %c6 = scalar.addi %v6, %v7 : i32
+      %d6 = scalar.addi %c6, %c6 : i32
+      %c7 = scalar.addi %v7, %v8 : i32
+      %d7 = scalar.addi %c7, %c7 : i32
+      %c8 = scalar.addi %v8, %v9 : i32
+      %d8 = scalar.addi %c8, %c8 : i32
+      %c9 = scalar.addi %v9, %v10 : i32
+      %d9 = scalar.addi %c9, %c9 : i32
+      %c10 = scalar.addi %v10, %v11 : i32
+      %d10 = scalar.addi %c10, %c10 : i32
+      %c11 = scalar.addi %v11, %v12 : i32
+      %d11 = scalar.addi %c11, %c11 : i32
+      %c12 = scalar.addi %v12, %v13 : i32
+      %d12 = scalar.addi %c12, %c12 : i32
+      %c13 = scalar.addi %v13, %v14 : i32
+      %d13 = scalar.addi %c13, %c13 : i32
+      %c14 = scalar.addi %v14, %v15 : i32
+      %d14 = scalar.addi %c14, %c14 : i32
+      %c15 = scalar.addi %v15, %v16 : i32
+      %d15 = scalar.addi %c15, %c15 : i32
+      %c16 = scalar.addi %v16, %v17 : i32
+      %d16 = scalar.addi %c16, %c16 : i32
+      %c17 = scalar.addi %v17, %v18 : i32
+      %d17 = scalar.addi %c17, %c17 : i32
+      %c18 = scalar.addi %v18, %v19 : i32
+      %d18 = scalar.addi %c18, %c18 : i32
+      %c19 = scalar.addi %v19, %v20 : i32
+      %d19 = scalar.addi %c19, %c19 : i32
+      %c20 = scalar.addi %v20, %v21 : i32
+      %d20 = scalar.addi %c20, %c20 : i32
+      %c21 = scalar.addi %v21, %v22 : i32
+      %d21 = scalar.addi %c21, %c21 : i32
+      %c22 = scalar.addi %v22, %v23 : i32
+      %d22 = scalar.addi %c22, %c22 : i32
+      %c23 = scalar.addi %v23, %v24 : i32
+      %d23 = scalar.addi %c23, %c23 : i32
+      %c24 = scalar.addi %v24, %v25 : i32
+      %d24 = scalar.addi %c24, %c24 : i32
+      %c25 = scalar.addi %v25, %v26 : i32
+      %d25 = scalar.addi %c25, %c25 : i32
+      %c26 = scalar.addi %v26, %v27 : i32
+      %d26 = scalar.addi %c26, %c26 : i32
+      %c27 = scalar.addi %v27, %v28 : i32
+      %d27 = scalar.addi %c27, %c27 : i32
+      %c28 = scalar.addi %v28, %v29 : i32
+      %d28 = scalar.addi %c28, %c28 : i32
+      %c29 = scalar.addi %v29, %v30 : i32
+      %d29 = scalar.addi %c29, %c29 : i32
+      %c30 = scalar.addi %v30, %v31 : i32
+      %d30 = scalar.addi %c30, %c30 : i32
+      %c31 = scalar.addi %v31, %v32 : i32
+      %d31 = scalar.addi %c31, %c31 : i32
+      %c32 = scalar.addi %v32, %v33 : i32
+      %d32 = scalar.addi %c32, %c32 : i32
+      %c33 = scalar.addi %v33, %v34 : i32
+      %d33 = scalar.addi %c33, %c33 : i32
+      %c34 = scalar.addi %v34, %v35 : i32
+      %d34 = scalar.addi %c34, %c34 : i32
+      %c35 = scalar.addi %v35, %v36 : i32
+      %d35 = scalar.addi %c35, %c35 : i32
+      %c36 = scalar.addi %v36, %v37 : i32
+      %d36 = scalar.addi %c36, %c36 : i32
+      %c37 = scalar.addi %v37, %v38 : i32
+      %d37 = scalar.addi %c37, %c37 : i32
+      %c38 = scalar.addi %v38, %v39 : i32
+      %d38 = scalar.addi %c38, %c38 : i32
+      %c39 = scalar.addi %v39, %v40 : i32
+      %d39 = scalar.addi %c39, %c39 : i32
+      %c40 = scalar.addi %v40, %v41 : i32
+      %d40 = scalar.addi %c40, %c40 : i32
+      %c41 = scalar.addi %v41, %v42 : i32
+      %d41 = scalar.addi %c41, %c41 : i32
+      %c42 = scalar.addi %v42, %v43 : i32
+      %d42 = scalar.addi %c42, %c42 : i32
+      %c43 = scalar.addi %v43, %v44 : i32
+      %d43 = scalar.addi %c43, %c43 : i32
+      %c44 = scalar.addi %v44, %v45 : i32
+      %d44 = scalar.addi %c44, %c44 : i32
+      %c45 = scalar.addi %v45, %v46 : i32
+      %d45 = scalar.addi %c45, %c45 : i32
+      %c46 = scalar.addi %v46, %v47 : i32
+      %d46 = scalar.addi %c46, %c46 : i32
+      %c47 = scalar.addi %v47, %v48 : i32
+      %d47 = scalar.addi %c47, %c47 : i32
+      %c48 = scalar.addi %v48, %v49 : i32
+      %d48 = scalar.addi %c48, %c48 : i32
+      %c49 = scalar.addi %v49, %v50 : i32
+      %d49 = scalar.addi %c49, %c49 : i32
+      %c50 = scalar.addi %v50, %v51 : i32
+      %d50 = scalar.addi %c50, %c50 : i32
+      %c51 = scalar.addi %v51, %v52 : i32
+      %d51 = scalar.addi %c51, %c51 : i32
+      %c52 = scalar.addi %v52, %v53 : i32
+      %d52 = scalar.addi %c52, %c52 : i32
+      %c53 = scalar.addi %v53, %v54 : i32
+      %d53 = scalar.addi %c53, %c53 : i32
+      %c54 = scalar.addi %v54, %v55 : i32
+      %d54 = scalar.addi %c54, %c54 : i32
+      %c55 = scalar.addi %v55, %v56 : i32
+      %d55 = scalar.addi %c55, %c55 : i32
+      %c56 = scalar.addi %v56, %v57 : i32
+      %d56 = scalar.addi %c56, %c56 : i32
+      %c57 = scalar.addi %v57, %v58 : i32
+      %d57 = scalar.addi %c57, %c57 : i32
+      %c58 = scalar.addi %v58, %v59 : i32
+      %d58 = scalar.addi %c58, %c58 : i32
+      %c59 = scalar.addi %v59, %v60 : i32
+      %d59 = scalar.addi %c59, %c59 : i32
+      %c60 = scalar.addi %v60, %v61 : i32
+      %d60 = scalar.addi %c60, %c60 : i32
+      %c61 = scalar.addi %v61, %v62 : i32
+      %d61 = scalar.addi %c61, %c61 : i32
+      %c62 = scalar.addi %v62, %v63 : i32
+      %d62 = scalar.addi %c62, %c62 : i32
+      %c63 = scalar.addi %v63, %v64 : i32
+      %d63 = scalar.addi %c63, %c63 : i32
+      %c64 = scalar.addi %v64, %v65 : i32
+      %d64 = scalar.addi %c64, %c64 : i32
+      %c65 = scalar.addi %v65, %v66 : i32
+      %d65 = scalar.addi %c65, %c65 : i32
+      %c66 = scalar.addi %v66, %v67 : i32
+      %d66 = scalar.addi %c66, %c66 : i32
+      %c67 = scalar.addi %v67, %v68 : i32
+      %d67 = scalar.addi %c67, %c67 : i32
+      %c68 = scalar.addi %v68, %v69 : i32
+      %d68 = scalar.addi %c68, %c68 : i32
+      %c69 = scalar.addi %v69, %v70 : i32
+      %d69 = scalar.addi %c69, %c69 : i32
+      %c70 = scalar.addi %v70, %v71 : i32
+      %d70 = scalar.addi %c70, %c70 : i32
+      %c71 = scalar.addi %v71, %v72 : i32
+      %d71 = scalar.addi %c71, %c71 : i32
+      %c72 = scalar.addi %v72, %v73 : i32
+      %d72 = scalar.addi %c72, %c72 : i32
+      %c73 = scalar.addi %v73, %v74 : i32
+      %d73 = scalar.addi %c73, %c73 : i32
+      %c74 = scalar.addi %v74, %v75 : i32
+      %d74 = scalar.addi %c74, %c74 : i32
+      %c75 = scalar.addi %v75, %v76 : i32
+      %d75 = scalar.addi %c75, %c75 : i32
+      %c76 = scalar.addi %v76, %v77 : i32
+      %d76 = scalar.addi %c76, %c76 : i32
+      %c77 = scalar.addi %v77, %v78 : i32
+      %d77 = scalar.addi %c77, %c77 : i32
+      %c78 = scalar.addi %v78, %v79 : i32
+      %d78 = scalar.addi %c78, %c78 : i32
+      %c79 = scalar.addi %v79, %v80 : i32
+      %d79 = scalar.addi %c79, %c79 : i32
+      %c80 = scalar.addi %v80, %v81 : i32
+      %d80 = scalar.addi %c80, %c80 : i32
+      %c81 = scalar.addi %v81, %v82 : i32
+      %d81 = scalar.addi %c81, %c81 : i32
+      %c82 = scalar.addi %v82, %v83 : i32
+      %d82 = scalar.addi %c82, %c82 : i32
+      %c83 = scalar.addi %v83, %v84 : i32
+      %d83 = scalar.addi %c83, %c83 : i32
+      %c84 = scalar.addi %v84, %v85 : i32
+      %d84 = scalar.addi %c84, %c84 : i32
+      %c85 = scalar.addi %v85, %v86 : i32
+      %d85 = scalar.addi %c85, %c85 : i32
+      %c86 = scalar.addi %v86, %v87 : i32
+      %d86 = scalar.addi %c86, %c86 : i32
+      %c87 = scalar.addi %v87, %v88 : i32
+      %d87 = scalar.addi %c87, %c87 : i32
+      %c88 = scalar.addi %v88, %v89 : i32
+      %d88 = scalar.addi %c88, %c88 : i32
+      %c89 = scalar.addi %v89, %v90 : i32
+      %d89 = scalar.addi %c89, %c89 : i32
+      %c90 = scalar.addi %v90, %v91 : i32
+      %d90 = scalar.addi %c90, %c90 : i32
+      %c91 = scalar.addi %v91, %v92 : i32
+      %d91 = scalar.addi %c91, %c91 : i32
+      %c92 = scalar.addi %v92, %v93 : i32
+      %d92 = scalar.addi %c92, %c92 : i32
+      %c93 = scalar.addi %v93, %v94 : i32
+      %d93 = scalar.addi %c93, %c93 : i32
+      %c94 = scalar.addi %v94, %v95 : i32
+      %d94 = scalar.addi %c94, %c94 : i32
+      %c95 = scalar.addi %v95, %v96 : i32
+      %d95 = scalar.addi %c95, %c95 : i32
+      %c96 = scalar.addi %v96, %v97 : i32
+      %d96 = scalar.addi %c96, %c96 : i32
+      %c97 = scalar.addi %v97, %v98 : i32
+      %d97 = scalar.addi %c97, %c97 : i32
+      %c98 = scalar.addi %v98, %v99 : i32
+      %d98 = scalar.addi %c98, %c98 : i32
+      %c99 = scalar.addi %v99, %v100 : i32
+      %d99 = scalar.addi %c99, %c99 : i32
+      %c100 = scalar.addi %v100, %v101 : i32
+      %d100 = scalar.addi %c100, %c100 : i32
+      %c101 = scalar.addi %v101, %v102 : i32
+      %d101 = scalar.addi %c101, %c101 : i32
+      %c102 = scalar.addi %v102, %v103 : i32
+      %d102 = scalar.addi %c102, %c102 : i32
+      %c103 = scalar.addi %v103, %v104 : i32
+      %d103 = scalar.addi %c103, %c103 : i32
+      %c104 = scalar.addi %v104, %v105 : i32
+      %d104 = scalar.addi %c104, %c104 : i32
+      %c105 = scalar.addi %v105, %v106 : i32
+      %d105 = scalar.addi %c105, %c105 : i32
+      %c106 = scalar.addi %v106, %v107 : i32
+      %d106 = scalar.addi %c106, %c106 : i32
+      %c107 = scalar.addi %v107, %v108 : i32
+      %d107 = scalar.addi %c107, %c107 : i32
+      %c108 = scalar.addi %v108, %v109 : i32
+      %d108 = scalar.addi %c108, %c108 : i32
+      %c109 = scalar.addi %v109, %v110 : i32
+      %d109 = scalar.addi %c109, %c109 : i32
+      %c110 = scalar.addi %v110, %v111 : i32
+      %d110 = scalar.addi %c110, %c110 : i32
+      %c111 = scalar.addi %v111, %v0 : i32
+      %d111 = scalar.addi %c111, %c111 : i32
+      scf.yield %d0, %d1, %d2, %d3, %d4, %d5, %d6, %d7, %d8, %d9, %d10, %d11, %d12, %d13, %d14, %d15, %d16, %d17, %d18, %d19, %d20, %d21, %d22, %d23, %d24, %d25, %d26, %d27, %d28, %d29, %d30, %d31, %d32, %d33, %d34, %d35, %d36, %d37, %d38, %d39, %d40, %d41, %d42, %d43, %d44, %d45, %d46, %d47, %d48, %d49, %d50, %d51, %d52, %d53, %d54, %d55, %d56, %d57, %d58, %d59, %d60, %d61, %d62, %d63, %d64, %d65, %d66, %d67, %d68, %d69, %d70, %d71, %d72, %d73, %d74, %d75, %d76, %d77, %d78, %d79, %d80, %d81, %d82, %d83, %d84, %d85, %d86, %d87, %d88, %d89, %d90, %d91, %d92, %d93, %d94, %d95, %d96, %d97, %d98, %d99, %d100, %d101, %d102, %d103, %d104, %d105, %d106, %d107, %d108, %d109, %d110, %d111 : i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32
+    }
+    scf.yield %inner0, %inner1, %inner2, %inner3, %inner4, %inner5, %inner6, %inner7, %inner8, %inner9, %inner10, %inner11, %inner12, %inner13, %inner14, %inner15, %inner16, %inner17, %inner18, %inner19, %inner20, %inner21, %inner22, %inner23, %inner24, %inner25, %inner26, %inner27, %inner28, %inner29, %inner30, %inner31, %inner32, %inner33, %inner34, %inner35, %inner36, %inner37, %inner38, %inner39, %inner40, %inner41, %inner42, %inner43, %inner44, %inner45, %inner46, %inner47, %inner48, %inner49, %inner50, %inner51, %inner52, %inner53, %inner54, %inner55, %inner56, %inner57, %inner58, %inner59, %inner60, %inner61, %inner62, %inner63, %inner64, %inner65, %inner66, %inner67, %inner68, %inner69, %inner70, %inner71, %inner72, %inner73, %inner74, %inner75, %inner76, %inner77, %inner78, %inner79, %inner80, %inner81, %inner82, %inner83, %inner84, %inner85, %inner86, %inner87, %inner88, %inner89, %inner90, %inner91, %inner92, %inner93, %inner94, %inner95, %inner96, %inner97, %inner98, %inner99, %inner100, %inner101, %inner102, %inner103, %inner104, %inner105, %inner106, %inner107, %inner108, %inner109, %inner110, %inner111 : i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32
+  } else {
+    %eight = scalar.constant 8 : i32
+    %outside0 = scalar.muli %v0, %eight : i32
+    %outside1 = scalar.muli %v1, %eight : i32
+    %outside2 = scalar.muli %v2, %eight : i32
+    %outside3 = scalar.muli %v3, %eight : i32
+    %outside4 = scalar.muli %v4, %eight : i32
+    %outside5 = scalar.muli %v5, %eight : i32
+    %outside6 = scalar.muli %v6, %eight : i32
+    %outside7 = scalar.muli %v7, %eight : i32
+    %outside8 = scalar.muli %v8, %eight : i32
+    %outside9 = scalar.muli %v9, %eight : i32
+    %outside10 = scalar.muli %v10, %eight : i32
+    %outside11 = scalar.muli %v11, %eight : i32
+    %outside12 = scalar.muli %v12, %eight : i32
+    %outside13 = scalar.muli %v13, %eight : i32
+    %outside14 = scalar.muli %v14, %eight : i32
+    %outside15 = scalar.muli %v15, %eight : i32
+    %outside16 = scalar.muli %v16, %eight : i32
+    %outside17 = scalar.muli %v17, %eight : i32
+    %outside18 = scalar.muli %v18, %eight : i32
+    %outside19 = scalar.muli %v19, %eight : i32
+    %outside20 = scalar.muli %v20, %eight : i32
+    %outside21 = scalar.muli %v21, %eight : i32
+    %outside22 = scalar.muli %v22, %eight : i32
+    %outside23 = scalar.muli %v23, %eight : i32
+    %outside24 = scalar.muli %v24, %eight : i32
+    %outside25 = scalar.muli %v25, %eight : i32
+    %outside26 = scalar.muli %v26, %eight : i32
+    %outside27 = scalar.muli %v27, %eight : i32
+    %outside28 = scalar.muli %v28, %eight : i32
+    %outside29 = scalar.muli %v29, %eight : i32
+    %outside30 = scalar.muli %v30, %eight : i32
+    %outside31 = scalar.muli %v31, %eight : i32
+    %outside32 = scalar.muli %v32, %eight : i32
+    %outside33 = scalar.muli %v33, %eight : i32
+    %outside34 = scalar.muli %v34, %eight : i32
+    %outside35 = scalar.muli %v35, %eight : i32
+    %outside36 = scalar.muli %v36, %eight : i32
+    %outside37 = scalar.muli %v37, %eight : i32
+    %outside38 = scalar.muli %v38, %eight : i32
+    %outside39 = scalar.muli %v39, %eight : i32
+    %outside40 = scalar.muli %v40, %eight : i32
+    %outside41 = scalar.muli %v41, %eight : i32
+    %outside42 = scalar.muli %v42, %eight : i32
+    %outside43 = scalar.muli %v43, %eight : i32
+    %outside44 = scalar.muli %v44, %eight : i32
+    %outside45 = scalar.muli %v45, %eight : i32
+    %outside46 = scalar.muli %v46, %eight : i32
+    %outside47 = scalar.muli %v47, %eight : i32
+    %outside48 = scalar.muli %v48, %eight : i32
+    %outside49 = scalar.muli %v49, %eight : i32
+    %outside50 = scalar.muli %v50, %eight : i32
+    %outside51 = scalar.muli %v51, %eight : i32
+    %outside52 = scalar.muli %v52, %eight : i32
+    %outside53 = scalar.muli %v53, %eight : i32
+    %outside54 = scalar.muli %v54, %eight : i32
+    %outside55 = scalar.muli %v55, %eight : i32
+    %outside56 = scalar.muli %v56, %eight : i32
+    %outside57 = scalar.muli %v57, %eight : i32
+    %outside58 = scalar.muli %v58, %eight : i32
+    %outside59 = scalar.muli %v59, %eight : i32
+    %outside60 = scalar.muli %v60, %eight : i32
+    %outside61 = scalar.muli %v61, %eight : i32
+    %outside62 = scalar.muli %v62, %eight : i32
+    %outside63 = scalar.muli %v63, %eight : i32
+    %outside64 = scalar.muli %v64, %eight : i32
+    %outside65 = scalar.muli %v65, %eight : i32
+    %outside66 = scalar.muli %v66, %eight : i32
+    %outside67 = scalar.muli %v67, %eight : i32
+    %outside68 = scalar.muli %v68, %eight : i32
+    %outside69 = scalar.muli %v69, %eight : i32
+    %outside70 = scalar.muli %v70, %eight : i32
+    %outside71 = scalar.muli %v71, %eight : i32
+    %outside72 = scalar.muli %v72, %eight : i32
+    %outside73 = scalar.muli %v73, %eight : i32
+    %outside74 = scalar.muli %v74, %eight : i32
+    %outside75 = scalar.muli %v75, %eight : i32
+    %outside76 = scalar.muli %v76, %eight : i32
+    %outside77 = scalar.muli %v77, %eight : i32
+    %outside78 = scalar.muli %v78, %eight : i32
+    %outside79 = scalar.muli %v79, %eight : i32
+    %outside80 = scalar.muli %v80, %eight : i32
+    %outside81 = scalar.muli %v81, %eight : i32
+    %outside82 = scalar.muli %v82, %eight : i32
+    %outside83 = scalar.muli %v83, %eight : i32
+    %outside84 = scalar.muli %v84, %eight : i32
+    %outside85 = scalar.muli %v85, %eight : i32
+    %outside86 = scalar.muli %v86, %eight : i32
+    %outside87 = scalar.muli %v87, %eight : i32
+    %outside88 = scalar.muli %v88, %eight : i32
+    %outside89 = scalar.muli %v89, %eight : i32
+    %outside90 = scalar.muli %v90, %eight : i32
+    %outside91 = scalar.muli %v91, %eight : i32
+    %outside92 = scalar.muli %v92, %eight : i32
+    %outside93 = scalar.muli %v93, %eight : i32
+    %outside94 = scalar.muli %v94, %eight : i32
+    %outside95 = scalar.muli %v95, %eight : i32
+    %outside96 = scalar.muli %v96, %eight : i32
+    %outside97 = scalar.muli %v97, %eight : i32
+    %outside98 = scalar.muli %v98, %eight : i32
+    %outside99 = scalar.muli %v99, %eight : i32
+    %outside100 = scalar.muli %v100, %eight : i32
+    %outside101 = scalar.muli %v101, %eight : i32
+    %outside102 = scalar.muli %v102, %eight : i32
+    %outside103 = scalar.muli %v103, %eight : i32
+    %outside104 = scalar.muli %v104, %eight : i32
+    %outside105 = scalar.muli %v105, %eight : i32
+    %outside106 = scalar.muli %v106, %eight : i32
+    %outside107 = scalar.muli %v107, %eight : i32
+    %outside108 = scalar.muli %v108, %eight : i32
+    %outside109 = scalar.muli %v109, %eight : i32
+    %outside110 = scalar.muli %v110, %eight : i32
+    %outside111 = scalar.muli %v111, %eight : i32
+    scf.yield %outside0, %outside1, %outside2, %outside3, %outside4, %outside5, %outside6, %outside7, %outside8, %outside9, %outside10, %outside11, %outside12, %outside13, %outside14, %outside15, %outside16, %outside17, %outside18, %outside19, %outside20, %outside21, %outside22, %outside23, %outside24, %outside25, %outside26, %outside27, %outside28, %outside29, %outside30, %outside31, %outside32, %outside33, %outside34, %outside35, %outside36, %outside37, %outside38, %outside39, %outside40, %outside41, %outside42, %outside43, %outside44, %outside45, %outside46, %outside47, %outside48, %outside49, %outside50, %outside51, %outside52, %outside53, %outside54, %outside55, %outside56, %outside57, %outside58, %outside59, %outside60, %outside61, %outside62, %outside63, %outside64, %outside65, %outside66, %outside67, %outside68, %outside69, %outside70, %outside71, %outside72, %outside73, %outside74, %outside75, %outside76, %outside77, %outside78, %outside79, %outside80, %outside81, %outside82, %outside83, %outside84, %outside85, %outside86, %outside87, %outside88, %outside89, %outside90, %outside91, %outside92, %outside93, %outside94, %outside95, %outside96, %outside97, %outside98, %outside99, %outside100, %outside101, %outside102, %outside103, %outside104, %outside105, %outside106, %outside107, %outside108, %outside109, %outside110, %outside111 : i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32
+  }
+  %two_e = scalar.constant 2 : i32
+  %choose = scalar.cmpi slt, %effective_lane, %two_e : i32
+  %inside_expected = scf.select %choose, %two_e, %four_i : i32
+  %eight_e = scalar.constant 8 : i32
+  %expected = scf.select %outer, %inside_expected, %eight_e : i32
+  %diff0 = scalar.subi %y0, %expected : i32
+  view.store %diff0, %ov[%ix0] : i32, view<448xi32>
+  %diff1 = scalar.subi %y1, %expected : i32
+  view.store %diff1, %ov[%ix1] : i32, view<448xi32>
+  %diff2 = scalar.subi %y2, %expected : i32
+  view.store %diff2, %ov[%ix2] : i32, view<448xi32>
+  %diff3 = scalar.subi %y3, %expected : i32
+  view.store %diff3, %ov[%ix3] : i32, view<448xi32>
+  %diff4 = scalar.subi %y4, %expected : i32
+  view.store %diff4, %ov[%ix4] : i32, view<448xi32>
+  %diff5 = scalar.subi %y5, %expected : i32
+  view.store %diff5, %ov[%ix5] : i32, view<448xi32>
+  %diff6 = scalar.subi %y6, %expected : i32
+  view.store %diff6, %ov[%ix6] : i32, view<448xi32>
+  %diff7 = scalar.subi %y7, %expected : i32
+  view.store %diff7, %ov[%ix7] : i32, view<448xi32>
+  %diff8 = scalar.subi %y8, %expected : i32
+  view.store %diff8, %ov[%ix8] : i32, view<448xi32>
+  %diff9 = scalar.subi %y9, %expected : i32
+  view.store %diff9, %ov[%ix9] : i32, view<448xi32>
+  %diff10 = scalar.subi %y10, %expected : i32
+  view.store %diff10, %ov[%ix10] : i32, view<448xi32>
+  %diff11 = scalar.subi %y11, %expected : i32
+  view.store %diff11, %ov[%ix11] : i32, view<448xi32>
+  %diff12 = scalar.subi %y12, %expected : i32
+  view.store %diff12, %ov[%ix12] : i32, view<448xi32>
+  %diff13 = scalar.subi %y13, %expected : i32
+  view.store %diff13, %ov[%ix13] : i32, view<448xi32>
+  %diff14 = scalar.subi %y14, %expected : i32
+  view.store %diff14, %ov[%ix14] : i32, view<448xi32>
+  %diff15 = scalar.subi %y15, %expected : i32
+  view.store %diff15, %ov[%ix15] : i32, view<448xi32>
+  %diff16 = scalar.subi %y16, %expected : i32
+  view.store %diff16, %ov[%ix16] : i32, view<448xi32>
+  %diff17 = scalar.subi %y17, %expected : i32
+  view.store %diff17, %ov[%ix17] : i32, view<448xi32>
+  %diff18 = scalar.subi %y18, %expected : i32
+  view.store %diff18, %ov[%ix18] : i32, view<448xi32>
+  %diff19 = scalar.subi %y19, %expected : i32
+  view.store %diff19, %ov[%ix19] : i32, view<448xi32>
+  %diff20 = scalar.subi %y20, %expected : i32
+  view.store %diff20, %ov[%ix20] : i32, view<448xi32>
+  %diff21 = scalar.subi %y21, %expected : i32
+  view.store %diff21, %ov[%ix21] : i32, view<448xi32>
+  %diff22 = scalar.subi %y22, %expected : i32
+  view.store %diff22, %ov[%ix22] : i32, view<448xi32>
+  %diff23 = scalar.subi %y23, %expected : i32
+  view.store %diff23, %ov[%ix23] : i32, view<448xi32>
+  %diff24 = scalar.subi %y24, %expected : i32
+  view.store %diff24, %ov[%ix24] : i32, view<448xi32>
+  %diff25 = scalar.subi %y25, %expected : i32
+  view.store %diff25, %ov[%ix25] : i32, view<448xi32>
+  %diff26 = scalar.subi %y26, %expected : i32
+  view.store %diff26, %ov[%ix26] : i32, view<448xi32>
+  %diff27 = scalar.subi %y27, %expected : i32
+  view.store %diff27, %ov[%ix27] : i32, view<448xi32>
+  %diff28 = scalar.subi %y28, %expected : i32
+  view.store %diff28, %ov[%ix28] : i32, view<448xi32>
+  %diff29 = scalar.subi %y29, %expected : i32
+  view.store %diff29, %ov[%ix29] : i32, view<448xi32>
+  %diff30 = scalar.subi %y30, %expected : i32
+  view.store %diff30, %ov[%ix30] : i32, view<448xi32>
+  %diff31 = scalar.subi %y31, %expected : i32
+  view.store %diff31, %ov[%ix31] : i32, view<448xi32>
+  %diff32 = scalar.subi %y32, %expected : i32
+  view.store %diff32, %ov[%ix32] : i32, view<448xi32>
+  %diff33 = scalar.subi %y33, %expected : i32
+  view.store %diff33, %ov[%ix33] : i32, view<448xi32>
+  %diff34 = scalar.subi %y34, %expected : i32
+  view.store %diff34, %ov[%ix34] : i32, view<448xi32>
+  %diff35 = scalar.subi %y35, %expected : i32
+  view.store %diff35, %ov[%ix35] : i32, view<448xi32>
+  %diff36 = scalar.subi %y36, %expected : i32
+  view.store %diff36, %ov[%ix36] : i32, view<448xi32>
+  %diff37 = scalar.subi %y37, %expected : i32
+  view.store %diff37, %ov[%ix37] : i32, view<448xi32>
+  %diff38 = scalar.subi %y38, %expected : i32
+  view.store %diff38, %ov[%ix38] : i32, view<448xi32>
+  %diff39 = scalar.subi %y39, %expected : i32
+  view.store %diff39, %ov[%ix39] : i32, view<448xi32>
+  %diff40 = scalar.subi %y40, %expected : i32
+  view.store %diff40, %ov[%ix40] : i32, view<448xi32>
+  %diff41 = scalar.subi %y41, %expected : i32
+  view.store %diff41, %ov[%ix41] : i32, view<448xi32>
+  %diff42 = scalar.subi %y42, %expected : i32
+  view.store %diff42, %ov[%ix42] : i32, view<448xi32>
+  %diff43 = scalar.subi %y43, %expected : i32
+  view.store %diff43, %ov[%ix43] : i32, view<448xi32>
+  %diff44 = scalar.subi %y44, %expected : i32
+  view.store %diff44, %ov[%ix44] : i32, view<448xi32>
+  %diff45 = scalar.subi %y45, %expected : i32
+  view.store %diff45, %ov[%ix45] : i32, view<448xi32>
+  %diff46 = scalar.subi %y46, %expected : i32
+  view.store %diff46, %ov[%ix46] : i32, view<448xi32>
+  %diff47 = scalar.subi %y47, %expected : i32
+  view.store %diff47, %ov[%ix47] : i32, view<448xi32>
+  %diff48 = scalar.subi %y48, %expected : i32
+  view.store %diff48, %ov[%ix48] : i32, view<448xi32>
+  %diff49 = scalar.subi %y49, %expected : i32
+  view.store %diff49, %ov[%ix49] : i32, view<448xi32>
+  %diff50 = scalar.subi %y50, %expected : i32
+  view.store %diff50, %ov[%ix50] : i32, view<448xi32>
+  %diff51 = scalar.subi %y51, %expected : i32
+  view.store %diff51, %ov[%ix51] : i32, view<448xi32>
+  %diff52 = scalar.subi %y52, %expected : i32
+  view.store %diff52, %ov[%ix52] : i32, view<448xi32>
+  %diff53 = scalar.subi %y53, %expected : i32
+  view.store %diff53, %ov[%ix53] : i32, view<448xi32>
+  %diff54 = scalar.subi %y54, %expected : i32
+  view.store %diff54, %ov[%ix54] : i32, view<448xi32>
+  %diff55 = scalar.subi %y55, %expected : i32
+  view.store %diff55, %ov[%ix55] : i32, view<448xi32>
+  %diff56 = scalar.subi %y56, %expected : i32
+  view.store %diff56, %ov[%ix56] : i32, view<448xi32>
+  %diff57 = scalar.subi %y57, %expected : i32
+  view.store %diff57, %ov[%ix57] : i32, view<448xi32>
+  %diff58 = scalar.subi %y58, %expected : i32
+  view.store %diff58, %ov[%ix58] : i32, view<448xi32>
+  %diff59 = scalar.subi %y59, %expected : i32
+  view.store %diff59, %ov[%ix59] : i32, view<448xi32>
+  %diff60 = scalar.subi %y60, %expected : i32
+  view.store %diff60, %ov[%ix60] : i32, view<448xi32>
+  %diff61 = scalar.subi %y61, %expected : i32
+  view.store %diff61, %ov[%ix61] : i32, view<448xi32>
+  %diff62 = scalar.subi %y62, %expected : i32
+  view.store %diff62, %ov[%ix62] : i32, view<448xi32>
+  %diff63 = scalar.subi %y63, %expected : i32
+  view.store %diff63, %ov[%ix63] : i32, view<448xi32>
+  %diff64 = scalar.subi %y64, %expected : i32
+  view.store %diff64, %ov[%ix64] : i32, view<448xi32>
+  %diff65 = scalar.subi %y65, %expected : i32
+  view.store %diff65, %ov[%ix65] : i32, view<448xi32>
+  %diff66 = scalar.subi %y66, %expected : i32
+  view.store %diff66, %ov[%ix66] : i32, view<448xi32>
+  %diff67 = scalar.subi %y67, %expected : i32
+  view.store %diff67, %ov[%ix67] : i32, view<448xi32>
+  %diff68 = scalar.subi %y68, %expected : i32
+  view.store %diff68, %ov[%ix68] : i32, view<448xi32>
+  %diff69 = scalar.subi %y69, %expected : i32
+  view.store %diff69, %ov[%ix69] : i32, view<448xi32>
+  %diff70 = scalar.subi %y70, %expected : i32
+  view.store %diff70, %ov[%ix70] : i32, view<448xi32>
+  %diff71 = scalar.subi %y71, %expected : i32
+  view.store %diff71, %ov[%ix71] : i32, view<448xi32>
+  %diff72 = scalar.subi %y72, %expected : i32
+  view.store %diff72, %ov[%ix72] : i32, view<448xi32>
+  %diff73 = scalar.subi %y73, %expected : i32
+  view.store %diff73, %ov[%ix73] : i32, view<448xi32>
+  %diff74 = scalar.subi %y74, %expected : i32
+  view.store %diff74, %ov[%ix74] : i32, view<448xi32>
+  %diff75 = scalar.subi %y75, %expected : i32
+  view.store %diff75, %ov[%ix75] : i32, view<448xi32>
+  %diff76 = scalar.subi %y76, %expected : i32
+  view.store %diff76, %ov[%ix76] : i32, view<448xi32>
+  %diff77 = scalar.subi %y77, %expected : i32
+  view.store %diff77, %ov[%ix77] : i32, view<448xi32>
+  %diff78 = scalar.subi %y78, %expected : i32
+  view.store %diff78, %ov[%ix78] : i32, view<448xi32>
+  %diff79 = scalar.subi %y79, %expected : i32
+  view.store %diff79, %ov[%ix79] : i32, view<448xi32>
+  %diff80 = scalar.subi %y80, %expected : i32
+  view.store %diff80, %ov[%ix80] : i32, view<448xi32>
+  %diff81 = scalar.subi %y81, %expected : i32
+  view.store %diff81, %ov[%ix81] : i32, view<448xi32>
+  %diff82 = scalar.subi %y82, %expected : i32
+  view.store %diff82, %ov[%ix82] : i32, view<448xi32>
+  %diff83 = scalar.subi %y83, %expected : i32
+  view.store %diff83, %ov[%ix83] : i32, view<448xi32>
+  %diff84 = scalar.subi %y84, %expected : i32
+  view.store %diff84, %ov[%ix84] : i32, view<448xi32>
+  %diff85 = scalar.subi %y85, %expected : i32
+  view.store %diff85, %ov[%ix85] : i32, view<448xi32>
+  %diff86 = scalar.subi %y86, %expected : i32
+  view.store %diff86, %ov[%ix86] : i32, view<448xi32>
+  %diff87 = scalar.subi %y87, %expected : i32
+  view.store %diff87, %ov[%ix87] : i32, view<448xi32>
+  %diff88 = scalar.subi %y88, %expected : i32
+  view.store %diff88, %ov[%ix88] : i32, view<448xi32>
+  %diff89 = scalar.subi %y89, %expected : i32
+  view.store %diff89, %ov[%ix89] : i32, view<448xi32>
+  %diff90 = scalar.subi %y90, %expected : i32
+  view.store %diff90, %ov[%ix90] : i32, view<448xi32>
+  %diff91 = scalar.subi %y91, %expected : i32
+  view.store %diff91, %ov[%ix91] : i32, view<448xi32>
+  %diff92 = scalar.subi %y92, %expected : i32
+  view.store %diff92, %ov[%ix92] : i32, view<448xi32>
+  %diff93 = scalar.subi %y93, %expected : i32
+  view.store %diff93, %ov[%ix93] : i32, view<448xi32>
+  %diff94 = scalar.subi %y94, %expected : i32
+  view.store %diff94, %ov[%ix94] : i32, view<448xi32>
+  %diff95 = scalar.subi %y95, %expected : i32
+  view.store %diff95, %ov[%ix95] : i32, view<448xi32>
+  %diff96 = scalar.subi %y96, %expected : i32
+  view.store %diff96, %ov[%ix96] : i32, view<448xi32>
+  %diff97 = scalar.subi %y97, %expected : i32
+  view.store %diff97, %ov[%ix97] : i32, view<448xi32>
+  %diff98 = scalar.subi %y98, %expected : i32
+  view.store %diff98, %ov[%ix98] : i32, view<448xi32>
+  %diff99 = scalar.subi %y99, %expected : i32
+  view.store %diff99, %ov[%ix99] : i32, view<448xi32>
+  %diff100 = scalar.subi %y100, %expected : i32
+  view.store %diff100, %ov[%ix100] : i32, view<448xi32>
+  %diff101 = scalar.subi %y101, %expected : i32
+  view.store %diff101, %ov[%ix101] : i32, view<448xi32>
+  %diff102 = scalar.subi %y102, %expected : i32
+  view.store %diff102, %ov[%ix102] : i32, view<448xi32>
+  %diff103 = scalar.subi %y103, %expected : i32
+  view.store %diff103, %ov[%ix103] : i32, view<448xi32>
+  %diff104 = scalar.subi %y104, %expected : i32
+  view.store %diff104, %ov[%ix104] : i32, view<448xi32>
+  %diff105 = scalar.subi %y105, %expected : i32
+  view.store %diff105, %ov[%ix105] : i32, view<448xi32>
+  %diff106 = scalar.subi %y106, %expected : i32
+  view.store %diff106, %ov[%ix106] : i32, view<448xi32>
+  %diff107 = scalar.subi %y107, %expected : i32
+  view.store %diff107, %ov[%ix107] : i32, view<448xi32>
+  %diff108 = scalar.subi %y108, %expected : i32
+  view.store %diff108, %ov[%ix108] : i32, view<448xi32>
+  %diff109 = scalar.subi %y109, %expected : i32
+  view.store %diff109, %ov[%ix109] : i32, view<448xi32>
+  %diff110 = scalar.subi %y110, %expected : i32
+  view.store %diff110, %ov[%ix110] : i32, view<448xi32>
+  %diff111 = scalar.subi %y111, %expected : i32
+  view.store %diff111, %ov[%ix111] : i32, view<448xi32>
+  kernel.return
+}
+check.case @nested_branch_divergent {
+  %input = check.generate.fill value(1) : tensor<448xi32>
+  %out = check.generate.fill value(-1) : tensor<448xi32>
+  %expected = check.generate.fill value(0) : tensor<448xi32>
+  %mode_value = check.generate.fill value(1) : tensor<1xi32>
+  kernel.launch @pressure(%input, %out, %mode_value) : (tensor<448xi32>, tensor<448xi32>, tensor<1xi32>)
+  check.expect.equal actual(%out) expected(%expected) : tensor<448xi32>
+  check.return
+}
+check.case @nested_branch_uniform {
+  %input = check.generate.fill value(1) : tensor<448xi32>
+  %out = check.generate.fill value(-1) : tensor<448xi32>
+  %expected = check.generate.fill value(0) : tensor<448xi32>
+  %mode_value = check.generate.fill value(0) : tensor<1xi32>
+  kernel.launch @pressure(%input, %out, %mode_value) : (tensor<448xi32>, tensor<448xi32>, tensor<1xi32>)
+  check.expect.equal actual(%out) expected(%expected) : tensor<448xi32>
+  check.return
+}

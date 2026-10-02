@@ -11,7 +11,37 @@ func.def @native_f64(%lhs: f64, %rhs: f64) -> (f64, f64, f64) {
 low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @native_f64(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
   %sum = v_add_f64 %lhs, %rhs
   %product = v_mul_f64 %lhs, %rhs
-  %root = v_sqrt_f64 %lhs
+  %15 = v_mov_b32 0
+  %16 = v_mov_b32 268435456
+  %17 = v_mov_b32 1071644672
+  %18 = concat(%15, %16) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %19 = concat(%15, %17) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %20 = v_cmp_lt_f64 %lhs, %18
+  %21 = v_mov_b32 256
+  %22 = v_cndmask_b32 %15, %21, %20
+  %23 = v_ldexp_f64 %lhs, %22
+  %24 = v_rsq_f64 %23
+  %25 = v_mul_f64 %23, %24
+  %26 = v_mul_f64 %24, %19
+  %27 = v_fma_f64_neg_a %26, %25, %19
+  %28 = v_fma_f64 %26, %27, %26
+  %29 = v_fma_f64 %25, %27, %25
+  %30 = v_fma_f64_neg_a %29, %29, %23
+  %31 = v_fma_f64 %30, %28, %29
+  %32 = v_fma_f64_neg_a %31, %31, %23
+  %33 = v_fma_f64 %32, %28, %31
+  %34 = v_mov_b32 4294967168
+  %35 = v_cndmask_b32 %15, %34, %20
+  %36 = v_ldexp_f64 %33, %35
+  %37 = v_mov_b32 608
+  %38 = v_cmp_class_f64 %23, %37
+  %39 = slice %36[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %40 = slice %23[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %41 = v_cndmask_b32 %39, %40, %38
+  %42 = slice %36[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %43 = slice %23[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %44 = v_cndmask_b32 %42, %43, %38
+  %root = concat(%41, %44) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
   return %sum, %product, %root
 }
 
@@ -175,4 +205,17 @@ low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @divide_f64(%numerator: r
   %18 = v_div_fmas_f64 %17, %15, %16, %14
   %quotient = v_div_fixup_f64 %18, %denominator, %numerator
   return %quotient
+}
+
+// ====
+
+func.def @approximate_sqrt_f64(%input: f64) -> (f64) {
+  %root = scalar.sqrtf<afn> %input : f64
+  func.return %root : f64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @approximate_sqrt_f64(%input: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %root = v_sqrt_f64 %input
+  return %root
 }

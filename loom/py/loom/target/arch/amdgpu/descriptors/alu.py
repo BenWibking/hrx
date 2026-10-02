@@ -5255,6 +5255,56 @@ def _v_sqrt_f64_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+def _v_rsq_f64_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.v_rsq_f64",
+        instruction_name="V_RSQ_F64",
+        mnemonic="v_rsq_f64",
+        encoding_name="ENC_VOP1",
+        semantic_tag="float.rsqrt.f64",
+        schedule_class=_amdgpu_trans_schedule_class_name("amdgpu.v_rsq_f64"),
+        operands=(
+            AmdgpuOperandOverlay("VDST", _vgpr_result(units=2)),
+            AmdgpuOperandOverlay("SRC0", _sgpr_vgpr_operand("input", units=2)),
+        ),
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _v_ldexp_f64_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.v_ldexp_f64",
+        instruction_name="V_LDEXP_F64",
+        mnemonic="v_ldexp_f64",
+        encoding_name="ENC_VOP3",
+        semantic_tag="float.ldexp.f64",
+        schedule_class=_SCHEDULE_VALU,
+        operands=(
+            AmdgpuOperandOverlay("VDST", _vgpr_result(units=2)),
+            AmdgpuOperandOverlay("SRC0", _sgpr_vgpr_operand("input", units=2)),
+            AmdgpuOperandOverlay("SRC1", _sgpr_vgpr_operand("exponent")),
+        ),
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
+def _v_cmp_class_f64_overlay() -> AmdgpuDescriptorOverlay:
+    return AmdgpuDescriptorOverlay(
+        descriptor_key="amdgpu.v_cmp_class_f64",
+        instruction_name="V_CMP_CLASS_F64",
+        mnemonic="v_cmp_class_f64",
+        encoding_name="ENC_VOP3",
+        semantic_tag="cmp.f64.class",
+        schedule_class=_SCHEDULE_VALU,
+        operands=(
+            AmdgpuOperandOverlay("VDST", _sgpr_result("mask", units=2)),
+            AmdgpuOperandOverlay("SRC0", _vgpr_const_operand("input", units=2)),
+            AmdgpuOperandOverlay("SRC1", _vgpr_const_operand("classes")),
+        ),
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
 def _v_rcp_f64_overlay() -> AmdgpuDescriptorOverlay:
     return AmdgpuDescriptorOverlay(
         descriptor_key="amdgpu.v_rcp_f64",
@@ -7567,6 +7617,9 @@ __all__ = (
     "_v_sin_f32_overlay",
     "_v_sqrt_f32_overlay",
     "_v_sqrt_f64_overlay",
+    "_v_rsq_f64_overlay",
+    "_v_ldexp_f64_overlay",
+    "_v_cmp_class_f64_overlay",
     "_v_trunc_f32_overlay",
     "_v_sub_f16_overlay",
     "_v_sub_f32_literal_overlay",

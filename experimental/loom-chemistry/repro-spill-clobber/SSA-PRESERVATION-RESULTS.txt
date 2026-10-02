@@ -1,0 +1,62 @@
+Explicit SSA preservation: implementation and validation (2026-10-01)
+====================================================================
+
+AMDGPU divergent-loop lowering now interposes a backedge merge block:
+  active = read EXEC
+  EXEC = saved parent mask
+  merged = select(active, candidate, old header argument)
+  EXEC = active
+  branch header(merged)
+
+VGPR values are merged component-wise. Native i1 masks use scalar mask
+intersection/union with an explicit old-mask operand. Source i1 typing
+distinguishes these masks from ordinary uniform 64-bit SGPR data.
+Whole-value spill and reload semantics are unchanged.
+
+Validation on MI300X, gfx942:
+- Clean main bfff52cfd59049518a32576c8bd5dcef98b651be plus control.c patch:
+  original 170-value spill reproducer passes divergent and uniform checks;
+  explicit-break 170-value reproducer passes both checks;
+  existing loop-entry corpus passes all five checks, including masked entry
+  and reordered latches; existing divergent-loop-carry check passes;
+  final rotation/alternate/mix/select sweep passes all 64 checks;
+  new masked-parent, wide-value, native-predicate regression passes.
+- New runtime regression fails on unmodified main and passes with the patch
+  in three consecutive baseline/fixed pairs. Both emitted binaries contain
+  zero scratch instructions. Baseline first residual is -4294967297 at lane 0,
+  where zero iterations should preserve the initially true predicate.
+  The baseline uses s[8:9] for the carried predicate, reuses it for add-carry
+  outputs at 0x105c/0x1068, and overwrites it with v_cmp_eq_i32 at 0x1078.
+  Masked VGPR writes preserve inactive components; predicate-result writes
+  replace scalar mask bits. Explicit SSA preservation fixes both cases.
+
+Local source-low suite: 423/424 test files pass. The remaining failure is
+source_low_unsigned_remainder_diagnostics.loom-test case 5, expecting
+TARGET/001 for scalar.remsi. It was separately reproduced after restoring
+the unmodified control.c and rebuilding. No unrelated diagnostic fix applied.
+The new runtime fixture also compiles for gfx950; no gfx950 hardware run.
+Formatting, generated CMake freshness, and git diff --check pass.
+
+Larger chemistry validation uses the original af901efb55 checkout with its
+existing sqrt correction plus this control.c change. Both kernels rebuilt.
+- Original perturbation-enabled 128-cell run passes through 20 complete
+  steps, then fails at step 20 after prepare. This is not a full-run pass.
+- The unchanged baseline prepare binary reproduces that failure at step 20
+  on fresh identical initial states, before any advance invocation. This
+  establishes a separate prepare-path failure, whose root cause is unexamined.
+- A diagnostic harness disabling perturbations passes 25 complete steps at
+  128 cells, with identical final grid time 2122481408440561.5. Tolerances are
+  rtol=0.0002, atol=1e-40, abundance_atol=1e-14. Production harness unchanged.
+  Its single timing sample is not a performance characterization.
+
+Durable regression:
+  loom/src/loom/tooling/target/amdgpu/test/corpus/divergent_loop_preservation.loom
+Golden IR also covers wide f64 state and native predicates under parent EXEC.
+
+Raw logs, disassemblies, diagnostic harnesses and code objects:
+  build/benchmarks/mi300x-main-bfff52cfd5/ssa-preservation-evidence.tar.gz
+  build/benchmarks/mi300x-af901efb55/ssa-preservation-evidence.tar.gz
+
+Scope: explicit preservation of loop-header recurrences. This is not a proof
+of all loop lowering or allocation, nor a claim to repair every possible
+loop-defined live-out that is not represented by a header recurrence.

@@ -230,9 +230,14 @@ The executable requires a visible gfx942 device. Use `HIP_VISIBLE_DEVICES` to
 select one if the VM exposes multiple GPUs. It initializes the same cells for
 both layouts, runs the original prepare/host minimum/advance sequence, and
 compares each prepare and advance result. Floating fields use configurable
-`--rtol` (default `2e-4`) and `--atol` (default `1e-40`); integer counters and
-status values must match exactly. On any mismatch it exits nonzero without
-reporting performance. `--steps 25` includes the first perturbation event.
+`--rtol` (default `2e-4`). Dimensionless abundances use `--abundance-atol`
+(default `1e-14`) to accommodate roundoff near zero; other floating fields use
+`--atol` (default `1e-40`). Integer counters and status values must match
+exactly. On any mismatch it exits nonzero without reporting performance. `--steps 25` includes the first perturbation event.
+
+The Loom module-launch path marshals the `perturb` flag as a 32-bit zero or
+one, matching its code-object argument metadata. Passing a C++ `bool` pointer
+would supply only one byte and can cause the step-20 perturbation to be skipped.
 
 For timing, it resets each backend to the same initial state before every
 sample, alternates backend order, and reports median HIP-event device time for

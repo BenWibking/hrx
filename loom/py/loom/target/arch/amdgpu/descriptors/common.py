@@ -267,6 +267,7 @@ _AMDGPU_TRANS_DESCRIPTOR_KEYS = (
     "amdgpu.v_cos_f32",
     "amdgpu.v_sqrt_f32",
     "amdgpu.v_sqrt_f64",
+    "amdgpu.v_rsq_f64",
     "amdgpu.v_rsq_f32",
     "amdgpu.v_rcp_f32",
     "amdgpu.v_rcp_f64",

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <stdexcept>
@@ -82,8 +83,11 @@ struct Backend {
                                                            perturb, candidates.ptr, failure.ptr);
             hip_check(hipGetLastError(), "original prepare launch");
         } else {
+            // Loom's kernarg ABI stores i1 in a 32-bit slot. HIP copies the
+            // metadata's argument size, so a pointer to C++ bool is too small.
+            std::uint32_t perturb_abi = perturb ? 1u : 0u;
             void* args[] = {&cells.ptr, &n, &completed, &time, &step,
-                            &perturb, &candidates.ptr, &failure.ptr};
+                            &perturb_abi, &candidates.ptr, &failure.ptr};
             hip_check(hipModuleLaunchKernel(prepare->function, blocks, 1, 1, 128, 1, 1,
                                             0, nullptr, args, nullptr), "Loom prepare launch");
         }
@@ -112,10 +116,13 @@ struct Backend {
     }
 };
 
-static double rtol = 2e-4, atol = 1e-40;
+static double relative_tolerance = 2e-4, absolute_tolerance = 1e-40;
+// Mass fractions are dimensionless; permit roundoff near zero without weakening
+// the absolute tolerance for dimensional fields or timestep candidates.
+static double abundance_absolute_tolerance = 1e-14;
 static int mismatches = 0;
-static void same(double a, double b, int cell, const char* field) {
-    if (!std::isfinite(a) || !std::isfinite(b) || std::abs(a - b) > atol + rtol * std::max(std::abs(a), std::abs(b))) {
+static void same(double a, double b, int cell, const char* field, double abs_tol = absolute_tolerance) {
+    if (!std::isfinite(a) || !std::isfinite(b) || std::abs(a - b) > abs_tol + relative_tolerance * std::max(std::abs(a), std::abs(b))) {
         if (++mismatches <= 20) std::fprintf(stderr, "cell %d %s: original %.17g, Loom %.17g\n", cell, field, a, b);
     }
 }
@@ -129,7 +136,7 @@ static void compare_state(const std::vector<lc::CellRecord>& a, const std::vecto
         same(a[i].current.rho, b[i].current.rho, cell, "rho");
         same(a[i].current.T, b[i].current.T, cell, "T");
         same(a[i].current.e, b[i].current.e, cell, "e");
-        for (int j = 0; j < 14; ++j) same(a[i].current.xn[j], b[i].current.xn[j], cell, "xn");
+        for (int j = 0; j < 14; ++j) same(a[i].current.xn[j], b[i].current.xn[j], cell, "xn", abundance_absolute_tolerance);
         same(a[i].time, b[i].time, cell, "time");
         same(a[i].density_driver, b[i].density_driver, cell, "density_driver");
         same_int(a[i].completed_steps, b[i].completed_steps, cell, "completed_steps");
@@ -175,7 +182,7 @@ static double median(std::vector<double> values) {
 }
 
 int main(int argc, char** argv) try {
-    if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X]");
+    if (argc < 3) throw std::runtime_error("usage: compare_rocm PREPARE.hsaco ADVANCE.hsaco [--cells N] [--steps N] [--warmup N] [--repeats N] [--rtol X] [--atol X] [--abundance-atol X]");
     int n = 128, steps = 1, warmup = 1, repeats = 5;
     for (int i = 3; i < argc; i += 2) {
         if (i + 1 == argc) throw std::runtime_error("missing option value");
@@ -184,12 +191,15 @@ int main(int argc, char** argv) try {
         else if (key == "--steps") steps = std::stoi(argv[i + 1]);
         else if (key == "--warmup") warmup = std::stoi(argv[i + 1]);
         else if (key == "--repeats") repeats = std::stoi(argv[i + 1]);
-        else if (key == "--rtol") rtol = std::stod(argv[i + 1]);
-        else if (key == "--atol") atol = std::stod(argv[i + 1]);
+        else if (key == "--rtol") relative_tolerance = std::stod(argv[i + 1]);
+        else if (key == "--atol") absolute_tolerance = std::stod(argv[i + 1]);
+        else if (key == "--abundance-atol") abundance_absolute_tolerance = std::stod(argv[i + 1]);
         else throw std::runtime_error("unknown option: " + key);
     }
     if (n < 1 || n > 1000000 || steps < 1 || steps > 1000 || warmup < 0 || repeats < 1 ||
-        rtol < 0 || atol < 0) throw std::runtime_error("invalid option value");
+        relative_tolerance < 0 || absolute_tolerance < 0 || abundance_absolute_tolerance < 0 ||
+        !std::isfinite(relative_tolerance) || !std::isfinite(absolute_tolerance) ||
+        !std::isfinite(abundance_absolute_tolerance)) throw std::runtime_error("invalid option value");
     int devices = 0;
     hip_check(hipGetDeviceCount(&devices), "hipGetDeviceCount");
     if (!devices) throw std::runtime_error("no ROCm GPU visible");
@@ -230,7 +240,7 @@ int main(int argc, char** argv) try {
         }
         same(original_dt, loom_dt, -1, "grid dt");
         compare_state(original.state(), loom.state());
-        if (mismatches) break;
+        if (mismatches) { std::fprintf(stderr, "correctness mismatch at step %d after prepare\n", step); break; }
         if (original.code() != 1 || original_dt == std::numeric_limits<double>::max() ||
             loom_dt == std::numeric_limits<double>::max())
             throw std::runtime_error("grid stopped before requested correctness steps");
@@ -243,14 +253,14 @@ int main(int argc, char** argv) try {
         same_int(original.code(), loom.code(), -1, "advance failure");
         same_int(original.count(), loom.count(), -1, "integrated count");
         compare_state(original.state(), loom.state());
-        if (mismatches) break;
+        if (mismatches) { std::fprintf(stderr, "correctness mismatch at step %d after advance\n", step); break; }
         if (original.code() != 1 || original.count() == 0)
             throw std::runtime_error("grid stopped before requested correctness steps");
         original_time = original_next; loom_time = loom_next; ++completed;
     }
     if (mismatches) { std::fprintf(stderr, "FAIL: %d mismatches (first 20 shown); performance skipped\n", mismatches); return 1; }
-    std::printf("PASS: %d full gridwide steps; final grid time original %.17g, Loom %.17g; rtol=%g atol=%g\n",
-                completed, original_time, loom_time, rtol, atol);
+    std::printf("PASS: %d full gridwide steps; final grid time original %.17g, Loom %.17g; rtol=%g atol=%g abundance_atol=%g\n",
+                completed, original_time, loom_time, relative_tolerance, absolute_tolerance, abundance_absolute_tolerance);
     for (bool prep : {true, false}) {
         std::vector<double> a, b;
         for (int rep = -warmup; rep < repeats; ++rep) {
