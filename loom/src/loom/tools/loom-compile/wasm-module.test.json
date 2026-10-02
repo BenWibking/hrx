@@ -6,7 +6,6 @@
       "run": {
         "tool": "loom-compile",
         "args": [
-          "--product=module",
           "--target=wasm:simd128",
           "--output={tmp}/module.wasm",
           "--compile-report=details",
@@ -25,6 +24,31 @@
           "path": "{tmp}/compile-report.json",
           "non_empty": true
         }
+      ]
+    },
+    {
+      "name": "rejects artifact manifests for module formats",
+      "run": {
+        "tool": "loom-compile",
+        "args": [
+          "--target=wasm:simd128",
+          "--output={tmp}/module-with-manifest.wasm",
+          "--artifact-manifest=summary",
+          "--emit-artifact-manifest={tmp}/module.manifest.json"
+        ],
+        "stdin": {
+          "text": "func.def public @entry() {\n  func.return\n}\n"
+        }
+      },
+      "exit": 1,
+      "stderr": {
+        "contains": [
+          "--artifact-manifest is only valid for loadable kernel formats"
+        ]
+      },
+      "files": [
+        {"path": "{tmp}/module-with-manifest.wasm", "exists": false},
+        {"path": "{tmp}/module.manifest.json", "exists": false}
       ]
     }
   ]
