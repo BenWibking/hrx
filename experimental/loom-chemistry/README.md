@@ -53,6 +53,11 @@ python3 experimental/loom-chemistry/generate.py
 python3 experimental/loom-chemistry/generate.py --check
 ```
 
+For compiler spill comparisons, the separate [f32 experiment](f32/README.md)
+mechanically derives both kernels with single-precision storage, literals, and
+math. It has its own generator and record layout and is not numerically
+validated against this f64 baseline.
+
 ## Buffer and launch contract
 
 Both kernels take `cells` as their first argument, followed by `num_cells` and
