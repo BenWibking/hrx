@@ -302,6 +302,7 @@ amdf_cts_gpu_kernel_set(
     "device_sdma_kernels"
   SRCS
     "device_sdma.loom"
+    "sdma_copy.loom"
   TARGETS
     "gfx1100"
     "gfx1101"

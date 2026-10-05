@@ -41,6 +41,7 @@ exports_files([
     "resident_channels.loom",
     "resident_exchange.loom",
     "resident_npu_initiated.loom",
+    "sdma_copy.loom",
     "transform.loom",
     "transform_alternate.loom",
 ])
@@ -139,7 +140,10 @@ amdf_cc_library(
 
 amdf_cts_gpu_kernel_set(
     name = "device_sdma_kernels",
-    srcs = ["device_sdma.loom"],
+    srcs = [
+        "device_sdma.loom",
+        "sdma_copy.loom",
+    ],
     entry_point = "device_sdma",
     namespace = "kernels::device_sdma",
     targets = _KERNEL_TARGETS,
