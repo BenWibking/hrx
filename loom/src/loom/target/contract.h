@@ -333,6 +333,8 @@ typedef struct loom_target_contract_index_t {
   uint8_t binding_count;
   // Active fragment bindings referenced by composed case rows.
   const loom_target_contract_binding_t* bindings;
+  // Relocation-free candidate-selection rows, buckets, and ordinal sequences.
+  const uint32_t* selection_data;
 } loom_target_contract_index_t;
 
 // Looks up the compact case span for an op kind in a composed index.

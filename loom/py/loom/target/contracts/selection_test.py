@@ -36,7 +36,6 @@ from loom.target.contracts.selection import (
     ContractSelectionSelector,
     compile_contract_selection_index,
     contract_selection_blob_words,
-    pack_contract_op_entry,
     pack_contract_selection_index,
 )
 
@@ -260,9 +259,10 @@ def test_pack_selection_chooses_and_interns_candidate_encodings() -> None:
     assert packed.candidate_words == (0xFFFFFFFF, 0, 0x001F0000, 63)
     assert contract_selection_blob_words(packed) == (
         1 | (3 << 16),
+        64,
         9,
         3,
-        0,
+        _OP_KIND << 16,
         1,
         (2 | 0x8000) << 16,
         2,
@@ -276,30 +276,59 @@ def test_pack_selection_chooses_and_interns_candidate_encodings() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("case_start", "case_count", "selection_ordinal", "message"),
-    [
-        (0x8000, 1, 0, "case start"),
-        (0, 2048, 0, "case count"),
-        (0, 1, 32, "ordinal"),
-    ],
-)
-def test_pack_contract_op_entry_checks_indexed_bounds(
-    case_start: int,
-    case_count: int,
-    selection_ordinal: int,
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        pack_contract_op_entry(case_start, case_count, selection_ordinal)
-
-
-def test_pack_contract_op_entry_preserves_unindexed_fields() -> None:
-    assert pack_contract_op_entry(0xFFFF, 0xFFFF, None) == (0xFFFF, 0xFFFF)
-    assert pack_contract_op_entry(10, 64, 3) == (
-        0x800A,
-        64 | (3 << 11),
+def test_pack_selection_preserves_full_contract_case_domains() -> None:
+    selection = ContractSelectionIndex(
+        (
+            ContractSelectionRow(
+                op_kind=_OP_KIND,
+                case_start=0,
+                case_count=0xFFFF,
+                selector=ContractSelectionSelector(
+                    ContractSelectionKind.ENUM_ATTRIBUTE, 0
+                ),
+                fallback_ordinals=(0, 0xFFFE),
+                buckets=(),
+            ),
+            ContractSelectionRow(
+                op_kind=_OP_KIND + 1,
+                case_start=0xFFFE,
+                case_count=1,
+                selector=ContractSelectionSelector(
+                    ContractSelectionKind.ENUM_ATTRIBUTE, 0
+                ),
+                fallback_ordinals=(0,),
+                buckets=(),
+            ),
+        )
     )
+
+    packed = pack_contract_selection_index(selection)
+
+    assert packed.rows[0].case_count == 0xFFFF
+    assert packed.rows[1].case_start == 0xFFFE
+    assert contract_selection_blob_words(packed)[1] == 1
+
+
+def test_pack_selection_supports_more_than_32_rows() -> None:
+    selection = ContractSelectionIndex(
+        tuple(
+            ContractSelectionRow(
+                op_kind=_OP_KIND + index,
+                case_start=index,
+                case_count=64,
+                selector=ContractSelectionSelector(
+                    ContractSelectionKind.ENUM_ATTRIBUTE, 0
+                ),
+                fallback_ordinals=(),
+                buckets=(),
+            )
+            for index in range(33)
+        )
+    )
+
+    packed = pack_contract_selection_index(selection)
+
+    assert len(packed.rows) == 33
 
 
 @pytest.mark.parametrize(

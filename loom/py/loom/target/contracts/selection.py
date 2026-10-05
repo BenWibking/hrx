@@ -27,14 +27,9 @@ from loom.target.contracts.lower_rule_tables import (
 from loom.target.contracts.patterns import TypePattern
 
 CONTRACT_SELECTION_MINIMUM_AVOIDED_CASES = 32
-CONTRACT_SELECTION_MAX_CASE_START = 0x7FFF
-CONTRACT_SELECTION_CASE_COUNT_BITS = 11
-CONTRACT_SELECTION_MAX_CASE_COUNT = (1 << CONTRACT_SELECTION_CASE_COUNT_BITS) - 1
-CONTRACT_SELECTION_MAX_ROW_COUNT = 32
 CONTRACT_SELECTION_MAX_FIELD_INDEX = 0xFF
 CONTRACT_SELECTION_MAX_ELEMENT_INDEX = 0x3F
 
-_SELECTION_INDEXED_BIT = 0x8000
 _CANDIDATE_BITMAP_BIT = 0x8000
 _TYPE_KEY_SCALAR = 1 << 28
 _TYPE_KEY_VECTOR = 2 << 28
@@ -394,12 +389,13 @@ def pack_contract_selection_index(
 ) -> PackedContractSelectionIndex:
     """Packs semantic candidates into one relocation-free word-pool model."""
 
-    if len(selection_index.rows) > CONTRACT_SELECTION_MAX_ROW_COUNT:
-        raise ValueError("contract selection row count exceeds packed op-entry range")
+    if len(selection_index.rows) > 0xFFFF:
+        raise ValueError("contract selection row count exceeds uint16_t")
     packed_rows = []
     packed_buckets = []
     candidate_words = []
     sequence_starts: dict[tuple[object, ...], int] = {}
+    previous_op_kind = -1
 
     def intern_candidates(
         case_count: int,
@@ -421,10 +417,15 @@ def pack_contract_selection_index(
         return PackedContractCandidateSpan(word_start, count, encoding)
 
     for row in selection_index.rows:
-        if row.case_start > CONTRACT_SELECTION_MAX_CASE_START:
-            raise ValueError("indexed contract case start exceeds 15 bits")
-        if row.case_count > CONTRACT_SELECTION_MAX_CASE_COUNT:
-            raise ValueError("indexed contract case count exceeds 11 bits")
+        if not 0 <= row.op_kind <= 0xFFFF:
+            raise ValueError("contract selection op kind exceeds uint16_t")
+        if row.op_kind <= previous_op_kind:
+            raise ValueError("contract selection rows must be ordered by op kind")
+        previous_op_kind = row.op_kind
+        if not 0 <= row.case_start <= 0xFFFF:
+            raise ValueError("contract selection case start exceeds uint16_t")
+        if not 0 <= row.case_count <= 0xFFFF:
+            raise ValueError("contract selection case count exceeds uint16_t")
         bucket_start = len(packed_buckets)
         fallback_candidates = intern_candidates(row.case_count, row.fallback_ordinals)
         previous_key = -1
@@ -456,6 +457,8 @@ def pack_contract_selection_index(
         )
     if len(candidate_words) > 0xFFFF:
         raise ValueError("contract selection candidate word count exceeds uint16_t")
+    if len(packed_buckets) > 0xFFFF:
+        raise ValueError("contract selection bucket count exceeds uint16_t")
     return PackedContractSelectionIndex(
         tuple(packed_rows), tuple(packed_buckets), tuple(candidate_words)
     )
@@ -473,7 +476,13 @@ def contract_selection_blob_words(
 ) -> tuple[int, ...]:
     """Returns the exact uint32 blob consumed by the runtime iterator."""
 
-    words = [len(selection_index.rows) | (len(selection_index.buckets) << 16)]
+    minimum_case_count = min(
+        (row.case_count for row in selection_index.rows), default=0
+    )
+    words = [
+        len(selection_index.rows) | (len(selection_index.buckets) << 16),
+        minimum_case_count,
+    ]
     for row in selection_index.rows:
         words.extend(
             (
@@ -485,31 +494,11 @@ def contract_selection_blob_words(
                     if row.fallback_candidates.encoding
                     is ContractCandidateEncoding.PRIORITY_BITMAP
                     else 0
-                ),
+                )
+                | (row.op_kind << 16),
             )
         )
     for bucket in selection_index.buckets:
         words.extend((bucket.key, _pack_candidate_span(bucket.candidates)))
     words.extend(selection_index.candidate_words)
     return tuple(words)
-
-
-def pack_contract_op_entry(
-    case_start: int,
-    case_count: int,
-    selection_ordinal: int | None,
-) -> tuple[int, int]:
-    """Packs one generated op entry with an optional direct selection row."""
-
-    if selection_ordinal is None:
-        return case_start, case_count
-    if case_start > CONTRACT_SELECTION_MAX_CASE_START:
-        raise ValueError("indexed contract case start exceeds 15 bits")
-    if case_count > CONTRACT_SELECTION_MAX_CASE_COUNT:
-        raise ValueError("indexed contract case count exceeds 11 bits")
-    if not 0 <= selection_ordinal < CONTRACT_SELECTION_MAX_ROW_COUNT:
-        raise ValueError("contract selection ordinal exceeds 5 bits")
-    return (
-        case_start | _SELECTION_INDEXED_BIT,
-        case_count | (selection_ordinal << CONTRACT_SELECTION_CASE_COUNT_BITS),
-    )
