@@ -116,6 +116,18 @@ no runtime ELF parser or descriptor patching.
 
 ### Private memory, geometry and transfers
 
+[device_sdma.loom](device_sdma.loom) generates SDMA COPY/FENCE packets from one
+running workitem. Source page, destination slot and length depend on the
+previous copied payload. The [caller](../recipes/device_sdma_test.cc) supplies
+queue addresses, family-selected packet fields and queried cache requirements;
+the shader owns command generation, ring-padding NOPs, publication, copy
+completion and subsequent payload consumption. Its 72-word rows preserve the
+selection state, command frontier and all 64 destination words, including the
+untouched tail of shorter copies. The [typed ABI](device_sdma.h) separates
+opaque buffer bindings from numeric addresses encoded into packets. This
+program uses the complete physical kernel target matrix and no private or
+workgroup storage.
+
 [private_roundtrip.loom](private_roundtrip.loom) initializes nine volatile private
 words per workitem, then reads them in a runtime-selected permutation into
 global output. The [fixed-scratch case](../aql/private_test.cc) uses its

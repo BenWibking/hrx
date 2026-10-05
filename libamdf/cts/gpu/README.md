@@ -169,6 +169,20 @@ without inventing native work for unused preparation. Full backing, guard and
 control checks include inactive slots and unaccepted result sentinels. Every
 stream retires all three native frontiers before its backing is reset.
 
+The [device-generated SDMA case](recipes/device_sdma_test.cc) requests the
+queue's device-producer capability at creation and borrows its exact owning
+GPU's ring, indices and notification addresses. One Loom workitem computes
+each source page, destination slot and transfer length from the preceding
+copied result, emits COPY/FENCE packets with queried cache transitions, and
+publishes through system-release WPTR and doorbell stores. The host initializes
+resources and joins the final AQL completion; no host publication or completion
+wait separates the 257 transfers. The shader acquires the SDMA completion and
+records all destination payload words after every copy. An independent CPU
+simulation checks that transcript, unchanged inputs, complete destination
+backing and guards before command retirement. This serial dependent chain
+exercises command-ring wrap and destination reuse; full-ring backpressure and
+multiple concurrent publishers require separate cases.
+
 The lifecycle cases exercise the same resource helper as the `DISABLED_`
 peer-device recreation scenarios, without creating extra devices. Recreation requires
 `--gtest_also_run_disabled_tests` and is a separate qualification. The manual

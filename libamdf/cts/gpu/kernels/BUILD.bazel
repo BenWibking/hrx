@@ -24,6 +24,7 @@ exports_files([
     "byte_copy_unaligned.loom",
     "completed_tick.cxx",
     "completed_tick.loom",
+    "device_sdma.loom",
     "file_demand.cxx",
     "file_demand.loom",
     "file_exchange.cxx",
@@ -127,6 +128,20 @@ amdf_cc_library(
     name = "transform",
     testonly = True,
     hdrs = ["transform.h"],
+)
+
+amdf_cc_library(
+    name = "device_sdma",
+    testonly = True,
+    hdrs = ["device_sdma.h"],
+)
+
+amdf_cts_gpu_kernel_set(
+    name = "device_sdma_kernels",
+    srcs = ["device_sdma.loom"],
+    entry_point = "device_sdma",
+    namespace = "kernels::device_sdma",
+    targets = _KERNEL_TARGETS,
 )
 
 amdf_cc_library(
@@ -343,6 +358,8 @@ amdf_cc_test(
     deps = [
         ":byte_copy_unaligned",
         ":byte_copy_unaligned_kernels",
+        ":device_sdma",
+        ":device_sdma_kernels",
         ":geometry_ids",
         ":geometry_ids_kernels",
         ":kernel",
