@@ -27,10 +27,11 @@ typedef struct loom_pipeline_resource_pool_t {
   loom_value_fact_memory_space_t memory_space;
   // Available extent relative to this backing store's origin.
   uint64_t byte_capacity;
-  // Fixed ranges contributed by the transport or resource owner before packing.
-  const loom_source_storage_packing_range_t* reserved_ranges;
-  // Number of entries in reserved_ranges.
-  iree_host_size_t reserved_range_count;
+  // Borrowed canonical packing owned by the admitting plan. Every construction
+  // using this backing appends to the same packing, including child
+  // invocations. Fixed transport ranges precede source construction; generated
+  // services and compiled workers join before final capacity admission.
+  loom_source_storage_packing_t* packing;
 } loom_pipeline_resource_pool_t;
 
 // One selectable memory in this invocation's worker domain. Several selections
@@ -92,11 +93,7 @@ typedef struct loom_pipeline_resource_strand_t {
 typedef struct loom_pipeline_resources_t {
   // Borrowed canonical backing rows; the admitting plan outlives this result.
   const loom_pipeline_resource_pool_t* pools;
-  // Arena-owned packings indexed by canonical backing row. Generated service
-  // and compiled worker requirements reserve storage here before final capacity
-  // admission. Earlier source offsets remain stable when requirements append.
-  loom_source_storage_packing_t** packings;
-  // Number of pools and packings.
+  // Number of canonical backing rows.
   iree_host_size_t pool_count;
   // Incoming and selected pool identities, sorted by source value for lookup.
   const loom_pipeline_resource_pool_binding_t* pool_bindings;
@@ -137,8 +134,11 @@ typedef struct loom_pipeline_resources_t {
 // admitted resources. This result describes this construction's resources,
 // not the transitive resources of its children. Every allocation stays live
 // throughout the invocation.
-// Strand-local storage remains with worker compilation and joins the same
-// packings using source_storage_packing_reserve before capacity admission.
+// Repeated construction from the same source gets fresh allocation ranges in
+// the selected pool's packing. Source IDs identify allocations only within
+// this occurrence; they never identify ranges across occurrences. Strand-local
+// storage remains with worker compilation and joins the same packings using
+// source_storage_packing_reserve before capacity admission.
 //
 // Allocation construction must be straight-line with finite specialized sizes
 // and capacities. Strand bodies must have been outlined into ordinary calls;
@@ -150,6 +150,8 @@ typedef struct loom_pipeline_resources_t {
 // No IR mutation occurs. Source mutation invalidates this result; a consuming
 // rewrite must retain or translate its source correspondence before erasure.
 // The fact table and its extension storage outlive this result.
+// A rejected construction ends admission of the enclosing plan; its pool
+// packings may already include allocations from the rejected construction.
 iree_status_t loom_pipeline_resources_build(
     loom_module_t* module, loom_func_like_t pipeline,
     const loom_value_fact_table_t* facts,

@@ -92,9 +92,10 @@ iree_status_t loom_source_storage_packing_append(
 
 // Places one additional lifetime-long reservation at the lowest aligned free
 // offset. The range cannot overlap a source allocation, a fixed range, or any
-// earlier reservation. Compiled worker storage and generated service state use
-// this when their requirements have no source allocation root. Previously
-// published offsets remain unchanged; no IR identity is synthesized.
+// earlier reservation. Invocation-long allocations, compiled worker storage,
+// and generated service state use this when no function-local interference
+// relation applies. Source correspondence stays with the owning construction;
+// no IR identity is synthesized. Previously published offsets remain unchanged.
 iree_status_t loom_source_storage_packing_reserve(
     loom_source_storage_packing_t* packing, uint64_t byte_length,
     uint64_t byte_alignment, uint64_t* out_byte_offset);

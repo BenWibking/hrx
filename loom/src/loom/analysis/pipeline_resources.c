@@ -130,16 +130,6 @@ iree_status_t loom_pipeline_resources_build(
       .pools = pools,
       .pool_count = pool_count,
   };
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, pool_count,
-                                                 sizeof(*resources.packings),
-                                                 (void**)&resources.packings));
-  for (iree_host_size_t i = 0; i < pool_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_source_storage_packing_create(
-        (loom_source_storage_packing_interference_callback_t){0},
-        pools[i].reserved_ranges, pools[i].reserved_range_count, arena,
-        &resources.packings[i]));
-  }
-
   loom_pipeline_resource_allocation_t* allocations = NULL;
   iree_host_size_t allocation_capacity = 0;
   loom_pipeline_resource_channel_t* channels = NULL;
@@ -309,8 +299,8 @@ iree_status_t loom_pipeline_resources_build(
         .byte_length = (uint64_t)byte_length,
         .byte_alignment = reference.minimum_alignment,
     };
-    IREE_RETURN_IF_ERROR(loom_source_storage_packing_append(
-        resources.packings[pool_index], root_value_id, allocation.byte_length,
+    IREE_RETURN_IF_ERROR(loom_source_storage_packing_reserve(
+        pools[pool_index].packing, allocation.byte_length,
         allocation.byte_alignment, &allocation.byte_offset));
     allocations[resources.allocation_count++] = allocation;
   }
@@ -404,7 +394,7 @@ iree_status_t loom_pipeline_resources_check_capacity(
   *out_valid = true;
   for (iree_host_size_t i = 0; i < resources->pool_count; ++i) {
     const uint64_t required =
-        loom_source_storage_packing_requirement(resources->packings[i])
+        loom_source_storage_packing_requirement(resources->pools[i].packing)
             .byte_length;
     if (required <= resources->pools[i].byte_capacity) {
       continue;
