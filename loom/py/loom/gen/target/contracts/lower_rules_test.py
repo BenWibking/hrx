@@ -513,26 +513,33 @@ def test_validate_c_table_shape_rejects_source_memory_diagnostic_indices_oob() -
         )
 
 
-def test_validate_c_table_shape_rejects_oversized_emit_count_field() -> None:
-    attr_copy = LowerAttrCopy(
-        kind=LowerAttrCopyKind.I64_LITERAL,
-        target_name="value",
-    )
-    table = _compiled_lower_rule_set(
-        attr_copies=(attr_copy,) * 256,
-        emits=(
-            LowerEmit(
-                kind=LowerEmitKind.DESCRIPTOR_CONST,
-                descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
-                attr_copy_count=256,
+def test_validate_c_table_shape_rejects_oversized_emit_count_fields() -> None:
+    for field_name, subject, bit_count in (
+        ("operand_ref_count", "operand-ref count", 3),
+        ("result_ref_count", "result-ref count", 2),
+        ("attr_copy_count", "attr-copy count", 5),
+        ("tied_result_count", "tied-result count", 1),
+        ("accumulator_operand_index", "accumulator operand index", 2),
+    ):
+        field_value = 1 << bit_count
+        table = _compiled_lower_rule_set(
+            emits=(
+                LowerEmit(
+                    kind=LowerEmitKind.DESCRIPTOR_CONST,
+                    descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+                    **{field_name: field_value},
+                ),
             ),
-        ),
-    )
+        )
 
-    _expect_value_error(
-        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' emit 0 attr-copy count exceeds uint8_t",
-    )
+        _expect_value_error(
+            lambda table=table: _validate_c_table_shape(
+                table,
+                _c_shape_contract(),
+                (),
+            ),
+            f"lower-rule set 'test.low.generated_c_shape' emit 0 {subject} exceeds {bit_count}-bit unsigned storage: {field_value}",
+        )
 
 
 def test_validate_c_table_shape_rejects_structural_descriptor_payload() -> None:

@@ -946,21 +946,23 @@ typedef struct loom_low_lower_emit_t {
     } structural;
   } payload;
   // Number of low operands to copy from value-ref rows.
-  uint8_t operand_ref_count;
+  uint16_t operand_ref_count : 3;
+  // Number of low results to map and bind.
+  uint16_t result_ref_count : 2;
+  // Number of attributes copied onto the low packet.
+  uint16_t attr_copy_count : 5;
+  // Number of tied-result rows forwarded to the low packet builder.
+  uint16_t tied_result_count : 1;
   // Operand ordinal that carries the threaded scalar accumulator for
   // DESCRIPTOR_OP_ACCUMULATE_LANES.
-  uint8_t accumulator_operand_index;
-  // Number of low results to map and bind.
-  uint8_t result_ref_count;
-  // Number of attributes copied onto the low packet.
-  uint8_t attr_copy_count;
-  // Number of tied-result rows forwarded to the low packet builder.
-  uint8_t tied_result_count;
+  uint16_t accumulator_operand_index : 2;
   // Operand-group materialization applied before descriptor emission.
-  loom_low_lower_operand_materialization_t operand_materialization;
+  uint16_t operand_materialization : 1;
+  // Reserved storage available to future emit parameters.
+  uint16_t reserved_count_bits : 2;
 } loom_low_lower_emit_t;
-static_assert(sizeof(loom_low_lower_emit_t) == 24,
-              "loom_low_lower_emit_t must be 24 bytes");
+static_assert(sizeof(loom_low_lower_emit_t) == 20,
+              "loom_low_lower_emit_t must be 20 bytes");
 
 // Ordinal into a rule set's interned emit table.
 typedef uint16_t loom_low_lower_emit_ref_t;

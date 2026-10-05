@@ -1025,7 +1025,11 @@ def _validate_c_table_shape(
         if is_structural_emit and row.operand_materialization is not DescriptorOperandMaterialization.DIRECT:
             raise ValueError(f"{row_subject} structural emit cannot materialize descriptor operands")
         _require_u16(row.operand_ref_start, f"{row_subject} operand-ref start")
-        _require_u8(row.operand_ref_count, f"{row_subject} operand-ref count")
+        _require_unsigned_bits(
+            row.operand_ref_count,
+            3,
+            f"{row_subject} operand-ref count",
+        )
         _require_table_range(
             row.operand_ref_start,
             row.operand_ref_count,
@@ -1038,8 +1042,9 @@ def _validate_c_table_shape(
             allowed_operand_mask = (1 << row.operand_ref_count) - 1
             if row.copy_operand_mask & ~allowed_operand_mask:
                 raise ValueError(f"{row_subject} copy operand mask references an operand outside operand-ref range: {row.copy_operand_mask}")
-        _require_u8(
+        _require_unsigned_bits(
             row.accumulator_operand_index,
+            2,
             f"{row_subject} accumulator operand index",
         )
         if row.kind == LowerEmitKind.DESCRIPTOR_OP_ACCUMULATE_LANES and row.accumulator_operand_index >= row.operand_ref_count:
@@ -1049,7 +1054,11 @@ def _validate_c_table_shape(
             row.result_type_pattern_start,
             f"{row_subject} result type-pattern start",
         )
-        _require_u8(row.result_ref_count, f"{row_subject} result-ref count")
+        _require_unsigned_bits(
+            row.result_ref_count,
+            2,
+            f"{row_subject} result-ref count",
+        )
         if row.flags & LOWER_EMIT_FLAG_RESULT_TYPE_PATTERN and row.flags & LOWER_EMIT_FLAG_RESULT_DESCRIPTOR_TYPE:
             raise ValueError(f"{row_subject} cannot use both result type-pattern and descriptor result-type flags")
         if row.flags & LOWER_EMIT_FLAG_RESULT_TYPE_PATTERN and row.result_ref_count != 0 and not row.flags & LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS:
@@ -1083,7 +1092,11 @@ def _validate_c_table_shape(
                 "value-ref",
             )
         _require_u16(row.attr_copy_start, f"{row_subject} attr-copy start")
-        _require_u8(row.attr_copy_count, f"{row_subject} attr-copy count")
+        _require_unsigned_bits(
+            row.attr_copy_count,
+            5,
+            f"{row_subject} attr-copy count",
+        )
         _require_table_range(
             row.attr_copy_start,
             row.attr_copy_count,
@@ -1092,7 +1105,11 @@ def _validate_c_table_shape(
             "attr-copy",
         )
         _require_u16(row.tied_result_start, f"{row_subject} tied-result start")
-        _require_u8(row.tied_result_count, f"{row_subject} tied-result count")
+        _require_unsigned_bits(
+            row.tied_result_count,
+            1,
+            f"{row_subject} tied-result count",
+        )
         _require_table_range(
             row.tied_result_start,
             row.tied_result_count,
@@ -1294,6 +1311,11 @@ def _validate_type_pattern_c_shape(subject: str, type_pattern: TypePattern) -> N
 def _require_u8(value: int, subject: str) -> None:
     if not 0 <= value <= _U8_MAX:
         raise ValueError(f"{subject} exceeds uint8_t: {value}")
+
+
+def _require_unsigned_bits(value: int, bit_count: int, subject: str) -> None:
+    if not 0 <= value < 1 << bit_count:
+        raise ValueError(f"{subject} exceeds {bit_count}-bit unsigned storage: {value}")
 
 
 def _require_u8_not_reserved_any(value: int, subject: str) -> None:
