@@ -30,6 +30,15 @@ typedef struct loom_channel_materialization_callback_t {
                       const loom_channel_plan_action_t* action,
                       loom_value_id_t* state, iree_host_size_t state_count,
                       loom_value_id_t* results);
+  // Optional execution-exit mechanics emitted before an original func.return,
+  // after all actions in its block. Receives the path's final protocol state.
+  // The realization owner selects this for an execution boundary that owns
+  // outstanding transfers; an ordinary helper return does not imply a drain.
+  // Leaves the return and CFG intact. NULL emits no completion operation.
+  iree_status_t (*exit)(void* user_data, loom_rewriter_t* rewriter,
+                        const loom_op_t* terminator,
+                        const loom_value_id_t* state,
+                        iree_host_size_t state_count);
   // Borrowed selected bindings, helper symbols and target emission context.
   void* user_data;
 } loom_channel_materialization_callback_t;
@@ -60,7 +69,8 @@ typedef struct loom_channel_materialization_options_t {
 // operations can still refer to carriers whose types have already changed.
 // Canonical CFG branches carry updated state through loops and reconvergence.
 // Conditional edges receive ordinary forwarding blocks, subsequently removable
-// by shared CFG simplification. No synchronization or global drain is inserted.
+// by shared CFG simplification. Exit mechanics see the same path-specific
+// state. The common owner imposes no synchronization or global drain.
 //
 // Source ownership and realization legality have already been established.
 // The caller owns callable signature conversion and dead channel-argument

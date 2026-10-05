@@ -184,6 +184,12 @@ iree_status_t loom_channel_materialize(
       }
       consumed_ops[action_index - 1] = action->op;
     }
+    if (options->emit.exit && loom_func_return_isa(blocks[b].terminator)) {
+      loom_builder_set_before(&rewriter->builder, blocks[b].terminator);
+      IREE_RETURN_IF_ERROR(options->emit.exit(options->emit.user_data, rewriter,
+                                              blocks[b].terminator,
+                                              blocks[b].state, state_count));
+    }
     IREE_RETURN_IF_ERROR(loom_channel_materialization_forward_state(
         rewriter, region, plan, options, &blocks[b], state_count));
   }

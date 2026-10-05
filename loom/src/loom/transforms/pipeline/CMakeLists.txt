@@ -50,4 +50,25 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_test(
+  NAME
+    channel_materialization_test
+  SRCS
+    "channel_materialization_test.cc"
+  DEPS
+    ::channel_materialization
+    iree::base
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::analysis::channel_plan
+    loom::ir
+    loom::ops::cfg
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::type_registry
+    loom::rewrite::rewriter
+    loom::verify
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
