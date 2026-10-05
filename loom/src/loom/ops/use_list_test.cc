@@ -88,9 +88,7 @@ class UseListTest : public ::testing::Test {
     }
   }
 
-  static loom_type_t ResourceType() {
-    return loom_type_pool(loom_dim_pack_static(16));
-  }
+  static loom_type_t ResourceType() { return loom_type_pool(); }
 
   // Module arena backing store retained for the fixture lifetime.
   iree_arena_block_pool_t pool_ = {};

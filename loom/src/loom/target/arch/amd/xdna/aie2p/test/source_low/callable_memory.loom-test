@@ -118,7 +118,7 @@ func.def target(@target) @reject_global_memory() -> (i32) {
   %aligned = buffer.assume.alignment %global {minimum_alignment = 4} : buffer
   %begin = index.constant 0 : offset
   %source = buffer.view %aligned[%begin] : buffer -> view<1xi32>
-  // ERROR@+1: TARGET/008
+  // ERROR@+1: TARGET/003 {constraint_key="source_memory.memory_space"}
   %value = view.load %source[0] : view<1xi32> -> i32
   func.return %value : i32
 }
