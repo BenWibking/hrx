@@ -6,6 +6,7 @@
 
 #include "loom/analysis/movement.h"
 
+#include "loom/analysis/storage_geometry.h"
 #include "loom/ir/facts.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/vector/ops.h"
@@ -110,37 +111,36 @@ static bool loom_movement_vector_footprint_byte_length(
     return false;
   }
 
-  int64_t maximum_element_offset = 0;
-  for (uint8_t view_axis = access->first_vector_axis;
-       view_axis < access->view_rank; ++view_axis) {
-    const uint8_t vector_axis = view_axis - access->first_vector_axis;
-    if (loom_type_dim_is_dynamic_at(access->vector_type, vector_axis)) {
+  loom_storage_geometry_span_t span = {
+      .element_count = 1, .element_span = 1, .dense = true};
+  for (uint8_t axis = access->vector_rank; axis-- > 0;) {
+    if (loom_type_dim_is_dynamic_at(access->vector_type, axis)) {
       return false;
     }
     const int64_t extent =
-        loom_type_dim_static_size_at(access->vector_type, vector_axis);
-    if (extent <= 0) {
+        loom_type_dim_static_size_at(access->vector_type, axis);
+    int64_t stride = 0;
+    if (extent <= 0 || !loom_vector_memory_access_static_axis_stride(
+                           access, access->first_vector_axis + axis, &stride)) {
       return false;
     }
-    int64_t axis_stride = 0;
-    if (!loom_vector_memory_access_static_axis_stride(access, view_axis,
-                                                      &axis_stride)) {
-      return false;
-    }
-    int64_t contribution = 0;
-    if (!iree_checked_mul_i64(extent - 1, axis_stride, &contribution) ||
-        !iree_checked_add_i64(maximum_element_offset, contribution,
-                              &maximum_element_offset)) {
+    const loom_storage_geometry_axis_t storage_axis = {
+        .extent = (uint64_t)extent,
+        .element_stride = (uint64_t)stride,
+    };
+    if (!loom_storage_geometry_span_prepend(storage_axis, &span)) {
       return false;
     }
   }
-
-  int64_t element_span = 0;
-  if (!iree_checked_add_i64(maximum_element_offset, 1, &element_span)) {
+  uint64_t byte_length = 0;
+  if (!iree_checked_mul_u64(span.element_span,
+                            (uint64_t)access->static_element_byte_count,
+                            &byte_length) ||
+      byte_length > INT64_MAX) {
     return false;
   }
-  return iree_checked_mul_i64(element_span, access->static_element_byte_count,
-                              out_byte_length);
+  *out_byte_length = (int64_t)byte_length;
+  return true;
 }
 
 static iree_status_t loom_movement_origin_index_expr(

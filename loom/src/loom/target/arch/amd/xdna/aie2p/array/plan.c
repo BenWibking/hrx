@@ -1802,10 +1802,18 @@ static iree_status_t loom_aie2p_array_admit_binding_transfers(
         .completion_route_index = UINT32_MAX,
     };
     iree_string_view_t reason = iree_string_view_empty();
+    loom_storage_geometry_t geometry;
+    if (!loom_storage_geometry_query(&builder->facts.context, builder->module,
+                                     base_binding_endpoint->message_type,
+                                     &geometry)) {
+      return loom_aie2p_array_diagnose_binding_transfer(
+          builder, channel_index, binding_endpoint, base_binding_endpoint,
+          IREE_SV("the binding source must have exact extents and non-negative "
+                  "dense or strided address geometry"));
+    }
     if (!loom_aie2p_array_resolve_binding_transfer(
-            builder->module, &builder->facts, builder->family,
-            base_binding_endpoint->message_type, binding_endpoint->message_type,
-            binding_endpoint->binding_byte_offset,
+            &geometry, loom_type_rank(binding_endpoint->message_type),
+            builder->family, binding_endpoint->binding_byte_offset,
             binding_endpoint->binding_view_partitioned,
             binding_endpoint->partition_lane, channel->record_byte_length,
             channel->record_count, shim_dma_facts, binding_plan, &reason)) {
@@ -2030,9 +2038,8 @@ static iree_status_t loom_aie2p_array_plan_routed_channel(
   loom_aie2p_array_compute_endpoint_proposal_t receiver_proposal;
   if (!loom_aie2p_array_select_compute_endpoint(
           builder, receiver_worker->coordinate,
-          LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
-          (uint8_t)channel->capacity, channel->record_byte_length,
-          &source_endpoint, &receiver_proposal)) {
+          LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY, (uint8_t)channel->capacity,
+          channel->record_byte_length, &source_endpoint, &receiver_proposal)) {
     return loom_aie2p_array_reject_channel_resources(
         builder, channel_index, receiver_worker->coordinate,
         IREE_SV("no visible compute tile can host the receiving DMA endpoint, "
@@ -2204,27 +2211,23 @@ static iree_status_t loom_aie2p_array_admit_physical_cardinalities(
 
     if (owns_compute_memory_to_stream) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_compute_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM, sender_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+          sender_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_compute_stream_to_memory) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_compute_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY, receiver_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
+          receiver_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_shim_memory_to_stream) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_shim_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM, receiver_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_MEMORY_TO_STREAM,
+          receiver_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_shim_stream_to_memory) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_shim_endpoint_cardinality(
-          builder, channel_index,
-          LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY, sender_coordinate,
-          &demands, out_cardinalities));
+          builder, channel_index, LOOM_XDNA_DMA_DIRECTION_STREAM_TO_MEMORY,
+          sender_coordinate, &demands, out_cardinalities));
     }
     if (builder->valid && owns_neighbor_ring) {
       IREE_RETURN_IF_ERROR(loom_aie2p_array_admit_neighbor_cardinality(

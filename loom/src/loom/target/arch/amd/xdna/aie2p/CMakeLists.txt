@@ -380,6 +380,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::analysis::scc
+    loom::analysis::storage_geometry
     loom::codegen::low::diagnostics
     loom::codegen::low::function_requirements
     loom::codegen::low::packet
@@ -775,6 +776,7 @@ loom_check_test_suite(
     "test/array_plan/route_capacity.loom-test"
     "test/array_plan/schedule_contracts.loom-test"
     "test/array_plan/shim_resource_admission.loom-test"
+    "test/array_plan/strided_records.loom-test"
     "test/array_plan/strided_transfer.loom-test"
     "test/array_plan/temporal_fold.loom-test"
     "test/array_plan/topology_admission.loom-test"

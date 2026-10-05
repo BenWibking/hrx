@@ -113,6 +113,36 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    storage_geometry
+  HDRS
+    "storage_geometry.h"
+  SRCS
+    "storage_geometry.c"
+  DEPS
+    iree::base
+    loom::ir
+    loom::ops::encoding
+    loom::util::fact_table
+  PUBLIC
+)
+
+loom_cc_test(
+  NAME
+    storage_geometry_test
+  SRCS
+    "storage_geometry_test.cc"
+  DEPS
+    ::storage_geometry
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::encoding
+    loom::util::fact_table
+)
+
+loom_cc_library(
+  NAME
     storage_layout
   HDRS
     "storage_layout.h"
@@ -1316,6 +1346,7 @@ loom_cc_library(
   SRCS
     "movement.c"
   DEPS
+    ::storage_geometry
     ::view_regions
     iree::base
     iree::base::internal

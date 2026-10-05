@@ -101,6 +101,32 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "storage_geometry",
+    srcs = ["storage_geometry.c"],
+    hdrs = ["storage_geometry.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/encoding",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "storage_geometry_test",
+    srcs = ["storage_geometry_test.cc"],
+    deps = [
+        ":storage_geometry",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/encoding",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "storage_layout",
     srcs = ["storage_layout.c"],
     hdrs = ["storage_layout.h"],
@@ -1160,6 +1186,7 @@ loom_cc_library(
     srcs = ["movement.c"],
     hdrs = ["movement.h"],
     deps = [
+        ":storage_geometry",
         ":view_regions",
         "//loom/src/loom/ir",
         "//loom/src/loom/ir:facts",
