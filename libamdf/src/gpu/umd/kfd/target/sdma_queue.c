@@ -90,7 +90,8 @@ bool amdf_gpu_kfd_sdma_queue_plan(const amdf_gpu_kfd_topology_t* topology,
               .cache_transition_kinds =
                   user_gcr ? AMDF_CACHE_TRANSITION_KINDS_GLOBAL : 0,
               .user_queue_capabilities =
-                  AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER,
+                  AMDF_USER_QUEUE_CAPABILITY_HOST_PRODUCER |
+                  AMDF_USER_QUEUE_CAPABILITY_DEVICE_PRODUCER,
               .producer_modes = AMDF_QUEUE_PRODUCER_MODE_BIT_SINGLE,
               .priority_capabilities = AMDF_QUEUE_PRIORITY_CAPABILITY_NORMAL,
               .minimum_ring_byte_length = AMDF_GPU_KFD_SDMA_RING_BYTE_LENGTH,

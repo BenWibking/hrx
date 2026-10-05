@@ -140,6 +140,36 @@ amdf_cc_test(
 )
 
 amdf_cc_library(
+    name = "doorbell",
+    srcs = ["doorbell.c"],
+    hdrs = ["doorbell.h"],
+    target_compatible_with = KFD_COMPATIBILITY,
+    deps = [
+        ":buffer",
+        ":device_state",
+        "//libamdf/src:allocator",
+        "//libamdf/src/platform/linux:file",
+        "//third_party:linux_kfd_uapi",
+    ],
+)
+
+amdf_cc_test(
+    name = "doorbell_test",
+    srcs = ["doorbell_test.cc"],
+    linkopts = ["-Wl,--wrap=ioctl"],
+    target_compatible_with = KFD_COMPATIBILITY,
+    deps = [
+        ":buffer",
+        ":device_state",
+        ":doorbell",
+        "//libamdf/src:allocator",
+        "//third_party:google_test",
+        "//third_party:google_test_main",
+        "//third_party:linux_kfd_uapi",
+    ],
+)
+
+amdf_cc_library(
     name = "user_queue_native",
     srcs = ["user_queue_native.c"],
     hdrs = ["user_queue_native.h"],
@@ -147,6 +177,7 @@ amdf_cc_library(
     deps = [
         ":buffer",
         ":device_state",
+        ":doorbell",
         "//libamdf/src/platform/linux:file",
         "//third_party:linux_amdgpu_uapi",
         "//third_party:linux_kfd_uapi",
