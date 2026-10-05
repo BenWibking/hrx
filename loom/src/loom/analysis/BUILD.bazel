@@ -797,7 +797,9 @@ loom_cc_test(
     srcs = ["pipeline_resources_test.cc"],
     deps = [
         ":pipeline_resources",
+        ":pipeline_workers",
         ":source_storage_packing",
+        "//loom/src/loom/error:diagnostic",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:type_registry",
@@ -807,9 +809,30 @@ loom_cc_test(
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/pipeline",
         "//loom/src/loom/util:fact_table",
+        "//loom/src/loom/verify",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "pipeline_workers",
+    srcs = ["pipeline_workers.c"],
+    hdrs = ["pipeline_workers.h"],
+    deps = [
+        ":channel_plan",
+        ":pipeline_resources",
+        "//loom/src/loom/error:emitter",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:type_registry",
+        "//loom/src/loom/ops/func",
+        "//loom/src/loom/ops/pipeline",
+        "//loom/src/loom/util:cfg_graph",
+        "//loom/src/loom/util:fact_table",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
     ],
 )
 

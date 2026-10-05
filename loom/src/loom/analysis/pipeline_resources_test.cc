@@ -8,6 +8,8 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/analysis/pipeline_workers.h"
+#include "loom/error/diagnostic.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
@@ -17,6 +19,8 @@
 #include "loom/ops/index/ops.h"
 #include "loom/ops/pipeline/ops.h"
 #include "loom/ops/type_registry.h"
+#include "loom/util/fact_extensions.h"
+#include "loom/verify/verify.h"
 
 namespace loom {
 namespace {
@@ -175,6 +179,24 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
       loom_named_attr_slice_empty(), worker_symbol, arguments, 2, nullptr, 0,
       nullptr, 0, nullptr, 0, LOOM_LOCATION_UNKNOWN, &worker));
   loom_builder_enter_region(&builder_, worker, loom_func_def_body(worker));
+  const auto* captured_channels =
+      loom_region_entry_block(loom_func_def_body(worker))->arg_ids;
+  loom_type_t read_type, write_type;
+  IREE_ASSERT_OK(loom_read_type_make(module_, 0, payload,
+                                     (loom_read_type_mode_t)0, &read_type));
+  IREE_ASSERT_OK(loom_write_type_make(module_, payload, &write_type));
+  const auto record_type = loom_type_shaped_1d(
+      LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32, loom_dim_pack_static(4), 0);
+  loom_op_t *accept, *reserve, *copy;
+  IREE_ASSERT_OK(loom_channel_accept_build(&builder_, 0, 0,
+                                           captured_channels[0], read_type,
+                                           LOOM_LOCATION_UNKNOWN, &accept));
+  IREE_ASSERT_OK(loom_channel_reserve_build(&builder_, captured_channels[1],
+                                            write_type, record_type,
+                                            LOOM_LOCATION_UNKNOWN, &reserve));
+  IREE_ASSERT_OK(loom_channel_copy_build(
+      &builder_, loom_channel_accept_read(accept),
+      loom_channel_reserve_write(reserve), LOOM_LOCATION_UNKNOWN, &copy));
   loom_op_t* terminator;
   IREE_ASSERT_OK(loom_func_return_build(&builder_, nullptr, 0,
                                         LOOM_LOCATION_UNKNOWN, &terminator));
@@ -189,9 +211,27 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
   loom_op_t* child;
   IREE_ASSERT_OK(loom_pipeline_def_build(
       &builder_, LOOM_PIPELINE_DEF_BUILD_FLAG_HAS_SCOPE,
-      LOOM_PIPELINE_DEF_SCOPE_KERNEL, 0, 1, loom_symbol_ref_null(),
-      child_symbol, child_arguments, 3, nullptr, 0, nullptr, 0,
+      LOOM_PIPELINE_DEF_SCOPE_KERNEL, 0, 0, loom_symbol_ref_null(),
+      child_symbol, child_arguments, 1, child_arguments + 1, 2, nullptr, 0,
       LOOM_LOCATION_UNKNOWN, &child));
+  loom_builder_enter_region(&builder_, child, loom_pipeline_def_body(child));
+  const auto* child_arguments_ids =
+      loom_region_entry_block(loom_pipeline_def_body(child))->arg_ids;
+  const int64_t dynamic_origin = INT64_MIN;
+  const int64_t worker_extent = 1;
+  loom_op_t* child_strand;
+  IREE_ASSERT_OK(loom_pipeline_strand_build(
+      &builder_, 0, loom_symbol_ref_null(), child_arguments_ids, 1,
+      &dynamic_origin, 1, nullptr, 0, &worker_extent, 1, nullptr, 0,
+      &worker_extent, 1, LOOM_LOCATION_UNKNOWN, &child_strand));
+  loom_builder_enter_region(&builder_, child_strand,
+                            loom_pipeline_strand_body(child_strand));
+  loom_op_t* child_call;
+  IREE_ASSERT_OK(loom_func_call_build(
+      &builder_, 0, 0, 0, 0, worker_symbol, child_arguments_ids + 1, 2, nullptr,
+      0, nullptr, 0, LOOM_LOCATION_UNKNOWN, &child_call));
+  IREE_ASSERT_OK(
+      loom_pipeline_end_build(&builder_, LOOM_LOCATION_UNKNOWN, &terminator));
   loom_builder_enter_region(&builder_, child, loom_pipeline_def_body(child));
   IREE_ASSERT_OK(loom_pipeline_finish_build(&builder_, LOOM_LOCATION_UNKNOWN,
                                             &terminator));
@@ -260,6 +300,12 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
   }
   IREE_ASSERT_OK(loom_pipeline_finish_build(&builder_, LOOM_LOCATION_UNKNOWN,
                                             &terminator));
+
+  loom_verify_options_t verify_options = {};
+  verify_options.sink = {loom_diagnostic_stderr_sink, nullptr};
+  loom_verify_result_t verification = {};
+  IREE_ASSERT_OK(loom_verify_module(module_, &verify_options, &verification));
+  ASSERT_EQ(verification.error_count, 0u);
 
   loom_value_fact_table_t facts = {};
   IREE_ASSERT_OK(
@@ -335,6 +381,101 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
     const auto* next = &repeated.channels[i].identity;
     EXPECT_EQ(original->value_id, next->value_id);
     EXPECT_NE(original, next);
+  }
+  // Calls share a definition but have occurrence-specific argument bindings.
+  // Selecting every worker before rewriting any of them retains those facts
+  // without tying channel identity to the shared SSA argument or storage root.
+  loom_pipeline_worker_t* workers[2] = {};
+  const loom_pipeline_resources_t* occurrences[] = {&resources, &repeated};
+  for (size_t occurrence = 0; occurrence < 2; ++occurrence) {
+    IREE_ASSERT_OK(loom_pipeline_workers_build(
+        module_, occurrences[occurrence], &facts, nullptr, 0, nullptr, {},
+        &arena_, &workers[occurrence], &valid));
+    ASSERT_TRUE(valid);
+  }
+  const auto* worker_arguments =
+      loom_region_entry_block(loom_func_def_body(worker))->arg_ids;
+  for (size_t occurrence : {1u, 0u, 1u}) {
+    for (size_t i : {1u, 0u}) {
+      auto& selected = workers[occurrence][i];
+      EXPECT_EQ(selected.function.op, worker);
+      ASSERT_EQ(selected.rank, 1u);
+      EXPECT_EQ(selected.axes[0].origin, i);
+      EXPECT_EQ(selected.axes[0].count, 1u);
+      EXPECT_EQ(selected.axes[0].stride, 1u);
+      ASSERT_EQ(selected.binding_count, 2u);
+      ASSERT_EQ(selected.channels.action_count, 3u);
+      ASSERT_NE(selected.graph, nullptr);
+      EXPECT_FALSE(loom_local_value_domain_is_acquired(&selected.value_domain));
+      loom_local_value_domain_restore(&selected.value_domain);
+      for (size_t argument = 0; argument < 2; ++argument) {
+        const auto* channel = loom_pipeline_resources_lookup_channel(
+            occurrences[occurrence], channels[argument ? 1 - i : i]);
+        EXPECT_EQ(selected.bindings[argument].resources,
+                  occurrences[occurrence]);
+        EXPECT_EQ(selected.bindings[argument].channel, channel);
+        EXPECT_EQ(loom_channel_plan_channel(&selected.channels,
+                                            worker_arguments[argument]),
+                  &channel->identity);
+        loom_value_fact_view_reference_t record;
+        ASSERT_TRUE(loom_value_facts_query_view_reference(
+            &selected.facts.context,
+            loom_value_fact_table_lookup(&selected.facts,
+                                         worker_arguments[argument]),
+            &record));
+        EXPECT_EQ(record.root_value_id, root);
+        EXPECT_EQ(record.footprint_byte_length.range_hi, 16);
+        EXPECT_EQ(record.base_byte_offset.range_lo, 64);
+        EXPECT_EQ(record.base_byte_offset.range_hi, 80);
+      }
+      EXPECT_EQ(selected.channels.actions[2].channel,
+                &selected.bindings[0].channel->identity);
+      EXPECT_EQ(selected.channels.actions[2].destination_channel,
+                &selected.bindings[1].channel->identity);
+      loom_local_value_domain_release(&selected.value_domain);
+    }
+  }
+
+  // The nested kernel receives the parent's channels without reconstructing
+  // their protocol identities or placements from the child's formal values.
+  loom_value_fact_table_t child_facts = {};
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(&child_facts, &arena_, 0));
+  loom_type_registry_configure_fact_context(&child_facts.context);
+  const auto child_actuals =
+      loom_call_like_operands(loom_call_like_cast(module_, compositions[0]));
+  for (size_t i = 0; i < child_actuals.count; ++i) {
+    loom_value_facts_t incoming_fact;
+    IREE_ASSERT_OK(loom_value_fact_table_clone_fact_for_type(
+        &child_facts, &facts, module_,
+        loom_module_value_type(module_, child_arguments_ids[i]),
+        loom_value_fact_table_lookup(&facts, child_actuals.values[i]),
+        &incoming_fact));
+    IREE_ASSERT_OK(loom_value_fact_table_define(
+        &child_facts, child_arguments_ids[i], incoming_fact));
+  }
+  IREE_ASSERT_OK(loom_value_fact_table_compute(
+      &child_facts, module_, loom_func_like_cast(module_, child)));
+  loom_pipeline_resources_t child_resources;
+  IREE_ASSERT_OK(loom_pipeline_resources_build(
+      module_, loom_func_like_cast(module_, child), &child_facts, nullptr, 0,
+      nullptr, 0, nullptr, 0, {}, &arena_, &child_resources, &valid));
+  ASSERT_TRUE(valid);
+  ASSERT_EQ(child_resources.strand_count, 1u);
+  const loom_pipeline_channel_binding_t incoming[] = {
+      {child_arguments_ids[1], &resources,
+       loom_pipeline_resources_lookup_channel(&resources, channels[0])},
+      {child_arguments_ids[2], &resources,
+       loom_pipeline_resources_lookup_channel(&resources, channels[1])},
+  };
+  loom_pipeline_worker_t* child_workers;
+  IREE_ASSERT_OK(loom_pipeline_workers_build(
+      module_, &child_resources, &child_facts, incoming,
+      IREE_ARRAYSIZE(incoming), nullptr, {}, &arena_, &child_workers, &valid));
+  ASSERT_TRUE(valid);
+  EXPECT_EQ(child_workers[0].axes[0].origin, 7u);
+  for (size_t i = 0; i < 2; ++i) {
+    EXPECT_EQ(child_workers[0].bindings[i].resources, &resources);
+    EXPECT_EQ(child_workers[0].bindings[i].channel, incoming[i].channel);
   }
   const auto* first_allocation =
       loom_pipeline_resources_lookup_allocation(&resources, root);

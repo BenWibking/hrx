@@ -370,5 +370,14 @@ void loom_local_value_domain_release(loom_local_value_domain_t* domain) {
                                             domain->value_ids[i]);
   }
   loom_module_value_ordinal_scratch_release(domain->module);
-  domain->flags = 0;
+  domain->flags &= ~LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
+}
+
+void loom_local_value_domain_restore(loom_local_value_domain_t* domain) {
+  loom_module_value_ordinal_scratch_acquire(domain->module);
+  for (loom_value_ordinal_t i = 0; i < domain->value_count; ++i) {
+    loom_module_value_ordinal_scratch_set(domain->module, domain->value_ids[i],
+                                          i);
+  }
+  domain->flags |= LOOM_LOCAL_VALUE_DOMAIN_FLAG_ACQUIRED;
 }

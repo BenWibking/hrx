@@ -898,10 +898,12 @@ loom_cc_test(
     "pipeline_resources_test.cc"
   DEPS
     ::pipeline_resources
+    ::pipeline_workers
     ::source_storage_packing
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::error::diagnostic
     loom::error::error_defs
     loom::ir
     loom::ops::buffer
@@ -911,6 +913,30 @@ loom_cc_test(
     loom::ops::pipeline
     loom::ops::type_registry
     loom::util::fact_table
+    loom::verify
+)
+
+loom_cc_library(
+  NAME
+    pipeline_workers
+  HDRS
+    "pipeline_workers.h"
+  SRCS
+    "pipeline_workers.c"
+  DEPS
+    ::channel_plan
+    ::pipeline_resources
+    iree::base
+    iree::base::internal::arena
+    loom::error::emitter
+    loom::error::error_defs
+    loom::ir
+    loom::ops::func
+    loom::ops::pipeline
+    loom::ops::type_registry
+    loom::util::cfg_graph
+    loom::util::fact_table
+  PUBLIC
 )
 
 loom_cc_library(

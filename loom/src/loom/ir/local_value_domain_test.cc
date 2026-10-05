@@ -236,5 +236,42 @@ TEST_F(LocalValueDomainTest,
   EXPECT_EQ(domain_.value_count, ids.size() + 1);
 }
 
+TEST_F(LocalValueDomainTest, RestoresOrdinalsAcrossOtherFramesAndModuleGrowth) {
+  const auto condition = Constant(1, LOOM_SCALAR_TYPE_I1);
+  auto* first = Region(condition);
+  auto* first_body = loom_test_optional_region_body(first);
+  loom_builder_enter_region(&builder_, first, first_body);
+  const auto value = Constant(17, LOOM_SCALAR_TYPE_I32);
+  Yield(condition);
+  IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region_tree(
+      module_, first_body, &arena_, &domain_));
+  const auto original = loom_local_value_domain_ordinal(&domain_, value);
+  const auto captured = loom_local_value_domain_ordinal(&domain_, condition);
+  loom_local_value_domain_release(&domain_);
+
+  loom_builder_set_block(&builder_, loom_module_block(module_));
+  builder_.ip.parent_op = nullptr;
+  auto* second = Region(condition);
+  auto* second_body = loom_test_optional_region_body(second);
+  loom_builder_enter_region(&builder_, second, second_body);
+  const auto other = Constant(29, LOOM_SCALAR_TYPE_I32);
+  Constant(31, LOOM_SCALAR_TYPE_I32);
+  Yield(condition);
+  loom_local_value_domain_t other_domain;
+  IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(
+      module_, second_body, &arena_, &other_domain));
+  EXPECT_EQ(loom_local_value_domain_try_ordinal(&other_domain, value),
+            LOOM_VALUE_ORDINAL_INVALID);
+  loom_local_value_domain_release(&other_domain);
+
+  loom_local_value_domain_restore(&domain_);
+  EXPECT_EQ(loom_local_value_domain_ordinal(&domain_, value), original);
+  EXPECT_EQ(loom_local_value_domain_ordinal(&domain_, condition), captured);
+  EXPECT_EQ(loom_local_value_domain_try_ordinal(&domain_, other),
+            LOOM_VALUE_ORDINAL_INVALID);
+  EXPECT_TRUE(iree_any_bit_set(domain_.flags,
+                               LOOM_LOCAL_VALUE_DOMAIN_FLAG_REGION_TREE));
+}
+
 }  // namespace
 }  // namespace loom
