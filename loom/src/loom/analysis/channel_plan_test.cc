@@ -145,10 +145,20 @@ TEST_F(ChannelPlanTest, SharedStorageDoesNotMergeChannelBindings) {
   IREE_ASSERT_OK(loom_func_return_build(&builder_, nullptr, 0,
                                         LOOM_LOCATION_UNKNOWN, &exit));
   const auto plan = Analyze(function, {});
-  EXPECT_EQ(loom_channel_plan_channel(&plan, loom_channel_bind_result(first)),
-            loom_channel_bind_result(first));
-  EXPECT_EQ(loom_channel_plan_channel(&plan, loom_channel_bind_result(second)),
-            loom_channel_bind_result(second));
+  const auto* first_identity =
+      loom_channel_plan_channel(&plan, loom_channel_bind_result(first));
+  const auto* second_identity =
+      loom_channel_plan_channel(&plan, loom_channel_bind_result(second));
+  EXPECT_EQ(first_identity->value_id, loom_channel_bind_result(first));
+  EXPECT_EQ(second_identity->value_id, loom_channel_bind_result(second));
+  EXPECT_NE(first_identity, second_identity);
+
+  loom_local_value_domain_release(&domain_);
+  const auto repeated = Analyze(function, {});
+  const auto* repeated_identity =
+      loom_channel_plan_channel(&repeated, loom_channel_bind_result(first));
+  EXPECT_EQ(repeated_identity->value_id, first_identity->value_id);
+  EXPECT_NE(repeated_identity, first_identity);
 }
 
 TEST_F(ChannelPlanTest, CallableSummaryTracksNewReadsFromFormalChannels) {
@@ -162,7 +172,8 @@ TEST_F(ChannelPlanTest, CallableSummaryTracksNewReadsFromFormalChannels) {
   loom_op_t* exit;
   IREE_ASSERT_OK(loom_func_return_build(&builder_, &read, 1,
                                         LOOM_LOCATION_UNKNOWN, &exit));
-  const auto formal_plan = Analyze(callee, {{formal, formal}});
+  const loom_channel_identity_t formal_identity = {formal};
+  const auto formal_plan = Analyze(callee, {{formal, &formal_identity}});
   loom_channel_plan_callable_t summary;
   loom_channel_plan_rejection_t rejection;
   IREE_ASSERT_OK(loom_channel_plan_summarize(&formal_plan, callee, &arena_,
@@ -171,27 +182,41 @@ TEST_F(ChannelPlanTest, CallableSummaryTracksNewReadsFromFormalChannels) {
   EXPECT_EQ(summary.result_arguments[0], 0);
   loom_local_value_domain_release(&domain_);
 
-  loom_op_t* caller = Function("consume_record", {channel_type_});
-  const loom_value_id_t actual =
-      loom_region_entry_block(loom_func_def_body(caller))->arg_ids[0];
-  loom_op_t* call;
-  IREE_ASSERT_OK(loom_func_call_build(
-      &builder_, 0, 0, 0, 0, loom_func_def_callee(callee), &actual, 1,
-      &read_type_, 1, nullptr, 0, LOOM_LOCATION_UNKNOWN, &call));
-  loom_op_t* release;
-  IREE_ASSERT_OK(loom_channel_release_build(&builder_, loom_op_results(call)[0],
-                                            LOOM_LOCATION_UNKNOWN, &release));
+  loom_op_t* caller =
+      Function("consume_record", {channel_type_, channel_type_});
+  const auto* actuals =
+      loom_region_entry_block(loom_func_def_body(caller))->arg_ids;
+  const loom_value_id_t operands[] = {actuals[0], actuals[1], actuals[0]};
+  loom_value_id_t reads[3];
+  for (size_t i = 0; i < 3; ++i) {
+    loom_op_t* call;
+    IREE_ASSERT_OK(loom_func_call_build(
+        &builder_, 0, 0, 0, 0, loom_func_def_callee(callee), &operands[i], 1,
+        &read_type_, 1, nullptr, 0, LOOM_LOCATION_UNKNOWN, &call));
+    reads[i] = loom_op_results(call)[0];
+    loom_op_t* release;
+    IREE_ASSERT_OK(loom_channel_release_build(&builder_, reads[i],
+                                              LOOM_LOCATION_UNKNOWN, &release));
+  }
   IREE_ASSERT_OK(loom_func_return_build(&builder_, nullptr, 0,
                                         LOOM_LOCATION_UNKNOWN, &exit));
   std::vector<const loom_channel_plan_callable_t*> summaries(
       module_->symbols.count, nullptr);
   summaries[loom_func_def_callee(callee).symbol_id] = &summary;
-  const auto plan = Analyze(caller, {{actual, actual}}, summaries.data());
-  EXPECT_EQ(loom_channel_plan_channel(&plan, loom_op_results(call)[0]), actual);
-  ASSERT_EQ(plan.action_count, 2u);
-  EXPECT_EQ(plan.actions[0].callable, &summary);
-  EXPECT_EQ(plan.actions[1].op, release);
-  EXPECT_EQ(plan.actions[1].channel_value_id, actual);
+  // Two occurrences of the same source binding remain independent through
+  // one reusable helper. Calling it again with the first channel forwards
+  // that original identity rather than creating a third protocol.
+  const loom_channel_identity_t instances[] = {{formal}, {formal}};
+  const auto plan = Analyze(
+      caller, {{actuals[0], &instances[0]}, {actuals[1], &instances[1]}},
+      summaries.data());
+  ASSERT_EQ(plan.action_count, 6u);
+  for (size_t i = 0; i < 3; ++i) {
+    const auto* expected = &instances[i % 2];
+    EXPECT_EQ(loom_channel_plan_channel(&plan, reads[i]), expected);
+    EXPECT_EQ(plan.actions[2 * i].callable, &summary);
+    EXPECT_EQ(plan.actions[2 * i + 1].channel, expected);
+  }
 }
 
 }  // namespace

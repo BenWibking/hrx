@@ -17,7 +17,7 @@ typedef struct loom_channel_plan_membership_t {
   // Disjoint-set parents for channel membership, indexed by local ordinal.
   loom_value_ordinal_t* parents;
   // Known channel identity for each current representative.
-  loom_value_id_t* channels;
+  const loom_channel_identity_t** channels;
   // Borrowed summaries indexed by module symbol ID, or NULL.
   const loom_channel_plan_callable_t* const* callables;
 } loom_channel_plan_membership_t;
@@ -49,10 +49,9 @@ static bool loom_channel_plan_connect(
   if (lhs == rhs) {
     return true;
   }
-  const loom_value_id_t lhs_channel = membership->channels[lhs];
-  const loom_value_id_t rhs_channel = membership->channels[rhs];
-  if (lhs_channel != LOOM_VALUE_ID_INVALID &&
-      rhs_channel != LOOM_VALUE_ID_INVALID && lhs_channel != rhs_channel) {
+  const loom_channel_identity_t* lhs_channel = membership->channels[lhs];
+  const loom_channel_identity_t* rhs_channel = membership->channels[rhs];
+  if (lhs_channel && rhs_channel && lhs_channel != rhs_channel) {
     *rejection = (loom_channel_plan_rejection_t){
         .kind = LOOM_CHANNEL_PLAN_REJECTION_DYNAMIC_CHANNEL,
         .op = op,
@@ -68,8 +67,7 @@ static bool loom_channel_plan_connect(
     rhs = temporary;
   }
   membership->parents[rhs] = lhs;
-  membership->channels[lhs] =
-      lhs_channel != LOOM_VALUE_ID_INVALID ? lhs_channel : rhs_channel;
+  membership->channels[lhs] = lhs_channel ? lhs_channel : rhs_channel;
   return true;
 }
 
@@ -214,11 +212,11 @@ iree_status_t loom_channel_plan_build(
                                                  (void**)&membership.channels));
   for (loom_value_ordinal_t i = 0; i < value_count; ++i) {
     membership.parents[i] = i;
-    membership.channels[i] = LOOM_VALUE_ID_INVALID;
+    membership.channels[i] = NULL;
   }
   for (iree_host_size_t i = 0; i < binding_count; ++i) {
     membership.channels[loom_local_value_domain_ordinal(
-        value_domain, bindings[i].value_id)] = bindings[i].channel_value_id;
+        value_domain, bindings[i].value_id)] = bindings[i].channel;
   }
 
   loom_channel_plan_action_t* actions = NULL;
@@ -236,8 +234,7 @@ iree_status_t loom_channel_plan_build(
             loom_channel_plan_representative(
                 &membership,
                 loom_local_value_domain_ordinal(value_domain, value));
-        if (membership.channels[representative] != LOOM_VALUE_ID_INVALID &&
-            membership.channels[representative] != value) {
+        if (membership.channels[representative]) {
           *out_rejection = (loom_channel_plan_rejection_t){
               .kind = LOOM_CHANNEL_PLAN_REJECTION_DYNAMIC_CHANNEL,
               .op = op,
@@ -245,7 +242,11 @@ iree_status_t loom_channel_plan_build(
           };
           return iree_ok_status();
         }
-        membership.channels[representative] = value;
+        loom_channel_identity_t* identity = NULL;
+        IREE_RETURN_IF_ERROR(
+            iree_arena_allocate(arena, sizeof(*identity), (void**)&identity));
+        identity->value_id = value;
+        membership.channels[representative] = identity;
       }
       const loom_channel_plan_callable_t* callable = NULL;
       if (!loom_channel_plan_collect_membership(&membership, op, &callable,
@@ -270,23 +271,25 @@ iree_status_t loom_channel_plan_build(
       }
       actions[action_count++] = (loom_channel_plan_action_t){
           .op = op,
-          .channel_value_id = LOOM_VALUE_ID_INVALID,
-          .destination_channel_value_id = LOOM_VALUE_ID_INVALID,
+          .channel = NULL,
+          .destination_channel = NULL,
           .callable = callable,
       };
     }
   }
 
-  // Compression is complete before replacing parent storage with the final
-  // direct table. No downstream query repeats the graph solution.
+  // Flatten every known identity onto its value before publishing the direct
+  // table. Every representative points to itself, so filling other entries
+  // cannot disturb identities still needed by later values.
   for (loom_value_ordinal_t i = 0; i < value_count; ++i) {
     membership.parents[i] = loom_channel_plan_representative(&membership, i);
   }
   for (loom_value_ordinal_t i = 0; i < value_count; ++i) {
     const loom_value_id_t value = value_domain->value_ids[i];
-    const loom_value_id_t channel = membership.channels[membership.parents[i]];
-    membership.parents[i] = channel;
-    if (channel == LOOM_VALUE_ID_INVALID &&
+    const loom_channel_identity_t* channel =
+        membership.channels[membership.parents[i]];
+    membership.channels[i] = channel;
+    if (!channel &&
         loom_channel_plan_tracks_type(loom_module_value_type(module, value))) {
       *out_rejection = (loom_channel_plan_rejection_t){
           .kind = LOOM_CHANNEL_PLAN_REJECTION_UNBOUND_ACCESS,
@@ -297,7 +300,7 @@ iree_status_t loom_channel_plan_build(
   }
   loom_channel_plan_t plan = {
       .value_domain = value_domain,
-      .channel_value_ids = membership.parents,
+      .channels = membership.channels,
       .value_count = value_count,
       .actions = actions,
       .action_count = action_count,
@@ -309,14 +312,14 @@ iree_status_t loom_channel_plan_build(
       continue;
     }
     loom_op_t* op = actions[i].op;
-    actions[i].channel_value_id = loom_channel_plan_channel(
+    actions[i].channel = loom_channel_plan_channel(
         &plan, loom_channel_bind_isa(op) ? loom_channel_bind_result(op)
                                          : loom_op_operands(op)[0]);
-    actions[i].destination_channel_value_id =
+    actions[i].destination_channel =
         loom_channel_copy_isa(op)
             ? loom_channel_plan_channel(&plan,
                                         loom_channel_copy_destination(op))
-            : LOOM_VALUE_ID_INVALID;
+            : NULL;
   }
   *out_plan = plan;
   return iree_ok_status();
@@ -358,9 +361,11 @@ iree_status_t loom_channel_plan_summarize(
               loom_module_value_type(domain->module, value))) {
         continue;
       }
-      const loom_value_id_t channel = loom_channel_plan_channel(plan, value);
+      const loom_channel_identity_t* channel =
+          loom_channel_plan_channel(plan, value);
       const uint16_t argument =
-          formal_arguments[loom_local_value_domain_ordinal(domain, channel)];
+          formal_arguments[loom_local_value_domain_ordinal(domain,
+                                                           channel->value_id)];
       if (argument == UINT16_MAX ||
           (r != 0 && result_arguments[i] != argument)) {
         *out_rejection = (loom_channel_plan_rejection_t){

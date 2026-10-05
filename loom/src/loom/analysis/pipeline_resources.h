@@ -7,6 +7,7 @@
 #ifndef LOOM_ANALYSIS_PIPELINE_RESOURCES_H_
 #define LOOM_ANALYSIS_PIPELINE_RESOURCES_H_
 
+#include "loom/analysis/channel_plan.h"
 #include "loom/analysis/source_storage_packing.h"
 #include "loom/error/emitter.h"
 #include "loom/util/fact_table.h"
@@ -70,8 +71,9 @@ typedef struct loom_pipeline_resource_allocation_t {
 typedef struct loom_pipeline_resource_channel_t {
   // Fresh protocol binding, independent of its backing allocation identity.
   loom_op_t* binding;
-  // Source identity selected by strand captures and channel actions.
-  loom_value_id_t value_id;
+  // Fresh identity for this construction occurrence, borrowed by strand and
+  // child plans. Resources remain at stable addresses after construction.
+  loom_channel_identity_t identity;
   // Complete slot-view projection retained from the construction's facts.
   // The footprint is an envelope, not a promise of dense record placement.
   loom_value_fact_view_reference_t storage;

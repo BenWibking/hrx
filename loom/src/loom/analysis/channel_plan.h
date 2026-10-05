@@ -15,14 +15,25 @@
 extern "C" {
 #endif
 
+// One protocol instance in a retained compiler plan. The construction owner
+// allocates a distinct object for every binding occurrence and shares its
+// pointer through captures and calls. Equal source values in different
+// invocations still have distinct objects; equal backing addresses never
+// establish protocol identity. The object outlives all plans borrowing it.
+typedef struct loom_channel_identity_t {
+  // Source binding or formal argument, for source correspondence only.
+  loom_value_id_t value_id;
+} loom_channel_identity_t;
+
 // A source argument or capture bound by the enclosing communication plan.
 // This correspondence comes from callable/capture substitution, never from
 // equal addresses, storage roots, argument names, or payload types.
 typedef struct loom_channel_plan_binding_t {
   // Channel or owned access in the analyzed region's value domain.
   loom_value_id_t value_id;
-  // Channel identity in the enclosing plan. Several arguments may select it.
-  loom_value_id_t channel_value_id;
+  // Borrowed protocol instance in the enclosing plan. Several arguments may
+  // select it, including arguments forwarded through different invocations.
+  const loom_channel_identity_t* channel;
 } loom_channel_plan_binding_t;
 
 // A visible callable's channel membership in formal argument coordinates.
@@ -41,11 +52,11 @@ typedef struct loom_channel_plan_callable_t {
 typedef struct loom_channel_plan_action_t {
   // Source operation, borrowed until the consuming rewrite erases it.
   loom_op_t* op;
-  // Channel of the first operand, or the result for channel.bind; INVALID for
+  // Channel of the first operand, or the result for channel.bind; NULL for
   // a call, whose actual arguments have independent entries in the value table.
-  loom_value_id_t channel_value_id;
-  // Destination channel for channel.copy; INVALID for other operations.
-  loom_value_id_t destination_channel_value_id;
+  const loom_channel_identity_t* channel;
+  // Destination channel for channel.copy; NULL for other operations.
+  const loom_channel_identity_t* destination_channel;
   // Retained formal summary for a channel-aware call; NULL for channel ops.
   const loom_channel_plan_callable_t* callable;
 } loom_channel_plan_action_t;
@@ -72,10 +83,10 @@ typedef struct loom_channel_plan_rejection_t {
 typedef struct loom_channel_plan_t {
   // Borrowed domain retained by the owner through materialization.
   const loom_local_value_domain_t* value_domain;
-  // Direct channel identity by value ordinal; INVALID for unrelated values.
+  // Direct protocol instance by value ordinal; NULL for unrelated values.
   // Equal entries mean membership only: records and consuming obligations
   // remain distinct SSA values with their original lifetime requirements.
-  const loom_value_id_t* channel_value_ids;
+  const loom_channel_identity_t* const* channels;
   // Original domain extent, excluding values created during materialization.
   loom_value_ordinal_t value_count;
   // Arena-owned channel actions in block/source order.
@@ -91,7 +102,8 @@ typedef struct loom_channel_plan_t {
 // Builds fixed-channel membership for one verified flat execution region.
 // SCF policies and control lowering precede this boundary. The enclosing plan
 // supplies the identity of every incoming channel/read/write argument; a local
-// channel.bind creates a fresh identity independent of its backing allocation.
+// channel.bind creates an arena-owned identity for this analyzed occurrence,
+// independent of its backing allocation and other analyses of the same source.
 //
 // A single collection owns the channel actions and forwarding edges. The
 // resulting direct table includes loop-carried accesses and fanout results.
@@ -114,20 +126,21 @@ iree_status_t loom_channel_plan_build(
 
 // Summarizes an already analyzed callable without walking its body again.
 // Build the formal plan with each incoming channel/read/write bound to its own
-// argument ID. All returned communication values must belong to a formal
-// argument's channel; a dynamically chosen or locally created escaping channel
-// needs a runtime channel carrier and produces DYNAMIC_CHANNEL. Ordinary
-// returned values need no membership. The summary outlives the local domain.
+// fresh formal identity carrying that argument's source ID. All returned
+// communication values must belong to a formal argument's channel; a
+// dynamically chosen or locally created escaping channel needs a runtime
+// channel carrier and produces DYNAMIC_CHANNEL. Ordinary returned values need
+// no membership. The summary outlives the local domain.
 iree_status_t loom_channel_plan_summarize(
     const loom_channel_plan_t* plan, loom_op_t* function,
     iree_arena_allocator_t* arena, loom_channel_plan_callable_t* out_callable,
     loom_channel_plan_rejection_t* out_rejection);
 
 // Direct membership query for an original channel/read/write value.
-static inline loom_value_id_t loom_channel_plan_channel(
+static inline const loom_channel_identity_t* loom_channel_plan_channel(
     const loom_channel_plan_t* plan, loom_value_id_t value_id) {
-  return plan->channel_value_ids[loom_local_value_domain_ordinal(
-      plan->value_domain, value_id)];
+  return plan
+      ->channels[loom_local_value_domain_ordinal(plan->value_domain, value_id)];
 }
 
 #ifdef __cplusplus

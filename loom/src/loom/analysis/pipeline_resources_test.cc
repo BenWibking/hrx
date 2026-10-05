@@ -294,8 +294,8 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
         loom_pipeline_resources_lookup_channel(&resources, composed.values[2]);
     ASSERT_NE(first, nullptr);
     ASSERT_NE(second, nullptr);
-    EXPECT_EQ(first->value_id, channels[i]);
-    EXPECT_EQ(second->value_id, channels[1 - i]);
+    EXPECT_EQ(first->identity.value_id, channels[i]);
+    EXPECT_EQ(second->identity.value_id, channels[1 - i]);
     EXPECT_NE(first, second);
     EXPECT_EQ(first->storage.root_value_id, second->storage.root_value_id);
     EXPECT_EQ(resources.strands[i].call, calls[i]);
@@ -305,7 +305,7 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
     const auto* channel =
         loom_pipeline_resources_lookup_channel(&resources, captures.values[0]);
     ASSERT_NE(channel, nullptr);
-    EXPECT_EQ(channel->value_id, channels[i]);
+    EXPECT_EQ(channel->identity.value_id, channels[i]);
     EXPECT_EQ(channel->capacity, 2u);
     const auto* backing = loom_pipeline_resources_lookup_allocation(
         &resources, channel->storage.root_value_id);
@@ -317,6 +317,19 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
     ASSERT_TRUE(loom_value_facts_as_exact_i64(channel->storage.base_byte_offset,
                                               &offset));
     EXPECT_EQ(offset, 64);
+  }
+
+  loom_pipeline_resources_t repeated;
+  IREE_ASSERT_OK(loom_pipeline_resources_build(module_, function, &facts, pools,
+                                               1, nullptr, 0, bindings, 1, {},
+                                               &arena_, &repeated, &valid));
+  ASSERT_TRUE(valid);
+  ASSERT_EQ(repeated.channel_count, resources.channel_count);
+  for (size_t i = 0; i < resources.channel_count; ++i) {
+    const auto* original = &resources.channels[i].identity;
+    const auto* next = &repeated.channels[i].identity;
+    EXPECT_EQ(original->value_id, next->value_id);
+    EXPECT_NE(original, next);
   }
 }
 

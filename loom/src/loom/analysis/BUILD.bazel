@@ -777,6 +777,7 @@ loom_cc_library(
     srcs = ["pipeline_resources.c"],
     hdrs = ["pipeline_resources.h"],
     deps = [
+        ":channel_plan",
         ":source_storage_packing",
         "//loom/src/loom/error:emitter",
         "//loom/src/loom/error:error_defs",

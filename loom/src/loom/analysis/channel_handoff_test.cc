@@ -189,8 +189,12 @@ class ChannelHandoffTest : public ::testing::Test {
                                           LOOM_LOCATION_UNKNOWN, &op));
     IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(
         module_, region_, &arena_, &domain_));
+    source_identity_.value_id = source_;
+    // The two endpoint instances may originate in the same source binding.
+    // Their independent protocol handles, not that source ID, select state.
+    destination_identity_.value_id = source_;
     const loom_channel_plan_binding_t bindings[] = {
-        {source_, source_}, {destination_, destination_}};
+        {source_, &source_identity_}, {destination_, &destination_identity_}};
     loom_channel_plan_rejection_t rejection;
     IREE_ASSERT_OK(loom_channel_plan_build(&domain_, bindings, 2, nullptr,
                                            &arena_, &plan_, &rejection));
@@ -199,7 +203,8 @@ class ChannelHandoffTest : public ::testing::Test {
   }
 
   loom_channel_handoff_rejection_t Analyze(uint64_t capacity) {
-    const loom_channel_handoff_t handoff = {source_, destination_, capacity};
+    const loom_channel_handoff_t handoff = {&source_identity_,
+                                            &destination_identity_, capacity};
     loom_channel_handoff_rejection_t rejection;
     IREE_CHECK_OK(loom_channel_handoff_analyze(&plan_, &graph_, &handoff,
                                                &arena_, &rejection));
@@ -236,6 +241,10 @@ class ChannelHandoffTest : public ::testing::Test {
   loom_value_id_t source_;
   // Independently realized transfer destination.
   loom_value_id_t destination_;
+  // Source protocol instance whose handle is borrowed by the membership plan.
+  loom_channel_identity_t source_identity_;
+  // Destination protocol instance, independent of the source and its storage.
+  loom_channel_identity_t destination_identity_;
   // Initialized scalar stored in each output record.
   loom_value_id_t payload_;
   // Retained history in oldest-to-newest order at the loop header.

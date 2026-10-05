@@ -19,9 +19,9 @@ extern "C" {
 // and acceptance, and that asynchronous source retirement gates slot reuse.
 typedef struct loom_channel_handoff_t {
   // Protocol identity of the locally produced, accepted and copied records.
-  loom_value_id_t source_channel;
+  const loom_channel_identity_t* source_channel;
   // Protocol identity receiving each current record's asynchronous copy.
-  loom_value_id_t destination_channel;
+  const loom_channel_identity_t* destination_channel;
   // Positive specialized source slot count, independent of physical addresses.
   uint64_t capacity;
 } loom_channel_handoff_t;

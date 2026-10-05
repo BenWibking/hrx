@@ -40,9 +40,9 @@ static int loom_pipeline_resources_compare_root(const void* lhs,
 static int loom_pipeline_resources_compare_channel(const void* lhs,
                                                    const void* rhs) {
   const loom_value_id_t lhs_id =
-      ((const loom_pipeline_resource_channel_t*)lhs)->value_id;
+      ((const loom_pipeline_resource_channel_t*)lhs)->identity.value_id;
   const loom_value_id_t rhs_id =
-      ((const loom_pipeline_resource_channel_t*)rhs)->value_id;
+      ((const loom_pipeline_resource_channel_t*)rhs)->identity.value_id;
   return (lhs_id > rhs_id) - (lhs_id < rhs_id);
 }
 
@@ -222,7 +222,7 @@ iree_status_t loom_pipeline_resources_build(
     if (loom_channel_bind_isa(op)) {
       loom_pipeline_resource_channel_t channel = {
           .binding = op,
-          .value_id = loom_channel_bind_result(op),
+          .identity = {.value_id = loom_channel_bind_result(op)},
       };
       if (!loom_value_facts_query_view_reference(
               &facts->context,
@@ -365,10 +365,10 @@ const loom_pipeline_resource_channel_t* loom_pipeline_resources_lookup_channel(
     const iree_host_size_t middle = begin + (end - begin) / 2;
     const loom_pipeline_resource_channel_t* channel =
         &resources->channels[middle];
-    if (channel->value_id == value_id) {
+    if (channel->identity.value_id == value_id) {
       return channel;
     }
-    if (channel->value_id < value_id) {
+    if (channel->identity.value_id < value_id) {
       begin = middle + 1;
     } else {
       end = middle;

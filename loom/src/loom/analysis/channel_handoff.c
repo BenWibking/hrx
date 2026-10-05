@@ -83,11 +83,11 @@ static bool loom_channel_handoff_apply(
   }
   const loom_value_id_t value = loom_op_operands(op)[0];
   const iree_host_size_t read = loom_channel_handoff_find_read(state, value);
-  if (action->channel_value_id != handoff->source_channel) {
+  if (action->channel != handoff->source_channel) {
     if (loom_channel_acquire_isa(op)) {
       for (iree_host_size_t i = 0; i < state->read_count; ++i) {
         if (loom_channel_plan_channel(plan, state->reads[i].value) ==
-            action->channel_value_id) {
+            action->channel) {
           return loom_channel_handoff_reject(
               LOOM_CHANNEL_HANDOFF_REJECTION_INPUT_OVERLAP, op,
               state->reads[i].value, rejection);
@@ -98,7 +98,7 @@ static bool loom_channel_handoff_apply(
     } else if (loom_channel_release_isa(op) && read != IREE_HOST_SIZE_MAX) {
       loom_channel_handoff_remove_read(state, read);
     } else if (loom_channel_reserve_isa(op) &&
-               action->channel_value_id == handoff->destination_channel) {
+               action->channel == handoff->destination_channel) {
       if (state->destination_write != LOOM_VALUE_ID_INVALID) {
         return loom_channel_handoff_reject(
             LOOM_CHANNEL_HANDOFF_REJECTION_DESTINATION_OVERLAP, op,
@@ -149,7 +149,7 @@ static bool loom_channel_handoff_apply(
           (loom_channel_handoff_read_t){loom_op_results(op)[i], distance};
     }
   } else if (loom_channel_copy_isa(op)) {
-    if (action->destination_channel_value_id != handoff->destination_channel ||
+    if (action->destination_channel != handoff->destination_channel ||
         loom_channel_copy_destination(op) != state->destination_write ||
         state->publication != LOOM_CHANNEL_HANDOFF_ACCEPTED ||
         read == IREE_HOST_SIZE_MAX || state->reads[read].distance != 0) {

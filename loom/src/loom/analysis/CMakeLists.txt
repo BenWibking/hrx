@@ -876,6 +876,7 @@ loom_cc_library(
   SRCS
     "pipeline_resources.c"
   DEPS
+    ::channel_plan
     ::source_storage_packing
     iree::base
     iree::base::internal::arena
