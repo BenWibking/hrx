@@ -128,6 +128,18 @@ opaque buffer bindings from numeric addresses encoded into packets. This
 program uses the complete physical kernel target matrix and no private or
 workgroup storage.
 
+[device_sdma_batched.loom](device_sdma_batched.loom) uses the same packet and
+publication contract with independently bounded command bytes and destination
+slots. Its [typed ABI](device_sdma_batched.h) adds batch size, payload credits
+and an admission-statistics output. The publisher fills until admission stops,
+publishes its complete prefix, and cooperatively consumes one result before
+trying to append again. An 80-word transcript preserves the actual reservation
+frontiers and payload ownership alongside each copied result. Completion uses
+a monotonic generation comparison because a batch can pass several FENCE
+values between observations. The next batch's seed derives from actual copied
+data. This program also uses the complete physical target matrix without
+private or workgroup storage.
+
 [private_roundtrip.loom](private_roundtrip.loom) initializes nine volatile private
 words per workitem, then reads them in a runtime-selected permutation into
 global output. The [fixed-scratch case](../aql/private_test.cc) uses its

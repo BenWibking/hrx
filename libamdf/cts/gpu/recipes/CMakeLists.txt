@@ -44,6 +44,8 @@ iree_cc_library(
     iree::third_party::google_test
     libamdf::cts::gpu::aql::dispatch_fixture
     libamdf::cts::gpu::kernels::device_sdma
+    libamdf::cts::gpu::kernels::device_sdma_batched
+    libamdf::cts::gpu::kernels::device_sdma_batched_kernels
     libamdf::cts::gpu::kernels::device_sdma_kernels
     libamdf::cts::gpu::kernels::transform
     libamdf::cts::gpu::kernels::transform_kernels

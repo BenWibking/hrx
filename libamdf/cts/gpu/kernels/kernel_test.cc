@@ -15,6 +15,8 @@
 #include "libamdf/cts/gpu/kernels/byte_copy_unaligned.h"
 #include "libamdf/cts/gpu/kernels/byte_copy_unaligned_kernels.h"
 #include "libamdf/cts/gpu/kernels/device_sdma.h"
+#include "libamdf/cts/gpu/kernels/device_sdma_batched.h"
+#include "libamdf/cts/gpu/kernels/device_sdma_batched_kernels.h"
 #include "libamdf/cts/gpu/kernels/device_sdma_kernels.h"
 #include "libamdf/cts/gpu/kernels/geometry_ids.h"
 #include "libamdf/cts/gpu/kernels/geometry_ids_kernels.h"
@@ -76,6 +78,55 @@ TEST(KernelTest, DeviceSdmaProductsPreserveTheCallerContract) {
     EXPECT_EQ(kernel.group_segment_byte_length, 0u);
   }
   RecordProperty("device_sdma_compiled_targets", targets);
+}
+
+TEST(KernelTest, BatchedDeviceSdmaProductsPreserveTheCallerContract) {
+  using Arguments = kernels::device_sdma_batched::Arguments;
+  constexpr std::array<uint32_t, 19> kOffsets = {
+      offsetof(Arguments, ring),
+      offsetof(Arguments, read_index),
+      offsetof(Arguments, write_index),
+      offsetof(Arguments, notification),
+      offsetof(Arguments, destinations),
+      offsetof(Arguments, completion),
+      offsetof(Arguments, records),
+      offsetof(Arguments, statistics),
+      offsetof(Arguments, source_address),
+      offsetof(Arguments, destination_address),
+      offsetof(Arguments, completion_address),
+      offsetof(Arguments, capacity),
+      offsetof(Arguments, round_count),
+      offsetof(Arguments, batch_size),
+      offsetof(Arguments, credit_count),
+      offsetof(Arguments, seed),
+      offsetof(Arguments, copy_control),
+      offsetof(Arguments, fence_header),
+      offsetof(Arguments, cache_flags)};
+  constexpr std::array<uint32_t, 19> kLengths = {8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+                                                 8, 8, 4, 4, 4, 4, 4, 4, 4};
+  constexpr std::array<std::string_view, 19> kKinds = {
+      "global_buffer", "global_buffer", "global_buffer", "global_buffer",
+      "global_buffer", "global_buffer", "global_buffer", "global_buffer",
+      "by_value",      "by_value",      "by_value",      "by_value",
+      "by_value",      "by_value",      "by_value",      "by_value",
+      "by_value",      "by_value",      "by_value"};
+  std::string targets;
+  for (const auto& kernel : kernels::device_sdma_batched::kKernels.variants) {
+    SCOPED_TRACE(kernel.target);
+    if (!targets.empty()) {
+      targets += ",";
+    }
+    targets += kernel.target;
+    CheckArgumentLayout(kernel, kOffsets, kLengths, kKinds, sizeof(Arguments),
+                        alignof(Arguments));
+    EXPECT_GE(kernel.arguments.byte_length,
+              offsetof(Arguments, cache_flags) + sizeof(uint32_t));
+    EXPECT_EQ(kernel.required_workgroup_size,
+              (std::array<uint32_t, 3>{1, 1, 1}));
+    EXPECT_EQ(kernel.private_segment_byte_length, 0u);
+    EXPECT_EQ(kernel.group_segment_byte_length, 0u);
+  }
+  RecordProperty("device_sdma_batched_compiled_targets", targets);
 }
 
 TEST(KernelTest, TransformProductsPreserveTheCallerContract) {

@@ -180,8 +180,20 @@ wait separates the 257 transfers. The shader acquires the SDMA completion and
 records all destination payload words after every copy. An independent CPU
 simulation checks that transcript, unchanged inputs, complete destination
 backing and guards before command retirement. This serial dependent chain
-exercises command-ring wrap and destination reuse; full-ring backpressure and
-multiple concurrent publishers require separate cases.
+exercises command-ring wrap and destination reuse.
+
+The batched cases keep command capacity and payload ownership independent.
+One cooperative workitem fills an available command prefix, publishes it once,
+then consumes one copied result before returning that destination credit. SDMA
+continues asynchronously; the publisher can append while other payloads remain
+owned by the consumer. Small credit windows encounter payload backpressure;
+the large window fills the unpublished ring prefix and encounters command-space
+admission. Each reservation records actual RPTR, preceding WPTR and payload
+consumption so the CPU can check both ownership inequalities. Later batches
+depend on earlier copied data. Empty work, credit and batch boundaries, repeated
+wrap and partial final batches share the same program. This exercises a
+cooperative publisher/consumer; it assumes no concurrent residency of separate
+GPU workgroups and has a single command publisher.
 
 The lifecycle cases exercise the same resource helper as the `DISABLED_`
 peer-device recreation scenarios, without creating extra devices. Recreation requires
