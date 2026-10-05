@@ -22,6 +22,7 @@ from loom.gen.target.contracts.lower_rule_rows import (
     diagnostic_param_row,
     diagnostic_stored_params,
     emit_row,
+    guard_payload_row,
     guard_row,
     rule_row,
     source_memory_address_materializer_row,
@@ -1096,8 +1097,11 @@ def test_generate_lower_rule_set_emits_value_ref_for_float_equals_guard() -> Non
     guard_start = generated.source.index("LOOM_LOW_LOWER_GUARD_VALUE_FLOAT_EQUALS")
     guard_end = generated.source.index("},", guard_start)
     guard_text = generated.source[guard_start:guard_end]
-    assert ".value_ref_index = 1," in guard_text
-    assert ".payload = {.u64 = UINT64_C(0)" in guard_text
+    assert ".selector.value.value_ref_index = 1," in guard_text
+    assert ".payload_ordinal = 1," in guard_text
+    assert ".u64 = UINT64_C(0)," in generated.source
+    assert ".guard_payloads = " in generated.source
+    assert ".guard_payload_count = IREE_ARRAYSIZE(" in generated.source
 
 
 def test_guard_row_preserves_power_of_two_addend() -> None:
@@ -1108,8 +1112,7 @@ def test_guard_row_preserves_power_of_two_addend() -> None:
         (2**63 - 1, "INT64_C(9223372036854775807)"),
     ):
         row = LowerGuard(kind=GuardKind.VALUE_EXACT_POWER_OF_TWO_I64, addend=addend)
-        fields = guard_row({}, row)
-        assert f".payload = {{.addend = {literal}}}" in fields
+        assert guard_payload_row(row) == [f".addend = {literal}"]
 
 
 def test_generate_lower_rule_set_emits_storage_element_format_guard() -> None:
@@ -1147,8 +1150,9 @@ def test_generate_lower_rule_set_emits_storage_element_format_guard() -> None:
     guard_start = generated.source.index("LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_ELEMENT_FORMAT")
     guard_end = generated.source.index("},", guard_start)
     guard_text = generated.source[guard_start:guard_end]
-    assert ".value_ref_index = 0," in guard_text
-    assert ".payload = {.u64 = LOOM_VALUE_FACT_NUMERIC_FORMAT_U8" in guard_text
+    assert ".selector.value.value_ref_index = 0," in guard_text
+    assert ".payload_ordinal = 1," in guard_text
+    assert ".u64 = LOOM_VALUE_FACT_NUMERIC_FORMAT_U8," in generated.source
 
 
 def test_generate_lower_rule_set_emits_exact_storage_operand_schema_guard() -> None:
@@ -1204,7 +1208,7 @@ def test_generate_lower_rule_set_emits_exact_storage_operand_schema_guard() -> N
     assert ".flags = LOOM_VALUE_FACT_ENCODED_OPERAND_FLAG_ZERO_SCALE_FALLBACK" in generated.source
     assert ".scale_group = {.element_count = 8, .shape = {8}}" in generated.source
     assert "LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_OPERAND_SCHEMA" in generated.source
-    assert ".index = {.element_index = 0}" in generated.source
+    assert ".selector.value.parameter_index = 0" in generated.source
     assert ".storage_operand_schemas = " in generated.source
     assert ".storage_operand_schema_count = IREE_ARRAYSIZE(" in generated.source
 
@@ -1236,17 +1240,17 @@ def test_generate_lower_rule_set_emits_packed_integer_storage_guard() -> None:
     guard_start = generated.source.index("LOOM_LOW_LOWER_GUARD_VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD")
     guard_end = generated.source.index("},", guard_start)
     guard_text = generated.source[guard_start:guard_end]
-    assert ".value_ref_index = 0," in guard_text
-    assert ".other_value_ref_index = 1," in guard_text
-    assert ".attr_index = 0," in guard_text
-    assert ".storage_payload_multiple = UINT32_C(16)" in guard_text
-    assert ".storage_unit_bit_count = UINT32_C(32)" in guard_text
-    assert ".maximum_lane_count = UINT32_C(32)" in guard_text
+    assert ".selector.value.value_ref_index = 0," in guard_text
+    assert ".selector.value.other_value_ref_index = 1," in guard_text
+    assert ".selector.value.parameter_index = 0," in guard_text
+    assert ".payload_ordinal = 1," in guard_text
+    assert ".storage_payload_multiple = UINT32_C(16)" in generated.source
+    assert ".storage_unit_bit_count = UINT32_C(32)" in generated.source
+    assert ".maximum_lane_count = UINT32_C(32)" in generated.source
 
 
 def test_guard_row_emits_portable_signed_i64_bounds() -> None:
-    fields = guard_row(
-        {},
+    fields = guard_payload_row(
         LowerGuard(
             kind=GuardKind.I64_RANGE,
             minimum_i64=-(1 << 31),
@@ -1254,22 +1258,25 @@ def test_guard_row_emits_portable_signed_i64_bounds() -> None:
         ),
     )
 
-    assert (".payload = {.i64_range = {.minimum = (-INT64_C(2147483648)), .maximum = INT64_C(2147483647)}}") in fields
+    assert (".i64_range = {.minimum = (-INT64_C(2147483648)), .maximum = INT64_C(2147483647)}") in fields
 
 
 def test_guard_row_overlays_array_element_index_and_range() -> None:
+    row = LowerGuard(
+        kind=GuardKind.I64_ARRAY_ELEMENT_RANGE,
+        u64=3,
+        minimum_i64=-4,
+        maximum_i64=7,
+    )
     fields = guard_row(
         {},
-        LowerGuard(
-            kind=GuardKind.I64_ARRAY_ELEMENT_RANGE,
-            u64=3,
-            minimum_i64=-4,
-            maximum_i64=7,
-        ),
+        row,
+        payload_ordinal=1,
     )
 
-    assert ".index = {.element_index = 3}" in fields
-    assert (".payload = {.i64_range = {.minimum = (-INT64_C(4)), .maximum = INT64_C(7)}}") in fields
+    assert ".selector.attribute.element_index = 3" in fields
+    assert ".payload_ordinal = 1" in fields
+    assert guard_payload_row(row) == [".i64_range = {.minimum = (-INT64_C(4)), .maximum = INT64_C(7)}"]
 
 
 def test_guard_row_emits_static_element_count_value_refs() -> None:
@@ -1282,8 +1289,8 @@ def test_guard_row_emits_static_element_count_value_refs() -> None:
         ),
     )
 
-    assert ".value_ref_index = 2" in fields
-    assert ".other_value_ref_index = 3" in fields
+    assert ".selector.value.value_ref_index = 2" in fields
+    assert ".selector.value.other_value_ref_index = 3" in fields
 
 
 def test_guard_row_emits_value_memory_space_mask() -> None:
@@ -1295,8 +1302,13 @@ def test_guard_row_emits_value_memory_space_mask() -> None:
         ),
     )
 
-    assert ".value_ref_index = 0" in fields
-    assert (".payload = {.u64 = LOOM_LOW_LOWER_MEMORY_SPACE_UNKNOWN | LOOM_LOW_LOWER_MEMORY_SPACE_GLOBAL | LOOM_LOW_LOWER_MEMORY_SPACE_DESCRIPTOR}") in fields
+    assert ".selector.value.value_ref_index = 0" in fields
+    assert guard_payload_row(
+        LowerGuard(
+            kind=GuardKind.VALUE_MEMORY_SPACE,
+            memory_spaces=("unknown", "global", "descriptor"),
+        )
+    ) == [".u64 = LOOM_LOW_LOWER_MEMORY_SPACE_UNKNOWN | LOOM_LOW_LOWER_MEMORY_SPACE_GLOBAL | LOOM_LOW_LOWER_MEMORY_SPACE_DESCRIPTOR"]
 
 
 def test_guard_row_emits_target_subgroup_size_range() -> None:
@@ -1310,7 +1322,13 @@ def test_guard_row_emits_target_subgroup_size_range() -> None:
     )
 
     assert ".kind = LOOM_LOW_LOWER_GUARD_TARGET_SUBGROUP_SIZE_RANGE" in fields
-    assert ".payload = {.i64_range = {.minimum = INT64_C(1), .maximum = INT64_C(64)}}" in fields
+    assert guard_payload_row(
+        LowerGuard(
+            kind=GuardKind.TARGET_SUBGROUP_SIZE_RANGE,
+            minimum_i64=1,
+            maximum_i64=64,
+        )
+    ) == [".i64_range = {.minimum = INT64_C(1), .maximum = INT64_C(64)}"]
 
 
 def test_attr_copy_row_emits_portable_signed_i64_literal() -> None:
@@ -1416,6 +1434,23 @@ def test_generated_tables_intern_guards_and_diagnostic_params() -> None:
     unique_guards, guard_refs = _intern_rows(guards)
     assert unique_guards == (guards[0], guards[2])
     assert guard_refs == (0, 0, 1)
+
+    payload_candidates = tuple(
+        tuple(fields) if fields else None
+        for guard in (
+            LowerGuard(kind=GuardKind.VALUE_TYPE),
+            LowerGuard(kind=GuardKind.ENUM_ATTR_EQUALS, u64=7),
+            LowerGuard(kind=GuardKind.INSTANCE_FLAGS_HAS_ALL, u64=7),
+            LowerGuard(kind=GuardKind.ENUM_ATTR_EQUALS, u64=9),
+        )
+        for fields in (guard_payload_row(guard),)
+    )
+    unique_payloads, payload_ordinals = _intern_optional_rows(payload_candidates)
+    assert unique_payloads == (
+        (".u64 = UINT64_C(7)",),
+        (".u64 = UINT64_C(9)",),
+    )
+    assert payload_ordinals == (0, 1, 1, 2)
 
     emits = (
         LowerEmit(
@@ -1558,9 +1593,9 @@ def test_generate_lower_rule_set_emits_static_element_count_type_pattern() -> No
     guard_start = generated.source.index("LOOM_LOW_LOWER_GUARD_VECTOR_EXTRACT_SHAPE")
     guard_end = generated.source.index("},", guard_start)
     guard_text = generated.source[guard_start:guard_end]
-    assert ".value_ref_index = 0," in guard_text
-    assert ".other_value_ref_index = 1," in guard_text
-    assert ".attr_index = 0," in guard_text
+    assert ".selector.value.value_ref_index = 0," in guard_text
+    assert ".selector.value.other_value_ref_index = 1," in guard_text
+    assert ".selector.value.parameter_index = 0," in guard_text
 
 
 def test_generate_lower_rule_set_emits_exact_view_shape_type_pattern() -> None:

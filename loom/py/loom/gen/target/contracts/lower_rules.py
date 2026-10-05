@@ -464,6 +464,22 @@ def _generate_source(
             [lower_rule_rows.storage_operand_schema_row(schema) for schema in storage_operand_schemas],
         )
     )
+
+    guard_payload_candidates: list[tuple[str, ...] | None] = []
+    for row in unique_guards:
+        payload_fields = lower_rule_rows.guard_payload_row(row)
+        guard_payload_candidates.append(tuple(payload_fields) if payload_fields else None)
+    # Each guard contributes at most one payload, so the validated uint16 guard
+    # count also bounds these one-based payload ordinals.
+    guard_payloads, guard_payload_ordinals = _intern_optional_rows(guard_payload_candidates)
+    guard_payloads_name = f"k{c_table_prefix}GuardPayloads"
+    lines.extend(
+        lower_rule_rows.emit_optional_array(
+            guard_payloads_name,
+            "loom_low_lower_guard_payload_t",
+            [list(payload_fields) for payload_fields in guard_payloads],
+        )
+    )
     guards_name = f"k{c_table_prefix}Guards"
     lines.extend(
         lower_rule_rows.emit_optional_array(
@@ -474,8 +490,9 @@ def _generate_source(
                     descriptor_refs,
                     row,
                     storage_operand_schema_ordinals=storage_operand_schema_ordinals,
+                    payload_ordinal=guard_payload_ordinals[index],
                 )
-                for row in unique_guards
+                for index, row in enumerate(unique_guards)
             ],
         )
     )
@@ -588,6 +605,8 @@ def _generate_source(
             diagnostic_params_name=diagnostic_params_name,
             diagnostic_param_refs=diagnostic_param_refs,
             diagnostic_param_refs_name=diagnostic_param_refs_name,
+            guard_payloads=guard_payloads,
+            guard_payloads_name=guard_payloads_name,
             guard_rows=unique_guards,
             guards_name=guards_name,
             storage_operand_schemas=storage_operand_schemas,

@@ -693,8 +693,8 @@ typedef enum loom_low_lower_guard_kind_e {
   // Source value facts must prove every non-floating integer element is
   // contained in [minimum_i64, maximum_i64].
   LOOM_LOW_LOWER_GUARD_VALUE_I64_RANGE = 19,
-  // Source operand segment starting at attr_index must contain exactly u64
-  // operands.
+  // Source operand segment starting at selector.attribute.attr_index must
+  // contain exactly payload.u64 operands.
   LOOM_LOW_LOWER_GUARD_OPERAND_SEGMENT_COUNT_EQ = 20,
   // Source op instance flags must contain every bit in u64.
   LOOM_LOW_LOWER_GUARD_INSTANCE_FLAGS_HAS_ALL = 21,
@@ -735,7 +735,7 @@ typedef enum loom_low_lower_guard_kind_e {
   // execute after the source operation. Type uses are ignored.
   LOOM_LOW_LOWER_GUARD_VALUE_NO_USES_AFTER = 35,
   // Source value's complete encoded-operand schema must equal the rule-set
-  // storage_operand_schemas row selected by index.element_index.
+  // storage_operand_schemas row selected by selector.value.parameter_index.
   LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_OPERAND_SCHEMA = 36,
   // Retained source value facts prove that the value cannot be NaN.
   LOOM_LOW_LOWER_GUARD_VALUE_NOT_NAN = 37,
@@ -748,63 +748,77 @@ static_assert(LOOM_LOW_LOWER_GUARD_COUNT_ <= UINT8_MAX,
 static_assert(LOOM_ATTR_COUNT_ <= UINT8_MAX,
               "attribute kinds must fit in uint8_t guard storage");
 
+typedef union loom_low_lower_guard_payload_t {
+  // Required enum value, divisor adjustment, expected count, bit-count limit,
+  // register unit count, exact f64 bit pattern, flag mask, storage element
+  // format, or memory-space mask.
+  uint64_t u64;
+  // Signed bias applied before testing an exact power of two.
+  int64_t addend;
+  // Inclusive signed range payload.
+  struct {
+    // Inclusive lower bound.
+    int64_t minimum;
+    // Inclusive upper bound.
+    int64_t maximum;
+  } i64_range;
+  // Packed integer storage-shape payload.
+  struct {
+    // Required storage payload multiple or maximum storage unit count.
+    uint32_t storage_payload_multiple;
+    // Bit count in one packed storage unit.
+    uint32_t storage_unit_bit_count;
+    // Maximum permitted lane count, or zero when not constrained.
+    uint32_t maximum_lane_count;
+    // Reserved storage available to future packed integer guards.
+    uint32_t reserved;
+  } packed_integer;
+} loom_low_lower_guard_payload_t;
+static_assert(sizeof(loom_low_lower_guard_payload_t) == 16,
+              "loom_low_lower_guard_payload_t must be 16 bytes");
+
 typedef struct loom_low_lower_guard_t {
   // Guard operation to evaluate, stored as a loom_low_lower_guard_kind_t.
   uint8_t kind;
   // Required attribute kind for ATTR_KIND guards, stored as a
   // loom_attr_kind_t.
   uint8_t attr_kind;
-  // Primary source value-ref table index used by value guards.
-  uint16_t value_ref_index;
-  // Second source value-ref table index used by pairwise value guards.
-  uint16_t other_value_ref_index;
-  // Source attribute ordinal used by attribute guards, source operand ordinal
-  // used by operand-segment guards, or op-specific attribute ordinal used by
-  // semantic guards.
-  uint16_t attr_index;
-  // Kind-selected secondary table or source index.
-  union {
-    // Type-pattern table index used by VALUE_TYPE guards.
-    uint16_t type_pattern_index;
-    // Source i64-array element ordinal used by element-range guards.
-    uint16_t element_index;
-  } index;
   // Diagnostic table index emitted when this guard rejects.
   uint16_t diagnostic_index;
-  // Descriptor-set register-class ID used by LOW_VALUE_REGISTER_CLASS guards.
-  uint16_t register_class_id;
-  // Rule-set-local descriptor ref used by DESCRIPTOR_AVAILABLE guards.
-  loom_low_lower_descriptor_ref_t descriptor_ref;
-  // Kind-selected immediate payload.
+  // Kind-selected source and table indices.
   union {
-    // Required enum value, divisor adjustment, expected count, bit-count
-    // limit, register unit count, exact f64 bit pattern, flag mask, storage
-    // element format, or memory-space mask.
-    uint64_t u64;
-    // Signed bias applied before testing an exact power of two.
-    int64_t addend;
-    // Inclusive signed range payload.
+    // Indices used by guards over source values.
     struct {
-      // Inclusive lower bound.
-      int64_t minimum;
-      // Inclusive upper bound.
-      int64_t maximum;
-    } i64_range;
-    // Packed integer storage-shape payload.
+      // Primary source value-ref table index.
+      uint16_t value_ref_index;
+      // Second source value-ref table index used by pairwise guards.
+      uint16_t other_value_ref_index;
+      // Kind-selected type-pattern, register-class, storage-schema, or source
+      // attribute index.
+      uint16_t parameter_index;
+    } value;
+    // Indices used by guards over source attributes.
     struct {
-      // Required storage payload multiple or maximum storage unit count.
-      uint32_t storage_payload_multiple;
-      // Bit count in one packed storage unit.
-      uint32_t storage_unit_bit_count;
-      // Maximum permitted lane count, or zero when not constrained.
-      uint32_t maximum_lane_count;
-      // Reserved storage available to future packed integer guards.
-      uint32_t reserved;
-    } packed_integer;
-  } payload;
+      // Source attribute or operand-segment ordinal.
+      uint16_t attr_index;
+      // Source i64-array element ordinal used by element-range guards.
+      uint16_t element_index;
+      // Reserved storage available to future attribute guards.
+      uint16_t reserved;
+    } attribute;
+    // Rule-set-local descriptor ref used by DESCRIPTOR_AVAILABLE guards.
+    struct {
+      // Descriptor table reference.
+      loom_low_lower_descriptor_ref_t descriptor_ref;
+      // Reserved storage available to future descriptor guards.
+      uint16_t reserved[2];
+    } descriptor;
+  } selector;
+  // One-based kind-selected payload row. Zero means no payload.
+  uint16_t payload_ordinal;
 } loom_low_lower_guard_t;
-static_assert(sizeof(loom_low_lower_guard_t) == 32,
-              "loom_low_lower_guard_t must be 32 bytes");
+static_assert(sizeof(loom_low_lower_guard_t) == 12,
+              "loom_low_lower_guard_t must be 12 bytes");
 
 // Ordinal into a rule set's interned guard table.
 typedef uint16_t loom_low_lower_guard_ref_t;
@@ -1105,6 +1119,10 @@ typedef struct loom_low_lower_rule_set_t {
   const loom_low_lower_diagnostic_param_ref_t* diagnostic_param_refs;
   // Number of rows in diagnostic_param_refs.
   uint16_t diagnostic_param_ref_count;
+  // Interned immediate and range payloads referenced by guards.
+  const loom_low_lower_guard_payload_t* guard_payloads;
+  // Number of rows in guard_payloads.
+  uint16_t guard_payload_count;
   // Interned guard rows referenced by guard_refs.
   const loom_low_lower_guard_t* guards;
   // Number of rows in guards.
@@ -1143,6 +1161,13 @@ typedef struct loom_low_lower_rule_set_t {
 static inline const loom_low_lower_emit_t* loom_low_lower_rule_set_emit_at(
     const loom_low_lower_rule_set_t* rule_set, uint16_t emit_ref_index) {
   return &rule_set->emits[rule_set->emit_refs[emit_ref_index]];
+}
+
+// Resolves the trusted one-based payload referenced by |guard|.
+static inline const loom_low_lower_guard_payload_t*
+loom_low_lower_rule_set_guard_payload(const loom_low_lower_rule_set_t* rule_set,
+                                      const loom_low_lower_guard_t* guard) {
+  return &rule_set->guard_payloads[guard->payload_ordinal - 1];
 }
 
 // Resolves the trusted byte-offset materializer referenced by |source_memory|.

@@ -400,13 +400,19 @@ TEST_F(LowContractQuerySourceMemoryTest,
   loom_low_lower_guard_t guard = {};
   guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_TYPE;
   guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
-  guard.value_ref_index = 0;
-  guard.index.type_pattern_index = 0;
+  guard.selector.value.value_ref_index = 0;
+  guard.selector.value.parameter_index = 0;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_VECTOR_NEGF;
   rule.guard_count = 1;
+  const loom_low_lower_rule_span_t span = {
+      /*.source_op_kind=*/LOOM_OP_VECTOR_NEGF,
+      /*.rule_start=*/0,
+      /*.rule_count=*/1,
+  };
   loom_low_lower_rule_set_t rule_set = {};
+  rule_set.spans = &span;
+  rule_set.span_count = 1;
   rule_set.rules = &rule;
   rule_set.rule_count = 1;
   rule_set.guards = &guard;
@@ -457,10 +463,12 @@ TEST(LowContractQueryTest, TargetSubgroupSizeRangeRequiresKnownInRangeSize) {
       /*.key_string_ref=*/kRuleStringDescriptor,
   };
   loom_low_lower_guard_t guard = {};
+  loom_low_lower_guard_payload_t guard_payload = {};
   guard.kind = LOOM_LOW_LOWER_GUARD_TARGET_SUBGROUP_SIZE_RANGE;
   guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
-  guard.payload.i64_range.minimum = 1;
-  guard.payload.i64_range.maximum = 32;
+  guard.payload_ordinal = 1;
+  guard_payload.i64_range.minimum = 1;
+  guard_payload.i64_range.maximum = 32;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_emit_t emit = {};
   emit.kind = LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP;
@@ -473,6 +481,8 @@ TEST(LowContractQueryTest, TargetSubgroupSizeRangeRequiresKnownInRangeSize) {
   rule_set.string_pool = kRuleStringPool;
   rule_set.rules = &rule;
   rule_set.rule_count = 1;
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
   rule_set.guards = &guard;
   rule_set.guard_count = 1;
   rule_set.guard_refs = &guard_ref;
