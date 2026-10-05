@@ -33,7 +33,7 @@ func.def public @copy_selected_record(%first_input: buffer, %second_input: buffe
 }
 
 // ----
-low.func.def public target<x86.avx2.core> abi(object_function) @copy_selected_record(%first_storage: reg<x86.gpr64>, %second_storage: reg<x86.gpr64>, %output_storage: reg<x86.gpr64>, %use_first: reg<x86.gpr32>) asm {
+low.func.def public target<x86.avx2.core> abi(object_function) abi_layout({signature = (buffer, buffer, buffer, i1) -> ()}) @copy_selected_record(%first_storage: reg<x86.gpr64>, %second_storage: reg<x86.gpr64>, %output_storage: reg<x86.gpr64>, %use_first: reg<x86.gpr32>) asm {
   %first_origin = mov.imm64 16
   %second_origin = mov.imm64 32
   low.cond_br %use_first, ^_bb1, ^_bb2 : reg<x86.gpr32>
