@@ -170,6 +170,24 @@ static void loom_low_emission_frame_advance_repair_iteration(
   }
 }
 
+// Target call admission is an external boundary. Validate each retained
+// callee after scheduling so allocation can consume its contract without a
+// nullable or fallible path in liveness and move construction.
+static iree_status_t loom_low_emission_frame_validate_call_contracts(
+    const loom_low_schedule_table_t* schedule,
+    loom_low_call_contract_provider_t provider) {
+  if (provider.query == NULL || provider.validate == NULL) {
+    return iree_ok_status();
+  }
+  for (iree_host_size_t i = 0; i < schedule->call_node_count; ++i) {
+    const loom_low_schedule_node_t* node =
+        &schedule->nodes[schedule->call_node_indices[i]];
+    IREE_RETURN_IF_ERROR(provider.validate(
+        provider.user_data, loom_low_func_call_callee(node->op)));
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_low_emission_frame_build_impl(
     loom_module_t* module, loom_op_t* low_func_op,
     const loom_low_emission_frame_options_t* options,
@@ -247,6 +265,10 @@ static iree_status_t loom_low_emission_frame_build_impl(
   if (iree_status_is_ok(status)) {
     status = loom_low_schedule_function(&model, &schedule_options, arena,
                                         &out_frame->schedule);
+  }
+  if (iree_status_is_ok(status) && out_frame->schedule.error_count == 0) {
+    status = loom_low_emission_frame_validate_call_contracts(
+        &out_frame->schedule, options->call_contracts);
   }
 
   loom_low_storage_lease_table_t storage_leases = {0};

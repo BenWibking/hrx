@@ -34,14 +34,19 @@ typedef struct loom_low_call_clobber_list_t {
 } loom_low_call_clobber_list_t;
 
 // One ABI location at invocation entry, outgoing call, or incoming result.
-// The boundary supplies a location in the value's register class and width;
-// it does not constrain storage during the value's SSA lifetime.
+// The boundary supplies its own register class, width, and location; it does
+// not constrain storage during the value's SSA lifetime.
 typedef struct loom_low_allocation_abi_location_t {
   // Register-like allocation kind, or UNASSIGNED for a storage ABI operand.
-  loom_low_allocation_location_kind_t location_kind;
-  // Physical view or first linear register unit, in the value's register class.
+  uint16_t location_kind;
+  // Register class in the allocation's resolved descriptor set.
+  uint16_t descriptor_reg_class_id;
+  // Physical view or first linear register unit in the boundary register class.
   uint32_t location_base;
 } loom_low_allocation_abi_location_t;
+
+static_assert(sizeof(loom_low_allocation_abi_location_t) == 8,
+              "ABI locations must remain compact");
 
 typedef struct loom_low_call_contract_t {
   // ABI registers indexed by logical argument. A missing suffix or UNASSIGNED
@@ -58,19 +63,22 @@ typedef struct loom_low_call_contract_t {
   loom_low_call_clobber_list_t clobbers;
 } loom_low_call_contract_t;
 
-// The target resolves the callee's convention before allocation. This query
-// reads that retained binding; it does not inspect bodies or infer effects.
+// The target resolves and validates the callee's convention before allocation.
+// The query reads that retained binding; it does not inspect bodies or infer
+// effects, and must return a non-NULL contract after optional validation.
 // Clobbers occur between argument consumption and result production: values
 // live across the boundary require preserved storage, while dying arguments
 // and new results may use these registers. Asynchronous execution contracts
 // must additionally account for outstanding physical storage leases.
-typedef struct loom_low_call_contract_query_t {
-  // Optional query; NULL when this consumer has no retained call convention.
-  const loom_low_call_contract_t* (*fn)(void* user_data,
-                                        loom_symbol_ref_t callee);
+typedef struct loom_low_call_contract_provider_t {
+  // Optional target-boundary validation performed once per retained call.
+  iree_status_t (*validate)(void* user_data, loom_symbol_ref_t callee);
+  // Optional infallible query; NULL when calls have no allocation contract.
+  const loom_low_call_contract_t* (*query)(void* user_data,
+                                           loom_symbol_ref_t callee);
   // Borrowed target convention bindings, valid across allocation repair.
   void* user_data;
-} loom_low_call_contract_query_t;
+} loom_low_call_contract_provider_t;
 
 #ifdef __cplusplus
 }  // extern "C"

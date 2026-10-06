@@ -69,6 +69,8 @@ enum {
 typedef struct loom_check_emit_entry_location_spec_t {
   // Original formal-argument ordinal from the RUN line.
   uint32_t argument_ordinal;
+  // Stable descriptor register-class name supplied by the RUN line.
+  iree_string_view_t register_class;
   // Incoming location supplied by the invocation boundary.
   loom_low_allocation_abi_location_t location;
 } loom_check_emit_entry_location_spec_t;
@@ -208,17 +210,19 @@ static iree_status_t loom_check_emit_initialize_entry_locations(
 
 static iree_status_t loom_check_emit_parse_entry_location(
     iree_string_view_t text, loom_check_emit_entry_locations_t* entry) {
-  iree_string_view_t ordinal_text, kind_text, base_text, remainder;
+  iree_string_view_t ordinal_text, register_class_text, kind_text, base_text;
+  iree_string_view_t remainder;
   iree_string_view_split(text, ':', &ordinal_text, &remainder);
+  iree_string_view_split(remainder, ':', &register_class_text, &remainder);
   iree_string_view_split(remainder, ':', &kind_text, &base_text);
   uint32_t ordinal = 0;
   uint32_t base = 0;
   if (!iree_string_view_atoi_uint32(ordinal_text, &ordinal) ||
       !iree_string_view_atoi_uint32(base_text, &base)) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "entry requires "
-        "<argument-ordinal>:<physical_register|target_id>:<base>");
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "entry requires "
+                            "<argument-ordinal>:<register-class>:"
+                            "<physical_register|target_id>:<base>");
   }
   loom_low_allocation_location_kind_t kind;
   if (iree_string_view_equal(kind_text, IREE_SV("physical_register"))) {
@@ -232,6 +236,7 @@ static iree_status_t loom_check_emit_parse_entry_location(
   }
   entry->specs[entry->count++] = (loom_check_emit_entry_location_spec_t){
       .argument_ordinal = ordinal,
+      .register_class = register_class_text,
       .location =
           {
               .location_kind = kind,
@@ -1158,7 +1163,14 @@ static iree_status_t loom_check_emit_resolve_entry_locations(
                               "entry argument %u must have a register type",
                               ordinal);
     }
-    const uint16_t class_id = loom_low_register_type_class_id(type);
+    uint16_t class_id = LOOM_LOW_REG_CLASS_NONE;
+    if (!loom_low_descriptor_set_lookup_register_class(
+            descriptors, entry->specs[i].register_class, &class_id, NULL)) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "unknown entry register class '%.*s'",
+                              (int)entry->specs[i].register_class.size,
+                              entry->specs[i].register_class.data);
+    }
     const uint32_t units = loom_low_register_type_unit_count(type);
     const loom_low_reg_class_t* reg_class = &descriptors->reg_classes[class_id];
     uint32_t first_ordinal = 0;
@@ -1175,6 +1187,7 @@ static iree_status_t loom_check_emit_resolve_entry_locations(
                               ordinal);
     }
     locations[ordinal] = *location;
+    locations[ordinal].descriptor_reg_class_id = class_id;
   }
   options->entry_locations = locations;
   options->entry_location_count = block->arg_count;

@@ -331,6 +331,10 @@ static iree_status_t loom_vm_program_resolve_signatures(
                 *bank_count < 16
                     ? LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER
                     : LOOM_LOW_ALLOCATION_LOCATION_UNASSIGNED,
+            .descriptor_reg_class_id =
+                descriptors[j].kind_u16 == IREE_VM_BYTECODE_SIGNATURE_KIND_REF
+                    ? VM_CORE_REG_CLASS_ID_REF
+                    : VM_CORE_REG_CLASS_ID_VALUE,
             .location_base = *bank_count,
         };
         ++(*bank_count);

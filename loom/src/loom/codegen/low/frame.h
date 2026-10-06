@@ -91,7 +91,7 @@ typedef struct loom_low_emission_frame_options_t {
   // Number of entries in |allocation_entry_locations|.
   iree_host_size_t allocation_entry_location_count;
   // Callee convention facts consumed before allocation in every repair round.
-  loom_low_call_contract_query_t call_contracts;
+  loom_low_call_contract_provider_t call_contracts;
   // Storage spaces supported by synchronous final transport in this emitter.
   // This does not authorize hiding asynchronous target instructions in moves.
   loom_low_storage_space_set_t synchronous_storage_spaces;

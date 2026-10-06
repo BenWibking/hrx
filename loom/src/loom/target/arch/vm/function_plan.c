@@ -514,19 +514,6 @@ static iree_status_t loom_vm_function_plan_calls(
     const loom_vm_program_callable_t* binding =
         functions
             ->bindings_by_symbol[loom_low_func_call_callee(node->op).symbol_id];
-    // Open source declarations remain legal until an executable is requested.
-    // Validate that boundary once before emitting calls from this schedule.
-    if (!binding) {
-      const loom_symbol_t* symbol =
-          &frame->module->symbols
-               .entries[loom_low_func_call_callee(node->op).symbol_id];
-      const iree_string_view_t name =
-          loom_string_table_get(&frame->module->strings, symbol->name_id);
-      return iree_make_status(
-          IREE_STATUS_NOT_FOUND,
-          "VM callee '@%.*s' has no definition or runtime import",
-          (int)name.size, name.data);
-    }
     const iree_vm_bytecode_v0_signature_row_t* signature =
         &binding->signature.row;
     const uint32_t argument_overflow =
@@ -846,12 +833,35 @@ static iree_status_t loom_vm_function_arguments(
   return status;
 }
 
-static const loom_low_call_contract_t* loom_vm_function_call_contract(
+typedef struct loom_vm_call_contract_provider_context_t {
+  // Module owning callee symbol names used at the external binding boundary.
+  const loom_module_t* module;
+  // Retained symbol-indexed callable bindings.
+  const loom_vm_program_build_t* program;
+} loom_vm_call_contract_provider_context_t;
+
+static iree_status_t loom_vm_function_call_contract_validate(
     void* user_data, loom_symbol_ref_t callee) {
-  const loom_vm_program_build_t* program = user_data;
+  const loom_vm_call_contract_provider_context_t* context = user_data;
   const loom_vm_program_callable_t* binding =
-      program->bindings_by_symbol[callee.symbol_id];
-  return binding ? &binding->call_contract : NULL;
+      context->program->bindings_by_symbol[callee.symbol_id];
+  if (binding != NULL) {
+    return iree_ok_status();
+  }
+  const loom_symbol_t* symbol =
+      &context->module->symbols.entries[callee.symbol_id];
+  const iree_string_view_t name =
+      loom_string_table_get(&context->module->strings, symbol->name_id);
+  return iree_make_status(
+      IREE_STATUS_NOT_FOUND,
+      "VM callee '@%.*s' has no definition or runtime import", (int)name.size,
+      name.data);
+}
+
+static const loom_low_call_contract_t* loom_vm_function_call_contract_query(
+    void* user_data, loom_symbol_ref_t callee) {
+  const loom_vm_call_contract_provider_context_t* context = user_data;
+  return &context->program->bindings_by_symbol[callee.symbol_id]->call_contract;
 }
 
 iree_status_t loom_vm_function_plan_write(
@@ -866,6 +876,10 @@ iree_status_t loom_vm_function_plan_write(
   *out_accepted = false;
   uint16_t argument_count = 0;
   loom_func_like_arg_ids(function, &argument_count);
+  loom_vm_call_contract_provider_context_t call_contracts = {
+      .module = module,
+      .program = functions,
+  };
   const loom_low_emission_frame_options_t options = {
       .descriptor_registry = descriptor_registry,
       .function_target_facts = function_version != NULL
@@ -876,8 +890,12 @@ iree_status_t loom_vm_function_plan_write(
       .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY,
       .allocation_entry_locations = signature->registers,
       .allocation_entry_location_count = argument_count,
-      .call_contracts = {.fn = loom_vm_function_call_contract,
-                         .user_data = functions},
+      .call_contracts =
+          {
+              .validate = loom_vm_function_call_contract_validate,
+              .query = loom_vm_function_call_contract_query,
+              .user_data = &call_contracts,
+          },
       .synchronous_storage_spaces =
           LOOM_LOW_STORAGE_SPACE_SET_STACK | LOOM_LOW_STORAGE_SPACE_SET_PRIVATE,
       .emitter = diagnostic_emitter,

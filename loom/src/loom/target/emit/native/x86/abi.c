@@ -13,21 +13,29 @@
 
 // SysV AMD64 integer-class arguments use RDI, RSI, RDX, RCX, R8, and R9.
 // Unused source parameters consume positions even when they need no interval.
-static const loom_low_allocation_abi_location_t kSysvArgumentRegisters[] = {
-    {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 7},
-    {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 6},
-    {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 2},
-    {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 1},
-    {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 8},
-    {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 9},
-};
+static const uint8_t kSysvArgumentRegisters[] = {7, 6, 2, 1, 8, 9};
 
 const loom_low_call_contract_t* loom_x86_function_call_contract(
     void* user_data, loom_symbol_ref_t callee) {
   (void)user_data;
   (void)callee;
+  static const loom_low_allocation_abi_location_t arguments[] = {
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 7},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 6},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 2},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 1},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 8},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 9},
+  };
   static const loom_low_allocation_abi_location_t results[] = {
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER, 0},
+      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+       LOOM_X86_REGISTER_CLASS_GPR64, 0},
   };
   static const loom_low_call_clobber_t clobbers[] = {
       {LOOM_X86_REGISTER_CLASS_GPR64, 0, 1},
@@ -41,8 +49,8 @@ const loom_low_call_contract_t* loom_x86_function_call_contract(
       {LOOM_X86_REGISTER_CLASS_GPR64, 11, 1},
   };
   static const loom_low_call_contract_t contract = {
-      .arguments = kSysvArgumentRegisters,
-      .argument_count = IREE_ARRAYSIZE(kSysvArgumentRegisters),
+      .arguments = arguments,
+      .argument_count = IREE_ARRAYSIZE(arguments),
       .results = results,
       .result_count = IREE_ARRAYSIZE(results),
       .clobbers = {clobbers, IREE_ARRAYSIZE(clobbers)},
@@ -222,7 +230,12 @@ iree_status_t loom_x86_function_abi_prepare(loom_module_t* module,
     arguments_supported = loom_x86_callable_type_supported(
         loom_module_value_type(module, arguments[i]));
     if (i < IREE_ARRAYSIZE(kSysvArgumentRegisters)) {
-      out_abi->entry_locations[i] = kSysvArgumentRegisters[i];
+      out_abi->entry_locations[i] = (loom_low_allocation_abi_location_t){
+          .location_kind = LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+          .descriptor_reg_class_id = loom_low_register_type_class_id(
+              loom_module_value_type(module, arguments[i])),
+          .location_base = kSysvArgumentRegisters[i],
+      };
     }
   }
   if (!arguments_supported) {

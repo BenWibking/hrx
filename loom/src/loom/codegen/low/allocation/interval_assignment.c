@@ -150,7 +150,8 @@ static bool loom_low_allocation_interval_assignment_find_entry_location(
   }
   const loom_low_allocation_abi_location_t* entry =
       &context->entry_locations[value_ordinal];
-  if (entry->location_kind != capacity->location_kind) {
+  if (entry->descriptor_reg_class_id != capacity->descriptor_reg_class_id ||
+      entry->location_kind != capacity->location_kind) {
     return false;
   }
   const loom_low_descriptor_set_t* descriptors =

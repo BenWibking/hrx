@@ -209,7 +209,9 @@ loom_low_allocation_entry_destination(
   }
   const loom_low_allocation_assignment_t* assignment =
       &state->interval_assignment.assignments[assignment_index];
-  return assignment->location_kind == entry->location_kind &&
+  return assignment->descriptor_reg_class_id ==
+                     entry->descriptor_reg_class_id &&
+                 assignment->location_kind == entry->location_kind &&
                  assignment->location_base == entry->location_base
              ? NULL
              : assignment;
@@ -227,6 +229,7 @@ static iree_status_t loom_low_allocation_build_entry_moves(
     const loom_low_allocation_abi_location_t* entry =
         &state->options->entry_locations[i];
     loom_low_allocation_assignment_t source = *destination;
+    source.descriptor_reg_class_id = entry->descriptor_reg_class_id;
     source.location_kind = entry->location_kind;
     source.location_base = entry->location_base;
     loom_low_allocation_move_plan_append_assignment(
@@ -259,19 +262,16 @@ static void loom_low_allocation_call_move_capacity(
     const loom_low_allocation_build_state_t* state,
     iree_host_size_t* total_count, iree_host_size_t* group_count) {
   const loom_low_schedule_table_t* schedule = state->options->schedule;
-  if (!state->options->call_contracts.fn || !schedule) {
+  if (!state->options->call_contracts.query || !schedule) {
     return;
   }
   for (iree_host_size_t c = 0; c < schedule->call_node_count; ++c) {
     const loom_low_schedule_node_t* node =
         &schedule->nodes[schedule->call_node_indices[c]];
     const loom_low_call_contract_t* contract =
-        state->options->call_contracts.fn(
+        state->options->call_contracts.query(
             state->options->call_contracts.user_data,
             loom_low_func_call_callee(node->op));
-    if (!contract) {
-      continue;
-    }
     for (uint16_t side = 0; side < 2; ++side) {
       const loom_low_allocation_abi_location_t* registers =
           side ? contract->results : contract->arguments;
@@ -300,7 +300,7 @@ static void loom_low_allocation_call_move_capacity(
 static iree_status_t loom_low_allocation_build_call_moves(
     loom_low_allocation_build_state_t* state) {
   const loom_low_schedule_table_t* schedule = state->options->schedule;
-  if (!state->options->call_contracts.fn || !schedule ||
+  if (!state->options->call_contracts.query || !schedule ||
       !schedule->call_node_count) {
     return iree_ok_status();
   }
@@ -311,12 +311,9 @@ static iree_status_t loom_low_allocation_build_call_moves(
     const uint32_t node_index = schedule->call_node_indices[c];
     const loom_low_schedule_node_t* node = &schedule->nodes[node_index];
     const loom_low_call_contract_t* contract =
-        state->options->call_contracts.fn(
+        state->options->call_contracts.query(
             state->options->call_contracts.user_data,
             loom_low_func_call_callee(node->op));
-    if (!contract) {
-      continue;
-    }
     loom_low_allocation_call_moves_t* call =
         &state->call_moves[state->call_move_count++];
     *call = (loom_low_allocation_call_moves_t){
@@ -346,6 +343,7 @@ static iree_status_t loom_low_allocation_build_call_moves(
           continue;
         }
         loom_low_allocation_assignment_t boundary = *assignment;
+        boundary.descriptor_reg_class_id = registers[i].descriptor_reg_class_id;
         boundary.location_kind = registers[i].location_kind;
         boundary.location_base = registers[i].location_base;
         loom_low_allocation_target_constraints_record_location_extent(
@@ -388,7 +386,7 @@ static iree_status_t loom_low_allocation_build_moves(
   iree_host_size_t call_group_capacity = 0;
   loom_low_allocation_call_move_capacity(state, &call_unit_count,
                                          &call_group_capacity);
-  const bool has_calls = state->options->call_contracts.fn &&
+  const bool has_calls = state->options->call_contracts.query &&
                          state->options->schedule &&
                          state->options->schedule->call_node_count;
   if (state->placement.packet_move_group_count == 0 &&
