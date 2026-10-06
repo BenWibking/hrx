@@ -20,6 +20,7 @@ across the complete graph.
 | [SDMA upload, AQL dispatch, SDMA download](#sdma-upload-aql-dispatch-and-sdma-download) | HSA dependency signals, packet fence scopes, SDMA completion and memory polling. |
 | [Staged device-local memory](local-memory.md) | System-memory staging, GC9.4.3/4 HBM cache policy, shader/DMA visibility, and the host-aperture boundary. |
 | [PM4 shader and SDMA handoffs](pm4-sdma.md) | RADV directional progress, shader cache transitions, native gang submission, and final-use joins. |
+| [Device-generated SDMA](../sdma/device-publication.md#command-credits-payload-credits-and-drain) | A resident shader chooses transfers, publishes complete commands, consumes copied results and separately returns ring/payload credits. |
 
 ## SDMA upload, AQL dispatch and SDMA download
 

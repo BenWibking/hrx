@@ -8,6 +8,11 @@ transfer and its memory effects. ROCr's direct KFD queues and Linux's scheduled
 IB queues have different publication owners. [ROCr publication][blit-publish]
 [Linux ring commit][kernel-commit]
 
+[Device-generated commands](device-publication.md) use these same native byte
+frontiers with a shader as publisher. That path adds GPUVM notification reach,
+shader command visibility, lane progress and downstream payload credits to the
+queue's ordinary reservation and retirement rules.
+
 ## Transport and pointer units
 
 The direct path described here is ROCr's KFD SDMA producer for its selected
