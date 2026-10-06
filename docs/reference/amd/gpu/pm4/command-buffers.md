@@ -62,6 +62,46 @@ separate entry/context contracts. RADV inlines compute secondary buffers in
 its ordinary secondary-execution path while allowing graphics IB2 execution.
 [Command state contract][pal-reset-contract] [RADV secondary execution][mesa-secondary]
 
+## Chained blocks and continuations
+
+PAL places a chaining INDIRECT_BUFFER in a reserved postamble at the end of
+its source block. `GfxCmdStream::EndCommandBlock` accounts for that postamble
+when computing the aligned block length and inserts any NOP padding before
+it. Both the GFX9 and GFX12 command-stream implementations use this
+construction. RADV likewise reserves four final DWORDs during finalization;
+its chain operation replaces exactly those DWORDs with the next address,
+count, CHAIN and VALID fields. [PAL block finalization][pal-block-end]
+[GFX9 chunk end][pal-chunk-end] [GFX12 chunk end][pal12-chunk-end]
+[RADV finalization][mesa-finalize] [RADV chaining][mesa-chain]
+
+```text
+source block: commands → alignment NOPs → CHAIN(next address, next DWORD count)
+next block:   commands → alignment NOPs → next chain or terminal NOP postamble
+```
+
+These builders establish a complete block layout, including the placement of
+padding. Appending padding after a chain produces a different stream: CHAIN
+replaces the remaining stream, so those trailing NOPs are not its executed
+epilogue. The source agreement establishes the callers' construction rule;
+it does not specify the hardware response to every other layout.
+
+A chain does not save a return address within its source IB. PAL implements a
+compute secondary call by ending the parent block with a chain to the child,
+then patching the child's reserved tail to the parent's continuation block.
+The continuation's address and complete length become known when that block
+is finalized. This path requires exclusive submission of the child because
+the caller rewrites its tail. The return is another explicit chain, rather
+than an IB2 return stack. [Compute continuation patching][pal-chain-return]
+[Pending patch resolution][pal-block-end]
+
+The per-block chain postamble is distinct from a scheduled submission's
+postamble stream. PAL's AMDGPU queue chains eligible command buffers but adds
+its submission postambles as separate kernel-launched streams. The cited
+policy keeps those postambles reachable even when a graphics frame is
+preempted; it is not a compute-preemption guarantee. A command owner cannot
+silently absorb an external retirement stream into its own chain.
+[Scheduled postamble ownership][pal-submit-postamble]
+
 ## Publication and memory ownership
 
 Command bytes must be visible before the CP can fetch their reference. KFD's
@@ -101,6 +141,38 @@ The KFD caller's in-body join uses a RELEASE_MEM fence in a NOP payload followed
 by WAIT_REG_MEM; that body is not immutable. Its placement demonstrates the
 separate execution join, not a requirement to store fences in command bytes.
 [Body join][kfd-body] [Compute-idle builder][pal-completion]
+
+## Native submission retirement
+
+WDDM hardware-queue submission supplies a GPU `CommandBuffer` address, a
+`CommandLength` in bytes, and a `HwQueueProgressFenceId` identifying native
+completion. A command's own output marker and that progress fence describe
+different observations. The native fence's update owner depends on the node's
+`RingBufferFenceRelease` capability: [Submission fields][wddm-submit]
+[Native fence contract][wddm-native-submit]
+
+| Node capability | Native progress-fence update contract |
+| --- | --- |
+| `RingBufferFenceRelease = 0` | For a UMD submission, the UMD places the update at the end of the DMA buffer. Kernel submissions use the corresponding driver signaling path. |
+| `RingBufferFenceRelease = 1` | The driver/GPU updates progress after neither GPU nor CPU uses the DMA buffer; the exact mechanism belongs to the native implementation. |
+
+Microsoft defines this bit separately from context scheduling support.
+Hardware scheduling being enabled alone does not identify the fence-update
+contract. [Node capabilities][wddm-node-flags]
+
+ROCr's `WDDMDevice::SubmitToHwQueue` provides a public caller: it fills WKMI
+private data, submits the address, byte length and progress point, then frees
+the host private data after the call. That private-data lifetime is expressly
+permitted by the WDDM DDI. The public WKMI submission helper accepts no
+continuation address and returns no native trailer location. These interfaces
+therefore do not supply an address to which a caller could chain to resume an
+opaque native wrapper. [ROCr hardware-queue submission][rocr-wddm-submit]
+[WKMI submission interface][wkmi-submit] [Private-data lifetime][wddm-native-submit]
+
+The complete scheduled lifetime consequently needs both the command graph's
+execution/cache completion and the selected transport's native retirement.
+Seeing a payload marker in the final chained body alone does not establish
+that the native submission has released its command backing.
 
 ## CPU rebuild after completed use
 
@@ -185,3 +257,15 @@ mutation or a substitute for the firmware contract of an AQL carrier.
 [pal-rewind]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L3541-L3561
 [pal-generated-chain]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdStream.cpp#L571-L606
 [pal-generated-owner]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdBuffer.cpp#L238-L257
+[pal-block-end]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdStream.cpp#L115-L205
+[pal-chunk-end]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdStream.cpp#L1525-L1547
+[pal12-chunk-end]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdStream.cpp#L68-L94
+[mesa-finalize]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_cs.c#L478-L510
+[mesa-chain]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_cs.c#L560-L592
+[pal-chain-return]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdStream.cpp#L519-L549
+[pal-submit-postamble]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/os/amdgpu/amdgpuQueue.cpp#L1235-L1313
+[wddm-submit]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/ns-d3dkmthk-_d3dkmt_submitcommandtohwqueue
+[wddm-native-submit]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmddi/ns-d3dkmddi-_dxgkarg_submitcommandtohwqueue
+[wddm-node-flags]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmdt/ns-d3dkmdt-_dxgk_nodemetadata_flags
+[rocr-wddm-submit]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/libhsakmt/src/dxg/wddm/device.cpp#L1134-L1164
+[wkmi-submit]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/shared/amdgpu-windows-interop/wkmi/wkmi.h#L299-L312
