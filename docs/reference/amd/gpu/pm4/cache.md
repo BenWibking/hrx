@@ -342,6 +342,48 @@ writeback would discard a different cache action. The Linux fence also owns
 its event, temporal hint, interrupt and destination policy; those fields do
 not come from the acquire mask. [GC12.1 fence][linux121-fence]
 
+### Placement in complete barriers
+
+PAL's `SelectReleaseMemCaches` partitions requested actions by packet
+representation: GL2 writeback/invalidation and M$/GL1/V$ invalidation fit in
+release; GFX11 also takes K$ writeback/invalidation. I$ invalidation remains
+for acquire. The helper itself issues no dependency wait. Its callers use
+that partition differently. [Action selection][pal-release-select]
+
+| PAL caller | Action placement and completion |
+| --- | --- |
+| `IssueReleaseSync` | Requires the entire split-release cache set to fit in release. Cache work plus a selected event promotes notification to EOP. With cache work but no event, the token path uses cache-only acquire and produces no completion token. |
+| `ComputeCmdBuffer::WriteWaitEop` | Emits the representable release actions, waits on its owned fence, then acquires any remaining actions. |
+| `IssueReleaseThenAcquireSync` | A late-acquire optimization moves actions to an existing EOP release only if all fit. Any remainder restores the original acquire mask and moves cache work to ME after the producer wait. |
+
+[Split-release requirement][pal-release-requirement]
+[Cache-only token path][pal-release-cache-only]
+[Compute EOP owner][pal-compute-eop-partition]
+[Combined placement][pal-combined-partition]
+
+The performance-experiment caller's `SyncGlxWbInvAll` request exposes a GFX10
+ordering question. The compute EOP helper places GL2 writeback in release and
+K$ writeback in the later acquire, with no second GL2 writeback in that helper.
+The sources supply no dirty-K$ premise reconciling that order with PAL's
+lower-to-outer writeback rule above. This emitted sequence alone does not
+establish a general scalar-to-system release.
+[All-cache caller][pal-perf-all-caches] [Compute EOP owner][pal-compute-eop-partition]
+[Acquire sequencing][pal-acquire]
+
+For an ordinary non-PWS compute buffer edge from shader write to shader read,
+the combined path joins CS execution and then invalidates shader-source caches.
+The separate split path publishes a release token and waits for it before the
+consumer invalidations. Both retain the execution edge before cache work.
+The selected CS-idle operation has its own
+[firmware predicate](memory-commands.md#compute-completion-and-firmware).
+[Buffer cache planning][pal-transitions] [Combined wait][pal-join]
+[Split wait][pal-split-acquire]
+
+These barrier callers request whole-range operations even for buffer barriers;
+the acquire builder's ranged mode is a separate facility. Deferring a CP-DMA
+token also defers its cache actions until the DMA join.
+[Caller inputs][pal-cache-caller-inputs] [Deferred DMA][pal-cache-deferred-dma]
+
 ## Metadata and source disagreements
 
 PAL says GLM writeback is unimplemented and leaves it clear in both acquire
@@ -480,6 +522,15 @@ to PFP or ME when cache work is attached; Mesa asserts that GCR has no effect
 at the other PWS stages. These fields and counters belong to the graphics
 pipeline. [PAL PWS acquire][pal-pws] [Mesa PWS acquire][mesa-pws-acquire]
 [GFX11 ME size fields][pal-me-sizes]
+
+PAL `c5e800072a32` has a source inconsistency in stage selection:
+`AcquirePoint` contains PFP=0, ME=1, PRE_DEPTH=2 and EOP=3, while
+`GetReleaseEvents` indexes a seven-entry stage-mask table. Indices 2 and 3
+therefore select masks whose comments name PRE_SHADER and PRE_DEPTH. Later
+conditionals further adjust the event set. These actual indices and predicates
+describe the pinned implementation; the table comments do not establish
+hardware stage ordering. [Acquire-point enum][pal-acquire-point-enum]
+[Indexed release masks][pal-release-stage-masks]
 
 ### Consumer stage and deferred waits
 
@@ -862,3 +913,12 @@ the address being in host or device memory. [Programming recipes](../recipes/REA
 [pal-metadata-history-acquire]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1797-L1800
 [pal-metadata-history-mask]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1815-L1831
 [pal-metadata-history-combined]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L2081-L2111
+[pal-release-requirement]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1331-L1372
+[pal-release-cache-only]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1513-L1536
+[pal-compute-eop-partition]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L1779-L1834
+[pal-perf-all-caches]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PerfExperiment.cpp#L4099-L4119
+[pal-combined-partition]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1834-L1872
+[pal-cache-caller-inputs]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L2393-L2429
+[pal-cache-deferred-dma]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1630-L1647
+[pal-acquire-point-enum]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Chip.h#L713-L720
+[pal-release-stage-masks]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L437-L531
