@@ -675,3 +675,27 @@ func.def @test(%limit: index) -> (i32) {
 scratch: accessed=yes single_instance=yes
 exposed: accessed=yes single_instance=unproven
 scratch / exposed: workgroup_nonoverlap=unproven
+
+// ====
+
+// Binding a channel exposes the backing storage through the channel identity.
+// The callee may retain records even though it never receives a buffer or view.
+func.decl @submit(%records: channel<tile<1xi32>>)
+
+func.def @test(%limit: index) {
+  %origin = index.constant 0 : offset
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %capacity = index.constant 1 : index
+  scf.for %i = [%begin to %limit step %step] {
+    %storage = buffer.alloca<private> align(4) %bytes : buffer
+    %records = buffer.view %storage[%origin] : buffer -> view<1x1xi32>
+    %channel = channel.bind<fifo> %records, %capacity : view<1x1xi32>, index -> channel<tile<1xi32>>
+    func.call @submit(%channel) : (channel<tile<1xi32>>)
+  }
+  func.return
+}
+
+// ----
+storage: accessed=yes single_instance=unproven

@@ -91,6 +91,7 @@ loom_cc_library(
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",
         "//loom/src/loom/ops/buffer",
+        "//loom/src/loom/ops/channel",
         "//loom/src/loom/ops/kernel",
         "//loom/src/loom/util:cfg_postdominance",
         "//loom/src/loom/util:fact_table",

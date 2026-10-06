@@ -103,6 +103,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::ir
     loom::ops::buffer
+    loom::ops::channel
     loom::ops::kernel
     loom::ops::op_defs
     loom::util::cfg_postdominance

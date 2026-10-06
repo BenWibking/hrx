@@ -14,6 +14,7 @@
 #include "loom/analysis/value_relation.h"
 #include "loom/ir/context.h"
 #include "loom/ops/buffer/ops.h"
+#include "loom/ops/channel/ops.h"
 #include "loom/ops/kernel/launch_config.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/util/cfg_postdominance.h"
@@ -343,7 +344,11 @@ static iree_status_t loom_storage_interference_record_value_accesses(
     // as a scalar at a Low boundary. Until the callee's access/escape contract
     // is known, only the roots exposed to that call lose their lifetime proof.
     // Purity alone does not describe result aliases.
-    if (loom_call_like_isa(
+    // Binding storage into a channel also exposes aliases and asynchronous
+    // lifetimes not described by the buffer/view use graph. Channel realization
+    // must make those accesses explicit before this analysis can prove reuse.
+    if (loom_channel_bind_isa(user_op) ||
+        loom_call_like_isa(
             loom_call_like_cast(analysis->module, (loom_op_t*)user_op))) {
       loom_storage_interference_mark_memberships_incomplete(analysis,
                                                             memberships);
