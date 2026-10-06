@@ -374,7 +374,8 @@ static iree_status_t iree_hal_vulkan_transient_buffer_map_range(
       iree_hal_vulkan_transient_buffer_retain_host_backing(buffer, &committed));
   iree_status_t status =
       iree_hal_vulkan_transient_buffer_committed_vtable(committed)->map_range(
-          committed, mapping_mode, memory_access, flags, local_byte_offset,
+          committed, mapping_mode, memory_access, flags,
+          iree_hal_buffer_byte_offset(committed) + local_byte_offset,
           local_byte_length, mapping);
   if (iree_status_is_ok(status)) {
     if (mapping->impl.is_persistent) {
@@ -385,6 +386,8 @@ static iree_status_t iree_hal_vulkan_transient_buffer_map_range(
       // ownership from the transient wrapper to the committed backing buffer so
       // a queue-ordered decommit cannot invalidate the unmap path.
       mapping->buffer = committed;
+      mapping->impl.byte_offset =
+          iree_hal_buffer_byte_offset(committed) + local_byte_offset;
       iree_hal_buffer_release(mapped_buffer);
     }
   } else {
@@ -403,7 +406,8 @@ static iree_status_t iree_hal_vulkan_transient_buffer_unmap_range(
       iree_hal_vulkan_transient_buffer_retain_host_backing(buffer, &committed));
   iree_status_t status =
       iree_hal_vulkan_transient_buffer_committed_vtable(committed)->unmap_range(
-          committed, local_byte_offset, local_byte_length, mapping);
+          committed, iree_hal_buffer_byte_offset(committed) + local_byte_offset,
+          local_byte_length, mapping);
   iree_hal_buffer_release(committed);
   return status;
 }
@@ -418,7 +422,10 @@ static iree_status_t iree_hal_vulkan_transient_buffer_invalidate_range(
       iree_hal_vulkan_transient_buffer_retain_host_backing(buffer, &committed));
   iree_status_t status =
       iree_hal_vulkan_transient_buffer_committed_vtable(committed)
-          ->invalidate_range(committed, local_byte_offset, local_byte_length);
+          ->invalidate_range(
+              committed,
+              iree_hal_buffer_byte_offset(committed) + local_byte_offset,
+              local_byte_length);
   iree_hal_buffer_release(committed);
   return status;
 }
@@ -433,7 +440,8 @@ static iree_status_t iree_hal_vulkan_transient_buffer_flush_range(
       iree_hal_vulkan_transient_buffer_retain_host_backing(buffer, &committed));
   iree_status_t status =
       iree_hal_vulkan_transient_buffer_committed_vtable(committed)->flush_range(
-          committed, local_byte_offset, local_byte_length);
+          committed, iree_hal_buffer_byte_offset(committed) + local_byte_offset,
+          local_byte_length);
   iree_hal_buffer_release(committed);
   return status;
 }

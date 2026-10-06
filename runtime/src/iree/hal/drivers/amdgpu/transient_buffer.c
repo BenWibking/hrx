@@ -547,8 +547,10 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_map_range(
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_transient_buffer_load_host_backing(
       buffer, &backing_buffer));
   return iree_hal_amdgpu_transient_buffer_backing_vtable(backing_buffer)
-      ->map_range(backing_buffer, mapping_mode, memory_access, flags,
-                  local_byte_offset, local_byte_length, mapping);
+      ->map_range(
+          backing_buffer, mapping_mode, memory_access, flags,
+          iree_hal_buffer_byte_offset(backing_buffer) + local_byte_offset,
+          local_byte_length, mapping);
 }
 
 static iree_status_t iree_hal_amdgpu_transient_buffer_unmap_range(
@@ -560,8 +562,10 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_unmap_range(
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_transient_buffer_load_host_backing(
       buffer, &backing_buffer));
   return iree_hal_amdgpu_transient_buffer_backing_vtable(backing_buffer)
-      ->unmap_range(backing_buffer, local_byte_offset, local_byte_length,
-                    mapping);
+      ->unmap_range(
+          backing_buffer,
+          iree_hal_buffer_byte_offset(backing_buffer) + local_byte_offset,
+          local_byte_length, mapping);
 }
 
 static iree_status_t iree_hal_amdgpu_transient_buffer_invalidate_range(
@@ -573,7 +577,10 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_invalidate_range(
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_transient_buffer_load_host_backing(
       buffer, &backing_buffer));
   return iree_hal_amdgpu_transient_buffer_backing_vtable(backing_buffer)
-      ->invalidate_range(backing_buffer, local_byte_offset, local_byte_length);
+      ->invalidate_range(
+          backing_buffer,
+          iree_hal_buffer_byte_offset(backing_buffer) + local_byte_offset,
+          local_byte_length);
 }
 
 static iree_status_t iree_hal_amdgpu_transient_buffer_flush_range(
@@ -585,7 +592,10 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_flush_range(
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_transient_buffer_load_host_backing(
       buffer, &backing_buffer));
   return iree_hal_amdgpu_transient_buffer_backing_vtable(backing_buffer)
-      ->flush_range(backing_buffer, local_byte_offset, local_byte_length);
+      ->flush_range(
+          backing_buffer,
+          iree_hal_buffer_byte_offset(backing_buffer) + local_byte_offset,
+          local_byte_length);
 }
 
 static const iree_hal_buffer_vtable_t iree_hal_amdgpu_transient_buffer_vtable =
