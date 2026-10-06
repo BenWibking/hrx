@@ -21,6 +21,7 @@ across the complete graph.
 | [Staged device-local memory](local-memory.md) | System-memory staging, GC9.4.3/4 HBM cache policy, shader/DMA visibility, and the host-aperture boundary. |
 | [PM4 shader and SDMA handoffs](pm4-sdma.md) | RADV directional progress, shader cache transitions, native gang submission, and final-use joins. |
 | [Device-generated SDMA](../sdma/device-publication.md#command-credits-payload-credits-and-drain) | A resident shader chooses transfers, publishes complete commands, consumes copied results and separately returns ring/payload credits. |
+| [Resident shader publication](../shader-memory.md#global-release-and-acquire-sequences) | Per-family release/acquire instruction sequences, fresh control loads, payload cache policy, contributor joins and read-completion credit. |
 
 ## SDMA upload, AQL dispatch and SDMA download
 

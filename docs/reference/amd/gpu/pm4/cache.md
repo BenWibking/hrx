@@ -693,6 +693,10 @@ all-XCC broadcast or the firmware expansion of AQL fences.
 [gfx942 cache model][cdna-llvm-model] [SYSTEM shader acquire][cdna-llvm-acquire]
 [SYSTEM shader release][cdna-llvm-release] [Native ring/XCC owner][cdna-ring-xcc]
 
+The [shader memory chapter](../shader-memory.md#global-release-and-acquire-sequences)
+gives the release/acquire instruction sequences and their scope, counter and
+workgroup-mode conditions across these shader families.
+
 An SDMA or CPU observer therefore needs the release, completion and acquire
 operations of its actual access path. HDP handles a host-aperture boundary;
 it does not substitute for shader TC maintenance. Conversely, an EOP control

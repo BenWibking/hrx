@@ -126,7 +126,7 @@ and receiver acquire because DMA can sit outside the shader coherency domain.
 A wait-counter instruction retires the instruction classes it names; it is not
 by itself a universal replacement for these mapping/scope-dependent cache
 operations. [Payload contract][copy-contract]
-[Shader waits and memory order](../pm4/dispatch.md#shader-wait-counter-mode-mem_ordered)
+[Shader release/acquire sequences](../shader-memory.md#global-release-and-acquire-sequences)
 [SDMA cache operations](cache.md)
 
 ## Reservations, ordered commit and lane progress

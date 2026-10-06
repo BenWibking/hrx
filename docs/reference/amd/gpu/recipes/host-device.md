@@ -204,23 +204,15 @@ directed handoffs into a reusable slot; the [pipeline
 recipe](../../interop/pipelines.md#resident-execution-and-slot-generations)
 also covers generation arithmetic, multiple readers and native drain.
 
-The shader acquire is more than a fresh control load. LLVM's GFX10/GFX11
-GLOBAL atomic acquire-load mapping at AGENT/SYSTEM scope uses `glc=1`
-(`dlc=1` additionally on GFX10), waits for the load with `s_waitcnt vmcnt(0)`,
-then invalidates GL1 and GL0 before subsequent payload loads. This sequence
-assumes the target's admitted atomic access and L2 coherence or bypass route.
-Invalidation after a polling loop cannot repair a loop that never observes
-the control update. [Acquire sequence][shader-acquire]
-[Hierarchy and mapping premises][shader-model]
-
-The ordinary scalar-load path assumes its data remains unchanged during the
-dispatch. Lane-uniform addresses do not give mutable control or payload that
-property. Immutable kernarg pointer values can point to separately synchronized
-mutable data. A publishing wave's wait counts also cover its own accesses;
-other contributing waves or workgroups require a join. LLVM's release sequence
-orders preceding loads as well as stores, which matters when the publication
-returns credit for completed reads. [Scalar-memory premise][shader-model]
-[Release sequence][shader-release]
+The [shader memory chapter](../shader-memory.md) gives the per-family
+release/acquire instructions and their native mapping assumptions. A fresh
+control load and payload acquisition are separate obligations; invalidation
+after a polling loop cannot repair a loop that never observes the update.
+Its [scalar-memory discussion](../shader-memory.md#scalar-loads-and-per-access-cache-policy)
+also explains why a uniform address does not make mutable resident data
+dispatch-immutable. Returning input credit orders completed reads as well as
+writes, and a publisher joins all contributing waves before its outward
+release.
 
 ## CPU publication and device cache operations
 
@@ -471,9 +463,6 @@ can erase the very completion that consumer still needs to observe.
 [dmabuf-cpu]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/include/uapi/linux/dma-buf.h#L26-L85
 [dmabuf-begin]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_dma_buf.c#L280-L319
 [dmabuf-import]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_dma_buf.c#L415-L446
-[shader-model]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L13564-L13695
-[shader-acquire]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L13906-L13932
-[shader-release]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L14367-L14414
 [sdma-notification]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L614-L649
 [sdma-gang]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L589-L612
 [gfx942-model]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L11263-L11333

@@ -8,6 +8,7 @@ resource-lifetime protocol.
 | Area | Topics |
 | --- | --- |
 | [Architecture and transport](architectures.md) | Physical IP, compiler targets, native queues, and submission ownership. |
+| [Shader memory publication](shader-memory.md) | Resident release/acquire sequences, `s_waitcnt`, `buffer_inv`, `global_wb`, cache scopes, and wave/workgroup joins across GCN, CDNA and RDNA. |
 | [PM4](pm4/README.md) | Compute dispatch, memory commands, cache control, and command-buffer execution. |
 | [AQL](aql/README.md) | Packet publication, dispatch, dependencies, vendor command carriers, and profiling. |
 | [SDMA](sdma/README.md) | Transfer-engine operations and signaling protocols. |
