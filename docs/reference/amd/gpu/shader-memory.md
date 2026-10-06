@@ -275,6 +275,10 @@ an ownership transfer. Mesa's GFX10 policy explicitly distinguishes coherent
 bypass from non-coherent bypass and states that the latter does not guarantee
 ordering with coherent stores. [Access-policy distinctions][mesa-cache-flags]
 
+[Cache residency and replacement policy](cache-residency.md) separates RDNA4
+and CDNA5 temporal hints from persisting-size requests and HIP access windows.
+Those controls retain the same independent publication and final-use edges.
+
 ## Resident transfer and reuse
 
 For a shader-generated SDMA transfer, the complete actor flow is:

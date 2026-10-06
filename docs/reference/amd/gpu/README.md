@@ -12,6 +12,7 @@ resource-lifetime protocol.
 | [Cooperative execution and grid synchronization](cooperative.md) | Shared cooperative queues, `ALLOC_QUEUE_GWS`, firmware admission, occupancy, hidden grid state and GWS/atomic barrier scopes. |
 | [Compute context save and restore](context-save.md) | CWSR, `ctx_save_restore_size`, per-XCC storage, control-stack inspection, suspension and final ownership. |
 | [Shader memory publication](shader-memory.md) | Resident release/acquire sequences, `s_waitcnt`, `buffer_inv`, `global_wb`, cache scopes, and wave/workgroup joins across GCN, CDNA and RDNA. |
+| [Cache residency and replacement policy](cache-residency.md) | Temporal hints, `HSA_AMD_AGENT_INFO_MAX_PERSISTING_L2_CACHE_SIZE`, native size-request admission and HIP access-window semantics. |
 | [Asynchronous global/LDS transfers](async-memory.md) | CDNA5 `ASYNCcnt`, `TENSORcnt`, TDM descriptor notifications, LDS split-barrier phases, and producer/consumer storage reuse. |
 | [Tensor descriptors and LDS layouts](tensor-memory.md) | CDNA5 TDM address/stride units, 1D–5D fields, iteration, padding, row gather/scatter, descriptor advancement and per-wave issue. |
 | [Workgroup clusters and multicast](clusters.md) | CDNA5 `CLUSTER_LOAD`, `workgroup_mask`, per-requestor completion, cluster barrier membership, extended AQL geometry and local LDS reuse. |
