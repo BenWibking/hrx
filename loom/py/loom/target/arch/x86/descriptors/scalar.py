@@ -43,7 +43,6 @@ from loom.target.low_descriptors import (
 from .common import (
     _ADDRESS_SCALE_ENUM,
     _ADDRESS_SCALE_IMMEDIATE,
-    _CONTROL_EFFECT,
     _DISP32_IMMEDIATE,
     _GPR_DESTRUCTIVE_LHS_CONSTRAINTS,
     _IMM32_IMMEDIATE,
@@ -64,7 +63,6 @@ from .common import (
     _SCHEDULE_SCALAR,
     _SHIFT32_IMMEDIATE,
     _SHIFT64_IMMEDIATE,
-    _TARGET_BLOCK_IMMEDIATE,
     _asm,
     _gpr32_operand,
     _gpr32_result,
@@ -971,17 +969,6 @@ X86_SCALAR_SUFFIX_DESCRIPTORS = (
         ),
         schedule_class=_SCHEDULE_ADDRESS,
         flags=(DescriptorFlag.DEAD_REMOVABLE, DescriptorFlag.SAFE_TO_SPECULATE),
-    ),
-    Descriptor(
-        key="x86.scalar.jmp",
-        mnemonic="jmp",
-        semantic_tag="control.branch",
-        operands=(),
-        immediates=(_TARGET_BLOCK_IMMEDIATE,),
-        asm_forms=_asm(immediates=("target_block",)),
-        effects=(_CONTROL_EFFECT,),
-        schedule_class=_SCHEDULE_CONTROL,
-        flags=(DescriptorFlag.SIDE_EFFECTING, DescriptorFlag.TERMINATOR),
     ),
 )
 

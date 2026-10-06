@@ -31,9 +31,6 @@ from loom.target.low_descriptors import (
     ConstraintKind,
     Descriptor,
     DescriptorFlag,
-    Effect,
-    EffectFlag,
-    EffectKind,
     EnumDomain,
     Immediate,
     ImmediateFlag,
@@ -369,20 +366,6 @@ _ADDRESS_SCALE_IMMEDIATE = Immediate(
     enum_domain=_ADDRESS_SCALE_ENUM,
     bit_width=8,
     unsigned_max=8,
-)
-
-_TARGET_BLOCK_IMMEDIATE = Immediate(
-    "target_block",
-    ImmediateKind.ORDINAL,
-    flags=(ImmediateFlag.SYMBOLIC, ImmediateFlag.RELATIVE),
-    bit_width=32,
-    unsigned_max=(2**32) - 1,
-)
-
-
-_CONTROL_EFFECT = Effect(
-    EffectKind.CONTROL,
-    flags=(EffectFlag.ORDERED,),
 )
 
 _DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS = (

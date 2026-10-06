@@ -49,7 +49,6 @@ from loom.target.low_descriptors import (
 from .avx2 import X86_AVX2_DESCRIPTORS
 from .common import (
     _ADDRESS_SCALE_ENUM,
-    _DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS,
     _LANE_I32X4_IMMEDIATE,
     _READ_ONLY_DATA_IMMEDIATE,
     _REG_K,
@@ -974,36 +973,6 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
         ),
         _mask_move_descriptor(mask_to_gpr=False),
         _mask_move_descriptor(mask_to_gpr=True),
-        Descriptor(
-            key="x86.avx512.vpdpbusd.zmm",
-            mnemonic="vpdpbusd",
-            semantic_tag="dot.u8s8.i32x16",
-            operands=(
-                _zmm_result(),
-                _zmm_operand("acc"),
-                _zmm_operand("lhs"),
-                _zmm_operand("rhs"),
-            ),
-            constraints=_DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS,
-            asm_forms=_asm(results=("dst",), operands=("acc", "lhs", "rhs")),
-            schedule_class=_SCHEDULE_VECTOR_DOT_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
-        Descriptor(
-            key="x86.avx512.vdpbf16ps.zmm",
-            mnemonic="vdpbf16ps",
-            semantic_tag="dot.bf16.f32x16",
-            operands=(
-                _zmm_result(),
-                _zmm_operand("acc"),
-                _zmm_operand("lhs"),
-                _zmm_operand("rhs"),
-            ),
-            constraints=_DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS,
-            asm_forms=_asm(results=("dst",), operands=("acc", "lhs", "rhs")),
-            schedule_class=_SCHEDULE_VECTOR_DOT_ZMM,
-            flags=(DescriptorFlag.DEAD_REMOVABLE,),
-        ),
         Descriptor(
             key="x86.avx512.kandq",
             mnemonic="kandq",
