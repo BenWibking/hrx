@@ -236,6 +236,8 @@ for those credits and any coordinator release, timestamp, or notification
 tail. CLR requests a separate `ActiveSignal(1, ...)` for each merged operation
 and joins independent completions into the enclosing command. That actual
 caller differs from the public batch description's shared-count model.
+The [batch boundary](fanout.md#batch-composition-and-descriptor-ownership)
+compares all operation families' count units and descriptor propagation.
 [CLR signals][clr-submit] [Enclosing join][clr-join]
 [API description][batch-api]
 

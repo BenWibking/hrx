@@ -238,6 +238,53 @@ start/body signal ownership to an asynchronous handler observing output zero.
 [Atomic predicate][initialize] [Owner][fanout-owner] [Epilogue][epilogue]
 [Fused coordinator][coordinator]
 
+## Batch composition and descriptor ownership
+
+ROCr's `hsa_amd_memory_async_batch_copy` groups host descriptions before
+generating command bytes. An operation array, the entries within one
+operation, the emitted packets and the completion credits have different
+counts. The following host representation and admission rules apply at ROCm
+systems `105dd4ff35798f95646353bc08f6c885416ae17e`; packet limits remain those
+of the selected builder. [Public representation][batch-current-descriptor]
+[Admission and grouping][batch-current-dispatcher]
+
+| Count | Meaning and bounds |
+| --- | --- |
+| `uint32_t num_copy_ops` | Number of host operation descriptors passed to the API; zero is rejected. It is not an SDMA packet count. |
+| LINEAR `uint16_t num_entries` | Zero selects scalar fields; 1–65535 selects source, destination, agent and length arrays. |
+| BROADCAST `uint16_t num_entries` | 1–65535 destination entries in the host representation. The selected multicast builder separately admits at most 1024 destinations; it does not split an oversized destination list into several multicast requests. |
+| SWAP `uint16_t num_entries` | Zero selects one pair with scalar lengths; 1–65535 selects paired arrays with one length per pair. |
+| INDIRECT_SRC / INDIRECT_DST / INDIRECT_SRCDST `uint16_t num_entries` | Zero selects one transfer; the dispatcher admits 1–1024 entries in a list. All entries share the descriptor's indirection mode. |
+| Emitted packet count | Depends on byte-length chunking, broadcast pairing, engine grouping, dependencies and completion work. It need not equal either host count. |
+
+The header's 65536-entry prose exceeds the 16-bit field's representable
+positive range. Zero selects a different representation for scalar-capable
+operations; it is not an encoding for 65536 entries. CLR's merged array
+construction narrows vector lengths into this field and does not supply a
+general splitting policy for these limits. [Descriptor][batch-current-descriptor]
+[CLR construction][batch-current-clr-arrays]
+
+The public dispatcher groups descriptors by selected copy agent in an
+agent-keyed map, and each agent's `DmaCopyBatch` receives the same original
+dependency list. The per-agent owner then selects engines for its operations;
+fan-out groups entries again by engine. These groupings do not add a
+completion-to-start edge between descriptors. Array order therefore does not
+establish a dependency between copies on different engines or agents. A
+producer/consumer chain needs an explicit dependency and the appropriate
+[payload visibility](cache.md), independently of any batching.
+[Agent grouping][batch-current-dispatcher]
+[Per-agent dispatch][batch-current-owner] [Engine grouping][fanout-assign]
+
+Validation precedes dispatch of the agent groups, but acceptance is not one
+transaction across all native queues. Later submission errors can follow
+earlier published work. Each successfully published operation retains its
+completion and resource obligations; a returned error does not cancel those
+operations. The error boundary below also applies within one fan-out
+operation. [Group dispatch][batch-current-dispatcher]
+[Operation dispatch][batch-current-owner] [Fan-out owner][fanout-owner]
+
+### Completion and descriptor controls
+
 The public batch API says all operations share a signal initialized to the
 operation count. Its caller in CLR's `rocrCopyBufferBatch` instead requests a
 separate `ActiveSignal(1, ...)` for every merged operation. The fixed-one joins
@@ -248,13 +295,40 @@ the enclosing command's completion. The public description and implementation
 are different contracts at the cited revision. [API description][batch-api]
 [CLR grouping/signals][clr-grouping] [CLR join][clr-join]
 
-The descriptor also advertises raw wait/signal operands and a traffic class.
-The public dispatcher validates raw wait/signal fields, but
-`DmaCopyBroadcast` passes HSA dependencies and the HSA output signal to its
-builders without those raw operands or traffic class. Consequently those
-declarations do not establish configurable raw comparisons or QoS for this
-copy path. The fused operands above describe what it actually emits.
-[Descriptor][descriptor] [Validation][dispatcher] [Caller][select]
+At the newer revision above, the same disagreement remains. This is a
+path-dependent completion protocol: standalone unprofiled multicast produces
+a net decrement of one, while other selectable paths use the fixed-one joins
+and zero stores described above. A shared count must work across every path
+the operation can select; one decrement-based path does not establish that
+property. Scalar LINEAR descriptors with zero byte length are omitted from
+the dispatch groups and receive no completion update from this dispatcher.
+[Current API description][batch-current-api]
+[Current dispatch][batch-current-dispatcher]
+[Current CLR signal assignment][batch-current-clr-signals]
+
+Common descriptor fields also differ from emitted packet operands:
+
+| Descriptor input | Actual propagation at the cited revision |
+| --- | --- |
+| Operation `type`, addresses, agents and lengths | Select and populate the scalar linear, multi-linear, broadcast, swap or one of the three indirect paths. |
+| HSA dependency array and `completion_signal` | Reach the operation owners and their native poll/join/completion protocols. |
+| Raw `wait.function`, `scope`, `addr`, `value`, `mask` | Validated by the public dispatcher, but not forwarded through the operation owners to their packet builders. This includes the indirect pointer-read scope. |
+| Raw `signal.operation`, `scope`, `addr`, `data` | Validated by the public dispatcher, but not forwarded to the builders. The descriptor's raw signal is distinct from the HSA completion handle. |
+| `traffic_class` | Declared in the descriptor, but not consumed by these operation owners. |
+
+The scalar LINEAR branch passes its ordinary copy arguments to
+`DmaCopyOnEngine`; multi-linear, swap and all three indirect modes enter
+`DmaCopyFanOutOp`. Broadcast selects its specialized builder or that same
+fan-out owner. Calls into `DmaCopyOnEngine`, `DmaCopyFanOutOp` and the
+broadcast/multicast builders omit the raw control and traffic-class fields.
+CLR initializes its generated descriptors to zero
+and uses the HSA signal path. Thus the fixed fused operands in this chapter
+describe the actual caller; raw-field validation does not establish arbitrary
+comparisons, signal atomics, pointer-read scope or QoS configuration.
+[Linear dispatch][batch-current-owner] [Broadcast selection][batch-current-broadcast]
+[Swap and indirect owners][batch-current-special]
+[Fan-out interface][batch-current-fanout-interface]
+[CLR descriptor construction][batch-current-clr-descriptors]
 
 ## Publication, visibility, and storage lifetime
 
@@ -312,6 +386,16 @@ bandwidth comparison measures. The runtime's byte accounting records `N * L`,
 while its size thresholds remain a separate scheduling policy.
 [Accounting][multicast-submit] [Policy][select]
 
+[batch-current-descriptor]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L2256-L2410
+[batch-current-api]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L2412-L2446
+[batch-current-dispatcher]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/hsa_ext_amd.cpp#L533-L790
+[batch-current-owner]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L2151-L2245
+[batch-current-broadcast]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L1931-L2041
+[batch-current-special]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L2043-L2095
+[batch-current-fanout-interface]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L1557-L1567
+[batch-current-clr-descriptors]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L647-L717
+[batch-current-clr-arrays]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L855-L951
+[batch-current-clr-signals]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L953-L957
 [initialize]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L156-L218
 [descriptor]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L2235-L2394
 [dispatcher]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/hsa_ext_amd.cpp#L520-L777

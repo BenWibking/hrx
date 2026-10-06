@@ -185,7 +185,10 @@ to one, then increased by the number of engine groups. The classic path with
 separate body flags keeps the output at one until its final store. These are
 not general shared batch-counter recipes. CLR's separate completion per merged
 operation and the public API's differing shared-counter description are detailed in
-[batch completion](fanout.md#completion-ownership).
+[batch completion](fanout.md#completion-and-descriptor-controls). The same
+[batch boundary](fanout.md#batch-composition-and-descriptor-ownership)
+separates pair counts from packet and completion counts across the operation
+family.
 
 The packet comments describe exchange as atomic, but do not name its
 granularity, participating observers, or a whole-range linearization point.

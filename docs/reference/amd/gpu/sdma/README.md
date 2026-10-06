@@ -13,6 +13,7 @@ depend on the engine generation and native transport.
 | [Buffer exchange](swap.md) | `COPY_LINEAR_SWAP`, `COPY_LINEAR_SWAP_WAITSIGNAL_GFX1250`: equal-sized read/write operands, aligned chunks, engine joins and residency ownership. |
 | [Indirect source and destination](indirect-copy.md) | `COPY_LINEAR_WAITSIGNAL_INDIRECT_GFX1250`, `LINEAR_INDIRECT_SRC` / `DST` / `SRCDST`: execution-time payload addresses, fixed lengths, slot publication and retirement. |
 | [Broadcast and multicast](fanout.md) | `COPY_LINEAR_BROADCAST` / `COPY_BROADCAST_LINEAR`, `COPY_MULTICAST`, fused wait/signal blocks, destination pairing, and joins across copy engines. |
+| [Batch composition](fanout.md#batch-composition-and-descriptor-ownership) | `hsa_amd_memory_async_batch_copy`: operation/entry/packet counts, agent and engine grouping, descriptor-control propagation and per-operation completion ownership. |
 | [Rectangular copy](rectangular-copy.md) | `COPY_LINEAR_SUBWIN` / `COPY_LINEAR_RECT`: element units, row/slice pitches, subwindow layouts, tiling and geometry-specific cache controls. |
 | [Constant fill](fill.md) | `CONST_FILL`: pattern width, count units, generation differences and completion. |
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED`: command-carried DWORD data, policy layouts, dependent transfers and storage lifetime. |
