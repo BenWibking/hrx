@@ -15,6 +15,11 @@ One source range can also feed several destinations through
 [broadcast, multicast, or ordinary-copy fan-out](fanout.md). Those forms have
 separate destination-count, alignment, routing, and completion contracts.
 
+[Indirect source and destination copies](indirect-copy.md) read payload
+addresses from device-visible slots at execution time while keeping the byte
+length fixed. Their slot scopes and lack of a post-dereference offset give
+them different publication and chunking requirements.
+
 ## Representation
 
 | DWORD | ROCr ordinary linear-copy fields |

@@ -9,6 +9,11 @@ owners create the native queues and mappings before launching device work.
 [XIO packet construction][xio-compose] [XIO queue owner][xio-owner]
 [Anvil publication][anvil-commit]
 
+For a fixed transfer length, [indirect payload addresses](indirect-copy.md)
+provide a separate path that ROCr selects for gfx125: the producer publishes
+address slots consumed by already constructed copy packets. Generating new
+commands also permits new lengths and operation sequences.
+
 ## Applicability and address reach
 
 This chapter describes direct Linux KFD queues with 64-bit byte frontiers and
