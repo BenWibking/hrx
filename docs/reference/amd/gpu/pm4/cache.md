@@ -344,7 +344,7 @@ not come from the acquire mask. [GC12.1 fence][linux121-fence]
 
 ### Placement in complete barriers
 
-PAL's `SelectReleaseMemCaches` partitions requested actions by packet
+PAL's GFX10/GFX11 `SelectReleaseMemCaches` partitions requested actions by packet
 representation: GL2 writeback/invalidation and M$/GL1/V$ invalidation fit in
 release; GFX11 also takes K$ writeback/invalidation. I$ invalidation remains
 for acquire. The helper itself issues no dependency wait. Its callers use
@@ -383,6 +383,43 @@ These barrier callers request whole-range operations even for buffer barriers;
 the acquire builder's ranged mode is a separate facility. Deferring a CP-DMA
 token also defers its cache actions until the DMA join.
 [Caller inputs][pal-cache-caller-inputs] [Deferred DMA][pal-cache-deferred-dma]
+
+### GFX12 complete barriers
+
+PAL's GFX12 cache flags contain GL2 writeback/invalidation and K$/V$/I$
+invalidation. Release represents the four data-cache actions; I$ invalidation
+requires acquire. K$ writeback is absent from this planner under the compiler
+premise above. This GFX12 policy does not describe GC12.1's vector-writeback
+field. [GFX12 flag set][pal12-complete-flags]
+[Release selection][pal12-complete-select]
+
+| GFX12 caller | Action placement and completion |
+| --- | --- |
+| Split token release/acquire to a compute consumer | Cache actions plus a selected stage event promote release to EOP. The non-PWS acquire joins the token before its remaining cache work. With no release event, cache-only work supplies no stage-completion token. |
+| Combined compute barrier with EOP completion | `WriteWaitEop` puts data-cache actions in release and waits on its owned fence, then emits any remaining acquire actions. |
+| Combined compute barrier with CS-only completion | `CS_PARTIAL_FLUSH` joins the shader stage before a cache-only acquire. |
+| Combined graphics PWS barrier | Requested data-cache work moves into the release; the matching counter acquire waits at the selected stage without repeating it. |
+| EOP-only destination | Required cache work can be emitted in a release without an immediate acquire wait. That emission is not a CPU completion observation. |
+
+[Split release][pal12-complete-release] [Split acquire][pal12-token-wait]
+[Compute EOP owner][pal12-complete-eop] [Combined callers][pal12-complete-combined]
+
+The pinned source contains an I$ assertion disagreement. `SelectReleaseMemCaches`
+asserts that no actions remain, describing I$ invalidation as preamble-only.
+`PerfExperiment::WriteWaitIdle(flushCaches=true)` instead passes
+`SyncGlxWbInvAll` (`0x1f`) through the compute EOP helper: release consumes
+`0x0f`, leaving I$ invalidation (`0x10`). The caller contains a trailing acquire
+for that remainder, but the selector assertion contradicts its real input.
+This source inconsistency establishes no hardware restriction on I$ invalidation.
+[Selector assertion][pal12-complete-select] [All-cache caller][pal12-complete-all]
+[Remainder handling][pal12-complete-eop]
+
+Timestamp writes add a separate dependency even when no GCR action is needed.
+The GFX12 recorder preserves `CoherTimestamp` as a confirmation requirement,
+inserts its write-confirmation sequence, and promotes an otherwise non-EOP
+producer join to EOP. Its
+[timestamp flow](timing.md#gfx12-timestamp-confirmation) supplies the complete
+caller and storage contract. [Timestamp event promotion][pal12-complete-events]
 
 ## Metadata and source disagreements
 
@@ -523,7 +560,8 @@ at the other PWS stages. These fields and counters belong to the graphics
 pipeline. [PAL PWS acquire][pal-pws] [Mesa PWS acquire][mesa-pws-acquire]
 [GFX11 ME size fields][pal-me-sizes]
 
-PAL `c5e800072a32` has a source inconsistency in stage selection:
+PAL `c5e800072a32` has the same source inconsistency in its GFX10/GFX11
+and GFX12 stage selection:
 `AcquirePoint` contains PFP=0, ME=1, PRE_DEPTH=2 and EOP=3, while
 `GetReleaseEvents` indexes a seven-entry stage-mask table. Indices 2 and 3
 therefore select masks whose comments name PRE_SHADER and PRE_DEPTH. Later
@@ -531,6 +569,7 @@ conditionals further adjust the event set. These actual indices and predicates
 describe the pinned implementation; the table comments do not establish
 hardware stage ordering. [Acquire-point enum][pal-acquire-point-enum]
 [Indexed release masks][pal-release-stage-masks]
+[GFX12 enum][pal12-complete-points] [GFX12 release masks][pal12-complete-events]
 
 ### Consumer stage and deferred waits
 
@@ -922,3 +961,11 @@ the address being in host or device memory. [Programming recipes](../recipes/REA
 [pal-cache-deferred-dma]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L1630-L1647
 [pal-acquire-point-enum]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9Chip.h#L713-L720
 [pal-release-stage-masks]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L437-L531
+[pal12-complete-flags]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Chip.h#L294-L311
+[pal12-complete-select]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L1803-L1827
+[pal12-complete-release]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L701-L896
+[pal12-complete-eop]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L1721-L1784
+[pal12-complete-combined]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L1199-L1347
+[pal12-complete-all]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12PerfExperiment.cpp#L3408-L3421
+[pal12-complete-events]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Barrier.cpp#L123-L204
+[pal12-complete-points]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12Chip.h#L375-L382
