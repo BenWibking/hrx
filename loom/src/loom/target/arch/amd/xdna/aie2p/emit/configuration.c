@@ -166,6 +166,9 @@ static iree_status_t loom_aie2p_configuration_load(
   loom_aie2p_configuration_worker_t* worker =
       emitter->workers[symbol.symbol_id];
   if (!worker) {
+    const iree_string_view_t name = loom_string_table_get(
+        &request->module->strings,
+        request->module->symbols.entries[symbol.symbol_id].name_id);
     IREE_RETURN_IF_ERROR(iree_arena_allocate(request->scratch_arena,
                                              sizeof(*worker), (void**)&worker));
     *worker = (loom_aie2p_configuration_worker_t){0};
@@ -201,7 +204,8 @@ static iree_status_t loom_aie2p_configuration_load(
                                     request->compile_report, report_ptr));
       loom_target_compile_report_deinitialize(report_ptr);
     }
-    IREE_RETURN_IF_ERROR(status);
+    IREE_RETURN_IF_ERROR(status, "while compiling worker '@%.*s'",
+                         (int)name.size, name.data);
     if (!compiled) {
       ++emitter->error_count;
       return iree_ok_status();
@@ -210,9 +214,6 @@ static iree_status_t loom_aie2p_configuration_load(
         .program_address = tile->memory.program_base,
         .program_byte_capacity = tile->memory.program_capacity,
     };
-    const iree_string_view_t name = loom_string_table_get(
-        &request->module->strings,
-        request->module->symbols.entries[symbol.symbol_id].name_id);
     IREE_RETURN_IF_ERROR(
         loom_aie2p_tile_link(&worker->contribution, &layout,
                              request->scratch_arena, &worker->linked),
