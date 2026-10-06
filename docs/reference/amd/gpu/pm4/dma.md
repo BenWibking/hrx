@@ -34,6 +34,37 @@ The principal ordering controls express different obligations:
 
 [PAL transfer contract][p11-dma-info] [RADV emitter][m-dma]
 
+## Immediate DWORD fill
+
+The ordinary incrementing fill repeats one 32-bit value across the destination.
+Its operands have the same representation in the cited GFX10/GFX11 and GFX12
+MEC layouts:
+
+| Word and field | Fill operand |
+| --- | --- |
+| 1, `src_sel` bits 30:29 | `data = 2`; word 2 supplies the pattern instead of a source address. |
+| 1, `dst_sel` bits 21:20 | `dst_addr_using_l2 = 3` selects the TC_L2 route, with the generation-specific cache meaning described below. |
+| 2, `src_addr_lo_or_data` | The complete 32-bit pattern, including its high bit. |
+| 3, `src_addr_hi` | Ignored for immediate data; PAL clears it, and RADV emits zero from its 32-bit value argument. |
+| 4–5, `dst_addr_lo` / `dst_addr_hi` | The destination byte address. RADV requires DWORD alignment. |
+| 6, `byte_count` bits 25:0 | Direct byte count, not a count of pattern DWORDs. RADV requires a multiple of four bytes. |
+
+[GFX10/GFX11 selectors][p11-dma-selectors]
+[GFX12 selectors][p12-dma-selectors] [MEC operands][p11-mec]
+[GFX12 operands][p12-mec] [PAL builder][p11-builder]
+[GFX12 builder][p12-builder] [RADV emitter][m-dma]
+[RADV fill loop][m-dma-callers]
+
+PAL's pipeline-query reset is a concrete fill caller. When the command buffer
+can issue pipeline-statistics queries, it first joins earlier query writes with
+`WriteWaitEop`; otherwise the caller supplies that ordering through semaphores.
+It then fills the result range with `PipelineStatsResetMemValue32` and the
+separate timestamp range with zero. Both fills request `sync=true` through the
+shared PFP-layout builder. That request retains the MEC completion discrepancy
+described next; the immediate-data operands do not resolve it.
+[GFX10/GFX11 query reset][p11-query-reset]
+[GFX12 query reset][p12-query-reset]
+
 ## MEC completion discrepancy and ordinary caller
 
 Mesa's emitter states that MEC DMA is synchronous and sets CP_SYNC only for
@@ -119,6 +150,7 @@ capacity, driver chunk size and algorithm threshold are different quantities.
 | Boundary | Source value or policy |
 | --- | --- |
 | Field capacity | `(1 << 26) - 1` bytes; field width alone is not an execution guarantee for every firmware. |
+| Largest DWORD-aligned field value | `0x03fffffc` bytes; applying fill alignment does not select a driver chunk policy. |
 | PAL compute chunks | `1 << 25` bytes, a power-of-two split policy. |
 | Mesa GFX10 chunks | 67,108,832 bytes: the field mask rounded down to 32-byte alignment. |
 | Mesa GFX11+ chunks | 32,736 bytes: 32,767 rounded down to 32-byte alignment. The reason for this smaller cap is not supplied by the cited code. |
@@ -179,7 +211,12 @@ PAL's MEC control discrepancy does not disappear by substituting one for
 another.
 
 [p11-mec]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_mec_pm4_packets.h#L1315-L1387
+[p11-dma-selectors]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_mec_pm4_packets.h#L1262-L1287
+[p12-dma-selectors]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_mec_pm4_packets.h#L1112-L1135
 [p11-builder]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L2225-L2320
+[p12-builder]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L2392-L2477
+[p11-query-reset]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9PipelineStatsQueryPool.cpp#L463-L521
+[p12-query-reset]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12PipelineStatsQueryPool.cpp#L491-L544
 [p11-dma-info]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.h#L149-L178
 [m-dma]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_cp_dma.c#L20-L127
 [p11-copy]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L1738-L1770
