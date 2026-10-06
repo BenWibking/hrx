@@ -420,7 +420,11 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::error::error_defs
+    loom::ir
+    loom::ops::op_defs
+    loom::ops::test
     loom::pass::test::harness
+    loom::rewrite::rewriter
 )
 
 loom_cc_test(

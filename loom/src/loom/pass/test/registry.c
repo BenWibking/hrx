@@ -145,6 +145,7 @@ static iree_status_t loom_test_noop_run(loom_pass_t* pass,
       trace, pass, IREE_SV("test.noop"),
       loom_test_pass_function_name(module, function)));
   if (trace) {
+    trace->events[trace->event_count - 1].function = function;
     ++trace->noop_invocation_count;
   }
   loom_test_invocation_statistics_t* statistics =
