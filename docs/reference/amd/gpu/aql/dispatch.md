@@ -118,20 +118,12 @@ flat-scratch-init user-SGPR inputs are not substitutes for that mechanism.
 [Private address space][llvm-private] · [Architected
 initialization][llvm-scratch-init]
 
-ROCr distinguishes retained scratch from single-dispatch scratch. Retained
-scratch must cover every physical scratch slot, even when one dispatch has
-fewer waves. Its single-use path can size backing for the dispatch instead,
-because firmware surrenders that allocation under a separate reclamation
-protocol. The per-XCC descriptor uses that XCC's share of the backing.
-[Allocation and retention policy][rocr-retained-scratch] · [Per-XCC descriptor
-construction][rocr-scratch-xcc]
-
-A fixed-scratch queue therefore keeps its backing alive while the queue can
-reuse it. Completion of a small dispatch does not establish that every
-physical slot was used, nor does it transfer queue-owned scratch to the host.
-Dynamic growth, single-use reclamation, and queue teardown have their own
-ownership transitions in the native runtime. [ROCr scratch ownership
-distinction][rocr-retained-scratch]
+Retained queue scratch covers every physical scratch slot, even when one
+dispatch has fewer waves. Dispatch-sized scratch has a separate firmware
+return protocol; dispatch completion alone does not relinquish retained
+backing. The [scratch chapter](scratch.md) describes wave32/wave64 sizing,
+per-XCC and per-engine register units, firmware growth requests, single-use
+return, and asynchronous reclaim. [ROCr allocation ownership][rocr-retained-scratch]
 
 ## Static and dynamic group storage
 
@@ -274,7 +266,6 @@ Return to [AQL](README.md) or [barriers and signals](barriers.md).
 [llvm-private]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L6068-L6106
 [llvm-scratch-init]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L7407-L7424
 [rocr-retained-scratch]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L2897-L2943
-[rocr-scratch-xcc]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp#L1802-L1811
 [llvm-group-space]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L6038-L6066
 [hsa-group-size]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa.h#L3044-L3050
 [llvm-lds-size]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L6791-L6810

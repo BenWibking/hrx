@@ -36,6 +36,7 @@ follow HSA §§2.9.1–2, 2.9.6, 2.9.8–9 and 3.3.3.1. [Specification][hsa]
 | [Publication and doorbells](publication.md) | Ring representation, reservation, atomic publication, notification, native mappings, and slot versus task ownership. |
 | [Barriers and signals](barriers.md) | Header ordering, AGENT/SYSTEM fences, AND/OR dependencies, native signal storage, and AMD BARRIER_VALUE epochs. |
 | [Kernel dispatch](dispatch.md) | Packet geometry, compiler descriptors, argument fetches, private/group resources, and executable publication. |
+| [Scratch storage and reclamation](scratch.md) | `COMPUTE_TMPRING_SIZE`, wave32/wave64 and per-XCC sizing, `USE_SCRATCH_ONCE`, firmware growth requests, and asynchronous last-use cutoffs. |
 | [Carried memory operations](transfers.md) | AMD vendor-format-1 PM4 indirection, confirmed data movement, virtual-XCC routing, and command-storage lifetime. |
 | [Profiling](profiling.md) | Dispatch timestamp capture, command-processor clocks, counter injection, result ownership, and profiling-tail completion. |
 

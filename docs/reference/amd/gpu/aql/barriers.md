@@ -138,10 +138,10 @@ The same reasoning applies to a host-gated consumer. If `AND(S, G)` waits on a
 completed producer signal `S` and a host gate `G` that is still nonzero, the
 intermediate, consumer arguments, dependency signals, and executable remain
 owned by the pending graph. A separate workset can be reused after its own
-terminal join without releasing any of those resources. Retaining a queue's
-scratch backing through queue destruction is a further queue-level obligation;
-it is not inferred from completion of one workset. See [private
-storage](dispatch.md#private-storage).
+terminal join without releasing any of those resources. A queue retains its
+scratch backing until the matching firmware return protocol or native queue
+destruction relinquishes it; completion of one workset does not establish
+that queue-level transition. See [scratch storage and reclamation](scratch.md).
 
 ## AMD BARRIER_VALUE epochs
 
