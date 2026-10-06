@@ -4651,12 +4651,6 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
           "non-zero");
     }
     if (iree_status_is_ok(status) &&
-        IREE_UNLIKELY((constants.data_length % sizeof(uint32_t)) != 0)) {
-      status = iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "task queue dispatch constants must be 4-byte aligned");
-    }
-    if (iree_status_is_ok(status) &&
         IREE_UNLIKELY(constants.data_length >
                       IREE_HAL_EXECUTABLE_MAX_CONSTANT_BYTE_LENGTH)) {
       status = iree_make_status(

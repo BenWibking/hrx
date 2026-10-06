@@ -314,10 +314,6 @@ iree_status_t iree_hal_cmd_build_dispatch(
   }
 
   // Validate constants.
-  if (IREE_UNLIKELY((constants.data_length % sizeof(uint32_t)) != 0)) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "constants must be 4-byte aligned");
-  }
   const iree_host_size_t expected_constant_length =
       dispatch_attrs.constant_byte_length;
   if (IREE_UNLIKELY(constants.data_length != expected_constant_length)) {
@@ -326,8 +322,6 @@ iree_status_t iree_hal_cmd_build_dispatch(
                             " but was provided %" PRIhsz,
                             expected_constant_length, constants.data_length);
   }
-  const iree_host_size_t constant_count =
-      dispatch_attrs.constant_byte_length / sizeof(uint32_t);
 
   // Validate bindings.
   if (IREE_UNLIKELY(binding_count != dispatch_attrs.binding_count)) {
@@ -375,7 +369,7 @@ iree_status_t iree_hal_cmd_build_dispatch(
       (uint16_t)(builder->total_binding_count - total_binding_count);
 
   // Fill dispatch command fields.
-  cmd->constant_count = (uint8_t)constant_count;
+  cmd->constant_byte_length = dispatch_attrs.constant_byte_length;
   cmd->binding_count = dispatch_attrs.binding_count;
   cmd->binding_data_base = binding_data_base;
   cmd->executable = task_executable;
