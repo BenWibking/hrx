@@ -835,6 +835,20 @@ static iree_status_t iree_hal_fixed_block_pool_acquire_reservations(
 
   iree_hal_fixed_block_pool_acquire_element_t
       inline_elements[IREE_HAL_FIXED_BLOCK_POOL_INLINE_TRANSACTION_CAPACITY];
+  if (request_count > IREE_ARRAYSIZE(inline_elements) &&
+      iree_any_bit_set(flags, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH)) {
+    // Fixed backing does not eliminate temporary storage for large batches.
+    // Let the caller stage this transaction on its allocation path.
+    iree_atomic_fetch_add(&pool->exhausted_count, 1, iree_memory_order_relaxed);
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      out_infos[i] = (iree_hal_pool_acquire_info_t){
+          .result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED,
+          .flags = IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED,
+      };
+    }
+    *out_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
+    return iree_ok_status();
+  }
   iree_hal_fixed_block_pool_acquire_element_t* elements = inline_elements;
   bool elements_allocated = false;
   iree_status_t status = iree_ok_status();

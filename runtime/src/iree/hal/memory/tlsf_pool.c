@@ -1229,7 +1229,7 @@ static iree_status_t iree_hal_tlsf_pool_acquire_one_reservation_locked(
   } else {
     memset(out_reservation, 0, sizeof(*out_reservation));
     memset(out_info, 0, sizeof(*out_info));
-    if (growth_required) {
+    if (growth_required || iree_hal_tlsf_pool_metadata_is_required(metadata)) {
       out_info->flags |= IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED;
     }
     out_info->result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
@@ -1305,6 +1305,21 @@ static iree_status_t iree_hal_tlsf_pool_acquire_reservations(
 
   iree_hal_tlsf_pool_acquire_element_t
       inline_elements[IREE_HAL_TLSF_POOL_INLINE_TRANSACTION_CAPACITY];
+  const bool growth_allowed =
+      !iree_any_bit_set(flags, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH);
+  if (request_count > IREE_ARRAYSIZE(inline_elements) && !growth_allowed) {
+    // Staging large transactions is cold work even when all backing and
+    // persistent allocator metadata are already available.
+    iree_atomic_fetch_add(&pool->exhausted_count, 1, iree_memory_order_relaxed);
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      out_infos[i] = (iree_hal_pool_acquire_info_t){
+          .result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED,
+          .flags = IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED,
+      };
+    }
+    *out_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
+    return iree_ok_status();
+  }
   iree_hal_tlsf_pool_acquire_element_t* elements = inline_elements;
   bool elements_allocated = false;
   iree_status_t status = iree_ok_status();
@@ -1335,15 +1350,17 @@ static iree_status_t iree_hal_tlsf_pool_acquire_reservations(
           pool, &requests[acquired_count], requester_frontier, flags, &metadata,
           &elements[acquired_count].reservation, &elements[acquired_count].info,
           &item_result);
-      if (!iree_status_is_ok(status) ||
-          iree_hal_tlsf_pool_metadata_is_required(&metadata)) {
+      if (!iree_status_is_ok(status)) {
+        break;
+      }
+      if (iree_hal_tlsf_pool_metadata_is_required(&metadata)) {
+        transaction_result = item_result;
         break;
       }
       if (item_result == IREE_HAL_POOL_ACQUIRE_EXHAUSTED &&
           iree_any_bit_set(elements[acquired_count].info.flags,
                            IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED) &&
-          !iree_any_bit_set(flags,
-                            IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH)) {
+          growth_allowed) {
         if (pool->slabs.count >= UINT16_MAX) {
           slab_limit_reached = true;
         } else if (prepared_slab) {
@@ -1404,15 +1421,18 @@ static iree_status_t iree_hal_tlsf_pool_acquire_reservations(
                            (uint32_t)UINT16_MAX);
     }
     needs_preparation =
-        needs_growth || iree_hal_tlsf_pool_metadata_is_required(&metadata);
-    if (iree_status_is_ok(status) && metadata.required.blocks.first_block) {
+        growth_allowed &&
+        (needs_growth || iree_hal_tlsf_pool_metadata_is_required(&metadata));
+    if (iree_status_is_ok(status) && needs_preparation &&
+        metadata.required.blocks.first_block) {
       iree_allocator_free(pool->host_allocator,
                           metadata.prepared.blocks.storage);
       metadata.prepared.blocks = metadata.required.blocks;
       status = iree_hal_memory_tlsf_prepare_growth(&metadata.prepared.blocks,
                                                    pool->host_allocator);
     }
-    if (iree_status_is_ok(status) && metadata.required.release_node) {
+    if (iree_status_is_ok(status) && needs_preparation &&
+        metadata.required.release_node) {
       // The accepted candidate needs a record. Prepare the remaining batch's
       // records together so each missing record does not cause another replay.
       for (iree_host_size_t i = acquired_count;

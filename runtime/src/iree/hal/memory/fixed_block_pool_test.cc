@@ -357,6 +357,103 @@ class FixedBlockPoolTest : public ::testing::Test {
   iree_hal_pool_t* pool_ = nullptr;
 };
 
+// Counts calls to the real allocator used by the pool and its native backing.
+class CountingAllocator {
+ public:
+  iree_allocator_t allocator() { return {this, Control}; }
+  size_t allocation_calls() const { return allocation_calls_; }
+
+ private:
+  static iree_status_t Control(void* self, iree_allocator_command_t command,
+                               const void* params, void** inout_ptr) {
+    auto* allocator = static_cast<CountingAllocator*>(self);
+    if (command != IREE_ALLOCATOR_COMMAND_FREE) {
+      ++allocator->allocation_calls_;
+    }
+    iree_allocator_t system_allocator = iree_allocator_system();
+    return system_allocator.ctl(system_allocator.self, command, params,
+                                inout_ptr);
+  }
+
+  // Number of allocation-like calls, including unsuccessful attempts.
+  size_t allocation_calls_ = 0;
+};
+
+TEST(FixedBlockPool, NoGrowthDefersLargeBatchStaging) {
+  CountingAllocator allocator;
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(
+      iree_hal_cpu_slab_provider_create(allocator.allocator(), &provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  constexpr size_t kCount = 12;
+  auto options = DefaultOptions();
+  options.block_allocator_options.block_count = kCount;
+  iree_hal_pool_t* pool = nullptr;
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+      options, provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator.allocator(), &pool));
+
+  iree_hal_pool_reservation_request_t requests[kCount];
+  for (auto& request : requests) {
+    request = MakeReservationRequest(256, 16);
+    request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  }
+  iree_hal_pool_reservation_t reservations[kCount];
+  memset(reservations, 0xA5, sizeof(reservations));
+  iree_hal_pool_reservation_t originals[kCount];
+  memcpy(originals, reservations, sizeof(originals));
+  iree_hal_pool_acquire_info_t infos[kCount];
+  iree_hal_pool_acquire_result_t result;
+  const size_t allocation_calls = allocator.allocation_calls();
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, kCount, requests, nullptr,
+      IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH, reservations, infos,
+      &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+  EXPECT_EQ(allocator.allocation_calls(), allocation_calls);
+  EXPECT_EQ(memcmp(reservations, originals, sizeof(originals)), 0);
+  for (const auto& info : infos) {
+    EXPECT_EQ(info.result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+    EXPECT_EQ(info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
+    EXPECT_EQ(info.reuse_frontier, nullptr);
+  }
+
+  // An inline-sized batch uses the same backing with no preparation.
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      reservations, infos, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  EXPECT_EQ(allocator.allocation_calls(), allocation_calls);
+  iree_hal_pool_release_reservations(pool, 1, reservations, nullptr);
+
+  // The ordinary cold retry stages and acquires the complete batch.
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, kCount, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+      reservations, infos, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  EXPECT_EQ(allocator.allocation_calls() - allocation_calls, 1u);
+  for (size_t i = 0; i < kCount; ++i) {
+    iree_hal_buffer_t* buffer = nullptr;
+    IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+        pool, 1, &requests[i], &reservations[i],
+        IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, &buffer));
+    const uint8_t pattern = static_cast<uint8_t>(i + 1);
+    IREE_EXPECT_OK(iree_hal_buffer_map_fill(buffer, 0, 256, &pattern, 1));
+    uint8_t actual[256] = {};
+    IREE_EXPECT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+    for (uint8_t value : actual) {
+      EXPECT_EQ(value, pattern);
+    }
+    iree_hal_buffer_release(buffer);
+  }
+  iree_hal_pool_release_reservations(pool, kCount, reservations, nullptr);
+  iree_hal_pool_release(pool);
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(provider);
+}
+
 TEST_F(FixedBlockPoolTest, ReserveReleaseFresh) {
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;

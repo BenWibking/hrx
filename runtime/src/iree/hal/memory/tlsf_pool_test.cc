@@ -980,9 +980,9 @@ TEST_F(TLSFPoolTest, ReuseFrontierSurvivesMetadataGrowth) {
   iree_hal_pool_reservation_t reservations[48];
   iree_hal_pool_acquire_info_t infos[IREE_ARRAYSIZE(reservations)];
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(reservations); ++i) {
-    IREE_ASSERT_OK(AcquireOneReservation(
-        pool_, 64, 16, death, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
-        &reservations[i], &infos[i], &result));
+    IREE_ASSERT_OK(AcquireOneReservation(pool_, 64, 16, death,
+                                         IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                         &reservations[i], &infos[i], &result));
     EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
     EXPECT_EQ(reservations[i].slab_index, whole_range.slab_index);
   }
@@ -1129,9 +1129,9 @@ TEST(TLSFPool, SplitRangesRetainReadinessUntilCompletion) {
 
   // Completion makes the remaining range available to the other requester.
   epoch_query.completed_epoch = 10;
-  IREE_ASSERT_OK(AcquireOneReservation(
-      pool, 256, 16, other_requester,
-      IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH, &remainder, &info, &result));
+  IREE_ASSERT_OK(AcquireOneReservation(pool, 256, 16, other_requester,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &remainder, &info, &result));
   ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
   EXPECT_EQ(remainder.slab_index, prefix.slab_index);
   EXPECT_EQ(remainder.offset, 256u);
