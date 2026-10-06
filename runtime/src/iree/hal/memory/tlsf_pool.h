@@ -55,10 +55,11 @@ typedef struct iree_hal_tlsf_pool_options_t {
 // a release node, and release publishes that node to a lock-free pending stack
 // with a compare/exchange loop after copying the death frontier into node-local
 // storage. Acquisition drains pending releases under a per-pool
-// mutex before searching TLSF. Native slab acquisition, retirement, and range
-// advice run outside that mutex. A batch needing new backing restores its
-// provisional reservations before acquiring storage and then retries selection;
-// concurrent callers can continue using the pool's existing capacity.
+// mutex before searching TLSF. Host metadata allocation and destruction, native
+// slab acquisition and retirement, and range advice run outside that mutex.
+// Batches restore provisional reservations before preparing backing or
+// metadata, then retry selection. Concurrent callers can continue using
+// existing capacity.
 //
 // Recycled blocks whose frontiers are not dominated by the requester are
 // skipped. When no immediately-usable block fits, the pool grows with another
