@@ -417,12 +417,15 @@ TEST_F(PassthroughPoolTest, AlignmentUsesNativeBackingGuarantee) {
 struct CountingAllocator {
   // Calls that can allocate storage.
   size_t allocation_count = 0;
+  // Thread performing the last joined allocation; frees do not change it.
+  std::thread::id last_allocation_thread;
 
   static iree_status_t Control(void* self, iree_allocator_command_t command,
                                const void* params, void** inout_pointer) {
     auto* state = static_cast<CountingAllocator*>(self);
     if (command != IREE_ALLOCATOR_COMMAND_FREE) {
       ++state->allocation_count;
+      state->last_allocation_thread = std::this_thread::get_id();
     }
     iree_allocator_t allocator = iree_allocator_system();
     return allocator.ctl(allocator.self, command, params, inout_pointer);
@@ -483,6 +486,7 @@ TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
         IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations, infos, &result));
     ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
     EXPECT_GT(allocations.allocation_count, allocation_count);
+    EXPECT_NE(allocations.last_allocation_thread, std::this_thread::get_id());
     iree_hal_buffer_t* buffers[9];
     IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
         pool, request_count, requests, reservations,
@@ -509,6 +513,86 @@ TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
   iree_hal_pool_release(pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(provider);
+}
+
+TEST_F(PassthroughPoolTest, NativeGrowthReentersCapturedOwner) {
+  struct Call {
+    // Pool borrowed until the outer maintenance call joins.
+    iree_hal_pool_t* pool;
+    // Exact token acquired by the nested native growth call.
+    iree_hal_pool_reservation_t reservation;
+    // Terminal status propagated to the observing thread.
+    iree_status_t status;
+    // Thread on which both the outer call and native growth execute.
+    std::thread::id owner_thread;
+  } call = {pool_, {}, iree_ok_status(), {}};
+  iree_hal_memory_maintenance_call(
+      test_maintenance(),
+      [](void* user_data) {
+        auto* call = static_cast<Call*>(user_data);
+        call->owner_thread = std::this_thread::get_id();
+        iree_hal_pool_acquire_info_t info;
+        iree_hal_pool_acquire_result_t result;
+        call->status = AcquireOneReservation(
+            call->pool, 256, 16, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+            &call->reservation, &info, &result);
+      },
+      &call);
+  IREE_ASSERT_OK(call.status);
+  EXPECT_NE(call.owner_thread, std::this_thread::get_id());
+  auto request = MakeReservationRequest(256, 16);
+  request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+      pool_, 1, &request, &call.reservation,
+      IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP, &buffer));
+  const uint8_t pattern = 0x5C;
+  IREE_EXPECT_OK(iree_hal_buffer_map_fill(buffer, 0, IREE_HAL_WHOLE_BUFFER,
+                                          &pattern, sizeof(pattern)));
+  uint8_t actual = 0;
+  IREE_EXPECT_OK(
+      iree_hal_buffer_map_read(buffer, 255, &actual, sizeof(actual)));
+  EXPECT_EQ(actual, pattern);
+  iree_hal_buffer_release(buffer);
+}
+
+TEST_F(PassthroughPoolTest, NoGrowthDoesNotJoinBlockedMaintenance) {
+  struct Gate : iree_hal_memory_maintenance_entry_t {
+    // Protects entry and resumption of the worker callback.
+    std::mutex mutex;
+    // Handshake with the worker; no timeout or scheduling assumption.
+    std::condition_variable condition;
+    // True after the worker enters the gate.
+    bool entered = false;
+    // True when the observer permits the worker to finish.
+    bool resumed = false;
+  } gate;
+  gate.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
+    auto* gate = static_cast<Gate*>(entry);
+    std::unique_lock<std::mutex> lock(gate->mutex);
+    gate->entered = true;
+    gate->condition.notify_all();
+    gate->condition.wait(lock, [&] { return gate->resumed; });
+  };
+  iree_hal_memory_maintenance_enqueue(test_maintenance(), &gate);
+  {
+    std::unique_lock<std::mutex> lock(gate.mutex);
+    gate.condition.wait(lock, [&] { return gate.entered; });
+  }
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_EXPECT_OK(AcquireOneReservation(
+      pool_, 256, 16, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &reservation, &info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+  EXPECT_EQ(info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
+  {
+    std::lock_guard<std::mutex> lock(gate.mutex);
+    gate.resumed = true;
+    gate.condition.notify_all();
+  }
+  WaitForMaintenance();
 }
 
 TEST_F(PassthroughPoolTest, ReservationTransactionValidatesBeforeAcquiring) {

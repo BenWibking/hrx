@@ -659,6 +659,75 @@ static void iree_hal_passthrough_pool_rollback_reservation(
   iree_allocator_free(pool->host_allocator, reservation_state);
 }
 
+// Cold native growth transaction. All pointers are borrowed until the owner
+// call joins; output publication and rollback remain all-or-none.
+typedef struct iree_hal_passthrough_pool_acquire_call_t {
+  // Native pool whose placement-local owner executes the transaction.
+  iree_hal_passthrough_pool_t* pool;
+  // Number of requests and output slots.
+  iree_host_size_t request_count;
+  // Immutable geometry and permissions supplied by the caller.
+  const iree_hal_pool_reservation_request_t* requests;
+  // Reservations assigned only after every native acquisition succeeds.
+  iree_hal_pool_reservation_t* out_reservations;
+  // Exact reuse information assigned with the reservations.
+  iree_hal_pool_acquire_info_t* out_infos;
+  // Aggregate acquisition outcome assigned only on success.
+  iree_hal_pool_acquire_result_t* out_result;
+  // Owned native or host allocation failure returned to the caller.
+  iree_status_t status;
+} iree_hal_passthrough_pool_acquire_call_t;
+
+static void iree_hal_passthrough_pool_acquire_on_owner(void* user_data) {
+  iree_hal_passthrough_pool_acquire_call_t* call = user_data;
+  iree_hal_passthrough_pool_t* pool = call->pool;
+  const iree_host_size_t request_count = call->request_count;
+  iree_hal_passthrough_pool_acquire_element_t
+      inline_elements[IREE_HAL_PASSTHROUGH_POOL_INLINE_TRANSACTION_CAPACITY];
+  iree_hal_passthrough_pool_acquire_element_t* elements = inline_elements;
+  bool elements_allocated = false;
+  iree_status_t status = iree_ok_status();
+  if (request_count > IREE_ARRAYSIZE(inline_elements)) {
+    status = iree_allocator_malloc_array(pool->host_allocator, request_count,
+                                         sizeof(*elements), (void**)&elements);
+    elements_allocated = iree_status_is_ok(status);
+  }
+  if (iree_status_is_ok(status)) {
+    memset(elements, 0, request_count * sizeof(*elements));
+  }
+
+  iree_host_size_t acquired_count = 0;
+  while (acquired_count < request_count && iree_status_is_ok(status)) {
+    status = iree_hal_passthrough_pool_acquire_one_reservation(
+        &pool->base, &call->requests[acquired_count],
+        &elements[acquired_count].reservation, &elements[acquired_count].info);
+    if (iree_status_is_ok(status)) {
+      ++acquired_count;
+    }
+  }
+  if (!iree_status_is_ok(status)) {
+    for (iree_host_size_t i = 0; i < acquired_count; ++i) {
+      iree_hal_passthrough_pool_rollback_reservation(pool,
+                                                     &elements[i].reservation);
+    }
+    if (acquired_count != 0) {
+      iree_async_notification_signal_if_observed(pool->base.notification,
+                                                 INT32_MAX);
+    }
+  } else {
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      call->out_reservations[i] = elements[i].reservation;
+      call->out_infos[i] = elements[i].info;
+    }
+    *call->out_result = IREE_HAL_POOL_ACQUIRE_OK_FRESH;
+  }
+
+  if (elements_allocated) {
+    iree_allocator_free(pool->host_allocator, elements);
+  }
+  call->status = status;
+}
+
 static iree_status_t iree_hal_passthrough_pool_acquire_reservations(
     iree_hal_pool_t* base_pool, iree_host_size_t request_count,
     const iree_hal_pool_reservation_request_t* requests,
@@ -691,50 +760,17 @@ static iree_status_t iree_hal_passthrough_pool_acquire_reservations(
     return iree_ok_status();
   }
 
-  iree_hal_passthrough_pool_acquire_element_t
-      inline_elements[IREE_HAL_PASSTHROUGH_POOL_INLINE_TRANSACTION_CAPACITY];
-  iree_hal_passthrough_pool_acquire_element_t* elements = inline_elements;
-  bool elements_allocated = false;
-  iree_status_t status = iree_ok_status();
-  if (request_count > IREE_ARRAYSIZE(inline_elements)) {
-    status = iree_allocator_malloc_array(pool->host_allocator, request_count,
-                                         sizeof(*elements), (void**)&elements);
-    elements_allocated = iree_status_is_ok(status);
-  }
-  if (iree_status_is_ok(status)) {
-    memset(elements, 0, request_count * sizeof(*elements));
-  }
-
-  iree_host_size_t acquired_count = 0;
-  while (acquired_count < request_count && iree_status_is_ok(status)) {
-    status = iree_hal_passthrough_pool_acquire_one_reservation(
-        base_pool, &requests[acquired_count],
-        &elements[acquired_count].reservation, &elements[acquired_count].info);
-    if (iree_status_is_ok(status)) {
-      ++acquired_count;
-    }
-  }
-  if (!iree_status_is_ok(status)) {
-    for (iree_host_size_t i = 0; i < acquired_count; ++i) {
-      iree_hal_passthrough_pool_rollback_reservation(pool,
-                                                     &elements[i].reservation);
-    }
-    if (acquired_count != 0) {
-      iree_async_notification_signal_if_observed(pool->base.notification,
-                                                 INT32_MAX);
-    }
-  } else {
-    for (iree_host_size_t i = 0; i < request_count; ++i) {
-      out_reservations[i] = elements[i].reservation;
-      out_infos[i] = elements[i].info;
-    }
-    *out_result = IREE_HAL_POOL_ACQUIRE_OK_FRESH;
-  }
-
-  if (elements_allocated) {
-    iree_allocator_free(pool->host_allocator, elements);
-  }
-  return status;
+  iree_hal_passthrough_pool_acquire_call_t call = {
+      .pool = pool,
+      .request_count = request_count,
+      .requests = requests,
+      .out_reservations = out_reservations,
+      .out_infos = out_infos,
+      .out_result = out_result,
+  };
+  iree_hal_memory_maintenance_call(
+      pool->maintenance, iree_hal_passthrough_pool_acquire_on_owner, &call);
+  return call.status;
 }
 
 static void iree_hal_passthrough_pool_release_one_reservation(

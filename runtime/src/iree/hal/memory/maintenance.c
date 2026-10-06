@@ -6,6 +6,68 @@
 
 #include "iree/hal/memory/maintenance.h"
 
+#include "iree/base/threading/notification.h"
+
+// Identifies the current executor for reentrant cold preparation calls.
+static IREE_THREAD_LOCAL iree_hal_memory_maintenance_t*
+    iree_hal_memory_maintenance_current;
+
+typedef struct iree_hal_memory_maintenance_call_t {
+  // Stack-owned entry joined before the calling thread returns.
+  iree_hal_memory_maintenance_entry_t entry;
+  // Cold preparation callback.
+  void(IREE_API_PTR* fn)(void* user_data);
+  // Borrowed callback state, valid until this call returns.
+  void* user_data;
+  // Protects completion through the callback's final notification access.
+  iree_slim_mutex_t mutex;
+  // Wakes the calling thread when preparation finishes.
+  iree_notification_t notification;
+  // True after the callback has finished accessing user_data.
+  bool complete;
+} iree_hal_memory_maintenance_call_t;
+
+static bool iree_hal_memory_maintenance_call_is_complete(void* user_data) {
+  iree_hal_memory_maintenance_call_t* call = user_data;
+  iree_slim_mutex_lock(&call->mutex);
+  const bool complete = call->complete;
+  iree_slim_mutex_unlock(&call->mutex);
+  return complete;
+}
+
+static void iree_hal_memory_maintenance_call_run(
+    iree_hal_memory_maintenance_entry_t* entry) {
+  iree_hal_memory_maintenance_call_t* call =
+      (iree_hal_memory_maintenance_call_t*)entry;
+  call->fn(call->user_data);
+  iree_slim_mutex_lock(&call->mutex);
+  call->complete = true;
+  iree_notification_post(&call->notification, IREE_ALL_WAITERS);
+  iree_slim_mutex_unlock(&call->mutex);
+}
+
+void iree_hal_memory_maintenance_call(
+    iree_hal_memory_maintenance_t* maintenance,
+    void(IREE_API_PTR* fn)(void* user_data), void* user_data) {
+  if (iree_hal_memory_maintenance_current == maintenance) {
+    fn(user_data);
+    return;
+  }
+  iree_hal_memory_maintenance_call_t call = {
+      .entry = {.fn = iree_hal_memory_maintenance_call_run},
+      .fn = fn,
+      .user_data = user_data,
+  };
+  iree_slim_mutex_initialize(&call.mutex);
+  iree_notification_initialize(&call.notification);
+  iree_hal_memory_maintenance_enqueue(maintenance, &call.entry);
+  iree_notification_await(&call.notification,
+                          iree_hal_memory_maintenance_call_is_complete, &call,
+                          iree_infinite_timeout());
+  iree_notification_deinitialize(&call.notification);
+  iree_slim_mutex_deinitialize(&call.mutex);
+}
+
 void iree_hal_memory_maintenance_initialize(
     const iree_hal_memory_maintenance_vtable_t* vtable,
     iree_hal_memory_maintenance_t* out_maintenance) {
@@ -73,6 +135,9 @@ bool iree_hal_memory_maintenance_run_one(
   if (!entry) {
     return false;
   }
+  iree_hal_memory_maintenance_t* previous = iree_hal_memory_maintenance_current;
+  iree_hal_memory_maintenance_current = maintenance;
   entry->fn(entry);
+  iree_hal_memory_maintenance_current = previous;
   return true;
 }

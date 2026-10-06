@@ -48,6 +48,18 @@ void iree_hal_memory_maintenance_enqueue(
     iree_hal_memory_maintenance_t* maintenance,
     iree_hal_memory_maintenance_entry_t* entry);
 
+// Runs cold preparation on its captured owner and joins the call before
+// returning. Calls already executing on that owner run inline, allowing an
+// allocator to prepare storage through a parent sharing the same owner.
+//
+// This may block on native preparation and queued maintenance. It is not a
+// capacity wait and must not run on allocation fast paths, under allocator
+// metadata locks, or on proactor poll callbacks. The callback must not wait for
+// execution progress or for another allocation to release capacity.
+void iree_hal_memory_maintenance_call(
+    iree_hal_memory_maintenance_t* maintenance,
+    void(IREE_API_PTR* fn)(void* user_data), void* user_data);
+
 //===----------------------------------------------------------------------===//
 // Implementer interface
 //===----------------------------------------------------------------------===//

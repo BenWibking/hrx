@@ -41,8 +41,10 @@ typedef struct iree_hal_passthrough_pool_options_t {
 // marking finishes before release returns. With pending history, marking is
 // deferred with native retirement. Native freeing is always asynchronous.
 // With DISALLOW_GROWTH, acquisition returns EXHAUSTED/GROWTH_REQUIRED without
-// acquiring backing or transaction metadata. The caller can retry with growth
-// enabled outside its submission critical section.
+// acquiring backing or transaction metadata. With growth enabled, native
+// acquisition and rollback run on the captured maintenance owner; the caller
+// joins that cold work outside its submission critical section. This never
+// waits for another allocation to release capacity.
 //
 // This is the simplest possible pool. It provides the same behavior as direct
 // allocation through the current iree_hal_allocator_t and serves as a baseline
