@@ -734,15 +734,14 @@ static iree_status_t loom_canonicalizer_prepare_region_facts(
     loom_region_t* region, loom_op_t* parent_op,
     const loom_canonicalizer_options_t* options) {
   loom_value_fact_table_t* facts = NULL;
-  IREE_RETURN_IF_ERROR(loom_pass_value_fact_owner_prepare(
-      canonicalizer->value_facts, canonicalizer->module,
+  loom_pass_value_fact_scope_t scope =
       loom_pass_value_fact_scope_region_for_target(
-          function, region, parent_op, options ? options->target_facts : NULL),
-      &facts));
-  if (options && options->seed_facts.table) {
-    IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_values(
-        facts, options->seed_facts, canonicalizer->module));
+          function, region, parent_op, options ? options->target_facts : NULL);
+  if (options) {
+    scope.seed_facts = options->seed_facts;
   }
+  IREE_RETURN_IF_ERROR(loom_pass_value_fact_owner_prepare(
+      canonicalizer->value_facts, canonicalizer->module, scope, &facts));
   IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_region(
       facts, canonicalizer->module, function, region, parent_op));
   loom_greedy_rewrite_driver_set_fact_table(
@@ -753,15 +752,14 @@ static iree_status_t loom_canonicalizer_prepare_region_facts(
 static iree_status_t loom_canonicalizer_prepare_function_facts(
     loom_canonicalizer_t* canonicalizer, loom_func_like_t function,
     const loom_canonicalizer_options_t* options) {
-  const loom_pass_value_fact_scope_t scope =
+  loom_pass_value_fact_scope_t scope =
       loom_pass_value_fact_scope_function_for_target(
           function, options ? options->target_facts : NULL);
   loom_value_fact_table_t* facts = NULL;
   if (options && options->seed_facts.table) {
+    scope.seed_facts = options->seed_facts;
     IREE_RETURN_IF_ERROR(loom_pass_value_fact_owner_prepare(
         canonicalizer->value_facts, canonicalizer->module, scope, &facts));
-    IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_values(
-        facts, options->seed_facts, canonicalizer->module));
     IREE_RETURN_IF_ERROR(
         loom_value_fact_table_compute(facts, canonicalizer->module, function));
   } else {

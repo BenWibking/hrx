@@ -51,7 +51,7 @@ typedef struct loom_pass_value_fact_lifecycle_counts_t {
   uint64_t cache_hit_count;
   // Number of complete scope computations attempted after cache misses.
   uint64_t recomputation_count;
-  // Number of empty scopes prepared for caller-maintained facts.
+  // Number of scopes prepared for caller-maintained facts.
   uint64_t preparation_count;
   // Number of explicit invalidation requests against an initialized table.
   uint64_t invalidation_count;
@@ -86,6 +86,14 @@ typedef struct loom_pass_value_fact_scope_t {
 
   // Optional immutable target facts for target-sensitive fact inference.
   const loom_target_facts_t* target_facts;
+
+  // Optional scope inputs established by an enclosing analysis. Entries and
+  // their extension payloads are cloned before inference, independently of the
+  // target environment. The table, selected value IDs and their facts remain
+  // immutable until the scope is invalidated or replaced. Their identities are
+  // part of the cache key; a producer changing facts in place must invalidate
+  // the owner before reacquiring. The source cannot be this owner's table.
+  loom_value_fact_table_view_t seed_facts;
 } loom_pass_value_fact_scope_t;
 
 static inline loom_pass_value_fact_scope_t loom_pass_value_fact_scope_none(
@@ -189,9 +197,9 @@ void loom_pass_value_fact_owner_deinitialize(
 // reusable direct-address storage, which grows as new values are analyzed.
 void loom_pass_value_fact_owner_invalidate(loom_pass_value_fact_owner_t* owner);
 
-// Prepares empty fact storage for |scope|. The returned table is borrowed and
-// may be populated by the caller through normal fact-table APIs. Use this for
-// production algorithms such as rewriting that must compute and incrementally
+// Prepares fact storage containing only |scope|'s selected seeds. The returned
+// table is borrowed and may be populated through normal fact-table APIs. Use
+// this for algorithms such as rewriting that must compute and incrementally
 // maintain facts while they mutate IR. If population fails, the caller must
 // invalidate the owner before returning the failure.
 iree_status_t loom_pass_value_fact_owner_prepare(

@@ -476,5 +476,97 @@ TEST_F(PassValueFactsTest,
   loom_pass_value_fact_owner_deinitialize(&owner);
 }
 
+TEST_F(PassValueFactsTest, SeededScopesPreserveInputsAndSeparateInvocations) {
+  loom_module_t* module = AllocateModule();
+  loom_builder_t builder;
+  loom_builder_initialize(module, &module->arena, loom_module_block(module),
+                          &builder);
+  loom_string_id_t name;
+  IREE_ASSERT_OK(loom_module_intern_string(module, IREE_SV("worker"), &name));
+  loom_symbol_id_t symbol;
+  IREE_ASSERT_OK(loom_module_add_symbol(module, name, &symbol));
+  const loom_type_t type = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+  loom_op_t* definition = nullptr;
+  IREE_ASSERT_OK(loom_test_func_build(&builder, 0, 0, 0, {0, symbol}, &type, 1,
+                                      nullptr, 0, nullptr, 0, nullptr, 0,
+                                      LOOM_LOCATION_UNKNOWN, &definition));
+  const loom_func_like_t function = loom_func_like_cast(module, definition);
+  loom_region_t* body = loom_func_like_body(function);
+  body->flags |= LOOM_REGION_INSTANCE_FLAG_CFG;
+  const loom_value_id_t argument =
+      loom_block_arg_id(loom_region_entry_block(body), 0);
+  loom_builder_enter_region(&builder, definition, body);
+  loom_op_t* add = nullptr;
+  IREE_ASSERT_OK(loom_test_addi_build(&builder, argument, argument, type,
+                                      LOOM_LOCATION_UNKNOWN, &add));
+  const loom_value_id_t result = loom_test_addi_result(add);
+  loom_op_t* terminator = nullptr;
+  IREE_ASSERT_OK(loom_test_yield_build(&builder, nullptr, 0,
+                                       LOOM_LOCATION_UNKNOWN, &terminator));
+
+  loom_value_fact_table_t first_inputs;
+  loom_value_fact_table_t second_inputs;
+  IREE_ASSERT_OK(
+      loom_value_fact_table_initialize(&first_inputs, scratch_arena(), 0));
+  IREE_ASSERT_OK(
+      loom_value_fact_table_initialize(&second_inputs, scratch_arena(), 0));
+  IREE_ASSERT_OK(loom_value_fact_table_define(&first_inputs, argument,
+                                              loom_value_facts_exact_i64(7)));
+  IREE_ASSERT_OK(loom_value_fact_table_define(&second_inputs, argument,
+                                              loom_value_facts_exact_i64(11)));
+
+  loom_pass_value_fact_owner_t owner;
+  loom_pass_value_fact_owner_initialize(block_pool(), &owner);
+  loom_pass_value_fact_lifecycle_counts_t counts = {};
+  owner.lifecycle_counts = &counts;
+  loom_pass_value_fact_scope_t scope =
+      loom_pass_value_fact_scope_function(function);
+  scope.seed_facts = {&first_inputs, &argument, 1};
+  loom_value_fact_table_t* facts = nullptr;
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  EXPECT_EQ(loom_value_fact_table_lookup(facts, result).range_lo, 14);
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  EXPECT_EQ(counts.cache_hit_count, 1u);
+  EXPECT_EQ(counts.recomputation_count, 1u);
+
+  scope.kind = LOOM_PASS_VALUE_FACT_SCOPE_CONDITIONED_FUNCTION;
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  EXPECT_EQ(loom_value_fact_table_lookup(facts, result).range_lo, 14);
+  EXPECT_EQ(counts.scope_clear_count, 0u);
+
+  scope.seed_facts = {&second_inputs, &argument, 1};
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  EXPECT_EQ(loom_value_fact_table_lookup(facts, result).range_lo, 22);
+  EXPECT_EQ(counts.scope_clear_count, 1u);
+
+  loom_pass_value_fact_owner_invalidate(&owner);
+  IREE_ASSERT_OK(loom_value_fact_table_define(&second_inputs, argument,
+                                              loom_value_facts_exact_i64(17)));
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  EXPECT_EQ(loom_value_fact_table_lookup(facts, result).range_lo, 34);
+
+  scope = loom_pass_value_fact_scope_region(function, body, definition);
+  scope.seed_facts = {&first_inputs, &argument, 1};
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_prepare(&owner, module, scope, &facts));
+  EXPECT_EQ(loom_value_fact_table_lookup(facts, argument).range_lo, 7);
+  EXPECT_FALSE(loom_value_fact_table_has_entry(facts, result));
+  IREE_ASSERT_OK(loom_value_fact_table_compute_region(facts, module, function,
+                                                      body, definition));
+  EXPECT_EQ(loom_value_fact_table_lookup(facts, result).range_lo, 14);
+
+  scope = loom_pass_value_fact_scope_function(function);
+  IREE_ASSERT_OK(
+      loom_pass_value_fact_owner_acquire(&owner, module, scope, &facts));
+  EXPECT_FALSE(
+      loom_value_facts_is_exact(loom_value_fact_table_lookup(facts, result)));
+  loom_pass_value_fact_owner_deinitialize(&owner);
+}
+
 }  // namespace
 }  // namespace loom
