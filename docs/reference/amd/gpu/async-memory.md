@@ -133,9 +133,17 @@ bit 29 as parity. For an expected count `N`, it initializes both counts to
 `N-1`, leaves the phase zero, and synchronizes the workgroup before use.
 That count adjustment translates the API's N arrivals into the hardware's
 underflow rule. The reload field remains 16 bits wide, independently of the
-pending-count width. The cited lowering establishes its 29-bit representation,
-but does not identify how hardware selects among the widths in table 70.
+pending-count width.
 [Compiler initialization and layout][triton-barrier-init]
+
+Linux's **GC12.1.0** register definitions expose
+`LDS_CONFIG.PEND_CNT_WIDTH` at bits **13:8**, with shift `8` and mask
+`0x00003f00`. This identifies a register-level width field, while the shader
+representation embeds its assumed count/phase split. The field definition
+does not supply its reset value, field-to-width encoding or reconfiguration
+contract. In particular, the compiler's constant 29 alone does not establish
+a matching native initialization on every implementation.
+[Native width field][linux-lds-width]
 
 The manual's two rollover expressions disagree: §11.2.2, printed page 153,
 tests `WIDTH == 32`, while the detailed instruction expressions in §15.15,
@@ -270,6 +278,7 @@ by multicast receivers. [Tensor cluster selection][isa-notification]
 [isa-idle]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=295
 [isa-endpgm]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=300
 [isa-cluster]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=143
+[linux-lds-width]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/asic_reg/gc/gc_12_1_0_sh_mask.h#L34240-L34260
 [triton-wait-ops]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/include/Dialect/TritonAMDGPU/IR/TritonAMDGPUOps.td#L1111-L1144
 [triton-wait-conversion]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUTransforms/UpdateAsyncWaitCount.cpp#L355-L410
 [triton-wait-counts]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUTransforms/UpdateAsyncWaitCount.cpp#L461-L511
