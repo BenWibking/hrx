@@ -308,6 +308,7 @@ loom_cc_library(
     loom::pass::pipeline
     loom::pass::registry
     loom::pass::types
+    loom::pass::value_facts
     loom::rewrite::materialize
     loom::rewrite::remap
     loom::transforms::cleanup::canonicalizer

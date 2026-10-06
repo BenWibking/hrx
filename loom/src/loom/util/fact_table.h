@@ -195,6 +195,17 @@ struct loom_value_fact_table_t {
   // Context object passed to op-specific fact inference callbacks.
   loom_fact_context_t context;
 
+  // Immutable scope inputs supplied by a surrounding analysis. Opaque result
+  // definitions consult these instead of discarding call-boundary summaries.
+  struct {
+    // Borrowed source whose selected facts outlive this populated scope.
+    const loom_value_fact_table_t* table;
+    // Transient bitmap selecting source entries by module-local value ID.
+    uint64_t* selected_bits;
+    // Number of allocated words in selected_bits.
+    iree_host_size_t word_count;
+  } seeds;
+
   // Facts derived under path conditions require whole-scope invalidation after
   // edits. The incremental rewriter cannot maintain their guard dependencies.
   bool has_conditioned_results;
@@ -719,6 +730,17 @@ typedef struct loom_value_fact_table_view_t {
 // Undefined entries remain unset in |target| so normal block-argument and op
 // fact seeding can fill them.
 iree_status_t loom_value_fact_table_clone_values(
+    loom_value_fact_table_t* target, loom_value_fact_table_view_t source,
+    const loom_module_t* module);
+
+// Imports selected inputs and retains their immutable source for opaque result
+// inference. Unlike an ordinary clone, this preserves external call summaries
+// when their local definition has no inference function, including recomputes
+// after cyclic solves undefine entries. The source and selected facts remain
+// valid and unchanged until target's scope is cleared. A caller that changes
+// the meaning of a seeded value must clear and rebuild the scope. Ordinary
+// semantic-preserving rewrites and type refinement retain the input contract.
+iree_status_t loom_value_fact_table_seed_values(
     loom_value_fact_table_t* target, loom_value_fact_table_view_t source,
     const loom_module_t* module);
 

@@ -1301,8 +1301,19 @@ static iree_status_t loom_value_fact_table_compute_scoped_op(
         table, op->result_count, &result_facts));
     const loom_value_id_t* results = loom_op_const_results(op);
     for (uint16_t i = 0; i < op->result_count; ++i) {
-      result_facts[i] =
-          loom_value_fact_table_unknown_for_value(module, results[i]);
+      const loom_value_id_t result = results[i];
+      if (result / 64 < table->seeds.word_count &&
+          (table->seeds.selected_bits[result / 64] &
+           (UINT64_C(1) << (result % 64)))) {
+        IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact_for_type(
+            table, table->seeds.table, module,
+            loom_module_value_type(module, result),
+            loom_value_fact_table_lookup(table->seeds.table, result),
+            &result_facts[i]));
+      } else {
+        result_facts[i] =
+            loom_value_fact_table_unknown_for_value(module, result);
+      }
     }
     IREE_RETURN_IF_ERROR(loom_value_fact_table_define_results(
         table, module, op, result_facts, op->result_count, out_changed));

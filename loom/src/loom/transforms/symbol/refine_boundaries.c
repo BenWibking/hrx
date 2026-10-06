@@ -21,6 +21,7 @@
 #include "loom/ops/type_registry.h"
 #include "loom/pass/pipeline.h"
 #include "loom/pass/registry.h"
+#include "loom/pass/value_facts.h"
 #include "loom/transforms/cleanup/canonicalizer.h"
 #include "loom/transforms/cleanup/pass_environment.h"
 #include "loom/transforms/symbol/boundary_graph.h"
@@ -594,75 +595,43 @@ static iree_status_t loom_refine_boundaries_refine_function_signature(
 // Fact summaries
 //===----------------------------------------------------------------------===//
 
-static loom_value_facts_t loom_refine_boundaries_scalar_fact(
-    loom_value_facts_t facts) {
-  facts.extension_id = LOOM_VALUE_FACT_EXTENSION_ID_NONE;
-  return facts;
-}
-
-static iree_status_t loom_refine_boundaries_join_facts(
-    loom_value_fact_table_t* target_table,
-    const loom_value_fact_table_t* existing_table,
-    loom_value_facts_t existing_facts,
-    const loom_value_fact_table_t* incoming_table,
-    loom_value_facts_t incoming_facts, loom_value_facts_t* out_joined_facts) {
-  if (loom_value_fact_table_facts_equal(existing_table, existing_facts,
-                                        incoming_table, incoming_facts)) {
-    if (existing_table == target_table) {
-      *out_joined_facts = existing_facts;
-      return iree_ok_status();
-    }
-    return loom_value_fact_table_clone_fact(target_table, existing_table,
-                                            existing_facts, out_joined_facts);
-  }
-
-  loom_value_facts_t existing_scalar =
-      loom_refine_boundaries_scalar_fact(existing_facts);
-  loom_value_facts_t incoming_scalar =
-      loom_refine_boundaries_scalar_fact(incoming_facts);
-  loom_value_facts_meet(&existing_scalar, &incoming_scalar, out_joined_facts);
-  if (loom_value_fact_table_extensions_equal(existing_table, existing_facts,
-                                             incoming_table, incoming_facts)) {
-    if (existing_table == target_table) {
-      out_joined_facts->extension_id = existing_facts.extension_id;
-    } else {
-      loom_value_facts_t cloned_existing = loom_value_facts_unknown();
-      IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact(
-          target_table, existing_table, existing_facts, &cloned_existing));
-      out_joined_facts->extension_id = cloned_existing.extension_id;
-    }
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_refine_boundaries_merge_fact(
-    loom_value_fact_table_t* table, loom_value_id_t value_id,
-    const loom_value_fact_table_t* source_table, loom_value_facts_t facts) {
+    const loom_module_t* module, loom_value_fact_table_t* table,
+    loom_value_id_t value_id, const loom_value_fact_table_t* source_table,
+    loom_value_facts_t facts) {
+  const loom_type_t type = loom_module_value_type(module, value_id);
   // An observed unknown input participates in the join. Keeping it distinct
   // from an unseen boundary prevents later callers from narrowing the result.
   if (!loom_value_fact_table_has_entry(table, value_id)) {
     loom_value_facts_t cloned_facts = loom_value_facts_unknown();
-    IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact(
-        table, source_table, facts, &cloned_facts));
+    IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact_for_type(
+        table, source_table, module, type, facts, &cloned_facts));
     return loom_value_fact_table_define(table, value_id, cloned_facts);
   }
   loom_value_facts_t existing = loom_value_fact_table_lookup(table, value_id);
   loom_value_facts_t joined = loom_value_facts_unknown();
-  IREE_RETURN_IF_ERROR(loom_refine_boundaries_join_facts(
-      table, table, existing, source_table, facts, &joined));
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_meet_for_type(
+      table, module, type, table, existing, source_table, facts, &joined));
   return loom_value_fact_table_define(table, value_id, joined);
 }
 
 static bool loom_refine_boundaries_fact_tables_equal(
-    const loom_value_fact_table_t* lhs, const loom_value_fact_table_t* rhs) {
-  iree_host_size_t count = lhs->count > rhs->count ? lhs->count : rhs->count;
-  for (iree_host_size_t i = 0; i < count; ++i) {
-    loom_value_facts_t lhs_facts =
-        loom_value_fact_table_lookup(lhs, (loom_value_id_t)i);
-    loom_value_facts_t rhs_facts =
-        loom_value_fact_table_lookup(rhs, (loom_value_id_t)i);
-    if (!loom_value_fact_table_facts_equal(lhs, lhs_facts, rhs, rhs_facts)) {
-      return false;
+    const loom_module_t* module, const loom_value_fact_table_t* lhs,
+    const loom_value_fact_table_t* rhs) {
+  const loom_value_fact_table_t* tables[] = {lhs, rhs};
+  for (iree_host_size_t source = 0; source < IREE_ARRAYSIZE(tables); ++source) {
+    const loom_value_fact_table_t* table = tables[source];
+    for (iree_host_size_t i = 0; i < table->touched_count; ++i) {
+      const loom_value_id_t value = table->touched_values[i];
+      if (source != 0 && loom_value_fact_table_has_entry(lhs, value)) {
+        continue;
+      }
+      if (!loom_value_fact_table_facts_equal_for_type(
+              module, loom_module_value_type(module, value), lhs,
+              loom_value_fact_table_lookup(lhs, value), rhs,
+              loom_value_fact_table_lookup(rhs, value))) {
+        return false;
+      }
     }
   }
   return true;
@@ -1039,19 +1008,22 @@ static iree_status_t loom_refine_boundaries_collect_return(
     loom_refine_boundaries_join_forward_index(
         function->return_forward_result_indices, i, result_index);
 
+    const loom_type_t type =
+        loom_module_value_type(collect->graph->module,
+                               loom_op_const_results(function->function.op)[i]);
     loom_value_facts_t facts = loom_value_fact_table_lookup(
         collect->function_facts, operands.values[i]);
     if (!function->return_fact_defined[i]) {
-      IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact(
-          collect->next_boundary_facts, collect->function_facts, facts,
-          &function->return_facts[i]));
+      IREE_RETURN_IF_ERROR(loom_value_fact_table_clone_fact_for_type(
+          collect->next_boundary_facts, collect->function_facts,
+          collect->graph->module, type, facts, &function->return_facts[i]));
       function->return_fact_defined[i] = true;
     } else {
       loom_value_facts_t joined_facts = loom_value_facts_unknown();
-      IREE_RETURN_IF_ERROR(loom_refine_boundaries_join_facts(
-          collect->next_boundary_facts, collect->next_boundary_facts,
-          function->return_facts[i], collect->function_facts, facts,
-          &joined_facts));
+      IREE_RETURN_IF_ERROR(loom_value_fact_table_meet_for_type(
+          collect->next_boundary_facts, collect->graph->module, type,
+          collect->next_boundary_facts, function->return_facts[i],
+          collect->function_facts, facts, &joined_facts));
       function->return_facts[i] = joined_facts;
     }
   }
@@ -1206,8 +1178,8 @@ static iree_status_t loom_refine_boundaries_collect_call(
       loom_value_facts_t facts = loom_value_fact_table_lookup(
           collect->function_facts, operands.values[i]);
       IREE_RETURN_IF_ERROR(loom_refine_boundaries_merge_fact(
-          collect->next_boundary_facts, callee_info->argument_ids[i],
-          collect->function_facts, facts));
+          collect->graph->module, collect->next_boundary_facts,
+          callee_info->argument_ids[i], collect->function_facts, facts));
     }
   }
 
@@ -1239,7 +1211,7 @@ static iree_status_t loom_refine_boundaries_collect_call(
           loom_reference_call_result_origin(&reference_call, origin), &facts));
     }
     IREE_RETURN_IF_ERROR(loom_refine_boundaries_merge_fact(
-        collect->next_boundary_facts, results.values[i],
+        collect->graph->module, collect->next_boundary_facts, results.values[i],
         collect->next_boundary_facts, facts));
   }
   return iree_ok_status();
@@ -1597,6 +1569,9 @@ iree_status_t loom_refine_boundaries_run_with_options(
        iree_status_is_ok(status) && !loom_pass_has_error_diagnostics(pass) &&
        iteration < max_iterations;
        ++iteration) {
+    // The previous function scope borrows an input summary from one of the
+    // alternating arenas. Release it before either arena can be reused.
+    loom_pass_value_fact_owner_invalidate(pass->value_facts);
     iree_arena_reset(&iteration_arena);
     iree_arena_reset(next_facts_arena);
 
@@ -1637,7 +1612,7 @@ iree_status_t loom_refine_boundaries_run_with_options(
     }
 
     bool boundary_facts_changed = !loom_refine_boundaries_fact_tables_equal(
-        &current_boundary->facts, &next_boundary->facts);
+        module, &current_boundary->facts, &next_boundary->facts);
     bool boundary_replacements_changed =
         !loom_refine_boundaries_replacement_tables_equal(
             &current_boundary->replacements, &next_boundary->replacements);
@@ -1718,6 +1693,7 @@ iree_status_t loom_refine_boundaries_run_with_options(
   if (canonicalizer_initialized) {
     loom_canonicalizer_deinitialize(&canonicalizer);
   }
+  loom_pass_value_fact_owner_invalidate(pass->value_facts);
   iree_arena_deinitialize(&walk_arena);
   iree_arena_deinitialize(&iteration_arena);
   iree_arena_deinitialize(&facts_arena_b);

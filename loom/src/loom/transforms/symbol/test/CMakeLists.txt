@@ -17,6 +17,7 @@ loom_check_test_suite(
     "inline_callables.loom-test"
     "inline_cfg_batches.loom-test"
     "inline_dependent_types.loom-test"
+    "reference_boundaries.loom-test"
     "refine_boundaries.loom-test"
     "symbol_dce.loom-test"
     "template_application.loom-test"

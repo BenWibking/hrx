@@ -356,6 +356,9 @@ iree_status_t loom_value_fact_table_reserve(loom_value_fact_table_t* table,
 }
 
 void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
+  table->seeds.table = NULL;
+  table->seeds.selected_bits = NULL;
+  table->seeds.word_count = 0;
   table->has_conditioned_results = false;
   table->has_boolean_branch_regions = false;
   table->has_counted_loop_domains = false;
@@ -1784,6 +1787,34 @@ iree_status_t loom_value_fact_table_clone_values(
           target, value_id, query_origin));
     }
   }
+  return iree_ok_status();
+}
+
+iree_status_t loom_value_fact_table_seed_values(
+    loom_value_fact_table_t* target, loom_value_fact_table_view_t source,
+    const loom_module_t* module) {
+  IREE_RETURN_IF_ERROR(
+      loom_value_fact_table_clone_values(target, source, module));
+  iree_host_size_t word_count = 0;
+  for (iree_host_size_t i = 0; i < source.value_count; ++i) {
+    word_count = iree_max(word_count, source.value_ids[i] / 64 + 1);
+  }
+  uint64_t* selected_bits = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      target->transient_arena, word_count, sizeof(*selected_bits),
+      (void**)&selected_bits));
+  if (word_count != 0) {
+    memset(selected_bits, 0, word_count * sizeof(*selected_bits));
+  }
+  for (iree_host_size_t i = 0; i < source.value_count; ++i) {
+    const loom_value_id_t value = source.value_ids[i];
+    if (loom_value_fact_table_has_entry(source.table, value)) {
+      selected_bits[value / 64] |= UINT64_C(1) << (value % 64);
+    }
+  }
+  target->seeds.table = source.table;
+  target->seeds.selected_bits = selected_bits;
+  target->seeds.word_count = word_count;
   return iree_ok_status();
 }
 

@@ -197,7 +197,7 @@ iree_status_t loom_pass_value_fact_owner_prepare(
       &owner->table, scope.minimum_value_capacity));
   owner->table.context.target_facts = scope.target_facts;
   if (scope.seed_facts.table) {
-    const iree_status_t status = loom_value_fact_table_clone_values(
+    const iree_status_t status = loom_value_fact_table_seed_values(
         &owner->table, scope.seed_facts, module);
     if (!iree_status_is_ok(status)) {
       loom_pass_value_fact_owner_clear_scope(owner);
@@ -246,8 +246,8 @@ iree_status_t loom_pass_value_fact_owner_acquire(
   }
   iree_status_t status = iree_ok_status();
   if (!refine_existing && scope.seed_facts.table) {
-    status = loom_value_fact_table_clone_values(&owner->table, scope.seed_facts,
-                                                module);
+    status = loom_value_fact_table_seed_values(&owner->table, scope.seed_facts,
+                                               module);
   }
   if (iree_status_is_ok(status)) {
     switch (scope.kind) {
