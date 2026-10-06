@@ -699,11 +699,11 @@ TEST_F(TLSFPoolTest, ReleaseWithObserverSignalsNotification) {
       IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation, &reserve_info, &result));
 
   const uint32_t wait_token =
-      iree_async_notification_begin_observe(notification_);
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   ReleaseOneReservation(pool_, &reservation, NULL);
-  EXPECT_TRUE(iree_async_notification_wait_for_token(notification_, wait_token,
-                                                     iree_make_timeout_ms(0)));
-  iree_async_notification_end_observe(notification_);
+  EXPECT_TRUE(iree_async_notification_wait_for_token(
+      iree_hal_pool_notification(pool_), wait_token, iree_make_timeout_ms(0)));
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
 }
 
 TEST_F(FiniteTLSFPoolTest, ReserveRejectsOversizedAllocation) {

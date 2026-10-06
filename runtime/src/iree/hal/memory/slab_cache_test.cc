@@ -310,7 +310,8 @@ TEST_F(SlabCacheTest, FailedBatchRestoresIdleCapacityWithoutNotification) {
   memset(reservations.data(), 0xA5, sizeof(reservations));
   const auto original = reservations;
   std::array<iree_hal_pool_acquire_info_t, 2> infos;
-  const uint32_t token = iree_async_notification_begin_observe(notification_);
+  const uint32_t token =
+      iree_async_notification_begin_observe(iree_hal_pool_notification(cache_));
   IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
       cache_, 2, requests.data(), nullptr,
       IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH, reservations.data(),
@@ -320,8 +321,10 @@ TEST_F(SlabCacheTest, FailedBatchRestoresIdleCapacityWithoutNotification) {
             0);
   EXPECT_EQ(infos[0].result, IREE_HAL_POOL_ACQUIRE_NONE);
   EXPECT_EQ(infos[1].flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
-  EXPECT_EQ(iree_async_notification_query_epoch(notification_), token);
-  iree_async_notification_end_observe(notification_);
+  EXPECT_EQ(
+      iree_async_notification_query_epoch(iree_hal_pool_notification(cache_)),
+      token);
+  iree_async_notification_end_observe(iree_hal_pool_notification(cache_));
   IREE_ASSERT_OK(Acquire(cache_, 4096, nullptr,
                          IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
                          &reservation, &info, &result));

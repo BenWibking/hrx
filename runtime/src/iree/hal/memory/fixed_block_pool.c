@@ -639,15 +639,22 @@ static iree_status_t iree_hal_fixed_block_pool_create_impl(
   iree_hal_fixed_block_pool_t* pool = NULL;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
-  iree_status_t status = iree_hal_pool_initialize(
-      &iree_hal_fixed_block_pool_vtable,
-      backing_pool ? backing_pool->notification
-                   : range->memory.backing->notification,
-      backing_pool ? backing_pool->wait_sources
-                   : (iree_hal_pool_wait_source_list_t){0},
-      backing_pool ? backing_pool->frontier_tracker
-                   : range->memory.backing->tracker,
-      host_allocator, &pool->base);
+  iree_async_proactor_t* proactor =
+      backing_pool ? backing_pool->notification->proactor
+                   : range->memory.backing->notification->proactor;
+  iree_async_notification_t* notification = NULL;
+  iree_status_t status = iree_async_notification_create(
+      proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_pool_initialize(
+        &iree_hal_fixed_block_pool_vtable, notification,
+        backing_pool ? backing_pool->wait_sources
+                     : (iree_hal_pool_wait_source_list_t){0},
+        backing_pool ? backing_pool->frontier_tracker
+                     : range->memory.backing->tracker,
+        host_allocator, &pool->base);
+  }
+  iree_async_notification_release(notification);
   if (!iree_status_is_ok(status)) {
     iree_allocator_free(host_allocator, pool);
     IREE_TRACE_ZONE_END(z0);

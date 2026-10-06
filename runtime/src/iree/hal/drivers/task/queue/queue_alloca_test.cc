@@ -14,6 +14,7 @@
 #include "iree/async/operations/scheduling.h"
 #include "iree/async/util/proactor_pool.h"
 #include "iree/hal/cts/util/pool_test_util.h"
+#include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/device_group.h"
 #include "iree/hal/drivers/task/device.h"
 #include "iree/hal/drivers/task/queue/queue.h"
@@ -21,6 +22,7 @@
 #include "iree/hal/memory/fixed_block_pool.h"
 #include "iree/hal/memory/maintenance.h"
 #include "iree/hal/memory/passthrough_pool.h"
+#include "iree/hal/memory/slab_cache.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -101,8 +103,8 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
     IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
         devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
         &backend));
-    notification_ = backend.notification;
     IREE_ASSERT_OK(CreatePool(backend, &pool_));
+    notification_ = iree_hal_pool_notification(pool_);
     for (iree_host_size_t i = 0; i < semaphores_.size(); ++i) {
       IREE_ASSERT_OK(iree_hal_semaphore_create(
           devices_[i == 0 ? 0 : i - 1], IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY, 0,
@@ -164,13 +166,14 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
     }
   }
 
-  iree_host_size_t RegisteredWaitCount() {
+  iree_host_size_t RegisteredWaitCount(
+      iree_async_notification_t* notification) {
     // Only this thread polls the owner, so its wait list cannot change while
     // inspected. The other queue's proactor is never polled.
 #if defined(IREE_PLATFORM_WINDOWS)
-    auto* wait = notification_->platform.iocp.pending_waits;
+    auto* wait = notification->platform.iocp.pending_waits;
 #else
-    auto* wait = notification_->platform.posix.pending_waits;
+    auto* wait = notification->platform.posix.pending_waits;
 #endif
     iree_host_size_t count = 0;
     for (; wait;
@@ -205,6 +208,7 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
           backing_pool, &options, iree_allocator_system(), &pool_);
       iree_hal_pool_release(backing_pool);
       IREE_ASSERT_OK(status);
+      notification_ = iree_hal_pool_notification(pool_);
     }
     std::array<iree_hal_pool_reservation_request_t, 2> requests = {};
     for (auto& request : requests) {
@@ -235,13 +239,13 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
     IREE_ASSERT_OK(iree_hal_queue_alloca(queues_[1], no_waits, allocated, pool_,
                                          requests.size(), requests.data(),
                                          pending_buffers_.data()));
-    while (RegisteredWaitCount() != 1) {
+    while (RegisteredWaitCount(notification_) != 1) {
       ASSERT_NO_FATAL_FAILURE(PollOwner());
     }
     EXPECT_EQ(iree_async_notification_query_epoch(notification_), epoch);
     iree_async_proactor_wake(notification_->proactor);
     ASSERT_NO_FATAL_FAILURE(PollOwner());
-    EXPECT_EQ(RegisteredWaitCount(), 1u);
+    EXPECT_EQ(RegisteredWaitCount(notification_), 1u);
     EXPECT_EQ(iree_async_notification_query_epoch(notification_), epoch);
 
     IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[0], initial_allocated,
@@ -290,7 +294,7 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
   iree_hal_pool_t* backing_pool_ = nullptr;
   // Finite memory pool shared by both consumers.
   iree_hal_pool_t* pool_ = nullptr;
-  // Availability notification borrowed from the selected backend.
+  // Local capacity notification borrowed from the active pool.
   iree_async_notification_t* notification_ = nullptr;
   // Initial allocation and the two consumers' completion timelines.
   std::array<iree_hal_semaphore_t*, 3> semaphores_ = {};
@@ -339,7 +343,7 @@ TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
   }
   // Explicit registration proves both queues reached exhaustion before any
   // block is returned; a submission-order or sleep-based check would not.
-  while (RegisteredWaitCount() != queues_.size()) {
+  while (RegisteredWaitCount(notification_) != queues_.size()) {
     ASSERT_NO_FATAL_FAILURE(PollOwner());
   }
 
@@ -380,6 +384,117 @@ TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
                                            &pending_buffers_[i]));
     ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[i + 1], released_value));
   }
+}
+
+TEST_P(TaskQueueAllocaTest, SiblingPoolResumesThroughBackingNotificationOwner) {
+  using iree::hal::cts::Ref;
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+      devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
+      &backend));
+  Ref<iree_hal_pool_t> native;
+  Ref<iree_hal_pool_t> source;
+  iree_hal_fixed_block_pool_options_t source_options = {};
+  source_options.block_size = 65536;
+  source_options.blocks_per_slab = 1;
+  source_options.frontier_capacity = 2;
+  source_options.asan = backend.asan;
+  IREE_ASSERT_OK(iree::hal::cts::CreateFiniteBlockPool(
+      backend, source_options, iree_allocator_system(), native.out(),
+      source.out()));
+  iree_hal_slab_cache_options_t cache_options;
+  iree_hal_slab_cache_options_initialize(&cache_options);
+  cache_options.slab.allocation_size = 65536;
+  iree_hal_pool_capabilities_t capabilities;
+  iree_hal_pool_query_capabilities(source, &capabilities);
+  cache_options.slab.params.min_alignment =
+      capabilities.max_allocation_alignment;
+  cache_options.slab.params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  cache_options.slab.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  cache_options.slab.params.usage =
+      IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  cache_options.slab.params.queue_family_affinity =
+      iree_hal_make_queue_family_affinity(0);
+  Ref<iree_hal_pool_t> cache;
+  IREE_ASSERT_OK(iree_hal_slab_cache_create(
+      source, &cache_options, iree_allocator_system(), cache.out()));
+  Ref<iree_hal_pool_t> producer;
+  iree_hal_tlsf_pool_options_t producer_options = {};
+  producer_options.tlsf_options.range_length = 4096;
+  producer_options.tlsf_options.frontier_capacity = 2;
+  producer_options.asan = backend.asan;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      cache, &producer_options, iree_allocator_system(), producer.out()));
+  Ref<iree_hal_pool_t> consumer;
+  iree_hal_fixed_block_pool_options_t consumer_options = {};
+  consumer_options.block_size = kBlockSize;
+  consumer_options.blocks_per_slab = 2;
+  consumer_options.frontier_capacity = 2;
+  consumer_options.asan = backend.asan;
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+      cache, &consumer_options, iree_allocator_system(), consumer.out()));
+  auto* consumer_notification = iree_hal_pool_notification(consumer);
+  auto* cache_notification = iree_hal_pool_notification(cache);
+  ASSERT_NE(consumer_notification, cache_notification);
+  iree_hal_pool_reservation_request_t request = {cache_options.slab.params,
+                                                 kBlockSize};
+  request.params.min_alignment = 16;
+  uint64_t allocated_value = 1;
+  uint64_t filled_value = 2;
+  uint64_t released_value = 3;
+  const auto no_waits = iree_hal_semaphore_list_empty();
+  iree_hal_semaphore_list_t first_allocated = {1, &semaphores_[0],
+                                               &allocated_value};
+  iree_hal_semaphore_list_t first_released = {1, &semaphores_[0],
+                                              &released_value};
+  Ref<iree_hal_buffer_t> first;
+  IREE_ASSERT_OK(iree_hal_queue_alloca(queues_[0], no_waits, first_allocated,
+                                       producer, 1, &request, first.out()));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], allocated_value));
+  const auto* backing = iree_hal_buffer_memory_view(first).backing;
+  iree_hal_semaphore_list_t allocated = {1, &semaphores_[1], &allocated_value};
+  iree_hal_semaphore_list_t filled = {1, &semaphores_[1], &filled_value};
+  iree_hal_semaphore_list_t released = {1, &semaphores_[1], &released_value};
+  Ref<iree_hal_buffer_t> second;
+  IREE_ASSERT_OK(iree_hal_queue_alloca(queues_[1], no_waits, allocated,
+                                       consumer, 1, &request, second.out()));
+  // Poll only the captured memory owner, never the other queue's proactor.
+  // Both independent source waits must be registered before capacity returns.
+  while (RegisteredWaitCount(consumer_notification) != 1 ||
+         RegisteredWaitCount(cache_notification) != 1) {
+    ASSERT_NO_FATAL_FAILURE(PollOwner());
+    uint64_t value = 0;
+    IREE_ASSERT_OK(iree_hal_semaphore_query(semaphores_[1], &value));
+    ASSERT_EQ(value, 0u);
+  }
+  iree_hal_buffer_t* first_buffer = first;
+  IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[0], first_allocated,
+                                         first_released, 1, &first_buffer));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], released_value));
+  first.reset();
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], allocated_value));
+  EXPECT_EQ(iree_hal_buffer_memory_view(second).backing, backing);
+  const uint32_t pattern = 0x1234CAFEu;
+  IREE_ASSERT_OK(iree_hal_queue_fill(queues_[1], allocated, filled, second, 0,
+                                     kBlockSize, &pattern, sizeof(pattern),
+                                     IREE_HAL_FILL_FLAG_NONE));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
+  std::array<uint32_t, kBlockSize / sizeof(uint32_t)> actual;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_map_read(second, 0, actual.data(), sizeof(actual)));
+  for (uint32_t value : actual) {
+    EXPECT_EQ(value, pattern);
+  }
+  iree_hal_buffer_t* second_buffer = second;
+  IREE_ASSERT_OK(
+      iree_hal_queue_dealloca(queues_[1], filled, released, 1, &second_buffer));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], released_value));
+  second.reset();
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(native, &stats);
+  EXPECT_EQ(stats.reserve_count, 1u);
+  EXPECT_EQ(RegisteredWaitCount(consumer_notification), 0u);
+  EXPECT_EQ(RegisteredWaitCount(cache_notification), 0u);
 }
 
 TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
@@ -563,6 +678,7 @@ class TaskQueueNativeRetirementTest : public TaskQueueAllocaTest {
         backend.maintenance, iree_allocator_system(), &pool_);
     iree_hal_slab_provider_release(provider);
     IREE_ASSERT_OK(status);
+    notification_ = iree_hal_pool_notification(pool_);
   }
 
   // Remains alive through the base fixture's pool and device teardown.

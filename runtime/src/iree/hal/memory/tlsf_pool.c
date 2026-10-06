@@ -1061,11 +1061,10 @@ iree_status_t iree_hal_tlsf_pool_query_backing_request(
 static iree_status_t iree_hal_tlsf_pool_create_impl(
     iree_hal_tlsf_pool_options_t options,
     iree_hal_pool_buffer_range_t source_range, iree_hal_pool_t* backing_pool,
-    iree_async_notification_t* notification,
+    iree_async_proactor_t* proactor,
     iree_async_frontier_tracker_t* frontier_tracker,
     iree_hal_pool_epoch_query_t epoch_query, iree_allocator_t host_allocator,
     iree_hal_pool_t** out_pool) {
-  IREE_ASSERT_ARGUMENT(notification);
   IREE_ASSERT_ARGUMENT(out_pool);
   IREE_TRACE_ZONE_BEGIN(z0);
 
@@ -1144,11 +1143,17 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
   memset(pool, 0, sizeof(*pool));
-  iree_status_t status = iree_hal_pool_initialize(
-      &iree_hal_tlsf_pool_vtable, notification,
-      backing_pool ? backing_pool->wait_sources
-                   : (iree_hal_pool_wait_source_list_t){0},
-      frontier_tracker, host_allocator, &pool->base);
+  iree_async_notification_t* notification = NULL;
+  iree_status_t status = iree_async_notification_create(
+      proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_pool_initialize(
+        &iree_hal_tlsf_pool_vtable, notification,
+        backing_pool ? backing_pool->wait_sources
+                     : (iree_hal_pool_wait_source_list_t){0},
+        frontier_tracker, host_allocator, &pool->base);
+  }
+  iree_async_notification_release(notification);
   if (!iree_status_is_ok(status)) {
     iree_allocator_free(host_allocator, pool);
     IREE_TRACE_ZONE_END(z0);
@@ -1215,7 +1220,7 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create(
   *out_pool = NULL;
   return iree_hal_tlsf_pool_create_impl(
       *options, (iree_hal_pool_buffer_range_t){0}, backing_pool,
-      backing_pool->notification, backing_pool->frontier_tracker,
+      backing_pool->notification->proactor, backing_pool->frontier_tracker,
       backing_pool->epoch_query, host_allocator, out_pool);
 }
 
@@ -1266,7 +1271,7 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create_from_buffer(
                               "buffer range cannot hold a guarded allocation");
   } else {
     status = iree_hal_tlsf_pool_create_impl(
-        resolved, range, NULL, range.memory.backing->notification,
+        resolved, range, NULL, range.memory.backing->notification->proactor,
         range.memory.backing->tracker, epoch_query, host_allocator, out_pool);
   }
   iree_hal_pool_buffer_range_deinitialize(&range);

@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "iree/async/frontier.h"
+#include "iree/async/notification.h"
 #include "iree/base/internal/atomics.h"
 #include "iree/base/status_cc.h"
 #include "iree/base/threading/notification.h"
@@ -1149,7 +1150,11 @@ TEST_F(HostQueuePendingTest, CancelPendingAllocaPoolNotificationWait) {
   iree_hal_pool_query_stats(pool, &stats);
   EXPECT_GE(stats.exhausted_count, 1u);
 
+  auto* notification = iree_hal_pool_notification(pool);
+  const uint32_t epoch = iree_async_notification_begin_observe(notification);
   CancelPendingWithTestStatus(queue);
+  EXPECT_EQ(iree_async_notification_query_epoch(notification), epoch);
+  iree_async_notification_end_observe(notification);
   EXPECT_FALSE(HostQueueHasPendingOps(queue));
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_CANCELLED,

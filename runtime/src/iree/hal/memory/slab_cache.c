@@ -564,10 +564,16 @@ iree_status_t iree_hal_slab_cache_create(
   iree_hal_slab_cache_t* cache = NULL;
   IREE_RETURN_IF_ERROR(
       iree_allocator_malloc(host_allocator, sizeof(*cache), (void**)&cache));
-  iree_status_t status = iree_hal_pool_initialize(
-      &iree_hal_slab_cache_vtable, backing_pool->notification,
-      backing_pool->wait_sources, backing_pool->frontier_tracker,
-      host_allocator, &cache->base);
+  iree_async_notification_t* notification = NULL;
+  iree_status_t status = iree_async_notification_create(
+      backing_pool->notification->proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE,
+      &notification);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_pool_initialize(
+        &iree_hal_slab_cache_vtable, notification, backing_pool->wait_sources,
+        backing_pool->frontier_tracker, host_allocator, &cache->base);
+  }
+  iree_async_notification_release(notification);
   if (!iree_status_is_ok(status)) {
     iree_allocator_free(host_allocator, cache);
     return status;

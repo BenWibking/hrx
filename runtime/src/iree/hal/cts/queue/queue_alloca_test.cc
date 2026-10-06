@@ -6,8 +6,10 @@
 
 #include <array>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
+#include "iree/async/notification.h"
 #include "iree/hal/cts/util/pool_test_util.h"
 #include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/memory/fixed_block_pool.h"
@@ -396,6 +398,103 @@ TEST_P(QueueAllocaTest, IndependentAllocatorsShareCachedNativeBacking) {
       iree_hal_pool_query_stats(child, &stats);
       EXPECT_EQ(stats.bytes_committed, 0u);
     }
+    iree_hal_pool_stats_t stats;
+    iree_hal_pool_query_stats(native, &stats);
+    EXPECT_EQ(stats.reserve_count, 1u);
+    iree_hal_slab_cache_stats_t cache_stats;
+    IREE_ASSERT_OK(iree_hal_slab_cache_query_stats(cache, &cache_stats));
+    EXPECT_EQ(cache_stats.hit_count, 1u);
+  }
+}
+
+TEST_P(QueueAllocaTest, BlockedSiblingResumesFromSharedCache) {
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(QueryPoolBackend(&backend));
+  for (uint32_t policies = 0; policies < 4; ++policies) {
+    SCOPED_TRACE(policies);
+    // A finite ordinary backing pool bounds the entire composition to one
+    // real native range, regardless of the children's allocation policies.
+    Ref<iree_hal_pool_t> native;
+    Ref<iree_hal_pool_t> source;
+    IREE_ASSERT_OK(CreateFixedBlockPool(65536, 1, native.out(), source.out()));
+    iree_hal_slab_cache_options_t cache_options;
+    iree_hal_slab_cache_options_initialize(&cache_options);
+    cache_options.slab = MakeRequest(transfer_queue_, 65536);
+    iree_hal_pool_capabilities_t capabilities;
+    iree_hal_pool_query_capabilities(source, &capabilities);
+    cache_options.slab.params.min_alignment =
+        capabilities.max_allocation_alignment;
+    Ref<iree_hal_pool_t> cache;
+    IREE_ASSERT_OK(iree_hal_slab_cache_create(
+        source, &cache_options, iree_allocator_system(), cache.out()));
+    Ref<iree_hal_pool_t> children[2];
+    for (uint32_t i = 0; i < 2; ++i) {
+      if (policies & (1u << i)) {
+        iree_hal_fixed_block_pool_options_t options = {};
+        options.block_size = 256;
+        options.blocks_per_slab = 16;
+        options.frontier_capacity = 2;
+        options.asan = backend.asan;
+        IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+            cache, &options, iree_allocator_system(), children[i].out()));
+      } else {
+        iree_hal_tlsf_pool_options_t options = {};
+        options.tlsf_options.range_length = 4096;
+        options.tlsf_options.alignment = IREE_HAL_MEMORY_TLSF_MIN_ALIGNMENT;
+        options.tlsf_options.frontier_capacity = 2;
+        options.asan = backend.asan;
+        IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+            cache, &options, iree_allocator_system(), children[i].out()));
+      }
+    }
+    ASSERT_NE(iree_hal_pool_notification(children[0]),
+              iree_hal_pool_notification(children[1]));
+    auto* cache_notification = iree_hal_pool_notification(cache);
+    ASSERT_NE(cache_notification, iree_hal_pool_notification(children[1]));
+    const auto request = MakeRequest(transfer_queue_, 256);
+    Ref<iree_hal_buffer_t> first;
+    SemaphoreList no_waits;
+    SemaphoreList first_allocated(device_, {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_alloca(transfer_queue_, no_waits,
+                                         first_allocated, children[0], 1,
+                                         &request, first.out()));
+    Wait(first_allocated);
+    const auto* first_backing = iree_hal_buffer_memory_view(first).backing;
+    Ref<iree_hal_buffer_t> second;
+    SemaphoreList second_allocated(device_, {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_alloca(transfer_queue_, no_waits,
+                                         second_allocated, children[1], 1,
+                                         &request, second.out()));
+    // Observation proves that the blocked child captured the backing source.
+    // Returning capacity here exercises either the retry bridge or admitted
+    // wait; both must preserve the notification without submission ordering.
+    while (iree_atomic_load(&cache_notification->observer_count,
+                            iree_memory_order_acquire) == 0) {
+      uint64_t value = 0;
+      IREE_ASSERT_OK(
+          iree_hal_semaphore_query(second_allocated.semaphores[0], &value));
+      ASSERT_EQ(value, 0u);
+      std::this_thread::yield();
+    }
+    EXPECT_FALSE(iree_hal_semaphore_list_poll(second_allocated));
+    iree_hal_buffer_t* first_buffer = first;
+    SemaphoreList first_released(device_, {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(transfer_queue_, first_allocated,
+                                           first_released, 1, &first_buffer));
+    Wait(first_released);
+    first.reset();
+    Wait(second_allocated);
+    EXPECT_EQ(iree_hal_buffer_memory_view(second).backing, first_backing);
+    constexpr uint32_t kPattern = 0xCAFE4321u;
+    FillAndWait(transfer_queue_, second, kPattern);
+    for (uint32_t value : ReadBufferData<uint32_t>(second)) {
+      EXPECT_EQ(value, kPattern);
+    }
+    iree_hal_buffer_t* second_buffer = second;
+    DeallocaAndWait(transfer_queue_, 1, &second_buffer);
+    second.reset();
+    iree_hal_memory_maintenance_call(
+        backend.maintenance, [](void*) {}, nullptr);
     iree_hal_pool_stats_t stats;
     iree_hal_pool_query_stats(native, &stats);
     EXPECT_EQ(stats.reserve_count, 1u);

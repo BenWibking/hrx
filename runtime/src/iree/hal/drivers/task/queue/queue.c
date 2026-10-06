@@ -26,6 +26,7 @@
 #include "iree/hal/drivers/task/command/block_processor.h"
 #include "iree/hal/drivers/task/executable/executable.h"
 #include "iree/hal/drivers/task/transient_buffer.h"
+#include "iree/hal/pool_wait.h"
 #include "iree/hal/utils/resource_set.h"
 
 #if !defined(NDEBUG)
@@ -1126,7 +1127,7 @@ static iree_status_t iree_hal_task_queue_enqueue_waits(
 typedef enum iree_hal_task_queue_alloca_memory_wait_kind_e {
   IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE = 0,
   IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_FRONTIER = 1,
-  IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_POOL_NOTIFICATION = 2,
+  IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_CAPACITY = 2,
 } iree_hal_task_queue_alloca_memory_wait_kind_t;
 
 // Cold-path alloca memory-readiness wait. Allocated inside the queue
@@ -1145,14 +1146,8 @@ struct iree_hal_task_queue_alloca_memory_wait_t {
     iree_async_frontier_waiter_t waiter;
   } frontier;
 
-  // State for reservation retry after pool release notifications.
-  struct {
-    // Wait operations rotated so a callback can arm a retry before returning.
-    iree_async_notification_wait_operation_t wait_ops[2];
-
-    // Index of the active wait operation in |wait_ops|.
-    uint8_t wait_slot;
-  } pool_notification;
+  // Arena-owned helper joining local and backing capacity notifications.
+  iree_hal_pool_wait_t* capacity_wait;
 };
 
 static iree_status_t iree_hal_task_queue_alloca_memory_wait_ensure(
@@ -1203,17 +1198,20 @@ static void iree_hal_task_queue_op_release_alloca_memory_wait(
       iree_hal_task_queue_alloca_release_reservations(operation);
       wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
       break;
-    case IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_POOL_NOTIFICATION:
+    case IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_CAPACITY:
       wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
       break;
     case IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE:
       iree_hal_task_queue_alloca_release_reservations(operation);
       break;
   }
+  iree_hal_pool_wait_destroy(wait->capacity_wait);
+  wait->capacity_wait = NULL;
 }
 
 static void iree_hal_task_queue_alloca_memory_wait_resolved(
-    iree_hal_task_queue_op_t* operation, iree_status_t status) {
+    void* user_data, iree_status_t status) {
+  iree_hal_task_queue_op_t* operation = user_data;
   if (!iree_status_is_ok(status)) {
     iree_hal_task_queue_profile_record_failed_before_ready(operation);
     iree_hal_task_queue_op_fail(operation, status);
@@ -1229,26 +1227,10 @@ static void iree_hal_task_queue_alloca_memory_wait_resolved(
 
   iree_hal_task_queue_alloca_memory_wait_t* wait =
       operation->alloca.memory_wait;
-  if (wait &&
-      wait->kind == IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_POOL_NOTIFICATION) {
+  if (wait && wait->kind == IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_CAPACITY) {
     wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
   }
   iree_hal_task_queue_schedule_ready(operation);
-}
-
-static void iree_hal_task_queue_alloca_frontier_wait_resolved(
-    void* user_data, iree_status_t status) {
-  iree_hal_task_queue_alloca_memory_wait_resolved(
-      (iree_hal_task_queue_op_t*)user_data, status);
-}
-
-static void iree_hal_task_queue_alloca_pool_notification_wait_resolved(
-    void* user_data, iree_async_operation_t* operation, iree_status_t status,
-    iree_async_completion_flags_t flags) {
-  (void)operation;
-  (void)flags;
-  iree_hal_task_queue_alloca_memory_wait_resolved(
-      (iree_hal_task_queue_op_t*)user_data, status);
 }
 
 static iree_status_t iree_hal_task_queue_alloca_wait_for_frontier(
@@ -1308,7 +1290,7 @@ static iree_status_t iree_hal_task_queue_alloca_wait_for_frontier(
         wait->frontier.wait_frontier->entry_count);
     status = iree_async_frontier_tracker_wait(
         operation->frontier_tracker, wait->frontier.wait_frontier,
-        iree_hal_task_queue_alloca_frontier_wait_resolved, operation,
+        iree_hal_task_queue_alloca_memory_wait_resolved, operation,
         &wait->frontier.waiter);
   }
   if (!iree_status_is_ok(status)) {
@@ -1320,30 +1302,15 @@ static iree_status_t iree_hal_task_queue_alloca_wait_for_frontier(
   return status;
 }
 
-static iree_status_t iree_hal_task_queue_alloca_wait_for_pool_notification(
+static void iree_hal_task_queue_alloca_wait_for_capacity(
     iree_hal_task_queue_op_t* operation,
-    iree_hal_pool_acquire_result_t acquire_result,
-    iree_async_notification_t* notification, uint32_t wait_token) {
-  iree_hal_task_queue_alloca_memory_wait_t* wait = NULL;
-  IREE_RETURN_IF_ERROR(
-      iree_hal_task_queue_alloca_memory_wait_ensure(operation, &wait));
-  wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_POOL_NOTIFICATION;
-  wait->pool_notification.wait_slot =
-      (uint8_t)((wait->pool_notification.wait_slot + 1u) & 1u);
+    iree_hal_pool_acquire_result_t acquire_result) {
+  iree_hal_task_queue_alloca_memory_wait_t* wait =
+      operation->alloca.memory_wait;
+  wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_CAPACITY;
 
-  iree_async_notification_wait_operation_t* wait_op =
-      &wait->pool_notification.wait_ops[wait->pool_notification.wait_slot];
-  iree_async_operation_zero(&wait_op->base, sizeof(*wait_op));
-  iree_async_operation_initialize(
-      &wait_op->base, IREE_ASYNC_OPERATION_TYPE_NOTIFICATION_WAIT,
-      IREE_ASYNC_OPERATION_FLAG_NONE,
-      iree_hal_task_queue_alloca_pool_notification_wait_resolved, operation);
-  wait_op->notification = notification;
-  wait_op->wait_flags = IREE_ASYNC_NOTIFICATION_WAIT_FLAG_USE_WAIT_TOKEN;
-  wait_op->wait_token = wait_token;
-
-  // The notification owner may dispatch the callback before submit returns.
-  // Finish profiling before handing off the operation to that proactor.
+  // Commit may dispatch before returning, including on admission failure.
+  // Finish profiling before handing off the operation to the helper.
   iree_hal_task_queue_profile_force_software_defer(operation);
   iree_hal_task_queue_profile_record_memory_event(
       operation, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_WAIT,
@@ -1352,12 +1319,12 @@ static iree_status_t iree_hal_task_queue_alloca_wait_for_pool_notification(
       acquire_result, operation->alloca.pool,
       operation->alloca.requests[0].params,
       /*reservation=*/NULL, /*frontier_entry_count=*/0);
-  iree_status_t status =
-      iree_async_proactor_submit_one(notification->proactor, &wait_op->base);
-  if (!iree_status_is_ok(status)) {
-    wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
-  }
-  return status;
+  iree_hal_pool_wait_commit(
+      wait->capacity_wait, iree_infinite_timeout(),
+      (iree_hal_pool_wait_callback_t){
+          .fn = iree_hal_task_queue_alloca_memory_wait_resolved,
+          .user_data = operation,
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -1964,45 +1931,33 @@ static iree_status_t iree_hal_task_queue_drain_alloca_on_acquire_result(
     iree_hal_task_queue_op_t* operation,
     iree_hal_pool_acquire_result_t acquire_result);
 
-static iree_status_t
-iree_hal_task_queue_drain_alloca_wait_for_pool_notification(
+static iree_status_t iree_hal_task_queue_drain_alloca_wait_for_capacity(
     iree_hal_task_queue_op_t* operation) {
-  iree_async_notification_t* notification =
-      iree_hal_pool_notification(operation->alloca.pool);
-  if (IREE_UNLIKELY(!notification)) {
-    return iree_make_status(IREE_STATUS_INTERNAL,
-                            "queue_alloca exhausted pool did not provide a "
-                            "notification");
+  iree_hal_task_queue_alloca_memory_wait_t* wait = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_hal_task_queue_alloca_memory_wait_ensure(operation, &wait));
+  if (!wait->capacity_wait) {
+    IREE_RETURN_IF_ERROR(iree_hal_pool_wait_create(
+        operation->alloca.pool, iree_arena_allocator(&operation->arena),
+        &wait->capacity_wait));
   }
-
-  const uint32_t wait_token =
-      iree_async_notification_begin_observe(notification);
+  iree_hal_pool_wait_prepare(wait->capacity_wait);
   iree_hal_pool_acquire_result_t acquire_result =
       IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
 
   iree_status_t status =
       iree_hal_task_queue_drain_alloca_acquire(operation, &acquire_result);
-  if (iree_status_is_ok(status)) {
-    switch (acquire_result) {
-      case IREE_HAL_POOL_ACQUIRE_OK:
-      case IREE_HAL_POOL_ACQUIRE_OK_FRESH:
-      case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT:
-        status = iree_hal_task_queue_drain_alloca_on_acquire_result(
-            operation, acquire_result);
-        break;
-      case IREE_HAL_POOL_ACQUIRE_EXHAUSTED:
-      case IREE_HAL_POOL_ACQUIRE_OVER_BUDGET:
-        status = iree_hal_task_queue_alloca_wait_for_pool_notification(
-            operation, acquire_result, notification, wait_token);
-        break;
-      default:
-        status = iree_make_status(IREE_STATUS_INTERNAL,
-                                  "unrecognized pool acquire result %u",
-                                  acquire_result);
-        break;
-    }
+  if (iree_status_is_ok(status) &&
+      (acquire_result == IREE_HAL_POOL_ACQUIRE_EXHAUSTED ||
+       acquire_result == IREE_HAL_POOL_ACQUIRE_OVER_BUDGET)) {
+    iree_hal_task_queue_alloca_wait_for_capacity(operation, acquire_result);
+    return iree_ok_status();
   }
-  iree_async_notification_end_observe(notification);
+  iree_hal_pool_wait_abort(wait->capacity_wait);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_task_queue_drain_alloca_on_acquire_result(operation,
+                                                                acquire_result);
+  }
   return status;
 }
 
@@ -2019,8 +1974,7 @@ static iree_status_t iree_hal_task_queue_drain_alloca_on_acquire_result(
       return iree_hal_task_queue_alloca_wait_for_frontier(operation);
     case IREE_HAL_POOL_ACQUIRE_EXHAUSTED:
     case IREE_HAL_POOL_ACQUIRE_OVER_BUDGET:
-      return iree_hal_task_queue_drain_alloca_wait_for_pool_notification(
-          operation);
+      return iree_hal_task_queue_drain_alloca_wait_for_capacity(operation);
   }
   return iree_make_status(IREE_STATUS_INTERNAL,
                           "unrecognized pool acquire result %u",

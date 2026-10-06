@@ -263,7 +263,8 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
     iree_hal_pool_query_stats(pool_, &before);
     const size_t metadata_calls = metadata_allocator_.allocation_calls();
     const size_t native_calls = native_allocator_.allocation_calls();
-    const uint32_t token = iree_async_notification_begin_observe(notification_);
+    const uint32_t token = iree_async_notification_begin_observe(
+        iree_hal_pool_notification(pool_));
     IREE_EXPECT_OK(iree_hal_pool_acquire_reservations(
         pool_, N, requests, requester_frontier,
         IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH, reservations, infos,
@@ -282,8 +283,8 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
       EXPECT_EQ(infos[i].reuse_frontier, nullptr);
     }
     EXPECT_FALSE(iree_async_notification_wait_for_token(
-        notification_, token, iree_immediate_timeout()));
-    iree_async_notification_end_observe(notification_);
+        iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
+    iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
     iree_hal_pool_stats_t after;
     iree_hal_pool_query_stats(pool_, &after);
     EXPECT_EQ(after.reservation_count, before.reservation_count);
@@ -705,7 +706,8 @@ TEST_F(FiniteTLSFPoolConcurrencyTest,
   memset(reservations, 0xA5, sizeof(reservations));
   iree_hal_pool_reservation_t originals[2];
   memcpy(originals, reservations, sizeof(originals));
-  const uint32_t token = iree_async_notification_begin_observe(notification_);
+  const uint32_t token =
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   CheckMetadataDeferral(requests, 1, death);
   metadata_allocator_.FailNextAllocation();
   IREE_EXPECT_STATUS_IS(
@@ -715,8 +717,8 @@ TEST_F(FiniteTLSFPoolConcurrencyTest,
                                          reservations, infos, &result));
   EXPECT_EQ(memcmp(reservations, originals, sizeof(originals)), 0);
   EXPECT_FALSE(iree_async_notification_wait_for_token(
-      notification_, token, iree_immediate_timeout()));
-  iree_async_notification_end_observe(notification_);
+      iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
   const auto request = Request(3968);
   iree_hal_pool_reservation_t remaining;
   IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
@@ -798,7 +800,8 @@ TEST_F(FiniteTLSFPoolConcurrencyTest,
   memcpy(originals, reservations, sizeof(originals));
   iree_hal_pool_acquire_info_t infos[3];
   iree_hal_pool_acquire_result_t result;
-  const uint32_t token = iree_async_notification_begin_observe(notification_);
+  const uint32_t token =
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   metadata_allocator_.FailNextAllocation();
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_RESOURCE_EXHAUSTED,
@@ -807,8 +810,8 @@ TEST_F(FiniteTLSFPoolConcurrencyTest,
                                          reservations, infos, &result));
   EXPECT_EQ(memcmp(reservations, originals, sizeof(originals)), 0);
   EXPECT_FALSE(iree_async_notification_wait_for_token(
-      notification_, token, iree_immediate_timeout()));
-  iree_async_notification_end_observe(notification_);
+      iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
   CheckExistingCapacity(4096);
 }
 
@@ -887,7 +890,8 @@ TEST_F(TLSFPoolConcurrencyTest, FailedNativeGrowthPreservesCapacityAndOutputs) {
   memcpy(originals, reservations, sizeof(originals));
   iree_hal_pool_acquire_info_t infos[2];
   iree_hal_pool_acquire_result_t result;
-  const uint32_t token = iree_async_notification_begin_observe(notification_);
+  const uint32_t token =
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   native_allocator_.FailNextAllocation();
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_RESOURCE_EXHAUSTED,
@@ -896,8 +900,8 @@ TEST_F(TLSFPoolConcurrencyTest, FailedNativeGrowthPreservesCapacityAndOutputs) {
                                          reservations, infos, &result));
   EXPECT_EQ(memcmp(reservations, originals, sizeof(originals)), 0);
   EXPECT_FALSE(iree_async_notification_wait_for_token(
-      notification_, token, iree_immediate_timeout()));
-  iree_async_notification_end_observe(notification_);
+      iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
   CheckExistingCapacity(4080);
   iree_hal_pool_release_reservations(pool_, 1, &held, nullptr);
 }
@@ -911,7 +915,8 @@ TEST_F(FiniteTLSFPoolConcurrencyTest, RollbackDoesNotPublishCapacityProgress) {
   iree_hal_pool_reservation_t reservations[2];
   iree_hal_pool_acquire_info_t infos[2];
   iree_hal_pool_acquire_result_t result;
-  const uint32_t token = iree_async_notification_begin_observe(notification_);
+  const uint32_t token =
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   for (int i = 0; i < 3; ++i) {
     IREE_EXPECT_OK(iree_hal_pool_acquire_reservations(
         pool_, 2, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
@@ -920,21 +925,22 @@ TEST_F(FiniteTLSFPoolConcurrencyTest, RollbackDoesNotPublishCapacityProgress) {
     EXPECT_EQ(infos[0].result, IREE_HAL_POOL_ACQUIRE_NONE);
     EXPECT_EQ(infos[1].result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
     EXPECT_FALSE(iree_async_notification_wait_for_token(
-        notification_, token, iree_immediate_timeout()));
+        iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
   }
-  iree_async_notification_end_observe(notification_);
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
   CheckExistingCapacity(4096);
 }
 
 TEST_F(TLSFPoolConcurrencyTest, GrowthPublishesSpareCapacity) {
   iree_hal_pool_reservation_t held;
   IREE_ASSERT_OK(Acquire(4096, &held));
-  const uint32_t token = iree_async_notification_begin_observe(notification_);
+  const uint32_t token =
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   iree_hal_pool_reservation_t reservation = {};
   IREE_EXPECT_OK(Acquire(512, &reservation));
-  EXPECT_TRUE(iree_async_notification_wait_for_token(notification_, token,
-                                                     iree_immediate_timeout()));
-  iree_async_notification_end_observe(notification_);
+  EXPECT_TRUE(iree_async_notification_wait_for_token(
+      iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
   CheckExistingCapacity(3584);
   iree_hal_pool_release_reservations(pool_, 1, &held, nullptr);
   if (reservation.block_handle) {
@@ -959,15 +965,16 @@ TEST_F(TLSFPoolConcurrencyTest, GrowthBeforeBudgetFailureReturnsUnusedBacking) {
   iree_hal_pool_acquire_info_t infos[3];
   iree_hal_pool_acquire_result_t result;
   for (int i = 0; i < 2; ++i) {
-    const uint32_t token = iree_async_notification_begin_observe(notification_);
+    const uint32_t token = iree_async_notification_begin_observe(
+        iree_hal_pool_notification(pool_));
     IREE_EXPECT_OK(iree_hal_pool_acquire_reservations(
         pool_, 3, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
         reservations, infos, &result));
     EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OVER_BUDGET);
     EXPECT_TRUE(iree_async_notification_wait_for_token(
-        notification_, token, iree_immediate_timeout()));
+        iree_hal_pool_notification(pool_), token, iree_immediate_timeout()));
     WaitForMaintenance();
-    iree_async_notification_end_observe(notification_);
+    iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
   }
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool_, &stats);

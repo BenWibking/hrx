@@ -692,7 +692,7 @@ TEST_F(FixedBlockPoolTest, ReserveReleaseFresh) {
 
 TEST_F(FixedBlockPoolTest, ReservationTransactionIsAllOrNone) {
   const uint32_t wait_token =
-      iree_async_notification_begin_observe(notification_);
+      iree_async_notification_begin_observe(iree_hal_pool_notification(pool_));
   const iree_hal_pool_reservation_request_t oversized_requests[5] = {
       MakeReservationRequest(64, 16), MakeReservationRequest(64, 16),
       MakeReservationRequest(64, 16), MakeReservationRequest(64, 16),
@@ -725,9 +725,9 @@ TEST_F(FixedBlockPoolTest, ReservationTransactionIsAllOrNone) {
   EXPECT_EQ(stats.bytes_reserved, 0u);
   EXPECT_EQ(stats.reserve_count, 0u);
   EXPECT_EQ(stats.release_count, 0u);
-  EXPECT_FALSE(iree_async_notification_wait_for_token(notification_, wait_token,
-                                                      iree_make_timeout_ms(0)));
-  iree_async_notification_end_observe(notification_);
+  EXPECT_FALSE(iree_async_notification_wait_for_token(
+      iree_hal_pool_notification(pool_), wait_token, iree_make_timeout_ms(0)));
+  iree_async_notification_end_observe(iree_hal_pool_notification(pool_));
 
   const iree_hal_pool_reservation_request_t fitting_requests[4] = {
       MakeReservationRequest(64, 16),

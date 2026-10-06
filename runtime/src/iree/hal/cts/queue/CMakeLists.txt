@@ -28,6 +28,8 @@ iree_cc_library(
   SRCS
     "queue_alloca_test.cc"
   DEPS
+    iree::async
+    iree::base
     iree::hal
     iree::hal::cts::util::pool_test_util
     iree::hal::cts::util::test_base

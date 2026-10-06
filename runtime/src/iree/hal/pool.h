@@ -605,8 +605,9 @@ IREE_API_EXPORT void iree_hal_pool_trim(iree_hal_pool_t* pool,
                                         iree_hal_pool_trim_flags_t flags,
                                         iree_device_size_t min_bytes_to_keep);
 
-// Returns the pool's notification. Callers waiting for blocks to become
-// available can use this to sleep efficiently instead of polling.
+// Returns the notification for this pool's local capacity changes. Backing
+// pools may publish independent capacity changes; allocation retries use the
+// common pool_wait helper to observe every captured source.
 //
 // The notification is advisory over pool state. Callers must observe the
 // notification epoch before checking the pool state, and then wait on that
