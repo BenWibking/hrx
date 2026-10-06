@@ -56,6 +56,38 @@ calculates that expansion before emitting the `WaitTensorcnt` intrinsic.
 [Operation units][triton-wait-ops] [Count conversion][triton-wait-conversion]
 [Expansion accounting][triton-wait-counts] [Counter emission][triton-wait-lowering]
 
+### Compiler-selected tensor depth
+
+LLVM's `FeatureNeedsTDMDrain` selects an additional issue-depth policy for
+the `gfx1250-strict`, `gfx1250`, `gfx1251` and `gfx12-5-generic` processor
+definitions at the cited revision. These exact compiler selections identify
+the workaround's applicability; they do not specify a physical queue capacity
+or an ASIC stepping. [Feature selections][llvm-depth-features]
+[Processor definitions][llvm-depth-processors]
+
+`GCNHazardRecognizer::fixTDM` searches backward through predecessor blocks
+before a tensor instruction. Finding an earlier tensor instruction without
+an intervening `S_WAIT_TENSORCNT` threshold of ten or less causes it to
+insert `S_WAIT_TENSORCNT 10`. A threshold of eleven does not discharge this
+policy; a threshold of nine or ten does. With no earlier tensor instruction
+on the searched paths, it inserts no wait.
+[Backward search][llvm-depth-search] [Insertion rule][llvm-depth-rule]
+[Load, store and threshold cases][llvm-depth-cases]
+
+This wait admits another transfer while up to ten older tensor operations
+remain outstanding. It does not make a particular LDS slot ready, return
+source storage, or join another wave. LLVM's two-load example retains the
+inserted `0xa` wait and separate application waits of one and zero. The
+six-bit counter width therefore describes representation, while this
+compiler policy controls issue depth and the application's waits control
+data dependencies. [Two-load sequence][llvm-depth-sequence]
+
+LLVM also excludes `ASYNCcnt` and `TENSORcnt` from its ordinary
+`getAllZeroWaitcnt` helper; explicit async-mark accounting handles those
+counters separately. An ordinary compiler-generated memory wait is not
+evidence that either asynchronous transfer class has drained.
+[Wait-generator contract][llvm-async-waits]
+
 ## Tensor descriptors and completion notification
 
 The tensor descriptor, written `D#` in the ISA, is supplied in groups of
@@ -302,3 +334,10 @@ fill and final-reader boundaries for each recipient's storage.
 [triton-worker-join]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/lib/Conversion/TritonGPUToLLVM/WarpSpecializeUtility.cpp#L415-L427
 [triton-partition-exit]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/lib/Conversion/TritonGPUToLLVM/WarpSpecializeUtility.cpp#L563-L593
 [triton-join-callback]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/ConvertWarpSpecializeToLLVM.cpp#L159-L173
+[llvm-depth-features]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L2520-L2643
+[llvm-depth-processors]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/GCNProcessors.td#L310-L327
+[llvm-depth-search]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/GCNHazardRecognizer.cpp#L960-L1012
+[llvm-depth-rule]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/GCNHazardRecognizer.cpp#L4317-L4340
+[llvm-depth-cases]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/test/CodeGen/AMDGPU/hazards-gfx1250.mir#L552-L704
+[llvm-depth-sequence]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/test/CodeGen/AMDGPU/llvm.amdgcn.tensor.load.store.ll#L362-L405
+[llvm-async-waits]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/SIInsertWaitcnts.cpp#L239-L244
