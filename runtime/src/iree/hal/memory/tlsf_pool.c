@@ -807,6 +807,19 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
     tlsf_options.range_length = source_range.length;
   }
 
+  iree_hal_slab_provider_properties_t slab_properties = {0};
+  if (slab_provider) {
+    iree_hal_slab_provider_query_properties(slab_provider, &slab_properties);
+    if (tlsf_options.alignment > slab_properties.allocation_alignment) {
+      IREE_TRACE_ZONE_END(z0);
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "TLSF alignment %" PRIdsz
+                              " exceeds native backing alignment %" PRIdsz,
+                              tlsf_options.alignment,
+                              slab_properties.allocation_alignment);
+    }
+  }
+
   iree_hal_tlsf_pool_t* pool = NULL;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
@@ -830,8 +843,7 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
   iree_hal_slab_provider_retain(slab_provider);
   pool->slab_provider = slab_provider;
   if (slab_provider) {
-    iree_hal_slab_provider_query_properties(slab_provider,
-                                            &pool->slab_properties);
+    pool->slab_properties = slab_properties;
   } else {
     pool->slab_properties = (iree_hal_slab_provider_properties_t){
         .memory_type = iree_hal_buffer_memory_type(source_range.buffer),

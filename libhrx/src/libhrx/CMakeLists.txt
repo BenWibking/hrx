@@ -68,6 +68,7 @@ iree_cc_library(
     iree::hal::drivers::task::driver
     iree::hal::drivers::task::executable::loaders::registration
     iree::hal::memory::asan
+    iree::hal::memory::cpu_slab_provider
     iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
@@ -144,6 +145,7 @@ iree_cc_library(
     iree::hal::drivers::task::driver
     iree::hal::drivers::task::executable::loaders::registration
     iree::hal::memory::asan
+    iree::hal::memory::cpu_slab_provider
     iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool

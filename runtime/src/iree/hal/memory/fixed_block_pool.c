@@ -623,13 +623,12 @@ static iree_status_t iree_hal_fixed_block_pool_validate_reservation_request(
   if (size > pool->user_block_size) {
     return iree_status_from_code(IREE_STATUS_OUT_OF_RANGE);
   }
-  if (pool->source_range.buffer &&
-      (alignment > pool->source_range.memory.backing->allocation_alignment ||
+  if (alignment > pool->slab_properties.allocation_alignment ||
+      (pool->source_range.buffer &&
        !iree_device_size_has_alignment(pool->source_range.memory.offset,
                                        alignment))) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "reservation alignment exceeds backing range alignment");
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "reservation alignment exceeds backing alignment");
   }
   if (pool->backing_block_size % alignment != 0) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,

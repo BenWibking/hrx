@@ -214,6 +214,7 @@ static void iree_hal_test_opaque_slab_provider_query_stats(
 static void iree_hal_test_opaque_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
+  out_properties->allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
   out_properties->memory_type =
       IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE |
       IREE_HAL_MEMORY_TYPE_HOST_COHERENT | IREE_HAL_MEMORY_TYPE_HOST_CACHED;
@@ -249,8 +250,8 @@ class PassthroughPoolTest : public ::testing::Test {
  protected:
   void SetUp() override {
     allocator_ = iree_allocator_system();
-    IREE_ASSERT_OK(
-        iree_hal_cpu_slab_provider_create(allocator_, &slab_provider_));
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, allocator_, &slab_provider_));
     IREE_ASSERT_OK(iree_async_notification_create(
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
     iree_hal_passthrough_pool_options_t options = {};
@@ -341,6 +342,30 @@ TEST_F(PassthroughPoolTest, ReserveRelease) {
   ReleaseOneReservation(pool_, &reservation, NULL);
 }
 
+TEST_F(PassthroughPoolTest, AlignmentUsesNativeBackingGuarantee) {
+  auto request = MakeReservationRequest(256, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
+  request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      pool_, request.params, request.allocation_size, iree_infinite_timeout(),
+      &buffer));
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 256, &mapping));
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) %
+                IREE_HAL_HEAP_BUFFER_ALIGNMENT,
+            0u);
+  memset(mapping.contents.data, 0x6B, 256);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  uint8_t actual[256] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+  for (uint8_t value : actual) {
+    EXPECT_EQ(value, 0x6B);
+  }
+  iree_hal_buffer_release(buffer);
+}
+
 // Counts real CPU backing and pool metadata allocations without replacing the
 // pool or provider under test.
 struct CountingAllocator {
@@ -363,8 +388,8 @@ struct CountingAllocator {
 TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
   CountingAllocator allocations;
   iree_hal_slab_provider_t* provider = nullptr;
-  IREE_ASSERT_OK(
-      iree_hal_cpu_slab_provider_create(allocations.allocator(), &provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+      /*min_alignment=*/0, allocations.allocator(), &provider));
   iree_async_notification_t* notification = nullptr;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -756,7 +781,8 @@ TEST(PassthroughPool, UsesProviderHooks) {
 TEST(PassthroughPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));

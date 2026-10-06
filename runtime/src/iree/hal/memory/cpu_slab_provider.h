@@ -33,8 +33,10 @@ extern "C" {
    IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_SEQUENTIAL_WRITE)
 
 // Creates a slab provider that allocates host memory via |host_allocator|
-// (typically the system allocator / malloc). Slabs are plain host memory
-// with no special alignment, registration, or NUMA affinity.
+// (typically the system allocator / malloc). Slabs are plain host memory with
+// no registration or NUMA affinity. Each slab has at least |min_alignment| byte
+// alignment, rounded up to IREE_HAL_HEAP_BUFFER_ALIGNMENT. |min_alignment| must
+// be zero (the default heap alignment) or a power of two.
 //
 // Reports IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE and supports
 // IREE_HAL_CPU_SLAB_PROVIDER_BUFFER_USAGE. Materialized buffers are accessible
@@ -43,7 +45,8 @@ extern "C" {
 // This is the simplest slab provider; intended for CPU-only testing and as
 // the backing for pass-through pools on host targets.
 iree_status_t iree_hal_cpu_slab_provider_create(
-    iree_allocator_t host_allocator, iree_hal_slab_provider_t** out_provider);
+    iree_host_size_t min_alignment, iree_allocator_t host_allocator,
+    iree_hal_slab_provider_t** out_provider);
 
 #ifdef __cplusplus
 }  // extern "C"

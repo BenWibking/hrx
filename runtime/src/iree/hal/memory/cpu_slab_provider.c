@@ -16,14 +16,24 @@ typedef struct iree_hal_cpu_slab_provider_t {
 
   // Host allocator used for provider metadata and slab memory.
   iree_allocator_t host_allocator;
+
+  // Minimum absolute byte alignment of every slab allocation.
+  iree_host_size_t allocation_alignment;
 } iree_hal_cpu_slab_provider_t;
 
 static const iree_hal_slab_provider_vtable_t iree_hal_cpu_slab_provider_vtable;
 
 iree_status_t iree_hal_cpu_slab_provider_create(
-    iree_allocator_t host_allocator, iree_hal_slab_provider_t** out_provider) {
+    iree_host_size_t min_alignment, iree_allocator_t host_allocator,
+    iree_hal_slab_provider_t** out_provider) {
   IREE_ASSERT_ARGUMENT(out_provider);
   *out_provider = NULL;
+  if (!iree_host_size_is_valid_alignment(min_alignment)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "slab alignment must be a power of two (got %" PRIhsz ")",
+        min_alignment);
+  }
 
   iree_hal_cpu_slab_provider_t* provider = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc(host_allocator, sizeof(*provider),
@@ -31,6 +41,8 @@ iree_status_t iree_hal_cpu_slab_provider_create(
   iree_hal_slab_provider_initialize(&iree_hal_cpu_slab_provider_vtable,
                                     &provider->base);
   provider->host_allocator = host_allocator;
+  provider->allocation_alignment =
+      iree_max(min_alignment, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
   *out_provider = &provider->base;
   return iree_ok_status();
 }
@@ -51,7 +63,7 @@ static iree_status_t iree_hal_cpu_slab_provider_acquire_slab(
   memset(out_slab, 0, sizeof(*out_slab));
   void* ptr = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc_aligned(
-      provider->host_allocator, min_length, IREE_HAL_HEAP_BUFFER_ALIGNMENT,
+      provider->host_allocator, min_length, provider->allocation_alignment,
       /*offset=*/0, &ptr));
   out_slab->base_ptr = (uint8_t*)ptr;
   out_slab->length = min_length;
@@ -169,8 +181,10 @@ static void iree_hal_cpu_slab_provider_query_stats(
 static void iree_hal_cpu_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
+  const iree_hal_cpu_slab_provider_t* provider =
+      (const iree_hal_cpu_slab_provider_t*)base_provider;
   out_properties->memory_type = IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE;
-  out_properties->allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
+  out_properties->allocation_alignment = provider->allocation_alignment;
   out_properties->maintenance_alignment = 1;
   out_properties->supported_usage = IREE_HAL_CPU_SLAB_PROVIDER_BUFFER_USAGE;
   out_properties->queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;

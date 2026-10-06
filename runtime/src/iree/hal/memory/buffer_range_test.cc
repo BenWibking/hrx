@@ -34,7 +34,8 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
       IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
           tracker_, Axis(i), nullptr));
     }
-    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator_, &provider_));
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                     allocator_, &provider_));
     iree_hal_fixed_block_pool_options_t options = {};
     options.block_allocator_options.block_size = 4096;
     options.block_allocator_options.block_count = 1;

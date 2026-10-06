@@ -266,8 +266,14 @@ TEST_P(QueueAllocaTest, ExactQueueAndExplicitPool) {
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(CreatePassthroughPool(pool.out()));
 
-  const iree_hal_pool_reservation_request_t request =
+  // Use the native guarantee, which may exceed the CPU heap alignment.
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(QueryPoolBackend(&backend));
+  iree_hal_slab_provider_properties_t properties;
+  iree_hal_slab_provider_query_properties(backend.slab_provider, &properties);
+  iree_hal_pool_reservation_request_t request =
       MakeRequest(transfer_queue_, kAllocationSize);
+  request.params.min_alignment = properties.allocation_alignment;
   Ref<iree_hal_buffer_t> buffer;
   SemaphoreList empty_wait;
   SemaphoreList alloca_signal(device_, {0}, {1});
@@ -277,6 +283,11 @@ TEST_P(QueueAllocaTest, ExactQueueAndExplicitPool) {
   ASSERT_NE(nullptr, buffer.get());
   Wait(alloca_signal);
 
+  const auto memory = iree_hal_buffer_memory_view(buffer);
+  ASSERT_NE(memory.backing, nullptr);
+  EXPECT_EQ(memory.backing->allocation_alignment,
+            properties.allocation_alignment);
+  EXPECT_EQ(memory.offset % properties.allocation_alignment, 0u);
   EXPECT_GE(iree_hal_buffer_byte_length(buffer), kAllocationSize);
   const iree_hal_buffer_placement_t placement =
       iree_hal_buffer_allocation_placement(buffer);

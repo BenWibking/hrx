@@ -334,8 +334,8 @@ iree_status_t iree_hal_task_device_create(
   }
 
   if (iree_status_is_ok(status)) {
-    status = iree_hal_cpu_slab_provider_create(host_allocator,
-                                               &device->pool_slab_provider);
+    status = iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, host_allocator, &device->pool_slab_provider);
   }
   if (iree_status_is_ok(status)) {
     status = iree_async_notification_create(device->proactor,

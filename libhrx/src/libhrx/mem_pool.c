@@ -13,6 +13,7 @@
 
 #include "hrx_internal.h"
 #include "iree/hal/memory/asan.h"
+#include "iree/hal/memory/cpu_slab_provider.h"
 #include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "vmm_slab_provider.h"
@@ -177,7 +178,11 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
 
   iree_hal_slab_provider_t* slab_provider = backend.slab_provider;
   bool owns_slab_provider = false;
-  if (hrx_mem_pool_uses_virtual_memory_slabs(pool, &backend)) {
+  if (pool->device->type == HRX_ACCELERATOR_CPU) {
+    IREE_RETURN_IF_ERROR(iree_hal_cpu_slab_provider_create(
+        HRX_MEM_POOL_ALIGNMENT, iree_allocator_system(), &slab_provider));
+    owns_slab_provider = true;
+  } else if (hrx_mem_pool_uses_virtual_memory_slabs(pool, &backend)) {
     const iree_hal_buffer_params_t physical_buffer_params = {
         .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
         .access = IREE_HAL_MEMORY_ACCESS_ALL,

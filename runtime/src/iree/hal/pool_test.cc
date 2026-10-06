@@ -168,8 +168,8 @@ class PoolFrontierWaitTest : public ::testing::Test {
         iree_async_frontier_tracker_register_axis(tracker_, axis_, nullptr));
     IREE_ASSERT_OK(iree_async_notification_create(
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
-    IREE_ASSERT_OK(
-        iree_hal_cpu_slab_provider_create(iree_allocator_system(), &provider_));
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, iree_allocator_system(), &provider_));
     iree_hal_fixed_block_pool_options_t options = {};
     options.block_allocator_options.block_size = kByteLength;
     options.block_allocator_options.block_count = 1;

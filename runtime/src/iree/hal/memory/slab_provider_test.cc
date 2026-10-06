@@ -22,8 +22,8 @@ static iree_hal_asan_pool_options_t ShadowOptions() {
 
 TEST(SlabProviderTest, CPUPropertiesDescribeAtomicStorage) {
   iree_hal_slab_provider_t* provider = nullptr;
-  IREE_ASSERT_OK(
-      iree_hal_cpu_slab_provider_create(iree_allocator_system(), &provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+      /*min_alignment=*/0, iree_allocator_system(), &provider));
 
   iree_hal_slab_provider_properties_t properties;
   iree_hal_slab_provider_query_properties(provider, &properties);
@@ -50,10 +50,45 @@ TEST(SlabProviderTest, CPUPropertiesDescribeAtomicStorage) {
   iree_hal_slab_provider_release(provider);
 }
 
+TEST(SlabProviderTest, CPUAlignmentMatchesActualStorage) {
+  const iree_host_size_t alignments[] = {0, 1, 64, 256, 4096};
+  for (iree_host_size_t alignment : alignments) {
+    SCOPED_TRACE(alignment);
+    iree_hal_slab_provider_t* provider = nullptr;
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+        alignment, iree_allocator_system(), &provider));
+    iree_hal_slab_provider_properties_t properties;
+    iree_hal_slab_provider_query_properties(provider, &properties);
+    EXPECT_EQ(properties.allocation_alignment,
+              iree_max(alignment, IREE_HAL_HEAP_BUFFER_ALIGNMENT));
+
+    iree_hal_slab_t slab = {};
+    IREE_ASSERT_OK(iree_hal_slab_provider_acquire_slab(provider, 127, &slab));
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(slab.base_ptr) %
+                  properties.allocation_alignment,
+              0u);
+    EXPECT_GE(slab.length, 127u);
+    memset(slab.base_ptr, 0x6B, 127);
+    for (iree_host_size_t i = 0; i < 127; ++i) {
+      EXPECT_EQ(slab.base_ptr[i], 0x6B);
+    }
+    iree_hal_slab_provider_release_slab(provider, &slab);
+    iree_hal_slab_provider_release(provider);
+  }
+}
+
+TEST(SlabProviderTest, CPUAlignmentMustBeZeroOrPowerOfTwo) {
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_cpu_slab_provider_create(3, iree_allocator_system(), &provider));
+  EXPECT_EQ(provider, nullptr);
+}
+
 TEST(SlabProviderASANTest, DisabledOptionsAreAlwaysValid) {
   iree_hal_slab_provider_t* provider = nullptr;
-  IREE_ASSERT_OK(
-      iree_hal_cpu_slab_provider_create(iree_allocator_system(), &provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+      /*min_alignment=*/0, iree_allocator_system(), &provider));
 
   iree_hal_asan_pool_options_t options = {};
   IREE_EXPECT_OK(
@@ -64,8 +99,8 @@ TEST(SlabProviderASANTest, DisabledOptionsAreAlwaysValid) {
 
 TEST(SlabProviderASANTest, EnabledOptionsRequireProviderSupport) {
   iree_hal_slab_provider_t* provider = nullptr;
-  IREE_ASSERT_OK(
-      iree_hal_cpu_slab_provider_create(iree_allocator_system(), &provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+      /*min_alignment=*/0, iree_allocator_system(), &provider));
 
   iree_hal_asan_pool_options_t options = ShadowOptions();
   IREE_EXPECT_STATUS_IS(

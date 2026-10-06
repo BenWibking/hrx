@@ -402,8 +402,8 @@ static iree_hal_asan_pool_options_t ShadowOptions() {
 class TLSFPoolTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    IREE_ASSERT_OK(
-        iree_hal_cpu_slab_provider_create(allocator_, &slab_provider_));
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, allocator_, &slab_provider_));
     IREE_ASSERT_OK(iree_async_notification_create(
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
     IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
@@ -441,6 +441,58 @@ TEST_F(TLSFPoolTest, ReserveReleaseFresh) {
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 
   ReleaseOneReservation(pool_, &reservation, NULL);
+}
+
+TEST(TLSFPoolAlignmentTest, CreationRequiresAbsoluteNativeAlignment) {
+  iree_hal_test_counting_allocator_t allocations = {iree_allocator_system()};
+  iree_allocator_t allocator = iree_hal_test_counting_allocator(&allocations);
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+      /*min_alignment=*/0, allocator, &provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+
+  auto options = DefaultOptions();
+  options.tlsf_options.alignment = 2 * IREE_HAL_HEAP_BUFFER_ALIGNMENT;
+  iree_hal_pool_t* pool = nullptr;
+  const auto allocation_count = allocations.allocation_call_count;
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_tlsf_pool_create(
+          options, provider, notification, test_frontier_tracker(),
+          iree_hal_pool_epoch_query_null(), allocator, &pool));
+  EXPECT_EQ(pool, nullptr);
+  EXPECT_EQ(allocations.allocation_call_count, allocation_count);
+
+  options.tlsf_options.alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
+  auto request = MakeReservationRequest(128, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
+  request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      pool, request.params, request.allocation_size, iree_infinite_timeout(),
+      &buffer));
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) %
+                IREE_HAL_HEAP_BUFFER_ALIGNMENT,
+            0u);
+  memset(mapping.contents.data, 0x6B, 128);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  uint8_t actual[128] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+  for (uint8_t value : actual) {
+    EXPECT_EQ(value, 0x6B);
+  }
+  iree_hal_buffer_release(buffer);
+  iree_hal_pool_release(pool);
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(provider);
 }
 
 TEST_F(TLSFPoolTest, ReservationTransactionIsAllOrNoneWithoutGrowth) {
@@ -666,7 +718,8 @@ TEST_F(TLSFPoolTest, TrimRetainsByteThresholdForIdleSlabs) {
 TEST(TLSFPool, TrimRetainsSlabUntilDeathFrontierCompletes) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -718,7 +771,8 @@ TEST(TLSFPool, TrimRetainsSlabUntilDeathFrontierCompletes) {
 TEST(TLSFPool, TrimRetainsSlabWithTaintedDeathFrontier) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -776,7 +830,8 @@ TEST(TLSFPool, ReleaseNodeReuseAvoidsRepeatedHostAllocation) {
       iree_hal_test_counting_allocator(&allocator_state);
 
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -828,7 +883,8 @@ TEST(TLSFPool, ConcurrentReleaseAcquireAndTrimRecoverTheFullBudget) {
   constexpr iree_device_size_t kLargestAllocation = 4096;
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* provider = nullptr;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &provider));
   iree_async_notification_t* notification = nullptr;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -1079,7 +1135,8 @@ TEST(TLSFPool, MaterializationFailurePreservesReuseFrontier) {
 TEST(TLSFPool, SplitRangesRetainReadinessUntilCompletion) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -1146,7 +1203,8 @@ TEST(TLSFPool, SplitRangesRetainReadinessUntilCompletion) {
 TEST(TLSFPool, ReserveSkipsStaleHeadAndReturnsFreshLaterBlock) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -1220,7 +1278,8 @@ TEST(TLSFPool, ReserveSkipsStaleHeadAndReturnsFreshLaterBlock) {
 TEST(TLSFPool, ReserveGrowsInsteadOfWaitingForStaleBlock) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -1276,7 +1335,8 @@ TEST(TLSFPool, ReserveGrowsInsteadOfWaitingForStaleBlock) {
 TEST(TLSFPool, ReserveCanReportGrowthRequiredWithoutGrowing) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -1335,7 +1395,8 @@ TEST(TLSFPool, ReserveCanReportGrowthRequiredWithoutGrowing) {
 TEST(TLSFPool, ReserveRejectedTaintRemainsRejected) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -1545,7 +1606,8 @@ TEST(TLSFPool, UsesProviderHooks) {
 TEST(TLSFPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));

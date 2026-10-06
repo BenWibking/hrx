@@ -28,6 +28,7 @@ typedef struct iree_hal_tlsf_pool_options_t {
   // Live-pressure exhaustion grows by acquiring another slab of at least this
   // size, rounded to the required alignment. Native slabs
   // start fresh; initial_frontier must be NULL for the provider constructor.
+  // Alignment requires the same absolute guarantee from the native provider.
   iree_hal_memory_tlsf_options_t tlsf_options;
 
   // ASAN policy used to shape hidden backing ranges for reservations.

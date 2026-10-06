@@ -150,7 +150,7 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
     IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
         tracker_, iree_async_axis_make_queue(1, 0, 0, 0, 0), nullptr));
     IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
-        native_allocator_.allocator(), &provider_));
+        /*min_alignment=*/0, native_allocator_.allocator(), &provider_));
     iree_hal_tlsf_pool_options_t options = {};
     options.tlsf_options.range_length = 4096;
     options.tlsf_options.alignment = 16;

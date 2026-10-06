@@ -240,6 +240,7 @@ static void iree_hal_test_opaque_slab_provider_query_stats(
 static void iree_hal_test_opaque_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
+  out_properties->allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
   out_properties->memory_type =
       IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE |
       IREE_HAL_MEMORY_TYPE_HOST_COHERENT | IREE_HAL_MEMORY_TYPE_HOST_CACHED;
@@ -335,8 +336,8 @@ static iree_hal_asan_pool_options_t ShadowOptions() {
 class FixedBlockPoolTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    IREE_ASSERT_OK(
-        iree_hal_cpu_slab_provider_create(allocator_, &slab_provider_));
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, allocator_, &slab_provider_));
     IREE_ASSERT_OK(iree_async_notification_create(
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
     IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
@@ -382,8 +383,8 @@ class CountingAllocator {
 TEST(FixedBlockPool, NoGrowthDefersLargeBatchStaging) {
   CountingAllocator allocator;
   iree_hal_slab_provider_t* provider = nullptr;
-  IREE_ASSERT_OK(
-      iree_hal_cpu_slab_provider_create(allocator.allocator(), &provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+      /*min_alignment=*/0, allocator.allocator(), &provider));
   iree_async_notification_t* notification = nullptr;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -536,6 +537,48 @@ TEST_F(FixedBlockPoolTest, ReservationTransactionIsAllOrNone) {
   EXPECT_EQ(stats.reservation_count, 0u);
   EXPECT_EQ(stats.reserve_count, 4u);
   EXPECT_EQ(stats.release_count, 4u);
+}
+
+TEST_F(FixedBlockPoolTest, AlignmentRequiresBothBackingAndBlockStride) {
+  // The 256-byte stride is divisible by 128, but the CPU provider guarantees
+  // only 64-byte alignment of the slab itself.
+  iree_hal_pool_reservation_t reservation;
+  memset(&reservation, 0xA5, sizeof(reservation));
+  const auto original = reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      AcquireOneReservation(pool_, 128, 2 * IREE_HAL_HEAP_BUFFER_ALIGNMENT,
+                            nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                            &reservation, &info, &result));
+  EXPECT_EQ(memcmp(&reservation, &original, sizeof(original)), 0);
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.reserve_count, 0u);
+  EXPECT_EQ(stats.bytes_reserved, 0u);
+
+  auto request = MakeReservationRequest(128, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
+  request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      pool_, request.params, request.allocation_size, iree_infinite_timeout(),
+      &buffer));
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) %
+                IREE_HAL_HEAP_BUFFER_ALIGNMENT,
+            0u);
+  memset(mapping.contents.data, 0x6B, 128);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  uint8_t actual[128] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+  for (uint8_t value : actual) {
+    EXPECT_EQ(value, 0x6B);
+  }
+  iree_hal_buffer_release(buffer);
 }
 
 TEST_F(FixedBlockPoolTest, MaterializationTransactionTransfersAllReservations) {
@@ -691,7 +734,8 @@ TEST_F(FixedBlockPoolTest, ReserveCanReturnStaleBlockWhenWaitAllowed) {
 TEST(FixedBlockPool, ReserveRejectedTaintRemainsRejected) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
@@ -913,7 +957,8 @@ TEST(FixedBlockPool, UsesProviderHooks) {
 TEST(FixedBlockPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   iree_allocator_t allocator = iree_allocator_system();
   iree_hal_slab_provider_t* slab_provider = NULL;
-  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &slab_provider));
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
+                                                   allocator, &slab_provider));
   iree_async_notification_t* notification = NULL;
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
