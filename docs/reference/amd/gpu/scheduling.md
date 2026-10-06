@@ -149,6 +149,30 @@ node's XCCs rather than being one contiguous bitmap per physical die.
 The native topology also clips the mask to `cu_info.number / num_nodes`.
 [Generic mapping][kfd-map] · [V9 per-XCC update][kfd-mqd9-xcc]
 
+### Partition virtual IDs and queue logical IDs
+
+Linux's GC9.4.3 partition setup and KFD's AQL queue initialization configure
+different XCC identities. Their numbering cannot be interchanged merely
+because both range over the partition's XCC count.
+
+| Identity | Source owner and construction |
+| --- | --- |
+| Native GC instance | Register access uses `GET_INST(GC, i)` to map the driver's instance index. |
+| Partition-relative virtual XCC | The non-PSP partition path writes `CP_HYP_XCP_CTL.VIRTUAL_XCC_ID = i % num_xccs_per_xcp`, alongside `NUM_XCC_IN_XCP`. The PSP path delegates partition setup. |
+| Queue logical XCC | KFD sets each AQL MQD's `compute_current_logic_xcc_id = (queue_start + xcc) % node_xcc_count` and `compute_tg_chunk_size = 1`. The start advances across queue creations. |
+
+[Partition setup][linux-virtual-xcc] · [Per-XCC queue initialization][kfd-logical-xcc]
+
+KFD obtains the node's XCC membership from its compute partition, then builds
+one MQD per member. Its AQL master-XCC branch enables the read-pointer update;
+the other MQDs retain their separate execution state. The native PM4 queue
+branch has a different distribution setup and a `pm4_target_xcc_in_xcp` field.
+These configuration differences explain why a shader-distribution index,
+a physical chiplet index and a
+[PRED_EXEC participant bit](pm4/conditional.md#virtual-xcc-selection-pred_exec)
+are distinct inputs. A cardinality query alone does not provide their mapping.
+[Node membership][kfd-xcc-membership] · [MQD construction][kfd-logical-xcc]
+
 ### MQD family differences
 
 KFD selects its manager by native GC version after handling the earlier
@@ -386,3 +410,6 @@ alongside their independent command and payload credits.
 [thunk-priority]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/libhsakmt/include/hsakmt/hsakmttypes.h#L667-L678
 [thunk-priority-map]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/libhsakmt/src/queues.c#L695-L698
 [thunk-update]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/libhsakmt/src/queues.c#L895-L927
+[linux-virtual-xcc]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdgpu/gfx_v9_4_3.c#L796-L825
+[kfd-logical-xcc]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_mqd_manager_v9.c#L731-L795
+[kfd-xcc-membership]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_device.c#L886-L901

@@ -273,6 +273,39 @@ caller writes mask `0x1` to execute the guarded sequence on virtual XCC 0.
 There is no memory-predicate address in this form. [Fields][rocr-fields]
 [Selected caller][rocr-xcc]
 
+### Participant index, mask and complete region
+
+The profiling library's `BuildPredExecPacket` accepts a virtual participant
+**index** and encodes `1 << xcc_select` into the eight-bit field. Its GFX9
+and GFX12 builders emit the packet; its GFX10 and GFX11 methods are empty.
+The PMC caller enables the wrapper when `xcc_number_` exceeds one, making
+the reported topology part of this implementation's selection condition.
+[GFX9 builder][profile-pred9] [GFX12 builder][profile-pred12]
+[GFX10 method][profile-pred10] [GFX11 method][profile-pred11]
+
+The PMC reader iterates the reported virtual XCCs, constructs a guarded read
+sequence for each participant, and advances the result cursor between them. This
+supplies a real caller for selecting indices beyond zero. Its AID-related
+path instead advances by `xcc_per_aid_`; that grouping is supplied by the
+profiling topology policy and is separate from the packet's mask encoding.
+[Per-participant collection][profile-read-xcc]
+
+The body count excludes the two prefix DWORDs and represents at most
+`0x3fff` following DWORDs. `PrecExecBuilder` reserves the prefix, constructs
+the body, then patches its count. For the library's packet-at-a-time
+builders, `CmdBuffer::CheckPredExec` closes and reopens the region before an
+append would cross that limit. Each new prefix preserves the participant
+selection and starts at a packet boundary. Its explicit rejection of nested
+regions is a library construction rule, not a hardware nesting guarantee.
+[Region construction][profile-pred-region] [Append boundary][profile-pred-append]
+
+PAL's generated PFP layout names the upper eight bits `device_select`.
+That field spelling alone does not establish the compute caller's
+virtual-XCC semantics for a graphics stream. Engine, carrier and actual
+caller remain part of the operation's applicability. [PFP layout][pal-pred-pfp]
+
+### Completion and retained storage
+
 One guarded body contains both an atomic exchange and the copy of its returned
 value. Selecting only one command would lose the same-CP result relationship.
 Another guarded body contains the sample-buffer wait, cache work, copies and
@@ -284,8 +317,9 @@ The selection mask does not replace those completion or ownership operations.
 
 This source establishes a virtual-CP selection use. It supplies no general
 physical-XCC mapping API, shader workgroup-placement promise or cross-XCC
-memory barrier. Those contracts belong to the queue topology and the
-[compute-affinity model](../scheduling.md).
+memory barrier. Partition-relative virtual identity and queue-specific logical
+workgroup distribution have [separate configuration owners](../scheduling.md#partition-virtual-ids-and-queue-logical-ids).
+Carrier completion still protects every participant's possible command fetches.
 
 ## A complete conditional dispatch
 
@@ -364,3 +398,11 @@ carrier completion make those boundaries explicit.
 [xgl-submit-native]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_queue.cpp#L1208-L1218
 [pal-inherited]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L1637-L1677
 [pal12-inherited]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L631-L667
+[profile-pred9]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/gfx9_cmd_builder.h#L80-L90
+[profile-pred12]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/gfx12_cmd_builder.h#L676-L688
+[profile-pred10]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/gfx10_cmd_builder.h#L262-L264
+[profile-pred11]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/gfx11_cmd_builder.h#L392-L392
+[profile-read-xcc]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/pmc_builder.h#L1187-L1209
+[profile-pred-region]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/pmc_builder.h#L70-L129
+[profile-pred-append]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocprofiler-sdk/source/lib/aqlprofile/pm4/cmd_builder.h#L106-L192
+[pal-pred-pfp]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_pfp_pm4_packets.h#L3232-L3256

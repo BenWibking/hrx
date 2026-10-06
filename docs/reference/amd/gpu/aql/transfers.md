@@ -41,8 +41,10 @@ of the same IB. [Completion and shared-buffer ownership][rocr-queue]
 ROCr wraps globally visible memory operations in PRED_EXEC when `NumXcc > 1`.
 Its two words are `0xc0002300` and `0x01000000 | body_dword_count`: the 14-bit
 count covers the following body, excluding the two prefix DWORDs, and bit 24
-selects virtual XCC 0. This is a virtual queue context, not a physical XCC
-number. [Predicate fields][rocr-fields] · [Actual multi-XCC caller][rocr-data]
+selects virtual XCC 0. This is a partition-relative virtual participant,
+distinct from physical instance numbering and the queue's logical workgroup
+distribution. [Predicate fields][rocr-fields] · [Actual multi-XCC caller][rocr-data] ·
+[Native identity owners](../scheduling.md#partition-virtual-ids-and-queue-logical-ids)
 
 The caller's reason is to execute an operation on globally visible addresses
 once, rather than once per XCC. Other XCCs still participate in carrier
@@ -50,6 +52,16 @@ processing; predication does not terminate the IB's storage lifetime. Shader
 workgroup routing has a different contract, described in [kernel
 dispatch](dispatch.md#pm4-shader-state-inside-an-aql-queue). [ROCr routing
 rationale][rocr-data]
+
+ROCr's `PcSamplingFlushDeviceBuffersPerXCC_PM4` makes the ownership concrete:
+each host worker has a separate XCC sample buffer, command construction
+storage and completion signal, but all of those memory operations select
+virtual XCC 0. Its outer `pcs_pm4_mutex_` spans both submit-and-wait pairs,
+protecting the queue's single staged IB until execution completes. The
+number of host workers therefore does not determine which command processor
+executes a transfer. [Complete submission owner][rocr-sampling-owner]
+The [conditional-command description](../pm4/conditional.md#virtual-xcc-selection-pred_exec)
+also covers per-participant regions and count-limit splitting.
 
 ## Confirmed data commands
 
@@ -149,3 +161,4 @@ reference](../pm4/).
 [pal-copy-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_mec_pm4_packets.h#L729-L918
 [pal-write-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_mec_pm4_packets.h#L2571-L2669
 [linux-coherence]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/gmc_v9_0.c#L1100-L1159
+[rocr-sampling-owner]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4665-L4706
