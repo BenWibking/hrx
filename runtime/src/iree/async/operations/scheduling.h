@@ -68,7 +68,10 @@ typedef struct iree_async_nop_operation_t {
 //
 // Cancellation:
 //   Timers may be cancelled via iree_async_proactor_cancel(). The callback
-//   fires with IREE_STATUS_CANCELLED.
+//   fires with IREE_STATUS_CANCELLED. Reusable private timers use
+//   iree_async_proactor_request_cancel() and join the receipt with the terminal
+//   callback before reusing their address: a native cancellation key can
+//   outlive the timer's own completion.
 //
 // Example:
 //   iree_async_timer_operation_t timer = {0};

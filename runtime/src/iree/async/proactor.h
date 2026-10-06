@@ -1043,7 +1043,7 @@ static inline iree_status_t iree_async_proactor_cancel(
 //
 // The target must have been successfully submitted to this proactor and must
 // not yet have delivered its terminal callback. Supported targets are private,
-// non-pooled SOCKET_CONNECT, SOCKET_ACCEPT (including multishot), and
+// non-pooled TIMER, SOCKET_CONNECT, SOCKET_ACCEPT (including multishot), and
 // HANDLE_POLL operations. Targets must not participate in LINKED chains or
 // sequences. The caller owns this precondition, including for the final link of
 // a chain. There must be at most one cancellation request for each target
