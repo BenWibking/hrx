@@ -1255,7 +1255,8 @@ TEST(TLSFPool, ReserveGrowsInsteadOfWaitingForStaleBlock) {
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool, &stats);
-  EXPECT_EQ(stats.reuse_miss_count, 1u);
+  // The retry rechecks old capacity after native growth preparation.
+  EXPECT_EQ(stats.reuse_miss_count, 2u);
   EXPECT_EQ(stats.wait_count, 0u);
 
   MAKE_FRONTIER(dominating_requester, 1, E(TestQueueAxis(0), 20));
@@ -1377,7 +1378,8 @@ TEST(TLSFPool, ReserveRejectedTaintRemainsRejected) {
 
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool, &stats);
-  EXPECT_EQ(stats.reuse_miss_count, 2u);
+  // Each growth retry rechecks that the original tainted range stays unusable.
+  EXPECT_EQ(stats.reuse_miss_count, 4u);
   EXPECT_EQ(stats.exhausted_count, 0u);
   EXPECT_EQ(stats.wait_count, 0u);
 
@@ -1652,6 +1654,41 @@ TEST(TLSFPool, ASANAdvisesBackingRangeAndExposesUserRange) {
   EXPECT_LT(provider->last_asan_allocated_sequence,
             provider->last_asan_released_sequence);
 
+  iree_hal_pool_release(pool);
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(slab_provider);
+}
+
+TEST(TLSFPool, FailedBatchDoesNotApplyNativeAdvice) {
+  iree_hal_slab_provider_t* slab_provider = nullptr;
+  IREE_ASSERT_OK(iree_hal_test_opaque_slab_provider_create(
+      iree_allocator_system(), &slab_provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  auto options = DefaultOptions();
+  options.asan = ShadowOptions();
+  options.budget_limit = 192;
+  iree_hal_pool_t* pool = nullptr;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), iree_allocator_system(), &pool));
+  const iree_hal_pool_reservation_request_t requests[] = {
+      MakeReservationRequest(13, 16),
+      MakeReservationRequest(13, 16),
+  };
+  iree_hal_pool_reservation_t reservations[2];
+  iree_hal_pool_acquire_info_t infos[2];
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 2, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations,
+      infos, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OVER_BUDGET);
+  const auto* provider =
+      reinterpret_cast<iree_hal_test_opaque_slab_provider_t*>(slab_provider);
+  EXPECT_EQ(
+      iree_atomic_load(&provider->asan_advice_count, iree_memory_order_relaxed),
+      0);
   iree_hal_pool_release(pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);

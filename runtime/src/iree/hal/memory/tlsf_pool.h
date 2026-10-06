@@ -25,7 +25,9 @@ extern "C" {
 typedef struct iree_hal_tlsf_pool_options_t {
   // Raw TLSF allocator configuration for each slab. The range length is the
   // fixed slab size and maximum single reservation served by this pool.
-  // Live-pressure exhaustion grows by acquiring another slab of this size.
+  // Live-pressure exhaustion grows by acquiring another slab of at least this
+  // size, rounded to the required alignment. Native slabs
+  // start fresh; initial_frontier must be NULL for the provider constructor.
   iree_hal_memory_tlsf_options_t tlsf_options;
 
   // ASAN policy used to shape hidden backing ranges for reservations.
@@ -53,7 +55,10 @@ typedef struct iree_hal_tlsf_pool_options_t {
 // reservation owns a release node, and release publishes that node to a
 // lock-free pending stack with one CAS after copying the death frontier into
 // node-local storage. Acquisition drains pending releases under a per-pool
-// mutex before searching TLSF.
+// mutex before searching TLSF. Native slab acquisition, retirement, and range
+// advice run outside that mutex. A batch needing new backing restores its
+// provisional reservations before acquiring storage and then retries selection;
+// concurrent callers can continue using the pool's existing capacity.
 //
 // Recycled blocks whose frontiers are not dominated by the requester are
 // skipped. When no immediately-usable block fits, the pool grows with another

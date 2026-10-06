@@ -200,6 +200,17 @@ static iree_hal_memory_tlsf_block_index_t
 iree_hal_memory_tlsf_find_suitable_block(iree_hal_memory_tlsf_t* tlsf,
                                          iree_device_size_t length) {
   uint8_t fl = 0, sl = 0;
+  // The containing bin may already have a fitting head, especially when the
+  // entire backing range is available. Check it before rounding up to a larger
+  // class so an exact-fit request cannot strand that range. Inspecting only the
+  // head preserves the constant bound on size-class selection.
+  iree_hal_memory_tlsf_mapping_insert(length, &fl, &sl);
+  iree_hal_memory_tlsf_block_index_t containing_head = tlsf->free_lists[fl][sl];
+  if (containing_head != IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE &&
+      iree_hal_memory_tlsf_block_at(tlsf, containing_head)->length >= length) {
+    return containing_head;
+  }
+
   iree_hal_memory_tlsf_mapping_search(length, &fl, &sl);
 
   // Try to find a block in the current FL level at or above the target SL.

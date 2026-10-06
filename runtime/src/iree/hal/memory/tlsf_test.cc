@@ -121,6 +121,25 @@ TEST(TLSFTest, InitializeAndDeinitialize) {
   iree_hal_memory_tlsf_deinitialize(&tlsf);
 }
 
+TEST(TLSFTest, ExactFitAtEverySizeClassRemainder) {
+  // Exercise every aligned point inside bins large enough to contain multiple
+  // alignments, across several first-level boundaries. A whole free range must
+  // remain allocatable without padding it to the next size class.
+  for (iree_device_size_t length = 1024; length < 8192; length += 16) {
+    auto options = DefaultOptions();
+    options.range_length = length;
+    iree_hal_memory_tlsf_t tlsf;
+    IREE_ASSERT_OK(iree_hal_memory_tlsf_initialize(
+        options, iree_allocator_system(), &tlsf));
+    iree_hal_memory_tlsf_allocation_t allocation;
+    IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate(&tlsf, length, &allocation));
+    EXPECT_EQ(allocation.offset, 0u);
+    EXPECT_EQ(allocation.length, length);
+    iree_hal_memory_tlsf_free(&tlsf, allocation.block_index, nullptr);
+    iree_hal_memory_tlsf_deinitialize(&tlsf);
+  }
+}
+
 TEST(TLSFTest, InitializeZeroRangeFails) {
   iree_hal_memory_tlsf_t tlsf;
   auto options = DefaultOptions();

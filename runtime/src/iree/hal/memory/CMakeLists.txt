@@ -365,4 +365,20 @@ iree_cc_test(
     iree::testing::gtest_main
 )
 
+iree_cc_test(
+  NAME
+    tlsf_pool_concurrency_test
+  SRCS
+    "tlsf_pool_concurrency_test.cc"
+  DEPS
+    ::cpu_slab_provider
+    ::tlsf_pool
+    iree::async
+    iree::async::platform
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
