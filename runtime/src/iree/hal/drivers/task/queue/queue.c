@@ -1365,19 +1365,20 @@ static iree_status_t iree_hal_task_queue_alloca_wait_for_pool_notification(
   wait_op->wait_flags = IREE_ASYNC_NOTIFICATION_WAIT_FLAG_USE_WAIT_TOKEN;
   wait_op->wait_token = wait_token;
 
-  iree_status_t status = iree_async_proactor_submit_one(
-      operation->queue->proactor, &wait_op->base);
+  // The notification owner may dispatch the callback before submit returns.
+  // Finish profiling before handing off the operation to that proactor.
+  iree_hal_task_queue_profile_force_software_defer(operation);
+  iree_hal_task_queue_profile_record_memory_event(
+      operation, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_WAIT,
+      IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION |
+          IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_WAIT_NOTIFICATION,
+      acquire_result, operation->alloca.pool,
+      operation->alloca.requests[0].params,
+      /*reservation=*/NULL, /*frontier_entry_count=*/0);
+  iree_status_t status =
+      iree_async_proactor_submit_one(notification->proactor, &wait_op->base);
   if (!iree_status_is_ok(status)) {
     wait->kind = IREE_HAL_TASK_QUEUE_ALLOCA_MEMORY_WAIT_NONE;
-  } else {
-    iree_hal_task_queue_profile_force_software_defer(operation);
-    iree_hal_task_queue_profile_record_memory_event(
-        operation, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_WAIT,
-        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION |
-            IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_WAIT_NOTIFICATION,
-        acquire_result, operation->alloca.pool,
-        operation->alloca.requests[0].params,
-        /*reservation=*/NULL, /*frontier_entry_count=*/0);
   }
   return status;
 }

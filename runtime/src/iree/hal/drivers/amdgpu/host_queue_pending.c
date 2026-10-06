@@ -690,8 +690,8 @@ static void iree_hal_amdgpu_pending_op_enqueue_alloca_pool_notification_wait(
   wait_op->wait_token = wait->pool_notification.wait_token;
 
   iree_atomic_store(&wait->callback_complete, 0, iree_memory_order_relaxed);
-  iree_status_t status =
-      iree_async_proactor_submit_one(op->queue->proactor, &wait_op->base);
+  iree_status_t status = iree_async_proactor_submit_one(
+      wait_op->notification->proactor, &wait_op->base);
   iree_hal_amdgpu_alloca_pool_notification_end_observe(wait);
   iree_hal_amdgpu_pending_op_finish_alloca_memory_wait_enqueue(op, status);
 }

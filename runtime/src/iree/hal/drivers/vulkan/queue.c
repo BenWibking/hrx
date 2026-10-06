@@ -6136,7 +6136,7 @@ static void iree_hal_vulkan_queue_start_alloca_pool_notification_wait(
     iree_hal_vulkan_queue_alloca_memory_wait_resolved(submission, status);
     return;
   }
-  status = iree_async_proactor_submit_one(submission->queue->proactor,
+  status = iree_async_proactor_submit_one(wait_op->notification->proactor,
                                           &wait_op->base);
   iree_hal_vulkan_queue_alloca_pool_notification_end_observe(submission);
   iree_hal_vulkan_queue_alloca_memory_wait_finish_arming(submission, status);
