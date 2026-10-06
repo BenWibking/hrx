@@ -13,6 +13,7 @@ resource-lifetime protocol.
 | [Compute context save and restore](context-save.md) | CWSR, `ctx_save_restore_size`, per-XCC storage, control-stack inspection, suspension and final ownership. |
 | [Shader memory publication](shader-memory.md) | Resident release/acquire sequences, `s_waitcnt`, `buffer_inv`, `global_wb`, cache scopes, and wave/workgroup joins across GCN, CDNA and RDNA. |
 | [Asynchronous global/LDS transfers](async-memory.md) | CDNA5 `ASYNCcnt`, `TENSORcnt`, TDM descriptor notifications, LDS split-barrier phases, and producer/consumer storage reuse. |
+| [Tensor descriptors and LDS layouts](tensor-memory.md) | CDNA5 TDM address/stride units, 1D–5D fields, iteration, padding, row gather/scatter, descriptor advancement and per-wave issue. |
 | [Workgroup clusters and multicast](clusters.md) | CDNA5 `CLUSTER_LOAD`, `workgroup_mask`, per-requestor completion, cluster barrier membership, extended AQL geometry and local LDS reuse. |
 | [Native signals and host notification](notifications.md) | `event_mailbox_ptr`, KFD event ages, interrupt decoding, sleeping waits and notification-storage lifetime. |
 | [PM4](pm4/README.md) | Compute dispatch, memory commands, cache control, and command-buffer execution. |

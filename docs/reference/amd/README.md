@@ -47,6 +47,7 @@ provide exact search terms within the tree.
 | Wake a host when GPU work changes a signal | [Native mailbox/event representation, interrupt decoding and check-to-sleep ordering](gpu/notifications.md). |
 | Launch a compiled GPU program | [PM4 `SET_SH_REG` and `DISPATCH_DIRECT`](gpu/pm4/dispatch.md), [AQL kernel dispatch and descriptors](gpu/aql/dispatch.md). |
 | Bind shared workgroup storage | [PM4 `LDS_SIZE`](gpu/pm4/lds.md), [AQL group storage](gpu/aql/dispatch.md#static-and-dynamic-group-storage). |
+| Stream tensor tiles through LDS | [TDM descriptor fields, stride units, padding and row gather/scatter](gpu/tensor-memory.md), [asynchronous completion and ready/empty slot reuse](gpu/async-memory.md). |
 | Size and reclaim private scratch backing | [AQL `COMPUTE_TMPRING_SIZE`, physical slots and firmware ownership](gpu/aql/scratch.md). |
 | Size compute context-save storage and preserve suspended work | [CWSR, `ctx_save_restore_size`, per-XCC headers and native removal](gpu/context-save.md). |
 | Determine which agents can access a memory pool | [Pool grain, per-agent access and SVM host access](gpu/recipes/host-device.md#pool-grain-agent-access-and-svm). |

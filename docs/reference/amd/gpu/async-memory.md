@@ -94,6 +94,8 @@ The tensor descriptor, written `D#` in the ISA, is supplied in groups of
 SGPRs. A tensor instruction executes once per wave and **ignores `EXEC`**;
 disabling lanes does not suppress its transfer. The descriptor supplies the
 global/LDS addresses, tensor layout and optional completion notification.
+The [descriptor and layout chapter](tensor-memory.md) details its address and
+stride units, bounds, padding, iteration and row-indexed forms.
 [Descriptor operands, §10.11.1][isa-tensor]
 
 The fields that control notification are:
@@ -117,9 +119,11 @@ merely because its instruction was issued.
 The descriptor notification is ordered after its tensor operation and prior
 tensor descriptors from the same wave. Triton's lowering consequently
 attaches an explicit barrier operand only to the last native instruction
-of an expanded transfer. Its GEMM producer goes further: it transfers operand
-A without a notification, then operand B with one notification covering both operands.
-The ready barrier joins those per-wave arrivals.
+of an expanded dense partitioned transfer. The
+[gather/scatter emitter](tensor-memory.md#row-gather-and-scatter) has a
+different per-chunk arrival count. The GEMM producer transfers operand A
+without a notification, then operand B with one notification covering both
+operands. The ready barrier joins those per-wave arrivals.
 [Tensor notification, §10.11.3][isa-notification]
 [Expanded transfer emission][triton-last-transfer]
 [Two-operand producer][triton-producer]
