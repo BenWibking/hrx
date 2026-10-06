@@ -136,3 +136,59 @@ func.def inline @__pipeline_strand_1(%incoming: channel<tile<16xi32>>) {
   }
   func.return
 }
+
+// ====
+// RUN: pass specialize-target-callgraph,inline-callables{policy=target},outline-pipeline-strands,cfg-simplify,canonicalize
+
+// Outlining after source expansion retains each worker's target environment.
+// The later function-local fold must see the inherited or selected subgroup.
+test.target<device> @device32 {subgroup_size = 32}
+
+test.target<device> @device64 {subgroup_size = 64}
+
+pipeline.def public target(@device32) @publish_widths() run(%first: channel<tile<1xi32>>, %second: channel<tile<1xi32>>) {
+  pipeline.strand workers([0], [1], [1]) {
+    %write, %record = channel.reserve %first : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %width = target.subgroup.size : index
+    %value = index.cast %width : index to i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+  pipeline.strand target(@device64) workers([1], [1], [1]) {
+    %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %width = target.subgroup.size : index
+    %value = index.cast %width : index to i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+// ----
+test.target<device> @device32 {subgroup_size = 32}
+
+test.target<device> @device64 {subgroup_size = 64}
+
+pipeline.def public target(@device32) @publish_widths() run(%first: channel<tile<1xi32>>, %second: channel<tile<1xi32>>) {
+  pipeline.strand workers([0], [1], [1]) {
+    func.call @__pipeline_strand_1(%first) : (channel<tile<1xi32>>)
+  }
+  pipeline.strand target(@device64) workers([1], [1], [1]) {
+    func.call @__pipeline_strand_0(%second) : (channel<tile<1xi32>>)
+  }
+}
+
+func.def inline @__pipeline_strand_0(%second: channel<tile<1xi32>>) {
+  %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+  %value = scalar.constant 64 : i32
+  view.store %value, %record[0] : i32, view<1xi32>
+  channel.publish %write : write<tile<1xi32>>
+  func.return
+}
+
+func.def inline @__pipeline_strand_1(%first: channel<tile<1xi32>>) {
+  %write, %record = channel.reserve %first : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+  %value = scalar.constant 32 : i32
+  view.store %value, %record[0] : i32, view<1xi32>
+  channel.publish %write : write<tile<1xi32>>
+  func.return
+}

@@ -42,11 +42,19 @@ loom_cc_library(
     loom::ir::symbol_map
     loom::ops::cfg
     loom::ops::func
+    loom::ops::func_symbol_facts
     loom::ops::pipeline
     loom::pass::types
+    loom::pass::value_facts
     loom::rewrite::materialize
     loom::rewrite::remap
     loom::rewrite::rewriter
+    loom::target::facts_builder
+    loom::target::function_contract
+    loom::target::function_version
+    loom::target::pass_environment
+    loom::target::provider
+    loom::util::fact_table
     loom::util::walk
   PUBLIC
 )

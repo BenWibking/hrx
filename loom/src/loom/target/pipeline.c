@@ -580,6 +580,11 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
       builder, IREE_SV("specialize-target-callgraph")));
   IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_required_source_inlining(builder, user_data));
+  // Worker bodies enter the existing function pipeline after required source
+  // expansion, while their target-specific math and representations are still
+  // available for legalization. Outlining registers their target versions.
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
+      builder, IREE_SV("outline-pipeline-strands")));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
       builder,
       loom_target_pipeline_build_math_legalization_after_authoring_expansion,

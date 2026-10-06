@@ -16,8 +16,9 @@ extern "C" {
 // Factors lexical strand bodies into ordinary calls with explicit, typed
 // captures. Worker geometry and target selection stay on the strand. The
 // helpers are transparent to execution-context requirements until a worker
-// binding consumes the call; this pass runs before that binding, not before
-// ordinary source inlining that would expand the helpers again.
+// binding consumes the call. Construction helpers must already be expanded.
+// This pass runs after required source inlining and registers worker target
+// versions for ordinary function legalization before binding consumes them.
 const loom_pass_info_t* loom_pipeline_outline_pass_info(void);
 iree_status_t loom_pipeline_outline_run(loom_pass_t* pass,
                                         loom_module_t* module);
