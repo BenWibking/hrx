@@ -16,26 +16,55 @@ namespace {
 struct WaitCase {
   // Stable parameter name describing the completion-value relation.
   const char* name;
-  // Comparison applied to the full 32-bit memory operand.
+  // Comparison applied to the masked 32-bit memory operand.
   SdmaMemoryComparison comparison;
-  // Unsatisfied operand for a consumer started before CPU publication.
+  // Operand before CPU publication; conditional waits start unsatisfied.
   uint32_t initial_value;
-  // Reference encoded in the memory poll.
+  // Reference encoded in the memory poll, with no bits outside the mask.
   uint32_t reference;
+  // Significant bits of the memory operand.
+  uint32_t mask;
   // Satisfying operand retained through the consumer's final use.
   uint32_t final_value;
 };
 
-// The GE cases stay below bit 31: they exercise exact and advanced completion
-// values without assuming signed ordering or a wrap-aware timeline protocol.
-constexpr std::array<WaitCase, 4> kWaitCases = {{
-    {"EqualZero", SdmaMemoryComparison::kEqual, 1, 0, 0},
+// Relational operands stay below bit 31 after masking. Ignored high/low bits
+// separate masked comparisons from raw-word comparisons without requiring a
+// signed interpretation or a wrap-aware timeline protocol.
+constexpr std::array<WaitCase, 17> kWaitCases = {{
+    {"EqualZero", SdmaMemoryComparison::kEqual, 1, 0, UINT32_MAX, 0},
     {"EqualHighBit", SdmaMemoryComparison::kEqual, 0x7fffffff, 0x92345678,
-     0x92345678},
+     UINT32_MAX, 0x92345678},
     {"AtLeastExact", SdmaMemoryComparison::kGreaterOrEqual, 0x12344, 0x12345,
-     0x12345},
+     UINT32_MAX, 0x12345},
     {"AtLeastAdvanced", SdmaMemoryComparison::kGreaterOrEqual, 0x12344, 0x12345,
-     0x23456},
+     UINT32_MAX, 0x23456},
+    {"LessEqualBoundary", SdmaMemoryComparison::kLess, 0x40000000, 0x40000000,
+     UINT32_MAX, 0x3fffffff},
+    {"LessOrEqualExact", SdmaMemoryComparison::kLessOrEqual, 0x40000001,
+     0x40000000, UINT32_MAX, 0x40000000},
+    {"LessOrEqualBelow", SdmaMemoryComparison::kLessOrEqual, 0x40000001,
+     0x40000000, UINT32_MAX, 0x3fffffff},
+    {"NotEqual", SdmaMemoryComparison::kNotEqual, 0x80000000, 0x80000000,
+     UINT32_MAX, 0},
+    {"GreaterEqualBoundary", SdmaMemoryComparison::kGreater, 0x40000000,
+     0x40000000, UINT32_MAX, 0x40000001},
+    {"MaskedEqual", SdmaMemoryComparison::kEqual, 0xaa000011, 0x5a000000,
+     0xff000000, 0x5a123456},
+    {"MaskedLessEqualBoundary", SdmaMemoryComparison::kLess, 0xa540005a,
+     0x00400000, 0x00ffff00, 0xa53fff5a},
+    {"MaskedLessOrEqualExact", SdmaMemoryComparison::kLessOrEqual, 0xa540015a,
+     0x00400000, 0x00ffff00, 0xa540005a},
+    {"MaskedLessOrEqualBelow", SdmaMemoryComparison::kLessOrEqual, 0xa540015a,
+     0x00400000, 0x00ffff00, 0xa53fff5a},
+    {"MaskedNotEqual", SdmaMemoryComparison::kNotEqual, 0xa540005a, 0x00400000,
+     0x00ffff00, 0xa540015a},
+    {"MaskedAtLeastExact", SdmaMemoryComparison::kGreaterOrEqual, 0xa53fff5a,
+     0x00400000, 0x00ffff00, 0xa540005a},
+    {"MaskedAtLeastAdvanced", SdmaMemoryComparison::kGreaterOrEqual, 0xa53fff5a,
+     0x00400000, 0x00ffff00, 0xa540015a},
+    {"MaskedGreaterEqualBoundary", SdmaMemoryComparison::kGreater, 0xa540005a,
+     0x00400000, 0x00ffff00, 0xa540015a},
 }};
 
 enum class OperandPublication {
@@ -97,7 +126,7 @@ class SdmaWaitTest : public GpuCommandTest,
           control->device_address + kArrivalWord * sizeof(uint32_t), marker);
       commands.WaitMemory32(
           control->device_address + kOperandWord * sizeof(uint32_t),
-          parameters.reference, parameters.comparison);
+          parameters.reference, parameters.comparison, parameters.mask);
       if (user_gcr) {
         commands.AcquireFromSystem();
       }
@@ -140,6 +169,8 @@ class SdmaWaitTest : public GpuCommandTest,
                        : "kernel");
     RecordProperty("comparison", static_cast<int>(parameters.comparison));
     RecordProperty("reference", std::to_string(parameters.reference));
+    RecordProperty("mask", std::to_string(parameters.mask));
+    RecordProperty("initial_value", std::to_string(parameters.initial_value));
     RecordProperty("final_value", std::to_string(parameters.final_value));
     RecordProperty("words_per_epoch", static_cast<int>(words_per_epoch));
     RecordProperty("copy_bytes_per_epoch", kCopyWordCount * sizeof(uint32_t));
@@ -233,6 +264,27 @@ TEST_P(SdmaWaitTest, CpuPublicationAfterArrivalReleasesFollowingCopy) {
 
 INSTANTIATE_TEST_SUITE_P(Comparison, SdmaWaitTest,
                          ::testing::ValuesIn(kWaitCases),
+                         [](const auto& info) { return info.param.name; });
+
+// Always-pass has no pending state: its operand and payload are already
+// published, with below/equal/above values covering each comparison outcome.
+class SdmaAlwaysWaitTest : public SdmaWaitTest {};
+
+TEST_P(SdmaAlwaysWaitTest, OperandDoesNotPreventFollowingCopy) {
+  RunWait(OperandPublication::kBeforeSubmission);
+}
+
+constexpr std::array<WaitCase, 3> kAlwaysCases = {{
+    {"Below", SdmaMemoryComparison::kAlways, 0x3fffffff, 0x40000000, UINT32_MAX,
+     0x3fffffff},
+    {"Equal", SdmaMemoryComparison::kAlways, 0x40000000, 0x40000000, UINT32_MAX,
+     0x40000000},
+    {"Above", SdmaMemoryComparison::kAlways, 0x40000001, 0x40000000, UINT32_MAX,
+     0x40000001},
+}};
+
+INSTANTIATE_TEST_SUITE_P(Comparison, SdmaAlwaysWaitTest,
+                         ::testing::ValuesIn(kAlwaysCases),
                          [](const auto& info) { return info.param.name; });
 
 }  // namespace
