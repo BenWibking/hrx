@@ -9,7 +9,7 @@ command results.
 | Mechanism | Programming contract |
 | --- | --- |
 | [Native execution](execution.md) | Device identity, placement, instruction submission, program quiescence, memory lifetime and runtime power. |
-| [Tile DMA and task ownership](dma.md) | Descriptor fields, address generators, local locks, task queues, completion tokens and buffer reuse. |
+| [Tile DMA and task ownership](dma.md) | Descriptor fields, address generators, local locks, task queues, completion tokens, AIE2 transaction and CERT waits, and buffer reuse. |
 | [Interconnects](interconnects.md) | Circuit and packet routes, multicast, backpressure, and split/join buffer ownership. |
 | [CPU and array memory handoff](../interop/cpu-npu.md) | Host backing and addresses, CPU cache-maintenance extents, input publication, output completion and slot reuse. |
 | [GPU and array memory handoff](../gpu/recipes/gpu-npu.md) | Shared external backing, native addresses, shim DMA completion, resident progress and payload reuse. |
@@ -17,8 +17,8 @@ command results.
 | [Timing, counters and trace](observability.md) | Tile-clock samples, event counters, stream replies, trace packets and DMA, firmware results and diagnostic access. |
 
 Architecture, product and native transport are separate coordinates. AIE2IPU,
-AIE2P and AIE4 have different register and firmware contracts. Product names
-such as NPU4, NPU5 and NPU6 identify driver-selected devices; array geometry
+AIE2P, AIE2PS and AIE4 have different register and firmware contracts. Product
+names such as NPU4, NPU5 and NPU6 identify driver-selected devices; array geometry
 and the active firmware interface supply additional constraints. Sharing an
 instruction set does not establish equal placement capacity or interchangeable
 native command payloads.

@@ -21,6 +21,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [Windows DDI][windows-ddi] | `7515063cea4c9e98db6a92986c5b4ddb0463fd16` | Native submission, monitored fences, mapping, residency, and destruction contracts. |
 | [XDNA driver][xdna] | `8dfda66f67a84aecf26cf68336efc9e4cc1756c3` | Array contexts, firmware command envelopes, native completion, power management, and diagnostic access. |
 | [AI Engine driver][aie] | `2855a032366e3d19dab893e7c263b14bb920cd64` | Register descriptions, timers, event counters, stream switches, DMA, and trace configuration. |
+| [AI Engine binary utilities][aiebu] | `e82e28cbb237dcfd6c3029d85dc604515367ee24` | AIE2 transaction encoding, AIE2PS CERT controller instructions and task-wait ownership, and ELF platform identities. |
 | [MLIR-AIE][mlir-aie] | `c69fb4c8f2fb853d5ca62d19f829796d3ae4ba34` | Array register data, trace-flow construction, and trace decoding. |
 | [MLIR-AIE and IRON dataflow][mlir-aie-dataflow] | `41fa359ea1f66f7e5c572f8d0cc8c7646262adf5` | Object FIFOs, task ownership, descriptor allocation, DMA lowering, and stream routes. |
 | [XRT runtime][xrt] | `ecad6cf22171ffec754fdd36afc2ae200af5c3a6` | Buffer synchronization delegation, ZYNQ/ZOCL GMIO channel completion, and managed external-buffer task ownership. |
@@ -82,6 +83,7 @@ executes. The corresponding chapter identifies those boundaries.
 [d3d12-sync]: https://learn.microsoft.com/en-us/windows/win32/direct3d12/user-mode-heap-synchronization
 [xdna]: https://github.com/amd/xdna-driver/tree/8dfda66f67a84aecf26cf68336efc9e4cc1756c3
 [aie]: https://github.com/Xilinx/aie-codegen/tree/2855a032366e3d19dab893e7c263b14bb920cd64
+[aiebu]: https://github.com/Xilinx/aiebu/tree/e82e28cbb237dcfd6c3029d85dc604515367ee24
 [mlir-aie]: https://github.com/Xilinx/mlir-aie/tree/c69fb4c8f2fb853d5ca62d19f829796d3ae4ba34
 [mlir-aie-dataflow]: https://github.com/Xilinx/mlir-aie/tree/41fa359ea1f66f7e5c572f8d0cc8c7646262adf5
 [xrt]: https://github.com/Xilinx/XRT/tree/ecad6cf22171ffec754fdd36afc2ae200af5c3a6
