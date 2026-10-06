@@ -117,6 +117,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     loom::codegen::low::frame
+    loom::ops::global
     loom::ops::low
     loom::target::emit::native::object_elf
     loom::target::entry_selection

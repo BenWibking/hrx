@@ -103,6 +103,7 @@ loom_cc_library(
         ":abi",
         ":function",
         "//loom/src/loom/codegen/low:frame",
+        "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:entry_selection",
         "//loom/src/loom/target:provider",

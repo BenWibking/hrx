@@ -154,11 +154,11 @@ static void loom_x86_function_append(loom_x86_function_t* function,
                                      loom_x86_encoding_form_t form,
                                      uint16_t encoding_id,
                                      loom_x86_encoding_operands_t operands,
-                                     uint32_t control_target) {
+                                     uint32_t reference) {
   function->instructions[function->instruction_count++] =
       (loom_x86_instruction_t){
           .operands = operands,
-          .control_target = control_target,
+          .reference = reference,
           .form = form,
           .encoding_id = encoding_id,
       };
@@ -374,18 +374,20 @@ static iree_status_t loom_x86_function_call(
       function, LOOM_X86_ENCODING_FORM_CALL, 0,
       (loom_x86_encoding_operands_t){0},
       loom_low_func_call_callee(packet->node->op).symbol_id);
-  ++function->call_count;
+  ++function->symbol_fixup_count;
   return loom_x86_function_moves(&frame->allocation, moves->results, builder);
 }
 
-static int64_t loom_x86_function_immediate(
+static loom_attribute_t loom_x86_function_immediate(
     const loom_low_emission_frame_t* frame,
     const loom_low_packet_view_t* packet, uint16_t index) {
   const loom_low_immediate_t* immediate =
       &frame->target.descriptor_set
            ->immediates[packet->descriptor->immediate_start + index];
   loom_attribute_t value = loom_low_packet_immediate_attr(packet, immediate);
-  return value.kind == LOOM_ATTR_ABSENT ? immediate->default_value : value.i64;
+  return value.kind == LOOM_ATTR_ABSENT
+             ? loom_attr_i64(immediate->default_value)
+             : value;
 }
 
 static iree_status_t loom_x86_function_packet(
@@ -410,16 +412,24 @@ static iree_status_t loom_x86_function_packet(
                           &frame->allocation, packet, 0)
                           ->location_base;
   }
+  uint32_t reference = UINT32_MAX;
   if (descriptor->immediate_count) {
-    operands.immediate = loom_x86_function_immediate(frame, packet, 0);
+    const loom_attribute_t immediate =
+        loom_x86_function_immediate(frame, packet, 0);
+    if (immediate.kind == LOOM_ATTR_SYMBOL) {
+      reference = loom_attr_as_symbol(immediate).symbol_id;
+      ++function->symbol_fixup_count;
+    } else {
+      operands.immediate = immediate.i64;
+    }
   }
   if (descriptor->immediate_count == 2) {
     operands.scale = (uint8_t)iree_math_count_trailing_zeros_u32(
-        (uint32_t)loom_x86_function_immediate(frame, packet, 1));
+        (uint32_t)loom_x86_function_immediate(frame, packet, 1).i64);
   }
   loom_x86_function_append(
       function, (loom_x86_encoding_form_t)descriptor->encoding_format_id,
-      descriptor->encoding_id, operands, UINT32_MAX);
+      descriptor->encoding_id, operands, reference);
   return iree_ok_status();
 }
 
@@ -765,7 +775,7 @@ static iree_status_t loom_x86_function_write_stack_leave(
 iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
                                       const uint32_t* symbol_indices,
                                       iree_host_size_t section_index,
-                                      loom_native_object_fixup_t* call_fixups,
+                                      loom_native_object_fixup_t* symbol_fixups,
                                       iree_io_stream_t* stream,
                                       iree_arena_allocator_t* arena) {
   const iree_io_stream_pos_t function_start = iree_io_stream_offset(stream);
@@ -787,7 +797,7 @@ iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
     status = loom_x86_function_write_stack_enter(function, stream);
   }
   iree_host_size_t fixup_count = 0;
-  iree_host_size_t call_index = 0;
+  iree_host_size_t symbol_fixup_index = 0;
   uint32_t block = 0;
   for (iree_host_size_t i = 0;
        i < function->instruction_count && iree_status_is_ok(status); ++i) {
@@ -800,19 +810,23 @@ iree_status_t loom_x86_function_write(const loom_x86_function_t* function,
     loom_x86_encode_instruction((loom_x86_encoding_form_t)prepared->form,
                                 prepared->encoding_id, &prepared->operands,
                                 &instruction);
-    if (prepared->form == LOOM_X86_ENCODING_FORM_CALL) {
-      call_fixups[call_index++] = (loom_native_object_fixup_t){
+    if (prepared->form == LOOM_X86_ENCODING_FORM_CALL ||
+        (prepared->form == LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE &&
+         prepared->reference != UINT32_MAX)) {
+      symbol_fixups[symbol_fixup_index++] = (loom_native_object_fixup_t){
           .section_contribution_index = section_index,
           .section_offset = iree_io_stream_offset(stream) + instruction.length -
                             4 - function_start,
-          .relocation_kind = LOOM_X86_RELOCATION_CALL,
-          .target_symbol_index = symbol_indices[prepared->control_target],
+          .relocation_kind = prepared->form == LOOM_X86_ENCODING_FORM_CALL
+                                 ? LOOM_X86_RELOCATION_CALL
+                                 : LOOM_X86_RELOCATION_ADDRESS,
+          .target_symbol_index = symbol_indices[prepared->reference],
           .addend = -4,
       };
-    } else if (prepared->control_target != UINT32_MAX) {
+    } else if (prepared->reference != UINT32_MAX) {
       fixups[fixup_count++] = (loom_x86_branch_fixup_t){
           .offset = iree_io_stream_offset(stream) + instruction.length - 4,
-          .target = prepared->control_target,
+          .target = prepared->reference,
       };
     }
     status =

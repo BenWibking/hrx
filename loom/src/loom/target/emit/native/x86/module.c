@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "iree/io/vec_stream.h"
+#include "loom/ops/global/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/emit/native/image_elf.h"
 #include "loom/target/emit/native/x86/abi.h"
@@ -42,12 +43,12 @@ static int loom_x86_module_compare_names(const void* lhs, const void* rhs) {
 static iree_status_t loom_x86_module_symbols(
     const loom_module_t* module, const loom_target_entry_list_t* entries,
     iree_arena_allocator_t* arena, loom_native_object_symbol_t* symbols,
-    uint16_t* out_section_count) {
+    iree_host_size_t* out_section_count) {
   iree_string_view_t* names = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       arena, entries->count, sizeof(*names), (void**)&names));
   uint16_t export_count = 0;
-  uint16_t section_count = 0;
+  iree_host_size_t section_count = 0;
   iree_status_t status = iree_ok_status();
   for (uint16_t i = 0; i < entries->count && iree_status_is_ok(status); ++i) {
     const loom_target_entry_t* entry = &entries->values[i];
@@ -117,6 +118,81 @@ static iree_status_t loom_x86_module_symbols(
   return status;
 }
 
+// Retain the data declarations while constructing the module symbol map. Later
+// contribution construction consumes these records without rescanning the IR.
+static iree_status_t loom_x86_module_collect_rodata(
+    const loom_module_t* module, iree_host_size_t first_symbol_index,
+    uint32_t* symbol_indices, iree_arena_allocator_t* arena,
+    const loom_symbol_t*** out_symbols, iree_host_size_t* out_count) {
+  *out_symbols = NULL;
+  *out_count = 0;
+  iree_host_size_t capacity = 0;
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0;
+       i < module->symbols.count && iree_status_is_ok(status); ++i) {
+    symbol_indices[i] = UINT32_MAX;
+    const loom_symbol_t* symbol = &module->symbols.entries[i];
+    if (!symbol->defining_op ||
+        !loom_symbol_implements(symbol, LOOM_SYMBOL_INTERFACE_RODATA)) {
+      continue;
+    }
+    status = iree_arena_grow_array(arena, *out_count, *out_count + 1,
+                                   sizeof(**out_symbols), &capacity,
+                                   (void**)out_symbols);
+    if (iree_status_is_ok(status)) {
+      symbol_indices[i] = (uint32_t)(first_symbol_index + *out_count);
+      (*out_symbols)[(*out_count)++] = symbol;
+    }
+  }
+  return status;
+}
+
+static iree_status_t loom_x86_module_rodata(
+    const loom_module_t* module, const loom_symbol_t* source,
+    loom_native_object_symbol_t* symbol,
+    loom_native_section_contribution_t* sections,
+    iree_host_size_t* section_count) {
+  const loom_op_t* op = source->defining_op;
+  const bool declaration = loom_global_rodata_decl_isa(op);
+  const iree_string_view_t name =
+      loom_string_table_get(&module->strings, source->name_id);
+  if (iree_string_view_is_empty(name) ||
+      iree_string_view_find_char(name, '\0', 0) != IREE_STRING_VIEW_NPOS) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "native symbol names cannot be empty or contain NUL");
+  }
+  *symbol = (loom_native_object_symbol_t){
+      .name = name,
+      .section_contribution_index =
+          declaration ? IREE_HOST_SIZE_MAX : *section_count,
+      .binding = declaration ? LOOM_NATIVE_OBJECT_SYMBOL_BINDING_GLOBAL
+                             : LOOM_NATIVE_OBJECT_SYMBOL_BINDING_LOCAL,
+      .visibility = LOOM_NATIVE_OBJECT_SYMBOL_VISIBILITY_DEFAULT,
+      .kind = LOOM_NATIVE_OBJECT_SYMBOL_KIND_DATA,
+  };
+  if (declaration) {
+    return iree_ok_status();
+  }
+  if (loom_global_rodata_def_has_bank_conflicts(op)) {
+    return iree_make_status(
+        IREE_STATUS_UNIMPLEMENTED,
+        "x86 native readonly data has no bank placement contract");
+  }
+  const iree_const_byte_span_t contents = loom_global_rodata_def_contents(op);
+  symbol->size = contents.data_length;
+  sections[(*section_count)++] = (loom_native_section_contribution_t){
+      .section_name = IREE_SV(".rodata"),
+      .storage = LOOM_NATIVE_SECTION_STORAGE_CONTENTS,
+      .access = LOOM_NATIVE_SECTION_ACCESS_READ,
+      .contribution_alignment = loom_global_rodata_def_has_alignment(op)
+                                    ? loom_global_rodata_def_alignment(op)
+                                    : 1,
+      .contents = contents,
+  };
+  return iree_ok_status();
+}
+
 static iree_status_t loom_x86_module_encode_function(
     const loom_target_emit_request_t* request, const loom_target_entry_t* entry,
     const uint32_t* symbol_indices, iree_host_size_t section_index,
@@ -179,17 +255,17 @@ static iree_status_t loom_x86_module_encode_function(
   IREE_RETURN_IF_ERROR(status);
   IREE_RETURN_IF_ERROR(
       loom_x86_function_prepare(&frame, function_arena, &function));
-  if (function.call_count) {
+  if (function.symbol_fixup_count) {
     IREE_RETURN_IF_ERROR(iree_arena_grow_array(
         request->scratch_arena, fixups->count,
-        fixups->count + function.call_count, sizeof(*fixups->values),
+        fixups->count + function.symbol_fixup_count, sizeof(*fixups->values),
         &fixups->capacity, (void**)&fixups->values));
   }
   IREE_RETURN_IF_ERROR(loom_x86_function_write(
       &function, symbol_indices, section_index,
-      function.call_count ? fixups->values + fixups->count : NULL, stream,
-      function_arena));
-  fixups->count += function.call_count;
+      function.symbol_fixup_count ? fixups->values + fixups->count : NULL,
+      stream, function_arena));
+  fixups->count += function.symbol_fixup_count;
   return iree_ok_status();
 }
 
@@ -273,29 +349,39 @@ static iree_status_t loom_x86_module_build_artifact(
   if (!accepted) {
     return iree_ok_status();
   }
-  loom_native_section_contribution_t* sections = NULL;
-  loom_native_object_symbol_t* symbols = NULL;
-  IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(request->scratch_arena, entries.count,
-                                sizeof(*sections), (void**)&sections));
-  IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(request->scratch_arena, entries.count,
-                                sizeof(*symbols), (void**)&symbols));
-  uint16_t section_count = 0;
-  IREE_RETURN_IF_ERROR(loom_x86_module_symbols(request->module, &entries,
-                                               request->scratch_arena, symbols,
-                                               &section_count));
   uint32_t* symbol_indices = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       request->scratch_arena, request->module->symbols.count,
       sizeof(*symbol_indices), (void**)&symbol_indices));
-  memset(symbol_indices, 0xff,
-         request->module->symbols.count * sizeof(*symbol_indices));
+  const loom_symbol_t** rodata_symbols = NULL;
+  iree_host_size_t rodata_count = 0;
+  IREE_RETURN_IF_ERROR(loom_x86_module_collect_rodata(
+      request->module, entries.count, symbol_indices, request->scratch_arena,
+      &rodata_symbols, &rodata_count));
+  const iree_host_size_t symbol_count = entries.count + rodata_count;
+  loom_native_section_contribution_t* sections = NULL;
+  loom_native_object_symbol_t* symbols = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(request->scratch_arena, symbol_count,
+                                sizeof(*sections), (void**)&sections));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(request->scratch_arena,
+                                                 symbol_count, sizeof(*symbols),
+                                                 (void**)&symbols));
+  iree_host_size_t section_count = 0;
+  IREE_RETURN_IF_ERROR(loom_x86_module_symbols(request->module, &entries,
+                                               request->scratch_arena, symbols,
+                                               &section_count));
   for (uint16_t i = 0; i < entries.count; ++i) {
     symbol_indices[entries.values[i].func_ref.symbol_id] = i;
   }
   loom_x86_module_fixups_t fixups = {0};
   iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0; i < rodata_count && iree_status_is_ok(status);
+       ++i) {
+    status = loom_x86_module_rodata(request->module, rodata_symbols[i],
+                                    &symbols[entries.count + i], sections,
+                                    &section_count);
+  }
   for (uint16_t i = 0;
        i < entries.count && accepted && iree_status_is_ok(status); ++i) {
     if (loom_low_func_decl_isa(entries.values[i].func.op)) {
@@ -323,7 +409,7 @@ static iree_status_t loom_x86_module_build_artifact(
         .sections = sections,
         .section_count = section_count,
         .symbols = symbols,
-        .symbol_count = entries.count,
+        .symbol_count = symbol_count,
         .fixups = fixups.values,
         .fixup_count = fixups.count,
     };
@@ -331,6 +417,11 @@ static iree_status_t loom_x86_module_build_artifact(
         [LOOM_X86_RELOCATION_CALL] =
             {
                 .type = 4,  // R_X86_64_PLT32.
+                .image_encoding = LOOM_NATIVE_ELF_FIXUP_PC_RELATIVE_32,
+            },
+        [LOOM_X86_RELOCATION_ADDRESS] =
+            {
+                .type = 2,  // R_X86_64_PC32.
                 .image_encoding = LOOM_NATIVE_ELF_FIXUP_PC_RELATIVE_32,
             },
     };
