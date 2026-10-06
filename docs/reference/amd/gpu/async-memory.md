@@ -259,11 +259,11 @@ It also does not replace the global-memory observer's
 Cluster transfers add different participants. The TDM `workgroup_mask`
 selects cluster asynchronous loads for tensor loads; stores ignore it,
 and a wave outside a cluster uses a zero mask. Cluster-load completion is
-reported to the requesting wave; other receiving waves need an explicit
-barrier or memory-atomic synchronization path. A local ready/empty ring's
-counts and final-reader join consequently cannot be inherited unchanged
-by multicast receivers. [Tensor cluster selection][isa-notification]
-[Cluster completion, §10.7][isa-cluster]
+reported separately to each requesting wave. Non-requesting waves within
+each recipient workgroup need a barrier or memory-atomic handoff before
+reading LDS. The [cluster multicast protocol](clusters.md) retains separate
+fill and final-reader boundaries for each recipient's storage.
+[Tensor cluster selection][isa-notification] [Cluster completion, §10.7][isa-cluster]
 
 [isa-counters]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=63
 [isa-async]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=144

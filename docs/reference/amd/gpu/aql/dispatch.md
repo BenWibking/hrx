@@ -31,6 +31,11 @@ Unused dimensions have workgroup and grid size one. Each grid axis is positive
 and at least its nominal workgroup size. Resource totals include the kernel's
 requirements and those of functions it calls. [Packet definition][packet]
 
+The AMD extended dispatch packet has different geometry fields: cluster counts
+and workgroups per cluster replace the standard grid's workitem counts.
+[Workgroup cluster launch](../clusters.md#native-launch-geometry) describes
+those units, native capability queries and the compiler's launch mapping.
+
 The LLVM descriptor at the cited revision is 64 bytes, aligned to 64 bytes.
 Its signed entry offset leads from the descriptor base to code aligned to 256
 bytes. Kernargs have at least 16-byte alignment and satisfy any larger

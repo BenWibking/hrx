@@ -41,6 +41,7 @@ provide exact search terms within the tree.
 | Identify the compiler target, physical GC or SDMA IP, and native transport | [Architecture identity and discovery](gpu/architectures.md). |
 | Select eligible compute resources and queue priority | [CU/WGP affinity, harvested SE/SH/XCC mapping, `COMPUTE_STATIC_THREAD_MGMT_SE*` and native priority translation](gpu/scheduling.md). |
 | Join workgroups inside a cooperative dispatch | [Shared cooperative queues, `ALLOC_QUEUE_GWS`, occupancy and grid barrier memory scopes](gpu/cooperative.md). |
+| Share input traffic across a workgroup cluster | [CDNA5 cluster geometry, `CLUSTER_LOAD`, multicast masks, completion and LDS reuse](gpu/clusters.md). |
 | Reserve, publish and reuse queue storage | [PM4 ring frontiers](gpu/pm4/publication.md), [AQL header and doorbell publication](gpu/aql/publication.md), [SDMA reservation and ordered commit](gpu/sdma/publication.md). |
 | Populate an AQL metadata-prefetch ring | [Paired slots, four headers, kernarg preload and `CP_HQD_KD_CNTL`](gpu/aql/metadata.md). |
 | Wake a host when GPU work changes a signal | [Native mailbox/event representation, interrupt decoding and check-to-sleep ordering](gpu/notifications.md). |
