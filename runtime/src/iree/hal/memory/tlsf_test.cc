@@ -140,6 +140,85 @@ TEST(TLSFTest, ExactFitAtEverySizeClassRemainder) {
   }
 }
 
+TEST(TLSFTest, FreeBlockQueryPreservesGeometryAndHistory) {
+  auto options = DefaultOptions();
+  options.range_length = 16384;
+  iree_hal_memory_tlsf_t tlsf;
+  IREE_ASSERT_OK(
+      iree_hal_memory_tlsf_initialize(options, iree_allocator_system(), &tlsf));
+  const iree_device_size_t lengths[] = {1024, 16, 1040, 16, 1024, 16, 4096, 16};
+  iree_hal_memory_tlsf_allocation_t allocations[IREE_ARRAYSIZE(lengths)];
+  for (size_t i = 0; i < IREE_ARRAYSIZE(lengths); ++i) {
+    IREE_ASSERT_OK(
+        iree_hal_memory_tlsf_allocate(&tlsf, lengths[i], &allocations[i]));
+  }
+  MAKE_FRONTIER(death, 1, E(TestQueueAxis(0), 7));
+  iree_hal_memory_tlsf_free(&tlsf, allocations[0].block_index, nullptr);
+  iree_hal_memory_tlsf_free(&tlsf, allocations[2].block_index, death);
+  iree_hal_memory_tlsf_free(&tlsf, allocations[4].block_index, nullptr);
+  iree_hal_memory_tlsf_free(&tlsf, allocations[6].block_index, nullptr);
+  iree_hal_memory_tlsf_stats_t before;
+  iree_hal_memory_tlsf_query_stats(&tlsf, &before);
+
+  // The first bin has a too-small head, a fitting middle, and a too-small tail.
+  // Continue through both later bins without removing any candidate.
+  auto candidate = iree_hal_memory_tlsf_query_free_block(
+      &tlsf, 1040, IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE);
+  EXPECT_EQ(candidate.block_index, allocations[2].block_index);
+  ASSERT_NE(candidate.death_frontier, nullptr);
+  EXPECT_EQ(candidate.death_frontier->entries[0].epoch, 7u);
+  const auto selected = candidate;
+  candidate =
+      iree_hal_memory_tlsf_query_free_block(&tlsf, 1040, candidate.block_index);
+  EXPECT_EQ(candidate.block_index, allocations[6].block_index);
+  candidate =
+      iree_hal_memory_tlsf_query_free_block(&tlsf, 1040, candidate.block_index);
+  ASSERT_NE(candidate.block_index, IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE);
+  candidate =
+      iree_hal_memory_tlsf_query_free_block(&tlsf, 1040, candidate.block_index);
+  EXPECT_EQ(candidate.block_index, IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE);
+  iree_hal_memory_tlsf_stats_t after;
+  iree_hal_memory_tlsf_query_stats(&tlsf, &after);
+  EXPECT_EQ(before.bytes_allocated, after.bytes_allocated);
+  EXPECT_EQ(before.bytes_free, after.bytes_free);
+  EXPECT_EQ(before.allocation_count, after.allocation_count);
+  EXPECT_EQ(before.free_block_count, after.free_block_count);
+  EXPECT_EQ(before.tainted_coalesce_count, after.tainted_coalesce_count);
+
+  iree_hal_memory_tlsf_allocation_t allocation;
+  IREE_ASSERT_OK(iree_hal_memory_tlsf_allocate_block(
+      &tlsf, selected.block_index, 1040, &allocation));
+  EXPECT_EQ(allocation.offset, allocations[2].offset);
+  ASSERT_NE(allocation.death_frontier, nullptr);
+  EXPECT_EQ(allocation.death_frontier->entries[0].epoch, 7u);
+  iree_hal_memory_tlsf_free(&tlsf, allocation.block_index, nullptr);
+  for (size_t i = 1; i < IREE_ARRAYSIZE(allocations); i += 2) {
+    iree_hal_memory_tlsf_free(&tlsf, allocations[i].block_index, nullptr);
+  }
+  iree_hal_memory_tlsf_deinitialize(&tlsf);
+}
+
+TEST(TLSFTest, FreeBlockQueryHandlesFinalBitmapBits) {
+  const iree_device_size_t lengths[] = {
+      (iree_device_size_t)1 << 63,
+      IREE_DEVICE_SIZE_MAX & ~(iree_device_size_t)15,
+  };
+  for (iree_device_size_t length : lengths) {
+    auto options = DefaultOptions();
+    options.range_length = length;
+    iree_hal_memory_tlsf_t tlsf;
+    IREE_ASSERT_OK(iree_hal_memory_tlsf_initialize(
+        options, iree_allocator_system(), &tlsf));
+    auto candidate = iree_hal_memory_tlsf_query_free_block(
+        &tlsf, length, IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE);
+    ASSERT_NE(candidate.block_index, IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE);
+    candidate = iree_hal_memory_tlsf_query_free_block(&tlsf, length,
+                                                      candidate.block_index);
+    EXPECT_EQ(candidate.block_index, IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE);
+    iree_hal_memory_tlsf_deinitialize(&tlsf);
+  }
+}
+
 TEST(TLSFTest, InitializeZeroRangeFails) {
   iree_hal_memory_tlsf_t tlsf;
   auto options = DefaultOptions();

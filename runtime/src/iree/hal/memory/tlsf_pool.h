@@ -51,10 +51,10 @@ typedef struct iree_hal_tlsf_pool_options_t {
 // has already advanced. If epoch_query.fn is NULL, only pure frontier
 // dominance enables reuse.
 //
-// Reservation release is wait-free with respect to the TLSF mutex: each
-// reservation owns a release node, and release publishes that node to a
-// lock-free pending stack with one CAS after copying the death frontier into
-// node-local storage. Acquisition drains pending releases under a per-pool
+// Reservation release does not acquire the TLSF mutex. Each reservation owns
+// a release node, and release publishes that node to a lock-free pending stack
+// with a compare/exchange loop after copying the death frontier into node-local
+// storage. Acquisition drains pending releases under a per-pool
 // mutex before searching TLSF. Native slab acquisition, retirement, and range
 // advice run outside that mutex. A batch needing new backing restores its
 // provisional reservations before acquiring storage and then retries selection;

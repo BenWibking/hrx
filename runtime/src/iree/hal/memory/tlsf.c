@@ -407,45 +407,57 @@ void iree_hal_memory_tlsf_deinitialize(iree_hal_memory_tlsf_t* tlsf) {
   memset(tlsf, 0, sizeof(*tlsf));
 }
 
-iree_status_t iree_hal_memory_tlsf_try_allocate(
-    iree_hal_memory_tlsf_t* tlsf, iree_device_size_t length,
-    iree_hal_memory_tlsf_allocation_t* out_allocation,
-    iree_hal_memory_tlsf_allocate_result_t* out_result) {
-  IREE_ASSERT_ARGUMENT(tlsf);
-  IREE_ASSERT_ARGUMENT(out_allocation);
-  IREE_ASSERT_ARGUMENT(out_result);
-  memset(out_allocation, 0, sizeof(*out_allocation));
-  *out_result = IREE_HAL_MEMORY_TLSF_ALLOCATE_EXHAUSTED;
-
-  if (length == 0) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "allocation length must be > 0");
+iree_hal_memory_tlsf_candidate_t iree_hal_memory_tlsf_query_free_block(
+    const iree_hal_memory_tlsf_t* tlsf, iree_device_size_t minimum_length,
+    iree_hal_memory_tlsf_block_index_t after_block) {
+  uint8_t fl = 0, sl = 0;
+  iree_hal_memory_tlsf_block_index_t block_index;
+  if (after_block == IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
+    iree_hal_memory_tlsf_mapping_insert(minimum_length, &fl, &sl);
+    block_index = tlsf->free_lists[fl][sl];
+  } else {
+    const iree_hal_memory_tlsf_block_t* after =
+        iree_hal_memory_tlsf_block_at(tlsf, after_block);
+    iree_hal_memory_tlsf_mapping_insert(after->length, &fl, &sl);
+    block_index = after->next_free;
   }
-
-  // Guard against overflow: if length is so large that rounding up to
-  // alignment would wrap around, reject immediately. This prevents
-  // near-SIZE_MAX requests from silently succeeding as tiny allocations.
-  if (length > IREE_DEVICE_SIZE_MAX - (tlsf->alignment - 1)) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "allocation length %" PRIdsz
-                            " overflows when aligned to %" PRIdsz,
-                            length, tlsf->alignment);
+  for (;;) {
+    while (block_index != IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
+      iree_hal_memory_tlsf_block_t* block =
+          iree_hal_memory_tlsf_block_at(tlsf, block_index);
+      if (block->length >= minimum_length) {
+        const iree_async_frontier_t* frontier =
+            iree_hal_memory_tlsf_block_frontier(tlsf, block);
+        return (iree_hal_memory_tlsf_candidate_t){
+            .block_index = block_index,
+            .block_flags = block->flags,
+            .death_frontier = frontier->entry_count ? frontier : NULL,
+        };
+      }
+      block_index = block->next_free;
+    }
+    // Mask only bins after the current one without shifting by the word size.
+    uint32_t sl_map = tlsf->sl_bitmaps[fl] & ~iree_shr(~0u, 31 - sl);
+    if (!sl_map) {
+      uint64_t fl_map = tlsf->fl_bitmap & ~iree_shr(~0ull, 63 - fl);
+      if (!fl_map) {
+        return (iree_hal_memory_tlsf_candidate_t){
+            .block_index = IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE,
+        };
+      }
+      fl = (uint8_t)iree_math_count_trailing_zeros_u64(fl_map);
+      sl_map = tlsf->sl_bitmaps[fl];
+    }
+    sl = (uint8_t)iree_math_count_trailing_zeros_u32(sl_map);
+    block_index = tlsf->free_lists[fl][sl];
   }
+}
 
-  // Round up to alignment (and ensure at least minimum block size).
-  iree_device_size_t aligned_length =
-      iree_device_align(length, tlsf->alignment);
-  if (aligned_length < tlsf->alignment) {
-    aligned_length = tlsf->alignment;
-  }
-
-  // Find a suitable free block.
-  iree_hal_memory_tlsf_block_index_t block_index =
-      iree_hal_memory_tlsf_find_suitable_block(tlsf, aligned_length);
-  if (block_index == IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
-    return iree_ok_status();
-  }
-
+iree_status_t iree_hal_memory_tlsf_allocate_block(
+    iree_hal_memory_tlsf_t* tlsf,
+    iree_hal_memory_tlsf_block_index_t block_index,
+    iree_device_size_t aligned_length,
+    iree_hal_memory_tlsf_allocation_t* out_allocation) {
   iree_hal_memory_tlsf_block_t* block =
       iree_hal_memory_tlsf_block_at(tlsf, block_index);
 
@@ -531,6 +543,50 @@ iree_status_t iree_hal_memory_tlsf_try_allocate(
   tlsf->bytes_allocated += block->length;
   tlsf->allocation_count++;
 
+  return iree_ok_status();
+}
+
+iree_status_t iree_hal_memory_tlsf_try_allocate(
+    iree_hal_memory_tlsf_t* tlsf, iree_device_size_t length,
+    iree_hal_memory_tlsf_allocation_t* out_allocation,
+    iree_hal_memory_tlsf_allocate_result_t* out_result) {
+  IREE_ASSERT_ARGUMENT(tlsf);
+  IREE_ASSERT_ARGUMENT(out_allocation);
+  IREE_ASSERT_ARGUMENT(out_result);
+  memset(out_allocation, 0, sizeof(*out_allocation));
+  *out_result = IREE_HAL_MEMORY_TLSF_ALLOCATE_EXHAUSTED;
+
+  if (length == 0) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "allocation length must be > 0");
+  }
+
+  // Guard against overflow: if length is so large that rounding up to
+  // alignment would wrap around, reject immediately. This prevents
+  // near-SIZE_MAX requests from silently succeeding as tiny allocations.
+  if (length > IREE_DEVICE_SIZE_MAX - (tlsf->alignment - 1)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "allocation length %" PRIdsz
+                            " overflows when aligned to %" PRIdsz,
+                            length, tlsf->alignment);
+  }
+
+  // Round up to alignment (and ensure at least minimum block size).
+  iree_device_size_t aligned_length =
+      iree_device_align(length, tlsf->alignment);
+  if (aligned_length < tlsf->alignment) {
+    aligned_length = tlsf->alignment;
+  }
+
+  // Find a suitable free block.
+  iree_hal_memory_tlsf_block_index_t block_index =
+      iree_hal_memory_tlsf_find_suitable_block(tlsf, aligned_length);
+  if (block_index == IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
+    return iree_ok_status();
+  }
+
+  IREE_RETURN_IF_ERROR(iree_hal_memory_tlsf_allocate_block(
+      tlsf, block_index, aligned_length, out_allocation));
   *out_result = IREE_HAL_MEMORY_TLSF_ALLOCATE_OK;
   return iree_ok_status();
 }

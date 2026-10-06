@@ -158,11 +158,6 @@ typedef struct iree_hal_tlsf_pool_t {
   // Byte offset of inline frontier storage within a release node.
   iree_host_size_t release_frontier_offset;
 
-  // Scratch storage used under |mutex| to hold rejected block indices while a
-  // reserve call keeps searching for a satisfiable block.
-  iree_hal_memory_tlsf_block_index_t* rejected_block_indices;
-  iree_host_size_t rejected_block_capacity;
-
   // Approximate live reservation bytes for lock-free stats queries.
   iree_atomic_int64_t bytes_reserved;
 
@@ -551,27 +546,6 @@ static bool iree_hal_tlsf_pool_frontier_is_satisfied(
     }
   }
   return true;
-}
-
-static void iree_hal_tlsf_pool_restore_rejected_blocks(
-    iree_hal_tlsf_pool_t* pool, iree_hal_tlsf_pool_slab_t* slab,
-    uint32_t rejected_block_count)
-    IREE_THREAD_ANNOTATION_ATTRIBUTE(requires_capability(&pool->mutex)) {
-  for (uint32_t i = 0; i < rejected_block_count; ++i) {
-    iree_hal_memory_tlsf_restore(&slab->tlsf, pool->rejected_block_indices[i]);
-  }
-}
-
-static iree_status_t iree_hal_tlsf_pool_ensure_rejected_capacity(
-    iree_hal_tlsf_pool_t* pool, iree_host_size_t capacity)
-    IREE_THREAD_ANNOTATION_ATTRIBUTE(requires_capability(&pool->mutex)) {
-  if (pool->rejected_block_capacity >= capacity) {
-    return iree_ok_status();
-  }
-  IREE_RETURN_IF_ERROR(iree_allocator_grow_array(
-      pool->host_allocator, capacity, sizeof(*pool->rejected_block_indices),
-      &pool->rejected_block_capacity, (void**)&pool->rejected_block_indices));
-  return iree_ok_status();
 }
 
 static iree_status_t iree_hal_tlsf_pool_aligned_slab_length(
@@ -996,7 +970,6 @@ static void iree_hal_tlsf_pool_destroy(iree_hal_pool_t* base_pool) {
 
   iree_hal_tlsf_pool_deinitialize_slabs(pool);
   iree_slim_mutex_deinitialize(&pool->mutex);
-  iree_allocator_free(pool->host_allocator, pool->rejected_block_indices);
   iree_hal_memory_trace_deinitialize(&pool->trace);
   iree_hal_pool_deinitialize(base_pool);
   iree_hal_slab_provider_release(pool->slab_provider);
@@ -1020,51 +993,44 @@ static iree_status_t iree_hal_tlsf_pool_try_acquire_from_slab(
     IREE_THREAD_ANNOTATION_ATTRIBUTE(requires_capability(&pool->mutex)) {
   iree_status_t status = iree_ok_status();
   iree_hal_tlsf_pool_slab_t* slab = pool->slabs[slab_index];
-  uint32_t rejected_block_count = 0;
+  const iree_device_size_t aligned_length =
+      iree_device_align(allocation_length, pool->slab_options.alignment);
+  iree_hal_memory_tlsf_block_index_t after_block =
+      IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
   *out_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
-
-  while (iree_status_is_ok(status)) {
-    iree_hal_memory_tlsf_allocation_t allocation;
-    iree_hal_memory_tlsf_allocate_result_t allocation_result =
-        IREE_HAL_MEMORY_TLSF_ALLOCATE_EXHAUSTED;
-    status = iree_hal_memory_tlsf_try_allocate(&slab->tlsf, allocation_length,
-                                               &allocation, &allocation_result);
-    if (!iree_status_is_ok(status) ||
-        allocation_result == IREE_HAL_MEMORY_TLSF_ALLOCATE_EXHAUSTED) {
+  for (;;) {
+    const iree_hal_memory_tlsf_candidate_t candidate =
+        iree_hal_memory_tlsf_query_free_block(&slab->tlsf, aligned_length,
+                                              after_block);
+    if (candidate.block_index == IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
       break;
     }
-
+    after_block = candidate.block_index;
     const bool is_satisfied = iree_hal_tlsf_pool_frontier_is_satisfied(
-        pool, requester_frontier, allocation.death_frontier,
-        allocation.block_flags);
+        pool, requester_frontier, candidate.death_frontier,
+        candidate.block_flags);
     const bool can_wait =
-        allocation.death_frontier &&
-        !iree_any_bit_set(allocation.block_flags,
+        candidate.death_frontier &&
+        !iree_any_bit_set(candidate.block_flags,
                           IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED) &&
         iree_any_bit_set(flags, IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER);
     if (!is_satisfied && !can_wait) {
       iree_atomic_fetch_add(&pool->reuse_miss_count, 1,
                             iree_memory_order_relaxed);
-      status = iree_hal_tlsf_pool_ensure_rejected_capacity(
-          pool, (iree_host_size_t)rejected_block_count + 1);
-      if (!iree_status_is_ok(status)) {
-        iree_hal_memory_tlsf_restore(&slab->tlsf, allocation.block_index);
-        break;
-      }
-      pool->rejected_block_indices[rejected_block_count++] =
-          allocation.block_index;
       continue;
     }
-
-    out_allocation->slab_index = slab_index;
-    out_allocation->allocation = allocation;
-    *out_result = !is_satisfied ? IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT
-                  : allocation.death_frontier ? IREE_HAL_POOL_ACQUIRE_OK
-                                              : IREE_HAL_POOL_ACQUIRE_OK_FRESH;
+    status = iree_hal_memory_tlsf_allocate_block(
+        &slab->tlsf, candidate.block_index, aligned_length,
+        &out_allocation->allocation);
+    if (iree_status_is_ok(status)) {
+      out_allocation->slab_index = slab_index;
+      *out_result = !is_satisfied ? IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT
+                    : out_allocation->allocation.death_frontier
+                        ? IREE_HAL_POOL_ACQUIRE_OK
+                        : IREE_HAL_POOL_ACQUIRE_OK_FRESH;
+    }
     break;
   }
-
-  iree_hal_tlsf_pool_restore_rejected_blocks(pool, slab, rejected_block_count);
   return status;
 }
 

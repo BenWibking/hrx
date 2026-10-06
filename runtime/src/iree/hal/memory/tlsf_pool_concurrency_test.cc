@@ -21,7 +21,7 @@
 
 namespace {
 
-// Gates one native allocation or release. All successful operations use the
+// Gates one underlying allocation or release. All successful operations use the
 // real system allocator, so the tests exercise actual backing and mapped bytes.
 class GatedAllocator {
  public:
@@ -49,6 +49,7 @@ class GatedAllocator {
   void FailNextAllocation() { fail_allocation_.store(true); }
 
   size_t live_allocations() const { return live_allocations_.load(); }
+  size_t allocation_calls() const { return allocation_calls_.load(); }
 
  private:
   static iree_status_t Control(void* self, iree_allocator_command_t command,
@@ -63,10 +64,13 @@ class GatedAllocator {
         allocator->condition_.wait(lock, [&] { return allocator->resumed_; });
       }
     }
+    if (command != IREE_ALLOCATOR_COMMAND_FREE) {
+      allocator->allocation_calls_.fetch_add(1);
+    }
     if (command != IREE_ALLOCATOR_COMMAND_FREE &&
         allocator->fail_allocation_.exchange(false)) {
       return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                              "native allocation unavailable");
+                              "allocation unavailable");
     }
     const bool had_allocation = *inout_ptr != nullptr;
     iree_allocator_t system_allocator = iree_allocator_system();
@@ -77,7 +81,7 @@ class GatedAllocator {
         if (had_allocation) {
           allocator->live_allocations_.fetch_sub(1);
         }
-      } else if (!had_allocation) {
+      } else if (command != IREE_ALLOCATOR_COMMAND_REALLOC || !had_allocation) {
         allocator->live_allocations_.fetch_add(1);
       }
     }
@@ -98,6 +102,8 @@ class GatedAllocator {
   bool resumed_ = false;
   // Requests one allocation failure without changing release behavior.
   std::atomic<bool> fail_allocation_{false};
+  // Allocation-like calls, including unsuccessful attempts.
+  std::atomic<size_t> allocation_calls_{0};
   // Live native backing, provider, and materialized-buffer allocations.
   std::atomic<size_t> live_allocations_{0};
 };
@@ -115,6 +121,13 @@ static iree_hal_pool_reservation_request_t Request(iree_device_size_t length) {
 
 class TLSFPoolConcurrencyTest : public ::testing::Test {
  protected:
+  static bool QueryEpoch(void* user_data, iree_async_axis_t axis,
+                         uint64_t epoch) {
+    auto* self = static_cast<TLSFPoolConcurrencyTest*>(user_data);
+    self->epoch_queries_.fetch_add(1);
+    return iree_async_frontier_tracker_query_epoch(self->tracker_, axis, epoch);
+  }
+
   void SetUp() override {
     IREE_ASSERT_OK(iree_async_proactor_create_platform(
         iree_async_proactor_options_default(), iree_allocator_system(),
@@ -124,18 +137,23 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
     IREE_ASSERT_OK(iree_async_frontier_tracker_create(
         iree_async_frontier_tracker_options_default(), iree_allocator_system(),
         &tracker_));
+    IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
+        tracker_, iree_async_axis_make_queue(1, 0, 0, 0, 0), nullptr));
     IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
         native_allocator_.allocator(), &provider_));
     iree_hal_tlsf_pool_options_t options = {};
     options.tlsf_options.range_length = 4096;
     options.tlsf_options.alignment = 16;
+    options.tlsf_options.initial_block_capacity = 4;
+    options.tlsf_options.frontier_capacity = 2;
     IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-        options, provider_, notification_, tracker_,
-        iree_hal_pool_epoch_query_null(), iree_allocator_system(), &pool_));
+        options, provider_, notification_, tracker_, {QueryEpoch, this},
+        metadata_allocator_.allocator(), &pool_));
   }
 
   void TearDown() override {
     iree_hal_pool_release(pool_);
+    EXPECT_EQ(metadata_allocator_.live_allocations(), 0u);
     iree_hal_slab_provider_release(provider_);
     EXPECT_EQ(native_allocator_.live_allocations(), 0u);
     iree_async_notification_release(notification_);
@@ -193,6 +211,10 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
 
   // Owns the real native allocation dependency and its handshake state.
   GatedAllocator native_allocator_;
+  // Counts the TLSF pool's actual host metadata allocations.
+  GatedAllocator metadata_allocator_;
+  // Counts real tracker queries made while checking candidate prerequisites.
+  std::atomic<size_t> epoch_queries_{0};
   // Progress owner retained for the fixture's notification.
   iree_async_proactor_t* proactor_ = nullptr;
   // Capacity publication observed by the tests.
@@ -201,7 +223,7 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
   iree_async_frontier_tracker_t* tracker_ = nullptr;
   // Native CPU source using the gated allocator.
   iree_hal_slab_provider_t* provider_ = nullptr;
-  // TLSF subject under test, with ordinary system-allocated host metadata.
+  // TLSF subject under test, with counted system-allocated host metadata.
   iree_hal_pool_t* pool_ = nullptr;
 };
 
@@ -347,8 +369,8 @@ TEST_F(TLSFPoolConcurrencyTest, GrowthBeforeBudgetFailurePublishesOnlyOnce) {
   options.tlsf_options.range_length = 4096;
   options.budget_limit = 6144;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      options, provider_, notification_, tracker_,
-      iree_hal_pool_epoch_query_null(), iree_allocator_system(), &pool_));
+      options, provider_, notification_, tracker_, {QueryEpoch, this},
+      metadata_allocator_.allocator(), &pool_));
   const iree_hal_pool_reservation_request_t requests[] = {
       Request(3072),
       Request(3072),
@@ -381,8 +403,8 @@ TEST_F(TLSFPoolConcurrencyTest, LargestReservationFitsWithoutSizeClassPadding) {
   iree_hal_tlsf_pool_options_t options = {};
   options.tlsf_options.range_length = 4112;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      options, provider_, notification_, tracker_,
-      iree_hal_pool_epoch_query_null(), iree_allocator_system(), &pool_));
+      options, provider_, notification_, tracker_, {QueryEpoch, this},
+      metadata_allocator_.allocator(), &pool_));
   iree_hal_pool_reservation_t reservations[2];
   IREE_ASSERT_OK(Acquire(4112, &reservations[0]));
   IREE_ASSERT_OK(Acquire(4112, &reservations[1]));
@@ -391,6 +413,46 @@ TEST_F(TLSFPoolConcurrencyTest, LargestReservationFitsWithoutSizeClassPadding) {
   EXPECT_EQ(stats.slab_count, 2u);
   EXPECT_EQ(stats.bytes_committed, 2u * 4112u);
   iree_hal_pool_release_reservations(pool_, 2, reservations, nullptr);
+}
+
+TEST_F(TLSFPoolConcurrencyTest, RejectedRangeNeedsOneQueryAndNoAllocations) {
+  iree_hal_pool_reservation_t seed;
+  IREE_ASSERT_OK(Acquire(4096, &seed));
+  alignas(16) uint8_t storage[sizeof(iree_async_frontier_t) +
+                              sizeof(iree_async_frontier_entry_t)] = {};
+  auto* death = reinterpret_cast<iree_async_frontier_t*>(storage);
+  iree_async_frontier_initialize(death, 1);
+  death->entries[0] = {iree_async_axis_make_queue(1, 0, 0, 0, 0), 7};
+  iree_hal_pool_release_reservations(pool_, 1, &seed, death);
+
+  const size_t allocation_calls = metadata_allocator_.allocation_calls();
+  const size_t epoch_queries = epoch_queries_.load();
+  auto request = Request(16);
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &reservation, &info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+  EXPECT_EQ(epoch_queries_.load() - epoch_queries, 1u);
+  EXPECT_EQ(metadata_allocator_.allocation_calls() - allocation_calls, 0u);
+
+  // The same entire range remains available to a requester covering its prior
+  // use, with the original exact prerequisite still attached to the result.
+  request.allocation_size = 4096;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, death, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &reservation, &info, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+  ASSERT_NE(info.reuse_frontier, nullptr);
+  EXPECT_EQ(info.reuse_frontier->entry_count, 1u);
+  EXPECT_EQ(info.reuse_frontier->entries[0].axis, death->entries[0].axis);
+  EXPECT_EQ(info.reuse_frontier->entries[0].epoch, 7u);
+  EXPECT_EQ(reservation.offset, seed.offset);
+  EXPECT_EQ(reservation.byte_length, 4096u);
+  iree_hal_pool_release_reservations(pool_, 1, &reservation,
+                                     info.reuse_frontier);
 }
 
 TEST_F(TLSFPoolConcurrencyTest, LargeBatchUsesAllPublishedSlabs) {

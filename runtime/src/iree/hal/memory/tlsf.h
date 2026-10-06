@@ -331,6 +331,18 @@ typedef struct iree_hal_memory_tlsf_allocation_t {
   iree_hal_memory_tlsf_block_flags_t block_flags;
 } iree_hal_memory_tlsf_allocation_t;
 
+// Borrowed candidate for a policy that selects among free ranges before
+// allocating. Inspecting a candidate does not reserve or split its bytes.
+// The descriptor and its frontier remain valid only until allocator mutation.
+typedef struct iree_hal_memory_tlsf_candidate_t {
+  // Free block handle, or BLOCK_INDEX_NONE when the search is exhausted.
+  iree_hal_memory_tlsf_block_index_t block_index;
+  // Current block flags, including FREE and any retained frontier taint.
+  iree_hal_memory_tlsf_block_flags_t block_flags;
+  // Exact borrowed reuse prerequisite, or NULL when the range has none.
+  const iree_async_frontier_t* death_frontier;
+} iree_hal_memory_tlsf_candidate_t;
+
 // Result of a TLSF try-allocation that can run out of blocks during normal
 // allocator search.
 typedef uint32_t iree_hal_memory_tlsf_allocate_result_t;
@@ -456,6 +468,33 @@ iree_status_t iree_hal_memory_tlsf_initialize(
 // The caller is responsible for ensuring no allocated blocks are leaked
 // (in debug builds, a warning is emitted if allocation_count > 0).
 void iree_hal_memory_tlsf_deinitialize(iree_hal_memory_tlsf_t* tlsf);
+
+// Finds the next free block of at least |minimum_length| bytes. Pass
+// BLOCK_INDEX_NONE for |after_block| to begin, then the previous candidate's
+// index to continue. Candidates are visited once in size-class/list order;
+// entries smaller than the requested length in its containing bin are skipped.
+// Keep the same minimum length and allow no allocator mutation between steps.
+// This query neither allocates metadata nor changes geometry or reuse history.
+//
+// |minimum_length| is a trusted, positive, alignment-rounded request. Repeated
+// queries visit at most the free blocks in the eligible size classes; unlike
+// ordinary try_allocate, policy selection is not a constant-time operation.
+iree_hal_memory_tlsf_candidate_t iree_hal_memory_tlsf_query_free_block(
+    const iree_hal_memory_tlsf_t* tlsf, iree_device_size_t minimum_length,
+    iree_hal_memory_tlsf_block_index_t after_block);
+
+// Allocates |aligned_length| bytes from a free block selected by the query
+// above. Selection and allocation must be serialized against all TLSF mutation.
+// The block must still be free, with sufficient length for the positive,
+// alignment-rounded request. These are trusted selection invariants.
+//
+// Only split-metadata allocation can fail. Failure preserves geometry and
+// history. On success, any split remainder inherits the same prerequisite.
+iree_status_t iree_hal_memory_tlsf_allocate_block(
+    iree_hal_memory_tlsf_t* tlsf,
+    iree_hal_memory_tlsf_block_index_t block_index,
+    iree_device_size_t aligned_length,
+    iree_hal_memory_tlsf_allocation_t* out_allocation);
 
 // Attempts to allocate a contiguous range of at least |length| bytes.
 //
