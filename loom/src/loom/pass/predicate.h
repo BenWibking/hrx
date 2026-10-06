@@ -4,7 +4,10 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// Shared pass.where predicate contracts.
+// Shared pass.where predicate contracts. The built-in op(name = "...")
+// predicate selects a function anchor by its defining operation's canonical
+// spelling, independently of the function's symbol name or attributes. It
+// observes only that operation; a nonmatching body is never traversed.
 
 #ifndef LOOM_PASS_PREDICATE_H_
 #define LOOM_PASS_PREDICATE_H_

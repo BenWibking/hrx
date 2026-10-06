@@ -14,6 +14,7 @@ loom_check_test_suite(
     test
   SRCS
     "compose.loom-test"
+    "loop_preparation.loom-test"
     "memory.loom-test"
     "outline.loom-test"
 )

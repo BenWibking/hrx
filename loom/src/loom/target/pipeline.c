@@ -562,6 +562,43 @@ static iree_status_t loom_target_pipeline_build_expanded_source_body(
                                         IREE_SV("materialize-locations"));
 }
 
+static iree_status_t loom_target_pipeline_build_lexical_worker_body(
+    loom_builder_t* builder, void* user_data) {
+  const loom_target_pipeline_build_context_t* context =
+      (const loom_target_pipeline_build_context_t*)user_data;
+  loom_target_control_flow_lowering_t control_flow_lowering =
+      LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG;
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_resolve_control_flow_lowering(
+      context->options, &control_flow_lowering));
+  // Channel views still borrow the construction's storage facts here. Expand
+  // loop policies before outlining replaces lexical captures with formals.
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_cleanup(builder));
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_source_loop_pipelining(builder, user_data));
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_source_unroll_before_bank_sroa(builder,
+                                                                user_data));
+  if (control_flow_lowering == LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG) {
+    IREE_RETURN_IF_ERROR(
+        loom_target_pipeline_build_run(builder, IREE_SV("scf-to-cfg")));
+    IREE_RETURN_IF_ERROR(
+        loom_target_pipeline_build_run(builder, IREE_SV("cfg-simplify")));
+  }
+  return loom_target_pipeline_build_cleanup(builder);
+}
+
+static iree_status_t loom_target_pipeline_build_lexical_workers(
+    loom_builder_t* builder, void* user_data) {
+  loom_named_attr_t name_attr = {0};
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_string_attr(
+      builder, IREE_SV("name"), IREE_SV("pipeline.def"), &name_attr));
+  loom_op_t* where_op = NULL;
+  return loom_pass_ir_build_where(
+      builder, LOOM_PASS_WHERE_BUILD_FLAG_HAS_ATTRS, IREE_SV("op"),
+      loom_make_named_attr_slice(&name_attr, 1),
+      loom_target_pipeline_build_lexical_worker_body, user_data, &where_op);
+}
+
 static iree_status_t loom_target_pipeline_build_source_low_body(
     loom_builder_t* builder, void* user_data) {
   const loom_target_pipeline_build_context_t* context =
@@ -580,6 +617,8 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
       builder, IREE_SV("specialize-target-callgraph")));
   IREE_RETURN_IF_ERROR(
       loom_target_pipeline_build_required_source_inlining(builder, user_data));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
+      builder, loom_target_pipeline_build_lexical_workers, user_data, &for_op));
   // Worker bodies enter the existing function pipeline after required source
   // expansion, while their target-specific math and representations are still
   // available for legalization. Outlining registers their target versions.
