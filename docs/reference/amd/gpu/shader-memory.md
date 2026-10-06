@@ -80,6 +80,11 @@ store and LDS completion. Its XML defines `S_WAIT_ASYNCCNT` and
 and `GLOBAL_WBINV` use the store counter. [Architecture counters][cdna5-counters]
 [Machine-readable instruction definitions][cdna5-xml]
 
+[Asynchronous global/LDS transfers](async-memory.md) describes those two
+classes, descriptor-generated notification and LDS split barriers. Transfer
+readiness and the final reader's permission to reuse a slot form distinct
+edges, including when the transfer and consumer run in different waves.
+
 The RDNA4 ISA guide §5.7 and Table 26 distinguish in-order retirement within
 a class from memory data ordering, and describe the scope at which store
 completion can be reported. The [MEM_ORDERED discussion](pm4/dispatch.md#shader-wait-counter-mode-mem_ordered)

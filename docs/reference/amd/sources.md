@@ -18,6 +18,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [Vulkan specification][vulkan] | `01aaacd99480487bf63830959513c5ca8ceb996d` | External memory and semaphore capabilities, handle ownership, host-pointer imports, resource ownership transfers, host visibility, and performance-query lifetimes. |
 | [LLVM ABI and memory model][llvm-abi] | `6e714c8d91116794cb699cdf80c26afe9cda3ef3` | Kernel descriptors, initial registers, address spaces, shader memory ordering, availability/visibility, and the matching cache-control emitter and target predicates. |
 | [LLVM compiler implementation][llvm-compiler] | `6dfe1677ab8dffbc6ec13d53a1e0215d75147689` | Executable fetch padding, dispatch inputs, partial workgroups, and target feature selection. |
+| [Triton CDNA5 transfer lowering][triton-cdna5] | `8262c9a91a1d6828ad4f36437fa0046daa67720d` | Asynchronous and tensor transfer counts, descriptor notification, LDS split barriers and a workgroup producer/consumer reuse protocol. |
 | [ROCm target identities][therock-targets] | `1cc8ec570e9f5c720de9ce52dc485228c2df0274` | CDNA5 product-to-compiler-target mapping, kept separate from native GC and SDMA IP. |
 | [AMD atomic-operation tables][legacy-rocm] | `85a16825737e43a14ff431754b359380e78062a7` | Architecture-specific atomic operation tables and their separate PCIe-route interpretations. |
 | [Windows DDI][windows-ddi] | `7515063cea4c9e98db6a92986c5b4ddb0463fd16` | Native submission, monitored fences, mapping, residency, and destruction contracts. |
@@ -43,7 +44,7 @@ the architecture's dependency-counter rules used in the
 
 The [CDNA5 ISA guide, 27 July 2026][cdna5-isa], covers cache policy in
 §§4.1.1–2, barriers in §5.6, dependency counters in §5.7, asynchronous memory
-in §10.8 and tensor movement in §10.11. The
+in §10.8, tensor movement in §10.11 and LDS split barriers in §11.2.2. The
 [architecture map](gpu/architectures.md#cdna5-and-gfx1250) connects its naming
 to public compiler and native-driver sources.
 
@@ -98,6 +99,7 @@ executes. The corresponding chapter identifies those boundaries.
 [vulkan]: https://github.com/KhronosGroup/Vulkan-Docs/tree/01aaacd99480487bf63830959513c5ca8ceb996d
 [llvm-abi]: https://github.com/llvm/llvm-project/tree/6e714c8d91116794cb699cdf80c26afe9cda3ef3
 [llvm-compiler]: https://github.com/llvm/llvm-project/tree/6dfe1677ab8dffbc6ec13d53a1e0215d75147689
+[triton-cdna5]: https://github.com/triton-lang/triton/tree/8262c9a91a1d6828ad4f36437fa0046daa67720d
 [therock-targets]: https://github.com/ROCm/TheRock/tree/1cc8ec570e9f5c720de9ce52dc485228c2df0274
 [legacy-rocm]: https://github.com/ROCm/legacy-rocm-build/tree/85a16825737e43a14ff431754b359380e78062a7
 [windows-ddi]: https://github.com/MicrosoftDocs/windows-driver-docs-ddi/tree/7515063cea4c9e98db6a92986c5b4ddb0463fd16
