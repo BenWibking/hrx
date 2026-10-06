@@ -60,6 +60,7 @@ static const loom_pass_info_t
 static bool loom_target_callgraph_kind_propagates_target(
     loom_call_like_kind_t kind) {
   return kind == LOOM_CALL_LIKE_KIND_SEMANTIC ||
+         kind == LOOM_CALL_LIKE_KIND_COMPOSITION ||
          kind == LOOM_CALL_LIKE_KIND_LOW_INVOKE ||
          kind == LOOM_CALL_LIKE_KIND_LOW_INTERNAL;
 }
@@ -873,6 +874,22 @@ static iree_status_t loom_target_callgraph_plan_reachable_rows(
       const loom_symbol_id_t callee_symbol_id = edge->target_symbol_id;
       IREE_RETURN_IF_ERROR(
           loom_target_callgraph_prepare_symbol(state, callee_symbol_id));
+      if (loom_call_like_kind(call) == LOOM_CALL_LIKE_KIND_COMPOSITION) {
+        const loom_target_callgraph_symbol_t* callee =
+            &state->symbols[callee_symbol_id];
+        const loom_symbol_ref_t target = callee->function_facts->target_symbol;
+        const loom_symbol_ref_t caller_target =
+            state->symbols[caller_source_symbol_id]
+                .function_facts->target_symbol;
+        // Composition inherits an environment unless the child selects a
+        // distinct target. A distinct unresolved target remains independent.
+        if (loom_symbol_ref_is_valid(target) &&
+            (target.module_id != caller_target.module_id ||
+             target.symbol_id != caller_target.symbol_id)) {
+          IREE_RETURN_IF_ERROR(loom_target_callgraph_authored_context(
+              state, callee->authored_target_requirement, &execution_context));
+        }
+      }
       // An unknown caller supplies no ABI context for external declarations,
       // and a declaration has no body whose facts need protection.
       if (execution_context->resolved_target.facts == NULL &&

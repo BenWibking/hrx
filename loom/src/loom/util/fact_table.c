@@ -607,15 +607,16 @@ static iree_status_t loom_value_fact_table_seed_region_target(
       loom_op_vtable(module, op), region_index);
   const loom_target_facts_t* target_facts = inherited;
   if (descriptor && descriptor->execution_target_attr_index_plus_one) {
-    table->regions.has_independent_targets = true;
-    target_facts = NULL;
     const loom_attribute_t target = loom_op_const_attrs(
         op)[descriptor->execution_target_attr_index_plus_one - 1];
-    if (!loom_attr_is_absent(target) &&
-        table->context.resolve_region_target.fn) {
-      IREE_RETURN_IF_ERROR(table->context.resolve_region_target.fn(
-          table->context.resolve_region_target.user_data, module,
-          loom_attr_as_symbol(target), &target_facts));
+    if (!loom_attr_is_absent(target)) {
+      table->regions.has_independent_targets = true;
+      target_facts = NULL;
+      if (table->context.resolve_region_target.fn) {
+        IREE_RETURN_IF_ERROR(table->context.resolve_region_target.fn(
+            table->context.resolve_region_target.user_data, module,
+            loom_attr_as_symbol(target), &target_facts));
+      }
     }
   }
   return loom_value_fact_table_set_region_target_scope(

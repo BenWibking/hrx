@@ -604,11 +604,11 @@ static iree_status_t loom_symbol_reference_visit_region(
         if (descriptor && descriptor->execution_target_attr_index_plus_one) {
           const loom_attribute_t attr = loom_op_const_attrs(
               op)[descriptor->execution_target_attr_index_plus_one - 1];
-          const loom_symbol_ref_t target = loom_attr_is_absent(attr)
-                                               ? loom_symbol_ref_null()
-                                               : loom_attr_as_symbol(attr);
-          IREE_RETURN_IF_ERROR(loom_symbol_reference_append_execution_target(
-              builder, target, &child_source_scope.execution_scope));
+          if (!loom_attr_is_absent(attr)) {
+            IREE_RETURN_IF_ERROR(loom_symbol_reference_append_execution_target(
+                builder, loom_attr_as_symbol(attr),
+                &child_source_scope.execution_scope));
+          }
         }
         IREE_RETURN_IF_ERROR(loom_symbol_reference_visit_region(
             builder, child_source_scope, regions[i]));

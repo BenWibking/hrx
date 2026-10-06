@@ -1093,9 +1093,10 @@ class RegionDef:
         after the owner. LoopLike supplies REPEATED for its regions and does
         not permit an override. Other regions default to ONCE.
     execution_target: Optional target-symbol attribute selecting an independent
-        execution environment for this region. An absent attribute leaves that
-        environment unresolved; it does not inherit the surrounding execution
-        target. Regions without this contract execute in their parent's context.
+        execution environment for this region. An absent attribute inherits the
+        enclosing target environment; an explicit unresolved target remains
+        independent. Regions without this contract execute in their parent's
+        context.
     """
 
     name: str

@@ -1,34 +1,34 @@
 // Each application selects for the execution environment in which it runs.
 // Capturing a construction result does not retarget that computation.
 // RUN: pass select-templates{rewrite=inline},canonicalize
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
-template.decl @wave_value() -> (i32)
+template.decl @width_value() -> (i32)
 
-template.def<@wave_value> requires [#target.subgroup.size<64>] @wave64() -> (i32) {
+template.def<@width_value> requires [#target.subgroup.size<64>] @width64() -> (i32) {
   %value = scalar.constant 64 : i32
   template.return %value : i32
 }
 
-template.def<@wave_value> requires [#target.subgroup.size<32>] @wave32() -> (i32) {
+template.def<@width_value> requires [#target.subgroup.size<32>] @width32() -> (i32) {
   %value = scalar.constant 32 : i32
   template.return %value : i32
 }
 
 pipeline.def public target(@construction) @publish_widths() run(%first: channel<tile<2xi32>>, %second: channel<tile<2xi32>>) {
-  %construction_value = template.apply<@wave_value>() : () -> (i32)
+  %construction_value = template.apply<@width_value>() : () -> (i32)
   pipeline.strand target(@worker) workers([0], [1], [1]) {
     %write, %record = channel.reserve %first : channel<tile<2xi32>> -> (write<tile<2xi32>>, view<2xi32>)
-    %value = template.apply<@wave_value>() : () -> (i32)
+    %value = template.apply<@width_value>() : () -> (i32)
     view.store %construction_value, %record[0] : i32, view<2xi32>
     view.store %value, %record[1] : i32, view<2xi32>
     channel.publish %write : write<tile<2xi32>>
   }
   pipeline.strand target(@construction) workers([1], [1], [1]) {
     %write, %record = channel.reserve %second : channel<tile<2xi32>> -> (write<tile<2xi32>>, view<2xi32>)
-    %value = template.apply<@wave_value>() : () -> (i32)
+    %value = template.apply<@width_value>() : () -> (i32)
     view.store %construction_value, %record[0] : i32, view<2xi32>
     view.store %value, %record[1] : i32, view<2xi32>
     channel.publish %write : write<tile<2xi32>>
@@ -36,11 +36,11 @@ pipeline.def public target(@construction) @publish_widths() run(%first: channel<
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
-template.decl @wave_value() -> (i32)
+template.decl @width_value() -> (i32)
 
 pipeline.def public target(@construction) @publish_widths() run(%first: channel<tile<2xi32>>, %second: channel<tile<2xi32>>) {
   %value$2 = scalar.constant 64 : i32
@@ -65,9 +65,9 @@ pipeline.def public target(@construction) @publish_widths() run(%first: channel<
 // Applicability uses the worker target while operand facts preserve both
 // construction and worker queries. Exact calls and abstract demands agree.
 // RUN: pass select-templates{mode=final,rewrite=inline},canonicalize
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 template.decl @combined_width(%construction: index, %worker: index) -> (index)
 
@@ -92,9 +92,9 @@ pipeline.def public target(@construction) @publish_combined() run(%output: chann
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 template.decl @combined_width(%construction: index, %worker: index) -> (index)
 
@@ -111,15 +111,16 @@ pipeline.def public target(@construction) @publish_combined() run(%output: chann
 
 // ====
 
-// An unresolved execution target cannot select the construction provider.
+// An explicit unresolved target cannot select the construction provider.
+// An omitted target inherits that provider from its enclosing environment.
 // RUN: pass select-templates
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
 target.decl @worker
 
-template.decl @wave_value() -> (i32)
+template.decl @width_value() -> (i32)
 
-template.def<@wave_value> requires [#target.subgroup.size<64>] @wave64() -> (i32) {
+template.def<@width_value> requires [#target.subgroup.size<64>] @width64() -> (i32) {
   %value = scalar.constant 64 : i32
   template.return %value : i32
 }
@@ -127,26 +128,26 @@ template.def<@wave_value> requires [#target.subgroup.size<64>] @wave64() -> (i32
 pipeline.def public target(@construction) @publish_unknown() run(%first: channel<tile<1xi32>>, %second: channel<tile<1xi32>>) {
   pipeline.strand target(@worker) workers([0], [1], [1]) {
     %write, %record = channel.reserve %first : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %value = template.apply<@wave_value>() : () -> (i32)
+    %value = template.apply<@width_value>() : () -> (i32)
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
   pipeline.strand workers([1], [1], [1]) {
     %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %value = template.apply<@wave_value>() : () -> (i32)
+    %value = template.apply<@width_value>() : () -> (i32)
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
 target.decl @worker
 
-template.decl @wave_value() -> (i32)
+template.decl @width_value() -> (i32)
 
-template.def<@wave_value> requires [#target.subgroup.size<64>] @wave64() -> (i32) {
+template.def<@width_value> requires [#target.subgroup.size<64>] @width64() -> (i32) {
   %value = scalar.constant 64 : i32
   template.return %value : i32
 }
@@ -154,13 +155,13 @@ template.def<@wave_value> requires [#target.subgroup.size<64>] @wave64() -> (i32
 pipeline.def public target(@construction) @publish_unknown() run(%first: channel<tile<1xi32>>, %second: channel<tile<1xi32>>) {
   pipeline.strand target(@worker) workers([0], [1], [1]) {
     %write, %record = channel.reserve %first : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %value = template.apply<@wave_value>() : () -> (i32)
+    %value = template.apply<@width_value>() : () -> (i32)
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
   pipeline.strand workers([1], [1], [1]) {
     %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %value = template.apply<@wave_value>() : () -> (i32)
+    %value = template.call @width64() : () -> (i32)
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }

@@ -11,6 +11,8 @@
 #include "loom/ops/op_registry.h"
 #include "loom/ops/pipeline/ops.h"
 #include "loom/ops/target/ops.h"
+#include "loom/ops/test/ops.h"
+#include "loom/ops/test/registry.h"
 #include "loom/pass/value_facts.h"
 #include "loom/rewrite/rewriter.h"
 
@@ -24,6 +26,7 @@ class TargetScopeTest : public ::testing::Test {
                                      &block_pool_);
     loom_context_initialize(iree_allocator_system(), &context_);
     IREE_ASSERT_OK(loom_op_registry_register_all_dialects(&context_));
+    IREE_ASSERT_OK(loom_test_dialect_register(&context_));
     IREE_ASSERT_OK(loom_context_finalize(&context_));
     IREE_ASSERT_OK(loom_module_allocate(&context_, IREE_SV("target_scope"),
                                         &block_pool_, nullptr,
@@ -83,11 +86,9 @@ class TargetScopeTest : public ::testing::Test {
                             loom_symbol_ref_t* out_symbol) {
     IREE_RETURN_IF_ERROR(AddSymbol(name, out_symbol));
     loom_op_t* target = nullptr;
-    return loom_target_generic_build(
-        &builder_,
-        LOOM_TARGET_GENERIC_BUILD_FLAG_HAS_SUBGROUP_SIZE |
-            LOOM_TARGET_GENERIC_BUILD_FLAG_HAS_ABI,
-        LOOM_TARGET_GENERIC_KIND_REFERENCE, *out_symbol,
+    return loom_test_target_build(
+        &builder_, LOOM_TEST_TARGET_BUILD_FLAG_HAS_SUBGROUP_SIZE,
+        LOOM_TEST_TARGET_KIND_LOW_CORE, *out_symbol,
         /*codegen_format=*/0, /*artifact_format=*/0,
         /*default_pointer_bitwidth=*/0, /*index_bitwidth=*/0,
         /*offset_bitwidth=*/0,
@@ -102,14 +103,14 @@ class TargetScopeTest : public ::testing::Test {
         /*memory_space_workgroup=*/0,
         /*memory_space_constant=*/0, /*memory_space_private=*/0,
         /*memory_space_host=*/0,
-        /*memory_space_descriptor=*/0, LOOM_TARGET_ABI_HAL_KERNEL,
+        /*memory_space_descriptor=*/0, /*abi=*/0,
         /*export_symbol=*/0, /*linkage=*/0, /*contract_set_key=*/0,
         /*contract_feature_bits=*/0, LOOM_LOCATION_UNKNOWN, &target);
   }
 
   // Allocation backing for the module and analysis scopes.
   iree_arena_block_pool_t block_pool_ = {};
-  // Registered production operation schemas.
+  // Registered production and test operation schemas.
   loom_context_t context_ = {};
   // Owned valid pipeline source fixture.
   loom_module_t* module_ = nullptr;
@@ -157,6 +158,7 @@ TEST_F(TargetScopeTest, RebindingRegionRefreshesFactsBeforeQueuedRewrites) {
   EXPECT_EQ(loom_value_fact_table_lookup(table, result).range_lo, 64);
   IREE_ASSERT_OK(
       loom_rewriter_set_attr(&rewriter, strand_, 0, loom_attr_absent()));
+  // The enclosing analysis scope has no supplied target facts.
   EXPECT_FALSE(
       loom_value_facts_is_exact(loom_value_fact_table_lookup(table, result)));
   loom_rewriter_deinitialize(&rewriter);

@@ -1,9 +1,9 @@
 // Construction and worker queries resolve independently. Capturing the
 // construction result preserves that value instead of reinterpreting its target.
 // RUN: pass cse,canonicalize,cse
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 pipeline.def public target(@construction) @publish_widths() run(%output: channel<tile<2xi32>>) {
   %construction_width = target.subgroup.size : index
@@ -19,9 +19,9 @@ pipeline.def public target(@construction) @publish_widths() run(%output: channel
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 pipeline.def public target(@construction) @publish_widths() run(%output: channel<tile<2xi32>>) {
   %construction_value = scalar.constant 64 : i32
@@ -36,10 +36,10 @@ pipeline.def public target(@construction) @publish_widths() run(%output: channel
 
 // ====
 
-// An unresolved or as-yet-unbound worker must not borrow the construction
-// target's subgroup size. Ordinary integer facts still propagate in its body.
+// An explicit unresolved target stays independent. An omitted target inherits
+// the construction environment. Ordinary integer facts propagate in both.
 // RUN: pass canonicalize
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
 target.decl @unresolved
 
@@ -63,7 +63,7 @@ pipeline.def public target(@construction) @preserve_unknown_widths() run(%first:
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
 target.decl @unresolved
 
@@ -77,8 +77,7 @@ pipeline.def public target(@construction) @preserve_unknown_widths() run(%first:
   }
   pipeline.strand workers([1], [1], [1]) {
     %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
-    %width = target.subgroup.size : index
-    %value = index.cast %width : index to i32
+    %value = scalar.constant 64 : i32
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
@@ -89,9 +88,9 @@ pipeline.def public target(@construction) @preserve_unknown_widths() run(%first:
 // The worker context propagates through loops and survives removal of a
 // constant conditional. Newly inserted casts and constants retain that context.
 // RUN: pass canonicalize,cse
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 pipeline.def public target(@construction) @nested_worker() run(%output: channel<tile<1xi32>>, %count: index) {
   pipeline.strand target(@worker) workers([0], [1], [1]) {
@@ -115,9 +114,9 @@ pipeline.def public target(@construction) @nested_worker() run(%output: channel<
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 pipeline.def public target(@construction) @nested_worker() run(%output: channel<tile<1xi32>>, %count: index) {
   pipeline.strand target(@worker) workers([0], [1], [1]) {
@@ -137,9 +136,9 @@ pipeline.def public target(@construction) @nested_worker() run(%output: channel<
 // Signed index rewrites use the worker's carrier width too. Source ranges in
 // the full U32 envelope are not signed-positive proofs on a 32-bit worker.
 // RUN: pass cse,canonicalize,cse
-target.generic<reference> @construction {abi = hal_kernel, index_bitwidth = 64}
+test.target<low_core> @construction {index_bitwidth = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, index_bitwidth = 32}
+test.target<low_core> @worker {index_bitwidth = 32}
 
 pipeline.def public target(@construction) @worker_index_carrier() run(%output: channel<tile<2xi64>>, %x: index, %y: index) {
   %high = index.assume %x [range(%x, 2147483648, 2147483663)] : index
@@ -157,9 +156,9 @@ pipeline.def public target(@construction) @worker_index_carrier() run(%output: c
 }
 
 // ----
-target.generic<reference> @construction {abi = hal_kernel, index_bitwidth = 64}
+test.target<low_core> @construction {index_bitwidth = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, index_bitwidth = 32}
+test.target<low_core> @worker {index_bitwidth = 32}
 
 pipeline.def public target(@construction) @worker_index_carrier() run(%output: channel<tile<2xi64>>, %x: index, %y: index) {
   %high = index.assume %x [range(%x, 2147483648, 2147483663)] : index
@@ -180,7 +179,7 @@ pipeline.def public target(@construction) @worker_index_carrier() run(%output: c
 // The construction target may prefer FMA without granting that preference to
 // a worker whose target remains unresolved. Explicit arithmetic remains intact.
 // RUN: pass canonicalize
-amdgpu.target<gfx942> @construction
+test.target<low_core> @construction {contract_set_key = "test.math.prefer_fma"}
 
 target.decl @worker
 
@@ -198,7 +197,7 @@ pipeline.def public target(@construction) @worker_math_policy() run(%output: cha
 }
 
 // ----
-amdgpu.target<gfx942> @construction
+test.target<low_core> @construction {contract_set_key = "test.math.prefer_fma"}
 
 target.decl @worker
 

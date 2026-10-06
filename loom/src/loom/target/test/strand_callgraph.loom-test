@@ -82,9 +82,9 @@ pipeline.def public target(@construction) @publish_widths(%enabled: i1) run(%out
 // preserve the generic helper; bound workers use separate concrete versions.
 // Repeated specialization must reuse those versions.
 // RUN: pass specialize-target-callgraph,specialize-target-callgraph,specialize-target-callgraph,canonicalize
-test.target<low_core> @wave32 {subgroup_size = 32}
+test.target<low_core> @width32 {subgroup_size = 32}
 
-test.target<low_core> @wave64 {subgroup_size = 64}
+test.target<low_core> @width64 {subgroup_size = 64}
 
 target.decl @unknown
 
@@ -94,14 +94,14 @@ func.def noinline @width() -> (index) {
 }
 
 pipeline.def public @publish_widths() run(%first: channel<tile<1xi32>>, %second: channel<tile<1xi32>>, %third: channel<tile<1xi32>>, %fourth: channel<tile<1xi32>>) {
-  pipeline.strand target(@wave32) workers([0], [1], [1]) {
+  pipeline.strand target(@width32) workers([0], [1], [1]) {
     %write, %record = channel.reserve %first : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
     %width = func.call @width() : () -> (index)
     %value = index.cast %width : index to i32
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
-  pipeline.strand target(@wave64) workers([1], [1], [1]) {
+  pipeline.strand target(@width64) workers([1], [1], [1]) {
     %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
     %width = func.call @width() : () -> (index)
     %value = index.cast %width : index to i32
@@ -125,9 +125,9 @@ pipeline.def public @publish_widths() run(%first: channel<tile<1xi32>>, %second:
 }
 
 // ----
-test.target<low_core> @wave32 {subgroup_size = 32}
+test.target<low_core> @width32 {subgroup_size = 32}
 
-test.target<low_core> @wave64 {subgroup_size = 64}
+test.target<low_core> @width64 {subgroup_size = 64}
 
 target.decl @unknown
 
@@ -147,14 +147,14 @@ func.def noinline @width_spec1() -> (index) {
 }
 
 pipeline.def public @publish_widths() run(%first: channel<tile<1xi32>>, %second: channel<tile<1xi32>>, %third: channel<tile<1xi32>>, %fourth: channel<tile<1xi32>>) {
-  pipeline.strand target(@wave32) workers([0], [1], [1]) {
+  pipeline.strand target(@width32) workers([0], [1], [1]) {
     %write, %record = channel.reserve %first : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
     %width = func.call pure @width_spec1() : () -> (index)
     %value = index.cast %width : index to i32
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
   }
-  pipeline.strand target(@wave64) workers([1], [1], [1]) {
+  pipeline.strand target(@width64) workers([1], [1], [1]) {
     %write, %record = channel.reserve %second : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
     %width = func.call pure @width_spec0() : () -> (index)
     %value = index.cast %width : index to i32
@@ -174,5 +174,145 @@ pipeline.def public @publish_widths() run(%first: channel<tile<1xi32>>, %second:
     %value = index.cast %width : index to i32
     view.store %value, %record[0] : i32, view<1xi32>
     channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+// ====
+
+// A reusable child inherits each caller's target through an omitted strand
+// target. Explicit unresolved targets remain independent within a bound parent.
+// RUN: pass @specialize_targets
+test.target<low_core> @width32 {subgroup_size = 32}
+
+test.target<low_core> @width64 {subgroup_size = 64}
+
+target.decl @unresolved
+
+func.def noinline @width() -> (index) {
+  %width = target.subgroup.size : index
+  func.return %width : index
+}
+
+pipeline.def @publish_width() run(%output: channel<tile<1xi32>>) {
+  pipeline.strand workers([0], [1], [1]) {
+    %write, %record = channel.reserve %output : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %width = func.call @width() : () -> (index)
+    %value = index.cast %width : index to i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+pipeline.def target(@width64) @publish_fixed_width() run(%output: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width(%output) : (channel<tile<1xi32>>)
+}
+
+pipeline.def target(@unresolved) @publish_unknown_width() run(%output: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width(%output) : (channel<tile<1xi32>>)
+}
+
+pipeline.def public target(@width32) @publish_narrow() run(%output: channel<tile<1xi32>>, %fixed: channel<tile<1xi32>>, %other: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width(%output) : (channel<tile<1xi32>>)
+  pipeline.compose @publish_fixed_width(%fixed) : (channel<tile<1xi32>>)
+  pipeline.compose @publish_unknown_width(%other) : (channel<tile<1xi32>>)
+}
+
+pipeline.def public target(@width64) @publish_wide() run(%output: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width(%output) : (channel<tile<1xi32>>)
+}
+
+pass.pipeline<module> @specialize_targets pipeline {
+  for func {
+    where target {
+      canonicalize
+    }
+  }
+  specialize-target-callgraph
+  specialize-target-callgraph
+  for func {
+    canonicalize
+  }
+}
+
+// ----
+test.target<low_core> @width32 {subgroup_size = 32}
+
+test.target<low_core> @width64 {subgroup_size = 64}
+
+target.decl @unresolved
+
+func.def noinline @width() -> (index) {
+  %width = target.subgroup.size : index
+  func.return %width : index
+}
+
+func.def noinline @width_spec0() -> (index) {
+  %width = index.constant 32 : index
+  func.return %width : index
+}
+
+func.def noinline @width_spec1() -> (index) {
+  %width = index.constant 64 : index
+  func.return %width : index
+}
+
+pipeline.def @publish_width() run(%output: channel<tile<1xi32>>) {
+  pipeline.strand workers([0], [1], [1]) {
+    %write, %record = channel.reserve %output : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %width = func.call pure @width() : () -> (index)
+    %value = index.cast %width : index to i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+pipeline.def @publish_width_spec0() run(%output: channel<tile<1xi32>>) {
+  pipeline.strand workers([0], [1], [1]) {
+    %write, %record = channel.reserve %output : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %width = func.call pure @width_spec0() : () -> (index)
+    %value = index.cast %width : index to i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+pipeline.def @publish_width_spec1() run(%output: channel<tile<1xi32>>) {
+  pipeline.strand workers([0], [1], [1]) {
+    %write, %record = channel.reserve %output : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %width = func.call pure @width_spec1() : () -> (index)
+    %value = index.cast %width : index to i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+pipeline.def target(@width64) @publish_fixed_width() run(%output: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width_spec1(%output) : (channel<tile<1xi32>>)
+}
+
+pipeline.def target(@unresolved) @publish_unknown_width() run(%output: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width(%output) : (channel<tile<1xi32>>)
+}
+
+pipeline.def public target(@width32) @publish_narrow() run(%output: channel<tile<1xi32>>, %fixed: channel<tile<1xi32>>, %other: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width_spec0(%output) : (channel<tile<1xi32>>)
+  pipeline.compose @publish_fixed_width(%fixed) : (channel<tile<1xi32>>)
+  pipeline.compose @publish_unknown_width(%other) : (channel<tile<1xi32>>)
+}
+
+pipeline.def public target(@width64) @publish_wide() run(%output: channel<tile<1xi32>>) {
+  pipeline.compose @publish_width_spec1(%output) : (channel<tile<1xi32>>)
+}
+
+pass.pipeline<module> @specialize_targets pipeline {
+  for func {
+    where target {
+      canonicalize
+    }
+  }
+  specialize-target-callgraph
+  specialize-target-callgraph
+  for func {
+    canonicalize
   }
 }

@@ -496,7 +496,8 @@ iree_status_t loom_value_fact_table_seed_root_target_scope(
 
 // Resolves direct child region targets once at their owning operation. Ordinary
 // structured regions inherit the operation's retained context; independently
-// executing regions use their own authored target, or remain unresolved.
+// executing regions use an explicit target or inherit the enclosing target
+// when their target attribute is absent.
 iree_status_t loom_value_fact_table_seed_nested_target_scopes(
     loom_value_fact_table_t* table, const loom_module_t* module,
     const loom_op_t* op);

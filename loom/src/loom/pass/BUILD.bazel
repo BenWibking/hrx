@@ -399,6 +399,7 @@ loom_cc_test(
         "//loom/src/loom/ops:op_registry",
         "//loom/src/loom/ops/pipeline",
         "//loom/src/loom/ops/target",
+        "//loom/src/loom/ops/test",
         "//loom/src/loom/rewrite:rewriter",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",

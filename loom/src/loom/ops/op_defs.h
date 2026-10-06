@@ -725,8 +725,8 @@ typedef struct loom_region_descriptor_t {
   // or its owning control-flow interface.
   loom_region_execution_t execution;
   // Target-symbol attribute index plus one for an independently executing
-  // region. Zero inherits the surrounding execution context. An absent target
-  // attribute starts an unresolved context until worker binding selects it.
+  // region. Zero or an absent attribute inherits the enclosing target. An
+  // explicit unresolved target remains independent of that environment.
   uint8_t execution_target_attr_index_plus_one;
 } loom_region_descriptor_t;
 

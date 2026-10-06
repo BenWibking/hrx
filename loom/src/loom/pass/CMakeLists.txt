@@ -442,6 +442,7 @@ loom_cc_test(
     loom::ops::op_registry
     loom::ops::pipeline
     loom::ops::target
+    loom::ops::test
     loom::rewrite::rewriter
 )
 

@@ -1,9 +1,9 @@
 // A captured construction query and an independent worker query name different
 // execution targets, even though their op syntax and result types are identical.
 // RUN: pass cse
-target.generic<reference> @construction {abi = hal_kernel, subgroup_size = 64}
+test.target<low_core> @construction {subgroup_size = 64}
 
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 pipeline.def public target(@construction) @query_worker() run(%output: channel<tile<2xi32>>) {
   %construction_width = target.subgroup.size : index
@@ -36,7 +36,7 @@ func.def @unused_query() {
 
 // A resolved query still folds, allowing ordinary constant propagation and CSE.
 // RUN: pass canonicalize,cse
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 func.def target(@worker) @resolved_queries() -> (index, index) {
   %first = target.subgroup.size : index
@@ -45,7 +45,7 @@ func.def target(@worker) @resolved_queries() -> (index, index) {
 }
 
 // ----
-target.generic<reference> @worker {abi = hal_kernel, subgroup_size = 32}
+test.target<low_core> @worker {subgroup_size = 32}
 
 func.def target(@worker) @resolved_queries() -> (index, index) {
   %first = index.constant 32 : index
