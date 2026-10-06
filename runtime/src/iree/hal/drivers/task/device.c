@@ -24,6 +24,7 @@
 #include "iree/hal/drivers/task/queue/queue.h"
 #include "iree/hal/drivers/task/semaphore.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
+#include "iree/hal/memory/maintenance_thread.h"
 #include "iree/hal/utils/file_registry.h"
 
 // Queue indices are encoded in eight bits of an async frontier axis.
@@ -74,6 +75,9 @@ typedef struct iree_hal_task_device_t {
 
   // Shared notification offered to explicitly created queue-allocation pools.
   iree_async_notification_t* pool_notification;
+
+  // Shared placement-local memory worker independent of execution callbacks.
+  iree_hal_memory_maintenance_t* memory_maintenance;
 
   // Proactor pool for async I/O. Retained for the lifetime of the device to
   // ensure proactor threads outlive all device resources (semaphores, etc.).
@@ -342,6 +346,16 @@ iree_status_t iree_hal_task_device_create(
                                             IREE_ASYNC_NOTIFICATION_FLAG_NONE,
                                             &device->pool_notification);
   }
+  if (iree_status_is_ok(status)) {
+    // Completion callbacks can synchronously destroy pools. Their cleanup
+    // cannot depend on progress by this device's execution workers.
+    iree_thread_affinity_t memory_affinity = {0};
+    if (default_node_id != IREE_NUMA_NODE_ANY) {
+      iree_thread_affinity_set_group_any(default_node_id, &memory_affinity);
+    }
+    status = iree_hal_memory_maintenance_thread_create(
+        memory_affinity, host_allocator, &device->memory_maintenance);
+  }
 
   if (iree_status_is_ok(status)) {
     const iree_hal_device_queue_spec_t* queue_spec =
@@ -449,6 +463,7 @@ static void iree_hal_task_device_destroy(iree_hal_device_t* base_device) {
   }
 
   iree_hal_slab_provider_release(device->pool_slab_provider);
+  iree_hal_memory_maintenance_release(device->memory_maintenance);
   iree_async_notification_release(device->pool_notification);
   iree_hal_allocator_release(device->device_allocator);
   iree_hal_channel_provider_release(device->channel_provider);
@@ -744,6 +759,7 @@ static iree_status_t iree_hal_task_device_query_queue_pool_backend(
   iree_hal_task_device_t* device = iree_hal_task_device_cast(base_device);
   out_backend->slab_provider = device->pool_slab_provider;
   out_backend->notification = device->pool_notification;
+  out_backend->maintenance = device->memory_maintenance;
   out_backend->epoch_query = (iree_hal_pool_epoch_query_t){
       .fn = iree_hal_task_device_query_pool_epoch,
       .user_data = device,

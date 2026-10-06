@@ -74,7 +74,7 @@ class TransientBufferTest : public CtsTestBase<> {
     options.asan = backend.asan;
     IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
         options, backend.slab_provider, backend.notification,
-        backend.frontier_tracker, iree_allocator_system(),
+        backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
         transient_pool_.out()));
   }
 

@@ -303,6 +303,8 @@ iree_runtime_cc_library(
         "//runtime/src/iree/hal",
         "//runtime/src/iree/hal/drivers/vulkan/device:library",
         "//runtime/src/iree/hal/drivers/vulkan/util:libvulkan",
+        "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/hal/memory:maintenance_thread",
         "//runtime/src/iree/hal/memory:passthrough_pool",
         "//runtime/src/iree/hal/memory:slab_provider",
         "//runtime/src/iree/hal/memory:tlsf_pool",

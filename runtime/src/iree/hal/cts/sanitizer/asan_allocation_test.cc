@@ -310,7 +310,8 @@ TEST_P(AsanAllocationTest, QueueDeallocaReleaseReportsAfterSignal) {
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, iree_allocator_system(), pool.out()));
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      pool.out()));
 
   iree_hal_buffer_params_t params = AsanQueueAllocaBufferParams();
   params.queue_family_affinity = iree_hal_make_queue_family_affinity(
@@ -319,32 +320,44 @@ TEST_P(AsanAllocationTest, QueueDeallocaReleaseReportsAfterSignal) {
       /*.params=*/params,
       /*.allocation_size=*/kAsanAllocationBufferLength,
   };
-  Ref<iree_hal_buffer_t> buffer;
-  SemaphoreList empty_wait;
-  SemaphoreList alloca_signal(device(), {0}, {1});
-  IREE_ASSERT_OK(iree_hal_queue_alloca(queue, empty_wait, alloca_signal, pool,
-                                       /*request_count=*/1, &request,
-                                       buffer.out()));
-  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
-      alloca_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  for (uint64_t gate_value : {1u, 0u}) {
+    SCOPED_TRACE(gate_value);
+    Ref<iree_hal_buffer_t> buffer;
+    SemaphoreList empty_wait;
+    SemaphoreList alloca_signal(device(), {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_alloca(queue, empty_wait, alloca_signal, pool,
+                                         /*request_count=*/1, &request,
+                                         buffer.out()));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        alloca_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
-  uint64_t stale_address = 0;
-  IREE_ASSERT_OK(ExportDeviceAddress(buffer, &stale_address));
-  ASSERT_NE(stale_address, 0u);
+    uint64_t stale_address = 0;
+    IREE_ASSERT_OK(ExportDeviceAddress(buffer, &stale_address));
+    ASSERT_NE(stale_address, 0u);
 
-  SemaphoreList dealloca_signal(device(), {0}, {1});
-  iree_hal_buffer_t* dealloca_buffer = buffer;
-  IREE_ASSERT_OK(iree_hal_queue_dealloca(queue, alloca_signal, dealloca_signal,
-                                         /*buffer_count=*/1, &dealloca_buffer));
-  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
-      dealloca_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    SemaphoreList dealloca_signal(device(), {0}, {1});
+    iree_hal_buffer_t* dealloca_buffer = buffer;
+    // Exercise both immediate capture and wait-before-signal deferral. The
+    // already-completed allocation remains live until this last-use edge.
+    SemaphoreList last_use(device(), {gate_value}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(queue, last_use, dealloca_signal,
+                                           /*buffer_count=*/1,
+                                           &dealloca_buffer));
+    if (gate_value == 0) {
+      EXPECT_FALSE(iree_hal_semaphore_list_poll(dealloca_signal));
+      IREE_ASSERT_OK(iree_hal_semaphore_list_signal(last_use, nullptr));
+    }
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        dealloca_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
-  recorder()->Reset();
-  IREE_ASSERT_OK(DispatchAsanAllocationRawAddress(
-      device(), queue, executable(), stale_address, kAsanAllocationHookLoad1,
-      /*access_length=*/1));
-  ExpectAsanReport(/*expected_count=*/1, IREE_HAL_DEVICE_ASAN_ACCESS_KIND_READ,
-                   1, kAsanReportExpectationFlagShadowPoisoned);
+    recorder()->Reset();
+    IREE_ASSERT_OK(DispatchAsanAllocationRawAddress(
+        device(), queue, executable(), stale_address, kAsanAllocationHookLoad1,
+        /*access_length=*/1));
+    ExpectAsanReport(/*expected_count=*/1,
+                     IREE_HAL_DEVICE_ASAN_ACCESS_KIND_READ, 1,
+                     kAsanReportExpectationFlagShadowPoisoned);
+  }
 }
 
 CTS_REGISTER_EXECUTABLE_TEST_SUITE(AsanAllocationTest);

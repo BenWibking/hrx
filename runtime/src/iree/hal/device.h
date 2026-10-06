@@ -37,6 +37,8 @@ extern "C" {
 // Types and Enums
 //===----------------------------------------------------------------------===//
 
+typedef struct iree_hal_memory_maintenance_t iree_hal_memory_maintenance_t;
+
 // An opaque driver-specific handle to identify different devices.
 typedef uintptr_t iree_hal_device_id_t;
 
@@ -316,6 +318,9 @@ typedef struct iree_hal_queue_pool_backend_t {
 
   // Borrowed group completion tracker for reservation reuse dependencies.
   iree_async_frontier_tracker_t* frontier_tracker;
+
+  // Borrowed placement-local cold owner shared by pools in the memory domain.
+  iree_hal_memory_maintenance_t* maintenance;
 
   // Optional host-side epoch query for zero-sync block reuse.
   iree_hal_pool_epoch_query_t epoch_query;

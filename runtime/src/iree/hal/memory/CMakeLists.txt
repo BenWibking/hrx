@@ -198,17 +198,48 @@ iree_cc_library(
 
 iree_cc_library(
   NAME
+    maintenance
+  HDRS
+    "maintenance.h"
+  SRCS
+    "maintenance.c"
+  DEPS
+    iree::base
+    iree::base::threading
+    iree::hal
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
+    maintenance_thread
+  HDRS
+    "maintenance_thread.h"
+  SRCS
+    "maintenance_thread.c"
+  DEPS
+    ::maintenance
+    iree::base
+    iree::base::threading
+    iree::base::threading::thread
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     passthrough_pool
   HDRS
     "passthrough_pool.h"
   SRCS
     "passthrough_pool.c"
   DEPS
+    ::maintenance
     ::slab_provider
     ::tracing
     iree::async
     iree::base
     iree::base::internal
+    iree::base::threading
     iree::hal
   PUBLIC
 )
@@ -220,6 +251,8 @@ iree_cc_test(
     "passthrough_pool_test.cc"
   DEPS
     ::cpu_slab_provider
+    ::maintenance
+    ::maintenance_thread
     ::passthrough_pool
     iree::async
     iree::async::platform

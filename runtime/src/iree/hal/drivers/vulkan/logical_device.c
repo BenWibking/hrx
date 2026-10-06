@@ -920,8 +920,15 @@ static iree_status_t iree_hal_vulkan_logical_device_assign_topology_info(
     }
   }
   if (iree_status_is_ok(status)) {
+    iree_thread_affinity_t memory_affinity = {0};
+    const uint32_t node_id =
+        iree_async_proactor_pool_node_id(device->proactor_pool, 0);
+    if (node_id != UINT32_MAX) {
+      iree_thread_affinity_set_group_any(node_id, &memory_affinity);
+    }
     status = iree_hal_vulkan_allocator_initialize_default_pools(
-        device->device_allocator, device->proactor, frontier_tracker);
+        device->device_allocator, device->proactor, frontier_tracker,
+        memory_affinity);
   }
   if (!iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < assigned_queue_count; ++i) {

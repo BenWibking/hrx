@@ -19,6 +19,7 @@
 #include "iree/hal/drivers/amdgpu/util/epoch_signal_table.h"
 #include "iree/hal/drivers/amdgpu/util/topology.h"
 #include "iree/hal/drivers/amdgpu/util/vmem.h"
+#include "iree/hal/memory/maintenance_thread.h"
 #include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 
@@ -726,6 +727,14 @@ iree_hal_amdgpu_physical_device_initialize_default_pool_resources(
       proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE,
       &out_physical_device->default_pool_notification));
 
+  iree_thread_affinity_t affinity = {0};
+  if (out_physical_device->host_numa_node != UINT32_MAX) {
+    iree_thread_affinity_set_group_any(out_physical_device->host_numa_node,
+                                       &affinity);
+  }
+  IREE_RETURN_IF_ERROR(iree_hal_memory_maintenance_thread_create(
+      affinity, host_allocator, &out_physical_device->memory_maintenance));
+
   char trace_name[64] = {0};
   iree_string_view_t slab_trace_name = iree_hal_amdgpu_format_pool_trace_name(
       trace_name, IREE_ARRAYSIZE(trace_name), "default-slab", device_ordinal);
@@ -1246,7 +1255,8 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
     status = iree_hal_passthrough_pool_create(
         oversized_pool_options, slab_provider,
         physical_device->default_pool_notification, frontier_tracker,
-        host_allocator, out_oversized_pool);
+        physical_device->memory_maintenance, host_allocator,
+        out_oversized_pool);
   }
   return status;
 }
@@ -1644,6 +1654,7 @@ void iree_hal_amdgpu_physical_device_deinitialize(
   iree_hal_slab_provider_release(physical_device->default_slab_provider);
   iree_hal_slab_provider_release(physical_device->default_host_slab_provider);
   iree_async_notification_release(physical_device->default_pool_notification);
+  iree_hal_memory_maintenance_release(physical_device->memory_maintenance);
 
   iree_hal_amdgpu_staging_pool_deinitialize(
       &physical_device->file_staging_pool);

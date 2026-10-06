@@ -3089,6 +3089,7 @@ static iree_status_t iree_hal_amdgpu_logical_device_query_queue_pool_backend(
       logical_device->physical_devices[queue_family_ordinal];
   out_backend->slab_provider = physical_device->default_slab_provider;
   out_backend->notification = physical_device->default_pool_notification;
+  out_backend->maintenance = physical_device->memory_maintenance;
   out_backend->epoch_query = (iree_hal_pool_epoch_query_t){
       .fn = iree_hal_amdgpu_logical_device_query_pool_epoch,
       .user_data = logical_device,

@@ -55,7 +55,8 @@ static iree_status_t iree_hal_replay_executor_require_queue_allocation_pool(
   iree_hal_pool_t* pool = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
       options, pool_backend.slab_provider, pool_backend.notification,
-      pool_backend.frontier_tracker, executor->host_allocator, &pool));
+      pool_backend.frontier_tracker, pool_backend.maintenance,
+      executor->host_allocator, &pool));
   queue_entry->queue_allocation_pool = pool;
   *out_pool = pool;
   return iree_ok_status();

@@ -17,6 +17,7 @@
 #include "iree/hal/drivers/vulkan/queue.h"
 #include "iree/hal/drivers/vulkan/slab_provider.h"
 #include "iree/hal/drivers/vulkan/sparse_buffer.h"
+#include "iree/hal/memory/maintenance_thread.h"
 #include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 
@@ -179,6 +180,9 @@ struct iree_hal_vulkan_allocator_t {
 
   // Shared notification published when default-pool reservations are released.
   iree_async_notification_t* default_pool_notification;
+
+  // Shared cold memory worker independent of execution queue failure/lifetime.
+  iree_hal_memory_maintenance_t* memory_maintenance;
 
   // Default queue-pool backend provider for caller-created pools.
   iree_hal_slab_provider_t* default_queue_slab_provider;
@@ -364,6 +368,7 @@ iree_status_t iree_hal_vulkan_allocator_query_queue_pool_backend(
       iree_hal_vulkan_allocator_cast(base_allocator);
   out_backend->slab_provider = allocator->default_queue_slab_provider;
   out_backend->notification = allocator->default_pool_notification;
+  out_backend->maintenance = allocator->memory_maintenance;
   out_backend->epoch_query = iree_hal_pool_epoch_query_null();
   return iree_ok_status();
 }
@@ -687,7 +692,8 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
     status = iree_hal_passthrough_pool_create(
         oversized_options, out_pool_pair->slab_provider,
         allocator->default_pool_notification, frontier_tracker,
-        allocator->host_allocator, &out_pool_pair->oversized_pool);
+        allocator->memory_maintenance, allocator->host_allocator,
+        &out_pool_pair->oversized_pool);
   }
 
   if (!iree_status_is_ok(status)) {
@@ -715,11 +721,14 @@ void iree_hal_vulkan_allocator_deinitialize_default_pools(
   allocator->default_queue_slab_provider = NULL;
   iree_async_notification_release(allocator->default_pool_notification);
   allocator->default_pool_notification = NULL;
+  iree_hal_memory_maintenance_release(allocator->memory_maintenance);
+  allocator->memory_maintenance = NULL;
 }
 
 iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
     iree_hal_allocator_t* base_allocator, iree_async_proactor_t* proactor,
-    iree_async_frontier_tracker_t* frontier_tracker) {
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_thread_affinity_t memory_affinity) {
   iree_hal_vulkan_allocator_t* allocator =
       iree_hal_vulkan_allocator_cast(base_allocator);
   IREE_TRACE_ZONE_BEGIN(z0);
@@ -729,6 +738,11 @@ iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
   iree_status_t status = iree_async_notification_create(
       proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE,
       &allocator->default_pool_notification);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_memory_maintenance_thread_create(
+        memory_affinity, allocator->host_allocator,
+        &allocator->memory_maintenance);
+  }
 
   const VkPhysicalDeviceMemoryProperties* memory_properties =
       &allocator->memory_properties2.memoryProperties;

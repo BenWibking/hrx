@@ -293,6 +293,8 @@ typedef struct iree_hal_amdgpu_physical_device_t {
 
   // Default queue-allocation pool notification for this physical device.
   iree_async_notification_t* default_pool_notification;
+  // Shared cold memory worker independent of execution queue failure/lifetime.
+  iree_hal_memory_maintenance_t* memory_maintenance;
   // Slab provider backing default and caller-created pools for this domain.
   iree_hal_slab_provider_t* default_slab_provider;
   // Host-local slab provider for mappable queue allocation transients.

@@ -2209,7 +2209,8 @@ TEST(ReplayExecuteTest, ExecutesRecordedQueueAlloca) {
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       pool_options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, iree_allocator_system(), &pool));
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      &pool));
 
   iree_hal_semaphore_t* signal_semaphore = nullptr;
   IREE_ASSERT_OK(iree_hal_semaphore_create(

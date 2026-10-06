@@ -410,6 +410,8 @@ iree_cc_library(
     iree::hal::drivers::amdgpu::util::shadow_map
     iree::hal::drivers::amdgpu::util::topology
     iree::hal::drivers::amdgpu::util::vmem
+    iree::hal::memory::maintenance
+    iree::hal::memory::maintenance_thread
     iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
@@ -659,6 +661,7 @@ iree_cc_test(
     iree::hal::drivers::amdgpu::util::info
     iree::hal::drivers::amdgpu::util::topology
     iree::hal::drivers::amdgpu::util::vmem
+    iree::hal::memory::maintenance
     iree::testing::gtest
     iree::testing::gtest_main
   LABELS

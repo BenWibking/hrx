@@ -5,6 +5,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <array>
+#include <condition_variable>
+#include <mutex>
 #include <thread>
 
 #include "iree/async/frontier_tracker.h"
@@ -14,7 +16,10 @@
 #include "iree/hal/device_group.h"
 #include "iree/hal/drivers/task/device.h"
 #include "iree/hal/drivers/task/queue/queue.h"
+#include "iree/hal/memory/cpu_slab_provider.h"
 #include "iree/hal/memory/fixed_block_pool.h"
+#include "iree/hal/memory/maintenance.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -31,9 +36,11 @@ enum class PoolKind { kFixedBlock, kTlsf };
 
 class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
  protected:
+  virtual iree_host_size_t WorkerCount() const { return 2; }
+
   void SetUp() override {
     iree_task_topology_t topology;
-    iree_task_topology_initialize_from_group_count(2, &topology);
+    iree_task_topology_initialize_from_group_count(WorkerCount(), &topology);
     iree_task_executor_options_t executor_options;
     iree_task_executor_options_initialize(&executor_options);
     iree_status_t status = iree_task_executor_create(
@@ -428,6 +435,372 @@ TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
 }
 
 INSTANTIATE_TEST_SUITE_P(NotificationOwners, TaskQueueAllocaTest,
+                         ::testing::Values(0, 1));
+
+// Observes the real CPU provider's next native allocation and final free.
+// Provider metadata and buffer wrappers continue using the same allocator;
+// only the explicitly captured allocation participates in the observation.
+class NativeBackingObserver {
+ public:
+  iree_allocator_t allocator() { return {this, Control}; }
+
+  void ObserveNextAllocation() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    observe_next_allocation_ = true;
+  }
+
+  void AwaitRelease() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    condition_.wait(lock, [&] { return released_; });
+  }
+
+  std::thread::id release_thread() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return release_thread_;
+  }
+
+  bool released() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return released_;
+  }
+
+ private:
+  static iree_status_t Control(void* self, iree_allocator_command_t command,
+                               const void* params, void** inout_pointer) {
+    auto* observer = static_cast<NativeBackingObserver*>(self);
+    bool observed_release = false;
+    if (command == IREE_ALLOCATOR_COMMAND_FREE) {
+      std::lock_guard<std::mutex> lock(observer->mutex_);
+      observed_release = *inout_pointer == observer->allocation_;
+      if (observed_release) {
+        observer->allocation_ = nullptr;
+      }
+    }
+    iree_allocator_t system_allocator = iree_allocator_system();
+    iree_status_t status = system_allocator.ctl(system_allocator.self, command,
+                                                params, inout_pointer);
+    if (iree_status_is_ok(status)) {
+      std::lock_guard<std::mutex> lock(observer->mutex_);
+      if (observed_release) {
+        observer->release_thread_ = std::this_thread::get_id();
+        observer->released_ = true;
+        observer->condition_.notify_all();
+      } else if (command != IREE_ALLOCATOR_COMMAND_FREE &&
+                 observer->observe_next_allocation_) {
+        observer->allocation_ = *inout_pointer;
+        observer->observe_next_allocation_ = false;
+      }
+    }
+    return status;
+  }
+
+  // Protects the selected allocation and its release observation.
+  std::mutex mutex_;
+  // Wakes the test after the underlying native free returns.
+  std::condition_variable condition_;
+  // Selects the next native allocation after provider construction.
+  bool observe_next_allocation_ = false;
+  // Underlying system allocation, before aligned-pointer adjustment.
+  void* allocation_ = nullptr;
+  // True after the selected native allocation has actually been freed.
+  bool released_ = false;
+  // Thread executing that native free.
+  std::thread::id release_thread_;
+};
+
+class TaskQueueNativeRetirementTest : public TaskQueueAllocaTest {
+ protected:
+  // Completion-driven pool destruction must not wait on this sole worker.
+  iree_host_size_t WorkerCount() const override { return 1; }
+
+  void UseNativePool() {
+    iree_hal_queue_pool_backend_t backend = {};
+    IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+        devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
+        &backend));
+    struct OwnerProbe : iree_hal_memory_maintenance_entry_t {
+      // Protects the identity and the callback's final notification access.
+      std::mutex mutex;
+      // Wakes the test after the captured owner runs the probe.
+      std::condition_variable condition;
+      // Identity of the independent memory-domain worker.
+      std::thread::id thread;
+      // Set by the owner under the mutex.
+      bool complete = false;
+    } probe;
+    probe.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
+      auto* probe = static_cast<OwnerProbe*>(entry);
+      std::lock_guard<std::mutex> lock(probe->mutex);
+      probe->thread = std::this_thread::get_id();
+      probe->complete = true;
+      probe->condition.notify_all();
+    };
+    iree_hal_memory_maintenance_enqueue(backend.maintenance, &probe);
+    {
+      std::unique_lock<std::mutex> lock(probe.mutex);
+      probe.condition.wait(lock, [&] { return probe.complete; });
+      memory_thread_ = probe.thread;
+    }
+    iree_hal_slab_provider_t* provider = nullptr;
+    IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
+        /*min_alignment=*/0, backing_.allocator(), &provider));
+    iree_hal_pool_release(pool_);
+    pool_ = nullptr;
+    iree_status_t status = iree_hal_passthrough_pool_create(
+        {}, provider, backend.notification, backend.frontier_tracker,
+        backend.maintenance, iree_allocator_system(), &pool_);
+    iree_hal_slab_provider_release(provider);
+    IREE_ASSERT_OK(status);
+  }
+
+  // Remains alive through the base fixture's pool and device teardown.
+  NativeBackingObserver backing_;
+  // Identity captured directly from the selected maintenance owner.
+  std::thread::id memory_thread_;
+};
+
+TEST_P(TaskQueueNativeRetirementTest, QueueBytesRetireOnCapturedOwner) {
+  ASSERT_NO_FATAL_FAILURE(UseNativePool());
+  struct OwnerProbe {
+    // Live pool whose trim must be callable from the sole executor worker.
+    iree_hal_pool_t* pool;
+    // Identity observed by the explicit queue host call.
+    std::thread::id executor_thread;
+  } owner_probe = {pool_, {}};
+  const uint64_t args[4] = {};
+  const auto call = iree_hal_make_host_call(
+      [](void* user_data, const uint64_t args[4],
+         iree_hal_host_call_context_t* context) -> iree_status_t {
+        auto* probe = static_cast<OwnerProbe*>(user_data);
+        iree_hal_pool_trim(probe->pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+        probe->executor_thread = std::this_thread::get_id();
+        return iree_ok_status();
+      },
+      &owner_probe);
+  uint64_t first_value = 1;
+  const iree_hal_semaphore_list_t observed = {1, &semaphores_[0], &first_value};
+  IREE_ASSERT_OK(iree_hal_queue_host_call(
+      queues_[GetParam()], iree_hal_semaphore_list_empty(), observed, call,
+      args, IREE_HAL_HOST_CALL_FLAG_NONE));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], first_value));
+
+  iree_hal_pool_reservation_request_t request = {};
+  request.allocation_size = kBlockSize;
+  request.params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  request.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  request.params.usage =
+      IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  request.params.queue_family_affinity = iree_hal_make_queue_family_affinity(0);
+  backing_.ObserveNextAllocation();
+  const iree_hal_semaphore_list_t allocated = {1, &semaphores_[1],
+                                               &first_value};
+  IREE_ASSERT_OK(iree_hal_queue_alloca(queues_[0], observed, allocated, pool_,
+                                       1, &request, &initial_buffers_[0]));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], first_value));
+  uint64_t filled_value = 2;
+  const iree_hal_semaphore_list_t filled = {1, &semaphores_[1], &filled_value};
+  const uint32_t pattern = 0xC0FFEE12u;
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      queues_[0], allocated, filled, initial_buffers_[0], 0, kBlockSize,
+      &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
+  std::array<uint32_t, kBlockSize / sizeof(uint32_t)> actual;
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(initial_buffers_[0], 0, actual.data(),
+                                          sizeof(actual)));
+  for (uint32_t value : actual) {
+    EXPECT_EQ(value, pattern);
+  }
+
+  // Deallocation is explicitly gated; submission order supplies no dependency.
+  uint64_t release_wait_values[] = {filled_value, first_value};
+  const iree_hal_semaphore_list_t release_waits = {2, &semaphores_[1],
+                                                   release_wait_values};
+  uint64_t released_value = 3;
+  const iree_hal_semaphore_list_t released = {1, &semaphores_[1],
+                                              &released_value};
+  IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[0], release_waits, released, 1,
+                                         &initial_buffers_[0]));
+  EXPECT_FALSE(backing_.released());
+  IREE_ASSERT_OK(iree_hal_semaphore_signal(semaphores_[2], first_value,
+                                           /*frontier=*/nullptr));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], released_value));
+  iree_hal_buffer_release(initial_buffers_[0]);
+  initial_buffers_[0] = nullptr;
+  // No subsequent allocation, trim, or destruction drives this native free.
+  backing_.AwaitRelease();
+  EXPECT_EQ(backing_.release_thread(), memory_thread_);
+  EXPECT_NE(backing_.release_thread(), owner_probe.executor_thread);
+  EXPECT_NE(backing_.release_thread(), std::this_thread::get_id());
+}
+
+TEST_P(TaskQueueNativeRetirementTest,
+       BorrowedAddressesRetainCrossQueueHistory) {
+  ASSERT_NO_FATAL_FAILURE(UseNativePool());
+  iree_hal_pool_reservation_request_t request = {};
+  request.allocation_size = kBlockSize;
+  request.params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  request.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  request.params.usage = IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT;
+  backing_.ObserveNextAllocation();
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+      &reservation, &info, &result));
+  IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+      pool_, 1, &request, &reservation, IREE_HAL_POOL_MATERIALIZE_FLAG_NONE,
+      &initial_buffers_[0]));
+  iree_hal_external_buffer_t external = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      initial_buffers_[0], IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external));
+
+  // These host kernels receive borrowed addresses, as native/custom dispatch
+  // arguments can. Their caller explicitly supplies the complete lifetime
+  // frontier; no buffer references or inferred dependencies keep bytes alive.
+  struct Output {
+    // Final user-visible readback copied while the address is still valid.
+    std::array<uint32_t, kBlockSize / sizeof(uint32_t)> words;
+    // Identity of the sole execution worker, independent of native cleanup.
+    std::thread::id executor_thread;
+  } output;
+  const auto call = iree_hal_make_host_call(
+      [](void* user_data, const uint64_t args[4],
+         iree_hal_host_call_context_t* context) -> iree_status_t {
+        auto* output = static_cast<Output*>(user_data);
+        auto* words = reinterpret_cast<uint32_t*>(args[0]);
+        const size_t half_length = output->words.size() / 2;
+        const size_t offset = args[1] * half_length;
+        for (size_t i = 0; i < half_length; ++i) {
+          words[offset + i] = static_cast<uint32_t>(0xCAFE1000u + args[1]);
+        }
+        if (args[1] == 1) {
+          memcpy(output->words.data(), words, sizeof(output->words));
+          output->executor_thread = std::this_thread::get_id();
+        }
+        return iree_ok_status();
+      },
+      &output);
+  IREE_ASYNC_FIXED_FRONTIER_TYPE(PairFrontier, 2);
+  PairFrontier frontier = {};
+  frontier.entry_count = 2;
+  for (size_t i = 0; i < queues_.size(); ++i) {
+    const auto* queue = reinterpret_cast<iree_hal_task_queue_t*>(queues_[i]);
+    // The fixture owns both fresh queues and submits exactly one operation to
+    // each, so completion epoch one identifies these two specific host calls.
+    ASSERT_EQ(iree_atomic_load(&queue->epoch, iree_memory_order_acquire), 0);
+    frontier.entries[i] = {queue->axis, 1};
+    const uint64_t args[4] = {
+        reinterpret_cast<uintptr_t>(external.handle.host_allocation.ptr), i, 0,
+        0};
+    iree_hal_semaphore_t* wait_semaphores[] = {semaphores_[i], semaphores_[2]};
+    uint64_t wait_values[] = {1, 1};
+    const iree_hal_semaphore_list_t waits = {i + 1, wait_semaphores,
+                                             wait_values};
+    uint64_t completed_value = i + 1;
+    const iree_hal_semaphore_list_t completed = {1, &semaphores_[2],
+                                                 &completed_value};
+    IREE_ASSERT_OK(iree_hal_queue_host_call(queues_[i], waits, completed, call,
+                                            args,
+                                            IREE_HAL_HOST_CALL_FLAG_NONE));
+  }
+  iree_hal_pool_release_reservations(
+      pool_, 1, &reservation,
+      iree_async_fixed_frontier_as_const_frontier(&frontier));
+  memset(&frontier, 0, sizeof(frontier));
+  iree_hal_buffer_release(initial_buffers_[0]);
+  initial_buffers_[0] = nullptr;
+  EXPECT_FALSE(backing_.released());
+
+  IREE_ASSERT_OK(iree_hal_semaphore_signal(semaphores_[0], 1,
+                                           /*frontier=*/nullptr));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[2], 1));
+  EXPECT_FALSE(backing_.released());
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.reservation_count, 0u);
+  EXPECT_EQ(stats.bytes_committed, kBlockSize);
+  IREE_ASSERT_OK(iree_hal_semaphore_signal(semaphores_[1], 1,
+                                           /*frontier=*/nullptr));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[2], 2));
+  backing_.AwaitRelease();
+  EXPECT_EQ(backing_.release_thread(), memory_thread_);
+  EXPECT_NE(backing_.release_thread(), output.executor_thread);
+  for (size_t i = 0; i < output.words.size(); ++i) {
+    EXPECT_EQ(output.words[i], 0xCAFE1000u + i / (output.words.size() / 2));
+  }
+}
+
+TEST_P(TaskQueueNativeRetirementTest, CompletionCanDestroyItsPool) {
+  ASSERT_NO_FATAL_FAILURE(UseNativePool());
+  iree_hal_buffer_params_t params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  params.usage =
+      IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  params.queue_family_affinity = iree_hal_make_queue_family_affinity(0);
+  backing_.ObserveNextAllocation();
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(pool_, params, kBlockSize,
+                                               iree_infinite_timeout(),
+                                               &initial_buffers_[0]));
+
+  const uint32_t pattern = 0xDCBA9876u;
+  uint64_t completed_value = 1;
+  const iree_hal_semaphore_list_t filled = {1, &semaphores_[0],
+                                            &completed_value};
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      queues_[0], iree_hal_semaphore_list_empty(), filled, initial_buffers_[0],
+      0, kBlockSize, &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+
+  struct Completion {
+    // Final pool reference, transferred to the accepted host call.
+    iree_hal_pool_t* pool;
+    // Final owned buffer reference after the preceding fill completes.
+    iree_hal_buffer_t* buffer;
+    // Output copied before releasing native storage.
+    std::array<uint32_t, kBlockSize / sizeof(uint32_t)> words;
+    // Task worker that destroys the buffer and pool.
+    std::thread::id thread;
+  } completion = {pool_, initial_buffers_[0], {}, {}};
+  pool_ = nullptr;
+  initial_buffers_[0] = nullptr;
+  const auto call = iree_hal_make_host_call(
+      [](void* user_data, const uint64_t args[4],
+         iree_hal_host_call_context_t* context) -> iree_status_t {
+        auto* completion = static_cast<Completion*>(user_data);
+        completion->thread = std::this_thread::get_id();
+        iree_status_t status = iree_hal_buffer_map_read(
+            completion->buffer, 0, completion->words.data(),
+            sizeof(completion->words));
+        // HRX's async-free terminal cleanup returns the last buffer and can
+        // destroy its now-idle pool on this same execution worker.
+        iree_hal_buffer_release(completion->buffer);
+        iree_hal_pool_trim(completion->pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+        iree_hal_pool_release(completion->pool);
+        return status;
+      },
+      &completion);
+  const uint64_t args[4] = {};
+  const iree_hal_semaphore_list_t completed = {1, &semaphores_[1],
+                                               &completed_value};
+  iree_status_t status = iree_hal_queue_host_call(
+      queues_[0], filled, completed, call, args, IREE_HAL_HOST_CALL_FLAG_NONE);
+  if (!iree_status_is_ok(status)) {
+    pool_ = completion.pool;
+    initial_buffers_[0] = completion.buffer;
+  }
+  IREE_ASSERT_OK(status);
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], completed_value));
+  EXPECT_TRUE(backing_.released());
+  EXPECT_EQ(backing_.release_thread(), memory_thread_);
+  EXPECT_NE(backing_.release_thread(), completion.thread);
+  for (uint32_t value : completion.words) {
+    EXPECT_EQ(value, pattern);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(MemoryOwners, TaskQueueNativeRetirementTest,
                          ::testing::Values(0, 1));
 
 }  // namespace

@@ -5,7 +5,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <array>
+#include <condition_variable>
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 #include "iree/hal/api.h"
@@ -16,6 +18,7 @@
 #include "iree/hal/drivers/amdgpu/util/info.h"
 #include "iree/hal/drivers/amdgpu/util/topology.h"
 #include "iree/hal/drivers/amdgpu/util/vmem.h"
+#include "iree/hal/memory/maintenance.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -290,6 +293,28 @@ static iree_device_size_t OversizedAllocationSize(
       logical_device->physical_devices[0]
           ->default_pool_options.tlsf_options.range_length;
   return tlsf_range_length + 1;
+}
+
+// Observe native quarantine counters only after the already-published cleanup
+// has finished. Logical buffer release does not wait for native retirement.
+static void WaitForMemoryMaintenance(iree_hal_memory_maintenance_t* owner) {
+  struct Barrier : iree_hal_memory_maintenance_entry_t {
+    // Protects completion and the callback's last notification access.
+    std::mutex mutex;
+    // Publishes completion of all preceding native releases.
+    std::condition_variable condition;
+    // Set by the worker while holding the mutex.
+    bool complete = false;
+  } barrier;
+  barrier.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
+    auto* barrier = static_cast<Barrier*>(entry);
+    std::lock_guard<std::mutex> lock(barrier->mutex);
+    barrier->complete = true;
+    barrier->condition.notify_all();
+  };
+  iree_hal_memory_maintenance_enqueue(owner, &barrier);
+  std::unique_lock<std::mutex> lock(barrier.mutex);
+  barrier.condition.wait(lock, [&] { return barrier.complete; });
 }
 
 static const char* QueryHostIncompatibilityReason(
@@ -1105,6 +1130,9 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeDefaultQuarantineRetention) {
       test_device.allocator(), params, allocation_size, &buffer, &ptr));
   iree_hal_buffer_release(buffer);
 
+  WaitForMemoryMaintenance(
+      test_device.logical_device()->physical_devices[0]->memory_maintenance);
+
   asan = QueryAsanObservation(test_device.device());
   EXPECT_GT(asan.quarantine_size, 0u);
   EXPECT_EQ(asan.quarantine_eviction_count, 0u);
@@ -1150,6 +1178,9 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeZeroQuarantineRelease) {
   IREE_ASSERT_OK(AllocateAndExportDevicePointer(
       test_device.allocator(), params, allocation_size, &buffer, &ptr));
   iree_hal_buffer_release(buffer);
+
+  WaitForMemoryMaintenance(
+      test_device.logical_device()->physical_devices[0]->memory_maintenance);
 
   asan = QueryAsanObservation(test_device.device());
   EXPECT_EQ(asan.quarantine_size, 0u);

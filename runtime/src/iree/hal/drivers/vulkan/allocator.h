@@ -9,6 +9,7 @@
 
 #include "iree/async/api.h"
 #include "iree/base/api.h"
+#include "iree/base/threading/affinity.h"
 #include "iree/hal/api.h"
 #include "iree/hal/drivers/vulkan/physical_device.h"
 
@@ -52,7 +53,8 @@ iree_status_t iree_hal_vulkan_allocator_create(
 // |proactor| alive through pool teardown.
 iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
     iree_hal_allocator_t* base_allocator, iree_async_proactor_t* proactor,
-    iree_async_frontier_tracker_t* frontier_tracker);
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_thread_affinity_t memory_affinity);
 
 // Releases the allocator's pools before retiring its group completion state.
 void iree_hal_vulkan_allocator_deinitialize_default_pools(

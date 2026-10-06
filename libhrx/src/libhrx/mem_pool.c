@@ -226,7 +226,8 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
   iree_hal_pool_t* oversized_hal_pool = NULL;
   status = iree_hal_passthrough_pool_create(
       oversized_options, slab_provider, backend.notification,
-      backend.frontier_tracker, iree_allocator_system(), &oversized_hal_pool);
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      &oversized_hal_pool);
   if (!iree_status_is_ok(status)) {
     iree_hal_pool_release(hal_pool);
     if (owns_slab_provider) {

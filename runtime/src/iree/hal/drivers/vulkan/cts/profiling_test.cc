@@ -111,7 +111,8 @@ TEST_P(VulkanProfilingTest,
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       pool_options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, iree_allocator_system(), pool.out()));
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      pool.out()));
   const iree_hal_pool_reservation_request_t request = {
       /*.params=*/params,
       /*.allocation_size=*/kBufferSize,

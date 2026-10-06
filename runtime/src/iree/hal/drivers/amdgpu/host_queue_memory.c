@@ -622,6 +622,184 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_alloca_transaction(
   return status;
 }
 
+// Sanitizer marking is an execution-visible release effect. Its host-side
+// implementation must run after device waits and before the user signals become
+// resolvable by either host waiters or another device queue. Ordinary dealloca
+// can publish causal reservations at submission; this diagnostic path keeps
+// their tokens until the barrier completes and publishes its signals on host.
+typedef struct iree_hal_amdgpu_sanitized_dealloca_t {
+  // Reclaim-owned state, released after the completion action.
+  iree_hal_resource_t resource;
+  // Allocator for this state and the cloned signal list.
+  iree_allocator_t host_allocator;
+  // Queue owning this operation and its profiling identity.
+  iree_hal_amdgpu_host_queue_t* queue;
+  // Source pool, borrowed for the queued allocation lifetimes.
+  iree_hal_pool_t* pool;
+  // User signals published only after the logical release effects complete.
+  iree_hal_semaphore_list_t signal_semaphore_list;
+  // Exact operation epoch assigned before the barrier is published.
+  uint64_t submission_id;
+  // Number of retained buffer roots, zero before submission admission.
+  iree_host_size_t buffer_count;
+  // Retained roots whose allocation epochs are returned on completion.
+  iree_hal_buffer_t* buffers[];
+} iree_hal_amdgpu_sanitized_dealloca_t;
+
+static void iree_hal_amdgpu_sanitized_dealloca_destroy(
+    iree_hal_resource_t* resource) {
+  iree_hal_amdgpu_sanitized_dealloca_t* state =
+      (iree_hal_amdgpu_sanitized_dealloca_t*)resource;
+  for (iree_host_size_t i = 0; i < state->buffer_count; ++i) {
+    iree_hal_buffer_release(state->buffers[i]);
+  }
+  iree_hal_semaphore_list_free(state->signal_semaphore_list,
+                               state->host_allocator);
+  iree_allocator_free(state->host_allocator, state);
+}
+
+static const iree_hal_resource_vtable_t
+    iree_hal_amdgpu_sanitized_dealloca_vtable = {
+        .destroy = iree_hal_amdgpu_sanitized_dealloca_destroy,
+};
+
+static void iree_hal_amdgpu_sanitized_dealloca_committed(
+    void* user_data, const iree_async_frontier_t* queue_frontier,
+    uint64_t submission_id) {
+  iree_hal_amdgpu_sanitized_dealloca_t* state =
+      (iree_hal_amdgpu_sanitized_dealloca_t*)user_data;
+  state->submission_id = submission_id;
+  for (iree_host_size_t i = 0; i < state->buffer_count; ++i) {
+    iree_hal_buffer_t* buffer = state->buffers[i];
+    const iree_hal_buffer_params_t params = {
+        .type = iree_hal_buffer_memory_type(buffer),
+        .access = iree_hal_buffer_allowed_access(buffer),
+        .usage = iree_hal_buffer_allowed_usage(buffer),
+    };
+    iree_hal_amdgpu_host_queue_record_memory_event(
+        state->queue, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_DEALLOCA,
+        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
+        state->pool, params, buffer, /*reservation=*/NULL,
+        iree_hal_buffer_byte_length(buffer), submission_id,
+        /*frontier_entry_count=*/0);
+  }
+}
+
+static void iree_hal_amdgpu_sanitized_dealloca_complete(
+    iree_hal_amdgpu_reclaim_entry_t* entry, void* user_data,
+    const iree_status_t status) {
+  iree_hal_amdgpu_sanitized_dealloca_t* state =
+      (iree_hal_amdgpu_sanitized_dealloca_t*)user_data;
+  if (!iree_status_is_ok(status)) {
+    for (iree_host_size_t i = 0; i < state->buffer_count; ++i) {
+      iree_hal_amdgpu_transient_buffer_abort_dealloca(state->buffers[i]);
+    }
+    iree_hal_semaphore_list_fail(state->signal_semaphore_list,
+                                 iree_status_clone(status));
+    return;
+  }
+  for (iree_host_size_t i = 0; i < state->buffer_count; ++i) {
+    iree_hal_buffer_t* buffer = state->buffers[i];
+    iree_hal_pool_t* source_pool = NULL;
+    iree_hal_pool_reservation_t reservation;
+    iree_hal_amdgpu_transient_buffer_take_dealloca_reservation(
+        buffer, &source_pool, &reservation);
+    iree_hal_amdgpu_transient_buffer_decommit(buffer);
+    // The barrier has completed every prior use. Empty history here records
+    // actual retirement, independent of later queue-frontier publication.
+    iree_hal_pool_release_reservations(source_pool, 1, &reservation,
+                                       /*death_frontier=*/NULL);
+    const iree_hal_buffer_params_t params = {
+        .type = iree_hal_buffer_memory_type(buffer),
+        .access = iree_hal_buffer_allowed_access(buffer),
+        .usage = iree_hal_buffer_allowed_usage(buffer),
+    };
+    iree_hal_amdgpu_host_queue_record_memory_event(
+        state->queue, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE,
+        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
+        source_pool, params, buffer, &reservation,
+        iree_hal_buffer_byte_length(buffer), state->submission_id,
+        /*frontier_entry_count=*/0);
+  }
+  iree_status_t signal_status = iree_hal_semaphore_list_signal(
+      state->signal_semaphore_list, /*frontier=*/NULL);
+  if (!iree_status_is_ok(signal_status)) {
+    iree_hal_semaphore_list_fail(state->signal_semaphore_list, signal_status);
+  }
+}
+
+static iree_status_t iree_hal_amdgpu_host_queue_submit_sanitized_dealloca(
+    iree_hal_amdgpu_host_queue_t* queue,
+    const iree_hal_amdgpu_wait_resolution_t* resolution,
+    iree_hal_semaphore_list_t signal_semaphore_list,
+    const iree_hal_amdgpu_dealloca_transaction_t* transaction,
+    iree_hal_amdgpu_host_queue_submission_flags_t submission_flags,
+    bool* out_ready) {
+  *out_ready = false;
+  iree_host_size_t state_size = 0;
+  IREE_RETURN_IF_ERROR(IREE_STRUCT_LAYOUT(
+      sizeof(iree_hal_amdgpu_sanitized_dealloca_t), &state_size,
+      IREE_STRUCT_FIELD(transaction->buffer_count, iree_hal_buffer_t*, NULL)));
+  iree_hal_amdgpu_sanitized_dealloca_t* state = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_allocator_malloc(queue->host_allocator, state_size, (void**)&state));
+  iree_hal_resource_initialize(&iree_hal_amdgpu_sanitized_dealloca_vtable,
+                               &state->resource);
+  state->host_allocator = queue->host_allocator;
+  state->queue = queue;
+  state->pool = transaction->pool;
+  iree_status_t status = iree_hal_semaphore_list_clone(
+      &signal_semaphore_list, queue->host_allocator,
+      &state->signal_semaphore_list);
+  iree_hal_amdgpu_host_queue_profile_event_info_t profile_event_info =
+      iree_hal_amdgpu_host_queue_dealloca_profile_event_info(transaction);
+  iree_hal_amdgpu_host_queue_barrier_submission_t submission;
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_amdgpu_host_queue_try_begin_barrier_submission(
+        queue, resolution, iree_hal_semaphore_list_empty(),
+        /*operation_resource_count=*/1, &profile_event_info, out_ready,
+        &submission);
+  }
+  if (iree_status_is_ok(status) && *out_ready) {
+    const bool retain_resources = iree_any_bit_set(
+        submission_flags,
+        IREE_HAL_AMDGPU_HOST_QUEUE_SUBMISSION_FLAG_RETAIN_RESOURCES);
+    state->buffer_count = transaction->buffer_count;
+    for (iree_host_size_t i = 0; i < state->buffer_count; ++i) {
+      state->buffers[i] = transaction->buffers[i];
+      if (retain_resources) {
+        iree_hal_buffer_retain(state->buffers[i]);
+      }
+    }
+    iree_hal_resource_t* resources[] = {&state->resource};
+    profile_event_info.submission_id =
+        iree_hal_amdgpu_host_queue_finish_barrier_submission(
+            queue, resolution, iree_hal_semaphore_list_empty(),
+            (iree_hal_amdgpu_reclaim_action_t){
+                .fn = iree_hal_amdgpu_sanitized_dealloca_complete,
+                .user_data = state,
+            },
+            resources, IREE_ARRAYSIZE(resources), &profile_event_info,
+            (iree_hal_amdgpu_host_queue_post_commit_callback_t){
+                .fn = iree_hal_amdgpu_sanitized_dealloca_committed,
+                .user_data = state,
+            },
+            /*resource_set=*/NULL,
+            IREE_HAL_AMDGPU_HOST_QUEUE_SUBMISSION_FLAG_NONE, &submission);
+    iree_hal_amdgpu_host_queue_record_profile_queue_event(
+        queue, resolution, signal_semaphore_list, &profile_event_info);
+    if (!retain_resources) {
+      // The cloned list owns the references needed through host publication.
+      for (iree_host_size_t i = 0; i < signal_semaphore_list.count; ++i) {
+        iree_hal_semaphore_release(signal_semaphore_list.semaphores[i]);
+      }
+    }
+  } else {
+    iree_hal_resource_release(&state->resource);
+  }
+  return status;
+}
+
 iree_status_t iree_hal_amdgpu_host_queue_submit_dealloca(
     iree_hal_amdgpu_host_queue_t* queue,
     const iree_hal_amdgpu_wait_resolution_t* resolution,
@@ -630,6 +808,13 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_dealloca(
     iree_hal_amdgpu_host_queue_submission_flags_t submission_flags,
     bool* out_ready) {
   *out_ready = false;
+  iree_hal_amdgpu_logical_device_t* logical_device =
+      (iree_hal_amdgpu_logical_device_t*)queue->logical_device;
+  if (iree_hal_amdgpu_asan_state_is_enabled(&logical_device->asan)) {
+    return iree_hal_amdgpu_host_queue_submit_sanitized_dealloca(
+        queue, resolution, signal_semaphore_list, transaction, submission_flags,
+        out_ready);
+  }
   iree_hal_amdgpu_host_queue_profile_event_info_t profile_event_info =
       iree_hal_amdgpu_host_queue_dealloca_profile_event_info(transaction);
   iree_hal_amdgpu_host_queue_barrier_submission_t submission;

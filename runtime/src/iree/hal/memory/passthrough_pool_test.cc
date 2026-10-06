@@ -6,16 +6,57 @@
 
 #include "iree/hal/memory/passthrough_pool.h"
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
 #include "iree/async/proactor.h"
 #include "iree/async/proactor_platform.h"
 #include "iree/hal/api.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
+#include "iree/hal/memory/maintenance_thread.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
 namespace {
+
+static iree_hal_memory_maintenance_t* test_maintenance() {
+  static iree_hal_memory_maintenance_t* maintenance = nullptr;
+  if (!maintenance) {
+    IREE_CHECK_OK(iree_hal_memory_maintenance_thread_create(
+        {}, iree_allocator_system(), &maintenance));
+    atexit([] {
+      iree_hal_memory_maintenance_release(maintenance);
+      maintenance = nullptr;
+    });
+  }
+  return maintenance;
+}
+
+// An ordered observation point for tests of asynchronous native retirement.
+// Pool trim itself never waits for work on a shared maintenance executor.
+static void WaitForMaintenance() {
+  struct Barrier : iree_hal_memory_maintenance_entry_t {
+    // Protects completion and the callback's final notification access.
+    std::mutex mutex;
+    // Wakes the observing test after preceding native work finishes.
+    std::condition_variable condition;
+    // Set by the maintenance callback under mutex.
+    bool complete = false;
+  } barrier;
+  barrier.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
+    auto* barrier = static_cast<Barrier*>(entry);
+    std::lock_guard<std::mutex> lock(barrier->mutex);
+    barrier->complete = true;
+    barrier->condition.notify_all();
+  };
+  iree_hal_memory_maintenance_enqueue(test_maintenance(), &barrier);
+  std::unique_lock<std::mutex> lock(barrier.mutex);
+  barrier.condition.wait(lock, [&] { return barrier.complete; });
+}
 
 static iree_async_frontier_tracker_t* test_frontier_tracker() {
   static iree_async_frontier_tracker_t* tracker = nullptr;
@@ -254,14 +295,17 @@ class PassthroughPoolTest : public ::testing::Test {
         /*min_alignment=*/0, allocator_, &slab_provider_));
     IREE_ASSERT_OK(iree_async_notification_create(
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
+    IREE_ASSERT_OK(iree_async_frontier_tracker_create(
+        iree_async_frontier_tracker_options_default(), allocator_, &tracker_));
     iree_hal_passthrough_pool_options_t options = {};
     IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-        options, slab_provider_, notification_, test_frontier_tracker(),
+        options, slab_provider_, notification_, tracker_, test_maintenance(),
         allocator_, &pool_));
   }
 
   void TearDown() override {
     iree_hal_pool_release(pool_);
+    iree_async_frontier_tracker_release(tracker_);
     iree_async_notification_release(notification_);
     iree_hal_slab_provider_release(slab_provider_);
   }
@@ -270,6 +314,8 @@ class PassthroughPoolTest : public ::testing::Test {
   iree_hal_slab_provider_t* slab_provider_ = nullptr;
   iree_async_notification_t* notification_ = nullptr;
   iree_hal_pool_t* pool_ = nullptr;
+  // Independent coordinate space for each test, including terminal failures.
+  iree_async_frontier_tracker_t* tracker_ = nullptr;
 };
 
 static iree_hal_pool_reservation_request_t MakeReservationRequest(
@@ -395,7 +441,7 @@ TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      {}, provider, notification, test_frontier_tracker(),
+      {}, provider, notification, test_frontier_tracker(), test_maintenance(),
       allocations.allocator(), &pool));
 
   // Include a transaction larger than inline staging to cover metadata growth.
@@ -454,6 +500,7 @@ TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
       iree_hal_buffer_release(buffers[i]);
     }
   }
+  WaitForMaintenance();
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool, &stats);
   EXPECT_EQ(stats.exhausted_count, 2u);
@@ -524,6 +571,7 @@ TEST_F(PassthroughPoolTest,
   iree_hal_buffer_release(buffers[0]);
   iree_hal_buffer_release(buffers[1]);
   iree_hal_buffer_release(buffers[2]);
+  WaitForMaintenance();
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.reservation_count, 0u);
@@ -545,8 +593,8 @@ TEST(PassthroughPool, FailedMaterializationTransactionRetainsEveryReservation) {
   iree_hal_passthrough_pool_options_t options = {};
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      options, slab_provider, notification, test_frontier_tracker(), allocator,
-      &pool));
+      options, slab_provider, notification, test_frontier_tracker(),
+      test_maintenance(), allocator, &pool));
 
   const iree_hal_pool_reservation_request_t requests[3] = {
       MakeReservationRequest(64, 16),
@@ -695,9 +743,209 @@ TEST_F(PassthroughPoolTest, BorrowedMaterializationKeepsSlabUntilViewRelease) {
   EXPECT_EQ(stats.slab_count, 1u);
 
   iree_hal_buffer_release(buffer);
+  WaitForMaintenance();
 
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 0u);
+}
+
+TEST_F(PassthroughPoolTest,
+       RetirementCopiesEveryAxisRegisteredAfterAllocation) {
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(AcquireOneReservation(pool_, 4096, 16, nullptr,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &reservation, &info, &result));
+
+  // Even a sealed device group permits new queue identities. The allocation
+  // precedes registration and must still accept the complete release history.
+  IREE_ASYNC_FIXED_FRONTIER_TYPE(FullFrontier, UINT8_MAX);
+  FullFrontier frontier = {};
+  frontier.entry_count = UINT8_MAX;
+  for (uint32_t i = 0; i < frontier.entry_count; ++i) {
+    frontier.entries[i] = {
+        iree_async_axis_make_queue(1, 0, 0, static_cast<uint8_t>(i), 0), i + 1};
+    IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
+        tracker_, frontier.entries[i].axis, nullptr));
+  }
+  ReleaseOneReservation(pool_, &reservation,
+                        iree_async_fixed_frontier_as_const_frontier(&frontier));
+  // The caller can immediately reuse its frontier storage.
+  memset(&frontier, 0, sizeof(frontier));
+  WaitForMaintenance();
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.reservation_count, 0u);
+  EXPECT_EQ(stats.bytes_reserved, 0u);
+  EXPECT_EQ(stats.bytes_committed, 4096u);
+
+  // All but the final axis have completed. A trim cannot turn a partial
+  // completion into permission to free native storage.
+  for (uint32_t i = 0; i + 1 < UINT8_MAX; ++i) {
+    EXPECT_EQ(
+        iree_async_frontier_tracker_advance(
+            tracker_,
+            iree_async_axis_make_queue(1, 0, 0, static_cast<uint8_t>(i), 0),
+            i + 1),
+        0u);
+  }
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+  WaitForMaintenance();
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.bytes_committed, 4096u);
+  EXPECT_EQ(iree_async_frontier_tracker_advance(
+                tracker_, iree_async_axis_make_queue(1, 0, 0, UINT8_MAX - 1, 0),
+                UINT8_MAX),
+            1u);
+  WaitForMaintenance();
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.bytes_committed, 0u);
+  EXPECT_EQ(stats.slab_count, 0u);
+}
+
+TEST_F(PassthroughPoolTest, ReturnedTokenAndViewsBothPrecedeRetirement) {
+  auto request = MakeReservationRequest(256, 16);
+  request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+      &reservation, &info, &result));
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(MaterializeOneReservation(pool_, request.params, &reservation,
+                                           IREE_HAL_POOL_MATERIALIZE_FLAG_NONE,
+                                           &buffer));
+  const uint32_t pattern = 0xABCDEF10u;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_map_fill(buffer, 0, 256, &pattern, sizeof(pattern)));
+  uint32_t actual = 0;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_map_read(buffer, 252, &actual, sizeof(actual)));
+  EXPECT_EQ(actual, pattern);
+  const iree_async_axis_t axis = iree_async_axis_make_queue(1, 0, 0, 0, 0);
+  IREE_ASSERT_OK(
+      iree_async_frontier_tracker_register_axis(tracker_, axis, nullptr));
+  iree_async_single_frontier_t frontier = {};
+  frontier.entry_count = 1;
+  frontier.entries[0] = {axis, 1};
+  ReleaseOneReservation(pool_, &reservation,
+                        iree_async_fixed_frontier_as_const_frontier(&frontier));
+  iree_async_frontier_tracker_advance(tracker_, axis, 1);
+  WaitForMaintenance();
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.bytes_committed, 256u);
+  // Retaining the borrowed view postpones native cleanup, but does not grant
+  // access after the caller has explicitly returned the allocation epoch.
+  iree_hal_buffer_release(buffer);
+  WaitForMaintenance();
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.bytes_committed, 0u);
+}
+
+TEST_F(PassthroughPoolTest, FailedAxisQuarantinesPendingNativeBacking) {
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(AcquireOneReservation(pool_, 4096, 16, nullptr,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &reservation, &info, &result));
+  IREE_ASYNC_FIXED_FRONTIER_TYPE(PairFrontier, 2);
+  PairFrontier frontier = {};
+  frontier.entry_count = 2;
+  for (uint8_t i = 0; i < 2; ++i) {
+    frontier.entries[i] = {iree_async_axis_make_queue(1, 0, 0, i, 0), 1};
+    IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
+        tracker_, frontier.entries[i].axis, nullptr));
+  }
+  ReleaseOneReservation(pool_, &reservation,
+                        iree_async_fixed_frontier_as_const_frontier(&frontier));
+  const uint32_t observed =
+      iree_async_notification_begin_observe(notification_);
+  iree_async_frontier_tracker_fail_axis(
+      tracker_, frontier.entries[0].axis,
+      iree_make_status(IREE_STATUS_UNAVAILABLE, "device execution failed"));
+  EXPECT_NE(iree_async_notification_query_epoch(notification_), observed);
+  iree_async_notification_end_observe(notification_);
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+  WaitForMaintenance();
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(stats.bytes_committed, 4096u);
+  EXPECT_EQ(stats.reservation_count, 0u);
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNAVAILABLE,
+                        AcquireOneReservation(pool_, 16, 16, nullptr,
+                                              IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                              &reservation, &info, &result));
+
+  // The caller retires the remaining device before final destruction. Failure
+  // itself never certifies that another axis has stopped touching the bytes.
+  iree_async_frontier_tracker_advance(tracker_, frontier.entries[1].axis, 1);
+  iree_hal_pool_release(pool_);
+  pool_ = nullptr;
+}
+
+TEST_F(PassthroughPoolTest,
+       CallerQuiescentDestructionCancelsPendingRetirement) {
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(AcquireOneReservation(pool_, 4096, 16, nullptr,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &reservation, &info, &result));
+  iree_async_single_frontier_t frontier = {};
+  frontier.entry_count = 1;
+  frontier.entries[0] = {iree_async_axis_make_queue(1, 0, 0, 0, 0), 1};
+  IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
+      tracker_, frontier.entries[0].axis, nullptr));
+  ReleaseOneReservation(pool_, &reservation,
+                        iree_async_fixed_frontier_as_const_frontier(&frontier));
+  // No execution uses the allocation. Final pool release cancels its waiter,
+  // so a later tracker update has no callback into retired pool metadata.
+  iree_hal_pool_release(pool_);
+  pool_ = nullptr;
+  EXPECT_EQ(iree_async_frontier_tracker_advance(tracker_,
+                                                frontier.entries[0].axis, 1),
+            0u);
+}
+
+TEST_F(PassthroughPoolTest, FrontierDispatchRacesFinalPoolRelease) {
+  const iree_async_axis_t axis = iree_async_axis_make_queue(1, 0, 0, 0, 0);
+  IREE_ASSERT_OK(
+      iree_async_frontier_tracker_register_axis(tracker_, axis, nullptr));
+  // The bytes have no remaining device users. Race final caller teardown with
+  // publication of their completion: cancellation may win, or teardown must
+  // join both the dispatched callback and its independently scheduled free.
+  for (uint64_t epoch = 1; epoch <= 64; ++epoch) {
+    iree_hal_pool_reservation_t reservation;
+    iree_hal_pool_acquire_info_t info;
+    iree_hal_pool_acquire_result_t result;
+    IREE_ASSERT_OK(AcquireOneReservation(pool_, 4096, 16, nullptr,
+                                         IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                         &reservation, &info, &result));
+    iree_async_single_frontier_t frontier = {};
+    frontier.entry_count = 1;
+    frontier.entries[0] = {axis, epoch};
+    ReleaseOneReservation(
+        pool_, &reservation,
+        iree_async_fixed_frontier_as_const_frontier(&frontier));
+    std::atomic<bool> start{false};
+    std::thread completer([&] {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      iree_async_frontier_tracker_advance(tracker_, axis, epoch);
+    });
+    start.store(true, std::memory_order_release);
+    iree_hal_pool_release(pool_);
+    pool_ = nullptr;
+    completer.join();
+    IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+        {}, slab_provider_, notification_, tracker_, test_maintenance(),
+        allocator_, &pool_));
+  }
 }
 
 TEST(PassthroughPool, UsesProviderHooks) {
@@ -712,8 +960,8 @@ TEST(PassthroughPool, UsesProviderHooks) {
   iree_hal_pool_t* pool = NULL;
   iree_hal_passthrough_pool_options_t options = {};
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      options, slab_provider, notification, test_frontier_tracker(), allocator,
-      &pool));
+      options, slab_provider, notification, test_frontier_tracker(),
+      test_maintenance(), allocator, &pool));
 
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(pool, &capabilities);
@@ -791,10 +1039,11 @@ TEST(PassthroughPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   options.asan = ShadowOptions();
 
   iree_hal_pool_t* pool = NULL;
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_FAILED_PRECONDITION,
-                        iree_hal_passthrough_pool_create(
-                            options, slab_provider, notification,
-                            test_frontier_tracker(), allocator, &pool));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_FAILED_PRECONDITION,
+      iree_hal_passthrough_pool_create(options, slab_provider, notification,
+                                       test_frontier_tracker(),
+                                       test_maintenance(), allocator, &pool));
   EXPECT_EQ(pool, nullptr);
 
   iree_async_notification_release(notification);
@@ -815,8 +1064,8 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
 
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      options, slab_provider, notification, test_frontier_tracker(), allocator,
-      &pool));
+      options, slab_provider, notification, test_frontier_tracker(),
+      test_maintenance(), allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -860,9 +1109,12 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
 
   iree_hal_buffer_release(buffer);
 
+  // A completed allocation epoch is poisoned before logical release returns,
+  // independently of whether the native worker has reclaimed its backing.
   EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,
                              iree_memory_order_relaxed),
             1);
+  WaitForMaintenance();
   const int32_t first_release_sequence = provider->last_asan_released_sequence;
   EXPECT_LT(provider->last_asan_allocated_sequence, first_release_sequence);
   iree_hal_pool_query_stats(pool, &stats);
@@ -878,8 +1130,22 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
             2);
   EXPECT_LT(first_release_sequence, provider->last_asan_allocated_sequence);
 
+  // Pending users retain addressable shadow until their actual completion.
+  // Advancing the tracker, rather than trim or another allocation, retires it.
+  const iree_async_axis_t axis = iree_async_axis_make_queue(1, 0, 1, 0, 0);
+  IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
+      test_frontier_tracker(), axis, nullptr));
+  iree_async_single_frontier_t frontier = {};
+  frontier.entry_count = 1;
+  frontier.entries[0] = {axis, 1};
   ReleaseOneReservation(pool, &reservation,
-                        /*death_frontier=*/NULL);
+                        iree_async_fixed_frontier_as_const_frontier(&frontier));
+  WaitForMaintenance();
+  EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,
+                             iree_memory_order_relaxed),
+            1);
+  iree_async_frontier_tracker_advance(test_frontier_tracker(), axis, 1);
+  WaitForMaintenance();
   EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,
                              iree_memory_order_relaxed),
             2);
@@ -963,6 +1229,7 @@ TEST_F(PassthroughPoolTest, MultipleReservations) {
     ReleaseOneReservation(pool_, &reservations[i], NULL);
   }
 
+  WaitForMaintenance();
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.reservation_count, 0u);
   EXPECT_EQ(stats.slab_count, 0u);

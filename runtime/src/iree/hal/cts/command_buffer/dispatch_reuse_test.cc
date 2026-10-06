@@ -51,7 +51,8 @@ class DispatchReuseTest : public CtsTestBase<> {
     options.asan = backend.asan;
     IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
         options, backend.slab_provider, backend.notification,
-        backend.frontier_tracker, iree_allocator_system(), &transient_pool_));
+        backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+        &transient_pool_));
 
     // Load the workgroup-ID kernel: writes workgroup_id[0] to buffer[wg_id].
     LoadExecutableOrSkipUnsupported(

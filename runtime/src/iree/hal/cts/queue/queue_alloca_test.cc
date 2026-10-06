@@ -169,7 +169,8 @@ class QueueAllocaTest : public CtsTestBase<> {
     options.asan = backend.asan;
     return iree_hal_passthrough_pool_create(
         options, backend.slab_provider, backend.notification,
-        backend.frontier_tracker, iree_allocator_system(), out_pool);
+        backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+        out_pool);
   }
 
   iree_status_t CreateTLSFPool(iree_device_size_t range_length,

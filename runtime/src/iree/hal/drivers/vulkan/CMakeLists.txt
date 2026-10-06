@@ -375,6 +375,8 @@ iree_cc_library(
     iree::hal
     iree::hal::drivers::vulkan::device::library
     iree::hal::drivers::vulkan::util::libvulkan
+    iree::hal::memory::maintenance
+    iree::hal::memory::maintenance_thread
     iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
