@@ -18,7 +18,7 @@ depend on the engine generation and native transport.
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: comparisons, retry controls, signal lifetime and scoped layouts. |
 | [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` and fused copy signaling: distinct completion and retirement protocols. |
 | [Cache maintenance](cache.md) | USER_GCR, scheduled kernel GCR, HDP and command publication. |
-| [Command buffers](command-buffers.md) | Scheduled IBs, context operands, direct rings and storage retirement. |
+| [Command buffers](command-buffers.md) | Generation-specific IB entries, body and submission alignment, context storage, direct rings and scheduled retirement. |
 | [Timestamps](timing.md) | Global clock samples, transfer ordering and interval interpretation. |
 
 Payload visibility, a control-word update, notification, and storage

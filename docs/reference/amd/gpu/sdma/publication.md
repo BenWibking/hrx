@@ -17,8 +17,10 @@ queue's ordinary reservation and retirement rules.
 
 The direct path described here is ROCr's KFD SDMA producer for its selected
 GFX9–GFX12 ISA branches. The runtime chooses packet/cache variants by ISA and
-transport; these predicates are not native SDMA IP numbers. Linux separately
-implements the scheduled SDMA4.4.2 and SDMA6.x ring interfaces.
+transport; these predicates are not native SDMA IP numbers. Linux's
+[scheduled IB backends](command-buffers.md#native-generation-and-transport)
+are selected by native SDMA IP. The kernel pointer examples here use its
+SDMA4.4.2 and SDMA6.x ring interfaces.
 [ROCr selection][blit-selection] [SDMA4.4.2 pointers][pointers442]
 [SDMA6.x pointers][pointers6]
 
