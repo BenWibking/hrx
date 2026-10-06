@@ -301,7 +301,7 @@ iree_status_t loom_pipeline_resources_build(
     };
     IREE_RETURN_IF_ERROR(loom_source_storage_packing_reserve(
         pools[pool_index].packing, allocation.byte_length,
-        allocation.byte_alignment, &allocation.byte_offset));
+        allocation.byte_alignment, NULL, 0, &allocation.byte_offset));
     allocations[resources.allocation_count++] = allocation;
   }
   if (resources.allocation_count > 1) {

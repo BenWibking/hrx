@@ -28,7 +28,8 @@ extern "C" {
 // operands against the device profile. Input diagnostics leave |out_valid|
 // false and no entry may be consumed; statuses report infrastructure failures.
 // Referenced workers are materialized Low definitions: source specialization,
-// call expansion, and storage/resource binding precede this physical form.
+// call expansion and resource binding precede this physical form. Their private
+// storage and read-only data are placed alongside the resident data ranges.
 //
 // The amd.xdna.aie2p.configuration representation has three operand classes:
 // config.scalar contains exact nonnegative integers, config.binding identifies
@@ -60,6 +61,13 @@ extern "C" {
 //   program.load column, row, @worker
 //     Loads a complete argument-free core definition during initialization.
 //     The configuration keeps the core reset until its state is ready.
+//   data.reserve column, row, offset, length
+//     Reserves the byte range in that tile's data memory for the configuration
+//     lifetime. These ranges hold resident channel data or service state and
+//     remain independent of program lifetime. Overlapping declarations reserve
+//     their union. They emit no initialization writes and retain existing data.
+//     Worker storage and read-only data are packed into the remaining memory.
+//     All reservations apply regardless of their order among program loads.
 //   dma.wait column, row, direction, channel, columns, rows
 //     Waits for task-completion tokens across the explicit rectangular range.
 //     Direction is memory-to-stream=1 or stream-to-memory=2.
@@ -68,7 +76,8 @@ extern "C" {
 // invocation function supplies external bindings and all relocated writes.
 // Configuration functions are statically evaluated straight-line Low programs;
 // worker functions retain their complete authored control flow. Each distinct
-// worker is compiled once and may be loaded onto several compute tiles.
+// worker is compiled once and linked at each placement with that tile's data
+// reservations and core-visible address apertures.
 //
 // All storage in |out_entry| belongs to the request's arena. Unsupported
 // authored configuration, unresolved physical values and native code/storage

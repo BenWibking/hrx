@@ -230,11 +230,26 @@ static iree_status_t loom_aie2p_bundle_plan_retain_read_only_data(
       memcpy(contents_data, requirement->contents.data,
              requirement->contents.data_length);
     }
+    uint32_t* bank_conflicts = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, requirement->bank_conflicts.count, sizeof(*bank_conflicts),
+        (void**)&bank_conflicts));
+    iree_host_size_t bank_conflict_count = 0;
+    for (iree_host_size_t j = 0; j < requirement->bank_conflicts.count; ++j) {
+      const uint32_t ordinal =
+          loom_low_function_requirements_read_only_data_ordinal(
+              requirements, requirement->bank_conflicts.values[j]);
+      if (ordinal != UINT32_MAX) {
+        bank_conflicts[bank_conflict_count++] = ordinal;
+      }
+    }
     read_only_data[i] = (loom_aie2p_leaf_read_only_data_t){
         .name = iree_make_string_view(name_data, source_name.size),
         .contents = iree_make_const_byte_span(
             contents_data, requirement->contents.data_length),
         .minimum_alignment = requirement->minimum_alignment,
+        .bank_conflicts = bank_conflicts,
+        .bank_conflict_count = bank_conflict_count,
     };
   }
   plan->read_only_data = read_only_data;

@@ -183,6 +183,12 @@ _DESCRIPTORS = (
     _instruction(
         "program.load", (_operand("column"), _operand("row")), (_symbol("program"),)
     ),
+    # These bytes belong to resident data and communication, independently of
+    # any loaded program's private storage. Repeated ranges name their union.
+    _instruction(
+        "data.reserve",
+        tuple(_operand(name) for name in ("column", "row", "offset", "length")),
+    ),
     _instruction(
         "dma.wait",
         tuple(

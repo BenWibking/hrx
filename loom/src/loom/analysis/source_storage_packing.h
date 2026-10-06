@@ -96,9 +96,14 @@ iree_status_t loom_source_storage_packing_append(
 // and generated service state use this when no function-local interference
 // relation applies. Source correspondence stays with the owning construction;
 // no IR identity is synthesized. Previously published offsets remain unchanged.
+// Optional admitted excluded_ranges constrain only this placement, without
+// occupying storage for later allocations. Physical bank conflicts use these
+// temporary exclusions while sharing the same canonical backing allocation.
 iree_status_t loom_source_storage_packing_reserve(
     loom_source_storage_packing_t* packing, uint64_t byte_length,
-    uint64_t byte_alignment, uint64_t* out_byte_offset);
+    uint64_t byte_alignment,
+    const loom_source_storage_packing_range_t* excluded_ranges,
+    iree_host_size_t excluded_range_count, uint64_t* out_byte_offset);
 
 // Returns the aggregate extent and base alignment for |packing|.
 loom_source_storage_packing_requirement_t

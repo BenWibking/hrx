@@ -213,8 +213,8 @@ TEST_F(SourceStoragePackingTest, FixedRangesAndWorkerStorageShareOnePacking) {
   EXPECT_EQ(Append(2, 48, 16), 0u);
 
   uint64_t worker_offset = UINT64_MAX;
-  IREE_ASSERT_OK(
-      loom_source_storage_packing_reserve(packing_, 16, 16, &worker_offset));
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(packing_, 16, 16, nullptr,
+                                                     0, &worker_offset));
   EXPECT_EQ(worker_offset, 48u);
   EXPECT_EQ(Append(3, 32, 16), 208u);
   EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
@@ -232,8 +232,8 @@ TEST_F(SourceStoragePackingTest, FixedReservationsSurviveSourceLifetimeReuse) {
   EXPECT_EQ(Append(2, 64, 16), 48u);
 
   uint64_t worker_offset = UINT64_MAX;
-  IREE_ASSERT_OK(
-      loom_source_storage_packing_reserve(packing_, 48, 16, &worker_offset));
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(packing_, 48, 16, nullptr,
+                                                     0, &worker_offset));
   EXPECT_EQ(worker_offset, 112u);
   AddNoninterference(3, 1);
   AddNoninterference(3, 2);
@@ -248,8 +248,8 @@ TEST_F(SourceStoragePackingTest, FixedTailCountsWithoutOccupyingPrefix) {
   EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
             1024u);
   uint64_t worker_offset = UINT64_MAX;
-  IREE_ASSERT_OK(
-      loom_source_storage_packing_reserve(packing_, 448, 64, &worker_offset));
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(packing_, 448, 64, nullptr,
+                                                     0, &worker_offset));
   EXPECT_EQ(worker_offset, 512u);
   EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
             1024u);
@@ -262,17 +262,32 @@ TEST_F(SourceStoragePackingTest, EmptyAllocationsDoNotOccupyStorage) {
       {}, fixed, IREE_ARRAYSIZE(fixed), &arena_, &packing_));
   EXPECT_EQ(Append(1, 0, 16), 0u);
   uint64_t empty_offset = UINT64_MAX;
-  IREE_ASSERT_OK(
-      loom_source_storage_packing_reserve(packing_, 0, 16, &empty_offset));
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(packing_, 0, 16, nullptr,
+                                                     0, &empty_offset));
   EXPECT_EQ(empty_offset, 0u);
   EXPECT_EQ(Append(2, 16, 16), 64u);
+}
+
+TEST_F(SourceStoragePackingTest, ExclusionsApplyOnlyToTheirReservation) {
+  EXPECT_EQ(Append(1, 32, 16), 0u);
+  const loom_source_storage_packing_range_t excluded[] = {{16, 48}, {80, 16}};
+  uint64_t offset = 0;
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(
+      packing_, 24, 16, excluded, IREE_ARRAYSIZE(excluded), &offset));
+  EXPECT_EQ(offset, 96u);
+  // The skipped bytes remain available to allocations with no conflict.
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(packing_, 64, 16, nullptr,
+                                                     0, &offset));
+  EXPECT_EQ(offset, 32u);
+  EXPECT_EQ(loom_source_storage_packing_requirement(packing_).byte_length,
+            120u);
 }
 
 TEST_F(SourceStoragePackingTest, ReservationOverflowPreservesSourcePlacement) {
   EXPECT_EQ(Append(1, INT64_MAX, 1), 0u);
   uint64_t offset = UINT64_MAX;
   iree_status_t status =
-      loom_source_storage_packing_reserve(packing_, 1, 1, &offset);
+      loom_source_storage_packing_reserve(packing_, 1, 1, nullptr, 0, &offset);
   EXPECT_EQ(iree_status_code(status), IREE_STATUS_OUT_OF_RANGE);
   iree_status_free(status);
   EXPECT_EQ(offset, 0u);

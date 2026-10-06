@@ -94,7 +94,9 @@ iree_status_t loom_source_storage_packing_create(
 static iree_status_t loom_source_storage_packing_find_byte_offset(
     const loom_source_storage_packing_t* packing,
     const loom_value_id_t* root_value_id, uint64_t byte_length,
-    uint64_t byte_alignment, uint64_t* out_byte_offset) {
+    uint64_t byte_alignment,
+    const loom_source_storage_packing_range_t* excluded_ranges,
+    iree_host_size_t excluded_range_count, uint64_t* out_byte_offset) {
   *out_byte_offset = 0;
   uint64_t candidate_offset = 0;
   if (!byte_length) {
@@ -109,6 +111,14 @@ static iree_status_t loom_source_storage_packing_find_byte_offset(
                               "source storage packing exceeds INT64_MAX");
     }
     uint64_t next_candidate_offset = candidate_offset;
+    for (iree_host_size_t i = 0; i < excluded_range_count; ++i) {
+      const loom_source_storage_packing_range_t range = excluded_ranges[i];
+      const uint64_t end = range.byte_offset + range.byte_length;
+      if (range.byte_length && candidate_offset < end &&
+          range.byte_offset < candidate_end) {
+        next_candidate_offset = iree_max(next_candidate_offset, end);
+      }
+    }
     for (iree_host_size_t i = 0; i < packing->reservation_count; ++i) {
       const loom_source_storage_packing_reservation_t reservation =
           packing->reservations[i];
@@ -158,7 +168,8 @@ iree_status_t loom_source_storage_packing_append(
 
   uint64_t byte_offset = 0;
   IREE_RETURN_IF_ERROR(loom_source_storage_packing_find_byte_offset(
-      packing, &root_value_id, byte_length, byte_alignment, &byte_offset));
+      packing, &root_value_id, byte_length, byte_alignment, NULL, 0,
+      &byte_offset));
   const uint64_t allocation_end = byte_offset + byte_length;
   const iree_host_size_t minimum_capacity = packing->allocation_count + 1;
   if (minimum_capacity > packing->allocation_capacity) {
@@ -183,11 +194,14 @@ iree_status_t loom_source_storage_packing_append(
 
 iree_status_t loom_source_storage_packing_reserve(
     loom_source_storage_packing_t* packing, uint64_t byte_length,
-    uint64_t byte_alignment, uint64_t* out_byte_offset) {
+    uint64_t byte_alignment,
+    const loom_source_storage_packing_range_t* excluded_ranges,
+    iree_host_size_t excluded_range_count, uint64_t* out_byte_offset) {
   *out_byte_offset = 0;
   uint64_t byte_offset = 0;
   IREE_RETURN_IF_ERROR(loom_source_storage_packing_find_byte_offset(
-      packing, NULL, byte_length, byte_alignment, &byte_offset));
+      packing, NULL, byte_length, byte_alignment, excluded_ranges,
+      excluded_range_count, &byte_offset));
   if (packing->reservation_count == packing->reservation_capacity) {
     IREE_RETURN_IF_ERROR(iree_arena_grow_array(
         packing->arena, packing->reservation_count,

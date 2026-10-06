@@ -36,7 +36,7 @@ enum {
 typedef struct loom_aie2p_low_function_contract_t {
   // Function definition observed by the shared Low verifier.
   const loom_op_t* function;
-  // First unbound resource import or storage reservation, when present.
+  // First unbound resource import, when present.
   const loom_op_t* unbound_resource;
   // First command unavailable in each configuration phase, when present.
   const loom_op_t* phase_conflicts[3];
@@ -556,6 +556,7 @@ static void loom_aie2p_low_record_configuration_command(
       ++contract->entry_count;
       break;
     case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_PROGRAM_LOAD:
+    case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_DATA_RESERVE:
       phases = 1u << LOOM_AIE2P_CONFIGURATION_PHASE_INITIALIZE;
       break;
     case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_BINDING:
@@ -589,8 +590,7 @@ static iree_status_t loom_aie2p_low_verify_op(
   if (state->target->descriptor_set->stable_id ==
       AIE2P_CORE_DESCRIPTOR_SET_ID) {
     if (!state->contract->unbound_resource &&
-        (loom_low_resource_isa(packet->op) ||
-         loom_low_storage_reserve_isa(packet->op))) {
+        loom_low_resource_isa(packet->op)) {
       state->contract->unbound_resource = packet->op;
     }
     return loom_aie2p_low_verify_core_op(context, state, packet);

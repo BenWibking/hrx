@@ -14,6 +14,7 @@
 #include "loom/codegen/low/schedule/run.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/configuration_descriptors.h"
+#include "loom/target/arch/amd/xdna/aie2p/emit/configuration_storage.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/leaf_compile.h"
 #include "loom/target/arch/amd/xdna/error_catalog.h"
 #include "loom/target/reporting/low.h"
@@ -42,12 +43,17 @@ typedef union loom_aie2p_configuration_value_t {
   } range;
 } loom_aie2p_configuration_value_t;
 
-typedef struct loom_aie2p_configuration_worker_t {
-  // Detached native object compiled once per referenced complete function.
-  loom_aie2p_leaf_contribution_t contribution;
-  // Code linked against the compute-tile instruction-memory contract.
-  loom_aie2p_linked_tile_t linked;
-} loom_aie2p_configuration_worker_t;
+// Data ownership lasts across all commands and program loads in this entry.
+typedef struct loom_aie2p_configuration_memory_t {
+  // Fixed resident ranges, accumulated from physical data.reserve commands.
+  loom_source_storage_packing_range_t* ranges;
+  // Number of populated resident ranges.
+  iree_host_size_t count;
+  // Arena-backed range table capacity.
+  iree_host_size_t capacity;
+  // Canonical packing shared by every worker loaded onto this tile.
+  loom_source_storage_packing_t* packing;
+} loom_aie2p_configuration_memory_t;
 
 typedef struct loom_aie2p_configuration_emitter_t {
   // Enclosing immutable compilation request.
@@ -59,7 +65,7 @@ typedef struct loom_aie2p_configuration_emitter_t {
   // Physical actions and runtime relocations retained for native serialization.
   loom_aie2p_array_program_t* program;
   // Compiled complete workers indexed by source symbol ID.
-  loom_aie2p_configuration_worker_t** workers;
+  loom_aie2p_leaf_contribution_t** workers;
   // Number of authored-input diagnostics; no product is published on failure.
   uint32_t error_count;
   // Entry-selected initialization function.
@@ -163,15 +169,14 @@ static iree_status_t loom_aie2p_configuration_load(
     return loom_aie2p_configuration_diagnose(emitter, op, LOOM_ERR_XDNA_046,
                                              params, IREE_ARRAYSIZE(params));
   }
-  loom_aie2p_configuration_worker_t* worker =
-      emitter->workers[symbol.symbol_id];
+  loom_aie2p_leaf_contribution_t* worker = emitter->workers[symbol.symbol_id];
   if (!worker) {
     const iree_string_view_t name = loom_string_table_get(
         &request->module->strings,
         request->module->symbols.entries[symbol.symbol_id].name_id);
     IREE_RETURN_IF_ERROR(iree_arena_allocate(request->scratch_arena,
                                              sizeof(*worker), (void**)&worker));
-    *worker = (loom_aie2p_configuration_worker_t){0};
+    *worker = (loom_aie2p_leaf_contribution_t){0};
     loom_op_t* function =
         request->module->symbols.entries[symbol.symbol_id].defining_op;
     const loom_target_function_version_t* version =
@@ -195,9 +200,9 @@ static iree_status_t loom_aie2p_configuration_load(
         .compile_report = report_ptr,
     };
     bool compiled = false;
-    iree_status_t status = loom_aie2p_leaf_compile(
-        request->module, function, &options, request->scratch_arena, &compiled,
-        &worker->contribution);
+    iree_status_t status =
+        loom_aie2p_leaf_compile(request->module, function, &options,
+                                request->scratch_arena, &compiled, worker);
     if (report_ptr) {
       status = iree_status_join(status,
                                 loom_target_compile_report_record_entry_report(
@@ -210,24 +215,59 @@ static iree_status_t loom_aie2p_configuration_load(
       ++emitter->error_count;
       return iree_ok_status();
     }
-    const loom_aie2p_tile_link_layout_t layout = {
-        .program_address = tile->memory.program_base,
-        .program_byte_capacity = tile->memory.program_capacity,
-    };
-    IREE_RETURN_IF_ERROR(
-        loom_aie2p_tile_link(&worker->contribution, &layout,
-                             request->scratch_arena, &worker->linked),
-        "worker '@%.*s': code=%" PRIu64 " bytes, tile capacity=%u bytes",
-        (int)name.size, name.data,
-        worker->contribution.realization.code.byte_length,
-        tile->memory.program_capacity);
     emitter->workers[symbol.symbol_id] = worker;
   }
   *out_tile = (loom_aie2p_xdna_tile_t){
       .coordinate = {(uint16_t)column, (uint16_t)row},
-      .contribution = &worker->contribution,
-      .linked_tile = &worker->linked,
+      .contribution = worker,
   };
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_configuration_link(
+    loom_aie2p_configuration_emitter_t* emitter, const loom_op_t* load,
+    loom_aie2p_configuration_memory_t* memory, loom_aie2p_xdna_tile_t* tile) {
+  iree_arena_allocator_t* arena = emitter->request->scratch_arena;
+  if (!memory->packing) {
+    IREE_RETURN_IF_ERROR(loom_source_storage_packing_create(
+        (loom_source_storage_packing_interference_callback_t){0},
+        memory->ranges, memory->count, arena, &memory->packing));
+  }
+  loom_aie2p_tile_link_layout_t layout = {0};
+  bool fits = false;
+  IREE_RETURN_IF_ERROR(loom_aie2p_configuration_storage_place(
+      tile->contribution, emitter->family, tile->coordinate, memory->packing,
+      arena, &layout, &fits));
+  const loom_xdna_tile_facts_t* facts =
+      loom_xdna_array_tile_facts(emitter->family, tile->coordinate);
+  if (!fits) {
+    const loom_diagnostic_param_t params[] = {
+        loom_param_u32(tile->coordinate.column),
+        loom_param_u32(tile->coordinate.row),
+        loom_param_u64(loom_source_storage_packing_requirement(memory->packing)
+                           .byte_length),
+        loom_param_u64(facts->memory.local_capacity),
+    };
+    return loom_aie2p_configuration_diagnose(emitter, load, LOOM_ERR_XDNA_049,
+                                             params, IREE_ARRAYSIZE(params));
+  }
+  loom_aie2p_linked_tile_t* linked = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(arena, sizeof(*linked), (void**)&linked));
+  const loom_symbol_ref_t symbol =
+      loom_aie2p_configuration_configuration_program_load_program(
+          loom_low_op_attrs(load))
+          .symbol;
+  const iree_string_view_t name = loom_string_table_get(
+      &emitter->request->module->strings,
+      emitter->request->module->symbols.entries[symbol.symbol_id].name_id);
+  IREE_RETURN_IF_ERROR(
+      loom_aie2p_tile_link(tile->contribution, &layout, arena, linked),
+      "worker '@%.*s': code=%" PRIu64 " bytes, tile capacity=%u bytes",
+      (int)name.size, name.data,
+      tile->contribution->realization.code.byte_length,
+      facts->memory.program_capacity);
+  tile->linked_tile = linked;
   return iree_ok_status();
 }
 
@@ -277,9 +317,18 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
   iree_xdna_elf_binding_record_t* bindings = NULL;
   loom_aie2p_program_relocation_t* relocations = NULL;
   loom_aie2p_xdna_tile_t* tiles = NULL;
+  const loom_op_t** loads = NULL;
+  loom_aie2p_configuration_memory_t* memories = NULL;
   if (phase == LOOM_AIE2P_CONFIGURATION_INITIALIZE) {
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
         arena, schedule.node_count, sizeof(*tiles), (void**)&tiles));
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, schedule.node_count, sizeof(*loads), (void**)&loads));
+    const iree_host_size_t memory_count =
+        emitter->entry->column_count * emitter->family->row_count;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, memory_count, sizeof(*memories), (void**)&memories));
+    memset(memories, 0, memory_count * sizeof(*memories));
   } else if (phase == LOOM_AIE2P_CONFIGURATION_INVOKE) {
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
         arena, schedule.node_count, sizeof(*bindings), (void**)&bindings));
@@ -516,10 +565,43 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
         if (emitter->error_count) {
           continue;
         }
+        loads[emitter->entry->tile_count] = op;
         record.type = LOOM_AIE2P_PROGRAM_RECORD_TILE_PROGRAM_LOAD;
         record.value.tile_program_load.tile_program_index =
             (uint32_t)emitter->entry->tile_count++;
         break;
+      }
+      case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_DATA_RESERVE: {
+        IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_scalar(
+            emitter, op, IREE_SV("column"), SCALAR(0), 0,
+            emitter->entry->column_count - 1));
+        IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_scalar(
+            emitter, op, IREE_SV("row"), SCALAR(1), 0,
+            emitter->family->row_count - 1));
+        if (emitter->error_count) {
+          continue;
+        }
+        const loom_xdna_tile_coordinate_t coordinate = {(uint16_t)SCALAR(0),
+                                                        (uint16_t)SCALAR(1)};
+        const loom_xdna_tile_facts_t* tile =
+            loom_xdna_array_tile_facts(emitter->family, coordinate);
+        IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_scalar(
+            emitter, op, IREE_SV("data extent"), SCALAR(2) + SCALAR(3), 0,
+            tile->memory.local_capacity));
+        if (emitter->error_count) {
+          continue;
+        }
+        loom_aie2p_configuration_memory_t* memory =
+            &memories[coordinate.column * emitter->family->row_count +
+                      coordinate.row];
+        if (memory->count == memory->capacity) {
+          IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+              arena, memory->count, memory->count + 1, sizeof(*memory->ranges),
+              &memory->capacity, (void**)&memory->ranges));
+        }
+        memory->ranges[memory->count++] =
+            (loom_source_storage_packing_range_t){SCALAR(2), SCALAR(3)};
+        continue;
       }
       case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_DMA_WAIT: {
         IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_scalar(
@@ -595,6 +677,19 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
     return status;
   }
   if (phase == LOOM_AIE2P_CONFIGURATION_INITIALIZE) {
+    // All resident ranges are known before worker data is placed, regardless
+    // of where the allocation declarations appear among initialization writes.
+    for (iree_host_size_t i = 0; i < emitter->entry->tile_count; ++i) {
+      const loom_xdna_tile_coordinate_t coordinate = tiles[i].coordinate;
+      IREE_RETURN_IF_ERROR(loom_aie2p_configuration_link(
+          emitter, loads[i],
+          &memories[coordinate.column * emitter->family->row_count +
+                    coordinate.row],
+          &tiles[i]));
+      if (emitter->error_count) {
+        return iree_ok_status();
+      }
+    }
     emitter->program->array_records = records;
     emitter->program->array_record_count = record_count;
     emitter->entry->tiles = tiles;

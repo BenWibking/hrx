@@ -791,6 +791,7 @@ loom_check_test_suite(
     "test/canonicalize/adjacent_add.loom-test"
     "test/configuration.loom-test"
     "test/configuration_contracts.loom-test"
+    "test/configuration_data.loom-test"
     "test/configuration_limits.loom-test"
     "test/descriptors/bf16_comparison.loom-test"
     "test/descriptors/bfp_move.loom-test"
@@ -1137,6 +1138,26 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    configuration_storage
+  HDRS
+    "emit/configuration_storage.h"
+  SRCS
+    "emit/configuration_storage.c"
+  DEPS
+    ::leaf_object
+    ::tile_link
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::source_storage_packing
+    loom::target::arch::amd::xdna::array_facts
+    loom::target::emit::native::contribution
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     artifact
   HDRS
     "emit/artifact.h"
@@ -1151,6 +1172,7 @@ loom_cc_library(
     ::array_program
     ::array_resident
     ::configuration_descriptors
+    ::configuration_storage
     ::leaf_compile
     ::provider
     ::target_facts
@@ -1161,6 +1183,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     iree::schemas::xdna_executable
+    loom::analysis::source_storage_packing
     loom::analysis::symbol_facts
     loom::codegen::low::descriptors
     loom::codegen::low::diagnostics

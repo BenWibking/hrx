@@ -84,8 +84,8 @@ TEST(PipelineResourcesTest, CapacityIncludesFixedAndCompiledReservations) {
   EXPECT_TRUE(valid);
   EXPECT_EQ(diagnostic.count, 0u);
 
-  IREE_ASSERT_OK(
-      loom_source_storage_packing_reserve(pools[1].packing, 64, 16, &offset));
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(pools[1].packing, 64, 16,
+                                                     nullptr, 0, &offset));
   EXPECT_EQ(offset, 512u);
   IREE_ASSERT_OK(loom_pipeline_resources_check_capacity(&resources, nullptr,
                                                         emitter, &valid));
@@ -490,8 +490,8 @@ TEST_F(PipelineConstructionTest, CapturesKeepProtocolAndStorageSeparate) {
   // The late worker/service requirement joins both constructions. Checking
   // either occurrence sees the aggregate budget and preserves earlier ranges.
   uint64_t service_offset;
-  IREE_ASSERT_OK(
-      loom_source_storage_packing_reserve(packing, 32, 16, &service_offset));
+  IREE_ASSERT_OK(loom_source_storage_packing_reserve(packing, 32, 16, nullptr,
+                                                     0, &service_offset));
   EXPECT_EQ(service_offset, 256u);
   CapacityDiagnostic diagnostic;
   for (const auto* occurrence : {&resources, &repeated}) {

@@ -88,15 +88,58 @@ static iree_status_t loom_aie2p_artifact_check_print(
   return iree_ok_status();
 }
 
+// Read final ELF sections, including relocated code and uninitialized data.
+// This is check-provider output, independent of the compiler's placement plan.
+static iree_status_t loom_aie2p_artifact_check_print_sections(
+    iree_const_byte_span_t bytes, iree_string_builder_t* output) {
+  const uint32_t table_offset = iree_unaligned_load_le_u32(bytes.data + 32);
+  const uint16_t record_size = iree_unaligned_load_le_u16(bytes.data + 46);
+  const uint16_t record_count = iree_unaligned_load_le_u16(bytes.data + 48);
+  const uint16_t names_index = iree_unaligned_load_le_u16(bytes.data + 50);
+  const uint8_t* names_header =
+      bytes.data + table_offset + names_index * record_size;
+  const char* names =
+      (const char*)bytes.data + iree_unaligned_load_le_u32(names_header + 16);
+  for (uint16_t i = 0; i < record_count; ++i) {
+    const uint8_t* header = bytes.data + table_offset + i * record_size;
+    const uint32_t flags = iree_unaligned_load_le_u32(header + 8);
+    if (!(flags & 2)) {
+      continue;  // Only SHF_ALLOC sections occupy native worker memory.
+    }
+    const uint32_t type = iree_unaligned_load_le_u32(header + 4);
+    const uint32_t address = iree_unaligned_load_le_u32(header + 12);
+    const uint32_t length = iree_unaligned_load_le_u32(header + 20);
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+        output, "%s: address=0x%08x bytes=%u %s\n",
+        names + iree_unaligned_load_le_u32(header), address, length,
+        type == 8 ? "reserved" : "initialized"));
+    if (type == 8) {
+      continue;
+    }
+    const uint8_t* contents =
+        bytes.data + iree_unaligned_load_le_u32(header + 16);
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(output, "  "));
+    for (uint32_t j = 0; j < length; ++j) {
+      IREE_RETURN_IF_ERROR(
+          iree_string_builder_append_format(output, "%02x", contents[j]));
+    }
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(output, "\n"));
+  }
+  return iree_ok_status();
+}
+
 static iree_status_t loom_aie2p_artifact_check_execute(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
   (void)provider;
-  if (!iree_string_view_is_empty(
-          iree_string_view_trim(request->target_options))) {
+  const iree_string_view_t options =
+      iree_string_view_trim(request->target_options);
+  const bool print_sections =
+      iree_string_view_equal(options, IREE_SV("output=sections"));
+  if (!iree_string_view_is_empty(options) && !print_sections) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "aie2p-xdna selects device profiles from IR and "
-                            "accepts no emission options");
+                            "accepts only output=sections");
   }
   loom_check_diagnostic_emitter_capture_t capture = {
       .diagnostic_collector = request->diagnostic_collector,
@@ -124,7 +167,11 @@ static iree_status_t loom_aie2p_artifact_check_execute(
     status =
         iree_byte_sequence_clone(contents, request->host_allocator, &bytes);
   }
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && print_sections) {
+    status = loom_aie2p_artifact_check_print_sections(
+        iree_make_const_byte_span(bytes.data, bytes.data_length),
+        &request->result->actual_output);
+  } else if (iree_status_is_ok(status)) {
     status = loom_aie2p_artifact_check_print(
         iree_make_const_byte_span(bytes.data, bytes.data_length),
         &request->result->actual_output);

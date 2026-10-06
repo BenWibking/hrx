@@ -255,8 +255,8 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initia
 }
 
 low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
-  // ERROR@+1: XDNA/040 {function_name="worker", op_name="low.storage.reserve"}
-  %scratch = storage {byte_alignment = 16, byte_length = 64} : low.storage<private>
+  // ERROR@+1: XDNA/040 {function_name="worker", op_name="low.resource"}
+  %external = resource<native_pointer> {index = 0, source_type = buffer} : reg<aie2p.ep>
   return
 }
 

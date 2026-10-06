@@ -757,7 +757,7 @@ ERR_XDNA_040 = ErrorDef(
     summary="Loaded tile program requires an unbound physical resource.",
     message=(
         "loaded tile program '@{function_name}' contains '{op_name}'; "
-        "program.load requires its resource addresses and storage placement "
+        "program.load requires imported resource addresses "
         "to be explicit in the core program"
     ),
     params=(
@@ -881,6 +881,23 @@ ERR_XDNA_048 = ErrorDef(
     params=(ErrorParam("alignment", ParamKind.U64),),
 )
 
+ERR_XDNA_049 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=49,
+    severity=Severity.ERROR,
+    summary="Resident data and worker storage exceed tile memory.",
+    message=(
+        "tile [{column}, {row}] requires {required} bytes for resident data "
+        "and loaded worker storage, but has {capacity} bytes"
+    ),
+    params=(
+        ErrorParam("column", ParamKind.U32),
+        ErrorParam("row", ParamKind.U32),
+        ErrorParam("required", ParamKind.U64),
+        ErrorParam("capacity", ParamKind.U64),
+    ),
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_002,
@@ -931,4 +948,5 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_046,
     ERR_XDNA_047,
     ERR_XDNA_048,
+    ERR_XDNA_049,
 )

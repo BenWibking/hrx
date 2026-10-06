@@ -332,9 +332,19 @@ iree_status_t loom_aie2p_leaf_object_emit(
         .visibility = LOOM_NATIVE_OBJECT_SYMBOL_VISIBILITY_HIDDEN,
         .kind = LOOM_NATIVE_OBJECT_SYMBOL_KIND_DATA,
     };
+    uint32_t* bank_conflicts = NULL;
+    if (data->bank_conflict_count) {
+      IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+          arena, data->bank_conflict_count, sizeof(*bank_conflicts),
+          (void**)&bank_conflicts));
+      memcpy(bank_conflicts, data->bank_conflicts,
+             data->bank_conflict_count * sizeof(*bank_conflicts));
+    }
     read_only_data[i] = (loom_aie2p_leaf_read_only_data_domain_t){
         .section_contribution_index = section_index,
         .symbol_index = section_index,
+        .bank_conflicts = bank_conflicts,
+        .bank_conflict_count = data->bank_conflict_count,
     };
   }
   realization->read_only_data = read_only_data;

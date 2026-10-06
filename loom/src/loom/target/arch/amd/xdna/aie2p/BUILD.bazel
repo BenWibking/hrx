@@ -658,6 +658,7 @@ loom_check_test_suite(
         "test/canonicalize/adjacent_add.loom-test",
         "test/configuration.loom-test",
         "test/configuration_contracts.loom-test",
+        "test/configuration_data.loom-test",
         "test/configuration_limits.loom-test",
         "test/descriptors/bf16_comparison.loom-test",
         "test/descriptors/bfp_move.loom-test",
@@ -962,6 +963,21 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "configuration_storage",
+    srcs = ["emit/configuration_storage.c"],
+    hdrs = ["emit/configuration_storage.h"],
+    deps = [
+        ":leaf_object",
+        ":tile_link",
+        "//loom/src/loom/analysis:source_storage_packing",
+        "//loom/src/loom/target/arch/amd/xdna:array_facts",
+        "//loom/src/loom/target/emit/native:contribution",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "artifact",
     srcs = [
         "emit/array_report.c",
@@ -980,12 +996,14 @@ loom_cc_library(
         ":array_program",
         ":array_resident",
         ":configuration_descriptors",
+        ":configuration_storage",
         ":leaf_compile",
         ":provider",
         ":target_facts",
         ":target_profile",
         ":tile_link",
         ":xdna_product",
+        "//loom/src/loom/analysis:source_storage_packing",
         "//loom/src/loom/analysis:symbol_facts",
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:diagnostics",

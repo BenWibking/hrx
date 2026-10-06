@@ -56,6 +56,10 @@ typedef struct loom_aie2p_leaf_read_only_data_domain_t {
   uint32_t section_contribution_index;
   // Index of the domain base symbol in the native object.
   uint32_t symbol_index;
+  // Read-only domain ordinals requiring disjoint physical storage banks.
+  const uint32_t* bank_conflicts;
+  // Number of entries in bank_conflicts.
+  iree_host_size_t bank_conflict_count;
 } loom_aie2p_leaf_read_only_data_domain_t;
 
 // Exact physical facts retained after all expensive leaf compilation work.
