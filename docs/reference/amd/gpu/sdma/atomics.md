@@ -124,10 +124,12 @@ not release payload or control storage still borrowed by another queue.
 
 The gang path makes the last-consumer rule concrete: the leader polls each
 internal signal to one, then performs its final decrement/store so that signal
-destruction cannot race the poll. The successful batch path joins body signals
-before final output completion and ties internal-signal destruction to that
-completion. These are owner-specific lifetime protocols, not permission to
-rearm any observed signal. [Gang ownership][gang-owner] [Gang commands][gang-commands]
+destruction cannot race the poll. For one fan-out operation with output
+initialized to one, the successful path joins body completions and ties
+internal-signal destruction to output zero. Its [completion
+ownership](fanout.md#completion-ownership) differs from the public batch API's
+shared-counter description. Each owner keeps signal reuse behind its final
+reader. [Gang ownership][gang-owner] [Gang commands][gang-commands]
 [Batch ownership][batch-owner]
 
 ## MEM_INCR and command allocator retirement

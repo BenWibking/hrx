@@ -11,6 +11,10 @@ Pitched rows and slices use the separate
 [rectangular-copy packet](rectangular-copy.md). Its element counts, geometry,
 and per-generation scope fields have their own encoding and caller limits.
 
+One source range can also feed several destinations through
+[broadcast, multicast, or ordinary-copy fan-out](fanout.md). Those forms have
+separate destination-count, alignment, routing, and completion contracts.
+
 ## Representation
 
 | DWORD | ROCr ordinary linear-copy fields |
