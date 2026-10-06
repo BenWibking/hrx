@@ -49,8 +49,14 @@ iree_status_t hrx_iree_exact_pool_create(
   hrx_iree_exact_pool_t* pool = NULL;
   IREE_RETURN_IF_ERROR(
       iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
-  iree_hal_pool_initialize(&hrx_iree_exact_pool_vtable, notification,
-                           frontier_tracker, &pool->base);
+  iree_status_t status =
+      iree_hal_pool_initialize(&hrx_iree_exact_pool_vtable, notification,
+                               (iree_hal_pool_wait_source_list_t){0},
+                               frontier_tracker, host_allocator, &pool->base);
+  if (!iree_status_is_ok(status)) {
+    iree_allocator_free(host_allocator, pool);
+    return status;
+  }
   pool->host_allocator = host_allocator;
   pool->allocator = allocator;
   iree_hal_buffer_params_canonicalize(&params);

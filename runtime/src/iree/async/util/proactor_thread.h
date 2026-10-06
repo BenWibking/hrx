@@ -140,7 +140,9 @@ typedef struct iree_async_proactor_thread_t iree_async_proactor_thread_t;
 
 // Creates a proactor thread that polls |proactor| in a loop.
 // The thread starts immediately after creation. |proactor| is retained for
-// the lifetime of the thread.
+// the lifetime of the thread. A proactor constructed by the calling thread
+// must use IREE_ASYNC_PROACTOR_THREADING_CROSS_THREAD so its first poll can
+// establish this new thread as its owner.
 iree_status_t iree_async_proactor_thread_create(
     iree_async_proactor_t* proactor,
     iree_async_proactor_thread_options_t options, iree_allocator_t allocator,

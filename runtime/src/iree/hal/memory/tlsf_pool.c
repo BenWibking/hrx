@@ -1144,8 +1144,16 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
   memset(pool, 0, sizeof(*pool));
-  iree_hal_pool_initialize(&iree_hal_tlsf_pool_vtable, notification,
-                           frontier_tracker, &pool->base);
+  iree_status_t status = iree_hal_pool_initialize(
+      &iree_hal_tlsf_pool_vtable, notification,
+      backing_pool ? backing_pool->wait_sources
+                   : (iree_hal_pool_wait_source_list_t){0},
+      frontier_tracker, host_allocator, &pool->base);
+  if (!iree_status_is_ok(status)) {
+    iree_allocator_free(host_allocator, pool);
+    IREE_TRACE_ZONE_END(z0);
+    return status;
+  }
   iree_slim_mutex_initialize(&pool->mutex);
   iree_slim_mutex_initialize(&pool->maintenance.mutex);
   iree_notification_initialize(&pool->maintenance.notification);
@@ -1174,9 +1182,9 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
   pool->backing_pool = backing_pool;
   pool->capabilities = capabilities;
 
-  iree_status_t status = iree_hal_memory_trace_initialize_pool(
-      options.trace_name, IREE_HAL_TLSF_POOL_TRACE_ID, host_allocator,
-      &pool->trace);
+  status = iree_hal_memory_trace_initialize_pool(options.trace_name,
+                                                 IREE_HAL_TLSF_POOL_TRACE_ID,
+                                                 host_allocator, &pool->trace);
   iree_hal_tlsf_pool_slab_t* initial_slab = NULL;
   if (iree_status_is_ok(status) && source_range.buffer) {
     iree_hal_pool_acquire_result_t result;

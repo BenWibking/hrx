@@ -564,9 +564,14 @@ iree_status_t iree_hal_slab_cache_create(
   iree_hal_slab_cache_t* cache = NULL;
   IREE_RETURN_IF_ERROR(
       iree_allocator_malloc(host_allocator, sizeof(*cache), (void**)&cache));
-  iree_hal_pool_initialize(&iree_hal_slab_cache_vtable,
-                           backing_pool->notification,
-                           backing_pool->frontier_tracker, &cache->base);
+  iree_status_t status = iree_hal_pool_initialize(
+      &iree_hal_slab_cache_vtable, backing_pool->notification,
+      backing_pool->wait_sources, backing_pool->frontier_tracker,
+      host_allocator, &cache->base);
+  if (!iree_status_is_ok(status)) {
+    iree_allocator_free(host_allocator, cache);
+    return status;
+  }
   cache->base.maintenance = backing_pool->maintenance;
   cache->base.epoch_query = backing_pool->epoch_query;
   cache->backing_pool = backing_pool;
@@ -584,8 +589,7 @@ iree_status_t iree_hal_slab_cache_create(
   iree_slim_mutex_initialize(&cache->mutex);
   iree_notification_initialize(&cache->maintenance_notification);
   iree_hal_pool_query_capabilities(backing_pool, &cache->capabilities);
-  iree_status_t status =
-      iree_hal_slab_cache_validate_request(cache, &cache->slab);
+  status = iree_hal_slab_cache_validate_request(cache, &cache->slab);
   if (iree_status_is_ok(status)) {
     // Cached views must serve every request accepted by the cache. The class
     // inherits the source's complete access scope; per-request views narrow it.

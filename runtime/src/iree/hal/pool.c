@@ -14,6 +14,7 @@
 #include "iree/base/threading/notification.h"
 #include "iree/base/threading/processor.h"
 #include "iree/hal/detail.h"
+#include "iree/hal/pool_wait.h"
 #include "iree/hal/resource.h"
 
 #define _VTABLE_DISPATCH(pool, method_name) \
@@ -21,24 +22,53 @@
 
 IREE_HAL_API_RETAIN_RELEASE(pool);
 
-IREE_API_EXPORT void iree_hal_pool_initialize(
+IREE_API_EXPORT iree_status_t iree_hal_pool_initialize(
     const iree_hal_pool_vtable_t* vtable,
     iree_async_notification_t* notification,
+    iree_hal_pool_wait_source_list_t backing_sources,
     iree_async_frontier_tracker_t* frontier_tracker,
-    iree_hal_pool_t* out_pool) {
+    iree_allocator_t host_allocator, iree_hal_pool_t* out_pool) {
   IREE_ASSERT_ARGUMENT(vtable);
   IREE_ASSERT_ARGUMENT(out_pool);
+  iree_host_size_t source_count = 1;
+  for (iree_host_size_t i = 0; i < backing_sources.count; ++i) {
+    source_count += backing_sources.values[i] != notification;
+  }
+  iree_async_notification_t** sources = &out_pool->notification;
+  if (source_count > 1) {
+    IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
+        host_allocator, source_count, sizeof(*sources), (void**)&sources));
+  }
   iree_hal_resource_initialize(vtable, &out_pool->resource);
   out_pool->notification = notification;
+  sources[0] = notification;
   iree_async_notification_retain(notification);
+  iree_host_size_t source_index = 1;
+  for (iree_host_size_t i = 0; i < backing_sources.count; ++i) {
+    if (backing_sources.values[i] != notification) {
+      sources[source_index++] = backing_sources.values[i];
+      iree_async_notification_retain(backing_sources.values[i]);
+    }
+  }
+  out_pool->wait_sources = (iree_hal_pool_wait_source_list_t){
+      .count = source_count,
+      .values = sources,
+  };
+  out_pool->wait_allocator = host_allocator;
   out_pool->frontier_tracker = frontier_tracker;
   out_pool->maintenance = NULL;
   out_pool->epoch_query = iree_hal_pool_epoch_query_null();
   out_pool->asan_enabled = false;
+  return iree_ok_status();
 }
 
 IREE_API_EXPORT void iree_hal_pool_deinitialize(iree_hal_pool_t* pool) {
-  iree_async_notification_release(pool->notification);
+  for (iree_host_size_t i = 0; i < pool->wait_sources.count; ++i) {
+    iree_async_notification_release(pool->wait_sources.values[i]);
+  }
+  if (pool->wait_sources.values != &pool->notification) {
+    iree_allocator_free(pool->wait_allocator, (void*)pool->wait_sources.values);
+  }
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_pool_acquire_reservations(
@@ -158,9 +188,9 @@ IREE_API_EXPORT iree_async_notification_t* iree_hal_pool_notification(
   return pool->notification;
 }
 
-// Stack-owned state shared with the exact-frontier callback.
-typedef struct iree_hal_pool_frontier_wait_t {
-  // Wakes the allocating thread when the frontier resolves or fails.
+// Stack-owned state shared with an asynchronous completion callback.
+typedef struct iree_hal_pool_sync_wait_t {
+  // Wakes the allocating thread when its asynchronous wait resolves or fails.
   iree_notification_t notification;
   // Published before notification so the waiter can observe the result.
   iree_atomic_int32_t resolved;
@@ -168,16 +198,16 @@ typedef struct iree_hal_pool_frontier_wait_t {
   iree_atomic_int32_t completed;
   // Callback-owned status transferred to the allocating thread on completion.
   iree_status_t status;
-} iree_hal_pool_frontier_wait_t;
+} iree_hal_pool_sync_wait_t;
 
-static bool iree_hal_pool_frontier_wait_is_resolved(void* user_data) {
-  iree_hal_pool_frontier_wait_t* wait = user_data;
+static bool iree_hal_pool_sync_wait_is_resolved(void* user_data) {
+  iree_hal_pool_sync_wait_t* wait = user_data;
   return iree_atomic_load(&wait->resolved, iree_memory_order_acquire) != 0;
 }
 
-static void iree_hal_pool_frontier_wait_resolve(void* user_data,
-                                                iree_status_t status) {
-  iree_hal_pool_frontier_wait_t* wait = user_data;
+static void iree_hal_pool_sync_wait_resolve(void* user_data,
+                                            iree_status_t status) {
+  iree_hal_pool_sync_wait_t* wait = user_data;
   wait->status = status;
   iree_atomic_store(&wait->resolved, 1, iree_memory_order_release);
   iree_notification_post(&wait->notification, IREE_ALL_WAITERS);
@@ -198,18 +228,18 @@ static iree_status_t iree_hal_pool_wait_for_frontier(
     return satisfied ? iree_ok_status()
                      : iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
   }
-  iree_hal_pool_frontier_wait_t wait;
+  iree_hal_pool_sync_wait_t wait;
   iree_notification_initialize(&wait.notification);
   iree_atomic_store(&wait.resolved, 0, iree_memory_order_relaxed);
   iree_atomic_store(&wait.completed, 0, iree_memory_order_relaxed);
   wait.status = iree_ok_status();
   iree_async_frontier_waiter_t waiter;
   iree_status_t status = iree_async_frontier_tracker_wait(
-      pool->frontier_tracker, frontier, iree_hal_pool_frontier_wait_resolve,
-      &wait, &waiter);
+      pool->frontier_tracker, frontier, iree_hal_pool_sync_wait_resolve, &wait,
+      &waiter);
   if (iree_status_is_ok(status)) {
     const bool resolved = iree_notification_await(
-        &wait.notification, iree_hal_pool_frontier_wait_is_resolved, &wait,
+        &wait.notification, iree_hal_pool_sync_wait_is_resolved, &wait,
         timeout);
     if (!resolved && iree_async_frontier_tracker_cancel_wait(
                          pool->frontier_tracker, &waiter)) {
@@ -228,6 +258,30 @@ static iree_status_t iree_hal_pool_wait_for_frontier(
   return status;
 }
 
+// Joins one asynchronous capacity round. The helper owns timeout cancellation
+// and native retirement, so this thread waits only for its terminal handoff.
+static iree_status_t iree_hal_pool_wait_for_capacity(
+    iree_hal_pool_wait_t* capacity_wait, iree_timeout_t timeout) {
+  iree_hal_pool_sync_wait_t wait;
+  iree_notification_initialize(&wait.notification);
+  iree_atomic_store(&wait.resolved, 0, iree_memory_order_relaxed);
+  iree_atomic_store(&wait.completed, 0, iree_memory_order_relaxed);
+  wait.status = iree_ok_status();
+  iree_hal_pool_wait_commit(capacity_wait, timeout,
+                            (iree_hal_pool_wait_callback_t){
+                                .fn = iree_hal_pool_sync_wait_resolve,
+                                .user_data = &wait,
+                            });
+  iree_notification_await(&wait.notification,
+                          iree_hal_pool_sync_wait_is_resolved, &wait,
+                          iree_infinite_timeout());
+  while (!iree_atomic_load(&wait.completed, iree_memory_order_acquire)) {
+    iree_processor_yield();
+  }
+  iree_notification_deinitialize(&wait.notification);
+  return wait.status;
+}
+
 IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
     iree_hal_pool_t* pool, iree_hal_buffer_params_t params,
     iree_device_size_t allocation_size, iree_timeout_t timeout,
@@ -244,12 +298,13 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
 
   // Capacity retries and exact-range completion share one deadline.
   iree_convert_timeout_to_absolute(&timeout);
-  iree_async_notification_t* notification = iree_hal_pool_notification(pool);
+  iree_hal_pool_wait_t* capacity_wait = NULL;
   iree_status_t status = iree_ok_status();
   bool retry = true;
   while (retry) {
-    const uint32_t wait_token =
-        iree_async_notification_begin_observe(notification);
+    if (capacity_wait) {
+      iree_hal_pool_wait_prepare(capacity_wait);
+    }
 
     iree_hal_pool_reservation_t reservation;
     iree_hal_pool_acquire_info_t acquire_info;
@@ -258,6 +313,11 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
         pool, 1, &request, /*requester_frontier=*/NULL,
         IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER, &reservation,
         &acquire_info, &result);
+    if (capacity_wait && (!iree_status_is_ok(status) ||
+                          (result != IREE_HAL_POOL_ACQUIRE_EXHAUSTED &&
+                           result != IREE_HAL_POOL_ACQUIRE_OVER_BUDGET))) {
+      iree_hal_pool_wait_abort(capacity_wait);
+    }
     if (iree_status_is_ok(status)) {
       switch (result) {
         case IREE_HAL_POOL_ACQUIRE_OK:
@@ -294,15 +354,18 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
         }
         case IREE_HAL_POOL_ACQUIRE_EXHAUSTED:
         case IREE_HAL_POOL_ACQUIRE_OVER_BUDGET:
-          // Wait for a release to advance the notification, then retry.
-          if (!iree_async_notification_wait_for_token(notification, wait_token,
-                                                      timeout)) {
-            status = iree_make_status(
-                IREE_STATUS_DEADLINE_EXCEEDED,
-                "pool allocate_buffer timed out waiting for a free block (%s)",
-                result == IREE_HAL_POOL_ACQUIRE_EXHAUSTED ? "exhausted"
-                                                          : "over budget");
-            retry = false;
+          if (iree_timeout_is_immediate(timeout)) {
+            if (capacity_wait) {
+              iree_hal_pool_wait_abort(capacity_wait);
+            }
+            status = iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
+          } else if (!capacity_wait) {
+            // Only a failed fast attempt allocates cold wait state. Retry with
+            // every source observed before submitting any asynchronous wait.
+            status = iree_hal_pool_wait_create(pool, pool->wait_allocator,
+                                               &capacity_wait);
+          } else {
+            status = iree_hal_pool_wait_for_capacity(capacity_wait, timeout);
           }
           break;
         case IREE_HAL_POOL_ACQUIRE_NONE:
@@ -319,11 +382,11 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
           break;
       }
     }
-    iree_async_notification_end_observe(notification);
     if (!iree_status_is_ok(status)) {
       retry = false;
     }
   }
+  iree_hal_pool_wait_destroy(capacity_wait);
 
   if (iree_status_is_ok(status)) {
     *out_buffer = buffer;

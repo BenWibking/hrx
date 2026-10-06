@@ -12,6 +12,7 @@
 #include "iree/async/notification.h"
 #include "iree/async/proactor.h"
 #include "iree/async/proactor_platform.h"
+#include "iree/async/util/proactor_thread.h"
 #include "iree/base/status_cc.h"
 #include "iree/hal/api.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
@@ -39,11 +40,22 @@ static iree_async_frontier_tracker_t* test_frontier_tracker() {
 
 static iree_async_proactor_t* test_proactor() {
   static iree_async_proactor_t* proactor = nullptr;
+  static iree_async_proactor_thread_t* thread = nullptr;
   if (!proactor) {
+    auto options = iree_async_proactor_options_default();
+    options.threading_mode = IREE_ASYNC_PROACTOR_THREADING_CROSS_THREAD;
     IREE_CHECK_OK(iree_async_proactor_create_platform(
-        iree_async_proactor_options_default(), iree_allocator_system(),
-        &proactor));
+        options, iree_allocator_system(), &proactor));
+    IREE_CHECK_OK(iree_async_proactor_thread_create(
+        proactor, iree_async_proactor_thread_options_default(),
+        iree_allocator_system(), &thread));
     atexit([] {
+      iree_async_proactor_thread_request_stop(thread);
+      IREE_CHECK_OK(
+          iree_async_proactor_thread_join(thread, IREE_DURATION_INFINITE));
+      IREE_CHECK_OK(iree_async_proactor_thread_consume_status(thread));
+      iree_async_proactor_thread_release(thread);
+      thread = nullptr;
       iree_async_proactor_release(proactor);
       proactor = nullptr;
     });
@@ -149,8 +161,9 @@ static iree_hal_routing_test_pool_t* CreateRoutingTestPool(
   iree_async_notification_t* notification = nullptr;
   IREE_CHECK_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
-  iree_hal_pool_initialize(&iree_hal_routing_test_pool_vtable, notification,
-                           test_frontier_tracker(), &pool->base);
+  IREE_CHECK_OK(iree_hal_pool_initialize(
+      &iree_hal_routing_test_pool_vtable, notification, {},
+      test_frontier_tracker(), iree_allocator_system(), &pool->base));
   iree_async_notification_release(notification);
   pool->capabilities.memory_type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
   pool->capabilities.allowed_access = IREE_HAL_MEMORY_ACCESS_ALL;
@@ -387,6 +400,19 @@ TEST_F(PoolFrontierWaitTest, CapacityWakeThenExactCompletion) {
   iree_async_frontier_tracker_advance(tracker_, axis_, 1);
   allocating.join();
   IREE_ASSERT_OK(allocation_status);
+  ExpectUsableBuffer();
+}
+
+TEST_F(PoolFrontierWaitTest, CapacityTimeoutPreservesAllocationAndOutput) {
+  iree_hal_pool_reservation_t occupied;
+  ASSERT_NO_FATAL_FAILURE(AcquireFresh(&occupied));
+  auto* sentinel = reinterpret_cast<iree_hal_buffer_t*>(uintptr_t{1});
+  auto* output = sentinel;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_DEADLINE_EXCEEDED,
+                        Allocate(iree_make_timeout_ms(1), &output));
+  EXPECT_EQ(output, sentinel);
+  iree_hal_pool_release_reservations(pool_, 1, &occupied, nullptr);
+  IREE_ASSERT_OK(Allocate(iree_infinite_timeout(), &buffer_));
   ExpectUsableBuffer();
 }
 

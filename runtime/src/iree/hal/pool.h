@@ -620,9 +620,10 @@ IREE_API_EXPORT iree_async_notification_t* iree_hal_pool_notification(
 // This is a shared utility (NOT a vtable method) that calls
 // one-element acquire and materialize transactions in a loop. If acquisition
 // returns EXHAUSTED or OVER_BUDGET, the function waits on the pool's
-// notification and retries. An allocation may instead reserve a range
-// with pending reuse dependencies and wait for that exact frontier through the
-// completion tracker captured by the pool.
+// captured local/backing notifications and retries. Their proactor owners must
+// remain polling during a capacity wait. An allocation may instead reserve a
+// range with pending reuse dependencies and wait for that exact frontier
+// through the completion tracker captured by the pool.
 //
 // Success establishes actual completion of prior accesses before returning the
 // buffer. A queue dependency frontier cannot substitute for that completion.
@@ -709,6 +710,14 @@ typedef struct iree_hal_pool_vtable_t {
 } iree_hal_pool_vtable_t;
 IREE_HAL_ASSERT_VTABLE_LAYOUT(iree_hal_pool_vtable_t);
 
+// Immutable capacity notifications captured by a pool at construction.
+typedef struct iree_hal_pool_wait_source_list_t {
+  // Number of distinct notifications in the immutable list.
+  iree_host_size_t count;
+  // Borrowed notifications, each serviced by its own proactor owner.
+  iree_async_notification_t* const* values;
+} iree_hal_pool_wait_source_list_t;
+
 // Common pool state embedded at offset zero in every pool implementation.
 struct iree_hal_pool_t {
   // Base HAL resource state. Must be at offset zero.
@@ -731,15 +740,25 @@ struct iree_hal_pool_t {
 
   // Immutable requirement for advice on this pool's own reservation lifetimes.
   bool asan_enabled;
+
+  // Captured local and backing capacity sources, with duplicates removed.
+  iree_hal_pool_wait_source_list_t wait_sources;
+
+  // Allocator for captured wait sources and cold synchronous wait helpers.
+  iree_allocator_t wait_allocator;
 };
 
-// Initializes |out_pool| with one owning reference. Retains |notification| and
-// borrows the non-NULL |frontier_tracker|. Both are immutable for the pool's
-// lifetime; all reservation frontiers use the tracker's registered axes.
-IREE_API_EXPORT void iree_hal_pool_initialize(
+// Initializes |out_pool| with one owning reference. Captures and retains the
+// local |notification| and immutable, distinct |backing_sources|. Single-source
+// pools use inline storage. Borrows the non-NULL |frontier_tracker|; all
+// reservation frontiers use the tracker's registered axes. On failure no
+// references are retained and the output requires no deinitialization.
+IREE_API_EXPORT iree_status_t iree_hal_pool_initialize(
     const iree_hal_pool_vtable_t* vtable,
     iree_async_notification_t* notification,
-    iree_async_frontier_tracker_t* frontier_tracker, iree_hal_pool_t* out_pool);
+    iree_hal_pool_wait_source_list_t backing_sources,
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_allocator_t host_allocator, iree_hal_pool_t* out_pool);
 
 // Releases common pool state during concrete destruction. The notification's
 // proactor must remain alive until this call returns.

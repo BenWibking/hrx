@@ -33,6 +33,7 @@ iree_cc_library(
     "file.h"
     "pool.h"
     "pool_set.h"
+    "pool_wait.h"
     "profile_metrics.h"
     "profile_options.h"
     "profile_schema.h"
@@ -73,6 +74,7 @@ iree_cc_library(
     "file.c"
     "pool.c"
     "pool_set.c"
+    "pool_wait.c"
     "profile_metrics.c"
     "profile_options.c"
     "profile_sink.c"
@@ -200,11 +202,27 @@ iree_cc_test(
     ::hal
     iree::async
     iree::async::platform
+    iree::async::util::proactor_thread
     iree::base
     iree::hal::memory::cpu_slab_provider
     iree::hal::memory::fixed_block_pool
     iree::hal::memory::maintenance_thread
     iree::hal::memory::passthrough_pool
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+iree_cc_test(
+  NAME
+    pool_wait_test
+  SRCS
+    "pool_wait_test.cc"
+  DEPS
+    ::hal
+    iree::async
+    iree::async::platform
+    iree::async::util::proactor_thread
+    iree::base
     iree::testing::gtest
     iree::testing::gtest_main
 )
