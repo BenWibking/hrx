@@ -441,6 +441,48 @@ TEST(Pm4EncodingTest, MecDmaCopyAndDrainKeepReservedControlsClear) {
   }
 }
 
+TEST(Pm4EncodingTest, MecDmaFillCarriesCompleteImmediatePattern) {
+  const struct {
+    // Positive DWORD-aligned direct count, including its representable limit.
+    uint32_t byte_length;
+    // Literal RAW_WAIT and count field, independent of the writer.
+    uint32_t count_control;
+  } counts[] = {
+      {4, 0x40000004},
+      {8, 0x40000008},
+      {32736, 0x40007fe0},
+      {0x03fffffc, 0x43fffffc},
+  };
+  constexpr uint32_t kPatterns[] = {0, 0xffffffff, 0x80000000,
+                                    1, 0x6d2ac491, 0xb730e85a};
+  for (const auto& target : std::array<std::array<uint32_t, 2>, 5>{
+           {{11, 0}, {11, 5}, {11, 7}, {12, 0}, {12, 5}}}) {
+    for (const auto& count : counts) {
+      for (uint32_t pattern : kPatterns) {
+        SCOPED_TRACE(::testing::Message()
+                     << target[0] << '.' << target[1] << " byte_length="
+                     << count.byte_length << " pattern=" << pattern);
+        std::array<uint32_t, 9> words;
+        words.fill(0x24681357);
+        Pm4CommandWriter commands(words.data() + 1,
+                                  Profile(target[0], target[1]));
+        commands.DmaFill32(UINT64_C(0x2345678998765104), pattern,
+                           count.byte_length);
+        // The complete immediate occupies source-low. Source-high and every
+        // reserved MEC control stay clear; the destination remains 64-bit.
+        const std::array<uint32_t, 7> expected = {
+            0xc0055000, 0x40300000,          pattern, 0, 0x98765104,
+            0x23456789, count.count_control,
+        };
+        ASSERT_EQ(commands.word_count(), expected.size());
+        ExpectWords(words.data() + 1, expected);
+        EXPECT_EQ(words.front(), 0x24681357u);
+        EXPECT_EQ(words.back(), 0x24681357u);
+      }
+    }
+  }
+}
+
 TEST(Pm4EncodingTest, SharedCopyDataPreservesFullPayloadAddresses) {
   std::array<uint32_t, 14> words;
   words.fill(0x24681357);

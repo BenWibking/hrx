@@ -108,6 +108,13 @@ class Pm4CommandWriter {
   // alignment.
   void DmaCopy(uint64_t source_address, uint64_t target_address,
                uint32_t byte_length);
+  // Repeats an immediate DWORD through the native TC_L2 destination selector.
+  // The target and positive byte count are DWORD aligned; the count fits the
+  // native 26-bit field and selected transfer policy. RAW_WAIT and enabled
+  // write confirmation match DmaCopy; final use still needs WaitDma and
+  // explicit cache/marker work.
+  void DmaFill32(uint64_t target_address, uint32_t pattern,
+                 uint32_t byte_length);
   // MEC zero-byte DMA drain, with all reserved fields clear.
   // This does not perform cache maintenance or publish a host marker.
   void WaitDma();

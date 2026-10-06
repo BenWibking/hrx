@@ -150,7 +150,10 @@ typedef struct amdf_gpu_device_info_t {
 /// byte count, TC_L2 source/destination selectors, RAW_WAIT and enabled write
 /// confirmation. TC_L2 routes through MALL on GFX12; the caller applies the
 /// reported cache-control encoding for the actual producer/consumer edge.
-/// Copy sequences end with the zero-byte MEC DMA_DATA drain, explicit cache
+/// Immediate-source DMA_DATA repeats a DWORD pattern over a DWORD-aligned
+/// destination and byte count, using the same destination and ordering
+/// controls. The pattern occupies source-low and source-high remains zero.
+/// Transfer sequences end with the zero-byte MEC DMA_DATA drain, explicit cache
 /// work and a completion marker before releasing their operands. Ring
 /// consumption alone does not complete a transfer. PFP-only controls and
 /// reserved MEC fields remain zero. AQL-carried PM4 uses a separate format.

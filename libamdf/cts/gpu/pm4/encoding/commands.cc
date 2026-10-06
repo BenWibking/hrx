@@ -200,6 +200,18 @@ void Pm4CommandWriter::DmaCopy(uint64_t source_address, uint64_t target_address,
   words_[word_count_++] = byte_length | (1u << 30);
 }
 
+void Pm4CommandWriter::DmaFill32(uint64_t target_address, uint32_t pattern,
+                                 uint32_t byte_length) {
+  words_[word_count_++] = MakeHeader(0x50, 7);
+  // Immediate DWORD source and TC_L2 destination; reserved MEC fields clear.
+  words_[word_count_++] = (2u << 29) | (3u << 20);
+  words_[word_count_++] = pattern;
+  words_[word_count_++] = 0;
+  words_[word_count_++] = static_cast<uint32_t>(target_address);
+  words_[word_count_++] = static_cast<uint32_t>(target_address >> 32);
+  words_[word_count_++] = byte_length | (1u << 30);
+}
+
 void Pm4CommandWriter::AtomicStore32(uint64_t target_address, uint32_t value) {
   word_count_ += pm4::AtomicStore(words_ + word_count_, target_address, value,
                                   pm4::AtomicStoreWidth::k32Bit);
