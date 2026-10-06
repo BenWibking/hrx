@@ -151,26 +151,10 @@ that queue-level transition. See [scratch storage and reclamation](scratch.md).
 
 AMD's vendor-specific BARRIER_VALUE packet uses format 2 and applies only to
 AMD kernel-dispatch agents. It compares `(signal_value & mask)` with a signed
-64-bit value using an HSA signal condition. A null dependency is satisfied.
+64-bit value using EQ, NE, LT or GTE. A null dependency is satisfied. The
+[signal-value wait chapter](value-waits.md) gives the complete layout, runtime
+selection, stream-operation lowering and signal/value-address distinction.
 [Extension contract][vendor]
-
-| Byte offset | Field |
-| --- | --- |
-| 0 | Standard 16-bit header with vendor-specific type 0. |
-| 2 | 8-bit AMD format, 2. |
-| 3–7 | Reserved. |
-| 8 | Dependency signal handle. |
-| 16 | Signed 64-bit comparison value. |
-| 24 | Signed 64-bit comparison mask. |
-| 32 | 32-bit HSA condition; LT has value 2 in this enumeration. |
-| 36–55 | Reserved. |
-| 56 | Completion signal handle. |
-
-CLR enables this path for `(major == 9 && minor == 0 && stepping == 10)` or
-`(major == 9 && minor >= 4 && stepping in {0, 1, 2})` at the cited revision.
-That is a consumer predicate, not a definition of every firmware implementing
-the extension. Its packet builder supplies the native comparison fields.
-[Selection predicate][clr-target] · [Builder and caller][clr-packet]
 
 A descending positive epoch can avoid host rearming between dependent
 dispatches. With a retained signal initially `E`, a producer completion
@@ -181,6 +165,10 @@ and the next comparison must refer to the next intended epoch. Signed
 comparison, finite range, and signal lifetime are part of this construction;
 it supplies no rule for wraparound or resets. [Extension comparison][vendor] ·
 [Completion and fence phases][hsa]
+
+The [producer/waiter sequence](value-waits.md#producer-waiter-and-final-reuse)
+connects that epoch to payload visibility, terminal completion and the final
+users of the signal and executable.
 
 Return to [AQL](README.md) or the [primary source map](../../sources.md).
 
@@ -197,5 +185,3 @@ Return to [AQL](README.md) or the [primary source map](../../sources.md).
 [convert]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/inc/signal.h#L295-L325
 [host-signal]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/default_signal.cpp#L51-L75
 [vendor]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L123-L229
-[clr-target]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/rocm/rocsettings.cpp#L148-L153
-[clr-packet]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L2234-L2309
