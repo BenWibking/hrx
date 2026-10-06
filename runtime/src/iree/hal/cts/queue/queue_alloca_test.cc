@@ -366,6 +366,108 @@ TEST_P(QueueAllocaTest, MapsSubspanBackingInNativeCoordinates) {
   DeallocaAndWait(transfer_queue_, IREE_ARRAYSIZE(raw_buffers), raw_buffers);
 }
 
+TEST_P(QueueAllocaTest, NestedBufferPoolsPreserveRangesAndOwnership) {
+  Ref<iree_hal_pool_t> native_pool;
+  IREE_ASSERT_OK(CreateTLSFPool(16384, native_pool.out()));
+  auto request = MakeRequest(transfer_queue_, 8192);
+  Ref<iree_hal_buffer_t> source;
+  SemaphoreList admission(device_, {0}, {1});
+  SemaphoreList allocated(device_, {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_alloca(transfer_queue_, admission, allocated,
+                                       native_pool, 1, &request, source.out()));
+
+  // Views may be created before commitment; child allocator construction waits
+  // for actual prepared storage, without caching an empty pre-commit snapshot.
+  Ref<iree_hal_buffer_t> source_view;
+  IREE_ASSERT_OK(iree_hal_buffer_subspan(
+      source, 256, 4096, iree_allocator_system(), source_view.out()));
+  iree_hal_fixed_block_pool_options_t block_options = {};
+  block_options.block_allocator_options.block_size = 512;
+  block_options.block_allocator_options.frontier_capacity = 2;
+  Ref<iree_hal_pool_t> blocks;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_FAILED_PRECONDITION,
+                        iree_hal_fixed_block_pool_create_from_buffer(
+                            source_view, 256, 2048, &block_options,
+                            iree_allocator_system(), blocks.out()));
+  EXPECT_EQ(nullptr, blocks.get());
+  IREE_ASSERT_OK(iree_hal_semaphore_list_signal(admission, nullptr));
+  Wait(allocated);
+  FillAndWait(transfer_queue_, source, 0x11111111u);
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
+      source_view, 256, 2048, &block_options, iree_allocator_system(),
+      blocks.out()));
+  source_view.reset();
+
+  Ref<iree_hal_buffer_t> neighbor;
+  Ref<iree_hal_buffer_t> arena_backing;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      blocks, request.params, 512, iree_immediate_timeout(), neighbor.out()));
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(blocks, request.params, 512,
+                                               iree_immediate_timeout(),
+                                               arena_backing.out()));
+  FillAndWait(transfer_queue_, neighbor, 0x22222222u);
+  FillAndWait(transfer_queue_, arena_backing, 0x33333333u);
+
+  iree_hal_tlsf_pool_options_t tlsf_options = {};
+  tlsf_options.tlsf_options.alignment = 16;
+  tlsf_options.tlsf_options.frontier_capacity = 2;
+  Ref<iree_hal_pool_t> arena;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+      arena_backing, 32, 448, &tlsf_options, iree_allocator_system(),
+      arena.out()));
+  arena_backing.reset();
+  Ref<iree_hal_buffer_t> first;
+  Ref<iree_hal_buffer_t> second;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      arena, request.params, 64, iree_immediate_timeout(), first.out()));
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      arena, request.params, 64, iree_immediate_timeout(), second.out()));
+  FillAndWait(transfer_queue_, first, 0xABABABABu);
+  FillAndWait(transfer_queue_, second, 0xCDCDCDCDu);
+
+  const auto values = ReadBufferData<uint8_t>(source);
+  ASSERT_EQ(8192u, values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    uint8_t expected = 0x11;
+    if (i >= 512 && i < 1024) {
+      expected = 0x22;
+    }
+    if (i >= 1024 && i < 1536) {
+      expected = 0x33;
+    }
+    if (i >= 1056 && i < 1120) {
+      expected = 0xAB;
+    }
+    if (i >= 1120 && i < 1184) {
+      expected = 0xCD;
+    }
+    ASSERT_EQ(expected, values[i]) << "byte " << i;
+  }
+
+  first.reset();
+  second.reset();
+  iree_hal_pool_trim(arena, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(arena, &stats);
+  EXPECT_EQ(0u, stats.reservation_count);
+  EXPECT_EQ(448u, stats.bytes_committed);
+  iree_hal_pool_query_stats(blocks, &stats);
+  EXPECT_EQ(2u, stats.reservation_count);
+  arena.reset();
+  iree_hal_pool_query_stats(blocks, &stats);
+  EXPECT_EQ(1u, stats.reservation_count);
+  neighbor.reset();
+  iree_hal_pool_query_stats(blocks, &stats);
+  EXPECT_EQ(0u, stats.reservation_count);
+  EXPECT_EQ(2u, stats.release_count);
+  blocks.reset();
+
+  iree_hal_buffer_t* buffers[] = {source.get()};
+  DeallocaAndWait(transfer_queue_, IREE_ARRAYSIZE(buffers), buffers);
+  iree_hal_pool_query_stats(native_pool, &stats);
+  EXPECT_EQ(0u, stats.reservation_count);
+}
+
 TEST_P(QueueAllocaTest, PluralTransaction) {
   constexpr std::array<iree_device_size_t, 3> kAllocationSizes = {256, 512,
                                                                   1024};

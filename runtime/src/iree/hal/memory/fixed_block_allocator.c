@@ -83,6 +83,12 @@ iree_status_t iree_hal_memory_fixed_block_allocator_allocate(
         IREE_HAL_MEMORY_FIXED_BLOCK_ALLOCATOR_DEFAULT_FRONTIER_CAPACITY;
   }
 
+  if (options.initial_frontier &&
+      options.initial_frontier->entry_count > options.frontier_capacity) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "initial frontier exceeds allocator capacity");
+  }
+
   IREE_TRACE_ZONE_BEGIN(z0);
 
   // Compute per-block metadata layout using overflow-checked struct math.
@@ -146,14 +152,20 @@ iree_status_t iree_hal_memory_fixed_block_allocator_allocate(
                       iree_memory_order_relaxed);
   }
 
-  // Initialize per-block metadata: flags = NONE, frontier = empty.
+  // Initialize every block with the same exact inherited prerequisite.
   for (uint32_t i = 0; i < options.block_count; ++i) {
     iree_hal_memory_fixed_block_allocator_block_t* block =
         iree_hal_memory_fixed_block_allocator_block_at(pool, i);
     block->flags = IREE_HAL_MEMORY_FIXED_BLOCK_ALLOCATOR_BLOCK_FLAG_NONE;
     iree_async_frontier_t* frontier =
         iree_hal_memory_fixed_block_allocator_block_frontier_at(pool, block);
-    iree_async_frontier_initialize(frontier, 0);
+    if (options.initial_frontier) {
+      memcpy(frontier, options.initial_frontier,
+             sizeof(*frontier) + options.initial_frontier->entry_count *
+                                     sizeof(iree_async_frontier_entry_t));
+    } else {
+      iree_async_frontier_initialize(frontier, 0);
+    }
   }
 
   *out_pool = pool;

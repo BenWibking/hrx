@@ -446,6 +446,20 @@ static iree_status_t iree_hal_vulkan_transient_buffer_flush_range(
   return status;
 }
 
+static iree_hal_buffer_memory_view_t
+iree_hal_vulkan_transient_buffer_query_memory(
+    const iree_hal_buffer_t* base_buffer) {
+  iree_hal_vulkan_transient_buffer_t* buffer =
+      (iree_hal_vulkan_transient_buffer_t*)base_buffer;
+  iree_hal_buffer_memory_view_t view = {0};
+  iree_slim_mutex_lock(&buffer->mutex);
+  if (buffer->committed_backing) {
+    view = iree_hal_buffer_memory_view(buffer->committed_backing);
+  }
+  iree_slim_mutex_unlock(&buffer->mutex);
+  return view;
+}
+
 static const iree_hal_buffer_vtable_t iree_hal_vulkan_transient_buffer_vtable =
     {
         .recycle = iree_hal_buffer_recycle,
@@ -455,4 +469,5 @@ static const iree_hal_buffer_vtable_t iree_hal_vulkan_transient_buffer_vtable =
         .unmap_range = iree_hal_vulkan_transient_buffer_unmap_range,
         .invalidate_range = iree_hal_vulkan_transient_buffer_invalidate_range,
         .flush_range = iree_hal_vulkan_transient_buffer_flush_range,
+        .query_memory = iree_hal_vulkan_transient_buffer_query_memory,
 };

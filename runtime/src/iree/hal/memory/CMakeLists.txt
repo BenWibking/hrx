@@ -11,6 +11,37 @@ iree_add_all_subdirs()
 
 iree_cc_library(
   NAME
+    buffer_range
+  HDRS
+    "buffer_range.h"
+  SRCS
+    "buffer_range.c"
+  DEPS
+    iree::base
+    iree::hal
+  PUBLIC
+)
+
+iree_cc_test(
+  NAME
+    buffer_range_test
+  SRCS
+    "buffer_range_test.cc"
+  DEPS
+    ::buffer_range
+    ::cpu_slab_provider
+    ::fixed_block_pool
+    ::tlsf_pool
+    iree::async
+    iree::async::platform
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+iree_cc_library(
+  NAME
     asan
   HDRS
     "asan.h"
@@ -96,6 +127,7 @@ iree_cc_library(
   SRCS
     "fixed_block_pool.c"
   DEPS
+    ::buffer_range
     ::fixed_block_allocator
     ::slab_provider
     ::tracing
@@ -264,6 +296,7 @@ iree_cc_library(
   SRCS
     "tlsf_pool.c"
   DEPS
+    ::buffer_range
     ::slab_provider
     ::tlsf
     ::tracing
@@ -322,6 +355,7 @@ iree_cc_test(
     "tlsf_pool_test.cc"
   DEPS
     ::cpu_slab_provider
+    ::fixed_block_pool
     ::tlsf_pool
     iree::async
     iree::async::platform

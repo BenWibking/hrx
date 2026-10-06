@@ -292,6 +292,12 @@ iree_status_t iree_hal_memory_tlsf_initialize(
     options.frontier_capacity = IREE_HAL_MEMORY_TLSF_DEFAULT_FRONTIER_CAPACITY;
   }
 
+  if (options.initial_frontier &&
+      options.initial_frontier->entry_count > options.frontier_capacity) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "initial frontier exceeds allocator capacity");
+  }
+
   // Compute block node layout using overflow-checked struct math.
   // Each block node is: [fixed fields] [padding] [frontier header] [entries]
   // The frontier must be aligned for its entry type (8-byte aligned).
@@ -363,10 +369,16 @@ iree_status_t iree_hal_memory_tlsf_initialize(
   initial_block->next_free = IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
   initial_block->flags = IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_FREE |
                          IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_LAST;
-  // Frontier starts empty.
+  // Every untouched byte inherits the source prerequisite.
   iree_async_frontier_t* initial_frontier =
       iree_hal_memory_tlsf_block_frontier(out_tlsf, initial_block);
-  iree_async_frontier_initialize(initial_frontier, 0);
+  if (options.initial_frontier) {
+    memcpy(initial_frontier, options.initial_frontier,
+           sizeof(*initial_frontier) + options.initial_frontier->entry_count *
+                                           sizeof(iree_async_frontier_entry_t));
+  } else {
+    iree_async_frontier_initialize(initial_frontier, 0);
+  }
 
   // Insert the initial free block into the appropriate FL/SL bin.
   iree_hal_memory_tlsf_insert_free_block(out_tlsf, 0);

@@ -598,6 +598,17 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_flush_range(
           local_byte_length);
 }
 
+static iree_hal_buffer_memory_view_t
+iree_hal_amdgpu_transient_buffer_query_memory(
+    const iree_hal_buffer_t* base_buffer) {
+  iree_hal_amdgpu_transient_buffer_t* buffer =
+      (iree_hal_amdgpu_transient_buffer_t*)base_buffer;
+  iree_hal_buffer_t* backing =
+      iree_hal_amdgpu_transient_buffer_load_committed_backing(buffer);
+  return backing ? iree_hal_buffer_memory_view(backing)
+                 : (iree_hal_buffer_memory_view_t){0};
+}
+
 static const iree_hal_buffer_vtable_t iree_hal_amdgpu_transient_buffer_vtable =
     {
         .recycle = iree_hal_buffer_recycle,
@@ -607,4 +618,5 @@ static const iree_hal_buffer_vtable_t iree_hal_amdgpu_transient_buffer_vtable =
         .unmap_range = iree_hal_amdgpu_transient_buffer_unmap_range,
         .invalidate_range = iree_hal_amdgpu_transient_buffer_invalidate_range,
         .flush_range = iree_hal_amdgpu_transient_buffer_flush_range,
+        .query_memory = iree_hal_amdgpu_transient_buffer_query_memory,
 };

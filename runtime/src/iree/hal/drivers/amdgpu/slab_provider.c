@@ -894,6 +894,8 @@ static void iree_hal_amdgpu_slab_provider_query_properties(
   const iree_hal_amdgpu_slab_provider_t* provider =
       iree_hal_amdgpu_slab_provider_const_cast(base_provider);
   *out_properties = provider->properties;
+  out_properties->allocation_alignment = provider->allocation_alignment;
+  out_properties->maintenance_alignment = 1;
 }
 
 static const iree_hal_slab_provider_vtable_t

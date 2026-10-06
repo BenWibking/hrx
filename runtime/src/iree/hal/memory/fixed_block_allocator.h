@@ -156,6 +156,9 @@ typedef struct iree_hal_memory_fixed_block_allocator_options_t {
   // Maximum number of frontier entries per block. Set to 0 to use
   // IREE_HAL_MEMORY_FIXED_BLOCK_ALLOCATOR_DEFAULT_FRONTIER_CAPACITY.
   uint16_t frontier_capacity;
+  // Exact prerequisite for the entire initial range, copied during creation.
+  // NULL means no prerequisite. A frontier wider than capacity is rejected.
+  const iree_async_frontier_t* initial_frontier;
 } iree_hal_memory_fixed_block_allocator_options_t;
 
 // Describes the result of a successful allocation from the fixed-block

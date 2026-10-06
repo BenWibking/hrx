@@ -70,6 +70,18 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create(
     iree_hal_pool_epoch_query_t epoch_query, iree_allocator_t host_allocator,
     iree_hal_pool_t** out_pool);
 
+// Creates a finite pool retaining the supplied prepared buffer range. Offsets
+// are relative to the source view; WHOLE_BUFFER uses its remaining extent.
+// Alignment rounds the range inward. The pool never grows or releases its
+// backing before destruction. Explicit allocation epochs remain caller-owned.
+// tlsf_options.range_length and initial_frontier must be zero/NULL: capacity
+// and initial history are derived from the buffer range. Every untouched byte
+// inherits the source's exact reuse prerequisite.
+IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create_from_buffer(
+    iree_hal_buffer_t* buffer, iree_device_size_t offset,
+    iree_device_size_t length, const iree_hal_tlsf_pool_options_t* options,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

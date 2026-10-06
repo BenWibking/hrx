@@ -20,6 +20,33 @@ package(
 )
 
 iree_runtime_cc_library(
+    name = "buffer_range",
+    srcs = ["buffer_range.c"],
+    hdrs = ["buffer_range.h"],
+    deps = [
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "buffer_range_test",
+    srcs = ["buffer_range_test.cc"],
+    deps = [
+        ":buffer_range",
+        ":cpu_slab_provider",
+        ":fixed_block_pool",
+        ":tlsf_pool",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async:platform",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+iree_runtime_cc_library(
     name = "asan",
     srcs = ["asan.c"],
     hdrs = ["asan.h"],
@@ -89,6 +116,7 @@ iree_runtime_cc_library(
     srcs = ["fixed_block_pool.c"],
     hdrs = ["fixed_block_pool.h"],
     deps = [
+        ":buffer_range",
         ":fixed_block_allocator",
         ":slab_provider",
         ":tracing",
@@ -232,6 +260,7 @@ iree_runtime_cc_library(
     srcs = ["tlsf_pool.c"],
     hdrs = ["tlsf_pool.h"],
     deps = [
+        ":buffer_range",
         ":slab_provider",
         ":tlsf",
         ":tracing",
@@ -281,6 +310,7 @@ iree_runtime_cc_test(
     srcs = ["tlsf_pool_test.cc"],
     deps = [
         ":cpu_slab_provider",
+        ":fixed_block_pool",
         ":tlsf_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",

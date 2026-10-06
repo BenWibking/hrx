@@ -419,6 +419,15 @@ static void iree_hal_vulkan_slab_provider_query_properties(
   const iree_hal_vulkan_slab_provider_t* provider =
       iree_hal_vulkan_slab_provider_const_cast(base_provider);
   *out_properties = provider->properties;
+  out_properties->allocation_alignment =
+      provider->min_alignment ? provider->min_alignment : 1;
+  out_properties->maintenance_alignment =
+      iree_any_bit_set(provider->memory_property_flags,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+              !iree_any_bit_set(provider->memory_property_flags,
+                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+          ? provider->non_coherent_atom_size
+          : 1;
 }
 
 static const iree_hal_slab_provider_vtable_t

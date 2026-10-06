@@ -10,7 +10,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "iree/async/frontier.h"
 #include "iree/base/api.h"
+#include "iree/hal/atomic.h"
+#include "iree/hal/memory/asan.h"
 #include "iree/hal/queue.h"
 #include "iree/hal/resource.h"
 
@@ -828,6 +831,61 @@ iree_hal_buffer_release_callback_null(void) {
 // a reference to the parent buffer.
 typedef struct iree_hal_buffer_t iree_hal_buffer_t;
 
+typedef struct iree_async_notification_t iree_async_notification_t;
+typedef struct iree_async_frontier_tracker_t iree_async_frontier_tracker_t;
+
+// Native allocation lifecycle operations. Qualification happens when a child
+// allocator is constructed; accepted advice is infallible on
+// allocation/release.
+typedef struct iree_hal_buffer_range_advice_t {
+  // Borrowed native allocation state, covered by the backing's lifetime.
+  void* user_data;
+  // Qualifies sanitizer policy without changing the allocation.
+  iree_status_t (*validate_asan)(void* user_data,
+                                 const iree_hal_asan_pool_options_t* options);
+  // Applies advice in native backing coordinates.
+  void (*advise_asan)(void* user_data, iree_device_size_t offset,
+                      iree_hal_asan_range_advice_flags_t flags,
+                      const iree_hal_asan_allocation_layout_t* layout);
+} iree_hal_buffer_range_advice_t;
+
+// Immutable cold facts embedded in the owner of prepared native storage.
+// This is borrowed value data, not another resource or an origin-pool link.
+// The sealed device group and the allocation epoch must outlive all consumers.
+typedef struct iree_hal_buffer_backing_facts_t {
+  // Shared capacity notification on the allocation's progress owner.
+  iree_async_notification_t* notification;
+  // Sealed-group completion tracker for exact inherited reuse prerequisites.
+  iree_async_frontier_tracker_t* tracker;
+  // Native range lifecycle operations; NULL when unavailable.
+  const iree_hal_buffer_range_advice_t* advice;
+  // Guaranteed power-of-two alignment of byte zero in native coordinates.
+  iree_device_size_t allocation_alignment;
+  // Minimum independently maintained byte granule; one for coherent storage.
+  iree_device_size_t maintenance_alignment;
+  // Atomic operations available on naturally aligned locations in this backing.
+  iree_hal_atomic_operation_capabilities_t atomic_operations;
+} iree_hal_buffer_backing_facts_t;
+
+// Prepared storage facts carried by a buffer independently of its native handle
+// representation. The visible length remains iree_hal_buffer_byte_length().
+typedef struct iree_hal_buffer_memory_view_t {
+  // Borrowed immutable backing facts, or NULL before storage is prepared.
+  const iree_hal_buffer_backing_facts_t* backing;
+  // Visible byte zero in the backing's native advice/alignment coordinates.
+  iree_device_size_t offset;
+  // Exact prerequisite inherited by this allocation epoch, or NULL if empty.
+  // This does not track later user accesses and does not extend the epoch.
+  const iree_async_frontier_t* reuse_frontier;
+} iree_hal_buffer_memory_view_t;
+
+// Returns the prepared storage view. Plain subspans created before transient
+// allocation commitment resolve their retained root on this cold query;
+// prepared views carry their facts directly. Callers synchronize with
+// commitment.
+IREE_API_EXPORT iree_hal_buffer_memory_view_t
+iree_hal_buffer_memory_view(const iree_hal_buffer_t* buffer);
+
 // Returns success iff the buffer was allocated with the given memory type.
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_memory_type(
     iree_hal_memory_type_t actual_memory_type,
@@ -1305,6 +1363,12 @@ typedef struct iree_hal_buffer_vtable_t {
   iree_status_t(IREE_API_PTR* flush_range)(
       iree_hal_buffer_t* buffer, iree_device_size_t local_byte_offset,
       iree_device_size_t local_byte_length);
+  // Resolves storage facts for a committed transient allocation. NULL for
+  // buffers whose prepared memory view is immutable after publication. This
+  // cold query is used when constructing a child allocator, never at
+  // submission.
+  iree_hal_buffer_memory_view_t(IREE_API_PTR* query_memory)(
+      const iree_hal_buffer_t* buffer);
 } iree_hal_buffer_vtable_t;
 static_assert(offsetof(iree_hal_buffer_vtable_t, recycle) == 0,
               "iree_hal_resource_vtable_t expects destroy at offset 0, we want "
@@ -1335,6 +1399,9 @@ struct iree_hal_buffer_t {
   // Length of the buffer range in the underlying allocated buffer. This is the
   // logical length exposed to users.
   iree_device_size_t byte_length;
+
+  // Prepared native storage facts, independent of the native handle offset.
+  iree_hal_buffer_memory_view_t memory;
 
   // Placement of the buffer on a device/queue set. Captured only for allocated
   // buffers.

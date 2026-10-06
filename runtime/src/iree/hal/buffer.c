@@ -183,6 +183,8 @@ IREE_API_EXPORT iree_status_t iree_hal_subspan_buffer_create_with_callback(
         source_buffer->memory_type, source_buffer->allowed_access,
         source_buffer->allowed_usage, &iree_hal_subspan_buffer_vtable,
         &buffer->base);
+    buffer->base.memory = source_buffer->memory;
+    buffer->base.memory.offset += byte_offset - source_buffer->byte_offset;
     buffer->host_allocator = host_allocator;
     buffer->release_callback = release_callback;
     buffer->lifetime_owner = lifetime_owner;
@@ -266,6 +268,21 @@ static const iree_hal_buffer_vtable_t iree_hal_subspan_buffer_vtable = {
 // iree_hal_buffer_t
 //===----------------------------------------------------------------------===//
 
+IREE_API_EXPORT iree_hal_buffer_memory_view_t
+iree_hal_buffer_memory_view(const iree_hal_buffer_t* buffer) {
+  iree_hal_buffer_memory_view_t view = buffer->memory;
+  if (!view.backing) {
+    const iree_hal_buffer_t* root = buffer->allocated_buffer;
+    const iree_hal_buffer_vtable_t* vtable =
+        (const iree_hal_buffer_vtable_t*)root->resource.vtable;
+    view = vtable->query_memory ? vtable->query_memory(root) : root->memory;
+    if (root != buffer) {
+      view.offset += buffer->byte_offset;
+    }
+  }
+  return view;
+}
+
 IREE_API_EXPORT void iree_hal_buffer_initialize(
     iree_hal_buffer_placement_t placement, iree_hal_buffer_t* allocated_buffer,
     iree_device_size_t allocation_size, iree_device_size_t byte_offset,
@@ -278,6 +295,7 @@ IREE_API_EXPORT void iree_hal_buffer_initialize(
   buffer->allocation_size = allocation_size;
   buffer->byte_offset = byte_offset;
   buffer->byte_length = byte_length;
+  memset(&buffer->memory, 0, sizeof(buffer->memory));
   buffer->placement = placement;
   buffer->pooling_allocator = NULL;
   buffer->preserve_count = IREE_ATOMIC_VAR_INIT(1);

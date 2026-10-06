@@ -380,6 +380,8 @@ static void hrx_vmm_slab_provider_query_properties(
   out_properties->supported_usage = provider->buffer_params.usage;
   out_properties->queue_family_affinity =
       provider->buffer_params.queue_family_affinity;
+  out_properties->allocation_alignment = provider->page_size;
+  out_properties->maintenance_alignment = 1;
 }
 
 iree_status_t hrx_vmm_slab_provider_create(

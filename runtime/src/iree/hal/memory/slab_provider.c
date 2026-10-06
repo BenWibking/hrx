@@ -153,6 +153,8 @@ void iree_hal_slab_provider_query_properties(
     const iree_hal_slab_provider_t* provider,
     iree_hal_slab_provider_properties_t* out_properties) {
   memset(out_properties, 0, sizeof(*out_properties));
+  out_properties->allocation_alignment = 1;
+  out_properties->maintenance_alignment = 1;
   provider->vtable->query_properties(provider, out_properties);
 }
 
@@ -169,4 +171,44 @@ bool iree_hal_slab_provider_visited(
   }
   visited->providers[visited->count++] = provider;
   return false;
+}
+
+static iree_status_t iree_hal_slab_buffer_validate_asan(
+    void* user_data, const iree_hal_asan_pool_options_t* options) {
+  const iree_hal_slab_buffer_backing_t* backing = user_data;
+  return iree_hal_slab_provider_validate_asan_options(backing->provider,
+                                                      options);
+}
+
+static void iree_hal_slab_buffer_advise_asan(
+    void* user_data, iree_device_size_t offset,
+    iree_hal_asan_range_advice_flags_t flags,
+    const iree_hal_asan_allocation_layout_t* layout) {
+  const iree_hal_slab_buffer_backing_t* backing = user_data;
+  iree_hal_slab_provider_advise_asan_range(backing->provider, backing->slab,
+                                           offset, flags, layout);
+}
+
+void iree_hal_slab_buffer_backing_initialize(
+    iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* tracker,
+    iree_hal_slab_buffer_backing_t* out_backing) {
+  iree_hal_slab_provider_properties_t properties;
+  iree_hal_slab_provider_query_properties(provider, &properties);
+  out_backing->provider = provider;
+  out_backing->slab = slab;
+  out_backing->advice = (iree_hal_buffer_range_advice_t){
+      .user_data = out_backing,
+      .validate_asan = iree_hal_slab_buffer_validate_asan,
+      .advise_asan = iree_hal_slab_buffer_advise_asan,
+  };
+  out_backing->facts = (iree_hal_buffer_backing_facts_t){
+      .notification = notification,
+      .tracker = tracker,
+      .advice = &out_backing->advice,
+      .allocation_alignment = properties.allocation_alignment,
+      .maintenance_alignment = properties.maintenance_alignment,
+      .atomic_operations = properties.atomic_operations,
+  };
 }

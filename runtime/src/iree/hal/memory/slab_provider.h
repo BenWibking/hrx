@@ -38,6 +38,12 @@ typedef struct iree_hal_slab_provider_properties_t {
   // containing logical device.
   iree_hal_queue_family_affinity_t queue_family_affinity;
 
+  // Guaranteed power-of-two alignment of acquired slab byte zero.
+  iree_device_size_t allocation_alignment;
+
+  // Smallest independently maintained byte granule; one for coherent storage.
+  iree_device_size_t maintenance_alignment;
+
   // Atomic operations supported by naturally aligned slab locations.
   iree_hal_atomic_operation_capabilities_t atomic_operations;
 } iree_hal_slab_provider_properties_t;
@@ -224,6 +230,27 @@ void iree_hal_slab_provider_query_properties(
 bool iree_hal_slab_provider_visited(
     iree_hal_slab_provider_visited_set_t* visited,
     const iree_hal_slab_provider_t* provider);
+
+// Prepared buffer facts embedded beside stable pool-owned slab metadata.
+// The slab, provider, progress owner, and tracker are borrowed for that
+// lifetime.
+typedef struct iree_hal_slab_buffer_backing_t {
+  // Immutable facts shared by materialized views of this slab.
+  iree_hal_buffer_backing_facts_t facts;
+  // Native lifecycle dispatch using this object's stable address.
+  iree_hal_buffer_range_advice_t advice;
+  // Native provider borrowed from the allocation owner.
+  iree_hal_slab_provider_t* provider;
+  // Stable native slab descriptor borrowed from the allocation owner.
+  const iree_hal_slab_t* slab;
+} iree_hal_slab_buffer_backing_t;
+
+// Initializes facts after the slab descriptor reaches its stable owned address.
+void iree_hal_slab_buffer_backing_initialize(
+    iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* tracker,
+    iree_hal_slab_buffer_backing_t* out_backing);
 
 //===----------------------------------------------------------------------===//
 // iree_hal_slab_provider_t vtable

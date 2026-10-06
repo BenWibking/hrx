@@ -63,6 +63,9 @@ typedef struct iree_hal_passthrough_pool_reservation_state_t {
   // Slab acquired from the pool's provider for this reservation.
   iree_hal_slab_t slab;
 
+  // Prepared facts shared by views while this slab allocation is owned.
+  iree_hal_slab_buffer_backing_t buffer_backing;
+
   // Backing bytes charged to this reservation.
   iree_device_size_t charged_length;
 
@@ -348,6 +351,9 @@ static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
   }
   reservation_state->pool = base_pool;
   reservation_state->slab = slab;
+  iree_hal_slab_buffer_backing_initialize(
+      pool->slab_provider, &reservation_state->slab, pool->base.notification,
+      pool->base.frontier_tracker, &reservation_state->buffer_backing);
   reservation_state->charged_length = slab.length;
   reservation_state->asan_layout = asan_layout;
   iree_atomic_store(&reservation_state->reference_count, 1,
@@ -615,6 +621,10 @@ static iree_status_t iree_hal_passthrough_pool_materialize_reservations(
         reservations[materialized_count].byte_length,
         requests[materialized_count].params, release_callback, staged_buffer);
     if (iree_status_is_ok(status)) {
+      (*staged_buffer)->memory = (iree_hal_buffer_memory_view_t){
+          .backing = &reservation_state->buffer_backing.facts,
+          .offset = reservations[materialized_count].offset,
+      };
       ++materialized_count;
     } else {
       iree_hal_passthrough_pool_reservation_state_release_reference(

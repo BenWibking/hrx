@@ -292,6 +292,9 @@ typedef struct iree_hal_memory_tlsf_options_t {
   //
   // Set to 0 to use IREE_HAL_MEMORY_TLSF_DEFAULT_FRONTIER_CAPACITY (8).
   uint8_t frontier_capacity;
+  // Exact prerequisite for the entire initial range, copied during creation.
+  // NULL means no prerequisite. A frontier wider than capacity is rejected.
+  const iree_async_frontier_t* initial_frontier;
 } iree_hal_memory_tlsf_options_t;
 
 // Describes the result of a successful allocation from the TLSF allocator.

@@ -78,9 +78,13 @@ static iree_status_t iree_hal_cpu_slab_provider_wrap_buffer(
       .data = slab->base_ptr + slab_offset,
       .data_length = (iree_host_size_t)allocation_size,
   };
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
+      IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE,
+      params.type & ~IREE_HAL_MEMORY_TYPE_OPTIMAL));
   return iree_hal_heap_buffer_wrap(iree_hal_buffer_placement_undefined(),
-                                   params.type, params.access, params.usage,
-                                   allocation_size, data, release_callback,
+                                   IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE,
+                                   params.access, params.usage, allocation_size,
+                                   data, release_callback,
                                    provider->host_allocator, out_buffer);
 }
 
@@ -166,6 +170,8 @@ static void iree_hal_cpu_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
   out_properties->memory_type = IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE;
+  out_properties->allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
+  out_properties->maintenance_alignment = 1;
   out_properties->supported_usage = IREE_HAL_CPU_SLAB_PROVIDER_BUFFER_USAGE;
   out_properties->queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;
   out_properties->atomic_operations =
