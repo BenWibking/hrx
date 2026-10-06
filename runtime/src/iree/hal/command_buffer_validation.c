@@ -101,7 +101,9 @@ static iree_status_t iree_hal_command_buffer_validate_binding_requirements(
     iree_hal_buffer_binding_t binding,
     iree_hal_buffer_binding_requirements_t requirements) {
   // Check for binding presence.
-  if (requirements.usage == IREE_HAL_BUFFER_USAGE_NONE) {
+  if (requirements.type == IREE_HAL_MEMORY_TYPE_NONE &&
+      !requirements.requires_storage &&
+      requirements.usage == IREE_HAL_BUFFER_USAGE_NONE) {
     // Binding slot is unused and its value in the table is ignored.
     return iree_ok_status();
   } else if (!binding.buffer) {
@@ -116,9 +118,16 @@ static iree_status_t iree_hal_command_buffer_validate_binding_requirements(
   // mode or try to fast path it if the buffer is known-good.
   IREE_RETURN_IF_ERROR(iree_hal_command_buffer_validate_buffer_compatibility(
       command_buffer, validation_state, binding.buffer,
-      requirements.required_compatibility, requirements.usage));
+      requirements.required_compatibility,
+      requirements.usage |
+          (requirements.requires_storage ? IREE_HAL_BUFFER_USAGE_STORAGE : 0)));
 
   // Verify buffer compatibility.
+  if (requirements.requires_storage) {
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
+        iree_hal_buffer_allowed_usage(binding.buffer),
+        IREE_HAL_BUFFER_USAGE_STORAGE));
+  }
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
       iree_hal_buffer_allowed_usage(binding.buffer), requirements.usage));
   if (requirements.access != IREE_HAL_MEMORY_ACCESS_NONE) {
@@ -207,6 +216,7 @@ static iree_status_t iree_hal_command_buffer_validate_buffer_requirements(
   table_requirements->required_compatibility |=
       requirements.required_compatibility;
   table_requirements->usage |= requirements.usage;
+  table_requirements->requires_storage |= requirements.requires_storage;
   table_requirements->access |= requirements.access;
   table_requirements->type |= requirements.type;
   table_requirements->max_byte_offset = iree_max(
@@ -637,8 +647,8 @@ iree_status_t iree_hal_command_buffer_dispatch_validation(
     // to the combined binding requirements.
     iree_hal_buffer_binding_requirements_t binding_requirements = {
         .required_compatibility = IREE_HAL_BUFFER_COMPATIBILITY_QUEUE_DISPATCH,
-        .usage = IREE_HAL_BUFFER_USAGE_STORAGE,
         .access = IREE_HAL_MEMORY_ACCESS_NONE,
+        .requires_storage = true,
         .type = IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
     };
     for (iree_host_size_t i = 0; i < bindings.count; ++i) {

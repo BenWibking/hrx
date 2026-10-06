@@ -4557,6 +4557,17 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
         "required 3 uint32_t values");
   }
 
+  for (iree_host_size_t i = 0; i < binding_count; ++i) {
+    if (!bindings[i].buffer || bindings[i].buffer_slot != 0) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "task queue_dispatch requires direct non-null buffer bindings");
+    }
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
+        iree_hal_buffer_allowed_usage(bindings[i].buffer),
+        IREE_HAL_BUFFER_USAGE_STORAGE));
+  }
+
   iree_hal_task_queue_op_t* operation = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_submit_op_begin(
       queue, IREE_HAL_TASK_QUEUE_OP_DISPATCH, &signal_semaphores, &operation));

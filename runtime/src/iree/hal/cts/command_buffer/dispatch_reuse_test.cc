@@ -350,6 +350,66 @@ TEST_P(DispatchReuseTest, LargeWorkgroupCount) {
   EXPECT_THAT(data, ContainerEq(expected));
 }
 
+// Storage roles constrain the executable's accesses without requiring the
+// opposite direction. Exercise both recorded and submission-supplied bindings.
+TEST_P(DispatchReuseTest, DirectionalStorageBindings) {
+  constexpr iree_device_size_t kByteLength = 4 * sizeof(float);
+  const iree_hal_buffer_usage_t usages[] = {
+      IREE_HAL_BUFFER_USAGE_STORAGE_READ,
+      IREE_HAL_BUFFER_USAGE_STORAGE_WRITE,
+  };
+  Ref<iree_hal_buffer_t> buffers[2];
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(buffers); ++i) {
+    iree_hal_buffer_params_t params = {};
+    params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
+    params.usage = usages[i] | IREE_HAL_BUFFER_USAGE_TRANSFER;
+    IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
+        device_allocator_, params, kByteLength, buffers[i].out()));
+    EXPECT_EQ(iree_hal_buffer_allowed_usage(buffers[i]) &
+                  IREE_HAL_BUFFER_USAGE_STORAGE,
+              usages[i]);
+    const float value = i == 0 ? -2.5f : -9.0f;
+    SemaphoreList signal(device_, {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_fill(
+        transfer_queue_, iree_hal_semaphore_list_empty(), signal, buffers[i], 0,
+        kByteLength, &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
+                                                IREE_ASYNC_WAIT_FLAG_NONE));
+  }
+
+  for (bool indirect : {false, true}) {
+    SCOPED_TRACE(indirect);
+    Ref<iree_hal_command_buffer_t> command_buffer;
+    IREE_ASSERT_OK(CreateCommandBuffer(IREE_HAL_COMMAND_BUFFER_MODE_DEFAULT,
+                                       IREE_HAL_COMMAND_CATEGORY_DISPATCH,
+                                       indirect ? 2 : 0, command_buffer.out()));
+    IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer));
+    iree_hal_buffer_ref_t refs[2] = {};
+    for (uint32_t i = 0; i < IREE_ARRAYSIZE(refs); ++i) {
+      refs[i].buffer = indirect ? nullptr : buffers[i].get();
+      refs[i].buffer_slot = indirect ? i : 0;
+      refs[i].offset = sizeof(float);
+      refs[i].length = 2 * sizeof(float);
+    }
+    const iree_hal_buffer_ref_list_t bindings = {IREE_ARRAYSIZE(refs), refs};
+    IREE_ASSERT_OK(iree_hal_command_buffer_dispatch(
+        command_buffer, absf_executable_,
+        iree_hal_executable_function_from_index(0),
+        iree_hal_make_static_dispatch_config(1, 1, 1),
+        iree_const_byte_span_empty(), bindings, IREE_HAL_DISPATCH_FLAG_NONE));
+    RecordDispatchBarrier(command_buffer);
+    IREE_ASSERT_OK(iree_hal_command_buffer_end(command_buffer));
+    iree_hal_buffer_binding_t table_entries[] = {{buffers[0], 0, kByteLength},
+                                                 {buffers[1], 0, kByteLength}};
+    const iree_hal_buffer_binding_table_t table = {
+        indirect ? IREE_ARRAYSIZE(table_entries) : 0,
+        indirect ? table_entries : nullptr};
+    SubmitWithBindingsAndWait(command_buffer, table);
+    EXPECT_THAT(ReadBufferData<float>(buffers[1]),
+                ::testing::ElementsAre(-9.0f, 2.5f, 2.5f, -9.0f));
+  }
+}
+
 // Records one dispatch with a direct input buffer and an indirect output
 // buffer. This is distinct from the all-direct/all-indirect cases: replay must
 // combine the baked static pointer source and the queue_execute binding-table

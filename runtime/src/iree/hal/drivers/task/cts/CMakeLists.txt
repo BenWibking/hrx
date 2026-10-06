@@ -51,6 +51,21 @@ iree_cc_test(
     iree::testing::gtest
 )
 
+iree_cc_test(
+  NAME
+    buffer_access_tests
+  SRCS
+    "buffer_access_test.cc"
+  DEPS
+    ::backends
+    ::executable_testdata
+    iree::hal
+    iree::hal::cts::util::registry
+    iree::hal::cts::util::test_base
+    iree::hal::cts::util::test_main
+    iree::testing::gtest
+)
+
 iree_runtime_hal_cts_test_suite(
   BACKENDS
     ::backends

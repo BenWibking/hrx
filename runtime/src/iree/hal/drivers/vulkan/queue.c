@@ -9302,31 +9302,6 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_shape(
   return iree_ok_status();
 }
 
-static iree_status_t iree_hal_vulkan_queue_validate_dispatch_storage_usage(
-    iree_hal_buffer_t* buffer) {
-  const iree_hal_buffer_usage_t allowed_usage =
-      iree_hal_buffer_allowed_usage(buffer);
-  if (iree_any_bit_set(allowed_usage, IREE_HAL_BUFFER_USAGE_STORAGE)) {
-    return iree_ok_status();
-  }
-#if IREE_STATUS_MODE
-  iree_bitfield_string_temp_t allowed_temp;
-  iree_bitfield_string_temp_t required_temp;
-  iree_string_view_t allowed_usage_string =
-      iree_hal_buffer_usage_format(allowed_usage, &allowed_temp);
-  iree_string_view_t required_usage_string = iree_hal_buffer_usage_format(
-      IREE_HAL_BUFFER_USAGE_STORAGE, &required_temp);
-  return iree_make_status(
-      IREE_STATUS_PERMISSION_DENIED,
-      "requested usage was not specified when the buffer was allocated; buffer "
-      "allows %.*s, operation requires one of %.*s",
-      (int)allowed_usage_string.size, allowed_usage_string.data,
-      (int)required_usage_string.size, required_usage_string.data);
-#else
-  return iree_status_from_code(IREE_STATUS_PERMISSION_DENIED);
-#endif  // IREE_STATUS_MODE
-}
-
 static iree_status_t iree_hal_vulkan_queue_validate_dispatch_binding(
     const iree_hal_buffer_ref_t* binding, VkDescriptorType descriptor_type) {
   if (binding->reserved != 0 || binding->buffer_slot != 0 || !binding->buffer) {
@@ -9349,9 +9324,9 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_binding(
       break;
     }
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: {
-      IREE_RETURN_IF_ERROR(
-          iree_hal_vulkan_queue_validate_dispatch_storage_usage(
-              binding->buffer));
+      IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
+          iree_hal_buffer_allowed_usage(binding->buffer),
+          IREE_HAL_BUFFER_USAGE_STORAGE));
       break;
     }
     default:

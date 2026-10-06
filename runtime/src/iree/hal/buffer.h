@@ -902,6 +902,13 @@ IREE_API_EXPORT iree_status_t
 iree_hal_buffer_validate_usage(iree_hal_buffer_usage_t allowed_usage,
                                iree_hal_buffer_usage_t required_usage);
 
+// Returns success iff at least one of the given usage types is allowed.
+// Opaque storage bindings require storage capability without claiming both
+// READ and WRITE. Commands with known accesses use validate_usage instead.
+IREE_API_EXPORT iree_status_t
+iree_hal_buffer_validate_usage_any(iree_hal_buffer_usage_t allowed_usage,
+                                   iree_hal_buffer_usage_t required_usage);
+
 // Returns success iff the given byte range falls within the valid buffer.
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_range(
     iree_hal_buffer_t* buffer, iree_device_size_t byte_offset,

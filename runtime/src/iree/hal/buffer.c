@@ -427,6 +427,29 @@ iree_hal_buffer_validate_usage(iree_hal_buffer_usage_t allowed_usage,
   return iree_ok_status();
 }
 
+IREE_API_EXPORT iree_status_t
+iree_hal_buffer_validate_usage_any(iree_hal_buffer_usage_t allowed_usage,
+                                   iree_hal_buffer_usage_t required_usage) {
+  if (IREE_LIKELY(iree_any_bit_set(allowed_usage, required_usage))) {
+    return iree_ok_status();
+  }
+#if IREE_STATUS_MODE
+  iree_bitfield_string_temp_t allowed_temp, required_temp;
+  iree_string_view_t allowed_string =
+      iree_hal_buffer_usage_format(allowed_usage, &allowed_temp);
+  iree_string_view_t required_string =
+      iree_hal_buffer_usage_format(required_usage, &required_temp);
+  return iree_make_status(
+      IREE_STATUS_PERMISSION_DENIED,
+      "requested usage was not specified when the buffer was allocated; "
+      "buffer allows %.*s, operation requires one of %.*s",
+      (int)allowed_string.size, allowed_string.data, (int)required_string.size,
+      required_string.data);
+#else
+  return iree_status_from_code(IREE_STATUS_PERMISSION_DENIED);
+#endif  // IREE_STATUS_MODE
+}
+
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_range(
     iree_hal_buffer_t* buffer, iree_device_size_t byte_offset,
     iree_device_size_t byte_length) {

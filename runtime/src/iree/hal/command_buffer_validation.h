@@ -11,8 +11,8 @@
 #include "iree/hal/command_buffer.h"
 
 // Requirements for a buffer resource used within a command buffer.
-// Buffers bound to must have all bits set from the included bitfields and
-// support the given min/max byte offsets as in-range.
+// Bound buffers must satisfy the exact uses and access permissions, the
+// optional storage-class requirement, and the recorded range/alignment.
 typedef struct iree_hal_buffer_binding_requirements_t {
   // Queue operation categories required of the allocator's native backing.
   iree_hal_buffer_compatibility_t required_compatibility;
@@ -21,6 +21,10 @@ typedef struct iree_hal_buffer_binding_requirements_t {
   // Known accesses performed by commands. NONE contributes no requirement;
   // opaque executable bindings cannot infer permissions from the dispatch ABI.
   iree_hal_memory_access_t access;
+  // An opaque dispatch requires at least one STORAGE usage bit. This remains
+  // separate from exact uses so combining a dispatch with an atomic or transfer
+  // command cannot weaken that command's requirements.
+  bool requires_storage;
   // Required memory properties for the recorded operations.
   iree_hal_memory_type_t type;
   // Maximum offset in the binding referenced by any command.
@@ -47,8 +51,7 @@ typedef struct iree_hal_command_buffer_validation_state_t {
   // TODO(benvanik): current pipeline layout/descriptor set layout info.
   // TODO(benvanik): valid push constant bit ranges.
   // Requirements for each binding table entry.
-  // Unused slots in the binding table will have IREE_HAL_BUFFER_USAGE_NONE and
-  // are ignored if set when executed.
+  // Unused slots have zeroed requirements and are ignored when executed.
   iree_hal_buffer_binding_requirements_t binding_requirements[0];
 } iree_hal_command_buffer_validation_state_t;
 

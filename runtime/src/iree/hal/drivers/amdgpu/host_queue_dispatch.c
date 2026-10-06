@@ -221,7 +221,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_validate_dispatch_binding(
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(binding->buffer),
       IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
       iree_hal_buffer_allowed_usage(binding->buffer),
       IREE_HAL_BUFFER_USAGE_STORAGE));
   iree_device_size_t binding_offset = 0;

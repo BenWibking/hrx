@@ -58,17 +58,25 @@ static void MakeScaleAndOffsetBindings(iree_hal_buffer_t* input_buffer,
 // Dispatches scale_and_offset directly on the queue:
 // output[i] = input[i] * scale + offset.
 TEST_P(QueueDispatchTest, DispatchWithConstantsAndBindings) {
+  const uint32_t input_data[] = {1, 2, 3, 4};
+  iree_hal_buffer_params_t params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
+  params.usage = IREE_HAL_BUFFER_USAGE_STORAGE_READ |
+                 IREE_HAL_BUFFER_USAGE_TRANSFER_TARGET;
   Ref<iree_hal_buffer_t> input_buffer;
-  {
-    std::vector<uint32_t> input_data = {1, 2, 3, 4};
-    IREE_ASSERT_OK(CreateDeviceBufferWithData(
-        input_data.data(), input_data.size() * sizeof(input_data[0]),
-        input_buffer.out()));
-  }
-
-  Ref<iree_hal_buffer_t> output_buffer;
+  IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
+      device_allocator_, params, sizeof(input_data), input_buffer.out()));
+  SemaphoreList upload_signal(device_, {0}, {1});
   IREE_ASSERT_OK(
-      CreateZeroedDeviceBuffer(4 * sizeof(uint32_t), output_buffer.out()));
+      iree_hal_queue_update(transfer_queue_, iree_hal_semaphore_list_empty(),
+                            upload_signal, input_data, 0, input_buffer, 0,
+                            sizeof(input_data), IREE_HAL_UPDATE_FLAG_NONE));
+
+  params.usage = IREE_HAL_BUFFER_USAGE_STORAGE_WRITE |
+                 IREE_HAL_BUFFER_USAGE_TRANSFER_SOURCE;
+  Ref<iree_hal_buffer_t> output_buffer;
+  IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
+      device_allocator_, params, sizeof(input_data), output_buffer.out()));
 
   iree_hal_buffer_ref_t binding_refs[2];
   MakeScaleAndOffsetBindings(input_buffer, output_buffer, binding_refs);
@@ -81,10 +89,9 @@ TEST_P(QueueDispatchTest, DispatchWithConstantsAndBindings) {
   iree_const_byte_span_t constants =
       iree_make_const_byte_span(constant_data, sizeof(constant_data));
 
-  SemaphoreList empty_wait;
   SemaphoreList dispatch_signal(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_dispatch(
-      dispatch_queue_, empty_wait, dispatch_signal, executable_,
+      dispatch_queue_, upload_signal, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
       IREE_HAL_DISPATCH_FLAG_NONE));

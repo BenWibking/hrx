@@ -81,6 +81,23 @@ TEST(BufferRangeTest, RejectsOutOfRangeAndOverflowingRanges) {
       iree_hal_buffer_validate_range(&buffer, IREE_DEVICE_SIZE_MAX - 3, 8));
 }
 
+TEST(BufferPermissionTest, OpaqueStorageRequiresEitherDirection) {
+  for (iree_hal_buffer_usage_t usage :
+       {IREE_HAL_BUFFER_USAGE_STORAGE_READ, IREE_HAL_BUFFER_USAGE_STORAGE_WRITE,
+        IREE_HAL_BUFFER_USAGE_STORAGE}) {
+    IREE_EXPECT_OK(iree_hal_buffer_validate_usage_any(
+        usage, IREE_HAL_BUFFER_USAGE_STORAGE));
+  }
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_validate_usage_any(IREE_HAL_BUFFER_USAGE_TRANSFER,
+                                         IREE_HAL_BUFFER_USAGE_STORAGE));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_validate_usage(IREE_HAL_BUFFER_USAGE_STORAGE_READ,
+                                     IREE_HAL_BUFFER_USAGE_STORAGE_WRITE));
+}
+
 TEST(BufferPermissionTest, ValidatesAccessAndUsage) {
   IREE_EXPECT_OK(iree_hal_buffer_validate_access(IREE_HAL_MEMORY_ACCESS_READ,
                                                  IREE_HAL_MEMORY_ACCESS_READ));
