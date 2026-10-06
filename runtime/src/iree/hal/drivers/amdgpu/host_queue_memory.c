@@ -374,8 +374,10 @@ iree_status_t iree_hal_amdgpu_host_queue_acquire_alloca_transaction(
           queue, resolution, &requester_frontier_storage);
   IREE_RETURN_IF_ERROR(iree_hal_pool_acquire_reservations(
       allocation_pool, transaction->request_count, transaction->requests,
-      requester_frontier, reserve_flags, transaction->reservations,
-      transaction->acquire_infos, &transaction->acquire_result));
+      iree_hal_pool_requires_asan_advice(allocation_pool) ? NULL
+                                                          : requester_frontier,
+      reserve_flags, transaction->reservations, transaction->acquire_infos,
+      &transaction->acquire_result));
 
   transaction->reservations_held =
       transaction->acquire_result == IREE_HAL_POOL_ACQUIRE_OK ||
@@ -437,7 +439,8 @@ iree_status_t iree_hal_amdgpu_host_queue_acquire_alloca_transaction(
         }
       }
       iree_hal_amdgpu_wait_resolution_t candidate_resolution = *resolution;
-      if (iree_hal_amdgpu_host_queue_append_pool_wait_frontier_barriers(
+      if (!iree_hal_pool_requires_asan_advice(allocation_pool) &&
+          iree_hal_amdgpu_host_queue_append_pool_wait_frontier_barriers(
               queue, requester_frontier, transaction->wait_frontier,
               &candidate_resolution)) {
         transaction->wait_resolution = candidate_resolution;
@@ -523,6 +526,11 @@ static uint64_t iree_hal_amdgpu_host_queue_finish_alloca_materialization(
     iree_hal_pool_t* allocation_pool,
     iree_hal_amdgpu_host_queue_submission_flags_t submission_flags,
     iree_hal_amdgpu_host_queue_barrier_submission_t* submission) {
+  // Guarded allocations reach this point only after actual reuse completion.
+  // No failure remains between publishing their shadow and committing backing.
+  iree_hal_pool_advise_asan_reservations(
+      allocation_pool, transaction->request_count, transaction->reservations,
+      IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
     iree_hal_amdgpu_transient_buffer_attach_reservation(
         transaction->buffers[i], allocation_pool,
@@ -707,6 +715,8 @@ static void iree_hal_amdgpu_sanitized_dealloca_complete(
     iree_hal_amdgpu_transient_buffer_decommit(buffer);
     // The barrier has completed every prior use. Empty history here records
     // actual retirement, independent of later queue-frontier publication.
+    iree_hal_pool_advise_asan_reservations(
+        source_pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
     iree_hal_pool_release_reservations(source_pool, 1, &reservation,
                                        /*death_frontier=*/NULL);
     const iree_hal_buffer_params_t params = {

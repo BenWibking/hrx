@@ -1267,6 +1267,11 @@ TEST(FixedBlockPool, ASANAdvisesBackingBlockAndExposesUserRange) {
 
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+  EXPECT_TRUE(iree_hal_pool_requires_asan_advice(pool));
+  EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                iree_memory_order_relaxed));
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   EXPECT_EQ(iree_atomic_load(&provider->asan_allocated_count,
                              iree_memory_order_relaxed),
             1);
@@ -1310,11 +1315,15 @@ TEST(FixedBlockPool, ASANAdvisesBackingBlockAndExposesUserRange) {
       pool, 13, 16, /*requester_frontier=*/NULL,
       IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   EXPECT_EQ(iree_atomic_load(&provider->asan_allocated_count,
                              iree_memory_order_relaxed),
             2);
   EXPECT_LT(first_release_sequence, provider->last_asan_allocated_sequence);
 
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
   ReleaseOneReservation(pool, &reservation,
                         /*death_frontier=*/NULL);
   EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,

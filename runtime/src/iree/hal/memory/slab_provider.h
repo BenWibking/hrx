@@ -195,8 +195,9 @@ iree_status_t iree_hal_slab_provider_validate_asan_options(
 // |backing_offset| identifies the beginning of |layout|'s backing range within
 // |slab|. The provider uses |layout| to locate the user-visible range and
 // poison/unpoison bytes in its target-specific shadow state according to
-// |advice_flags|. This hook must be infallible after enabled ASAN options have
-// been accepted by iree_hal_slab_provider_validate_asan_options().
+// |advice_flags|. The caller establishes actual completion of prior accesses
+// before changing shadow state. This hook must be infallible after enabled ASAN
+// options have been accepted by iree_hal_slab_provider_validate_asan_options().
 void iree_hal_slab_provider_advise_asan_range(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
     iree_device_size_t backing_offset,

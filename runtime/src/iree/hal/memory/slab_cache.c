@@ -499,6 +499,7 @@ iree_status_t iree_hal_slab_cache_create(
   cache->backing_pool = backing_pool;
   iree_hal_pool_retain(backing_pool);
   cache->host_allocator = host_allocator;
+  cache->base.asan_enabled = iree_hal_pool_requires_asan_advice(backing_pool);
   cache->slab = options->slab;
   cache->slab.params.min_alignment =
       iree_max(1, cache->slab.params.min_alignment);
@@ -864,6 +865,19 @@ static void iree_hal_slab_cache_release_reservations(
 // Materialization, retention and diagnostics
 //===----------------------------------------------------------------------===//
 
+static void iree_hal_slab_cache_advise_asan_reservations(
+    iree_hal_pool_t* base_pool, iree_host_size_t reservation_count,
+    const iree_hal_pool_reservation_t* reservations,
+    iree_hal_asan_range_advice_flags_t flags) {
+  iree_hal_slab_cache_t* cache = (iree_hal_slab_cache_t*)base_pool;
+  for (iree_host_size_t i = 0; i < reservation_count; ++i) {
+    iree_hal_slab_cache_entry_t* entry =
+        (iree_hal_slab_cache_entry_t*)(uintptr_t)reservations[i].block_handle;
+    iree_hal_pool_advise_asan_reservations(cache->backing_pool, 1,
+                                           &entry->reservation, flags);
+  }
+}
+
 static void iree_hal_slab_cache_buffer_release(void* user_data,
                                                iree_hal_buffer_t* buffer) {
   iree_hal_slab_cache_entry_t* entry = user_data;
@@ -874,6 +888,9 @@ static void iree_hal_slab_cache_buffer_release(void* user_data,
       .byte_length = entry->range.length,
       .block_handle = (uint64_t)(uintptr_t)entry,
   };
+  iree_hal_pool_advise_asan_reservations(
+      &entry->cache->base, 1, &reservation,
+      IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
   iree_hal_slab_cache_release_reservations(&entry->cache->base, 1, &reservation,
                                            NULL);
 }
@@ -1047,4 +1064,5 @@ static const iree_hal_pool_vtable_t iree_hal_slab_cache_vtable = {
     .validate_asan = iree_hal_slab_cache_validate_asan,
     .query_stats = iree_hal_slab_cache_query_pool_stats,
     .trim = iree_hal_slab_cache_trim,
+    .advise_asan_reservations = iree_hal_slab_cache_advise_asan_reservations,
 };

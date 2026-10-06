@@ -320,6 +320,10 @@ void iree_hal_vulkan_transient_buffer_release_reservation(
   }
   iree_slim_mutex_unlock(&buffer->mutex);
   if (was_armed) {
+    if (!death_frontier || death_frontier->entry_count == 0) {
+      iree_hal_pool_advise_asan_reservations(
+          pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
+    }
     iree_hal_pool_release_reservations(pool, 1, &reservation, death_frontier);
   }
 }

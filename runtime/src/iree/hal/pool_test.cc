@@ -138,6 +138,7 @@ static const iree_hal_pool_vtable_t iree_hal_routing_test_pool_vtable = {
     /*.validate_asan=*/nullptr,
     /*.query_stats=*/iree_hal_routing_test_pool_query_stats,
     /*.trim=*/iree_hal_routing_test_pool_trim,
+    /*.advise_asan_reservations=*/nullptr,
 };
 
 static iree_hal_routing_test_pool_t* CreateRoutingTestPool(

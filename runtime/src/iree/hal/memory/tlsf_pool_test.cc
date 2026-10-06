@@ -1596,6 +1596,11 @@ TEST(TLSFPool, ASANAdvisesBackingRangeAndExposesUserRange) {
 
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+  EXPECT_TRUE(iree_hal_pool_requires_asan_advice(pool));
+  EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                iree_memory_order_relaxed));
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   EXPECT_EQ(iree_atomic_load(&provider->asan_allocated_count,
                              iree_memory_order_relaxed),
             1);
@@ -1640,11 +1645,15 @@ TEST(TLSFPool, ASANAdvisesBackingRangeAndExposesUserRange) {
       pool, 13, 16, /*requester_frontier=*/NULL,
       IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   EXPECT_EQ(iree_atomic_load(&provider->asan_allocated_count,
                              iree_memory_order_relaxed),
             2);
   EXPECT_LT(first_release_sequence, provider->last_asan_allocated_sequence);
 
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
   ReleaseOneReservation(pool, &reservation,
                         /*death_frontier=*/NULL);
   EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,
@@ -1778,6 +1787,141 @@ TEST(TLSFPool, FinitePoolsPreserveNativeAdviceCoordinates) {
   iree_hal_pool_release(source_pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);
+}
+
+TEST(TLSFPool, GuardedFinitePoolsKeepPendingBookkeepingSideEffectFree) {
+  for (bool use_tlsf : {false, true}) {
+    SCOPED_TRACE(use_tlsf ? "TLSF" : "fixed block");
+    auto allocator = iree_allocator_system();
+    iree_async_frontier_tracker_t* tracker = nullptr;
+    IREE_ASSERT_OK(iree_async_frontier_tracker_create(
+        iree_async_frontier_tracker_options_default(), allocator, &tracker));
+    const iree_async_axis_t axis = iree_async_axis_make_queue(1, 0, 0, 0, 0);
+    IREE_ASSERT_OK(
+        iree_async_frontier_tracker_register_axis(tracker, axis, nullptr));
+    iree_async_single_frontier_t prior_use = {};
+    prior_use.entry_count = 1;
+    prior_use.entries[0] = {axis, 1};
+    const auto* frontier =
+        iree_async_fixed_frontier_as_const_frontier(&prior_use);
+    iree_async_notification_t* notification = nullptr;
+    IREE_ASSERT_OK(iree_async_notification_create(
+        test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+    iree_hal_slab_provider_t* slab_provider = nullptr;
+    IREE_ASSERT_OK(
+        iree_hal_test_opaque_slab_provider_create(allocator, &slab_provider));
+    auto* provider = (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+    iree_hal_pool_t* source_pool = nullptr;
+    IREE_ASSERT_OK(CreateTLSFPool(DefaultOptions(), slab_provider, notification,
+                                  tracker, iree_hal_pool_epoch_query_null(),
+                                  allocator, &source_pool));
+    EXPECT_FALSE(iree_hal_pool_requires_asan_advice(source_pool));
+    iree_hal_pool_reservation_t source_reservation;
+    iree_hal_pool_acquire_info_t source_info;
+    iree_hal_pool_acquire_result_t result;
+    IREE_ASSERT_OK(AcquireOneReservation(
+        source_pool, 4096, 16, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+        &source_reservation, &source_info, &result));
+    ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK_FRESH, result);
+    ReleaseOneReservation(source_pool, &source_reservation, frontier);
+    IREE_ASSERT_OK(
+        AcquireOneReservation(source_pool, 4096, 16, nullptr,
+                              IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER,
+                              &source_reservation, &source_info, &result));
+    ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT, result);
+    auto params = MakeReservationRequest(4096, 16).params;
+    params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+    iree_hal_buffer_t* source = nullptr;
+    IREE_ASSERT_OK(MaterializeOneReservation(
+        source_pool, params, &source_reservation,
+        IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, &source));
+
+    iree_hal_pool_t* child = nullptr;
+    if (use_tlsf) {
+      iree_hal_tlsf_pool_options_t options = {};
+      options.tlsf_options.frontier_capacity = 2;
+      options.asan = ShadowOptions();
+      IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+          source, 0, 256, &options, allocator, &child));
+    } else {
+      iree_hal_fixed_block_pool_options_t options = {};
+      options.block_allocator_options.block_size = 176;
+      options.block_allocator_options.frontier_capacity = 2;
+      options.alignment = 16;
+      options.asan = ShadowOptions();
+      IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
+          source, 0, 256, &options, allocator, &child));
+    }
+    EXPECT_TRUE(iree_hal_pool_requires_asan_advice(child));
+
+    // Causal eligibility permits reservation and view creation before the
+    // producer finishes, but it grants no authority to change shadow bytes.
+    iree_hal_pool_reservation_t reservation;
+    iree_hal_pool_acquire_info_t info;
+    IREE_ASSERT_OK(AcquireOneReservation(child, 176, 16, frontier,
+                                         IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                         &reservation, &info, &result));
+    ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK, result);
+    iree_hal_buffer_t* buffer = nullptr;
+    IREE_ASSERT_OK(MaterializeOneReservation(
+        child, params, &reservation, IREE_HAL_POOL_MATERIALIZE_FLAG_NONE,
+        &buffer));
+    EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                  iree_memory_order_relaxed));
+    iree_hal_buffer_release(buffer);
+    ReleaseOneReservation(child, &reservation, info.reuse_frontier);
+    EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                  iree_memory_order_relaxed));
+
+    // The synchronous helper's timed-out wait returns the exact prerequisite
+    // without ever starting a new allocation lifetime.
+    buffer = nullptr;
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_DEADLINE_EXCEEDED,
+        iree_hal_pool_allocate_buffer(child, params, 176,
+                                      iree_immediate_timeout(), &buffer));
+    EXPECT_EQ(nullptr, buffer);
+    EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                  iree_memory_order_relaxed));
+
+    IREE_ASSERT_OK(AcquireOneReservation(
+        child, 176, 16, nullptr, IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER,
+        &reservation, &info, &result));
+    ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT, result);
+    IREE_ASSERT_OK(MaterializeOneReservation(
+        child, params, &reservation, IREE_HAL_POOL_MATERIALIZE_FLAG_NONE,
+        &buffer));
+    EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                  iree_memory_order_relaxed));
+    iree_async_frontier_tracker_advance(tracker, axis, 1);
+    iree_hal_pool_advise_asan_reservations(
+        child, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
+    EXPECT_EQ(1, iree_atomic_load(&provider->asan_allocated_count,
+                                  iree_memory_order_relaxed));
+    const uint32_t value = 0x12345678;
+    IREE_ASSERT_OK(iree_hal_buffer_map_write(buffer, 0, &value, sizeof(value)));
+    uint32_t observed = 0;
+    IREE_ASSERT_OK(
+        iree_hal_buffer_map_read(buffer, 0, &observed, sizeof(observed)));
+    EXPECT_EQ(value, observed);
+    iree_hal_pool_advise_asan_reservations(
+        child, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
+    EXPECT_EQ(1, iree_atomic_load(&provider->asan_released_count,
+                                  iree_memory_order_relaxed));
+    EXPECT_LT(provider->last_asan_allocated_sequence,
+              provider->last_asan_released_sequence);
+    ReleaseOneReservation(child, &reservation, nullptr);
+    iree_hal_buffer_release(buffer);
+    EXPECT_EQ(2, iree_atomic_load(&provider->asan_advice_count,
+                                  iree_memory_order_relaxed));
+    iree_hal_pool_release(child);
+    iree_hal_buffer_release(source);
+    ReleaseOneReservation(source_pool, &source_reservation, nullptr);
+    iree_hal_pool_release(source_pool);
+    iree_hal_slab_provider_release(slab_provider);
+    iree_async_notification_release(notification);
+    iree_async_frontier_tracker_release(tracker);
+  }
 }
 
 TEST(TLSFPool, ASANQuarantineDelaysReleasedRangeReuse) {

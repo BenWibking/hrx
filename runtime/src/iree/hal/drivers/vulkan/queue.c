@@ -4952,6 +4952,10 @@ static void iree_hal_vulkan_queue_complete_alloca(
   const iree_async_frontier_t* frontier =
       iree_async_fixed_frontier_as_const_frontier(&submission->frontier);
   if (iree_status_is_ok(completion_status)) {
+    iree_hal_pool_advise_asan_reservations(
+        submission->alloca.pool, submission->alloca.request_count,
+        submission->alloca.reservations,
+        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
     for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
       iree_hal_vulkan_transient_buffer_commit(submission->alloca.buffers[i]);
     }
@@ -4999,6 +5003,10 @@ static void iree_hal_vulkan_queue_complete_dealloca(
     }
     // Native completion and decommit have both finished. The returned ranges
     // need no dependency on the later publication of the queue's frontier.
+    iree_hal_pool_advise_asan_reservations(
+        submission->dealloca.pool, submission->dealloca.buffer_count,
+        submission->dealloca.reservations,
+        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
     iree_hal_pool_release_reservations(
         submission->dealloca.pool, submission->dealloca.buffer_count,
         submission->dealloca.reservations, /*death_frontier=*/NULL);

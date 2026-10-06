@@ -1006,6 +1006,77 @@ TEST_F(HostQueuePendingTest, CancelPendingAllocaFrontierWait) {
   iree_hal_buffer_release(buffer);
 }
 
+TEST_F(HostQueuePendingTest, CancelColdAllocaPreservesInheritedFrontier) {
+  constexpr iree_device_size_t kSlabSize = 65536;
+  constexpr iree_device_size_t kAllocationSize = 4096;
+  iree_hal_amdgpu_logical_device_options_t options;
+  iree_hal_amdgpu_logical_device_options_initialize(&options);
+  options.preallocate_pools = 0;
+  TestLogicalDevice test_device;
+  IREE_ASSERT_OK(
+      test_device.Initialize(&options, &libhsa_, &topology_, host_allocator_));
+  auto* queue = test_device.first_host_queue();
+  ASSERT_NE(queue, nullptr);
+  queue->wait_barrier_strategy = IREE_HAL_AMDGPU_WAIT_BARRIER_STRATEGY_DEFER;
+
+  Ref<iree_hal_pool_t> backing_pool;
+  IREE_ASSERT_OK(CreateExplicitFixedBlockPool(
+      test_device.base_device(), iree_hal_queue_family(&queue->base), kSlabSize,
+      backing_pool.out()));
+  IREE_ASSERT_OK(
+      SeedWaitableFixedBlockReservation(backing_pool, kSlabSize, queue->axis));
+  iree_hal_tlsf_pool_options_t pool_options = {};
+  pool_options.tlsf_options.range_length = kSlabSize;
+  pool_options.tlsf_options.alignment = 16;
+  pool_options.tlsf_options.frontier_capacity = 2;
+  Ref<iree_hal_pool_t> pool;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(backing_pool, &pool_options,
+                                           host_allocator_, pool.out()));
+
+  iree::hal::cts::SemaphoreList allocated(test_device.base_device(), {0}, {1});
+  Ref<iree_hal_buffer_t> buffer;
+  IREE_ASSERT_OK(QueueAlloca(queue, pool, allocated,
+                             MakeTransientBufferParams(), kAllocationSize,
+                             buffer.out()));
+  ASSERT_TRUE(HostQueueHasPendingOps(queue));
+  EXPECT_FALSE(iree_hal_semaphore_list_poll(allocated));
+  iree_hal_pool_stats_t stats = {};
+  iree_hal_pool_query_stats(pool, &stats);
+  EXPECT_EQ(stats.reserve_count, 1u);
+  EXPECT_EQ(stats.wait_count, 1u);
+  EXPECT_EQ(stats.release_count, 0u);
+  EXPECT_EQ(stats.reservation_count, 1u);
+
+  CancelPendingWithTestStatus(queue);
+  EXPECT_FALSE(HostQueueHasPendingOps(queue));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_CANCELLED,
+      iree_hal_semaphore_list_wait(allocated, iree_infinite_timeout(),
+                                   IREE_ASYNC_WAIT_FLAG_NONE));
+  iree_hal_pool_query_stats(pool, &stats);
+  EXPECT_EQ(stats.reservation_count, 0u);
+  EXPECT_EQ(stats.release_count, 1u);
+  buffer.reset();
+
+  // Cancellation rolls back bookkeeping without retiring the prior user's
+  // dependency. The next allocation must inherit the exact same edge.
+  const iree_hal_pool_reservation_request_t request = {
+      MakeTransientBufferParams(), kAllocationSize};
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, &request, nullptr,
+      IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER, &reservation, &info,
+      &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT);
+  ASSERT_EQ(info.reuse_frontier->entry_count, 1u);
+  EXPECT_EQ(info.reuse_frontier->entries[0].axis, queue->axis);
+  EXPECT_EQ(info.reuse_frontier->entries[0].epoch, 1u);
+  iree_hal_pool_release_reservations(pool, 1, &reservation,
+                                     info.reuse_frontier);
+}
+
 TEST_F(HostQueuePendingTest, CancelPendingAllocaPoolNotificationWait) {
   const iree_device_size_t allocation_size = 4096;
 

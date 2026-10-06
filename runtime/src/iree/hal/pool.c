@@ -34,6 +34,7 @@ IREE_API_EXPORT void iree_hal_pool_initialize(
   out_pool->frontier_tracker = frontier_tracker;
   out_pool->maintenance = NULL;
   out_pool->epoch_query = iree_hal_pool_epoch_query_null();
+  out_pool->asan_enabled = false;
 }
 
 IREE_API_EXPORT void iree_hal_pool_deinitialize(iree_hal_pool_t* pool) {
@@ -75,6 +76,21 @@ IREE_API_EXPORT void iree_hal_pool_release_reservations(
   _VTABLE_DISPATCH(pool, release_reservations)(pool, reservation_count,
                                                reservations, death_frontier);
   IREE_TRACE_ZONE_END(z0);
+}
+
+IREE_API_EXPORT bool iree_hal_pool_requires_asan_advice(
+    const iree_hal_pool_t* pool) {
+  return pool->asan_enabled;
+}
+
+IREE_API_EXPORT void iree_hal_pool_advise_asan_reservations(
+    iree_hal_pool_t* pool, iree_host_size_t reservation_count,
+    const iree_hal_pool_reservation_t* reservations,
+    iree_hal_asan_range_advice_flags_t flags) {
+  if (pool->asan_enabled) {
+    _VTABLE_DISPATCH(pool, advise_asan_reservations)(pool, reservation_count,
+                                                     reservations, flags);
+  }
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_pool_materialize_reservations(
@@ -262,6 +278,11 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
                 pool, 1, &request, &reservation,
                 IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
                 &buffer);
+            if (iree_status_is_ok(status)) {
+              iree_hal_pool_advise_asan_reservations(
+                  pool, 1, &reservation,
+                  IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
+            }
           }
           if (!iree_status_is_ok(status)) {
             // A failed wait must preserve the dependency on the previous user.

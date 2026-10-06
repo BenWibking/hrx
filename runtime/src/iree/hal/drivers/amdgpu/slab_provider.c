@@ -106,8 +106,8 @@ typedef struct iree_hal_amdgpu_slab_handle_t {
   // True when |base_ptr| is an active HSA VMM mapping.
   uint32_t is_vmem_mapped : 1;
 
-  // True when any ASAN advice has published shadow bytes for this slab.
-  uint32_t has_asan_advice : 1;
+  // Set by independently advised subranges; read after all users retire.
+  iree_atomic_int32_t has_asan_advice;
 
   // Borrowed HSA API table used to release slab backing allocations.
   const iree_hal_amdgpu_libhsa_t* libhsa;
@@ -685,7 +685,8 @@ static void iree_hal_amdgpu_slab_provider_release_slab(
         slab->base_ptr);
     iree_hal_memory_trace_free(&provider->trace, slab->base_ptr);
     if (iree_hal_amdgpu_slab_provider_uses_asan_shadow(provider) &&
-        slab_handle->has_asan_advice) {
+        iree_atomic_load(&slab_handle->has_asan_advice,
+                         iree_memory_order_relaxed)) {
       iree_hal_amdgpu_asan_quarantine_release_fn_t release_fn =
           iree_hal_amdgpu_slab_provider_uses_asan_vmm(provider)
               ? iree_hal_amdgpu_slab_provider_finalize_vmem_handle
@@ -841,7 +842,8 @@ static void iree_hal_amdgpu_slab_provider_advise_asan_range(
   IREE_ASSERT(iree_hal_amdgpu_asan_state_is_enabled(provider->asan_state));
   iree_hal_amdgpu_slab_handle_t* slab_handle =
       (iree_hal_amdgpu_slab_handle_t*)(uintptr_t)slab->provider_handle;
-  slab_handle->has_asan_advice = true;
+  iree_atomic_store(&slab_handle->has_asan_advice, 1,
+                    iree_memory_order_relaxed);
 
   const uint64_t mapped_address =
       (uint64_t)(uintptr_t)slab->base_ptr + backing_offset;

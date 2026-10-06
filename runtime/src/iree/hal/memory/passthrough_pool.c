@@ -217,12 +217,6 @@ static void iree_hal_passthrough_pool_retire_allocation(
                                                            maintenance_entry));
   iree_hal_passthrough_pool_t* pool = (iree_hal_passthrough_pool_t*)state->pool;
   const iree_allocator_t host_allocator = pool->host_allocator;
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options) &&
-      state->death_frontier.entry_count != 0) {
-    iree_hal_slab_provider_advise_asan_range(
-        pool->slab_provider, &state->slab, /*backing_offset=*/0,
-        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED, &state->asan_layout);
-  }
   iree_hal_slab_provider_release_slab(pool->slab_provider, &state->slab);
   const iree_device_size_t charged_length = state->charged_length;
   iree_hal_passthrough_pool_unlink_allocation(pool, state);
@@ -317,18 +311,6 @@ static void iree_hal_passthrough_pool_reservation_state_release_reservation(
                                          sizeof(death_frontier->entries[0]));
   }
 
-  // An empty frontier declares that prior uses have already completed. Publish
-  // their logical release effects before returning to a queue completion or
-  // synchronous owner. Native freeing still belongs to the maintenance worker.
-  // A pending frontier defers both marking and native retirement until ready.
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options) &&
-      reservation_state->death_frontier.entry_count == 0) {
-    iree_hal_slab_provider_advise_asan_range(
-        pool->slab_provider, &reservation_state->slab,
-        /*backing_offset=*/0, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED,
-        &reservation_state->asan_layout);
-  }
-
   const iree_device_size_t user_offset =
       iree_hal_asan_pool_options_is_enabled(&pool->asan_options)
           ? reservation_state->asan_layout.user_offset
@@ -355,6 +337,21 @@ static void iree_hal_passthrough_pool_borrowed_view_release(
       reservation_state);
 }
 
+static void iree_hal_passthrough_pool_advise_asan_reservations(
+    iree_hal_pool_t* base_pool, iree_host_size_t reservation_count,
+    const iree_hal_pool_reservation_t* reservations,
+    iree_hal_asan_range_advice_flags_t flags) {
+  iree_hal_passthrough_pool_t* pool = (iree_hal_passthrough_pool_t*)base_pool;
+  for (iree_host_size_t i = 0; i < reservation_count; ++i) {
+    iree_hal_passthrough_pool_reservation_state_t* state =
+        (iree_hal_passthrough_pool_reservation_state_t*)(uintptr_t)
+            reservations[i]
+                .block_handle;
+    iree_hal_slab_provider_advise_asan_range(pool->slab_provider, &state->slab,
+                                             0, flags, &state->asan_layout);
+  }
+}
+
 static void iree_hal_passthrough_pool_owned_buffer_release(
     void* user_data, iree_hal_buffer_t* buffer) {
   (void)buffer;
@@ -364,6 +361,12 @@ static void iree_hal_passthrough_pool_owned_buffer_release(
   iree_hal_passthrough_pool_reservation_state_t* reservation_state =
       element->reservation_state;
   if (state->ownership_committed) {
+    const iree_hal_pool_reservation_t reservation = {
+        .block_handle = (uint64_t)(uintptr_t)reservation_state,
+    };
+    iree_hal_pool_advise_asan_reservations(
+        reservation_state->pool, 1, &reservation,
+        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
     iree_hal_passthrough_pool_reservation_state_release_reservation(
         reservation_state, NULL);
     iree_hal_passthrough_pool_t* pool =
@@ -412,6 +415,8 @@ iree_status_t iree_hal_passthrough_pool_create(
   pool->host_allocator = host_allocator;
   pool->base.epoch_query = options.epoch_query;
   pool->asan_options = options.asan;
+  pool->base.asan_enabled =
+      iree_hal_asan_pool_options_is_enabled(&options.asan);
   pool->base.maintenance = maintenance;
   pool->maintenance = maintenance;
   iree_hal_memory_maintenance_retain(maintenance);
@@ -594,13 +599,6 @@ static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
   out_reservation->byte_length = size;
   out_reservation->block_handle = (uint64_t)(uintptr_t)reservation_state;
 
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
-    iree_hal_slab_provider_advise_asan_range(
-        pool->slab_provider, &reservation_state->slab,
-        /*backing_offset=*/0, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED,
-        &reservation_state->asan_layout);
-  }
-
   iree_atomic_fetch_add(&pool->bytes_reserved, (int64_t)slab.length,
                         iree_memory_order_relaxed);
   iree_atomic_fetch_add(&pool->bytes_committed, (int64_t)slab.length,
@@ -639,12 +637,6 @@ static void iree_hal_passthrough_pool_rollback_reservation(
           : 0;
   iree_hal_memory_trace_free(&pool->trace,
                              reservation_state->slab.base_ptr + user_offset);
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
-    iree_hal_slab_provider_advise_asan_range(
-        pool->slab_provider, &reservation_state->slab,
-        /*backing_offset=*/0, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED,
-        &reservation_state->asan_layout);
-  }
   iree_atomic_fetch_add(&pool->bytes_reserved,
                         -(int64_t)reservation_state->charged_length,
                         iree_memory_order_relaxed);
@@ -1015,4 +1007,6 @@ static const iree_hal_pool_vtable_t iree_hal_passthrough_pool_vtable = {
     .validate_asan = iree_hal_passthrough_pool_validate_asan,
     .query_stats = iree_hal_passthrough_pool_query_stats,
     .trim = iree_hal_passthrough_pool_trim,
+    .advise_asan_reservations =
+        iree_hal_passthrough_pool_advise_asan_reservations,
 };

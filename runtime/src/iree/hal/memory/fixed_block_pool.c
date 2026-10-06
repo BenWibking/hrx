@@ -324,9 +324,6 @@ static void iree_hal_fixed_block_pool_return_allocation(
   }
   if (asan_enabled) {
     pool->asan_block_layouts[allocation->block_index] = *asan_layout;
-    iree_hal_fixed_block_pool_advise_asan(
-        pool, allocation->offset, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED,
-        asan_layout);
   }
   iree_hal_memory_trace_alloc(
       &pool->trace,
@@ -466,6 +463,8 @@ static iree_status_t iree_hal_fixed_block_pool_create_impl(
   pool->backing_block_size = backing_block_size;
   pool->block_count = block_allocator_options.block_count;
   pool->asan_options = options.asan;
+  pool->base.asan_enabled =
+      iree_hal_asan_pool_options_is_enabled(&options.asan);
   pool->budget_limit = options.budget_limit;
 
   iree_hal_slab_provider_retain(slab_provider);
@@ -889,16 +888,6 @@ static void iree_hal_fixed_block_pool_release_one_reservation(
       (void*)((uintptr_t)pool->slab.base_ptr + reservation->offset));
 
   const uint32_t block_index = (uint32_t)reservation->block_handle;
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
-    const iree_hal_asan_allocation_layout_t* asan_layout =
-        &pool->asan_block_layouts[block_index];
-    const iree_device_size_t backing_offset =
-        (iree_device_size_t)block_index * pool->backing_block_size;
-    iree_hal_fixed_block_pool_advise_asan(
-        pool, backing_offset, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED,
-        asan_layout);
-  }
-
   iree_hal_memory_fixed_block_allocator_release(pool->block_allocator,
                                                 block_index, death_frontier);
 
@@ -926,6 +915,19 @@ static void iree_hal_fixed_block_pool_release_reservations(
 // Wrap / Query / Trim / Notification
 //===----------------------------------------------------------------------===//
 
+static void iree_hal_fixed_block_pool_advise_asan_reservations(
+    iree_hal_pool_t* base_pool, iree_host_size_t reservation_count,
+    const iree_hal_pool_reservation_t* reservations,
+    iree_hal_asan_range_advice_flags_t flags) {
+  iree_hal_fixed_block_pool_t* pool = (iree_hal_fixed_block_pool_t*)base_pool;
+  for (iree_host_size_t i = 0; i < reservation_count; ++i) {
+    const uint32_t block_index = (uint32_t)reservations[i].block_handle;
+    iree_hal_fixed_block_pool_advise_asan(
+        pool, (iree_device_size_t)block_index * pool->backing_block_size, flags,
+        &pool->asan_block_layouts[block_index]);
+  }
+}
+
 static void iree_hal_fixed_block_pool_buffer_release(
     void* user_data, iree_hal_buffer_t* buffer) {
   (void)buffer;
@@ -933,6 +935,9 @@ static void iree_hal_fixed_block_pool_buffer_release(
       (iree_hal_fixed_block_pool_materialize_element_t*)user_data;
   iree_hal_fixed_block_pool_materialize_state_t* state = element->state;
   if (state->ownership_committed) {
+    iree_hal_pool_advise_asan_reservations(
+        state->pool, 1, &element->reservation,
+        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
     iree_hal_pool_release_reservations(state->pool, 1, &element->reservation,
                                        NULL);
   }
@@ -1192,4 +1197,6 @@ static const iree_hal_pool_vtable_t iree_hal_fixed_block_pool_vtable = {
     .validate_asan = iree_hal_fixed_block_pool_validate_asan,
     .query_stats = iree_hal_fixed_block_pool_query_stats,
     .trim = iree_hal_fixed_block_pool_trim,
+    .advise_asan_reservations =
+        iree_hal_fixed_block_pool_advise_asan_reservations,
 };

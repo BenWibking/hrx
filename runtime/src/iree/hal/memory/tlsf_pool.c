@@ -165,13 +165,13 @@ typedef struct iree_hal_tlsf_pool_t {
   // Free list of release nodes ready for reuse. Protected by |mutex|.
   iree_hal_tlsf_pool_release_node_t* release_node_free_head;
 
-  // Head of poisoned ASAN releases retained before TLSF reuse.
+  // Head of returned ranges withheld by the ASAN quarantine policy.
   iree_hal_tlsf_pool_release_node_t* quarantine_head;
 
-  // Tail of poisoned ASAN releases retained before TLSF reuse.
+  // Tail of returned ranges withheld by the ASAN quarantine policy.
   iree_hal_tlsf_pool_release_node_t* quarantine_tail;
 
-  // Backing bytes currently retained in the ASAN quarantine list.
+  // Backing bytes currently withheld by the ASAN quarantine policy.
   iree_device_size_t quarantine_size;
 
   // Host allocator used for pool metadata.
@@ -903,6 +903,8 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
   pool->backing_slab_length = backing_slab_length;
   pool->max_reservation_size = options.tlsf_options.range_length;
   pool->asan_options = options.asan;
+  pool->base.asan_enabled =
+      iree_hal_asan_pool_options_is_enabled(&options.asan);
   iree_atomic_store(&pool->bytes_committed, 0, iree_memory_order_relaxed);
   iree_atomic_store(&pool->committed_slab_count, 0, iree_memory_order_relaxed);
 
@@ -1347,18 +1349,12 @@ static void iree_hal_tlsf_pool_rollback_reservation_locked(
   }
 }
 
-// Reservations keep their slabs and release nodes alive until the caller sees
-// them. Applying native advice outside the mutex cannot race slab retirement.
+// Publishes tracing only after the entire reservation transaction commits.
 static void iree_hal_tlsf_pool_commit_reservation(
     iree_hal_tlsf_pool_t* pool,
     const iree_hal_pool_reservation_t* reservation) {
   iree_hal_tlsf_pool_release_node_t* node =
       (iree_hal_tlsf_pool_release_node_t*)(uintptr_t)reservation->block_handle;
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
-    iree_hal_pool_buffer_range_advise_asan(
-        &node->slab->range, node->backing_offset,
-        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED, &node->asan_layout);
-  }
   // Each live release record has a unique identity, independent of native
   // address representation or overlapping offsets in different backing ranges.
   iree_hal_memory_trace_alloc(&pool->trace, node, reservation->byte_length);
@@ -1596,11 +1592,6 @@ static void iree_hal_tlsf_pool_release_one_reservation(
   }
 
   iree_hal_memory_trace_free(&pool->trace, release_node);
-  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
-    iree_hal_pool_buffer_range_advise_asan(
-        &slab->range, release_node->backing_offset,
-        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED, &release_node->asan_layout);
-  }
 
   // Publication transfers the node to acquisition, which may recycle it.
   const iree_device_size_t charged_length = release_node->charged_length;
@@ -1629,6 +1620,20 @@ static void iree_hal_tlsf_pool_release_reservations(
 // Wrap / Query / Trim / Notification
 //===----------------------------------------------------------------------===//
 
+static void iree_hal_tlsf_pool_advise_asan_reservations(
+    iree_hal_pool_t* base_pool, iree_host_size_t reservation_count,
+    const iree_hal_pool_reservation_t* reservations,
+    iree_hal_asan_range_advice_flags_t flags) {
+  (void)base_pool;
+  for (iree_host_size_t i = 0; i < reservation_count; ++i) {
+    iree_hal_tlsf_pool_release_node_t* node =
+        (iree_hal_tlsf_pool_release_node_t*)(uintptr_t)reservations[i]
+            .block_handle;
+    iree_hal_pool_buffer_range_advise_asan(
+        &node->slab->range, node->backing_offset, flags, &node->asan_layout);
+  }
+}
+
 static void iree_hal_tlsf_pool_buffer_release(void* user_data,
                                               iree_hal_buffer_t* buffer) {
   (void)buffer;
@@ -1636,6 +1641,9 @@ static void iree_hal_tlsf_pool_buffer_release(void* user_data,
       (iree_hal_tlsf_pool_materialize_element_t*)user_data;
   iree_hal_tlsf_pool_materialize_state_t* state = element->state;
   if (state->ownership_committed) {
+    iree_hal_pool_advise_asan_reservations(
+        state->pool, 1, &element->reservation,
+        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
     iree_hal_pool_release_reservations(state->pool, 1, &element->reservation,
                                        NULL);
   }
@@ -1917,4 +1925,5 @@ static const iree_hal_pool_vtable_t iree_hal_tlsf_pool_vtable = {
     .validate_asan = iree_hal_tlsf_pool_validate_asan,
     .query_stats = iree_hal_tlsf_pool_query_stats,
     .trim = iree_hal_tlsf_pool_trim,
+    .advise_asan_reservations = iree_hal_tlsf_pool_advise_asan_reservations,
 };

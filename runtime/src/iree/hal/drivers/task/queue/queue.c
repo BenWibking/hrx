@@ -1871,6 +1871,10 @@ static iree_status_t iree_hal_task_queue_drain_alloca_submit_reservations(
       operation->alloca.requests, operation->alloca.reservations,
       IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, operation->alloca.backing_buffers);
   if (iree_status_is_ok(status)) {
+    iree_hal_pool_advise_asan_reservations(
+        operation->alloca.pool, operation->alloca.request_count,
+        operation->alloca.reservations,
+        IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
     for (iree_host_size_t i = 0; i < operation->alloca.request_count; ++i) {
       iree_hal_task_transient_buffer_attach_reservation(
           operation->alloca.transient_buffers[i], operation->alloca.pool,
@@ -2074,6 +2078,10 @@ static void iree_hal_task_queue_drain_dealloca(
   // The waits and decommit have completed, so no prior access or target-side
   // deallocation effect remains. Publish usable capacity without a dependency
   // on this operation's later completion bookkeeping.
+  iree_hal_pool_advise_asan_reservations(
+      operation->dealloca.pool, operation->dealloca.buffer_count,
+      operation->dealloca.reservations,
+      IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
   iree_hal_pool_release_reservations(
       operation->dealloca.pool, operation->dealloca.buffer_count,
       operation->dealloca.reservations, /*death_frontier=*/NULL);

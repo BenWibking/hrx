@@ -1165,6 +1165,11 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
 
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)slab_provider;
+  EXPECT_TRUE(iree_hal_pool_requires_asan_advice(pool));
+  EXPECT_EQ(0, iree_atomic_load(&provider->asan_advice_count,
+                                iree_memory_order_relaxed));
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   EXPECT_EQ(iree_atomic_load(&provider->asan_allocated_count,
                              iree_memory_order_relaxed),
             1);
@@ -1210,13 +1215,26 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
       pool, 13, 16, /*requester_frontier=*/NULL,
       IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation, &reserve_info, &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_ALLOCATED);
   EXPECT_EQ(iree_atomic_load(&provider->asan_allocated_count,
                              iree_memory_order_relaxed),
             2);
   EXPECT_LT(first_release_sequence, provider->last_asan_allocated_sequence);
 
-  // Pending users retain addressable shadow until their actual completion.
-  // Advancing the tracker, rather than trim or another allocation, retires it.
+  iree_hal_pool_advise_asan_reservations(
+      pool, 1, &reservation, IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
+  ReleaseOneReservation(pool, &reservation, nullptr);
+  WaitForMaintenance();
+  EXPECT_EQ(2, iree_atomic_load(&provider->asan_released_count,
+                                iree_memory_order_relaxed));
+
+  // A reservation whose lifetime never starts returns without shadow effects,
+  // even when its physical retirement carries an outstanding prerequisite.
+  IREE_ASSERT_OK(AcquireOneReservation(pool, 13, 16, nullptr,
+                                       IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                       &reservation, &reserve_info, &result));
+  ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK_FRESH, result);
   const iree_async_axis_t axis = iree_async_axis_make_queue(1, 0, 1, 0, 0);
   IREE_ASSERT_OK(iree_async_frontier_tracker_register_axis(
       test_frontier_tracker(), axis, nullptr));
@@ -1228,7 +1246,7 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
   WaitForMaintenance();
   EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,
                              iree_memory_order_relaxed),
-            1);
+            2);
   iree_async_frontier_tracker_advance(test_frontier_tracker(), axis, 1);
   WaitForMaintenance();
   EXPECT_EQ(iree_atomic_load(&provider->asan_released_count,

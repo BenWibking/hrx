@@ -836,8 +836,8 @@ typedef struct iree_async_frontier_tracker_t iree_async_frontier_tracker_t;
 typedef struct iree_hal_memory_maintenance_t iree_hal_memory_maintenance_t;
 
 // Native allocation lifecycle operations. Qualification happens when a child
-// allocator is constructed; accepted advice is infallible on
-// allocation/release.
+// allocator is constructed; accepted advice is infallible at caller-ordered
+// allocation and release execution boundaries.
 typedef struct iree_hal_buffer_range_advice_t {
   // Borrowed native allocation state, covered by the backing's lifetime.
   void* user_data;

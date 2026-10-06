@@ -449,6 +449,11 @@ void iree_hal_amdgpu_transient_buffer_release_reservation(
   const int32_t was_armed = iree_atomic_exchange(&buffer->reservation_armed, 0,
                                                  iree_memory_order_acq_rel);
   if (was_armed) {
+    if (!death_frontier || death_frontier->entry_count == 0) {
+      iree_hal_pool_advise_asan_reservations(
+          buffer->source_pool, 1, &buffer->reservation,
+          IREE_HAL_ASAN_RANGE_ADVICE_FLAG_RELEASED);
+    }
     iree_hal_pool_release_reservations(buffer->source_pool, 1,
                                        &buffer->reservation, death_frontier);
   }

@@ -71,7 +71,7 @@ typedef enum iree_hal_amdgpu_alloca_memory_wait_kind_e {
   IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_NONE = 0,
   // Waiting for a copied pool death frontier while holding reservations.
   IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_FRONTIER = 1,
-  // Performing cold pool backing growth before retrying reservation.
+  // Performing cold pool growth and materializing the acquired reservations.
   IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_POOL_GROWTH = 2,
   // Waiting for a pool release notification before retrying reservation.
   IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_POOL_NOTIFICATION = 3,
@@ -713,8 +713,11 @@ static iree_status_t iree_hal_amdgpu_pending_op_grow_alloca_pool(
   iree_async_frontier_initialize(transaction->wait_frontier, 0);
   IREE_RETURN_IF_ERROR(iree_hal_pool_acquire_reservations(
       op->alloca_op.pool, transaction->request_count, transaction->requests,
-      requester_frontier, reserve_flags, transaction->reservations,
-      transaction->acquire_infos, &transaction->acquire_result));
+      iree_hal_pool_requires_asan_advice(op->alloca_op.pool)
+          ? NULL
+          : requester_frontier,
+      reserve_flags, transaction->reservations, transaction->acquire_infos,
+      &transaction->acquire_result));
   transaction->reservations_held =
       transaction->acquire_result == IREE_HAL_POOL_ACQUIRE_OK ||
       transaction->acquire_result == IREE_HAL_POOL_ACQUIRE_OK_FRESH ||
@@ -727,35 +730,35 @@ static iree_status_t iree_hal_amdgpu_pending_op_grow_alloca_pool(
           op->queue, op->alloca_op.pool, transaction);
     case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT: {
       bool merged = true;
-      for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
+      for (iree_host_size_t i = 0; i < transaction->request_count && merged;
+           ++i) {
         if (transaction->acquire_infos[i].result !=
             IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
           continue;
         }
         const iree_async_frontier_t* item_frontier =
             transaction->acquire_infos[i].reuse_frontier;
-        if (item_frontier &&
-            !iree_async_frontier_merge(transaction->wait_frontier, UINT8_MAX,
-                                       item_frontier)) {
-          merged = false;
-          break;
+        if (item_frontier) {
+          merged = iree_async_frontier_merge(transaction->wait_frontier,
+                                             UINT8_MAX, item_frontier);
         }
       }
-      const bool has_wait_frontier =
-          transaction->wait_frontier->entry_count != 0;
-      for (iree_host_size_t i = 0; i < transaction->request_count; ++i) {
-        iree_hal_pool_release_reservations(
-            op->alloca_op.pool, 1, &transaction->reservations[i],
-            transaction->acquire_infos[i].reuse_frontier);
+      if (IREE_UNLIKELY(!merged)) {
+        return iree_make_status(
+            IREE_STATUS_RESOURCE_EXHAUSTED,
+            "allocation transaction wait frontier exceeds 255 axes");
       }
-      transaction->reservations_held = false;
-      wait->kind = IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_NONE;
-      if (IREE_UNLIKELY(merged && !has_wait_frontier)) {
+      if (IREE_UNLIKELY(transaction->wait_frontier->entry_count == 0)) {
         return iree_make_status(
             IREE_STATUS_INTERNAL,
             "waitable pool reservation transaction provided an empty "
             "frontier");
       }
+      // The cold acquisition owns these ranges until its dependency resolves.
+      // Returning them to retry would lose that ownership and can strand finite
+      // capacity in an allocator's quarantine before any lifetime begins.
+      transaction->readiness =
+          IREE_HAL_AMDGPU_ALLOCA_RESERVATION_NEEDS_FRONTIER_WAIT;
       return iree_ok_status();
     }
     case IREE_HAL_POOL_ACQUIRE_EXHAUSTED:
@@ -777,6 +780,12 @@ static void iree_hal_amdgpu_pending_op_enqueue_alloca_pool_growth(
   iree_hal_amdgpu_alloca_memory_wait_t* wait = op->alloca_op.memory_wait;
   iree_atomic_store(&wait->callback_complete, 0, iree_memory_order_relaxed);
   iree_status_t status = iree_hal_amdgpu_pending_op_grow_alloca_pool(op);
+  if (iree_status_is_ok(status) && op->alloca_op.transaction.acquire_result ==
+                                       IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
+    wait->kind = IREE_HAL_AMDGPU_ALLOCA_MEMORY_WAIT_FRONTIER;
+    iree_hal_amdgpu_pending_op_enqueue_alloca_frontier_wait(op);
+    return;
+  }
   iree_hal_amdgpu_alloca_memory_wait_resolved(op, status);
   iree_hal_amdgpu_pending_op_finish_alloca_memory_wait_enqueue(
       op, iree_ok_status());

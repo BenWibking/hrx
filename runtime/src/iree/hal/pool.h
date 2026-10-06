@@ -214,7 +214,9 @@ enum iree_hal_pool_materialize_flag_bits_e {
 
   // Transfers reservation ownership to the returned buffer. When that buffer
   // is destroyed its release callback must return |reservation| to |pool|
-  // with a NULL death frontier.
+  // with a NULL death frontier, after applying RELEASED advice if guarded.
+  // The caller applies ALLOCATED advice before use and establishes actual
+  // completion of all accesses before destroying the buffer.
   //
   // Without this flag, the returned buffer is only a borrowed view of the
   // reserved bytes and the caller remains responsible for calling
@@ -509,6 +511,30 @@ IREE_API_EXPORT void iree_hal_pool_release_reservations(
     const iree_hal_pool_reservation_t* reservations,
     const iree_async_frontier_t* death_frontier);
 
+// Returns whether this pool's reservations require explicit ASAN lifecycle
+// advice. This is an immutable local property; supporting guarded child pools
+// does not imply that this pool's own reservations are guarded.
+IREE_API_EXPORT bool iree_hal_pool_requires_asan_advice(
+    const iree_hal_pool_t* pool);
+
+// Applies an ASAN lifecycle transition to live reservation tokens. Does nothing
+// for an unguarded pool. This operation is infallible after pool construction.
+//
+// ALLOCATED runs after all inherited reuse prerequisites have actually
+// completed and before the new user accesses the range. RELEASED runs after the
+// user's accesses have actually completed, before publishing deallocation
+// completion and before returning the token. Requester dominance and an
+// enqueued device wait do not establish host completion. Queue implementations
+// order this call at the corresponding execution boundary; synchronous
+// allocation helpers do so on the caller's behalf.
+//
+// Acquiring, materializing and returning reservations perform no ASAN advice.
+// An unused reservation returned during rollback needs neither transition.
+IREE_API_EXPORT void iree_hal_pool_advise_asan_reservations(
+    iree_hal_pool_t* pool, iree_host_size_t reservation_count,
+    const iree_hal_pool_reservation_t* reservations,
+    iree_hal_asan_range_advice_flags_t flags);
+
 // Materializes concrete buffer objects or views for a reservation transaction.
 //
 // |requests| is the allocation request transaction used to acquire
@@ -672,6 +698,13 @@ typedef struct iree_hal_pool_vtable_t {
   void(IREE_API_PTR* trim)(iree_hal_pool_t* pool,
                            iree_hal_pool_trim_flags_t flags,
                            iree_device_size_t min_bytes_to_keep);
+
+  // Applies qualified ASAN advice after caller-established actual completion.
+  // Required only when the pool's asan_enabled property is true.
+  void(IREE_API_PTR* advise_asan_reservations)(
+      iree_hal_pool_t* pool, iree_host_size_t reservation_count,
+      const iree_hal_pool_reservation_t* reservations,
+      iree_hal_asan_range_advice_flags_t flags);
 } iree_hal_pool_vtable_t;
 IREE_HAL_ASSERT_VTABLE_LAYOUT(iree_hal_pool_vtable_t);
 
@@ -694,6 +727,9 @@ struct iree_hal_pool_t {
   // Captured optional completion probe inherited by child allocators. Its
   // borrowed context belongs to the same sealed device group as the tracker.
   iree_hal_pool_epoch_query_t epoch_query;
+
+  // Immutable requirement for advice on this pool's own reservation lifetimes.
+  bool asan_enabled;
 };
 
 // Initializes |out_pool| with one owning reference. Retains |notification| and
