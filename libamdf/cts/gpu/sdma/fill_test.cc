@@ -6,6 +6,8 @@
 
 #include <array>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "libamdf/cts/gpu/sdma/encoding/commands.h"
 #include "libamdf/cts/gpu/util/command_fixture.h"
@@ -23,98 +25,167 @@ class SdmaFillTest : public GpuCommandTest {
         }) {}
 };
 
-TEST_F(SdmaFillTest, ConstantFillCompletesBeforeFence) {
-  constexpr size_t kTargetLength = 8192;
-  constexpr size_t kCompletionLength = 4096;
-  constexpr uint8_t kPoison = 0xa5;
-  constexpr uint8_t kCompletionGuard = 0x5d;
+TEST_F(SdmaFillTest, ConstantFillFeedsCopiesAcrossEpochs) {
+  constexpr size_t kDataLength = 8192;
+  constexpr size_t kControlLength = 4096;
+  constexpr size_t kCompletionWord = 16;
+  constexpr size_t kEpochCount = 2;
   struct FillSpan {
-    // Byte offset within the owned target allocation.
-    uint32_t offset;
+    // Byte offset of the fill within the target allocation.
+    uint32_t target_offset;
+    // Byte offset of its dependent copy within the output allocation.
+    uint32_t output_offset;
     // Nonzero DWORD-aligned byte length.
     uint32_t length;
-    // Full 32-bit pattern repeated in little-endian order.
-    uint32_t pattern;
+    // Full 32-bit patterns, changed between completed uses of the backing.
+    std::array<uint32_t, kEpochCount> patterns;
   };
-  constexpr std::array<FillSpan, 3> kFills = {
-      {{64, 4, 0x6d2ac491u}, {128, 8, 0xb730e85au}, {4092, 1028, 0x1fe43962u}}};
-  GpuMemory* target = nullptr;
-  GpuMemory* completion = nullptr;
-  // The native SYSTEM profile guarantees READ permission, so both writable
-  // attachments request the complete READ|WRITE contract.
-  ASSERT_NO_FATAL_FAILURE(
-      CreateMemory(AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE,
-                   kTargetLength, &target));
-  ASSERT_NO_FATAL_FAILURE(
-      CreateMemory(AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE,
-                   kCompletionLength, &completion));
-  ASSERT_EQ(target->device_address % 4096, 0u);
-  ASSERT_EQ(completion->device_address % sizeof(uint32_t), 0u);
-  std::memset(target->host.pointer, kPoison, kTargetLength);
-  std::memset(completion->host.pointer, kCompletionGuard, kCompletionLength);
-  *static_cast<uint32_t*>(completion->host.pointer) = 0;
-
-  std::array<uint8_t, kTargetLength> expected_target;
-  std::array<uint8_t, kCompletionLength> expected_completion;
-  expected_target.fill(kPoison);
-  expected_completion.fill(kCompletionGuard);
-  for (const auto& fill : kFills) {
-    for (uint32_t byte = 0; byte < fill.length; ++byte) {
-      expected_target[fill.offset + byte] =
-          static_cast<uint8_t>(fill.pattern >> (8 * (byte & 3)));
-    }
-  }
-  // The completion oracle includes the entire guarded allocation, exposing
-  // writes wider than the independent 32-bit fence marker.
-  for (size_t byte = 0; byte < sizeof(uint32_t); ++byte) {
-    expected_completion[byte] = 0;
-  }
-  expected_completion[0] = 1;
-
-  GpuCommandQueue* queue = nullptr;
-  ASSERT_NO_FATAL_FAILURE(CreateQueue(&queue));
-  ASSERT_GE(queue->words().size_bytes(), 29u * sizeof(uint32_t));
-  SdmaCommandWriter commands(queue->words().data(), family_.format_features);
+  constexpr std::array<FillSpan, 3> kSpans = {
+      {{64, 192, 4, {0x00000000u, 0xffffffffu}},
+       {124, 252, 8, {0x80000000u, 0x00000001u}},
+       {4092, 4076, 1028, {0x6d2ac491u, 0xb730e85au}}}};
   const bool user_gcr =
       (family_.format_features & AMDF_GPU_SDMA_FORMAT_FEATURE_USER_GCR) != 0;
-  if (user_gcr) {
-    commands.AcquireFromSystem();
-  }
-  // The three disjoint fills need no ordering among themselves. The final
-  // range crosses a mapped page boundary while remaining inside the target.
-  for (const auto& fill : kFills) {
-    commands.Fill32(target->device_address + fill.offset, fill.pattern,
-                    fill.length);
-  }
-  if (user_gcr) {
-    commands.ReleaseToSystem();
-  }
-  commands.Fence32(completion->device_address, 1);
-  ASSERT_EQ(commands.word_count(), 19u + (user_gcr ? 10u : 0u));
+  const size_t words_per_epoch =
+      kSpans.size() * (5 + 7) + 1 + 4 + (user_gcr ? 10 : 0);
+  GpuMemory* target = nullptr;
+  GpuMemory* output = nullptr;
+  GpuMemory* completion = nullptr;
+  // The fill destination becomes the copy source without a host observation.
   ASSERT_NO_FATAL_FAILURE(
-      queue->Publish(api_, gpu_api_, commands.word_count()));
-  GpuWaitEqual<uint32_t>(reinterpret_cast<uintptr_t>(completion->host.pointer),
-                         1);
+      CreateMemory(AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE,
+                   kDataLength, &target));
+  ASSERT_NO_FATAL_FAILURE(
+      CreateMemory(AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE,
+                   kDataLength, &output));
+  ASSERT_NO_FATAL_FAILURE(
+      CreateMemory(AMDF_MEMORY_ACCESS_READ | AMDF_MEMORY_ACCESS_WRITE,
+                   kControlLength, &completion));
+  ASSERT_EQ(target->device_address % 4096, 0u);
+  ASSERT_EQ(output->device_address % 4096, 0u);
+  ASSERT_EQ(completion->device_address % sizeof(uint32_t), 0u);
+  GpuCommandQueue* queue = nullptr;
+  ASSERT_NO_FATAL_FAILURE(CreateQueue(&queue));
+  ASSERT_GT(queue->words().size(), kEpochCount * words_per_epoch);
 
-  // Snapshot and observe both complete allocations before command storage
-  // retirement can add synchronization. No payload cache operation intervenes.
-  std::array<uint8_t, kTargetLength> observed_target;
-  std::array<uint8_t, kCompletionLength> observed_completion;
-  std::memcpy(observed_target.data(), target->host.pointer,
-              observed_target.size());
-  std::memcpy(observed_completion.data(), completion->host.pointer,
-              observed_completion.size());
-  for (size_t byte = 0; byte < expected_target.size(); ++byte) {
-    EXPECT_EQ(observed_target[byte], expected_target[byte])
-        << "target byte=" << byte;
+  // Prebuild both command spans and guard all remaining command backing.
+  // Each publication exposes one new span; no command bytes change in flight.
+  std::vector<uint32_t> expected_commands(queue->words().size(), 0x6935bdefu);
+  std::vector<uint32_t> observed_commands(queue->words().size());
+  std::memcpy(queue->words().data(), expected_commands.data(),
+              queue->words().size_bytes());
+  SdmaCommandWriter commands(queue->words().data(), family_.format_features);
+  for (size_t epoch = 0; epoch < kEpochCount; ++epoch) {
+    if (user_gcr) {
+      commands.AcquireFromSystem();
+    }
+    for (const auto& span : kSpans) {
+      commands.Fill32(target->device_address + span.target_offset,
+                      span.patterns[epoch], span.length);
+    }
+    // Disjoint fills may overlap. Join them before their dependent reads;
+    // neither the host nor an intermediate cache operation supplies this edge.
+    commands.Noop();
+    for (const auto& span : kSpans) {
+      commands.CopyLinear(target->device_address + span.target_offset,
+                          output->device_address + span.output_offset,
+                          span.length);
+    }
+    if (user_gcr) {
+      commands.ReleaseToSystem();
+    }
+    commands.Fence32(
+        completion->device_address + kCompletionWord * sizeof(uint32_t),
+        static_cast<uint32_t>(epoch + 1));
   }
-  for (size_t byte = 0; byte < expected_completion.size(); ++byte) {
-    EXPECT_EQ(observed_completion[byte], expected_completion[byte])
-        << "completion byte=" << byte;
+  ASSERT_EQ(commands.word_count(), kEpochCount * words_per_epoch);
+  std::memcpy(expected_commands.data(), queue->words().data(),
+              queue->words().size_bytes());
+
+  std::array<uint32_t, kDataLength / sizeof(uint32_t)> expected_target;
+  std::array<uint32_t, kDataLength / sizeof(uint32_t)> expected_output;
+  std::array<uint32_t, kControlLength / sizeof(uint32_t)> expected_completion;
+  std::array<uint32_t, kDataLength / sizeof(uint32_t)> observed_target;
+  std::array<uint32_t, kDataLength / sizeof(uint32_t)> observed_output;
+  std::array<uint32_t, kControlLength / sizeof(uint32_t)> observed_completion;
+  auto* target_words = static_cast<uint32_t*>(target->host.pointer);
+  auto* output_words = static_cast<uint32_t*>(output->host.pointer);
+  auto* completion_words = static_cast<uint32_t*>(completion->host.pointer);
+  RecordProperty("sdma_format_features",
+                 std::to_string(family_.format_features));
+  RecordProperty("fills_per_epoch", static_cast<int>(kSpans.size()));
+  RecordProperty("words_per_epoch", static_cast<int>(words_per_epoch));
+  RecordProperty("data_checked_bytes_per_epoch", 2 * kDataLength);
+  RecordProperty("control_checked_bytes_per_epoch", kControlLength);
+  RecordProperty("command_checked_bytes_per_epoch",
+                 queue->words().size_bytes());
+  RecordProperty("completed_epochs", 0);
+
+  for (size_t epoch = 0; epoch < kEpochCount; ++epoch) {
+    SCOPED_TRACE(epoch);
+    const uint32_t marker = static_cast<uint32_t>(epoch + 1);
+    for (size_t i = 0; i < expected_target.size(); ++i) {
+      const uint32_t word = static_cast<uint32_t>(i);
+      expected_target[i] = 0x25a64bc3u ^ (marker + word * 0x03050709u);
+      expected_output[i] = 0x4962d5e7u ^ (marker + word * 0x0507090bu);
+    }
+    for (size_t i = 0; i < expected_completion.size(); ++i) {
+      expected_completion[i] =
+          0x6de8912fu ^ (marker + static_cast<uint32_t>(i) * 0x07090b0du);
+    }
+    std::memcpy(target->host.pointer, expected_target.data(), kDataLength);
+    std::memcpy(output->host.pointer, expected_output.data(), kDataLength);
+    std::memcpy(completion->host.pointer, expected_completion.data(),
+                kControlLength);
+    for (const auto& span : kSpans) {
+      for (size_t i = 0; i < span.length / sizeof(uint32_t); ++i) {
+        // Derive both oracles from the requested pattern, never device output.
+        const uint32_t pattern = span.patterns[epoch];
+        expected_target[span.target_offset / sizeof(uint32_t) + i] = pattern;
+        expected_output[span.output_offset / sizeof(uint32_t) + i] = pattern;
+        target_words[span.target_offset / sizeof(uint32_t) + i] =
+            pattern ^ 0x55555555u;
+        output_words[span.output_offset / sizeof(uint32_t) + i] =
+            pattern ^ 0xaaaaaaaau;
+      }
+    }
+    completion_words[kCompletionWord] = marker - 1;
+    expected_completion[kCompletionWord] = marker;
+
+    ASSERT_NO_FATAL_FAILURE(
+        queue->Publish(api_, gpu_api_, (epoch + 1) * words_per_epoch));
+    GpuWaitEqual<uint32_t>(
+        reinterpret_cast<uintptr_t>(completion->host.pointer) +
+            kCompletionWord * sizeof(uint32_t),
+        marker);
+
+    // Observe the final consumer first. Native retirement and host cache
+    // services cannot repair a missing fill-to-copy dependency before this.
+    std::memcpy(observed_output.data(), output->host.pointer, kDataLength);
+    std::memcpy(observed_target.data(), target->host.pointer, kDataLength);
+    std::memcpy(observed_completion.data(), completion->host.pointer,
+                kControlLength);
+    std::memcpy(observed_commands.data(), queue->words().data(),
+                queue->words().size_bytes());
+    for (size_t i = 0; i < expected_target.size(); ++i) {
+      EXPECT_EQ(observed_output[i], expected_output[i]) << "output word=" << i;
+      EXPECT_EQ(observed_target[i], expected_target[i]) << "target word=" << i;
+    }
+    for (size_t i = 0; i < expected_completion.size(); ++i) {
+      EXPECT_EQ(observed_completion[i], expected_completion[i])
+          << "completion word=" << i;
+    }
+    EXPECT_EQ(observed_commands, expected_commands);
+    // Oracle failures still retire the accepted commands, but prevent reuse.
+    EXPECT_NO_FATAL_FAILURE(queue->WaitRetired(api_));
+    if (HasFailure()) {
+      return;
+    }
+    RecordProperty("completed_epochs", static_cast<int>(marker));
+    RecordProperty(
+        "retired_byte_frontier",
+        static_cast<int>((epoch + 1) * words_per_epoch * sizeof(uint32_t)));
   }
-  // Nonfatal oracle failures still reach retirement. The fixture removes the
-  // queue before releasing either allocation, preserving backing on failure.
-  ASSERT_NO_FATAL_FAILURE(queue->WaitRetired(api_));
 }
 
 }  // namespace
