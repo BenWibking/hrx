@@ -1234,14 +1234,23 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
   pool_options.trace_name = iree_hal_amdgpu_format_pool_trace_name(
       pool_trace_name, IREE_ARRAYSIZE(pool_trace_name), pool_name,
       physical_device->device_ordinal);
-  iree_status_t status = iree_hal_tlsf_pool_create(
-      pool_options, slab_provider, physical_device->default_pool_notification,
-      frontier_tracker,
-      (iree_hal_pool_epoch_query_t){
-          .fn = iree_hal_amdgpu_physical_device_query_pool_epoch,
-          .user_data = epoch_signal_table,
-      },
-      host_allocator, out_pool);
+  const iree_hal_passthrough_pool_options_t backing_options = {
+      .epoch_query =
+          {
+              .fn = iree_hal_amdgpu_physical_device_query_pool_epoch,
+              .user_data = epoch_signal_table,
+          },
+  };
+  iree_hal_pool_t* backing_pool = NULL;
+  iree_status_t status = iree_hal_passthrough_pool_create(
+      backing_options, slab_provider,
+      physical_device->default_pool_notification, frontier_tracker,
+      physical_device->memory_maintenance, host_allocator, &backing_pool);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_tlsf_pool_create(backing_pool, &pool_options,
+                                       host_allocator, out_pool);
+  }
+  iree_hal_pool_release(backing_pool);
 
   char oversized_pool_trace_name[64] = {0};
   if (iree_status_is_ok(status)) {

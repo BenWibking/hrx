@@ -239,10 +239,14 @@ static void hrx_iree_exact_pool_query_capabilities(
     iree_hal_pool_capabilities_t* out_capabilities) {
   const hrx_iree_exact_pool_t* pool = hrx_iree_exact_pool_const_cast(base_pool);
   out_capabilities->memory_type = pool->params.type;
+  out_capabilities->allowed_access = pool->params.access;
   out_capabilities->supported_usage = pool->params.usage;
   out_capabilities->queue_family_affinity = pool->params.queue_family_affinity;
   out_capabilities->min_allocation_size = 0;
   out_capabilities->max_allocation_size = 0;
+  out_capabilities->max_allocation_alignment =
+      pool->params.min_alignment ? pool->params.min_alignment : 1;
+  out_capabilities->maintenance_alignment = 1;
 }
 
 static void hrx_iree_exact_pool_query_stats(const iree_hal_pool_t* base_pool,

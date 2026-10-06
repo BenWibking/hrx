@@ -410,6 +410,7 @@ iree_status_t iree_hal_passthrough_pool_create(
   iree_hal_pool_initialize(&iree_hal_passthrough_pool_vtable, notification,
                            frontier_tracker, &pool->base);
   pool->host_allocator = host_allocator;
+  pool->base.epoch_query = options.epoch_query;
   pool->asan_options = options.asan;
   pool->maintenance = maintenance;
   iree_hal_memory_maintenance_retain(maintenance);
@@ -903,12 +904,26 @@ static void iree_hal_passthrough_pool_query_capabilities(
   const iree_hal_passthrough_pool_t* pool =
       (const iree_hal_passthrough_pool_t*)base_pool;
   out_capabilities->memory_type = pool->slab_properties.memory_type;
+  out_capabilities->allowed_access = IREE_HAL_MEMORY_ACCESS_ALL;
   out_capabilities->supported_usage = pool->slab_properties.supported_usage;
   out_capabilities->queue_family_affinity =
       pool->slab_properties.queue_family_affinity;
   out_capabilities->atomic_operations = pool->slab_properties.atomic_operations;
   out_capabilities->min_allocation_size = 0;
   out_capabilities->max_allocation_size = 0;
+  out_capabilities->max_allocation_alignment =
+      pool->slab_properties.allocation_alignment;
+  out_capabilities->maintenance_alignment =
+      pool->slab_properties.maintenance_alignment;
+}
+
+static iree_status_t iree_hal_passthrough_pool_validate_asan(
+    const iree_hal_pool_t* base_pool,
+    const iree_hal_asan_pool_options_t* options) {
+  const iree_hal_passthrough_pool_t* pool =
+      (const iree_hal_passthrough_pool_t*)base_pool;
+  return iree_hal_slab_provider_validate_asan_options(pool->slab_provider,
+                                                      options);
 }
 
 static void iree_hal_passthrough_pool_query_stats(
@@ -959,6 +974,7 @@ static const iree_hal_pool_vtable_t iree_hal_passthrough_pool_vtable = {
     .materialize_reservations =
         iree_hal_passthrough_pool_materialize_reservations,
     .query_capabilities = iree_hal_passthrough_pool_query_capabilities,
+    .validate_asan = iree_hal_passthrough_pool_validate_asan,
     .query_stats = iree_hal_passthrough_pool_query_stats,
     .trim = iree_hal_passthrough_pool_trim,
 };

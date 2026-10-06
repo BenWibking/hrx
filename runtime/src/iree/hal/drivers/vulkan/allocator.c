@@ -675,11 +675,18 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
             tlsf_trace_storage, IREE_ARRAYSIZE(tlsf_trace_storage),
             IREE_SV("tlsf"), memory_type_index),
     };
-    status = iree_hal_tlsf_pool_create(
-        tlsf_options, out_pool_pair->slab_provider,
+    iree_hal_pool_t* backing_pool = NULL;
+    status = iree_hal_passthrough_pool_create(
+        (iree_hal_passthrough_pool_options_t){0}, out_pool_pair->slab_provider,
         allocator->default_pool_notification, frontier_tracker,
-        iree_hal_pool_epoch_query_null(), allocator->host_allocator,
-        &out_pool_pair->tlsf_pool);
+        allocator->memory_maintenance, allocator->host_allocator,
+        &backing_pool);
+    if (iree_status_is_ok(status)) {
+      status = iree_hal_tlsf_pool_create(backing_pool, &tlsf_options,
+                                         allocator->host_allocator,
+                                         &out_pool_pair->tlsf_pool);
+    }
+    iree_hal_pool_release(backing_pool);
   }
 
   char oversized_trace_storage[64] = {0};

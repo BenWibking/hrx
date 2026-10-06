@@ -22,6 +22,7 @@
 #include "iree/hal/drivers/amdgpu/physical_device.h"
 #include "iree/hal/drivers/amdgpu/util/aql_emitter.h"
 #include "iree/hal/memory/fixed_block_pool.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -502,10 +503,17 @@ static iree_status_t CreateExplicitTlsfPool(
   options.tlsf_options.alignment = 16;
   options.tlsf_options.initial_block_capacity = 16;
   options.tlsf_options.frontier_capacity = 2;
-  return iree_hal_tlsf_pool_create(
-      options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
-      iree_allocator_system(), out_pool);
+  iree_hal_passthrough_pool_options_t backing_options = {};
+  backing_options.epoch_query = iree_hal_pool_epoch_query_null();
+  iree_hal_pool_t* backing_pool = nullptr;
+  IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
+      backing_options, backend.slab_provider, backend.notification,
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      &backing_pool));
+  iree_status_t status = iree_hal_tlsf_pool_create(
+      backing_pool, &options, iree_allocator_system(), out_pool);
+  iree_hal_pool_release(backing_pool);
+  return status;
 }
 
 static iree_status_t SeedWaitableFixedBlockReservation(

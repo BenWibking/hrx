@@ -3,7 +3,12 @@
 
 #include "vmm_slab_provider.h"
 
+#include <condition_variable>
+#include <mutex>
+
 #include "hrx_internal.h"
+#include "iree/hal/memory/maintenance.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -37,14 +42,23 @@ class VmmSlabProviderTest : public ::testing::Test {
     IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
         device->hal_device, iree_hal_queue_family(device->transfer_queue),
         &backend));
+    maintenance_ = backend.maintenance;
     iree_hal_tlsf_pool_options_t options = {};
     options.tlsf_options.range_length = 2 * 1024 * 1024;
     options.tlsf_options.alignment = 256;
     options.tlsf_options.frontier_capacity =
         IREE_HAL_MEMORY_TLSF_DEFAULT_FRONTIER_CAPACITY;
-    IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-        options, provider_, backend.notification, backend.frontier_tracker,
-        backend.epoch_query, iree_allocator_system(), &pool_));
+    iree_hal_passthrough_pool_options_t backing_options = {};
+    backing_options.epoch_query = backend.epoch_query;
+    iree_hal_pool_t* backing_pool = nullptr;
+    IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+        backing_options, provider_, backend.notification,
+        backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+        &backing_pool));
+    iree_status_t pool_status = iree_hal_tlsf_pool_create(
+        backing_pool, &options, iree_allocator_system(), &pool_);
+    iree_hal_pool_release(backing_pool);
+    IREE_ASSERT_OK(pool_status);
   }
 
   void TearDown() override {
@@ -68,6 +82,26 @@ class VmmSlabProviderTest : public ::testing::Test {
     return stats;
   }
 
+  void WaitForMaintenance() {
+    struct Barrier : iree_hal_memory_maintenance_entry_t {
+      // Protects completion and the callback's final notification access.
+      std::mutex mutex;
+      // Publishes completion of preceding native releases.
+      std::condition_variable condition;
+      // Set by the worker while holding the mutex.
+      bool complete = false;
+    } barrier;
+    barrier.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
+      auto* barrier = static_cast<Barrier*>(entry);
+      std::lock_guard<std::mutex> lock(barrier->mutex);
+      barrier->complete = true;
+      barrier->condition.notify_all();
+    };
+    iree_hal_memory_maintenance_enqueue(maintenance_, &barrier);
+    std::unique_lock<std::mutex> lock(barrier.mutex);
+    barrier.condition.wait(lock, [&] { return barrier.complete; });
+  }
+
   // Whether the fixture owns an initialized GPU runtime.
   bool initialized_ = false;
   // Device-local parameters matching the production VMM pool configuration.
@@ -76,6 +110,8 @@ class VmmSlabProviderTest : public ::testing::Test {
   iree_hal_slab_provider_t* provider_ = nullptr;
   // Real TLSF pool whose reservation and slab lifetimes are observed.
   iree_hal_pool_t* pool_ = nullptr;
+  // Borrowed native owner kept alive until runtime shutdown.
+  iree_hal_memory_maintenance_t* maintenance_ = nullptr;
 };
 
 TEST_F(VmmSlabProviderTest, OwnedRangeSurvivesUntilItsFinalSubspan) {
@@ -114,6 +150,7 @@ TEST_F(VmmSlabProviderTest, OwnedRangeSurvivesUntilItsFinalSubspan) {
                      /*min_bytes_to_keep=*/0);
   EXPECT_EQ(0u, PoolStats().slab_count);
   EXPECT_EQ(0u, PoolStats().bytes_committed);
+  WaitForMaintenance();
   EXPECT_EQ(1u, ProviderStats().total_acquired);
   EXPECT_EQ(1u, ProviderStats().total_released);
 }
@@ -146,6 +183,7 @@ TEST_F(VmmSlabProviderTest, BorrowedSubspanDoesNotOwnTheReservation) {
   EXPECT_EQ(1u, PoolStats().release_count);
   iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
                      /*min_bytes_to_keep=*/0);
+  WaitForMaintenance();
   EXPECT_EQ(1u, ProviderStats().total_released);
 }
 

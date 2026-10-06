@@ -93,11 +93,13 @@ static iree_status_t iree_hal_cpu_slab_provider_wrap_buffer(
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE,
       params.type & ~IREE_HAL_MEMORY_TYPE_OPTIMAL));
-  return iree_hal_heap_buffer_wrap(iree_hal_buffer_placement_undefined(),
-                                   IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE,
-                                   params.access, params.usage, allocation_size,
-                                   data, release_callback,
-                                   provider->host_allocator, out_buffer);
+  const iree_hal_buffer_placement_t placement = {
+      .queue_family_affinity = params.queue_family_affinity,
+  };
+  return iree_hal_heap_buffer_wrap(
+      placement, IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE, params.access,
+      params.usage, allocation_size, data, release_callback,
+      provider->host_allocator, out_buffer);
 }
 
 static iree_status_t iree_hal_cpu_slab_provider_validate_asan_options(

@@ -209,9 +209,19 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
   options.trace_name = iree_make_cstring_view("hrx-mem-pool");
 
   iree_hal_pool_t* hal_pool = NULL;
-  iree_status_t status = iree_hal_tlsf_pool_create(
-      options, slab_provider, backend.notification, backend.frontier_tracker,
-      backend.epoch_query, iree_allocator_system(), &hal_pool);
+  iree_hal_passthrough_pool_options_t backing_options = {
+      .epoch_query = backend.epoch_query,
+  };
+  iree_hal_pool_t* backing_pool = NULL;
+  iree_status_t status = iree_hal_passthrough_pool_create(
+      backing_options, slab_provider, backend.notification,
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      &backing_pool);
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_tlsf_pool_create(backing_pool, &options,
+                                       iree_allocator_system(), &hal_pool);
+  }
+  iree_hal_pool_release(backing_pool);
   if (!iree_status_is_ok(status)) {
     if (owns_slab_provider) {
       iree_hal_slab_provider_release(slab_provider);

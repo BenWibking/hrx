@@ -9,7 +9,6 @@
 
 #include "iree/async/notification.h"
 #include "iree/base/api.h"
-#include "iree/hal/memory/slab_provider.h"
 #include "iree/hal/memory/tlsf.h"
 #include "iree/hal/pool.h"
 
@@ -26,9 +25,9 @@ typedef struct iree_hal_tlsf_pool_options_t {
   // Raw TLSF allocator configuration for each slab. The range length is the
   // fixed slab size and maximum single reservation served by this pool.
   // Live-pressure exhaustion grows by acquiring another slab of at least this
-  // size, rounded to the required alignment. Native slabs
-  // start fresh; initial_frontier must be NULL for the provider constructor.
-  // Alignment requires the same absolute guarantee from the native provider.
+  // size, rounded to the required alignment. Backing reservations
+  // supply history; initial_frontier must be NULL for the backing constructor.
+  // Alignment requires the same support from the backing pool.
   iree_hal_memory_tlsf_options_t tlsf_options;
 
   // ASAN policy used to shape hidden backing ranges for reservations.
@@ -42,40 +41,23 @@ typedef struct iree_hal_tlsf_pool_options_t {
   iree_string_view_t trace_name;
 } iree_hal_tlsf_pool_options_t;
 
-// Creates a growable TLSF-backed HAL pool over slabs from |slab_provider|.
+// Creates an initially empty TLSF allocator retaining |backing_pool| once.
+// Growth obtains ordinary reservations and borrowed prepared buffer ranges.
+// Every byte inherits the backing reservation's exact reuse prerequisite.
+// Failed preparation returns that original prerequisite without losing history.
 //
-// |notification| is published on reservation release and skips platform wake
-// work when no waiter is observing it.
+// Release publishes reservation metadata without native work. Acquisition and
+// trim drain the pending releases under a short metadata mutex. Backing-pool
+// calls, host allocation/free, materialization and native advice run outside
+// that mutex. Trim returns whole unused ranges with their merged history; it
+// never trims the backing pool itself. Pending history may be returned for
+// queue-owned waiting when ALLOW_WAIT_FRONTIER is set.
 //
-// |epoch_query| is an optional host-side completion predicate used to recover
-// zero-sync reuse when a requester's frontier is stale but the producer queue
-// has already advanced. If epoch_query.fn is NULL, only pure frontier
-// dominance enables reuse.
-//
-// Reservation release does not acquire the TLSF mutex. Each reservation owns
-// a release node, and release publishes that node to a lock-free pending stack
-// with a compare/exchange loop after copying the death frontier into node-local
-// storage. Acquisition drains pending releases under a per-pool
-// mutex before searching TLSF. Host metadata allocation and destruction, native
-// slab acquisition and retirement, and range advice run outside that mutex.
-// Batches restore provisional reservations before preparing backing or
-// metadata, then retry selection. Concurrent callers can continue using
-// existing capacity.
-//
-// Recycled blocks whose frontiers are not dominated by the requester are
-// skipped. When no immediately-usable block fits, the pool grows with another
-// slab instead of returning wait-frontier reservations; queue-visible
-// backpressure remains a budget/provider concern, not a hidden dependency
-// between arbitrary transient allocations.
-// The pool borrows |frontier_tracker| for reservation reuse dependencies. Its
-// owning group must outlive the pool and all operations using it.
+// Captures the backing pool's immutable capabilities and group progress owner.
+// The device group outlives both pools and all operations using them.
 IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create(
-    iree_hal_tlsf_pool_options_t options,
-    iree_hal_slab_provider_t* slab_provider,
-    iree_async_notification_t* notification,
-    iree_async_frontier_tracker_t* frontier_tracker,
-    iree_hal_pool_epoch_query_t epoch_query, iree_allocator_t host_allocator,
-    iree_hal_pool_t** out_pool);
+    iree_hal_pool_t* backing_pool, const iree_hal_tlsf_pool_options_t* options,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool);
 
 // Creates a finite pool retaining the supplied prepared buffer range. Offsets
 // are relative to the source view; WHOLE_BUFFER uses its remaining extent.

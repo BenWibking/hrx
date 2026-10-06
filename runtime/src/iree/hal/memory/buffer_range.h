@@ -13,9 +13,9 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Retained source range for a finite offset allocator. Ownership is one buffer
+// Retained prepared range for an offset allocator. Ownership is one buffer
 // reference; explicitly managed allocation epochs remain the caller's
-// obligation.
+// obligation, including a child pool holding an ordinary backing reservation.
 typedef struct iree_hal_pool_buffer_range_t {
   // Source view retained once for the allocator's lifetime.
   iree_hal_buffer_t* buffer;

@@ -236,7 +236,11 @@ void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* base_buffer) {
       if (!backing_buffer) {
         return NULL;
       }
-      return iree_hal_amdgpu_buffer_device_pointer(backing_buffer);
+      void* pointer = iree_hal_amdgpu_buffer_device_pointer(
+          iree_hal_buffer_allocated_buffer(backing_buffer));
+      return pointer ? (uint8_t*)pointer +
+                           iree_hal_buffer_byte_offset(backing_buffer)
+                     : NULL;
     }
     return NULL;
   }
@@ -245,6 +249,7 @@ void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* base_buffer) {
 
 iree_hal_amdgpu_atomic_memory_cell_flags_t
 iree_hal_amdgpu_buffer_atomic_memory_cells(iree_hal_buffer_t* base_buffer) {
+  base_buffer = iree_hal_buffer_allocated_buffer(base_buffer);
   if (!iree_hal_resource_is((const iree_hal_resource_t*)base_buffer,
                             &iree_hal_amdgpu_buffer_vtable)) {
     if (iree_hal_amdgpu_transient_buffer_isa(base_buffer)) {

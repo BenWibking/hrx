@@ -127,8 +127,9 @@ void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* buffer);
 
 // Returns the immutable atomic memory cells supported by |buffer|.
 //
-// Transient buffers resolve to their materialized backing buffer. Other buffer
-// implementations and unmaterialized transient buffers support no cells.
+// Views resolve to their allocated buffer, and transient buffers resolve to
+// their materialized backing. Other buffer implementations and unmaterialized
+// transient buffers support no cells.
 iree_hal_amdgpu_atomic_memory_cell_flags_t
 iree_hal_amdgpu_buffer_atomic_memory_cells(iree_hal_buffer_t* buffer);
 

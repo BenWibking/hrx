@@ -194,10 +194,17 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
       options.budget_limit = 2 * kBlockSize;
       iree_hal_pool_release(pool_);
       pool_ = nullptr;
-      IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-          options, backend.slab_provider, backend.notification,
-          backend.frontier_tracker, backend.epoch_query,
-          iree_allocator_system(), &pool_));
+      iree_hal_passthrough_pool_options_t backing_options = {};
+      backing_options.epoch_query = backend.epoch_query;
+      iree_hal_pool_t* backing_pool = nullptr;
+      IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+          backing_options, backend.slab_provider, backend.notification,
+          backend.frontier_tracker, backend.maintenance,
+          iree_allocator_system(), &backing_pool));
+      iree_status_t status = iree_hal_tlsf_pool_create(
+          backing_pool, &options, iree_allocator_system(), &pool_);
+      iree_hal_pool_release(backing_pool);
+      IREE_ASSERT_OK(status);
     }
     std::array<iree_hal_pool_reservation_request_t, 2> requests = {};
     for (auto& request : requests) {

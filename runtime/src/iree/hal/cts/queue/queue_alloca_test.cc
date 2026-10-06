@@ -187,10 +187,17 @@ class QueueAllocaTest : public CtsTestBase<> {
     options.tlsf_options.alignment = IREE_HAL_MEMORY_TLSF_MIN_ALIGNMENT;
     options.tlsf_options.frontier_capacity = 2;
     options.asan = backend.asan;
-    return iree_hal_tlsf_pool_create(
-        options, backend.slab_provider, backend.notification,
-        backend.frontier_tracker, backend.epoch_query, iree_allocator_system(),
-        out_pool);
+    iree_hal_passthrough_pool_options_t backing_options = {};
+    backing_options.epoch_query = backend.epoch_query;
+    iree_hal_pool_t* backing_pool = nullptr;
+    IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
+        backing_options, backend.slab_provider, backend.notification,
+        backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+        &backing_pool));
+    iree_status_t status = iree_hal_tlsf_pool_create(
+        backing_pool, &options, iree_allocator_system(), out_pool);
+    iree_hal_pool_release(backing_pool);
+    return status;
   }
 
   iree_status_t CreateFixedBlockPool(iree_device_size_t block_size,

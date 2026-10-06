@@ -246,6 +246,9 @@ typedef struct iree_hal_pool_capabilities_t {
   // against the required bits in iree_hal_buffer_params_t.type.
   iree_hal_memory_type_t memory_type;
 
+  // Access permissions available to views materialized from this pool.
+  iree_hal_memory_access_t allowed_access;
+
   // Buffer usages this pool supports. A pool backed by DEVICE_LOCAL memory
   // that isn't host-visible can't serve MAPPING usage.
   iree_hal_buffer_usage_t supported_usage;
@@ -268,6 +271,13 @@ typedef struct iree_hal_pool_capabilities_t {
   // pass-through pools report 0 for no strategy limit. Budgets are reported
   // separately and enforced by reservation acquisition.
   iree_device_size_t max_allocation_size;
+
+  // Largest power-of-two alignment accepted by reservation requests.
+  iree_device_size_t max_allocation_alignment;
+
+  // Minimum independently maintained byte granule in the backing storage.
+  // Suballocators align both endpoints to this granule.
+  iree_device_size_t maintenance_alignment;
 } iree_hal_pool_capabilities_t;
 
 // Running statistics for a pool. All values are atomic snapshots; they may
@@ -537,6 +547,11 @@ IREE_API_EXPORT void iree_hal_pool_query_capabilities(
     const iree_hal_pool_t* pool,
     iree_hal_pool_capabilities_t* out_capabilities);
 
+// Qualifies a child allocator's sanitizer policy against this pool's prepared
+// storage. Called during construction, never during reservation selection.
+IREE_API_EXPORT iree_status_t iree_hal_pool_validate_asan_options(
+    const iree_hal_pool_t* pool, const iree_hal_asan_pool_options_t* options);
+
 // Queries the pool's running statistics. O(1); atomic snapshots of
 // incrementally maintained counters. Values may be momentarily inconsistent
 // under concurrent modifications.
@@ -644,6 +659,11 @@ typedef struct iree_hal_pool_vtable_t {
       const iree_hal_pool_t* pool,
       iree_hal_pool_capabilities_t* out_capabilities);
 
+  // Qualifies native range advice during child-pool construction. NULL when
+  // the pool cannot supply ASAN-capable prepared storage.
+  iree_status_t(IREE_API_PTR* validate_asan)(
+      const iree_hal_pool_t* pool, const iree_hal_asan_pool_options_t* options);
+
   // Queries running pool statistics.
   void(IREE_API_PTR* query_stats)(const iree_hal_pool_t* pool,
                                   iree_hal_pool_stats_t* out_stats);
@@ -666,6 +686,10 @@ struct iree_hal_pool_t {
   // Borrowed completion tracker for all frontiers used with this pool.
   // Its owning device group must outlive the pool and its operations.
   iree_async_frontier_tracker_t* frontier_tracker;
+
+  // Captured optional completion probe inherited by child allocators. Its
+  // borrowed context belongs to the same sealed device group as the tracker.
+  iree_hal_pool_epoch_query_t epoch_query;
 };
 
 // Initializes |out_pool| with one owning reference. Retains |notification| and

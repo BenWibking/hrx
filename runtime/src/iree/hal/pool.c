@@ -32,6 +32,7 @@ IREE_API_EXPORT void iree_hal_pool_initialize(
   out_pool->notification = notification;
   iree_async_notification_retain(notification);
   out_pool->frontier_tracker = frontier_tracker;
+  out_pool->epoch_query = iree_hal_pool_epoch_query_null();
 }
 
 IREE_API_EXPORT void iree_hal_pool_deinitialize(iree_hal_pool_t* pool) {
@@ -108,6 +109,21 @@ IREE_API_EXPORT void iree_hal_pool_query_stats(
   IREE_ASSERT_ARGUMENT(out_stats);
   memset(out_stats, 0, sizeof(*out_stats));
   _VTABLE_DISPATCH(pool, query_stats)(pool, out_stats);
+}
+
+IREE_API_EXPORT iree_status_t iree_hal_pool_validate_asan_options(
+    const iree_hal_pool_t* pool, const iree_hal_asan_pool_options_t* options) {
+  IREE_RETURN_IF_ERROR(iree_hal_asan_pool_options_validate(options));
+  if (!iree_hal_asan_pool_options_is_enabled(options)) {
+    return iree_ok_status();
+  }
+  const iree_hal_pool_vtable_t* vtable =
+      (const iree_hal_pool_vtable_t*)pool->resource.vtable;
+  if (!vtable->validate_asan) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "pool cannot supply native ASAN range advice");
+  }
+  return vtable->validate_asan(pool, options);
 }
 
 IREE_API_EXPORT void iree_hal_pool_trim(iree_hal_pool_t* pool,

@@ -289,7 +289,6 @@ iree_runtime_cc_library(
     hdrs = ["tlsf_pool.h"],
     deps = [
         ":buffer_range",
-        ":slab_provider",
         ":tlsf",
         ":tracing",
         "//runtime/src/iree/async",
@@ -339,6 +338,26 @@ iree_runtime_cc_test(
     deps = [
         ":cpu_slab_provider",
         ":fixed_block_pool",
+        ":maintenance_thread",
+        ":passthrough_pool",
+        ":tlsf_pool",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async:platform",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "tlsf_pool_composition_test",
+    srcs = ["tlsf_pool_composition_test.cc"],
+    deps = [
+        ":cpu_slab_provider",
+        ":fixed_block_pool",
+        ":maintenance_thread",
+        ":passthrough_pool",
         ":tlsf_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",
@@ -354,6 +373,8 @@ iree_runtime_cc_test(
     srcs = ["tlsf_pool_concurrency_test.cc"],
     deps = [
         ":cpu_slab_provider",
+        ":maintenance_thread",
+        ":passthrough_pool",
         ":tlsf_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",

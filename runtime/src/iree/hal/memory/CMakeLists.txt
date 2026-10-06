@@ -331,7 +331,6 @@ iree_cc_library(
     "tlsf_pool.c"
   DEPS
     ::buffer_range
-    ::slab_provider
     ::tlsf
     ::tracing
     iree::async
@@ -390,6 +389,27 @@ iree_cc_test(
   DEPS
     ::cpu_slab_provider
     ::fixed_block_pool
+    ::maintenance_thread
+    ::passthrough_pool
+    ::tlsf_pool
+    iree::async
+    iree::async::platform
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+iree_cc_test(
+  NAME
+    tlsf_pool_composition_test
+  SRCS
+    "tlsf_pool_composition_test.cc"
+  DEPS
+    ::cpu_slab_provider
+    ::fixed_block_pool
+    ::maintenance_thread
+    ::passthrough_pool
     ::tlsf_pool
     iree::async
     iree::async::platform
@@ -406,6 +426,8 @@ iree_cc_test(
     "tlsf_pool_concurrency_test.cc"
   DEPS
     ::cpu_slab_provider
+    ::maintenance_thread
+    ::passthrough_pool
     ::tlsf_pool
     iree::async
     iree::async::platform

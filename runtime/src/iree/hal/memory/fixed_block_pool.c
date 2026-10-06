@@ -50,9 +50,6 @@ typedef struct iree_hal_fixed_block_pool_t {
   // Prepared facts shared by views while this slab allocation is owned.
   iree_hal_slab_buffer_backing_t buffer_backing;
 
-  // Optional completion predicate for try-before-fence reuse.
-  iree_hal_pool_epoch_query_t epoch_query;
-
   // Host allocator used for pool metadata.
   iree_allocator_t host_allocator;
 
@@ -205,7 +202,7 @@ static bool iree_hal_fixed_block_pool_frontier_is_satisfied(
       return true;
     }
   }
-  if (!pool->epoch_query.fn) {
+  if (!pool->base.epoch_query.fn) {
     return false;
   }
 
@@ -224,7 +221,8 @@ static bool iree_hal_fixed_block_pool_frontier_is_satisfied(
         requester_frontier->entries[requester_index].epoch >= epoch) {
       continue;
     }
-    if (!pool->epoch_query.fn(pool->epoch_query.user_data, axis, epoch)) {
+    if (!pool->base.epoch_query.fn(pool->base.epoch_query.user_data, axis,
+                                   epoch)) {
       return false;
     }
   }
@@ -461,7 +459,7 @@ static iree_status_t iree_hal_fixed_block_pool_create_impl(
       (uint8_t)iree_min(block_allocator_options.frontier_capacity, UINT8_MAX);
   pool->source_range = source_range;
   iree_hal_buffer_retain(source_range.buffer);
-  pool->epoch_query = epoch_query;
+  pool->base.epoch_query = epoch_query;
   pool->user_block_size = user_block_size;
   pool->backing_block_size = backing_block_size;
   pool->block_count = block_allocator_options.block_count;
@@ -1086,12 +1084,50 @@ static void iree_hal_fixed_block_pool_query_capabilities(
   const iree_hal_fixed_block_pool_t* pool =
       (const iree_hal_fixed_block_pool_t*)base_pool;
   out_capabilities->memory_type = pool->slab_properties.memory_type;
+  out_capabilities->allowed_access =
+      pool->source_range.buffer
+          ? iree_hal_buffer_allowed_access(pool->source_range.buffer)
+          : IREE_HAL_MEMORY_ACCESS_ALL;
   out_capabilities->supported_usage = pool->slab_properties.supported_usage;
   out_capabilities->queue_family_affinity =
       pool->slab_properties.queue_family_affinity;
   out_capabilities->atomic_operations = pool->slab_properties.atomic_operations;
   out_capabilities->min_allocation_size = 1;
   out_capabilities->max_allocation_size = pool->user_block_size;
+  iree_device_size_t alignment = iree_min(
+      iree_hal_fixed_block_pool_max_user_alignment(pool->backing_block_size),
+      pool->slab_properties.allocation_alignment);
+  if (pool->source_range.buffer && pool->source_range.memory.offset) {
+    alignment =
+        iree_min(alignment, iree_hal_fixed_block_pool_max_user_alignment(
+                                pool->source_range.memory.offset));
+  }
+  if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
+    alignment = iree_min(
+        alignment,
+        iree_hal_fixed_block_pool_max_user_alignment(pool->user_block_size));
+  }
+  out_capabilities->max_allocation_alignment = alignment;
+  out_capabilities->maintenance_alignment =
+      pool->slab_properties.maintenance_alignment;
+}
+
+static iree_status_t iree_hal_fixed_block_pool_validate_asan(
+    const iree_hal_pool_t* base_pool,
+    const iree_hal_asan_pool_options_t* options) {
+  const iree_hal_fixed_block_pool_t* pool =
+      (const iree_hal_fixed_block_pool_t*)base_pool;
+  if (pool->slab_provider) {
+    return iree_hal_slab_provider_validate_asan_options(pool->slab_provider,
+                                                        options);
+  }
+  const iree_hal_buffer_range_advice_t* advice =
+      pool->source_range.memory.backing->advice;
+  if (!advice) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "buffer has no native ASAN range advice");
+  }
+  return advice->validate_asan(advice->user_data, options);
 }
 
 static void iree_hal_fixed_block_pool_query_stats(
@@ -1151,6 +1187,7 @@ static const iree_hal_pool_vtable_t iree_hal_fixed_block_pool_vtable = {
     .materialize_reservations =
         iree_hal_fixed_block_pool_materialize_reservations,
     .query_capabilities = iree_hal_fixed_block_pool_query_capabilities,
+    .validate_asan = iree_hal_fixed_block_pool_validate_asan,
     .query_stats = iree_hal_fixed_block_pool_query_stats,
     .trim = iree_hal_fixed_block_pool_trim,
 };

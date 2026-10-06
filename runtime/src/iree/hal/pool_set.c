@@ -143,6 +143,12 @@ iree_hal_pool_t* iree_hal_pool_set_select(const iree_hal_pool_set_t* pool_set,
       continue;
     }
 
+    // Prepared backing must permit both the requested access and alignment.
+    if (!iree_all_bits_set(capabilities->allowed_access, params.access) ||
+        params.min_alignment > capabilities->max_allocation_alignment) {
+      continue;
+    }
+
     // Queue families: pool visibility must cover every requested family.
     if (!iree_hal_pool_set_supports_queue_families(
             capabilities->queue_family_affinity,

@@ -135,6 +135,7 @@ static const iree_hal_pool_vtable_t iree_hal_routing_test_pool_vtable = {
     /*.materialize_reservations=*/
     iree_hal_routing_test_pool_materialize_reservations,
     /*.query_capabilities=*/iree_hal_routing_test_pool_query_capabilities,
+    /*.validate_asan=*/nullptr,
     /*.query_stats=*/iree_hal_routing_test_pool_query_stats,
     /*.trim=*/iree_hal_routing_test_pool_trim,
 };
@@ -149,10 +150,13 @@ static iree_hal_routing_test_pool_t* CreateRoutingTestPool(
                            test_frontier_tracker(), &pool->base);
   iree_async_notification_release(notification);
   pool->capabilities.memory_type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  pool->capabilities.allowed_access = IREE_HAL_MEMORY_ACCESS_ALL;
   pool->capabilities.supported_usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
   pool->capabilities.queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;
   pool->capabilities.min_allocation_size = 0;
   pool->capabilities.max_allocation_size = max_allocation_size;
+  pool->capabilities.max_allocation_alignment = 64;
+  pool->capabilities.maintenance_alignment = 1;
   return pool;
 }
 
@@ -515,6 +519,34 @@ TEST(PoolSetTest, SelectsNoncoherentUnifiedMemory) {
 
   iree_hal_pool_set_deinitialize(&pool_set);
   iree_hal_pool_release((iree_hal_pool_t*)unified_pool);
+}
+
+TEST(PoolSetTest, RoutesUsingPreparedAccessAndAlignment) {
+  auto* general = CreateRoutingTestPool(0);
+  auto* read_only = CreateRoutingTestPool(0);
+  read_only->capabilities.allowed_access = IREE_HAL_MEMORY_ACCESS_READ;
+  read_only->capabilities.max_allocation_alignment = 16;
+  iree_hal_pool_set_t pool_set;
+  IREE_ASSERT_OK(
+      iree_hal_pool_set_initialize(2, iree_allocator_system(), &pool_set));
+  IREE_ASSERT_OK(iree_hal_pool_set_register(&pool_set, 0, &general->base));
+  IREE_ASSERT_OK(iree_hal_pool_set_register(&pool_set, 1, &read_only->base));
+  iree_hal_buffer_params_t params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
+  params.access = IREE_HAL_MEMORY_ACCESS_READ;
+  params.min_alignment = 16;
+  EXPECT_EQ(iree_hal_pool_set_select(&pool_set, params, 128), &read_only->base);
+  params.access = IREE_HAL_MEMORY_ACCESS_WRITE;
+  EXPECT_EQ(iree_hal_pool_set_select(&pool_set, params, 128), &general->base);
+  params.access = IREE_HAL_MEMORY_ACCESS_READ;
+  params.min_alignment = 32;
+  EXPECT_EQ(iree_hal_pool_set_select(&pool_set, params, 128), &general->base);
+  params.min_alignment = 128;
+  EXPECT_EQ(iree_hal_pool_set_select(&pool_set, params, 128), nullptr);
+  iree_hal_pool_set_deinitialize(&pool_set);
+  iree_hal_pool_release(&read_only->base);
+  iree_hal_pool_release(&general->base);
 }
 
 }  // namespace

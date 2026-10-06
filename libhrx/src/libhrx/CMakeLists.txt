@@ -247,6 +247,8 @@ iree_cc_test(
     ::hrx_static
     iree::base
     iree::hal
+    iree::hal::memory::maintenance
+    iree::hal::memory::passthrough_pool
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::testing::gtest

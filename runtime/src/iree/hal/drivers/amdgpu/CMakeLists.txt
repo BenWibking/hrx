@@ -1216,6 +1216,7 @@ iree_cc_test(
     iree::hal::cts::util::test_base
     iree::hal::drivers::amdgpu::util::packet
     iree::hal::memory::fixed_block_pool
+    iree::hal::memory::passthrough_pool
     iree::hal::memory::tlsf_pool
     iree::testing::gtest
     iree::testing::gtest_main

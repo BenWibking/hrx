@@ -15,6 +15,8 @@
 #include "iree/async/proactor_platform.h"
 #include "iree/hal/api.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
+#include "iree/hal/memory/maintenance_thread.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -151,24 +153,53 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
         tracker_, iree_async_axis_make_queue(1, 0, 0, 0, 0), nullptr));
     IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
         /*min_alignment=*/0, native_allocator_.allocator(), &provider_));
+    IREE_ASSERT_OK(iree_hal_memory_maintenance_thread_create(
+        {}, iree_allocator_system(), &maintenance_));
+    iree_hal_passthrough_pool_options_t backing_options = {};
+    backing_options.epoch_query = {QueryEpoch, this};
+    IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+        backing_options, provider_, notification_, tracker_, maintenance_,
+        iree_allocator_system(), &backing_pool_));
     iree_hal_tlsf_pool_options_t options = {};
     options.tlsf_options.range_length = 4096;
     options.tlsf_options.alignment = 16;
     options.tlsf_options.initial_block_capacity = 4;
     options.tlsf_options.frontier_capacity = 2;
     IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-        options, provider_, notification_, tracker_, {QueryEpoch, this},
-        metadata_allocator_.allocator(), &pool_));
+        backing_pool_, &options, metadata_allocator_.allocator(), &pool_));
   }
 
   void TearDown() override {
     iree_hal_pool_release(pool_);
     EXPECT_EQ(metadata_allocator_.live_allocations(), 0u);
+    iree_hal_pool_release(backing_pool_);
+    iree_hal_memory_maintenance_release(maintenance_);
     iree_hal_slab_provider_release(provider_);
     EXPECT_EQ(native_allocator_.live_allocations(), 0u);
     iree_async_notification_release(notification_);
     iree_async_frontier_tracker_release(tracker_);
     iree_async_proactor_release(proactor_);
+  }
+
+  // Observe native retirement after its asynchronous parent-token return.
+  void WaitForMaintenance() {
+    struct Barrier : iree_hal_memory_maintenance_entry_t {
+      // Protects completion and the callback's final notification access.
+      std::mutex mutex;
+      // Wakes the observer after preceding entries have finished.
+      std::condition_variable condition;
+      // Published under mutex by the maintenance worker.
+      bool complete = false;
+    } barrier;
+    barrier.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
+      auto* barrier = static_cast<Barrier*>(entry);
+      std::lock_guard<std::mutex> lock(barrier->mutex);
+      barrier->complete = true;
+      barrier->condition.notify_all();
+    };
+    iree_hal_memory_maintenance_enqueue(maintenance_, &barrier);
+    std::unique_lock<std::mutex> lock(barrier.mutex);
+    barrier.condition.wait(lock, [&] { return barrier.complete; });
   }
 
   iree_status_t Acquire(iree_device_size_t length,
@@ -294,11 +325,116 @@ class TLSFPoolConcurrencyTest : public ::testing::Test {
   iree_async_notification_t* notification_ = nullptr;
   // Shared completion tracker captured by prepared buffers.
   iree_async_frontier_tracker_t* tracker_ = nullptr;
+  // Native backing pool shared by the TLSF policies created by this fixture.
+  iree_hal_pool_t* backing_pool_ = nullptr;
+  // Independent owner of native retirement, joined during teardown.
+  iree_hal_memory_maintenance_t* maintenance_ = nullptr;
   // Native CPU source using the gated allocator.
   iree_hal_slab_provider_t* provider_ = nullptr;
   // TLSF subject under test, with counted system-allocated host metadata.
   iree_hal_pool_t* pool_ = nullptr;
 };
+
+TEST_F(TLSFPoolConcurrencyTest,
+       ConcurrentReleaseAcquireAndTrimRecoverTheFullBudget) {
+  constexpr size_t kWorkerCount = 4;
+  constexpr size_t kIterationCount = 256;
+  constexpr iree_device_size_t kLargestAllocation = 4096;
+  iree_hal_pool_release(pool_);
+  pool_ = nullptr;
+  iree_hal_tlsf_pool_options_t options = {};
+  options.tlsf_options.range_length = kLargestAllocation;
+  options.tlsf_options.alignment = 64;
+  options.tlsf_options.initial_block_capacity = 4;
+  options.tlsf_options.frontier_capacity = 2;
+  options.budget_limit = kWorkerCount * kLargestAllocation;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      backing_pool_, &options, metadata_allocator_.allocator(), &pool_));
+
+  // Start allocation and trimming together. No synchronization protects the
+  // pool's release-node publication: acquisitions recycle published nodes and
+  // trims free them while other threads are returning their reservations.
+  std::mutex start_mutex;
+  std::condition_variable start_condition;
+  size_t ready_count = 0;
+  bool started = false;
+  auto await_start = [&] {
+    std::unique_lock<std::mutex> lock(start_mutex);
+    ++ready_count;
+    start_condition.notify_all();
+    start_condition.wait(lock, [&] { return started; });
+  };
+  std::atomic<size_t> finished_count{0};
+  auto run_worker = [&](size_t worker_index) -> iree_status_t {
+    iree_status_t status = iree_ok_status();
+    for (size_t iteration = 0;
+         iteration < kIterationCount && iree_status_is_ok(status);
+         ++iteration) {
+      const iree_device_size_t length = 64u << ((iteration + worker_index) % 7);
+      auto request = Request(length);
+      request.params.min_alignment = 64;
+      iree_hal_buffer_t* buffer = nullptr;
+      status = iree_hal_pool_allocate_buffer(pool_, request.params, length,
+                                             iree_immediate_timeout(), &buffer);
+      const uint32_t pattern =
+          static_cast<uint32_t>(worker_index * kIterationCount + iteration);
+      if (iree_status_is_ok(status)) {
+        status = iree_hal_buffer_map_fill(buffer, 0, length, &pattern,
+                                          sizeof(pattern));
+      }
+      uint32_t actual[kLargestAllocation / sizeof(uint32_t)] = {};
+      if (iree_status_is_ok(status)) {
+        status = iree_hal_buffer_map_read(buffer, 0, actual, length);
+      }
+      if (iree_status_is_ok(status)) {
+        for (size_t i = 0; i < length / sizeof(uint32_t); ++i) {
+          EXPECT_EQ(pattern, actual[i]);
+        }
+      }
+      iree_hal_buffer_release(buffer);
+    }
+    return status;
+  };
+  iree_status_t worker_statuses[kWorkerCount] = {};
+  std::thread workers[kWorkerCount];
+  for (size_t i = 0; i < kWorkerCount; ++i) {
+    workers[i] = std::thread([&, i] {
+      await_start();
+      worker_statuses[i] = run_worker(i);
+      finished_count.fetch_add(1, std::memory_order_release);
+    });
+  }
+  std::thread trimmer([&] {
+    await_start();
+    do {
+      iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+      std::this_thread::yield();
+    } while (finished_count.load(std::memory_order_acquire) != kWorkerCount);
+  });
+  {
+    std::unique_lock<std::mutex> lock(start_mutex);
+    start_condition.wait(lock, [&] { return ready_count == kWorkerCount + 1; });
+    started = true;
+    start_condition.notify_all();
+  }
+  for (auto& worker : workers) {
+    worker.join();
+  }
+  trimmer.join();
+  for (iree_status_t status : worker_statuses) {
+    IREE_EXPECT_OK(status);
+  }
+
+  iree_hal_pool_trim(pool_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool_, &stats);
+  EXPECT_EQ(0u, stats.bytes_reserved);
+  EXPECT_EQ(0u, stats.reservation_count);
+  EXPECT_EQ(0u, stats.bytes_committed);
+  EXPECT_EQ(kWorkerCount * kIterationCount, stats.reserve_count);
+  EXPECT_EQ(stats.reserve_count, stats.release_count);
+  EXPECT_EQ(0u, stats.over_budget_count);
+}
 
 TEST_F(TLSFPoolConcurrencyTest, NativeGrowthRestoresPrefixBeforeUnlocking) {
   iree_hal_pool_reservation_t held;
@@ -344,9 +480,10 @@ TEST_F(TLSFPoolConcurrencyTest, ReusesCapacityReturnedDuringNativePreparation) {
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 1u);
   EXPECT_EQ(stats.bytes_committed, 4096u);
-  // One provider object and one native slab remain. Unneeded prepared backing
-  // was returned without entering the pool's capacity inventory.
-  EXPECT_EQ(native_allocator_.live_allocations(), 2u);
+  // Only the provider, one native allocation and its prepared backing view
+  // remain. The unused prepared range never entered TLSF's inventory.
+  WaitForMaintenance();
+  EXPECT_EQ(native_allocator_.live_allocations(), 3u);
   if (reservation.block_handle) {
     iree_hal_pool_release_reservations(pool_, 1, &reservation, nullptr);
   }
@@ -451,6 +588,7 @@ TEST_F(TLSFPoolConcurrencyTest, TrimRetiresSlabDuringMetadataPreparation) {
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 0u);
   EXPECT_EQ(stats.bytes_committed, 0u);
+  WaitForMaintenance();
   EXPECT_EQ(native_allocator_.live_allocations(), 1u);
   metadata_allocator_.Resume();
   growing.join();
@@ -648,6 +786,9 @@ TEST_F(TLSFPoolConcurrencyTest, FailedReleaseRecordGrowthPreservesOutputs) {
 
 TEST_F(TLSFPoolConcurrencyTest,
        PartialReleasePreparationFailureReturnsStorage) {
+  // Establish backing and one release record; the three-item transaction must
+  // prepare two further records and fail after preparing only the first.
+  WarmReleaseRecords(1);
   const size_t live_allocations = metadata_allocator_.live_allocations();
   const iree_hal_pool_reservation_request_t requests[] = {
       Request(512), Request(512), Request(512)};
@@ -706,6 +847,7 @@ TEST_F(TLSFPoolConcurrencyTest, TrimPreservesLiveSlabsAndRetainedFloor) {
 }
 
 TEST_F(TLSFPoolConcurrencyTest, FailedNativeGrowthPreservesCapacityAndOutputs) {
+  WarmReleaseRecords(2);
   const iree_hal_pool_reservation_request_t requests[] = {
       Request(3072),
       Request(3072),
@@ -777,8 +919,7 @@ TEST_F(TLSFPoolConcurrencyTest, GrowthBeforeBudgetFailurePublishesOnlyOnce) {
   options.tlsf_options.range_length = 4096;
   options.budget_limit = 6144;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      options, provider_, notification_, tracker_, {QueryEpoch, this},
-      metadata_allocator_.allocator(), &pool_));
+      backing_pool_, &options, metadata_allocator_.allocator(), &pool_));
   const iree_hal_pool_reservation_request_t requests[] = {
       Request(3072),
       Request(3072),
@@ -811,8 +952,7 @@ TEST_F(TLSFPoolConcurrencyTest, LargestReservationFitsWithoutSizeClassPadding) {
   iree_hal_tlsf_pool_options_t options = {};
   options.tlsf_options.range_length = 4112;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      options, provider_, notification_, tracker_, {QueryEpoch, this},
-      metadata_allocator_.allocator(), &pool_));
+      backing_pool_, &options, metadata_allocator_.allocator(), &pool_));
   iree_hal_pool_reservation_t reservations[2];
   IREE_ASSERT_OK(Acquire(4112, &reservations[0]));
   IREE_ASSERT_OK(Acquire(4112, &reservations[1]));
@@ -915,6 +1055,49 @@ TEST_F(TLSFPoolConcurrencyTest, LargeBatchUsesAllPublishedSlabs) {
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, kCount);
   iree_hal_pool_release_reservations(pool_, kCount, reservations, nullptr);
+}
+
+TEST_F(TLSFPoolConcurrencyTest, MaterializationFailurePreservesReuseFrontier) {
+  iree_hal_pool_reservation_t reservation;
+  IREE_ASSERT_OK(Acquire(4096, &reservation));
+  alignas(16) uint8_t storage[sizeof(iree_async_frontier_t) +
+                              sizeof(iree_async_frontier_entry_t)] = {};
+  auto* death = reinterpret_cast<iree_async_frontier_t*>(storage);
+  iree_async_frontier_initialize(death, 1);
+  death->entries[0] = {iree_async_axis_make_queue(1, 0, 0, 0, 0), 10};
+  iree_hal_pool_release_reservations(pool_, 1, &reservation, death);
+
+  const auto request = Request(256);
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, death, IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation,
+      &info, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+  iree_hal_buffer_t* buffer = nullptr;
+  // Allow transaction metadata, then fail the logical subspan allocation.
+  metadata_allocator_.FailAfterAllocations(1);
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_RESOURCE_EXHAUSTED,
+      iree_hal_pool_materialize_reservations(
+          pool_, 1, &request, &reservation,
+          IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+          &buffer));
+  EXPECT_EQ(buffer, nullptr);
+  iree_hal_pool_release_reservations(pool_, 1, &reservation,
+                                     info.reuse_frontier);
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &reservation, &info, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+
+  iree_async_frontier_tracker_advance(tracker_, death->entries[0].axis, 10);
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+      &reservation, &info, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+  CheckReservationContents(256, reservation);
+  iree_hal_pool_release_reservations(pool_, 1, &reservation, nullptr);
 }
 
 }  // namespace
