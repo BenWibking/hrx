@@ -1,0 +1,116 @@
+// RUN: pass x86-materialize-hal-kernel,cfg-simplify,low-dce
+
+// Constants and bindings use distinct tables. Unused logical parameters keep
+// their slots without issuing memory operations for their unused imports.
+x86.target<scalar> @target
+
+low.kernel.def target<x86.scalar.core>(@target) abi_layout({offsets = [0, 0, 2, 4, 8, 16], signature = (buffer, i8, i16, i32, i64, i32) -> ()}) workgroup_size(1, 1, 1) @parameters(%output: reg<x86.gpr64>, %byte: reg<x86.gpr32>, %halfword: reg<x86.gpr32>, %word: reg<x86.gpr32>, %doubleword: reg<x86.gpr64>, %unused: reg<x86.gpr32>) asm {
+  mov.store.u8.gpr32 %byte, %output {disp32 = 0}
+  mov.store.u16.gpr32 %halfword, %output {disp32 = 2}
+  mov.store.gpr32 %word, %output {disp32 = 4}
+  mov.store.gpr64 %doubleword, %output {disp32 = 8}
+  return
+}
+
+// ----
+x86.target<scalar> @target
+
+low.func.def public target<x86.scalar.core>(@target) abi(hal_kernel) abi_layout({offsets = [0, 0, 2, 4, 8, 16], signature = (buffer, i8, i16, i32, i64, i32) -> ()}) @parameters(%6: reg<x86.gpr64>, %7: reg<x86.gpr64>, %8: reg<x86.gpr64>) -> (reg<x86.gpr32>) asm {
+  %10 = mov.load.gpr64 %7 {disp32 = 40}
+  %11 = mov.load.gpr64 %10 {disp32 = 0}
+  %12 = mov.load.gpr64 %7 {disp32 = 24}
+  %13 = movzx.load.u8.gpr32 %12 {disp32 = 0}
+  %14 = movzx.load.u16.gpr32 %12 {disp32 = 2}
+  %15 = mov.load.gpr32 %12 {disp32 = 4}
+  %16 = mov.load.gpr64 %12 {disp32 = 8}
+  %18 = mov.imm32 0
+  mov.store.u8.gpr32 %13, %11 {disp32 = 0}
+  mov.store.u16.gpr32 %14, %11 {disp32 = 2}
+  mov.store.gpr32 %15, %11 {disp32 = 4}
+  mov.store.gpr64 %16, %11 {disp32 = 8}
+  return %18
+}
+
+// ====
+
+// Z fields are 16 bits in the task ABI; X and Y fields are 32 bits. All six
+// values are zero-extended into the 64-bit index carrier.
+x86.target<scalar> @target
+
+low.kernel.def target<x86.scalar.core>(@target) abi_layout({offsets = [0], signature = (buffer) -> ()}) workgroup_size(1, 1, 1) @geometry(%output: reg<x86.gpr64>) asm {
+  %x = live_in<x86.hal.workgroup_id_x> : reg<x86.gpr64>
+  %y = live_in<x86.hal.workgroup_id_y> : reg<x86.gpr64>
+  %z = live_in<x86.hal.workgroup_id_z> : reg<x86.gpr64>
+  %count_x = live_in<x86.hal.workgroup_count_x> : reg<x86.gpr64>
+  %count_y = live_in<x86.hal.workgroup_count_y> : reg<x86.gpr64>
+  %count_z = live_in<x86.hal.workgroup_count_z> : reg<x86.gpr64>
+  mov.store.gpr64 %x, %output {disp32 = 0}
+  mov.store.gpr64 %y, %output {disp32 = 8}
+  mov.store.gpr64 %z, %output {disp32 = 16}
+  mov.store.gpr64 %count_x, %output {disp32 = 24}
+  mov.store.gpr64 %count_y, %output {disp32 = 32}
+  mov.store.gpr64 %count_z, %output {disp32 = 40}
+  return
+}
+
+// ----
+x86.target<scalar> @target
+
+low.func.def public target<x86.scalar.core>(@target) abi(hal_kernel) abi_layout({offsets = [0], signature = (buffer) -> ()}) @geometry(%7: reg<x86.gpr64>, %8: reg<x86.gpr64>, %9: reg<x86.gpr64>) -> (reg<x86.gpr32>) asm {
+  %11 = mov.load.gpr64 %8 {disp32 = 40}
+  %12 = mov.load.gpr64 %11 {disp32 = 0}
+  %13 = mov.imm32 0
+  %14 = mov.load.gpr32 %9 {disp32 = 0}
+  %15 = movzx.gpr64.gpr32 %14
+  %16 = mov.load.gpr32 %9 {disp32 = 4}
+  %17 = movzx.gpr64.gpr32 %16
+  %18 = movzx.load.u16.gpr32 %9 {disp32 = 8}
+  %19 = movzx.gpr64.gpr32 %18
+  %20 = mov.load.gpr32 %8 {disp32 = 12}
+  %21 = movzx.gpr64.gpr32 %20
+  %22 = mov.load.gpr32 %8 {disp32 = 16}
+  %23 = movzx.gpr64.gpr32 %22
+  %24 = movzx.load.u16.gpr32 %8 {disp32 = 20}
+  %25 = movzx.gpr64.gpr32 %24
+  mov.store.gpr64 %15, %12 {disp32 = 0}
+  mov.store.gpr64 %17, %12 {disp32 = 8}
+  mov.store.gpr64 %19, %12 {disp32 = 16}
+  mov.store.gpr64 %21, %12 {disp32 = 24}
+  mov.store.gpr64 %23, %12 {disp32 = 32}
+  mov.store.gpr64 %25, %12 {disp32 = 40}
+  return %13
+}
+
+// ====
+
+// A parameter-free entry needs only its explicit success result.
+x86.target<scalar> @target
+
+low.kernel.def target<x86.scalar.core>(@target) abi_layout({offsets = [], signature = () -> ()}) workgroup_size(1, 1, 1) @empty() asm {
+  return
+}
+
+// ----
+x86.target<scalar> @target
+
+low.func.def public target<x86.scalar.core>(@target) abi(hal_kernel) abi_layout({offsets = [], signature = () -> ()}) @empty(%0: reg<x86.gpr64>, %1: reg<x86.gpr64>, %2: reg<x86.gpr64>) -> (reg<x86.gpr32>) asm {
+  %4 = mov.imm32 0
+  return %4
+}
+
+// ====
+
+// An entry with unused parameters has no dependency on either parameter table.
+x86.target<scalar> @target
+
+low.kernel.def target<x86.scalar.core>(@target) abi_layout({offsets = [0, 0], signature = (buffer, i32) -> ()}) workgroup_size(1, 1, 1) @unused(%binding: reg<x86.gpr64>, %constant: reg<x86.gpr32>) asm {
+  return
+}
+
+// ----
+x86.target<scalar> @target
+
+low.func.def public target<x86.scalar.core>(@target) abi(hal_kernel) abi_layout({offsets = [0, 0], signature = (buffer, i32) -> ()}) @unused(%2: reg<x86.gpr64>, %3: reg<x86.gpr64>, %4: reg<x86.gpr64>) -> (reg<x86.gpr32>) asm {
+  %8 = mov.imm32 0
+  return %8
+}

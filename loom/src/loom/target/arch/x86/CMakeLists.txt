@@ -12,6 +12,41 @@ iree_add_all_subdirs()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    hal_abi
+  HDRS
+    "hal_abi.h"
+  SRCS
+    "hal_abi.c"
+  DEPS
+    iree::base
+    iree::base::core_headers
+    iree::base::internal::arena
+    iree::hal::drivers::task::executable::library::abi
+    loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    hal_abi_test
+  SRCS
+    "hal_abi_test.cc"
+  DEPS
+    ::hal_abi
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     feature_bits
   HDRS
     "feature_bits.h"
@@ -93,6 +128,61 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    hal_materialization
+  HDRS
+    "hal_materialization.h"
+  SRCS
+    "hal_materialization.c"
+  DEPS
+    ::hal_abi
+    ::register_classes
+    iree::base
+    iree::base::internal::arena
+    iree::hal::drivers::task::executable::library::abi
+    loom::analysis::symbol_facts
+    loom::codegen::low::builder
+    loom::codegen::low::descriptors
+    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::low::target_binding
+    loom::ir
+    loom::ops::func_symbol_facts
+    loom::ops::global
+    loom::ops::low
+    loom::ops::op_defs
+    loom::pass::types
+    loom::rewrite::remap
+    loom::rewrite::rewriter
+    loom::target::arch::x86::descriptors::entry
+    loom::target::arch::x86::ops
+    loom::target::function_contract
+    loom::target::function_version
+    loom::target::pass_environment
+    loom::target::registers
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
+    pass_registry
+  HDRS
+    "pass_registry.h"
+  SRCS
+    "pass_registry.c"
+  DEPS
+    ::hal_materialization
+    loom::codegen::low::pipeline::pass_environment
+    loom::pass::registry
+    loom::target::pass_environment
+    loom::target::pass_requirements
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     provider
   HDRS
     "provider.h"
@@ -101,8 +191,10 @@ loom_cc_library(
   DEPS
     ::legalization
     ::math_policy
+    ::pass_registry
     iree::base
     loom::ir
+    loom::pass::builder
     loom::target::arch::x86::descriptors::low_registry
     loom::target::arch::x86::lower
     loom::target::arch::x86::ops
@@ -134,6 +226,8 @@ loom_check_test_suite(
   NAME
     loom_check_file_test
   SRCS
+    "test/hal_materialization.loom-test"
+    "test/hal_query.loom-test"
     "test/instruction_immediates.loom-test"
     "test/register_classes.loom-test"
     "test/source_low/allocation.loom-test"

@@ -1,4 +1,4 @@
-# Scalar x86 native functions
+# Scalar x86 native functions and task kernels
 
 `loom-compile` can compile ordinary High functions into an ELF relocatable
 object for an independent C or C++ linker input:
@@ -65,3 +65,52 @@ restore order and branch destinations from prepared native instructions;
 instruction encoding has its own byte-level tests. `callable_link_test` links a
 Loom-generated object into a normal host test with independent arithmetic and
 memory references; the compiler exits before linking begins.
+
+## Task HAL kernels
+
+A source kernel can also become a task HAL executable library:
+
+```sh
+loom-compile fill.loom --target=x86:scalar --format=x86-hal --output=fill.so
+```
+
+```loom
+kernel.def export("fill") @fill(%groups: index) {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%groups, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%output: buffer, %value: i32) {
+  %x = kernel.workgroup.id<x> : index
+  %count = kernel.workgroup.count<x> : index
+  %buffer_base = index.constant 0 : offset
+  %view = buffer.view %output[%buffer_base] : buffer -> view<[%count]xi32>
+  view.store %value, %view[%x] : i32, view<[%count]xi32>
+  kernel.return
+}
+```
+
+Each workgroup invokes the body once. Workgroup size is `(1, 1, 1)`; explicit
+loops within the body own additional work. XYZ IDs and counts come from the
+dispatch's state. The body can call ordinary scalar helpers and use aligned
+invocation-private stack storage across those calls.
+
+The retained logical signature describes binding ordinals and byte offsets in
+the dispatch constant segment. Bindings are dense in declaration order, while
+constants align to their scalar element width, capped at eight bytes. Unused
+parameters retain their public positions. The physical entry receives three
+state pointers, imports its parameters, and returns an explicit success value.
+These operations are ordinary Low instructions before allocation; the native
+encoder receives the same prepared form as an ordinary function.
+
+The compiler also emits the versioned library query as an ordinary Low function.
+Its address reference to the readonly library object becomes a native relocation.
+The artifact contains code, reflection records, and internal pointer fixups; it
+contains no pointers into compiler memory. Public `iree_hal_executable_load`
+loads the artifact on a compatible task device, and the queue dispatch APIs
+consume its reflected interface. Input artifact bytes can be released once
+loading completes.
+
+`hal_dispatch_test` exercises that public boundary with a source kernel: the
+compiler exits before loading, artifact bytes are released before dispatch,
+and two semaphore-ordered 3D grids update a nonzero-offset binding. The kernel
+passes aligned private storage to a retained helper. Exact buffer contents and
+guard words check the invocation, call, storage, and binding contracts together.

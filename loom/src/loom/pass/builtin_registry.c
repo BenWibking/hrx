@@ -9,7 +9,6 @@
 #include <stdint.h>
 
 #include "loom/codegen/low/pipeline/pass_environment.h"
-#include "loom/codegen/low/pipeline/pass_requirements.h"
 #include "loom/codegen/low/transforms/allocation.h"
 #include "loom/codegen/low/transforms/cfg_tuple_decomposition.h"
 #include "loom/codegen/low/transforms/cse.h"

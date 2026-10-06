@@ -115,11 +115,8 @@ loom_cc_library(
     iree::base
     iree::base::core_headers
     iree::base::internal::arena
-    iree::hal::drivers::task::executable::library::abi
-    loom::ir
-    loom::ops::low
+    loom::target::arch::x86::hal_abi
     loom::target::emit::native::object
-    loom::target::entry_selection
   PUBLIC
 )
 endif()
@@ -142,6 +139,7 @@ loom_cc_library(
     loom::codegen::low::frame
     loom::ops::global
     loom::ops::low
+    loom::target::arch::x86::hal_abi
     loom::target::emit::native::object_elf
     loom::target::entry_selection
     loom::target::provider

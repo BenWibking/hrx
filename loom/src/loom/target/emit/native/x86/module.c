@@ -430,12 +430,24 @@ static iree_status_t loom_x86_module_build_artifact(
           sizeof(*library_entries), &library_entry_capacity,
           (void**)&library_entries);
       if (iree_status_is_ok(status)) {
-        status = loom_x86_hal_library_entry_parse(
-            request->module, &entries.values[i], i, request->scratch_arena,
-            &library_entries[library_entry_count]);
+        library_entries[library_entry_count] = (loom_x86_hal_library_entry_t){
+            .name = symbols[i].name,
+            .symbol_index = i,
+        };
+        if (!loom_low_func_def_isa(entries.values[i].func.op)) {
+          status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                    "x86 HAL dispatch requires a physical "
+                                    "function and logical parameter layout");
+        } else {
+          status = loom_x86_hal_abi_parse(
+              request->module,
+              loom_low_func_def_abi_layout(entries.values[i].func.op),
+              request->scratch_arena,
+              &library_entries[library_entry_count].abi);
+        }
       }
       if (iree_status_is_ok(status)) {
-        library_entries[library_entry_count++].name = symbols[i].name;
+        ++library_entry_count;
       }
     }
     if (!iree_status_is_ok(status)) {

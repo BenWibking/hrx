@@ -23,6 +23,21 @@
 extern "C" {
 #endif
 
+// Pass requirement satisfied when the pass environment provides a target-low
+// descriptor registry for low-codegen passes.
+#define LOOM_LOW_PASS_REQUIREMENT_TARGET_LOW_DESCRIPTOR_REGISTRY \
+  "target.low-descriptor-registry"
+
+// Pass requirement satisfied when the pass environment provides a
+// source-to-target-low lowering policy registry.
+#define LOOM_LOW_PASS_REQUIREMENT_TARGET_LOW_LOWER_POLICY_REGISTRY \
+  "target.low-lower-policy-registry"
+
+// Pass requirement satisfied when the pass environment provides a dense
+// source legalizer registry.
+#define LOOM_LOW_PASS_REQUIREMENT_TARGET_LEGALIZER_REGISTRY \
+  "target.legalizer-registry"
+
 // Capability type for loom_low_pass_capability_t.
 extern const loom_pass_environment_capability_type_t
     loom_low_pass_capability_type;

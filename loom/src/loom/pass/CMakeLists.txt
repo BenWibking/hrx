@@ -327,7 +327,6 @@ loom_cc_library(
   DEPS
     ::registry
     loom::codegen::low::pipeline::pass_environment
-    loom::codegen::low::pipeline::pass_requirements
     loom::codegen::low::transforms::allocation
     loom::codegen::low::transforms::cfg_tuple_decomposition
     loom::codegen::low::transforms::cse
@@ -495,7 +494,6 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::codegen::low::pipeline::pass_environment
-    loom::codegen::low::pipeline::pass_requirements
     loom::pass::testing::registry_verify
     loom::target::legalization
     loom::target::pass_environment

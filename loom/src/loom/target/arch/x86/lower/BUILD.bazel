@@ -21,10 +21,12 @@ loom_cc_library(
     name = "lower",
     srcs = [
         "contraction.c",
+        "kernel.c",
         "registry.c",
     ],
     hdrs = [
         "contraction.h",
+        "kernel.h",
         "lower.h",
     ],
     textual_hdrs = ["//loom/src/loom/target/arch/x86/contracts:tables.inl"],
@@ -34,6 +36,9 @@ loom_cc_library(
         "//loom/src/loom/codegen/low/lower",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
+        "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target/arch/x86:hal_abi",
         "//loom/src/loom/target/arch/x86:packed_dot_contract",
         "//loom/src/loom/target/arch/x86:packed_dot_contract_projection",
         "//loom/src/loom/target/arch/x86:register_classes",

@@ -7,116 +7,7 @@
 #include "loom/target/emit/native/x86/hal_library.h"
 
 #include "iree/base/alignment.h"
-#include "loom/ir/module.h"
-#include "loom/ops/low/ops.h"
 #include "loom/target/emit/native/x86/encoding.h"
-
-// A signature carries logical types in source order; offsets explicitly place
-// each value in either the binding table or the byte-addressed constant table.
-// This contract remains meaningful after dead parameter uses disappear.
-iree_status_t loom_x86_hal_library_entry_parse(
-    const loom_module_t* module, const loom_target_entry_t* entry,
-    iree_host_size_t symbol_index, iree_arena_allocator_t* arena,
-    loom_x86_hal_library_entry_t* out_entry) {
-  *out_entry = (loom_x86_hal_library_entry_t){
-      .name = entry->func_name,
-      .symbol_index = symbol_index,
-      .attributes = {.workgroup_size_x = 1,
-                     .workgroup_size_y = 1,
-                     .workgroup_size_z = 1},
-  };
-  if (!loom_low_func_def_isa(entry->func.op)) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "x86 HAL entries require a physical dispatch "
-                            "function and its logical parameter ABI");
-  }
-  const loom_named_attr_slice_t layout =
-      loom_low_func_def_abi_layout(entry->func.op);
-  const loom_func_type_data_t* signature = NULL;
-  const loom_attribute_t* offsets = NULL;
-  for (uint16_t i = 0; i < layout.count; ++i) {
-    const loom_named_attr_t* field = &layout.entries[i];
-    const iree_string_view_t key =
-        loom_string_table_get(&module->strings, field->name_id);
-    if (iree_string_view_equal(key, IREE_SV("signature")) &&
-        field->value.kind == LOOM_ATTR_TYPE) {
-      const loom_type_t type =
-          loom_type_table_get(&module->types, field->value.type_id);
-      if (loom_type_is_function(type)) {
-        signature = loom_type_func_data(type);
-      }
-    } else if (iree_string_view_equal(key, IREE_SV("offsets")) &&
-               field->value.kind == LOOM_ATTR_I64_ARRAY) {
-      offsets = &field->value;
-    } else {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "invalid x86 HAL ABI field '%.*s'", (int)key.size,
-                              key.data);
-    }
-  }
-  if (!signature || signature->result_count || !offsets ||
-      offsets->count != signature->arg_count) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "x86 HAL ABI requires a void logical signature and one offset per "
-        "parameter");
-  }
-  iree_hal_executable_dispatch_parameter_v0_t* rows = NULL;
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, signature->arg_count,
-                                                 sizeof(*rows), (void**)&rows));
-  out_entry->parameters = rows;
-  out_entry->attributes.parameter_count = signature->arg_count;
-  iree_status_t status = iree_ok_status();
-  for (uint16_t i = 0; i < signature->arg_count && iree_status_is_ok(status);
-       ++i) {
-    const loom_type_t type = signature->types[i];
-    const int64_t offset = offsets->i64_array[i];
-    rows[i] = (iree_hal_executable_dispatch_parameter_v0_t){.name = UINT16_MAX};
-    if (loom_type_is_buffer(type)) {
-      if (offset < 0 || offset >= IREE_HAL_EXECUTABLE_MAX_BINDING_COUNT) {
-        status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                                  "x86 HAL binding ordinal is out of range");
-      } else {
-        rows[i].type = IREE_HAL_EXECUTABLE_DISPATCH_PARAM_TYPE_V0_BINDING;
-        rows[i].offset = (uint16_t)offset;
-        out_entry->attributes.binding_count =
-            (uint8_t)iree_max(out_entry->attributes.binding_count, offset + 1);
-      }
-    } else {
-      const loom_scalar_type_t element_type = loom_type_element_type(type);
-      const uint32_t element_bits =
-          element_type == LOOM_SCALAR_TYPE_INDEX ||
-                  element_type == LOOM_SCALAR_TYPE_OFFSET
-              ? 64
-              : loom_scalar_type_bitwidth(element_type);
-      uint64_t element_count = 1;
-      const bool valid_shape =
-          loom_type_is_scalar(type) ||
-          (loom_type_is_vector(type) &&
-           loom_type_static_element_count(type, &element_count));
-      // This constant ABI uses one byte per boolean lane. Vector constants
-      // retain lane order without padding between elements.
-      const uint64_t element_bytes = (element_bits + 7) / 8;
-      if (!valid_shape || !element_bytes || !element_count ||
-          element_count > UINT8_MAX / element_bytes || offset < 0 ||
-          offset > (int64_t)IREE_HAL_EXECUTABLE_MAX_CONSTANT_BYTE_LENGTH -
-                       (int64_t)(element_count * element_bytes)) {
-        status = iree_make_status(
-            IREE_STATUS_INVALID_ARGUMENT,
-            "x86 HAL constants require byte-addressable scalars or static "
-            "vectors fitting the dispatch constant segment");
-      } else {
-        rows[i].type = IREE_HAL_EXECUTABLE_DISPATCH_PARAM_TYPE_V0_CONSTANT;
-        rows[i].size = (uint8_t)(element_count * element_bytes);
-        rows[i].offset = (uint16_t)offset;
-        out_entry->attributes.constant_byte_length =
-            iree_max(out_entry->attributes.constant_byte_length,
-                     (uint32_t)rows[i].offset + rows[i].size);
-      }
-    }
-  }
-  return status;
-}
 
 // These are the x86-64 ABI offsets, independent of the compiler host's pointer
 // size, alignment, and byte order. The standalone runtime schema checks the
@@ -211,7 +102,7 @@ iree_status_t loom_x86_hal_library_build(
   iree_host_size_t string_length = 0;
   bool fits = iree_host_size_checked_add(name.size, 1, &string_length);
   for (uint16_t i = 0; i < entry_count && fits; ++i) {
-    parameter_count += entries[i].attributes.parameter_count;
+    parameter_count += entries[i].abi.attributes.parameter_count;
     fits = iree_host_size_checked_add(string_length, entries[i].name.size,
                                       &string_length) &&
            iree_host_size_checked_add(string_length, 1, &string_length);
@@ -273,13 +164,13 @@ iree_status_t loom_x86_hal_library_build(
     loom_x86_hal_library_pointer(out_data, section_index, names_offset + i * 8,
                                  library_symbol_index, string_offset);
     loom_x86_hal_library_attributes(
-        &entry->attributes,
+        &entry->abi.attributes,
         contents + attributes_offset + i * LOOM_X86_HAL_ATTRIBUTES_SIZE);
     memcpy(contents + string_offset, entry->name.data, entry->name.size);
     string_offset += entry->name.size + 1;
-    for (uint16_t p = 0; p < entry->attributes.parameter_count; ++p) {
+    for (uint16_t p = 0; p < entry->abi.attributes.parameter_count; ++p) {
       const iree_hal_executable_dispatch_parameter_v0_t* parameter =
-          &entry->parameters[p];
+          &entry->abi.parameters[p];
       contents[parameter_offset] = parameter->type;
       contents[parameter_offset + 1] = parameter->size;
       iree_unaligned_store_le_u16(contents + parameter_offset + 2,

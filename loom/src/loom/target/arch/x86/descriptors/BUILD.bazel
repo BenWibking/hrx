@@ -7,6 +7,7 @@
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
     "loom_cc_library",
+    "loom_cc_test",
     "loom_low_descriptor_cc_library",
 )
 
@@ -174,6 +175,34 @@ loom_low_descriptor_cc_library(
     ids_visibility = _X86_ROOT_VISIBILITY + _X86_NATIVE_VISIBILITY,
     visibility = _X86_NATIVE_VISIBILITY,
     deps = ["//loom/src/loom/codegen/low:descriptors"],
+)
+
+loom_cc_library(
+    name = "entry",
+    srcs = ["entry.c"],
+    hdrs = ["entry.h"],
+    visibility = _X86_ROOT_VISIBILITY,
+    deps = [
+        ":avx2_descriptors_ids",
+        ":avx512_descriptors_ids",
+        ":avx512_packed_dot_descriptors_ids",
+        ":scalar_descriptors_ids",
+        ":simd128_descriptors_ids",
+        "//loom/src/loom/codegen/low:descriptors",
+        "//runtime/src/iree/base",
+    ],
+)
+
+loom_cc_test(
+    name = "entry_test",
+    srcs = ["entry_test.cc"],
+    deps = [
+        ":entry",
+        ":shards_for_testing",
+        "//loom/src/loom/codegen/low:descriptors",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
 )
 
 loom_cc_library(

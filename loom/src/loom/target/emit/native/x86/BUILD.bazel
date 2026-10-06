@@ -100,14 +100,11 @@ loom_cc_library(
     hdrs = ["hal_library.h"],
     deps = [
         ":encoding",
-        "//loom/src/loom/ir",
-        "//loom/src/loom/ops/low",
-        "//loom/src/loom/target:entry_selection",
+        "//loom/src/loom/target/arch/x86:hal_abi",
         "//loom/src/loom/target/emit/native:object",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base:core_headers",
         "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
     ],
 )
 
@@ -125,6 +122,7 @@ loom_cc_library(
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:entry_selection",
         "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/arch/x86:hal_abi",
         "//loom/src/loom/target/emit/native:object_elf",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
