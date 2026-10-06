@@ -32,6 +32,31 @@ valid asynchronous work independent of a device-side deadline. Finite retry
 exhaustion and its error/completion behavior are not specified by these
 callers. [PAL wait][pal-wait], [Mesa wait][mesa-wait]
 
+## Comparison selection
+
+The classic FUNCTION field selects the relation to the reference value. Linux's
+CIK definitions and AMD's UMR decoder use the same seven selector meanings;
+UMR places the field at header bits 30:28 in its later classic packet decoders
+as well. Selector 7 is named `N/A` by that decoder.
+[Linux selector names][linux-comparisons], [UMR selector names][umr-comparisons],
+[UMR classic fields][umr-poll]
+
+| FUNCTION | Relation to the reference |
+| --- | --- |
+| 0 | Always passes. |
+| 1 | Less than. |
+| 2 | Less than or equal. |
+| 3 | Equal. |
+| 4 | Not equal. |
+| 5 | Greater than or equal. |
+| 6 | Greater than. |
+
+Always-pass has no unsatisfied comparison state, so it cannot establish a
+dependency on a producer's future control update. The selector is independent
+of the reference and mask DWORDs, the memory/register selector, and the
+retry/interval word. The comparison names alone define neither signed
+relational ordering nor a wrap-aware completion counter.
+
 The ordinary ROCr, PAL and Linux memory-equality callers use full masks.
 Mesa's SDMA gang postamble additionally uses comparison 5, greater-or-equal,
 with reference 1 and a full mask. Its comparison selector occupies the same
@@ -130,3 +155,6 @@ operation's completion with the next operation's initial state.
 [poll64-layout]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h#L795-L871
 [poll64-builder]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L2662-L2687
 [poll64-caller]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L742-L746
+[linux-comparisons]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/cikd.h#L525-L541
+[umr-comparisons]: https://gitlab.freedesktop.org/tomstdenis/umr/-/blob/c18840f10c7d5a085f2aeb2bc0d33ab9b3b71709/src/lib/packet/sdma/sdma_decode_opcodes.c#L44
+[umr-poll]: https://gitlab.freedesktop.org/tomstdenis/umr/-/blob/c18840f10c7d5a085f2aeb2bc0d33ab9b3b71709/src/lib/packet/sdma/sdma_decode_opcodes.c#L2109-2133
