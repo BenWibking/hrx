@@ -14,7 +14,7 @@ across the complete graph.
 
 | Recipe | Native mechanisms |
 | --- | --- |
-| [CPU and GPU memory handoff](host-device.md) | Mapping/cache properties, HSA release/acquire, native completion, CPU apertures and imported-buffer access. |
+| [CPU and GPU memory handoff](host-device.md) | Mapping/cache properties, HSA release/acquire, SVM prefetch results and accepted-work ownership, CPU apertures and imported-buffer access. |
 | [GPU and AI Engine shared-memory handoff](gpu-npu.md) | Per-device addresses, external DMA visibility, finite submission ordering, resident progress and final drain. |
 | [External memory and synchronization](../../interop/external-memory.md) | Linux DMA-BUF and dependency objects, Vulkan imports and ownership transfers, Windows shared resources and fences. |
 | [Inbound RDMA visibility](../../interop/rdma.md) | External producer completion, host HDP visibility, GPU acquisition and the separate ownership of peer and resident consumers. |

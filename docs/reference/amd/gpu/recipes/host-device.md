@@ -303,6 +303,51 @@ remain stable through all their waiters, including consumers that have not yet
 reached the dependency. [Prefetch owner][svm-prefetch-owner]
 [Discard owner][svm-discard-owner] [Signal lifetime](../aql/barriers.md)
 
+These are memory-management operations with their own admission rules. The
+discard API requires XNACK and reserved, unregistered SVM address ranges; it
+does not accept every GPU buffer. The callers request SYSTEM scope for
+subsequent work, independently of the preceding-work dependency. This is CLR
+runtime policy at `105dd4ff35798f95646353bc08f6c885416ae17e`, not an HDP flush
+or an extension of SVM operations to other allocation classes.
+[Discard admission][svm-discard-admission] [Range checks][svm-discard-ranges]
+[Following-work scope][clr-prefetch]
+
+### Prefetch completion and page residency
+
+SVM prefetch in this ROCr path is a host-serviced memory-management operation.
+The accepted callback waits for its dependencies, requests
+`HSA_SVM_ATTR_PREFETCH_LOC` through the native KFD ioctl, and then updates its
+completion signal. The callback owns a range and destination node, not a
+user-submitted SDMA packet. Linux's migration implementation submits its own
+copies and waits for their final DMA fence before finalizing the migrated
+pages. API-level asynchrony therefore does not establish a device-only
+execution path. [ROCr callback][svm-prefetch-owner]
+[Native request][svm-native-request] [Migration copy wait][svm-copy-wait]
+[Page finalization][svm-page-finalization]
+
+Native request success and physical residency also differ. In Linux
+`fe2ec83746e501645709761605c2464a44fd2929`,
+`svm_range_best_prefetch_location` can select CPU memory for a GPU request.
+Its conditions include `apu_prefer_gtt` and access by GPUs outside the
+destination's XGMI hive. With XNACK enabled, that topology check uses the
+ACCESS_IN_PLACE set; with XNACK disabled, it uses both ACCESS and
+ACCESS_IN_PLACE. This is a placement decision for that range and process,
+not a GPU-architecture-wide prohibition. [Placement selection][svm-placement]
+
+The migration code permits only a subset of a range's pages to migrate.
+`svm_range_trigger_migration` also returns zero after its GPU-directed
+migration attempt even when that attempt returns an error; it records the
+outcome separately in `migrated`. Its CPU-directed branch propagates the
+migration result. The enclosing attribute operation can report later mapping
+errors after earlier changes have taken effect. Its source explicitly
+describes that state as partially completed, without a guaranteed rollback.
+Consequently, a successful request is neither proof of whole-range GPU
+residency nor a promise that residency remains fixed for subsequent work.
+[Partial page migration][svm-page-finalization]
+[Migration result handling][svm-migration-result]
+[Attribute update and mapping][svm-attribute-update]
+[Later eviction][svm-eviction]
+
 Acceptance, callback completion and native success also have distinct
 meanings. The prefetch header specifies a negative completion value on an
 asynchronous error, while the cited callback asserts native success and then
@@ -314,14 +359,57 @@ carried by those counters; the prior-work dependency does not repair it.
 [Prefetch result contract][svm-prefetch] [Native result handling][svm-prefetch-owner]
 [Discard result handling][svm-discard-owner]
 
-These are memory-management operations with their own admission rules. The
-discard API requires XNACK and reserved, unregistered SVM address ranges; it
-does not accept every GPU buffer. The callers request SYSTEM scope for
-subsequent work, independently of the preceding-work dependency. This is CLR
-runtime policy at `105dd4ff35798f95646353bc08f6c885416ae17e`, not an HDP flush
-or an extension of SVM operations to other allocation classes.
-[Discard admission][svm-discard-admission] [Range checks][svm-discard-ranges]
-[Following-work scope][clr-prefetch]
+The two ROCr discard operations have different contents-preservation
+semantics. `hsa_amd_svm_discard_batch_async` optionally requests CPU prefetch
+and then uses `MADV_FREE`. The combined
+`hsa_amd_svm_discard_and_prefetch_batch_async` uses `MADV_DONTNEED` before
+requesting GPU prefetch. Each owner performs one completion decrement for its
+entire range list; the combined owner also only warns on native errors.
+Neither is a preserving copy operation, and neither counter reports a
+per-range outcome. [Discard owner][svm-discard-owner]
+[Combined discard and prefetch][svm-discard-prefetch-owner]
+
+### Accepted work and signal reuse
+
+HIP's `hipMemPrefetchBatchAsync` validates and copies the range, size and
+destination arrays into an owned command before enqueueing it. CLR later
+submits those ranges as independent ROCr prefetch calls sharing a completion
+signal. Up-front argument validation does not make that sequence one atomic
+native admission: each prefetch constructs its own asynchronous operation,
+and resource allocation remains fallible. [HIP admission][hip-prefetch-batch]
+[Command storage][clr-prefetch-command] [CLR submissions][clr-prefetch]
+[ROCr operation storage][svm-operation-storage]
+[Resource failure translation][svm-api-errors]
+
+An accepted prefetch keeps its completion update until its callback runs.
+Changing the completion value does not cancel that callback: asynchronous
+registration monitors the dependency signal and retains that monitored
+signal, while the operation separately stores its completion handle. The
+callback receives no HIP batch state through which it could observe a later
+member's submission failure. [Operation storage][svm-operation-storage]
+[Dependency registration][svm-handler-registration]
+[Callback retirement][svm-handler-retirement]
+
+At ROCm systems `105dd4ff35798f95646353bc08f6c885416ae17e`, CLR responds to
+a prefetch submission error with `ResetCurrentSignal`, which writes zero to
+the shared completion and moves its tracker back. That branch supplies no
+join for earlier accepted members. If such members remain outstanding,
+the written zero cannot establish their completion. The signal pool also has
+object-reference and reuse checks. Those checks do not turn that store into
+cancellation or prove the end of the accepted callbacks.
+This is a discrepancy in the cited owner's failure path, not a hardware
+retirement rule. [Batch submission failure][clr-prefetch]
+[Tracker reset][clr-signal-reset] [Signal reuse checks][clr-signal-reuse]
+
+A composed owner therefore needs distinct evidence for submission acceptance,
+operation outcome and the final use of borrowed storage. Rejecting one member
+leaves earlier accepted members' obligations intact. A terminal error value
+can report failure without proving that other members sharing the signal
+have stopped using it. The completion storage remains live through its last
+writer and waiter, and the referenced ranges remain live through their final
+native and device users. [Prefetch result contract][svm-prefetch]
+[Accepted callback][svm-prefetch-owner]
+[Signal lifetime](../aql/barriers.md#native-signal-storage-and-last-consumers)
 
 ### A visible control store still needs its producing payload
 
@@ -587,3 +675,19 @@ can erase the very completion that consumer still needs to observe.
 [clr-submit]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L1523-L1574
 [clr-batch-blit]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L3615-L3652
 [clr-batch-kernel]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/blitcl.cpp#L230-L256
+[svm-native-request]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/libhsakmt/src/svm.c#L38-L115
+[svm-copy-wait]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_migrate.c#L184-L211
+[svm-page-finalization]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_migrate.c#L426-L471
+[svm-placement]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3501-L3582
+[svm-migration-result]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3608-L3639
+[svm-attribute-update]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3801-L3892
+[svm-eviction]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdkfd/kfd_svm.c#L3641-L3737
+[svm-discard-prefetch-owner]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L4120-L4239
+[hip-prefetch-batch]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_hmm.cpp#L566-L688
+[clr-prefetch-command]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/platform/command.hpp#L2285-L2311
+[svm-operation-storage]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L3768-L3790
+[svm-api-errors]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/hsa_ext_amd.cpp#L221-L245
+[svm-handler-registration]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L965-L988
+[svm-handler-retirement]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L2030-L2045
+[clr-signal-reset]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L997-L1002
+[clr-signal-reuse]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L779-L805

@@ -51,6 +51,7 @@ provide exact search terms within the tree.
 | Size and reclaim private scratch backing | [AQL `COMPUTE_TMPRING_SIZE`, physical slots and firmware ownership](gpu/aql/scratch.md). |
 | Size compute context-save storage and preserve suspended work | [CWSR, `ctx_save_restore_size`, per-XCC headers and native removal](gpu/context-save.md). |
 | Determine which agents can access a memory pool | [Pool grain, per-agent access and SVM host access](gpu/recipes/host-device.md#pool-grain-agent-access-and-svm). |
+| Interpret SVM prefetch completion and reuse its resources | [Page residency and native results](gpu/recipes/host-device.md#prefetch-completion-and-page-residency), [accepted work and signal reuse](gpu/recipes/host-device.md#accepted-work-and-signal-reuse). |
 | Make a producer's writes visible to its consumer | [GPU cache controls](gpu/pm4/cache.md), [CPU/GPU handoffs](gpu/recipes/host-device.md), [all six CPU/GPU/NPU directions](interop/README.md). |
 | Retain repeatedly used GPU data in cache | [Temporal hints, persisting-size requests, native admission and HIP access windows](gpu/cache-residency.md). |
 | Consume inbound RDMA writes | [Host visibility, `hipDeviceFlushGPUDirectRDMAWrites`, HDP mapping and independent GPU acquisition](interop/rdma.md). |
