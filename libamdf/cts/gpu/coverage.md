@@ -11,7 +11,8 @@ identity, independent observation and checked retirement.
 
 | Behavior | Case sources | What the oracle observes |
 | --- | --- | --- |
-| PM4 memory operations | [write](pm4/write_test.cc), [copy](pm4/copy_test.cc), [wait](pm4/wait_test.cc), [atomic store](pm4/atomic_store_test.cc) | Changed data, selected widths and extents, surrounding bytes, producer/consumer ordering and CPU handoffs. Atomic-store coverage is distinct from read-modify-write operations. |
+| PM4 memory operations | [write](pm4/write_test.cc), [copy](pm4/copy_test.cc), [atomic store](pm4/atomic_store_test.cc) | Changed data, selected widths and extents, surrounding bytes, producer/consumer ordering and CPU handoffs. Atomic-store coverage is distinct from read-modify-write operations. |
+| PM4 memory dependencies | [wait](pm4/wait_test.cc) | All six conditional comparisons across 32/64-bit operands and full/partial masks, already-satisfied and consumer-before-producer publication, and always-pass below/equal/above operands. Complete backing checks precede native retirement; masked relational values separate ordering from ignored bits. |
 | PM4 execution and dependencies | [dispatch](pm4/dispatch_test.cc), [cross-queue handoff](pm4/handoff_test.cc), [indirect dispatch](pm4/indirect_test.cc), [command buffers](pm4/command_buffer_test.cc) | Shader outputs across generations, device-produced dispatch counts, immutable indirect buffers and completed-use command rebuilding. |
 | PM4 shader resources | [LDS](pm4/lds_test.cc), [resource changes](pm4/resource_test.cc) | Cross-wave exchange through fixed workgroup storage and transitions between distinct resource configurations. |
 | SDMA transfers | [copy](sdma/copy_test.cc), [fill](sdma/fill_test.cc) | Linear copies, byte tails/page crossings, DWORD fills, NOP-separated copy and fill-to-copy dependencies, changing-pattern payload reuse, immutable commands and fence-visible output. |

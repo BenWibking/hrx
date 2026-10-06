@@ -533,6 +533,49 @@ TEST(Pm4EncodingTest, MaskedMemoryWaitsKeepOrdinaryMecExecution) {
   EXPECT_EQ(words.back(), 0x24681357u);
 }
 
+TEST(Pm4EncodingTest, EveryMemoryComparisonPreservesBothPacketLayouts) {
+  const struct {
+    // Comparison requested by the caller.
+    Pm4MemoryComparison comparison;
+    // Literal MEC function and memory-space control word.
+    uint32_t control;
+  } cases[] = {
+      {Pm4MemoryComparison::kAlways, 0x10},
+      {Pm4MemoryComparison::kLess, 0x11},
+      {Pm4MemoryComparison::kLessOrEqual, 0x12},
+      {Pm4MemoryComparison::kEqual, 0x13},
+      {Pm4MemoryComparison::kNotEqual, 0x14},
+      {Pm4MemoryComparison::kGreaterOrEqual, 0x15},
+      {Pm4MemoryComparison::kGreater, 0x16},
+  };
+  const std::array<uint32_t, 2> targets[] = {
+      {11, 0}, {11, 5}, {11, 7}, {12, 0}, {12, 5}};
+  for (const auto& target : targets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (const auto& test : cases) {
+      SCOPED_TRACE(test.control);
+      std::array<uint32_t, 18> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      commands.WaitMemory32(UINT64_C(0x0000123487654324), 0x00400000,
+                            test.comparison, 0x00ffff00);
+      commands.WaitMemory64(UINT64_C(0x00005678fedcba98),
+                            UINT64_C(0x0040000013570000), test.comparison,
+                            UINT64_C(0x00ffff00ffff0000));
+      const std::array<uint32_t, 16> expected = {
+          0xc0053c00,   test.control, 0x87654324, 0x00001234,
+          0x00400000,   0x00ffff00,   4,          0xc0079300,
+          test.control, 0xfedcba98,   0x00005678, 0x13570000,
+          0x00400000,   0xffff0000,   0x00ffff00, 4};
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
+}
+
 TEST(Pm4EncodingTest, LessThanWaitsPreserveBothOperandWidths) {
   std::array<uint32_t, 17> words = {};
   words.back() = 0x24681357;
