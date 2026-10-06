@@ -7,6 +7,7 @@
 #include <cstring>
 #include <vector>
 
+#include "iree/hal/cts/util/pool_test_util.h"
 #include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/memory/fixed_block_pool.h"
 #include "iree/hal/memory/passthrough_pool.h"
@@ -119,17 +120,15 @@ TEST_P(VulkanAllocatorGuardrailTest,
       device_, iree_hal_queue_family(transfer_queue_), &backend));
   constexpr iree_device_size_t kBlockSize = 512;
   iree_hal_fixed_block_pool_options_t options = {};
-  options.block_allocator_options.block_size = kBlockSize;
-  options.block_allocator_options.block_count = 1;
-  options.block_allocator_options.frontier_capacity = 2;
+  options.block_size = kBlockSize;
+  options.blocks_per_slab = 1;
+  options.frontier_capacity = 2;
   options.asan = backend.asan;
+  Ref<iree_hal_pool_t> backing_pool;
   Ref<iree_hal_pool_t> pool;
-  // Vulkan returns the reservation from its completion path. Reuse must not
-  // require the optional probe to rediscover that completion.
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
-      iree_allocator_system(), pool.out()));
+  IREE_ASSERT_OK(CreateFiniteBlockPool(backend, options,
+                                       iree_allocator_system(),
+                                       backing_pool.out(), pool.out()));
 
   iree_hal_pool_reservation_request_t request = {};
   request.allocation_size = kBlockSize;
@@ -151,10 +150,21 @@ TEST_P(VulkanAllocatorGuardrailTest,
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(released, iree_infinite_timeout(),
                                               IREE_ASYNC_WAIT_FLAG_NONE));
 
+  // Completion returns an empty prerequisite, so reuse needs no completion
+  // query and carries no wait into the next submission.
+  iree_hal_pool_reservation_t reservation;
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservation,
+      &info, &result));
+  ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK_FRESH, result);
+  EXPECT_EQ(info.reuse_frontier, nullptr);
   Ref<iree_hal_buffer_t> buffer;
-  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(pool, request.params, kBlockSize,
-                                               iree_immediate_timeout(),
-                                               buffer.out()));
+  IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+      pool, 1, &request, &reservation,
+      IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+      buffer.out()));
   const uint32_t pattern = 0x1234ABCDu;
   SemaphoreList filled(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_fill(transfer_queue_, empty_wait, filled,

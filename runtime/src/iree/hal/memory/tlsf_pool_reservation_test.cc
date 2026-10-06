@@ -264,8 +264,8 @@ TEST_F(TLSFPoolReservationTest, MixedRollbackPreservesDedicatedParentHistory) {
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
       native_, parent_request.params, 8192, iree_infinite_timeout(), &backing));
   iree_hal_fixed_block_pool_options_t parent_options = {};
-  parent_options.block_allocator_options.block_size = 8192;
-  parent_options.block_allocator_options.frontier_capacity = 2;
+  parent_options.block_size = 8192;
+  parent_options.frontier_capacity = 2;
   iree_hal_pool_t* parent = nullptr;
   IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
       backing, 0, IREE_HAL_WHOLE_BUFFER, &parent_options, allocator_, &parent));

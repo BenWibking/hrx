@@ -612,7 +612,7 @@ TEST_F(SlabCacheTest, InteriorRangePreparationPreservesNeighbors) {
   IREE_ASSERT_OK(
       iree_hal_buffer_map_fill(backing, 0, IREE_HAL_WHOLE_BUFFER, &pattern, 1));
   iree_hal_fixed_block_pool_options_t options = {};
-  options.block_allocator_options.block_size = 1024;
+  options.block_size = 1024;
   iree_hal_pool_t* interior = nullptr;
   IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
       backing, 16, 1024, &options, allocator_, &interior));

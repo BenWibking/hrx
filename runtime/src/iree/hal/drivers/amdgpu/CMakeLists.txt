@@ -1287,6 +1287,7 @@ iree_cc_test(
     ::headers
     iree::base
     iree::hal
+    iree::hal::cts::util::pool_test_util
     iree::hal::cts::util::test_base
     iree::hal::drivers::amdgpu::util::libhsa
     iree::hal::drivers::amdgpu::util::packet

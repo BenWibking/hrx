@@ -338,8 +338,8 @@ static iree_status_t CreateExplicitFixedBlockPool(
       backing_pool, MakeTransientBufferParams(), block_size,
       iree_infinite_timeout(), backing_buffer.out()));
   iree_hal_fixed_block_pool_options_t options = {};
-  options.block_allocator_options.block_size = block_size;
-  options.block_allocator_options.frontier_capacity = 2;
+  options.block_size = block_size;
+  options.frontier_capacity = 2;
   IREE_RETURN_IF_ERROR(iree_hal_fixed_block_pool_create_from_buffer(
       backing_buffer, 0, IREE_HAL_WHOLE_BUFFER, &options,
       iree_allocator_system(), out_pool));

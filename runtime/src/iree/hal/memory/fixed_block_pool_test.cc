@@ -17,6 +17,8 @@
 #include "iree/async/proactor_platform.h"
 #include "iree/hal/api.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
+#include "iree/hal/memory/maintenance_thread.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/pool_set.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -322,11 +324,76 @@ static iree_status_t MaterializeOneReservation(
                                                 flags, out_buffer);
 }
 
+static iree_hal_memory_maintenance_t* test_maintenance() {
+  static iree_hal_memory_maintenance_t* owner = nullptr;
+  if (!owner) {
+    IREE_CHECK_OK(iree_hal_memory_maintenance_thread_create(
+        {}, iree_allocator_system(), &owner));
+    atexit([] { iree_hal_memory_maintenance_release(owner); });
+  }
+  return owner;
+}
+
+static void WaitForMaintenance() {
+  iree_hal_memory_maintenance_call(test_maintenance(), [](void*) {}, nullptr);
+}
+
+static iree_status_t CreateFinitePool(
+    iree_hal_fixed_block_pool_options_t options,
+    iree_hal_slab_provider_t* provider, iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* tracker, iree_allocator_t allocator,
+    iree_hal_pool_t** out_backing_pool, iree_hal_pool_t** out_pool) {
+  *out_backing_pool = nullptr;
+  *out_pool = nullptr;
+  iree_hal_pool_t* backing_pool = nullptr;
+  IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
+      {}, provider, notification, tracker, test_maintenance(), allocator,
+      &backing_pool));
+  iree_hal_pool_reservation_request_t request;
+  iree_status_t status = iree_hal_fixed_block_pool_query_backing_request(
+      backing_pool, &options, &request);
+  iree_hal_buffer_t* buffer = nullptr;
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_pool_allocate_buffer(backing_pool, request.params,
+                                           request.allocation_size,
+                                           iree_infinite_timeout(), &buffer);
+  }
+  if (iree_status_is_ok(status)) {
+    options.blocks_per_slab = 0;
+    status = iree_hal_fixed_block_pool_create_from_buffer(
+        buffer, 0, IREE_HAL_WHOLE_BUFFER, &options, allocator, out_pool);
+  }
+  iree_hal_buffer_release(buffer);
+  if (iree_status_is_ok(status)) {
+    *out_backing_pool = backing_pool;
+  } else {
+    iree_hal_pool_release(backing_pool);
+  }
+  return status;
+}
+
+static iree_status_t CreateGrowingPool(
+    const iree_hal_fixed_block_pool_options_t& options,
+    iree_hal_slab_provider_t* provider, iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* tracker, iree_hal_pool_epoch_query_t query,
+    iree_allocator_t allocator, iree_hal_pool_t** out_pool) {
+  iree_hal_passthrough_pool_options_t source_options = {};
+  source_options.epoch_query = query;
+  iree_hal_pool_t* source = nullptr;
+  IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
+      source_options, provider, notification, tracker, test_maintenance(),
+      allocator, &source));
+  iree_status_t status =
+      iree_hal_fixed_block_pool_create(source, &options, allocator, out_pool);
+  iree_hal_pool_release(source);
+  return status;
+}
+
 static iree_hal_fixed_block_pool_options_t DefaultOptions() {
   iree_hal_fixed_block_pool_options_t options = {};
-  options.block_allocator_options.block_size = 256;
-  options.block_allocator_options.block_count = 4;
-  options.block_allocator_options.frontier_capacity = 2;
+  options.block_size = 256;
+  options.blocks_per_slab = 4;
+  options.frontier_capacity = 2;
   return options;
 }
 
@@ -346,21 +413,29 @@ class FixedBlockPoolTest : public ::testing::Test {
         /*min_alignment=*/0, allocator_, &slab_provider_));
     IREE_ASSERT_OK(iree_async_notification_create(
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
-    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-        DefaultOptions(), slab_provider_, notification_,
-        test_frontier_tracker(), iree_hal_pool_epoch_query_null(), allocator_,
-        &pool_));
+    IREE_ASSERT_OK(CreateFinitePool(DefaultOptions(), slab_provider_,
+                                    notification_, test_frontier_tracker(),
+                                    allocator_, &backing_pool_, &pool_));
   }
 
   void TearDown() override {
     iree_hal_pool_release(pool_);
+    iree_hal_pool_release(backing_pool_);
+    backing_pool_ = nullptr;
     iree_async_notification_release(notification_);
     iree_hal_slab_provider_release(slab_provider_);
   }
 
+  // Host allocator for fixture and pool metadata.
   iree_allocator_t allocator_ = iree_allocator_system();
+  // Real CPU storage provider retained through native pool destruction.
   iree_hal_slab_provider_t* slab_provider_ = nullptr;
+  // Capacity observation shared by the native owner and child.
   iree_async_notification_t* notification_ = nullptr;
+  // Native owner of a finite arena; growable pools retain their source
+  // directly.
+  iree_hal_pool_t* backing_pool_ = nullptr;
+  // Allocation policy under test, destroyed before its native owner.
   iree_hal_pool_t* pool_ = nullptr;
 };
 
@@ -386,6 +461,65 @@ class CountingAllocator {
   size_t allocation_calls_ = 0;
 };
 
+TEST(FixedBlockPool, GrowableProbesAndBudgetAdmissionDoNotAllocate) {
+  CountingAllocator allocator;
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(
+      iree_hal_cpu_slab_provider_create(0, allocator.allocator(), &provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  auto options = DefaultOptions();
+  options.blocks_per_slab = 2;
+  options.budget_limit = 512;
+  iree_hal_pool_t* pool = nullptr;
+  IREE_ASSERT_OK(CreateGrowingPool(
+      options, provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator.allocator(), &pool));
+  iree_hal_pool_reservation_request_t requests[3];
+  for (auto& request : requests) {
+    request = MakeReservationRequest(256, 16);
+  }
+  iree_hal_pool_reservation_t reservations[3];
+  iree_hal_pool_acquire_info_t infos[3];
+  iree_hal_pool_acquire_result_t result;
+  const size_t initial_calls = allocator.allocation_calls();
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      reservations, infos, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+  EXPECT_EQ(infos[0].flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 3, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations,
+      infos, &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OVER_BUDGET);
+  EXPECT_EQ(allocator.allocation_calls(), initial_calls);
+
+  // Cold preparation acquires one source range. Its live first block keeps
+  // that range available for an allocation-free probe of the second block.
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations,
+      infos, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  const size_t prepared_calls = allocator.allocation_calls();
+  EXPECT_GT(prepared_calls, initial_calls);
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &reservations[1], infos, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  EXPECT_EQ(allocator.allocation_calls(), prepared_calls);
+  iree_hal_pool_release_reservations(pool, 2, reservations, nullptr);
+  WaitForMaintenance();
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool, &stats);
+  EXPECT_EQ(stats.bytes_committed, 0u);
+  EXPECT_EQ(stats.reservation_count, 0u);
+  EXPECT_EQ(stats.over_budget_count, 1u);
+  iree_hal_pool_release(pool);
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(provider);
+}
+
 TEST(FixedBlockPool, NoGrowthDefersLargeBatchStaging) {
   CountingAllocator allocator;
   iree_hal_slab_provider_t* provider = nullptr;
@@ -396,11 +530,12 @@ TEST(FixedBlockPool, NoGrowthDefersLargeBatchStaging) {
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
   constexpr size_t kCount = 12;
   auto options = DefaultOptions();
-  options.block_allocator_options.block_count = kCount;
+  options.blocks_per_slab = kCount;
+  iree_hal_pool_t* backing_pool = nullptr;
   iree_hal_pool_t* pool = nullptr;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, provider, notification, test_frontier_tracker(),
-      iree_hal_pool_epoch_query_null(), allocator.allocator(), &pool));
+  IREE_ASSERT_OK(CreateFinitePool(options, provider, notification,
+                                  test_frontier_tracker(),
+                                  allocator.allocator(), &backing_pool, &pool));
 
   iree_hal_pool_reservation_request_t requests[kCount];
   for (auto& request : requests) {
@@ -457,6 +592,7 @@ TEST(FixedBlockPool, NoGrowthDefersLargeBatchStaging) {
   }
   iree_hal_pool_release_reservations(pool, kCount, reservations, nullptr);
   iree_hal_pool_release(pool);
+  iree_hal_pool_release(backing_pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(provider);
 }
@@ -475,12 +611,13 @@ TEST(FixedBlockPool, SixQueueHistorySurvivesInlineAndColdStaging) {
   for (uint16_t capacity : {6, 16}) {
     SCOPED_TRACE(capacity);
     auto options = DefaultOptions();
-    options.block_allocator_options.block_count = 2;
-    options.block_allocator_options.frontier_capacity = capacity;
+    options.blocks_per_slab = 2;
+    options.frontier_capacity = capacity;
+    iree_hal_pool_t* backing_pool = nullptr;
     iree_hal_pool_t* pool = nullptr;
-    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+    IREE_ASSERT_OK(CreateFinitePool(
         options, provider, notification, test_frontier_tracker(),
-        iree_hal_pool_epoch_query_null(), allocator.allocator(), &pool));
+        allocator.allocator(), &backing_pool, &pool));
     auto request = MakeReservationRequest(64, 16);
     request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
     const iree_hal_pool_reservation_request_t requests[2] = {request, request};
@@ -529,6 +666,7 @@ TEST(FixedBlockPool, SixQueueHistorySurvivesInlineAndColdStaging) {
     }
     iree_hal_pool_release_reservations(pool, 2, reservations, death);
     iree_hal_pool_release(pool);
+    iree_hal_pool_release(backing_pool);
   }
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(provider);
@@ -545,7 +683,7 @@ TEST_F(FixedBlockPoolTest, ReserveReleaseFresh) {
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
   EXPECT_EQ(reservation.offset, 0u);
   EXPECT_EQ(reservation.byte_length, 128u);
-  EXPECT_EQ(reservation.block_handle, 0u);
+  EXPECT_NE(reservation.block_handle, 0u);
   EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 
@@ -619,10 +757,12 @@ TEST_F(FixedBlockPoolTest, ReservationTransactionIsAllOrNone) {
 
 TEST_F(FixedBlockPoolTest, BatchChecksEachAvailableFrontierOnce) {
   iree_hal_pool_release(pool_);
+  iree_hal_pool_release(backing_pool_);
+  backing_pool_ = nullptr;
   auto options = DefaultOptions();
-  constexpr uint32_t kBlockCount = 4096;
+  constexpr uint32_t kBlockCount = 4095;
   constexpr iree_host_size_t kRequestCount = 8;
-  options.block_allocator_options.block_count = kBlockCount;
+  options.blocks_per_slab = kBlockCount + 1;
   iree_host_size_t query_count = 0;
   const iree_hal_pool_epoch_query_t query = {
       [](void* user_data, iree_async_axis_t axis, uint64_t epoch) {
@@ -631,9 +771,9 @@ TEST_F(FixedBlockPoolTest, BatchChecksEachAvailableFrontierOnce) {
       },
       &query_count,
   };
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, slab_provider_, notification_, test_frontier_tracker(), query,
-      allocator_, &pool_));
+  IREE_ASSERT_OK(CreateGrowingPool(options, slab_provider_, notification_,
+                                   test_frontier_tracker(), query, allocator_,
+                                   &pool_));
   const auto request = MakeReservationRequest(64, 16);
   std::vector<iree_hal_pool_reservation_request_t> requests(kBlockCount,
                                                             request);
@@ -645,6 +785,11 @@ TEST_F(FixedBlockPoolTest, BatchChecksEachAvailableFrontierOnce) {
       IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations.data(), infos.data(),
       &result));
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  iree_hal_pool_reservation_t anchor;
+  iree_hal_pool_acquire_info_t anchor_info;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE, &anchor,
+      &anchor_info, &result));
   MAKE_FRONTIER(death, 1, E(TestQueueAxis(0), 10));
   iree_hal_pool_release_reservations(pool_, kBlockCount, reservations.data(),
                                      death);
@@ -662,6 +807,7 @@ TEST_F(FixedBlockPoolTest, BatchChecksEachAvailableFrontierOnce) {
   }
   iree_hal_pool_release_reservations(pool_, kRequestCount, reservations.data(),
                                      death);
+  ReleaseOneReservation(pool_, &anchor, nullptr);
 }
 
 // Holds one completion query while another caller uses the same real backing.
@@ -702,12 +848,14 @@ class PausedEpochQuery {
 
 TEST_F(FixedBlockPoolTest, ConcurrentUseRevalidatesTheEntireBatch) {
   iree_hal_pool_release(pool_);
+  iree_hal_pool_release(backing_pool_);
+  backing_pool_ = nullptr;
   auto options = DefaultOptions();
-  options.block_allocator_options.block_count = 2;
+  options.blocks_per_slab = 3;
   PausedEpochQuery query;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, slab_provider_, notification_, test_frontier_tracker(),
-      query.query(), allocator_, &pool_));
+  IREE_ASSERT_OK(CreateGrowingPool(options, slab_provider_, notification_,
+                                   test_frontier_tracker(), query.query(),
+                                   allocator_, &pool_));
   auto request = MakeReservationRequest(64, 16);
   request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
   const iree_hal_pool_reservation_request_t requests[2] = {request, request};
@@ -717,6 +865,11 @@ TEST_F(FixedBlockPoolTest, ConcurrentUseRevalidatesTheEntireBatch) {
   IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
       pool_, 2, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
       reservations, infos, &result));
+  iree_hal_pool_reservation_t anchor;
+  iree_hal_pool_acquire_info_t anchor_info;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE, &anchor,
+      &anchor_info, &result));
   MAKE_FRONTIER(old_death, 1, E(TestQueueAxis(0), 10));
   iree_hal_pool_release_reservations(pool_, 2, reservations, old_death);
 
@@ -739,10 +892,10 @@ TEST_F(FixedBlockPoolTest, ConcurrentUseRevalidatesTheEntireBatch) {
         pool_, 1, &request, old_death, IREE_HAL_POOL_RESERVE_FLAG_NONE,
         &competing, &competing_info, &competing_result));
     EXPECT_EQ(competing_result, IREE_HAL_POOL_ACQUIRE_OK);
-    EXPECT_EQ(competing.block_handle, 0u);
+    EXPECT_EQ(competing.offset, 0u);
     iree_hal_pool_stats_t stats;
     iree_hal_pool_query_stats(pool_, &stats);
-    EXPECT_EQ(stats.bytes_reserved, options.block_allocator_options.block_size);
+    EXPECT_EQ(stats.bytes_reserved, 2 * options.block_size);
     iree_hal_buffer_t* buffer = nullptr;
     iree_status_t status =
         MaterializeOneReservation(pool_, request.params, &competing,
@@ -792,6 +945,7 @@ TEST_F(FixedBlockPoolTest, ConcurrentUseRevalidatesTheEntireBatch) {
   for (iree_host_size_t i = 0; i < 2; ++i) {
     ReleaseOneReservation(pool_, &reservations[i], infos[i].reuse_frontier);
   }
+  ReleaseOneReservation(pool_, &anchor, nullptr);
 }
 
 TEST_F(FixedBlockPoolTest, AlignmentRequiresBothBackingAndBlockStride) {
@@ -950,12 +1104,14 @@ TEST_F(FixedBlockPoolTest, ReserveSkipsStaleBlockAndReturnsLaterFreshBlock) {
 
 TEST_F(FixedBlockPoolTest, ReserveCanReturnStaleBlockWhenWaitAllowed) {
   iree_hal_pool_release(pool_);
+  iree_hal_pool_release(backing_pool_);
+  backing_pool_ = nullptr;
   pool_ = NULL;
   iree_hal_fixed_block_pool_options_t options = DefaultOptions();
-  options.block_allocator_options.block_count = 1;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, slab_provider_, notification_, test_frontier_tracker(),
-      iree_hal_pool_epoch_query_null(), allocator_, &pool_));
+  options.blocks_per_slab = 1;
+  IREE_ASSERT_OK(CreateFinitePool(options, slab_provider_, notification_,
+                                  test_frontier_tracker(), allocator_,
+                                  &backing_pool_, &pool_));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -996,13 +1152,14 @@ TEST(FixedBlockPool, ReserveRejectedTaintRemainsRejected) {
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
 
   iree_hal_fixed_block_pool_options_t options = DefaultOptions();
-  options.block_allocator_options.block_count = 1;
-  options.block_allocator_options.frontier_capacity = 1;
+  options.blocks_per_slab = 1;
+  options.frontier_capacity = 1;
 
+  iree_hal_pool_t* backing_pool = nullptr;
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, slab_provider, notification, test_frontier_tracker(),
-      iree_hal_pool_epoch_query_null(), allocator, &pool));
+  IREE_ASSERT_OK(CreateFinitePool(options, slab_provider, notification,
+                                  test_frontier_tracker(), allocator,
+                                  &backing_pool, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1034,6 +1191,7 @@ TEST(FixedBlockPool, ReserveRejectedTaintRemainsRejected) {
   EXPECT_EQ(stats.exhausted_count, 2u);
 
   iree_hal_pool_release(pool);
+  iree_hal_pool_release(backing_pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);
 }
@@ -1057,7 +1215,7 @@ TEST_F(FixedBlockPoolTest, WrapReservationCreatesBuffer) {
       pool_, params, &reservation,
       IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP, &buffer));
   ASSERT_NE(buffer, nullptr);
-  EXPECT_EQ(iree_hal_buffer_allocation_size(buffer), 128u);
+  EXPECT_EQ(iree_hal_buffer_allocation_size(buffer), 1024u);
   EXPECT_EQ(iree_hal_buffer_byte_length(buffer), 128u);
 
   iree_hal_buffer_mapping_t mapping;
@@ -1141,10 +1299,11 @@ TEST(FixedBlockPool, UsesProviderHooks) {
   IREE_ASSERT_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
 
+  iree_hal_pool_t* backing_pool = nullptr;
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      DefaultOptions(), slab_provider, notification, test_frontier_tracker(),
-      iree_hal_pool_epoch_query_null(), allocator, &pool));
+  IREE_ASSERT_OK(CreateFinitePool(DefaultOptions(), slab_provider, notification,
+                                  test_frontier_tracker(), allocator,
+                                  &backing_pool, &pool));
 
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(pool, &capabilities);
@@ -1171,7 +1330,8 @@ TEST(FixedBlockPool, UsesProviderHooks) {
       pool, params, &reservation,
       IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP, &buffer));
 
-  // All trim modes preserve this live buffer and reach its native source.
+  // Policy trim preserves live buffers; native trim is an explicit source
+  // operation.
   auto* provider = (iree_hal_test_opaque_slab_provider_t*)slab_provider;
   const iree_hal_pool_trim_flags_t trim_flags[] = {
       IREE_HAL_POOL_TRIM_FLAG_NONE,
@@ -1181,6 +1341,9 @@ TEST(FixedBlockPool, UsesProviderHooks) {
   };
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(trim_flags); ++i) {
     iree_hal_pool_trim(pool, trim_flags[i], /*min_bytes_to_keep=*/0);
+    EXPECT_EQ(provider->trim_count, i);
+    iree_hal_pool_trim(backing_pool, trim_flags[i], 0);
+    WaitForMaintenance();
     EXPECT_EQ(provider->trim_count, i + 1);
     EXPECT_EQ(provider->last_trim_flags, trim_flags[i]);
     iree_hal_pool_stats_t stats;
@@ -1205,6 +1368,7 @@ TEST(FixedBlockPool, UsesProviderHooks) {
 
   iree_hal_buffer_release(buffer);
   iree_hal_pool_release(pool);
+  iree_hal_pool_release(backing_pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);
 }
@@ -1221,13 +1385,14 @@ TEST(FixedBlockPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   iree_hal_fixed_block_pool_options_t options = DefaultOptions();
   options.asan = ShadowOptions();
 
+  iree_hal_pool_t* backing_pool = nullptr;
   iree_hal_pool_t* pool = NULL;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_FAILED_PRECONDITION,
-      iree_hal_fixed_block_pool_create(
-          options, slab_provider, notification, test_frontier_tracker(),
-          iree_hal_pool_epoch_query_null(), allocator, &pool));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_FAILED_PRECONDITION,
+                        CreateFinitePool(options, slab_provider, notification,
+                                         test_frontier_tracker(), allocator,
+                                         &backing_pool, &pool));
   EXPECT_EQ(pool, nullptr);
+  iree_hal_pool_release(backing_pool);
 
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);
@@ -1243,14 +1408,15 @@ TEST(FixedBlockPool, ASANAdvisesBackingBlockAndExposesUserRange) {
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
 
   iree_hal_fixed_block_pool_options_t options = DefaultOptions();
-  options.block_allocator_options.block_size = 64;
-  options.block_allocator_options.block_count = 2;
+  options.block_size = 64;
+  options.blocks_per_slab = 2;
   options.asan = ShadowOptions();
 
+  iree_hal_pool_t* backing_pool = nullptr;
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, slab_provider, notification, test_frontier_tracker(),
-      iree_hal_pool_epoch_query_null(), allocator, &pool));
+  IREE_ASSERT_OK(CreateFinitePool(options, slab_provider, notification,
+                                  test_frontier_tracker(), allocator,
+                                  &backing_pool, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1262,7 +1428,7 @@ TEST(FixedBlockPool, ASANAdvisesBackingBlockAndExposesUserRange) {
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
   EXPECT_EQ(reservation.offset, 64u);
   EXPECT_EQ(reservation.byte_length, 13u);
-  EXPECT_EQ(reservation.block_handle, 0u);
+  EXPECT_NE(reservation.block_handle, 0u);
 
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)slab_provider;
@@ -1296,7 +1462,7 @@ TEST(FixedBlockPool, ASANAdvisesBackingBlockAndExposesUserRange) {
       pool, params, &reservation,
       IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP, &buffer));
   ASSERT_NE(buffer, nullptr);
-  EXPECT_EQ(iree_hal_buffer_allocation_size(buffer), 13u);
+  EXPECT_EQ(iree_hal_buffer_allocation_size(buffer), 384u);
   EXPECT_EQ(iree_hal_buffer_byte_length(buffer), 13u);
 
   iree_hal_buffer_release(buffer);
@@ -1332,6 +1498,7 @@ TEST(FixedBlockPool, ASANAdvisesBackingBlockAndExposesUserRange) {
             provider->last_asan_released_sequence);
 
   iree_hal_pool_release(pool);
+  iree_hal_pool_release(backing_pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);
 }
@@ -1347,13 +1514,15 @@ TEST_F(FixedBlockPoolTest, QueryCapabilitiesAndBudget) {
   EXPECT_EQ(capabilities.max_allocation_size, 256u);
 
   iree_hal_pool_release(pool_);
+  iree_hal_pool_release(backing_pool_);
+  backing_pool_ = nullptr;
   pool_ = NULL;
 
   iree_hal_fixed_block_pool_options_t options = DefaultOptions();
   options.budget_limit = 255;
-  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-      options, slab_provider_, notification_, test_frontier_tracker(),
-      iree_hal_pool_epoch_query_null(), allocator_, &pool_));
+  IREE_ASSERT_OK(CreateFinitePool(options, slab_provider_, notification_,
+                                  test_frontier_tracker(), allocator_,
+                                  &backing_pool_, &pool_));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;

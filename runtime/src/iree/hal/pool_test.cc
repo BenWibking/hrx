@@ -16,6 +16,8 @@
 #include "iree/hal/api.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
 #include "iree/hal/memory/fixed_block_pool.h"
+#include "iree/hal/memory/maintenance_thread.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -176,12 +178,30 @@ class PoolFrontierWaitTest : public ::testing::Test {
     IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(
         /*min_alignment=*/0, iree_allocator_system(), &provider_));
     iree_hal_fixed_block_pool_options_t options = {};
-    options.block_allocator_options.block_size = kByteLength;
-    options.block_allocator_options.block_count = 1;
-    options.block_allocator_options.frontier_capacity = 2;
-    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-        options, provider_, notification_, tracker_,
-        iree_hal_pool_epoch_query_null(), iree_allocator_system(), &pool_));
+    options.block_size = kByteLength;
+    options.blocks_per_slab = 1;
+    options.frontier_capacity = 2;
+    IREE_ASSERT_OK(iree_hal_memory_maintenance_thread_create(
+        {}, iree_allocator_system(), &maintenance_));
+    IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+        {}, provider_, notification_, tracker_, maintenance_,
+        iree_allocator_system(), &backing_pool_));
+    iree_hal_pool_reservation_request_t backing_request;
+    IREE_ASSERT_OK(iree_hal_fixed_block_pool_query_backing_request(
+        backing_pool_, &options, &backing_request));
+    iree_hal_buffer_t* backing_buffer = nullptr;
+    IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+        backing_pool_, backing_request.params, backing_request.allocation_size,
+        iree_infinite_timeout(), &backing_buffer));
+    options.blocks_per_slab = 0;
+    iree_status_t status = iree_hal_fixed_block_pool_create_from_buffer(
+        backing_buffer, 0, IREE_HAL_WHOLE_BUFFER, &options,
+        iree_allocator_system(), &pool_);
+    iree_hal_buffer_release(backing_buffer);
+    IREE_ASSERT_OK(status);
+    // Exercise the generic waiter's completion handling without the pool's
+    // optional early completion probe resolving the prerequisite first.
+    pool_->epoch_query = iree_hal_pool_epoch_query_null();
     request_.allocation_size = kByteLength;
     request_.params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
     request_.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
@@ -192,6 +212,8 @@ class PoolFrontierWaitTest : public ::testing::Test {
   void TearDown() override {
     iree_hal_buffer_release(buffer_);
     iree_hal_pool_release(pool_);
+    iree_hal_pool_release(backing_pool_);
+    iree_hal_memory_maintenance_release(maintenance_);
     iree_hal_slab_provider_release(provider_);
     iree_async_notification_release(notification_);
     iree_async_frontier_tracker_release(tracker_);
@@ -282,6 +304,10 @@ class PoolFrontierWaitTest : public ::testing::Test {
   iree_async_notification_t* notification_ = nullptr;
   // Actual host-memory backing provider.
   iree_hal_slab_provider_t* provider_ = nullptr;
+  // Captured owner of native memory operations.
+  iree_hal_memory_maintenance_t* maintenance_ = nullptr;
+  // Native owner of the finite arena.
+  iree_hal_pool_t* backing_pool_ = nullptr;
   // One-block pool with a borrowed reference to tracker_.
   iree_hal_pool_t* pool_ = nullptr;
   // Common allocation request for the full block.

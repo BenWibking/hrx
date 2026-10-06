@@ -15,6 +15,8 @@
 #include "iree/async/proactor_platform.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
 #include "iree/hal/memory/fixed_block_pool.h"
+#include "iree/hal/memory/maintenance_thread.h"
+#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -37,12 +39,29 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
     IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(/*min_alignment=*/0,
                                                      allocator_, &provider_));
     iree_hal_fixed_block_pool_options_t options = {};
-    options.block_allocator_options.block_size = 4096;
-    options.block_allocator_options.block_count = 1;
-    options.block_allocator_options.frontier_capacity = 2;
-    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-        options, provider_, notification_, tracker_,
-        iree_hal_pool_epoch_query_null(), allocator_, &source_pool_));
+    options.block_size = 4096;
+    options.blocks_per_slab = 1;
+    options.frontier_capacity = 2;
+    IREE_ASSERT_OK(iree_hal_memory_maintenance_thread_create({}, allocator_,
+                                                             &maintenance_));
+    iree_hal_pool_t* native_pool = nullptr;
+    IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+        {}, provider_, notification_, tracker_, maintenance_, allocator_,
+        &native_pool));
+    pools_.push_back(native_pool);
+    iree_hal_pool_reservation_request_t backing_request;
+    IREE_ASSERT_OK(iree_hal_fixed_block_pool_query_backing_request(
+        native_pool, &options, &backing_request));
+    iree_hal_buffer_t* backing_buffer = nullptr;
+    IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+        native_pool, backing_request.params, backing_request.allocation_size,
+        iree_infinite_timeout(), &backing_buffer));
+    options.blocks_per_slab = 0;
+    iree_status_t status = iree_hal_fixed_block_pool_create_from_buffer(
+        backing_buffer, 0, IREE_HAL_WHOLE_BUFFER, &options, allocator_,
+        &source_pool_);
+    iree_hal_buffer_release(backing_buffer);
+    IREE_ASSERT_OK(status);
     pools_.push_back(source_pool_);
     params_.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
     params_.access = IREE_HAL_MEMORY_ACCESS_ALL;
@@ -57,6 +76,7 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
     for (auto i = pools_.rbegin(); i != pools_.rend(); ++i) {
       iree_hal_pool_release(*i);
     }
+    iree_hal_memory_maintenance_release(maintenance_);
     iree_hal_slab_provider_release(provider_);
     iree_async_frontier_tracker_release(tracker_);
     iree_async_notification_release(notification_);
@@ -90,8 +110,8 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
           buffer, offset, length, &options, allocator_, out_pool);
     } else {
       iree_hal_fixed_block_pool_options_t options = {};
-      options.block_allocator_options.block_size = 256;
-      options.block_allocator_options.frontier_capacity = frontier_capacity;
+      options.block_size = 256;
+      options.frontier_capacity = frontier_capacity;
       status = iree_hal_fixed_block_pool_create_from_buffer(
           buffer, offset, length, &options, allocator_, out_pool);
     }
@@ -109,6 +129,8 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
   iree_async_notification_t* notification_ = nullptr;
   // Completion tracker with two registered production queue axes.
   iree_async_frontier_tracker_t* tracker_ = nullptr;
+  // Captured owner for native allocation and retirement.
+  iree_hal_memory_maintenance_t* maintenance_ = nullptr;
   // Native CPU storage provider.
   iree_hal_slab_provider_t* provider_ = nullptr;
   // One native block used as the source for each test.
@@ -268,7 +290,7 @@ TEST_P(BufferRangeTest, AlignsNativeCoordinatesWithinVisibleRange) {
                                                          allocator_, &child));
   } else {
     iree_hal_fixed_block_pool_options_t options = {};
-    options.block_allocator_options.block_size = 13;
+    options.block_size = 13;
     options.alignment = 24;
     IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                           iree_hal_fixed_block_pool_create_from_buffer(

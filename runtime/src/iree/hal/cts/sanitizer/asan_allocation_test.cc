@@ -12,6 +12,7 @@
 
 #include "iree/async/frontier_tracker.h"
 #include "iree/hal/cts/sanitizer/sanitizer_test_util.h"
+#include "iree/hal/cts/util/pool_test_util.h"
 #include "iree/hal/cts/util/registry.h"
 #include "iree/hal/memory/fixed_block_pool.h"
 #include "iree/hal/memory/passthrough_pool.h"
@@ -321,16 +322,16 @@ TEST_P(AsanAllocationTest, QueueDeallocaReleaseReportsAfterSignal) {
   for (auto kind :
        {PoolKind::kNative, PoolKind::kTLSF, PoolKind::kFixedBlock}) {
     SCOPED_TRACE(static_cast<int>(kind));
+    Ref<iree_hal_pool_t> backing_pool;
     Ref<iree_hal_pool_t> pool;
     if (kind == PoolKind::kFixedBlock) {
       iree_hal_fixed_block_pool_options_t options = {};
-      options.block_allocator_options.block_size = kAsanAllocationBufferLength;
-      options.block_allocator_options.block_count = 2;
+      options.block_size = kAsanAllocationBufferLength;
+      options.blocks_per_slab = 2;
       options.asan = backend.asan;
-      IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-          options, backend.slab_provider, backend.notification,
-          backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
-          iree_allocator_system(), pool.out()));
+      IREE_ASSERT_OK(CreateFiniteBlockPool(backend, options,
+                                           iree_allocator_system(),
+                                           backing_pool.out(), pool.out()));
     } else {
       iree_hal_passthrough_pool_options_t options = {};
       if (kind == PoolKind::kNative) {
@@ -407,14 +408,14 @@ TEST_P(AsanAllocationTest, GuardedFiniteAllocaWaitsForInheritedHostUse) {
   for (bool use_tlsf : {false, true}) {
     SCOPED_TRACE(use_tlsf ? "TLSF" : "fixed block");
     iree_hal_fixed_block_pool_options_t source_options = {};
-    source_options.block_allocator_options.block_size = 65536;
-    source_options.block_allocator_options.block_count = 1;
-    source_options.block_allocator_options.frontier_capacity = 1;
+    source_options.block_size = 65536;
+    source_options.blocks_per_slab = 1;
+    source_options.frontier_capacity = 1;
+    Ref<iree_hal_pool_t> backing_pool;
     Ref<iree_hal_pool_t> source_pool;
-    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-        source_options, backend.slab_provider, backend.notification,
-        backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
-        iree_allocator_system(), source_pool.out()));
+    IREE_ASSERT_OK(
+        CreateFiniteBlockPool(backend, source_options, iree_allocator_system(),
+                              backing_pool.out(), source_pool.out()));
     iree_hal_pool_reservation_request_t source_request = {
         AsanQueueAllocaBufferParams(), 65536};
     source_request.params.queue_family_affinity =
@@ -452,7 +453,7 @@ TEST_P(AsanAllocationTest, GuardedFiniteAllocaWaitsForInheritedHostUse) {
           pool.out()));
     } else {
       iree_hal_fixed_block_pool_options_t options = {};
-      options.block_allocator_options.block_size = kAsanAllocationBufferLength;
+      options.block_size = kAsanAllocationBufferLength;
       options.asan = backend.asan;
       IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
           source, 0, IREE_HAL_WHOLE_BUFFER, &options, iree_allocator_system(),

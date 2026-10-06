@@ -75,6 +75,7 @@ iree_cc_test(
     iree::async::util::proactor_pool
     iree::base
     iree::hal
+    iree::hal::cts::util::pool_test_util
     iree::hal::drivers::task::device
     iree::hal::memory::cpu_slab_provider
     iree::hal::memory::fixed_block_pool

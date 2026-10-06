@@ -1849,7 +1849,7 @@ TEST(TLSFPool, GuardedGrowingPoolReportsUsableSourceLimit) {
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
       source_pool, params, 1024, iree_infinite_timeout(), &backing));
   iree_hal_fixed_block_pool_options_t parent_options = {};
-  parent_options.block_allocator_options.block_size = 1024;
+  parent_options.block_size = 1024;
   parent_options.alignment = 64;
   iree_hal_pool_t* parent = nullptr;
   IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
@@ -1966,7 +1966,7 @@ TEST(TLSFPool, FinitePoolsPreserveNativeAdviceCoordinates) {
       EXPECT_EQ(source, largest);
     } else {
       iree_hal_fixed_block_pool_options_t options = {};
-      options.block_allocator_options.block_size = 13;
+      options.block_size = 13;
       options.alignment = 16;
       options.asan = ShadowOptions();
       IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
@@ -2059,8 +2059,8 @@ TEST(TLSFPool, GuardedFinitePoolsKeepPendingBookkeepingSideEffectFree) {
           source, 0, 256, &options, allocator, &child));
     } else {
       iree_hal_fixed_block_pool_options_t options = {};
-      options.block_allocator_options.block_size = 176;
-      options.block_allocator_options.frontier_capacity = 2;
+      options.block_size = 176;
+      options.frontier_capacity = 2;
       options.alignment = 16;
       options.asan = ShadowOptions();
       IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(

@@ -13,6 +13,7 @@
 #include "iree/async/notification.h"
 #include "iree/async/operations/scheduling.h"
 #include "iree/async/util/proactor_pool.h"
+#include "iree/hal/cts/util/pool_test_util.h"
 #include "iree/hal/device_group.h"
 #include "iree/hal/drivers/task/device.h"
 #include "iree/hal/drivers/task/queue/queue.h"
@@ -112,14 +113,12 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
   iree_status_t CreatePool(const iree_hal_queue_pool_backend_t& backend,
                            iree_hal_pool_t** out_pool) {
     iree_hal_fixed_block_pool_options_t options = {};
-    options.block_allocator_options.block_size = kBlockSize;
-    options.block_allocator_options.block_count = 2;
-    options.block_allocator_options.frontier_capacity = 2;
+    options.block_size = kBlockSize;
+    options.blocks_per_slab = 2;
+    options.frontier_capacity = 2;
     options.asan = backend.asan;
-    return iree_hal_fixed_block_pool_create(
-        options, backend.slab_provider, backend.notification,
-        backend.frontier_tracker, backend.epoch_query, iree_allocator_system(),
-        out_pool);
+    return iree::hal::cts::CreateFiniteBlockPool(
+        backend, options, iree_allocator_system(), &backing_pool_, out_pool);
   }
 
   void TearDown() override {
@@ -133,6 +132,7 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
       iree_hal_semaphore_release(semaphore);
     }
     iree_hal_pool_release(pool_);
+    iree_hal_pool_release(backing_pool_);
     iree_hal_device_group_release(group_);
     for (auto* device : devices_) {
       iree_hal_device_release(device);
@@ -286,6 +286,8 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
   iree_hal_device_group_t* group_ = nullptr;
   // Provisioned queues borrowed from the devices.
   std::array<iree_hal_queue_t*, 2> queues_ = {};
+  // Native owner retained until the finite arena and its buffers are gone.
+  iree_hal_pool_t* backing_pool_ = nullptr;
   // Finite memory pool shared by both consumers.
   iree_hal_pool_t* pool_ = nullptr;
   // Availability notification borrowed from the selected backend.
@@ -381,17 +383,6 @@ TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
 }
 
 TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
-  // A completion probe is an optional reuse optimization. A completed Task
-  // deallocation must return usable memory even when that probe is absent.
-  iree_hal_queue_pool_backend_t backend = {};
-  IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
-      devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
-      &backend));
-  backend.epoch_query = iree_hal_pool_epoch_query_null();
-  iree_hal_pool_release(pool_);
-  pool_ = nullptr;
-  IREE_ASSERT_OK(CreatePool(backend, &pool_));
-
   std::array<iree_hal_pool_reservation_request_t, 2> requests = {};
   for (auto& request : requests) {
     request.allocation_size = kBlockSize;
@@ -415,11 +406,25 @@ TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
                                          initial_buffers_.data()));
   ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], released_value));
 
+  // Completion publishes empty prerequisites, independent of the optional
+  // completion query inherited by the prepared range.
+  std::array<iree_hal_pool_reservation_t, 2> reservations;
+  std::array<iree_hal_pool_acquire_info_t, 2> infos;
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, requests.size(), requests.data(), nullptr,
+      IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations.data(), infos.data(),
+      &result));
+  ASSERT_EQ(IREE_HAL_POOL_ACQUIRE_OK_FRESH, result);
+  for (const auto& info : infos) {
+    EXPECT_EQ(info.reuse_frontier, nullptr);
+  }
+  IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+      pool_, requests.size(), requests.data(), reservations.data(),
+      IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+      pending_buffers_.data()));
   uint64_t filled_value = 0;
   for (auto*& buffer : pending_buffers_) {
-    IREE_ASSERT_OK(
-        iree_hal_pool_allocate_buffer(pool_, requests[0].params, kBlockSize,
-                                      iree_immediate_timeout(), &buffer));
     const uint32_t pattern = 0x1234ABCDu;
     ++filled_value;
     iree_hal_semaphore_list_t filled = {1, &semaphores_[1], &filled_value};

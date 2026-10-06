@@ -36,6 +36,8 @@ iree_runtime_cc_test(
         ":buffer_range",
         ":cpu_slab_provider",
         ":fixed_block_pool",
+        ":maintenance_thread",
+        ":passthrough_pool",
         ":tlsf_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",
@@ -112,13 +114,28 @@ iree_runtime_cc_library(
 )
 
 iree_runtime_cc_library(
+    name = "fixed_block_pool_slab",
+    srcs = ["fixed_block_pool_slab.c"],
+    hdrs = ["fixed_block_pool_slab.h"],
+    deps = [
+        ":buffer_range",
+        ":fixed_block_allocator",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal",
+        "//runtime/src/iree/hal",
+    ],
+)
+
+iree_runtime_cc_library(
     name = "fixed_block_pool",
     srcs = ["fixed_block_pool.c"],
     hdrs = ["fixed_block_pool.h"],
     deps = [
         ":buffer_range",
         ":fixed_block_allocator",
-        ":slab_provider",
+        ":fixed_block_pool_slab",
+        ":maintenance",
         ":tracing",
         "//runtime/src/iree/async",
         "//runtime/src/iree/base",
@@ -157,6 +174,8 @@ iree_runtime_cc_test(
     deps = [
         ":cpu_slab_provider",
         ":fixed_block_pool",
+        ":maintenance_thread",
+        ":passthrough_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",
         "//runtime/src/iree/base",
@@ -389,13 +408,14 @@ iree_runtime_cc_test(
 )
 
 iree_runtime_cc_test(
-    name = "tlsf_pool_composition_test",
-    srcs = ["tlsf_pool_composition_test.cc"],
+    name = "pool_composition_test",
+    srcs = ["pool_composition_test.cc"],
     deps = [
         ":cpu_slab_provider",
         ":fixed_block_pool",
         ":maintenance_thread",
         ":passthrough_pool",
+        ":slab_cache",
         ":tlsf_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",
