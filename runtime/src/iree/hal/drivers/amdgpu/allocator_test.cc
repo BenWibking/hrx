@@ -295,7 +295,7 @@ static iree_device_size_t OversizedAllocationSize(
   return tlsf_range_length + 1;
 }
 
-// Observe native quarantine counters only after the already-published cleanup
+// Observe quarantine counters only after the already-published cleanup
 // has finished. Logical buffer release does not wait for native retirement.
 static void WaitForMemoryMaintenance(iree_hal_memory_maintenance_t* owner) {
   struct Barrier : iree_hal_memory_maintenance_entry_t {
@@ -1128,13 +1128,23 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeDefaultQuarantineRetention) {
       OversizedAllocationSize(test_device.logical_device());
   IREE_ASSERT_OK(AllocateAndExportDevicePointer(
       test_device.allocator(), params, allocation_size, &buffer, &ptr));
+  iree_hal_buffer_t* small_buffer = nullptr;
+  uint64_t small_ptr = 0;
+  IREE_ASSERT_OK(AllocateAndExportDevicePointer(
+      test_device.allocator(), params, 128, &small_buffer, &small_ptr));
   iree_hal_buffer_release(buffer);
+  iree_hal_buffer_release(small_buffer);
 
   WaitForMemoryMaintenance(
       test_device.logical_device()->physical_devices[0]->memory_maintenance);
 
   asan = QueryAsanObservation(test_device.device());
-  EXPECT_GT(asan.quarantine_size, 0u);
+  iree_hal_pool_stats_t pool_stats;
+  iree_hal_pool_query_stats(
+      test_device.logical_device()->physical_devices[0]->default_pool,
+      &pool_stats);
+  EXPECT_GT(pool_stats.bytes_quarantined, allocation_size + 128);
+  EXPECT_EQ(asan.quarantine_size, pool_stats.bytes_quarantined);
   EXPECT_EQ(asan.quarantine_eviction_count, 0u);
   EXPECT_GE(asan.shadow_mapped_slab_count, initial_shadow_mapped_slab_count);
   EXPECT_GE(asan.shadow_committed_size, initial_shadow_committed_size);

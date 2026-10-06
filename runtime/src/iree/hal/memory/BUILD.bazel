@@ -305,6 +305,20 @@ iree_runtime_cc_library(
 )
 
 iree_runtime_cc_library(
+    name = "tlsf_pool_reservation",
+    srcs = ["tlsf_pool_reservation.c"],
+    hdrs = ["tlsf_pool_reservation.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":buffer_range",
+        ":tlsf",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+    ],
+)
+
+iree_runtime_cc_library(
     name = "tlsf_pool",
     srcs = ["tlsf_pool.c"],
     hdrs = ["tlsf_pool.h"],
@@ -312,6 +326,7 @@ iree_runtime_cc_library(
         ":buffer_range",
         ":maintenance",
         ":tlsf",
+        ":tlsf_pool_reservation",
         ":tracing",
         "//runtime/src/iree/async",
         "//runtime/src/iree/base",
@@ -398,6 +413,27 @@ iree_runtime_cc_test(
         ":cpu_slab_provider",
         ":maintenance_thread",
         ":passthrough_pool",
+        ":tlsf_pool",
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async:platform",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "tlsf_pool_reservation_test",
+    srcs = ["tlsf_pool_reservation_test.cc"],
+    deps = [
+        ":cpu_slab_provider",
+        ":fixed_block_pool",
+        ":maintenance",
+        ":maintenance_thread",
+        ":passthrough_pool",
+        ":slab_cache",
+        ":tlsf",
         ":tlsf_pool",
         "//runtime/src/iree/async",
         "//runtime/src/iree/async:platform",

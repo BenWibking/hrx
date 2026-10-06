@@ -133,7 +133,7 @@ TEST_F(SlabProviderTest,
   iree_hal_buffer_release(buffer);
 }
 
-TEST_F(SlabProviderTest, SelectedQueuePoolRoutesOversizedRequests) {
+TEST_F(SlabProviderTest, SelectedQueuePoolServesLargeRequests) {
   iree_hal_amdgpu_logical_device_options_t options;
   iree_hal_amdgpu_logical_device_options_initialize(&options);
   options.default_pool.range_length = 4096;
@@ -163,14 +163,15 @@ TEST_F(SlabProviderTest, SelectedQueuePoolRoutesOversizedRequests) {
   ASSERT_NE(queue, nullptr);
   params.queue_family_affinity = iree_hal_make_queue_family_affinity(
       iree_hal_queue_family_ordinal(iree_hal_queue_family(queue)));
-  constexpr iree_device_size_t kAllocationSize = 8192;
+  const auto* physical_device = test_device.device()->physical_devices[0];
+  const iree_device_size_t allocation_size =
+      physical_device->default_pool_options.tlsf_options.range_length + 1;
   iree_hal_pool_t* pool = iree_hal_pool_set_select(
-      &test_device.device()->physical_devices[0]->default_pool_set, params,
-      kAllocationSize);
-  ASSERT_NE(pool, nullptr);
+      &physical_device->default_pool_set, params, allocation_size);
+  ASSERT_EQ(pool, physical_device->default_pool);
   const iree_hal_pool_reservation_request_t request = {
       /*.params=*/params,
-      /*.allocation_size=*/kAllocationSize,
+      /*.allocation_size=*/allocation_size,
   };
 
   iree_hal_buffer_t* buffer = NULL;
@@ -220,18 +221,15 @@ TEST_F(SlabProviderTest, DefaultPhysicalDevicePoolGrowsAdditionalSlabs) {
   iree_hal_pool_t* default_pool = device->physical_devices[0]->default_pool;
   ASSERT_NE(default_pool, nullptr);
 
-  iree_hal_pool_capabilities_t capabilities;
-  iree_hal_pool_query_capabilities(default_pool, &capabilities);
-  ASSERT_NE(capabilities.max_allocation_size, 0u);
-
   iree_hal_pool_reservation_t first_reservation = {0};
   iree_hal_pool_acquire_info_t first_info = {0};
   iree_hal_pool_acquire_result_t first_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
   iree_hal_buffer_params_t params = {};
-  params.min_alignment = capabilities.min_allocation_size;
   const iree_hal_pool_reservation_request_t request = {
       /*.params=*/params,
-      /*.allocation_size=*/capabilities.max_allocation_size,
+      /*.allocation_size=*/
+      device->physical_devices[0]
+          ->default_pool_options.tlsf_options.range_length,
   };
   iree::Status first_status(iree_hal_pool_acquire_reservations(
       default_pool, 1, &request, /*requester_frontier=*/NULL,

@@ -37,11 +37,8 @@
 #define IREE_HAL_AMDGPU_PHYSICAL_DEVICE_FINE_BLOCK_POOL_SMALL_PAGE_SIZE 128
 #define IREE_HAL_AMDGPU_PHYSICAL_DEVICE_FINE_BLOCK_POOL_LARGE_PAGE_SIZE 4096
 
-// Catch-all priority for direct allocations in the default pool set.
-#define IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY_OVERSIZED 0
-
-// Preferred priority for pooled allocations in the default pool set.
-#define IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY_TLSF 10
+// Equal priority lets memory compatibility select the default pool.
+#define IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY 0
 
 // Conservative maximum group-segment byte length supported by the AMDGPU
 // dispatch paths used here. HSA exposes executable group-segment requirements
@@ -1223,14 +1220,13 @@ iree_status_t iree_hal_amdgpu_physical_device_initialize(
   return status;
 }
 
-static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
+static iree_status_t iree_hal_amdgpu_physical_device_create_pool(
     iree_hal_amdgpu_physical_device_t* physical_device,
     iree_hal_amdgpu_epoch_signal_table_t* epoch_signal_table,
     iree_async_frontier_tracker_t* frontier_tracker,
     iree_hal_slab_provider_t* slab_provider,
     iree_hal_tlsf_pool_options_t pool_options, const char* pool_name,
-    const char* oversized_pool_name, iree_allocator_t host_allocator,
-    iree_hal_pool_t** out_pool, iree_hal_pool_t** out_oversized_pool,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool,
     iree_hal_pool_t** out_backing_cache) {
   char pool_trace_name[64] = {0};
   pool_options.trace_name = iree_hal_amdgpu_format_pool_trace_name(
@@ -1263,21 +1259,6 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
   }
   iree_hal_pool_release(backing_pool);
 
-  char oversized_pool_trace_name[64] = {0};
-  if (iree_status_is_ok(status)) {
-    iree_hal_passthrough_pool_options_t oversized_pool_options = {
-        .trace_name = iree_hal_amdgpu_format_pool_trace_name(
-            oversized_pool_trace_name,
-            IREE_ARRAYSIZE(oversized_pool_trace_name), oversized_pool_name,
-            physical_device->device_ordinal),
-        .asan = pool_options.asan,
-    };
-    status = iree_hal_passthrough_pool_create(
-        oversized_pool_options, slab_provider,
-        physical_device->default_pool_notification, frontier_tracker,
-        physical_device->memory_maintenance, host_allocator,
-        out_oversized_pool);
-  }
   return status;
 }
 
@@ -1287,51 +1268,35 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_default_pools(
     iree_async_frontier_tracker_t* frontier_tracker,
     iree_allocator_t host_allocator) {
   IREE_RETURN_IF_ERROR(iree_hal_pool_set_initialize(
-      /*initial_capacity=*/4, host_allocator,
+      /*initial_capacity=*/2, host_allocator,
       &physical_device->default_pool_set));
 
-  iree_status_t status = iree_hal_amdgpu_physical_device_create_pool_pair(
+  iree_status_t status = iree_hal_amdgpu_physical_device_create_pool(
       physical_device, epoch_signal_table, frontier_tracker,
       physical_device->default_slab_provider,
-      physical_device->default_pool_options, "tlsf", "oversized",
-      host_allocator, &physical_device->default_pool,
-      &physical_device->default_oversized_pool,
-      &physical_device->default_backing_cache);
+      physical_device->default_pool_options, "tlsf", host_allocator,
+      &physical_device->default_pool, &physical_device->default_backing_cache);
   iree_hal_tlsf_pool_options_t host_pool_options =
       physical_device->default_pool_options;
   host_pool_options.tlsf_options.range_length =
       IREE_HAL_AMDGPU_PHYSICAL_DEVICE_HOST_POOL_RANGE_LENGTH_DEFAULT;
   if (iree_status_is_ok(status)) {
-    status = iree_hal_amdgpu_physical_device_create_pool_pair(
+    status = iree_hal_amdgpu_physical_device_create_pool(
         physical_device, epoch_signal_table, frontier_tracker,
         physical_device->default_host_slab_provider, host_pool_options,
-        "host-tlsf", "host-oversized", host_allocator,
-        &physical_device->default_host_pool,
-        &physical_device->default_host_oversized_pool,
+        "host-tlsf", host_allocator, &physical_device->default_host_pool,
         &physical_device->default_host_backing_cache);
   }
   if (iree_status_is_ok(status)) {
     status = iree_hal_pool_set_register(
         &physical_device->default_pool_set,
-        IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY_OVERSIZED,
-        physical_device->default_oversized_pool);
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_pool_set_register(
-        &physical_device->default_pool_set,
-        IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY_OVERSIZED,
-        physical_device->default_host_oversized_pool);
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_pool_set_register(
-        &physical_device->default_pool_set,
-        IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY_TLSF,
+        IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY,
         physical_device->default_pool);
   }
   if (iree_status_is_ok(status)) {
     status = iree_hal_pool_set_register(
         &physical_device->default_pool_set,
-        IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY_TLSF,
+        IREE_HAL_AMDGPU_PHYSICAL_DEVICE_DEFAULT_POOL_PRIORITY,
         physical_device->default_host_pool);
   }
   return status;
@@ -1601,14 +1566,10 @@ void iree_hal_amdgpu_physical_device_deassign_frontier(
   if (physical_device->default_pool_set.entries) {
     iree_hal_pool_set_deinitialize(&physical_device->default_pool_set);
   }
-  iree_hal_pool_release(physical_device->default_host_oversized_pool);
-  physical_device->default_host_oversized_pool = NULL;
   iree_hal_pool_release(physical_device->default_host_pool);
   physical_device->default_host_pool = NULL;
   iree_hal_pool_release(physical_device->default_host_backing_cache);
   physical_device->default_host_backing_cache = NULL;
-  iree_hal_pool_release(physical_device->default_oversized_pool);
-  physical_device->default_oversized_pool = NULL;
   iree_hal_pool_release(physical_device->default_pool);
   physical_device->default_pool = NULL;
   iree_hal_pool_release(physical_device->default_backing_cache);
@@ -1756,10 +1717,6 @@ void iree_hal_amdgpu_physical_device_trim(
     iree_hal_pool_trim(physical_device->default_backing_cache,
                        IREE_HAL_POOL_TRIM_FLAG_EXCESS, 0);
   }
-  if (physical_device->default_oversized_pool) {
-    iree_hal_pool_trim(physical_device->default_oversized_pool,
-                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
-  }
   if (physical_device->default_host_pool) {
     iree_hal_pool_trim(physical_device->default_host_pool,
                        IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
@@ -1767,10 +1724,6 @@ void iree_hal_amdgpu_physical_device_trim(
   if (physical_device->default_host_backing_cache) {
     iree_hal_pool_trim(physical_device->default_host_backing_cache,
                        IREE_HAL_POOL_TRIM_FLAG_EXCESS, 0);
-  }
-  if (physical_device->default_host_oversized_pool) {
-    iree_hal_pool_trim(physical_device->default_host_oversized_pool,
-                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
   }
 
   IREE_TRACE_ZONE_END(z0);

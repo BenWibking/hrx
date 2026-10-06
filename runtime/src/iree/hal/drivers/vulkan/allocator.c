@@ -35,10 +35,6 @@ static const char* IREE_HAL_VULKAN_ALLOCATOR_ID = "iree-hal-vulkan-unpooled";
 
 #define IREE_HAL_VULKAN_ALLOCATOR_DEFAULT_POOL_ALIGNMENT 256ull
 
-#define IREE_HAL_VULKAN_ALLOCATOR_DEFAULT_POOL_PRIORITY_OVERSIZED 0
-
-#define IREE_HAL_VULKAN_ALLOCATOR_DEFAULT_POOL_PRIORITY_TLSF 1000
-
 typedef struct iree_hal_vulkan_allocator_memory_placement_t {
   // Vulkan memory type index selected for the allocation.
   uint32_t memory_type_index;
@@ -62,22 +58,19 @@ typedef struct iree_hal_vulkan_allocator_buffer_sharing_t {
   uint32_t queue_family_indices[IREE_HAL_MAX_QUEUE_FAMILIES];
 } iree_hal_vulkan_allocator_buffer_sharing_t;
 
-typedef struct iree_hal_vulkan_allocator_pool_pair_t {
+typedef struct iree_hal_vulkan_allocator_memory_pool_t {
   // Slab provider acquiring whole Vulkan buffers for this memory type.
   iree_hal_slab_provider_t* slab_provider;
 
-  // Suballocating pool used for allocations up to the default slab length.
+  // Allocator for suballocated and dedicated ranges of this memory type.
   iree_hal_pool_t* tlsf_pool;
 
   // Explicit retention cache for this memory type's TLSF backing slabs.
   iree_hal_pool_t* backing_cache;
 
-  // Direct per-allocation pool used for allocations larger than one slab.
-  iree_hal_pool_t* oversized_pool;
-
   // Selection priority for this memory type among compatible pools.
   int32_t memory_priority;
-} iree_hal_vulkan_allocator_pool_pair_t;
+} iree_hal_vulkan_allocator_memory_pool_t;
 
 typedef struct iree_hal_vulkan_allocator_virtual_memory_mapping_t {
   // Next mapping in the allocator-owned registry.
@@ -191,11 +184,11 @@ struct iree_hal_vulkan_allocator_t {
   // Default queue-pool backend provider for caller-created pools.
   iree_hal_slab_provider_t* default_queue_slab_provider;
 
-  // Per-Vulkan-memory-type provider and pool pairs.
-  iree_hal_vulkan_allocator_pool_pair_t pool_pairs[VK_MAX_MEMORY_TYPES];
+  // Explicit allocator and retention cache for each Vulkan memory type.
+  iree_hal_vulkan_allocator_memory_pool_t memory_pools[VK_MAX_MEMORY_TYPES];
 
-  // Number of initialized entries in |pool_pairs|.
-  iree_host_size_t pool_pair_count;
+  // Number of initialized entries in |memory_pools|.
+  iree_host_size_t memory_pool_count;
 
   // Alignment used by default TLSF pools.
   iree_device_size_t default_pool_alignment;
@@ -356,10 +349,10 @@ static iree_status_t iree_hal_vulkan_allocator_trim(
     iree_hal_allocator_t* IREE_RESTRICT base_allocator) {
   iree_hal_vulkan_allocator_t* allocator =
       iree_hal_vulkan_allocator_cast(base_allocator);
-  for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
-    iree_hal_pool_trim(allocator->pool_pairs[i].tlsf_pool,
+  for (iree_host_size_t i = 0; i < allocator->memory_pool_count; ++i) {
+    iree_hal_pool_trim(allocator->memory_pools[i].tlsf_pool,
                        IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
-    iree_hal_pool_trim(allocator->pool_pairs[i].backing_cache,
+    iree_hal_pool_trim(allocator->memory_pools[i].backing_cache,
                        IREE_HAL_POOL_TRIM_FLAG_EXCESS, 0);
   }
   return iree_ok_status();
@@ -611,16 +604,16 @@ static iree_string_view_t iree_hal_vulkan_allocator_format_pool_trace_name(
   return iree_make_string_view(storage, clamped_length);
 }
 
-static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
+static iree_status_t iree_hal_vulkan_allocator_create_memory_pool(
     iree_hal_vulkan_allocator_t* allocator,
     iree_async_frontier_tracker_t* frontier_tracker, uint32_t memory_type_index,
     iree_hal_memory_type_t memory_type,
     VkMemoryPropertyFlags memory_property_flags,
     iree_hal_buffer_usage_t supported_usage,
-    iree_hal_vulkan_allocator_pool_pair_t* out_pool_pair) {
-  memset(out_pool_pair, 0, sizeof(*out_pool_pair));
+    iree_hal_vulkan_allocator_memory_pool_t* out_memory_pool) {
+  memset(out_memory_pool, 0, sizeof(*out_memory_pool));
   IREE_TRACE_ZONE_BEGIN(z0);
-  out_pool_pair->memory_priority =
+  out_memory_pool->memory_priority =
       iree_hal_vulkan_allocator_memory_type_priority(memory_type);
 
   char slab_trace_storage[64] = {0};
@@ -645,7 +638,7 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
           IREE_SV("slab"), memory_type_index);
   iree_status_t status = iree_hal_vulkan_slab_provider_create(
       allocator, slab_options, slab_trace_name, allocator->host_allocator,
-      &out_pool_pair->slab_provider);
+      &out_memory_pool->slab_provider);
 
   iree_device_size_t range_length =
       IREE_HAL_VULKAN_ALLOCATOR_DEFAULT_POOL_RANGE_LENGTH;
@@ -683,10 +676,10 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
     };
     iree_hal_pool_t* backing_pool = NULL;
     status = iree_hal_passthrough_pool_create(
-        (iree_hal_passthrough_pool_options_t){0}, out_pool_pair->slab_provider,
-        allocator->default_pool_notification, frontier_tracker,
-        allocator->memory_maintenance, allocator->host_allocator,
-        &backing_pool);
+        (iree_hal_passthrough_pool_options_t){0},
+        out_memory_pool->slab_provider, allocator->default_pool_notification,
+        frontier_tracker, allocator->memory_maintenance,
+        allocator->host_allocator, &backing_pool);
     if (iree_status_is_ok(status)) {
       iree_hal_slab_cache_options_t cache_options = {.max_count = UINT32_MAX};
       status = iree_hal_tlsf_pool_query_backing_request(
@@ -694,37 +687,22 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
       if (iree_status_is_ok(status)) {
         status = iree_hal_slab_cache_create(backing_pool, &cache_options,
                                             allocator->host_allocator,
-                                            &out_pool_pair->backing_cache);
+                                            &out_memory_pool->backing_cache);
       }
     }
     if (iree_status_is_ok(status)) {
       status = iree_hal_tlsf_pool_create(
-          out_pool_pair->backing_cache, &tlsf_options,
-          allocator->host_allocator, &out_pool_pair->tlsf_pool);
+          out_memory_pool->backing_cache, &tlsf_options,
+          allocator->host_allocator, &out_memory_pool->tlsf_pool);
     }
     iree_hal_pool_release(backing_pool);
   }
 
-  char oversized_trace_storage[64] = {0};
-  if (iree_status_is_ok(status)) {
-    iree_hal_passthrough_pool_options_t oversized_options = {
-        .trace_name = iree_hal_vulkan_allocator_format_pool_trace_name(
-            oversized_trace_storage, IREE_ARRAYSIZE(oversized_trace_storage),
-            IREE_SV("oversized"), memory_type_index),
-    };
-    status = iree_hal_passthrough_pool_create(
-        oversized_options, out_pool_pair->slab_provider,
-        allocator->default_pool_notification, frontier_tracker,
-        allocator->memory_maintenance, allocator->host_allocator,
-        &out_pool_pair->oversized_pool);
-  }
-
   if (!iree_status_is_ok(status)) {
-    iree_hal_pool_release(out_pool_pair->oversized_pool);
-    iree_hal_pool_release(out_pool_pair->tlsf_pool);
-    iree_hal_pool_release(out_pool_pair->backing_cache);
-    iree_hal_slab_provider_release(out_pool_pair->slab_provider);
-    memset(out_pool_pair, 0, sizeof(*out_pool_pair));
+    iree_hal_pool_release(out_memory_pool->tlsf_pool);
+    iree_hal_pool_release(out_memory_pool->backing_cache);
+    iree_hal_slab_provider_release(out_memory_pool->slab_provider);
+    memset(out_memory_pool, 0, sizeof(*out_memory_pool));
   }
 
   IREE_TRACE_ZONE_END(z0);
@@ -735,14 +713,13 @@ void iree_hal_vulkan_allocator_deinitialize_default_pools(
     iree_hal_allocator_t* base_allocator) {
   iree_hal_vulkan_allocator_t* allocator =
       iree_hal_vulkan_allocator_cast(base_allocator);
-  for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
-    iree_hal_pool_release(allocator->pool_pairs[i].oversized_pool);
-    iree_hal_pool_release(allocator->pool_pairs[i].tlsf_pool);
-    iree_hal_pool_release(allocator->pool_pairs[i].backing_cache);
-    iree_hal_slab_provider_release(allocator->pool_pairs[i].slab_provider);
+  for (iree_host_size_t i = 0; i < allocator->memory_pool_count; ++i) {
+    iree_hal_pool_release(allocator->memory_pools[i].tlsf_pool);
+    iree_hal_pool_release(allocator->memory_pools[i].backing_cache);
+    iree_hal_slab_provider_release(allocator->memory_pools[i].slab_provider);
   }
-  memset(allocator->pool_pairs, 0, sizeof(allocator->pool_pairs));
-  allocator->pool_pair_count = 0;
+  memset(allocator->memory_pools, 0, sizeof(allocator->memory_pools));
+  allocator->memory_pool_count = 0;
   allocator->default_queue_slab_provider = NULL;
   iree_async_notification_release(allocator->default_pool_notification);
   allocator->default_pool_notification = NULL;
@@ -832,24 +809,20 @@ iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
             allocator, vk_memory_type->propertyFlags);
     const iree_hal_buffer_usage_t supported_usage =
         iree_hal_vulkan_allowed_usage_from_memory_type(memory_type);
-    iree_hal_vulkan_allocator_pool_pair_t pool_pair;
-    status = iree_hal_vulkan_allocator_create_pool_pair(
+    iree_hal_vulkan_allocator_memory_pool_t memory_pool;
+    status = iree_hal_vulkan_allocator_create_memory_pool(
         allocator, frontier_tracker, i, memory_type,
-        vk_memory_type->propertyFlags, supported_usage, &pool_pair);
-    if (!iree_status_is_ok(status)) {
-      break;
-    }
-
+        vk_memory_type->propertyFlags, supported_usage, &memory_pool);
     if (iree_status_is_ok(status)) {
-      if (pool_pair.memory_priority > default_queue_provider_priority) {
-        default_queue_provider_priority = pool_pair.memory_priority;
-        allocator->default_queue_slab_provider = pool_pair.slab_provider;
+      if (memory_pool.memory_priority > default_queue_provider_priority) {
+        default_queue_provider_priority = memory_pool.memory_priority;
+        allocator->default_queue_slab_provider = memory_pool.slab_provider;
       }
-      allocator->pool_pairs[allocator->pool_pair_count++] = pool_pair;
+      allocator->memory_pools[allocator->memory_pool_count++] = memory_pool;
     }
   }
 
-  if (iree_status_is_ok(status) && allocator->pool_pair_count == 0) {
+  if (iree_status_is_ok(status) && allocator->memory_pool_count == 0) {
     status = iree_make_status(
         IREE_STATUS_UNAVAILABLE,
         "Vulkan physical device reports no memory types for default pools");
@@ -1495,6 +1468,9 @@ static bool iree_hal_vulkan_allocator_pool_matches(
       allocation_size > capabilities.max_allocation_size) {
     return false;
   }
+  if (params.min_alignment > capabilities.max_allocation_alignment) {
+    return false;
+  }
   return true;
 }
 
@@ -1502,32 +1478,16 @@ static iree_hal_pool_t* iree_hal_vulkan_allocator_select_default_pool(
     iree_hal_vulkan_allocator_t* allocator, iree_hal_buffer_params_t params,
     iree_device_size_t allocation_size) {
   iree_hal_buffer_params_canonicalize(&params);
-  const iree_device_size_t requested_alignment =
-      params.min_alignment ? params.min_alignment : 1;
   iree_hal_pool_t* selected_pool = NULL;
   int32_t selected_priority = INT32_MIN;
-  for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
-    const iree_hal_vulkan_allocator_pool_pair_t* pool_pair =
-        &allocator->pool_pairs[i];
-    const int32_t oversized_priority =
-        IREE_HAL_VULKAN_ALLOCATOR_DEFAULT_POOL_PRIORITY_OVERSIZED +
-        pool_pair->memory_priority;
-    if (requested_alignment <= IREE_HAL_HEAP_BUFFER_ALIGNMENT &&
-        oversized_priority > selected_priority &&
-        iree_hal_vulkan_allocator_pool_matches(pool_pair->oversized_pool,
-                                               params, allocation_size)) {
-      selected_pool = pool_pair->oversized_pool;
-      selected_priority = oversized_priority;
-    }
-    const int32_t tlsf_priority =
-        IREE_HAL_VULKAN_ALLOCATOR_DEFAULT_POOL_PRIORITY_TLSF +
-        pool_pair->memory_priority;
-    if (requested_alignment <= allocator->default_pool_alignment &&
-        tlsf_priority > selected_priority &&
-        iree_hal_vulkan_allocator_pool_matches(pool_pair->tlsf_pool, params,
+  for (iree_host_size_t i = 0; i < allocator->memory_pool_count; ++i) {
+    const iree_hal_vulkan_allocator_memory_pool_t* memory_pool =
+        &allocator->memory_pools[i];
+    if (memory_pool->memory_priority > selected_priority &&
+        iree_hal_vulkan_allocator_pool_matches(memory_pool->tlsf_pool, params,
                                                allocation_size)) {
-      selected_pool = pool_pair->tlsf_pool;
-      selected_priority = tlsf_priority;
+      selected_pool = memory_pool->tlsf_pool;
+      selected_priority = memory_pool->memory_priority;
     }
   }
   return selected_pool;

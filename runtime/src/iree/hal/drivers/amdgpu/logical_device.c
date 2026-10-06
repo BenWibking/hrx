@@ -2438,6 +2438,25 @@ static iree_status_t iree_hal_amdgpu_logical_device_sample_observation(
     iree_hal_amdgpu_asan_state_statistics_t statistics;
     iree_hal_amdgpu_asan_state_query_statistics(&logical_device->asan,
                                                 &statistics);
+    // Logical ranges remain quarantined in their allocating pool before any
+    // retired native mapping reaches the device-wide quarantine.
+    for (iree_host_size_t i = 0; i < logical_device->physical_device_count;
+         ++i) {
+      const iree_hal_amdgpu_physical_device_t* physical_device =
+          logical_device->physical_devices[i];
+      iree_hal_pool_t* pools[] = {physical_device->default_pool,
+                                  physical_device->default_host_pool};
+      for (iree_host_size_t j = 0; j < IREE_ARRAYSIZE(pools); ++j) {
+        if (!pools[j]) {
+          continue;
+        }
+        iree_hal_pool_stats_t pool_stats;
+        iree_hal_pool_query_stats(pools[j], &pool_stats);
+        statistics.quarantine_size += pool_stats.bytes_quarantined;
+        statistics.quarantine_eviction_count +=
+            pool_stats.quarantine_eviction_count;
+      }
+    }
     out_observation->provided_flags |=
         IREE_HAL_DEVICE_OBSERVATION_FLAG_SANITIZER;
     out_observation->sanitizer.asan.flags =

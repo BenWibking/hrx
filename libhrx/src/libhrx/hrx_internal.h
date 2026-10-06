@@ -483,17 +483,11 @@ typedef struct hrx_mem_pool_s {
   // HIP/CUDA-style creation properties used for attribute queries.
   hrx_mem_pool_props_t props;
 
-  // TLSF HAL pool serving allocations up to |suballocation_max_size|.
+  // TLSF HAL pool serving suballocated and dedicated ordinary backing.
   iree_hal_pool_t* hal_pool;
 
   // Explicit retention cache owning live and idle TLSF backing slabs.
   iree_hal_pool_t* backing_cache;
-
-  // Pass-through HAL pool serving allocations larger than the TLSF slab size.
-  iree_hal_pool_t* oversized_hal_pool;
-
-  // Largest request routed to |hal_pool| rather than |oversized_hal_pool|.
-  iree_device_size_t suballocation_max_size;
 
   // Bytes charged to the immutable |props.max_size| allocation limit.
   size_t allocation_budget_current;

@@ -262,8 +262,8 @@ typedef struct iree_hal_pool_capabilities_t {
   iree_device_size_t min_allocation_size;
 
   // Strategy-specific maximum single user-visible reservation in bytes.
-  // Fixed-block pools use their block size, TLSF pools use their slab size, and
-  // pass-through pools report 0 for no strategy limit. Budgets are reported
+  // Finite pools report their managed geometry; growable pools inherit their
+  // backing limit. A zero value means no strategy limit. Budgets are reported
   // separately and enforced by reservation acquisition.
   iree_device_size_t max_allocation_size;
 
@@ -286,6 +286,10 @@ typedef struct iree_hal_pool_stats_t {
 
   // Total backing bytes in free blocks or otherwise available for reservation.
   iree_device_size_t bytes_free;
+
+  // Returned backing bytes withheld from reuse by this pool's ASAN policy.
+  // Does not include quarantine owned by a backing pool or native allocator.
+  iree_device_size_t bytes_quarantined;
 
   // Total physical memory committed (slabs or VMM pages).
   iree_device_size_t bytes_committed;
@@ -322,6 +326,10 @@ typedef struct iree_hal_pool_stats_t {
 
   // Reserves that returned NEEDS_WAIT.
   uint64_t wait_count;
+
+  // Ranges removed from this pool's quarantine by pressure or explicit trim.
+  // A disabled quarantine does not retain ranges or count evictions.
+  uint64_t quarantine_eviction_count;
 } iree_hal_pool_stats_t;
 
 // Callback for try-before-fence epoch queries. When a death-frontier dominance

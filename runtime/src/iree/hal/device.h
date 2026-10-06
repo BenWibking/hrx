@@ -459,9 +459,10 @@ typedef enum iree_hal_device_asan_observation_flag_bits_e {
 typedef struct iree_hal_device_asan_observation_t {
   // ASAN fields populated by the device.
   iree_hal_device_asan_observation_flags_t flags;
-  // Current total bytes retained by the ASAN quarantine FIFO.
+  // Current total bytes retained by the device's ASAN quarantines.
   iree_device_size_t quarantine_size;
-  // Cumulative count of mappings released due to ASAN quarantine pressure.
+  // Cumulative count of ranges released from the device's ASAN quarantines.
+  // Counts logical pool ranges and native mappings at their respective layers.
   uint64_t quarantine_eviction_count;
   // Number of precise physical shadow slabs currently mapped.
   uint64_t shadow_mapped_slab_count;

@@ -346,6 +346,22 @@ iree_cc_library(
 
 iree_cc_library(
   NAME
+    tlsf_pool_reservation
+  HDRS
+    "tlsf_pool_reservation.h"
+  SRCS
+    "tlsf_pool_reservation.c"
+  DEPS
+    ::buffer_range
+    ::tlsf
+    iree::async
+    iree::base
+    iree::hal
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     tlsf_pool
   HDRS
     "tlsf_pool.h"
@@ -355,6 +371,7 @@ iree_cc_library(
     ::buffer_range
     ::maintenance
     ::tlsf
+    ::tlsf_pool_reservation
     ::tracing
     iree::async
     iree::base
@@ -452,6 +469,28 @@ iree_cc_test(
     ::cpu_slab_provider
     ::maintenance_thread
     ::passthrough_pool
+    ::tlsf_pool
+    iree::async
+    iree::async::platform
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
+iree_cc_test(
+  NAME
+    tlsf_pool_reservation_test
+  SRCS
+    "tlsf_pool_reservation_test.cc"
+  DEPS
+    ::cpu_slab_provider
+    ::fixed_block_pool
+    ::maintenance
+    ::maintenance_thread
+    ::passthrough_pool
+    ::slab_cache
+    ::tlsf
     ::tlsf_pool
     iree::async
     iree::async::platform

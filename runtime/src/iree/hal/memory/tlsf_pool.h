@@ -23,9 +23,9 @@ extern "C" {
 // Options for creating a HAL pool that wraps iree_hal_memory_tlsf_t.
 typedef struct iree_hal_tlsf_pool_options_t {
   // Raw TLSF allocator configuration for each slab. The range length is the
-  // fixed slab size and maximum single reservation served by this pool.
-  // Live-pressure exhaustion grows by acquiring another slab of at least this
-  // size, rounded to the required alignment. Backing reservations
+  // preferred size for suballocated backing. Requests beyond its size or
+  // alignment use dedicated ranges from the same backing pool. Live-pressure
+  // exhaustion grows regular backing by this size. Backing reservations
   // supply history; initial_frontier must be NULL for the backing constructor.
   // Alignment requires the same support from the backing pool.
   iree_hal_memory_tlsf_options_t tlsf_options;
@@ -53,6 +53,9 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_query_backing_request(
 // Growth obtains ordinary reservations and borrowed prepared buffer ranges.
 // Every byte inherits the backing reservation's exact reuse prerequisite.
 // Failed preparation returns that original prerequisite without losing history.
+// Larger or more strongly aligned requests hold dedicated parent reservations,
+// without offset-allocator metadata. Mixed batches remain all-or-none. Source
+// size/alignment limits and the pool live-byte budget apply to both paths.
 //
 // Release publishes reservation metadata without native work. The captured
 // memory owner drains releases and returns whole unused ranges with their

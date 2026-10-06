@@ -557,8 +557,8 @@ TEST_P(QueueAllocaTest, NestedBufferPoolsPreserveRangesAndOwnership) {
   EXPECT_EQ(0u, stats.reservation_count);
 }
 
-TEST_P(QueueAllocaTest, PluralTransaction) {
-  constexpr std::array<iree_device_size_t, 3> kAllocationSizes = {256, 512,
+TEST_P(QueueAllocaTest, PluralSmallLargeAndAlignedTransaction) {
+  constexpr std::array<iree_device_size_t, 3> kAllocationSizes = {256, 8192,
                                                                   1024};
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(CreateTLSFPool(/*range_length=*/4096, pool.out()));
@@ -568,6 +568,9 @@ TEST_P(QueueAllocaTest, PluralTransaction) {
   for (size_t i = 0; i < requests.size(); ++i) {
     requests[i] = MakeRequest(transfer_queue_, kAllocationSizes[i]);
   }
+  iree_hal_pool_capabilities_t capabilities;
+  iree_hal_pool_query_capabilities(pool, &capabilities);
+  requests.back().params.min_alignment = capabilities.max_allocation_alignment;
   std::array<iree_hal_buffer_t*, kAllocationSizes.size()> raw_buffers = {};
   SemaphoreList empty_wait;
   SemaphoreList alloca_signal(device_, {0}, {1});
@@ -587,7 +590,15 @@ TEST_P(QueueAllocaTest, PluralTransaction) {
   for (size_t i = 0; i < buffers.size(); ++i) {
     const uint32_t pattern = 0x11000000u + static_cast<uint32_t>(i);
     FillAndWait(transfer_queue_, buffers[i], pattern);
-    EXPECT_EQ(pattern, ReadBufferData<uint32_t>(buffers[i])[0]);
+    const auto actual = ReadBufferData<uint32_t>(buffers[i]);
+    ASSERT_EQ(actual.size() * sizeof(uint32_t), kAllocationSizes[i]);
+    for (uint32_t value : actual) {
+      EXPECT_EQ(value, pattern);
+    }
+    if (requests[i].params.min_alignment) {
+      const auto memory = iree_hal_buffer_memory_view(buffers[i]);
+      EXPECT_EQ(memory.offset % requests[i].params.min_alignment, 0u);
+    }
   }
 
   DeallocaAndWait(transfer_queue_, raw_buffers.size(), raw_buffers.data());
