@@ -295,8 +295,8 @@ that a failed setter left every layer unchanged. [ROCr setter][rocr-priority] ·
 ## Construction, execution and final use
 
 A creation-time configuration keeps affinity changes outside the workload's
-publication path. CLR's descriptor caller and ROCr's construction implement
-the following flow:
+publication path. For an ordinary, non-counted compute queue, CLR's descriptor
+caller and ROCr's construction implement the following flow:
 
 1. Resolve the intended agent and native topology. Construct a nonempty
    eligible set using that boundary's mask units and applicable pairing rule.
@@ -325,6 +325,12 @@ one native queue among several handles of the same priority and explicitly
 prohibits `hsa_amd_queue_set_priority` and `hsa_amd_queue_cu_set_mask` on
 those handles. A handle alone therefore does not establish independently
 mutable native scheduling state. [Counted queue contract][hsa-counted]
+
+[Cooperative queues](cooperative.md#shared-cooperative-queue-ownership) also
+have shared ownership: repeated creation may return the same queue, with a
+matching reference release required for each acquisition. The ordinary
+construction sequence above does not describe a fresh native allocation
+for every cooperative request.
 
 For a persistent producer/consumer design, disjoint affinity sets express
 eligible placement but do not establish exclusive ownership, simultaneous

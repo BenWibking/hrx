@@ -9,6 +9,7 @@ resource-lifetime protocol.
 | --- | --- |
 | [Architecture and transport](architectures.md) | Physical IP, compiler targets, native queues, and submission ownership. |
 | [Compute affinity and queue priority](scheduling.md) | CU/WGP mask units, harvested SE/SH/XCC placement, `COMPUTE_STATIC_THREAD_MGMT_SE*`, native priority encodings and update ownership. |
+| [Cooperative execution and grid synchronization](cooperative.md) | Shared cooperative queues, `ALLOC_QUEUE_GWS`, firmware admission, occupancy, hidden grid state and GWS/atomic barrier scopes. |
 | [Compute context save and restore](context-save.md) | CWSR, `ctx_save_restore_size`, per-XCC storage, control-stack inspection, suspension and final ownership. |
 | [Shader memory publication](shader-memory.md) | Resident release/acquire sequences, `s_waitcnt`, `buffer_inv`, `global_wb`, cache scopes, and wave/workgroup joins across GCN, CDNA and RDNA. |
 | [Native signals and host notification](notifications.md) | `event_mailbox_ptr`, KFD event ages, interrupt decoding, sleeping waits and notification-storage lifetime. |

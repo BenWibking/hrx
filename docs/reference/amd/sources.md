@@ -11,7 +11,8 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [Mesa counter, barrier and shader policy][mesa-counter-barriers] | `44cc4ca677a4752a10c14194289bde5a6468675e` | GFX12 performance-query admission, event selection and SQG sample ordering; consumer-stage selection for graphics PWS waits; compiler-selected MEM_ORDERED mode, linked-program requirements and per-SA compute affinity. |
 | [ROCm systems][rocm] | `8d57824901ffa7d961c00a37d055a108723b93ca` | ROCr queue/signal/copy protocols, HIP/CLR consumers, native queue construction, and profiling. |
 | [ROCm XIO][xio] | `cbe97e6392066bef7901121965ffadad19404da4` | Device-authored SDMA packets, reservation/commit protocols and native queue-resource ownership; compared with the related rocSHMEM Anvil implementation in ROCm systems. |
-| [ROCm native memory and engine policy][rocm-native] | `f9ba16bbe70e365b2f59b268e847bef19ad9db6e` | BO-backed queue storage, AQL metadata publication and scratch reclamation, signal/event notification and host waits, pageable host SVM allocation, context-save layout and ownership, DRM import/mapping ownership, CLR peer-engine selection, compute affinity and native queue priority. |
+| [ROCm native memory and engine policy][rocm-native] | `f9ba16bbe70e365b2f59b268e847bef19ad9db6e` | BO-backed queue storage, AQL metadata publication and scratch reclamation, signal/event notification and host waits, pageable host SVM allocation, context-save layout and ownership, DRM import/mapping ownership, CLR peer-engine selection, compute affinity, native queue priority and cooperative launch admission/ownership. |
+| [ROCm device libraries][rocm-device-libs] | `8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec` | OCKL hidden grid state, GWS versus atomic barrier selection, split arrival/wait and workgroup/agent/system fence composition. |
 | [Linux][linux] | `50d05c7c76c96b90462f24debacca971d2e86713` | Native UAPI, queue descriptors, memory mappings, engine emitters, and driver resource lifetimes. |
 | [Linux DMA-BUF attachment updates][linux-dmabuf] | `fe2ec83746e501645709761605c2464a44fd2929` | Exporter runtime PM references and their relation to P2P eligibility and memory placement. |
 | [Vulkan specification][vulkan] | `01aaacd99480487bf63830959513c5ca8ceb996d` | External memory and semaphore capabilities, handle ownership, host-pointer imports, resource ownership transfers, host visibility, and performance-query lifetimes. |
@@ -38,6 +39,12 @@ representations and owners.
 The [RDNA4 ISA guide, 7 April 2025][rdna4-isa], §5.7 and Table 26, supplies
 the architecture's dependency-counter rules used in the
 [shader wait-mode discussion](gpu/pm4/dispatch.md#shader-wait-counter-mode-mem_ordered).
+
+AMD's [Micro Engine Scheduler specification, April 2024][mes-manual],
+introduced by GPUOpen as an RDNA3 scheduling overview, describes the native
+MES API and its scheduling fields. Its `ADD_QUEUE` flags corroborate the
+[cooperative-launch discussion](gpu/cooperative.md#what-reaches-the-scheduler);
+that revision does not establish the behavior of later MES implementations.
 
 Microsoft's public [D3D12 sharing][d3d12-sharing] and [queue synchronization][d3d12-sync]
 documentation supplies the API contracts for shared heaps, resources and
@@ -72,6 +79,7 @@ executes. The corresponding chapter identifies those boundaries.
 [rocm]: https://github.com/ROCm/rocm-systems/tree/8d57824901ffa7d961c00a37d055a108723b93ca
 [xio]: https://github.com/ROCm/rocm-xio/tree/cbe97e6392066bef7901121965ffadad19404da4
 [rocm-native]: https://github.com/ROCm/rocm-systems/tree/f9ba16bbe70e365b2f59b268e847bef19ad9db6e
+[rocm-device-libs]: https://github.com/ROCm/llvm-project/tree/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/amd/device-libs
 [linux]: https://github.com/torvalds/linux/tree/50d05c7c76c96b90462f24debacca971d2e86713
 [linux-dmabuf]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdgpu/amdgpu_dma_buf.c
 [vulkan]: https://github.com/KhronosGroup/Vulkan-Docs/tree/01aaacd99480487bf63830959513c5ca8ceb996d
@@ -93,4 +101,5 @@ executes. The corresponding chapter identifies those boundaries.
 [hsa-prm]: https://hsafoundation.com/wp-content/uploads/2021/02/HSA-PRM-1.2.pdf
 [gpu-manuals]: https://gpuopen.com/amd-gpu-architecture-programming-documentation/
 [rdna4-isa]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf
+[mes-manual]: https://gpuopen.com/download/documentation/micro_engine_scheduler.pdf
 [axi4]: https://documentation-service.arm.com/static/5f915bbcf86e16515cdc3b23
