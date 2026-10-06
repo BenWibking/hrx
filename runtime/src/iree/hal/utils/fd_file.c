@@ -65,7 +65,17 @@ static iree_status_t iree_hal_platform_win32_initialize_overlapped(
     return iree_make_status(iree_status_code_from_win32_error(GetLastError()),
                             "failed to create file I/O completion event");
   }
+  // Duplicated handles share completion-port association. This synchronous
+  // operation owns its stack OVERLAPPED and waits on its event; the low bit
+  // prevents a second completion from being posted to an associated IOCP.
+  out_overlapped->hEvent =
+      (HANDLE)((uintptr_t)out_overlapped->hEvent | (uintptr_t)1);
   return iree_ok_status();
+}
+
+static void iree_hal_platform_win32_deinitialize_overlapped(
+    OVERLAPPED* overlapped) {
+  CloseHandle((HANDLE)((uintptr_t)overlapped->hEvent & ~(uintptr_t)1));
 }
 
 static iree_status_t iree_hal_platform_win32_wait_for_overlapped_file_io(
@@ -112,10 +122,10 @@ static iree_status_t iree_hal_platform_fd_pread(
   if (!ReadFile(handle, buffer, (DWORD)count, &bytes_read, &overlapped)) {
     iree_status_t status = iree_hal_platform_win32_wait_for_overlapped_file_io(
         handle, &overlapped, GetLastError(), IREE_SV("read"), &bytes_read);
-    CloseHandle(overlapped.hEvent);
+    iree_hal_platform_win32_deinitialize_overlapped(&overlapped);
     IREE_RETURN_IF_ERROR(status);
   } else {
-    CloseHandle(overlapped.hEvent);
+    iree_hal_platform_win32_deinitialize_overlapped(&overlapped);
   }
 
   *out_bytes_read = (iree_host_size_t)bytes_read;
@@ -148,10 +158,10 @@ static iree_status_t iree_hal_platform_fd_pwrite(
   if (!WriteFile(handle, buffer, (DWORD)count, &bytes_written, &overlapped)) {
     iree_status_t status = iree_hal_platform_win32_wait_for_overlapped_file_io(
         handle, &overlapped, GetLastError(), IREE_SV("write"), &bytes_written);
-    CloseHandle(overlapped.hEvent);
+    iree_hal_platform_win32_deinitialize_overlapped(&overlapped);
     IREE_RETURN_IF_ERROR(status);
   } else {
-    CloseHandle(overlapped.hEvent);
+    iree_hal_platform_win32_deinitialize_overlapped(&overlapped);
   }
 
   *out_bytes_written = (iree_host_size_t)bytes_written;

@@ -685,6 +685,39 @@ TEST_P(FileTest, SynchronousSpansRequireStorage) {
                           iree_make_const_byte_span(nullptr, 1)));
 }
 
+TEST_P(AsyncFileTest, SynchronousAndQueuedAccessShareFile) {
+  ForEachProvider([&](const FileProvider& provider) {
+    TestFile file;
+    if (!TryCreateTestFile(provider, IREE_HAL_MEMORY_ACCESS_ALL,
+                           std::vector<uint8_t>(256, 0), &file)) {
+      return;
+    }
+    Ref<iree_hal_buffer_t> buffer = CreateZeroedBuffer(128);
+    const std::vector<uint8_t> contents = MakeDeterministicBytes(81);
+
+    // Native files have already been imported into the device's proactor.
+    // Synchronous operations must consume only their own completion; queued
+    // operations continue through the proactor on the same underlying file.
+    IREE_ASSERT_OK(iree_hal_file_write(
+        file.get(), 11,
+        iree_make_const_byte_span(contents.data(), contents.size())));
+    std::vector<uint8_t> readback(contents.size(), 0);
+    IREE_ASSERT_OK(iree_hal_file_read(
+        file.get(), 11, iree_make_byte_span(readback.data(), readback.size())));
+    EXPECT_THAT(readback, ContainerEq(contents));
+
+    QueueReadAndWait(file.get(), 11, buffer.get(), 7, contents.size());
+    EXPECT_THAT(ReadBufferBytes(buffer.get(), 7, contents.size()),
+                ContainerEq(contents));
+    QueueWriteAndWait(buffer.get(), 7, file.get(), 139, contents.size());
+    std::fill(readback.begin(), readback.end(), 0);
+    IREE_ASSERT_OK(iree_hal_file_read(
+        file.get(), 139,
+        iree_make_byte_span(readback.data(), readback.size())));
+    EXPECT_THAT(readback, ContainerEq(contents));
+  });
+}
+
 TEST_P(FileTest, SynchronousReadRejectsWriteOnlyFile) {
   const FileProvider provider = {"memory_file", FileProviderKind::kMemory};
   TestFile file;
