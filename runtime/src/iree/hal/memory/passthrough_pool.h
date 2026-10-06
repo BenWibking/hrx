@@ -44,11 +44,14 @@ typedef struct iree_hal_passthrough_pool_options_t {
 // reservation release, and skips wake work when no waiter is observing it.
 // |host_allocator| is used for pool metadata, reservation state, and
 // materialization transaction state.
+// The pool borrows |frontier_tracker| for reservation reuse dependencies. Its
+// owning group must outlive the pool and all operations using it.
 iree_status_t iree_hal_passthrough_pool_create(
     iree_hal_passthrough_pool_options_t options,
     iree_hal_slab_provider_t* slab_provider,
-    iree_async_notification_t* notification, iree_allocator_t host_allocator,
-    iree_hal_pool_t** out_pool);
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool);
 
 #ifdef __cplusplus
 }  // extern "C"

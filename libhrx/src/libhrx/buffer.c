@@ -105,9 +105,15 @@ hrx_status_t hrx_buffer_allocate(hrx_stream_t stream, size_t size,
       .payload_values = &signal_value,
   };
 
-  iree_status_t status = iree_ok_status();
-  status = hrx_iree_exact_pool_create(stream->device->allocator.hal_allocator,
-                                      params, &buf->hal_pool);
+  iree_hal_queue_pool_backend_t backend = {0};
+  iree_status_t status = iree_hal_device_query_queue_pool_backend(
+      stream->device->hal_device,
+      iree_hal_queue_family(stream->device->transfer_queue), &backend);
+  if (iree_status_is_ok(status)) {
+    status = hrx_iree_exact_pool_create(
+        stream->device->allocator.hal_allocator, params, backend.notification,
+        backend.frontier_tracker, iree_allocator_system(), &buf->hal_pool);
+  }
   if (iree_status_is_ok(status)) {
     const iree_hal_pool_reservation_request_t request = {
         .params = params,

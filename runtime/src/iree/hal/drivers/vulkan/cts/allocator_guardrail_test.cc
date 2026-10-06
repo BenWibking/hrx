@@ -68,7 +68,7 @@ TEST_P(VulkanAllocatorGuardrailTest, QueueAllocaAcceptsSparseSizedAllocation) {
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       options, backend.slab_provider, backend.notification,
-      iree_allocator_system(), pool.out()));
+      backend.frontier_tracker, iree_allocator_system(), pool.out()));
   params.queue_family_affinity = iree_hal_make_queue_family_affinity(
       iree_hal_queue_family_ordinal(iree_hal_queue_family(transfer_queue_)));
   const iree_hal_pool_reservation_request_t request = {
@@ -127,7 +127,8 @@ TEST_P(VulkanAllocatorGuardrailTest,
   // require the optional probe to rediscover that completion.
   IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
       options, backend.slab_provider, backend.notification,
-      iree_hal_pool_epoch_query_null(), iree_allocator_system(), pool.out()));
+      backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
+      iree_allocator_system(), pool.out()));
 
   iree_hal_pool_reservation_request_t request = {};
   request.allocation_size = kBlockSize;
@@ -150,9 +151,9 @@ TEST_P(VulkanAllocatorGuardrailTest,
                                               IREE_ASYNC_WAIT_FLAG_NONE));
 
   Ref<iree_hal_buffer_t> buffer;
-  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool, request.params, kBlockSize, /*requester_frontier=*/nullptr,
-      iree_immediate_timeout(), buffer.out()));
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(pool, request.params, kBlockSize,
+                                               iree_immediate_timeout(),
+                                               buffer.out()));
   const uint32_t pattern = 0x1234ABCDu;
   SemaphoreList filled(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_fill(transfer_queue_, empty_wait, filled,

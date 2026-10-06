@@ -288,6 +288,23 @@ static int32_t iree_async_frontier_find_axis(
   return -1;
 }
 
+// Public wait/query boundaries validate axis registration before consuming the
+// immutable axis entries. Registered entries remain present after retirement.
+static iree_status_t iree_async_frontier_tracker_validate_axes(
+    iree_async_frontier_tracker_t* tracker,
+    const iree_async_frontier_t* frontier) {
+  for (uint8_t i = 0; i < frontier->entry_count; ++i) {
+    if (iree_async_axis_table_lookup(&tracker->axis_table,
+                                     frontier->entries[i].axis) == NULL) {
+      return iree_make_status(IREE_STATUS_NOT_FOUND,
+                              "frontier entry %" PRIu8
+                              " references unknown axis 0x%016" PRIX64,
+                              i, frontier->entries[i].axis);
+    }
+  }
+  return iree_ok_status();
+}
+
 // Result of checking a waiter's satisfaction state.
 typedef enum iree_async_waiter_check_result_e {
   IREE_ASYNC_WAITER_CHECK_PENDING = 0,    // Not yet satisfied.
@@ -295,25 +312,17 @@ typedef enum iree_async_waiter_check_result_e {
   IREE_ASYNC_WAITER_CHECK_FAILED = 2,     // At least one axis failed.
 } iree_async_waiter_check_result_t;
 
-// Checks whether a waiter is satisfied or failed.
+// Checks whether a validated frontier is satisfied or failed.
 // If FAILED, |out_failure_status| is set to the cloned failure status (caller
 // owns). Must be called under the waiters_mutex.
 static iree_async_waiter_check_result_t
-iree_async_frontier_tracker_check_waiter(
+iree_async_frontier_tracker_check_frontier(
     iree_async_frontier_tracker_t* tracker,
-    const iree_async_frontier_waiter_t* waiter,
-    iree_status_t* out_failure_status) {
-  const iree_async_frontier_t* frontier = waiter->frontier;
+    const iree_async_frontier_t* frontier, iree_status_t* out_failure_status) {
+  bool satisfied = true;
   for (uint8_t i = 0; i < frontier->entry_count; ++i) {
     iree_async_axis_table_entry_t* entry = iree_async_axis_table_lookup(
         &tracker->axis_table, frontier->entries[i].axis);
-    if (entry == NULL) {
-      // Axis not in table. This should not happen if wait() validated
-      // correctly, so leave the waiter pending rather than manufacturing a
-      // status in the hot check path.
-      return IREE_ASYNC_WAITER_CHECK_PENDING;
-    }
-
     // Check for axis failure.
     iree_status_t failure = entry->failure_status;
     if (!iree_status_is_ok(failure)) {
@@ -325,10 +334,13 @@ iree_async_frontier_tracker_check_waiter(
     int64_t current_epoch =
         iree_atomic_load(&entry->current_epoch, iree_memory_order_acquire);
     if ((uint64_t)current_epoch < frontier->entries[i].epoch) {
-      return IREE_ASYNC_WAITER_CHECK_PENDING;
+      // A later axis may already have failed. Pending work must not mask that
+      // terminal result or leave a newly registered waiter stranded.
+      satisfied = false;
     }
   }
-  return IREE_ASYNC_WAITER_CHECK_SATISFIED;
+  return satisfied ? IREE_ASYNC_WAITER_CHECK_SATISFIED
+                   : IREE_ASYNC_WAITER_CHECK_PENDING;
 }
 
 //===----------------------------------------------------------------------===//
@@ -471,6 +483,22 @@ IREE_API_EXPORT bool iree_async_frontier_tracker_query_epoch(
   return (uint64_t)current_epoch >= epoch;
 }
 
+IREE_API_EXPORT iree_status_t iree_async_frontier_tracker_query(
+    iree_async_frontier_tracker_t* tracker,
+    const iree_async_frontier_t* frontier, bool* out_satisfied) {
+  IREE_RETURN_IF_ERROR(
+      iree_async_frontier_tracker_validate_axes(tracker, frontier));
+  iree_slim_mutex_lock(&tracker->waiters_mutex);
+  iree_status_t status = iree_ok_status();
+  iree_async_waiter_check_result_t result =
+      iree_async_frontier_tracker_check_frontier(tracker, frontier, &status);
+  iree_slim_mutex_unlock(&tracker->waiters_mutex);
+  if (iree_status_is_ok(status)) {
+    *out_satisfied = result == IREE_ASYNC_WAITER_CHECK_SATISFIED;
+  }
+  return status;
+}
+
 //===----------------------------------------------------------------------===//
 // Tracker operations
 //===----------------------------------------------------------------------===//
@@ -569,8 +597,8 @@ iree_host_size_t iree_async_frontier_tracker_advance(
     // Full satisfaction check.
     iree_status_t failure_status = iree_ok_status();
     iree_async_waiter_check_result_t result =
-        iree_async_frontier_tracker_check_waiter(tracker, waiter,
-                                                 &failure_status);
+        iree_async_frontier_tracker_check_frontier(tracker, waiter->frontier,
+                                                   &failure_status);
 
     if (result == IREE_ASYNC_WAITER_CHECK_SATISFIED ||
         result == IREE_ASYNC_WAITER_CHECK_FAILED) {
@@ -614,16 +642,8 @@ iree_status_t iree_async_frontier_tracker_wait(
     const iree_async_frontier_t* frontier,
     iree_async_frontier_waiter_fn_t callback, void* user_data,
     iree_async_frontier_waiter_t* waiter) {
-  // Validate: all axes must be in the table.
-  for (uint8_t i = 0; i < frontier->entry_count; ++i) {
-    if (iree_async_axis_table_lookup(&tracker->axis_table,
-                                     frontier->entries[i].axis) == NULL) {
-      return iree_make_status(IREE_STATUS_NOT_FOUND,
-                              "frontier entry %" PRIu8
-                              " references unknown axis 0x%016" PRIX64,
-                              i, frontier->entries[i].axis);
-    }
-  }
+  IREE_RETURN_IF_ERROR(
+      iree_async_frontier_tracker_validate_axes(tracker, frontier));
 
   // Populate waiter fields (needed even for immediate dispatch, for
   // consistency).
@@ -637,11 +657,11 @@ iree_status_t iree_async_frontier_tracker_wait(
 
   iree_status_t failure_status = iree_ok_status();
   iree_async_waiter_check_result_t result =
-      iree_async_frontier_tracker_check_waiter(tracker, waiter,
-                                               &failure_status);
+      iree_async_frontier_tracker_check_frontier(tracker, waiter->frontier,
+                                                 &failure_status);
 
   if (result == IREE_ASYNC_WAITER_CHECK_SATISFIED) {
-    // Already satisfied; dispatch immediately under lock.
+    // Already satisfied; dispatch immediately after unlocking.
     iree_slim_mutex_unlock(&tracker->waiters_mutex);
     callback(user_data, iree_ok_status());
     return iree_ok_status();
@@ -674,8 +694,8 @@ iree_status_t iree_async_frontier_tracker_wait(
   // initialized above, and on FAILED it owns the cloned failure. Either way
   // we can propagate it directly into the callback without a conditional;
   // no status is ever dropped on the floor.
-  result = iree_async_frontier_tracker_check_waiter(tracker, waiter,
-                                                    &failure_status);
+  result = iree_async_frontier_tracker_check_frontier(tracker, waiter->frontier,
+                                                      &failure_status);
   if (result == IREE_ASYNC_WAITER_CHECK_SATISFIED ||
       result == IREE_ASYNC_WAITER_CHECK_FAILED) {
     // Either epoch advanced or axis failed while we were inserting. The

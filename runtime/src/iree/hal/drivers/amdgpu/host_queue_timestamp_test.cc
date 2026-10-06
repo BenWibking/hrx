@@ -1076,7 +1076,8 @@ static iree_status_t CreateSingleBlockPool(
   options.block_allocator_options.frontier_capacity = 2;
   return iree_hal_fixed_block_pool_create(
       options, backend.slab_provider, backend.notification,
-      iree_hal_pool_epoch_query_null(), iree_allocator_system(), out_pool);
+      backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
+      iree_allocator_system(), out_pool);
 }
 
 // A queue_alloca target with no staged backing has no device pointer to write

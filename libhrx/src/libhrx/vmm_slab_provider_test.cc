@@ -43,8 +43,8 @@ class VmmSlabProviderTest : public ::testing::Test {
     options.tlsf_options.frontier_capacity =
         IREE_HAL_MEMORY_TLSF_DEFAULT_FRONTIER_CAPACITY;
     IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-        options, provider_, backend.notification, backend.epoch_query,
-        iree_allocator_system(), &pool_));
+        options, provider_, backend.notification, backend.frontier_tracker,
+        backend.epoch_query, iree_allocator_system(), &pool_));
   }
 
   void TearDown() override {
@@ -81,7 +81,7 @@ class VmmSlabProviderTest : public ::testing::Test {
 TEST_F(VmmSlabProviderTest, OwnedRangeSurvivesUntilItsFinalSubspan) {
   iree_hal_buffer_t* owner = nullptr;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool_, params_, 4096, nullptr, iree_infinite_timeout(), &owner));
+      pool_, params_, 4096, iree_infinite_timeout(), &owner));
   iree_hal_buffer_t* root = iree_hal_buffer_allocated_buffer(owner);
   ASSERT_NE(owner, root);
   iree_hal_buffer_t* intermediate = nullptr;

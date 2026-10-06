@@ -23,9 +23,6 @@ typedef struct iree_hal_passthrough_pool_t {
   // Provider used to acquire one slab per reservation.
   iree_hal_slab_provider_t* slab_provider;
 
-  // Notification signaled when a reservation release may unblock waiters.
-  iree_async_notification_t* notification;
-
   // Host allocator used for pool metadata and reservation state.
   iree_allocator_t host_allocator;
 
@@ -205,7 +202,8 @@ static void iree_hal_passthrough_pool_owned_buffer_release(
         reservation_state);
     iree_hal_passthrough_pool_t* pool =
         (iree_hal_passthrough_pool_t*)reservation_state->pool;
-    iree_async_notification_signal_if_observed(pool->notification, INT32_MAX);
+    iree_async_notification_signal_if_observed(pool->base.notification,
+                                               INT32_MAX);
   }
   iree_hal_passthrough_pool_reservation_state_release_reference(
       reservation_state);
@@ -224,8 +222,9 @@ static void iree_hal_passthrough_pool_owned_buffer_release(
 iree_status_t iree_hal_passthrough_pool_create(
     iree_hal_passthrough_pool_options_t options,
     iree_hal_slab_provider_t* slab_provider,
-    iree_async_notification_t* notification, iree_allocator_t host_allocator,
-    iree_hal_pool_t** out_pool) {
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool) {
   IREE_ASSERT_ARGUMENT(slab_provider);
   IREE_ASSERT_ARGUMENT(notification);
   IREE_ASSERT_ARGUMENT(out_pool);
@@ -239,14 +238,13 @@ iree_status_t iree_hal_passthrough_pool_create(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
   memset(pool, 0, sizeof(*pool));
-  iree_hal_pool_initialize(&iree_hal_passthrough_pool_vtable, &pool->base);
+  iree_hal_pool_initialize(&iree_hal_passthrough_pool_vtable, notification,
+                           frontier_tracker, &pool->base);
   pool->host_allocator = host_allocator;
   pool->asan_options = options.asan;
 
   iree_hal_slab_provider_retain(slab_provider);
   pool->slab_provider = slab_provider;
-  iree_async_notification_retain(notification);
-  pool->notification = notification;
 
   iree_hal_slab_provider_query_properties(slab_provider,
                                           &pool->slab_properties);
@@ -268,7 +266,7 @@ static void iree_hal_passthrough_pool_destroy(iree_hal_pool_t* base_pool) {
   iree_hal_passthrough_pool_t* pool = (iree_hal_passthrough_pool_t*)base_pool;
   iree_allocator_t host_allocator = pool->host_allocator;
   iree_hal_memory_trace_deinitialize(&pool->trace);
-  iree_async_notification_release(pool->notification);
+  iree_hal_pool_deinitialize(base_pool);
   iree_hal_slab_provider_release(pool->slab_provider);
   iree_allocator_free(host_allocator, pool);
   IREE_TRACE_ZONE_END(z0);
@@ -475,7 +473,8 @@ static iree_status_t iree_hal_passthrough_pool_acquire_reservations(
                                                      &elements[i].reservation);
     }
     if (acquired_count != 0) {
-      iree_async_notification_signal_if_observed(pool->notification, INT32_MAX);
+      iree_async_notification_signal_if_observed(pool->base.notification,
+                                                 INT32_MAX);
     }
   } else {
     for (iree_host_size_t i = 0; i < request_count; ++i) {
@@ -513,7 +512,8 @@ static void iree_hal_passthrough_pool_release_reservations(
     iree_hal_passthrough_pool_release_one_reservation(
         base_pool, &reservations[i], death_frontier);
   }
-  iree_async_notification_signal_if_observed(pool->notification, INT32_MAX);
+  iree_async_notification_signal_if_observed(pool->base.notification,
+                                             INT32_MAX);
 }
 
 //===----------------------------------------------------------------------===//
@@ -698,12 +698,6 @@ static void iree_hal_passthrough_pool_trim(
   iree_hal_slab_provider_trim(pool->slab_provider, flags);
 }
 
-static iree_async_notification_t* iree_hal_passthrough_pool_notification(
-    iree_hal_pool_t* base_pool) {
-  iree_hal_passthrough_pool_t* pool = (iree_hal_passthrough_pool_t*)base_pool;
-  return pool->notification;
-}
-
 //===----------------------------------------------------------------------===//
 // Vtable
 //===----------------------------------------------------------------------===//
@@ -717,5 +711,4 @@ static const iree_hal_pool_vtable_t iree_hal_passthrough_pool_vtable = {
     .query_capabilities = iree_hal_passthrough_pool_query_capabilities,
     .query_stats = iree_hal_passthrough_pool_query_stats,
     .trim = iree_hal_passthrough_pool_trim,
-    .notification = iree_hal_passthrough_pool_notification,
 };

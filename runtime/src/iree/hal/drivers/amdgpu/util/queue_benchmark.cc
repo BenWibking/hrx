@@ -757,7 +757,8 @@ class QueueBenchmark : public benchmark::Fixture {
     options.tlsf_options.frontier_capacity = 2;
     return iree_hal_tlsf_pool_create(
         options, backend.slab_provider, backend.notification,
-        iree_hal_pool_epoch_query_null(), host_allocator_, out_pool);
+        backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
+        host_allocator_, out_pool);
   }
 
   iree_status_t QueueAllocaSubmit(iree_hal_pool_t* pool,

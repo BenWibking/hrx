@@ -9,7 +9,10 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
+#include "iree/base/threading/notification.h"
+#include "iree/base/threading/processor.h"
 #include "iree/hal/detail.h"
 #include "iree/hal/resource.h"
 
@@ -19,10 +22,20 @@
 IREE_HAL_API_RETAIN_RELEASE(pool);
 
 IREE_API_EXPORT void iree_hal_pool_initialize(
-    const iree_hal_pool_vtable_t* vtable, iree_hal_pool_t* out_pool) {
+    const iree_hal_pool_vtable_t* vtable,
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_hal_pool_t* out_pool) {
   IREE_ASSERT_ARGUMENT(vtable);
   IREE_ASSERT_ARGUMENT(out_pool);
   iree_hal_resource_initialize(vtable, &out_pool->resource);
+  out_pool->notification = notification;
+  iree_async_notification_retain(notification);
+  out_pool->frontier_tracker = frontier_tracker;
+}
+
+IREE_API_EXPORT void iree_hal_pool_deinitialize(iree_hal_pool_t* pool) {
+  iree_async_notification_release(pool->notification);
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_pool_acquire_reservations(
@@ -109,13 +122,82 @@ IREE_API_EXPORT void iree_hal_pool_trim(iree_hal_pool_t* pool,
 IREE_API_EXPORT iree_async_notification_t* iree_hal_pool_notification(
     iree_hal_pool_t* pool) {
   IREE_ASSERT_ARGUMENT(pool);
-  return _VTABLE_DISPATCH(pool, notification)(pool);
+  return pool->notification;
+}
+
+// Stack-owned state shared with the exact-frontier callback.
+typedef struct iree_hal_pool_frontier_wait_t {
+  // Wakes the allocating thread when the frontier resolves or fails.
+  iree_notification_t notification;
+  // Published before notification so the waiter can observe the result.
+  iree_atomic_int32_t resolved;
+  // Published after the callback's final notification access.
+  iree_atomic_int32_t completed;
+  // Callback-owned status transferred to the allocating thread on completion.
+  iree_status_t status;
+} iree_hal_pool_frontier_wait_t;
+
+static bool iree_hal_pool_frontier_wait_is_resolved(void* user_data) {
+  iree_hal_pool_frontier_wait_t* wait = user_data;
+  return iree_atomic_load(&wait->resolved, iree_memory_order_acquire) != 0;
+}
+
+static void iree_hal_pool_frontier_wait_resolve(void* user_data,
+                                                iree_status_t status) {
+  iree_hal_pool_frontier_wait_t* wait = user_data;
+  wait->status = status;
+  iree_atomic_store(&wait->resolved, 1, iree_memory_order_release);
+  iree_notification_post(&wait->notification, IREE_ALL_WAITERS);
+  // This is the callback's final access to caller-owned storage.
+  iree_atomic_store(&wait->completed, 1, iree_memory_order_release);
+}
+
+// Waits for a reserved range using the allocation's already-normalized
+// deadline. Immediate attempts also check here: the optional native completion
+// probe may be absent, or completion may have arrived after reservation.
+static iree_status_t iree_hal_pool_wait_for_frontier(
+    iree_hal_pool_t* pool, const iree_async_frontier_t* frontier,
+    iree_timeout_t timeout) {
+  if (iree_timeout_is_immediate(timeout)) {
+    bool satisfied = false;
+    IREE_RETURN_IF_ERROR(iree_async_frontier_tracker_query(
+        pool->frontier_tracker, frontier, &satisfied));
+    return satisfied ? iree_ok_status()
+                     : iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
+  }
+  iree_hal_pool_frontier_wait_t wait;
+  iree_notification_initialize(&wait.notification);
+  iree_atomic_store(&wait.resolved, 0, iree_memory_order_relaxed);
+  iree_atomic_store(&wait.completed, 0, iree_memory_order_relaxed);
+  wait.status = iree_ok_status();
+  iree_async_frontier_waiter_t waiter;
+  iree_status_t status = iree_async_frontier_tracker_wait(
+      pool->frontier_tracker, frontier, iree_hal_pool_frontier_wait_resolve,
+      &wait, &waiter);
+  if (iree_status_is_ok(status)) {
+    const bool resolved = iree_notification_await(
+        &wait.notification, iree_hal_pool_frontier_wait_is_resolved, &wait,
+        timeout);
+    if (!resolved && iree_async_frontier_tracker_cancel_wait(
+                         pool->frontier_tracker, &waiter)) {
+      status = iree_status_from_code(IREE_STATUS_DEADLINE_EXCEEDED);
+    } else {
+      // Dispatch won. Join the callback even if the deadline elapsed: observing
+      // resolved does not prove notification_post has stopped touching storage.
+      // This joins only the dispatched callback, never unfinished device work.
+      while (!iree_atomic_load(&wait.completed, iree_memory_order_acquire)) {
+        iree_processor_yield();
+      }
+      status = wait.status;
+    }
+  }
+  iree_notification_deinitialize(&wait.notification);
+  return status;
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
     iree_hal_pool_t* pool, iree_hal_buffer_params_t params,
-    iree_device_size_t allocation_size,
-    const iree_async_frontier_t* requester_frontier, iree_timeout_t timeout,
+    iree_device_size_t allocation_size, iree_timeout_t timeout,
     iree_hal_buffer_t** out_buffer) {
   IREE_ASSERT_ARGUMENT(pool);
   IREE_ASSERT_ARGUMENT(out_buffer);
@@ -127,8 +209,7 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
   };
   iree_hal_buffer_t* buffer = NULL;
 
-  // Convert to absolute so retries after spurious wakes use a consistent
-  // cutoff.
+  // Capacity retries and exact-range completion share one deadline.
   iree_convert_timeout_to_absolute(&timeout);
   iree_async_notification_t* notification = iree_hal_pool_notification(pool);
   iree_status_t status = iree_ok_status();
@@ -141,42 +222,38 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
     iree_hal_pool_acquire_info_t acquire_info;
     iree_hal_pool_acquire_result_t result;
     status = iree_hal_pool_acquire_reservations(
-        pool, 1, &request, requester_frontier, IREE_HAL_POOL_RESERVE_FLAG_NONE,
-        &reservation, &acquire_info, &result);
+        pool, 1, &request, /*requester_frontier=*/NULL,
+        IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER, &reservation,
+        &acquire_info, &result);
     if (iree_status_is_ok(status)) {
       switch (result) {
         case IREE_HAL_POOL_ACQUIRE_OK:
         case IREE_HAL_POOL_ACQUIRE_OK_FRESH:
-          // Reservation succeeded; transfer ownership to the returned buffer.
-          status = iree_hal_pool_materialize_reservations(
-              pool, 1, &request, &reservation,
-              IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
-              &buffer);
+        case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT: {
+          const iree_async_frontier_t* rollback_frontier =
+              acquire_info.reuse_frontier;
+          if (result == IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT) {
+            status = iree_hal_pool_wait_for_frontier(
+                pool, acquire_info.reuse_frontier, timeout);
+            if (iree_status_is_ok(status)) {
+              rollback_frontier = NULL;
+            }
+          }
+          if (iree_status_is_ok(status)) {
+            // Transfer the now-usable reservation to the returned buffer.
+            status = iree_hal_pool_materialize_reservations(
+                pool, 1, &request, &reservation,
+                IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+                &buffer);
+          }
           if (!iree_status_is_ok(status)) {
-            // The reservation was never used. Preserve its prior-use
-            // prerequisite even if this requester already covered it.
+            // A failed wait must preserve the dependency on the previous user.
             iree_hal_pool_release_reservations(pool, 1, &reservation,
-                                               acquire_info.reuse_frontier);
+                                               rollback_frontier);
           }
           retry = false;
           break;
-        case IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT:
-          // Synchronous allocation cannot model a hidden queue wait edge. A
-          // pool used through this helper must skip non-dominated blocks and
-          // return EXHAUSTED/OVER_BUDGET until an immediately-usable
-          // reservation exists. Preserve the block's original frontier and
-          // report a pool implementation bug, not a caller precondition
-          // failure.
-          iree_hal_pool_release_reservations(pool, 1, &reservation,
-                                             acquire_info.reuse_frontier);
-          status = iree_make_status(
-              IREE_STATUS_INTERNAL,
-              "iree_hal_pool_allocate_buffer received an "
-              "IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT reservation from a pool "
-              "that must only return immediately-usable reservations in the "
-              "synchronous helper path");
-          retry = false;
-          break;
+        }
         case IREE_HAL_POOL_ACQUIRE_EXHAUSTED:
         case IREE_HAL_POOL_ACQUIRE_OVER_BUDGET:
           // Wait for a release to advance the notification, then retry.

@@ -310,7 +310,7 @@ TEST_P(AsanAllocationTest, QueueDeallocaReleaseReportsAfterSignal) {
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       options, backend.slab_provider, backend.notification,
-      iree_allocator_system(), pool.out()));
+      backend.frontier_tracker, iree_allocator_system(), pool.out()));
 
   iree_hal_buffer_params_t params = AsanQueueAllocaBufferParams();
   params.queue_family_affinity = iree_hal_make_queue_family_affinity(

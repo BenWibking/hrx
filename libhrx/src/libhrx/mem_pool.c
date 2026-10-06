@@ -205,8 +205,8 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
 
   iree_hal_pool_t* hal_pool = NULL;
   iree_status_t status = iree_hal_tlsf_pool_create(
-      options, slab_provider, backend.notification, backend.epoch_query,
-      iree_allocator_system(), &hal_pool);
+      options, slab_provider, backend.notification, backend.frontier_tracker,
+      backend.epoch_query, iree_allocator_system(), &hal_pool);
   if (!iree_status_is_ok(status)) {
     if (owns_slab_provider) {
       iree_hal_slab_provider_release(slab_provider);
@@ -221,7 +221,7 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
   iree_hal_pool_t* oversized_hal_pool = NULL;
   status = iree_hal_passthrough_pool_create(
       oversized_options, slab_provider, backend.notification,
-      iree_allocator_system(), &oversized_hal_pool);
+      backend.frontier_tracker, iree_allocator_system(), &oversized_hal_pool);
   if (!iree_status_is_ok(status)) {
     iree_hal_pool_release(hal_pool);
     if (owns_slab_provider) {
@@ -532,7 +532,6 @@ static iree_status_t hrx_mem_pool_allocate_hal_buffer(
   }
 
   status = iree_hal_pool_allocate_buffer(hal_pool, params, size,
-                                         /*requester_frontier=*/NULL,
                                          iree_immediate_timeout(), out_buffer);
   if (!iree_status_is_ok(status) &&
       iree_status_code(status) == IREE_STATUS_DEADLINE_EXCEEDED) {

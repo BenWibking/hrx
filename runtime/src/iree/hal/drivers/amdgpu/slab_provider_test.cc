@@ -117,8 +117,8 @@ TEST_F(SlabProviderTest,
 
   iree_hal_buffer_t* buffer = NULL;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      default_pool, params, /*allocation_size=*/128,
-      /*requester_frontier=*/NULL, iree_make_timeout_ms(0), &buffer));
+      default_pool, params, /*allocation_size=*/128, iree_make_timeout_ms(0),
+      &buffer));
   ASSERT_NE(buffer, nullptr);
   EXPECT_GE(iree_hal_buffer_allocation_size(buffer), 128u);
   EXPECT_GE(iree_hal_buffer_byte_length(buffer), 128u);

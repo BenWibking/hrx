@@ -1216,6 +1216,7 @@ iree_status_t iree_hal_amdgpu_physical_device_initialize(
 static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
     iree_hal_amdgpu_physical_device_t* physical_device,
     iree_hal_amdgpu_epoch_signal_table_t* epoch_signal_table,
+    iree_async_frontier_tracker_t* frontier_tracker,
     iree_hal_slab_provider_t* slab_provider,
     iree_hal_tlsf_pool_options_t pool_options, const char* pool_name,
     const char* oversized_pool_name, iree_allocator_t host_allocator,
@@ -1226,6 +1227,7 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
       physical_device->device_ordinal);
   iree_status_t status = iree_hal_tlsf_pool_create(
       pool_options, slab_provider, physical_device->default_pool_notification,
+      frontier_tracker,
       (iree_hal_pool_epoch_query_t){
           .fn = iree_hal_amdgpu_physical_device_query_pool_epoch,
           .user_data = epoch_signal_table,
@@ -1243,8 +1245,8 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
     };
     status = iree_hal_passthrough_pool_create(
         oversized_pool_options, slab_provider,
-        physical_device->default_pool_notification, host_allocator,
-        out_oversized_pool);
+        physical_device->default_pool_notification, frontier_tracker,
+        host_allocator, out_oversized_pool);
   }
   return status;
 }
@@ -1252,13 +1254,14 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_pool_pair(
 static iree_status_t iree_hal_amdgpu_physical_device_create_default_pools(
     iree_hal_amdgpu_physical_device_t* physical_device,
     iree_hal_amdgpu_epoch_signal_table_t* epoch_signal_table,
+    iree_async_frontier_tracker_t* frontier_tracker,
     iree_allocator_t host_allocator) {
   IREE_RETURN_IF_ERROR(iree_hal_pool_set_initialize(
       /*initial_capacity=*/4, host_allocator,
       &physical_device->default_pool_set));
 
   iree_status_t status = iree_hal_amdgpu_physical_device_create_pool_pair(
-      physical_device, epoch_signal_table,
+      physical_device, epoch_signal_table, frontier_tracker,
       physical_device->default_slab_provider,
       physical_device->default_pool_options, "tlsf", "oversized",
       host_allocator, &physical_device->default_pool,
@@ -1269,7 +1272,7 @@ static iree_status_t iree_hal_amdgpu_physical_device_create_default_pools(
       IREE_HAL_AMDGPU_PHYSICAL_DEVICE_HOST_POOL_RANGE_LENGTH_DEFAULT;
   if (iree_status_is_ok(status)) {
     status = iree_hal_amdgpu_physical_device_create_pool_pair(
-        physical_device, epoch_signal_table,
+        physical_device, epoch_signal_table, frontier_tracker,
         physical_device->default_host_slab_provider, host_pool_options,
         "host-tlsf", "host-oversized", host_allocator,
         &physical_device->default_host_pool,
@@ -1433,7 +1436,7 @@ iree_status_t iree_hal_amdgpu_physical_device_assign_frontier(
 
   physical_device->system_event_target = system_event_target;
   iree_status_t status = iree_hal_amdgpu_physical_device_create_default_pools(
-      physical_device, epoch_signal_table, host_allocator);
+      physical_device, epoch_signal_table, frontier_tracker, host_allocator);
   if (iree_status_is_ok(status)) {
     iree_hal_amdgpu_physical_device_initialize_host_queue_construction(
         logical_device, system, proactor, frontier_tracker, epoch_signal_table,

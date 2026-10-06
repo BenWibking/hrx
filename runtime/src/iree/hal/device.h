@@ -314,6 +314,9 @@ typedef struct iree_hal_queue_pool_backend_t {
   // Notification shared by pools over the selected queue memory domain.
   iree_async_notification_t* notification;
 
+  // Borrowed group completion tracker for reservation reuse dependencies.
+  iree_async_frontier_tracker_t* frontier_tracker;
+
   // Optional host-side epoch query for zero-sync block reuse.
   iree_hal_pool_epoch_query_t epoch_query;
 

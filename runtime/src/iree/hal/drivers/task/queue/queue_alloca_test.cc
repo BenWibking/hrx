@@ -108,7 +108,8 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
     options.asan = backend.asan;
     return iree_hal_fixed_block_pool_create(
         options, backend.slab_provider, backend.notification,
-        backend.epoch_query, iree_allocator_system(), out_pool);
+        backend.frontier_tracker, backend.epoch_query, iree_allocator_system(),
+        out_pool);
   }
 
   void TearDown() override {
@@ -305,9 +306,9 @@ TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
 
   uint64_t filled_value = 0;
   for (auto*& buffer : pending_buffers_) {
-    IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-        pool_, requests[0].params, kBlockSize, /*requester_frontier=*/nullptr,
-        iree_immediate_timeout(), &buffer));
+    IREE_ASSERT_OK(
+        iree_hal_pool_allocate_buffer(pool_, requests[0].params, kBlockSize,
+                                      iree_immediate_timeout(), &buffer));
     const uint32_t pattern = 0x1234ABCDu;
     ++filled_value;
     iree_hal_semaphore_list_t filled = {1, &semaphores_[1], &filled_value};

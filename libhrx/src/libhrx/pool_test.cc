@@ -15,6 +15,9 @@ class CpuPoolTest : public ::testing::Test {
     IREE_ASSERT_OK(hrx_status_to_iree(hrx_cpu_initialize(/*flags=*/0)));
     IREE_ASSERT_OK(
         hrx_status_to_iree(hrx_cpu_device_get(/*index=*/0, &device_)));
+    IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+        device_->hal_device, iree_hal_queue_family(device_->transfer_queue),
+        &backend_));
   }
 
   void TearDown() override {
@@ -33,6 +36,8 @@ class CpuPoolTest : public ::testing::Test {
 
   // CPU device supplying backing storage for the pools under test.
   hrx_device_t device_ = nullptr;
+  // Borrowed memory and progress sources from the device's transfer family.
+  iree_hal_queue_pool_backend_t backend_ = {};
 };
 
 TEST_F(CpuPoolTest, ExactPoolDefersNativeAllocationUntilGrowthIsAllowed) {
@@ -55,7 +60,9 @@ TEST_F(CpuPoolTest, ExactPoolDefersNativeAllocationUntilGrowthIsAllowed) {
       &allocator));
   const iree_hal_buffer_params_t params = BufferParams();
   iree_hal_pool_t* pool = nullptr;
-  IREE_ASSERT_OK(hrx_iree_exact_pool_create(allocator, params, &pool));
+  IREE_ASSERT_OK(hrx_iree_exact_pool_create(
+      allocator, params, backend_.notification, backend_.frontier_tracker,
+      iree_allocator_system(), &pool));
 
   for (iree_host_size_t request_count : {1u, 9u}) {
     iree_hal_pool_reservation_request_t requests[9];
@@ -129,8 +136,9 @@ TEST_F(CpuPoolTest, ExactPoolDefersNativeAllocationUntilGrowthIsAllowed) {
 TEST_F(CpuPoolTest, BatchedReservationsRetainPoolUntilRelease) {
   const iree_hal_buffer_params_t params = BufferParams();
   iree_hal_pool_t* pool = nullptr;
-  IREE_ASSERT_OK(hrx_iree_exact_pool_create(device_->allocator.hal_allocator,
-                                            params, &pool));
+  IREE_ASSERT_OK(hrx_iree_exact_pool_create(
+      device_->allocator.hal_allocator, params, backend_.notification,
+      backend_.frontier_tracker, iree_allocator_system(), &pool));
 
   const iree_hal_pool_reservation_request_t requests[2] = {
       {/*.params=*/params, /*.allocation_size=*/4096},
@@ -168,13 +176,14 @@ TEST_F(CpuPoolTest, BatchedReservationsRetainPoolUntilRelease) {
 TEST_F(CpuPoolTest, TransferredReservationOwnsBackingBuffer) {
   const iree_hal_buffer_params_t params = BufferParams();
   iree_hal_pool_t* pool = nullptr;
-  IREE_ASSERT_OK(hrx_iree_exact_pool_create(device_->allocator.hal_allocator,
-                                            params, &pool));
+  IREE_ASSERT_OK(hrx_iree_exact_pool_create(
+      device_->allocator.hal_allocator, params, backend_.notification,
+      backend_.frontier_tracker, iree_allocator_system(), &pool));
 
   iree_hal_buffer_t* buffer = nullptr;
-  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool, params, /*allocation_size=*/4096, /*requester_frontier=*/nullptr,
-      iree_infinite_timeout(), &buffer));
+  IREE_ASSERT_OK(
+      iree_hal_pool_allocate_buffer(pool, params, /*allocation_size=*/4096,
+                                    iree_infinite_timeout(), &buffer));
 
   iree_hal_buffer_release(buffer);
   iree_hal_pool_release(pool);
@@ -184,8 +193,9 @@ TEST_F(CpuPoolTest, AcceptsWeakerAndRejectsInvalidOrStrongerAlignment) {
   iree_hal_buffer_params_t params = BufferParams();
   params.min_alignment = 8;
   iree_hal_pool_t* pool = nullptr;
-  IREE_ASSERT_OK(hrx_iree_exact_pool_create(device_->allocator.hal_allocator,
-                                            params, &pool));
+  IREE_ASSERT_OK(hrx_iree_exact_pool_create(
+      device_->allocator.hal_allocator, params, backend_.notification,
+      backend_.frontier_tracker, iree_allocator_system(), &pool));
 
   iree_hal_pool_reservation_request_t request = {
       /*.params=*/params,

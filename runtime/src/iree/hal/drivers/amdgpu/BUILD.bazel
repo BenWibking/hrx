@@ -928,6 +928,7 @@ iree_runtime_cc_test(
     deps = [
         ":amdgpu",
         ":headers",
+        "//build_tools/bazel:pthreads",
         "//runtime/src/iree/async",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",

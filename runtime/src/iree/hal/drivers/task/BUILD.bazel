@@ -161,8 +161,6 @@ iree_runtime_cc_library(
         "//runtime/src/iree/hal/drivers/task/executable:loader",
         "//runtime/src/iree/hal/drivers/task/queue",
         "//runtime/src/iree/hal/memory:cpu_slab_provider",
-        "//runtime/src/iree/hal/memory:passthrough_pool",
-        "//runtime/src/iree/hal/memory:tlsf_pool",
         "//runtime/src/iree/hal/utils:files",
         "//runtime/src/iree/task",
     ],

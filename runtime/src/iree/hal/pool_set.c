@@ -168,8 +168,7 @@ iree_hal_pool_t* iree_hal_pool_set_select(const iree_hal_pool_set_t* pool_set,
 
 iree_status_t iree_hal_pool_set_allocate_buffer(
     iree_hal_pool_set_t* pool_set, iree_hal_buffer_params_t params,
-    iree_device_size_t allocation_size,
-    const iree_async_frontier_t* requester_frontier, iree_timeout_t timeout,
+    iree_device_size_t allocation_size, iree_timeout_t timeout,
     iree_hal_buffer_t** out_buffer) {
   IREE_ASSERT_ARGUMENT(pool_set);
   IREE_ASSERT_ARGUMENT(out_buffer);
@@ -187,6 +186,6 @@ iree_status_t iree_hal_pool_set_allocate_buffer(
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(pool, &capabilities);
   iree_hal_pool_set_apply_optimal_memory_type(&capabilities, &params);
-  return iree_hal_pool_allocate_buffer(pool, params, allocation_size,
-                                       requester_frontier, timeout, out_buffer);
+  return iree_hal_pool_allocate_buffer(pool, params, allocation_size, timeout,
+                                       out_buffer);
 }

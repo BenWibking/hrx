@@ -45,8 +45,18 @@ iree_status_t iree_hal_vulkan_allocator_create(
     iree_host_size_t queue_family_count,
     const iree_hal_vulkan_allocator_queue_family_t* queue_families,
     iree_hal_vulkan_queue_t* sparse_binding_queue,
-    iree_async_proactor_t* proactor, iree_allocator_t host_allocator,
-    iree_hal_allocator_t** out_allocator);
+    iree_allocator_t host_allocator, iree_hal_allocator_t** out_allocator);
+
+// Creates the allocator's pools after the device's group tracker is known.
+// The pools borrow |frontier_tracker| until deinitialization. The caller keeps
+// |proactor| alive through pool teardown.
+iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
+    iree_hal_allocator_t* base_allocator, iree_async_proactor_t* proactor,
+    iree_async_frontier_tracker_t* frontier_tracker);
+
+// Releases the allocator's pools before retiring its group completion state.
+void iree_hal_vulkan_allocator_deinitialize_default_pools(
+    iree_hal_allocator_t* base_allocator);
 
 // Allocates one whole Vulkan buffer from a required memory type index.
 //

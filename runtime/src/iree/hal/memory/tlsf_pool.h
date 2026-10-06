@@ -60,10 +60,13 @@ typedef struct iree_hal_tlsf_pool_options_t {
 // slab instead of returning wait-frontier reservations; queue-visible
 // backpressure remains a budget/provider concern, not a hidden dependency
 // between arbitrary transient allocations.
+// The pool borrows |frontier_tracker| for reservation reuse dependencies. Its
+// owning group must outlive the pool and all operations using it.
 IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create(
     iree_hal_tlsf_pool_options_t options,
     iree_hal_slab_provider_t* slab_provider,
     iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker,
     iree_hal_pool_epoch_query_t epoch_query, iree_allocator_t host_allocator,
     iree_hal_pool_t** out_pool);
 

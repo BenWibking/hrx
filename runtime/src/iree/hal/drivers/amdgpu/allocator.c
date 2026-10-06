@@ -1450,7 +1450,7 @@ static iree_status_t iree_hal_amdgpu_allocator_allocate_asan_pool_buffer(
   iree_hal_buffer_t* allocation_buffer = NULL;
   iree_status_t status = iree_hal_pool_set_allocate_buffer(
       &physical_device->default_pool_set, params, pool_allocation_size,
-      /*requester_frontier=*/NULL, iree_infinite_timeout(), &allocation_buffer);
+      iree_infinite_timeout(), &allocation_buffer);
   if (iree_status_is_ok(status) &&
       iree_hal_buffer_byte_length(allocation_buffer) != byte_length) {
     status = iree_hal_buffer_subspan(allocation_buffer, /*byte_offset=*/0,

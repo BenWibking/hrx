@@ -49,7 +49,7 @@ class DispatchPipelineTest : public CtsTestBase<> {
     options.asan = backend.asan;
     IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
         options, backend.slab_provider, backend.notification,
-        iree_allocator_system(), &transient_pool_));
+        backend.frontier_tracker, iree_allocator_system(), &transient_pool_));
 
     // Load the scale_and_offset kernel:
     //   output[i] = input[i] * scale + offset

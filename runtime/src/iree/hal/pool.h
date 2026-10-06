@@ -21,6 +21,7 @@ extern "C" {
 #endif  // __cplusplus
 
 typedef struct iree_async_notification_t iree_async_notification_t;
+typedef struct iree_async_frontier_tracker_t iree_async_frontier_tracker_t;
 
 //===----------------------------------------------------------------------===//
 // Types and Enums
@@ -394,8 +395,9 @@ static inline iree_hal_pool_epoch_query_t iree_hal_pool_epoch_query_null(void) {
 // Synchronous allocation:
 //   iree_hal_pool_allocate_buffer(): submits one-element acquire and
 //   materialize transactions with TRANSFER_RESERVATION_OWNERSHIP in a loop,
-//   waiting on the pool's notification if exhausted. This is a shared utility,
-//   not a vtable method.
+//   waiting on the pool's notification if exhausted or its captured completion
+//   tracker if a reserved range still has a pending death frontier. This is a
+//   shared utility, not a vtable method.
 //
 // ## Death frontier integration
 //
@@ -575,31 +577,34 @@ IREE_API_EXPORT iree_async_notification_t* iree_hal_pool_notification(
 // This is a shared utility (NOT a vtable method) that calls
 // one-element acquire and materialize transactions in a loop. If acquisition
 // returns EXHAUSTED or OVER_BUDGET, the function waits on the pool's
-// notification for |timeout| and retries.
+// notification and retries. An allocation may instead reserve a range
+// with pending reuse dependencies and wait for that exact frontier through the
+// completion tracker captured by the pool.
 //
-// |requester_frontier| is passed to reservation acquisition for dominance
-// checking. Pass NULL to skip dominance checking (appropriate for persistent
-// buffers that aren't queue-ordered).
+// Success establishes actual completion of prior accesses before returning the
+// buffer. A queue dependency frontier cannot substitute for that completion.
 //
 // This helper is synchronous-only. Queue implementations must not call it for
 // queue_alloca, because queue-owned memory-frontier waits and pool-notification
 // retries are scheduler state, not host-thread blocking in this helper.
 //
-// |timeout| controls how long to wait for a free block. Converted to an
-// absolute deadline internally so retries after spurious wakes use a
-// consistent cutoff:
-//   iree_make_timeout_ms(0): try once, fail immediately if exhausted.
-//   iree_infinite_timeout(): block until a block becomes available.
+// |timeout| is converted to one absolute deadline shared by capacity waits,
+// retries and frontier completion:
+//   iree_immediate_timeout(): poll completion without registering a waiter.
+//   iree_infinite_timeout(): block until a usable range becomes available.
 //   iree_make_timeout_ms(N): wait up to N milliseconds.
 //
-// Returns IREE_STATUS_DEADLINE_EXCEEDED if |timeout| is reached before an
-// immediately-usable reservation can be acquired. This uses iree_make_status()
-// because it represents a terminal failure visible to the application, not a
-// transient hot-path condition.
+// Returns IREE_STATUS_DEADLINE_EXCEEDED when a capacity wait times out or a
+// timed-out frontier wait is successfully cancelled. If frontier callback
+// dispatch wins the cancellation race, the function joins that callback and
+// continues with its actual result, which may extend beyond the deadline.
+// Callback storage is no longer in use when this function returns.
+//
+// A failed frontier wait returns the reservation with its original dependency
+// intact. |out_buffer| is assigned only on success and is otherwise unchanged.
 IREE_API_EXPORT iree_status_t iree_hal_pool_allocate_buffer(
     iree_hal_pool_t* pool, iree_hal_buffer_params_t params,
-    iree_device_size_t allocation_size,
-    const iree_async_frontier_t* requester_frontier, iree_timeout_t timeout,
+    iree_device_size_t allocation_size, iree_timeout_t timeout,
     iree_hal_buffer_t** out_buffer);
 
 //===----------------------------------------------------------------------===//
@@ -646,9 +651,6 @@ typedef struct iree_hal_pool_vtable_t {
   void(IREE_API_PTR* trim)(iree_hal_pool_t* pool,
                            iree_hal_pool_trim_flags_t flags,
                            iree_device_size_t min_bytes_to_keep);
-
-  // Returns the notification used for pool availability changes.
-  iree_async_notification_t*(IREE_API_PTR* notification)(iree_hal_pool_t* pool);
 } iree_hal_pool_vtable_t;
 IREE_HAL_ASSERT_VTABLE_LAYOUT(iree_hal_pool_vtable_t);
 
@@ -656,11 +658,26 @@ IREE_HAL_ASSERT_VTABLE_LAYOUT(iree_hal_pool_vtable_t);
 struct iree_hal_pool_t {
   // Base HAL resource state. Must be at offset zero.
   iree_hal_resource_t resource;
+
+  // Owned notification for changes in this pool's available capacity.
+  iree_async_notification_t* notification;
+
+  // Borrowed completion tracker for all frontiers used with this pool.
+  // Its owning device group must outlive the pool and its operations.
+  iree_async_frontier_tracker_t* frontier_tracker;
 };
 
-// Initializes |out_pool| with one owning reference.
+// Initializes |out_pool| with one owning reference. Retains |notification| and
+// borrows the non-NULL |frontier_tracker|. Both are immutable for the pool's
+// lifetime; all reservation frontiers use the tracker's registered axes.
 IREE_API_EXPORT void iree_hal_pool_initialize(
-    const iree_hal_pool_vtable_t* vtable, iree_hal_pool_t* out_pool);
+    const iree_hal_pool_vtable_t* vtable,
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker, iree_hal_pool_t* out_pool);
+
+// Releases common pool state during concrete destruction. The notification's
+// proactor must remain alive until this call returns.
+IREE_API_EXPORT void iree_hal_pool_deinitialize(iree_hal_pool_t* pool);
 
 IREE_API_EXPORT void iree_hal_pool_destroy(iree_hal_pool_t* pool);
 

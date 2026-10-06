@@ -121,8 +121,7 @@ iree_hal_pool_t* iree_hal_pool_set_select(const iree_hal_pool_set_t* pool_set,
 // Returns IREE_STATUS_NOT_FOUND if no pool matches the parameters.
 iree_status_t iree_hal_pool_set_allocate_buffer(
     iree_hal_pool_set_t* pool_set, iree_hal_buffer_params_t params,
-    iree_device_size_t allocation_size,
-    const iree_async_frontier_t* requester_frontier, iree_timeout_t timeout,
+    iree_device_size_t allocation_size, iree_timeout_t timeout,
     iree_hal_buffer_t** out_buffer);
 
 #ifdef __cplusplus

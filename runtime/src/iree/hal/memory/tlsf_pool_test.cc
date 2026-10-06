@@ -6,6 +6,7 @@
 
 #include "iree/hal/memory/tlsf_pool.h"
 
+#include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
 #include "iree/async/proactor.h"
 #include "iree/async/proactor_platform.h"
@@ -15,6 +16,25 @@
 #include "iree/testing/status_matchers.h"
 
 namespace {
+
+static iree_async_frontier_tracker_t* test_frontier_tracker() {
+  static iree_async_frontier_tracker_t* tracker = nullptr;
+  if (!tracker) {
+    IREE_CHECK_OK(iree_async_frontier_tracker_create(
+        iree_async_frontier_tracker_options_default(), iree_allocator_system(),
+        &tracker));
+    for (uint8_t queue_index = 0; queue_index < 2; ++queue_index) {
+      IREE_CHECK_OK(iree_async_frontier_tracker_register_axis(
+          tracker, iree_async_axis_make_queue(1, 0, 0, queue_index, 0),
+          nullptr));
+    }
+    atexit([] {
+      iree_async_frontier_tracker_release(tracker);
+      tracker = nullptr;
+    });
+  }
+  return tracker;
+}
 
 static iree_async_proactor_t* test_proactor() {
   static iree_async_proactor_t* proactor = nullptr;
@@ -380,7 +400,8 @@ class TLSFPoolTest : public ::testing::Test {
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
     IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
         DefaultOptions(), slab_provider_, notification_,
-        iree_hal_pool_epoch_query_null(), allocator_, &pool_));
+        test_frontier_tracker(), iree_hal_pool_epoch_query_null(), allocator_,
+        &pool_));
   }
 
   void TearDown() override {
@@ -626,8 +647,8 @@ TEST_F(TLSFPoolTest, TrimRetainsByteThresholdForIdleSlabs) {
   const auto request = MakeReservationRequest(128, 16);
   iree_hal_buffer_t* buffer = nullptr;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool_, request.params, request.allocation_size,
-      /*requester_frontier=*/nullptr, iree_immediate_timeout(), &buffer));
+      pool_, request.params, request.allocation_size, iree_immediate_timeout(),
+      &buffer));
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.slab_count, 1u);
   EXPECT_EQ(stats.reservation_count, 1u);
@@ -648,13 +669,13 @@ TEST(TLSFPool, TrimRetainsSlabUntilDeathFrontierCompletes) {
       /*.query_count=*/0,
   };
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(
-      iree_hal_tlsf_pool_create(DefaultOptions(), slab_provider, notification,
-                                (iree_hal_pool_epoch_query_t){
-                                    /*.fn=*/iree_hal_test_epoch_query,
-                                    /*.user_data=*/&query,
-                                },
-                                allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      DefaultOptions(), slab_provider, notification, test_frontier_tracker(),
+      (iree_hal_pool_epoch_query_t){
+          /*.fn=*/iree_hal_test_epoch_query,
+          /*.user_data=*/&query,
+      },
+      allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t acquire_info;
@@ -702,13 +723,13 @@ TEST(TLSFPool, TrimRetainsSlabWithTaintedDeathFrontier) {
       /*.query_count=*/0,
   };
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(
-      iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                (iree_hal_pool_epoch_query_t){
-                                    /*.fn=*/iree_hal_test_epoch_query,
-                                    /*.user_data=*/&query,
-                                },
-                                allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      (iree_hal_pool_epoch_query_t){
+          /*.fn=*/iree_hal_test_epoch_query,
+          /*.user_data=*/&query,
+      },
+      allocator, &pool));
 
   iree_hal_pool_reservation_t reservations[2];
   iree_hal_pool_acquire_info_t acquire_info;
@@ -754,7 +775,7 @@ TEST(TLSFPool, ReleaseNodeReuseAvoidsRepeatedHostAllocation) {
 
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      DefaultOptions(), slab_provider, notification,
+      DefaultOptions(), slab_provider, notification, test_frontier_tracker(),
       iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   const iree_host_size_t allocation_call_count_after_create =
@@ -884,7 +905,7 @@ TEST(TLSFPool, MaterializationFailurePreservesReuseFrontier) {
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      DefaultOptions(), slab_provider, notification,
+      DefaultOptions(), slab_provider, notification, test_frontier_tracker(),
       iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
@@ -901,10 +922,19 @@ TEST(TLSFPool, MaterializationFailurePreservesReuseFrontier) {
   iree_hal_buffer_params_t params = MakeReservationRequest(256, 16).params;
   params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
   iree_hal_buffer_t* buffer = NULL;
+  const iree_hal_pool_reservation_request_t request = {params, 256};
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool, 1, &request, death, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      &reservation, &info, &result));
+  ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_RESOURCE_EXHAUSTED,
-      iree_hal_pool_allocate_buffer(pool, params, 256, death,
-                                    iree_immediate_timeout(), &buffer));
+      iree_hal_pool_materialize_reservations(
+          pool, 1, &request, &reservation,
+          IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+          &buffer));
+  iree_hal_pool_release_reservations(pool, 1, &reservation,
+                                     info.reuse_frontier);
   EXPECT_EQ(buffer, nullptr);
 
   // The failed allocation covered the prerequisite without completing it.
@@ -916,8 +946,10 @@ TEST(TLSFPool, MaterializationFailurePreservesReuseFrontier) {
   EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
 
   provider->fail_wrap = false;
+  iree_async_frontier_tracker_advance(test_frontier_tracker(), TestQueueAxis(0),
+                                      10);
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool, params, 256, death, iree_immediate_timeout(), &buffer));
+      pool, params, 256, iree_immediate_timeout(), &buffer));
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
                                            IREE_HAL_MEMORY_ACCESS_ALL, 0, 256,
@@ -943,13 +975,13 @@ TEST(TLSFPool, SplitRangesRetainReadinessUntilCompletion) {
   auto options = DefaultOptions();
   options.tlsf_options.range_length = 1024;
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(
-      iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                iree_hal_pool_epoch_query_t{
-                                    /*.fn=*/iree_hal_test_epoch_query,
-                                    /*.user_data=*/&epoch_query,
-                                },
-                                allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_t{
+          /*.fn=*/iree_hal_test_epoch_query,
+          /*.user_data=*/&epoch_query,
+      },
+      allocator, &pool));
 
   iree_hal_pool_reservation_t whole_range;
   iree_hal_pool_acquire_info_t info;
@@ -1013,9 +1045,9 @@ TEST(TLSFPool, ReserveSkipsStaleHeadAndReturnsFreshLaterBlock) {
   options.tlsf_options.frontier_capacity = 2;
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t left_stale;
   iree_hal_pool_reservation_t middle_live;
@@ -1084,9 +1116,9 @@ TEST(TLSFPool, ReserveGrowsInsteadOfWaitingForStaleBlock) {
   options.tlsf_options.range_length = 256;
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1139,9 +1171,9 @@ TEST(TLSFPool, ReserveCanReportGrowthRequiredWithoutGrowing) {
   options.tlsf_options.range_length = 256;
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1199,9 +1231,9 @@ TEST(TLSFPool, ReserveRejectedTaintRemainsRejected) {
   options.tlsf_options.frontier_capacity = 1;
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1329,7 +1361,7 @@ TEST(TLSFPool, UsesProviderHooks) {
 
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      DefaultOptions(), slab_provider, notification,
+      DefaultOptions(), slab_provider, notification, test_frontier_tracker(),
       iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_capabilities_t capabilities;
@@ -1409,9 +1441,9 @@ TEST(TLSFPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   iree_hal_pool_t* pool = NULL;
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_FAILED_PRECONDITION,
-      iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                iree_hal_pool_epoch_query_null(), allocator,
-                                &pool));
+      iree_hal_tlsf_pool_create(
+          options, slab_provider, notification, test_frontier_tracker(),
+          iree_hal_pool_epoch_query_null(), allocator, &pool));
   EXPECT_EQ(pool, nullptr);
 
   iree_async_notification_release(notification);
@@ -1433,9 +1465,9 @@ TEST(TLSFPool, ASANAdvisesBackingRangeAndExposesUserRange) {
   options.asan = ShadowOptions();
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1528,9 +1560,9 @@ TEST(TLSFPool, ASANQuarantineDelaysReleasedRangeReuse) {
   options.asan.quarantine_size = 128;
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t first_reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1586,9 +1618,9 @@ TEST(TLSFPool, ASANZeroQuarantineReusesReleasedRangeImmediately) {
   options.asan.quarantine_size = 0;
 
   iree_hal_pool_t* pool = NULL;
-  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(options, slab_provider, notification,
-                                           iree_hal_pool_epoch_query_null(),
-                                           allocator, &pool));
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, slab_provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
 
   iree_hal_pool_reservation_t first_reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -1633,8 +1665,8 @@ TEST_F(TLSFPoolTest, QueryCapabilitiesAndBudget) {
   iree_hal_tlsf_pool_options_t options = DefaultOptions();
   options.budget_limit = 63;
   IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
-      options, slab_provider_, notification_, iree_hal_pool_epoch_query_null(),
-      allocator_, &pool_));
+      options, slab_provider_, notification_, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator_, &pool_));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;

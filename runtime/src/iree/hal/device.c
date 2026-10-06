@@ -255,6 +255,7 @@ IREE_API_EXPORT iree_status_t iree_hal_device_query_queue_pool_backend(
   iree_status_t status = _VTABLE_DISPATCH(device, query_queue_pool_backend)(
       device, queue_family, &backend);
   if (iree_status_is_ok(status)) {
+    backend.frontier_tracker = topology_info->frontier.tracker;
     *out_backend = backend;
   }
   return status;

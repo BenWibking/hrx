@@ -6,6 +6,7 @@
 
 #include "iree/hal/memory/passthrough_pool.h"
 
+#include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
 #include "iree/async/proactor.h"
 #include "iree/async/proactor_platform.h"
@@ -15,6 +16,20 @@
 #include "iree/testing/status_matchers.h"
 
 namespace {
+
+static iree_async_frontier_tracker_t* test_frontier_tracker() {
+  static iree_async_frontier_tracker_t* tracker = nullptr;
+  if (!tracker) {
+    IREE_CHECK_OK(iree_async_frontier_tracker_create(
+        iree_async_frontier_tracker_options_default(), iree_allocator_system(),
+        &tracker));
+    atexit([] {
+      iree_async_frontier_tracker_release(tracker);
+      tracker = nullptr;
+    });
+  }
+  return tracker;
+}
 
 static iree_async_proactor_t* test_proactor() {
   static iree_async_proactor_t* proactor = nullptr;
@@ -240,7 +255,8 @@ class PassthroughPoolTest : public ::testing::Test {
         test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification_));
     iree_hal_passthrough_pool_options_t options = {};
     IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-        options, slab_provider_, notification_, allocator_, &pool_));
+        options, slab_provider_, notification_, test_frontier_tracker(),
+        allocator_, &pool_));
   }
 
   void TearDown() override {
@@ -354,7 +370,8 @@ TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      {}, provider, notification, allocations.allocator(), &pool));
+      {}, provider, notification, test_frontier_tracker(),
+      allocations.allocator(), &pool));
 
   // Include a transaction larger than inline staging to cover metadata growth.
   for (iree_host_size_t request_count : {1u, 9u}) {
@@ -503,7 +520,8 @@ TEST(PassthroughPool, FailedMaterializationTransactionRetainsEveryReservation) {
   iree_hal_passthrough_pool_options_t options = {};
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      options, slab_provider, notification, allocator, &pool));
+      options, slab_provider, notification, test_frontier_tracker(), allocator,
+      &pool));
 
   const iree_hal_pool_reservation_request_t requests[3] = {
       MakeReservationRequest(64, 16),
@@ -669,7 +687,8 @@ TEST(PassthroughPool, UsesProviderHooks) {
   iree_hal_pool_t* pool = NULL;
   iree_hal_passthrough_pool_options_t options = {};
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      options, slab_provider, notification, allocator, &pool));
+      options, slab_provider, notification, test_frontier_tracker(), allocator,
+      &pool));
 
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(pool, &capabilities);
@@ -746,10 +765,10 @@ TEST(PassthroughPool, CreateRejectsASANWhenProviderCannotAdviseRanges) {
   options.asan = ShadowOptions();
 
   iree_hal_pool_t* pool = NULL;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_FAILED_PRECONDITION,
-      iree_hal_passthrough_pool_create(options, slab_provider, notification,
-                                       allocator, &pool));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_FAILED_PRECONDITION,
+                        iree_hal_passthrough_pool_create(
+                            options, slab_provider, notification,
+                            test_frontier_tracker(), allocator, &pool));
   EXPECT_EQ(pool, nullptr);
 
   iree_async_notification_release(notification);
@@ -770,7 +789,8 @@ TEST(PassthroughPool, ASANAdvisesBackingRangeAndExposesUserRange) {
 
   iree_hal_pool_t* pool = NULL;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      options, slab_provider, notification, allocator, &pool));
+      options, slab_provider, notification, test_frontier_tracker(), allocator,
+      &pool));
 
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -932,7 +952,7 @@ TEST_F(PassthroughPoolTest, AllocateBuffer) {
 
   iree_hal_buffer_t* buffer = NULL;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool_, params, 2048, NULL, iree_make_timeout_ms(0), &buffer));
+      pool_, params, 2048, iree_make_timeout_ms(0), &buffer));
   ASSERT_NE(buffer, nullptr);
   EXPECT_EQ(iree_hal_buffer_allocation_size(buffer), 2048u);
   EXPECT_EQ(iree_hal_buffer_byte_length(buffer), 2048u);
@@ -956,7 +976,7 @@ TEST_F(PassthroughPoolTest, WrappedBuffersBorrowPool) {
 
   iree_hal_buffer_t* buffer = NULL;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
-      pool_, params, 512, NULL, iree_make_timeout_ms(0), &buffer));
+      pool_, params, 512, iree_make_timeout_ms(0), &buffer));
 
   // Wrapped buffers borrow the pool. Use the buffer while the pool is still
   // alive, then release the buffer before releasing the pool.

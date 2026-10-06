@@ -68,9 +68,9 @@ class QueueAllocaTest : public CtsTestBase<> {
     }
     iree_hal_passthrough_pool_options_t options = {};
     options.asan = backend.asan;
-    return iree_hal_passthrough_pool_create(options, backend.slab_provider,
-                                            backend.notification,
-                                            iree_allocator_system(), out_pool);
+    return iree_hal_passthrough_pool_create(
+        options, backend.slab_provider, backend.notification,
+        backend.frontier_tracker, iree_allocator_system(), out_pool);
   }
 
   iree_status_t CreateTLSFPool(iree_device_size_t range_length,
@@ -87,9 +87,10 @@ class QueueAllocaTest : public CtsTestBase<> {
     options.tlsf_options.alignment = IREE_HAL_MEMORY_TLSF_MIN_ALIGNMENT;
     options.tlsf_options.frontier_capacity = 2;
     options.asan = backend.asan;
-    return iree_hal_tlsf_pool_create(options, backend.slab_provider,
-                                     backend.notification, backend.epoch_query,
-                                     iree_allocator_system(), out_pool);
+    return iree_hal_tlsf_pool_create(
+        options, backend.slab_provider, backend.notification,
+        backend.frontier_tracker, backend.epoch_query, iree_allocator_system(),
+        out_pool);
   }
 
   iree_status_t CreateFixedBlockPool(iree_device_size_t block_size,
@@ -108,9 +109,10 @@ class QueueAllocaTest : public CtsTestBase<> {
     options.block_allocator_options.block_count = block_count;
     options.block_allocator_options.frontier_capacity = 2;
     options.asan = backend.asan;
-    return iree_hal_fixed_block_pool_create(options, backend.slab_provider,
-                                            backend.notification, epoch_query,
-                                            iree_allocator_system(), out_pool);
+    return iree_hal_fixed_block_pool_create(
+        options, backend.slab_provider, backend.notification,
+        backend.frontier_tracker, epoch_query, iree_allocator_system(),
+        out_pool);
   }
 
   iree_hal_queue_t* FindSiblingQueue(iree_hal_queue_t* queue) {

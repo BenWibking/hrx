@@ -201,6 +201,8 @@ iree_cc_test(
     iree::async
     iree::async::platform
     iree::base
+    iree::hal::memory::cpu_slab_provider
+    iree::hal::memory::fixed_block_pool
     iree::testing::gtest
     iree::testing::gtest_main
 )

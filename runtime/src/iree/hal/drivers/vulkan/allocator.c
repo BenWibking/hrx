@@ -198,12 +198,6 @@ struct iree_hal_vulkan_allocator_t {
 
 static const iree_hal_allocator_vtable_t iree_hal_vulkan_allocator_vtable;
 
-static iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
-    iree_hal_vulkan_allocator_t* allocator, iree_async_proactor_t* proactor);
-
-static void iree_hal_vulkan_allocator_deinitialize_default_pools(
-    iree_hal_vulkan_allocator_t* allocator);
-
 static iree_hal_vulkan_allocator_t* iree_hal_vulkan_allocator_cast(
     iree_hal_allocator_t* base_value) {
   IREE_HAL_ASSERT_TYPE(base_value, &iree_hal_vulkan_allocator_vtable);
@@ -280,14 +274,12 @@ iree_status_t iree_hal_vulkan_allocator_create(
     iree_host_size_t queue_family_count,
     const iree_hal_vulkan_allocator_queue_family_t* queue_families,
     iree_hal_vulkan_queue_t* sparse_binding_queue,
-    iree_async_proactor_t* proactor, iree_allocator_t host_allocator,
-    iree_hal_allocator_t** out_allocator) {
+    iree_allocator_t host_allocator, iree_hal_allocator_t** out_allocator) {
   IREE_ASSERT_ARGUMENT(parent_device);
   IREE_ASSERT_ARGUMENT(syms);
   IREE_ASSERT_ARGUMENT(logical_device);
   IREE_ASSERT_ARGUMENT(physical_device);
   IREE_ASSERT_ARGUMENT(queue_families);
-  IREE_ASSERT_ARGUMENT(proactor);
   IREE_ASSERT_ARGUMENT(out_allocator);
   *out_allocator = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_allocator_validate_queue_family_mappings(
@@ -326,15 +318,9 @@ iree_status_t iree_hal_vulkan_allocator_create(
   allocator->sparse_binding_queue = sparse_binding_queue;
   iree_slim_mutex_initialize(&allocator->virtual_memory_mutex);
 
-  iree_status_t status =
-      iree_hal_vulkan_allocator_initialize_default_pools(allocator, proactor);
-  if (iree_status_is_ok(status)) {
-    *out_allocator = (iree_hal_allocator_t*)allocator;
-  } else {
-    iree_hal_allocator_release((iree_hal_allocator_t*)allocator);
-  }
+  *out_allocator = (iree_hal_allocator_t*)allocator;
   IREE_TRACE_ZONE_END(z0);
-  return status;
+  return iree_ok_status();
 }
 
 static void iree_hal_vulkan_allocator_destroy(
@@ -344,7 +330,7 @@ static void iree_hal_vulkan_allocator_destroy(
   iree_allocator_t host_allocator = allocator->host_allocator;
   IREE_TRACE_ZONE_BEGIN(z0);
 
-  iree_hal_vulkan_allocator_deinitialize_default_pools(allocator);
+  iree_hal_vulkan_allocator_deinitialize_default_pools(base_allocator);
   iree_hal_vulkan_allocator_deinitialize_virtual_memory_registry(allocator);
   iree_allocator_free(host_allocator, allocator);
 
@@ -615,7 +601,8 @@ static iree_string_view_t iree_hal_vulkan_allocator_format_pool_trace_name(
 }
 
 static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
-    iree_hal_vulkan_allocator_t* allocator, uint32_t memory_type_index,
+    iree_hal_vulkan_allocator_t* allocator,
+    iree_async_frontier_tracker_t* frontier_tracker, uint32_t memory_type_index,
     iree_hal_memory_type_t memory_type,
     VkMemoryPropertyFlags memory_property_flags,
     iree_hal_buffer_usage_t supported_usage,
@@ -685,8 +672,9 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
     };
     status = iree_hal_tlsf_pool_create(
         tlsf_options, out_pool_pair->slab_provider,
-        allocator->default_pool_notification, iree_hal_pool_epoch_query_null(),
-        allocator->host_allocator, &out_pool_pair->tlsf_pool);
+        allocator->default_pool_notification, frontier_tracker,
+        iree_hal_pool_epoch_query_null(), allocator->host_allocator,
+        &out_pool_pair->tlsf_pool);
   }
 
   char oversized_trace_storage[64] = {0};
@@ -698,8 +686,8 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
     };
     status = iree_hal_passthrough_pool_create(
         oversized_options, out_pool_pair->slab_provider,
-        allocator->default_pool_notification, allocator->host_allocator,
-        &out_pool_pair->oversized_pool);
+        allocator->default_pool_notification, frontier_tracker,
+        allocator->host_allocator, &out_pool_pair->oversized_pool);
   }
 
   if (!iree_status_is_ok(status)) {
@@ -713,8 +701,10 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
   return status;
 }
 
-static void iree_hal_vulkan_allocator_deinitialize_default_pools(
-    iree_hal_vulkan_allocator_t* allocator) {
+void iree_hal_vulkan_allocator_deinitialize_default_pools(
+    iree_hal_allocator_t* base_allocator) {
+  iree_hal_vulkan_allocator_t* allocator =
+      iree_hal_vulkan_allocator_cast(base_allocator);
   for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
     iree_hal_pool_release(allocator->pool_pairs[i].oversized_pool);
     iree_hal_pool_release(allocator->pool_pairs[i].tlsf_pool);
@@ -727,8 +717,11 @@ static void iree_hal_vulkan_allocator_deinitialize_default_pools(
   allocator->default_pool_notification = NULL;
 }
 
-static iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
-    iree_hal_vulkan_allocator_t* allocator, iree_async_proactor_t* proactor) {
+iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
+    iree_hal_allocator_t* base_allocator, iree_async_proactor_t* proactor,
+    iree_async_frontier_tracker_t* frontier_tracker) {
+  iree_hal_vulkan_allocator_t* allocator =
+      iree_hal_vulkan_allocator_cast(base_allocator);
   IREE_TRACE_ZONE_BEGIN(z0);
 
   allocator->default_pool_alignment =
@@ -802,8 +795,8 @@ static iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
         iree_hal_vulkan_allowed_usage_from_memory_type(memory_type);
     iree_hal_vulkan_allocator_pool_pair_t pool_pair;
     status = iree_hal_vulkan_allocator_create_pool_pair(
-        allocator, i, memory_type, vk_memory_type->propertyFlags,
-        supported_usage, &pool_pair);
+        allocator, frontier_tracker, i, memory_type,
+        vk_memory_type->propertyFlags, supported_usage, &pool_pair);
     if (!iree_status_is_ok(status)) {
       break;
     }
@@ -823,7 +816,7 @@ static iree_status_t iree_hal_vulkan_allocator_initialize_default_pools(
         "Vulkan physical device reports no memory types for default pools");
   }
   if (!iree_status_is_ok(status)) {
-    iree_hal_vulkan_allocator_deinitialize_default_pools(allocator);
+    iree_hal_vulkan_allocator_deinitialize_default_pools(base_allocator);
   }
 
   IREE_TRACE_ZONE_END(z0);
@@ -1798,9 +1791,9 @@ static iree_status_t iree_hal_vulkan_allocator_allocate_buffer(
     iree_hal_pool_t* pool = iree_hal_vulkan_allocator_select_default_pool(
         allocator, compat_params, allocation_size);
     if (pool) {
-      status = iree_hal_pool_allocate_buffer(
-          pool, compat_params, allocation_size, /*requester_frontier=*/NULL,
-          iree_infinite_timeout(), &buffer);
+      status =
+          iree_hal_pool_allocate_buffer(pool, compat_params, allocation_size,
+                                        iree_infinite_timeout(), &buffer);
       if (iree_status_is_ok(status) &&
           iree_hal_buffer_byte_length(buffer) != byte_length) {
         iree_hal_buffer_t* allocation_buffer = buffer;

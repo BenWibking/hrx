@@ -490,6 +490,8 @@ static void iree_hal_vulkan_logical_device_clear_topology_info(
     for (iree_host_size_t i = 0; i < device->queues.queue_count; ++i) {
       iree_hal_vulkan_queue_retire_frontier(&device->queues.objects[i]);
     }
+    iree_hal_vulkan_allocator_deinitialize_default_pools(
+        device->device_allocator);
     iree_async_frontier_tracker_release(device->frontier_tracker);
     device->frontier_tracker = NULL;
     device->axis = 0;
@@ -507,7 +509,6 @@ static void iree_hal_vulkan_logical_device_destroy(
   IREE_ASSERT(!device->profile.recorder,
               "profiling sessions must be ended before device destruction");
 
-  iree_hal_vulkan_logical_device_clear_topology_info(device);
   iree_hal_channel_provider_release(device->channel_provider);
   for (iree_host_size_t i = 0; i < device->queues.initialized_queue_count;
        ++i) {
@@ -515,6 +516,7 @@ static void iree_hal_vulkan_logical_device_destroy(
     iree_atomic_ref_count_abort_if_uses(&queue->resource.ref_count);
     iree_hal_queue_release(queue);
   }
+  iree_hal_vulkan_logical_device_clear_topology_info(device);
   iree_hal_allocator_release(device->device_allocator);
   iree_hal_vulkan_builtins_deinitialize(&device->builtins);
   if (device->executable_pipeline_cache) {
@@ -916,6 +918,10 @@ static iree_status_t iree_hal_vulkan_logical_device_assign_topology_info(
     if (iree_status_is_ok(status)) {
       assigned_queue_count = i + 1;
     }
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_vulkan_allocator_initialize_default_pools(
+        device->device_allocator, device->proactor, frontier_tracker);
   }
   if (!iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < assigned_queue_count; ++i) {
@@ -1362,7 +1368,7 @@ static iree_status_t iree_hal_vulkan_logical_device_initialize_allocator(
       (iree_hal_device_t*)device, &device->syms, device->logical_device,
       &device->physical_device, device->enabled_features,
       device->enabled_extensions, device->queues.family_count, queue_families,
-      device->queues.sparse_binding, device->proactor, device->host_allocator,
+      device->queues.sparse_binding, device->host_allocator,
       &device->device_allocator);
 }
 
