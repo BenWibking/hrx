@@ -14,6 +14,38 @@
 extern "C" {
 #endif
 
+// An independently rewritable callable with the selected source plan projected
+// into its value and operation identities. Protocol identities stay owned by
+// the admitting construction, independently of this function's symbol.
+typedef struct loom_channel_materialization_instance_t {
+  // Cloned ordinary callable, owned by the source module.
+  loom_func_like_t function;
+  // Released domain whose ordinals match the source plan exactly.
+  loom_local_value_domain_t value_domain;
+  // Projected actions and exits, borrowing the source membership table.
+  loom_channel_plan_t plan;
+} loom_channel_materialization_instance_t;
+
+// Clones a selected callable occurrence before consuming channel rewrites.
+// The source plan's domain is acquired and describes source_function's flat
+// body. target_symbol is an existing same-module symbol with no definition.
+// Cloning projects retained action sites and value ordinals without repeating
+// channel analysis. It leaves the original definition and domain untouched.
+//
+// Release the source domain before restoring the instance's domain. The
+// source membership table and protocol identities outlive materialization.
+// Ordinal-indexed selections keep their correspondence; action and return
+// pointers refer only to the clone. Initial runtime state, other selected SSA
+// operands and dependencies of physical carrier types must use the instance's
+// value_ids at their original ordinals. Cloned source types already refer to
+// the corresponding cloned values.
+// The enclosing lowering owns callsite/signature realization and admission;
+// this helper neither retargets callers nor selects transport mechanics.
+iree_status_t loom_channel_materialization_clone(
+    loom_rewriter_t* rewriter, loom_func_like_t source_function,
+    const loom_channel_plan_t* source_plan, loom_symbol_ref_t target_symbol,
+    loom_channel_materialization_instance_t* out_instance);
+
 // Emission mechanics for one already selected channel realization. Selection
 // proves legality and retains resource bindings before this consuming rewrite.
 typedef struct loom_channel_materialization_callback_t {

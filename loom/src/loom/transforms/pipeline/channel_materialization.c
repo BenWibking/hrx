@@ -10,6 +10,108 @@
 
 #include "loom/ops/cfg/ops.h"
 #include "loom/ops/func/ops.h"
+#include "loom/rewrite/callable.h"
+
+typedef struct loom_channel_materialization_clone_state_t {
+  // Immutable occurrence plan in the acquired source value domain.
+  const loom_channel_plan_t* source;
+  // Compact cloned value correspondence, indexed by source ordinal.
+  loom_value_id_t* values;
+  // Projected channel actions in the source collection's order.
+  loom_channel_plan_action_t* actions;
+  // Next source action in clone visitation order.
+  iree_host_size_t action_index;
+  // Projected callable exits in the source collection's order.
+  loom_op_t** returns;
+  // Next source exit in clone visitation order.
+  iree_host_size_t return_index;
+} loom_channel_materialization_clone_state_t;
+
+static iree_status_t loom_channel_materialization_clone_op(
+    void* user_data, const loom_op_t* source_op, loom_op_t* target_op) {
+  loom_channel_materialization_clone_state_t* state = user_data;
+  const loom_channel_plan_t* plan = state->source;
+  for (uint16_t i = 0; i < source_op->result_count; ++i) {
+    const loom_value_ordinal_t ordinal = loom_local_value_domain_try_ordinal(
+        plan->value_domain, loom_op_const_results(source_op)[i]);
+    // Callable signature results are outside the execution region's domain.
+    if (ordinal != LOOM_VALUE_ORDINAL_INVALID) {
+      state->values[ordinal] = loom_op_results(target_op)[i];
+    }
+  }
+  if (state->action_index < plan->action_count &&
+      source_op == plan->actions[state->action_index].op) {
+    state->actions[state->action_index] = plan->actions[state->action_index];
+    state->actions[state->action_index++].op = target_op;
+  }
+  if (state->return_index < plan->return_count &&
+      source_op == plan->returns[state->return_index]) {
+    state->returns[state->return_index++] = target_op;
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_channel_materialization_clone(
+    loom_rewriter_t* rewriter, loom_func_like_t source_function,
+    const loom_channel_plan_t* source_plan, loom_symbol_ref_t target_symbol,
+    loom_channel_materialization_instance_t* out_instance) {
+  *out_instance = (loom_channel_materialization_instance_t){0};
+  const loom_local_value_domain_t* source_domain = source_plan->value_domain;
+  loom_channel_materialization_clone_state_t state = {.source = source_plan};
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(rewriter->arena, source_domain->value_count,
+                                sizeof(*state.values), (void**)&state.values));
+  if (source_domain->value_count) {
+    memcpy(state.values, source_domain->value_ids,
+           source_domain->value_count * sizeof(*state.values));
+  }
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      rewriter->arena, source_plan->action_count, sizeof(*state.actions),
+      (void**)&state.actions));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      rewriter->arena, source_plan->return_count, sizeof(*state.returns),
+      (void**)&state.returns));
+  const loom_callable_clone_options_t options = {
+      .observer = {.fn = loom_channel_materialization_clone_op,
+                   .user_data = &state},
+  };
+  loom_func_like_t function = {0};
+  IREE_RETURN_IF_ERROR(loom_callable_clone_definition(
+      &rewriter->builder, source_function, target_symbol, &options, &function,
+      rewriter->arena));
+  // A change to clone visitation must not silently leave selected source sites
+  // pointing at the shared definition that this instance must not rewrite.
+  IREE_ASSERT_EQ(state.action_index, source_plan->action_count);
+  IREE_ASSERT_EQ(state.return_index, source_plan->return_count);
+  const loom_region_t* source_region = source_domain->region;
+  const loom_region_t* target_region = loom_func_like_body(function);
+  for (uint16_t b = 0; b < source_region->block_count; ++b) {
+    const loom_block_t* source_block = source_region->blocks[b];
+    const loom_block_t* target_block = target_region->blocks[b];
+    for (uint16_t i = 0; i < source_block->arg_count; ++i) {
+      const loom_value_ordinal_t ordinal = loom_local_value_domain_ordinal(
+          source_domain, source_block->arg_ids[i]);
+      state.values[ordinal] = target_block->arg_ids[i];
+    }
+  }
+  *out_instance = (loom_channel_materialization_instance_t){
+      .function = function,
+      .value_domain =
+          {
+              .module = rewriter->module,
+              .region = target_region,
+              .value_ids = state.values,
+              .value_count = source_domain->value_count,
+              .definition_count = source_domain->definition_count,
+              .value_capacity = source_domain->value_count,
+          },
+      .plan = *source_plan,
+  };
+  out_instance->plan.value_domain = &out_instance->value_domain;
+  out_instance->plan.actions = state.actions;
+  out_instance->plan.returns = state.returns;
+  return iree_ok_status();
+}
 
 // One source block's retained exit and private protocol state.
 typedef struct loom_channel_materialization_block_t {

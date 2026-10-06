@@ -193,10 +193,18 @@ class ChannelMaterializationTest : public ::testing::Test {
                                            bindings.size(), nullptr, &arena_,
                                            &plan, &rejection));
     ASSERT_EQ(rejection.kind, LOOM_CHANNEL_PLAN_REJECTION_NONE);
+    MaterializePlan(plan, initial_, boundary);
+    loom_local_value_domain_release(&domain_);
+    Verify();
+  }
+
+  void MaterializePlan(const loom_channel_plan_t& plan, loom_value_id_t initial,
+                       Boundary boundary) {
     std::vector<loom_type_t> carriers(plan.value_count);
     std::vector<uint8_t> erased(plan.value_count, 0);
     for (loom_value_ordinal_t i = 0; i < plan.value_count; ++i) {
-      const auto type = loom_module_value_type(module_, domain_.value_ids[i]);
+      const auto type =
+          loom_module_value_type(module_, plan.value_domain->value_ids[i]);
       if (loom_read_type_isa(type) || loom_write_type_isa(type)) {
         carriers[i] = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
       }
@@ -204,21 +212,20 @@ class ChannelMaterializationTest : public ::testing::Test {
     for (iree_host_size_t i = 0; i < plan.action_count; ++i) {
       if (loom_channel_reserve_isa(plan.actions[i].op)) {
         erased[loom_local_value_domain_ordinal(
-            &domain_, loom_channel_reserve_view(plan.actions[i].op))] = 1;
+            plan.value_domain, loom_channel_reserve_view(plan.actions[i].op))] =
+            1;
       }
     }
     const loom_channel_materialization_options_t options = {
         carriers.data(),
         erased.data(),
-        &initial_,
+        &initial,
         1,
         {Emit, boundary == Boundary::Execution ? Exit : nullptr, this}};
     loom_rewriter_t rewriter;
     loom_rewriter_initialize(&rewriter, module_, &arena_);
     IREE_ASSERT_OK(loom_channel_materialize(&rewriter, &plan, &options));
     loom_rewriter_deinitialize(&rewriter);
-    loom_local_value_domain_release(&domain_);
-    Verify();
   }
 
   static iree_status_t Emit(void* user_data, loom_rewriter_t* rewriter,
@@ -353,6 +360,123 @@ TEST_F(ChannelMaterializationTest, HelperReturnDoesNotDrain) {
   ExpectCall(admit->next_op, publication_, {initial_});
   EXPECT_EQ(admit->next_op->next_op, entry_->last_op);
   EXPECT_TRUE(loom_func_return_isa(entry_->last_op));
+}
+
+TEST_F(ChannelMaterializationTest, ClonedOccurrencesKeepLoopOwnershipSeparate) {
+  const auto width = Argument(loom_type_scalar(LOOM_SCALAR_TYPE_INDEX));
+  loom_type_id_t payload;
+  IREE_ASSERT_OK(loom_module_intern_type_id(
+      module_,
+      loom_type_shaped_1d(LOOM_TYPE_TILE, LOOM_SCALAR_TYPE_I32,
+                          loom_dim_pack_dynamic(width), 0),
+      &payload));
+  loom_type_t channel;
+  IREE_ASSERT_OK(loom_channel_type_make(module_, payload, &channel));
+  IREE_ASSERT_OK(loom_module_set_value_type(module_, channel_, channel));
+  IREE_ASSERT_OK(loom_write_type_make(module_, payload, &write_type_));
+  view_type_ = loom_type_shaped_1d(LOOM_TYPE_VIEW, LOOM_SCALAR_TYPE_I32,
+                                   loom_dim_pack_dynamic(width), 0);
+  const auto first_write = Reserve();
+  auto* loop = Block();
+  auto* repeat = Block();
+  auto* exit = Block();
+  loom_value_id_t carried_write;
+  IREE_ASSERT_OK(
+      loom_module_define_value(module_, write_type_, &carried_write));
+  IREE_ASSERT_OK(loom_block_add_arg(module_, loop, carried_write));
+  loom_op_t* branch;
+  IREE_ASSERT_OK(loom_cfg_br_build(&builder_, loop, &first_write, 1,
+                                   LOOM_LOCATION_UNKNOWN, &branch));
+  At(loop);
+  Choose(repeat, exit);
+  At(repeat);
+  Publish(carried_write);
+  const auto next_write = Reserve();
+  IREE_ASSERT_OK(loom_cfg_br_build(&builder_, loop, &next_write, 1,
+                                   LOOM_LOCATION_UNKNOWN, &branch));
+  At(exit);
+  Publish(carried_write);
+  Return();
+  Verify();
+
+  IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region(module_, region_,
+                                                            &arena_, &domain_));
+  const auto initial_ordinal =
+      loom_local_value_domain_ordinal(&domain_, initial_);
+  const auto write_ordinal =
+      loom_local_value_domain_ordinal(&domain_, carried_write);
+  // The same source argument is bound by two different constructions. Their
+  // identities remain distinct even when the callable and storage could alias.
+  const loom_channel_identity_t identities[] = {{channel_}, {channel_}};
+  loom_channel_materialization_instance_t instances[2];
+  loom_channel_plan_t plans[2];
+  loom_rewriter_t rewriter;
+  loom_rewriter_initialize(&rewriter, module_, &arena_);
+  loom_builder_set_block(&rewriter.builder, loom_module_block(module_));
+  rewriter.builder.ip.parent_op = nullptr;
+  const char* names[] = {"first_worker", "second_worker"};
+  for (size_t i = 0; i < 2; ++i) {
+    const loom_channel_plan_binding_t binding = {channel_, &identities[i]};
+    loom_channel_plan_rejection_t rejection;
+    IREE_ASSERT_OK(loom_channel_plan_build(&domain_, &binding, 1, nullptr,
+                                           &arena_, &plans[i], &rejection));
+    ASSERT_EQ(rejection.kind, LOOM_CHANNEL_PLAN_REJECTION_NONE);
+    IREE_ASSERT_OK(loom_channel_materialization_clone(
+        &rewriter, loom_func_like_cast(module_, function_), &plans[i],
+        Symbol(names[i]), &instances[i]));
+    EXPECT_TRUE(loom_local_value_domain_is_acquired(&domain_));
+    EXPECT_FALSE(
+        loom_local_value_domain_is_acquired(&instances[i].value_domain));
+    ASSERT_EQ(instances[i].plan.action_count, 4u);
+    ASSERT_EQ(instances[i].plan.return_count, 1u);
+    EXPECT_EQ(instances[i].plan.returns[0],
+              instances[i].value_domain.region->blocks[3]->last_op);
+    for (size_t action = 0; action < plans[i].action_count; ++action) {
+      EXPECT_NE(instances[i].plan.actions[action].op,
+                plans[i].actions[action].op);
+      EXPECT_EQ(instances[i].plan.actions[action].channel, &identities[i]);
+    }
+  }
+  loom_rewriter_deinitialize(&rewriter);
+  loom_local_value_domain_release(&domain_);
+
+  // Consume in the opposite order to construction. Each loop carries its own
+  // physical write and cursor; neither rewrite can alter the shared definition.
+  for (size_t i : {1u, 0u}) {
+    auto& instance = instances[i];
+    auto* body = loom_func_like_body(instance.function);
+    auto* entry = loom_region_entry_block(body);
+    const auto initial = instance.value_domain.value_ids[initial_ordinal];
+    const auto write = instance.value_domain.value_ids[write_ordinal];
+    const auto channel_type =
+        loom_module_value_type(module_, entry->arg_ids[0]);
+    const auto payload_type = loom_type_table_get(
+        &module_->types, loom_channel_type_payload(channel_type));
+    EXPECT_EQ(loom_dim_value_id(loom_type_dim(payload_type, 0)),
+              entry->arg_ids[3]);
+    EXPECT_NE(entry->arg_ids[3], width);
+    EXPECT_NE(initial, initial_);
+    EXPECT_EQ(write, body->blocks[1]->arg_ids[0]);
+    loom_local_value_domain_restore(&instance.value_domain);
+    EXPECT_EQ(loom_channel_plan_channel(&instance.plan, write), &identities[i]);
+    MaterializePlan(instance.plan, initial, Boundary::Execution);
+    loom_local_value_domain_release(&instance.value_domain);
+    ExpectCall(entry->first_op, admission_, {initial});
+    ExpectCall(body->blocks[2]->first_op, publication_, {write});
+    const auto* final_publication = body->blocks[3]->first_op;
+    ExpectCall(final_publication, publication_, {write});
+    ExpectCall(final_publication->next_op, completion_,
+               {body->blocks[3]->arg_ids[0]});
+    EXPECT_TRUE(loom_channel_reserve_isa(entry_->first_op));
+    EXPECT_TRUE(loom_channel_publish_isa(repeat->first_op));
+    EXPECT_EQ(loop->arg_ids[0], carried_write);
+    Verify();
+  }
+  loom_local_value_domain_restore(&domain_);
+  EXPECT_EQ(loom_channel_plan_channel(&plans[0], carried_write),
+            &identities[0]);
+  EXPECT_EQ(loom_channel_plan_channel(&plans[1], carried_write),
+            &identities[1]);
 }
 
 TEST_F(ChannelMaterializationTest, ReconvergenceRetainsEachPathsCursor) {

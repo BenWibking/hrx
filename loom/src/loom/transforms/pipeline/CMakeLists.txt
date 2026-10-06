@@ -23,6 +23,7 @@ loom_cc_library(
     loom::ir
     loom::ops::cfg
     loom::ops::func
+    loom::rewrite::callable
     loom::rewrite::rewriter
   PUBLIC
 )
