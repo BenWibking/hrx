@@ -14,7 +14,7 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/format/text/parser.h"
 #include "loom/ir/context.h"
-#include "loom/ops/target/ops.h"
+#include "loom/target/test/target_records.h"
 #include "loom/testing/context.h"
 #include "loom/testing/module_ptr.h"
 
@@ -47,13 +47,13 @@ static iree_status_t ProjectTargetFacts(const loom_target_profile_t* profile,
                                         loom_target_facts_t* out_facts) {
   (void)profile;
   (void)arena;
-  (void)out_facts;
+  out_facts->selector = LOOM_TEST_TARGET_KIND_LOW_CORE;
   return iree_ok_status();
 }
 
 static const loom_target_profile_type_t kTargetProfileType = {
     /*.name=*/IREE_SVL("TargetFamily123"),
-    /*.fact_type=*/&loom_target_generic_fact_type,
+    /*.fact_type=*/&loom_test_target_fact_type,
     /*.project_facts=*/ProjectTargetFacts,
 };
 static const loom_target_profile_t kTargetProfile = {
@@ -101,12 +101,11 @@ class CompileRequestTest : public ::testing::Test {
     IREE_ASSERT_OK(loom_testing_context_register_all_dialects(&context_));
     IREE_ASSERT_OK(loom_context_finalize(&context_));
     target_provider_.profile_type = &kTargetProfileType;
-    target_provider_.target_fact_type = &loom_target_generic_fact_type;
+    target_provider_.target_fact_type = &loom_test_target_fact_type;
     emission_provider_.emitter_list = loom_target_emitter_list_make(
         kTargetEmitters, IREE_ARRAYSIZE(kTargetEmitters));
     emission_provider_.canonical_kernel_emitter = &kDiagnosticEmitter;
-    emission_provider_.canonical_kernel_fact_type =
-        &loom_target_generic_fact_type;
+    emission_provider_.canonical_kernel_fact_type = &loom_test_target_fact_type;
     target_providers_[0] = &target_provider_;
     target_providers_[1] = &emission_provider_;
     target_provider_set_ = loom_target_provider_set_make(
@@ -187,7 +186,7 @@ class CompileRequestTest : public ::testing::Test {
 
   static ModulePtr ParseKernel(CompileRequestTest* test, bool with_target) {
     return with_target ? test->Parse(R"(
-target.generic<reference> @Target789 {
+test.target<low_core> @Target789 {
   subgroup_size = 32
 }
 kernel.def target(@Target789) @Kernel123() {
@@ -226,7 +225,7 @@ TEST_F(CompileRequestTest, InfersKernelAndCanonicalFormat) {
       iree_string_view_equal(request.target_emitter->public_artifact_format,
                              IREE_SV("DiagnosticFormat123")));
   EXPECT_EQ(request.target_emitter, &kDiagnosticEmitter);
-  EXPECT_EQ(request.selection.target_fact_type, &loom_target_generic_fact_type);
+  EXPECT_EQ(request.selection.target_fact_type, &loom_test_target_fact_type);
   EXPECT_EQ(request.target_profile, nullptr);
   ASSERT_EQ(request.selection.roots.count, 1u);
   EXPECT_TRUE(iree_string_view_equal(request.selection.roots.values[0],
@@ -313,7 +312,7 @@ func.def public @excluded(%value: i32) -> (i32) {
 
 TEST_F(CompileRequestTest, MaterializesSelectedKernelRootAlone) {
   ModulePtr module = Parse(R"(
-target.generic<reference> @Target789 {
+test.target<low_core> @Target789 {
   subgroup_size = 32
 }
 kernel.def target(@Target789) @kept() {
@@ -470,7 +469,7 @@ kernel.def @excluded() {
 
 TEST_F(CompileRequestTest, ExcludedKernelDoesNotParticipateInTargetSelection) {
   ModulePtr module = Parse(R"(
-target.generic<reference> @Target789 {
+test.target<low_core> @Target789 {
   subgroup_size = 32
 }
 target.decl @UnavailableTarget
@@ -493,7 +492,7 @@ kernel.def target(@UnavailableTarget) @excluded() {
   const loom_compile_request_t request = Resolve(module.get(), options);
 
   EXPECT_EQ(request.selection.kind, LOOM_COMPILE_ENTRY_KIND_KERNEL);
-  EXPECT_EQ(request.selection.target_fact_type, &loom_target_generic_fact_type);
+  EXPECT_EQ(request.selection.target_fact_type, &loom_test_target_fact_type);
   ASSERT_EQ(request.selection.roots.count, 1u);
   EXPECT_TRUE(iree_string_view_equal(request.selection.roots.values[0],
                                      IREE_SV("kept")));
@@ -665,7 +664,7 @@ command.program.def public @Command123() launch() {
 
 TEST_F(CompileRequestTest, RoutesKernelPipelineByEntryCategory) {
   ModulePtr module = Parse(R"(
-target.generic<reference> @Target789 {
+test.target<low_core> @Target789 {
   subgroup_size = 32
 }
 pipeline.def<kernel> public retain target(@Target789) @KernelPipeline() run() {
@@ -678,7 +677,7 @@ pipeline.def @GenericPipeline() run() {
   loom_compile_request_t request = Resolve(module.get(), options);
   EXPECT_EQ(request.selection.kind, LOOM_COMPILE_ENTRY_KIND_KERNEL);
   EXPECT_EQ(request.target_emitter, &kDiagnosticEmitter);
-  EXPECT_EQ(request.selection.target_fact_type, &loom_target_generic_fact_type);
+  EXPECT_EQ(request.selection.target_fact_type, &loom_test_target_fact_type);
   ASSERT_EQ(request.selection.roots.count, 1u);
   EXPECT_TRUE(iree_string_view_equal(request.selection.roots.values[0],
                                      IREE_SV("KernelPipeline")));
@@ -776,8 +775,7 @@ func.def public @Function123() {
 
   loom_target_environment_deinitialize(&environment_);
   emission_provider_.canonical_module_emitter = &kDiagnosticEmitter;
-  emission_provider_.canonical_module_fact_type =
-      &loom_target_generic_fact_type;
+  emission_provider_.canonical_module_fact_type = &loom_test_target_fact_type;
   IREE_ASSERT_OK(
       loom_target_environment_initialize(&target_provider_set_, &environment_));
   IREE_ASSERT_OK(loom_compile_request_resolve(
@@ -792,7 +790,7 @@ func.def public @Function123() {
 
 TEST_F(CompileRequestTest, ExplicitTargetSpecializesUntargetedKernel) {
   ModulePtr module = Parse(R"(
-target.generic<reference> @Target789 {
+test.target<low_core> @Target789 {
   subgroup_size = 32
 }
 kernel.def target(@Target789) @Targeted() {
@@ -817,7 +815,7 @@ kernel.def @Untargeted() {
 
   EXPECT_EQ(request.target_profile, &kTargetProfile);
   EXPECT_EQ(request.target_emitter, &kDiagnosticEmitter);
-  EXPECT_EQ(request.selection.target_fact_type, &loom_target_generic_fact_type);
+  EXPECT_EQ(request.selection.target_fact_type, &loom_test_target_fact_type);
   EXPECT_EQ(request.selection.untargeted_kernel_count, 1u);
   EXPECT_EQ(request.selection.roots.count, 2u);
 }
