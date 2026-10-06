@@ -460,6 +460,7 @@ loom_cc_library(
     loom::target::arch::amd::xdna::aie2p::contracts::core
     loom::target::arch::amd::xdna::aie2p::contracts::core_lower_rules
     loom::target::arch::amd::xdna::error_defs
+    loom::target::contract
     loom::util::fact_table
   PUBLIC
 )
@@ -682,6 +683,8 @@ loom_check_test_suite(
     "test/source_low/callable_returns.loom-test"
     "test/source_low/callable_values.loom-test"
     "test/source_low/carried_counter_store.loom-test"
+    "test/source_low/component_packetization.loom-test"
+    "test/source_low/component_packetization_report.loom-test"
     "test/source_low/function_storage.loom-test"
     "test/source_low/fused_packet_memory.loom-test"
     "test/source_low/immutable_gather.loom-test"
@@ -789,6 +792,7 @@ loom_check_test_suite(
     "test/source_low/vector_slice.loom-test"
     "test/source_low/vector_splat.loom-test"
     "test/source_low/vector_structural.loom-test"
+    "test/target_legalize_report.loom-test"
   RUNNER
     ::loom-check
   TEST_NAME_PREFIX_TO_STRIP
@@ -875,7 +879,6 @@ loom_cc_library(
     ::relocation
     iree::base
     iree::base::internal::arena
-    iree::schemas::xdna_executable
     loom::target::emit::native::object
   PUBLIC
 )
@@ -943,6 +946,7 @@ loom_cc_library(
     iree::schemas::xdna_executable
     loom::target::arch::amd::xdna::device_profile
     loom::target::emit::native::elf
+    loom::target::emit::native::elf_sections
   PUBLIC
 )
 endif()
