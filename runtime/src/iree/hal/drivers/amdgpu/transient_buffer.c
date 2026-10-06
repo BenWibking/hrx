@@ -538,7 +538,7 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_export_range(
 
 static iree_status_t iree_hal_amdgpu_transient_buffer_map_range(
     iree_hal_buffer_t* base_buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   iree_hal_amdgpu_transient_buffer_t* buffer =
@@ -547,7 +547,7 @@ static iree_status_t iree_hal_amdgpu_transient_buffer_map_range(
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_transient_buffer_load_host_backing(
       buffer, &backing_buffer));
   return iree_hal_amdgpu_transient_buffer_backing_vtable(backing_buffer)
-      ->map_range(backing_buffer, mapping_mode, memory_access,
+      ->map_range(backing_buffer, mapping_mode, memory_access, flags,
                   local_byte_offset, local_byte_length, mapping);
 }
 

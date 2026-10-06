@@ -583,10 +583,12 @@ iree_status_t iree_hal_replay_executor_write_buffer_data(
     return iree_make_status(IREE_STATUS_DATA_LOSS,
                             "replay buffer data overflows target range");
   }
+  // Captured flushes can cover only part of a write mapping. Reproduce those
+  // bytes without repeating the original map's discard operation.
   iree_hal_buffer_mapping_t mapping;
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
-      buffer, IREE_HAL_MAPPING_MODE_SCOPED, memory_access, byte_offset,
-      byte_length, &mapping));
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, memory_access,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, byte_offset, byte_length, &mapping));
   iree_status_t status = iree_ok_status();
   iree_byte_span_t target_span;
   if (iree_status_is_ok(status)) {

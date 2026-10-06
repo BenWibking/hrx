@@ -82,10 +82,10 @@ static iree_status_t QueueReadbackAndWait(iree_hal_device_t* device,
                                         readback_buffer, target.data_length));
 
   iree_hal_buffer_mapping_t readback_mapping;
-  IREE_RETURN_IF_ERROR(
-      iree_hal_buffer_map_range(readback_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                IREE_HAL_MEMORY_ACCESS_READ, /*byte_offset=*/0,
-                                target.data_length, &readback_mapping));
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
+      readback_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      /*byte_offset=*/0, target.data_length, &readback_mapping));
   std::memcpy(target.data, readback_mapping.contents.data, target.data_length);
   return iree_hal_buffer_unmap_range(&readback_mapping);
 }

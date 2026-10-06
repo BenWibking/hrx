@@ -438,6 +438,7 @@ TEST_F(GraphExecTest, BatchMemoryNodePreservesResolvedWriteSemantics) {
       context_->device_allocator, buffer_params, sizeof(uint64_t), &buffer));
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_PERSISTENT, IREE_HAL_MEMORY_ACCESS_ALL,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE,
       /*local_byte_offset=*/0, sizeof(uint64_t), &mapping));
   ASSERT_NE(mapping.contents.data, nullptr);
   *reinterpret_cast<uint64_t*>(mapping.contents.data) = 0;

@@ -206,8 +206,7 @@ typedef uint16_t hrx_memory_access_t;
 #define HRX_MEMORY_ACCESS_NONE 0x00
 #define HRX_MEMORY_ACCESS_READ 0x01
 #define HRX_MEMORY_ACCESS_WRITE 0x02
-#define HRX_MEMORY_ACCESS_DISCARD 0x04
-#define HRX_MEMORY_ACCESS_ALL 0x07
+#define HRX_MEMORY_ACCESS_ALL 0x03
 
 // Buffer usage bitfield. Values match iree_hal_buffer_usage_t.
 typedef uint32_t hrx_buffer_usage_t;
@@ -222,11 +221,15 @@ typedef uint32_t hrx_buffer_usage_t;
 #define HRX_BUFFER_USAGE_MAPPING_PERSISTENT 0x02000000u
 #define HRX_BUFFER_USAGE_DEFAULT 0x00000C03u
 
-// Map flags for hrx_buffer_map. Values match iree_hal_memory_access_t.
+// Operation flags for hrx_buffer_map. READ/WRITE are permissions; DISCARD
+// and MAY_ALIAS apply only to the requested mapping.
 typedef uint16_t hrx_map_flags_t;
 #define HRX_MAP_READ HRX_MEMORY_ACCESS_READ
 #define HRX_MAP_WRITE HRX_MEMORY_ACCESS_WRITE
-#define HRX_MAP_DISCARD HRX_MEMORY_ACCESS_DISCARD
+// Prior contents of the mapped range may be discarded. Implies WRITE.
+#define HRX_MAP_DISCARD 0x04
+// Mapped accesses may alias other concurrent accesses; supplies no ordering.
+#define HRX_MAP_MAY_ALIAS 0x08
 
 // Dispatch flags (hrx-specific, no IREE equivalent).
 typedef enum hrx_dispatch_flags_t {

@@ -50,12 +50,10 @@ static const iree_bitfield_string_mapping_t iree_hal_memory_access_mappings[] =
     {
         // Combined:
         {IREE_HAL_MEMORY_ACCESS_ALL, IREE_SVL("ALL")},
-        {IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, IREE_SVL("DISCARD_WRITE")},
         // Separate:
         {IREE_HAL_MEMORY_ACCESS_READ, IREE_SVL("READ")},
         {IREE_HAL_MEMORY_ACCESS_WRITE, IREE_SVL("WRITE")},
-        {IREE_HAL_MEMORY_ACCESS_DISCARD, IREE_SVL("DISCARD")},
-        {IREE_HAL_MEMORY_ACCESS_MAY_ALIAS, IREE_SVL("MAY_ALIAS")},
+        {IREE_HAL_MEMORY_ACCESS_UNALIGNED, IREE_SVL("UNALIGNED")},
         {IREE_HAL_MEMORY_ACCESS_ANY, IREE_SVL("ANY")},
 };
 
@@ -225,12 +223,12 @@ static iree_status_t iree_hal_subspan_buffer_export_range(
 
 static iree_status_t iree_hal_subspan_buffer_map_range(
     iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   return _VTABLE_DISPATCH(buffer->allocated_buffer, map_range)(
-      buffer->allocated_buffer, mapping_mode, memory_access, local_byte_offset,
-      local_byte_length, mapping);
+      buffer->allocated_buffer, mapping_mode, memory_access, flags,
+      local_byte_offset, local_byte_length, mapping);
 }
 
 static iree_status_t iree_hal_subspan_buffer_unmap_range(
@@ -355,6 +353,14 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_memory_type(
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_access(
     iree_hal_memory_access_t allowed_memory_access,
     iree_hal_memory_access_t required_memory_access) {
+  if (IREE_UNLIKELY(required_memory_access &
+                    ~(IREE_HAL_MEMORY_ACCESS_ALL |
+                      IREE_HAL_MEMORY_ACCESS_UNALIGNED |
+                      IREE_HAL_MEMORY_ACCESS_ANY))) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "unsupported memory access bits 0x%x",
+                            required_memory_access);
+  }
   if (iree_all_bits_set(required_memory_access, IREE_HAL_MEMORY_ACCESS_ANY)) {
     return iree_ok_status();
   }
@@ -704,7 +710,8 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_fill(
   iree_hal_buffer_mapping_t target_mapping = {{0}};
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                    IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
+                                    IREE_HAL_MEMORY_ACCESS_WRITE,
+                                    IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
                                     byte_offset, byte_length, &target_mapping));
   if (byte_length == IREE_HAL_WHOLE_BUFFER) {
     byte_length = target_mapping.contents.data_length;
@@ -768,9 +775,10 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_read(
   IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, data_length);
   iree_hal_buffer_mapping_t source_mapping = {{0}};
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_hal_buffer_map_range(source_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                    IREE_HAL_MEMORY_ACCESS_READ, source_offset,
-                                    data_length, &source_mapping));
+      z0, iree_hal_buffer_map_range(
+              source_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+              IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+              source_offset, data_length, &source_mapping));
 
   memcpy(target_buffer, source_mapping.contents.data, data_length);
 
@@ -793,10 +801,10 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_write(
   IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, data_length);
   iree_hal_buffer_mapping_t target_mapping;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0,
-      iree_hal_buffer_map_range(target_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
-                                target_offset, data_length, &target_mapping));
+      z0, iree_hal_buffer_map_range(
+              target_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+              IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+              target_offset, data_length, &target_mapping));
 
   memcpy(target_mapping.contents.data, source_buffer, data_length);
 
@@ -839,16 +847,17 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_copy(
   // Map source, which may have IREE_HAL_WHOLE_BUFFER length.
   iree_hal_buffer_mapping_t source_mapping;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_hal_buffer_map_range(source_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                    IREE_HAL_MEMORY_ACCESS_READ, source_offset,
-                                    data_length, &source_mapping));
+      z0, iree_hal_buffer_map_range(
+              source_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+              IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+              source_offset, data_length, &source_mapping));
 
   // Map target, which may also have IREE_HAL_WHOLE_BUFFER length.
   iree_hal_buffer_mapping_t target_mapping;
-  iree_status_t status =
-      iree_hal_buffer_map_range(target_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
-                                target_offset, data_length, &target_mapping);
+  iree_status_t status = iree_hal_buffer_map_range(
+      target_buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD, target_offset, data_length,
+      &target_mapping);
   if (!iree_status_is_ok(status)) {
     status =
         iree_status_join(status, iree_hal_buffer_unmap_range(&source_mapping));
@@ -904,16 +913,15 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_copy(
 
 IREE_API_EXPORT iree_status_t iree_hal_buffer_map_range(
     iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access, iree_device_size_t byte_offset,
-    iree_device_size_t byte_length,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
+    iree_device_size_t byte_offset, iree_device_size_t byte_length,
     iree_hal_buffer_mapping_t* out_buffer_mapping) {
   IREE_ASSERT_ARGUMENT(buffer);
   IREE_ASSERT_ARGUMENT(out_buffer_mapping);
   IREE_RETURN_IF_ERROR(iree_hal_buffer_prepare_map_range(
-      buffer, mapping_mode, memory_access, byte_offset, byte_length,
+      buffer, mapping_mode, memory_access, flags, byte_offset, byte_length,
       out_buffer_mapping));
-  iree_status_t status = iree_hal_buffer_commit_map_range(
-      buffer, mapping_mode, memory_access, out_buffer_mapping);
+  iree_status_t status = iree_hal_buffer_commit_map_range(out_buffer_mapping);
   if (!iree_status_is_ok(status)) {
     // Undo the prepare's retain — there will be no unmap to release it.
     if (!out_buffer_mapping->impl.is_persistent) {
@@ -926,14 +934,33 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_range(
 
 IREE_API_EXPORT iree_status_t iree_hal_buffer_prepare_map_range(
     iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access, iree_device_size_t byte_offset,
-    iree_device_size_t byte_length,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
+    iree_device_size_t byte_offset, iree_device_size_t byte_length,
     iree_hal_buffer_mapping_t* out_buffer_mapping) {
   IREE_ASSERT_ARGUMENT(buffer);
   IREE_ASSERT_ARGUMENT(out_buffer_mapping);
   IREE_TRACE_ZONE_BEGIN(z0);
   memset(out_buffer_mapping, 0, sizeof(*out_buffer_mapping));
 
+  if (IREE_UNLIKELY(mapping_mode != IREE_HAL_MAPPING_MODE_SCOPED &&
+                    mapping_mode != IREE_HAL_MAPPING_MODE_PERSISTENT)) {
+    IREE_TRACE_ZONE_END(z0);
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "mapping mode must be SCOPED or PERSISTENT");
+  }
+  if (IREE_UNLIKELY(flags & ~(IREE_HAL_BUFFER_MAP_FLAG_DISCARD |
+                              IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS))) {
+    IREE_TRACE_ZONE_END(z0);
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "unsupported buffer map flags 0x%x", flags);
+  }
+  if (IREE_UNLIKELY(
+          iree_any_bit_set(flags, IREE_HAL_BUFFER_MAP_FLAG_DISCARD) &&
+          !iree_any_bit_set(memory_access, IREE_HAL_MEMORY_ACCESS_WRITE))) {
+    IREE_TRACE_ZONE_END(z0);
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "discard mapping requires WRITE access");
+  }
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_hal_buffer_validate_access(
               iree_hal_buffer_allowed_access(buffer), memory_access));
@@ -964,6 +991,7 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_prepare_map_range(
 
   out_buffer_mapping->buffer = buffer;
   out_buffer_mapping->impl.allowed_access = memory_access;
+  out_buffer_mapping->impl.flags = flags;
   out_buffer_mapping->impl.is_persistent = is_persistent ? 1 : 0;
   out_buffer_mapping->impl.byte_offset = local_byte_offset;
   out_buffer_mapping->contents = iree_make_byte_span(NULL, local_byte_length);
@@ -977,14 +1005,16 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_prepare_map_range(
   return iree_ok_status();
 }
 
-IREE_API_EXPORT iree_status_t iree_hal_buffer_commit_map_range(
-    iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
-    iree_hal_buffer_mapping_t* buffer_mapping) {
-  IREE_ASSERT_ARGUMENT(buffer);
+IREE_API_EXPORT iree_status_t
+iree_hal_buffer_commit_map_range(iree_hal_buffer_mapping_t* buffer_mapping) {
   IREE_ASSERT_ARGUMENT(buffer_mapping);
+  iree_hal_buffer_t* buffer = buffer_mapping->buffer;
+  const iree_hal_mapping_mode_t mapping_mode =
+      buffer_mapping->impl.is_persistent ? IREE_HAL_MAPPING_MODE_PERSISTENT
+                                         : IREE_HAL_MAPPING_MODE_SCOPED;
   return _VTABLE_DISPATCH(buffer, map_range)(
-      buffer, mapping_mode, memory_access, buffer_mapping->impl.byte_offset,
+      buffer, mapping_mode, buffer_mapping->impl.allowed_access,
+      buffer_mapping->impl.flags, buffer_mapping->impl.byte_offset,
       buffer_mapping->contents.data_length, buffer_mapping);
 }
 

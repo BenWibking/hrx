@@ -376,9 +376,10 @@ static iree_status_t iree_hal_replay_dump_append_text_payload(
       return iree_string_builder_append_format(
           builder,
           " byte_offset=%" PRIu64 " byte_length=%" PRIu64
-          " mapping_mode=0x%08" PRIx32 " memory_access=0x%04" PRIx16,
+          " mapping_mode=0x%08" PRIx32 " memory_access=0x%04" PRIx16
+          " map_flags=0x%04" PRIx16,
           payload.byte_offset, payload.byte_length, payload.mapping_mode,
-          payload.memory_access);
+          payload.memory_access, payload.map_flags);
     }
     case IREE_HAL_REPLAY_PAYLOAD_TYPE_BUFFER_RANGE_DATA: {
       if (record->payload.data_length <
@@ -402,9 +403,9 @@ static iree_status_t iree_hal_replay_dump_append_text_payload(
           " byte_offset=%" PRIu64 " byte_length=%" PRIu64
           " data_range=[%" PRIu64 ", +%" PRIu64
           "]"
-          " memory_access=0x%04" PRIx16,
+          " memory_access=0x%04" PRIx16 " map_flags=0x%04" PRIx16,
           payload.byte_offset, payload.byte_length, data_offset,
-          payload.data_length, payload.memory_access);
+          payload.data_length, payload.memory_access, payload.map_flags);
     }
     case IREE_HAL_REPLAY_PAYLOAD_TYPE_QUEUE_FAMILY_COMMAND_BUFFER_OBJECT: {
       IREE_RETURN_IF_ERROR(iree_hal_replay_dump_payload_length_check(

@@ -255,7 +255,8 @@ TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
     iree_hal_buffer_mapping_t mapping = {};
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
         pending_buffers_[i], IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_READ, 0, kBlockSize, &mapping));
+        IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+        kBlockSize, &mapping));
     const auto* output =
         reinterpret_cast<const uint32_t*>(mapping.contents.data);
     for (iree_host_size_t word = 0; word < kBlockSize / sizeof(pattern);
@@ -318,8 +319,8 @@ TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
     ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
     iree_hal_buffer_mapping_t mapping = {};
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
-        buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-        kBlockSize, &mapping));
+        buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, kBlockSize, &mapping));
     const auto* output =
         reinterpret_cast<const uint32_t*>(mapping.contents.data);
     for (iree_host_size_t word = 0; word < kBlockSize / sizeof(pattern);

@@ -179,6 +179,13 @@ struct ReplayRecordSummary {
   iree_host_size_t refine_topology_record_count = 0;
   iree_host_size_t allocate_buffer_record_count = 0;
   iree_host_size_t import_buffer_record_count = 0;
+  // Most recently captured mapping and mapped-data publication.
+  struct {
+    // Map operation arguments, including its access permissions and flags.
+    iree_hal_replay_buffer_range_payload_t request = {};
+    // Publication metadata from the last flush or unmap carrying bytes.
+    iree_hal_replay_buffer_range_data_payload_t data = {};
+  } mapping;
   iree_host_size_t buffer_map_range_record_count = 0;
   iree_host_size_t buffer_flush_range_record_count = 0;
   iree_host_size_t buffer_unmap_range_record_count = 0;
@@ -302,6 +309,12 @@ static ReplayRecordSummary ParseReplayRecordSummary(
         } else if (record.header.operation_code ==
                    IREE_HAL_REPLAY_OPERATION_CODE_BUFFER_MAP_RANGE) {
           ++summary.buffer_map_range_record_count;
+          if (record.payload.data_length != sizeof(summary.mapping.request)) {
+            ADD_FAILURE() << "buffer map payload size mismatch";
+            return summary;
+          }
+          memcpy(&summary.mapping.request, record.payload.data,
+                 sizeof(summary.mapping.request));
         } else if (record.header.operation_code ==
                    IREE_HAL_REPLAY_OPERATION_CODE_BUFFER_FLUSH_RANGE) {
           ++summary.buffer_flush_range_record_count;
@@ -326,6 +339,12 @@ static ReplayRecordSummary ParseReplayRecordSummary(
         if (record.header.payload_type ==
             IREE_HAL_REPLAY_PAYLOAD_TYPE_BUFFER_RANGE_DATA) {
           ++summary.buffer_range_data_payload_count;
+          if (record.payload.data_length < sizeof(summary.mapping.data)) {
+            ADD_FAILURE() << "buffer data payload is short";
+            return summary;
+          }
+          memcpy(&summary.mapping.data, record.payload.data,
+                 sizeof(summary.mapping.data));
         } else if (record.header.payload_type ==
                    IREE_HAL_REPLAY_PAYLOAD_TYPE_ALLOCATOR_IMPORT_BUFFER) {
           ++summary.import_buffer_payload_count;
@@ -893,9 +912,10 @@ TEST(ReplayRecorderTest, WrappedAllocatorRecordsBuffersAndMapping) {
       iree_hal_allocator_allocate_buffer(allocator, params, 16, &buffer));
 
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
-                                           0, 16, &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD | IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0,
+      16, &mapping));
   iree_byte_span_t span;
   IREE_ASSERT_OK(iree_hal_buffer_mapping_subspan(
       &mapping, IREE_HAL_MEMORY_ACCESS_WRITE, 0, 16, &span));
@@ -923,6 +943,14 @@ TEST(ReplayRecorderTest, WrappedAllocatorRecordsBuffersAndMapping) {
   EXPECT_EQ(1u, summary.buffer_flush_range_record_count);
   EXPECT_EQ(1u, summary.buffer_unmap_range_record_count);
   EXPECT_EQ(2u, summary.buffer_range_data_payload_count);
+  EXPECT_EQ(IREE_HAL_MAPPING_MODE_SCOPED, summary.mapping.request.mapping_mode);
+  EXPECT_EQ(IREE_HAL_MEMORY_ACCESS_WRITE,
+            summary.mapping.request.memory_access);
+  EXPECT_EQ(
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD | IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS,
+      summary.mapping.request.map_flags);
+  EXPECT_EQ(summary.mapping.request.map_flags, summary.mapping.data.map_flags);
+  EXPECT_EQ(IREE_HAL_MEMORY_ACCESS_WRITE, summary.mapping.data.memory_access);
 }
 
 TEST(ReplayRecorderTest, PersistentWriteMapsFailLoud) {
@@ -949,10 +977,11 @@ TEST(ReplayRecorderTest, PersistentWriteMapsFailLoud) {
       iree_hal_allocator_allocate_buffer(allocator, params, 16, &buffer));
 
   iree_hal_buffer_mapping_t mapping;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_UNIMPLEMENTED,
-      iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-                                IREE_HAL_MEMORY_ACCESS_WRITE, 0, 16, &mapping));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_UNIMPLEMENTED,
+                        iree_hal_buffer_map_range(
+                            buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
+                            IREE_HAL_MEMORY_ACCESS_WRITE,
+                            IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 16, &mapping));
   iree_hal_buffer_release(buffer);
 
   IREE_ASSERT_OK(iree_hal_replay_recorder_close(recorder));

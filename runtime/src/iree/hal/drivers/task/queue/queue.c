@@ -1714,7 +1714,8 @@ static iree_status_t iree_hal_task_queue_resolve_binding_entry(
   if (binding->buffer) {
     IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
         binding->buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_ANY, binding->offset, binding->length, mapping));
+        IREE_HAL_MEMORY_ACCESS_ANY, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS,
+        binding->offset, binding->length, mapping));
     out_entry->base = mapping->contents.data;
     out_entry->length = mapping->contents.data_length;
   } else {
@@ -2160,12 +2161,13 @@ static iree_status_t iree_hal_task_queue_execute_transfer_copy(
   iree_hal_buffer_mapping_t target_mapping = {{0}};
   iree_status_t status = iree_hal_buffer_map_range(
       transfer_operation->copy.source_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, transfer_operation->copy.source_offset,
-      transfer_operation->copy.length, &source_mapping);
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      transfer_operation->copy.source_offset, transfer_operation->copy.length,
+      &source_mapping);
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         transfer_operation->copy.target_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
         transfer_operation->copy.target_offset, transfer_operation->copy.length,
         &target_mapping);
   }
@@ -2199,7 +2201,8 @@ static iree_status_t iree_hal_task_queue_execute_transfer_download(
   iree_hal_buffer_mapping_t source_mapping = {{0}};
   iree_status_t status = iree_hal_buffer_map_range(
       transfer_operation->download.source_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, transfer_operation->download.source_offset,
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      transfer_operation->download.source_offset,
       transfer_operation->download.length, &source_mapping);
   if (iree_status_is_ok(status) &&
       !iree_all_bits_set(iree_hal_buffer_memory_type(
@@ -2294,16 +2297,17 @@ static void iree_hal_task_queue_set_transfer_recording_fixup(
 static iree_status_t iree_hal_task_queue_map_transfer_recording_buffer(
     iree_hal_task_queue_op_t* operation, iree_host_size_t* mapping_index,
     iree_hal_buffer_t* buffer, iree_hal_memory_access_t access,
-    iree_device_size_t offset, iree_device_size_t length,
-    iree_hal_cmd_fixup_t* fixup) {
+    iree_hal_buffer_map_flags_t flags, iree_device_size_t offset,
+    iree_device_size_t length, iree_hal_cmd_fixup_t* fixup) {
   if (IREE_UNLIKELY(*mapping_index >= operation->recording_mapping_count)) {
     return iree_make_status(IREE_STATUS_INTERNAL,
                             "transfer recording mapping count mismatch");
   }
   iree_hal_buffer_mapping_t* mapping =
       &operation->recording_mappings[(*mapping_index)++];
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
-      buffer, IREE_HAL_MAPPING_MODE_SCOPED, access, offset, length, mapping));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED, access,
+                                flags, offset, length, mapping));
   iree_hal_task_queue_set_transfer_recording_fixup(
       fixup, mapping->contents.data, mapping->contents.data_length);
   return iree_ok_status();
@@ -2322,7 +2326,7 @@ static iree_status_t iree_hal_task_queue_build_transfer_recording_operation(
         transfer_operation->fill.pattern_length, &fixups, &token));
     return iree_hal_task_queue_map_transfer_recording_buffer(
         operation, mapping_index, transfer_operation->fill.target_buffer,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
         transfer_operation->fill.target_offset, transfer_operation->fill.length,
         &fixups[0]);
   }
@@ -2369,16 +2373,15 @@ static iree_status_t iree_hal_task_queue_build_transfer_recording_operation(
   if (source_buffer) {
     IREE_RETURN_IF_ERROR(iree_hal_task_queue_map_transfer_recording_buffer(
         operation, mapping_index, source_buffer, IREE_HAL_MEMORY_ACCESS_READ,
-        source_offset, length, &fixups[0]));
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, source_offset, length, &fixups[0]));
   } else {
     iree_hal_task_queue_set_transfer_recording_fixup(
         &fixups[0], (void*)source_host_ptr, length);
   }
   if (target_buffer) {
     IREE_RETURN_IF_ERROR(iree_hal_task_queue_map_transfer_recording_buffer(
-        operation, mapping_index, target_buffer,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, target_offset, length,
-        &fixups[1]));
+        operation, mapping_index, target_buffer, IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_BUFFER_MAP_FLAG_DISCARD, target_offset, length, &fixups[1]));
   } else {
     iree_hal_task_queue_set_transfer_recording_fixup(&fixups[1],
                                                      target_host_ptr, length);
@@ -2527,9 +2530,10 @@ static iree_status_t iree_hal_task_queue_map_atomic_target(
     iree_hal_atomic_target_error_mode_t target_error_mode,
     iree_hal_memory_access_t access, iree_hal_buffer_mapping_t* out_mapping) {
   const iree_device_size_t byte_count = iree_hal_atomic_width_byte_count(width);
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
-      target_buffer, IREE_HAL_MAPPING_MODE_SCOPED, access, target_offset,
-      byte_count, out_mapping));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_buffer_map_range(target_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+                                access, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS,
+                                target_offset, byte_count, out_mapping));
   if (IREE_UNLIKELY(!iree_host_size_has_alignment(
           (iree_host_size_t)(uintptr_t)out_mapping->contents.data,
           (iree_host_size_t)byte_count))) {
@@ -3275,8 +3279,9 @@ static iree_status_t iree_hal_task_queue_drain_read(
 
   iree_status_t status = iree_hal_buffer_map_range(
       operation->read.buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, operation->read.buffer_offset,
-      operation->read.length, &io_context->mapping);
+      IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+      operation->read.buffer_offset, operation->read.length,
+      &io_context->mapping);
   if (!iree_status_is_ok(status)) {
     return status;
   }
@@ -3341,8 +3346,9 @@ static iree_status_t iree_hal_task_queue_drain_write(
 
   iree_status_t status = iree_hal_buffer_map_range(
       operation->write.buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, operation->write.buffer_offset,
-      operation->write.length, &io_context->mapping);
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      operation->write.buffer_offset, operation->write.length,
+      &io_context->mapping);
   if (!iree_status_is_ok(status)) {
     return status;
   }
@@ -4726,7 +4732,8 @@ static iree_status_t iree_hal_task_queue_drain_dispatch(
     iree_hal_buffer_mapping_t mapping = {{0}};
     status = iree_hal_buffer_map_range(
         binding->buffer, mapping_mode, IREE_HAL_MEMORY_ACCESS_ANY,
-        binding->offset, binding->length, &mapping);
+        IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, binding->offset, binding->length,
+        &mapping);
     if (iree_status_is_ok(status)) {
       host_ptrs[i] = mapping.contents.data;
       host_lengths[i] = mapping.contents.data_length;
@@ -4744,8 +4751,8 @@ static iree_status_t iree_hal_task_queue_drain_dispatch(
         &operation->dispatch.config.workgroup_count_ref;
     status = iree_hal_buffer_map_range(
         parameter_ref->buffer, mapping_mode, IREE_HAL_MEMORY_ACCESS_READ,
-        parameter_ref->offset, sizeof(iree_hal_dispatch_params_t),
-        &parameter_mapping);
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, parameter_ref->offset,
+        sizeof(iree_hal_dispatch_params_t), &parameter_mapping);
     if (iree_status_is_ok(status)) {
       parameter_host_ptr = parameter_mapping.contents.data;
       parameter_host_length = parameter_mapping.contents.data_length;

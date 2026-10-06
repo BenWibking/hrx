@@ -951,9 +951,9 @@ TEST(TLSFPool, MaterializationFailurePreservesReuseFrontier) {
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
       pool, params, 256, iree_immediate_timeout(), &buffer));
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_ALL, 0, 256,
-                                           &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 256, &mapping));
   memset(mapping.contents.data, 0x4D, mapping.contents.data_length);
   EXPECT_EQ(mapping.contents.data[255], 0x4D);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
@@ -1300,8 +1300,8 @@ TEST_F(TLSFPoolTest, WrapReservationCreatesBuffer) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0, 128,
-      &mapping));
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
   memset(mapping.contents.data, 0x7C, 128);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
 
@@ -1409,8 +1409,8 @@ TEST(TLSFPool, UsesProviderHooks) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0, 128,
-      &mapping));
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
   memset(mapping.contents.data, 0x4D, 128);
   EXPECT_EQ(((uint8_t*)mapping.contents.data)[127], 0x4D);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));

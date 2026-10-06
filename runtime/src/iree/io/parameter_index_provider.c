@@ -185,8 +185,7 @@ static iree_status_t iree_io_validate_parameter_range(
       if (iree_all_bits_set(
               iree_io_file_handle_access(entry->storage.file.handle),
               IREE_IO_FILE_ACCESS_WRITE)) {
-        allowed_access |=
-            IREE_HAL_MEMORY_ACCESS_WRITE | IREE_HAL_MEMORY_ACCESS_DISCARD;
+        allowed_access |= IREE_HAL_MEMORY_ACCESS_WRITE;
       }
       break;
     default:

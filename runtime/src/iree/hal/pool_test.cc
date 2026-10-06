@@ -254,13 +254,13 @@ class PoolFrontierWaitTest : public ::testing::Test {
     ASSERT_NE(buffer_, nullptr);
     iree_hal_buffer_mapping_t mapping = {};
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
-        buffer_, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE, 0,
-        kByteLength, &mapping));
+        buffer_, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, kByteLength, &mapping));
     memset(mapping.contents.data, 0xA5, kByteLength);
     IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
-        buffer_, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-        kByteLength, &mapping));
+        buffer_, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, kByteLength, &mapping));
     for (iree_host_size_t i = 0; i < kByteLength; ++i) {
       EXPECT_EQ(mapping.contents.data[i], 0xA5);
     }

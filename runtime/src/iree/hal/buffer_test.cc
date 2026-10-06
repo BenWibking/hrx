@@ -392,4 +392,94 @@ TEST(BufferExportTest, FailureClearsOutputAndPreservesMappingRequirements) {
   iree_hal_buffer_release(buffer);
 }
 
+class BufferMapTest : public ::testing::TestWithParam<iree_hal_mapping_mode_t> {
+ protected:
+  void SetUp() override {
+    for (size_t i = 0; i < sizeof(storage_); ++i) {
+      storage_[i] = i;
+    }
+    IREE_ASSERT_OK(iree_hal_heap_buffer_wrap(
+        iree_hal_buffer_placement_undefined(), IREE_HAL_MEMORY_TYPE_HOST_LOCAL,
+        IREE_HAL_MEMORY_ACCESS_ALL,
+        IREE_HAL_BUFFER_USAGE_MAPPING |
+            IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
+        sizeof(storage_), iree_make_byte_span(storage_, sizeof(storage_)),
+        iree_hal_buffer_release_callback_null(), iree_allocator_system(),
+        &buffer_));
+    iree_hal_buffer_t* outer = nullptr;
+    IREE_ASSERT_OK(iree_hal_buffer_subspan(buffer_, 8, 48,
+                                           iree_allocator_system(), &outer));
+    IREE_ASSERT_OK(
+        iree_hal_buffer_subspan(outer, 5, 24, iree_allocator_system(), &view_));
+    iree_hal_buffer_release(outer);
+  }
+
+  void TearDown() override {
+    iree_hal_buffer_release(view_);
+    iree_hal_buffer_release(buffer_);
+  }
+
+  // Imported host storage, including bytes outside the nested logical view.
+  alignas(64) uint8_t storage_[64] = {};
+  // Root view of the imported allocation.
+  iree_hal_buffer_t* buffer_ = nullptr;
+  // Nested view starting at byte 13 of storage_.
+  iree_hal_buffer_t* view_ = nullptr;
+};
+
+TEST_P(BufferMapTest, ReadWritePreservesContentsWithEitherAliasPromise) {
+  for (iree_hal_buffer_map_flags_t flags :
+       {IREE_HAL_BUFFER_MAP_FLAG_NONE, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS}) {
+    iree_hal_buffer_mapping_t mapping = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_range(
+        view_, GetParam(), IREE_HAL_MEMORY_ACCESS_ALL, flags, 3, 16, &mapping));
+    EXPECT_EQ(storage_ + 16, mapping.contents.data);
+    EXPECT_EQ(16u, mapping.contents.data_length);
+    for (size_t i = 0; i < sizeof(storage_); ++i) {
+      EXPECT_EQ(i, storage_[i]);
+    }
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  }
+}
+
+TEST_P(BufferMapTest, PreparedDiscardAppliesOnlyWhenCommitted) {
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_ASSERT_OK(iree_hal_buffer_prepare_map_range(
+      view_, GetParam(), IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 3, 16, &mapping));
+  EXPECT_EQ(nullptr, mapping.contents.data);
+  for (size_t i = 0; i < sizeof(storage_); ++i) {
+    EXPECT_EQ(i, storage_[i]);
+  }
+  IREE_ASSERT_OK(iree_hal_buffer_commit_map_range(&mapping));
+  EXPECT_EQ(storage_ + 16, mapping.contents.data);
+  memset(mapping.contents.data, 0xA5, mapping.contents.data_length);
+  IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+  for (size_t i = 0; i < sizeof(storage_); ++i) {
+    EXPECT_EQ(i >= 16 && i < 32 ? 0xA5u : i, storage_[i]);
+  }
+}
+
+TEST_P(BufferMapTest, RejectsInvalidFlagsBeforeMapping) {
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_hal_buffer_map_range(
+                            view_, GetParam(), IREE_HAL_MEMORY_ACCESS_READ,
+                            IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 0, 8, &mapping));
+  EXPECT_EQ(nullptr, mapping.buffer);
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_buffer_map_range(view_, GetParam(), IREE_HAL_MEMORY_ACCESS_ALL,
+                                static_cast<iree_hal_buffer_map_flags_t>(0x80),
+                                0, 8, &mapping));
+  EXPECT_EQ(nullptr, mapping.buffer);
+  for (size_t i = 0; i < sizeof(storage_); ++i) {
+    EXPECT_EQ(i, storage_[i]);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(Modes, BufferMapTest,
+                         ::testing::Values(IREE_HAL_MAPPING_MODE_SCOPED,
+                                           IREE_HAL_MAPPING_MODE_PERSISTENT));
+
 }  // namespace

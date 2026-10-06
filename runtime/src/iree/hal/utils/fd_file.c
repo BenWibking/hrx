@@ -438,8 +438,8 @@ static iree_status_t iree_hal_fd_file_read(iree_hal_file_t* base_file,
 
   iree_hal_buffer_mapping_t mapping = {{0}};
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
-      buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, buffer_offset, length, &mapping));
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD, buffer_offset, length, &mapping));
 
   iree_status_t status = iree_ok_status();
   uint8_t* buffer_ptr = mapping.contents.data;
@@ -476,7 +476,7 @@ static iree_status_t iree_hal_fd_file_write(iree_hal_file_t* base_file,
   iree_hal_buffer_mapping_t mapping = {{0}};
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
-      buffer_offset, length, &mapping));
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, buffer_offset, length, &mapping));
 
   iree_status_t status = iree_ok_status();
   if (!iree_all_bits_set(iree_hal_buffer_memory_type(buffer),

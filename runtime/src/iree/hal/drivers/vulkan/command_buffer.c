@@ -2693,8 +2693,9 @@ iree_hal_vulkan_command_buffer_materialize_transfer_staging(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         staging_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, /*byte_offset=*/0,
-        command_buffer->transfer_staging_length, &staging_mapping);
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+        /*byte_offset=*/0, command_buffer->transfer_staging_length,
+        &staging_mapping);
   }
 
   iree_hal_vulkan_command_buffer_iterator_t iterator =

@@ -133,8 +133,6 @@ static_assert(HRX_MEMORY_ACCESS_READ == IREE_HAL_MEMORY_ACCESS_READ,
               "memory access mismatch");
 static_assert(HRX_MEMORY_ACCESS_WRITE == IREE_HAL_MEMORY_ACCESS_WRITE,
               "memory access mismatch");
-static_assert(HRX_MEMORY_ACCESS_DISCARD == IREE_HAL_MEMORY_ACCESS_DISCARD,
-              "memory access mismatch");
 static_assert(HRX_MEMORY_ACCESS_ALL == IREE_HAL_MEMORY_ACCESS_ALL,
               "memory access mismatch");
 
@@ -213,12 +211,10 @@ static_assert(HRX_MEMORY_PROTECTION_READ == IREE_HAL_MEMORY_PROTECTION_READ,
 static_assert(HRX_MEMORY_PROTECTION_WRITE == IREE_HAL_MEMORY_PROTECTION_WRITE,
               "memory protection mismatch");
 
-// Map flags reuse memory access values.
+// Map permissions share memory access values; operation flags are translated.
 static_assert(HRX_MAP_READ == IREE_HAL_MEMORY_ACCESS_READ,
               "map flags mismatch");
 static_assert(HRX_MAP_WRITE == IREE_HAL_MEMORY_ACCESS_WRITE,
-              "map flags mismatch");
-static_assert(HRX_MAP_DISCARD == IREE_HAL_MEMORY_ACCESS_DISCARD,
               "map flags mismatch");
 
 //===----------------------------------------------------------------------===//

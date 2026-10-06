@@ -203,7 +203,13 @@ hrx_status_t hrx_buffer_map(hrx_buffer_t buffer, hrx_map_flags_t flags,
                                                 "buffer is already mapped"));
   }
 
-  iree_hal_memory_access_t access = 0;
+  if (flags &
+      ~(HRX_MAP_READ | HRX_MAP_WRITE | HRX_MAP_DISCARD | HRX_MAP_MAY_ALIAS)) {
+    HRX_RETURN_AND_END_ZONE(z0, hrx_make_status(HRX_STATUS_INVALID_ARGUMENT,
+                                                "unsupported map flags"));
+  }
+  iree_hal_memory_access_t access = IREE_HAL_MEMORY_ACCESS_NONE;
+  iree_hal_buffer_map_flags_t map_flags = IREE_HAL_BUFFER_MAP_FLAG_NONE;
   if (flags & HRX_MAP_READ) {
     access |= IREE_HAL_MEMORY_ACCESS_READ;
   }
@@ -211,11 +217,16 @@ hrx_status_t hrx_buffer_map(hrx_buffer_t buffer, hrx_map_flags_t flags,
     access |= IREE_HAL_MEMORY_ACCESS_WRITE;
   }
   if (flags & HRX_MAP_DISCARD) {
-    access |= IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE;
+    access |= IREE_HAL_MEMORY_ACCESS_WRITE;
+    map_flags |= IREE_HAL_BUFFER_MAP_FLAG_DISCARD;
+  }
+
+  if (flags & HRX_MAP_MAY_ALIAS) {
+    map_flags |= IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS;
   }
 
   iree_status_t status = iree_hal_buffer_map_range(
-      buffer->hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED, access,
+      buffer->hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED, access, map_flags,
       (iree_device_size_t)offset, (iree_device_size_t)size, &buffer->mapping);
   if (!iree_status_is_ok(status)) {
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
@@ -276,7 +287,8 @@ hrx_status_t hrx_buffer_get_device_ptr(hrx_buffer_t buffer, void** device_ptr) {
   // Try to get a native allocation pointer.
   status = iree_hal_buffer_map_range(
       buffer->hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_ALL, 0, buffer->size, &buffer->mapping);
+      IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0,
+      buffer->size, &buffer->mapping);
   if (iree_status_is_ok(status)) {
     buffer->is_mapped = true;
     buffer->mapped_ptr = buffer->mapping.contents.data;

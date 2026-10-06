@@ -1167,7 +1167,7 @@ static iree_status_t iree_hal_vulkan_queue_bda_publication_block_create(
   iree_hal_buffer_params_t params = {
       .type = IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE |
               IREE_HAL_MEMORY_TYPE_HOST_VISIBLE,
-      .access = IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
+      .access = IREE_HAL_MEMORY_ACCESS_WRITE,
       .usage = IREE_HAL_BUFFER_USAGE_STORAGE_READ |
                IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
                IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_SEQUENTIAL_WRITE,
@@ -1179,7 +1179,7 @@ static iree_status_t iree_hal_vulkan_queue_bda_publication_block_create(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         block->buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-        IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_NONE,
         /*byte_offset=*/0, capacity, &block->mapping);
   }
   if (iree_status_is_ok(status)) {
@@ -1624,6 +1624,7 @@ static iree_status_t iree_hal_vulkan_queue_staging_ring_create(
     status = iree_hal_buffer_map_range(
         ring->buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
         IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE,
         /*byte_offset=*/0, allocation_size, &ring->mapping);
   }
   if (iree_status_is_ok(status)) {
@@ -4366,7 +4367,8 @@ static iree_status_t iree_hal_vulkan_queue_prepare_fill_staging(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         staging_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, /*byte_offset=*/0,
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+        /*byte_offset=*/0,
         /*byte_length=*/8, &staging_mapping);
   }
   if (iree_status_is_ok(status)) {

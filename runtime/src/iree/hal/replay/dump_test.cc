@@ -889,6 +889,7 @@ TEST(ReplayDumpTest, EmitsBufferRangeDataRanges) {
   payload.byte_length = 4;
   payload.data_length = 4;
   payload.memory_access = IREE_HAL_MEMORY_ACCESS_WRITE;
+  payload.map_flags = IREE_HAL_BUFFER_MAP_FLAG_DISCARD;
   const uint8_t data[] = {0x01, 0x02, 0x03, 0x04};
   iree_const_byte_span_t iovecs[2] = {
       iree_make_const_byte_span(&payload, sizeof(payload)),
@@ -915,6 +916,13 @@ TEST(ReplayDumpTest, EmitsBufferRangeDataRanges) {
   EXPECT_THAT(output, HasSubstr("\"payload_type\":\"buffer_range_data\""));
   EXPECT_THAT(output, HasSubstr("\"data_range\""));
   EXPECT_THAT(output, HasSubstr("\"length\":4"));
+  EXPECT_THAT(output, HasSubstr("\"memory_access\":2"));
+  EXPECT_THAT(output, HasSubstr("\"map_flags\":1"));
+  options.format = IREE_HAL_REPLAY_DUMP_FORMAT_TEXT;
+  output.clear();
+  IREE_ASSERT_OK(
+      DumpReplayToString(MakeReplayFileContents(storage), &options, &output));
+  EXPECT_THAT(output, HasSubstr("memory_access=0x0002 map_flags=0x0001"));
 }
 
 TEST(ReplayDumpTest, EmitsQueueAllocaSemaphoreRanges) {

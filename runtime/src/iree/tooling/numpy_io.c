@@ -574,8 +574,8 @@ static iree_status_t iree_numpy_npy_write_bytes(
 
   iree_hal_buffer_mapping_t mapping;
   IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
-      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-      write_length, &mapping));
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, write_length, &mapping));
 
   iree_status_t status = iree_ok_status();
   if (write_length > 0 &&

@@ -196,6 +196,20 @@ iree_cc_test(
 
 iree_cc_test(
   NAME
+    buffer_test
+  SRCS
+    "buffer_test.cc"
+  DEPS
+    ::hrx_static
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+    libhrx_defs
+)
+
+iree_cc_test(
+  NAME
     graph_buffer_test
   SRCS
     "graph_buffer_test.cc"

@@ -555,7 +555,7 @@ static iree_status_t iree_hal_vulkan_buffer_export_range(
 
 static iree_status_t iree_hal_vulkan_buffer_map_range(
     iree_hal_buffer_t* base_buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   iree_hal_vulkan_buffer_t* buffer = iree_hal_vulkan_buffer_cast(base_buffer);
@@ -620,7 +620,7 @@ static iree_status_t iree_hal_vulkan_buffer_map_range(
   IREE_RETURN_IF_ERROR(status);
 
 #if !defined(NDEBUG)
-  if (iree_any_bit_set(memory_access, IREE_HAL_MEMORY_ACCESS_DISCARD)) {
+  if (iree_any_bit_set(flags, IREE_HAL_BUFFER_MAP_FLAG_DISCARD)) {
     memset(mapping->contents.data, 0xCD, local_byte_length);
   }
 #endif  // !defined(NDEBUG)

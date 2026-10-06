@@ -267,8 +267,7 @@ static iree_status_t iree_hal_memory_file_try_import_buffer(
   const bool is_aligned = iree_host_size_has_alignment(
       (uintptr_t)contents.data, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
   iree_hal_buffer_params_t storage_buffer_params = {
-      .access = access | IREE_HAL_MEMORY_ACCESS_DISCARD |
-                (!is_aligned ? IREE_HAL_MEMORY_ACCESS_UNALIGNED : 0),
+      .access = access | (!is_aligned ? IREE_HAL_MEMORY_ACCESS_UNALIGNED : 0),
       .queue_family_affinity = queue_family_affinity,
       .type = IREE_HAL_MEMORY_TYPE_OPTIMAL_FOR_HOST |
               IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,

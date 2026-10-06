@@ -667,8 +667,8 @@ TEST_F(FixedBlockPoolTest, WrapReservationCreatesBuffer) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0, 128,
-      &mapping));
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
   memset(mapping.contents.data, 0x5A, 128);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
 
@@ -795,8 +795,8 @@ TEST(FixedBlockPool, UsesProviderHooks) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0, 128,
-      &mapping));
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
   memset(mapping.contents.data, 0x3C, 128);
   EXPECT_EQ(((uint8_t*)mapping.contents.data)[127], 0x3C);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));

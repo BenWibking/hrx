@@ -150,18 +150,6 @@ enum iree_hal_memory_access_bits_t {
   // from it but the results will be undefined or incredibly slow (as it may
   // be mapped by the driver as uncached).
   IREE_HAL_MEMORY_ACCESS_WRITE = 1u << 1,
-  // Memory will be discarded prior to mapping.
-  // The existing contents will be undefined after mapping and must be written
-  // to ensure validity.
-  IREE_HAL_MEMORY_ACCESS_DISCARD = 1u << 2,
-  // Memory will be discarded and completely overwritten in a single operation.
-  IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE =
-      IREE_HAL_MEMORY_ACCESS_WRITE | IREE_HAL_MEMORY_ACCESS_DISCARD,
-  // A flag that can be applied to any access type to indicate that the buffer
-  // storage being accessed may alias with other accesses occurring concurrently
-  // within or across operations. The lack of the flag indicates that the access
-  // is guaranteed not to alias (ala C's `restrict` keyword).
-  IREE_HAL_MEMORY_ACCESS_MAY_ALIAS = 1u << 3,
   // A flag that can be applied to any access type to indicate that the buffer
   // storage may not be aligned.
   IREE_HAL_MEMORY_ACCESS_UNALIGNED = 1u << 4,
@@ -171,13 +159,10 @@ enum iree_hal_memory_access_bits_t {
   // This should only be used by device-side code where it is known-safe to
   // bypass the access verification.
   IREE_HAL_MEMORY_ACCESS_ANY = 1u << 5,
-  // Memory may have any operation performed on it.
-  // Note that this explicitly includes 'DISCARD', which means that the
-  // mapped memory will have undefined contents. Do not use this access
-  // mode if you intend the existing contents to be accessible.
-  IREE_HAL_MEMORY_ACCESS_ALL = IREE_HAL_MEMORY_ACCESS_READ |
-                               IREE_HAL_MEMORY_ACCESS_WRITE |
-                               IREE_HAL_MEMORY_ACCESS_DISCARD,
+  // Memory may be read and written. Mapping with these permissions preserves
+  // existing contents unless DISCARD is explicitly requested as a map flag.
+  IREE_HAL_MEMORY_ACCESS_ALL =
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
 };
 typedef uint16_t iree_hal_memory_access_t;
 
@@ -466,6 +451,23 @@ enum iree_hal_mapping_mode_bits_t {
 };
 typedef uint32_t iree_hal_mapping_mode_t;
 
+// Operation-specific mapping promises, independent of buffer permissions.
+enum iree_hal_buffer_map_flag_bits_e {
+  IREE_HAL_BUFFER_MAP_FLAG_NONE = 0u,
+
+  // Existing contents of the mapped range need not be preserved. Requires
+  // WRITE access. Bytes must be initialized before they are read again. This
+  // neither waits for prior accesses nor discards bytes outside the range.
+  IREE_HAL_BUFFER_MAP_FLAG_DISCARD = 1u << 0,
+
+  // Mapped accesses may alias other accesses occurring concurrently within or
+  // across operations. Without this flag accesses carry a C restrict-like
+  // non-aliasing promise. This supplies no synchronization, extends no memory
+  // lifetime, and does not make overlapping copies valid.
+  IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS = 1u << 1,
+};
+typedef uint16_t iree_hal_buffer_map_flags_t;
+
 //===----------------------------------------------------------------------===//
 // External buffers
 //===----------------------------------------------------------------------===//
@@ -727,6 +729,8 @@ typedef struct iree_hal_buffer_mapping_impl_t {
   iree_device_size_t byte_offset;
   // Used for validation only.
   iree_hal_memory_access_t allowed_access;
+  // Operation flags captured when the mapping is prepared.
+  iree_hal_buffer_map_flags_t flags;
   // Tracking flags.
   uint32_t is_persistent : 1;
   uint32_t reserved_flags : 31;
@@ -1116,14 +1120,17 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_copy(
 // Fails if the memory could not be mapped (invalid access type, invalid
 // range, or unsupported memory type).
 //
-// Requires that the buffer has the IREE_HAL_BUFFER_USAGE_MAPPING bit set.
+// |mapping_mode| must be SCOPED or PERSISTENT, with the corresponding
+// IREE_HAL_BUFFER_USAGE_MAPPING_* capability enabled on the buffer. Access
+// permissions and operation flags are independent: READ | WRITE preserves
+// contents unless |flags| explicitly includes DISCARD.
 // If the buffer is not IREE_HAL_MEMORY_TYPE_HOST_COHERENT then the caller must
 // invalidate the byte range they want to access to update the visibility of the
 // mapped memory.
 IREE_API_EXPORT iree_status_t iree_hal_buffer_map_range(
     iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access, iree_device_size_t byte_offset,
-    iree_device_size_t byte_length,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
+    iree_device_size_t byte_offset, iree_device_size_t byte_length,
     iree_hal_buffer_mapping_t* out_buffer_mapping);
 
 // Prepares for mapping the buffer to be accessed as a host pointer into
@@ -1132,7 +1139,8 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_range(
 // start of the data. Fails if the memory could not be mapped (invalid access
 // type, invalid range, or unsupported memory type).
 //
-// Requires that the buffer has the IREE_HAL_BUFFER_USAGE_MAPPING bit set.
+// |mapping_mode| must be SCOPED or PERSISTENT, with the corresponding
+// IREE_HAL_BUFFER_USAGE_MAPPING_* capability enabled on the buffer.
 // If the buffer is not IREE_HAL_MEMORY_TYPE_HOST_COHERENT then the caller must
 // invalidate the byte range they want to access to update the visibility of the
 // mapped memory.
@@ -1149,21 +1157,20 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_range(
 //
 // Example usage:
 //  iree_hal_buffer_prepare_map_range(..., &mapping);
-//  if (maybe) iree_hal_buffer_commit_map_range(..., &mapping);
+//  if (maybe) iree_hal_buffer_commit_map_range(&mapping);
 //  iree_hal_buffer_unmap_range(&mapping);
 IREE_API_EXPORT iree_status_t iree_hal_buffer_prepare_map_range(
     iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access, iree_device_size_t byte_offset,
-    iree_device_size_t byte_length,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
+    iree_device_size_t byte_offset, iree_device_size_t byte_length,
     iree_hal_buffer_mapping_t* out_buffer_mapping);
 
 // Commits a mapping operation from iree_hal_buffer_prepare_map_range.
 // May fail for internal reasons but not any of those previously validated
-// during preparation.
-IREE_API_EXPORT iree_status_t iree_hal_buffer_commit_map_range(
-    iree_hal_buffer_t* buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
-    iree_hal_buffer_mapping_t* buffer_mapping);
+// during preparation. Uses the access, mode, flags and range captured by
+// prepare; the caller must not modify that prepared state before commit.
+IREE_API_EXPORT iree_status_t
+iree_hal_buffer_commit_map_range(iree_hal_buffer_mapping_t* buffer_mapping);
 
 // Unmaps the buffer as was previously mapped to |buffer_mapping|.
 //
@@ -1281,6 +1288,7 @@ typedef struct iree_hal_buffer_vtable_t {
   iree_status_t(IREE_API_PTR* map_range)(iree_hal_buffer_t* buffer,
                                          iree_hal_mapping_mode_t mapping_mode,
                                          iree_hal_memory_access_t memory_access,
+                                         iree_hal_buffer_map_flags_t flags,
                                          iree_device_size_t local_byte_offset,
                                          iree_device_size_t local_byte_length,
                                          iree_hal_buffer_mapping_t* mapping);

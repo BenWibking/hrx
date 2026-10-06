@@ -389,7 +389,8 @@ static iree_status_t iree_hal_streaming_buffer_wrap_hrx_buffer(
       (wrapper->memory_type & IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)) {
     iree_status_t map_status = iree_hal_buffer_map_range(
         wrapper->buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-        IREE_HAL_MEMORY_ACCESS_ALL, 0, wrapper->size, &wrapper->host_mapping);
+        IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0,
+        wrapper->size, &wrapper->host_mapping);
     if (iree_status_is_ok(map_status)) {
       wrapper->host_ptr = wrapper->host_mapping.contents.data;
       wrapper->has_host_mapping = true;

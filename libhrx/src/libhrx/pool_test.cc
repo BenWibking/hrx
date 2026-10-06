@@ -262,6 +262,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer->hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
       IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE,
       /*byte_offset=*/0, /*byte_length=*/1024, &mapping));
   memset(mapping.contents.data, 0x3C, mapping.contents.data_length);
   EXPECT_EQ(mapping.contents.data[1023], 0x3C);

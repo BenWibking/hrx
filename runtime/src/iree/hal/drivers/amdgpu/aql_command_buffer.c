@@ -775,8 +775,8 @@ iree_hal_amdgpu_aql_command_buffer_materialize_prepublished_kernargs(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         template_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, /*byte_offset=*/0,
-        (iree_device_size_t)allocation_length, &mapping);
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+        /*byte_offset=*/0, (iree_device_size_t)allocation_length, &mapping);
   }
   if (iree_status_is_ok(status)) {
     memset(mapping.contents.data, 0, allocation_length);

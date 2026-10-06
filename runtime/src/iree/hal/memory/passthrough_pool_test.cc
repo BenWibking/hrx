@@ -735,8 +735,8 @@ TEST(PassthroughPool, UsesProviderHooks) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0, 256,
-      &mapping));
+      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 256, &mapping));
   memset(mapping.contents.data, 0x6B, 256);
   EXPECT_EQ(((uint8_t*)mapping.contents.data)[255], 0x6B);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
@@ -888,8 +888,8 @@ TEST_F(PassthroughPoolTest, BufferMemoryAccess) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_WRITE | IREE_HAL_MEMORY_ACCESS_READ, 0, 256,
-      &mapping));
+      IREE_HAL_MEMORY_ACCESS_WRITE | IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 256, &mapping));
   memset(mapping.contents.data, 0xCD, 256);
   EXPECT_EQ(((uint8_t*)mapping.contents.data)[0], 0xCD);
   EXPECT_EQ(((uint8_t*)mapping.contents.data)[255], 0xCD);
@@ -981,9 +981,9 @@ TEST_F(PassthroughPoolTest, WrappedBuffersBorrowPool) {
   // Wrapped buffers borrow the pool. Use the buffer while the pool is still
   // alive, then release the buffer before releasing the pool.
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_WRITE, 0, 512,
-                                           &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 512, &mapping));
   memset(mapping.contents.data, 0xEF, 512);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
 

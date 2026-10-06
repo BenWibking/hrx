@@ -316,7 +316,7 @@ static iree_status_t iree_hal_task_transient_buffer_export_range(
 
 static iree_status_t iree_hal_task_transient_buffer_map_range(
     iree_hal_buffer_t* base_buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   iree_hal_task_transient_buffer_t* buffer =
@@ -326,7 +326,7 @@ static iree_status_t iree_hal_task_transient_buffer_map_range(
       iree_hal_task_transient_buffer_retain_host_backing(buffer, &committed));
   iree_status_t status =
       iree_hal_task_transient_buffer_committed_vtable(committed)->map_range(
-          committed, mapping_mode, memory_access, local_byte_offset,
+          committed, mapping_mode, memory_access, flags, local_byte_offset,
           local_byte_length, mapping);
   if (iree_status_is_ok(status)) {
     if (mapping->impl.is_persistent) {

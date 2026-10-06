@@ -101,7 +101,7 @@ TEST_F(ReplayRecorderBufferTest, ExportsNestedSubspansOfANativeView) {
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       nested_subspan, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
-      0, IREE_HAL_WHOLE_BUFFER, &mapping));
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, IREE_HAL_WHOLE_BUFFER, &mapping));
   EXPECT_EQ(storage_ + 50, mapping.contents.data);
   EXPECT_EQ(8u, mapping.contents.data_length);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
