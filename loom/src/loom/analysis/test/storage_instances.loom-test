@@ -584,3 +584,94 @@ kernel.def @test() {
 
 // ----
 storage: accessed=yes single_instance=unproven
+
+// ====
+
+// Impure calls can access their arguments, but cannot discover fresh private
+// scratch that has never been passed to them.
+func.decl @service(%external: buffer)
+
+func.def @test(%external: buffer, %limit: index) -> (i32) {
+  %origin = index.constant 0 : offset
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %seed = scalar.constant 7 : i32
+  %sum = scf.for %i = [%begin to %limit step %step](%accumulator = %seed : i32) -> (i32) {
+    %scratch = buffer.alloca<private> align(4) %bytes : buffer
+    %slot = buffer.view %scratch[%origin] : buffer -> view<1xi32>
+    view.store %accumulator, %slot[0] : i32, view<1xi32>
+    func.call @service(%external) : (buffer)
+    %next = view.load %slot[0] : view<1xi32> -> i32
+    scf.yield %next : i32
+  }
+  func.return %sum : i32
+}
+
+// ----
+scratch: accessed=yes single_instance=yes
+
+// ====
+
+// Exposing either the root or an alias prevents static instance reuse. The
+// opaque callee may retain the reference after returning.
+func.decl @remember_buffer(%storage: buffer)
+
+func.decl @remember_view(%storage: view<1xi32>)
+
+func.def @test(%limit: index) {
+  %origin = index.constant 0 : offset
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %i = [%begin to %limit step %step] {
+    %root = buffer.alloca<private> align(4) %bytes : buffer
+    %alias_root = buffer.alloca<private> align(4) %bytes : buffer
+    %alias = buffer.view %alias_root[%origin] : buffer -> view<1xi32>
+    func.call @remember_buffer(%root) : (buffer)
+    func.call @remember_view(%alias) : (view<1xi32>)
+  }
+  func.return
+}
+
+// ----
+root: accessed=yes single_instance=unproven
+alias_root: accessed=yes single_instance=unproven
+root / alias_root: workgroup_nonoverlap=unproven
+
+// ====
+
+// Target-Low interop obeys the same boundary. Buffer exposure through a pure
+// pointer conversion remains opaque even though the conversion has no effects.
+test.target<low_core> @test_target
+
+low.func.decl target<test.low.core>(@test_target) @wait_credit()
+
+low.func.decl pure target<test.low.core>(@test_target) @encode_address(%storage: reg<test.ptr>) -> (reg<test.i64>)
+
+low.func.decl target<test.low.core>(@test_target) @publish_address(%address: reg<test.i64>)
+
+func.def @test(%limit: index) -> (i32) {
+  %origin = index.constant 0 : offset
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %seed = scalar.constant 7 : i32
+  %sum = scf.for %i = [%begin to %limit step %step](%accumulator = %seed : i32) -> (i32) {
+    %scratch = buffer.alloca<private> align(4) %bytes : buffer
+    %exposed = buffer.alloca<private> align(4) %bytes : buffer
+    %slot = buffer.view %scratch[%origin] : buffer -> view<1xi32>
+    view.store %accumulator, %slot[0] : i32, view<1xi32>
+    low.invoke @wait_credit() : ()
+    %address = low.invoke pure @encode_address(%exposed) : (buffer) -> (i64)
+    low.invoke @publish_address(%address) : (i64)
+    %next = view.load %slot[0] : view<1xi32> -> i32
+    scf.yield %next : i32
+  }
+  func.return %sum : i32
+}
+
+// ----
+scratch: accessed=yes single_instance=yes
+exposed: accessed=yes single_instance=unproven
+scratch / exposed: workgroup_nonoverlap=unproven

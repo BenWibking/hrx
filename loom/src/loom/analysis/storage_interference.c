@@ -339,6 +339,16 @@ static iree_status_t loom_storage_interference_record_value_accesses(
   const loom_use_t* use = NULL;
   loom_value_for_each_use(value, use) {
     const loom_op_t* user_op = loom_use_user_op(*use);
+    // A call can retain a reference or return an alias, including encoding it
+    // as a scalar at a Low boundary. Until the callee's access/escape contract
+    // is known, only the roots exposed to that call lose their lifetime proof.
+    // Purity alone does not describe result aliases.
+    if (loom_call_like_isa(
+            loom_call_like_cast(analysis->module, (loom_op_t*)user_op))) {
+      loom_storage_interference_mark_memberships_incomplete(analysis,
+                                                            memberships);
+      continue;
+    }
     const loom_op_vtable_t* vtable = loom_op_vtable(analysis->module, user_op);
     const loom_operand_descriptor_t* descriptor = NULL;
     if (!loom_op_operand_descriptor_at(vtable, user_op,
@@ -678,11 +688,16 @@ static iree_status_t loom_storage_interference_walk_op(
       loom_op_effective_traits(analysis->module, op);
   const bool known_async_stream_effect =
       loom_kernel_async_group_isa(op) || loom_kernel_async_wait_isa(op);
+  // Fresh frame storage is reachable by a callee through its operands. The
+  // per-value walk handles those exposures after alias propagation; a call
+  // without a reference to a root cannot invalidate that root's proof.
+  const bool callable_effect =
+      loom_call_like_isa(loom_call_like_cast(analysis->module, op));
   if (iree_any_bit_set(traits, LOOM_TRAIT_UNKNOWN_EFFECTS) &&
-      !known_async_stream_effect) {
+      !known_async_stream_effect && !callable_effect) {
     analysis->has_unknown_memory_access = true;
   } else if (loom_traits_may_access_memory(traits) &&
-             !known_async_stream_effect) {
+             !known_async_stream_effect && !callable_effect) {
     bool described_read = false;
     bool described_write = false;
     if (vtable && vtable->operand_descriptors) {
