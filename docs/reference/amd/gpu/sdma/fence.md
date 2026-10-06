@@ -54,6 +54,10 @@ the signal's mailbox. Payload completion, notification completion,
 primary-ring consumption, and the final use of each allocation are distinct
 observations. [Notification owner](atomics.md#memory-and-lifetime)
 
+The [native notification protocol](../notifications.md) follows that mailbox
+through KFD interrupt delivery, host wait registration and event reuse. The
+decoder's mailbox requirements differ between CP, SDMA and shader interrupts.
+
 ## Native 64-bit form
 
 ROCr's gfx1250 FENCE_64B is opcode 5/suboperation 2 and occupies five DWORDs.

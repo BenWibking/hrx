@@ -10,6 +10,7 @@ resource-lifetime protocol.
 | [Architecture and transport](architectures.md) | Physical IP, compiler targets, native queues, and submission ownership. |
 | [Compute context save and restore](context-save.md) | CWSR, `ctx_save_restore_size`, per-XCC storage, control-stack inspection, suspension and final ownership. |
 | [Shader memory publication](shader-memory.md) | Resident release/acquire sequences, `s_waitcnt`, `buffer_inv`, `global_wb`, cache scopes, and wave/workgroup joins across GCN, CDNA and RDNA. |
+| [Native signals and host notification](notifications.md) | `event_mailbox_ptr`, KFD event ages, interrupt decoding, sleeping waits and notification-storage lifetime. |
 | [PM4](pm4/README.md) | Compute dispatch, memory commands, cache control, and command-buffer execution. |
 | [AQL](aql/README.md) | Packet publication, dispatch, dependencies, vendor command carriers, and profiling. |
 | [SDMA](sdma/README.md) | Transfer-engine operations and signaling protocols. |

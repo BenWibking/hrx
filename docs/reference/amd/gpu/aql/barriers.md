@@ -94,6 +94,10 @@ reserved fields. A native handle identifies the ABI block; the surrounding
 ROCr signal object has additional ownership and runtime metadata. [Native
 layout][signal] · [ROCr object conversion][convert]
 
+The [native notification chapter](../notifications.md) traces the separate
+event mailbox, interrupt decoding and sleeping host wait. A native event wake
+does not replace the signal comparison or the payload acquire.
+
 Initializing only the signal value does not create that surrounding runtime
 object. Likewise, a host value store does not promise to clear all other
 native fields. Rearming a retained signal updates its value under the
