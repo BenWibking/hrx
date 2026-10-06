@@ -3,12 +3,12 @@
 kernel.def @exit_owner() {
   %c1 = index.constant 1 : index
   kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%c1, %c1, %c1) : index
-} launch(%done: i1, %resource: pool<16>) {
+} launch(%done: i1, %resource: pool) {
   kernel.exit %done : i1 {
-    %moved = test.resource.move %resource : pool<16> -> pool<16>
-    test.resource.borrow %moved : pool<16>
+    %moved = test.resource.move %resource : pool -> pool
+    test.resource.borrow %moved : pool
   }
-  test.resource.borrow %resource : pool<16>
+  test.resource.borrow %resource : pool
   kernel.return
 }
 
@@ -16,11 +16,11 @@ kernel.def @exit_owner() {
 
 // An elementwise region repeats its capture but recreates each element arg.
 // RUN: verify
-func.def @map_captured_owner(%input: tile<4xf32>, %resource: pool<16>) -> (tile<4xf32>) {
+func.def @map_captured_owner(%input: tile<4xf32>, %resource: pool) -> (tile<4xf32>) {
   %result = test.map(%element = %input : tile<4xf32>) {
     // ERROR@+1: DOMINANCE/002 {value_name="resource"}
-    %moved = test.resource.move %resource : pool<16> -> pool<16>
-    test.resource.borrow %moved : pool<16>
+    %moved = test.resource.move %resource : pool -> pool
+    test.resource.borrow %moved : pool
     test.yield %element : f32
   } -> (tile<4xf32>)
   func.return %result : tile<4xf32>
@@ -30,13 +30,13 @@ func.def @map_captured_owner(%input: tile<4xf32>, %resource: pool<16>) -> (tile<
 
 // Each optional branch may consume the same captured owner.
 // RUN: verify
-func.def @optional_branch_owner(%condition: i1, %resource: pool<16>) {
+func.def @optional_branch_owner(%condition: i1, %resource: pool) {
   test.optional_region %condition {
-    %left = test.resource.move %resource : pool<16> -> pool<16>
-    test.resource.borrow %left : pool<16>
+    %left = test.resource.move %resource : pool -> pool
+    test.resource.borrow %left : pool
   } else {
-    %right = test.resource.move %resource : pool<16> -> pool<16>
-    test.resource.borrow %right : pool<16>
+    %right = test.resource.move %resource : pool -> pool
+    test.resource.borrow %right : pool
   }
   func.return
 }
@@ -57,12 +57,12 @@ test.func @independent_numeric_identity(%input: index) {
 // Managed aliases borrow the resource referent, not a physical register owner.
 // Moving the owning reference preserves the referent for both borrowed forms.
 // RUN: verify
-test.func @managed_referent_survives_move(%resource: pool<16>) {
-  %alias = test.resource.alias %resource : pool<16> -> pool<16>
-  %borrowed = test.resource.borrowed %resource : pool<16> -> pool<16>
-  %moved = test.resource.move %resource : pool<16> -> pool<16>
-  test.resource.borrow %alias : pool<16>
-  test.resource.borrow %borrowed : pool<16>
-  test.resource.borrow %moved : pool<16>
+test.func @managed_referent_survives_move(%resource: pool) {
+  %alias = test.resource.alias %resource : pool -> pool
+  %borrowed = test.resource.borrowed %resource : pool -> pool
+  %moved = test.resource.move %resource : pool -> pool
+  test.resource.borrow %alias : pool
+  test.resource.borrow %borrowed : pool
+  test.resource.borrow %moved : pool
   test.yield
 }

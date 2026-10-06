@@ -29,22 +29,25 @@ from loom.dsl import (
     Result,
     SameType,
     SymbolDefinition,
+    SymbolReference,
     SymbolValueContract,
 )
 from loom.gen.ops.c_metadata_tables import generate_tables_c
 
 
 @pytest.mark.parametrize("execution", [None, *RegionExecution])
-def test_region_execution_metadata(execution: RegionExecution | None) -> None:
+@pytest.mark.parametrize("independent_target", [False, True])
+def test_region_execution_metadata(execution: RegionExecution | None, independent_target: bool) -> None:
     op = Op(
         "test.region",
         group=Dialect("test"),
-        regions=[RegionDef("body", execution=execution)],
+        attrs=[AttrDef("target", ATTR_TYPE_SYMBOL, symbol_ref=SymbolReference("target", ["target"]))] if independent_target else [],
+        regions=[RegionDef("body", execution=execution, execution_target="target" if independent_target else None)],
         format=[Region("body")],
     )
     expected = execution if execution is not None else RegionExecution.ONCE
     source = generate_tables_c("test", 0, [op])
-    assert f"{{LOOM_OP_KIND_UNKNOWN, LOOM_OP_KIND_UNKNOWN, 0, {expected.c_name}}}" in source
+    assert f"{{LOOM_OP_KIND_UNKNOWN, LOOM_OP_KIND_UNKNOWN, 0, {expected.c_name}, {int(independent_target)}}}" in source
 
 
 def test_capturing_multiple_regions_requires_declared_control_flow() -> None:
