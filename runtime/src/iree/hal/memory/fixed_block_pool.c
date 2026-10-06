@@ -295,7 +295,6 @@ static void iree_hal_fixed_block_pool_return_allocation(
       allocation->offset + (asan_enabled ? asan_layout->user_offset : 0);
   out_reservation->byte_length = byte_length;
   out_reservation->block_handle = allocation->block_index;
-  out_reservation->slab_index = 0;
 
   // Tainted blocks never reach this helper: frontier_is_satisfied rejects
   // them (so they never become OK/OK_FRESH) and can_wait_for_allocation

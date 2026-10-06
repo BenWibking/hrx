@@ -94,13 +94,13 @@ enum iree_hal_pool_acquire_result_e {
 // iree_hal_pool_acquire_reservations() and passed to
 // iree_hal_pool_release_reservations().
 //
-// This is a pure value type (32 bytes, no ownership). It lives on the stack
-// during queue submission or is stored in the buffer that wraps it. The offset
-// and byte length describe the user-visible range that may be materialized as
-// a HAL buffer. Concrete pools may reserve additional backing bytes for
-// alignment, block-granularity allocation, guard regions, sanitizer redzones,
-// or other provider-specific metadata; those bytes are owned by the pool and
-// must not be inferred from this public value.
+// This is a pure value type (24 bytes, no duplicated ownership). It lives on
+// the stack during queue submission or is stored in the buffer that wraps it.
+// The offset and byte length describe the user-visible range that may be
+// materialized as a HAL buffer. Concrete pools may reserve additional backing
+// bytes for alignment, block-granularity allocation, guard regions, sanitizer
+// redzones, or other provider-specific metadata; those bytes are owned by the
+// pool and must not be inferred from this public value.
 typedef struct iree_hal_pool_reservation_t {
   // Offset of the user-visible range within the pool's managed range.
   iree_device_size_t offset;
@@ -116,13 +116,6 @@ typedef struct iree_hal_pool_reservation_t {
   // fixed-block block index, pass-through reservation-state pointer, etc.
   // 64-bit to accommodate pointer-sized handles on all platforms.
   uint64_t block_handle;
-
-  // Which slab within the pool (for multi-slab pools in slab mode).
-  // 0 for single-slab or VMM pools.
-  uint16_t slab_index;
-
-  // Reserved for future expansion. Must be zero.
-  uint16_t reserved[3];
 } iree_hal_pool_reservation_t;
 
 // Describes one allocation in a pool reservation transaction.

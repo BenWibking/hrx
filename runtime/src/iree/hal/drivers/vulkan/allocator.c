@@ -19,6 +19,7 @@
 #include "iree/hal/drivers/vulkan/sparse_buffer.h"
 #include "iree/hal/memory/maintenance_thread.h"
 #include "iree/hal/memory/passthrough_pool.h"
+#include "iree/hal/memory/slab_cache.h"
 #include "iree/hal/memory/tlsf_pool.h"
 
 //===----------------------------------------------------------------------===//
@@ -67,6 +68,9 @@ typedef struct iree_hal_vulkan_allocator_pool_pair_t {
 
   // Suballocating pool used for allocations up to the default slab length.
   iree_hal_pool_t* tlsf_pool;
+
+  // Explicit retention cache for this memory type's TLSF backing slabs.
+  iree_hal_pool_t* backing_cache;
 
   // Direct per-allocation pool used for allocations larger than one slab.
   iree_hal_pool_t* oversized_pool;
@@ -355,6 +359,8 @@ static iree_status_t iree_hal_vulkan_allocator_trim(
   for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
     iree_hal_pool_trim(allocator->pool_pairs[i].tlsf_pool,
                        IREE_HAL_POOL_TRIM_FLAG_EXCESS, /*min_bytes_to_keep=*/0);
+    iree_hal_pool_trim(allocator->pool_pairs[i].backing_cache,
+                       IREE_HAL_POOL_TRIM_FLAG_EXCESS, 0);
   }
   return iree_ok_status();
 }
@@ -682,9 +688,19 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
         allocator->memory_maintenance, allocator->host_allocator,
         &backing_pool);
     if (iree_status_is_ok(status)) {
-      status = iree_hal_tlsf_pool_create(backing_pool, &tlsf_options,
-                                         allocator->host_allocator,
-                                         &out_pool_pair->tlsf_pool);
+      iree_hal_slab_cache_options_t cache_options = {.max_count = UINT32_MAX};
+      status = iree_hal_tlsf_pool_query_backing_request(
+          backing_pool, &tlsf_options, &cache_options.slab);
+      if (iree_status_is_ok(status)) {
+        status = iree_hal_slab_cache_create(backing_pool, &cache_options,
+                                            allocator->host_allocator,
+                                            &out_pool_pair->backing_cache);
+      }
+    }
+    if (iree_status_is_ok(status)) {
+      status = iree_hal_tlsf_pool_create(
+          out_pool_pair->backing_cache, &tlsf_options,
+          allocator->host_allocator, &out_pool_pair->tlsf_pool);
     }
     iree_hal_pool_release(backing_pool);
   }
@@ -706,6 +722,7 @@ static iree_status_t iree_hal_vulkan_allocator_create_pool_pair(
   if (!iree_status_is_ok(status)) {
     iree_hal_pool_release(out_pool_pair->oversized_pool);
     iree_hal_pool_release(out_pool_pair->tlsf_pool);
+    iree_hal_pool_release(out_pool_pair->backing_cache);
     iree_hal_slab_provider_release(out_pool_pair->slab_provider);
     memset(out_pool_pair, 0, sizeof(*out_pool_pair));
   }
@@ -721,6 +738,7 @@ void iree_hal_vulkan_allocator_deinitialize_default_pools(
   for (iree_host_size_t i = 0; i < allocator->pool_pair_count; ++i) {
     iree_hal_pool_release(allocator->pool_pairs[i].oversized_pool);
     iree_hal_pool_release(allocator->pool_pairs[i].tlsf_pool);
+    iree_hal_pool_release(allocator->pool_pairs[i].backing_cache);
     iree_hal_slab_provider_release(allocator->pool_pairs[i].slab_provider);
   }
   memset(allocator->pool_pairs, 0, sizeof(allocator->pool_pairs));

@@ -546,7 +546,6 @@ TEST_F(FixedBlockPoolTest, ReserveReleaseFresh) {
   EXPECT_EQ(reservation.offset, 0u);
   EXPECT_EQ(reservation.byte_length, 128u);
   EXPECT_EQ(reservation.block_handle, 0u);
-  EXPECT_EQ(reservation.slab_index, 0u);
   EXPECT_EQ(reserve_info.reuse_frontier, nullptr);
   EXPECT_EQ(reserve_info.flags, IREE_HAL_POOL_ACQUIRE_FLAG_NONE);
 

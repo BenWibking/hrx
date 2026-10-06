@@ -45,6 +45,9 @@ void iree_hal_slab_cache_options_initialize(
 // is preserved without touching its bytes; ordinary reservation eligibility
 // still permits an ordered borrower to accept that range with a dependency.
 // The cache and its backing pool must outlive all reservations and views.
+// Trim also schedules an ordered sweep after previously queued child returns;
+// it never joins native preparation on the caller. Committed-byte statistics
+// exclude detached returns even while their native retirement is pending.
 // Final destruction joins this cache's maintenance and runs outside the
 // captured executor after the caller has retired its execution.
 iree_status_t iree_hal_slab_cache_create(

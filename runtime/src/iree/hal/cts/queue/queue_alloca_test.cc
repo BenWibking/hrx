@@ -344,8 +344,9 @@ TEST_P(QueueAllocaTest, IndependentAllocatorsShareCachedNativeBacking) {
   const auto request = MakeRequest(transfer_queue_, 256);
   const iree_hal_buffer_backing_facts_t* first_backing = nullptr;
   iree_device_size_t first_offset = 0;
+  Ref<iree_hal_pool_t> children[2];
   for (uint32_t iteration = 0; iteration < 2; ++iteration) {
-    Ref<iree_hal_pool_t> child;
+    auto& child = children[iteration];
     IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
         cache, &options, iree_allocator_system(), child.out()));
     Ref<iree_hal_buffer_t> buffer;
@@ -372,9 +373,8 @@ TEST_P(QueueAllocaTest, IndependentAllocatorsShareCachedNativeBacking) {
     iree_hal_buffer_t* buffers[] = {buffer.get()};
     DeallocaAndWait(transfer_queue_, 1, buffers);
     buffer.reset();
-    // The first policy is destroyed before the second policy is constructed.
-    // The shared cache remains the sole owner of their reusable native epoch.
-    child.reset();
+    // Both policies remain alive. Idle ownership moves to their shared cache
+    // as soon as a whole range can be returned.
   }
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(native, &stats);

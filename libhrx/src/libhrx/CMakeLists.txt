@@ -70,6 +70,7 @@ iree_cc_library(
     iree::hal::memory::asan
     iree::hal::memory::cpu_slab_provider
     iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::hal::utils::profile_file
@@ -147,6 +148,7 @@ iree_cc_library(
     iree::hal::memory::asan
     iree::hal::memory::cpu_slab_provider
     iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::hal::utils::profile_file
@@ -233,6 +235,7 @@ iree_cc_test(
     ::hrx_static
     iree::base
     iree::hal
+    iree::hal::memory::maintenance
     iree::testing::gtest
     iree::testing::gtest_main
     libhrx_defs

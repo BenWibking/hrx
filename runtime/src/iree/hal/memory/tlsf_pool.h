@@ -41,17 +41,30 @@ typedef struct iree_hal_tlsf_pool_options_t {
   iree_string_view_t trace_name;
 } iree_hal_tlsf_pool_options_t;
 
+// Resolves the exact backing request for these options against a source pool.
+// This includes sanitizer padding and native maintenance alignment. Callers
+// can use the result to configure a shared slab cache before creating TLSF
+// pools over it. This cold query acquires no backing and retains no resources.
+IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_query_backing_request(
+    iree_hal_pool_t* backing_pool, const iree_hal_tlsf_pool_options_t* options,
+    iree_hal_pool_reservation_request_t* out_request);
+
 // Creates an initially empty TLSF allocator retaining |backing_pool| once.
 // Growth obtains ordinary reservations and borrowed prepared buffer ranges.
 // Every byte inherits the backing reservation's exact reuse prerequisite.
 // Failed preparation returns that original prerequisite without losing history.
 //
-// Release publishes reservation metadata without native work. Acquisition and
-// trim drain the pending releases under a short metadata mutex. Backing-pool
-// calls, host allocation/free, materialization and native advice run outside
-// that mutex. Trim returns whole unused ranges with their merged history; it
-// never trims the backing pool itself. Pending history may be returned for
-// queue-owned waiting when ALLOW_WAIT_FRONTIER is set.
+// Release publishes reservation metadata without native work. The captured
+// memory owner drains releases and returns whole unused ranges with their
+// merged history; explicit caches below this pool own idle retention.
+// A trim floor applies to that call and does not change automatic idle return.
+// Persistent retention floors belong to the explicitly selected backing cache.
+// Acquisition and trim may also drain releases under the metadata mutex.
+// Backing-pool calls, host allocation/free, materialization and native advice
+// run outside that mutex. Trim never trims the backing pool itself. Pending
+// history may be returned for queue-owned waiting with ALLOW_WAIT_FRONTIER.
+// Final destruction joins this pool's maintenance, never device execution,
+// and must run outside the captured maintenance executor.
 //
 // Captures the backing pool's immutable capabilities and group progress owner.
 // The device group outlives both pools and all operations using them.

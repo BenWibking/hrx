@@ -317,7 +317,10 @@ static void EnqueueRawBlockingBarrier(
 
 static iree_status_t CreateExplicitFixedBlockPool(
     iree_hal_device_t* device, const iree_hal_queue_family_t* queue_family,
-    iree_device_size_t block_size, iree_hal_pool_t** out_pool) {
+    iree_device_size_t block_size, iree_hal_pool_t** out_native_pool,
+    iree_hal_pool_t** out_pool) {
+  *out_native_pool = nullptr;
+  *out_pool = nullptr;
   iree_hal_queue_pool_backend_t backend = {0};
   IREE_RETURN_IF_ERROR(
       iree_hal_device_query_queue_pool_backend(device, queue_family, &backend));
@@ -326,14 +329,22 @@ static iree_status_t CreateExplicitFixedBlockPool(
         IREE_STATUS_FAILED_PRECONDITION,
         "queue pool backend query returned an incomplete backend bundle");
   }
+  Ref<iree_hal_pool_t> backing_pool;
+  IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_create(
+      {}, backend.slab_provider, backend.notification, backend.frontier_tracker,
+      backend.maintenance, iree_allocator_system(), backing_pool.out()));
+  Ref<iree_hal_buffer_t> backing_buffer;
+  IREE_RETURN_IF_ERROR(iree_hal_pool_allocate_buffer(
+      backing_pool, MakeTransientBufferParams(), block_size,
+      iree_infinite_timeout(), backing_buffer.out()));
   iree_hal_fixed_block_pool_options_t options = {};
   options.block_allocator_options.block_size = block_size;
-  options.block_allocator_options.block_count = 1;
   options.block_allocator_options.frontier_capacity = 2;
-  return iree_hal_fixed_block_pool_create(
-      options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, iree_hal_pool_epoch_query_null(),
-      iree_allocator_system(), out_pool);
+  IREE_RETURN_IF_ERROR(iree_hal_fixed_block_pool_create_from_buffer(
+      backing_buffer, 0, IREE_HAL_WHOLE_BUFFER, &options,
+      iree_allocator_system(), out_pool));
+  *out_native_pool = backing_pool.release();
+  return iree_ok_status();
 }
 
 TEST_F(HostQueuePendingTest,
@@ -348,9 +359,11 @@ TEST_F(HostQueuePendingTest,
   auto* queue = device.first_host_queue();
   ASSERT_NE(queue, nullptr);
   const auto* family = iree_hal_queue_family(&queue->base);
+  Ref<iree_hal_pool_t> native_pool;
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(CreateExplicitFixedBlockPool(device.base_device(), family,
-                                              kByteLength, pool.out()));
+                                              kByteLength, native_pool.out(),
+                                              pool.out()));
   iree_hal_pool_reservation_request_t request = {};
   request.allocation_size = kByteLength;
   request.params.type = IREE_HAL_MEMORY_TYPE_OPTIMAL_FOR_DEVICE;
@@ -847,10 +860,11 @@ TEST_F(HostQueuePendingTest,
   iree_hal_amdgpu_host_queue_t* queue = test_device.first_host_queue();
   ASSERT_NE(queue, nullptr);
 
+  Ref<iree_hal_pool_t> native_pool;
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(CreateExplicitFixedBlockPool(
       test_device.base_device(), iree_hal_queue_family(&queue->base),
-      allocation_size, pool.out()));
+      allocation_size, native_pool.out(), pool.out()));
 
   Ref<iree_hal_semaphore_t> alloca0_signal;
   IREE_ASSERT_OK(
@@ -967,10 +981,11 @@ TEST_F(HostQueuePendingTest, CancelPendingAllocaFrontierWait) {
   iree_hal_amdgpu_host_queue_t* queue = test_device.first_host_queue();
   ASSERT_NE(queue, nullptr);
 
+  Ref<iree_hal_pool_t> native_pool;
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(CreateExplicitFixedBlockPool(
       test_device.base_device(), iree_hal_queue_family(&queue->base),
-      allocation_size, pool.out()));
+      allocation_size, native_pool.out(), pool.out()));
   const iree_async_axis_t death_axis = queue->axis;
   IREE_ASSERT_OK(
       SeedWaitableFixedBlockReservation(pool, allocation_size, death_axis));
@@ -1019,10 +1034,11 @@ TEST_F(HostQueuePendingTest, CancelColdAllocaPreservesInheritedFrontier) {
   ASSERT_NE(queue, nullptr);
   queue->wait_barrier_strategy = IREE_HAL_AMDGPU_WAIT_BARRIER_STRATEGY_DEFER;
 
+  Ref<iree_hal_pool_t> native_pool;
   Ref<iree_hal_pool_t> backing_pool;
   IREE_ASSERT_OK(CreateExplicitFixedBlockPool(
       test_device.base_device(), iree_hal_queue_family(&queue->base), kSlabSize,
-      backing_pool.out()));
+      native_pool.out(), backing_pool.out()));
   IREE_ASSERT_OK(
       SeedWaitableFixedBlockReservation(backing_pool, kSlabSize, queue->axis));
   iree_hal_tlsf_pool_options_t pool_options = {};
@@ -1090,10 +1106,11 @@ TEST_F(HostQueuePendingTest, CancelPendingAllocaPoolNotificationWait) {
   iree_hal_amdgpu_host_queue_t* queue = test_device.first_host_queue();
   ASSERT_NE(queue, nullptr);
 
+  Ref<iree_hal_pool_t> native_pool;
   Ref<iree_hal_pool_t> pool;
   IREE_ASSERT_OK(CreateExplicitFixedBlockPool(
       test_device.base_device(), iree_hal_queue_family(&queue->base),
-      allocation_size, pool.out()));
+      allocation_size, native_pool.out(), pool.out()));
 
   Ref<iree_hal_semaphore_t> alloca0_signal;
   IREE_ASSERT_OK(

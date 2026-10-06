@@ -15,6 +15,7 @@
 #include "iree/hal/memory/asan.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
 #include "iree/hal/memory/passthrough_pool.h"
+#include "iree/hal/memory/slab_cache.h"
 #include "iree/hal/memory/tlsf_pool.h"
 #include "vmm_slab_provider.h"
 
@@ -71,8 +72,8 @@ static iree_status_t hrx_mem_pool_query_range_length(
   if (!has_env_range_length) {
     if (pool->device->type == HRX_ACCELERATOR_GPU) {
       // TLSF grows by this range length one slab at a time. A slab is fully
-      // committed on first use, so its size bounds per-pool idle memory rather
-      // than expressing a fraction of total device memory.
+      // committed on first use, so its size sets the growth and idle-retention
+      // granularity rather than expressing a fraction of total device memory.
       range_length = HRX_MEM_POOL_GPU_SLAB_LENGTH_DEFAULT;
     } else {
       range_length = HRX_MEM_POOL_CPU_RANGE_LENGTH_DEFAULT;
@@ -89,19 +90,20 @@ static iree_status_t hrx_mem_pool_query_range_length(
 }
 
 static void hrx_mem_pool_refresh_stats_locked(hrx_mem_pool_t pool) {
-  iree_hal_pool_stats_t tlsf_stats = {0};
+  iree_hal_pool_stats_t backing_stats = {0};
   iree_hal_pool_stats_t oversized_stats = {0};
-  if (pool->hal_pool) {
-    iree_hal_pool_query_stats(pool->hal_pool, &tlsf_stats);
+  if (pool->backing_cache) {
+    iree_hal_pool_query_stats(pool->backing_cache, &backing_stats);
   }
   if (pool->oversized_hal_pool) {
     iree_hal_pool_query_stats(pool->oversized_hal_pool, &oversized_stats);
   }
   const uint64_t previous_reserved_mem_current = pool->reserved_mem_current;
   pool->reserved_mem_current =
-      tlsf_stats.bytes_committed > UINT64_MAX - oversized_stats.bytes_committed
+      backing_stats.bytes_committed >
+              UINT64_MAX - oversized_stats.bytes_committed
           ? UINT64_MAX
-          : tlsf_stats.bytes_committed + oversized_stats.bytes_committed;
+          : backing_stats.bytes_committed + oversized_stats.bytes_committed;
   if (pool->reserved_mem_current > previous_reserved_mem_current) {
     pool->reserved_mem_high =
         iree_max(pool->reserved_mem_high, pool->reserved_mem_current);
@@ -113,9 +115,11 @@ static void hrx_mem_pool_refresh_stats_locked(hrx_mem_pool_t pool) {
 // unlocking.
 static void hrx_mem_pool_take_idle_hal_pools_locked(
     hrx_mem_pool_t pool, iree_hal_pool_t** out_hal_pool,
-    iree_hal_pool_t** out_oversized_hal_pool) {
+    iree_hal_pool_t** out_oversized_hal_pool,
+    iree_hal_pool_t** out_backing_cache) {
   *out_hal_pool = NULL;
   *out_oversized_hal_pool = NULL;
+  *out_backing_cache = NULL;
   if ((!pool->hal_pool && !pool->oversized_hal_pool) ||
       pool->inflight_allocation_count != 0) {
     return;
@@ -136,8 +140,10 @@ static void hrx_mem_pool_take_idle_hal_pools_locked(
 
   *out_hal_pool = pool->hal_pool;
   *out_oversized_hal_pool = pool->oversized_hal_pool;
+  *out_backing_cache = pool->backing_cache;
   pool->hal_pool = NULL;
   pool->oversized_hal_pool = NULL;
+  pool->backing_cache = NULL;
   pool->reserved_mem_current = 0;
   pool->used_mem_current = 0;
 }
@@ -217,12 +223,24 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
       backing_options, slab_provider, backend.notification,
       backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
       &backing_pool);
+  iree_hal_pool_t* backing_cache = NULL;
   if (iree_status_is_ok(status)) {
-    status = iree_hal_tlsf_pool_create(backing_pool, &options,
+    iree_hal_slab_cache_options_t cache_options = {.max_count = UINT32_MAX};
+    status = iree_hal_tlsf_pool_query_backing_request(backing_pool, &options,
+                                                      &cache_options.slab);
+    if (iree_status_is_ok(status)) {
+      status =
+          iree_hal_slab_cache_create(backing_pool, &cache_options,
+                                     iree_allocator_system(), &backing_cache);
+    }
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_tlsf_pool_create(backing_cache, &options,
                                        iree_allocator_system(), &hal_pool);
   }
   iree_hal_pool_release(backing_pool);
   if (!iree_status_is_ok(status)) {
+    iree_hal_pool_release(backing_cache);
     if (owns_slab_provider) {
       iree_hal_slab_provider_release(slab_provider);
     }
@@ -240,6 +258,7 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
       &oversized_hal_pool);
   if (!iree_status_is_ok(status)) {
     iree_hal_pool_release(hal_pool);
+    iree_hal_pool_release(backing_cache);
     if (owns_slab_provider) {
       iree_hal_slab_provider_release(slab_provider);
     }
@@ -250,6 +269,7 @@ static iree_status_t hrx_mem_pool_ensure_hal_pools_locked(hrx_mem_pool_t pool) {
   }
 
   pool->hal_pool = hal_pool;
+  pool->backing_cache = backing_cache;
   pool->oversized_hal_pool = oversized_hal_pool;
   pool->suballocation_max_size = range_length;
   hrx_mem_pool_refresh_stats_locked(pool);
@@ -297,6 +317,7 @@ hrx_status_t hrx_mem_pool_create(hrx_device_t device,
 static void hrx_mem_pool_destroy(hrx_mem_pool_s* pool) {
   iree_hal_pool_release(pool->hal_pool);
   iree_hal_pool_release(pool->oversized_hal_pool);
+  iree_hal_pool_release(pool->backing_cache);
   hrx_device_release(pool->device);
   iree_slim_mutex_deinitialize(&pool->mutex);
   free(pool);
@@ -425,22 +446,24 @@ hrx_status_t hrx_mem_pool_trim(hrx_mem_pool_t pool, size_t min_bytes_to_keep) {
   if (!pool) {
     return hrx_make_status(HRX_STATUS_INVALID_ARGUMENT, "pool is NULL");
   }
-
   iree_hal_pool_t* idle_hal_pool = NULL;
   iree_hal_pool_t* idle_oversized_hal_pool = NULL;
+  iree_hal_pool_t* idle_backing_cache = NULL;
   iree_slim_mutex_lock(&pool->mutex);
   if (pool->hal_pool) {
-    iree_hal_pool_trim(pool->hal_pool, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+    iree_hal_pool_trim(pool->hal_pool, IREE_HAL_POOL_TRIM_FLAG_EXCESS, 0);
+    iree_hal_pool_trim(pool->backing_cache, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
                        min_bytes_to_keep);
   }
   hrx_mem_pool_refresh_stats_locked(pool);
   if (min_bytes_to_keep == 0) {
-    hrx_mem_pool_take_idle_hal_pools_locked(pool, &idle_hal_pool,
-                                            &idle_oversized_hal_pool);
+    hrx_mem_pool_take_idle_hal_pools_locked(
+        pool, &idle_hal_pool, &idle_oversized_hal_pool, &idle_backing_cache);
   }
   iree_slim_mutex_unlock(&pool->mutex);
   iree_hal_pool_release(idle_hal_pool);
   iree_hal_pool_release(idle_oversized_hal_pool);
+  iree_hal_pool_release(idle_backing_cache);
   return hrx_ok_status();
 }
 
@@ -448,22 +471,16 @@ hrx_status_t hrx_mem_pool_release_unused(hrx_mem_pool_t pool) {
   if (!pool) {
     return hrx_make_status(HRX_STATUS_INVALID_ARGUMENT, "pool is NULL");
   }
-
   iree_slim_mutex_lock(&pool->mutex);
-  iree_hal_pool_t* idle_hal_pool = NULL;
-  iree_hal_pool_t* idle_oversized_hal_pool = NULL;
   if (pool->hal_pool) {
-    iree_hal_pool_trim(pool->hal_pool, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
+    iree_hal_pool_trim(pool->hal_pool, IREE_HAL_POOL_TRIM_FLAG_EXCESS, 0);
+    iree_hal_pool_trim(pool->backing_cache, IREE_HAL_POOL_TRIM_FLAG_EXCESS,
                        pool->release_threshold);
   }
   hrx_mem_pool_refresh_stats_locked(pool);
-  if (pool->release_threshold == 0) {
-    hrx_mem_pool_take_idle_hal_pools_locked(pool, &idle_hal_pool,
-                                            &idle_oversized_hal_pool);
-  }
   iree_slim_mutex_unlock(&pool->mutex);
-  iree_hal_pool_release(idle_hal_pool);
-  iree_hal_pool_release(idle_oversized_hal_pool);
+  // Completion callbacks publish reclamation but retain the pool objects.
+  // Destroying an empty stack here would join cold maintenance on the caller.
   return hrx_ok_status();
 }
 

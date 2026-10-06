@@ -486,6 +486,9 @@ typedef struct hrx_mem_pool_s {
   // TLSF HAL pool serving allocations up to |suballocation_max_size|.
   iree_hal_pool_t* hal_pool;
 
+  // Explicit retention cache owning live and idle TLSF backing slabs.
+  iree_hal_pool_t* backing_cache;
+
   // Pass-through HAL pool serving allocations larger than the TLSF slab size.
   iree_hal_pool_t* oversized_hal_pool;
 

@@ -987,7 +987,9 @@ HRX_API hrx_status_t hrx_mem_pool_trim(hrx_mem_pool_t pool,
                                        size_t min_bytes_to_keep);
 
 // Trims unused backing storage toward the pool's configured release threshold.
-// This is intended for stream-ordered free completion paths.
+// This is intended for stream-ordered free completion paths. Reclamation runs
+// on the memory owner without waiting here; retained-byte statistics converge
+// after queued whole-slab returns and the ordered cache sweep complete.
 HRX_API hrx_status_t hrx_mem_pool_release_unused(hrx_mem_pool_t pool);
 
 // Records a logical allocation backed by |pool|. Logical usage is distinct

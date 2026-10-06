@@ -236,8 +236,6 @@ TEST_F(SlabCacheTest, IndependentChildrenReuseOneNativeAllocation) {
   uintptr_t first_address = 0;
   IREE_ASSERT_OK(CheckBytes(first, reservation, 0x49, &first_address));
   iree_hal_pool_release_reservations(first, 1, &reservation, nullptr);
-  children_.pop_back();
-  iree_hal_pool_release(first);
   iree_hal_pool_t* second = nullptr;
   IREE_ASSERT_OK(CreateChild(cache_, 4096, &second));
   IREE_ASSERT_OK(Acquire(second, 256, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
@@ -472,6 +470,49 @@ TEST_F(SlabCacheTest, HotReuseAndTrimDoNotWaitForNativePreparation) {
   Drain();
   IREE_ASSERT_OK(iree_hal_slab_cache_query_stats(cache_, &stats));
   EXPECT_EQ(stats.ready_count, 2u);
+}
+
+TEST_F(SlabCacheTest, TrimIncludesQueuedChildReturnsDuringNativePreparation) {
+  iree_hal_pool_t* children[2];
+  iree_hal_pool_reservation_t reservations[2];
+  iree_hal_pool_acquire_info_t info;
+  iree_hal_pool_acquire_result_t result;
+  for (size_t i = 0; i < 2; ++i) {
+    IREE_ASSERT_OK(CreateChild(cache_, 4096, &children[i]));
+    IREE_ASSERT_OK(Acquire(children[i], 4096, nullptr,
+                           IREE_HAL_POOL_RESERVE_FLAG_NONE, &reservations[i],
+                           &info, &result));
+    ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  }
+  Drain();
+  native_allocator_.BlockNext();
+  IREE_ASSERT_OK(iree_hal_slab_cache_set_target(cache_, 1));
+  native_allocator_.AwaitEntry();
+
+  // Both returns precede their respective trim, but the second return follows
+  // the first trim's queued sweep. Neither trim may join the paused owner.
+  iree_hal_pool_release_reservations(children[0], 1, &reservations[0], nullptr);
+  // A child trim floor does not turn the child into an idle retention cache.
+  iree_hal_pool_trim(children[0], IREE_HAL_POOL_TRIM_FLAG_ALL, 4096);
+  iree_hal_pool_trim(cache_, IREE_HAL_POOL_TRIM_FLAG_EXCESS, 4096);
+  iree_hal_pool_release_reservations(children[1], 1, &reservations[1], nullptr);
+  iree_hal_pool_trim(cache_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+  native_allocator_.Resume();
+  // The first sweep observes the second generation and moves behind its
+  // return. A second ordered observation includes that requeued sweep.
+  Drain();
+  Drain();
+  iree_hal_slab_cache_stats_t cache_stats;
+  IREE_ASSERT_OK(iree_hal_slab_cache_query_stats(cache_, &cache_stats));
+  EXPECT_EQ(cache_stats.ready_count, 0u);
+  EXPECT_EQ(cache_stats.pending_count, 0u);
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(cache_, &stats);
+  EXPECT_EQ(stats.bytes_committed, 0u);
+  for (auto* child : children) {
+    iree_hal_pool_query_stats(child, &stats);
+    EXPECT_EQ(stats.slab_count, 0u);
+  }
 }
 
 TEST_F(SlabCacheTest, AsyncPreparationFailurePropagatesAndCanBeRetried) {

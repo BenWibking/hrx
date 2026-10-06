@@ -353,6 +353,7 @@ iree_cc_library(
     "tlsf_pool.c"
   DEPS
     ::buffer_range
+    ::maintenance
     ::tlsf
     ::tracing
     iree::async
@@ -413,6 +414,7 @@ iree_cc_test(
     ::fixed_block_pool
     ::maintenance_thread
     ::passthrough_pool
+    ::slab_cache
     ::tlsf_pool
     iree::async
     iree::async::platform

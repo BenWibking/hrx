@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "hrx_internal.h"
+#include "iree/hal/memory/maintenance.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -280,6 +281,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
       pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, committed_bytes)));
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_release_unused(pool)));
+  iree_hal_memory_maintenance_call(backend_.maintenance, [](void*) {}, nullptr);
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
   EXPECT_EQ(retained_bytes, committed_bytes);
@@ -287,6 +289,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
       pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, 0)));
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_release_unused(pool)));
+  iree_hal_memory_maintenance_call(backend_.maintenance, [](void*) {}, nullptr);
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
   EXPECT_EQ(retained_bytes, 0u);
