@@ -98,6 +98,21 @@ TEST(BufferPermissionTest, ValidatesAccessAndUsage) {
                                      IREE_HAL_BUFFER_USAGE_TRANSFER_TARGET));
 }
 
+TEST(BufferPermissionTest, RequiresOnlyReadWritePermissions) {
+  for (iree_hal_memory_access_t access :
+       {IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_MEMORY_ACCESS_WRITE,
+        IREE_HAL_MEMORY_ACCESS_ALL}) {
+    IREE_EXPECT_OK(
+        iree_hal_buffer_validate_access(IREE_HAL_MEMORY_ACCESS_ALL, access));
+  }
+  for (iree_hal_memory_access_t access :
+       {0u, 1u << 4, (1u << 5) | IREE_HAL_MEMORY_ACCESS_WRITE}) {
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        iree_hal_buffer_validate_access(IREE_HAL_MEMORY_ACCESS_ALL, access));
+  }
+}
+
 static void CountBufferRelease(void* user_data, iree_hal_buffer_t* buffer) {
   ++*static_cast<int*>(user_data);
 }

@@ -53,8 +53,6 @@ static const iree_bitfield_string_mapping_t iree_hal_memory_access_mappings[] =
         // Separate:
         {IREE_HAL_MEMORY_ACCESS_READ, IREE_SVL("READ")},
         {IREE_HAL_MEMORY_ACCESS_WRITE, IREE_SVL("WRITE")},
-        {IREE_HAL_MEMORY_ACCESS_UNALIGNED, IREE_SVL("UNALIGNED")},
-        {IREE_HAL_MEMORY_ACCESS_ANY, IREE_SVL("ANY")},
 };
 
 IREE_API_EXPORT iree_status_t iree_hal_memory_access_parse(
@@ -371,16 +369,10 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_memory_type(
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_access(
     iree_hal_memory_access_t allowed_memory_access,
     iree_hal_memory_access_t required_memory_access) {
-  if (IREE_UNLIKELY(required_memory_access &
-                    ~(IREE_HAL_MEMORY_ACCESS_ALL |
-                      IREE_HAL_MEMORY_ACCESS_UNALIGNED |
-                      IREE_HAL_MEMORY_ACCESS_ANY))) {
+  if (IREE_UNLIKELY(required_memory_access & ~IREE_HAL_MEMORY_ACCESS_ALL)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "unsupported memory access bits 0x%x",
                             required_memory_access);
-  }
-  if (iree_all_bits_set(required_memory_access, IREE_HAL_MEMORY_ACCESS_ANY)) {
-    return iree_ok_status();
   }
   if (IREE_UNLIKELY(!iree_any_bit_set(
           required_memory_access,

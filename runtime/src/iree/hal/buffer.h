@@ -140,9 +140,11 @@ IREE_API_EXPORT iree_status_t iree_hal_memory_type_parse(
 IREE_API_EXPORT iree_string_view_t iree_hal_memory_type_format(
     iree_hal_memory_type_t value, iree_bitfield_string_temp_t* out_temp);
 
-// A bitfield specifying how memory will be accessed in a mapped memory region.
+// Permissions for accessing buffer contents. Alignment is a property of the
+// storage and operation-specific mapping promises use
+// iree_hal_buffer_map_flags_t.
 enum iree_hal_memory_access_bits_t {
-  // Memory is not mapped.
+  // No access is permitted or required.
   IREE_HAL_MEMORY_ACCESS_NONE = 0u,
   // Memory will be read.
   // If a buffer is only mapped for reading it may still be possible to write to
@@ -153,15 +155,6 @@ enum iree_hal_memory_access_bits_t {
   // from it but the results will be undefined or incredibly slow (as it may
   // be mapped by the driver as uncached).
   IREE_HAL_MEMORY_ACCESS_WRITE = 1u << 1,
-  // A flag that can be applied to any access type to indicate that the buffer
-  // storage may not be aligned.
-  IREE_HAL_MEMORY_ACCESS_UNALIGNED = 1u << 4,
-  // Memory access may perform any operation and should not be validated.
-  // Used upon access to bypass access verification at the API boundary and
-  // effectively provides a `void*`.
-  // This should only be used by device-side code where it is known-safe to
-  // bypass the access verification.
-  IREE_HAL_MEMORY_ACCESS_ANY = 1u << 5,
   // Memory may be read and written. Mapping with these permissions preserves
   // existing contents unless DISCARD is explicitly requested as a map flag.
   IREE_HAL_MEMORY_ACCESS_ALL =
@@ -898,7 +891,8 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_memory_type(
     iree_hal_memory_type_t actual_memory_type,
     iree_hal_memory_type_t expected_memory_type);
 
-// Returns success iff the buffer allows the requested access.
+// Returns success iff the buffer allows the requested nonempty READ/WRITE
+// access. NONE and undefined permission bits are invalid requests.
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_access(
     iree_hal_memory_access_t allowed_memory_access,
     iree_hal_memory_access_t required_memory_access);
@@ -1318,8 +1312,9 @@ IREE_API_EXPORT iree_status_t iree_hal_subspan_buffer_create_with_callback(
 // Wraps an existing host allocation in a buffer.
 // When the buffer is destroyed the provided |release_callback| will be called.
 //
-// The buffer must be aligned to at least IREE_HAL_HEAP_BUFFER_ALIGNMENT and if
-// it is not the call will fail with IREE_STATUS_OUT_OF_RANGE.
+// |data| may have byte alignment. Operations requiring stronger alignment must
+// validate the actual address they access. This wrapper neither copies the
+// contents nor changes the alignment of the supplied storage.
 //
 // |out_buffer| must be released by the caller. |data| must be kept live for the
 // lifetime of the wrapping buffer.

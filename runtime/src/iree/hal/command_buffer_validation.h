@@ -14,9 +14,14 @@
 // Buffers bound to must have all bits set from the included bitfields and
 // support the given min/max byte offsets as in-range.
 typedef struct iree_hal_buffer_binding_requirements_t {
+  // Queue operation categories required of the allocator's native backing.
   iree_hal_buffer_compatibility_t required_compatibility;
+  // Buffer uses declared by commands referencing this binding.
   iree_hal_buffer_usage_t usage;
+  // Known accesses performed by commands. NONE contributes no requirement;
+  // opaque executable bindings cannot infer permissions from the dispatch ABI.
   iree_hal_memory_access_t access;
+  // Required memory properties for the recorded operations.
   iree_hal_memory_type_t type;
   // Maximum offset in the binding referenced by any command.
   iree_device_size_t max_byte_offset;

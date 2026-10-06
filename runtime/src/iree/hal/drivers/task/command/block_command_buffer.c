@@ -478,8 +478,9 @@ static iree_status_t iree_hal_block_command_buffer_resolve_refs(
       iree_hal_buffer_mapping_t mapping = {{0}};
       IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
           buffer_refs[i].buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-          IREE_HAL_MEMORY_ACCESS_ANY, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS,
-          buffer_refs[i].offset, buffer_refs[i].length, &mapping));
+          iree_hal_buffer_allowed_access(buffer_refs[i].buffer),
+          IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, buffer_refs[i].offset,
+          buffer_refs[i].length, &mapping));
       fixups[i].host_ptr = mapping.contents.data;
       fixups[i].offset = 0;  // map_range already applied the offset.
       fixups[i].length = mapping.contents.data_length;

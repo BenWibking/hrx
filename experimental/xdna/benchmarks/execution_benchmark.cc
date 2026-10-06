@@ -330,9 +330,8 @@ class ExecutionBenchmark {
           iree_hal_buffer_placement_undefined(),
           IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE |
               IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
-          IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE |
-              IREE_HAL_MEMORY_ACCESS_UNALIGNED,
-          IREE_HAL_BUFFER_USAGE_STORAGE, kBindingByteLength,
+          IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_USAGE_STORAGE,
+          kBindingByteLength,
           iree_make_byte_span(binding.storage.pointer + kBindingByteLength,
                               kBindingByteLength),
           iree_hal_buffer_release_callback_null(), iree_allocator_system(),

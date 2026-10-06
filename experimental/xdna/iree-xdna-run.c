@@ -547,15 +547,10 @@ static iree_status_t iree_xdna_run_prepare_binding(
   if (binding->mapping_info.cacheability == AMDF_HOST_CACHEABILITY_WRITE_BACK) {
     memory_type |= IREE_HAL_MEMORY_TYPE_HOST_CACHED;
   }
-  iree_hal_memory_access_t memory_access =
-      IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE;
-  if (!iree_host_size_has_alignment((uintptr_t)binding->mapping_info.pointer,
-                                    IREE_HAL_HEAP_BUFFER_ALIGNMENT)) {
-    memory_access |= IREE_HAL_MEMORY_ACCESS_UNALIGNED;
-  }
   IREE_RETURN_IF_ERROR(iree_hal_heap_buffer_wrap(
-      iree_hal_buffer_placement_undefined(), memory_type, memory_access,
-      IREE_HAL_BUFFER_USAGE_STORAGE, initial.data_length,
+      iree_hal_buffer_placement_undefined(), memory_type,
+      IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_USAGE_STORAGE,
+      initial.data_length,
       iree_make_byte_span(binding->mapping_info.pointer, initial.data_length),
       iree_hal_buffer_release_callback_null(), run->host_allocator,
       &binding->buffer));

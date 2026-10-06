@@ -59,18 +59,16 @@ static const iree_hal_buffer_vtable_t iree_hal_heap_buffer_vtable;
 // This results in an additional host allocation but allows for user-overridden
 // data storage allocations.
 static iree_status_t iree_hal_heap_buffer_allocate_split(
-    iree_device_size_t allocation_size, iree_allocator_t data_allocator,
-    iree_allocator_t host_allocator, iree_hal_heap_buffer_t** out_buffer,
-    iree_byte_span_t* out_data) {
+    iree_host_size_t allocation_size, iree_host_size_t alignment,
+    iree_allocator_t data_allocator, iree_allocator_t host_allocator,
+    iree_hal_heap_buffer_t** out_buffer, iree_byte_span_t* out_data) {
   // Try allocating the storage first as it's the most likely to fail if OOM.
-  // It must be aligned to the minimum buffer alignment.
+  // The storage alignment is independent of the metadata allocator.
   out_data->data_length = allocation_size;
   uint8_t* data_ptr = 0;
-  IREE_RETURN_IF_ERROR(iree_allocator_malloc_aligned(
-      data_allocator, allocation_size, IREE_HAL_HEAP_BUFFER_ALIGNMENT,
-      /*offset=*/0, (void**)&data_ptr));
-  IREE_ASSERT_TRUE(iree_host_size_has_alignment(
-      (iree_host_size_t)data_ptr, IREE_HAL_HEAP_BUFFER_ALIGNMENT));
+  IREE_RETURN_IF_ERROR(
+      iree_allocator_malloc_aligned(data_allocator, allocation_size, alignment,
+                                    /*offset=*/0, (void**)&data_ptr));
   out_data->data = data_ptr;
 
   // Allocate the host metadata wrapper with natural alignment.
@@ -87,26 +85,28 @@ static iree_status_t iree_hal_heap_buffer_allocate_split(
 // This results in a single allocation per buffer but requires that both the
 // metadata and storage live together.
 static iree_status_t iree_hal_heap_buffer_allocate_slab(
-    iree_device_size_t allocation_size, iree_allocator_t host_allocator,
-    iree_hal_heap_buffer_t** out_buffer, iree_byte_span_t* out_data) {
+    iree_host_size_t allocation_size, iree_host_size_t alignment,
+    iree_allocator_t host_allocator, iree_hal_heap_buffer_t** out_buffer,
+    iree_byte_span_t* out_data) {
   // The metadata header is always aligned and we want to ensure it's padded
   // out to the max alignment.
   iree_hal_heap_buffer_t* buffer = NULL;
   iree_host_size_t header_size =
       iree_host_align(iree_sizeof_struct(*buffer), iree_max_align_t);
-  iree_host_size_t total_size = header_size + allocation_size;
+  iree_host_size_t total_size = 0;
+  if (!iree_host_size_checked_add(header_size, allocation_size, &total_size)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "heap buffer allocation size overflow");
+  }
 
   // Allocate with the data starting at offset header_size aligned to the
-  // minimum required buffer alignment. The header itself will still be aligned
+  // requested buffer alignment. The header itself will still be aligned
   // to the natural alignment but our buffer alignment is often much larger.
   IREE_RETURN_IF_ERROR(iree_allocator_malloc_aligned(
-      host_allocator, total_size, IREE_HAL_HEAP_BUFFER_ALIGNMENT, header_size,
-      (void**)&buffer));
+      host_allocator, total_size, alignment, header_size, (void**)&buffer));
   *out_buffer = buffer;
 
   uint8_t* data_ptr = (uint8_t*)buffer + header_size;
-  IREE_ASSERT_TRUE(iree_host_size_has_alignment(
-      (iree_host_size_t)data_ptr, IREE_HAL_HEAP_BUFFER_ALIGNMENT));
   *out_data = iree_make_byte_span(data_ptr, allocation_size);
 
   return iree_ok_status();
@@ -126,15 +126,18 @@ iree_status_t iree_hal_heap_buffer_create(
   // metadata and the storage independently.
   const bool same_allocator =
       memcmp(&data_allocator, &host_allocator, sizeof(data_allocator)) == 0;
+  const iree_host_size_t alignment = (iree_host_size_t)iree_max(
+      params->min_alignment, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
 
   iree_hal_heap_buffer_t* buffer = NULL;
   iree_byte_span_t data = iree_byte_span_empty();
   iree_status_t status =
       same_allocator
-          ? iree_hal_heap_buffer_allocate_slab(allocation_size, host_allocator,
-                                               &buffer, &data)
-          : iree_hal_heap_buffer_allocate_split(allocation_size, data_allocator,
-                                                host_allocator, &buffer, &data);
+          ? iree_hal_heap_buffer_allocate_slab(allocation_size, alignment,
+                                               host_allocator, &buffer, &data)
+          : iree_hal_heap_buffer_allocate_split(allocation_size, alignment,
+                                                data_allocator, host_allocator,
+                                                &buffer, &data);
 
   if (iree_status_is_ok(status)) {
     iree_hal_buffer_initialize(
@@ -177,16 +180,6 @@ iree_status_t iree_hal_heap_buffer_wrap(
     iree_allocator_t host_allocator, iree_hal_buffer_t** out_buffer) {
   IREE_ASSERT_ARGUMENT(out_buffer);
   IREE_TRACE_ZONE_BEGIN(z0);
-
-  if (!iree_any_bit_set(allowed_access, IREE_HAL_MEMORY_ACCESS_UNALIGNED) &&
-      !iree_host_size_has_alignment((uintptr_t)data.data,
-                                    IREE_HAL_HEAP_BUFFER_ALIGNMENT)) {
-    IREE_TRACE_ZONE_END(z0);
-    return iree_make_status(
-        IREE_STATUS_OUT_OF_RANGE,
-        "imported heap buffer data must be aligned to %d; got %p",
-        (int)IREE_HAL_HEAP_BUFFER_ALIGNMENT, data.data);
-  }
 
   iree_hal_heap_buffer_t* buffer = NULL;
   iree_status_t status =

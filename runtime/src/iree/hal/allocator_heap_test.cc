@@ -4,6 +4,8 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include <algorithm>
+#include <cstring>
 #include <set>
 
 #include "iree/hal/allocator.h"
@@ -11,6 +13,63 @@
 #include "iree/testing/status_matchers.h"
 
 namespace {
+
+TEST(HeapAllocatorTest, ImportsByteAlignedStorageWithExplicitAlignment) {
+  iree_hal_allocator_t* allocator = nullptr;
+  IREE_ASSERT_OK(
+      iree_hal_allocator_create_heap(IREE_SV("test"), iree_allocator_system(),
+                                     iree_allocator_system(), &allocator));
+  alignas(64) uint8_t storage[18] = {};
+  storage[0] = 0xA5;
+  storage[17] = 0x5A;
+  iree_hal_external_buffer_t external_buffer = {};
+  external_buffer.type = IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION;
+  external_buffer.size = 16;
+  external_buffer.handle.host_allocation.ptr = storage + 1;
+  iree_hal_buffer_params_t params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+  params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  params.usage = IREE_HAL_BUFFER_USAGE_MAPPING;
+  int release_count = 0;
+  const iree_hal_buffer_release_callback_t release_callback = {
+      [](void* user_data, iree_hal_buffer_t*) {
+        ++*static_cast<int*>(user_data);
+      },
+      &release_count,
+  };
+  for (iree_device_size_t alignment : {0, 1, 2, 3, 64}) {
+    SCOPED_TRACE(alignment);
+    params.min_alignment = alignment;
+    const int releases_before_import = release_count;
+    iree_hal_buffer_t* buffer = nullptr;
+    iree_status_t status = iree_hal_allocator_import_buffer(
+        allocator, params, &external_buffer, release_callback, &buffer);
+    if (alignment > 1) {
+      IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT, status);
+      EXPECT_EQ(nullptr, buffer);
+      EXPECT_EQ(releases_before_import, release_count);
+      continue;
+    }
+    IREE_ASSERT_OK(status);
+    iree_hal_buffer_mapping_t mapping = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_range(
+        buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 16, &mapping));
+    EXPECT_EQ(storage + 1, mapping.contents.data);
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+    const uint32_t pattern = 0x12345678;
+    IREE_ASSERT_OK(
+        iree_hal_buffer_map_fill(buffer, 0, 16, &pattern, sizeof(pattern)));
+    uint32_t values[4] = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, values, sizeof(values)));
+    EXPECT_THAT(values, ::testing::Each(pattern));
+    iree_hal_buffer_release(buffer);
+    EXPECT_EQ(0xA5, storage[0]);
+    EXPECT_EQ(0x5A, storage[17]);
+  }
+  EXPECT_EQ(2, release_count);
+  iree_hal_allocator_release(allocator);
+}
 
 TEST(HeapAllocatorTest, ProvidesCoherentUnifiedMemory) {
   iree_hal_allocator_t* allocator = nullptr;
@@ -112,6 +171,50 @@ static iree_allocator_t TrackingAllocator(TrackingAllocatorState* state) {
       /*.self=*/state,
       /*.ctl=*/TrackingAllocatorCtl,
   };
+}
+
+TEST(HeapAllocatorTest, HonorsAlignmentWithCombinedAndSeparateStorage) {
+  TrackingAllocatorState data_state;
+  for (iree_allocator_t data_allocator :
+       {iree_allocator_system(), TrackingAllocator(&data_state)}) {
+    SCOPED_TRACE(data_allocator.self == &data_state ? "separate" : "combined");
+    iree_hal_allocator_t* allocator = nullptr;
+    IREE_ASSERT_OK(iree_hal_allocator_create_heap(
+        IREE_SV("test"), data_allocator, iree_allocator_system(), &allocator));
+    iree_hal_buffer_params_t params = {};
+    params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+    params.usage = IREE_HAL_BUFFER_USAGE_MAPPING;
+    for (iree_device_size_t alignment : {0, 1, 64, 256, 4096}) {
+      SCOPED_TRACE(alignment);
+      params.min_alignment = alignment;
+      iree_hal_buffer_t* buffer = nullptr;
+      IREE_ASSERT_OK(
+          iree_hal_allocator_allocate_buffer(allocator, params, 17, &buffer));
+      iree_hal_buffer_mapping_t mapping = {};
+      IREE_ASSERT_OK(iree_hal_buffer_map_range(
+          buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
+          IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 17, &mapping));
+      EXPECT_EQ(0u, reinterpret_cast<uintptr_t>(mapping.contents.data) %
+                        std::max<iree_device_size_t>(
+                            alignment, IREE_HAL_HEAP_BUFFER_ALIGNMENT));
+      memset(mapping.contents.data, 0xA5, mapping.contents.data_length);
+      IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
+      uint8_t values[17] = {};
+      IREE_ASSERT_OK(
+          iree_hal_buffer_map_read(buffer, 0, values, sizeof(values)));
+      EXPECT_THAT(values, ::testing::Each(0xA5));
+      iree_hal_buffer_release(buffer);
+      EXPECT_TRUE(data_state.live_allocations.empty());
+    }
+    params.min_alignment = 3;
+    iree_hal_buffer_t* buffer = nullptr;
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        iree_hal_allocator_allocate_buffer(allocator, params, 17, &buffer));
+    EXPECT_EQ(nullptr, buffer);
+    EXPECT_EQ(0u, data_state.unowned_free_count);
+    iree_hal_allocator_release(allocator);
+  }
 }
 
 // Buffers from an allocator with distinct data and host allocators keep their

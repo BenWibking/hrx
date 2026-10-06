@@ -159,7 +159,6 @@ class CommandBufferAtomicTest : public CtsTestBase<> {
     external_buffer.handle.host_allocation.ptr = misaligned_ptr;
 
     iree_hal_buffer_params_t buffer_params = configuration.buffer_params;
-    buffer_params.access |= IREE_HAL_MEMORY_ACCESS_UNALIGNED;
     buffer_params.min_alignment = 1;
     Ref<iree_hal_buffer_t> buffer;
     Status import_status(iree_hal_allocator_import_buffer(

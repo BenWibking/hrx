@@ -369,7 +369,8 @@ TEST_P(DispatchReuseTest, MixedDirectAndIndirectBindings) {
 
   Ref<iree_hal_command_buffer_t> command_buffer;
   IREE_ASSERT_OK(CreateCommandBuffer(
-      IREE_HAL_COMMAND_BUFFER_MODE_DEFAULT, IREE_HAL_COMMAND_CATEGORY_DISPATCH,
+      IREE_HAL_COMMAND_BUFFER_MODE_DEFAULT,
+      IREE_HAL_COMMAND_CATEGORY_DISPATCH | IREE_HAL_COMMAND_CATEGORY_TRANSFER,
       /*binding_capacity=*/1, command_buffer.out()));
   IREE_ASSERT_OK(iree_hal_command_buffer_begin(command_buffer));
 
@@ -383,6 +384,19 @@ TEST_P(DispatchReuseTest, MixedDirectAndIndirectBindings) {
       /*.count=*/IREE_ARRAYSIZE(binding_refs),
       /*.values=*/binding_refs,
   };
+  const float fill_value = -1.0f;
+  IREE_ASSERT_OK(iree_hal_command_buffer_fill_buffer(
+      command_buffer, binding_refs[1], &fill_value, sizeof(fill_value),
+      IREE_HAL_FILL_FLAG_NONE));
+  const iree_hal_memory_barrier_t fill_barrier = {
+      IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE,
+      IREE_HAL_ACCESS_SCOPE_DISPATCH_WRITE,
+  };
+  IREE_ASSERT_OK(iree_hal_command_buffer_execution_barrier(
+      command_buffer, IREE_HAL_EXECUTION_STAGE_TRANSFER,
+      IREE_HAL_EXECUTION_STAGE_DISPATCH, IREE_HAL_EXECUTION_BARRIER_FLAG_NONE,
+      /*memory_barrier_count=*/1, &fill_barrier,
+      /*buffer_barrier_count=*/0, /*buffer_barriers=*/nullptr));
   IREE_ASSERT_OK(iree_hal_command_buffer_dispatch(
       command_buffer, absf_executable_,
       iree_hal_executable_function_from_index(0),
@@ -403,6 +417,22 @@ TEST_P(DispatchReuseTest, MixedDirectAndIndirectBindings) {
       /*length=*/IREE_HAL_WHOLE_BUFFER,
   }};
   iree_hal_buffer_binding_table_t binding_table = {1, table_bindings};
+#if IREE_HAL_COMMAND_BUFFER_VALIDATION_ENABLE
+  // An opaque dispatch binding must preserve the known WRITE requirement
+  // contributed by the fill using the same indirect slot.
+  iree_hal_buffer_params_t params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
+  params.access = IREE_HAL_MEMORY_ACCESS_READ;
+  params.usage = IREE_HAL_BUFFER_USAGE_STORAGE | IREE_HAL_BUFFER_USAGE_TRANSFER;
+  Ref<iree_hal_buffer_t> read_only_buffer;
+  IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
+      device_allocator_, params, kByteLength, read_only_buffer.out()));
+  table_bindings[0].buffer = read_only_buffer;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_PERMISSION_DENIED,
+                        iree_hal_command_buffer_validate_submission(
+                            command_buffer, binding_table));
+  table_bindings[0].buffer = output;
+#endif  // IREE_HAL_COMMAND_BUFFER_VALIDATION_ENABLE
   SubmitWithBindingsAndWait(command_buffer, binding_table);
 
   auto data = ReadBufferData<float>(output);

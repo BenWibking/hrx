@@ -385,12 +385,12 @@ static iree_status_t loom_vm_testbench_import_buffer(
         iree_hal_buffer_memory_type(binding->buffer),
         IREE_HAL_MEMORY_TYPE_HOST_COHERENT));
     const iree_hal_memory_access_t access =
-        iree_hal_buffer_allowed_access(binding->buffer) &
-        (IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE);
+        iree_hal_buffer_allowed_access(binding->buffer);
     iree_hal_buffer_mapping_t mapping = {0};
     IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
         binding->buffer, IREE_HAL_MAPPING_MODE_PERSISTENT, access,
-        binding->byte_offset, binding->byte_length, &mapping));
+        IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, binding->byte_offset,
+        binding->byte_length, &mapping));
     iree_vm_buffer_access_flags_t vm_access = 0;
     if (iree_any_bit_set(access, IREE_HAL_MEMORY_ACCESS_READ)) {
       vm_access |= IREE_VM_BUFFER_ACCESS_FLAG_READ;
@@ -501,7 +501,7 @@ static iree_status_t loom_vm_testbench_export_buffer(
   iree_hal_buffer_t* buffer = NULL;
   const iree_host_size_t length = iree_vm_buffer_length(source);
   const iree_vm_buffer_access_flags_t vm_access = iree_vm_buffer_access(source);
-  iree_hal_memory_access_t access = IREE_HAL_MEMORY_ACCESS_UNALIGNED;
+  iree_hal_memory_access_t access = IREE_HAL_MEMORY_ACCESS_NONE;
   if (iree_any_bit_set(vm_access, IREE_VM_BUFFER_ACCESS_FLAG_READ)) {
     access |= IREE_HAL_MEMORY_ACCESS_READ;
   }

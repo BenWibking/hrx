@@ -1681,8 +1681,9 @@ static iree_status_t iree_hal_task_queue_resolve_binding_entry(
   if (binding->buffer) {
     IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
         binding->buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_ANY, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS,
-        binding->offset, binding->length, mapping));
+        iree_hal_buffer_allowed_access(binding->buffer),
+        IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, binding->offset, binding->length,
+        mapping));
     out_entry->base = mapping->contents.data;
     out_entry->length = mapping->contents.data_length;
   } else {
@@ -4693,7 +4694,8 @@ static iree_status_t iree_hal_task_queue_drain_dispatch(
     const iree_hal_buffer_ref_t* binding = &operation->dispatch.bindings[i];
     iree_hal_buffer_mapping_t mapping = {{0}};
     status = iree_hal_buffer_map_range(
-        binding->buffer, mapping_mode, IREE_HAL_MEMORY_ACCESS_ANY,
+        binding->buffer, mapping_mode,
+        iree_hal_buffer_allowed_access(binding->buffer),
         IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, binding->offset, binding->length,
         &mapping);
     if (iree_status_is_ok(status)) {

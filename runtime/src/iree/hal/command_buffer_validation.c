@@ -121,8 +121,10 @@ static iree_status_t iree_hal_command_buffer_validate_binding_requirements(
   // Verify buffer compatibility.
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
       iree_hal_buffer_allowed_usage(binding.buffer), requirements.usage));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
-      iree_hal_buffer_allowed_access(binding.buffer), requirements.access));
+  if (requirements.access != IREE_HAL_MEMORY_ACCESS_NONE) {
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
+        iree_hal_buffer_allowed_access(binding.buffer), requirements.access));
+  }
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(binding.buffer), requirements.type));
 
@@ -629,12 +631,14 @@ iree_status_t iree_hal_command_buffer_dispatch_validation(
     IREE_RETURN_IF_ERROR(iree_hal_command_buffer_validate_buffer_requirements(
         command_buffer, validation_state, bindings.values[0], arguments_reqs));
   } else {
-    // For now we conservatively say _any_ access may be performed (read/write)
-    // for buffer bindings.
+    // The dispatch ABI does not carry per-binding access requirements. Usage
+    // and range can be checked here; permissions remain the caller's contract
+    // with the executable. Known accesses by other commands still contribute
+    // to the combined binding requirements.
     iree_hal_buffer_binding_requirements_t binding_requirements = {
         .required_compatibility = IREE_HAL_BUFFER_COMPATIBILITY_QUEUE_DISPATCH,
         .usage = IREE_HAL_BUFFER_USAGE_STORAGE,
-        .access = IREE_HAL_MEMORY_ACCESS_ANY,
+        .access = IREE_HAL_MEMORY_ACCESS_NONE,
         .type = IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
     };
     for (iree_host_size_t i = 0; i < bindings.count; ++i) {

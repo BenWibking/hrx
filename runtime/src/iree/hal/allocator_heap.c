@@ -142,6 +142,11 @@ iree_hal_heap_allocator_query_buffer_compatibility(
     iree_hal_allocator_t* IREE_RESTRICT base_allocator,
     iree_hal_buffer_params_t* IREE_RESTRICT params,
     iree_device_size_t* IREE_RESTRICT allocation_size) {
+  if (!iree_device_size_is_valid_alignment(params->min_alignment) ||
+      params->min_alignment > IREE_HOST_SIZE_MAX ||
+      *allocation_size > IREE_HOST_SIZE_MAX) {
+    return IREE_HAL_BUFFER_COMPATIBILITY_NONE;
+  }
   if (iree_any_bit_set(params->type, IREE_HAL_MEMORY_TYPE_DEVICE_UNCACHED)) {
     return IREE_HAL_BUFFER_COMPATIBILITY_NONE;
   }
@@ -255,6 +260,16 @@ static iree_status_t iree_hal_heap_allocator_import_buffer(
     default:
       return iree_make_status(IREE_STATUS_UNAVAILABLE,
                               "external buffer type not supported");
+  }
+
+  if (params->min_alignment &&
+      !iree_host_ptr_has_alignment(ptr,
+                                   (iree_host_size_t)params->min_alignment)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "imported heap buffer address does not satisfy minimum alignment "
+        "(address=%p, minimum_alignment=%" PRIdsz ")",
+        ptr, params->min_alignment);
   }
 
   const iree_hal_buffer_placement_t placement = {
