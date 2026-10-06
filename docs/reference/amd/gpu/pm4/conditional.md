@@ -169,7 +169,7 @@ builder spells the opcode `IT_INDIRECT_BUFFER`; GFX12 spells it
 | 1 | 10:8 | `function`, comparison selector. Other bits in this word are reserved. |
 | 2 | 31:3 | `compare_addr_lo` in the generated layout, with bits 2:0 marked reserved; the builder's alignment exception is below. |
 | 3 | 31:0 | `compare_addr_hi`. |
-| 4–5 | 31:0 each | `mask_lo`, `mask_hi`, a 64-bit mask applied to the memory operand. |
+| 4–5 | 31:0 each | `mask_lo`, `mask_hi`, a 64-bit comparison mask; reference masking is discussed below. |
 | 6–7 | 31:0 each | `reference_lo`, `reference_hi`, a 64-bit reference. |
 | 8, 11 | 31:2 | `ib_base1_lo`, `ib_base2_lo`; low command byte addresses with four-byte alignment. Bits 1:0 are reserved. |
 | 9, 12 | 31:0 | `ib_base1_hi`, `ib_base2_hi`. |
@@ -196,6 +196,46 @@ alignment and native transport constraints still bound actual use. Branch
 cache-policy values use the same older/GFX12 naming split as the inline
 packet, at their different bit positions. [Older fields][pal-branch-fields]
 [GFX12 fields][pal12-branch-fields] [Builder exception][pal12-branch-build]
+
+### Reference masking and portability
+
+PAL's public contract describes applying the mask to GPU memory before
+comparison: `(memory & mask) op reference`. Both packet builders copy mask
+and reference independently, without masking the reference during encoding.
+[API contract][pal-if-api] [Older builder][pal-branch-build]
+[GFX12 builder][pal12-branch-build]
+
+Native observations on Linux KFD user-managed compute queues distinguish two
+behaviors when the reference contains bits outside the mask. The executed
+predicates match these unsigned comparison models:
+
+| Observed deployment | Comparison model |
+| --- | --- |
+| gfx1100 | `(memory & mask) op reference` |
+| gfx1151 | `(memory & mask) op (reference & mask)` |
+
+For example, with mask `0x00000000ffffffff`, masked memory
+`0x0000000080000000` and reference `0x0000000180000000`, less-than selects
+the pass arm under the first model and the fail arm under the second.
+Experiments with masked-out reference bits inside either DWORD also match
+the second model; ignoring only an entirely masked-out DWORD does not
+explain those results. These observations use stable shader-produced
+operands, joined before the branch, and retained command graphs with
+unconditional completion. Both four-byte and eight-byte comparison-address
+alignments are exercised.
+
+This is evidence about those deployments, not a source-defined architecture
+boundary. Firmware revisions were not captured, and the cited definitions
+and builders do not identify a reference-masking exception. Neither the
+packet layout nor a compiler target name determines which model another
+hardware/firmware pairing implements.
+
+A portable operand contract requires `reference & ~mask == 0`. The two
+models then compare identical values for every comparison function, while
+ignored memory bits remain unrestricted. A zero mask uses a zero reference.
+This is a caller precondition, not an encoding transformation: silently
+masking an arbitrary supplied reference can change the requested predicate,
+as the less-than example demonstrates.
 
 ### Structured control flow and ownership
 
