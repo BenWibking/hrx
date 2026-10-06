@@ -326,6 +326,107 @@ TEST(Pm4EncodingTest, ConditionalExecutionUsesDwordAddressAndDirectCount) {
   }
 }
 
+TEST(Pm4EncodingTest, ConditionalBranchesPreserveOperandAndBothTargets) {
+  constexpr std::array<std::array<uint32_t, 2>, 5> kTargets = {{
+      {11, 0},
+      {11, 5},
+      {11, 7},
+      {12, 0},
+      {12, 5},
+  }};
+  const struct {
+    // Native memory comparison requested by the caller.
+    Pm4MemoryComparison comparison;
+    // Literal if-then-else mode and function word from the MEC layout.
+    uint32_t control;
+  } cases[] = {
+      {Pm4MemoryComparison::kAlways, 0x002},
+      {Pm4MemoryComparison::kLess, 0x102},
+      {Pm4MemoryComparison::kLessOrEqual, 0x202},
+      {Pm4MemoryComparison::kEqual, 0x302},
+      {Pm4MemoryComparison::kNotEqual, 0x402},
+      {Pm4MemoryComparison::kGreaterOrEqual, 0x502},
+      {Pm4MemoryComparison::kGreater, 0x602},
+  };
+  for (const auto& target : kTargets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (const auto& test : cases) {
+      SCOPED_TRACE(test.control);
+      for (uint32_t count : {1u, 0x20000u, 0xfffffu}) {
+        SCOPED_TRACE(count);
+        std::array<uint32_t, 20> words;
+        words.fill(0x24681357);
+        Pm4CommandWriter commands(words.data() + 1,
+                                  Profile(target[0], target[1]));
+        const Pm4IndirectBuffer pass = {UINT64_C(0x0000456789abcd04), count};
+        const Pm4IndirectBuffer fail = {UINT64_C(0x00006789abcdef08), 0x12345};
+        commands.BranchIndirectBuffer(
+            UINT64_C(0x0000123456789004), UINT64_C(0x8000000055aa55aa),
+            UINT64_C(0xff00ff0055aa55aa), test.comparison, pass, fail);
+        commands.ChainIndirectBuffer(pass);
+        const std::array<uint32_t, 18> expected = {
+            0xc00c3f00, test.control, 0x56789004,
+            0x1234,     0x55aa55aa,   0xff00ff00,
+            0x55aa55aa, 0x80000000,   0x89abcd04,
+            0x4567,     count,        0xabcdef08,
+            0x6789,     0x12345,      0xc0023f00,
+            0x89abcd04, 0x4567,       0x900000u | count,
+        };
+        ASSERT_EQ(commands.word_count(), expected.size());
+        ExpectWords(words.data() + 1, expected);
+        EXPECT_EQ(words.front(), 0x24681357u);
+        EXPECT_EQ(words.back(), 0x24681357u);
+      }
+    }
+  }
+}
+
+TEST(Pm4EncodingTest, AlignmentPaddingPrecedesTerminalPackets) {
+  // Eight prefix lengths cover every residue. Each literal row is the NOP
+  // length before an ordinary end, four-DWORD chain or fourteen-DWORD branch.
+  constexpr std::array<std::array<size_t, 3>, 8> kPadding = {{
+      {3, 7, 5},
+      {2, 6, 4},
+      {9, 5, 3},
+      {8, 4, 2},
+      {7, 3, 9},
+      {6, 2, 8},
+      {5, 9, 7},
+      {4, 8, 6},
+  }};
+  constexpr std::array<size_t, 3> kTrailers = {0, 4, 14};
+  constexpr std::array<uint32_t, 8> kNoopHeaders = {
+      0xc0001000, 0xc0011000, 0xc0021000, 0xc0031000,
+      0xc0041000, 0xc0051000, 0xc0061000, 0xc0071000,
+  };
+  const std::array<uint32_t, 8> payload = {};
+  for (size_t prefix = 0; prefix < kPadding.size(); ++prefix) {
+    for (size_t trailer = 0; trailer < kTrailers.size(); ++trailer) {
+      SCOPED_TRACE(::testing::Message() << prefix << ':' << kTrailers[trailer]);
+      std::array<uint32_t, 32> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
+      commands.WriteData(UINT64_C(0x0000123456789000), payload.data(),
+                         prefix + 1);
+      const size_t first_padding = commands.word_count();
+      ASSERT_EQ(first_padding, prefix + 5);
+      commands.PadToEightWords(kTrailers[trailer]);
+      const size_t padding = kPadding[prefix][trailer];
+      ASSERT_EQ(commands.word_count(), first_padding + padding);
+      EXPECT_EQ(words[1 + first_padding], kNoopHeaders[padding - 2]);
+      for (size_t word = 1; word < padding; ++word) {
+        EXPECT_EQ(words[1 + first_padding + word], 0u);
+      }
+      EXPECT_EQ((commands.word_count() + kTrailers[trailer]) % 8, 0u);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      for (size_t word = 1 + commands.word_count(); word < words.size();
+           ++word) {
+        EXPECT_EQ(words[word], 0x24681357u);
+      }
+    }
+  }
+}
+
 TEST(Pm4EncodingTest, IndirectBufferCallUsesMecAddressAndDwordCount) {
   std::array<uint32_t, 10> words;
   words.fill(0x24681357u);

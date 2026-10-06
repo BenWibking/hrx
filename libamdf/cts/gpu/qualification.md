@@ -59,6 +59,21 @@ descriptor, code and payload reuse follow their respective final users.
 Coherence does not create an execution dependency, and a host wake is not a
 retirement certificate.
 
+### Portable conditional-branch operands
+
+The PM4 conditional graph cases require `reference & ~mask == 0`. That
+precondition makes unsigned comparisons equivalent whether an engine masks
+only the memory operand or both memory and reference. The command writer
+preserves the supplied fields; it does not silently change the predicate.
+Every comparison function uses full, partial and zero masks, with changing
+ignored memory bits and a pre-masked reference.
+
+Native observations on tested gfx1100 and gfx1151 deployments distinguish
+the two mask behaviors when the reference has bits outside the mask. Such
+operands are outside this portable recipe. Neither a passing case under the
+precondition nor a compiler target name establishes arbitrary-reference
+semantics for another driver/firmware pairing.
+
 ## Required witnesses and deployment identity
 
 An ordinary discovery invocation can skip an unavailable native service. The

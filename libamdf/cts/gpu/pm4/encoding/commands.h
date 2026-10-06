@@ -13,7 +13,8 @@
 #include "libamdf/cts/gpu/pm4/encoding/profile.h"
 
 // Ordinary memory comparisons used by the CTS. These are the MEC
-// WAIT_REG_MEM/WAIT_REG_MEM64 function values, not host comparison opcodes.
+// WAIT_REG_MEM/WAIT_REG_MEM64 and COND_INDIRECT_BUFFER function values, not
+// host comparison opcodes.
 enum class Pm4MemoryComparison : uint32_t {
   kAlways = 0,
   kLess = 1,
@@ -43,11 +44,20 @@ struct Pm4ComputeProgram {
   uint32_t workgroup_size[3];
 };
 
+// One complete command block retained by the enclosing graph owner.
+struct Pm4IndirectBuffer {
+  // Four-byte-aligned GPU byte address of immutable executable backing.
+  uint64_t address;
+  // Positive direct DWORD count, at most 0xfffff, wholly within that backing.
+  uint32_t word_count;
+};
+
 // Encodes the selected RDNA compute recipe using PM4 format version 1.
 // Native callers admit the target and corresponding packet, transfer and
 // cache-control requirements before constructing a stream. Callers supply
 // sufficient storage and addresses aligned to four bytes for 32-bit operations
-// and eight bytes for 64-bit operations.
+// and eight bytes for 64-bit operations, except the explicitly documented
+// conditional-branch comparison address.
 class Pm4CommandWriter {
  public:
   Pm4CommandWriter(uint32_t* words, const Pm4CommandProfile& profile)
@@ -91,6 +101,21 @@ class Pm4CommandWriter {
   // backing stays immutable and retained through final use and checked queue
   // removal; return alone does not join shader completion.
   void CallIndirectBuffer(uint64_t buffer_address, uint32_t word_count);
+  // Continues at the same IB level, without saving a return address. Padding
+  // precedes this terminal packet. The enclosing owner retains the complete
+  // graph through native retirement, including its explicit continuations.
+  void ChainIndirectBuffer(const Pm4IndirectBuffer& successor);
+  // Terminal if-then-else branch comparing (memory & mask) with reference.
+  // The caller pre-masks reference: reference & ~mask is zero. This keeps the
+  // comparison equivalent on engines that also mask the reference. The writer
+  // preserves both fields unchanged. PAL accepts a four-byte-aligned, stable
+  // readable QWORD. Each selected block continues at the same IB level; no
+  // shader wait or cache action is implicit. Both blocks and their
+  // continuations remain owned.
+  void BranchIndirectBuffer(uint64_t operand_address, uint64_t reference,
+                            uint64_t mask, Pm4MemoryComparison comparison,
+                            const Pm4IndirectBuffer& pass,
+                            const Pm4IndirectBuffer& fail);
   // Executes the next complete packet range only if the addressed DWORD is
   // nonzero. The four-byte-aligned predicate is published and stable through
   // sampling; word_count is the following range's direct DWORD count, at most
@@ -140,7 +165,10 @@ class Pm4CommandWriter {
   // Samples the GPU clock at the command processor using confirmed COPY_DATA.
   // This is not shader completion, cache release, or a host-correlated time.
   void CopyGpuClock64(uint64_t target_address);
-  void PadToEightWords();
+  // Emits a complete NOP so this stream plus a following terminal packet is
+  // eight-DWORD aligned. The caller emits exactly trailing_word_count words
+  // afterward; zero pads the current stream normally.
+  void PadToEightWords(size_t trailing_word_count = 0);
   size_t word_count() const { return word_count_; }
 
  private:

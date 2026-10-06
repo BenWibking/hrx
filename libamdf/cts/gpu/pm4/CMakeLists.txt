@@ -46,6 +46,7 @@ iree_cc_library(
     pm4_cases
   SRCS
     "atomic_store_test.cc"
+    "branch_test.cc"
     "command_buffer_test.cc"
     "conditional_test.cc"
     "copy_test.cc"

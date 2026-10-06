@@ -94,6 +94,36 @@ void Pm4CommandWriter::CallIndirectBuffer(uint64_t buffer_address,
   words_[word_count_++] = word_count | (1u << 23);
 }
 
+void Pm4CommandWriter::ChainIndirectBuffer(const Pm4IndirectBuffer& successor) {
+  words_[word_count_++] = MakeHeader(0x3f, 4);
+  words_[word_count_++] = static_cast<uint32_t>(successor.address);
+  words_[word_count_++] = static_cast<uint32_t>(successor.address >> 32);
+  // MEC CHAIN and VALID, with zero VMID, policy and all reserved bits.
+  words_[word_count_++] = successor.word_count | (1u << 20) | (1u << 23);
+}
+
+void Pm4CommandWriter::BranchIndirectBuffer(uint64_t operand_address,
+                                            uint64_t reference, uint64_t mask,
+                                            Pm4MemoryComparison comparison,
+                                            const Pm4IndirectBuffer& pass,
+                                            const Pm4IndirectBuffer& fail) {
+  words_[word_count_++] = MakeHeader(0x3f, 14);
+  words_[word_count_++] = 2u | (static_cast<uint32_t>(comparison) << 8);
+  words_[word_count_++] = static_cast<uint32_t>(operand_address);
+  words_[word_count_++] = static_cast<uint32_t>(operand_address >> 32);
+  words_[word_count_++] = static_cast<uint32_t>(mask);
+  words_[word_count_++] = static_cast<uint32_t>(mask >> 32);
+  words_[word_count_++] = static_cast<uint32_t>(reference);
+  words_[word_count_++] = static_cast<uint32_t>(reference >> 32);
+  words_[word_count_++] = static_cast<uint32_t>(pass.address);
+  words_[word_count_++] = static_cast<uint32_t>(pass.address >> 32);
+  // These branch words have counts and default policies, not CHAIN/VALID bits.
+  words_[word_count_++] = pass.word_count;
+  words_[word_count_++] = static_cast<uint32_t>(fail.address);
+  words_[word_count_++] = static_cast<uint32_t>(fail.address >> 32);
+  words_[word_count_++] = fail.word_count;
+}
+
 void Pm4CommandWriter::ExecuteIfNonzero(uint64_t predicate_address,
                                         uint32_t word_count) {
   words_[word_count_++] = MakeHeader(0x22, 5);
@@ -287,8 +317,8 @@ void Pm4CommandWriter::CopyGpuClock64(uint64_t target_address) {
   word_count_ += pm4::CopyGpuClock64(words_ + word_count_, target_address);
 }
 
-void Pm4CommandWriter::PadToEightWords() {
-  size_t padding = 8 - word_count_ % 8;
+void Pm4CommandWriter::PadToEightWords(size_t trailing_word_count) {
+  size_t padding = 8 - (word_count_ + trailing_word_count) % 8;
   if (padding == 1) {
     padding += 8;
   }
