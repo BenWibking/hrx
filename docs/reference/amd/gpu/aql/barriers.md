@@ -122,6 +122,26 @@ acquire then supplies the payload visibility boundary matching the producers'
 releases. HSA scheduling requires dependencies not to occupy the resources
 needed to make the prerequisite work progress. [HSA §§2.9.8, 2.10, 3.3.8][hsa]
 
+For `N` producers, partition the dependencies into `ceil(N / 5)` consecutive
+AND packets, null-fill unused slots in the final packet, and place `C` after
+the last packet. Each AND holds back later launches even with its header
+barrier bit clear, so reaching `C` joins every group. Each dependency remains
+zero until the AND naming it completes. Retaining every signal until `C`
+completes supplies one reuse boundary for all groups. With matching releases,
+mappings and scopes, `C`'s acquire supplies payload visibility after the full
+join. [HSA §§2.9.8, 3.3.8][hsa]
+
+CLR's `VirtualGPU::dispatchBarrierPacket` uses this grouping for
+`Barriers().WaitingSignal()`. It fills `dep_signal[i % 5]`, emits a full AND
+while more dependencies remain, and finally emits the last group. Each
+emission clears all five fields before the next group is populated. Its
+header-barrier and fence choices are separate runtime policy.
+[CLR dependency grouping][clr-and-groups]
+
+Consecutive OR packets instead compose an AND of OR groups: each group needs
+one satisfied member before `C` can launch. Nonwinning producers retain their
+independent completion and storage-lifetime obligations. [HSA §2.9.9][hsa]
+
 The lifetime graph has more edges than the producer completion graph:
 
 | Storage | Final user in this graph |
@@ -185,3 +205,4 @@ Return to [AQL](README.md) or the [primary source map](../../sources.md).
 [convert]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/inc/signal.h#L295-L325
 [host-signal]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/default_signal.cpp#L51-L75
 [vendor]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L123-L229
+[clr-and-groups]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L2168-L2230
