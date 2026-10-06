@@ -4995,9 +4995,11 @@ static void iree_hal_vulkan_queue_complete_dealloca(
       iree_hal_vulkan_transient_buffer_decommit(
           submission->dealloca.buffers[i]);
     }
+    // Native completion and decommit have both finished. The returned ranges
+    // need no dependency on the later publication of the queue's frontier.
     iree_hal_pool_release_reservations(
         submission->dealloca.pool, submission->dealloca.buffer_count,
-        submission->dealloca.reservations, frontier);
+        submission->dealloca.reservations, /*death_frontier=*/NULL);
     for (iree_host_size_t i = 0; i < submission->dealloca.buffer_count; ++i) {
       iree_hal_buffer_t* buffer = submission->dealloca.buffers[i];
       const iree_hal_buffer_params_t params = {
@@ -5014,13 +5016,13 @@ static void iree_hal_vulkan_queue_complete_dealloca(
           IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
           allocation_id, submission->dealloca.pool, params,
           &submission->dealloca.reservations[i], /*backing_id=*/0,
-          allocation_size, frontier->entry_count);
+          allocation_size, /*frontier_entry_count=*/0);
       iree_hal_vulkan_queue_profile_record_memory_event(
           submission, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE,
           IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
           allocation_id, submission->dealloca.pool, params,
           &submission->dealloca.reservations[i], /*backing_id=*/0,
-          allocation_size, frontier->entry_count);
+          allocation_size, /*frontier_entry_count=*/0);
     }
     iree_hal_vulkan_queue_signal_list_or_fail(signal_semaphore_list, frontier);
   } else {

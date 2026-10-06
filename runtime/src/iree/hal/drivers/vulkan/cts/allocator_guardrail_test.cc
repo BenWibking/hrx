@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "iree/hal/cts/util/test_base.h"
+#include "iree/hal/memory/fixed_block_pool.h"
 #include "iree/hal/memory/passthrough_pool.h"
 
 namespace iree::hal::cts {
@@ -108,6 +109,60 @@ TEST_P(VulkanAllocatorGuardrailTest, QueueAllocaAcceptsSparseSizedAllocation) {
                                          /*buffer_count=*/1, &dealloca_buffer));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dealloca_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+}
+
+TEST_P(VulkanAllocatorGuardrailTest,
+       CompletedDeallocationIsImmediatelyReusable) {
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+      device_, iree_hal_queue_family(transfer_queue_), &backend));
+  constexpr iree_device_size_t kBlockSize = 512;
+  iree_hal_fixed_block_pool_options_t options = {};
+  options.block_allocator_options.block_size = kBlockSize;
+  options.block_allocator_options.block_count = 1;
+  options.block_allocator_options.frontier_capacity = 2;
+  options.asan = backend.asan;
+  Ref<iree_hal_pool_t> pool;
+  // Vulkan returns the reservation from its completion path. Reuse must not
+  // require the optional probe to rediscover that completion.
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+      options, backend.slab_provider, backend.notification,
+      iree_hal_pool_epoch_query_null(), iree_allocator_system(), pool.out()));
+
+  iree_hal_pool_reservation_request_t request = {};
+  request.allocation_size = kBlockSize;
+  request.params.type = IREE_HAL_MEMORY_TYPE_OPTIMAL_FOR_DEVICE;
+  request.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  request.params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
+  request.params.queue_family_affinity = iree_hal_make_queue_family_affinity(
+      iree_hal_queue_family_ordinal(iree_hal_queue_family(transfer_queue_)));
+  Ref<iree_hal_buffer_t> transient_buffer;
+  SemaphoreList empty_wait;
+  SemaphoreList allocated(device_, {0}, {1});
+  SemaphoreList released(device_, {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_alloca(transfer_queue_, empty_wait, allocated,
+                                       pool, 1, &request,
+                                       transient_buffer.out()));
+  iree_hal_buffer_t* dealloca_buffer = transient_buffer.get();
+  IREE_ASSERT_OK(iree_hal_queue_dealloca(transfer_queue_, allocated, released,
+                                         1, &dealloca_buffer));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(released, iree_infinite_timeout(),
+                                              IREE_ASYNC_WAIT_FLAG_NONE));
+
+  Ref<iree_hal_buffer_t> buffer;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      pool, request.params, kBlockSize, /*requester_frontier=*/nullptr,
+      iree_immediate_timeout(), buffer.out()));
+  const uint32_t pattern = 0x1234ABCDu;
+  SemaphoreList filled(device_, {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_fill(transfer_queue_, empty_wait, filled,
+                                     buffer, 0, kBlockSize, &pattern,
+                                     sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
+                                              IREE_ASYNC_WAIT_FLAG_NONE));
+  for (uint32_t value : ReadBufferData<uint32_t>(buffer)) {
+    EXPECT_EQ(pattern, value);
+  }
 }
 
 CTS_REGISTER_TEST_SUITE(VulkanAllocatorGuardrailTest);

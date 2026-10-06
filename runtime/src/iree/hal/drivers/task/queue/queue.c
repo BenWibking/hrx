@@ -811,29 +811,6 @@ static void iree_hal_task_queue_op_advance_frontier(
                                       operation->axis, epoch);
 }
 
-static void iree_hal_task_queue_op_complete_with_epoch(
-    iree_hal_task_queue_op_t* operation, uint64_t epoch) {
-  iree_status_t status = iree_hal_task_queue_op_unmap_recording_mappings(
-      operation, iree_ok_status());
-  if (iree_status_is_ok(status)) {
-    // Publish profiling before user-visible completion. Waiters may flush and
-    // end profiling immediately after signal semaphores are reached.
-    iree_hal_task_queue_profile_finish_host_execution(operation,
-                                                      iree_status_code(status));
-  }
-  if (iree_status_is_ok(status)) {
-    status = iree_hal_semaphore_list_signal(operation->signal_semaphores,
-                                            /*frontier=*/NULL);
-  }
-  if (iree_status_is_ok(status)) {
-    iree_hal_task_queue_op_advance_frontier(operation, epoch);
-    iree_hal_task_queue_debug_record_complete(operation->queue, operation);
-    iree_hal_task_queue_op_destroy(operation, status);
-  } else {
-    iree_hal_task_queue_op_fail(operation, status);
-  }
-}
-
 // Completes an operation successfully: signals semaphores, advances the
 // frontier, then destroys the operation (freeing the arena).
 static void iree_hal_task_queue_op_complete(
@@ -2069,9 +2046,8 @@ static iree_status_t iree_hal_task_queue_drain_alloca(
 }
 
 // Handles a DEALLOCA operation after all wait semaphores are satisfied:
-// decommits target-visible backing, releases the reservation transaction with
-// a queue frontier that gates future pool reuse, then publishes dealloca
-// completion.
+// decommits target-visible backing, returns immediately reusable reservations,
+// then publishes dealloca completion.
 static void iree_hal_task_queue_drain_dealloca(
     iree_hal_task_queue_op_t* operation) {
   iree_hal_buffer_t* first_buffer = operation->dealloca.transient_buffers[0];
@@ -2086,11 +2062,6 @@ static void iree_hal_task_queue_drain_dealloca(
         operation->dealloca.transient_buffers[i]);
   }
 
-  const uint64_t epoch =
-      iree_hal_task_queue_op_reserve_completion_epoch(operation);
-  iree_async_single_frontier_t death_frontier;
-  iree_async_single_frontier_initialize(&death_frontier, operation->axis,
-                                        epoch);
   for (iree_host_size_t i = 0; i < operation->dealloca.buffer_count; ++i) {
     iree_hal_pool_t* source_pool = NULL;
     iree_hal_task_transient_buffer_take_dealloca_reservation(
@@ -2099,21 +2070,23 @@ static void iree_hal_task_queue_drain_dealloca(
     IREE_ASSERT_TRUE(source_pool == operation->dealloca.pool);
   }
   operation->dealloca.marks_owned = false;
+  // The waits and decommit have completed, so no prior access or target-side
+  // deallocation effect remains. Publish usable capacity without a dependency
+  // on this operation's later completion bookkeeping.
   iree_hal_pool_release_reservations(
       operation->dealloca.pool, operation->dealloca.buffer_count,
-      operation->dealloca.reservations,
-      iree_async_single_frontier_as_const_frontier(&death_frontier));
+      operation->dealloca.reservations, /*death_frontier=*/NULL);
   iree_hal_task_queue_profile_record_memory_event(
       operation, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_DEALLOCA,
       IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
       operation->dealloca.pool, params, &operation->dealloca.reservations[0],
-      death_frontier.entry_count);
+      /*frontier_entry_count=*/0);
   iree_hal_task_queue_profile_record_memory_event(
       operation, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_RELEASE,
       IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
       operation->dealloca.pool, params, &operation->dealloca.reservations[0],
-      death_frontier.entry_count);
-  iree_hal_task_queue_op_complete_with_epoch(operation, epoch);
+      /*frontier_entry_count=*/0);
+  iree_hal_task_queue_op_complete(operation);
 }
 
 //===----------------------------------------------------------------------===//

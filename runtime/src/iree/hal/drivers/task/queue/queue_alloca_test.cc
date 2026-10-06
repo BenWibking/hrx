@@ -91,19 +91,24 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
         devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
         &backend));
     notification_ = backend.notification;
-    iree_hal_fixed_block_pool_options_t options = {};
-    options.block_allocator_options.block_size = kBlockSize;
-    options.block_allocator_options.block_count = 2;
-    options.block_allocator_options.frontier_capacity = 2;
-    options.asan = backend.asan;
-    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
-        options, backend.slab_provider, notification_, backend.epoch_query,
-        iree_allocator_system(), &pool_));
+    IREE_ASSERT_OK(CreatePool(backend, &pool_));
     for (iree_host_size_t i = 0; i < semaphores_.size(); ++i) {
       IREE_ASSERT_OK(iree_hal_semaphore_create(
           devices_[i == 0 ? 0 : i - 1], IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY, 0,
           IREE_HAL_SEMAPHORE_FLAG_DEFAULT, &semaphores_[i]));
     }
+  }
+
+  iree_status_t CreatePool(const iree_hal_queue_pool_backend_t& backend,
+                           iree_hal_pool_t** out_pool) {
+    iree_hal_fixed_block_pool_options_t options = {};
+    options.block_allocator_options.block_size = kBlockSize;
+    options.block_allocator_options.block_count = 2;
+    options.block_allocator_options.frontier_capacity = 2;
+    options.asan = backend.asan;
+    return iree_hal_fixed_block_pool_create(
+        options, backend.slab_provider, backend.notification,
+        backend.epoch_query, iree_allocator_system(), out_pool);
   }
 
   void TearDown() override {
@@ -260,6 +265,67 @@ TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
     IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[i], filled, released, 1,
                                            &pending_buffers_[i]));
     ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[i + 1], released_value));
+  }
+}
+
+TEST_P(TaskQueueAllocaTest, CompletedDeallocationIsImmediatelyReusable) {
+  // A completion probe is an optional reuse optimization. A completed Task
+  // deallocation must return usable memory even when that probe is absent.
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+      devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
+      &backend));
+  backend.epoch_query = iree_hal_pool_epoch_query_null();
+  iree_hal_pool_release(pool_);
+  pool_ = nullptr;
+  IREE_ASSERT_OK(CreatePool(backend, &pool_));
+
+  std::array<iree_hal_pool_reservation_request_t, 2> requests = {};
+  for (auto& request : requests) {
+    request.allocation_size = kBlockSize;
+    request.params.type = IREE_HAL_MEMORY_TYPE_OPTIMAL_FOR_DEVICE;
+    request.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+    request.params.usage =
+        IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+    request.params.queue_family_affinity =
+        iree_hal_make_queue_family_affinity(0);
+  }
+  uint64_t allocated_value = 1;
+  uint64_t released_value = 2;
+  const auto no_waits = iree_hal_semaphore_list_empty();
+  iree_hal_semaphore_list_t allocated = {1, &semaphores_[0], &allocated_value};
+  iree_hal_semaphore_list_t released = {1, &semaphores_[0], &released_value};
+  IREE_ASSERT_OK(iree_hal_queue_alloca(queues_[0], no_waits, allocated, pool_,
+                                       requests.size(), requests.data(),
+                                       initial_buffers_.data()));
+  IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[0], allocated, released,
+                                         initial_buffers_.size(),
+                                         initial_buffers_.data()));
+  ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], released_value));
+
+  uint64_t filled_value = 0;
+  for (auto*& buffer : pending_buffers_) {
+    IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+        pool_, requests[0].params, kBlockSize, /*requester_frontier=*/nullptr,
+        iree_immediate_timeout(), &buffer));
+    const uint32_t pattern = 0x1234ABCDu;
+    ++filled_value;
+    iree_hal_semaphore_list_t filled = {1, &semaphores_[1], &filled_value};
+    IREE_ASSERT_OK(iree_hal_queue_fill(queues_[1], no_waits, filled, buffer, 0,
+                                       kBlockSize, &pattern, sizeof(pattern),
+                                       IREE_HAL_FILL_FLAG_NONE));
+    ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], filled_value));
+    iree_hal_buffer_mapping_t mapping = {};
+    IREE_ASSERT_OK(iree_hal_buffer_map_range(
+        buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
+        kBlockSize, &mapping));
+    const auto* output =
+        reinterpret_cast<const uint32_t*>(mapping.contents.data);
+    for (iree_host_size_t word = 0; word < kBlockSize / sizeof(pattern);
+         ++word) {
+      EXPECT_EQ(pattern, output[word]);
+    }
+    IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
   }
 }
 
