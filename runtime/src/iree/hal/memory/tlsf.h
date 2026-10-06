@@ -216,7 +216,7 @@ enum iree_hal_memory_tlsf_block_flag_bits_e {
 
 // Fixed-size metadata for a single block in the TLSF allocator. Each block
 // represents a contiguous sub-range of the managed offset space. Blocks are
-// stored in a flat array with stride arithmetic; the actual storage size per
+// stored in fixed-stride segments; the actual storage size per
 // block includes trailing inline frontier data (not represented in this
 // struct).
 //
@@ -269,8 +269,8 @@ typedef struct iree_hal_memory_tlsf_options_t {
   iree_device_size_t alignment;
 
   // Initial capacity of the block node pool (number of block metadata
-  // entries to pre-allocate). The pool grows dynamically when exhausted,
-  // doubling in capacity. Set to 0 to use
+  // entries to pre-allocate, rounded up to a power of two). The pool grows
+  // dynamically when exhausted, doubling in capacity. Set to 0 to use
   // IREE_HAL_MEMORY_TLSF_DEFAULT_INITIAL_BLOCK_CAPACITY (64).
   //
   // Each block node costs approximately (40 + 8 + 16 * frontier_capacity)
@@ -315,10 +315,10 @@ typedef struct iree_hal_memory_tlsf_allocation_t {
 
   // The death frontier that was attached to this block when it was in the
   // free list. This is the causal snapshot from the block's previous
-  // deallocation. Points into the block's inline frontier storage, which may
-  // move when a later allocation grows the block metadata. NULL if the block
-  // had no frontier entries (e.g., the initial free block or a block freed with
-  // a NULL frontier).
+  // deallocation. Points into the block's inline frontier storage, which stays
+  // valid until this block is released or the allocator is destroyed. NULL if
+  // the block had no frontier entries (e.g., the initial free block or a block
+  // freed with a NULL frontier).
   //
   // The async allocator checks whether the requester's current frontier
   // dominates this death frontier. If yes, the memory is safe for zero-sync
@@ -342,6 +342,22 @@ typedef struct iree_hal_memory_tlsf_candidate_t {
   // Exact borrowed reuse prerequisite, or NULL when the range has none.
   const iree_async_frontier_t* death_frontier;
 } iree_hal_memory_tlsf_candidate_t;
+
+// Detached metadata growth for a selected split. The descriptor contains no
+// reference to a TLSF instance and survives its mutation or destruction.
+// Storage is caller-owned until accepted by apply_growth; otherwise free it
+// with the allocator used by prepare_growth. A zero first_block means no growth
+// needed.
+typedef struct iree_hal_memory_tlsf_growth_t {
+  // Prepared, initialized block storage, or NULL before preparation.
+  uint8_t* storage;
+  // Byte stride captured from the requesting allocator.
+  iree_host_size_t block_stride;
+  // First block index in the new segment, or zero for an empty descriptor.
+  uint32_t first_block;
+  // Number of new slots; zero at the exhausted 32-bit block-handle limit.
+  uint32_t block_count;
+} iree_hal_memory_tlsf_growth_t;
 
 // Result of a TLSF try-allocation that can run out of blocks during normal
 // allocator search.
@@ -393,6 +409,12 @@ typedef struct iree_hal_memory_tlsf_t {
   // Maximum frontier entries per block (set at creation time).
   uint8_t frontier_capacity;
 
+  // Number of published metadata segments, including the initial segment.
+  uint8_t block_segment_count;
+
+  // Log2 of the initial segment capacity for indexed segment selection.
+  uint8_t initial_block_shift;
+
   // First-level bitmap: bit i set means sl_bitmaps[i] has at least one set
   // bit (some SL bin in FL level i is non-empty).
   uint64_t fl_bitmap;
@@ -406,10 +428,10 @@ typedef struct iree_hal_memory_tlsf_t {
   iree_hal_memory_tlsf_block_index_t free_lists[IREE_HAL_MEMORY_TLSF_FL_COUNT]
                                                [IREE_HAL_MEMORY_TLSF_SL_COUNT];
 
-  // Block node pool: a flat array of fixed-stride block nodes. Each node
-  // contains the block's fixed fields followed by inline frontier storage.
-  // Accessed via stride arithmetic from internal helpers.
-  uint8_t* block_storage;
+  // Independently allocated, fixed-stride segments. Segment lengths are
+  // initially N, then N, 2N, 4N, ...; at most 33 cover all 32-bit block handles
+  // when N is one. Published segments never move while the allocator lives.
+  uint8_t* block_segments[33];
 
   // Bytes per block node in the pool (fixed fields + frontier header +
   // frontier_capacity * entry_size, aligned up).
@@ -419,11 +441,11 @@ typedef struct iree_hal_memory_tlsf_t {
   // each block node.
   iree_host_size_t frontier_offset;
 
-  // Number of block node slots that have been initialized (high water mark).
-  iree_host_size_t block_count;
+  // Number of slots in the first segment. A power of two or UINT32_MAX.
+  uint32_t initial_block_capacity;
 
-  // Total allocated slots in block_storage.
-  iree_host_size_t block_capacity;
+  // Total allocated slots across published segments.
+  uint32_t block_capacity;
 
   // Head of the unused node free list. When blocks are coalesced, the
   // absorbed block's node is returned here for reuse. When a new node is
@@ -431,14 +453,18 @@ typedef struct iree_hal_memory_tlsf_t {
   // if empty). Uses the next_free field for linking.
   iree_hal_memory_tlsf_block_index_t unused_node_head;
 
-  // Running statistics (updated incrementally on every alloc/free).
+  // Bytes occupied by live allocations, updated on each allocation and release.
   iree_device_size_t bytes_allocated;
+  // Bytes represented by the free-list matrix.
   iree_device_size_t bytes_free;
+  // Number of blocks currently owned by callers.
   uint32_t allocation_count;
+  // Number of free blocks currently in the free-list matrix.
   uint32_t free_block_count;
+  // Number of releases or merges whose frontier exceeded inline capacity.
   uint64_t tainted_coalesce_count;
 
-  // Host allocator for block_storage growth.
+  // Host allocator owning each block metadata segment.
   iree_allocator_t host_allocator;
 } iree_hal_memory_tlsf_t;
 
@@ -447,7 +473,7 @@ typedef struct iree_hal_memory_tlsf_t {
 //===----------------------------------------------------------------------===//
 
 // Initializes a TLSF allocator managing the offset range [0, range_length).
-// The entire range starts as a single free block with an empty death frontier.
+// The entire range starts as a single free block with options.initial_frontier.
 //
 // |options| configures the range, alignment, block pool capacity, and frontier
 // capacity (see iree_hal_memory_tlsf_options_t documentation for defaults).
@@ -457,8 +483,8 @@ typedef struct iree_hal_memory_tlsf_t {
 // the pool reaches steady-state size.
 //
 // Returns IREE_STATUS_INVALID_ARGUMENT if options are invalid (zero range,
-// non-power-of-two alignment, alignment below minimum, range not a multiple
-// of alignment).
+// non-power-of-two alignment, alignment below minimum, or excessive metadata
+// capacity). The managed range rounds down to a multiple of alignment.
 iree_status_t iree_hal_memory_tlsf_initialize(
     iree_hal_memory_tlsf_options_t options, iree_allocator_t host_allocator,
     iree_hal_memory_tlsf_t* out_tlsf);
@@ -466,7 +492,7 @@ iree_status_t iree_hal_memory_tlsf_initialize(
 // Deinitializes a TLSF allocator, freeing all internal metadata.
 // Does NOT free any backing memory (the TLSF manages offsets, not memory).
 // The caller is responsible for ensuring no allocated blocks are leaked
-// (in debug builds, a warning is emitted if allocation_count > 0).
+// (debug builds assert that allocation_count is zero).
 void iree_hal_memory_tlsf_deinitialize(iree_hal_memory_tlsf_t* tlsf);
 
 // Finds the next free block of at least |minimum_length| bytes. Pass
@@ -483,14 +509,39 @@ iree_hal_memory_tlsf_candidate_t iree_hal_memory_tlsf_query_free_block(
     const iree_hal_memory_tlsf_t* tlsf, iree_device_size_t minimum_length,
     iree_hal_memory_tlsf_block_index_t after_block);
 
+// Queries metadata required to split a selected free block. Selection is
+// subject to the same trusted invariants as allocate_block. Returns an empty
+// descriptor when existing metadata suffices. A nonempty descriptor can be
+// prepared outside the caller's mutation lock without keeping the requesting
+// allocator alive.
+iree_hal_memory_tlsf_growth_t iree_hal_memory_tlsf_query_growth(
+    const iree_hal_memory_tlsf_t* tlsf,
+    iree_hal_memory_tlsf_block_index_t block_index,
+    iree_device_size_t aligned_length);
+
+// Allocates and initializes detached growth storage. The descriptor must come
+// from query_growth and have no prepared storage. Failure leaves storage NULL.
+iree_status_t iree_hal_memory_tlsf_prepare_growth(
+    iree_hal_memory_tlsf_growth_t* growth, iree_allocator_t host_allocator);
+
+// Publishes compatible prepared storage using a bounded number of metadata
+// updates, with no allocation or copying of existing nodes. On success, takes
+// ownership and clears growth->storage. Returns false when the allocator's
+// current capacity or stride differs; ownership then remains with the caller.
+// Storage must have been successfully prepared with the same host allocator as
+// the destination TLSF. Serialize publication against all allocator mutation.
+bool iree_hal_memory_tlsf_apply_growth(iree_hal_memory_tlsf_t* tlsf,
+                                       iree_hal_memory_tlsf_growth_t* growth);
+
 // Allocates |aligned_length| bytes from a free block selected by the query
 // above. Selection and allocation must be serialized against all TLSF mutation.
 // The block must still be free, with sufficient length for the positive,
 // alignment-rounded request. These are trusted selection invariants.
 //
-// Only split-metadata allocation can fail. Failure preserves geometry and
-// history. On success, any split remainder inherits the same prerequisite.
-iree_status_t iree_hal_memory_tlsf_allocate_block(
+// Any required split metadata must already be available, as reported by
+// query_growth. This commit performs no host allocation and cannot fail.
+// Any split remainder inherits the same prerequisite.
+void iree_hal_memory_tlsf_allocate_block(
     iree_hal_memory_tlsf_t* tlsf,
     iree_hal_memory_tlsf_block_index_t block_index,
     iree_device_size_t aligned_length,

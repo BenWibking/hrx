@@ -12,11 +12,17 @@
 // Internal helpers
 //===----------------------------------------------------------------------===//
 
-// Returns a pointer to the block node at |index| via stride arithmetic.
+// Maps stable block handles to fixed-stride storage without moving live nodes.
 static inline iree_hal_memory_tlsf_block_t* iree_hal_memory_tlsf_block_at(
     const iree_hal_memory_tlsf_t* tlsf,
     iree_hal_memory_tlsf_block_index_t index) {
-  return (iree_hal_memory_tlsf_block_t*)(tlsf->block_storage +
+  uint32_t segment = 0;
+  if (index >= tlsf->initial_block_capacity) {
+    const uint32_t shift = 31 - iree_math_count_leading_zeros_u32(index);
+    segment = shift - tlsf->initial_block_shift + 1;
+    index -= 1u << shift;
+  }
+  return (iree_hal_memory_tlsf_block_t*)(tlsf->block_segments[segment] +
                                          (iree_host_size_t)index *
                                              tlsf->block_stride);
 }
@@ -27,52 +33,18 @@ static inline iree_async_frontier_t* iree_hal_memory_tlsf_block_frontier(
   return (iree_async_frontier_t*)((uint8_t*)block + tlsf->frontier_offset);
 }
 
-// Grows the block node pool using 2x doubling. New nodes are linked into the
-// unused_node_head free list. Uses iree_allocator_grow_array for
-// overflow-checked capacity doubling and realloc.
-static iree_status_t iree_hal_memory_tlsf_grow_pool(
+// Pops one already-published node. Callers prepare metadata before committing a
+// split, so this mutation cannot invoke the host allocator.
+static iree_hal_memory_tlsf_block_index_t iree_hal_memory_tlsf_alloc_node(
     iree_hal_memory_tlsf_t* tlsf) {
-  if (tlsf->block_capacity >= UINT32_MAX) {
-    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
-                            "block pool at maximum capacity (%" PRIu32 ")",
-                            (uint32_t)UINT32_MAX);
-  }
-  iree_host_size_t old_capacity = tlsf->block_capacity;
-  iree_host_size_t new_capacity = old_capacity;
-  IREE_RETURN_IF_ERROR(iree_allocator_grow_array(
-      tlsf->host_allocator, /*minimum_capacity=*/old_capacity + 1,
-      tlsf->block_stride, &new_capacity, (void**)&tlsf->block_storage));
-  // Cap at UINT32_MAX since block indices are uint32_t.
-  if (new_capacity > UINT32_MAX) {
-    new_capacity = UINT32_MAX;
-  }
-  // Initialize new nodes and link them into the unused list.
-  for (iree_host_size_t i = old_capacity; i < new_capacity; ++i) {
-    iree_hal_memory_tlsf_block_t* block =
-        iree_hal_memory_tlsf_block_at(tlsf, (uint32_t)i);
-    memset(block, 0, tlsf->block_stride);
-    block->next_free = tlsf->unused_node_head;
-    tlsf->unused_node_head = (uint32_t)i;
-  }
-  tlsf->block_capacity = new_capacity;
-  return iree_ok_status();
-}
-
-// Allocates a block node from the pool. Grows the pool if no unused nodes
-// are available.
-static iree_status_t iree_hal_memory_tlsf_alloc_node(
-    iree_hal_memory_tlsf_t* tlsf,
-    iree_hal_memory_tlsf_block_index_t* out_index) {
-  if (tlsf->unused_node_head == IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
-    IREE_RETURN_IF_ERROR(iree_hal_memory_tlsf_grow_pool(tlsf));
-  }
   iree_hal_memory_tlsf_block_index_t index = tlsf->unused_node_head;
+  IREE_ASSERT(index != IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE,
+              "split metadata must be prepared before allocation");
   iree_hal_memory_tlsf_block_t* block =
       iree_hal_memory_tlsf_block_at(tlsf, index);
   tlsf->unused_node_head = block->next_free;
   memset(block, 0, tlsf->block_stride);
-  *out_index = index;
-  return iree_ok_status();
+  return index;
 }
 
 // Returns a block node to the unused pool.
@@ -103,7 +75,7 @@ static inline void iree_hal_memory_tlsf_mapping_insert(
 // Maps a requested allocation length to (FL, SL) indices for searching the
 // free list matrix. We want the smallest bin that could contain a block >=
 // |length|, so we round up within the current FL level's SL range.
-static inline void iree_hal_memory_tlsf_mapping_search(
+static inline bool iree_hal_memory_tlsf_mapping_search(
     iree_device_size_t length, uint8_t* out_fl, uint8_t* out_sl) {
   // For sizes that span SL bins within an FL level, round up to ensure we
   // find a block that is at least |length|. We add (1 << sl_shift) - 1
@@ -111,14 +83,17 @@ static inline void iree_hal_memory_tlsf_mapping_search(
   int fl = 63 - iree_math_count_leading_zeros_u64(length);
   if (fl > IREE_HAL_MEMORY_TLSF_SL_LOG2) {
     int sl_shift = fl - IREE_HAL_MEMORY_TLSF_SL_LOG2;
-    iree_device_size_t rounded =
-        length + (((iree_device_size_t)1 << sl_shift) - 1);
+    const iree_device_size_t rounding = ((iree_device_size_t)1 << sl_shift) - 1;
+    if (length > IREE_DEVICE_SIZE_MAX - rounding) {
+      return false;
+    }
+    iree_device_size_t rounded = length + rounding;
     // If rounding caused overflow into the next FL level, use that instead.
     int new_fl = 63 - iree_math_count_leading_zeros_u64(rounded);
     if (new_fl != fl) {
       *out_fl = (uint8_t)new_fl;
       *out_sl = 0;
-      return;
+      return true;
     }
     *out_fl = (uint8_t)fl;
     *out_sl =
@@ -127,6 +102,7 @@ static inline void iree_hal_memory_tlsf_mapping_search(
     *out_fl = (uint8_t)fl;
     *out_sl = (uint8_t)(length & (IREE_HAL_MEMORY_TLSF_SL_COUNT - 1));
   }
+  return true;
 }
 
 // Inserts a free block into the appropriate (FL, SL) free list and updates
@@ -211,7 +187,9 @@ iree_hal_memory_tlsf_find_suitable_block(iree_hal_memory_tlsf_t* tlsf,
     return containing_head;
   }
 
-  iree_hal_memory_tlsf_mapping_search(length, &fl, &sl);
+  if (!iree_hal_memory_tlsf_mapping_search(length, &fl, &sl)) {
+    return IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
+  }
 
   // Try to find a block in the current FL level at or above the target SL.
   uint32_t sl_map = tlsf->sl_bitmaps[fl] & (~0u << sl);
@@ -328,6 +306,19 @@ iree_status_t iree_hal_memory_tlsf_initialize(
     initial_capacity = IREE_HAL_MEMORY_TLSF_DEFAULT_INITIAL_BLOCK_CAPACITY;
   }
 
+  if (initial_capacity > UINT32_MAX) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "initial block capacity exceeds 32-bit handles");
+  }
+  // Power-of-two boundaries make segment selection a single bit scan. The
+  // terminal capacity excludes UINT32_MAX, which is the null block handle.
+  if (initial_capacity > (1u << 31)) {
+    initial_capacity = UINT32_MAX;
+  } else if (initial_capacity > 1) {
+    initial_capacity = 1u << (32 - iree_math_count_leading_zeros_u32(
+                                       (uint32_t)initial_capacity - 1));
+  }
+
   // Allocate block storage (overflow-checked array allocation).
   uint8_t* block_storage = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
@@ -346,11 +337,15 @@ iree_status_t iree_hal_memory_tlsf_initialize(
       out_tlsf->free_lists[fl][sl] = IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
     }
   }
-  out_tlsf->block_storage = block_storage;
+  out_tlsf->block_segments[0] = block_storage;
+  out_tlsf->block_segment_count = 1;
   out_tlsf->block_stride = block_stride;
   out_tlsf->frontier_offset = frontier_offset;
-  out_tlsf->block_count = 0;
-  out_tlsf->block_capacity = initial_capacity;
+  out_tlsf->initial_block_capacity = (uint32_t)initial_capacity;
+  out_tlsf->initial_block_shift =
+      (uint8_t)(31 -
+                iree_math_count_leading_zeros_u32((uint32_t)initial_capacity));
+  out_tlsf->block_capacity = (uint32_t)initial_capacity;
   out_tlsf->unused_node_head = IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
   out_tlsf->bytes_allocated = 0;
   out_tlsf->bytes_free = options.range_length;
@@ -367,7 +362,6 @@ iree_status_t iree_hal_memory_tlsf_initialize(
     block->next_free = out_tlsf->unused_node_head;
     out_tlsf->unused_node_head = (uint32_t)i;
   }
-  out_tlsf->block_count = initial_capacity;
 
   // Create the initial free block spanning the entire range.
   iree_hal_memory_tlsf_block_t* initial_block =
@@ -403,7 +397,9 @@ void iree_hal_memory_tlsf_deinitialize(iree_hal_memory_tlsf_t* tlsf) {
     IREE_ASSERT(false, "TLSF deinitialize with %" PRIu32 " leaked allocations",
                 tlsf->allocation_count);
   }
-  iree_allocator_free(tlsf->host_allocator, tlsf->block_storage);
+  for (uint8_t i = 0; i < tlsf->block_segment_count; ++i) {
+    iree_allocator_free(tlsf->host_allocator, tlsf->block_segments[i]);
+  }
   memset(tlsf, 0, sizeof(*tlsf));
 }
 
@@ -453,7 +449,63 @@ iree_hal_memory_tlsf_candidate_t iree_hal_memory_tlsf_query_free_block(
   }
 }
 
-iree_status_t iree_hal_memory_tlsf_allocate_block(
+iree_hal_memory_tlsf_growth_t iree_hal_memory_tlsf_query_growth(
+    const iree_hal_memory_tlsf_t* tlsf,
+    iree_hal_memory_tlsf_block_index_t block_index,
+    iree_device_size_t aligned_length) {
+  const iree_hal_memory_tlsf_block_t* block =
+      iree_hal_memory_tlsf_block_at(tlsf, block_index);
+  if (tlsf->unused_node_head != IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE ||
+      block->length - aligned_length < tlsf->alignment) {
+    return (iree_hal_memory_tlsf_growth_t){0};
+  }
+  return (iree_hal_memory_tlsf_growth_t){
+      .block_stride = tlsf->block_stride,
+      .first_block = tlsf->block_capacity,
+      .block_count =
+          iree_min(tlsf->block_capacity, UINT32_MAX - tlsf->block_capacity),
+  };
+}
+
+iree_status_t iree_hal_memory_tlsf_prepare_growth(
+    iree_hal_memory_tlsf_growth_t* growth, iree_allocator_t host_allocator) {
+  if (!growth->block_count) {
+    return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                            "block pool reached its 32-bit handle limit");
+  }
+  IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
+      host_allocator, growth->block_count, growth->block_stride,
+      (void**)&growth->storage));
+  // Populate the entire chain while detached. The tail joins any returned nodes
+  // at publication; no per-node initialization happens under the caller's lock.
+  for (uint32_t i = 0; i < growth->block_count; ++i) {
+    iree_hal_memory_tlsf_block_t* block =
+        (iree_hal_memory_tlsf_block_t*)(growth->storage +
+                                        (iree_host_size_t)i *
+                                            growth->block_stride);
+    block->next_free =
+        i ? growth->first_block + i - 1 : IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
+  }
+  return iree_ok_status();
+}
+
+bool iree_hal_memory_tlsf_apply_growth(iree_hal_memory_tlsf_t* tlsf,
+                                       iree_hal_memory_tlsf_growth_t* growth) {
+  if (growth->first_block != tlsf->block_capacity ||
+      growth->block_stride != tlsf->block_stride) {
+    return false;
+  }
+  iree_hal_memory_tlsf_block_t* tail =
+      (iree_hal_memory_tlsf_block_t*)growth->storage;
+  tail->next_free = tlsf->unused_node_head;
+  tlsf->block_segments[tlsf->block_segment_count++] = growth->storage;
+  tlsf->block_capacity += growth->block_count;
+  tlsf->unused_node_head = tlsf->block_capacity - 1;
+  growth->storage = NULL;
+  return true;
+}
+
+void iree_hal_memory_tlsf_allocate_block(
     iree_hal_memory_tlsf_t* tlsf,
     iree_hal_memory_tlsf_block_index_t block_index,
     iree_device_size_t aligned_length,
@@ -465,18 +517,11 @@ iree_status_t iree_hal_memory_tlsf_allocate_block(
   iree_hal_memory_tlsf_block_index_t remainder_index =
       IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE;
   if (remainder >= tlsf->alignment) {
-    // Allocate the remainder node before unlinking the selected free block so
-    // metadata growth failure leaves allocator state unchanged.
-    IREE_RETURN_IF_ERROR(
-        iree_hal_memory_tlsf_alloc_node(tlsf, &remainder_index));
+    remainder_index = iree_hal_memory_tlsf_alloc_node(tlsf);
   }
 
-  // Remove the block from the free list after all fallible split preparation.
+  // Metadata is already available; commit the selected block and its split.
   iree_hal_memory_tlsf_remove_free_block(tlsf, block_index);
-
-  // Re-fetch block: alloc_node may have grown the block pool via realloc,
-  // invalidating all prior block pointers into block_storage.
-  block = iree_hal_memory_tlsf_block_at(tlsf, block_index);
 
   if (remainder_index != IREE_HAL_MEMORY_TLSF_BLOCK_INDEX_NONE) {
     iree_hal_memory_tlsf_block_t* remainder_block =
@@ -542,8 +587,6 @@ iree_status_t iree_hal_memory_tlsf_allocate_block(
 
   tlsf->bytes_allocated += block->length;
   tlsf->allocation_count++;
-
-  return iree_ok_status();
 }
 
 iree_status_t iree_hal_memory_tlsf_try_allocate(
@@ -585,8 +628,17 @@ iree_status_t iree_hal_memory_tlsf_try_allocate(
     return iree_ok_status();
   }
 
-  IREE_RETURN_IF_ERROR(iree_hal_memory_tlsf_allocate_block(
-      tlsf, block_index, aligned_length, out_allocation));
+  iree_hal_memory_tlsf_growth_t growth =
+      iree_hal_memory_tlsf_query_growth(tlsf, block_index, aligned_length);
+  if (growth.first_block) {
+    IREE_RETURN_IF_ERROR(
+        iree_hal_memory_tlsf_prepare_growth(&growth, tlsf->host_allocator));
+    // This standalone path remains serialized across preparation, so the
+    // captured geometry is still current and ownership always transfers.
+    iree_hal_memory_tlsf_apply_growth(tlsf, &growth);
+  }
+  iree_hal_memory_tlsf_allocate_block(tlsf, block_index, aligned_length,
+                                      out_allocation);
   *out_result = IREE_HAL_MEMORY_TLSF_ALLOCATE_OK;
   return iree_ok_status();
 }
