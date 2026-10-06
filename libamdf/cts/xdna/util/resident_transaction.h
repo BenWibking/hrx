@@ -4,8 +4,8 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#ifndef AMDF_CTS_INTEROP_GPU_XDNA_RECIPES_RESIDENT_TRANSACTION_H_
-#define AMDF_CTS_INTEROP_GPU_XDNA_RECIPES_RESIDENT_TRANSACTION_H_
+#ifndef AMDF_CTS_XDNA_UTIL_RESIDENT_TRANSACTION_H_
+#define AMDF_CTS_XDNA_UTIL_RESIDENT_TRANSACTION_H_
 
 #include <cstdint>
 #include <span>
@@ -16,9 +16,9 @@
 // Paired storage with one writer per direction. Either program may initiate
 // the exchange; request and response addresses always follow physical writers.
 struct ResidentNpuSlot {
-  // Four-byte GPU-produced request generation, preceding its payload.
+  // Four-byte peer-produced request generation, preceding its payload.
   uint64_t request_generation_address;
-  // Complete GPU-produced request payload.
+  // Complete peer-produced request payload.
   uint64_t request_payload_address;
   // Complete NPU-produced response payload.
   uint64_t response_payload_address;
@@ -35,7 +35,7 @@ struct ResidentNpuAddresses {
   uint64_t startup_address;
   // One or two paired slots, borrowed only during command construction.
   std::span<const ResidentNpuSlot> slots;
-  // Four-byte GPU acknowledgement after its final response reads.
+  // Four-byte peer acknowledgement after its final response reads.
   uint64_t final_ack_address;
 };
 
@@ -62,7 +62,7 @@ enum class ResidentResponsePath {
 // column. They leave payload and ready as independent tasks, ordered by shim
 // lock0; the immutable worker configuration chooses which task is armed first.
 //
-// The worker consumes a fresh final GPU ACK, ceases custom submissions, then
+// The worker consumes a fresh final peer ACK, ceases custom submissions, then
 // writes its ordinary terminal record before returning. ABORT writes that same
 // terminal record without submitting any request/response task. The compiler's
 // terminal S2MM0 token in the terminal output's column must precede the
@@ -86,4 +86,4 @@ enum class ResidentResponsePath {
     uint32_t payload_byte_length, ResidentResponsePath response_path,
     std::vector<uint8_t>* output);
 
-#endif  // AMDF_CTS_INTEROP_GPU_XDNA_RECIPES_RESIDENT_TRANSACTION_H_
+#endif  // AMDF_CTS_XDNA_UTIL_RESIDENT_TRANSACTION_H_

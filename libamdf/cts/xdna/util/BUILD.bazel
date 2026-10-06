@@ -24,6 +24,14 @@ amdf_cc_library(
 )
 
 amdf_cc_library(
+    name = "resident_transaction",
+    testonly = True,
+    srcs = ["resident_transaction.cc"],
+    hdrs = ["resident_transaction.h"],
+    deps = ["//third_party:google_test"],
+)
+
+amdf_cc_library(
     name = "execution",
     testonly = True,
     srcs = ["execution.cc"],

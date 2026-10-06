@@ -48,22 +48,6 @@ iree_cc_library(
 )
 endif()
 
-if(AMDF_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND AMDF_FAMILY_XDNA AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA)
-iree_cc_library(
-  NAME
-    resident_transaction
-  HDRS
-    "resident_transaction.h"
-  SRCS
-    "resident_transaction.cc"
-  DEPS
-    amdf::headers
-    iree::third_party::google_test
-  TESTONLY
-  PUBLIC
-)
-endif()
-
 if(IREE_ARCH STREQUAL "x86_64" AND AMDF_BUILD AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND (AMDF_FAMILY_RDNA OR AMDF_FAMILY_CDNA) AND AMDF_FAMILY_XDNA AND LOOM_TARGET_ARCH_XDNA AND LOOM_BUILD AND LOOM_EMIT_XDNA)
 iree_cc_library(
   NAME
@@ -95,7 +79,6 @@ iree_cc_library(
     ::device_fixture
     ::pm4_queue
     ::resident_memory
-    ::resident_transaction
     amdf::headers
     iree::third_party::google_test
     libamdf::cts::gpu::gpu_device_fixture
@@ -123,6 +106,7 @@ iree_cc_library(
     libamdf::cts::xdna::programs::resident_terminal_relay
     libamdf::cts::xdna::util::executable
     libamdf::cts::xdna::util::execution
+    libamdf::cts::xdna::util::resident_transaction
   TESTONLY
   ALWAYSLINK
   PUBLIC

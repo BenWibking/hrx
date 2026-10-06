@@ -4,7 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "resident_transaction.h"
+#include "libamdf/cts/xdna/util/resident_transaction.h"
 
 #include <array>
 #include <cstddef>
