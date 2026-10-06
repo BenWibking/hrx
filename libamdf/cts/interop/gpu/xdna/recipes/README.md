@@ -238,6 +238,64 @@ The `resident_cycle_*` properties retain this distinction and the test checks
 carried-sample equality. Final acknowledgement and native joins lie outside
 these intervals. Raw correctness samples are not calibrated performance data.
 
+### NPU-selected SDMA transfers
+
+`NpuSdma/ResidentNpuSdmaTest.CopiesFeedTheNextNpuRequest` composes the same NPU
+service with [resident_npu_sdma.loom](../../../../gpu/kernels/resident_npu_sdma.loom).
+The NPU computes requests; one resident GPU workitem translates them into fresh
+SDMA COPY/FENCE commands, acquires the copied data and returns values derived
+from that data. The host sets up resources, publishes startup once and joins
+terminal completion. No CPU relay participates in the repeated exchanges.
+
+For request `Qg`, complete payload width `W` and generation `g`, the GPU uses:
+
+```text
+page      = Qg[0] & 7
+length    = 1 + min((Qg[0] >> 8) & 1023, W - 1)
+D[0:length] = source[page][0:length]    through SDMA
+Rg[i]     = 3*D[i] + Qg[i] + g       for every i in [0, W)
+Q(g+1)[i] = Rg[i] + 257*(g+1) + 17*i through the NPU
+```
+
+All arithmetic is modulo 2^32. Eight immutable source pages have distinct
+words, a runtime byte stride and guards around each payload. A short transfer
+preserves the preceding destination tail. Every copied and preserved word
+feeds the next NPU request. The CPU independently reconstructs each complete
+Q and destination vector, source/length selection, command frontier, final
+ring contents, completion generation and terminal NPU summary. It also checks
+all guards, padding and immutable source/code/argument storage. Closing
+`Q(N+1)` issues no transfer or GPU return; it records the final destination
+before publishing the final ACK. Zero work and prestart ABORT touch no payload
+or SDMA commands.
+
+The GPU acquires an exact-owner DEVICE_PRODUCER mapping of one SDMA queue.
+Its [shared serial copy operation](../../../../gpu/kernels/sdma_copy.loom)
+waits for command retirement before reusing ring bytes, emits complete packets
+and wrap padding, then release-publishes WPTR and the doorbell. A separate
+FENCE generation and system acquire precede payload reads. HOST-to-SDMA and
+SDMA-to-GPU memory-pair queries select optional USER_GCR operations independently
+of GPU identity. The source, destination and SDMA completion have GPU-only
+attachments; joint NPU/GPU backing retains the existing Q/R protocol.
+
+GPU execution completion establishes the last notification, and native SDMA
+consumption separately retires command storage. Both GPU and NPU terminal
+joins precede backing release. A failed join retains every reachable owner;
+queue release failures also stop dependent destruction. This path occupies one
+GPU workitem throughout the exchange. It establishes GPU-mediated device-only
+scheduling, not a direct NPU doorbell mapping or progress between independently
+scheduled GPU workgroups.
+
+The matrix covers both launch orders, allocated/registered joint backing,
+zero/one/17/257 returns, both one-sided startup aborts, and 1, 4, 15, 16, 17, 64
+or 1024 words with shared/separate first cache lines. The page-sized shape
+starts with a full copy; other shapes start with one word. Subsequent requests
+select changing pages and lengths from actual returned values. Each transcript
+row contains generation, return generation, page, length, 64-bit command
+frontier, two raw clock samples, all Q words and all destination words. The
+ordinary physical RDNA product matrix checks its typed ABI and PM4 launch
+contract with zero private or workgroup storage. Native execution remains
+capability-selected through the existing grouped corpus.
+
 ## Build and execution
 
 The ordinary build compiles the `.loom` fixtures and embeds the GPU image and

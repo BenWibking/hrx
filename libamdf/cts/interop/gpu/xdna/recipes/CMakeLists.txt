@@ -86,9 +86,14 @@ iree_cc_library(
     libamdf::cts::gpu::kernels::resident_exchange_kernels
     libamdf::cts::gpu::kernels::resident_npu_initiated
     libamdf::cts::gpu::kernels::resident_npu_initiated_kernels
+    libamdf::cts::gpu::kernels::resident_npu_sdma
+    libamdf::cts::gpu::kernels::resident_npu_sdma_kernels
     libamdf::cts::gpu::kernels::transform
     libamdf::cts::gpu::kernels::transform_kernels
     libamdf::cts::gpu::pm4::encoding::commands
+    libamdf::cts::gpu::sdma::encoding::commands
+    libamdf::cts::gpu::util::command_fixture
+    libamdf::cts::gpu::util::user_queue
     libamdf::cts::util::device_cache
     libamdf::cts::util::mapped_memory
     libamdf::cts::xdna::programs::mul_i32

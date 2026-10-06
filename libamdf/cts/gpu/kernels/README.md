@@ -126,7 +126,9 @@ selection state, command frontier and all 64 destination words, including the
 untouched tail of shorter copies. The [typed ABI](device_sdma.h) separates
 opaque buffer bindings from numeric addresses encoded into packets. This
 program uses the complete physical kernel target matrix and no private or
-workgroup storage.
+workgroup storage. The serial publication, retirement and data-acquire
+sequence lives in [sdma_copy.loom](sdma_copy.loom), shared with the NPU-driven
+program below.
 
 [device_sdma_batched.loom](device_sdma_batched.loom) uses the same packet and
 publication contract with independently bounded command bytes and destination
@@ -139,6 +141,16 @@ a monotonic generation comparison because a batch can pass several FENCE
 values between observations. The next batch's seed derives from actual copied
 data. This program also uses the complete physical target matrix without
 private or workgroup storage.
+
+[resident_npu_sdma.loom](resident_npu_sdma.loom) consumes NPU-computed transfer
+requests. Its source page and copy prefix vary with the NPU payload. The GPU
+publishes SDMA, acquires every destination word and returns values derived from
+actual copied data to the NPU. A closing request proves the NPU consumed the
+last return. The [typed ABI](resident_npu_sdma.h) carries the borrowed queue
+mapping and live GPU-only allocation addresses; its compiled products use the
+same physical RDNA matrix and zero-scratch PM4 contract as the other resident
+programs. The [composed recipe](../../interop/gpu/xdna/recipes/README.md#npu-selected-sdma-transfers)
+owns startup, both native joins and complete backing/ring/transcript checks.
 
 [private_roundtrip.loom](private_roundtrip.loom) initializes nine volatile private
 words per workitem, then reads them in a runtime-selected permutation into
