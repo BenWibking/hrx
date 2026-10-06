@@ -43,7 +43,11 @@ static iree_status_t loom_x86_module_encode_function(
       .schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY,
       .allocation_entry_locations = abi.entry_locations,
       .allocation_entry_location_count = abi.entry_location_count,
-      .call_contracts = {.query = loom_x86_function_call_contract},
+      .call_contracts =
+          {
+              .query = loom_x86_function_call_contract,
+              .query_common_clobbers = loom_x86_function_common_call_clobbers,
+          },
       .synchronous_storage_spaces = LOOM_LOW_STORAGE_SPACE_SET_STACK |
                                     LOOM_LOW_STORAGE_SPACE_SET_PRIVATE |
                                     LOOM_LOW_STORAGE_SPACE_SET_SCRATCH,

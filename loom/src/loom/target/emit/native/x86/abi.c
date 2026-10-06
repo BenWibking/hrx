@@ -58,6 +58,48 @@ const loom_low_call_contract_t* loom_x86_function_call_contract(
   return &contract;
 }
 
+loom_low_call_clobber_list_t loom_x86_function_common_call_clobbers(
+    void* user_data, const loom_low_descriptor_set_t* descriptor_set) {
+  (void)user_data;
+  static const loom_low_call_clobber_t clobbers[] = {
+      {LOOM_X86_REGISTER_CLASS_XMM, 0, 16},
+      {LOOM_X86_REGISTER_CLASS_YMM, 0, 16},
+      {LOOM_X86_REGISTER_CLASS_ZMM, 0, 32},
+      {LOOM_X86_REGISTER_CLASS_K, 0, 8},
+  };
+  uint16_t register_class = LOOM_X86_REGISTER_CLASS_ZMM;
+  if (register_class >= descriptor_set->reg_class_count ||
+      descriptor_set->reg_classes[register_class].allocatable_count == 0) {
+    register_class = LOOM_X86_REGISTER_CLASS_YMM;
+  }
+  if (register_class >= descriptor_set->reg_class_count ||
+      descriptor_set->reg_classes[register_class].allocatable_count == 0) {
+    register_class = LOOM_X86_REGISTER_CLASS_XMM;
+  }
+  if (register_class >= descriptor_set->reg_class_count ||
+      descriptor_set->reg_classes[register_class].allocatable_count == 0) {
+    return (loom_low_call_clobber_list_t){0};
+  }
+  const iree_host_size_t clobber_index =
+      register_class - LOOM_X86_REGISTER_CLASS_XMM;
+  IREE_ASSERT_EQ(descriptor_set->reg_classes[register_class].allocatable_count,
+                 clobbers[clobber_index].count);
+  const bool has_mask_registers =
+      LOOM_X86_REGISTER_CLASS_K < descriptor_set->reg_class_count &&
+      descriptor_set->reg_classes[LOOM_X86_REGISTER_CLASS_K]
+              .allocatable_count != 0;
+  if (has_mask_registers) {
+    IREE_ASSERT_EQ(register_class, LOOM_X86_REGISTER_CLASS_ZMM);
+    IREE_ASSERT_EQ(descriptor_set->reg_classes[LOOM_X86_REGISTER_CLASS_K]
+                       .allocatable_count,
+                   clobbers[3].count);
+  }
+  return (loom_low_call_clobber_list_t){
+      .values = &clobbers[clobber_index],
+      .count = has_mask_registers ? 2 : 1,
+  };
+}
+
 static iree_status_t loom_x86_callable_reject(
     const loom_module_t* module, const loom_target_entry_t* entry,
     iree_string_view_t constraint, iree_diagnostic_emitter_t emitter) {

@@ -126,6 +126,29 @@ loom_cc_library(
     ],
 )
 
+loom_cc_test(
+    name = "abi_test",
+    srcs = ["abi_test.cc"],
+    deps = [
+        ":abi",
+        "//loom/src/loom/target/arch/x86:register_classes",
+        "//loom/src/loom/target/arch/x86/descriptors:avx10_2_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx2_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx512_bf16_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx512_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx512_packed_dot_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx512_vnni_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx_vnni_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx_vnni_int16_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:avx_vnni_int8_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:packed_dot_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:scalar_descriptors",
+        "//loom/src/loom/target/arch/x86/descriptors:simd128_descriptors",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 loom_cc_library(
     name = "module",
     srcs = ["module.c"],

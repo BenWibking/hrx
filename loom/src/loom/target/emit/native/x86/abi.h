@@ -32,6 +32,11 @@ typedef struct loom_x86_function_abi_t {
 const loom_low_call_contract_t* loom_x86_function_call_contract(
     void* user_data, loom_symbol_ref_t callee);
 
+// Returns SysV registers clobbered by every call for the resolved x86 profile.
+// The widest available SIMD class covers all of its narrower aliases.
+loom_low_call_clobber_list_t loom_x86_function_common_call_clobbers(
+    void* user_data, const loom_low_descriptor_set_t* descriptor_set);
+
 // Admits the logical and physical callable signature and materializes the
 // platform's incoming locations. Unsupported user boundaries produce a
 // diagnostic and leave out_accepted false. Compiler storage is borrowed.

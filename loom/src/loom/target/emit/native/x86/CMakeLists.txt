@@ -137,6 +137,34 @@ loom_cc_library(
 endif()
 
 if(LOOM_TARGET_ARCH_X86)
+loom_cc_test(
+  NAME
+    abi_test
+  SRCS
+    "abi_test.cc"
+  DEPS
+    ::abi
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::x86::descriptors::avx10_2_descriptors
+    loom::target::arch::x86::descriptors::avx2_descriptors
+    loom::target::arch::x86::descriptors::avx512_bf16_descriptors
+    loom::target::arch::x86::descriptors::avx512_descriptors
+    loom::target::arch::x86::descriptors::avx512_packed_dot_descriptors
+    loom::target::arch::x86::descriptors::avx512_vnni_descriptors
+    loom::target::arch::x86::descriptors::avx_vnni_descriptors
+    loom::target::arch::x86::descriptors::avx_vnni_int16_descriptors
+    loom::target::arch::x86::descriptors::avx_vnni_int8_descriptors
+    loom::target::arch::x86::descriptors::packed_dot_descriptors
+    loom::target::arch::x86::descriptors::scalar_descriptors
+    loom::target::arch::x86::descriptors::simd128_descriptors
+    loom::target::arch::x86::register_classes
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
     module

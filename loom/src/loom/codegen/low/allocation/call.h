@@ -17,6 +17,8 @@
 extern "C" {
 #endif
 
+struct loom_low_descriptor_set_t;
+
 typedef struct loom_low_call_clobber_t {
   // Register class in the caller's resolved descriptor set.
   uint16_t register_class;
@@ -76,6 +78,11 @@ typedef struct loom_low_call_contract_provider_t {
   // Optional infallible query; NULL when calls have no allocation contract.
   const loom_low_call_contract_t* (*query)(void* user_data,
                                            loom_symbol_ref_t callee);
+  // Optional physical writes shared by every call in the resolved caller
+  // profile. Allocation queries this once and combines it with each callee's
+  // retained clobbers without multiplying contracts by caller profile.
+  loom_low_call_clobber_list_t (*query_common_clobbers)(
+      void* user_data, const struct loom_low_descriptor_set_t* descriptor_set);
   // Borrowed target convention bindings, valid across allocation repair.
   void* user_data;
 } loom_low_call_contract_provider_t;
