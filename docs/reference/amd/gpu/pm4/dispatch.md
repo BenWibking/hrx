@@ -128,6 +128,7 @@ synchronous. [Resource-limit derivation][pal-limits]
 
 ## Shader wait-counter mode: MEM_ORDERED
 
+In the GFX10–GFX11 `vmcnt`/`vscnt` model,
 `COMPUTE_PGM_RSRC1.MEM_ORDERED`, bit 30, controls how a wave's vector-memory
 wait counters account for completed instructions. The compiled waits and the
 bound register must agree about this mode. LLVM's descriptor table describes
@@ -163,10 +164,24 @@ labels this field GFX10–GFX12, and PAL's GFX12 register definition retains bit
 30. LLVM's GFX12 memory-model chapter instead describes separate load, store,
 sample and BVH counters, with completion ordered within each type. Mesa excludes
 GFX12 from its `MEM_ORDERED` setting and tracks sample and BVH waits separately
-there. These sources establish the field representation and Mesa's selection
-policy; they do not establish the effect of changing the bit on GFX12.
+there.
 [GFX12 register][pal-gfx12-mem-ordered] [GFX12 wait model][llvm-gfx12-waits]
 [Separate wait events][mesa-gfx12-waits]
+
+AMD's RDNA4 ISA guide, dated 7 April 2025, independently describes those
+separate counters in §5.7 and Table 26. It distinguishes counter retirement
+from memory order: loads can write VGPRs out of order while their counter
+reports completion in order; stores to different addresses need not preserve
+issue order. For stores, `STOREcnt` decrements after the write reaches the
+memory-hierarchy level selected by `SCOPE`.
+Global invalidation uses `LOADcnt`, while global writeback and
+writeback/invalidation use `STOREcnt`; issuing the cache instruction alone
+does not establish its completion. [RDNA4 dependency rules, pp. 51–55][rdna4-waits]
+
+Section 5.7 does not define `MEM_ORDERED` bit 30.
+The named field, separate-counter model and Mesa's selection policy therefore
+remain distinct evidence; they do not establish the effect of changing the
+bit on GFX12.
 
 ## Runtime trap and context state
 
@@ -336,3 +351,4 @@ join/writeback sequence.
 [pal-gfx12-mem-ordered]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_registers.h#L2486-L2508
 [mesa-gfx12-waits]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/44cc4ca677a4752a10c14194289bde5a6468675e/src/amd/compiler/aco_insert_waitcnt.cpp#L40-L71
 [llvm-gfx12-waits]: https://github.com/llvm/llvm-project/blob/6dfe1677ab8dffbc6ec13d53a1e0215d75147689/llvm/docs/AMDGPUUsage.rst#L15482-L15492
+[rdna4-waits]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf#page=61

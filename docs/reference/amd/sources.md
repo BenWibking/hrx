@@ -33,6 +33,10 @@ Manual 1.2][hsa-prm] supplies work-item and workgroup execution rules. AMD's
 manuals; shader instructions and command-processor packets have separate
 representations and owners.
 
+The [RDNA4 ISA guide, 7 April 2025][rdna4-isa], §5.7 and Table 26, supplies
+the architecture's dependency-counter rules used in the
+[shader wait-mode discussion](gpu/pm4/dispatch.md#shader-wait-counter-mode-mem_ordered).
+
 Microsoft's public [D3D12 sharing][d3d12-sharing] and [queue synchronization][d3d12-sync]
 documentation supplies the API contracts for shared heaps, resources and
 fences. Those object and execution contracts complement the native Windows
@@ -84,4 +88,5 @@ executes. The corresponding chapter identifies those boundaries.
 [hsa-system]: https://hsafoundation.com/wp-content/uploads/2021/02/HSA-SysArch-1.2.pdf
 [hsa-prm]: https://hsafoundation.com/wp-content/uploads/2021/02/HSA-PRM-1.2.pdf
 [gpu-manuals]: https://gpuopen.com/amd-gpu-architecture-programming-documentation/
+[rdna4-isa]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf
 [axi4]: https://documentation-service.arm.com/static/5f915bbcf86e16515cdc3b23
