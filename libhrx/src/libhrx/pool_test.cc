@@ -35,6 +35,97 @@ class CpuPoolTest : public ::testing::Test {
   hrx_device_t device_ = nullptr;
 };
 
+TEST_F(CpuPoolTest, ExactPoolDefersNativeAllocationUntilGrowthIsAllowed) {
+  // Observe the real heap allocator used by the HRX adapter.
+  size_t allocation_count = 0;
+  const iree_allocator_t counting_allocator = {
+      &allocation_count,
+      +[](void* self, iree_allocator_command_t command, const void* params,
+          void** inout_pointer) -> iree_status_t {
+        if (command != IREE_ALLOCATOR_COMMAND_FREE) {
+          ++*static_cast<size_t*>(self);
+        }
+        iree_allocator_t allocator = iree_allocator_system();
+        return allocator.ctl(allocator.self, command, params, inout_pointer);
+      },
+  };
+  iree_hal_allocator_t* allocator = nullptr;
+  IREE_ASSERT_OK(iree_hal_allocator_create_heap(
+      IREE_SV("exact_pool_test"), counting_allocator, counting_allocator,
+      &allocator));
+  const iree_hal_buffer_params_t params = BufferParams();
+  iree_hal_pool_t* pool = nullptr;
+  IREE_ASSERT_OK(hrx_iree_exact_pool_create(allocator, params, &pool));
+
+  for (iree_host_size_t request_count : {1u, 9u}) {
+    iree_hal_pool_reservation_request_t requests[9];
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      requests[i] = {params, 128 + i * 16};
+    }
+    iree_hal_pool_reservation_t reservations[9];
+    memset(reservations, 0xA5, sizeof(reservations));
+    iree_hal_pool_reservation_t original_reservations[9];
+    memcpy(original_reservations, reservations, sizeof(reservations));
+    iree_hal_pool_acquire_info_t infos[9];
+    memset(infos, 0x5A, sizeof(infos));
+    iree_hal_pool_acquire_info_t original_infos[9];
+    memcpy(original_infos, infos, sizeof(infos));
+    iree_hal_pool_acquire_result_t result = IREE_HAL_POOL_ACQUIRE_NONE;
+    const size_t original_allocation_count = allocation_count;
+
+    // Validation precedes ordinary exhaustion and preserves all error outputs.
+    requests[request_count - 1].allocation_size = 0;
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        iree_hal_pool_acquire_reservations(
+            pool, request_count, requests, /*requester_frontier=*/nullptr,
+            IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH, reservations, infos,
+            &result));
+    EXPECT_EQ(memcmp(infos, original_infos, sizeof(infos)), 0);
+    EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_NONE);
+    requests[request_count - 1].allocation_size = 128;
+
+    IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+        pool, request_count, requests, /*requester_frontier=*/nullptr,
+        IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH |
+            IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER,
+        reservations, infos, &result));
+    EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+    EXPECT_EQ(allocation_count, original_allocation_count);
+    EXPECT_EQ(memcmp(reservations, original_reservations, sizeof(reservations)),
+              0);
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      EXPECT_EQ(infos[i].result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+      EXPECT_EQ(infos[i].flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
+      EXPECT_EQ(infos[i].reuse_frontier, nullptr);
+    }
+
+    IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+        pool, request_count, requests, /*requester_frontier=*/nullptr,
+        IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations, infos, &result));
+    ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+    EXPECT_GT(allocation_count, original_allocation_count);
+    iree_hal_buffer_t* buffers[9];
+    IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+        pool, request_count, requests, reservations,
+        IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+        buffers));
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      const uint8_t pattern = static_cast<uint8_t>(i + 1);
+      IREE_ASSERT_OK(iree_hal_buffer_map_fill(
+          buffers[i], 0, IREE_HAL_WHOLE_BUFFER, &pattern, sizeof(pattern)));
+      uint8_t actual = 0;
+      IREE_ASSERT_OK(iree_hal_buffer_map_read(buffers[i],
+                                              requests[i].allocation_size - 1,
+                                              &actual, sizeof(actual)));
+      EXPECT_EQ(actual, pattern);
+      iree_hal_buffer_release(buffers[i]);
+    }
+  }
+  iree_hal_pool_release(pool);
+  iree_hal_allocator_release(allocator);
+}
+
 TEST_F(CpuPoolTest, BatchedReservationsRetainPoolUntilRelease) {
   const iree_hal_buffer_params_t params = BufferParams();
   iree_hal_pool_t* pool = nullptr;

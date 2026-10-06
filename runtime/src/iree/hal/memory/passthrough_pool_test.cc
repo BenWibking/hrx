@@ -325,6 +325,103 @@ TEST_F(PassthroughPoolTest, ReserveRelease) {
   ReleaseOneReservation(pool_, &reservation, NULL);
 }
 
+// Counts real CPU backing and pool metadata allocations without replacing the
+// pool or provider under test.
+struct CountingAllocator {
+  // Calls that can allocate storage.
+  size_t allocation_count = 0;
+
+  static iree_status_t Control(void* self, iree_allocator_command_t command,
+                               const void* params, void** inout_pointer) {
+    auto* state = static_cast<CountingAllocator*>(self);
+    if (command != IREE_ALLOCATOR_COMMAND_FREE) {
+      ++state->allocation_count;
+    }
+    iree_allocator_t allocator = iree_allocator_system();
+    return allocator.ctl(allocator.self, command, params, inout_pointer);
+  }
+
+  iree_allocator_t allocator() { return {this, Control}; }
+};
+
+TEST(PassthroughPool, NoGrowthDefersWholeTransactionBeforeAllocating) {
+  CountingAllocator allocations;
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(
+      iree_hal_cpu_slab_provider_create(allocations.allocator(), &provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  iree_hal_pool_t* pool = nullptr;
+  IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+      {}, provider, notification, allocations.allocator(), &pool));
+
+  // Include a transaction larger than inline staging to cover metadata growth.
+  for (iree_host_size_t request_count : {1u, 9u}) {
+    iree_hal_pool_reservation_request_t requests[9];
+    iree_hal_pool_reservation_t reservations[9];
+    memset(reservations, 0xA5, sizeof(reservations));
+    iree_hal_pool_reservation_t original_reservations[9];
+    memcpy(original_reservations, reservations, sizeof(reservations));
+    iree_hal_pool_acquire_info_t infos[9];
+    memset(infos, 0x5A, sizeof(infos));
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      requests[i] = MakeReservationRequest(128 + i * 16, 16);
+      requests[i].params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+    }
+    const size_t allocation_count = allocations.allocation_count;
+    const uint32_t token = iree_async_notification_begin_observe(notification);
+    iree_hal_pool_acquire_result_t result = IREE_HAL_POOL_ACQUIRE_NONE;
+    IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+        pool, request_count, requests, /*requester_frontier=*/nullptr,
+        IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH |
+            IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER,
+        reservations, infos, &result));
+    EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+    EXPECT_EQ(allocations.allocation_count, allocation_count);
+    EXPECT_EQ(memcmp(reservations, original_reservations, sizeof(reservations)),
+              0);
+    EXPECT_EQ(iree_async_notification_query_epoch(notification), token);
+    iree_async_notification_end_observe(notification);
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      EXPECT_EQ(infos[i].result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+      EXPECT_EQ(infos[i].flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
+      EXPECT_EQ(infos[i].reuse_frontier, nullptr);
+    }
+
+    // The queue's explicit cold retry allocates and produces usable buffers.
+    IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+        pool, request_count, requests, /*requester_frontier=*/nullptr,
+        IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations, infos, &result));
+    ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+    EXPECT_GT(allocations.allocation_count, allocation_count);
+    iree_hal_buffer_t* buffers[9];
+    IREE_ASSERT_OK(iree_hal_pool_materialize_reservations(
+        pool, request_count, requests, reservations,
+        IREE_HAL_POOL_MATERIALIZE_FLAG_TRANSFER_RESERVATION_OWNERSHIP,
+        buffers));
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      const uint8_t pattern = static_cast<uint8_t>(i + 1);
+      IREE_ASSERT_OK(iree_hal_buffer_map_fill(
+          buffers[i], 0, IREE_HAL_WHOLE_BUFFER, &pattern, sizeof(pattern)));
+      uint8_t actual = 0;
+      IREE_ASSERT_OK(iree_hal_buffer_map_read(buffers[i],
+                                              requests[i].allocation_size - 1,
+                                              &actual, sizeof(actual)));
+      EXPECT_EQ(actual, pattern);
+      iree_hal_buffer_release(buffers[i]);
+    }
+  }
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool, &stats);
+  EXPECT_EQ(stats.exhausted_count, 2u);
+  EXPECT_EQ(stats.reservation_count, 0u);
+  EXPECT_EQ(stats.bytes_committed, 0u);
+  iree_hal_pool_release(pool);
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(provider);
+}
+
 TEST_F(PassthroughPoolTest, ReservationTransactionValidatesBeforeAcquiring) {
   const iree_hal_pool_reservation_request_t requests[2] = {
       MakeReservationRequest(1024, 16),
@@ -339,12 +436,15 @@ TEST_F(PassthroughPoolTest, ReservationTransactionValidatesBeforeAcquiring) {
   iree_hal_pool_acquire_info_t original_infos[2];
   memcpy(original_infos, infos, sizeof(original_infos));
   iree_hal_pool_acquire_result_t result = IREE_HAL_POOL_ACQUIRE_OVER_BUDGET;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_INVALID_ARGUMENT,
-      iree_hal_pool_acquire_reservations(
-          pool_, IREE_ARRAYSIZE(requests), requests,
-          /*requester_frontier=*/NULL, IREE_HAL_POOL_RESERVE_FLAG_NONE,
-          reservations, infos, &result));
+  for (iree_hal_pool_reserve_flags_t flags :
+       {IREE_HAL_POOL_RESERVE_FLAG_NONE,
+        IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH}) {
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        iree_hal_pool_acquire_reservations(
+            pool_, IREE_ARRAYSIZE(requests), requests,
+            /*requester_frontier=*/NULL, flags, reservations, infos, &result));
+  }
 
   EXPECT_EQ(memcmp(reservations, original_reservations, sizeof(reservations)),
             0);

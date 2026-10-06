@@ -52,6 +52,9 @@ typedef struct iree_hal_passthrough_pool_t {
 
   // Total reservations returned by release transactions.
   iree_atomic_int64_t release_count;
+
+  // Reservation transactions deferred because backing growth was prohibited.
+  iree_atomic_int64_t exhausted_count;
 } iree_hal_passthrough_pool_t;
 
 // Per-reservation slab state owned by the reservation until release.
@@ -309,14 +312,9 @@ static iree_status_t iree_hal_passthrough_pool_validate_reservation_request(
 static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
     iree_hal_pool_t* base_pool,
     const iree_hal_pool_reservation_request_t* request,
-    const iree_async_frontier_t* requester_frontier,
-    iree_hal_pool_reserve_flags_t flags,
     iree_hal_pool_reservation_t* out_reservation,
-    iree_hal_pool_acquire_info_t* out_info,
-    iree_hal_pool_acquire_result_t* out_result) {
+    iree_hal_pool_acquire_info_t* out_info) {
   iree_hal_passthrough_pool_t* pool = (iree_hal_passthrough_pool_t*)base_pool;
-  (void)requester_frontier;
-  (void)flags;
   const iree_device_size_t size = request->allocation_size;
   const iree_device_size_t alignment =
       request->params.min_alignment ? request->params.min_alignment : 1;
@@ -386,7 +384,6 @@ static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
 
   memset(out_info, 0, sizeof(*out_info));
   out_info->result = IREE_HAL_POOL_ACQUIRE_OK_FRESH;
-  *out_result = IREE_HAL_POOL_ACQUIRE_OK_FRESH;
   return iree_ok_status();
 }
 
@@ -435,6 +432,19 @@ static iree_status_t iree_hal_passthrough_pool_acquire_reservations(
     IREE_RETURN_IF_ERROR(iree_hal_passthrough_pool_validate_reservation_request(
         pool, &requests[i]));
   }
+  // Every reservation requires new backing. Defer the whole transaction before
+  // allocating either native storage or transaction metadata.
+  if (iree_any_bit_set(flags, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH)) {
+    iree_atomic_fetch_add(&pool->exhausted_count, 1, iree_memory_order_relaxed);
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      out_infos[i] = (iree_hal_pool_acquire_info_t){
+          .result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED,
+          .flags = IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED,
+      };
+    }
+    *out_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
+    return iree_ok_status();
+  }
 
   iree_hal_passthrough_pool_acquire_element_t
       inline_elements[IREE_HAL_PASSTHROUGH_POOL_INLINE_TRANSACTION_CAPACITY];
@@ -452,11 +462,9 @@ static iree_status_t iree_hal_passthrough_pool_acquire_reservations(
 
   iree_host_size_t acquired_count = 0;
   while (acquired_count < request_count && iree_status_is_ok(status)) {
-    iree_hal_pool_acquire_result_t item_result = IREE_HAL_POOL_ACQUIRE_NONE;
     status = iree_hal_passthrough_pool_acquire_one_reservation(
-        base_pool, &requests[acquired_count], requester_frontier, flags,
-        &elements[acquired_count].reservation, &elements[acquired_count].info,
-        &item_result);
+        base_pool, &requests[acquired_count],
+        &elements[acquired_count].reservation, &elements[acquired_count].info);
     if (iree_status_is_ok(status)) {
       ++acquired_count;
     }
@@ -674,7 +682,8 @@ static void iree_hal_passthrough_pool_query_stats(
   out_stats->reuse_count = 0;
   out_stats->reuse_miss_count = 0;
   out_stats->fresh_count = out_stats->reserve_count;
-  out_stats->exhausted_count = 0;
+  out_stats->exhausted_count = (uint64_t)iree_atomic_load(
+      &pool->exhausted_count, iree_memory_order_relaxed);
   out_stats->over_budget_count = 0;
   out_stats->wait_count = 0;
 }

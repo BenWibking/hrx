@@ -31,6 +31,9 @@ typedef struct iree_hal_passthrough_pool_options_t {
 // slab provider. Each acquired reservation owns a new slab and releasing the
 // reservation frees it. No suballocation, no offset management, and no
 // death-frontier tracking.
+// With DISALLOW_GROWTH, acquisition returns EXHAUSTED/GROWTH_REQUIRED without
+// acquiring backing or transaction metadata. The caller can retry with growth
+// enabled outside its submission critical section.
 //
 // This is the simplest possible pool. It provides the same behavior as direct
 // allocation through the current iree_hal_allocator_t and serves as a baseline

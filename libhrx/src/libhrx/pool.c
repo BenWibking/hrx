@@ -128,10 +128,21 @@ static iree_status_t hrx_iree_exact_pool_acquire_reservations(
     iree_hal_pool_acquire_result_t* out_result) {
   hrx_iree_exact_pool_t* pool = hrx_iree_exact_pool_cast(base_pool);
   (void)requester_frontier;
-  (void)flags;
   for (iree_host_size_t i = 0; i < request_count; ++i) {
     IREE_RETURN_IF_ERROR(
         hrx_iree_exact_pool_validate_request(pool, &requests[i]));
+  }
+  // Exact pools have no reusable backing. Let the queue retry on its allocation
+  // path instead of calling the native allocator inside its submission lock.
+  if (iree_any_bit_set(flags, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH)) {
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      out_infos[i] = (iree_hal_pool_acquire_info_t){
+          .result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED,
+          .flags = IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED,
+      };
+    }
+    *out_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
+    return iree_ok_status();
   }
 
   iree_hal_buffer_t*
