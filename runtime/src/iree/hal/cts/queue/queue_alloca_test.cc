@@ -11,6 +11,7 @@
 #include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/memory/fixed_block_pool.h"
 #include "iree/hal/memory/passthrough_pool.h"
+#include "iree/hal/memory/slab_cache.h"
 #include "iree/hal/memory/tlsf_pool.h"
 
 namespace iree::hal::cts {
@@ -116,8 +117,10 @@ const iree_hal_slab_provider_vtable_t SubspanSlabProvider::vtable_ = {
                                                backing_offset, flags, layout);
     },
     /*.prefault=*/
-    [](iree_hal_slab_provider_t* provider, iree_hal_slab_t* slab) {
-      iree_hal_slab_provider_prefault(Cast(provider)->inner_, slab);
+    [](iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
+       iree_device_size_t offset, iree_device_size_t length) {
+      iree_hal_slab_provider_prefault(Cast(provider)->inner_, slab, offset,
+                                      length);
     },
     /*.trim=*/
     [](iree_hal_slab_provider_t* provider, iree_hal_pool_trim_flags_t flags) {
@@ -312,6 +315,73 @@ TEST_P(QueueAllocaTest, ExactQueueAndExplicitPool) {
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool, &stats);
   EXPECT_EQ(0u, stats.reservation_count);
+}
+
+TEST_P(QueueAllocaTest, IndependentAllocatorsShareCachedNativeBacking) {
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(QueryPoolBackend(&backend));
+  iree_hal_slab_provider_properties_t properties;
+  iree_hal_slab_provider_query_properties(backend.slab_provider, &properties);
+  iree_hal_passthrough_pool_options_t native_options = {};
+  native_options.epoch_query = backend.epoch_query;
+  Ref<iree_hal_pool_t> native;
+  IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+      native_options, backend.slab_provider, backend.notification,
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      native.out()));
+  iree_hal_slab_cache_options_t cache_options;
+  iree_hal_slab_cache_options_initialize(&cache_options);
+  cache_options.slab = MakeRequest(transfer_queue_, 65536);
+  cache_options.slab.params.min_alignment = properties.allocation_alignment;
+  Ref<iree_hal_pool_t> cache;
+  IREE_ASSERT_OK(iree_hal_slab_cache_create(
+      native, &cache_options, iree_allocator_system(), cache.out()));
+  iree_hal_tlsf_pool_options_t options = {};
+  options.tlsf_options.range_length = 4096;
+  options.tlsf_options.alignment = IREE_HAL_MEMORY_TLSF_MIN_ALIGNMENT;
+  options.tlsf_options.frontier_capacity = 2;
+  options.asan = backend.asan;
+  const auto request = MakeRequest(transfer_queue_, 256);
+  const iree_hal_buffer_backing_facts_t* first_backing = nullptr;
+  iree_device_size_t first_offset = 0;
+  for (uint32_t iteration = 0; iteration < 2; ++iteration) {
+    Ref<iree_hal_pool_t> child;
+    IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+        cache, &options, iree_allocator_system(), child.out()));
+    Ref<iree_hal_buffer_t> buffer;
+    SemaphoreList empty_wait;
+    SemaphoreList allocated(device_, {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_alloca(transfer_queue_, empty_wait, allocated,
+                                         child, 1, &request, buffer.out()));
+    Wait(allocated);
+    const auto memory = iree_hal_buffer_memory_view(buffer);
+    ASSERT_NE(memory.backing, nullptr);
+    if (iteration == 0) {
+      first_backing = memory.backing;
+      first_offset = memory.offset;
+    } else {
+      EXPECT_EQ(memory.backing, first_backing);
+      EXPECT_EQ(memory.offset, first_offset);
+    }
+    const uint32_t pattern = 0xCA000000u + iteration;
+    FillAndWait(transfer_queue_, buffer, pattern);
+    const auto actual = ReadBufferData<uint32_t>(buffer);
+    for (uint32_t value : actual) {
+      EXPECT_EQ(value, pattern);
+    }
+    iree_hal_buffer_t* buffers[] = {buffer.get()};
+    DeallocaAndWait(transfer_queue_, 1, buffers);
+    buffer.reset();
+    // The first policy is destroyed before the second policy is constructed.
+    // The shared cache remains the sole owner of their reusable native epoch.
+    child.reset();
+  }
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(native, &stats);
+  EXPECT_EQ(stats.reserve_count, 1u);
+  iree_hal_slab_cache_stats_t cache_stats;
+  IREE_ASSERT_OK(iree_hal_slab_cache_query_stats(cache, &cache_stats));
+  EXPECT_EQ(cache_stats.hit_count, 1u);
 }
 
 TEST_P(QueueAllocaTest, MapsSubspanBackingInNativeCoordinates) {

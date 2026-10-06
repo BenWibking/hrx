@@ -270,13 +270,35 @@ iree_cc_library(
   SRCS
     "slab_cache.c"
   DEPS
-    ::slab_provider
+    ::buffer_range
+    ::maintenance
+    ::tracing
+    iree::async
     iree::base
-    iree::base::internal
-    iree::base::internal::atomic_slist
     iree::base::threading
-    iree::base::threading::thread
+    iree::hal
   PUBLIC
+)
+
+iree_cc_test(
+  NAME
+    slab_cache_test
+  SRCS
+    "slab_cache_test.cc"
+  DEPS
+    ::cpu_slab_provider
+    ::fixed_block_pool
+    ::maintenance
+    ::maintenance_thread
+    ::passthrough_pool
+    ::slab_cache
+    ::tlsf_pool
+    iree::async
+    iree::async::platform
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 iree_cc_library(

@@ -412,6 +412,7 @@ iree_status_t iree_hal_passthrough_pool_create(
   pool->host_allocator = host_allocator;
   pool->base.epoch_query = options.epoch_query;
   pool->asan_options = options.asan;
+  pool->base.maintenance = maintenance;
   pool->maintenance = maintenance;
   iree_hal_memory_maintenance_retain(maintenance);
   iree_slim_mutex_initialize(&pool->retirement_mutex);
@@ -574,7 +575,8 @@ static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
   reservation_state->slab = slab;
   iree_hal_slab_buffer_backing_initialize(
       pool->slab_provider, &reservation_state->slab, pool->base.notification,
-      pool->base.frontier_tracker, &reservation_state->buffer_backing);
+      pool->base.frontier_tracker, pool->maintenance,
+      &reservation_state->buffer_backing);
   reservation_state->charged_length = slab.length;
   reservation_state->asan_layout = asan_layout;
   reservation_state->maintenance_entry.fn =

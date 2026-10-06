@@ -133,8 +133,14 @@ void iree_hal_slab_provider_advise_asan_range(
 }
 
 void iree_hal_slab_provider_prefault(iree_hal_slab_provider_t* provider,
-                                     iree_hal_slab_t* slab) {
-  provider->vtable->prefault(provider, slab);
+                                     const iree_hal_slab_t* slab,
+                                     iree_device_size_t offset,
+                                     iree_device_size_t length) {
+  IREE_ASSERT(offset <= slab->length && length <= slab->length - offset);
+  if (!length) {
+    return;
+  }
+  provider->vtable->prefault(provider, slab, offset, length);
 }
 
 void iree_hal_slab_provider_trim(iree_hal_slab_provider_t* provider,
@@ -189,10 +195,19 @@ static void iree_hal_slab_buffer_advise_asan(
                                            offset, flags, layout);
 }
 
+static void iree_hal_slab_buffer_prefault(void* user_data,
+                                          iree_device_size_t offset,
+                                          iree_device_size_t length) {
+  const iree_hal_slab_buffer_backing_t* backing = user_data;
+  iree_hal_slab_provider_prefault(backing->provider, backing->slab, offset,
+                                  length);
+}
+
 void iree_hal_slab_buffer_backing_initialize(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
     iree_async_notification_t* notification,
     iree_async_frontier_tracker_t* tracker,
+    iree_hal_memory_maintenance_t* maintenance,
     iree_hal_slab_buffer_backing_t* out_backing) {
   iree_hal_slab_provider_properties_t properties;
   iree_hal_slab_provider_query_properties(provider, &properties);
@@ -201,11 +216,13 @@ void iree_hal_slab_buffer_backing_initialize(
   out_backing->advice = (iree_hal_buffer_range_advice_t){
       .user_data = out_backing,
       .validate_asan = iree_hal_slab_buffer_validate_asan,
+      .prefault = iree_hal_slab_buffer_prefault,
       .advise_asan = iree_hal_slab_buffer_advise_asan,
   };
   out_backing->facts = (iree_hal_buffer_backing_facts_t){
       .notification = notification,
       .tracker = tracker,
+      .maintenance = maintenance,
       .advice = &out_backing->advice,
       .allocation_alignment = properties.allocation_alignment,
       .maintenance_alignment = properties.maintenance_alignment,

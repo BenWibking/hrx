@@ -338,7 +338,8 @@ static void hrx_vmm_slab_provider_advise_asan_range(
 }
 
 static void hrx_vmm_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {
   (void)base_provider;
   (void)slab;
 }

@@ -226,7 +226,8 @@ static void iree_hal_test_opaque_slab_provider_advise_asan_range(
 }
 
 static void iree_hal_test_opaque_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {}
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {}
 
 static void iree_hal_test_opaque_slab_provider_trim(
     iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {

@@ -853,6 +853,14 @@ bool iree_hal_memory_tlsf_query_full_free_block(
   return true;
 }
 
+void iree_hal_memory_tlsf_merge_full_free_frontier(
+    iree_hal_memory_tlsf_t* tlsf, const iree_async_frontier_t* frontier) {
+  IREE_ASSERT(tlsf->allocation_count == 0 && tlsf->free_block_count == 1 &&
+              tlsf->bytes_free == tlsf->range_length);
+  iree_hal_memory_tlsf_merge_frontiers(
+      tlsf, iree_hal_memory_tlsf_block_at(tlsf, 0), frontier);
+}
+
 iree_device_size_t iree_hal_memory_tlsf_largest_free_block(
     const iree_hal_memory_tlsf_t* tlsf) {
   IREE_ASSERT_ARGUMENT(tlsf);

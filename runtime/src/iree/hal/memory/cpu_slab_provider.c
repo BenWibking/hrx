@@ -125,42 +125,30 @@ static void iree_hal_cpu_slab_provider_advise_asan_range(
   IREE_ASSERT(false, "CPU slab provider cannot advise ASAN ranges");
 }
 
-// Forces the OS to back all virtual pages in the slab with physical memory
-// and zero them. Without this, each page faults on first write: 65,536
-// faults for a 256MB slab, scattered across whichever thread touches the
-// memory first. Running this on the slab cache's background thread (which is
-// NUMA-pinned) ensures pages are allocated on the correct NUMA node via
-// first-touch policy.
+// First touch runs on the captured native owner. Only the owned range may be
+// written: neighboring bytes can belong to independently active pools.
 static void iree_hal_cpu_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {
   IREE_TRACE_ZONE_BEGIN(z0);
-  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)slab->length);
-
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)length);
+  uint8_t* data = slab->base_ptr + offset;
   bool populated = false;
-
 #if defined(IREE_PLATFORM_LINUX)
 #ifdef MADV_HUGEPAGE
-  // Hint to the kernel that this region is a good candidate for transparent
-  // huge pages. Best-effort; errors are ignored.
-  if (slab->length >= 2 * 1024 * 1024) {
-    madvise(slab->base_ptr, (size_t)slab->length, MADV_HUGEPAGE);
+  if (length >= 2 * 1024 * 1024) {
+    madvise(data, (size_t)length, MADV_HUGEPAGE);
   }
 #endif  // MADV_HUGEPAGE
-
 #ifdef MADV_POPULATE_WRITE
-  // MADV_POPULATE_WRITE (kernel 5.14+) faults and zeroes all pages in a
-  // single syscall. Much faster than touching each page from userspace.
-  populated =
-      madvise(slab->base_ptr, (size_t)slab->length, MADV_POPULATE_WRITE) == 0;
+  // This hint may fail for an interior range that is not page aligned. The
+  // bounded write below still provides first touch without widening ownership.
+  populated = madvise(data, (size_t)length, MADV_POPULATE_WRITE) == 0;
 #endif  // MADV_POPULATE_WRITE
 #endif  // IREE_PLATFORM_LINUX
-
   if (!populated) {
-    // Fallback: touch every page to force allocation and zero-fill.
-    // Sequential access pattern for TLB and prefetcher friendliness.
-    memset(slab->base_ptr, 0, (size_t)slab->length);
+    memset(data, 0, (size_t)length);
   }
-
   IREE_TRACE_ZONE_END(z0);
 }
 

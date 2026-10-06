@@ -203,9 +203,13 @@ void iree_hal_slab_provider_advise_asan_range(
     iree_hal_asan_range_advice_flags_t advice_flags,
     const iree_hal_asan_allocation_layout_t* layout);
 
-// Prepares a slab for use (page faulting, NUMA pinning, etc.).
+// Prepares an exclusively owned, retired range (page faulting, first touch,
+// etc.). May change contents inside the range, never outside it. The caller
+// establishes actual completion of prior users before requesting preparation.
 void iree_hal_slab_provider_prefault(iree_hal_slab_provider_t* provider,
-                                     iree_hal_slab_t* slab);
+                                     const iree_hal_slab_t* slab,
+                                     iree_device_size_t offset,
+                                     iree_device_size_t length);
 
 // Releases unused cached resources. Passes |flags| through to the provider
 // and any inner providers in the chain.
@@ -250,6 +254,7 @@ void iree_hal_slab_buffer_backing_initialize(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
     iree_async_notification_t* notification,
     iree_async_frontier_tracker_t* tracker,
+    iree_hal_memory_maintenance_t* maintenance,
     iree_hal_slab_buffer_backing_t* out_backing);
 
 //===----------------------------------------------------------------------===//
@@ -305,18 +310,11 @@ struct iree_hal_slab_provider_vtable_t {
                             iree_hal_asan_range_advice_flags_t advice_flags,
                             const iree_hal_asan_allocation_layout_t* layout);
 
-  // Prepares a slab for use after acquisition. Called by the slab cache's
-  // background thread after acquire_slab() succeeds and before the slab is
-  // placed on the ready freelist.
-  //
-  // Provider-specific preparation:
-  //   CPU (Linux): madvise(MADV_POPULATE_WRITE) to force page allocation
-  //     and zeroing, eliminating lazy zero-fill page faults on first write.
-  //   CPU (Windows): PrefetchVirtualMemory or page-strided writes.
-  //   CPU (any): NUMA pinning via mbind + first-touch policy.
-  // Providers where acquire_slab already commits all pages implement this
-  // as an empty function.
-  void (*prefault)(iree_hal_slab_provider_t* provider, iree_hal_slab_t* slab);
+  // Prepares only the requested range after prior accesses have completed.
+  // Providers whose allocations already commit every page may do nothing.
+  void (*prefault)(iree_hal_slab_provider_t* provider,
+                   const iree_hal_slab_t* slab, iree_device_size_t offset,
+                   iree_device_size_t length);
 
   // Releases unused cached resources. Caching providers release freelisted
   // slabs back to their inner provider. Non-caching providers do nothing.

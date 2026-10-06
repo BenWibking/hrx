@@ -630,6 +630,14 @@ bool iree_hal_memory_tlsf_query_full_free_block(
     const iree_async_frontier_t** out_death_frontier,
     iree_hal_memory_tlsf_block_flags_t* out_block_flags);
 
+// Merges an additional prerequisite into a completely free range. The caller
+// has established that the whole range is free via query_full_free_block.
+// Used when returning a parent reservation whose untouched alignment margins
+// still carry their original history. Overflow taints the range, as in ordinary
+// free-block coalescing, and never turns lost history into fresh capacity.
+void iree_hal_memory_tlsf_merge_full_free_frontier(
+    iree_hal_memory_tlsf_t* tlsf, const iree_async_frontier_t* frontier);
+
 // Returns the length of the largest free block. O(1) via bitmap scan: finds
 // the highest populated FL/SL bin and reads the head block's actual length.
 // Returns 0 if no free blocks exist.

@@ -666,13 +666,33 @@ static void iree_hal_tlsf_pool_destroy_slab(iree_hal_tlsf_pool_t* pool,
   iree_allocator_free(pool->host_allocator, slab);
 }
 
+// Returns the history of the entire parent reservation, including bytes that
+// endpoint alignment excluded from the child's managed interval.
+static bool iree_hal_tlsf_pool_query_full_free_slab(
+    iree_hal_tlsf_pool_slab_t* slab, const iree_async_frontier_t** out_frontier,
+    iree_hal_memory_tlsf_block_flags_t* out_flags) {
+  if (!iree_hal_memory_tlsf_query_full_free_block(&slab->tlsf, out_frontier,
+                                                  out_flags)) {
+    return false;
+  }
+  if (slab->reservation.byte_length &&
+      (slab->range.offset ||
+       slab->range.length != slab->reservation.byte_length)) {
+    iree_hal_memory_tlsf_merge_full_free_frontier(
+        &slab->tlsf, slab->range.memory.reuse_frontier);
+    iree_hal_memory_tlsf_query_full_free_block(&slab->tlsf, out_frontier,
+                                               out_flags);
+  }
+  return true;
+}
+
 static void iree_hal_tlsf_pool_deinitialize_slabs(iree_hal_tlsf_pool_t* pool) {
   iree_hal_tlsf_pool_slab_t* slab = pool->slabs.head;
   while (slab) {
     iree_hal_tlsf_pool_slab_t* next = slab->next;
     iree_hal_memory_tlsf_block_flags_t flags;
-    const bool is_free = iree_hal_memory_tlsf_query_full_free_block(
-        &slab->tlsf, &slab->release_frontier, &flags);
+    const bool is_free = iree_hal_tlsf_pool_query_full_free_slab(
+        slab, &slab->release_frontier, &flags);
     IREE_ASSERT(is_free, "pool destruction requires returned reservations");
     if (iree_any_bit_set(flags, IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED)) {
       // Destruction requires caller quiescence for unrepresentable history.
@@ -875,6 +895,9 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
   pool->source_range = source_range;
   iree_hal_buffer_retain(source_range.buffer);
   pool->base.epoch_query = epoch_query;
+  pool->base.maintenance = backing_pool
+                               ? backing_pool->maintenance
+                               : source_range.memory.backing->maintenance;
   pool->budget_limit = options.budget_limit;
   pool->slab_options = tlsf_options;
   pool->backing_slab_length = backing_slab_length;
@@ -1831,8 +1854,8 @@ static iree_hal_tlsf_pool_slab_t* iree_hal_tlsf_pool_trim_unused_slabs_locked(
     iree_hal_memory_tlsf_block_flags_t block_flags =
         IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_NONE;
     const bool is_reclaimable =
-        iree_hal_memory_tlsf_query_full_free_block(&slab->tlsf, &death_frontier,
-                                                   &block_flags) &&
+        iree_hal_tlsf_pool_query_full_free_slab(slab, &death_frontier,
+                                                &block_flags) &&
         !iree_any_bit_set(block_flags, IREE_HAL_MEMORY_TLSF_BLOCK_FLAG_TAINTED);
     if (is_reclaimable && committed >= min_bytes_to_keep &&
         slab->range.length <= committed - min_bytes_to_keep) {

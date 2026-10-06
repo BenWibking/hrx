@@ -460,6 +460,8 @@ static iree_status_t iree_hal_fixed_block_pool_create_impl(
   pool->source_range = source_range;
   iree_hal_buffer_retain(source_range.buffer);
   pool->base.epoch_query = epoch_query;
+  pool->base.maintenance =
+      source_range.buffer ? source_range.memory.backing->maintenance : NULL;
   pool->user_block_size = user_block_size;
   pool->backing_block_size = backing_block_size;
   pool->block_count = block_allocator_options.block_count;
@@ -509,7 +511,7 @@ static iree_status_t iree_hal_fixed_block_pool_create_impl(
     if (iree_status_is_ok(status)) {
       iree_hal_slab_buffer_backing_initialize(
           pool->slab_provider, &pool->slab, pool->base.notification,
-          pool->base.frontier_tracker, &pool->buffer_backing);
+          pool->base.frontier_tracker, NULL, &pool->buffer_backing);
     }
   }
   if (!iree_status_is_ok(status)) {

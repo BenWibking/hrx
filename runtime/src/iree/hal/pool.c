@@ -32,6 +32,7 @@ IREE_API_EXPORT void iree_hal_pool_initialize(
   out_pool->notification = notification;
   iree_async_notification_retain(notification);
   out_pool->frontier_tracker = frontier_tracker;
+  out_pool->maintenance = NULL;
   out_pool->epoch_query = iree_hal_pool_epoch_query_null();
 }
 

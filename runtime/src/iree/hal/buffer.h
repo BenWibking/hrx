@@ -833,6 +833,7 @@ typedef struct iree_hal_buffer_t iree_hal_buffer_t;
 
 typedef struct iree_async_notification_t iree_async_notification_t;
 typedef struct iree_async_frontier_tracker_t iree_async_frontier_tracker_t;
+typedef struct iree_hal_memory_maintenance_t iree_hal_memory_maintenance_t;
 
 // Native allocation lifecycle operations. Qualification happens when a child
 // allocator is constructed; accepted advice is infallible on
@@ -843,6 +844,10 @@ typedef struct iree_hal_buffer_range_advice_t {
   // Qualifies sanitizer policy without changing the allocation.
   iree_status_t (*validate_asan)(void* user_data,
                                  const iree_hal_asan_pool_options_t* options);
+  // Prepares an exclusively owned, retired range in native coordinates.
+  // May touch its contents; bytes outside the range remain unchanged.
+  void (*prefault)(void* user_data, iree_device_size_t offset,
+                   iree_device_size_t length);
   // Applies advice in native backing coordinates.
   void (*advise_asan)(void* user_data, iree_device_size_t offset,
                       iree_hal_asan_range_advice_flags_t flags,
@@ -857,6 +862,8 @@ typedef struct iree_hal_buffer_backing_facts_t {
   iree_async_notification_t* notification;
   // Sealed-group completion tracker for exact inherited reuse prerequisites.
   iree_async_frontier_tracker_t* tracker;
+  // Borrowed placement-local owner for cold preparation and retirement.
+  iree_hal_memory_maintenance_t* maintenance;
   // Native range lifecycle operations; NULL when unavailable.
   const iree_hal_buffer_range_advice_t* advice;
   // Guaranteed power-of-two alignment of byte zero in native coordinates.
