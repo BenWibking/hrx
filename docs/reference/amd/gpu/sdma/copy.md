@@ -20,6 +20,10 @@ addresses from device-visible slots at execution time while keeping the byte
 length fixed. Their slot scopes and lack of a post-dereference offset give
 them different publication and chunking requirements.
 
+[Buffer exchange](swap.md) replaces both operands' contents while preserving
+their addresses. It has its own generation predicates, address alignment and
+both-operand ownership contract.
+
 ## Representation
 
 | DWORD | ROCr ordinary linear-copy fields |
