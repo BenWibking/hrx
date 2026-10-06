@@ -127,6 +127,10 @@ compiler target with major 12 and minor at least 5. Its metadata service is
 separate from signal timestamp storage and the profiling-enable property.
 [Metadata predicate][metadata] · [Queue property][queue-abi]
 
+The copied completion `event_id` in a [metadata record](metadata.md#version-00-record-representation)
+is a native notification identifier. It is neither a dispatch timestamp nor
+the completion counter; their storage and observation remain separate.
+
 An embedded PM4 clock command and a separately scheduled PM4 queue also have
 different dependency graphs. Publishing work to separate queues in host order
 does not make one clock bracket the other's shader execution. The dependency

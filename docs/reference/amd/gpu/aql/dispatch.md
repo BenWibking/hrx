@@ -56,6 +56,12 @@ and firmware capability must agree; the copied runtime structure alone does
 not describe every supported code-object feature. [ROCr descriptor
 copy][rocr-descriptor] · [LLVM preload protocol][llvm-preload]
 
+A metadata-enabled queue can additionally carry a copied descriptor suffix
+and up to 32 argument DWORDs in a paired 256-byte record. Its versioned
+representation and publication are described under [metadata-prefetch rings](metadata.md);
+the original packet's executable, argument and completion ownership still
+applies.
+
 ## Arguments, geometry, and initial registers
 
 Argument layout comes from the executable ABI, rather than the host compiler's

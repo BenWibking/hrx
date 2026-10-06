@@ -242,6 +242,10 @@ CLR's publication path orders that metadata before making the dispatch valid.
 Ordinary 64-byte packet publication alone does not describe this extra owner.
 [Metadata predicate][metadata-select] [Metadata ordering][clr-publish]
 
+The [metadata chapter](metadata.md) describes paired-slot layout, all four
+headers, descriptor and kernarg copying, native enablement, and the distinct
+declaration/writer contracts for barrier records.
+
 Older ring-mapping conditions are separately visible in KFD: topology marks
 Tonga with `AQL_QUEUE_DOUBLE_MAP`, while the buffer-acquisition path handles
 GFX7/GFX8 AQL rings whose reported size is twice their backing size. Those

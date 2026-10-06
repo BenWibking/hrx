@@ -40,6 +40,7 @@ provide exact search terms within the tree.
 | --- | --- |
 | Identify the compiler target, physical GC or SDMA IP, and native transport | [Architecture identity and discovery](gpu/architectures.md). |
 | Reserve, publish and reuse queue storage | [PM4 ring frontiers](gpu/pm4/publication.md), [AQL header and doorbell publication](gpu/aql/publication.md), [SDMA reservation and ordered commit](gpu/sdma/publication.md). |
+| Populate an AQL metadata-prefetch ring | [Paired slots, four headers, kernarg preload and `CP_HQD_KD_CNTL`](gpu/aql/metadata.md). |
 | Launch a compiled GPU program | [PM4 `SET_SH_REG` and `DISPATCH_DIRECT`](gpu/pm4/dispatch.md), [AQL kernel dispatch and descriptors](gpu/aql/dispatch.md). |
 | Bind shared workgroup storage | [PM4 `LDS_SIZE`](gpu/pm4/lds.md), [AQL group storage](gpu/aql/dispatch.md#static-and-dynamic-group-storage). |
 | Size and reclaim private scratch backing | [AQL `COMPUTE_TMPRING_SIZE`, physical slots and firmware ownership](gpu/aql/scratch.md). |
