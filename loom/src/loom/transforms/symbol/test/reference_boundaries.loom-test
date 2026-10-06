@@ -31,8 +31,8 @@ func.def public @two_records() -> (offset, offset) {
 
 // RUN: pass refine-boundaries
 
-// Return alternatives preserve their extent bound without making the selected
-// extent exact. The length remains dependent on the runtime branch.
+// Return alternatives preserve their extent bound and divisibility without
+// making the selected extent exact. The length remains dependent on the branch.
 func.def noinline @select_record(%first: buffer, %second: buffer, %pick_first: i1) -> (buffer) {
   cfg.cond_br %pick_first, ^first, ^second
 ^first:
@@ -41,15 +41,18 @@ func.def noinline @select_record(%first: buffer, %second: buffer, %pick_first: i
   func.return %second : buffer
 }
 
-func.def public @record_properties(%pick_first: i1) -> (offset, i1) {
+func.def public @record_properties(%pick_first: i1) -> (offset, i1, index) {
   %first_bytes = index.constant 256 : offset
   %second_bytes = index.constant 512 : offset
+  %alignment = index.constant 128 : index
   %first = buffer.alloca<workgroup> align(64) %first_bytes : buffer
   %second = buffer.alloca<workgroup> align(32) %second_bytes : buffer
   %record = func.call @select_record(%first, %second, %pick_first) : (buffer, buffer, i1) -> (buffer)
   %length = buffer.length %record
   %fits = index.cmp sle, %length, %second_bytes : offset
-  func.return %length, %fits : offset, i1
+  %byte_count = index.cast %length : offset to index
+  %remainder = index.rem %byte_count, %alignment : index
+  func.return %length, %fits, %remainder : offset, i1, index
 }
 
 // ----
@@ -61,7 +64,7 @@ func.def noinline @select_record(%first: buffer, %second: buffer, %pick_first: i
   func.return %second : buffer
 }
 
-func.def public @record_properties(%pick_first: i1) -> (offset, i1) {
+func.def public @record_properties(%pick_first: i1) -> (offset, i1, index) {
   %first_bytes = index.constant 256 : offset
   %second_bytes = index.constant 512 : offset
   %first = buffer.alloca<workgroup> align(64) %first_bytes : buffer
@@ -69,7 +72,8 @@ func.def public @record_properties(%pick_first: i1) -> (offset, i1) {
   %record = func.call pure @select_record(%first, %second, %pick_first) : (buffer, buffer, i1) -> (buffer)
   %length = buffer.length %record
   %fits = scalar.constant true : i1
-  func.return %length, %fits : offset, i1
+  %remainder = index.constant 0 : index
+  func.return %length, %fits, %remainder : offset, i1, index
 }
 
 // ====
