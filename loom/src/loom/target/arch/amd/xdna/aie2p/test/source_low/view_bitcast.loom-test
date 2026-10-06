@@ -51,8 +51,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @selected_packet_a
   %21 = mov.short 96
   %22 = copy %condition : reg<aie2p.er> -> reg<aie2p.mr27_select>
   %packet_offset = sel.nez %20, %21, %22
-  %24 = add %packet_offset, 5
-  %25 = mov.address-index %24
-  %byte = lda.i8.index %bytes, %25
+  %24 = add.address-index.immediate %packet_offset, 5
+  %byte = lda.i8.index %bytes, %24
   return %byte
 }

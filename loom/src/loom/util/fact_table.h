@@ -230,8 +230,6 @@ struct loom_value_fact_table_t {
     // True after encountering an independent execution target. Ordinary
     // function inference bypasses per-operation region target lookup.
     bool has_independent_targets;
-    // Intrusive list of all entries for bucket-table rehashing.
-    loom_value_fact_region_entry_t* entries;
   } regions;
 
   // Interned fact extension payloads. Extension IDs stored in

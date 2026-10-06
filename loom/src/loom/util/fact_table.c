@@ -49,8 +49,6 @@ struct loom_value_fact_region_entry_t {
   loom_condition_edge_projection_t* condition_projection;
   // Next entry in the region-address hash collision chain.
   loom_value_fact_region_entry_t* next_bucket;
-  // Next entry in the complete cache entry list.
-  loom_value_fact_region_entry_t* next_entry;
 };
 
 static_assert(sizeof(loom_value_fact_region_entry_t) <= 64,
@@ -412,7 +410,6 @@ void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
   table->regions.count = 0;
   table->regions.cfg_count = 0;
   table->regions.has_independent_targets = false;
-  table->regions.entries = NULL;
   table->uniform_element_origins.touched_count = 0;
   table->static_lane_origins.touched_count = 0;
   table->exact_lane_origins.count = 0;
@@ -455,13 +452,17 @@ static iree_status_t loom_value_fact_table_rehash_regions(
       iree_arena_allocate_array(table->transient_arena, new_bucket_count,
                                 sizeof(*new_buckets), (void**)&new_buckets));
   memset(new_buckets, 0, new_bucket_count * sizeof(*new_buckets));
-  for (loom_value_fact_region_entry_t* entry = table->regions.entries; entry;
-       entry = entry->next_entry) {
-    const iree_host_size_t bucket_index =
-        loom_value_fact_table_region_hash(entry->region) &
-        (new_bucket_count - 1);
-    entry->next_bucket = new_buckets[bucket_index];
-    new_buckets[bucket_index] = entry;
+  for (iree_host_size_t i = 0; i < table->regions.bucket_count; ++i) {
+    loom_value_fact_region_entry_t* entry = table->regions.buckets[i];
+    while (entry) {
+      loom_value_fact_region_entry_t* next = entry->next_bucket;
+      const iree_host_size_t bucket_index =
+          loom_value_fact_table_region_hash(entry->region) &
+          (new_bucket_count - 1);
+      entry->next_bucket = new_buckets[bucket_index];
+      new_buckets[bucket_index] = entry;
+      entry = next;
+    }
   }
   table->regions.buckets = new_buckets;
   table->regions.bucket_count = new_bucket_count;
@@ -526,10 +527,14 @@ iree_status_t loom_value_fact_table_enumerate_cfg_graphs(
     const loom_value_fact_table_t* table,
     loom_value_fact_cfg_graph_callback_t callback) {
   iree_status_t status = iree_ok_status();
-  for (const loom_value_fact_region_entry_t* entry = table->regions.entries;
-       entry && iree_status_is_ok(status); entry = entry->next_entry) {
-    if (entry->structure) {
-      status = callback.fn(callback.user_data, &entry->structure->graph);
+  for (iree_host_size_t i = 0;
+       i < table->regions.bucket_count && iree_status_is_ok(status); ++i) {
+    for (const loom_value_fact_region_entry_t* entry =
+             table->regions.buckets[i];
+         entry && iree_status_is_ok(status); entry = entry->next_bucket) {
+      if (entry->structure) {
+        status = callback.fn(callback.user_data, &entry->structure->graph);
+      }
     }
   }
   return status;
@@ -554,8 +559,6 @@ static iree_status_t loom_value_fact_table_ensure_region_entry(
         (table->regions.bucket_count - 1);
     entry->next_bucket = table->regions.buckets[bucket_index];
     table->regions.buckets[bucket_index] = entry;
-    entry->next_entry = table->regions.entries;
-    table->regions.entries = entry;
     table->regions.count = new_count;
   }
   *out_entry = entry;
