@@ -298,6 +298,12 @@ before an HDP flush; for reads it invalidates HDP before reading where that
 operation applies. HDP maintenance covers this host path and does not replace
 shader-cache release/acquire. [Aperture access][aperture]
 
+Inbound writes from an external device have a separate producer-completion
+boundary. HIP exposes a host HDP visibility operation, while the consumer's
+execution dependency and cache acquisition remain explicit. Its support
+queries, native mapping lifetime and observer scopes are described in
+[inbound RDMA visibility](../../interop/rdma.md).
+
 The architecture and transport predicates matter. Linux bypasses its ordinary
 HDP flush and invalidate paths for an APU outside passthrough under
 `CONFIG_X86_64`. Its CPU-connected XGMI exclusion is separate and is not

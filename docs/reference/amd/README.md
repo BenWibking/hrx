@@ -52,6 +52,7 @@ provide exact search terms within the tree.
 | Size compute context-save storage and preserve suspended work | [CWSR, `ctx_save_restore_size`, per-XCC headers and native removal](gpu/context-save.md). |
 | Determine which agents can access a memory pool | [Pool grain, per-agent access and SVM host access](gpu/recipes/host-device.md#pool-grain-agent-access-and-svm). |
 | Make a producer's writes visible to its consumer | [GPU cache controls](gpu/pm4/cache.md), [CPU/GPU handoffs](gpu/recipes/host-device.md), [all six CPU/GPU/NPU directions](interop/README.md). |
+| Consume inbound RDMA writes | [Host visibility, `hipDeviceFlushGPUDirectRDMAWrites`, HDP mapping and independent GPU acquisition](interop/rdma.md). |
 | Copy or fill memory and wait for completion | [SDMA packet index](gpu/sdma/README.md), [PM4 `DMA_DATA`](gpu/pm4/dma.md), [SDMA upload → AQL dispatch → SDMA download](gpu/recipes/README.md#sdma-upload-aql-dispatch-and-sdma-download). |
 | Replace or reuse commands and executable storage | [PM4 indirect buffers](gpu/pm4/command-buffers.md), [AQL command carriers](gpu/aql/transfers.md), [AQL executable lifetime](gpu/aql/dispatch.md#executable-publication-and-final-use), [SDMA command buffers](gpu/sdma/command-buffers.md). |
 | Configure an NPU transfer or split/join flow | [Tile DMA descriptors and task tokens](xdna/dma.md), [stream switches and multicast](xdna/interconnects.md), [pipeline ownership](interop/pipelines.md). |
