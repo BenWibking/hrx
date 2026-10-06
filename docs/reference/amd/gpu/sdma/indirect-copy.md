@@ -18,9 +18,9 @@ publication, and retirement obligations.
 The cited ROCr layout is
 `SDMA_PKT_COPY_LINEAR_WAITSIGNAL_INDIRECT_GFX1250`. `BlitSdma::Initialize`
 enables its indirect-copy path when ISA major is 12 and minor is at least 5.
-HIP/CLR's `sdma_indirect_supported_` setting is narrower: major 12 and minor
-exactly 5. These are consumer predicates at the pinned ROCm revision, not a
-native-SDMA-IP feature query or a promise for every numerically later target.
+HIP/CLR's `sdma_indirect_supported_` setting uses the same ISA condition.
+These are consumer predicates at the cited revisions, not a native-SDMA-IP
+feature query or a promise for every numerically later target.
 [ROCr selection][initialize] [CLR selection][settings]
 
 The public HIP flags are `hipMemcpyFlagExtOpIndirectSrc` (`0x400`) and
@@ -166,13 +166,13 @@ range, and the full `L`-byte range on a direct side, using those memory
 objects' access and bounds checks. [Validation][hip-validation]
 [Access and bounds][hip-bounds] [Two-size helper][hip-helper]
 
-The extended-operation admission accepts device/host combinations and peer
-device copies as classified from those operand objects. `getMemoryType`
-classifies an object as host when its flags include
+The extended-operation admission accepts device/host combinations, ordinary
+device-to-device copies and peer copies as classified from those operand
+objects. `getMemoryType` classifies an object as host when its flags include
 `CL_MEM_SVM_FINE_GRAIN_BUFFER` or `CL_MEM_USE_HOST_PTR`, and as device otherwise.
 These are runtime object categories, not a test of the future pointee's
-physical placement. The admission rejects the same-memory-type ordinary-copy
-case, host-to-host copies, and pageable-host read/write paths.
+physical placement. The admission rejects host-to-host copies and
+pageable-host read/write paths.
 [Memory classification][hip-memory-type] [Admission][hip-admission]
 
 Source/destination location hints are present in the public attributes, but
@@ -181,9 +181,10 @@ contents do not repeat that selection. [Attributes][hip-flags]
 [Classification and queues][hip-admission]
 
 For the admitted device/host paths, HIP chooses the device-side allocation's
-device; for peer copies it chooses the stream's device. CLR obtains the
-operands' device addresses and owning agents, normalizes peer routing to the
-calling device, and groups operations into H2D, D2H, or D2D bins. ROCr then
+device; for ordinary device-to-device copies it chooses the destination
+allocation's device, and for peer copies it chooses the stream's device.
+CLR obtains the operands' device addresses and owning agents, normalizes peer
+routing to the calling device, and groups operations into H2D, D2H, or D2D bins. ROCr then
 selects copy engines using the supplied agents and topology. These operations
 precede SDMA's slot reads. [HIP queues][hip-admission]
 [CLR operands and routing][clr-operands] [Direction bins][clr-bins]
@@ -304,10 +305,10 @@ corroboration of this SDMA layout. [RADV dispatch][mesa-dispatch]
 
 [api]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ext_amd.h#L2311-L2394
 [initialize]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L156-L218
-[settings]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/rocclr/device/rocm/rocsettings.cpp#L192-L203
+[settings]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocsettings.cpp#L198-L201
 [hip-flags]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/hip/include/hip/driver_types.h#L455-L493
 [hip-front-door]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/hipamd/src/hip_memory.cpp#L3245-L3314
-[hip-admission]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/hipamd/src/hip_memory.cpp#L3083-L3169
+[hip-admission]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L3085-L3169
 [indirect-caller]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L2060-L2085
 [constants]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h#L55-L81
 [layout]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/inc/sdma_registers.h#L1432-L1600

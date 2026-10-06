@@ -214,9 +214,9 @@ shader, peer GPU, or NPU concurrently reading the ranges.
 ## HIP and CLR caller policy
 
 HIP exposes exchange as `hipMemcpyFlagExtOpSwap` (`0x200`) in batch-copy
-attributes. The inspected implementation admits tracked device-to-pinned-host,
-pinned-host-to-device and peer-device operations. It rejects ordinary
-same-class memory pairs and the pageable-host staging paths for this flag.
+attributes. The inspected implementation admits tracked device-to-device,
+device-to-pinned-host, pinned-host-to-device and peer-device operations. It
+rejects host-only memory pairs and the pageable-host staging paths for this flag.
 These are HIP routing choices, not additional packet address bits.
 [Flag][hip-flags] [Classification and admission][hip-admission]
 
@@ -308,7 +308,7 @@ DWORD counts alone supply no exchange latency or throughput bound.
 [bodies]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_blit_sdma.cpp#L1351-L1577
 [hip-flags]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/hip/include/hip/driver_types.h#L454-L493
 [hip-entry]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/hipamd/src/hip_memory.cpp#L3245-L3314
-[hip-admission]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/hipamd/src/hip_memory.cpp#L3083-L3169
+[hip-admission]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L3085-L3169
 [hip-enqueue]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/hipamd/src/hip_memory.cpp#L2959-L3009
 [hip-join]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/hipamd/src/hip_memory.cpp#L3198-L3242
 [command-owner]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/rocclr/platform/command.hpp#L1232-L1272

@@ -13,6 +13,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [ROCm systems][rocm] | `8d57824901ffa7d961c00a37d055a108723b93ca` | ROCr queue/signal/copy protocols, HIP/CLR consumers, native queue construction, and profiling. |
 | [ROCm XIO][xio] | `cbe97e6392066bef7901121965ffadad19404da4` | Device-authored SDMA packets, reservation/commit protocols and native queue-resource ownership; compared with the related rocSHMEM Anvil implementation in ROCm systems. |
 | [ROCm native memory and engine policy][rocm-native] | `f9ba16bbe70e365b2f59b268e847bef19ad9db6e` | BO-backed queue storage, AQL metadata publication and scratch reclamation, signal/event notification and host waits, pageable host SVM allocation, context-save layout and ownership, DRM import/mapping ownership, CLR peer-engine selection, broadcast/multicast copy selection and completion ownership, indirect payload-address copies and HIP pointer-holder admission, buffer-exchange layouts and both-operand lifetimes, compute affinity, native queue priority and cooperative launch admission/ownership. |
+| [ROCm extended-copy caller policy][rocm-extended-copy] | `105dd4ff35798f95646353bc08f6c885416ae17e` | HIP admission of device-to-device swap and indirect copies, operand-based executor selection and CLR's indirect-copy ISA predicate. |
 | [ROCm device libraries][rocm-device-libs] | `8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec` | OCKL hidden grid state, GWS versus atomic barrier selection, split arrival/wait and workgroup/agent/system fence composition. |
 | [Linux][linux] | `50d05c7c76c96b90462f24debacca971d2e86713` | Native UAPI, queue descriptors, memory mappings, engine emitters, and driver resource lifetimes. |
 | [Linux DMA-BUF attachment updates][linux-dmabuf] | `fe2ec83746e501645709761605c2464a44fd2929` | Exporter runtime PM references and their relation to P2P eligibility and memory placement. |
@@ -95,6 +96,7 @@ executes. The corresponding chapter identifies those boundaries.
 [rocm]: https://github.com/ROCm/rocm-systems/tree/8d57824901ffa7d961c00a37d055a108723b93ca
 [xio]: https://github.com/ROCm/rocm-xio/tree/cbe97e6392066bef7901121965ffadad19404da4
 [rocm-native]: https://github.com/ROCm/rocm-systems/tree/f9ba16bbe70e365b2f59b268e847bef19ad9db6e
+[rocm-extended-copy]: https://github.com/ROCm/rocm-systems/tree/105dd4ff35798f95646353bc08f6c885416ae17e
 [rocm-device-libs]: https://github.com/ROCm/llvm-project/tree/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/amd/device-libs
 [linux]: https://github.com/torvalds/linux/tree/50d05c7c76c96b90462f24debacca971d2e86713
 [linux-dmabuf]: https://github.com/torvalds/linux/blob/fe2ec83746e501645709761605c2464a44fd2929/drivers/gpu/drm/amd/amdgpu/amdgpu_dma_buf.c
