@@ -451,7 +451,7 @@ static iree_status_t loom_x86_map_native_abi_layout(
   (void)result_count;
   *out_abi_layout = loom_make_named_attr_slice(NULL, 0);
   const bool hal_kernel = layout_kind == LOOM_LOW_LOWER_ABI_LAYOUT_KIND_KERNEL;
-  if (!hal_kernel &&
+  if (layout_kind != LOOM_LOW_LOWER_ABI_LAYOUT_KIND_FUNC && !hal_kernel &&
       loom_low_lower_context_bundle(context)->export_plan->abi_kind !=
           LOOM_TARGET_ABI_OBJECT_FUNCTION) {
     return iree_ok_status();

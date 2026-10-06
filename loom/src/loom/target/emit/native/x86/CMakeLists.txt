@@ -80,6 +80,7 @@ loom_cc_library(
   SRCS
     "function.c"
   DEPS
+    ::abi
     ::encoding
     ::transport
     iree::base
@@ -126,12 +127,14 @@ loom_cc_library(
     "abi.c"
   DEPS
     iree::base
-    loom::codegen::low::allocation
-    loom::error::error_defs
+    iree::base::internal::arena
+    loom::codegen::low::allocation::call
+    loom::codegen::low::target_binding
     loom::ir
     loom::ops::low
+    loom::target::arch::x86::call_abi
     loom::target::arch::x86::register_classes
-    loom::target::entry_selection
+    loom::target::registers
   PUBLIC
 )
 endif()
@@ -144,8 +147,14 @@ loom_cc_test(
     "abi_test.cc"
   DEPS
     ::abi
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::codegen::low::text_asm
+    loom::format::text::parser
+    loom::ir
+    loom::ops::low
+    loom::ops::target
     loom::target::arch::x86::descriptors::avx10_2_descriptors
     loom::target::arch::x86::descriptors::avx2_descriptors
     loom::target::arch::x86::descriptors::avx512_bf16_descriptors
@@ -159,6 +168,7 @@ loom_cc_test(
     loom::target::arch::x86::descriptors::scalar_descriptors
     loom::target::arch::x86::descriptors::simd128_descriptors
     loom::target::arch::x86::register_classes
+    loom::testing::module_ptr
   LABELS
     "iree-build-requirement=loom.target.arch.x86"
 )
@@ -178,7 +188,10 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::io::stream
+    loom::analysis::symbol_facts
     loom::codegen::low::frame
+    loom::codegen::low::target_binding
+    loom::error::error_defs
     loom::target::emit::native::module
   PUBLIC
 )
@@ -196,6 +209,9 @@ loom_cc_library(
     ::abi
     ::function
     iree::base
+    loom::analysis::symbol_facts
+    loom::codegen::low::target_binding
+    loom::ops::low
     loom::tools::loom-check::execute
   PUBLIC
 )
@@ -283,6 +299,25 @@ loom_generated_file(
 endif()
 
 if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_generated_file(
+  NAME
+    packed_dot_callable_object
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "packed_dot_callable.o"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/packed_dot_callable.loom"
+    "--target=x86:packed_dot"
+  INPUTS
+    "test/packed_dot_callable.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 loom_cc_test(
   NAME
     callable_link_test
@@ -290,7 +325,10 @@ loom_cc_test(
     "avx512_callable.o"
     "callable.o"
     "callable_link_test.cc"
+    "packed_dot_callable.o"
     "vector_callable.o"
+  COPTS
+    "-mavx2"
   DEPS
     iree::testing::gtest
     iree::testing::gtest_main

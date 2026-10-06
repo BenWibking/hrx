@@ -211,10 +211,15 @@ static iree_status_t loom_low_emission_frame_build_impl(
   }
 
   loom_low_function_model_t model = {0};
-  iree_status_t status = loom_low_function_model_initialize(
-      module, low_func_op, options->function_target_facts,
-      options->descriptor_registry, options->emitter,
-      LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE, arena, &model);
+  iree_status_t status =
+      options->resolved_target
+          ? loom_low_function_model_initialize_resolved(
+                module, low_func_op, options->resolved_target,
+                LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE, arena, &model)
+          : loom_low_function_model_initialize(
+                module, low_func_op, options->function_target_facts,
+                options->descriptor_registry, options->emitter,
+                LOOM_LOW_FUNCTION_MODEL_FLAG_REGION_TREE, arena, &model);
   const loom_low_storage_transport_t* storage_transport = NULL;
   if (iree_status_is_ok(status) && model.error_count == 0) {
     status = loom_low_storage_transport_build(

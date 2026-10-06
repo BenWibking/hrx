@@ -91,6 +91,40 @@ TEST_F(FunctionTest, DirtyUpperVectorStateCleansBeforeReturn) {
   EXPECT_EQ(Read(), std::string("\xc5\xf8\x77\xc3", 4));
 }
 
+TEST_F(FunctionTest, DirtyUpperVectorStatePreservesWideResult) {
+  iree_host_size_t block_starts[] = {0, 0};
+  loom_x86_function_t function = {};
+  function.block_starts = block_starts;
+  function.block_count = 1;
+  function.may_dirty_upper_vector_state = true;
+  function.has_upper_vector_result = true;
+
+  IREE_ASSERT_OK(loom_x86_function_write(&function, nullptr, 0, nullptr,
+                                         stream_, &arena_));
+  EXPECT_EQ(Read(), Encode(Instruction(LOOM_X86_ENCODING_FORM_RETURN)));
+}
+
+TEST_F(FunctionTest, DirtyUpperVectorStateCleansBeforeEligibleCall) {
+  loom_x86_instruction_t instructions[] = {
+      Instruction(LOOM_X86_ENCODING_FORM_CALL),
+  };
+  iree_host_size_t block_starts[] = {0, IREE_ARRAYSIZE(instructions)};
+  const uint32_t cleanup_indices[] = {0};
+  loom_x86_function_t function = {};
+  function.instructions = instructions;
+  function.instruction_count = IREE_ARRAYSIZE(instructions);
+  function.block_starts = block_starts;
+  function.block_count = 1;
+  function.may_dirty_upper_vector_state = true;
+  function.upper_vector_call_cleanup_indices = cleanup_indices;
+  function.upper_vector_call_cleanup_count = IREE_ARRAYSIZE(cleanup_indices);
+
+  IREE_ASSERT_OK(loom_x86_function_write(&function, nullptr, 0, nullptr,
+                                         stream_, &arena_));
+  EXPECT_EQ(Read(), std::string("\xc5\xf8\x77", 3) + Encode(instructions[0]) +
+                        std::string("\xc5\xf8\x77\xc3", 4));
+}
+
 TEST_F(FunctionTest, PackedVectorRecipeUsesOrdinaryWriterPath) {
   loom_x86_encoding_operands_t operands = {};
   operands.result = 17;
@@ -169,6 +203,9 @@ TEST_F(FunctionTest, RestoreStackAndRegistersAfterResultTransport) {
       /*.block_count=*/1,
       /*.saved_registers=*/(1u << 3) | (1u << 12),
       /*.may_dirty_upper_vector_state=*/false,
+      /*.has_upper_vector_result=*/false,
+      /*.upper_vector_call_cleanup_indices=*/nullptr,
+      /*.upper_vector_call_cleanup_count=*/0,
       /*.stack=*/{24, 16, {}},
   };
   IREE_ASSERT_OK(loom_x86_function_write(&function, nullptr, 0, nullptr,
@@ -225,6 +262,9 @@ TEST_F(FunctionTest, BranchesSkipEntryTransportAndPreservation) {
       /*.block_count=*/4,
       /*.saved_registers=*/1u << 3,
       /*.may_dirty_upper_vector_state=*/false,
+      /*.has_upper_vector_result=*/false,
+      /*.upper_vector_call_cleanup_indices=*/nullptr,
+      /*.upper_vector_call_cleanup_count=*/0,
       /*.stack=*/{16, 16, {}},
   };
 
@@ -347,6 +387,53 @@ TEST_F(FunctionTest, SymbolFixupsKeepSectionOffsetsAndTheirOwnNamespace) {
   EXPECT_EQ(fixups[1].target_symbol_index, 4u);
   EXPECT_EQ(fixups[1].relocation_kind, LOOM_X86_RELOCATION_CALL);
   EXPECT_EQ(fixups[1].addend, -4);
+}
+
+TEST_F(FunctionTest, FramePointerDoesNotSuppressOutgoingStackRealignment) {
+  iree_host_size_t block_starts[] = {0, 0};
+  loom_x86_function_t function = {};
+  function.block_starts = block_starts;
+  function.block_count = 1;
+  function.saved_registers = (1u << 3) | (1u << 5);
+  function.stack.allocation_size = 64;
+  function.stack.alignment = 32;
+  function.stack.has_frame_pointer = true;
+  function.stack.realignment.mask = -32;
+  IREE_ASSERT_OK(loom_x86_function_write(&function, nullptr, 0, nullptr,
+                                         stream_, &arena_));
+
+  loom_x86_encoding_operands_t rbx = {};
+  rbx.inputs[0] = 3;
+  loom_x86_encoding_operands_t rbp = {};
+  rbp.inputs[0] = 5;
+  loom_x86_encoding_operands_t establish = {};
+  establish.result = 5;
+  establish.inputs[0] = 4;
+  loom_x86_encoding_operands_t align = {};
+  align.result = 4;
+  align.immediate = -32;
+  loom_x86_encoding_operands_t allocate = {};
+  allocate.result = 4;
+  allocate.immediate = 64;
+  loom_x86_encoding_operands_t restore = {};
+  restore.result = 4;
+  restore.inputs[0] = 5;
+  EXPECT_EQ(Read(),
+            Encode(Instruction(LOOM_X86_ENCODING_FORM_PUSH, 0, rbx)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_PUSH, 0, rbp)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_MOVE,
+                                   0x8b | LOOM_X86_ENCODING_REX_W, establish)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_BINARY_IMMEDIATE,
+                                   0x81 | (4u << 9) | LOOM_X86_ENCODING_REX_W,
+                                   align)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_BINARY_IMMEDIATE,
+                                   0x81 | (5u << 9) | LOOM_X86_ENCODING_REX_W,
+                                   allocate)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_MOVE,
+                                   0x8b | LOOM_X86_ENCODING_REX_W, restore)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_POP, 0, rbp)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_POP, 0, rbx)) +
+                Encode(Instruction(LOOM_X86_ENCODING_FORM_RETURN)));
 }
 
 }  // namespace

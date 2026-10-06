@@ -6,56 +6,78 @@
 
 #include "loom/target/emit/native/x86/abi.h"
 
-#include "loom/error/error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/x86/register_classes.h"
+#include "loom/target/registers.h"
 
 // SysV AMD64 integer-class arguments use RDI, RSI, RDX, RCX, R8, and R9.
-// Unused source parameters consume positions even when they need no interval.
-static const uint8_t kSysvArgumentRegisters[] = {7, 6, 2, 1, 8, 9};
+static const uint8_t kSysvIntegerArgumentRegisters[] = {7, 6, 2, 1, 8, 9};
+
+static const loom_low_call_clobber_t kSysvGprClobbers[] = {
+    {LOOM_X86_REGISTER_CLASS_GPR64, 0, 3},
+    {LOOM_X86_REGISTER_CLASS_GPR64, 6, 6},
+};
+
+iree_status_t loom_x86_module_abi_initialize(
+    iree_host_size_t symbol_count, iree_host_size_t function_count,
+    iree_arena_allocator_t* arena, loom_x86_module_abi_t* out_module_abi) {
+  *out_module_abi = (loom_x86_module_abi_t){
+      .function_count = function_count,
+      .symbol_count = symbol_count,
+  };
+  if (function_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, function_count, sizeof(*out_module_abi->functions),
+        (void**)&out_module_abi->functions));
+    memset(out_module_abi->functions, 0,
+           function_count * sizeof(*out_module_abi->functions));
+  }
+  if (symbol_count != 0) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        arena, symbol_count, sizeof(*out_module_abi->functions_by_symbol),
+        (void**)&out_module_abi->functions_by_symbol));
+    memset(out_module_abi->functions_by_symbol, 0,
+           symbol_count * sizeof(*out_module_abi->functions_by_symbol));
+  }
+  return iree_ok_status();
+}
+
+void loom_x86_module_abi_bind(loom_x86_module_abi_t* module_abi,
+                              iree_host_size_t function_index,
+                              loom_symbol_id_t symbol_id) {
+  IREE_ASSERT_LT(function_index, module_abi->function_count);
+  IREE_ASSERT_LT(symbol_id, module_abi->symbol_count);
+  IREE_ASSERT_EQ(module_abi->functions_by_symbol[symbol_id], NULL);
+  module_abi->functions_by_symbol[symbol_id] =
+      &module_abi->functions[function_index];
+}
+
+const loom_x86_function_abi_t* loom_x86_module_abi_lookup(
+    const loom_x86_module_abi_t* module_abi, loom_symbol_ref_t function) {
+  if (function.module_id != 0 ||
+      function.symbol_id >= module_abi->symbol_count) {
+    return NULL;
+  }
+  return module_abi->functions_by_symbol[function.symbol_id];
+}
+
+iree_status_t loom_x86_function_call_contract_validate(
+    void* user_data, loom_symbol_ref_t callee) {
+  const loom_x86_module_abi_t* module_abi = user_data;
+  if (loom_x86_module_abi_lookup(module_abi, callee) == NULL) {
+    return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
+                            "x86 callee has no native SysV ABI plan");
+  }
+  return iree_ok_status();
+}
 
 const loom_low_call_contract_t* loom_x86_function_call_contract(
     void* user_data, loom_symbol_ref_t callee) {
-  (void)user_data;
-  (void)callee;
-  static const loom_low_allocation_abi_location_t arguments[] = {
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 7},
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 6},
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 2},
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 1},
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 8},
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 9},
-  };
-  static const loom_low_allocation_abi_location_t results[] = {
-      {LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-       LOOM_X86_REGISTER_CLASS_GPR64, 0},
-  };
-  static const loom_low_call_clobber_t clobbers[] = {
-      {LOOM_X86_REGISTER_CLASS_GPR64, 0, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 1, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 2, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 6, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 7, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 8, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 9, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 10, 1},
-      {LOOM_X86_REGISTER_CLASS_GPR64, 11, 1},
-  };
-  static const loom_low_call_contract_t contract = {
-      .arguments = arguments,
-      .argument_count = IREE_ARRAYSIZE(arguments),
-      .results = results,
-      .result_count = IREE_ARRAYSIZE(results),
-      .clobbers = {clobbers, IREE_ARRAYSIZE(clobbers)},
-  };
-  return &contract;
+  const loom_x86_function_abi_t* function_abi =
+      loom_x86_module_abi_lookup(user_data, callee);
+  IREE_ASSERT_NE(function_abi, NULL);
+  return &function_abi->call_contract;
 }
 
 loom_low_call_clobber_list_t loom_x86_function_common_call_clobbers(
@@ -100,73 +122,69 @@ loom_low_call_clobber_list_t loom_x86_function_common_call_clobbers(
   };
 }
 
-static iree_status_t loom_x86_callable_reject(
-    const loom_module_t* module, const loom_target_entry_t* entry,
-    iree_string_view_t constraint, iree_diagnostic_emitter_t emitter) {
-  const loom_target_bundle_t* bundle = loom_target_entry_bundle(entry);
-  const loom_diagnostic_param_t params[] = {
-      loom_param_string(bundle->snapshot->name),
-      loom_param_string(bundle->export_plan->name),
-      loom_param_string(bundle->config->name),
-      loom_param_string(entry->func_name),
-      loom_param_string(loom_op_name(module, entry->func.op)),
-      loom_param_string(constraint),
-  };
-  const loom_diagnostic_emission_t emission = {
-      .op = entry->func.op,
-      .error = LOOM_ERR_TARGET_032,
-      .params = params,
-      .param_count = IREE_ARRAYSIZE(params),
-  };
-  return iree_diagnostic_emit(emitter, &emission);
-}
-
-static bool loom_x86_callable_payload_matches_register(
-    loom_type_t type, uint16_t register_class) {
-  if (loom_type_is_buffer(type)) {
-    return register_class == LOOM_X86_REGISTER_CLASS_GPR64;
-  }
-  if (!loom_type_is_scalar(type)) {
+static bool loom_x86_abi_carrier_class(loom_type_t carrier,
+                                       uint16_t* out_register_class) {
+  if (!loom_low_type_is_register(carrier) ||
+      loom_low_register_type_unit_count(carrier) != 1) {
     return false;
   }
-  switch (loom_type_element_type(type)) {
-    case LOOM_SCALAR_TYPE_I32:
-      return register_class == LOOM_X86_REGISTER_CLASS_GPR32;
-    case LOOM_SCALAR_TYPE_I64:
-    case LOOM_SCALAR_TYPE_INDEX:
-    case LOOM_SCALAR_TYPE_OFFSET:
-      return register_class == LOOM_X86_REGISTER_CLASS_GPR64;
+  const uint16_t register_class = loom_low_register_type_class_id(carrier);
+  switch (register_class) {
+    case LOOM_X86_REGISTER_CLASS_GPR32:
+    case LOOM_X86_REGISTER_CLASS_GPR64:
+    case LOOM_X86_REGISTER_CLASS_XMM:
+    case LOOM_X86_REGISTER_CLASS_YMM:
+    case LOOM_X86_REGISTER_CLASS_ZMM:
+      *out_register_class = register_class;
+      return true;
     default:
       return false;
   }
 }
 
-static bool loom_x86_callable_type_supported(loom_type_t type) {
-  if (!loom_low_type_is_register(type) ||
-      loom_low_register_type_unit_count(type) != 1) {
+static bool loom_x86_abi_classify_value(
+    loom_type_t logical_type, loom_type_t carrier,
+    loom_x86_call_abi_classification_t* out_classification) {
+  uint16_t carrier_class = 0;
+  if (!loom_x86_abi_carrier_class(carrier, &carrier_class)) {
     return false;
   }
-  uint16_t register_class = loom_low_register_type_class_id(type);
-  if (register_class != LOOM_X86_REGISTER_CLASS_GPR32 &&
-      register_class != LOOM_X86_REGISTER_CLASS_GPR64) {
+  if (loom_type_equal(logical_type, loom_type_none())) {
+    const uint16_t byte_length =
+        loom_x86_call_abi_register_byte_length(carrier_class);
+    *out_classification = (loom_x86_call_abi_classification_t){
+        .abi_class = carrier_class == LOOM_X86_REGISTER_CLASS_GPR32 ||
+                             carrier_class == LOOM_X86_REGISTER_CLASS_GPR64
+                         ? LOOM_X86_CALL_ABI_CLASS_INTEGER
+                         : LOOM_X86_CALL_ABI_CLASS_SSE,
+        .carrier_register_class = carrier_class,
+        .boundary_register_class = carrier_class,
+        .byte_length = byte_length,
+        .byte_alignment = (uint8_t)byte_length,
+    };
+    return byte_length != 0;
+  }
+  if (!loom_x86_call_abi_classify_source_type(logical_type,
+                                              out_classification)) {
     return false;
   }
-  const loom_type_t* value_type = loom_type_register_value_type(type);
-  return value_type == NULL || loom_x86_callable_payload_matches_register(
-                                   *value_type, register_class);
+  return out_classification->carrier_register_class == carrier_class;
 }
 
-// The ABI signature states the logical boundary when raw physical carriers
-// cannot distinguish it. Absence selects the register-width boundary, as for
-// authored Low GPR32/GPR64 functions. This admission also applies to reparsed
-// Low and therefore does not rely on the source-lowering invocation surviving.
-static bool loom_x86_callable_layout_supported(const loom_module_t* module,
-                                               loom_func_like_t function) {
-  const loom_op_t* function_op = function.op;
+static bool loom_x86_abi_signature(
+    const loom_module_t* module, loom_func_like_t function,
+    const loom_func_type_data_t** out_signature) {
+  *out_signature = NULL;
+  // The HAL task adapter has a fixed physical platform signature. Its ABI
+  // layout describes logical dispatch parameters and remains owned by task
+  // metadata construction; it is not the native function boundary.
+  if (loom_func_like_abi(function) == LOOM_TARGET_ABI_HAL_KERNEL) {
+    return true;
+  }
   const loom_named_attr_slice_t layout =
-      loom_low_func_decl_isa(function_op)
-          ? loom_low_func_decl_abi_layout(function_op)
-          : loom_low_func_def_abi_layout(function_op);
+      loom_low_func_decl_isa(function.op)
+          ? loom_low_func_decl_abi_layout(function.op)
+          : loom_low_func_def_abi_layout(function.op);
   if (layout.count == 0) {
     return true;
   }
@@ -183,119 +201,184 @@ static bool loom_x86_callable_layout_supported(const loom_module_t* module,
   }
   const loom_func_type_data_t* data = loom_type_func_data(signature);
   uint16_t argument_count = 0;
-  const loom_value_id_t* arguments =
-      loom_func_like_arg_ids(function, &argument_count);
+  loom_func_like_arg_ids(function, &argument_count);
   if (data->arg_count != argument_count ||
-      data->result_count != function_op->result_count) {
+      data->result_count != function.op->result_count) {
     return false;
   }
-  const loom_value_id_t* results = loom_op_const_results(function_op);
-  const iree_host_size_t count =
-      (iree_host_size_t)data->arg_count + data->result_count;
-  for (iree_host_size_t i = 0; i < count; ++i) {
-    const loom_value_id_t value =
-        i < argument_count ? arguments[i] : results[i - argument_count];
-    const loom_type_t carrier = loom_module_value_type(module, value);
-    if (!loom_low_type_is_register(carrier) ||
-        loom_low_register_type_unit_count(carrier) != 1 ||
-        !loom_x86_callable_payload_matches_register(
-            data->types[i], loom_low_register_type_class_id(carrier))) {
-      return false;
-    }
-  }
+  *out_signature = data;
   return true;
 }
 
-iree_status_t loom_x86_function_abi_prepare(loom_module_t* module,
-                                            const loom_target_entry_t* entry,
-                                            iree_diagnostic_emitter_t emitter,
-                                            bool* out_accepted,
-                                            loom_x86_function_abi_t* out_abi) {
-  *out_accepted = false;
-  *out_abi = (loom_x86_function_abi_t){0};
-  const iree_string_view_t convention =
-      loom_target_entry_bundle(entry)->export_plan->calling_convention;
-  if (!iree_string_view_is_empty(convention) &&
-      !iree_string_view_equal(convention, IREE_SV("sysv"))) {
-    return loom_x86_callable_reject(
-        module, entry,
-        IREE_SV("native x86 supports the sysv calling convention"), emitter);
+static bool loom_x86_abi_register_available(
+    const loom_low_descriptor_set_t* descriptor_set, uint16_t register_class,
+    uint32_t location) {
+  return register_class < descriptor_set->reg_class_count &&
+         location <
+             descriptor_set->reg_classes[register_class].allocatable_count;
+}
+
+static bool loom_x86_abi_has_upper_vector_state(uint16_t register_class,
+                                                uint32_t location) {
+  return (register_class == LOOM_X86_REGISTER_CLASS_YMM ||
+          register_class == LOOM_X86_REGISTER_CLASS_ZMM) &&
+         location < 16;
+}
+
+static iree_status_t loom_x86_abi_allocate_values(
+    iree_host_size_t count, iree_arena_allocator_t* arena,
+    loom_low_allocation_abi_location_t** out_locations,
+    loom_x86_abi_value_t** out_values) {
+  *out_locations = NULL;
+  *out_values = NULL;
+  if (count == 0) {
+    return iree_ok_status();
   }
-  const bool hal_dispatch =
-      loom_target_entry_bundle(entry)->export_plan->abi_kind ==
-      LOOM_TARGET_ABI_HAL_KERNEL;
-  if (!hal_dispatch &&
-      !loom_x86_callable_layout_supported(module, entry->func)) {
-    return loom_x86_callable_reject(
-        module, entry,
-        IREE_SV("native x86 ABI signature requires scalar i32, i64, or "
-                "pointers matching the register boundary"),
-        emitter);
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, count, sizeof(**out_locations), (void**)out_locations));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, count, sizeof(**out_values), (void**)out_values));
+  memset(*out_locations, 0, count * sizeof(**out_locations));
+  memset(*out_values, 0, count * sizeof(**out_values));
+  return iree_ok_status();
+}
+
+iree_status_t loom_x86_function_abi_prepare(
+    const loom_module_t* module, loom_func_like_t function,
+    const loom_low_resolved_target_t* resolved_target,
+    iree_arena_allocator_t* arena, bool* out_supported,
+    iree_string_view_t* out_constraint, loom_x86_function_abi_t* out_abi) {
+  *out_supported = false;
+  *out_constraint = iree_string_view_empty();
+  *out_abi = (loom_x86_function_abi_t){.target = *resolved_target};
+  const loom_low_descriptor_set_t* descriptor_set =
+      resolved_target->descriptor_set;
+
+  const loom_func_type_data_t* signature = NULL;
+  if (!loom_x86_abi_signature(module, function, &signature)) {
+    *out_constraint = IREE_SV("native x86 requires one valid ABI signature");
+    return iree_ok_status();
   }
+  if (function.op->result_count > 1) {
+    *out_constraint =
+        IREE_SV("native x86 supports at most one primitive result");
+    return iree_ok_status();
+  }
+
   uint16_t argument_count = 0;
-  const loom_value_id_t* arguments =
-      loom_func_like_arg_ids(entry->func, &argument_count);
-  if (hal_dispatch) {
-    bool physical_signature = loom_low_func_def_isa(entry->func.op) &&
-                              argument_count == 3 &&
-                              entry->func.op->result_count == 1;
-    for (uint16_t i = 0; i < argument_count && physical_signature; ++i) {
-      const loom_type_t type = loom_module_value_type(module, arguments[i]);
-      physical_signature = loom_low_type_is_register(type) &&
-                           loom_low_register_type_class_id(type) ==
-                               LOOM_X86_REGISTER_CLASS_GPR64 &&
-                           loom_low_register_type_unit_count(type) == 1;
+  const loom_value_id_t* argument_ids =
+      loom_func_like_arg_ids(function, &argument_count);
+  const loom_value_id_t* result_ids = loom_op_const_results(function.op);
+  loom_low_allocation_abi_location_t* argument_locations = NULL;
+  loom_low_allocation_abi_location_t* result_locations = NULL;
+  IREE_RETURN_IF_ERROR(loom_x86_abi_allocate_values(
+      argument_count, arena, &argument_locations, &out_abi->arguments));
+  IREE_RETURN_IF_ERROR(loom_x86_abi_allocate_values(
+      function.op->result_count, arena, &result_locations, &out_abi->results));
+
+  uint16_t register_counts[2] = {0, 0};
+  uint64_t stack_bytes = 0;
+  for (uint16_t i = 0; i < argument_count; ++i) {
+    const loom_type_t logical_type =
+        signature ? signature->types[i] : loom_type_none();
+    const loom_type_t carrier = loom_module_value_type(module, argument_ids[i]);
+    loom_x86_call_abi_classification_t classification;
+    if (!loom_x86_abi_classify_value(logical_type, carrier, &classification)) {
+      *out_constraint =
+          IREE_SV("native x86 argument logical type and Low carrier disagree");
+      return iree_ok_status();
     }
-    if (physical_signature) {
-      const loom_type_t result = loom_module_value_type(
-          module, loom_op_const_results(entry->func.op)[0]);
-      physical_signature = loom_low_type_is_register(result) &&
-                           loom_low_register_type_class_id(result) ==
-                               LOOM_X86_REGISTER_CLASS_GPR32 &&
-                           loom_low_register_type_unit_count(result) == 1;
-    }
-    if (!physical_signature) {
-      return loom_x86_callable_reject(
-          module, entry,
-          IREE_SV("x86 HAL dispatch requires three GPR64 state pointers and "
-                  "one GPR32 status result"),
-          emitter);
-    }
-  }
-  if (entry->func.op->result_count > 1) {
-    return loom_x86_callable_reject(
-        module, entry, IREE_SV("native x86 supports at most one scalar result"),
-        emitter);
-  }
-  bool arguments_supported = true;
-  for (uint16_t i = 0; i < argument_count && arguments_supported; ++i) {
-    arguments_supported = loom_x86_callable_type_supported(
-        loom_module_value_type(module, arguments[i]));
-    if (i < IREE_ARRAYSIZE(kSysvArgumentRegisters)) {
-      out_abi->entry_locations[i] = (loom_low_allocation_abi_location_t){
+    loom_x86_abi_value_t* value = &out_abi->arguments[i];
+    *value = (loom_x86_abi_value_t){
+        .stack_offset = UINT32_MAX,
+        .byte_length = classification.byte_length,
+        .byte_alignment = classification.byte_alignment,
+        .action = classification.action,
+    };
+    const uint16_t register_index = register_counts[classification.abi_class]++;
+    const uint16_t register_limit =
+        classification.abi_class == LOOM_X86_CALL_ABI_CLASS_INTEGER
+            ? IREE_ARRAYSIZE(kSysvIntegerArgumentRegisters)
+            : 8;
+    if (register_index < register_limit) {
+      const uint32_t location =
+          classification.abi_class == LOOM_X86_CALL_ABI_CLASS_INTEGER
+              ? kSysvIntegerArgumentRegisters[register_index]
+              : register_index;
+      if (!loom_x86_abi_register_available(
+              descriptor_set, classification.boundary_register_class,
+              location)) {
+        *out_constraint = IREE_SV(
+            "native x86 ABI register class is unavailable in this profile");
+        return iree_ok_status();
+      }
+      argument_locations[i] = (loom_low_allocation_abi_location_t){
           .location_kind = LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
-          .descriptor_reg_class_id = loom_low_register_type_class_id(
-              loom_module_value_type(module, arguments[i])),
-          .location_base = kSysvArgumentRegisters[i],
+          .descriptor_reg_class_id = classification.boundary_register_class,
+          .location_base = location,
       };
+      out_abi->has_upper_vector_register_argument |=
+          loom_x86_abi_has_upper_vector_state(
+              classification.boundary_register_class, location);
+    } else {
+      const uint32_t alignment = iree_max(8u, value->byte_alignment);
+      stack_bytes = iree_host_align(stack_bytes, alignment);
+      if (stack_bytes > UINT32_MAX) {
+        return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                                "x86 ABI argument area exceeds 32 bits");
+      }
+      value->stack_offset = (uint32_t)stack_bytes;
+      stack_bytes += iree_host_align(value->byte_length, 8u);
+      out_abi->stack_argument_alignment = (uint8_t)iree_max(
+          out_abi->stack_argument_alignment, iree_max(16u, alignment));
+      out_abi->has_simd_stack_argument |=
+          classification.abi_class == LOOM_X86_CALL_ABI_CLASS_SSE;
     }
   }
-  if (!arguments_supported) {
-    return loom_x86_callable_reject(
-        module, entry,
-        IREE_SV("native x86 arguments require scalar i32, i64, or pointers"),
-        emitter);
+  if (stack_bytes > UINT32_MAX) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "x86 ABI argument area exceeds 32 bits");
   }
-  if (entry->func.op->result_count &&
-      !loom_x86_callable_type_supported(loom_module_value_type(
-          module, loom_op_const_results(entry->func.op)[0]))) {
-    return loom_x86_callable_reject(
-        module, entry,
-        IREE_SV("native x86 results require scalar i32, i64, or pointers"),
-        emitter);
+  out_abi->stack_argument_bytes = (uint32_t)stack_bytes;
+
+  if (function.op->result_count != 0) {
+    const loom_type_t logical_type =
+        signature ? signature->types[argument_count] : loom_type_none();
+    const loom_type_t carrier = loom_module_value_type(module, result_ids[0]);
+    loom_x86_call_abi_classification_t classification;
+    if (!loom_x86_abi_classify_value(logical_type, carrier, &classification)) {
+      *out_constraint =
+          IREE_SV("native x86 result logical type and Low carrier disagree");
+      return iree_ok_status();
+    }
+    if (!loom_x86_abi_register_available(
+            descriptor_set, classification.boundary_register_class, 0)) {
+      *out_constraint = IREE_SV(
+          "native x86 result register class is unavailable in this profile");
+      return iree_ok_status();
+    }
+    result_locations[0] = (loom_low_allocation_abi_location_t){
+        .location_kind = LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER,
+        .descriptor_reg_class_id = classification.boundary_register_class,
+        .location_base = 0,
+    };
+    out_abi->has_upper_vector_result = loom_x86_abi_has_upper_vector_state(
+        classification.boundary_register_class, 0);
+    out_abi->results[0] = (loom_x86_abi_value_t){
+        .stack_offset = UINT32_MAX,
+        .byte_length = classification.byte_length,
+        .byte_alignment = classification.byte_alignment,
+        .action = classification.action,
+    };
   }
-  out_abi->entry_location_count =
-      iree_min(argument_count, IREE_ARRAYSIZE(kSysvArgumentRegisters));
-  *out_accepted = true;
+
+  out_abi->call_contract = (loom_low_call_contract_t){
+      .arguments = argument_locations,
+      .argument_count = argument_count,
+      .results = result_locations,
+      .result_count = function.op->result_count,
+      .clobbers = {kSysvGprClobbers, IREE_ARRAYSIZE(kSysvGprClobbers)},
+  };
+  *out_supported = true;
   return iree_ok_status();
 }

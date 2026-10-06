@@ -39,20 +39,23 @@ typedef struct loom_native_module_fixups_t {
 } loom_native_module_fixups_t;
 
 // Immutable target mechanics consumed by the shared ELF64LE module assembler.
-// Each callback consumes one selected entry. Authored constraints emit source
-// diagnostics and clear out_accepted; only allocation/output/sink failures
-// return a status. Calling conventions and instruction choices stay here.
+// Authored constraints emit source diagnostics and clear out_accepted; only
+// allocation/output/sink failures return a status. Calling conventions and
+// instruction choices stay here.
 typedef struct loom_native_module_elf_target_t {
-  // Admits the physical signature of an imported function without emitting it.
-  iree_status_t (*check_declaration)(const loom_target_emit_request_t* request,
-                                     const loom_target_entry_t* entry,
-                                     bool* out_accepted);
+  // Prepares immutable target state over the complete selected function set.
+  // The arena-owned context remains live through all function emissions.
+  iree_status_t (*prepare_module)(const loom_target_emit_request_t* request,
+                                  const loom_target_entry_list_t* entries,
+                                  iree_arena_allocator_t* arena,
+                                  bool* out_accepted, void** out_context);
   // Emits one definition to a writable, seekable stream. symbol_indices maps
   // module symbol IDs to native symbols; section_index locates these bytes.
   // Temporary schedules, allocations, and instructions use function_arena and
   // expire after this call. Only stream bytes and appended fixups survive.
   iree_status_t (*emit_function)(const loom_target_emit_request_t* request,
                                  const loom_target_entry_t* entry,
+                                 const void* context,
                                  const uint32_t* symbol_indices,
                                  iree_host_size_t section_index,
                                  loom_native_module_fixups_t* fixups,
