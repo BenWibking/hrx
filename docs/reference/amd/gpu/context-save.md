@@ -304,6 +304,10 @@ explicitly requests `KFD_PREEMPT_TYPE_WAVEFRONT_SAVE` when CWSR is enabled
 and `KFD_PREEMPT_TYPE_WAVEFRONT_DRAIN` otherwise. Save therefore allows an
 unfinished dispatch to survive removal from hardware. [Native update][queue-update]
 
+[Affinity and priority updates](scheduling.md#updating-a-live-queue) use this
+same transition. A successful configuration change does not imply that saved
+work completed or that its application-owned storage can be reused.
+
 For CP hardware scheduling, even the scheduler's status fence is not the
 whole unmap-success test. The cited MEC protocol can report the status fence
 after abandoning a preemption request. KFD also checks the HIQ MQD's recorded
