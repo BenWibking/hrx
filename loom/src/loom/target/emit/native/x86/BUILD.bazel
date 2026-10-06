@@ -95,6 +95,23 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "hal_library",
+    srcs = ["hal_library.c"],
+    hdrs = ["hal_library.h"],
+    deps = [
+        ":encoding",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target:entry_selection",
+        "//loom/src/loom/target/emit/native:object",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
+    ],
+)
+
+loom_cc_library(
     name = "module",
     srcs = ["module.c"],
     hdrs = ["module.h"],
@@ -102,6 +119,7 @@ loom_cc_library(
     deps = [
         ":abi",
         ":function",
+        ":hal_library",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/low",
@@ -168,6 +186,48 @@ loom_cc_test(
         "@platforms//os:linux",
     ],
     deps = [
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_generated_file(
+    name = "hal_dispatch_image",
+    testonly = True,
+    args = [
+        "$(location test/hal_dispatch.loom)",
+        "--target=x86:scalar",
+        "--format=x86-hal",
+    ],
+    generator = "//loom/src/loom/tools/loom-compile:loom-compile",
+    inputs = ["test/hal_dispatch.loom"],
+    output = "hal_dispatch.so",
+    output_flag = "--output=",
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+    ]),
+)
+
+loom_cc_test(
+    name = "hal_dispatch_test",
+    srcs = ["hal_dispatch_test.cc"],
+    args = ["--executable_file=$(rootpath :hal_dispatch_image)"],
+    data = [":hal_dispatch_image"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+        "//runtime/config/hal:driver_task",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+    ]) + [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//runtime/src/iree/async",
+        "//runtime/src/iree/async/util:proactor_pool",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/tooling:flags",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/drivers",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],

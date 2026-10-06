@@ -1,0 +1,52 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+global.rodata.decl @iree_hal_executable_library_v0
+
+// The query is compiled through the same allocator and native encoder as the
+// dispatch. The returned object is resident in the loaded image.
+low.func.def public target<x86.scalar.core> abi(object_function) @iree_hal_executable_library_query(%version: reg<x86.gpr32>, %environment: reg<x86.gpr64>) -> (reg<x86.gpr64>) asm {
+  %compatible = cmp.uge.imm.gpr32 %version, 8
+  low.cond_br %compatible, ^supported, ^unsupported : reg<x86.gpr32>
+^supported:
+  %library = lea.symbol.gpr64 @iree_hal_executable_library_v0
+  return %library
+^unsupported:
+  %null = mov.imm64 0
+  return %null
+}
+
+// Each workgroup writes exactly one word. The binding pointer already includes
+// the caller's byte offset. All three grid dimensions participate in indexing.
+low.func.def public target<x86.scalar.core> abi(hal_kernel) abi_layout({offsets = [0, 0], signature = (buffer, i32) -> ()}) @grid(%environment: reg<x86.gpr64>, %dispatch: reg<x86.gpr64>, %workgroup: reg<x86.gpr64>) -> (reg<x86.gpr32>) asm {
+  %constants = mov.load.gpr64 %dispatch {disp32 = 24}
+  %bias = mov.load.gpr32 %constants {disp32 = 0}
+  %bindings = mov.load.gpr64 %dispatch {disp32 = 40}
+  %output = mov.load.gpr64 %bindings {disp32 = 0}
+  %count_x = mov.load.gpr32 %dispatch {disp32 = 12}
+  %count_y = mov.load.gpr32 %dispatch {disp32 = 16}
+  %x = mov.load.gpr32 %workgroup {disp32 = 0}
+  %y = mov.load.gpr32 %workgroup {disp32 = 4}
+  %z = movzx.load.u16.gpr32 %workgroup {disp32 = 8}
+  %plane = imul.gpr32 %z, %count_y
+  %row = add.gpr32 %plane, %y
+  %row_offset = imul.gpr32 %row, %count_x
+  %index = add.gpr32 %row_offset, %x
+  %value = low.func.call noinline @mix(%index, %bias) : (reg<x86.gpr32>, reg<x86.gpr32>) -> (reg<x86.gpr32>)
+  %position = movzx.gpr64.gpr32 %index
+  %previous = mov.load.indexed.gpr32 %output, %position {disp32 = 0, scale = 4}
+  %sum = add.gpr32 %previous, %value
+  mov.store.indexed.gpr32 %sum, %output, %position {disp32 = 0, scale = 4}
+  %success = mov.imm32 0
+  return %success
+}
+
+low.func.def noinline target<x86.scalar.core> abi(object_function) @mix(%index: reg<x86.gpr32>, %bias: reg<x86.gpr32>) -> (reg<x86.gpr32>) asm {
+  %factor = mov.imm32 17
+  %product = imul.gpr32 %index, %factor
+  %result = add.gpr32 %product, %bias
+  return %result
+}

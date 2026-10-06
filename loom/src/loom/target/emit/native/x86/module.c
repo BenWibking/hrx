@@ -12,15 +12,27 @@
 #include "loom/ops/global/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/emit/native/image_elf.h"
+#include "loom/target/emit/native/object_elf.h"
 #include "loom/target/emit/native/x86/abi.h"
 #include "loom/target/emit/native/x86/function.h"
+#include "loom/target/emit/native/x86/hal_library.h"
+
+typedef struct loom_x86_module_selection_t {
+  // Architecture identity supplied by the composing provider.
+  const loom_target_fact_type_t* fact_type;
+  // Native artifact and ABI family requested by the caller.
+  loom_x86_module_format_t format;
+} loom_x86_module_selection_t;
 
 static bool loom_x86_module_accept_entry(void* user_data,
                                          const loom_target_entry_t* entry) {
   const loom_target_bundle_t* bundle = loom_target_entry_bundle(entry);
-  return entry->target_facts->fact_type == user_data &&
+  const loom_x86_module_selection_t* selection = user_data;
+  return entry->target_facts->fact_type == selection->fact_type &&
          (bundle->export_plan->abi_kind == LOOM_TARGET_ABI_OBJECT_FUNCTION ||
-          bundle->export_plan->abi_kind == LOOM_TARGET_ABI_UNKNOWN) &&
+          bundle->export_plan->abi_kind == LOOM_TARGET_ABI_UNKNOWN ||
+          (selection->format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY &&
+           bundle->export_plan->abi_kind == LOOM_TARGET_ABI_HAL_KERNEL)) &&
          bundle->snapshot->artifact_format == LOOM_TARGET_ARTIFACT_FORMAT_ELF;
 }
 
@@ -318,7 +330,7 @@ static iree_status_t loom_x86_module_function(
 static iree_status_t loom_x86_module_build_artifact(
     const loom_target_emit_request_t* request,
     const loom_target_fact_type_t* target_fact_type,
-    loom_native_elf_file_type_t file_type, bool* out_emitted,
+    loom_x86_module_format_t format, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
   *out_emitted = false;
   *out_artifact = (loom_target_emit_artifact_t){0};
@@ -338,11 +350,15 @@ static iree_status_t loom_x86_module_build_artifact(
   };
   loom_target_entry_list_t entries = {0};
   bool accepted = false;
+  loom_x86_module_selection_t selection = {
+      .fact_type = target_fact_type,
+      .format = format,
+  };
   IREE_RETURN_IF_ERROR(loom_target_entry_select_all_entries(
       request->module, &options,
       (loom_target_entry_predicate_t){
           .fn = loom_x86_module_accept_entry,
-          .user_data = (void*)target_fact_type,
+          .user_data = &selection,
       },
       &diagnostics, IREE_SV("x86 native artifact"), request->scratch_arena,
       &accepted, &entries));
@@ -375,15 +391,56 @@ static iree_status_t loom_x86_module_build_artifact(
     symbol_indices[entries.values[i].func_ref.symbol_id] = i;
   }
   loom_x86_module_fixups_t fixups = {0};
+  iree_host_size_t library_symbol_index = IREE_HOST_SIZE_MAX;
+  loom_x86_hal_library_entry_t* library_entries = NULL;
+  uint16_t library_entry_count = 0;
+  iree_host_size_t library_entry_capacity = 0;
+  bool has_library_query = false;
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0; i < rodata_count && iree_status_is_ok(status);
        ++i) {
     status = loom_x86_module_rodata(request->module, rodata_symbols[i],
                                     &symbols[entries.count + i], sections,
                                     &section_count);
+    if (iree_status_is_ok(status) &&
+        format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY &&
+        iree_string_view_equal(symbols[entries.count + i].name,
+                               IREE_SV(LOOM_X86_HAL_LIBRARY_SYMBOL))) {
+      if (!loom_global_rodata_decl_isa(rodata_symbols[i]->defining_op)) {
+        status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                  "the task HAL library symbol must be a "
+                                  "readonly data declaration");
+      } else {
+        library_symbol_index = entries.count + i;
+      }
+    }
   }
   for (uint16_t i = 0;
        i < entries.count && accepted && iree_status_is_ok(status); ++i) {
+    const bool exported = loom_func_like_is_exported(entries.values[i].func);
+    has_library_query |=
+        format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY && exported &&
+        iree_string_view_equal(
+            symbols[i].name, IREE_SV(IREE_HAL_EXECUTABLE_LIBRARY_EXPORT_NAME));
+    if (format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY && exported &&
+        loom_target_entry_bundle(&entries.values[i])->export_plan->abi_kind ==
+            LOOM_TARGET_ABI_HAL_KERNEL) {
+      status = iree_arena_grow_array(
+          request->scratch_arena, library_entry_count, library_entry_count + 1,
+          sizeof(*library_entries), &library_entry_capacity,
+          (void**)&library_entries);
+      if (iree_status_is_ok(status)) {
+        status = loom_x86_hal_library_entry_parse(
+            request->module, &entries.values[i], i, request->scratch_arena,
+            &library_entries[library_entry_count]);
+      }
+      if (iree_status_is_ok(status)) {
+        library_entries[library_entry_count++].name = symbols[i].name;
+      }
+    }
+    if (!iree_status_is_ok(status)) {
+      continue;
+    }
     if (loom_low_func_decl_isa(entries.values[i].func.op)) {
       loom_x86_function_abi_t abi;
       status = loom_x86_function_abi_prepare(
@@ -396,6 +453,37 @@ static iree_status_t loom_x86_module_build_artifact(
                                         symbol_indices, section_index, &fixups,
                                         &accepted, &sections[section_index]);
       symbols[i].size = sections[section_index].contents.data_length;
+    }
+  }
+  if (iree_status_is_ok(status) && accepted &&
+      format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY) {
+    if (!library_entry_count || !has_library_query ||
+        library_symbol_index == IREE_HOST_SIZE_MAX) {
+      status = iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "task HAL libraries require dispatch entries, the library query, "
+          "and its readonly library declaration");
+    } else {
+      loom_x86_hal_library_data_t data;
+      status = loom_x86_hal_library_build(
+          request->identifier, library_entries, library_entry_count,
+          library_symbol_index, section_count, request->scratch_arena, &data);
+      if (iree_status_is_ok(status)) {
+        status = iree_arena_grow_array(request->scratch_arena, fixups.count,
+                                       fixups.count + data.fixup_count,
+                                       sizeof(*fixups.values), &fixups.capacity,
+                                       (void**)&fixups.values);
+      }
+      if (iree_status_is_ok(status)) {
+        memcpy(fixups.values + fixups.count, data.fixups,
+               data.fixup_count * sizeof(*fixups.values));
+        fixups.count += data.fixup_count;
+        loom_native_object_symbol_t* symbol = &symbols[library_symbol_index];
+        symbol->section_contribution_index = section_count;
+        symbol->binding = LOOM_NATIVE_OBJECT_SYMBOL_BINDING_LOCAL;
+        symbol->size = data.section.contents.data_length;
+        sections[section_count++] = data.section;
+      }
     }
   }
   iree_io_stream_t* stream = NULL;
@@ -424,8 +512,13 @@ static iree_status_t loom_x86_module_build_artifact(
                 .type = 2,  // R_X86_64_PC32.
                 .image_encoding = LOOM_NATIVE_ELF_FIXUP_PC_RELATIVE_32,
             },
+        [LOOM_X86_RELOCATION_POINTER] =
+            {
+                .type = 1,  // R_X86_64_64.
+                .image_encoding = LOOM_NATIVE_ELF_FIXUP_ABSOLUTE_64,
+            },
     };
-    if (file_type == LOOM_NATIVE_ELF_FILE_TYPE_DYN) {
+    if (format != LOOM_X86_MODULE_FORMAT_OBJECT) {
       const loom_native_elf_image_options_t options = {
           .machine = LOOM_NATIVE_ELF_MACHINE_X86_64,
           .page_alignment = 4096,
@@ -454,12 +547,12 @@ static iree_status_t loom_x86_module_build_artifact(
 iree_status_t loom_x86_module_emit(
     const loom_target_emit_request_t* request,
     const loom_target_fact_type_t* target_fact_type,
-    loom_native_elf_file_type_t file_type, bool* out_emitted,
+    loom_x86_module_format_t format, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
   const iree_arena_checkpoint_t checkpoint =
       iree_arena_checkpoint_save(request->scratch_arena);
   iree_status_t status = loom_x86_module_build_artifact(
-      request, target_fact_type, file_type, out_emitted, out_artifact);
+      request, target_fact_type, format, out_emitted, out_artifact);
   iree_arena_checkpoint_restore(&checkpoint);
   return status;
 }

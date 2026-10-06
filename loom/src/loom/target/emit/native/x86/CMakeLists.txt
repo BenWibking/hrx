@@ -105,6 +105,28 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    hal_library
+  HDRS
+    "hal_library.h"
+  SRCS
+    "hal_library.c"
+  DEPS
+    ::encoding
+    iree::base
+    iree::base::core_headers
+    iree::base::internal::arena
+    iree::hal::drivers::task::executable::library::abi
+    loom::ir
+    loom::ops::low
+    loom::target::emit::native::object
+    loom::target::entry_selection
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     module
   HDRS
     "module.h"
@@ -113,6 +135,7 @@ loom_cc_library(
   DEPS
     ::abi
     ::function
+    ::hal_library
     iree::base
     iree::base::internal::arena
     iree::io::stream
@@ -181,6 +204,50 @@ loom_cc_test(
   DEPS
     iree::testing::gtest
     iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.x86"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_generated_file(
+  NAME
+    hal_dispatch_image
+  GENERATOR
+    loom::tools::loom-compile::loom-compile
+  OUTPUT
+    "hal_dispatch.so"
+  OUTPUT_FLAG
+    "--output="
+  ARGS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/target/emit/native/x86/test/hal_dispatch.loom"
+    "--target=x86:scalar"
+    "--format=x86-hal"
+  INPUTS
+    "test/hal_dispatch.loom"
+  TESTONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND IREE_ARCH STREQUAL "x86_64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+loom_cc_test(
+  NAME
+    hal_dispatch_test
+  SRCS
+    "hal_dispatch_test.cc"
+  DATA
+    "${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so"
+  DEPS
+    iree::async
+    iree::async::util::proactor_pool
+    iree::base
+    iree::base::tooling::flags
+    iree::hal
+    iree::hal::drivers
+    iree::testing::gtest
+    iree::testing::gtest_main
+  ARGS
+    "--executable_file={{${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so}}"
   LABELS
     "iree-build-requirement=loom.target.arch.x86"
 )
