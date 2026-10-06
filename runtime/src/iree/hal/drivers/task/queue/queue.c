@@ -3207,10 +3207,20 @@ static void iree_hal_task_queue_io_write_completion(
 // for the duration of the read but is always correct.
 static iree_status_t iree_hal_task_queue_drain_read_sync(
     iree_hal_task_queue_t* queue, iree_hal_task_queue_op_t* operation) {
-  iree_status_t status =
-      iree_hal_file_read(operation->read.hal_file, operation->read.file_offset,
-                         operation->read.buffer, operation->read.buffer_offset,
-                         operation->read.length);
+  iree_hal_buffer_mapping_t mapping = {{0}};
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
+      operation->read.buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+      IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+      operation->read.buffer_offset, operation->read.length, &mapping));
+  iree_status_t status = iree_hal_file_read(
+      operation->read.hal_file, operation->read.file_offset, mapping.contents);
+  if (iree_status_is_ok(status) &&
+      !iree_all_bits_set(iree_hal_buffer_memory_type(operation->read.buffer),
+                         IREE_HAL_MEMORY_TYPE_HOST_COHERENT)) {
+    status = iree_hal_buffer_mapping_flush_range(&mapping, 0,
+                                                 operation->read.length);
+  }
+  status = iree_status_join(status, iree_hal_buffer_unmap_range(&mapping));
   if (iree_status_is_ok(status)) {
     iree_hal_task_queue_op_complete(operation);
   } else {
@@ -3275,10 +3285,24 @@ static iree_status_t iree_hal_task_queue_drain_read(
 // Synchronous fallback for WRITE when no async file handle is available.
 static iree_status_t iree_hal_task_queue_drain_write_sync(
     iree_hal_task_queue_t* queue, iree_hal_task_queue_op_t* operation) {
-  iree_status_t status = iree_hal_file_write(
-      operation->write.hal_file, operation->write.file_offset,
-      operation->write.buffer, operation->write.buffer_offset,
-      operation->write.length);
+  iree_hal_buffer_mapping_t mapping = {{0}};
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
+      operation->write.buffer, IREE_HAL_MAPPING_MODE_SCOPED,
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      operation->write.buffer_offset, operation->write.length, &mapping));
+  iree_status_t status = iree_ok_status();
+  if (!iree_all_bits_set(iree_hal_buffer_memory_type(operation->write.buffer),
+                         IREE_HAL_MEMORY_TYPE_HOST_COHERENT)) {
+    status = iree_hal_buffer_mapping_invalidate_range(&mapping, 0,
+                                                      operation->write.length);
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_hal_file_write(
+        operation->write.hal_file, operation->write.file_offset,
+        iree_make_const_byte_span(mapping.contents.data,
+                                  mapping.contents.data_length));
+  }
+  status = iree_status_join(status, iree_hal_buffer_unmap_range(&mapping));
   if (iree_status_is_ok(status)) {
     iree_hal_task_queue_op_complete(operation);
   } else {

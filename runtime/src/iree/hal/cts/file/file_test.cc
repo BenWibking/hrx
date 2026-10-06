@@ -602,12 +602,12 @@ TEST_P(FileTest, SynchronousReadRejectsRangePastFileEnd) {
   TestFile file;
   ASSERT_TRUE(TryCreateTestFile(provider, IREE_HAL_MEMORY_ACCESS_READ,
                                 std::vector<uint8_t>(16, 0), &file));
-  Ref<iree_hal_buffer_t> target_buffer = CreateZeroedBuffer(16);
+  uint8_t target[2] = {};
 
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_OUT_OF_RANGE,
-      iree_hal_file_read(file.get(), /*file_offset=*/15, target_buffer.get(),
-                         /*buffer_offset=*/0, /*length=*/2));
+      iree_hal_file_read(file.get(), /*file_offset=*/15,
+                         iree_make_byte_span(target, sizeof(target))));
 }
 
 TEST_P(FileTest, SynchronousWriteRejectsReadOnlyFile) {
@@ -615,12 +615,86 @@ TEST_P(FileTest, SynchronousWriteRejectsReadOnlyFile) {
   TestFile file;
   ASSERT_TRUE(TryCreateTestFile(provider, IREE_HAL_MEMORY_ACCESS_READ,
                                 std::vector<uint8_t>(16, 0), &file));
-  Ref<iree_hal_buffer_t> source_buffer = CreateZeroedBuffer(16);
+  const uint8_t source = 0;
 
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_PERMISSION_DENIED,
-      iree_hal_file_write(file.get(), /*file_offset=*/0, source_buffer.get(),
-                          /*buffer_offset=*/0, /*length=*/1));
+      iree_hal_file_write(file.get(), /*file_offset=*/0,
+                          iree_make_const_byte_span(&source, sizeof(source))));
+}
+
+TEST_P(FileTest, SynchronousHostSpans) {
+  ForEachProvider([&](const FileProvider& provider) {
+    std::vector<uint8_t> file_contents(256);
+    for (size_t i = 0; i < file_contents.size(); ++i) {
+      file_contents[i] = static_cast<uint8_t>(i);
+    }
+    TestFile file;
+    if (!TryCreateTestFile(provider, IREE_HAL_MEMORY_ACCESS_ALL, file_contents,
+                           &file)) {
+      return;
+    }
+    ASSERT_TRUE(iree_hal_file_supports_synchronous_io(file.get()));
+
+    // Unaligned host spans need no HAL allocation, import or public mapping.
+    std::vector<uint8_t> target(80, 0xA5);
+    IREE_ASSERT_OK(iree_hal_file_read(
+        file.get(), 19, iree_make_byte_span(target.data() + 3, 67)));
+    std::vector<uint8_t> expected_target(80, 0xA5);
+    std::copy_n(file_contents.data() + 19, 67, expected_target.data() + 3);
+    EXPECT_THAT(target, ContainerEq(expected_target));
+
+    const std::vector<uint8_t> source = target;
+    IREE_ASSERT_OK(iree_hal_file_write(
+        file.get(), 103, iree_make_const_byte_span(source.data() + 7, 59)));
+    std::copy_n(source.data() + 7, 59, file_contents.data() + 103);
+
+    // Empty spans permit a null pointer and preserve the logical file bound.
+    IREE_ASSERT_OK(iree_hal_file_read(file.get(), file_contents.size(),
+                                      iree_byte_span_empty()));
+    IREE_ASSERT_OK(iree_hal_file_write(file.get(), file_contents.size(),
+                                       iree_const_byte_span_empty()));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_OUT_OF_RANGE,
+        iree_hal_file_read(file.get(), file_contents.size() + 1,
+                           iree_byte_span_empty()));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_OUT_OF_RANGE,
+        iree_hal_file_write(file.get(), file_contents.size() + 1,
+                            iree_const_byte_span_empty()));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_OUT_OF_RANGE,
+        iree_hal_file_write(file.get(), file_contents.size() - 1,
+                            iree_make_const_byte_span(source.data(), 2)));
+    EXPECT_THAT(file.ReadContents(0, file_contents.size()),
+                ContainerEq(file_contents));
+  });
+}
+
+TEST_P(FileTest, SynchronousSpansRequireStorage) {
+  const FileProvider provider = {"memory_file", FileProviderKind::kMemory};
+  TestFile file;
+  ASSERT_TRUE(TryCreateTestFile(provider, IREE_HAL_MEMORY_ACCESS_ALL,
+                                std::vector<uint8_t>(16, 0), &file));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_file_read(file.get(), 0, iree_make_byte_span(nullptr, 1)));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      iree_hal_file_write(file.get(), 0,
+                          iree_make_const_byte_span(nullptr, 1)));
+}
+
+TEST_P(FileTest, SynchronousReadRejectsWriteOnlyFile) {
+  const FileProvider provider = {"memory_file", FileProviderKind::kMemory};
+  TestFile file;
+  ASSERT_TRUE(TryCreateTestFile(provider, IREE_HAL_MEMORY_ACCESS_WRITE,
+                                std::vector<uint8_t>(16, 0), &file));
+  uint8_t target = 0;
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_file_read(file.get(), 0,
+                         iree_make_byte_span(&target, sizeof(target))));
 }
 
 TEST_P(AsyncFileTest, ZeroLengthReadForwardsDependencies) {

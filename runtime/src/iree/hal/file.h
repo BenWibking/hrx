@@ -143,21 +143,26 @@ IREE_API_EXPORT iree_status_t iree_hal_file_validate_range(
 IREE_API_EXPORT bool iree_hal_file_supports_synchronous_io(
     iree_hal_file_t* file);
 
-// Synchronously reads a segment of |file| into |buffer|.
-// Blocks the caller until completed. The file must allow read access and the
-// buffer must allow write access. Only available if
+// Synchronously reads a segment of |file| into |target|.
+// Blocks the caller until the entire span is filled or an error occurs. The
+// file must allow read access. The caller supplies writable host storage and
+// owns its synchronization, cache maintenance and lifetime through this call.
+// An error may leave a partially filled span. Empty spans are valid, including
+// at the end of the file. Only available if
 // iree_hal_file_supports_synchronous_io is true.
-IREE_API_EXPORT iree_status_t iree_hal_file_read(
-    iree_hal_file_t* file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length);
+IREE_API_EXPORT iree_status_t iree_hal_file_read(iree_hal_file_t* file,
+                                                 uint64_t file_offset,
+                                                 iree_byte_span_t target);
 
-// Synchronously writes a segment of |buffer| into |file|.
-// Blocks the caller until completed. The buffer must allow read access and the
-// file must allow write access. Only available if
+// Synchronously writes |source| into a segment of |file|.
+// Blocks the caller until the entire span is written or an error occurs. The
+// file must allow write access. The caller supplies readable host storage and
+// owns its synchronization, cache maintenance and lifetime through this call.
+// An error may leave a partially written file range. Empty spans are valid,
+// including at the end of the file. Only available if
 // iree_hal_file_supports_synchronous_io is true.
 IREE_API_EXPORT iree_status_t iree_hal_file_write(
-    iree_hal_file_t* file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length);
+    iree_hal_file_t* file, uint64_t file_offset, iree_const_byte_span_t source);
 
 //===----------------------------------------------------------------------===//
 // iree_hal_file_t implementation details
@@ -176,14 +181,10 @@ typedef struct iree_hal_file_vtable_t {
 
   bool(IREE_API_PTR* supports_synchronous_io)(iree_hal_file_t* file);
   iree_status_t(IREE_API_PTR* read)(iree_hal_file_t* file, uint64_t file_offset,
-                                    iree_hal_buffer_t* buffer,
-                                    iree_device_size_t buffer_offset,
-                                    iree_device_size_t length);
+                                    iree_byte_span_t target);
   iree_status_t(IREE_API_PTR* write)(iree_hal_file_t* file,
                                      uint64_t file_offset,
-                                     iree_hal_buffer_t* buffer,
-                                     iree_device_size_t buffer_offset,
-                                     iree_device_size_t length);
+                                     iree_const_byte_span_t source);
 } iree_hal_file_vtable_t;
 IREE_HAL_ASSERT_VTABLE_LAYOUT(iree_hal_file_vtable_t);
 

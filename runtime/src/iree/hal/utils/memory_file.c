@@ -351,22 +351,20 @@ static bool iree_hal_memory_file_supports_synchronous_io(
 
 static iree_status_t iree_hal_memory_file_read(iree_hal_file_t* base_file,
                                                uint64_t file_offset,
-                                               iree_hal_buffer_t* buffer,
-                                               iree_device_size_t buffer_offset,
-                                               iree_device_size_t length) {
+                                               iree_byte_span_t target) {
   iree_hal_memory_file_t* file = iree_hal_memory_file_cast(base_file);
-  iree_byte_span_t file_contents = file->storage->contents;
-  return iree_hal_buffer_map_write(buffer, buffer_offset,
-                                   file_contents.data + file_offset, length);
+  memcpy(target.data, file->storage->contents.data + file_offset,
+         target.data_length);
+  return iree_ok_status();
 }
 
-static iree_status_t iree_hal_memory_file_write(
-    iree_hal_file_t* base_file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+static iree_status_t iree_hal_memory_file_write(iree_hal_file_t* base_file,
+                                                uint64_t file_offset,
+                                                iree_const_byte_span_t source) {
   iree_hal_memory_file_t* file = iree_hal_memory_file_cast(base_file);
-  iree_byte_span_t file_contents = file->storage->contents;
-  return iree_hal_buffer_map_read(buffer, buffer_offset,
-                                  file_contents.data + file_offset, length);
+  memcpy(file->storage->contents.data + file_offset, source.data,
+         source.data_length);
+  return iree_ok_status();
 }
 
 static const iree_hal_file_vtable_t iree_hal_memory_file_vtable = {
