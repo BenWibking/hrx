@@ -113,6 +113,14 @@ recording, and finalization copies staged command bytes into mapped GPU storage
 when needed. [Reset contract][pal-reset-contract] [Retained chunks][pal-reset]
 [Chunk selection][pal-retained] [Finalization][pal-finalize]
 
+The new recording's cache history has a different scope from the lifetime of
+those retained chunks. PAL initializes conservative shader/cache state because
+other work on the same queue can remain outstanding. Its nested-execution path
+also carries the callee's recorded BLT/cache effects into the caller. The
+[execution and cache history](cache.md#recorded-execution-and-cache-history)
+describes those summaries and the distinct waits and cache actions that clear
+them; resetting a summary does not establish storage retirement.
+
 PAL's automatic allocator path has a different owner check: root submit/done
 counts and generation tracking determine idleness. The compute postamble
 waits for shaders because they may read or write command memory, then increments
