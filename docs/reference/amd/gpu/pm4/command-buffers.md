@@ -20,6 +20,11 @@ write-pointer visibility and doorbell protocols for KFD, scheduled DRM and
 DRM user queues. Those transport rules surround the indirect-command
 storage and entry/return protocol described here.
 
+[Conditional execution](conditional.md) describes `COND_EXEC` inline ranges
+and `COND_INDIRECT_BUFFER` pass/fail blocks. The conditional form shares the
+ordinary IB opcode but has a different packet layout and comparison operands.
+Its selected branches retain the command ownership described here.
+
 ## Representation and entry context
 
 The ordinary MEC INDIRECT_BUFFER form is four DWORDs, opcode `0x3f`:

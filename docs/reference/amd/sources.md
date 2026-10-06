@@ -6,8 +6,8 @@ specific definition, builder, caller, or resource owner that supports a claim.
 
 | Source | Revision | Role |
 | --- | --- | --- |
-| [PAL][pal] | `c5e800072a32f68b6ccc4422936d96167c6e0728` | Generation-specific packet definitions, command builders, cache transitions, and command-storage ownership. |
-| [Mesa][mesa] | `0ba4b08edc65075e9346d20d5310261939aaaf48` | RADV/radeonsi command composition, memory policy, synchronization, and native submission. |
+| [PAL][pal] | `c5e800072a32f68b6ccc4422936d96167c6e0728` | Generation-specific packet definitions, command builders, cache transitions, conditional compute blocks and Boolean sampling, and command-storage ownership. |
+| [Mesa][mesa] | `0ba4b08edc65075e9346d20d5310261939aaaf48` | RADV/radeonsi command composition, memory policy, synchronization, MEC predicate normalization and guarded command extents, and native submission. |
 | [Mesa counter, barrier and shader policy][mesa-counter-barriers] | `44cc4ca677a4752a10c14194289bde5a6468675e` | GFX12 performance-query admission, event selection and SQG sample ordering; consumer-stage selection for graphics PWS waits; compiler-selected MEM_ORDERED mode, linked-program requirements and per-SA compute affinity. |
 | [ROCm systems][rocm] | `8d57824901ffa7d961c00a37d055a108723b93ca` | ROCr queue/signal/copy protocols, HIP/CLR consumers, native queue construction, and profiling. |
 | [ROCm XIO][xio] | `cbe97e6392066bef7901121965ffadad19404da4` | Device-authored SDMA packets, reservation/commit protocols and native queue-resource ownership; compared with the related rocSHMEM Anvil implementation in ROCm systems. |

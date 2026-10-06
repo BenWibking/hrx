@@ -46,6 +46,7 @@ right to that trailer. [Compute postamble][postamble]
 | [Compute affinity and queue priority](../scheduling.md) | `COMPUTE_STATIC_THREAD_MGMT_SE*`, KMD mask composition, per-SE preambles and the distinct KFD queue controls. |
 | [Group memory](lds.md) | Static and dynamic LDS allocation, workgroup synchronization and resource rebinding. |
 | [Indirect dispatch](indirect.md) | Memory-resident workgroup counts, compiler inputs and producer-to-fetch dependencies. |
+| [Conditional execution](conditional.md) | COND_EXEC ranges, COND_INDIRECT_BUFFER branches, Boolean sampling and reuse, and PRED_EXEC virtual-XCC selection. |
 | [Command buffers](command-buffers.md) | First-level INDIRECT_BUFFER entry/return, CHAIN postambles and continuations, publication, WDDM native retirement and completed-use rebuild. |
 | [Cross-queue handoff](handoff.md) | Release, control signaling, wait, consumer acquire and last-use ownership. |
 | [Command-processor DMA](dma.md) | DMA_DATA copies, fills, prefetch, completion discrepancies and cache routing. |
