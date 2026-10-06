@@ -22,14 +22,15 @@ extern "C" {
 // declarations supply complete external extents, including auxiliary services;
 // range operands select relocation spans within those extents. Initialization
 // loads already complete workers and never adds a firing loop or port protocol.
-// Invocation contains runtime-address relocations and explicit final DMA waits.
-// Low verification has established closed signatures, command phases, and
-// complete physical worker definitions. Construction admits evaluated physical
-// operands against the device profile. Input diagnostics leave |out_valid|
-// false and no entry may be consumed; statuses report infrastructure failures.
-// Referenced workers are materialized Low definitions: source specialization,
-// call expansion and resource binding precede this physical form. Their private
-// storage and read-only data are placed alongside the resident data ranges.
+// Invocation contains runtime-address relocations and explicit completion
+// waits. Low verification has established closed signatures, command phases,
+// and complete physical worker definitions. Construction admits evaluated
+// physical operands against the device profile. Input diagnostics leave
+// |out_valid| false and no entry may be consumed; statuses report
+// infrastructure failures. Referenced workers are materialized Low definitions:
+// source specialization, call expansion and resource binding precede this
+// physical form. Their private storage and read-only data are placed alongside
+// the resident data ranges.
 //
 // The amd.xdna.aie2p.configuration representation has three operand classes:
 // config.scalar contains exact nonnegative integers, config.binding identifies
@@ -51,6 +52,10 @@ extern "C" {
 //   write32 address, value; write.mask32 address, mask, value
 //   write.block32 (address) [words...]
 //     Perform ordered physical writes within one tile's register aperture.
+//   wait.mask32 address, mask, value
+//     Waits until (register & mask) == value before issuing later commands.
+//     The value contains only bits selected by the mask. The wait does not
+//     modify the register and is available in initialization and invocation.
 //   write.address address, span
 //     Writes the span's relocated runtime address as two consecutive words.
 //   shim.descriptor address, span, length, flags, dim0, dim1, dim2, iter,

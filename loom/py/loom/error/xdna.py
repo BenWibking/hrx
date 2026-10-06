@@ -832,9 +832,9 @@ ERR_XDNA_045 = ErrorDef(
     domain=ErrorDomain.XDNA,
     code=45,
     severity=Severity.ERROR,
-    summary="Configuration write crosses a physical tile aperture.",
+    summary="Configuration register access crosses a physical tile aperture.",
     message=(
-        "configuration write at address {address} has {word_count} words "
+        "configuration register access at address {address} has {word_count} words "
         "and exceeds one tile in the {columns}-column partition"
     ),
     params=(
@@ -898,6 +898,18 @@ ERR_XDNA_049 = ErrorDef(
     ),
 )
 
+ERR_XDNA_052 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=52,
+    severity=Severity.ERROR,
+    summary="Register wait requires bits outside its comparison mask.",
+    message=(
+        "wait.mask32 value {value} sets bits outside mask {mask}; "
+        "the masked register cannot match this value"
+    ),
+    params=(ErrorParam("mask", ParamKind.U32), ErrorParam("value", ParamKind.U32)),
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_002,
@@ -949,4 +961,5 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_047,
     ERR_XDNA_048,
     ERR_XDNA_049,
+    ERR_XDNA_052,
 )

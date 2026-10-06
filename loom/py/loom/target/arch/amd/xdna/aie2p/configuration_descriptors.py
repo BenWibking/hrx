@@ -148,6 +148,9 @@ _DESCRIPTORS = (
         "write.mask32", (_operand("address"), _operand("mask"), _operand("value"))
     ),
     _instruction(
+        "wait.mask32", (_operand("address"), _operand("mask"), _operand("value"))
+    ),
+    _instruction(
         "write.block32",
         (_operand("address"), _operand("words", variadic=True)),
         form=AsmForm(

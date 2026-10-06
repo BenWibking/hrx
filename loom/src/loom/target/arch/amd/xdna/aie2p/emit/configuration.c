@@ -271,7 +271,7 @@ static iree_status_t loom_aie2p_configuration_link(
   return iree_ok_status();
 }
 
-// Physical writes stay within one tile aperture in the declared partition.
+// Physical register accesses stay within one tile aperture in the partition.
 // Register meanings remain explicit in the authored configuration program.
 static iree_status_t loom_aie2p_configuration_check_address(
     loom_aie2p_configuration_emitter_t* emitter, const loom_op_t* op,
@@ -487,6 +487,20 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
             (loom_aie2p_program_register_mask_write32_t){WORD(0), WORD(1),
                                                          WORD(2)};
         break;
+      case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WAIT_MASK32: {
+        if (WORD(2) & ~WORD(1)) {
+          const loom_diagnostic_param_t params[] = {loom_param_u32(WORD(1)),
+                                                    loom_param_u32(WORD(2))};
+          status = loom_aie2p_configuration_diagnose(
+              emitter, op, LOOM_ERR_XDNA_052, params, IREE_ARRAYSIZE(params));
+          continue;
+        }
+        record.type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32;
+        record.value.register_mask_wait32 =
+            (loom_aie2p_program_register_mask_wait32_t){WORD(0), WORD(1),
+                                                        WORD(2)};
+        break;
+      }
       case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_BLOCK32: {
         uint32_t* words = NULL;
         const iree_host_size_t count = node->operand_count - 1;
@@ -658,6 +672,11 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
       case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WRITE32: {
         IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_address(
             emitter, op, record.value.register_mask_write32.address, 1));
+        break;
+      }
+      case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32: {
+        IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_address(
+            emitter, op, record.value.register_mask_wait32.address, 1));
         break;
       }
       case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_BLOCK_WRITE32: {

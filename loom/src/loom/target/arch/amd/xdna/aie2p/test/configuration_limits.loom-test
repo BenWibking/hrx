@@ -280,3 +280,84 @@ low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
 }
 
 // ----
+
+// ====
+// A wait value cannot require bits outside the comparison mask.
+// RUN: emit aie2p-xdna
+
+aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @completion() asm {
+  %columns = constant 1 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  %status = constant 2224128 : reg<aie2p.config.scalar : i64>
+  %mask = constant 5 : reg<aie2p.config.scalar : i64>
+  %value = constant 2 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/052 {mask="5", value="2"}
+  wait.mask32 %status, %mask, %value
+  return
+}
+
+// ----
+
+// ====
+// A wait cannot address a column outside the partition.
+// RUN: emit aie2p-xdna
+
+aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @completion() asm {
+  %columns = constant 1 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  %status = constant 33554432 : reg<aie2p.config.scalar : i64>
+  %mask = constant 1 : reg<aie2p.config.scalar : i64>
+  %value = constant 1 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/045 {address="33554432", word_count="1", columns="1"}
+  wait.mask32 %status, %mask, %value
+  return
+}
+
+// ----
+
+// ====
+// Wait masks retain their physical word width.
+// RUN: emit aie2p-xdna
+
+aie2p.target<configuration> @configuration_target {device_profile = "amd.xdna.strix_halo.17f0_11"}
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) abi(array_program) @completion() asm {
+  %columns = constant 1 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
+  %status = constant 2224128 : reg<aie2p.config.scalar : i64>
+  %mask = constant 4294967296 : reg<aie2p.config.scalar : i64>
+  %value = constant 1 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/041 {operand_name="mask", value="4294967296", minimum="0", maximum="4294967295"}
+  wait.mask32 %status, %mask, %value
+  return
+}
+
+// ----

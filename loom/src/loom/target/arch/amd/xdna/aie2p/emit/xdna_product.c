@@ -178,6 +178,8 @@ static uint32_t loom_aie2p_xdna_native_record_size(
       return 24;
     case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WRITE32:
       return 28;
+    case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32:
+      return 32;
     case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_BLOCK_WRITE32:
       return 16 +
              (uint32_t)record->value.register_block_write32.word_count * 4u;
@@ -240,6 +242,16 @@ static void loom_aie2p_xdna_native_record(
       iree_unaligned_store_le_u32(storage + 20,
                                   record->value.register_mask_write32.mask);
       iree_unaligned_store_le_u32(storage + 24, 28);
+      break;
+    case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32:
+      storage[0] = 4;
+      iree_unaligned_store_le_u32(storage + 8,
+                                  record->value.register_mask_wait32.address);
+      iree_unaligned_store_le_u32(storage + 16,
+                                  record->value.register_mask_wait32.value);
+      iree_unaligned_store_le_u32(storage + 20,
+                                  record->value.register_mask_wait32.mask);
+      iree_unaligned_store_le_u32(storage + 24, 32);
       break;
     case LOOM_AIE2P_PROGRAM_RECORD_REGISTER_BLOCK_WRITE32: {
       const loom_aie2p_program_register_block_write32_t* block =
@@ -694,10 +706,10 @@ iree_status_t loom_aie2p_xdna_product_write(
     const loom_aie2p_xdna_entry_t* entry = &product->entries[i];
     loom_aie2p_xdna_entry_layout_t* layout = &layouts[i];
     const uint32_t first_load = segment_count;
-    loom_aie2p_xdna_emit_entry(
-        entry, i, profile, family, columns, memory_rows,
-        linked_sections_by_tile + layout->first_tile, layout, sections,
-        &section_count, segments, &segment_count);
+    loom_aie2p_xdna_emit_entry(entry, i, profile, family, columns, memory_rows,
+                               linked_sections_by_tile + layout->first_tile,
+                               layout, sections, &section_count, segments,
+                               &segment_count);
     const iree_xdna_elf_allocation_record_t allocation = {
         .domain = IREE_XDNA_ELF_ALLOCATION_DOMAIN_COMMAND,
         .byte_length =

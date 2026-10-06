@@ -23,6 +23,7 @@ typedef enum loom_aie2p_program_record_type_e {
   LOOM_AIE2P_PROGRAM_RECORD_REGISTER_BLOCK_WRITE32 = 3,
   LOOM_AIE2P_PROGRAM_RECORD_TILE_PROGRAM_LOAD = 4,
   LOOM_AIE2P_PROGRAM_RECORD_DMA_TASK_WAIT = 5,
+  LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32 = 6,
 } loom_aie2p_program_record_type_t;
 
 // One complete 32-bit configuration-register write.
@@ -42,6 +43,16 @@ typedef struct loom_aie2p_program_register_mask_write32_t {
   // Positioned register value; bits outside mask are ignored.
   uint32_t value;
 } loom_aie2p_program_register_mask_write32_t;
+
+// Waits until (register & mask) == value before issuing later commands.
+typedef struct loom_aie2p_program_register_mask_wait32_t {
+  // Absolute AIE array register address.
+  uint32_t address;
+  // Register bits participating in the comparison.
+  uint32_t mask;
+  // Required positioned value; bits outside the mask are zero.
+  uint32_t value;
+} loom_aie2p_program_register_mask_wait32_t;
 
 // One contiguous sequence of 32-bit configuration-register writes.
 typedef struct loom_aie2p_program_register_block_write32_t {
@@ -82,6 +93,8 @@ typedef struct loom_aie2p_program_record_t {
     loom_aie2p_program_register_write32_t register_write32;
     // REGISTER_MASK_WRITE32 payload.
     loom_aie2p_program_register_mask_write32_t register_mask_write32;
+    // REGISTER_MASK_WAIT32 payload.
+    loom_aie2p_program_register_mask_wait32_t register_mask_wait32;
     // REGISTER_BLOCK_WRITE32 payload.
     loom_aie2p_program_register_block_write32_t register_block_write32;
     // TILE_PROGRAM_LOAD payload.

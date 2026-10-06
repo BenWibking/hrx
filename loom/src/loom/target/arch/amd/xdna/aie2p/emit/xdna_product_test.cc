@@ -144,7 +144,7 @@ TEST_F(XdnaProductTest, PreservesRequirementsIndependentOfWorkerTopology) {
   }
 }
 
-TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
+TEST_F(XdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   const loom_xdna_device_profile_t* profile =
       loom_xdna_device_profile_lookup(IREE_SV("amd.xdna.strix_halo.17f0_11"));
   ASSERT_NE(profile, nullptr);
@@ -243,14 +243,19 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
       /*.contribution=*/&contribution,
       /*.linked_tile=*/&linked_tile,
   };
-  constexpr uint32_t kActivationAddress = 0x01234000;
-  constexpr uint32_t kActivationValue = 0x0000CAFE;
-  loom_aie2p_program_record_t records[2] = {};
+  constexpr uint32_t kActivationAddress = 0x02232000;
+  constexpr uint32_t kActivationValue = 1;
+  constexpr uint32_t kCompletionAddress = 0x0221F0F0;
+  loom_aie2p_program_record_t records[4] = {};
   records[0].type = LOOM_AIE2P_PROGRAM_RECORD_TILE_PROGRAM_LOAD;
   records[0].value.tile_program_load.tile_program_index = 0;
   records[1].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_WRITE32;
   records[1].value.register_write32.address = kActivationAddress;
   records[1].value.register_write32.value = kActivationValue;
+  records[2].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_MASK_WAIT32;
+  records[2].value.register_mask_wait32 = {kCompletionAddress, 0x3F, 1};
+  records[3].type = LOOM_AIE2P_PROGRAM_RECORD_REGISTER_WRITE32;
+  records[3].value.register_write32 = {kActivationAddress, 0};
   loom_aie2p_array_program_t array_program = {};
   array_program.array_records = records;
   array_program.array_record_count = IREE_ARRAYSIZE(records);
@@ -270,20 +275,11 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
       /*.entry_count=*/1,
   };
 
-  iree_arena_block_pool_t block_pool;
-  iree_arena_block_pool_initialize(4096, iree_allocator_system(), &block_pool);
-  iree_arena_allocator_t arena;
-  iree_arena_initialize(&block_pool, &arena);
-  iree_io_stream_t* stream = nullptr;
-  IREE_ASSERT_OK(iree_io_vec_stream_create(
-      IREE_IO_STREAM_MODE_READABLE | IREE_IO_STREAM_MODE_WRITABLE |
-          IREE_IO_STREAM_MODE_SEEKABLE,
-      4096, iree_allocator_system(), &stream));
-  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream, &arena));
+  IREE_ASSERT_OK(loom_aie2p_xdna_product_write(&product, stream_, &arena_));
 
-  std::vector<uint8_t> file_bytes(iree_io_stream_length(stream));
-  IREE_ASSERT_OK(iree_io_stream_seek(stream, IREE_IO_STREAM_SEEK_SET, 0));
-  IREE_ASSERT_OK(iree_io_stream_read(stream, file_bytes.size(),
+  std::vector<uint8_t> file_bytes(iree_io_stream_length(stream_));
+  IREE_ASSERT_OK(iree_io_stream_seek(stream_, IREE_IO_STREAM_SEEK_SET, 0));
+  IREE_ASSERT_OK(iree_io_stream_read(stream_, file_bytes.size(),
                                      file_bytes.data(), nullptr));
   ASSERT_GE(file_bytes.size(), 52u);
   const uint32_t program_header_offset =
@@ -342,7 +338,7 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   EXPECT_EQ(load_offsets[2], 40u);
   EXPECT_EQ(load_offsets[3], 56u);
   EXPECT_EQ(load_offsets[4], 64u);
-  EXPECT_EQ(iree_unaligned_load_le_u32(transaction.data() + 8), 3u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(transaction.data() + 8), 5u);
 
   const uint32_t coordinate_address =
       ((uint32_t)kCoordinate.column << family->column_shift) |
@@ -372,9 +368,21 @@ TEST(Aie2pXdnaProductTest, LoadsInitializedTileSectionsBeforeActivation) {
   EXPECT_EQ(iree_unaligned_load_le_u32(activation + 16), kActivationValue);
   EXPECT_EQ(iree_unaligned_load_le_u32(activation + 20), 24u);
 
-  iree_io_stream_release(stream);
-  iree_arena_deinitialize(&arena);
-  iree_arena_block_pool_deinitialize(&block_pool);
+  // Firmware transaction 0.1's masked poll is a complete 32-byte record,
+  // including its reserved tail word. The stop write follows the poll.
+  const std::array<uint8_t, 32> completion = {
+      4, 0, 0, 0, 0,    0, 0, 0, 0xF0, 0xF0, 0x21, 2, 0, 0, 0, 0,
+      1, 0, 0, 0, 0x3F, 0, 0, 0, 32,   0,    0,    0, 0, 0, 0, 0,
+  };
+  ASSERT_GE(transaction.size(), 144u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(transaction.data() + 12), 144u);
+  EXPECT_EQ(0, std::memcmp(transaction.data() + 88, completion.data(),
+                           completion.size()));
+  const uint8_t* stop = transaction.data() + 120;
+  EXPECT_EQ(stop[0], 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(stop + 8), kActivationAddress);
+  EXPECT_EQ(iree_unaligned_load_le_u32(stop + 16), 0u);
+  EXPECT_EQ(iree_unaligned_load_le_u32(stop + 20), 24u);
 }
 
 }  // namespace

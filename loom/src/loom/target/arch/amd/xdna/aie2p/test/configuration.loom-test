@@ -91,12 +91,14 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initia
   %address = constant 2224128 : reg<aie2p.config.scalar : i64>
   %value = constant 1 : reg<aie2p.config.scalar : i64>
   write32 %address, %value
+  wait.mask32 %address, %value, %value
   return
 }
 
 low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke() asm {
   %address = constant 2224132 : reg<aie2p.config.scalar : i64>
   %value = constant 1 : reg<aie2p.config.scalar : i64>
+  wait.mask32 %address, %value, %value
   write32 %address, %value
   return
 }
@@ -105,5 +107,5 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 partition: 1 columns, 6 rows
 entries: 1
 entry 0: 0 bindings, 0 dynamic relocations
-  invocation 0: bytes=64 next=1
-  invocation 1: bytes=40 next=1
+  invocation 0: bytes=128 next=1
+  invocation 1: bytes=72 next=1
