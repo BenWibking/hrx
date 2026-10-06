@@ -41,8 +41,9 @@ typedef uint32_t loom_template_demand_id_t;
 #define LOOM_SYMBOL_REFERENCE_ATTR_INDEX_NONE ((uint8_t)UINT8_MAX)
 
 // Independent execution region ordinal plus one in execution_targets. Zero
-// inherits the owning function's context, including its specialized version.
-// A nonzero scope names an explicitly selected target, which may be unresolved.
+// names the owning function's context, including its specialized version.
+// A nonzero scope enters that environment's independently executing worker
+// contract, optionally selecting a different target first.
 typedef uint32_t loom_symbol_reference_execution_scope_id_t;
 
 // Classifies where a symbol reference occurrence was found.
@@ -191,12 +192,13 @@ typedef struct loom_symbol_reference_table_t {
   loom_symbol_reference_call_counts_t calls;
   // Number of valid module-local template providers.
   uint32_t template_provider_count;
-  // Explicit targets selected by independently executing regions. Regions
-  // without a target inherit their enclosing scope without adding rows.
+  // Target environments selected by independently executing regions. Nested
+  // regions inheriting an existing worker environment share its scope.
   struct {
-    // Target references borrowed from the analyzed module, in traversal order.
+    // References in traversal order. Null inherits the owning function's
+    // environment; an explicit unresolved reference selects an unbound worker.
     const loom_symbol_ref_t* values;
-    // Number of explicitly targeted execution regions.
+    // Number of distinct execution scopes.
     iree_host_size_t count;
   } execution_targets;
   // Abstract template.apply provider demands owned by module symbols.

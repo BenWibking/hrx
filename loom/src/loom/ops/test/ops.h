@@ -14,6 +14,7 @@
 
 #include "loom/ir/parameterized_attr.h"
 #include "loom/ops/op_defs.h"
+#include "loom/target/test/target_records.h"
 #include "loom/target/types.h"
 
 enum {
@@ -356,13 +357,6 @@ typedef enum loom_test_record_kind_e {
   LOOM_TEST_RECORD_KIND_ARTIFACT = 2,
   LOOM_TEST_RECORD_KIND_COUNT_ = 3,
 } loom_test_record_kind_e;
-
-// Synthetic target kind for target-like interface tests.
-typedef enum loom_test_target_kind_e {
-  LOOM_TEST_TARGET_KIND_LOW_CORE = 1,
-  LOOM_TEST_TARGET_KIND_QUIRKY = 2,
-  LOOM_TEST_TARGET_KIND_COUNT_ = 3,
-} loom_test_target_kind_t;
 
 // Synthetic sparse enum for descriptor-backed aggregate coverage.
 typedef enum loom_test_enum_array_attrs_required_values_e {

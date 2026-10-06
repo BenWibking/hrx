@@ -1095,8 +1095,8 @@ class RegionDef:
     execution_target: Optional target-symbol attribute selecting an independent
         execution environment for this region. An absent attribute inherits the
         enclosing target environment; an explicit unresolved target remains
-        independent. Regions without this contract execute in their parent's
-        context.
+        independent. The selected environment projects to its worker code
+        contract. Regions without this contract execute in their parent's context.
     """
 
     name: str

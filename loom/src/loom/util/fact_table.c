@@ -12,6 +12,7 @@
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/op_defs.h"
+#include "loom/target/facts_builder.h"
 #include "loom/util/fact_cfg.h"
 #include "loom/util/fact_loop.h"
 
@@ -609,8 +610,8 @@ static iree_status_t loom_value_fact_table_seed_region_target(
   if (descriptor && descriptor->execution_target_attr_index_plus_one) {
     const loom_attribute_t target = loom_op_const_attrs(
         op)[descriptor->execution_target_attr_index_plus_one - 1];
+    table->regions.has_independent_targets = true;
     if (!loom_attr_is_absent(target)) {
-      table->regions.has_independent_targets = true;
       target_facts = NULL;
       if (table->context.resolve_region_target.fn) {
         IREE_RETURN_IF_ERROR(table->context.resolve_region_target.fn(
@@ -618,6 +619,8 @@ static iree_status_t loom_value_fact_table_seed_region_target(
             loom_attr_as_symbol(target), &target_facts));
       }
     }
+    IREE_RETURN_IF_ERROR(loom_target_facts_builder_project_worker(
+        target_facts, table->transient_arena, &target_facts));
   }
   return loom_value_fact_table_set_region_target_scope(
       table, loom_op_regions(op)[region_index], target_facts);

@@ -196,8 +196,12 @@ _TargetKind = EnumDef(
     [
         EnumCase("low_core", 1, doc="Generic target-low test core."),
         EnumCase("quirky", 2, doc="Synthetic edge-case target."),
+        EnumCase("device", 3, doc="Device environment containing low_core workers."),
     ],
     doc="Synthetic target kind for target-like interface tests.",
+    c_type="loom_test_target_kind_t",
+    c_const_prefix="LOOM_TEST_TARGET_KIND",
+    c_include="loom/target/test/target_records.h",
 )
 
 _TemplateFlags = EnumDef(

@@ -642,7 +642,7 @@ func.def @entry() {
 
 TEST_F(SymbolReferencesTest, OccurrencesRetainContractAndRootRegionOrigins) {
   ModulePtr module = ParseModule(R"(
-target.generic<reference> @header_target
+test.target<low_core> @header_target
 func.decl @body_dependency()
 
 func.def target(@header_target) @single_root() {

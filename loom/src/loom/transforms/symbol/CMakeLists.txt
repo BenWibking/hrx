@@ -157,6 +157,7 @@ loom_cc_library(
     loom::rewrite::rewriter
     loom::target::condition
     loom::target::facts
+    loom::target::facts_builder
     loom::target::function_version
     loom::target::pass_environment
     loom::util::dominance

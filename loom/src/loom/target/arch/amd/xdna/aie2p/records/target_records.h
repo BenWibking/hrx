@@ -15,6 +15,14 @@
 extern "C" {
 #endif
 
+// Program contract selected by aie2p.target.
+typedef enum loom_aie2p_target_kind_e {
+  LOOM_AIE2P_TARGET_KIND_CORE = 1,
+  LOOM_AIE2P_TARGET_KIND_ARRAY = 2,
+  LOOM_AIE2P_TARGET_KIND_CONFIGURATION = 3,
+  LOOM_AIE2P_TARGET_KIND_COUNT_ = 4,
+} loom_aie2p_target_kind_t;
+
 // Target bundle rows selected by aie2p.target.
 extern const loom_target_bundle_table_t loom_aie2p_target_bundles;
 

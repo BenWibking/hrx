@@ -105,6 +105,10 @@ struct loom_target_callgraph_context_t {
 
   // Next explicit root context.
   loom_target_callgraph_context_t* next_root;
+
+  // Lazily projected independent worker context, including self for a leaf
+  // environment. All inherited strand occurrences share this projection.
+  loom_target_callgraph_context_t* worker_context;
 };
 
 typedef struct loom_target_callgraph_symbol_t {
@@ -458,29 +462,43 @@ static iree_status_t loom_target_callgraph_authored_context(
 
 static iree_status_t loom_target_callgraph_execution_context(
     loom_target_callgraph_state_t* state,
+    loom_target_callgraph_context_t* caller_context,
     loom_symbol_reference_execution_scope_id_t scope,
     loom_target_callgraph_context_t** out_context) {
-  if (state->execution_contexts == NULL) {
-    IREE_RETURN_IF_ERROR(
-        iree_allocator_malloc_array(iree_arena_allocator(state->pass->arena),
-                                    state->references.execution_targets.count,
-                                    sizeof(*state->execution_contexts),
-                                    (void**)&state->execution_contexts));
-  }
-  loom_target_callgraph_context_t** slot =
-      &state->execution_contexts[scope - 1];
-  if (*slot == NULL) {
-    const loom_symbol_ref_t target =
-        state->references.execution_targets.values[scope - 1];
-    const loom_target_facts_t* requirement = NULL;
-    if (loom_symbol_ref_is_valid(target)) {
+  const loom_symbol_ref_t target =
+      state->references.execution_targets.values[scope - 1];
+  if (loom_symbol_ref_is_valid(target)) {
+    if (state->execution_contexts == NULL) {
+      IREE_RETURN_IF_ERROR(
+          iree_allocator_malloc_array(iree_arena_allocator(state->pass->arena),
+                                      state->references.execution_targets.count,
+                                      sizeof(*state->execution_contexts),
+                                      (void**)&state->execution_contexts));
+    }
+    loom_target_callgraph_context_t** slot =
+        &state->execution_contexts[scope - 1];
+    if (*slot == NULL) {
+      const loom_target_facts_t* requirement = NULL;
       IREE_RETURN_IF_ERROR(loom_target_callgraph_target_requirement(
           state, target, &requirement));
+      IREE_RETURN_IF_ERROR(
+          loom_target_callgraph_authored_context(state, requirement, slot));
     }
-    IREE_RETURN_IF_ERROR(
-        loom_target_callgraph_authored_context(state, requirement, slot));
+    caller_context = *slot;
   }
-  *out_context = *slot;
+  if (caller_context->worker_context == NULL) {
+    const loom_target_facts_t* worker_facts = NULL;
+    IREE_RETURN_IF_ERROR(loom_target_facts_builder_project_worker(
+        caller_context->resolved_target.facts, state->version_owner->arena,
+        &worker_facts));
+    if (worker_facts == caller_context->resolved_target.facts) {
+      caller_context->worker_context = caller_context;
+    } else {
+      IREE_RETURN_IF_ERROR(loom_target_callgraph_authored_context(
+          state, worker_facts, &caller_context->worker_context));
+    }
+  }
+  *out_context = caller_context->worker_context;
   return iree_ok_status();
 }
 
@@ -868,7 +886,7 @@ static iree_status_t loom_target_callgraph_plan_reachable_rows(
       loom_target_callgraph_context_t* execution_context = caller_context;
       if (edge->execution_scope) {
         IREE_RETURN_IF_ERROR(loom_target_callgraph_execution_context(
-            state, edge->execution_scope, &execution_context));
+            state, caller_context, edge->execution_scope, &execution_context));
       }
 
       const loom_symbol_id_t callee_symbol_id = edge->target_symbol_id;

@@ -46,6 +46,9 @@ Aie2pTargetKind = EnumDef(
         ),
     ],
     doc="AIE2P target row selected by aie2p.target.",
+    c_type="loom_aie2p_target_kind_t",
+    c_const_prefix="LOOM_AIE2P_TARGET_KIND",
+    c_include="loom/target/arch/amd/xdna/aie2p/records/target_records.h",
 )
 
 aie2p_target = Op(

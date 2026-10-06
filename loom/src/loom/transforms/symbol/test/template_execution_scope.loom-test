@@ -214,3 +214,53 @@ pipeline.def public target(@construction) @publish_adjusted(%enabled: i1, %value
     }
   }
 }
+
+// ====
+
+// Provider applicability observes the worker contract before target callgraph
+// specialization. Lexical construction still sees its device environment.
+// RUN: pass select-templates{mode=final,rewrite=inline},canonicalize
+test.target<device> @device
+
+test.target<low_core> @core
+
+template.decl @scope_value() -> (i32)
+
+template.def<@scope_value> target(@device) @construction_value() -> (i32) {
+  %value = scalar.constant 7 : i32
+  template.return %value : i32
+}
+
+template.def<@scope_value> target(@core) @worker_value() -> (i32) {
+  %value = scalar.constant 11 : i32
+  template.return %value : i32
+}
+
+pipeline.def public target(@device) @publish_scopes() run(%output: channel<tile<2xi32>>) {
+  %construction = template.apply<@scope_value>() : () -> (i32)
+  pipeline.strand workers([0], [1], [1]) {
+    %worker = template.apply<@scope_value>() : () -> (i32)
+    %write, %record = channel.reserve %output : channel<tile<2xi32>> -> (write<tile<2xi32>>, view<2xi32>)
+    view.store %construction, %record[0] : i32, view<2xi32>
+    view.store %worker, %record[1] : i32, view<2xi32>
+    channel.publish %write : write<tile<2xi32>>
+  }
+}
+
+// ----
+test.target<device> @device
+
+test.target<low_core> @core
+
+template.decl @scope_value() -> (i32)
+
+pipeline.def public target(@device) @publish_scopes() run(%output: channel<tile<2xi32>>) {
+  %value$2 = scalar.constant 7 : i32
+  pipeline.strand workers([0], [1], [1]) {
+    %value = scalar.constant 11 : i32
+    %write, %record = channel.reserve %output : channel<tile<2xi32>> -> (write<tile<2xi32>>, view<2xi32>)
+    view.store %value$2, %record[0] : i32, view<2xi32>
+    view.store %value, %record[1] : i32, view<2xi32>
+    channel.publish %write : write<tile<2xi32>>
+  }
+}

@@ -50,6 +50,7 @@ loom_cc_library(
   DEPS
     iree::base
     loom::target::facts
+    loom::target::facts_builder
   PUBLIC
 )
 

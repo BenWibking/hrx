@@ -142,6 +142,7 @@ loom_cc_library(
         "//loom/src/loom/rewrite:rewriter",
         "//loom/src/loom/target:condition",
         "//loom/src/loom/target:facts",
+        "//loom/src/loom/target:facts_builder",
         "//loom/src/loom/target:function_version",
         "//loom/src/loom/target:pass_environment",
         "//loom/src/loom/util:dominance",

@@ -320,6 +320,7 @@ loom_cc_library(
     loom::ops::op_defs
     loom::ops::scalar::op_defs
     loom::target::facts
+    loom::target::facts_builder
   PUBLIC
 )
 

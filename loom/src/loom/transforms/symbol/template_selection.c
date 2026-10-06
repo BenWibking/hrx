@@ -34,6 +34,7 @@
 #include "loom/pass/value_facts.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/target/condition.h"
+#include "loom/target/facts_builder.h"
 #include "loom/target/pass_environment.h"
 #include "loom/transforms/symbol/inline_callables.h"
 #include "loom/transforms/symbol/symbol_pruning.h"
@@ -294,6 +295,10 @@ typedef struct loom_template_selection_state_t {
   // Concrete symbol references for this module snapshot.
   loom_symbol_reference_table_t references;
 
+  // Lazily projected worker environments indexed by retained execution scope.
+  // Projection happens once per independent scope, even for many applications.
+  loom_template_applicability_target_t** worker_targets;
+
   // Symbol-pruning policy shared with the liveness root classifier.
   loom_symbol_pruning_options_t pruning_options;
 
@@ -533,12 +538,39 @@ static iree_status_t loom_template_selection_resolve_application_target(
     return loom_template_selection_resolve_function_target(state, context,
                                                            out_target);
   }
-  *out_target = (loom_template_applicability_target_t){
-      .witness =
-          state->references.execution_targets.values[execution_scope - 1],
-  };
-  return loom_template_selection_lookup_target_facts(state, out_target->witness,
-                                                     &out_target->facts);
+  if (state->worker_targets == NULL) {
+    IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
+        iree_arena_allocator(state->arena),
+        state->references.execution_targets.count,
+        sizeof(*state->worker_targets), (void**)&state->worker_targets));
+  }
+  loom_template_applicability_target_t** slot =
+      &state->worker_targets[execution_scope - 1];
+  if (*slot == NULL) {
+    IREE_RETURN_IF_ERROR(
+        iree_arena_allocate(state->arena, sizeof(**slot), (void**)slot));
+    loom_template_applicability_target_t* target = *slot;
+    *target = (loom_template_applicability_target_t){
+        .witness =
+            state->references.execution_targets.values[execution_scope - 1],
+    };
+    if (loom_symbol_ref_is_valid(target->witness)) {
+      IREE_RETURN_IF_ERROR(loom_template_selection_lookup_target_facts(
+          state, target->witness, &target->facts));
+    } else {
+      IREE_RETURN_IF_ERROR(loom_template_selection_resolve_function_target(
+          state, context, target));
+    }
+    const loom_target_facts_t* source = target->facts;
+    IREE_RETURN_IF_ERROR(loom_target_facts_builder_project_worker(
+        source, state->arena, &target->facts));
+    if (target->facts != source) {
+      // The device symbol is not an identity witness for its worker contract.
+      target->witness = loom_symbol_ref_null();
+    }
+  }
+  *out_target = **slot;
+  return iree_ok_status();
 }
 
 static iree_status_t loom_template_selection_append_report_detail(
