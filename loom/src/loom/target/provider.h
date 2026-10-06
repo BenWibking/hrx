@@ -71,13 +71,14 @@ typedef iree_status_t (*loom_target_materialize_definition_fn_t)(
     loom_symbol_ref_t symbol, loom_location_id_t location);
 
 // Target disposition for semantic calls and retained low.func.call edges.
-typedef enum loom_target_low_call_policy_e {
-  // The target can preserve and emit the direct Low call boundary.
-  LOOM_TARGET_LOW_CALL_POLICY_DIRECT = 0,
-  // The target has no Low call ABI. Semantic edges must inline before physical
-  // representation selection; authored Low edges inline after normalization.
-  LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE = 1,
-} loom_target_low_call_policy_t;
+typedef enum loom_target_call_policy_e {
+  // The target can preserve and emit the direct call boundary.
+  LOOM_TARGET_CALL_POLICY_DIRECT = 0,
+  // The target cannot emit this call boundary. Semantic edges inline before
+  // physical representation selection; authored Low edges inline after
+  // normalization.
+  LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE = 1,
+} loom_target_call_policy_t;
 
 // Physical representation policy for source view values that survive across
 // function and CFG boundaries.
@@ -96,28 +97,42 @@ typedef enum loom_target_loop_predicate_carrier_e {
   LOOM_TARGET_LOOP_PREDICATE_CARRIER_I32 = 1,
 } loom_target_loop_predicate_carrier_t;
 
-// Selects Low call policy for one caller's resolved target context.
+// Selects call policy for one verified semantic or Low boundary.
 //
 // The query is intentionally per resolved caller rather than per module: one
-// module may carry versions owned by different target providers.
-typedef loom_target_low_call_policy_t (
-    *loom_target_select_low_call_policy_fn_t)(
-    const loom_resolved_target_t* resolved_target);
+// module may carry versions owned by different target providers. Semantic
+// callees remain source typed; Low callees have their selected physical
+// representation. |kind| makes that stage boundary explicit without requiring
+// every provider record to carry two policy hooks.
+typedef loom_target_call_policy_t (*loom_target_select_call_policy_fn_t)(
+    const loom_resolved_target_t* resolved_target, const loom_module_t* module,
+    loom_call_like_kind_t kind, loom_call_like_t call, loom_func_like_t callee);
 
-// Selects direct Low call preservation for every resolved target.
-static inline loom_target_low_call_policy_t
-loom_target_select_low_call_policy_direct(
-    const loom_resolved_target_t* resolved_target) {
+// Selects direct call preservation for every resolved target and call stage.
+static inline loom_target_call_policy_t loom_target_select_call_policy_direct(
+    const loom_resolved_target_t* resolved_target, const loom_module_t* module,
+    loom_call_like_kind_t kind, loom_call_like_t call,
+    loom_func_like_t callee) {
   (void)resolved_target;
-  return LOOM_TARGET_LOW_CALL_POLICY_DIRECT;
+  (void)module;
+  (void)kind;
+  (void)call;
+  (void)callee;
+  return LOOM_TARGET_CALL_POLICY_DIRECT;
 }
 
-// Selects required Low call inlining for every resolved target.
-static inline loom_target_low_call_policy_t
-loom_target_select_low_call_policy_require_inline(
-    const loom_resolved_target_t* resolved_target) {
+// Selects required call inlining for every resolved target and call stage.
+static inline loom_target_call_policy_t
+loom_target_select_call_policy_require_inline(
+    const loom_resolved_target_t* resolved_target, const loom_module_t* module,
+    loom_call_like_kind_t kind, loom_call_like_t call,
+    loom_func_like_t callee) {
   (void)resolved_target;
-  return LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE;
+  (void)module;
+  (void)kind;
+  (void)call;
+  (void)callee;
+  return LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
 }
 
 // Target emission artifact storage release callback.
@@ -399,10 +414,9 @@ struct loom_target_provider_t {
   const loom_pass_registry_t* pass_registry;
   // Optional pass-pipeline contribution callback.
   loom_target_provider_pipeline_contribution_fn_t contribute_pipeline;
-  // Optional per-caller Low call policy selector. Missing permits direct Low
-  // calls. A REQUIRE_INLINE result applies before source-to-Low as well as to
-  // retained Low edges; it is an emission requirement, not an authored hint.
-  loom_target_select_low_call_policy_fn_t select_low_call_policy;
+  // Optional per-caller call policy selector. Missing permits direct calls.
+  // This is an emission requirement, not an authored hint.
+  loom_target_select_call_policy_fn_t select_call_policy;
   // Physical carrier requested for source views that remain at retained
   // function or CFG boundaries after common-root transport.
   loom_target_view_boundary_carrier_t view_boundary_carrier;

@@ -266,7 +266,8 @@ struct loom_inline_callables_plan_t {
 
 static bool loom_inline_target_requires_call_inline(
     const loom_inline_callables_plan_t* state,
-    loom_symbol_id_t caller_symbol_id) {
+    loom_symbol_id_t caller_symbol_id, loom_call_like_kind_t call_kind,
+    loom_call_like_t call, loom_func_like_t callee) {
   if (!state->options.target_policy) {
     return false;
   }
@@ -278,9 +279,10 @@ static bool loom_inline_target_requires_call_inline(
   }
   const loom_target_provider_t* provider =
       caller_version->resolved_target.provider;
-  return provider->select_low_call_policy != NULL &&
-         provider->select_low_call_policy(&caller_version->resolved_target) ==
-             LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE;
+  return provider->select_call_policy != NULL &&
+         provider->select_call_policy(&caller_version->resolved_target,
+                                      state->module, call_kind, call, callee) ==
+             LOOM_TARGET_CALL_POLICY_REQUIRE_INLINE;
 }
 
 static bool loom_inline_policy_is_inline(loom_inline_policy_t policy) {
@@ -485,7 +487,9 @@ static void loom_inline_resolve_entry_policy(
   const bool target_requires_inline =
       (call_kind == LOOM_CALL_LIKE_KIND_SEMANTIC ||
        call_kind == LOOM_CALL_LIKE_KIND_LOW_INTERNAL) &&
-      loom_inline_target_requires_call_inline(state, entry->source_symbol_id);
+      loom_inline_target_requires_call_inline(state, entry->source_symbol_id,
+                                              call_kind, entry->call,
+                                              entry->callee);
   if (target_requires_inline && (callee_noinline || call_noinline)) {
     entry->effective_policy = LOOM_INLINE_POLICY_NOINLINE;
     loom_inline_mark_blocker(entry, LOOM_INLINE_BLOCKER_TARGET_REQUIRES_INLINE);

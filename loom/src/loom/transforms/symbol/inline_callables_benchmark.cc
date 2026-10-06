@@ -344,16 +344,10 @@ static int64_t ReadPassStatistic(const loom_pass_info_t* pass_info,
   std::abort();
 }
 
-static loom_target_low_call_policy_t RequireInlineLowCalls(
-    const loom_resolved_target_t* resolved_target) {
-  (void)resolved_target;
-  return LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE;
-}
-
 static const loom_target_provider_t* RequireInlineProvider() {
   static const loom_target_provider_t provider = [] {
     loom_target_provider_t value = {};
-    value.select_low_call_policy = RequireInlineLowCalls;
+    value.select_call_policy = loom_target_select_call_policy_require_inline;
     return value;
   }();
   return &provider;
