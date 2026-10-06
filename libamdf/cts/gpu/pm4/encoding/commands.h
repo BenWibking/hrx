@@ -91,6 +91,11 @@ class Pm4CommandWriter {
   // backing stays immutable and retained through final use and checked queue
   // removal; return alone does not join shader completion.
   void CallIndirectBuffer(uint64_t buffer_address, uint32_t word_count);
+  // Executes the next complete packet range only if the addressed DWORD is
+  // nonzero. The four-byte-aligned predicate is published and stable through
+  // sampling; word_count is the following range's direct DWORD count, at most
+  // 0x3fff. Sampling is neither a payload acquire nor shader completion.
+  void ExecuteIfNonzero(uint64_t predicate_address, uint32_t word_count);
   // Confirmed TC/L2 memory transfers; width does not imply atomicity. A 32-bit
   // source retains readable trailing backing for native reads beyond its DWORD.
   void CopyData32(uint64_t source_address, uint64_t target_address);

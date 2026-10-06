@@ -47,6 +47,7 @@ iree_cc_library(
   SRCS
     "atomic_store_test.cc"
     "command_buffer_test.cc"
+    "conditional_test.cc"
     "copy_test.cc"
     "dispatch_test.cc"
     "dma_test.cc"

@@ -94,6 +94,16 @@ void Pm4CommandWriter::CallIndirectBuffer(uint64_t buffer_address,
   words_[word_count_++] = word_count | (1u << 23);
 }
 
+void Pm4CommandWriter::ExecuteIfNonzero(uint64_t predicate_address,
+                                        uint32_t word_count) {
+  words_[word_count_++] = MakeHeader(0x22, 5);
+  words_[word_count_++] = static_cast<uint32_t>(predicate_address);
+  words_[word_count_++] = static_cast<uint32_t>(predicate_address >> 32);
+  // PAL's ordinary policy is zero: LRU on GFX11, regular temporal on GFX12+.
+  words_[word_count_++] = 0;
+  words_[word_count_++] = word_count;
+}
+
 void Pm4CommandWriter::AcquireMemory(uint32_t gcr) {
   words_[word_count_++] = MakeHeader(0x58, 8);
   words_[word_count_++] = 0;

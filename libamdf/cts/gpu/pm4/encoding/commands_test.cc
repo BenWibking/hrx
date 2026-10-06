@@ -294,6 +294,38 @@ TEST(Pm4EncodingTest, IndirectWave32DispatchUsesAbsoluteByteAddressAndGroups) {
   EXPECT_EQ(words.back(), 0x24681357u);
 }
 
+TEST(Pm4EncodingTest, ConditionalExecutionUsesDwordAddressAndDirectCount) {
+  constexpr std::array<std::array<uint32_t, 2>, 5> kTargets = {{
+      {11, 0},
+      {11, 5},
+      {11, 7},
+      {12, 0},
+      {12, 5},
+  }};
+  for (const auto& target : kTargets) {
+    SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]);
+    for (uint32_t count : {0u, 5u, 31u, 37u, 0x2000u, 0x3fffu}) {
+      SCOPED_TRACE(count);
+      std::array<uint32_t, 12> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      commands.ExecuteIfNonzero(UINT64_C(0x0000123456789004), count);
+      commands.ExecuteIfNonzero(UINT64_C(0x0000abcd87654ffc), count);
+      // PAL's MEC layouts retain zero header flags and policy/reserved words.
+      // The count excludes each five-DWORD COND_EXEC packet itself.
+      const std::array<uint32_t, 10> expected = {
+          0xc0032200, 0x56789004, 0x1234, 0, count,
+          0xc0032200, 0x87654ffc, 0xabcd, 0, count,
+      };
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
+}
+
 TEST(Pm4EncodingTest, IndirectBufferCallUsesMecAddressAndDwordCount) {
   std::array<uint32_t, 10> words;
   words.fill(0x24681357u);

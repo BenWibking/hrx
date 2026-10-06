@@ -38,10 +38,11 @@ before the host observes the completion word. AQL polls the signal value after
 the command processor decrements it; PM4 and SDMA emit explicit completion
 writes. Read-index progress is checked separately before queue teardown.
 
-Kernel-published recipes wait on the exact native submission point. Their
-completion and retirement share that checked native wait, and their result
-records identify the publication mode. No payload maintenance is hidden in
-either transport helper.
+Kernel-published recipes retire the exact native submission point. Cases with
+an in-band completion marker observe payload before that native wait; cases
+without one use the native wait for completion as well. Their result records
+identify the publication mode. No payload maintenance is hidden in either
+transport helper.
 
 Completion occupies bytes disjoint from the copied or shader-produced payload.
 Host polling performs no cache maintenance. After observing completion, a
