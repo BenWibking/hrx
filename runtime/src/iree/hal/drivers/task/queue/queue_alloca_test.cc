@@ -15,6 +15,7 @@
 #include "iree/hal/drivers/task/device.h"
 #include "iree/hal/drivers/task/queue/queue.h"
 #include "iree/hal/memory/fixed_block_pool.h"
+#include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -25,6 +26,8 @@
 #endif
 
 namespace {
+
+enum class PoolKind { kFixedBlock, kTlsf };
 
 class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
  protected:
@@ -171,6 +174,91 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
     return count;
   }
 
+  void CheckFailedBatchParks(PoolKind kind) {
+    if (kind == PoolKind::kTlsf) {
+      iree_hal_queue_pool_backend_t backend = {};
+      IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+          devices_[GetParam()], iree_hal_queue_family(queues_[GetParam()]),
+          &backend));
+      iree_hal_tlsf_pool_options_t options = {};
+      options.tlsf_options.range_length = 2 * kBlockSize;
+      options.tlsf_options.alignment = 16;
+      options.tlsf_options.frontier_capacity = 2;
+      options.budget_limit = 2 * kBlockSize;
+      iree_hal_pool_release(pool_);
+      pool_ = nullptr;
+      IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+          options, backend.slab_provider, backend.notification,
+          backend.frontier_tracker, backend.epoch_query,
+          iree_allocator_system(), &pool_));
+    }
+    std::array<iree_hal_pool_reservation_request_t, 2> requests = {};
+    for (auto& request : requests) {
+      request.allocation_size = kBlockSize;
+      request.params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
+      request.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+      request.params.usage =
+          IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+      request.params.queue_family_affinity =
+          iree_hal_make_queue_family_affinity(0);
+    }
+    uint64_t allocated_value = 1;
+    uint64_t filled_value = 2;
+    uint64_t released_value = 3;
+    const auto no_waits = iree_hal_semaphore_list_empty();
+    iree_hal_semaphore_list_t initial_allocated = {1, &semaphores_[0],
+                                                   &allocated_value};
+    iree_hal_semaphore_list_t initial_released = {1, &semaphores_[0],
+                                                  &released_value};
+    IREE_ASSERT_OK(
+        iree_hal_queue_alloca(queues_[0], no_waits, initial_allocated, pool_, 1,
+                              requests.data(), initial_buffers_.data()));
+    ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], allocated_value));
+
+    const uint32_t epoch = iree_async_notification_query_epoch(notification_);
+    iree_hal_semaphore_list_t allocated = {1, &semaphores_[1],
+                                           &allocated_value};
+    IREE_ASSERT_OK(iree_hal_queue_alloca(queues_[1], no_waits, allocated, pool_,
+                                         requests.size(), requests.data(),
+                                         pending_buffers_.data()));
+    while (RegisteredWaitCount() != 1) {
+      ASSERT_NO_FATAL_FAILURE(PollOwner());
+    }
+    EXPECT_EQ(iree_async_notification_query_epoch(notification_), epoch);
+    iree_async_proactor_wake(notification_->proactor);
+    ASSERT_NO_FATAL_FAILURE(PollOwner());
+    EXPECT_EQ(RegisteredWaitCount(), 1u);
+    EXPECT_EQ(iree_async_notification_query_epoch(notification_), epoch);
+
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[0], initial_allocated,
+                                           initial_released, 1,
+                                           initial_buffers_.data()));
+    ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[0], released_value));
+    ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], allocated_value));
+    for (iree_host_size_t i = 0; i < pending_buffers_.size(); ++i) {
+      iree_hal_semaphore_list_t filled = {1, &semaphores_[i + 1],
+                                          &filled_value};
+      const uint32_t pattern = 0xCAFE1000u + i;
+      IREE_ASSERT_OK(iree_hal_queue_fill(
+          queues_[1], allocated, filled, pending_buffers_[i], 0, kBlockSize,
+          &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+      ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[i + 1], filled_value));
+      std::array<uint32_t, kBlockSize / sizeof(uint32_t)> actual;
+      IREE_ASSERT_OK(iree_hal_buffer_map_read(pending_buffers_[i], 0,
+                                              actual.data(), sizeof(actual)));
+      for (uint32_t value : actual) {
+        EXPECT_EQ(value, pattern);
+      }
+    }
+    uint64_t filled_values[2] = {filled_value, filled_value};
+    iree_hal_semaphore_list_t all_filled = {2, &semaphores_[1], filled_values};
+    iree_hal_semaphore_list_t released = {1, &semaphores_[1], &released_value};
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[1], all_filled, released,
+                                           pending_buffers_.size(),
+                                           pending_buffers_.data()));
+    ASSERT_NO_FATAL_FAILURE(Wait(semaphores_[1], released_value));
+  }
+
   static constexpr iree_device_size_t kBlockSize = 512;
   // Workers shared by the two independent Task devices.
   iree_task_executor_t* executor_ = nullptr;
@@ -195,6 +283,14 @@ class TaskQueueAllocaTest : public ::testing::TestWithParam<iree_host_size_t> {
   // Buffers materialized after the owner wakes both consumers.
   std::array<iree_hal_buffer_t*, 2> pending_buffers_ = {};
 };
+
+TEST_P(TaskQueueAllocaTest, FixedBlockFailedBatchParksUntilExternalRelease) {
+  ASSERT_NO_FATAL_FAILURE(CheckFailedBatchParks(PoolKind::kFixedBlock));
+}
+
+TEST_P(TaskQueueAllocaTest, TlsfFailedBatchParksUntilExternalRelease) {
+  ASSERT_NO_FATAL_FAILURE(CheckFailedBatchParks(PoolKind::kTlsf));
+}
 
 TEST_P(TaskQueueAllocaTest, SharedPoolResumesThroughNotificationOwner) {
   std::array<iree_hal_pool_reservation_request_t, 2> requests = {};

@@ -6,6 +6,11 @@
 
 #include "iree/hal/memory/fixed_block_pool.h"
 
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <vector>
+
 #include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
 #include "iree/async/proactor.h"
@@ -24,7 +29,7 @@ static iree_async_frontier_tracker_t* test_frontier_tracker() {
     IREE_CHECK_OK(iree_async_frontier_tracker_create(
         iree_async_frontier_tracker_options_default(), iree_allocator_system(),
         &tracker));
-    for (uint8_t queue_index = 0; queue_index < 2; ++queue_index) {
+    for (uint8_t queue_index = 0; queue_index < 6; ++queue_index) {
       IREE_CHECK_OK(iree_async_frontier_tracker_register_axis(
           tracker, iree_async_axis_make_queue(1, 0, 0, queue_index, 0),
           nullptr));
@@ -455,6 +460,79 @@ TEST(FixedBlockPool, NoGrowthDefersLargeBatchStaging) {
   iree_hal_slab_provider_release(provider);
 }
 
+TEST(FixedBlockPool, SixQueueHistorySurvivesInlineAndColdStaging) {
+  CountingAllocator allocator;
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(
+      iree_hal_cpu_slab_provider_create(0, allocator.allocator(), &provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  MAKE_FRONTIER(death, 6, E(TestQueueAxis(0), 10), E(TestQueueAxis(1), 20),
+                E(TestQueueAxis(2), 30), E(TestQueueAxis(3), 40),
+                E(TestQueueAxis(4), 50), E(TestQueueAxis(5), 60));
+  for (uint16_t capacity : {6, 16}) {
+    SCOPED_TRACE(capacity);
+    auto options = DefaultOptions();
+    options.block_allocator_options.block_count = 2;
+    options.block_allocator_options.frontier_capacity = capacity;
+    iree_hal_pool_t* pool = nullptr;
+    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+        options, provider, notification, test_frontier_tracker(),
+        iree_hal_pool_epoch_query_null(), allocator.allocator(), &pool));
+    auto request = MakeReservationRequest(64, 16);
+    request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+    const iree_hal_pool_reservation_request_t requests[2] = {request, request};
+    iree_hal_pool_reservation_t reservations[2];
+    iree_hal_pool_acquire_info_t infos[2];
+    iree_hal_pool_acquire_result_t result;
+    IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+        pool, 2, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+        reservations, infos, &result));
+    ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+    iree_hal_pool_release_reservations(pool, 2, reservations, death);
+
+    const size_t allocation_calls = allocator.allocation_calls();
+    IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+        pool, 2, requests, death, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+        reservations, infos, &result));
+    EXPECT_EQ(allocator.allocation_calls(), allocation_calls);
+    if (capacity == 16) {
+      EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_EXHAUSTED);
+      EXPECT_EQ(infos[0].flags, IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED);
+      IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+          pool, 2, requests, death, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+          reservations, infos, &result));
+      EXPECT_EQ(allocator.allocation_calls(), allocation_calls + 1);
+    }
+    ASSERT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK);
+    for (iree_host_size_t i = 0; i < 2; ++i) {
+      ASSERT_NE(infos[i].reuse_frontier, nullptr);
+      EXPECT_EQ(infos[i].reuse_frontier->entry_count, 6u);
+      EXPECT_EQ(memcmp(infos[i].reuse_frontier->entries, death->entries,
+                       6 * sizeof(death->entries[0])),
+                0);
+      iree_hal_buffer_t* buffer = nullptr;
+      IREE_ASSERT_OK(MaterializeOneReservation(
+          pool, request.params, &reservations[i],
+          IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, &buffer));
+      const uint8_t pattern = static_cast<uint8_t>(capacity + i);
+      IREE_ASSERT_OK(iree_hal_buffer_map_fill(buffer, 0, 64, &pattern, 1));
+      uint8_t actual[64] = {};
+      IREE_ASSERT_OK(
+          iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+      for (uint8_t value : actual) {
+        EXPECT_EQ(value, pattern);
+      }
+      iree_hal_buffer_release(buffer);
+    }
+    iree_hal_pool_release_reservations(pool, 2, reservations, death);
+    iree_hal_pool_release(pool);
+  }
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(provider);
+}
+
 TEST_F(FixedBlockPoolTest, ReserveReleaseFresh) {
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
@@ -509,8 +587,8 @@ TEST_F(FixedBlockPoolTest, ReservationTransactionIsAllOrNone) {
   EXPECT_EQ(stats.bytes_reserved, 0u);
   EXPECT_EQ(stats.reserve_count, 0u);
   EXPECT_EQ(stats.release_count, 0u);
-  EXPECT_TRUE(iree_async_notification_wait_for_token(notification_, wait_token,
-                                                     iree_make_timeout_ms(0)));
+  EXPECT_FALSE(iree_async_notification_wait_for_token(notification_, wait_token,
+                                                      iree_make_timeout_ms(0)));
   iree_async_notification_end_observe(notification_);
 
   const iree_hal_pool_reservation_request_t fitting_requests[4] = {
@@ -537,6 +615,183 @@ TEST_F(FixedBlockPoolTest, ReservationTransactionIsAllOrNone) {
   EXPECT_EQ(stats.reservation_count, 0u);
   EXPECT_EQ(stats.reserve_count, 4u);
   EXPECT_EQ(stats.release_count, 4u);
+}
+
+TEST_F(FixedBlockPoolTest, BatchChecksEachAvailableFrontierOnce) {
+  iree_hal_pool_release(pool_);
+  auto options = DefaultOptions();
+  constexpr uint32_t kBlockCount = 4096;
+  constexpr iree_host_size_t kRequestCount = 8;
+  options.block_allocator_options.block_count = kBlockCount;
+  iree_host_size_t query_count = 0;
+  const iree_hal_pool_epoch_query_t query = {
+      [](void* user_data, iree_async_axis_t axis, uint64_t epoch) {
+        ++*static_cast<iree_host_size_t*>(user_data);
+        return false;
+      },
+      &query_count,
+  };
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+      options, slab_provider_, notification_, test_frontier_tracker(), query,
+      allocator_, &pool_));
+  const auto request = MakeReservationRequest(64, 16);
+  std::vector<iree_hal_pool_reservation_request_t> requests(kBlockCount,
+                                                            request);
+  std::vector<iree_hal_pool_reservation_t> reservations(kBlockCount);
+  std::vector<iree_hal_pool_acquire_info_t> infos(kBlockCount);
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, kBlockCount, requests.data(), nullptr,
+      IREE_HAL_POOL_RESERVE_FLAG_NONE, reservations.data(), infos.data(),
+      &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_FRESH);
+  MAKE_FRONTIER(death, 1, E(TestQueueAxis(0), 10));
+  iree_hal_pool_release_reservations(pool_, kBlockCount, reservations.data(),
+                                     death);
+
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, kRequestCount, requests.data(), nullptr,
+      IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER |
+          IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH,
+      reservations.data(), infos.data(), &result));
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT);
+  EXPECT_EQ(query_count, kBlockCount);
+  for (iree_host_size_t i = 0; i < kRequestCount; ++i) {
+    ASSERT_NE(infos[i].reuse_frontier, nullptr);
+    EXPECT_EQ(infos[i].reuse_frontier->entries[0].epoch, 10u);
+  }
+  iree_hal_pool_release_reservations(pool_, kRequestCount, reservations.data(),
+                                     death);
+}
+
+// Holds one completion query while another caller uses the same real backing.
+// Subsequent queries return the deliberately stale completed epoch of 10.
+class PausedEpochQuery {
+ public:
+  iree_hal_pool_epoch_query_t query() { return {Query, this}; }
+  void AwaitEntry() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    condition_.wait(lock, [&] { return entered_; });
+  }
+  void Resume() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    resumed_ = true;
+    condition_.notify_all();
+  }
+
+ private:
+  static bool Query(void* user_data, iree_async_axis_t axis, uint64_t epoch) {
+    auto* self = static_cast<PausedEpochQuery*>(user_data);
+    std::unique_lock<std::mutex> lock(self->mutex_);
+    if (!self->entered_) {
+      self->entered_ = true;
+      self->condition_.notify_all();
+      self->condition_.wait(lock, [&] { return self->resumed_; });
+    }
+    return epoch <= 10;
+  }
+  // Protects the query-entry and continuation handoff.
+  std::mutex mutex_;
+  // Publishes the two explicit handoff events.
+  std::condition_variable condition_;
+  // True once the selecting thread has entered its first completion query.
+  bool entered_ = false;
+  // True once the competing allocation has returned its changed frontier.
+  bool resumed_ = false;
+};
+
+TEST_F(FixedBlockPoolTest, ConcurrentUseRevalidatesTheEntireBatch) {
+  iree_hal_pool_release(pool_);
+  auto options = DefaultOptions();
+  options.block_allocator_options.block_count = 2;
+  PausedEpochQuery query;
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create(
+      options, slab_provider_, notification_, test_frontier_tracker(),
+      query.query(), allocator_, &pool_));
+  auto request = MakeReservationRequest(64, 16);
+  request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+  const iree_hal_pool_reservation_request_t requests[2] = {request, request};
+  iree_hal_pool_reservation_t reservations[2];
+  iree_hal_pool_acquire_info_t infos[2];
+  iree_hal_pool_acquire_result_t result;
+  IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
+      pool_, 2, requests, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+      reservations, infos, &result));
+  MAKE_FRONTIER(old_death, 1, E(TestQueueAxis(0), 10));
+  iree_hal_pool_release_reservations(pool_, 2, reservations, old_death);
+
+  iree::Status selection_status;
+  std::thread selector([&] {
+    selection_status = iree_hal_pool_acquire_reservations(
+        pool_, 2, requests, nullptr,
+        IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER, reservations, infos,
+        &result);
+  });
+  query.AwaitEntry();
+
+  // This caller covers the old prerequisite, so it can run while the other
+  // caller is paused. Its returned history invalidates the earlier snapshot.
+  auto use_while_paused = [&]() -> iree_status_t {
+    iree_hal_pool_reservation_t competing;
+    iree_hal_pool_acquire_info_t competing_info;
+    iree_hal_pool_acquire_result_t competing_result;
+    IREE_RETURN_IF_ERROR(iree_hal_pool_acquire_reservations(
+        pool_, 1, &request, old_death, IREE_HAL_POOL_RESERVE_FLAG_NONE,
+        &competing, &competing_info, &competing_result));
+    EXPECT_EQ(competing_result, IREE_HAL_POOL_ACQUIRE_OK);
+    EXPECT_EQ(competing.block_handle, 0u);
+    iree_hal_pool_stats_t stats;
+    iree_hal_pool_query_stats(pool_, &stats);
+    EXPECT_EQ(stats.bytes_reserved, options.block_allocator_options.block_size);
+    iree_hal_buffer_t* buffer = nullptr;
+    iree_status_t status =
+        MaterializeOneReservation(pool_, request.params, &competing,
+                                  IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, &buffer);
+    const uint32_t expected[16] = {0x12345678};
+    uint32_t actual[16] = {};
+    if (iree_status_is_ok(status)) {
+      status = iree_hal_buffer_map_write(buffer, 0, expected, sizeof(expected));
+    }
+    if (iree_status_is_ok(status)) {
+      status = iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual));
+    }
+    if (iree_status_is_ok(status)) {
+      EXPECT_EQ(memcmp(expected, actual, sizeof(actual)), 0);
+    }
+    iree_hal_buffer_release(buffer);
+    MAKE_FRONTIER(new_death, 1, E(TestQueueAxis(0), 20));
+    ReleaseOneReservation(pool_, &competing, new_death);
+    return status;
+  };
+  IREE_EXPECT_OK(use_while_paused());
+  query.Resume();
+  selector.join();
+  IREE_ASSERT_OK(selection_status);
+  EXPECT_EQ(result, IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT);
+  ASSERT_NE(infos[0].reuse_frontier, nullptr);
+  ASSERT_NE(infos[1].reuse_frontier, nullptr);
+  EXPECT_EQ(infos[0].reuse_frontier->entries[0].epoch, 10u);
+  EXPECT_EQ(infos[1].reuse_frontier->entries[0].epoch, 20u);
+  EXPECT_EQ(infos[0].result, IREE_HAL_POOL_ACQUIRE_OK);
+  EXPECT_EQ(infos[1].result, IREE_HAL_POOL_ACQUIRE_OK_NEEDS_WAIT);
+
+  // The selected pending block is the block written by the competing caller.
+  // All CPU accesses above have completed; inspect its bytes through the new
+  // reservation and return each block with its own exact history.
+  iree_hal_buffer_t* buffer = nullptr;
+  IREE_ASSERT_OK(
+      MaterializeOneReservation(pool_, request.params, &reservations[1],
+                                IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, &buffer));
+  uint32_t actual[16] = {};
+  IREE_ASSERT_OK(iree_hal_buffer_map_read(buffer, 0, actual, sizeof(actual)));
+  EXPECT_EQ(actual[0], 0x12345678u);
+  for (iree_host_size_t i = 1; i < IREE_ARRAYSIZE(actual); ++i) {
+    EXPECT_EQ(actual[i], 0u);
+  }
+  iree_hal_buffer_release(buffer);
+  for (iree_host_size_t i = 0; i < 2; ++i) {
+    ReleaseOneReservation(pool_, &reservations[i], infos[i].reuse_frontier);
+  }
 }
 
 TEST_F(FixedBlockPoolTest, AlignmentRequiresBothBackingAndBlockStride) {

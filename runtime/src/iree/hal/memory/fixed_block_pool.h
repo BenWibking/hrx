@@ -36,8 +36,8 @@ typedef struct iree_hal_fixed_block_pool_options_t {
   iree_hal_asan_pool_options_t asan;
 
   // Logical byte budget for live reservations in this pool. 0 means unlimited.
-  // This is checked before each reservation and can return
-  // IREE_HAL_POOL_RESERVE_OVER_BUDGET without touching the allocator.
+  // Checked for the entire transaction before claiming any blocks. Can return
+  // IREE_HAL_POOL_ACQUIRE_OVER_BUDGET without touching the allocator.
   iree_device_size_t budget_limit;
 
   // Optional named-memory trace identifier for logical reservations returned by
@@ -47,8 +47,10 @@ typedef struct iree_hal_fixed_block_pool_options_t {
 
 // Creates a fixed-block HAL pool backed by one slab from |slab_provider|.
 //
-// The pool's reserve path is lock-free on the fast path because
-// iree_hal_memory_fixed_block_allocator_t is lock-free. Non-dominated recycled
+// Acquisition copies candidate frontiers and commits complete batches under
+// short metadata locks. Eligibility queries, host allocation and provider
+// advice run outside them. Release never takes an acquisition lock. Failed
+// batches claim no capacity and produce no notification. Non-dominated recycled
 // blocks are returned as NEEDS_WAIT only when callers set
 // IREE_HAL_POOL_RESERVE_FLAG_ALLOW_WAIT_FRONTIER and no immediately-usable
 // block is available; otherwise they are skipped and the call returns EXHAUSTED

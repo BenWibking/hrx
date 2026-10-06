@@ -77,6 +77,7 @@ iree_cc_test(
     iree::hal
     iree::hal::drivers::task::device
     iree::hal::memory::fixed_block_pool
+    iree::hal::memory::tlsf_pool
     iree::task
     iree::testing::gtest
     iree::testing::gtest_main
