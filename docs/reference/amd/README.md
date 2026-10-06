@@ -43,6 +43,7 @@ provide exact search terms within the tree.
 | Launch a compiled GPU program | [PM4 `SET_SH_REG` and `DISPATCH_DIRECT`](gpu/pm4/dispatch.md), [AQL kernel dispatch and descriptors](gpu/aql/dispatch.md). |
 | Bind shared workgroup storage | [PM4 `LDS_SIZE`](gpu/pm4/lds.md), [AQL group storage](gpu/aql/dispatch.md#static-and-dynamic-group-storage). |
 | Size and reclaim private scratch backing | [AQL `COMPUTE_TMPRING_SIZE`, physical slots and firmware ownership](gpu/aql/scratch.md). |
+| Size compute context-save storage and preserve suspended work | [CWSR, `ctx_save_restore_size`, per-XCC headers and native removal](gpu/context-save.md). |
 | Determine which agents can access a memory pool | [Pool grain, per-agent access and SVM host access](gpu/recipes/host-device.md#pool-grain-agent-access-and-svm). |
 | Make a producer's writes visible to its consumer | [GPU cache controls](gpu/pm4/cache.md), [CPU/GPU handoffs](gpu/recipes/host-device.md), [all six CPU/GPU/NPU directions](interop/README.md). |
 | Copy or fill memory and wait for completion | [SDMA packet index](gpu/sdma/README.md), [PM4 `DMA_DATA`](gpu/pm4/dma.md), [SDMA upload → AQL dispatch → SDMA download](gpu/recipes/README.md#sdma-upload-aql-dispatch-and-sdma-download). |

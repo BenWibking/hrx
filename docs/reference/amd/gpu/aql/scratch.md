@@ -307,6 +307,11 @@ completion. The later resumption and last-use wait retain a purpose even
 after a successful unmap. [User-mode transport][update-ioctl] · [KFD update
 ordering][kfd-update] · [Active predicate][kfd-active]
 
+The [context-save ownership model](../context-save.md#save-resume-and-final-ownership)
+traces the separate save-area backing and the resources that suspended waves
+still need. Saving registers and LDS leaves private scratch under its own
+firmware and dispatch lifetime.
+
 Successful native transitions are premises of that sequence. The cited
 runtime's suspend/resume helpers assert native success but do not propagate
 failure. Their return alone therefore cannot prove that a failed native

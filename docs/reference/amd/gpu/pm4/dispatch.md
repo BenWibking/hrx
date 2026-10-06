@@ -215,6 +215,10 @@ topology without reporting whether a handler is installed. Debugger and
 exception policy require their own process owner information.
 [CWSR parameter][linux-cwsr-enable] [Storage calculation][linux-cwsr-size]
 
+The [context-save storage contract](../context-save.md) explains the native
+capacity calculation, per-XCC layout and MQD frontiers. It also separates
+saved-wave inspection, dispatch completion and final queue removal.
+
 ROCr's native vendor-1 AQL wrapper copies PM4 bytes and supplies completion;
 its CPU implementation does not merge shader resource fields. The separate
 DXG/WDDM software translator copies descriptor resources and adds LDS, while

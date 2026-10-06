@@ -104,6 +104,11 @@ reference plus a queue reference on its VM mapping. [Creation caller][queue-crea
 
 [Resource acquisition][queue-resources]
 
+The [compute context-save chapter](context-save.md) details `cwsr_size`,
+`ctl_stack_size`, per-XCC strides and the combined debugger area. Its
+save/resume sequence distinguishes native handler installation, queue-owned
+backing and the dispatch resources that unfinished waves still reference.
+
 The `enable_mes` queue-initialization path additionally requires the write
 pointer's BO to belong to the queue's AMDGPU device and maps that BO into
 GART. MES uses it to determine pending work while the queue is not mapped to
