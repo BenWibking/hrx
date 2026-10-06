@@ -17,14 +17,30 @@ compiler-target-shaped `gfx_target_version` metadata. For example:
 | 9.4.2 | 90010 | gfx90a |
 | 9.4.3 / 9.4.4 | 90402 | gfx942 |
 | 9.5.0 | 90500 | gfx950 |
+| 12.1.0 | 120500 | gfx1250 |
 
-[KFD translation][kfd-targets]
+[KFD GFX9 translation][kfd-targets] [KFD GC12.1 translation][kfd-gfx1250]
 
 The similarly spelled physical 9.4.2 and compiler gfx942 therefore identify
 different devices. ROCr's ISA registry and LLVM's target/ABI tables describe
 the executable side of this mapping. Linux separately selects SDMA backends
 from native SDMA IP. [ROCr ISA registry][isa] [LLVM ABI][llvm] [SDMA
 discovery][sdma]
+
+### CDNA5 and gfx1250
+
+ROCm's TheRock target registry identifies `gfx1250` with CDNA5 Instinct
+products. LLVM's cited target table leaves the product name unspecified under
+its GFX12 heading. The compiler number therefore does not make this an RDNA4
+device, and Linux's physical GC12.1.0 remains a separate identifier.
+[Product mapping][cdna5-target] [Build target][cdna5-build-target]
+[LLVM target table][llvm-gfx1250]
+
+The [CDNA5 ISA guide][cdna5-isa] describes wave32 WGP execution, named and
+cluster barriers, and separate asynchronous-memory and tensor-transfer waits.
+The [shader-memory chapter](shader-memory.md) retains LLVM's GFX125x predicates
+for compiler sequences. Native queue admission and PM4/SDMA layouts still come
+from their engine and transport sources.
 
 ### Discovering the native SDMA IP
 
@@ -56,10 +72,11 @@ source-visible families:
 | GFX6 | Legacy SI command and transfer representations. |
 | GFX7–8 | Graphics/compute completion packets, older cache controls, and indirect dispatch. |
 | GFX9 graphics and APUs | Physical/compiler mapping, scalar/L2 policy, coherent host paths. |
-| CDNA gfx908/gfx90a/gfx942/gfx950 | SDMA generation, XCC/L2 topology, scratch state, atomic routes, and local/peer cache policy. |
+| CDNA1–4 gfx908/gfx90a/gfx942/gfx950 | SDMA generation, XCC/L2 topology, scratch state, atomic routes, and local/peer cache policy. |
 | GFX10.1 / GFX10.3 | GCR controls, CP-DMA ordering, and firmware-conditioned completion. |
 | GFX11.0 / GFX11.5 | Wave32 dispatch, compute queue setup, native SDMA IP, and completion/cache fields. |
-| GFX12 | Cache routing, revised packet fields, system-memory routing, and dispatch distribution. |
+| GFX12.0 | Cache routing, revised packet fields, system-memory routing, and dispatch distribution. |
+| CDNA5 gfx1250 / physical GC12.1.0 | WGP cache scope, asynchronous/tensor completion, workgroup clusters, and separately versioned native packet layouts. |
 
 These groups are navigation aids. Exact predicates remain beside the affected
 operation: a source comparison such as ISA minor >= 5 is a runtime selection
@@ -151,6 +168,11 @@ describe the corresponding command and completion owners.
 [Native reference release][queue-release]
 
 [kfd-targets]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device.c#L335-L355
+[kfd-gfx1250]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device.c#L464-L475
+[cdna5-target]: https://github.com/ROCm/TheRock/blob/1cc8ec570e9f5c720de9ce52dc485228c2df0274/build_tools/hack/env_check/AMDGPU_LLVM_TARGET.py#L56-L61
+[cdna5-build-target]: https://github.com/ROCm/TheRock/blob/1cc8ec570e9f5c720de9ce52dc485228c2df0274/cmake/therock_amdgpu_targets.cmake#L245-L246
+[llvm-gfx1250]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L653-L694
+[cdna5-isa]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf
 [isa]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/isa.cpp
 [llvm]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst
 [sdma]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c#L2785-L2836

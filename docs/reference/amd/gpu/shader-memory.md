@@ -15,6 +15,10 @@ protocol remain separate inputs. The [CPU/GPU](recipes/host-device.md),
 [GPU/NPU](recipes/gpu-npu.md) and [device-generated SDMA](sdma/device-publication.md)
 recipes supply those surrounding owners.
 
+The GFX125x compiler rows include `gfx1250`, identified as CDNA5 by ROCm's
+[target registry](architectures.md#cdna5-and-gfx1250). CDNA1–4 sequences retain
+their individual GFX9 target predicates.
+
 ## Ordering, visibility and scope
 
 A handoff has three distinct memory obligations:
@@ -69,6 +73,12 @@ determine the external visibility of every memory type.
 [Legacy and flat ordering][llvm-legacy-model] [RDNA counter model][llvm-gfx10-model]
 [GFX12 counters][llvm-gfx12-model] [GFX125x asynchronous classes][llvm-gfx125-order]
 [GFX12 emitter][llvm-gfx12-waits]
+
+CDNA5's §5.7 distinguishes `ASYNCcnt` and `TENSORcnt` from ordinary load,
+store and LDS completion. Its XML defines `S_WAIT_ASYNCCNT` and
+`S_WAIT_TENSORCNT`; `GLOBAL_INV` uses the load counter, while `GLOBAL_WB`
+and `GLOBAL_WBINV` use the store counter. [Architecture counters][cdna5-counters]
+[Machine-readable instruction definitions][cdna5-xml]
 
 The RDNA4 ISA guide §5.7 and Table 26 distinguish in-order retirement within
 a class from memory data ordering, and describe the scope at which store
@@ -157,7 +167,7 @@ OS device handles does not replace the locality and partition facts.
 [gfx942 hierarchy and memory types][llvm-gfx942-model]
 [Native HBM mapping](recipes/local-memory.md#native-hbm-cache-policy)
 
-### RDNA cache scopes and special waits
+### Vector cache scopes and special waits
 
 On GFX10/GFX11, the acquire invalidates GL1 **before** GL0. LLVM's emitter
 names the reason: otherwise GL0 can refill from stale GL1 data. Neither
@@ -173,6 +183,13 @@ an agent can contain multiple L2s. On GFX12.0 `SCOPE_CU` denotes a CU,
 independent of CU/WGP execution mode; on GFX125x it denotes the WGP.
 [GFX12 scope model][llvm-gfx12-model] [GFX125x scope model][llvm-gfx125-order]
 [Writeback selection][llvm-gfx12-wb]
+
+CDNA5 Table 13 lists no L2 action for DEV-scoped maintenance. The same
+manual's §4.1.1 makes cache scope memory-pool-dependent; LLVM's GFX125x model
+also admits noncoherent L2s within one agent. The table alone cannot justify
+eliding an AGENT writeback across those mappings. The unresolved input is the
+deployed cache-scope assignment, not the numerical scope encoding.
+[Manual scope rules and table][cdna5-scopes] [Compiler mapping model][llvm-gfx125-order]
 
 The detailed GFX125x sequences require waits before `global_wb` so prior
 store/RMW data has reached L2, and after agent/system `global_inv` so later
@@ -215,6 +232,14 @@ invalidation cannot repair a resident scalar poll. Legacy scalar spill stores
 have their own compiler-managed `s_dcache_wb` lifetime and are not a model
 for inter-agent publication. [Scalar premises][llvm-gfx10-model]
 [Scalar spills][llvm-legacy-scalar]
+
+CDNA5 §4.1.1 also excludes scalar/vector coherence at WGP scope. Its `NV`
+cache-line policy is separate from language-level volatility: maintenance
+with `NV=0` leaves nonvolatile lines intact; `NV=1` includes all lines.
+[Scalar scope and NV policy][cdna5-scopes]
+LLVM documents the same selection for GFX125x cache instructions while keeping
+ordinary scalar loads restricted to dispatch-immutable data.
+[Compiler NV and scalar contracts][llvm-gfx125-nv]
 
 LLVM's availability/visibility model separates propagation of an individual
 access from synchronization of other accesses. Its `!mmra !{!"amdgcn-av",
@@ -275,6 +300,10 @@ own publication/completion mechanism supplies the matching half. The
 conditions across several stages.
 
 [llvm-order]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L7485-L7604
+[cdna5-counters]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=61
+[cdna5-scopes]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=44
+[cdna5-xml]: https://gpuopen.com/download/AMD_GPU_MR_ISA_XML_2026_08_06.zip
+[llvm-gfx125-nv]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L17832-L17882
 [llvm-release-builder]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/SIMemoryLegalizer.cpp#L441-L461
 [llvm-load-builder]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/SIMemoryLegalizer.cpp#L2325-L2367
 [llvm-legacy-model]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L7669-L7726

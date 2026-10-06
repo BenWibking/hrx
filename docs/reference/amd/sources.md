@@ -18,6 +18,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [Vulkan specification][vulkan] | `01aaacd99480487bf63830959513c5ca8ceb996d` | External memory and semaphore capabilities, handle ownership, host-pointer imports, resource ownership transfers, host visibility, and performance-query lifetimes. |
 | [LLVM ABI and memory model][llvm-abi] | `6e714c8d91116794cb699cdf80c26afe9cda3ef3` | Kernel descriptors, initial registers, address spaces, shader memory ordering, availability/visibility, and the matching cache-control emitter and target predicates. |
 | [LLVM compiler implementation][llvm-compiler] | `6dfe1677ab8dffbc6ec13d53a1e0215d75147689` | Executable fetch padding, dispatch inputs, partial workgroups, and target feature selection. |
+| [ROCm target identities][therock-targets] | `1cc8ec570e9f5c720de9ce52dc485228c2df0274` | CDNA5 product-to-compiler-target mapping, kept separate from native GC and SDMA IP. |
 | [AMD atomic-operation tables][legacy-rocm] | `85a16825737e43a14ff431754b359380e78062a7` | Architecture-specific atomic operation tables and their separate PCIe-route interpretations. |
 | [Windows DDI][windows-ddi] | `7515063cea4c9e98db6a92986c5b4ddb0463fd16` | Native submission, monitored fences, mapping, residency, and destruction contracts. |
 | [XDNA driver][xdna] | `8dfda66f67a84aecf26cf68336efc9e4cc1756c3` | Array contexts, firmware command envelopes, native completion, power management, and diagnostic access. |
@@ -39,6 +40,18 @@ representations and owners.
 The [RDNA4 ISA guide, 7 April 2025][rdna4-isa], §5.7 and Table 26, supplies
 the architecture's dependency-counter rules used in the
 [shader wait-mode discussion](gpu/pm4/dispatch.md#shader-wait-counter-mode-mem_ordered).
+
+The [CDNA5 ISA guide, 27 July 2026][cdna5-isa], covers cache policy in
+§§4.1.1–2, barriers in §5.6, dependency counters in §5.7, asynchronous memory
+in §10.8 and tensor movement in §10.11. The
+[architecture map](gpu/architectures.md#cdna5-and-gfx1250) connects its naming
+to public compiler and native-driver sources.
+
+GPUOpen's [6 August 2026 machine-readable ISA archive][isa-xml] contains
+`amdgpu_isa_cdna5.xml`, whose document revision is 3 August 2026 and schema
+version is 1.2.0. Its instruction definitions provide a second representation
+of the cache and wait operations; the descriptions and manual are both AMD
+sources, rather than independent hardware observations.
 
 AMD's [Micro Engine Scheduler specification, April 2024][mes-manual],
 introduced by GPUOpen as an RDNA3 scheduling overview, describes the native
@@ -85,6 +98,7 @@ executes. The corresponding chapter identifies those boundaries.
 [vulkan]: https://github.com/KhronosGroup/Vulkan-Docs/tree/01aaacd99480487bf63830959513c5ca8ceb996d
 [llvm-abi]: https://github.com/llvm/llvm-project/tree/6e714c8d91116794cb699cdf80c26afe9cda3ef3
 [llvm-compiler]: https://github.com/llvm/llvm-project/tree/6dfe1677ab8dffbc6ec13d53a1e0215d75147689
+[therock-targets]: https://github.com/ROCm/TheRock/tree/1cc8ec570e9f5c720de9ce52dc485228c2df0274
 [legacy-rocm]: https://github.com/ROCm/legacy-rocm-build/tree/85a16825737e43a14ff431754b359380e78062a7
 [windows-ddi]: https://github.com/MicrosoftDocs/windows-driver-docs-ddi/tree/7515063cea4c9e98db6a92986c5b4ddb0463fd16
 [d3d12-sharing]: https://learn.microsoft.com/en-us/windows/win32/direct3d12/shared-heaps
@@ -101,5 +115,7 @@ executes. The corresponding chapter identifies those boundaries.
 [hsa-prm]: https://hsafoundation.com/wp-content/uploads/2021/02/HSA-PRM-1.2.pdf
 [gpu-manuals]: https://gpuopen.com/amd-gpu-architecture-programming-documentation/
 [rdna4-isa]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf
+[cdna5-isa]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf
+[isa-xml]: https://gpuopen.com/download/AMD_GPU_MR_ISA_XML_2026_08_06.zip
 [mes-manual]: https://gpuopen.com/download/documentation/micro_engine_scheduler.pdf
 [axi4]: https://documentation-service.arm.com/static/5f915bbcf86e16515cdc3b23
