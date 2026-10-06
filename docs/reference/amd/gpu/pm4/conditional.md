@@ -89,15 +89,6 @@ evidence of an atomic 64-bit snapshot. A producer retains a stable value
 through the reads that consume it. The private predicate has an independent
 lifetime through all guards that reference it.
 
-PAL's CPU initializer runs while recording. Its shown GPU sequence contains
-conditional writes only, so that sequence alone does not restore the initial
-private value for a later execution with a changed condition. Repeated-use
-reasoning must include the owner that restores or replaces that mutable word;
-recording-time initialization is not a per-execution reset. This is a boundary
-of the shown sequence, not evidence of a measured replay failure.
-[Setup and conditional writes][pal-predicate]
-[Embedded allocation contract][pal-embedded]
-
 RADV's ordinary MEC guard reads the user's predicate directly. For inverted
 conditions, the first needed guard emits a confirmed write of one to an
 upload word, conditionally writes zero when the source is nonzero, and then
@@ -122,6 +113,45 @@ or 80 bytes. RADV's inversion uses two six-DWORD copies and one five-DWORD
 guard, or 68 bytes before the guarded operation. These are command-storage
 costs, not measured execution latencies. [PAL setup][pal-predicate]
 [Write-data construction][pal-write-size] [RADV inversion][radv-predicate]
+
+### Submission and mutable predicate storage
+
+PAL's private predicate occupies persistent embedded GPU backing. Its allocator
+enables separate CPU staging only for command allocations, not embedded data;
+the recording-time initializer therefore writes the backing subsequently used
+by the GPU. `End` associates the embedded chunk with the command root for
+lifetime tracking. The public embedded-data contract retains its GPU address
+until reset or the next begin. [Allocation policy][pal-embedded-policy]
+[Mapping and write pointer][pal-embedded-map] [Root association][pal-record-end]
+[Embedded lifetime][pal-embedded]
+
+The normal public submission path calls a no-op `PreSubmit`, increments the
+command stream's busy-tracking count, and launches its recorded commands.
+The optional upload path copies executable command ranges from command-stream
+chunks; it does not copy a pristine embedded-data image. Neither mechanism
+reinitializes the private predicate. Command upload, execution bookkeeping and
+mutable-data initialization are separate operations.
+[Pre-submit hook][pal-pre-submit] [Submission bookkeeping][pal-submit-owner]
+[Counter owner][pal-count-owner] [Uploaded ranges][pal-upload-range]
+
+XGL supplies a real reusable caller: its conditional-rendering translation
+selects PAL Boolean32, its one-time flag comes from the application's command
+buffer usage, and exclusive submission remains a separate optimization.
+Its normal queue path submits the recorded PAL command-buffer object.
+Thus this public compute sequence has no per-execution restore when a later
+submission changes the source condition. It cannot alone establish a
+changed-predicate replay protocol. This is a conclusion about the cited source
+path, not a measured result for an installed driver or a closed client.
+[Predicate translation][xgl-predicate] [Build flags][xgl-build-flags]
+[Submitted object][xgl-submit-storage] [Native submission][xgl-submit-native]
+
+Nested predicate inheritance has its own copy: before calling a nested compute
+buffer, PAL emits a confirmed 32-bit `COPY_DATA` from the caller's normalized
+word to the callee's inherited word. That propagates the caller's current
+decision; it does not reset the caller or resample its original source.
+A reusable normalization protocol includes initialization in the executing
+sequence or a separately ordered restoration of uniquely owned storage.
+[Older inheritance][pal-inherited] [GFX12 inheritance][pal12-inherited]
 
 ## Conditional indirect blocks
 
@@ -281,3 +311,16 @@ carrier completion make those boundaries explicit.
 [rocr-fields]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/inc/amd_gpu_pm4.h#L50-L106
 [rocr-xcc]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4739-L4799
 [rocr-copy-body]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4820-L4950
+[pal-embedded-policy]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdAllocator.cpp#L195-L230
+[pal-embedded-map]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdStreamAllocation.cpp#L123-L166
+[pal-record-end]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdBuffer.cpp#L346-L379
+[pal-pre-submit]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdBuffer.h#L772-L776
+[pal-submit-owner]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/queue.cpp#L701-L737
+[pal-count-owner]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdStream.cpp#L626-L649
+[pal-upload-range]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/cmdUploadRing.cpp#L416-L484
+[xgl-predicate]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_cmdbuffer.cpp#L11041-L11071
+[xgl-build-flags]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_cmdbuffer.cpp#L1371-L1377
+[xgl-submit-storage]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_queue.cpp#L1543-L1548
+[xgl-submit-native]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_queue.cpp#L1208-L1218
+[pal-inherited]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9ComputeCmdBuffer.cpp#L1637-L1677
+[pal12-inherited]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12ComputeCmdBuffer.cpp#L631-L667

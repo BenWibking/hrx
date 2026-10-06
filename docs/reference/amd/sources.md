@@ -7,6 +7,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | Source | Revision | Role |
 | --- | --- | --- |
 | [PAL][pal] | `c5e800072a32f68b6ccc4422936d96167c6e0728` | Generation-specific packet definitions, command builders, cache transitions, conditional compute blocks and Boolean sampling, and command-storage ownership. |
+| [XGL][xgl] | `e9782eb33ce5e5e4ed2e339542a28c1b933624b4` | Vulkan conditional-rendering translation, application-derived command-buffer reuse flags and the PAL submission owner. |
 | [Mesa][mesa] | `0ba4b08edc65075e9346d20d5310261939aaaf48` | RADV/radeonsi command composition, memory policy, synchronization, MEC predicate normalization and guarded command extents, and native submission. |
 | [Mesa counter, barrier and shader policy][mesa-counter-barriers] | `44cc4ca677a4752a10c14194289bde5a6468675e` | GFX12 performance-query admission, event selection and SQG sample ordering; consumer-stage selection for graphics PWS waits; compiler-selected MEM_ORDERED mode, linked-program requirements and per-SA compute affinity. |
 | [ROCm systems][rocm] | `8d57824901ffa7d961c00a37d055a108723b93ca` | ROCr queue/signal/copy protocols, HIP/CLR consumers, native queue construction, and profiling. |
@@ -88,6 +89,7 @@ submission wrapper can supply operations absent from the command buffer it
 executes. The corresponding chapter identifies those boundaries.
 
 [pal]: https://github.com/GPUOpen-Drivers/pal/tree/c5e800072a32f68b6ccc4422936d96167c6e0728
+[xgl]: https://github.com/GPUOpen-Drivers/xgl/tree/e9782eb33ce5e5e4ed2e339542a28c1b933624b4
 [mesa]: https://gitlab.freedesktop.org/mesa/mesa/-/tree/0ba4b08edc65075e9346d20d5310261939aaaf48
 [mesa-counter-barriers]: https://gitlab.freedesktop.org/mesa/mesa/-/tree/44cc4ca677a4752a10c14194289bde5a6468675e
 [rocm]: https://github.com/ROCm/rocm-systems/tree/8d57824901ffa7d961c00a37d055a108723b93ca
