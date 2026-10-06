@@ -178,6 +178,12 @@ existence of the host API, or of a GPU mapping of its register page, does not
 establish such a protocol. [Device-generated SDMA](../gpu/sdma/device-publication.md)
 [GPU/array handoff](../gpu/recipes/gpu-npu.md)
 
+Runtime stream publication is a separate mechanism. CLR uses queue completion
+signals when handing earlier work to native SVM operations and SYSTEM-scoped
+dispatches before publishing batch control values. Those operations carry
+specific stream dependencies that the host RDMA flush does not receive.
+[Prior-stream publication](../gpu/recipes/host-device.md#publishing-prior-stream-work-to-another-executor)
+
 [hip-contract]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/hip/include/hip/hip_runtime_api.h#L2534-L2556
 [hip-scopes]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/hip/include/hip/hip_runtime_api.h#L678-L706
 [hip-properties]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_device.cpp#L808-L812
