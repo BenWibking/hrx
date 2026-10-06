@@ -26,7 +26,7 @@ typedef struct iree_hal_fixed_block_pool_t {
   // Provider backing the single fixed-block slab.
   iree_hal_slab_provider_t* slab_provider;
 
-  // Retained finite backing; empty for a provider-backed growing pool.
+  // Retained finite backing; empty for a provider-backed pool.
   iree_hal_pool_buffer_range_t source_range;
 
   // Lock-free offset allocator for fixed-size blocks within |slab|.

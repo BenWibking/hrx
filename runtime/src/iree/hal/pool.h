@@ -518,12 +518,11 @@ IREE_API_EXPORT void iree_hal_pool_release_reservations(
 // function returns OK and are otherwise untouched. |pool| must outlive every
 // reservation and returned buffer.
 //
-// The concrete pool owns reservation bookkeeping and release callbacks, but
-// provider-specific buffer materialization must flow through that pool's slab
-// provider. Generic pools must not dereference slab payload fields directly;
-// they pass the reservation's user-visible slab offset and byte range to
-// iree_hal_slab_provider_wrap_buffer(). Hidden backing bytes remain owned by
-// the concrete pool/provider and are not materialized through this API.
+// The concrete pool owns reservation bookkeeping and release callbacks. Native
+// slabs are materialized through their provider; pools over retained buffer
+// ranges create ordinary subspans of that backing. Generic offset allocators
+// never dereference native slab payload fields. Only the reservation's visible
+// range is exposed; hidden backing bytes remain owned by the source.
 IREE_API_EXPORT iree_status_t iree_hal_pool_materialize_reservations(
     iree_hal_pool_t* pool, iree_host_size_t reservation_count,
     const iree_hal_pool_reservation_request_t* requests,
