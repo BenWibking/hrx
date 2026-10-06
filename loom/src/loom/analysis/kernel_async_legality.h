@@ -8,9 +8,9 @@
 //
 // This analysis proves kernel.async group/wait streams are in the
 // straight-line form required by target lowering. Local op verifiers check
-// token types, static footprints, and cache policies; this analysis checks
-// endpoint memory spaces from propagated facts and the temporal stream contract
-// that depends on program order.
+// token types, known footprints, and cache policies; this analysis requires
+// concrete transfer footprints and endpoint memory spaces from propagated
+// facts, and checks the temporal stream contract that depends on program order.
 
 #ifndef LOOM_ANALYSIS_KERNEL_ASYNC_LEGALITY_H_
 #define LOOM_ANALYSIS_KERNEL_ASYNC_LEGALITY_H_

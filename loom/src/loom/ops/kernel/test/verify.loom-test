@@ -1073,7 +1073,7 @@ kernel.def @workgroup_barrier_accepts_workgroup_uniform_cfg_control(%enabled: i1
 
 // ====
 
-func.def @async_copy_requires_static_byte_footprint(%buffer: buffer, %offset: offset, %n: index) {
+func.def @async_copy_accepts_symbolic_byte_footprint(%buffer: buffer, %offset: offset, %n: index) {
   %base = index.constant 0 : offset
   %bytes = index.constant 1024 : offset
   %layout = encoding.layout.dense : encoding<layout>
@@ -1081,9 +1081,46 @@ func.def @async_copy_requires_static_byte_footprint(%buffer: buffer, %offset: of
   %source = buffer.view %global[%offset] : buffer -> view<[%n]xi8, %layout>
   %scratch = buffer.alloca<workgroup> align(64) %bytes : buffer
   %dest = buffer.view %scratch[%base] : buffer -> view<[%n]xi8, %layout>
-  // ERROR@+2: TYPE/003 "source" "view with a static byte-addressable footprint"
-  // ERROR@+1: TYPE/003 "dest" "view with a static byte-addressable footprint"
   %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%n]xi8, %layout> to view<[%n]xi8, %layout> -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+func.def @async_masked_copy_accepts_symbolic_byte_footprint(%elements: index, %bytes: index, %source: view<[%elements]xbf16>, %dest: view<[%bytes]xi8>, %enabled: i1) {
+  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%elements]xbf16> to view<[%bytes]xi8>, i1 -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+func.def @async_copy_rejects_bit_elements_in_symbolic_source(%extent: index, %source: view<[%extent]xi1>, %dest: view<[%extent]xi8>) {
+  // ERROR@+1: TYPE/003 "source" "view with a byte-addressable footprint"
+  %copy = kernel.async.copy %source to %dest {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi1> to view<[%extent]xi8> -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+func.def @async_masked_copy_rejects_bit_elements_in_symbolic_destination(%extent: index, %source: view<[%extent]xi8>, %dest: view<[%extent]xi1>, %enabled: i1) {
+  // ERROR@+1: TYPE/003 "dest" "view with a byte-addressable footprint"
+  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi8> to view<[%extent]xi1>, i1 -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+func.def @async_masked_copy_rejects_mismatched_byte_footprint(%source: view<16xbf16>, %dest: view<16xi8>, %enabled: i1) {
+  // ERROR@+1: TYPE/003 "dest" "same static byte footprint as source"
+  %copy = kernel.async.copy.mask %source to %dest, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<16xbf16> to view<16xi8>, i1 -> kernel.async.token
   %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return

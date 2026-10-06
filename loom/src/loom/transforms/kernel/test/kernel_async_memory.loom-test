@@ -200,3 +200,92 @@ func.def public @caller_rejects_global_destination(%input: buffer, %output: buff
   func.call @copy_page(%source, %destination) : (view<64xi32>, view<64xi32>)
   func.return
 }
+
+// ====
+
+// RUN: pass inline-callables,symbol-dce,canonicalize,kernel-async-legality
+
+// The helper's shapes are symbolic while authored, then specialize at its
+// caller. Both transfer directions must retain the resolved footprint.
+func.def inline @copy_rows(%elements: index, %bytes: index, %source: view<[%elements]xbf16>, %scratch: view<[%bytes]xi8>, %output: view<[%elements]xbf16>, %enabled: i1) {
+  %load = kernel.async.copy %source to %scratch {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%elements]xbf16> to view<[%bytes]xi8> -> kernel.async.token
+  %loaded = kernel.async.group %load : kernel.async.token -> kernel.async.group
+  kernel.async.wait %loaded {newer_groups = 0} : kernel.async.group
+  %store = kernel.async.copy.mask %scratch to %output, %enabled {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<[%bytes]xi8> to view<[%elements]xbf16>, i1 -> kernel.async.token
+  %stored = kernel.async.group %store : kernel.async.token -> kernel.async.group
+  kernel.async.wait %stored {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+func.def public @specialized_rows(%input: buffer, %output: buffer, %enabled: i1) {
+  %origin = index.constant 0 : offset
+  %elements = index.constant 32 : index
+  %bytes = index.constant 64 : index
+  %allocation_size = index.constant 64 : offset
+  %global_input = buffer.assume.memory_space<global> %input : buffer
+  %global_output = buffer.assume.memory_space<global> %output : buffer
+  %source = buffer.view %global_input[%origin] : buffer -> view<[%elements]xbf16>
+  %destination = buffer.view %global_output[%origin] : buffer -> view<[%elements]xbf16>
+  %storage = buffer.alloca<workgroup> align(64) %allocation_size : buffer
+  %scratch = buffer.view %storage[%origin] : buffer -> view<[%bytes]xi8>
+  func.call @copy_rows(%elements, %bytes, %source, %scratch, %destination, %enabled) : (index, index, view<[%elements]xbf16>, view<[%bytes]xi8>, view<[%elements]xbf16>, i1)
+  func.return
+}
+
+// ----
+func.def public @specialized_rows(%input: buffer, %output: buffer, %enabled: i1) {
+  %origin = index.constant 0 : offset
+  %allocation_size = index.constant 64 : offset
+  %global_input = buffer.assume.memory_space<global> %input : buffer
+  %global_output = buffer.assume.memory_space<global> %output : buffer
+  %source = buffer.view %global_input[%origin] : buffer -> view<32xbf16>
+  %destination = buffer.view %global_output[%origin] : buffer -> view<32xbf16>
+  %storage = buffer.alloca<workgroup> align(64) %allocation_size : buffer
+  %scratch = buffer.view %storage[%origin] : buffer -> view<64xi8>
+  %load = kernel.async.copy %source to %scratch {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<32xbf16> to view<64xi8> -> kernel.async.token
+  %loaded = kernel.async.group %load : kernel.async.token -> kernel.async.group
+  kernel.async.wait %loaded {newer_groups = 0} : kernel.async.group
+  %store = kernel.async.copy.mask %scratch to %destination, %enabled {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<64xi8> to view<32xbf16>, i1 -> kernel.async.token
+  %stored = kernel.async.group %store : kernel.async.token -> kernel.async.group
+  kernel.async.wait %stored {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+// RUN: pass kernel-async-legality
+
+// Deferring source shape verification does not authorize an unresolved copy
+// length at the target boundary.
+func.def @copy_requires_concrete_extent_at_lowering(%input: buffer, %extent: index) {
+  %origin = index.constant 0 : offset
+  %allocation_size = index.constant 64 : offset
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%origin] : buffer -> view<[%extent]xi8>
+  %storage = buffer.alloca<workgroup> align(64) %allocation_size : buffer
+  %destination = buffer.view %storage[%origin] : buffer -> view<[%extent]xi8>
+  // ERROR@+1: LOWERING/024 {op_name="kernel.async.copy", phase_name="kernel-async-legality", rejection_bits="64"}
+  %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xi8> to view<[%extent]xi8> -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+// Mismatches visible only in value facts are rejected even without a preceding
+// canonicalization of the symbolic view types.
+func.def @copy_rejects_specialized_extent_mismatch(%input: buffer, %enabled: i1) {
+  %origin = index.constant 0 : offset
+  %extent = index.constant 32 : index
+  %allocation_size = index.constant 64 : offset
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%origin] : buffer -> view<[%extent]xbf16>
+  %storage = buffer.alloca<workgroup> align(64) %allocation_size : buffer
+  %destination = buffer.view %storage[%origin] : buffer -> view<[%extent]xi8>
+  // ERROR@+1: LOWERING/024 {op_name="kernel.async.copy.mask", phase_name="kernel-async-legality", rejection_bits="64"}
+  %copy = kernel.async.copy.mask %source to %destination, %enabled {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%extent]xbf16> to view<[%extent]xi8>, i1 -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}

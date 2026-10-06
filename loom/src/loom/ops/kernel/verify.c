@@ -504,8 +504,11 @@ static bool loom_kernel_type_static_element_byte_count(
   return true;
 }
 
-static bool loom_kernel_type_static_byte_count_from_axis(
-    loom_type_t type, uint8_t first_axis, int64_t* out_byte_count) {
+// An unresolved extent leaves the footprint symbolic until specialization.
+// Element addressability and the known factors remain source constraints.
+static bool loom_kernel_type_byte_count_from_axis(loom_type_t type,
+                                                  uint8_t first_axis,
+                                                  int64_t* out_byte_count) {
   if (!out_byte_count || !loom_type_is_view(type) ||
       first_axis > loom_type_rank(type)) {
     return false;
@@ -515,9 +518,11 @@ static bool loom_kernel_type_static_byte_count_from_axis(
   if (!loom_kernel_type_static_element_byte_count(type, &byte_count)) {
     return false;
   }
+  bool is_static = true;
   for (uint8_t axis = first_axis; axis < loom_type_rank(type); ++axis) {
     if (loom_type_dim_is_dynamic_at(type, axis)) {
-      return false;
+      is_static = false;
+      continue;
     }
     int64_t dimension_size = loom_type_dim_static_size_at(type, axis);
     if (dimension_size < 0 ||
@@ -526,8 +531,15 @@ static bool loom_kernel_type_static_byte_count_from_axis(
     }
   }
 
-  *out_byte_count = byte_count;
+  *out_byte_count = is_static ? byte_count : -1;
   return true;
+}
+
+static bool loom_kernel_type_static_byte_count_from_axis(
+    loom_type_t type, uint8_t first_axis, int64_t* out_byte_count) {
+  return loom_kernel_type_byte_count_from_axis(type, first_axis,
+                                               out_byte_count) &&
+         *out_byte_count >= 0;
 }
 
 static bool loom_kernel_type_static_byte_count(loom_type_t type,
@@ -549,21 +561,32 @@ static iree_status_t loom_kernel_verify_static_byte_count(
       IREE_SV("view with a static byte-addressable footprint"));
 }
 
-static iree_status_t loom_kernel_verify_same_static_byte_count(
+static iree_status_t loom_kernel_verify_same_byte_count(
     const loom_module_t* module, iree_diagnostic_emitter_t emitter,
     const loom_op_t* op, loom_value_id_t source_id, loom_value_id_t dest_id) {
   int64_t source_byte_count = 0;
-  IREE_RETURN_IF_ERROR(loom_kernel_verify_static_byte_count(
-      module, emitter, op, IREE_SV("source"), source_id, &source_byte_count));
+  loom_type_t source_type = loom_module_value_type(module, source_id);
+  if (!loom_kernel_type_byte_count_from_axis(source_type, 0,
+                                             &source_byte_count)) {
+    return loom_kernel_emit_operand_constraint(
+        emitter, op, IREE_SV("source"), source_type,
+        IREE_SV("view with a byte-addressable footprint"));
+  }
 
   int64_t dest_byte_count = 0;
-  IREE_RETURN_IF_ERROR(loom_kernel_verify_static_byte_count(
-      module, emitter, op, IREE_SV("dest"), dest_id, &dest_byte_count));
+  loom_type_t dest_type = loom_module_value_type(module, dest_id);
+  if (!loom_kernel_type_byte_count_from_axis(dest_type, 0, &dest_byte_count)) {
+    return loom_kernel_emit_operand_constraint(
+        emitter, op, IREE_SV("dest"), dest_type,
+        IREE_SV("view with a byte-addressable footprint"));
+  }
 
-  if (source_byte_count == dest_byte_count) {
+  // Movement analysis requires equal concrete footprints before selecting a
+  // target transfer. Source verification can only reject a known mismatch.
+  if (source_byte_count < 0 || dest_byte_count < 0 ||
+      source_byte_count == dest_byte_count) {
     return iree_ok_status();
   }
-  loom_type_t dest_type = loom_module_value_type(module, dest_id);
   return loom_kernel_emit_operand_constraint(
       emitter, op, IREE_SV("dest"), dest_type,
       IREE_SV("same static byte footprint as source"));
@@ -730,8 +753,8 @@ static iree_status_t loom_kernel_verify_async_copy_like(
     uint8_t direction, loom_value_id_t token_id) {
   IREE_RETURN_IF_ERROR(loom_kernel_verify_result_async_token(
       module, emitter, op, IREE_SV("token"), token_id));
-  IREE_RETURN_IF_ERROR(loom_kernel_verify_same_static_byte_count(
-      module, emitter, op, source_id, dest_id));
+  IREE_RETURN_IF_ERROR(loom_kernel_verify_same_byte_count(module, emitter, op,
+                                                          source_id, dest_id));
   IREE_RETURN_IF_ERROR(loom_cache_policy_verify(
       module, op,
       direction == LOOM_KERNEL_DIRECTION_WORKGROUP_TO_GLOBAL
