@@ -6,6 +6,11 @@
 
 #include "iree/hal/memory/tlsf_pool.h"
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
 #include "iree/async/proactor.h"
@@ -812,6 +817,111 @@ TEST(TLSFPool, ReleaseNodeReuseAvoidsRepeatedHostAllocation) {
   iree_hal_pool_release(pool);
   iree_async_notification_release(notification);
   iree_hal_slab_provider_release(slab_provider);
+}
+
+TEST(TLSFPool, ConcurrentReleaseAcquireAndTrimRecoverTheFullBudget) {
+  constexpr size_t kWorkerCount = 4;
+  constexpr size_t kIterationCount = 256;
+  constexpr iree_device_size_t kLargestAllocation = 4096;
+  iree_allocator_t allocator = iree_allocator_system();
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(iree_hal_cpu_slab_provider_create(allocator, &provider));
+  iree_async_notification_t* notification = nullptr;
+  IREE_ASSERT_OK(iree_async_notification_create(
+      test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
+  auto options = DefaultOptions();
+  options.tlsf_options.alignment = 64;
+  options.budget_limit = kWorkerCount * kLargestAllocation;
+  iree_hal_pool_t* pool = nullptr;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+      options, provider, notification, test_frontier_tracker(),
+      iree_hal_pool_epoch_query_null(), allocator, &pool));
+  iree_async_notification_release(notification);
+  iree_hal_slab_provider_release(provider);
+
+  // Start allocation and trimming together. No synchronization protects the
+  // pool's release-node publication: acquisitions recycle published nodes and
+  // trims free them while other threads are returning their reservations.
+  std::mutex start_mutex;
+  std::condition_variable start_condition;
+  size_t ready_count = 0;
+  bool started = false;
+  auto await_start = [&] {
+    std::unique_lock<std::mutex> lock(start_mutex);
+    ++ready_count;
+    start_condition.notify_all();
+    start_condition.wait(lock, [&] { return started; });
+  };
+  std::atomic<size_t> finished_count{0};
+  auto run_worker = [&](size_t worker_index) -> iree_status_t {
+    iree_status_t status = iree_ok_status();
+    for (size_t iteration = 0;
+         iteration < kIterationCount && iree_status_is_ok(status);
+         ++iteration) {
+      const iree_device_size_t length = 64u << ((iteration + worker_index) % 7);
+      const auto request = MakeReservationRequest(length, 64);
+      iree_hal_buffer_t* buffer = nullptr;
+      status = iree_hal_pool_allocate_buffer(pool, request.params, length,
+                                             iree_immediate_timeout(), &buffer);
+      const uint32_t pattern =
+          static_cast<uint32_t>(worker_index * kIterationCount + iteration);
+      if (iree_status_is_ok(status)) {
+        status = iree_hal_buffer_map_fill(buffer, 0, length, &pattern,
+                                          sizeof(pattern));
+      }
+      uint32_t actual[kLargestAllocation / sizeof(uint32_t)] = {};
+      if (iree_status_is_ok(status)) {
+        status = iree_hal_buffer_map_read(buffer, 0, actual, length);
+      }
+      if (iree_status_is_ok(status)) {
+        for (size_t i = 0; i < length / sizeof(uint32_t); ++i) {
+          EXPECT_EQ(pattern, actual[i]);
+        }
+      }
+      iree_hal_buffer_release(buffer);
+    }
+    return status;
+  };
+  iree_status_t worker_statuses[kWorkerCount] = {};
+  std::thread workers[kWorkerCount];
+  for (size_t i = 0; i < kWorkerCount; ++i) {
+    workers[i] = std::thread([&, i] {
+      await_start();
+      worker_statuses[i] = run_worker(i);
+      finished_count.fetch_add(1, std::memory_order_release);
+    });
+  }
+  std::thread trimmer([&] {
+    await_start();
+    do {
+      iree_hal_pool_trim(pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+      std::this_thread::yield();
+    } while (finished_count.load(std::memory_order_acquire) != kWorkerCount);
+  });
+  {
+    std::unique_lock<std::mutex> lock(start_mutex);
+    start_condition.wait(lock, [&] { return ready_count == kWorkerCount + 1; });
+    started = true;
+    start_condition.notify_all();
+  }
+  for (auto& worker : workers) {
+    worker.join();
+  }
+  trimmer.join();
+  for (iree_status_t status : worker_statuses) {
+    IREE_EXPECT_OK(status);
+  }
+
+  iree_hal_pool_trim(pool, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
+  iree_hal_pool_stats_t stats;
+  iree_hal_pool_query_stats(pool, &stats);
+  EXPECT_EQ(0u, stats.bytes_reserved);
+  EXPECT_EQ(0u, stats.reservation_count);
+  EXPECT_EQ(0u, stats.bytes_committed);
+  EXPECT_EQ(kWorkerCount * kIterationCount, stats.reserve_count);
+  EXPECT_EQ(stats.reserve_count, stats.release_count);
+  EXPECT_EQ(0u, stats.over_budget_count);
+  iree_hal_pool_release(pool);
 }
 
 TEST_F(TLSFPoolTest, ReserveReusesDominatedFrontier) {
