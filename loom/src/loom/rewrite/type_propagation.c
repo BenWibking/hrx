@@ -712,6 +712,10 @@ loom_type_t loom_type_transfer_value_type(
   return loom_type_propagator_value_type(context->propagator, value_id);
 }
 
+void loom_type_transfer_reject(loom_type_transfer_context_t* context) {
+  context->propagator->conflict = true;
+}
+
 iree_status_t loom_type_transfer_seed_candidate(
     loom_type_transfer_context_t* context, loom_value_id_t value_id,
     loom_type_t candidate_type, loom_constraint_property_t property) {

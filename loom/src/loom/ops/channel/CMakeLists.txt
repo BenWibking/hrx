@@ -41,6 +41,7 @@ loom_generated_cc_library(
     loom::ops::op_defs
     loom::ops::type_registry
     loom::ops::view
+    loom::rewrite::type_propagation
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

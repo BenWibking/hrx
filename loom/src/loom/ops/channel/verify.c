@@ -9,6 +9,7 @@
 #include "loom/ir/module.h"
 #include "loom/ops/channel/ops.h"
 #include "loom/ops/type_registry.h"
+#include "loom/rewrite/type_propagation.h"
 
 typedef enum loom_channel_handle_kind_e {
   LOOM_CHANNEL_HANDLE_CHANNEL,
@@ -82,6 +83,55 @@ static bool loom_channel_view_matches(loom_type_t payload, loom_type_t view,
     }
   }
   return true;
+}
+
+// A payload's shape is one contract shared by its channel, owned accesses and
+// borrowed views. A local type transaction must not specialize a view in
+// isolation. Slot extents and view encodings remain independently refinable.
+iree_status_t loom_channel_bind_type_transfer(
+    loom_type_transfer_context_t* context, const loom_module_t* module,
+    loom_op_t* op) {
+  const loom_type_t channel =
+      loom_type_transfer_value_type(context, loom_channel_bind_result(op));
+  const loom_type_t payload =
+      loom_type_table_get(&module->types, loom_channel_type_payload(channel));
+  const loom_type_t storage =
+      loom_type_transfer_value_type(context, loom_channel_bind_storage(op));
+  if (!loom_channel_view_matches(payload, storage, 1)) {
+    loom_type_transfer_reject(context);
+  }
+  return iree_ok_status();
+}
+
+// Reserve and acquire both return a borrowed view as their second result.
+iree_status_t loom_channel_selection_type_transfer(
+    loom_type_transfer_context_t* context, const loom_module_t* module,
+    loom_op_t* op) {
+  const loom_type_t channel =
+      loom_type_transfer_value_type(context, loom_op_const_operands(op)[0]);
+  const loom_type_t payload =
+      loom_type_table_get(&module->types, loom_channel_type_payload(channel));
+  const loom_type_t view =
+      loom_type_transfer_value_type(context, loom_op_const_results(op)[1]);
+  if (!loom_channel_view_matches(payload, view, 0)) {
+    loom_type_transfer_reject(context);
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_channel_wait_type_transfer(
+    loom_type_transfer_context_t* context, const loom_module_t* module,
+    loom_op_t* op) {
+  const loom_type_t read =
+      loom_type_transfer_value_type(context, loom_channel_wait_read(op));
+  const loom_type_t payload =
+      loom_type_table_get(&module->types, loom_read_type_payload(read));
+  const loom_type_t view =
+      loom_type_transfer_value_type(context, loom_channel_wait_view(op));
+  if (!loom_channel_view_matches(payload, view, 0)) {
+    loom_type_transfer_reject(context);
+  }
+  return iree_ok_status();
 }
 
 static iree_string_view_t loom_channel_handle_constraint(

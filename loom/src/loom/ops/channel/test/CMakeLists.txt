@@ -20,6 +20,7 @@ loom_check_test_suite(
     "read_ahead_storage.loom-test"
     "roundtrip.loom-test"
     "storage_facts.loom-test"
+    "type_propagation.loom-test"
     "verify.loom-test"
     "worker_control.loom-test"
 )
