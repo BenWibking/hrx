@@ -394,23 +394,51 @@ TEST(Pm4EncodingTest, ConfirmedCopiesPreserveAddressesAndSelectWidth) {
 }
 
 TEST(Pm4EncodingTest, MecDmaCopyAndDrainKeepReservedControlsClear) {
-  std::array<uint32_t, 16> words;
-  words.fill(0x24681357);
-  Pm4CommandWriter commands(words.data() + 1, Profile(11, 0));
-  commands.DmaCopyL2(UINT64_C(0x1234567887654040), UINT64_C(0x2345678998765100),
-                     1024);
-  commands.WaitDma();
-  // RADV's real compute copy/drain uses a direct byte count with RAW_WAIT,
-  // enabled write confirmation and no PFP-layout CP_SYNC control.
-  const std::array<uint32_t, 14> expected = {
-      0xc0055000, 0x60300000, 0x87654040, 0x12345678, 0x98765100,
-      0x23456789, 0x40000400, 0xc0055000, 0,          0,
-      0,          0,          0,          0,
+  const struct {
+    // Direct positive byte count, including the native field maximum.
+    uint32_t byte_length;
+    // Literal RAW_WAIT plus byte-count encoding, independent of the writer.
+    uint32_t count_control;
+  } cases[] = {
+      {1, 0x40000001},     {3, 0x40000003},          {1024, 0x40000400},
+      {32736, 0x40007fe0}, {0x03ffffff, 0x43ffffff},
   };
-  ASSERT_EQ(commands.word_count(), expected.size());
-  ExpectWords(words.data() + 1, expected);
-  EXPECT_EQ(words.front(), 0x24681357u);
-  EXPECT_EQ(words.back(), 0x24681357u);
+  for (const auto& target : std::array<std::array<uint32_t, 2>, 5>{
+           {{11, 0}, {11, 5}, {11, 7}, {12, 0}, {12, 5}}}) {
+    for (const auto& test : cases) {
+      SCOPED_TRACE(::testing::Message() << target[0] << '.' << target[1]
+                                        << " byte_length=" << test.byte_length);
+      std::array<uint32_t, 16> words;
+      words.fill(0x24681357);
+      Pm4CommandWriter commands(words.data() + 1,
+                                Profile(target[0], target[1]));
+      commands.DmaCopy(UINT64_C(0x1234567887654043),
+                       UINT64_C(0x2345678998765105), test.byte_length);
+      commands.WaitDma();
+      // Full byte addresses, direct count, RAW_WAIT, enabled confirmation,
+      // and no PFP-layout CP_SYNC. The drain's complete body remains zero.
+      const std::array<uint32_t, 14> expected = {
+          0xc0055000,
+          0x60300000,
+          0x87654043,
+          0x12345678,
+          0x98765105,
+          0x23456789,
+          test.count_control,
+          0xc0055000,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+      };
+      ASSERT_EQ(commands.word_count(), expected.size());
+      ExpectWords(words.data() + 1, expected);
+      EXPECT_EQ(words.front(), 0x24681357u);
+      EXPECT_EQ(words.back(), 0x24681357u);
+    }
+  }
 }
 
 TEST(Pm4EncodingTest, SharedCopyDataPreservesFullPayloadAddresses) {

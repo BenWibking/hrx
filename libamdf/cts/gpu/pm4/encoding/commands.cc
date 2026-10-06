@@ -187,11 +187,10 @@ void Pm4CommandWriter::CopyData64(uint64_t source_address,
                                target_address, pm4::CopyDataWidth::k64Bit);
 }
 
-void Pm4CommandWriter::DmaCopyL2(uint64_t source_address,
-                                 uint64_t target_address,
-                                 uint32_t byte_length) {
+void Pm4CommandWriter::DmaCopy(uint64_t source_address, uint64_t target_address,
+                               uint32_t byte_length) {
   words_[word_count_++] = MakeHeader(0x50, 7);
-  // L2 source/destination, LRU policies and no PFP-layout CP_SYNC bit.
+  // TC_L2 source/destination, default policies and no PFP-layout CP_SYNC bit.
   words_[word_count_++] = (3u << 29) | (3u << 20);
   words_[word_count_++] = static_cast<uint32_t>(source_address);
   words_[word_count_++] = static_cast<uint32_t>(source_address >> 32);

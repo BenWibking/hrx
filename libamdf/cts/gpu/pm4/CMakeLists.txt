@@ -49,6 +49,7 @@ iree_cc_library(
     "command_buffer_test.cc"
     "copy_test.cc"
     "dispatch_test.cc"
+    "dma_test.cc"
     "handoff_test.cc"
     "indirect_test.cc"
     "lds_test.cc"

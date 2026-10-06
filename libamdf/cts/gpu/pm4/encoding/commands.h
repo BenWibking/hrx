@@ -100,12 +100,14 @@ class Pm4CommandWriter {
   // a subsequent barrier and completion establish visibility and retirement.
   void AtomicStore32(uint64_t target_address, uint32_t value);
   void AtomicStore64(uint64_t target_address, uint64_t value);
-  // MEC incrementing L2 copy with RAW_WAIT and write confirmation.
+  // MEC incrementing copy through the native TC_L2 selectors, with RAW_WAIT
+  // and write confirmation. Those selectors route through MALL on GFX12.
   // The caller supplies a nonzero byte count within the native 26-bit field
   // and the selected transfer policy, then joins final use with WaitDma and
-  // explicit cache/marker work. The CTS currently selects 1024 bytes.
-  void DmaCopyL2(uint64_t source_address, uint64_t target_address,
-                 uint32_t byte_length);
+  // explicit cache/marker work. Source and destination need only byte
+  // alignment.
+  void DmaCopy(uint64_t source_address, uint64_t target_address,
+               uint32_t byte_length);
   // MEC zero-byte DMA drain, with all reserved fields clear.
   // This does not perform cache maintenance or publish a host marker.
   void WaitDma();
