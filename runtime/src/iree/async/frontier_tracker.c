@@ -234,18 +234,18 @@ struct iree_async_frontier_tracker_t {
   // atomic pointer. All writes and most reads happen under |waiters_mutex|;
   // the atomic type exists solely so that iree_async_frontier_tracker_advance
   // can perform a lock-free "any waiters?" check outside the mutex without
-  // racing against insertions under the C memory model (and without TSAN
-  // flagging it). Acquire load on the lock-free read pairs with release stores
-  // from wait()/cancel_wait()/etc. under the mutex.
+  // racing against insertions under the C memory model. Waiter publication,
+  // epoch advancement and their opposing observations are sequentially
+  // consistent, so they cannot both miss the other writer.
   iree_atomic_intptr_t waiters_head;
 
   // Flexible array member containing tracker-owned axis table slots.
   iree_async_axis_table_entry_t axis_table_entries[];
 };
 
-// Typed load for the atomic waiters_head. Callers outside the mutex must use
-// iree_memory_order_acquire to pair with release stores; callers under the
-// mutex can use iree_memory_order_relaxed (mutual exclusion gives ordering).
+// Typed load for the atomic waiters_head. The lock-free advance check uses
+// sequential consistency for the publication handshake; reads under the mutex
+// can use relaxed ordering.
 static inline iree_async_frontier_waiter_t*
 iree_async_frontier_tracker_load_waiters_head(
     iree_async_frontier_tracker_t* tracker, iree_memory_order_t order) {
@@ -253,9 +253,9 @@ iree_async_frontier_tracker_load_waiters_head(
                                                          order);
 }
 
-// Typed store for the atomic waiters_head. All stores happen under the
-// waiters_mutex; iree_memory_order_release is used so that the lock-free
-// acquire load in advance() observes a well-defined value chain.
+// Typed store for the atomic waiters_head. All stores hold waiters_mutex.
+// Insertion participates in the sequentially consistent publication handshake;
+// release ordering suffices for removals observed by the lock-free head check.
 static inline void iree_async_frontier_tracker_store_waiters_head(
     iree_async_frontier_tracker_t* tracker, iree_async_frontier_waiter_t* value,
     iree_memory_order_t order) {
@@ -330,9 +330,11 @@ iree_async_frontier_tracker_check_frontier(
       return IREE_ASYNC_WAITER_CHECK_FAILED;
     }
 
-    // Check epoch.
+    // Sequential consistency participates in wait()'s publication handshake
+    // with lock-free advance(). The post-insertion recheck must observe any
+    // advancement that missed the newly published waiter.
     int64_t current_epoch =
-        iree_atomic_load(&entry->current_epoch, iree_memory_order_acquire);
+        iree_atomic_load(&entry->current_epoch, iree_memory_order_seq_cst);
     if ((uint64_t)current_epoch < frontier->entries[i].epoch) {
       // A later axis may already have failed. Pending work must not mask that
       // terminal result or leave a newly registered waiter stranded.
@@ -513,11 +515,8 @@ iree_host_size_t iree_async_frontier_tracker_advance(
     return 0;
   }
 
-  // CAS loop to update epoch if advancing. Uses acq_rel ordering so that the
-  // subsequent load of waiters_head (lock-free fast path) cannot be reordered
-  // before the store. Without this, on weakly-ordered architectures (ARM),
-  // advance() could store the epoch and read a stale waiters_head (NULL) while
-  // wait() inserts a waiter and reads the old epoch, causing a lost wakeup.
+  // Publish monotonically advancing completion in the same total order as
+  // waiter publication and the opposing observations in wait() and below.
   int64_t current_epoch;
   do {
     current_epoch =
@@ -527,7 +526,7 @@ iree_host_size_t iree_async_frontier_tracker_advance(
     }
   } while (!iree_atomic_compare_exchange_weak(
       &entry->current_epoch, &current_epoch, (int64_t)epoch,
-      iree_memory_order_acq_rel, iree_memory_order_relaxed));
+      iree_memory_order_seq_cst, iree_memory_order_relaxed));
 
   // Phase 2: Signal semaphore if present.
   if (entry->semaphore != NULL) {
@@ -546,19 +545,13 @@ iree_host_size_t iree_async_frontier_tracker_advance(
   // callback reenters the tracker (e.g., registering a new waiter or
   // failing another axis).
 
-  // Lock-free quick check: if no waiters, skip the mutex entirely.
-  // This is safe because wait() re-checks satisfaction after insertion:
-  //   - advance() reads waiters_head (sees NULL, stale due to concurrent
-  //     insert)
-  //   - advance() returns early (never takes lock)
-  //   - wait() inserts waiter, re-checks epoch (sees new value from our CAS)
-  //   - wait() dispatches immediately
-  // The acquire load here pairs with release stores on waiters_head from
-  // wait()/cancel_wait()/fail_axis_impl() under the mutex. Combined with the
-  // acq_rel CAS on current_epoch above, lost wakeups are prevented on
-  // weakly-ordered architectures.
+  // Lock-free quick check: if no waiters, skip the mutex entirely. Sequential
+  // consistency with epoch publication and wait()'s store/recheck guarantees
+  // that either this load sees the new waiter or that recheck sees our epoch.
+  // Acquire/release on the distinct atomics alone permits both readers to miss
+  // the opposing publication.
   if (iree_async_frontier_tracker_load_waiters_head(
-          tracker, iree_memory_order_acquire) == NULL) {
+          tracker, iree_memory_order_seq_cst) == NULL) {
     return 0;
   }
 
@@ -674,20 +667,14 @@ iree_status_t iree_async_frontier_tracker_wait(
     return iree_ok_status();
   }
 
-  // Not yet satisfied; insert at the head of the waiter list. Release
-  // ordering on the head store pairs with the acquire fast-path load in
-  // advance() so the lock-free reader observes the insertion on weakly
-  // ordered architectures.
+  // Not yet satisfied; publish in the same total order as advance()'s epoch
+  // update and waiter-head load before rechecking completion.
   waiter->next = iree_async_frontier_tracker_load_waiters_head(
       tracker, iree_memory_order_relaxed);
   iree_async_frontier_tracker_store_waiters_head(tracker, waiter,
-                                                 iree_memory_order_release);
+                                                 iree_memory_order_seq_cst);
 
-  // Re-check satisfaction after insertion. This handles the race where:
-  //   1. wait() checks epoch (old value), decides to insert
-  //   2. advance() updates epoch, does lock-free check (sees NULL), returns
-  //   3. wait() inserts waiter (would be stuck without this re-check)
-  // The re-check sees the new epoch and dispatches immediately.
+  // Re-check satisfaction after insertion before handing ownership to advance.
   //
   // check_waiter only writes |failure_status| when returning FAILED, so on
   // SATISFIED the value is still the iree_ok_status() sentinel we

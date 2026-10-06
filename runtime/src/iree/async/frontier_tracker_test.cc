@@ -931,6 +931,45 @@ TEST(ConcurrencyTest, ConcurrentAdvanceSameAxis) {
   EXPECT_EQ(state.last_status_code, IREE_STATUS_OK);
 }
 
+TEST(ConcurrencyTest, WaitPublicationRacingAdvanceDispatchesExactlyOnce) {
+  TrackerFixture fixture;
+  fixture.AddAxis(Axis(0));
+  constexpr int kRoundCount = 10000;
+  std::atomic<int> prepared_round{0};
+  std::atomic<int> advanced_round{0};
+  std::thread advancing([&] {
+    for (int round = 1; round <= kRoundCount; ++round) {
+      while (prepared_round.load(std::memory_order_acquire) != round) {
+        std::this_thread::yield();
+      }
+      iree_async_frontier_tracker_advance(fixture.tracker(), Axis(0), round);
+      advanced_round.store(round, std::memory_order_release);
+    }
+  });
+
+  for (int round = 1; round <= kRoundCount; ++round) {
+    MAKE_FRONTIER(frontier, 1, E(Axis(0), round));
+    iree_async_frontier_waiter_t waiter;
+    CallbackState state;
+    prepared_round.store(round, std::memory_order_release);
+    IREE_EXPECT_OK(iree_async_frontier_tracker_wait(
+        fixture.tracker(), frontier, TrackingCallback, &state, &waiter));
+    while (advanced_round.load(std::memory_order_acquire) != round) {
+      std::this_thread::yield();
+    }
+
+    // Both calls have returned: either registration observed completion and
+    // dispatched inline, or advance observed the waiter and dispatched it.
+    // No asynchronous operation remains that could deliver another callback.
+    EXPECT_EQ(state.call_count.load(std::memory_order_relaxed), 1)
+        << "round " << round;
+    EXPECT_EQ(state.last_status_code, IREE_STATUS_OK);
+    EXPECT_FALSE(
+        iree_async_frontier_tracker_cancel_wait(fixture.tracker(), &waiter));
+  }
+  advancing.join();
+}
+
 //===----------------------------------------------------------------------===//
 // Section 9: Scenarios
 //===----------------------------------------------------------------------===//
