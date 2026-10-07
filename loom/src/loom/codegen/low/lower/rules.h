@@ -1021,11 +1021,6 @@ typedef uint8_t loom_low_lower_rule_flags_t;
 #define LOOM_LOW_LOWER_RULE_PRIMARY_EMIT_NONE ((uint16_t)UINT16_MAX)
 
 typedef struct loom_low_lower_rule_t {
-  // One-based report-key table ordinal. Zero means the selected rule has no
-  // stable strategy key for compile reports.
-  uint16_t report_key_ordinal;
-  // Number of liveness-packed rule-local temporary slots.
-  uint16_t temporary_count;
   // Packed first related source-node row and row count. The root source op is
   // implicit node zero.
   uint16_t source_node_span;
@@ -1057,13 +1052,18 @@ typedef struct loom_low_lower_rule_t {
       uint8_t elide_ref_count;
     } value;
   } metadata;
+  // One-based report-key table ordinal. Zero means the selected rule has no
+  // stable strategy key for compile reports.
+  uint8_t report_key_ordinal;
+  // Number of liveness-packed rule-local temporary slots.
+  uint8_t temporary_count;
   // Rule behavior flags.
   loom_low_lower_rule_flags_t flags;
   // Number of guard refs for this rule.
   uint8_t guard_count;
 } loom_low_lower_rule_t;
-static_assert(sizeof(loom_low_lower_rule_t) == 16,
-              "loom_low_lower_rule_t must be 16 bytes");
+static_assert(sizeof(loom_low_lower_rule_t) == 14,
+              "loom_low_lower_rule_t must be 14 bytes");
 
 static inline uint16_t loom_low_lower_rule_source_node_start(
     const loom_low_lower_rule_t* rule) {

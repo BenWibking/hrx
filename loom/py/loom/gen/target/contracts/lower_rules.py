@@ -746,7 +746,7 @@ def _validate_c_table_shape(
     subject = f"lower-rule set '{table.name}'"
     _require_u16(len(table.spans), f"{subject} span count")
     _require_u16(len(table.rules), f"{subject} rule count")
-    _require_u16(len(_collect_report_keys(table)), f"{subject} report-key count")
+    _require_u8(len(_collect_report_keys(table)), f"{subject} report-key count")
     _require_u16(len(table.type_patterns), f"{subject} type-pattern count")
     _require_u16(len(table.value_refs), f"{subject} value-ref count")
     if len(table.source_nodes) > 1 << (16 - SOURCE_NODE_COUNT_BITS):
@@ -1183,7 +1183,7 @@ def _validate_c_table_shape(
             raise ValueError(f"{row_subject} inactive elide-ref range has a nonzero start")
         if row.report_key:
             _require_report_key(row.report_key, f"{row_subject} report key")
-        _require_u16(row.temporary_count, f"{row_subject} temporary count")
+        _require_u8(row.temporary_count, f"{row_subject} temporary count")
         if row.source_node_start >= 1 << (16 - SOURCE_NODE_COUNT_BITS):
             raise ValueError(f"{row_subject} source-node start exceeds packed capacity")
         _require_u8(row.source_node_count, f"{row_subject} source-node count")

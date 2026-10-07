@@ -207,12 +207,34 @@ def test_validate_c_table_shape_rejects_oversized_table_count() -> None:
     )
 
 
+def test_validate_c_table_shape_rejects_oversized_report_key_count() -> None:
+    table = _compiled_lower_rule_set(
+        rules=tuple(
+            LowerRule(
+                source_op=scalar_arithmetic.scalar_addi,
+                report_key=f"key_{index}",
+                temporary_count=0,
+                guard_start=0,
+                guard_count=0,
+                emit_start=0,
+                emit_count=0,
+            )
+            for index in range(0x100)
+        ),
+    )
+
+    _expect_value_error(
+        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
+        "lower-rule set 'test.low.generated_c_shape' report-key count exceeds uint8_t",
+    )
+
+
 def test_validate_c_table_shape_rejects_oversized_rule_field() -> None:
     table = _compiled_lower_rule_set(
         rules=(
             LowerRule(
                 source_op=scalar_arithmetic.scalar_addi,
-                temporary_count=0x10000,
+                temporary_count=0x100,
                 guard_start=0,
                 guard_count=0,
                 emit_start=0,
@@ -223,7 +245,7 @@ def test_validate_c_table_shape_rejects_oversized_rule_field() -> None:
 
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' rule 0 temporary count exceeds uint16_t",
+        "lower-rule set 'test.low.generated_c_shape' rule 0 temporary count exceeds uint8_t",
     )
 
 
