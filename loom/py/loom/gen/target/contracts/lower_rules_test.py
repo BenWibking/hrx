@@ -30,6 +30,8 @@ from loom.gen.target.contracts.lower_rule_rows import (
     source_memory_diagnostic_indices,
     source_memory_diagnostics_row,
     source_memory_row,
+    source_memory_shape,
+    source_memory_shape_row,
     source_node_row,
     type_pattern_row,
     value_ref_row,
@@ -548,6 +550,37 @@ def test_validate_c_table_shape_rejects_source_memory_diagnostic_indices_oob() -
         _expect_value_error(
             lambda table=table: _validate_c_table_shape(table, _c_shape_contract(), ()),
             f"lower-rule set 'test.low.generated_c_shape' source-memory 0 {reason.value} diagnostic index references missing diagnostic row",
+        )
+
+
+def test_validate_c_table_shape_rejects_oversized_source_memory_fields() -> None:
+    constraint = SourceMemoryConstraint(
+        operation=SourceMemoryOperation.LOAD,
+        memory_spaces=("global",),
+        element_byte_count=4,
+        vector_lane_count=1,
+        vector_lane_byte_stride=4,
+        static_byte_offset=0,
+    )
+    for field_name, value, subject, storage in (
+        ("element_byte_count", 0x100, "element byte count", "uint8_t"),
+        ("vector_lane_count", 0x10000, "vector lane count", "uint16_t"),
+        ("minimum_alignment", 0x10000, "minimum alignment", "uint16_t"),
+        (
+            "cache_policy_build_flags",
+            0x100,
+            "cache policy build flags",
+            "uint8_t",
+        ),
+    ):
+        row = LowerSourceMemory(
+            constraint=replace(constraint, **{field_name: value}),
+            rejection_diagnostic_indices=_rejection_diagnostic_indices(0xFFFF),
+        )
+        table = _compiled_lower_rule_set(source_memories=(row,))
+        _expect_value_error(
+            lambda table=table: _validate_c_table_shape(table, _c_shape_contract(), ()),
+            f"lower-rule set 'test.low.generated_c_shape' source-memory 0 {subject} exceeds {storage}",
         )
 
 
@@ -1555,6 +1588,37 @@ def test_generated_tables_intern_guards_and_diagnostic_params() -> None:
     assert param_refs == (0, 0, 1)
 
 
+def test_generated_tables_intern_source_memory_shapes() -> None:
+    constraint = SourceMemoryConstraint(
+        operation=SourceMemoryOperation.LOAD,
+        memory_spaces=("global",),
+        element_byte_count=4,
+        vector_lane_count=8,
+        vector_lane_byte_stride=4,
+        static_byte_offset_minimum=-16,
+        static_byte_offset_maximum=16,
+        dynamic_term_count=1,
+        dynamic_index_source=SourceMemoryDynamicIndexSource.VALUE,
+        dynamic_byte_stride=4,
+    )
+    rows = tuple(
+        LowerSourceMemory(
+            constraint=replace(constraint, **fields),
+            rejection_diagnostic_indices=_rejection_diagnostic_indices(0xFFFF),
+        )
+        for fields in (
+            {},
+            {"operation": SourceMemoryOperation.STORE},
+            {"vector_lane_byte_stride": 8},
+        )
+    )
+
+    unique_shapes, shape_indices = _intern_rows(tuple(source_memory_shape(row) for row in rows))
+
+    assert unique_shapes == (source_memory_shape(rows[0]), source_memory_shape(rows[2]))
+    assert shape_indices == (0, 0, 1)
+
+
 def test_diagnostic_rows_use_recorded_target_context() -> None:
     target_context_params = (
         LowerDiagnosticParam("target_key", DiagnosticParamKind.TARGET_KEY),
@@ -1883,6 +1947,7 @@ def test_source_memory_row_emits_dynamic_byte_stride_any_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1913,6 +1978,7 @@ def test_source_memory_row_emits_cache_policy_any_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1944,6 +2010,7 @@ def test_source_memory_row_emits_compact_address_layout() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -1978,6 +2045,7 @@ def test_source_memory_row_emits_preserve_source_index_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -2007,6 +2075,7 @@ def test_source_memory_row_emits_any_positive_dynamic_term_count() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -2017,7 +2086,7 @@ def test_source_memory_row_emits_any_positive_dynamic_term_count() -> None:
     assert (".dynamic_view_base_term_count = LOOM_LOW_LOWER_SOURCE_MEMORY_DYNAMIC_VIEW_BASE_TERM_COUNT_ANY") in fields
 
 
-def test_source_memory_row_emits_portable_signed_i64_values() -> None:
+def test_source_memory_shape_row_emits_portable_signed_i64_values() -> None:
     row = LowerSourceMemory(
         constraint=SourceMemoryConstraint(
             operation=SourceMemoryOperation.LOAD,
@@ -2034,12 +2103,7 @@ def test_source_memory_row_emits_portable_signed_i64_values() -> None:
         rejection_diagnostic_indices=_rejection_diagnostic_indices(0xFFFF),
     )
 
-    fields = source_memory_row(
-        row,
-        byte_offset_materializer_ordinal=0,
-        address_materializer_ordinal=0,
-        diagnostics_index=0,
-    )
+    fields = source_memory_shape_row(source_memory_shape(row))
 
     assert ".vector_lane_byte_stride = (-INT64_C(2147483648))" in fields
     assert ".static_byte_offset_minimum = INT64_MIN" in fields
@@ -2070,6 +2134,7 @@ def test_source_memory_row_emits_dynamic_stride_values_flag() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=0,
         diagnostics_index=0,
@@ -2121,6 +2186,7 @@ def test_source_memory_rows_split_complete_address_materializer() -> None:
 
     fields = source_memory_row(
         row,
+        shape_index=0,
         byte_offset_materializer_ordinal=0,
         address_materializer_ordinal=1,
         diagnostics_index=0,

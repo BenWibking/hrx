@@ -860,13 +860,14 @@ TEST_F(LowContractQuerySourceMemoryTest,
                                     LOOM_LOW_LOWER_MEMORY_SPACE_DESCRIPTOR;
   source_memory.element_byte_count = 4;
   source_memory.vector_lane_count = 1;
-  source_memory.vector_lane_byte_stride = 4;
-  source_memory.static_byte_offset_minimum = INT64_MIN;
-  source_memory.static_byte_offset_maximum = INT64_MAX;
   source_memory.dynamic_term_count = 1;
   source_memory.dynamic_index_source =
       LOOM_LOW_SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_VALUE;
-  source_memory.dynamic_byte_stride = 4;
+  loom_low_lower_source_memory_shape_t source_memory_shape = {};
+  source_memory_shape.vector_lane_byte_stride = 4;
+  source_memory_shape.static_byte_offset_minimum = INT64_MIN;
+  source_memory_shape.static_byte_offset_maximum = INT64_MAX;
+  source_memory_shape.dynamic_byte_stride = 4;
   loom_low_lower_source_memory_diagnostics_t source_memory_diagnostics = {};
   for (uint16_t& diagnostic_index :
        source_memory_diagnostics.rejection_diagnostic_indices) {
@@ -885,6 +886,8 @@ TEST_F(LowContractQuerySourceMemoryTest,
   rule_set.rule_count = 1;
   rule_set.source_memories = &source_memory;
   rule_set.source_memory_count = 1;
+  rule_set.source_memory_shapes = &source_memory_shape;
+  rule_set.source_memory_shape_count = 1;
   rule_set.source_memory_diagnostics = &source_memory_diagnostics;
   rule_set.source_memory_diagnostic_count = 1;
   rule_set.emit_refs = &emit_ref;

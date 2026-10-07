@@ -398,6 +398,16 @@ def _generate_source(
         )
     )
 
+    source_memory_shapes, source_memory_shape_indices = _intern_rows(tuple(lower_rule_rows.source_memory_shape(row) for row in table.source_memories))
+    source_memory_shapes_name = f"k{c_table_prefix}SourceMemoryShapes"
+    lines.extend(
+        lower_rule_rows.emit_optional_array(
+            source_memory_shapes_name,
+            "loom_low_lower_source_memory_shape_t",
+            [lower_rule_rows.source_memory_shape_row(shape) for shape in source_memory_shapes],
+        )
+    )
+
     source_memories_name = f"k{c_table_prefix}SourceMemories"
     lines.extend(
         lower_rule_rows.emit_optional_array(
@@ -406,12 +416,14 @@ def _generate_source(
             [
                 lower_rule_rows.source_memory_row(
                     row,
+                    shape_index=shape_index,
                     byte_offset_materializer_ordinal=byte_offset_ordinal,
                     address_materializer_ordinal=address_ordinal,
                     diagnostics_index=diagnostics_index,
                 )
-                for row, byte_offset_ordinal, address_ordinal, diagnostics_index in zip(
+                for row, shape_index, byte_offset_ordinal, address_ordinal, diagnostics_index in zip(
                     table.source_memories,
+                    source_memory_shape_indices,
                     byte_offset_materializer_ordinals,
                     address_materializer_ordinals,
                     source_memory_diagnostic_indices,
@@ -611,6 +623,8 @@ def _generate_source(
             source_nodes_name=source_nodes_name,
             materializers_name=materializers_name,
             source_memories_name=source_memories_name,
+            source_memory_shapes=source_memory_shapes,
+            source_memory_shapes_name=source_memory_shapes_name,
             source_memory_diagnostics=source_memory_diagnostics,
             source_memory_diagnostics_name=source_memory_diagnostics_name,
             source_memory_byte_offset_materializers=(source_memory_byte_offset_materializers),
@@ -850,11 +864,11 @@ def _validate_c_table_shape(
     for index, row in enumerate(table.source_memories):
         row_subject = f"{subject} source-memory {index}"
         constraint = row.constraint
-        _require_u32(
+        _require_u8(
             constraint.element_byte_count,
             f"{row_subject} element byte count",
         )
-        _require_u32(
+        _require_u16(
             constraint.vector_lane_count,
             f"{row_subject} vector lane count",
         )
@@ -870,7 +884,7 @@ def _validate_c_table_shape(
             constraint.static_byte_offset_maximum,
             f"{row_subject} static byte offset maximum",
         )
-        _require_u32(
+        _require_u16(
             constraint.minimum_alignment,
             f"{row_subject} minimum alignment",
         )
@@ -920,7 +934,7 @@ def _validate_c_table_shape(
                 "diagnostic",
             )
         if constraint.cache_policy_build_flags is not None:
-            _require_u32(
+            _require_u8(
                 constraint.cache_policy_build_flags,
                 f"{row_subject} cache policy build flags",
             )

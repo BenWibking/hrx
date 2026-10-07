@@ -39,10 +39,11 @@ TEST(LowLowerSourceMemoryMatchTest, SelectsExactRejectionReason) {
   constraint.memory_space_mask = LOOM_LOW_LOWER_MEMORY_SPACE_GLOBAL;
   constraint.element_byte_count = 4;
   constraint.vector_lane_count = 1;
-  constraint.vector_lane_byte_stride = 4;
-  constraint.static_byte_offset_minimum = 0;
-  constraint.static_byte_offset_maximum = 0;
   constraint.minimum_alignment = 4;
+  loom_low_lower_source_memory_shape_t shape = {};
+  shape.vector_lane_byte_stride = 4;
+  shape.static_byte_offset_minimum = 0;
+  shape.static_byte_offset_maximum = 0;
 
   loom_low_source_memory_access_plan_t access = {};
   access.operation_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD;
@@ -56,18 +57,21 @@ TEST(LowLowerSourceMemoryMatchTest, SelectsExactRejectionReason) {
   loom_low_lower_rule_match_context_t context = {};
   uint16_t diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
   EXPECT_TRUE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
 
   access.memory_space = LOOM_VALUE_FACT_MEMORY_SPACE_PRIVATE;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_MEMORY_SPACE);
   access.memory_space = LOOM_VALUE_FACT_MEMORY_SPACE_GLOBAL;
 
   access.vector_lane_count = 2;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_VECTOR_LANE_COUNT);
 
@@ -76,16 +80,19 @@ TEST(LowLowerSourceMemoryMatchTest, SelectsExactRejectionReason) {
       /*.projected_lane_count=*/1,
   };
   EXPECT_TRUE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   access.minimum_alignment = 2;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_MINIMUM_ALIGNMENT);
   access.minimum_alignment = 4;
   context.vector_lane_projection.source_lane_count = 3;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_VECTOR_LANE_COUNT);
   context.vector_lane_projection = {};
@@ -94,17 +101,19 @@ TEST(LowLowerSourceMemoryMatchTest, SelectsExactRejectionReason) {
   access.minimum_alignment = 2;
   access.static_byte_offset = 1;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_MINIMUM_ALIGNMENT);
   access.minimum_alignment = 4;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_STATIC_OFFSET);
 
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, nullptr,
+      &context, &constraint, &shape, &diagnostics, nullptr,
       LOOM_LOW_SOURCE_MEMORY_ACCESS_REJECTION_LAYOUT, &diagnostic_index));
   EXPECT_EQ(diagnostic_index,
             100 + LOOM_LOW_SOURCE_MEMORY_REJECTION_REASON_LAYOUT);
@@ -724,9 +733,10 @@ TEST_F(LowLowerRuleMatchTest, SelectsRootKindRejection) {
   constraint.memory_space_mask = LOOM_LOW_LOWER_MEMORY_SPACE_GLOBAL;
   constraint.element_byte_count = 4;
   constraint.vector_lane_count = 1;
-  constraint.vector_lane_byte_stride = 4;
-  constraint.static_byte_offset_minimum = 0;
-  constraint.static_byte_offset_maximum = 0;
+  loom_low_lower_source_memory_shape_t shape = {};
+  shape.vector_lane_byte_stride = 4;
+  shape.static_byte_offset_minimum = 0;
+  shape.static_byte_offset_maximum = 0;
 
   loom_low_source_memory_access_plan_t access = {};
   access.operation_kind = LOOM_LOW_SOURCE_MEMORY_OPERATION_LOAD;
@@ -740,7 +750,8 @@ TEST_F(LowLowerRuleMatchTest, SelectsRootKindRejection) {
   context.module = module_;
   uint16_t diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
   EXPECT_FALSE(loom_low_lower_rule_source_memory_matches(
-      &context, &constraint, &diagnostics, &access, 0, &diagnostic_index));
+      &context, &constraint, &shape, &diagnostics, &access, 0,
+      &diagnostic_index));
   EXPECT_EQ(diagnostic_index, 7);
 }
 

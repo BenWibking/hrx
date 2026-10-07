@@ -651,14 +651,21 @@ typedef struct loom_low_lower_source_memory_t {
   uint16_t diagnostics_index;
   // Accepted target-independent source memory spaces.
   loom_low_lower_memory_space_mask_t memory_space_mask;
-  // Required byte count of one addressed view element.
-  uint32_t element_byte_count;
+  // Rule-set source-memory shape row index.
+  uint16_t shape_index;
   // Required static number of vector lanes addressed by the operation.
-  uint32_t vector_lane_count;
+  uint16_t vector_lane_count;
   // Minimum required final address byte alignment, or zero if unconstrained.
-  uint32_t minimum_alignment;
+  uint16_t minimum_alignment;
+  // Required byte count of one addressed view element.
+  uint8_t element_byte_count;
   // Required source cache-policy build flags unless CACHE_POLICY_ANY is set.
-  uint32_t cache_policy_build_flags;
+  uint8_t cache_policy_build_flags;
+} loom_low_lower_source_memory_t;
+static_assert(sizeof(loom_low_lower_source_memory_t) == 24,
+              "source-memory rows must remain compact");
+
+typedef struct loom_low_lower_source_memory_shape_t {
   // Required byte stride between adjacent vector lanes.
   int64_t vector_lane_byte_stride;
   // Minimum accepted static byte offset from the storage root.
@@ -667,9 +674,9 @@ typedef struct loom_low_lower_source_memory_t {
   int64_t static_byte_offset_maximum;
   // Required byte stride for each dynamic address term unless ANY is set.
   int64_t dynamic_byte_stride;
-} loom_low_lower_source_memory_t;
-static_assert(sizeof(loom_low_lower_source_memory_t) == 64,
-              "source-memory rows must remain compact");
+} loom_low_lower_source_memory_shape_t;
+static_assert(sizeof(loom_low_lower_source_memory_shape_t) == 32,
+              "source-memory shape rows must be 32 bytes");
 
 typedef enum loom_low_lower_guard_kind_e {
   // Invalid or uninitialized guard.
@@ -1128,6 +1135,10 @@ typedef struct loom_low_lower_rule_set_t {
   const loom_low_lower_source_memory_t* source_memories;
   // Number of rows in source_memories.
   uint16_t source_memory_count;
+  // Interned shape rows referenced by source_memories.
+  const loom_low_lower_source_memory_shape_t* source_memory_shapes;
+  // Number of rows in source_memory_shapes.
+  uint16_t source_memory_shape_count;
   // Interned diagnostic selections referenced by source memories.
   const loom_low_lower_source_memory_diagnostics_t* source_memory_diagnostics;
   // Number of rows in source_memory_diagnostics.

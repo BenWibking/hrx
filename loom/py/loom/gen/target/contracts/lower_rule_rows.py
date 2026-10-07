@@ -267,6 +267,7 @@ def source_node_row(row: LowerSourceNode) -> list[str]:
 def source_memory_row(
     row: LowerSourceMemory,
     *,
+    shape_index: int,
     byte_offset_materializer_ordinal: int,
     address_materializer_ordinal: int,
     diagnostics_index: int,
@@ -324,24 +325,7 @@ def source_memory_row(
         constraint.vector_lane_count,
         always=True,
     )
-    _append_field(
-        fields,
-        "vector_lane_byte_stride",
-        _c_i64_literal(constraint.vector_lane_byte_stride),
-        always=True,
-    )
-    _append_field(
-        fields,
-        "static_byte_offset_minimum",
-        _c_i64_literal(constraint.static_byte_offset_minimum),
-        always=True,
-    )
-    _append_field(
-        fields,
-        "static_byte_offset_maximum",
-        _c_i64_literal(constraint.static_byte_offset_maximum),
-        always=True,
-    )
+    _append_field(fields, "shape_index", shape_index, always=True)
     _append_field(fields, "minimum_alignment", constraint.minimum_alignment)
     _append_field(
         fields,
@@ -365,12 +349,6 @@ def source_memory_row(
         lower_rule_spelling.SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_C_NAMES[constraint.dynamic_index_source],
         default="LOOM_LOW_SOURCE_MEMORY_DYNAMIC_INDEX_SOURCE_NONE",
     )
-    if constraint.dynamic_byte_stride is not None:
-        _append_field(
-            fields,
-            "dynamic_byte_stride",
-            _c_i64_literal(constraint.dynamic_byte_stride),
-        )
     _append_field(
         fields,
         "byte_offset_unsigned_bit_count",
@@ -399,6 +377,25 @@ def source_memory_row(
             constraint.cache_policy_build_flags,
         )
     return fields
+
+
+def source_memory_shape(row: LowerSourceMemory) -> tuple[int, int, int, int]:
+    constraint = row.constraint
+    return (
+        constraint.vector_lane_byte_stride,
+        constraint.static_byte_offset_minimum,
+        constraint.static_byte_offset_maximum,
+        0 if constraint.dynamic_byte_stride is None else constraint.dynamic_byte_stride,
+    )
+
+
+def source_memory_shape_row(shape: tuple[int, int, int, int]) -> list[str]:
+    return [
+        f".vector_lane_byte_stride = {_c_i64_literal(shape[0])}",
+        f".static_byte_offset_minimum = {_c_i64_literal(shape[1])}",
+        f".static_byte_offset_maximum = {_c_i64_literal(shape[2])}",
+        f".dynamic_byte_stride = {_c_i64_literal(shape[3])}",
+    ]
 
 
 def source_memory_diagnostic_indices(
@@ -1072,6 +1069,8 @@ def rule_set_row(
     source_nodes_name: str,
     materializers_name: str,
     source_memories_name: str,
+    source_memory_shapes: tuple[object, ...],
+    source_memory_shapes_name: str,
     source_memory_diagnostics: tuple[object, ...],
     source_memory_diagnostics_name: str,
     source_memory_byte_offset_materializers: tuple[object, ...],
@@ -1143,6 +1142,12 @@ def rule_set_row(
         "source_memories",
         table.source_memories,
         source_memories_name,
+    )
+    _append_table_fields(
+        fields,
+        "source_memory_shapes",
+        source_memory_shapes,
+        source_memory_shapes_name,
     )
     _append_table_fields(
         fields,
