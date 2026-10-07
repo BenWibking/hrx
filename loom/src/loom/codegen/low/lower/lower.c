@@ -1487,14 +1487,14 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     status = loom_low_lower_function_boundary_create(&context, source_body,
                                                      low_func_ref);
     loom_low_lower_emission_scope_end(&context);
-    if (iree_status_is_ok(status)) {
+    if (iree_status_is_ok(status) && context.result->error_count == 0) {
       loom_low_lower_report_initialize(&context);
       status = loom_low_lower_map_blocks(&context, source_body);
     }
-    if (iree_status_is_ok(status)) {
+    if (iree_status_is_ok(status) && context.result->error_count == 0) {
       status = loom_low_lower_function_boundary_remap_predicates(&context);
     }
-    if (iree_status_is_ok(status)) {
+    if (iree_status_is_ok(status) && context.result->error_count == 0) {
       status = loom_low_lower_prepare_branches(&context, source_body);
     }
     if (iree_status_is_ok(status) && context.result->error_count == 0) {

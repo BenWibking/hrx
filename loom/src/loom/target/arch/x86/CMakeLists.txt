@@ -22,6 +22,7 @@ loom_cc_library(
     iree::base::core_headers
     iree::base::internal::arena
     iree::hal::drivers::task::executable::library::abi
+    loom::error::x86_error_defs
     loom::ir
   PUBLIC
 )
@@ -144,6 +145,8 @@ loom_cc_library(
     loom::codegen::low::descriptors
     loom::codegen::low::pipeline::pass_environment
     loom::codegen::low::target_binding
+    loom::error::error_defs
+    loom::error::x86_error_defs
     loom::ir
     loom::ops::func_symbol_facts
     loom::ops::global
@@ -227,6 +230,7 @@ loom_check_test_suite(
     loom_check_file_test
   SRCS
     "test/hal_materialization.loom-test"
+    "test/hal_materialization_diagnostics.loom-test"
     "test/hal_query.loom-test"
     "test/instruction_immediates.loom-test"
     "test/register_classes.loom-test"

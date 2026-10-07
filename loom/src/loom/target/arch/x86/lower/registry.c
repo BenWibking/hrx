@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 
-#include "loom/error/error_catalog.h"
+#include "loom/error/x86_error_catalog.h"
 #include "loom/ir/module.h"
 #include "loom/target/arch/x86/contracts/avx2.h"
 #include "loom/target/arch/x86/contracts/avx2_lower_rules.h"
@@ -332,6 +332,13 @@ static bool loom_x86_abi_type_has_default_boundary(loom_type_t type) {
          loom_x86_type_is_scalar_i32(type) || loom_x86_type_is_scalar_i64(type);
 }
 
+static iree_status_t loom_x86_emit_abi_diagnostic(
+    void* user_data, const loom_diagnostic_emission_t* emission) {
+  return loom_low_lower_emit_error_ref(user_data, emission->op,
+                                       loom_error_def_ref(emission->error),
+                                       emission->params, emission->param_count);
+}
+
 static iree_status_t loom_x86_map_native_abi_layout(
     void* user_data, loom_low_lower_context_t* context,
     loom_low_lower_abi_layout_kind_t layout_kind, const loom_type_t* arg_types,
@@ -381,9 +388,13 @@ static iree_status_t loom_x86_map_native_abi_layout(
     }
   }
   if (hal_kernel) {
+    bool accepted = false;
     return loom_x86_hal_abi_layout_build(
-        module, types, argument_count,
-        loom_low_lower_context_emission_arena(context), out_abi_layout);
+        module, function.op, types, argument_count,
+        (iree_diagnostic_emitter_t){.fn = loom_x86_emit_abi_diagnostic,
+                                    .user_data = context},
+        loom_low_lower_context_emission_arena(context), &accepted,
+        out_abi_layout);
   }
   loom_type_t signature;
   IREE_RETURN_IF_ERROR(loom_module_intern_function_type(
@@ -415,7 +426,7 @@ static const loom_low_lower_policy_t kX86Avx512LowLowerPolicy = {
     .name = IREE_SVL("x86-avx512-low-lower"),
     .function_storage = {kX86FunctionStorage,
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
-    .error_catalog = &loom_error_catalog_core,
+    .error_catalog = &loom_x86_error_catalog,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
     .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
     .preselect_op = {.fn = loom_x86_select_kernel_builtin},
@@ -432,7 +443,7 @@ static const loom_low_lower_policy_t kX86Avx2LowLowerPolicy = {
     .name = IREE_SVL("x86-avx2-low-lower"),
     .function_storage = {kX86FunctionStorage,
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
-    .error_catalog = &loom_error_catalog_core,
+    .error_catalog = &loom_x86_error_catalog,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
     .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
     .preselect_op = {.fn = loom_x86_select_kernel_builtin},
@@ -449,7 +460,7 @@ static const loom_low_lower_policy_t kX86ScalarLowLowerPolicy = {
     .name = IREE_SVL("x86-scalar-low-lower"),
     .function_storage = {kX86FunctionStorage,
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
-    .error_catalog = &loom_error_catalog_core,
+    .error_catalog = &loom_x86_error_catalog,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
     .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
     .preselect_op = {.fn = loom_x86_select_kernel_builtin},
@@ -464,7 +475,7 @@ static const loom_low_lower_policy_t kX86ScalarLowLowerPolicy = {
 
 static const loom_low_lower_policy_t kX86PackedDotLowLowerPolicy = {
     .name = IREE_SVL("x86-packed-dot-low-lower"),
-    .error_catalog = &loom_error_catalog_core,
+    .error_catalog = &loom_x86_error_catalog,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
     .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
     .preselect_op = {.fn = loom_x86_select_kernel_builtin},
@@ -483,7 +494,7 @@ static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
     .name = IREE_SVL("x86-avx512-packed-dot-low-lower"),
     .function_storage = {kX86FunctionStorage,
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
-    .error_catalog = &loom_error_catalog_core,
+    .error_catalog = &loom_x86_error_catalog,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
     .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
     .preselect_op = {.fn = loom_x86_select_kernel_builtin},

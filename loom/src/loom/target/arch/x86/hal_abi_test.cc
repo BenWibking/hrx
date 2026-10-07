@@ -72,12 +72,17 @@ TEST_F(HalAbiTest, PackingUsesLogicalElementsAndSeparateBindingOrdinals) {
                                    loom_type_scalar(LOOM_SCALAR_TYPE_I8), value,
                                    loom_type_buffer()};
       loom_named_attr_slice_t layout;
+      bool accepted = false;
       IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(
-          module_, types, IREE_ARRAYSIZE(types), &scratch_, &layout));
+          module_, nullptr, types, IREE_ARRAYSIZE(types), {}, &scratch_,
+          &accepted, &layout));
+      ASSERT_TRUE(accepted);
       // The layout survives the scratch arena that computed its byte offsets.
       iree_arena_reset(&scratch_);
       loom_x86_hal_abi_t abi;
-      IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, layout, &scratch_, &abi));
+      IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, nullptr, layout, {},
+                                            &scratch_, &accepted, &abi));
+      ASSERT_TRUE(accepted);
       ASSERT_EQ(abi.attributes.parameter_count, 4u);
       EXPECT_EQ(abi.attributes.binding_count, 2u);
       EXPECT_EQ(abi.attributes.constant_byte_length,
@@ -97,25 +102,29 @@ TEST_F(HalAbiTest, ExactDispatchCapacityAndEmptyInterface) {
     const size_t capacity = loom_type_is_buffer(type) ? 64 : 32;
     std::vector<loom_type_t> types(capacity, type);
     loom_named_attr_slice_t layout;
-    IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(
-        module_, types.data(), types.size(), &scratch_, &layout));
+    bool accepted = false;
+    IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(module_, nullptr, types.data(),
+                                                 types.size(), {}, &scratch_,
+                                                 &accepted, &layout));
+    ASSERT_TRUE(accepted);
     loom_x86_hal_abi_t abi;
-    IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, layout, &scratch_, &abi));
+    IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, nullptr, layout, {},
+                                          &scratch_, &accepted, &abi));
+    ASSERT_TRUE(accepted);
     EXPECT_EQ(abi.attributes.binding_count,
               loom_type_is_buffer(type) ? 64u : 0u);
     EXPECT_EQ(abi.attributes.constant_byte_length,
               loom_type_is_buffer(type) ? 0u : 256u);
-    types.push_back(type);
-    IREE_EXPECT_STATUS_IS(
-        IREE_STATUS_INVALID_ARGUMENT,
-        loom_x86_hal_abi_layout_build(module_, types.data(), types.size(),
-                                      &scratch_, &layout));
   }
   loom_named_attr_slice_t layout;
-  IREE_ASSERT_OK(
-      loom_x86_hal_abi_layout_build(module_, nullptr, 0, &scratch_, &layout));
+  bool accepted = false;
+  IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(module_, nullptr, nullptr, 0, {},
+                                               &scratch_, &accepted, &layout));
+  ASSERT_TRUE(accepted);
   loom_x86_hal_abi_t abi;
-  IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, layout, &scratch_, &abi));
+  IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, nullptr, layout, {}, &scratch_,
+                                        &accepted, &abi));
+  ASSERT_TRUE(accepted);
   EXPECT_EQ(abi.attributes.parameter_count, 0u);
   EXPECT_EQ(abi.attributes.binding_count, 0u);
   EXPECT_EQ(abi.attributes.constant_byte_length, 0u);

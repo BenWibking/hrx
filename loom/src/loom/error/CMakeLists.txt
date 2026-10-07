@@ -111,6 +111,27 @@ loom_generated_cc_library(
     loom::ir
 )
 
+loom_generated_cc_library(
+  NAME
+    x86_error_defs
+  GENERATOR
+    loom::py::loom::gen::error::c_errors
+  SOURCE
+    "x86_error_catalog.c"
+  GENERATED_HDR_FLAGS
+    "--header"
+  GENERATED_HDRS
+    "x86_error_catalog.h"
+  ARGS
+    "--catalog-symbol=loom_x86_error_catalog"
+    "--fallback-catalog-symbol=loom_error_catalog_core"
+    "--fallback-public-header=loom/error/error_catalog.h"
+    "--public-header=loom/error/x86_error_catalog.h"
+    "--shard=x86"
+  DEPS
+    ::error_defs
+)
+
 loom_cc_test(
   NAME
     error_defs_test

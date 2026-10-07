@@ -9,6 +9,7 @@
 #include "loom/codegen/low/builder.h"
 #include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/target_binding.h"
+#include "loom/error/x86_error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/func_symbol_facts.h"
@@ -54,26 +55,34 @@ typedef struct loom_x86_hal_builder_t {
   loom_location_id_t location;
 } loom_x86_hal_builder_t;
 
-static iree_status_t loom_x86_hal_builder_initialize(
+static iree_status_t loom_x86_hal_reject(loom_pass_t* pass,
+                                         const loom_op_t* source,
+                                         iree_string_view_t constraint) {
+  const loom_diagnostic_param_t params[] = {loom_param_string(constraint)};
+  return iree_diagnostic_emit(pass->diagnostic_emitter,
+                              &(loom_diagnostic_emission_t){
+                                  .op = source,
+                                  .error = LOOM_ERR_X86_001,
+                                  .params = params,
+                                  .param_count = IREE_ARRAYSIZE(params),
+                              });
+}
+
+static void loom_x86_hal_builder_initialize(
     loom_module_t* module, const loom_low_descriptor_set_t* descriptors,
-    loom_location_id_t location, loom_x86_hal_builder_t* out_builder) {
+    const loom_x86_entry_descriptors_t* entry, loom_location_id_t location,
+    loom_x86_hal_builder_t* out_builder) {
   *out_builder = (loom_x86_hal_builder_t){
       .descriptors = descriptors,
-      .entry = loom_x86_entry_descriptors(descriptors),
+      .entry = entry,
+      .word_type = loom_low_register_type(descriptors->stable_id,
+                                          LOOM_X86_REGISTER_CLASS_GPR32, 1),
+      .pointer_type = loom_low_register_type(descriptors->stable_id,
+                                             LOOM_X86_REGISTER_CLASS_GPR64, 1),
       .location = location,
   };
-  if (!out_builder->entry) {
-    return iree_make_status(
-        IREE_STATUS_UNIMPLEMENTED,
-        "x86 entry requires a complete scalar control/addressing contract");
-  }
   loom_builder_initialize(module, &module->arena, loom_module_block(module),
                           &out_builder->ir);
-  IREE_RETURN_IF_ERROR(loom_low_build_register_type(
-      descriptors, LOOM_X86_REGISTER_CLASS_GPR32, 1, &out_builder->word_type));
-  return loom_low_build_register_type(descriptors,
-                                      LOOM_X86_REGISTER_CLASS_GPR64, 1,
-                                      &out_builder->pointer_type);
 }
 
 static iree_status_t loom_x86_hal_build_packet(
@@ -111,25 +120,12 @@ static iree_status_t loom_x86_hal_build_load(loom_x86_hal_builder_t* builder,
                                              uint32_t offset, uint8_t size,
                                              loom_type_t type,
                                              loom_value_id_t* out_value) {
-  uint32_t descriptor_ref;
-  switch (size) {
-    case 1:
-      descriptor_ref = builder->entry->load_u8;
-      break;
-    case 2:
-      descriptor_ref = builder->entry->load_u16;
-      break;
-    case 4:
-      descriptor_ref = builder->entry->load_u32;
-      break;
-    case 8:
-      descriptor_ref = builder->entry->load_u64;
-      break;
-    default:
-      return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                              "x86 task parameter requires a %u-byte load",
-                              size);
-  }
+  // Parameter admission and the fixed invocation-state schema admit exactly
+  // these load widths before any entry instructions are built.
+  const uint32_t descriptor_ref = size == 1   ? builder->entry->load_u8
+                                  : size == 2 ? builder->entry->load_u16
+                                  : size == 4 ? builder->entry->load_u32
+                                              : builder->entry->load_u64;
   return loom_x86_hal_build_packet(builder, descriptor_ref, &base, 1,
                                    IREE_SV("disp32"), loom_attr_i64(offset),
                                    type, out_value);
@@ -142,48 +138,89 @@ static iree_status_t loom_x86_hal_build_success(loom_x86_hal_builder_t* builder,
                                    builder->word_type, out_value);
 }
 
+typedef struct loom_x86_hal_parameters_t {
+  // Original body arguments, borrowed until their blocks are moved.
+  const loom_value_id_t* arguments;
+  // Admitted scalar register types, indexed by original argument ordinal.
+  loom_type_t* types;
+  // Number of arguments, matching the retained logical interface.
+  uint16_t count;
+} loom_x86_hal_parameters_t;
+
+static iree_status_t loom_x86_hal_parameters_prepare(
+    loom_pass_t* pass, loom_module_t* module, loom_func_like_t function,
+    const loom_x86_hal_abi_t* abi, loom_x86_hal_parameters_t* out_parameters) {
+  *out_parameters = (loom_x86_hal_parameters_t){0};
+  out_parameters->arguments =
+      loom_func_like_arg_ids(function, &out_parameters->count);
+  if (out_parameters->count != abi->attributes.parameter_count) {
+    return loom_x86_hal_reject(
+        pass, function.op,
+        IREE_SV("one argument carrier per logical parameter"));
+  }
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      pass->arena, out_parameters->count, sizeof(*out_parameters->types),
+      (void**)&out_parameters->types));
+  iree_status_t status = iree_ok_status();
+  for (uint16_t i = 0;
+       i < out_parameters->count && !loom_pass_has_error_diagnostics(pass) &&
+       iree_status_is_ok(status);
+       ++i) {
+    const iree_hal_executable_dispatch_parameter_v0_t* parameter =
+        &abi->parameters[i];
+    const uint8_t size =
+        parameter->type == IREE_HAL_EXECUTABLE_DISPATCH_PARAM_TYPE_V0_BINDING
+            ? 8
+            : parameter->size;
+    const loom_type_t type =
+        loom_module_value_type(module, out_parameters->arguments[i]);
+    out_parameters->types[i] = type;
+    // Byte width alone cannot admit an authored XMM or mask carrier. Admit
+    // both the storage width and its register class before mutating the body.
+    if ((size != 1 && size != 2 && size != 4 && size != 8) ||
+        !loom_low_type_is_register(type) ||
+        loom_low_register_type_unit_count(type) != 1 ||
+        loom_low_register_type_class_id(type) !=
+            (size <= 4 ? LOOM_X86_REGISTER_CLASS_GPR32
+                       : LOOM_X86_REGISTER_CLASS_GPR64)) {
+      const loom_diagnostic_param_t params[] = {
+          loom_param_i64(i),
+          loom_param_type(type),
+          loom_param_string(IREE_SV("a 1-, 2-, or 4-byte value in one GPR32, "
+                                    "or an 8-byte value in one GPR64")),
+      };
+      status = iree_diagnostic_emit(pass->diagnostic_emitter,
+                                    &(loom_diagnostic_emission_t){
+                                        .op = function.op,
+                                        .error = LOOM_ERR_X86_002,
+                                        .params = params,
+                                        .param_count = IREE_ARRAYSIZE(params),
+                                    });
+    }
+  }
+  return status;
+}
+
 static iree_status_t loom_x86_hal_build_parameter_imports(
     loom_x86_hal_builder_t* builder, loom_pass_t* pass,
     loom_func_like_t function, const loom_x86_hal_abi_t* abi,
-    loom_value_id_t dispatch, loom_value_id_t** out_arguments) {
-  uint16_t argument_count = 0;
-  const loom_value_id_t* source_arguments =
-      loom_func_like_arg_ids(function, &argument_count);
-  if (argument_count != abi->attributes.parameter_count) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "x86 HAL logical signature has %u parameters but the kernel has %u "
-        "argument carriers",
-        abi->attributes.parameter_count, argument_count);
-  }
+    const loom_x86_hal_parameters_t* parameters, loom_value_id_t dispatch,
+    loom_value_id_t** out_arguments) {
+  const uint16_t argument_count = parameters->count;
+  const loom_value_id_t* source_arguments = parameters->arguments;
+  const loom_type_t* types = parameters->types;
   loom_value_id_t* arguments = NULL;
-  loom_type_t* types = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       pass->arena, argument_count, sizeof(*arguments), (void**)&arguments));
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      pass->arena, argument_count, sizeof(*types), (void**)&types));
   loom_value_id_t constants = LOOM_VALUE_ID_INVALID;
   loom_value_id_t bindings = LOOM_VALUE_ID_INVALID;
   iree_status_t status = iree_ok_status();
   for (uint16_t i = 0; i < argument_count && iree_status_is_ok(status); ++i) {
     const iree_hal_executable_dispatch_parameter_v0_t* parameter =
         &abi->parameters[i];
-    types[i] = loom_module_value_type(builder->ir.module, source_arguments[i]);
     const bool binding =
         parameter->type == IREE_HAL_EXECUTABLE_DISPATCH_PARAM_TYPE_V0_BINDING;
     const uint8_t size = binding ? 8 : parameter->size;
-    // The native encoder admits scalar GPR transport. Byte width alone does
-    // not select the proper load for an authored XMM or mask carrier.
-    if (!loom_low_type_is_register(types[i]) ||
-        loom_low_register_type_unit_count(types[i]) != 1 ||
-        loom_low_register_type_class_id(types[i]) !=
-            (size <= 4 ? LOOM_X86_REGISTER_CLASS_GPR32
-                       : LOOM_X86_REGISTER_CLASS_GPR64)) {
-      status = iree_make_status(
-          IREE_STATUS_UNIMPLEMENTED,
-          "x86 native task parameter %u requires a scalar GPR carrier", i);
-      break;
-    }
     if (!loom_module_value_has_uses(builder->ir.module, source_arguments[i])) {
       // The moved body still has its original block signature. Feed unused
       // slots a pure value until CFG cleanup removes them; ABI loads remain
@@ -306,22 +343,36 @@ iree_status_t loom_x86_materialize_hal_kernel_run(loom_pass_t* pass,
     return iree_ok_status();
   }
   const loom_op_t* source = function.op;
-  if (loom_low_kernel_def_workgroup_size_x(source) > 1 ||
-      loom_low_kernel_def_workgroup_size_y(source) > 1 ||
-      loom_low_kernel_def_workgroup_size_z(source) > 1 ||
-      loom_low_kernel_def_workgroup_cluster_size_x(source) > 1 ||
+  if (loom_low_kernel_def_workgroup_cluster_size_x(source) > 1 ||
       loom_low_kernel_def_workgroup_cluster_size_y(source) > 1 ||
       loom_low_kernel_def_workgroup_cluster_size_z(source) > 1) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "x86 task kernels execute one invocation per "
-                            "workgroup without clustering");
+    return loom_x86_hal_reject(
+        pass, source,
+        IREE_SV("one invocation per workgroup without clustering"));
+  }
+  const loom_x86_entry_descriptors_t* entry =
+      loom_x86_entry_descriptors(target.descriptor_set);
+  if (!entry) {
+    return loom_x86_hal_reject(
+        pass, source, IREE_SV("a complete scalar control/addressing contract"));
   }
   loom_x86_hal_abi_t abi;
+  bool accepted = false;
   IREE_RETURN_IF_ERROR(loom_x86_hal_abi_parse(
-      module, loom_low_kernel_def_abi_layout(source), pass->arena, &abi));
+      module, source, loom_low_kernel_def_abi_layout(source),
+      pass->diagnostic_emitter, pass->arena, &accepted, &abi));
+  if (!accepted) {
+    return iree_ok_status();
+  }
+  loom_x86_hal_parameters_t parameter_plan;
+  IREE_RETURN_IF_ERROR(loom_x86_hal_parameters_prepare(pass, module, function,
+                                                       &abi, &parameter_plan));
+  if (loom_pass_has_error_diagnostics(pass)) {
+    return iree_ok_status();
+  }
   loom_x86_hal_builder_t builder;
-  IREE_RETURN_IF_ERROR(loom_x86_hal_builder_initialize(
-      module, target.descriptor_set, source->location, &builder));
+  loom_x86_hal_builder_initialize(module, target.descriptor_set, entry,
+                                  source->location, &builder);
   loom_builder_set_before(&builder.ir, source);
   const loom_type_t argument_types[] = {
       builder.pointer_type, builder.pointer_type, builder.pointer_type};
@@ -364,7 +415,8 @@ iree_status_t loom_x86_materialize_hal_kernel_run(loom_pass_t* pass,
   loom_builder_enter_region(&builder.ir, physical, body);
   loom_value_id_t* parameters = NULL;
   IREE_RETURN_IF_ERROR(loom_x86_hal_build_parameter_imports(
-      &builder, pass, function, &abi, state_arguments[1], &parameters));
+      &builder, pass, function, &abi, &parameter_plan, state_arguments[1],
+      &parameters));
   loom_value_id_t success;
   IREE_RETURN_IF_ERROR(loom_x86_hal_build_success(&builder, &success));
   loom_rewriter_t rewriter;
@@ -489,7 +541,6 @@ iree_status_t loom_x86_materialize_hal_query_run(loom_pass_t* pass,
       module, IREE_SV(LOOM_X86_HAL_LIBRARY_SYMBOL), &library_name));
   uint16_t query_id;
   uint16_t library_id = loom_module_find_symbol(module, library_name);
-  IREE_RETURN_IF_ERROR(loom_module_add_symbol(module, query_name, &query_id));
   const loom_low_descriptor_registry_t* registry =
       loom_low_pass_capability_descriptor_registry(
           loom_low_pass_capability_from_pass(pass));
@@ -497,9 +548,17 @@ iree_status_t loom_x86_materialize_hal_query_run(loom_pass_t* pass,
       entry->function_target_facts->storage.config.contract_set_key;
   const loom_low_descriptor_set_t* descriptors =
       loom_low_descriptor_registry_lookup(registry, descriptor_key);
+  const loom_x86_entry_descriptors_t* entry_descriptors =
+      loom_x86_entry_descriptors(descriptors);
+  if (!entry_descriptors) {
+    return loom_x86_hal_reject(
+        pass, entry->base.function.op,
+        IREE_SV("a complete scalar control/addressing contract"));
+  }
   loom_x86_hal_builder_t builder;
-  IREE_RETURN_IF_ERROR(loom_x86_hal_builder_initialize(
-      module, descriptors, entry->base.function.op->location, &builder));
+  loom_x86_hal_builder_initialize(module, descriptors, entry_descriptors,
+                                  entry->base.function.op->location, &builder);
+  IREE_RETURN_IF_ERROR(loom_module_add_symbol(module, query_name, &query_id));
   if (library_id == LOOM_SYMBOL_ID_INVALID) {
     IREE_RETURN_IF_ERROR(
         loom_module_add_symbol(module, library_name, &library_id));

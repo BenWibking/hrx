@@ -46,6 +46,7 @@ loom_cc_library(
     hdrs = ["hal_abi.h"],
     visibility = _X86_LOWER_VISIBILITY + _X86_NATIVE_VISIBILITY,
     deps = [
+        "//loom/src/loom/error:x86_error_defs",
         "//loom/src/loom/ir",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base:core_headers",
@@ -135,6 +136,8 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:target_binding",
         "//loom/src/loom/codegen/low/pipeline:pass_environment",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/error:x86_error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:func_symbol_facts",
         "//loom/src/loom/ops:op_defs",
@@ -205,6 +208,7 @@ loom_check_test_suite(
     name = "loom_check_file_test",
     srcs = [
         "test/hal_materialization.loom-test",
+        "test/hal_materialization_diagnostics.loom-test",
         "test/hal_query.loom-test",
         "test/instruction_immediates.loom-test",
         "test/register_classes.loom-test",

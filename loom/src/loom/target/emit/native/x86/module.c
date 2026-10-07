@@ -448,17 +448,17 @@ static iree_status_t loom_x86_module_build_artifact(
                                     "function and logical parameter layout");
         } else {
           status = loom_x86_hal_abi_parse(
-              request->module,
+              request->module, entries.values[i].func.op,
               loom_low_func_def_abi_layout(entries.values[i].func.op),
-              request->scratch_arena,
+              request->diagnostic_emitter, request->scratch_arena, &accepted,
               &library_entries[library_entry_count].abi);
         }
       }
-      if (iree_status_is_ok(status)) {
+      if (iree_status_is_ok(status) && accepted) {
         ++library_entry_count;
       }
     }
-    if (!iree_status_is_ok(status)) {
+    if (!iree_status_is_ok(status) || !accepted) {
       continue;
     }
     if (loom_low_func_decl_isa(entries.values[i].func.op)) {

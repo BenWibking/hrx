@@ -88,6 +88,10 @@ kernel.def export("fill") @fill(%groups: index) {
 }
 ```
 
+The command-line target is optional when the source binds its kernels to an
+explicit target, such as `x86.target<scalar> @cpu` and
+`kernel.def target(@cpu)`. Both forms use the same task ABI and emitter.
+
 Kernel roots select the task library format automatically; ordinary function
 roots select a relocatable object. `--format=x86-hal` also selects the library
 explicitly. Each workgroup invokes the body once. Workgroup size and subgroup
@@ -112,7 +116,8 @@ loads the artifact on a compatible task device, and the queue dispatch APIs
 consume its reflected interface. Input artifact bytes can be released once
 loading completes.
 
-`hal_dispatch_test` exercises that public boundary with a source kernel: the
+`hal_dispatch_test` exercises that public boundary with an explicitly targeted
+grid kernel and an unbound byte kernel in the same library: the
 compiler exits before loading, artifact bytes are released before dispatch,
 and two semaphore-ordered 3D grids update a nonzero-offset binding. The kernel
 passes aligned private storage to a retained helper. Exact buffer contents and

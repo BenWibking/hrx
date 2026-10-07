@@ -28,6 +28,7 @@ loom_cc_library(
     loom::codegen::low::descriptors
     loom::codegen::low::lower
     loom::error::error_defs
+    loom::error::x86_error_defs
     loom::ir
     loom::ops::kernel
     loom::ops::low
