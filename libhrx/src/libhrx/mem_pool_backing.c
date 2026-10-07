@@ -7,8 +7,6 @@
 #include <string.h>
 
 #include "hrx_internal.h"
-#include "iree/hal/memory/cpu_slab_provider.h"
-#include "iree/hal/memory/passthrough_pool.h"
 #include "iree/hal/memory/slab_cache.h"
 
 // Default slab length for growable GPU allocation pools.
@@ -77,6 +75,66 @@ static iree_status_t hrx_mem_pool_query_range_length(
   return iree_ok_status();
 }
 
+// HRX's ordinary device memory is usable on every family of its device. Host
+// mapping is required for CPU storage and optional for GPU storage. Prefer the
+// dispatch device's memory ahead of optional host mapping on system memory or
+// another GPU.
+static iree_status_t hrx_mem_pool_backing_create_source(
+    hrx_device_t device, iree_hal_pool_t** out_pool) {
+  const iree_hal_device_queue_spec_t* queues =
+      iree_hal_device_spec_queues(iree_hal_device_spec(device->hal_device));
+  iree_hal_pool_family_access_t* families = NULL;
+  IREE_RETURN_IF_ERROR(iree_allocator_malloc(
+      iree_allocator_system(), queues->family_count * sizeof(*families),
+      (void**)&families));
+  for (iree_host_size_t i = 0; i < queues->family_count; ++i) {
+    families[i].family = iree_hal_device_queue_family(device->hal_device, i);
+    families[i].usage =
+        IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_DISPATCH;
+  }
+  const iree_hal_pool_host_access_t host = {
+      .access = IREE_HAL_MEMORY_ACCESS_ALL,
+      .modes = IREE_HAL_MAPPING_MODE_SCOPED | IREE_HAL_MAPPING_MODE_PERSISTENT,
+  };
+  iree_hal_pool_scope_t scope = {
+      .family_count = queues->family_count,
+      .families = families,
+  };
+  iree_hal_slab_pool_options_t options;
+  iree_hal_slab_pool_options_initialize(&options);
+  options.trace_name = iree_make_cstring_view("hrx-mem-pool-source");
+  if (device->type == HRX_ACCELERATOR_CPU) {
+    scope.host = host;
+  } else {
+    options.preferences.host = host;
+    const iree_hal_device_topology_info_t* topology_info =
+        iree_hal_device_topology_info(device->hal_device);
+    const iree_hal_queue_family_spec_t* dispatch_family =
+        iree_hal_queue_family_spec(
+            iree_hal_queue_family(device->dispatch_queue));
+    const iree_hal_topology_t* topology =
+        iree_hal_device_group_topology(device->hal_device_group);
+    for (iree_host_size_t i = 0; i < iree_hal_topology_node_count(topology);
+         ++i) {
+      const iree_hal_topology_node_t* node =
+          iree_hal_topology_node_at(topology, i);
+      if (node->kind == IREE_HAL_TOPOLOGY_NODE_KIND_PHYSICAL_DEVICE &&
+          node->device_ordinal == topology_info->topology_index &&
+          iree_any_bit_set(node->physical_device_affinity,
+                           dispatch_family->physical_device_affinity)) {
+        options.placement.mode = IREE_HAL_POOL_PLACEMENT_PREFERRED;
+        options.placement.node = node->ordinal;
+        break;
+      }
+    }
+  }
+  iree_status_t status =
+      iree_hal_slab_pool_create(device->hal_device_group, scope, &options,
+                                iree_allocator_system(), out_pool);
+  iree_allocator_free(iree_allocator_system(), families);
+  return status;
+}
+
 static iree_status_t hrx_mem_pool_backing_ensure_cache_locked(
     hrx_device_t device) {
   hrx_mem_pool_backing_t* backing = &device->mem_pool_backing;
@@ -84,51 +142,23 @@ static iree_status_t hrx_mem_pool_backing_ensure_cache_locked(
     return iree_ok_status();
   }
 
-  iree_hal_queue_pool_backend_t backend;
-  IREE_RETURN_IF_ERROR(iree_hal_device_query_queue_pool_backend(
-      device->hal_device, iree_hal_queue_family(device->transfer_queue),
-      &backend));
-  if (!backend.notification) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "HAL queue-pool backend returned no allocation "
-                            "notification");
-  }
-
   iree_device_size_t range_length = 0;
   IREE_RETURN_IF_ERROR(hrx_mem_pool_query_range_length(device, &range_length));
-
-  // Whole slabs use the backend's native allocation and access contract. The
-  // child policies return slabs intact; they do not need independent virtual
-  // reservations or remapping of physical backing.
-  iree_hal_slab_provider_t* slab_provider = backend.slab_provider;
-  bool owns_slab_provider = false;
-  if (device->type == HRX_ACCELERATOR_CPU) {
-    IREE_RETURN_IF_ERROR(iree_hal_cpu_slab_provider_create(
-        HRX_MEM_POOL_ALIGNMENT, iree_allocator_system(), &slab_provider));
-    owns_slab_provider = true;
-  }
-  if (!slab_provider) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "HAL memory pool has no slab provider");
-  }
 
   iree_hal_tlsf_pool_options_t options = {0};
   options.tlsf_options.range_length = range_length;
   options.tlsf_options.alignment = HRX_MEM_POOL_ALIGNMENT;
   options.tlsf_options.frontier_capacity =
       IREE_HAL_MEMORY_TLSF_DEFAULT_FRONTIER_CAPACITY;
-  options.asan = backend.asan;
+  options.asan =
+      iree_hal_device_spec_sanitizer(iree_hal_device_spec(device->hal_device))
+          ->asan.pool_options;
   options.budget_limit = 0;
   options.trace_name = iree_make_cstring_view("hrx-mem-pool");
 
-  iree_hal_passthrough_pool_options_t backing_options = {
-      .epoch_query = backend.epoch_query,
-  };
   iree_hal_pool_t* backing_pool = NULL;
-  iree_status_t status = iree_hal_passthrough_pool_create(
-      backing_options, slab_provider, backend.notification,
-      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
-      &backing_pool);
+  iree_status_t status =
+      hrx_mem_pool_backing_create_source(device, &backing_pool);
   iree_hal_pool_t* backing_cache = NULL;
   if (iree_status_is_ok(status)) {
     iree_hal_slab_cache_options_t cache_options = {.max_count = UINT32_MAX};
@@ -141,9 +171,6 @@ static iree_status_t hrx_mem_pool_backing_ensure_cache_locked(
     }
   }
   iree_hal_pool_release(backing_pool);
-  if (owns_slab_provider) {
-    iree_hal_slab_provider_release(slab_provider);
-  }
   if (iree_status_is_ok(status)) {
     backing->cache = backing_cache;
     backing->pool_options = options;

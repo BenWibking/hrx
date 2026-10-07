@@ -261,15 +261,9 @@ TEST_F(CpuPoolTest, MemoryPoolServesSmallAndLargeBuffersFromOneAllocator) {
   hrx_mem_pool_t pool = nullptr;
   IREE_ASSERT_OK(
       hrx_status_to_iree(hrx_mem_pool_create(device_, &properties, &pool)));
-  const hrx_buffer_params_t params = {
-      /*.type=*/HRX_MEMORY_TYPE_HOST_LOCAL,
-      /*.access=*/HRX_MEMORY_ACCESS_ALL,
-      /*.usage=*/HRX_BUFFER_USAGE_TRANSFER | HRX_BUFFER_USAGE_MAPPING_SCOPED,
-      /*.queue_affinity=*/0,
-  };
   hrx_buffer_t buffers[3] = {};
   IREE_ASSERT_OK(hrx_status_to_iree(
-      hrx_mem_pool_allocate_buffer(pool, params, 1024, &buffers[0])));
+      hrx_mem_pool_allocate_buffer(pool, 1024, &buffers[0])));
   uint64_t regular_backing_bytes = 0;
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &regular_backing_bytes)));
@@ -277,7 +271,7 @@ TEST_F(CpuPoolTest, MemoryPoolServesSmallAndLargeBuffersFromOneAllocator) {
       1024, static_cast<size_t>(regular_backing_bytes) + 256, 512};
   for (size_t i = 1; i < IREE_ARRAYSIZE(buffers); ++i) {
     IREE_ASSERT_OK(hrx_status_to_iree(
-        hrx_mem_pool_allocate_buffer(pool, params, lengths[i], &buffers[i])));
+        hrx_mem_pool_allocate_buffer(pool, lengths[i], &buffers[i])));
   }
   uint64_t live_backing_bytes = 0;
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
@@ -317,15 +311,9 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(
       hrx_status_to_iree(hrx_mem_pool_create(device_, &properties, &pool)));
 
-  const hrx_buffer_params_t params = {
-      /*.type=*/HRX_MEMORY_TYPE_HOST_LOCAL,
-      /*.access=*/HRX_MEMORY_ACCESS_ALL,
-      /*.usage=*/HRX_BUFFER_USAGE_TRANSFER | HRX_BUFFER_USAGE_MAPPING_SCOPED,
-      /*.queue_affinity=*/0,
-  };
   hrx_buffer_t buffer = nullptr;
-  IREE_ASSERT_OK(hrx_status_to_iree(
-      hrx_mem_pool_allocate_buffer(pool, params, 1024, &buffer)));
+  IREE_ASSERT_OK(
+      hrx_status_to_iree(hrx_mem_pool_allocate_buffer(pool, 1024, &buffer)));
 
   uint64_t committed_bytes = 0;
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
@@ -373,8 +361,8 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   EXPECT_EQ(retained_bytes, 0u);
   EXPECT_EQ(BackingStats().bytes_committed, 0u);
 
-  IREE_ASSERT_OK(hrx_status_to_iree(
-      hrx_mem_pool_allocate_buffer(pool, params, 1024, &buffer)));
+  IREE_ASSERT_OK(
+      hrx_status_to_iree(hrx_mem_pool_allocate_buffer(pool, 1024, &buffer)));
   hrx_buffer_release(buffer);
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_trim(pool, 0)));
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
@@ -387,9 +375,9 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
 
 TEST_F(CpuPoolTest, MemoryPoolAllocationRequiresPool) {
   hrx_buffer_t buffer = reinterpret_cast<hrx_buffer_t>(uintptr_t{1});
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
-                        hrx_status_to_iree(hrx_mem_pool_allocate_buffer(
-                            nullptr, {}, 1024, &buffer)));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_INVALID_ARGUMENT,
+      hrx_status_to_iree(hrx_mem_pool_allocate_buffer(nullptr, 1024, &buffer)));
   EXPECT_EQ(buffer, nullptr);
 }
 

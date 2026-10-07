@@ -1019,11 +1019,10 @@ HRX_API void hrx_mem_pool_record_logical_allocation(hrx_mem_pool_t pool,
 // reused.
 HRX_API void hrx_mem_pool_record_logical_free(hrx_mem_pool_t pool, size_t size);
 
-// Allocates a buffer from |pool| using the same parameter contract as
-// hrx_allocator_allocate_buffer. The returned buffer owns the allocation and
+// Allocates a buffer with at least 256-byte alignment and the device access
+// permissions captured by |pool|. The returned buffer owns the allocation and
 // remains valid independently of the public |pool| handle.
 HRX_API hrx_status_t hrx_mem_pool_allocate_buffer(hrx_mem_pool_t pool,
-                                                  hrx_buffer_params_t params,
                                                   size_t size,
                                                   hrx_buffer_t* buffer);
 

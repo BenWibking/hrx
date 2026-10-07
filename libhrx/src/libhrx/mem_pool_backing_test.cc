@@ -25,14 +25,10 @@ class MemPoolBackingTest : public ::testing::Test {
 #if defined(HRX_TEST_GPU)
     IREE_ASSERT_OK(hrx_status_to_iree(hrx_gpu_initialize(0)));
     IREE_ASSERT_OK(hrx_status_to_iree(hrx_gpu_device_get(0, &device_)));
-    params_.type = HRX_MEMORY_TYPE_DEVICE_LOCAL;
 #else
     IREE_ASSERT_OK(hrx_status_to_iree(hrx_cpu_initialize(0)));
     IREE_ASSERT_OK(hrx_status_to_iree(hrx_cpu_device_get(0, &device_)));
-    params_.type = HRX_MEMORY_TYPE_HOST_LOCAL | HRX_MEMORY_TYPE_DEVICE_VISIBLE;
 #endif
-    params_.access = HRX_MEMORY_ACCESS_ALL;
-    params_.usage = HRX_BUFFER_USAGE_DEFAULT;
   }
 
   void TearDown() override {
@@ -55,7 +51,7 @@ class MemPoolBackingTest : public ::testing::Test {
   Buffer Allocate(hrx_mem_pool_t pool, size_t length = 1024) {
     hrx_buffer_t buffer = nullptr;
     IREE_EXPECT_OK(hrx_status_to_iree(
-        hrx_mem_pool_allocate_buffer(pool, params_, length, &buffer)));
+        hrx_mem_pool_allocate_buffer(pool, length, &buffer)));
     return Buffer(buffer, hrx_buffer_release);
   }
 
@@ -120,8 +116,6 @@ class MemPoolBackingTest : public ::testing::Test {
 
   // Initialized runtime device owning all pools in each test.
   hrx_device_t device_ = nullptr;
-  // Ordinary executable storage supported by that native device.
-  hrx_buffer_params_t params_ = {};
 };
 
 TEST_F(MemPoolBackingTest, LivePoolsReuseBackingAndKeepIndependentAccounting) {
@@ -133,6 +127,28 @@ TEST_F(MemPoolBackingTest, LivePoolsReuseBackingAndKeepIndependentAccounting) {
 
   auto buffer = Allocate(first.get());
   ASSERT_NE(buffer, nullptr);
+  const auto* contract = first->hal_pool->memory_contract;
+  ASSERT_NE(contract, nullptr);
+  EXPECT_EQ(contract->domain,
+            iree_hal_device_group_memory_domain(device_->hal_device_group));
+  EXPECT_EQ(device_->mem_pool_backing.cache->memory_contract, contract);
+  const auto* queues =
+      iree_hal_device_spec_queues(iree_hal_device_spec(device_->hal_device));
+  for (iree_host_size_t i = 0; i < queues->family_count; ++i) {
+    EXPECT_EQ(iree_hal_buffer_family_usage(
+                  buffer->hal_buffer,
+                  iree_hal_device_queue_family(device_->hal_device, i)),
+              IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_DISPATCH);
+  }
+#if defined(HRX_TEST_GPU)
+  EXPECT_TRUE(iree_all_bits_set(iree_hal_buffer_memory_type(buffer->hal_buffer),
+                                IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL));
+#else
+  const auto host = iree_hal_pool_query_host_access(first->hal_pool);
+  EXPECT_EQ(host.access, IREE_HAL_MEMORY_ACCESS_ALL);
+  EXPECT_EQ(host.modes,
+            IREE_HAL_MAPPING_MODE_SCOPED | IREE_HAL_MAPPING_MODE_PERSISTENT);
+#endif
   WriteAndCheck(buffer.get(), 0x37);
   const auto* identity =
       iree_hal_buffer_memory_view(buffer->hal_buffer).backing;
@@ -158,6 +174,7 @@ TEST_F(MemPoolBackingTest, LivePoolsReuseBackingAndKeepIndependentAccounting) {
   buffer = Allocate(second.get());
   ASSERT_NE(buffer, nullptr);
   EXPECT_NE(first->hal_pool, second->hal_pool);
+  EXPECT_EQ(second->hal_pool->memory_contract, contract);
   EXPECT_EQ(iree_hal_buffer_memory_view(buffer->hal_buffer).backing, identity);
   WriteAndCheck(buffer.get(), 0x59);
   EXPECT_EQ(ReservedBytes(first.get()), 0u);
@@ -211,7 +228,7 @@ TEST_F(MemPoolBackingTest, LogicalLimitsRemainIndependentOfSharedBacking) {
   hrx_buffer_t rejected = nullptr;
   IREE_EXPECT_STATUS_IS(IREE_STATUS_RESOURCE_EXHAUSTED,
                         hrx_status_to_iree(hrx_mem_pool_allocate_buffer(
-                            first.get(), params_, 1025, &rejected)));
+                            first.get(), 1025, &rejected)));
   EXPECT_EQ(rejected, nullptr);
   EXPECT_EQ(device_->mem_pool_backing.cache, nullptr);
 
@@ -225,9 +242,9 @@ TEST_F(MemPoolBackingTest, LogicalLimitsRemainIndependentOfSharedBacking) {
   EXPECT_EQ(ReservedBytes(first.get()) + ReservedBytes(second.get()),
             backing_bytes);
   for (auto* pool : {first.get(), second.get()}) {
-    IREE_EXPECT_STATUS_IS(IREE_STATUS_RESOURCE_EXHAUSTED,
-                          hrx_status_to_iree(hrx_mem_pool_allocate_buffer(
-                              pool, params_, 1, &rejected)));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_RESOURCE_EXHAUSTED,
+        hrx_status_to_iree(hrx_mem_pool_allocate_buffer(pool, 1, &rejected)));
     EXPECT_EQ(rejected, nullptr);
   }
   EXPECT_EQ(BackingStats().bytes_committed, backing_bytes);

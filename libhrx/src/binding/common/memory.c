@@ -1334,30 +1334,14 @@ iree_status_t iree_hal_streaming_memory_allocate_device_from_pool(
         IREE_STATUS_UNIMPLEMENTED,
         "memory-pool allocations cannot satisfy uncached device memory");
   }
-  iree_hal_buffer_params_t params = {
-      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT |
-               IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
-               IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL,
-      .access = IREE_HAL_MEMORY_ACCESS_ALL,
-      .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
-      .queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY,
-      .min_alignment = 64,
-  };
-  hrx_buffer_params_t hrx_params = {
-      .type = (hrx_memory_type_t)params.type,
-      .access = (hrx_memory_access_t)params.access,
-      .usage = (hrx_buffer_usage_t)params.usage,
-      .queue_affinity = 0,
-  };
-
   hrx_buffer_t hrx_buffer = NULL;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, HRX_CALL(hrx_mem_pool_allocate_buffer(pool, hrx_params, size,
-                                                &hrx_buffer)));
+      z0, HRX_CALL(hrx_mem_pool_allocate_buffer(pool, size, &hrx_buffer)));
 
   iree_hal_streaming_buffer_t* wrapper = NULL;
   iree_status_t status = iree_hal_streaming_buffer_wrap_hrx_buffer(
-      context, hrx_buffer, (int)params.type, /*imported_host_ptr=*/NULL, pool,
+      context, hrx_buffer, (int)hrx_buffer->mem_type,
+      /*imported_host_ptr=*/NULL, pool,
       IREE_HAL_STREAMING_BUFFER_CONTEXT_RETAINED, &wrapper);
   hrx_buffer_release(hrx_buffer);
 

@@ -299,9 +299,8 @@ void hrx_mem_pool_release_allocation_budget(hrx_mem_pool_t pool, size_t size) {
 //===----------------------------------------------------------------------===//
 
 static iree_status_t hrx_mem_pool_allocate_hal_buffer(
-    hrx_mem_pool_t pool, iree_hal_buffer_params_t params,
-    iree_device_size_t size, iree_hal_pool_t** out_hal_pool,
-    iree_hal_buffer_t** out_buffer) {
+    hrx_mem_pool_t pool, iree_device_size_t size,
+    iree_hal_pool_t** out_hal_pool, iree_hal_buffer_t** out_buffer) {
   IREE_ASSERT_ARGUMENT(out_hal_pool);
   IREE_ASSERT_ARGUMENT(out_buffer);
   *out_hal_pool = NULL;
@@ -340,19 +339,7 @@ static iree_status_t hrx_mem_pool_allocate_hal_buffer(
     return status;
   }
 
-  // The backing pool fixes placement. Resolve optional host mapping against
-  // that pool's achieved capabilities before making an exact reservation.
-  if (iree_any_bit_set(params.usage, IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL)) {
-    iree_hal_pool_capabilities_t capabilities;
-    iree_hal_pool_query_capabilities(hal_pool, &capabilities);
-    const iree_hal_buffer_usage_t mapping_usage =
-        IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED |
-        IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
-        IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL |
-        IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_RANDOM |
-        IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_SEQUENTIAL_WRITE;
-    params.usage &= ~(mapping_usage & ~capabilities.supported_usage);
-  }
+  const iree_hal_buffer_params_t params = {0};
   status = iree_hal_pool_allocate_buffer(hal_pool, params, size,
                                          iree_immediate_timeout(), out_buffer);
   if (!iree_status_is_ok(status) &&
@@ -381,9 +368,8 @@ static iree_status_t hrx_mem_pool_allocate_hal_buffer(
   return status;
 }
 
-hrx_status_t hrx_mem_pool_allocate_buffer(hrx_mem_pool_t pool,
-                                          hrx_buffer_params_t params,
-                                          size_t size, hrx_buffer_t* buffer) {
+hrx_status_t hrx_mem_pool_allocate_buffer(hrx_mem_pool_t pool, size_t size,
+                                          hrx_buffer_t* buffer) {
   HRX_TRACE_ZONE_BEGIN(z0, "hrx_mem_pool_allocate_buffer");
   HRX_TRACE_ZONE_APPEND_BYTES(z0, size);
   if (!buffer) {
@@ -396,30 +382,17 @@ hrx_status_t hrx_mem_pool_allocate_buffer(hrx_mem_pool_t pool,
         z0, hrx_make_status(HRX_STATUS_INVALID_ARGUMENT, "pool is NULL"));
   }
 
-  iree_hal_queue_family_affinity_t queue_family_affinity = 0;
-  iree_status_t status = hrx_hal_queue_affinity_to_family_affinity(
-      pool->device->hal_device, params.queue_affinity, &queue_family_affinity);
-  if (!iree_status_is_ok(status)) {
-    HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
-  }
-  iree_hal_buffer_params_t hal_params = {
-      .usage = (iree_hal_buffer_usage_t)params.usage,
-      .access = (iree_hal_memory_access_t)params.access,
-      .type = (iree_hal_memory_type_t)params.type,
-      .queue_family_affinity = queue_family_affinity,
-  };
-
   iree_hal_pool_t* hal_pool = NULL;
   iree_hal_buffer_t* hal_buffer = NULL;
-  status = hrx_mem_pool_allocate_hal_buffer(
-      pool, hal_params, (iree_device_size_t)size, &hal_pool, &hal_buffer);
+  iree_status_t status = hrx_mem_pool_allocate_hal_buffer(
+      pool, (iree_device_size_t)size, &hal_pool, &hal_buffer);
   if (!iree_status_is_ok(status)) {
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
   }
 
-  hrx_buffer_t buf = NULL;
+  hrx_buffer_t new_buffer = NULL;
   status = iree_allocator_malloc(iree_allocator_system(), sizeof(hrx_buffer_s),
-                                 (void**)&buf);
+                                 (void**)&new_buffer);
   if (!iree_status_is_ok(status)) {
     iree_hal_buffer_release(hal_buffer);
     iree_hal_pool_release(hal_pool);
@@ -429,19 +402,20 @@ hrx_status_t hrx_mem_pool_allocate_buffer(hrx_mem_pool_t pool,
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
   }
 
-  memset(buf, 0, sizeof(*buf));
-  iree_atomic_ref_count_init(&buf->ref_count);
-  buf->hal_buffer = hal_buffer;
-  buf->hal_pool = hal_pool;
-  buf->device = pool->device;
-  hrx_device_retain(buf->device);
-  buf->mem_type = params.type;
-  buf->size = size;
+  memset(new_buffer, 0, sizeof(*new_buffer));
+  iree_atomic_ref_count_init(&new_buffer->ref_count);
+  new_buffer->hal_buffer = hal_buffer;
+  new_buffer->hal_pool = hal_pool;
+  new_buffer->device = pool->device;
+  hrx_device_retain(new_buffer->device);
+  new_buffer->mem_type =
+      (hrx_memory_type_t)iree_hal_buffer_memory_type(hal_buffer);
+  new_buffer->size = size;
   if (pool->props.max_size != 0) {
     hrx_mem_pool_retain(pool);
-    buf->allocation_budget_pool = pool;
-    buf->allocation_budget_size = size;
+    new_buffer->allocation_budget_pool = pool;
+    new_buffer->allocation_budget_size = size;
   }
-  *buffer = buf;
+  *buffer = new_buffer;
   HRX_RETURN_AND_END_ZONE(z0, hrx_ok_status());
 }
