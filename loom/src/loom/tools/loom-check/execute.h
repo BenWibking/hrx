@@ -33,7 +33,6 @@
 #include "loom/ir/context.h"
 #include "loom/target/low_descriptor_registry.h"
 #include "loom/testing/test_file.h"
-#include "loom/tooling/compile/pipeline.h"
 #include "loom/tooling/input/input.h"
 #include "loom/tools/loom-check/report.h"
 #include "loom/tools/loom-check/update.h"

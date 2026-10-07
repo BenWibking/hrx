@@ -10,7 +10,9 @@
 #define LOOM_TOOLS_LOOM_CHECK_SOURCE_LOW_H_
 
 #include "loom/error/source.h"
+#include "loom/sanitizer/options.h"
 #include "loom/target/selection.h"
+#include "loom/tooling/compile/pipeline.h"
 #include "loom/tools/loom-check/execute.h"
 
 #ifdef __cplusplus

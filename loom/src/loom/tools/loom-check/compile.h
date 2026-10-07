@@ -9,6 +9,7 @@
 #ifndef LOOM_TOOLS_LOOM_CHECK_COMPILE_H_
 #define LOOM_TOOLS_LOOM_CHECK_COMPILE_H_
 
+#include "loom/sanitizer/options.h"
 #include "loom/target/profile.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tools/loom-check/execute.h"

@@ -289,7 +289,6 @@ static iree_status_t loom_spirv_loom_check_emit_provider_execute(
   if (emit_request.input == LOOM_SPIRV_LOOM_CHECK_INPUT_SOURCE_LOW) {
     loom_check_prepare_source_low_options_t prepare_options;
     loom_check_prepare_source_low_options_initialize(&prepare_options);
-    prepare_options.default_pipeline = LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW;
     prepare_options.control_flow_lowering = emit_request.control_flow_lowering;
     loom_target_specialization_request_t specialization = {0};
     if (iree_any_bit_set(emit_request.flags,

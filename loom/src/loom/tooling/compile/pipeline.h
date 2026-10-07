@@ -114,12 +114,6 @@ void loom_compile_pipeline_options_initialize(
 void loom_compile_pipeline_result_deinitialize(
     loom_compile_pipeline_result_t* result);
 
-// Returns true when |pipeline| disables pass execution.
-bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline);
-
-// Returns true when |pipeline| requests the configured default pipeline.
-bool loom_compile_pipeline_is_default(iree_string_view_t pipeline);
-
 // Returns true when |pipeline| names an authored pass.pipeline symbol.
 bool loom_compile_pipeline_is_named(iree_string_view_t pipeline);
 

@@ -64,12 +64,12 @@ void loom_compile_pipeline_result_deinitialize(
   *result = (loom_compile_pipeline_result_t){0};
 }
 
-bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline) {
+static bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline) {
   pipeline = iree_string_view_trim(pipeline);
   return iree_string_view_equal(pipeline, IREE_SV("none"));
 }
 
-bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
+static bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
   pipeline = iree_string_view_trim(pipeline);
   return iree_string_view_is_empty(pipeline) ||
          iree_string_view_equal(pipeline, IREE_SV("default"));
