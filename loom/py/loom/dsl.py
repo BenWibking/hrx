@@ -503,6 +503,9 @@ class Result:
         that cannot alias any pre-existing resource.
     signature_only: If True, this result describes a locally scoped signature
         value rather than an SSA value visible after the operation.
+    reference_source: Named buffer/view operand whose storage this reference
+        derives from. Coordinates and reference representation may change;
+        ownership and the physical carrier are not transferred or aliased.
     """
 
     name: str
@@ -511,6 +514,7 @@ class Result:
     variadic: bool = False
     allocates: bool = False
     signature_only: bool = False
+    reference_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -6267,6 +6271,46 @@ def _validate_keyed_module_record(
         )
 
 
+def _validate_reference_sources(
+    op_name: str,
+    operands: tuple[Operand, ...],
+    results: tuple[Result | TiedResult, ...],
+) -> None:
+    """Validates storage provenance independently of ownership or carriers."""
+    for result in results:
+        source_name = getattr(result, "reference_source", None)
+        if source_name is None:
+            continue
+        source = next(
+            (operand for operand in operands if operand.name == source_name), None
+        )
+        if source is None:
+            raise ValueError(
+                f"Op '{op_name}': reference source '{source_name}' is not an operand"
+            )
+        if source.variadic or source.optional:
+            raise ValueError(
+                f"Op '{op_name}': reference source '{source_name}' "
+                "must be one required operand"
+            )
+        if source.type_constraint not in (
+            BUFFER,
+            VIEW,
+        ) or result.type_constraint not in (BUFFER, VIEW):
+            raise ValueError(
+                f"Op '{op_name}': reference sources require buffer or view fields"
+            )
+        if result.allocates or getattr(result, "signature_only", False):
+            raise ValueError(
+                f"Op '{op_name}': derived references cannot allocate "
+                "or be signature-only"
+            )
+        if operands.index(source) >= 255:
+            raise ValueError(
+                f"Op '{op_name}': reference source exceeds descriptor index range"
+            )
+
+
 def _validate_signature_only_results(
     op_name: str,
     results: tuple[Result | TiedResult, ...],
@@ -6683,6 +6727,7 @@ class Op:
             frozen_effects,
             frozen_ownership_effects,
         )
+        _validate_reference_sources(name, frozen_operands, frozen_results)
         _validate_signature_only_results(
             name, frozen_results, tuple(traits), frozen_format
         )

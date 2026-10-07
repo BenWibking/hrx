@@ -38,6 +38,7 @@ typedef struct loom_target_low_legality_provider_t
     loom_target_low_legality_provider_t;
 typedef struct loom_local_value_domain_t loom_local_value_domain_t;
 typedef struct loom_view_region_table_t loom_view_region_table_t;
+typedef struct loom_call_effects_t loom_call_effects_t;
 
 typedef enum loom_target_low_legality_diagnostic_flag_bits_e {
   // Emit target source-memory decision remarks from providers that support
@@ -221,6 +222,10 @@ const loom_low_descriptor_set_t* loom_target_low_legality_descriptor_set(
 
 // Returns source value facts available to target-specific legality providers.
 const loom_value_fact_table_t* loom_target_low_legality_fact_table(
+    const loom_target_low_legality_context_t* context);
+
+// Returns the source snapshot's detached callable argument effects.
+const loom_call_effects_t* loom_target_low_legality_call_effects(
     const loom_target_low_legality_context_t* context);
 
 // Returns the active value domain owned by the shared function analysis.

@@ -17,6 +17,7 @@
 #define LOOM_CODEGEN_LOW_LOWER_LOWER_H_
 
 #include "iree/base/api.h"
+#include "loom/analysis/call_effects.h"
 #include "loom/analysis/condition_facts.h"
 #include "loom/analysis/contract_vector.h"
 #include "loom/analysis/native_layout.h"
@@ -996,6 +997,8 @@ typedef struct loom_low_lower_options_t {
   // Lowering is a pure consumer of facts; callers own acquisition and
   // invalidation.
   loom_value_fact_table_t* fact_table;
+  // Detached call effects established before any source body is lowered.
+  const loom_call_effects_t* call_effects;
   // Structured diagnostic emitter for user legality and lowering failures.
   iree_diagnostic_emitter_t emitter;
   // Maximum number of errors to emit before aborting. Zero means no limit.

@@ -47,17 +47,22 @@ _X86_TASK_HARDWARE_PROFILE = loom_execution_profile(
     target_family = "x86",
 )
 
-# Copied C++ array records cross a native call and preserve independent storage
-# through the public task HAL runner.
-loom_test(
-    name = "array_records_test",
-    benchmark_smoke = False,
-    execution_profiles = [_X86_TASK_HARDWARE_PROFILE],
-    module = "//loom/src/loom/import/cxx/test:array_records_module",
-    target_compatible_with = loom_config_compatible_with([
-        "//loom/config/import:cxx",
-    ]) + ["@platforms//cpu:x86_64"],
-)
+# Addressable C++ locals preserve independent storage across native calls.
+[
+    loom_test(
+        name = name + "_test",
+        benchmark_smoke = False,
+        execution_profiles = [_X86_TASK_HARDWARE_PROFILE],
+        module = "//loom/src/loom/import/cxx/test:" + name + "_module",
+        target_compatible_with = loom_config_compatible_with([
+            "//loom/config/import:cxx",
+        ]) + ["@platforms//cpu:x86_64"],
+    )
+    for name in [
+        "array_records",
+        "call_lifetimes",
+    ]
+]
 
 # Exercises shared corpus programs through the task HAL and independent VM oracle.
 [

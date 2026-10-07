@@ -1,0 +1,222 @@
+// RUN: emit storage-interference @test
+
+// An unpassed allocation remains private across a nested scalar call.
+func.def @store(%output: view<1xi32>, %value: i32) {
+  view.store %value, %output[0] : i32, view<1xi32>
+  func.return
+}
+
+func.def @forward(%output: view<1xi32>, %value: i32) {
+  func.call @store(%output, %value) : (view<1xi32>, i32)
+  func.return
+}
+
+func.def @test(%output: view<1xi32>, %limit: index) {
+  %origin = index.constant 0 : offset
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %value = scalar.constant 7 : i32
+  scf.for %index = [%begin to %limit step %step] {
+    %local = buffer.alloca<private> align(4) %bytes : buffer
+    %slot = buffer.view %local[%origin] : buffer -> view<1xi32>
+    view.store %value, %slot[0] : i32, view<1xi32>
+    %loaded = view.load %slot[0] : view<1xi32> -> i32
+    func.call @forward(%output, %loaded) : (view<1xi32>, i32)
+  }
+  func.return
+}
+
+// ----
+local: accessed=yes single_instance=yes
+
+// ====
+
+// Formal effects traverse derived views, CFG arguments, and recursive calls.
+// Reading/writing a private argument is bounded by the synchronous return.
+func.def @touch(%input: buffer, %choose: i1, %recurse: i1) {
+  %origin = index.constant 0 : offset
+  %whole = buffer.view %input[%origin] : buffer -> view<2xi32>
+  %first = view.subview %whole[0] : view<2xi32> -> view<1xi32>
+  %second = view.subview %whole[1] : view<2xi32> -> view<1xi32>
+  cfg.cond_br %choose, ^first, ^second
+^first:
+  cfg.br ^use(%first: view<1xi32>)
+^second:
+  cfg.br ^use(%second: view<1xi32>)
+^use(%selected: view<1xi32>):
+  %value = view.load %selected[0] : view<1xi32> -> i32
+  view.store %value, %selected[0] : i32, view<1xi32>
+  scf.if %recurse {
+    %stop = scalar.constant 0 : i1
+    func.call @touch(%input, %choose, %stop) : (buffer, i1, i1)
+  }
+  func.return
+}
+
+func.def @test(%limit: index, %choose: i1) {
+  %bytes = index.constant 8 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %index = [%begin to %limit step %step] {
+    %local = buffer.alloca<private> align(4) %bytes : buffer
+    func.call @touch(%local, %choose, %choose) : (buffer, i1, i1)
+  }
+  func.return
+}
+
+// ----
+local: accessed=yes single_instance=yes
+
+// ====
+
+// Returning one argument cannot make an unused sibling escape.
+func.def @identity(%unused: buffer, %returned: buffer) -> (buffer) {
+  func.return %returned : buffer
+}
+
+func.def @test(%limit: index) {
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %index = [%begin to %limit step %step] {
+    %unused = buffer.alloca<private> align(4) %bytes : buffer
+    %returned = buffer.alloca<private> align(4) %bytes : buffer
+    %alias = func.call @identity(%unused, %returned) : (buffer, buffer) -> (buffer)
+  }
+  func.return
+}
+
+// ----
+unused: accessed=no single_instance=yes
+returned: accessed=yes single_instance=unproven
+unused / returned: workgroup_nonoverlap=unproven
+
+// ====
+
+// An unavailable body cannot promise bounded use, even with a pure signature.
+func.decl pure @external(%input: buffer) -> (i32)
+
+func.def @test(%limit: index) {
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %index = [%begin to %limit step %step] {
+    %local = buffer.alloca<private> align(4) %bytes : buffer
+    %value = func.call @external(%local) : (buffer) -> (i32)
+  }
+  func.return
+}
+
+// ----
+local: accessed=yes single_instance=unproven
+
+// ====
+
+// A bounded call reading an earlier allocation still overlaps the next one.
+func.def @read(%input: buffer) -> (i32) {
+  %origin = index.constant 0 : offset
+  %view = buffer.view %input[%origin] : buffer -> view<1xi32>
+  %value = view.load %view[0] : view<1xi32> -> i32
+  func.return %value : i32
+}
+
+func.def @test(%limit: index) {
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  %initial = buffer.alloca<private> align(4) %bytes : buffer
+  %last = scf.for %index = [%begin to %limit step %step](%previous = %initial : buffer) -> (buffer) {
+    %local = buffer.alloca<private> align(4) %bytes : buffer
+    %value = func.call @read(%previous) : (buffer) -> (i32)
+    scf.yield %local : buffer
+  }
+  func.return
+}
+
+// ----
+initial: accessed=yes single_instance=yes
+local: accessed=yes single_instance=unproven
+initial / local: workgroup_nonoverlap=unproven
+
+// ====
+
+// A reference returned through a conditional region still escapes its call.
+func.def @select(%first: view<1xi32>, %second: view<1xi32>, %condition: i1) -> (view<1xi32>) {
+  %result = scf.if %condition -> (view<1xi32>) {
+    scf.yield %first : view<1xi32>
+  } else {
+    scf.yield %second : view<1xi32>
+  }
+  func.return %result : view<1xi32>
+}
+
+func.def @test(%other: view<1xi32>, %limit: index, %condition: i1) {
+  %origin = index.constant 0 : offset
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %index = [%begin to %limit step %step] {
+    %local = buffer.alloca<private> align(4) %bytes : buffer
+    %slot = buffer.view %local[%origin] : buffer -> view<1xi32>
+    %selected = func.call @select(%slot, %other, %condition) : (view<1xi32>, view<1xi32>, i1) -> (view<1xi32>)
+  }
+  func.return
+}
+
+// ----
+local: accessed=yes single_instance=unproven
+
+// ====
+
+// Async completion needs an explicit interprocedural completion proof. The
+// synchronous access summary conservatively leaves these roots incomplete.
+func.def @issue(%input: buffer, %destination: buffer) {
+  %origin = index.constant 0 : offset
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %shared = buffer.assume.memory_space<workgroup> %destination : buffer
+  %source = buffer.view %global[%origin] : buffer -> view<1xi32>
+  %view = buffer.view %shared[%origin] : buffer -> view<1xi32>
+  %token = kernel.async.copy %source to %view {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<1xi32> to view<1xi32> -> kernel.async.token
+  %group = kernel.async.group %token : kernel.async.token -> kernel.async.group
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+func.def @test(%source: buffer, %limit: index) {
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %index = [%begin to %limit step %step] {
+    %local = buffer.alloca<workgroup> align(4) %bytes : buffer
+    func.call @issue(%source, %local) : (buffer, buffer)
+  }
+  func.return
+}
+
+// ----
+local: accessed=yes single_instance=unproven
+
+// ====
+
+// Publishing a reference makes it available after the callee returns.
+global.variable @saved : buffer
+
+func.def @publish(%input: buffer) {
+  global.store %input, @saved : buffer
+  func.return
+}
+
+func.def @test(%limit: index) {
+  %bytes = index.constant 4 : offset
+  %begin = index.constant 0 : index
+  %step = index.constant 1 : index
+  scf.for %index = [%begin to %limit step %step] {
+    %local = buffer.alloca<private> align(4) %bytes : buffer
+    func.call @publish(%local) : (buffer)
+  }
+  func.return
+}
+
+// ----
+local: accessed=yes single_instance=unproven

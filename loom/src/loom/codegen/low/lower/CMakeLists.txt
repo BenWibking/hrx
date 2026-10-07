@@ -68,6 +68,7 @@ loom_cc_library(
     iree::base
     iree::base::internal
     iree::base::internal::arena
+    loom::analysis::call_effects
     loom::analysis::cfg_value_identity
     loom::analysis::condition_facts
     loom::analysis::consumption

@@ -80,13 +80,30 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "call_effects",
+    srcs = ["call_effects.c"],
+    hdrs = ["call_effects.h"],
+    deps = [
+        ":movement",
+        ":value_relation",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/util:walk",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "storage_interference",
     srcs = ["storage_interference.c"],
     hdrs = ["storage_interference.h"],
     deps = [
+        ":call_effects",
         ":control_uniformity",
         ":liveness",
         ":liveness_events",
+        ":movement",
         ":value_relation",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:op_defs",

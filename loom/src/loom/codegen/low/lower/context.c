@@ -385,7 +385,8 @@ iree_status_t loom_low_lower_context_storage_interference(
     IREE_RETURN_IF_ERROR(loom_storage_interference_analyze_function(
         context->module, context->lowering.fact_table,
         &context->lowering.value_domain, context->source_function,
-        &context->function_arena, &analysis->storage_interference));
+        context->options->call_effects, &context->function_arena,
+        &analysis->storage_interference));
   }
   *out_interference = analysis->storage_interference;
   return iree_ok_status();

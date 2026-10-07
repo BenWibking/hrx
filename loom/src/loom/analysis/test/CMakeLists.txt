@@ -13,6 +13,7 @@ loom_check_test_suite(
   NAME
     test
   SRCS
+    "storage_calls.loom-test"
     "storage_instances.loom-test"
     "storage_interference.loom-test"
 )

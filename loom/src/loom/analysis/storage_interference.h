@@ -11,6 +11,7 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
+#include "loom/analysis/call_effects.h"
 #include "loom/ir/local_value_domain.h"
 #include "loom/ops/op_defs.h"
 #include "loom/util/fact_table.h"
@@ -27,6 +28,8 @@ typedef struct loom_storage_interference_t loom_storage_interference_t;
 // |function|. |value_domain| must be acquired for the function body and remain
 // active for the analysis lifetime. The returned analysis and all retained
 // provenance, access, and control facts are allocated from |arena|.
+// |call_effects| supplies detached callable summaries built before source body
+// mutation. NULL retains conservative treatment of unknown callable effects.
 //
 // The analysis owns the function walk. Consumers query its indexed result and
 // must not reconstruct aliases or access footprints from source IR.
@@ -38,7 +41,8 @@ typedef struct loom_storage_interference_t loom_storage_interference_t;
 iree_status_t loom_storage_interference_analyze_function(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     const loom_local_value_domain_t* value_domain, loom_func_like_t function,
-    iree_arena_allocator_t* arena, loom_storage_interference_t** out_analysis);
+    const loom_call_effects_t* call_effects, iree_arena_allocator_t* arena,
+    loom_storage_interference_t** out_analysis);
 
 // Returns true when |root_value_id| may have a memory footprint.
 //

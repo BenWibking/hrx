@@ -391,7 +391,7 @@ buffer_view = Op(
         Operand("buffer", BUFFER, doc="Opaque storage root."),
         Operand("byte_offset", OFFSET, doc="Base byte offset from the buffer root."),
     ],
-    results=[Result("result", VIEW, doc="Typed logical view over the buffer.")],
+    results=[Result("result", VIEW, doc="Typed logical view over the buffer.", reference_source="buffer")],
     traits=[PURE, REFINABLE_RESULT_TYPE_REFS],
     verify="loom_buffer_view_verify",
     facts="loom_buffer_view_facts",

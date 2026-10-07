@@ -89,15 +89,35 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    call_effects
+  HDRS
+    "call_effects.h"
+  SRCS
+    "call_effects.c"
+  DEPS
+    ::movement
+    ::value_relation
+    iree::base
+    iree::base::internal::arena
+    loom::ir
+    loom::ops::op_defs
+    loom::util::walk
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     storage_interference
   HDRS
     "storage_interference.h"
   SRCS
     "storage_interference.c"
   DEPS
+    ::call_effects
     ::control_uniformity
     ::liveness
     ::liveness_events
+    ::movement
     ::value_relation
     iree::base
     iree::base::internal::arena

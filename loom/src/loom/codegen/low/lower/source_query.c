@@ -461,6 +461,7 @@ iree_status_t loom_low_lower_source_query_environment_initialize(
       .target_facts = context->options->target_facts,
       .descriptor_set = descriptor_set,
       .fact_table = context->lowering.fact_table,
+      .call_effects = context->options->call_effects,
       .value_domain = &context->lowering.value_domain,
       .view_regions = view_regions,
       .arena = &context->function_arena,

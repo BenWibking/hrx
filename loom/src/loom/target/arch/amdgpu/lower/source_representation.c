@@ -288,6 +288,7 @@ static bool loom_amdgpu_address_representation_relation_is_exact(
       // A shared payload may therefore feed independently placed selects.
       return false;
     case LOOM_VALUE_RELATION_ELEMENTWISE:
+    case LOOM_VALUE_RELATION_REFERENCE_SOURCE:
     case LOOM_VALUE_RELATION_COUNT_:
       return false;
   }

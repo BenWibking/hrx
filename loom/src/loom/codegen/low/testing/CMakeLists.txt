@@ -113,6 +113,7 @@ loom_cc_library(
     ::source_workload
     iree::base
     iree::base::internal::arena
+    loom::analysis::call_effects
     loom::codegen::low::frame
     loom::codegen::low::function
     loom::codegen::low::lower

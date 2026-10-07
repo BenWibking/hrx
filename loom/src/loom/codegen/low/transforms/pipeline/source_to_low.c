@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+#include "loom/analysis/call_effects.h"
 #include "loom/codegen/low/launch_config_program.h"
 #include "loom/codegen/low/lower/function_boundary.h"
 #include "loom/codegen/low/lower/representation_projection.h"
@@ -320,6 +321,7 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
   iree_arena_allocator_t selection_arena;
   iree_arena_initialize(module->arena.block_pool, &selection_arena);
   loom_low_lower_module_state_t* module_state = NULL;
+  loom_call_effects_t* call_effects = NULL;
   loom_low_source_selection_list_t selection_list = {0};
   loom_low_source_selection_list_t target_function_list = {0};
   const loom_low_source_selection_options_t selection_options = {
@@ -372,6 +374,10 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
         loom_low_lower_module_state_create(&selection_arena, &module_state);
   }
   uint32_t declaration_count = 0;
+  if (iree_status_is_ok(status) && !emitted_error_diagnostics) {
+    status = loom_call_effects_analyze_module(module, &selection_arena,
+                                              &call_effects);
+  }
   for (iree_host_size_t i = 0;
        i < selection_list.count && iree_status_is_ok(status) &&
        !emitted_error_diagnostics;
@@ -447,6 +453,7 @@ iree_status_t loom_low_source_to_low_run(loom_pass_t* pass,
             state ? state->legality_diagnostic_flags : 0,
         .policy = selection->policy,
         .fact_table = fact_table,
+        .call_effects = call_effects,
         .emitter = pass->diagnostic_emitter,
         .max_errors = state ? state->max_errors : 20,
         .control_flow_lowering = state ? state->control_flow_lowering

@@ -11,6 +11,7 @@
 #include "loom/analysis/control_uniformity.h"
 #include "loom/analysis/liveness.h"
 #include "loom/analysis/liveness_events.h"
+#include "loom/analysis/movement.h"
 #include "loom/analysis/value_relation.h"
 #include "loom/ir/context.h"
 #include "loom/ops/buffer/ops.h"
@@ -108,6 +109,8 @@ struct loom_storage_interference_t {
   const loom_module_t* module;
   // Populated value facts and retained CFG snapshots.
   const loom_value_fact_table_t* fact_table;
+  // Detached callable argument summaries borrowed for the analysis lifetime.
+  const loom_call_effects_t* call_effects;
   // Active local numbering for the function body.
   const loom_local_value_domain_t* value_domain;
   // Arena owning all analysis results and query summaries.
@@ -263,22 +266,6 @@ static iree_status_t loom_storage_interference_append_footprint_operation(
   return iree_ok_status();
 }
 
-static bool loom_storage_interference_async_transfer_isa(const loom_op_t* op) {
-  switch (op->kind) {
-    case LOOM_OP_KERNEL_ASYNC_COPY:
-    case LOOM_OP_KERNEL_ASYNC_COPY_MASK:
-    case LOOM_OP_KERNEL_ASYNC_GATHER:
-    case LOOM_OP_KERNEL_ASYNC_GATHER_MASK:
-    case LOOM_OP_KERNEL_ASYNC_CLUSTER_GATHER:
-    case LOOM_OP_KERNEL_ASYNC_CLUSTER_GATHER_MASK:
-    case LOOM_OP_KERNEL_ASYNC_TENSOR_LOAD_TO_LDS:
-    case LOOM_OP_KERNEL_ASYNC_TENSOR_STORE_FROM_LDS:
-      return true;
-    default:
-      return false;
-  }
-}
-
 static const loom_op_t* loom_storage_interference_async_completion(
     const loom_storage_interference_t* analysis, const loom_op_t* producer_op) {
   if (producer_op->result_count != 1 || !producer_op->parent_block) {
@@ -347,32 +334,48 @@ static iree_status_t loom_storage_interference_record_value_accesses(
     // Binding storage into a channel also exposes aliases and asynchronous
     // lifetimes not described by the buffer/view use graph. Channel realization
     // must make those accesses explicit before this analysis can prove reuse.
+    const loom_call_like_t call =
+        loom_call_like_const_cast(analysis->module, user_op);
     if (loom_channel_bind_isa(user_op) ||
-        loom_call_like_isa(
-            loom_call_like_cast(analysis->module, (loom_op_t*)user_op))) {
+        (loom_call_like_isa(call) && !loom_call_like_is_direct_semantic(call))) {
       loom_storage_interference_mark_memberships_incomplete(analysis,
                                                             memberships);
       continue;
     }
     const loom_op_vtable_t* vtable = loom_op_vtable(analysis->module, user_op);
     const loom_operand_descriptor_t* descriptor = NULL;
-    if (!loom_op_operand_descriptor_at(vtable, user_op,
-                                       loom_use_operand_index(*use),
-                                       &descriptor, NULL, NULL)) {
+    bool accesses_memory = false;
+    if (loom_call_like_is_direct_semantic(call)) {
+      const loom_call_effect_summary_t* summary = loom_call_effects_lookup(
+          analysis->call_effects, loom_call_like_callee(call));
+      const loom_call_argument_effects_t effects =
+          summary ? summary->arguments[loom_use_operand_index(*use)]
+                  : LOOM_CALL_ARGUMENT_ESCAPE;
+      if (iree_any_bit_set(effects, LOOM_CALL_ARGUMENT_ESCAPE)) {
+        loom_storage_interference_mark_memberships_incomplete(analysis,
+                                                              memberships);
+      }
+      accesses_memory = iree_any_bit_set(
+          effects, LOOM_CALL_ARGUMENT_READ | LOOM_CALL_ARGUMENT_WRITE);
+    } else if (!loom_op_operand_descriptor_at(vtable, user_op,
+                                              loom_use_operand_index(*use),
+                                              &descriptor, NULL, NULL)) {
       if (loom_traits_may_access_memory(
               loom_op_effective_traits(analysis->module, user_op))) {
         loom_storage_interference_mark_memberships_incomplete(analysis,
                                                               memberships);
       }
       continue;
+    } else {
+      accesses_memory = iree_any_bit_set(
+          descriptor->flags, LOOM_OPERAND_READS | LOOM_OPERAND_WRITES);
     }
-    if (!iree_any_bit_set(descriptor->flags,
-                          LOOM_OPERAND_READS | LOOM_OPERAND_WRITES)) {
+    if (!accesses_memory) {
       continue;
     }
 
     const loom_op_t* completion_op = NULL;
-    if (loom_storage_interference_async_transfer_isa(user_op)) {
+    if (loom_movement_op_kind_is_async(user_op->kind)) {
       completion_op =
           loom_storage_interference_async_completion(analysis, user_op);
       if (!completion_op) {
@@ -734,7 +737,8 @@ static iree_status_t loom_storage_interference_walk_op(
       LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_CFG_ARGUMENT) |
       LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_LOOP_CARRIED) |
       LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_LOOP_BYPASS) |
-      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_REGION_RESULT);
+      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_REGION_RESULT) |
+      LOOM_VALUE_RELATION_MASK(LOOM_VALUE_RELATION_REFERENCE_SOURCE);
   loom_value_relation_iterator_t iterator;
   loom_value_relation_iterator_initialize(analysis->module, op, relation_mask,
                                           &iterator);
@@ -801,7 +805,8 @@ static iree_status_t loom_storage_interference_initialize_values(
 iree_status_t loom_storage_interference_analyze_function(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     const loom_local_value_domain_t* value_domain, loom_func_like_t function,
-    iree_arena_allocator_t* arena, loom_storage_interference_t** out_analysis) {
+    const loom_call_effects_t* call_effects, iree_arena_allocator_t* arena,
+    loom_storage_interference_t** out_analysis) {
   IREE_ASSERT_ARGUMENT(module);
   IREE_ASSERT_ARGUMENT(fact_table);
   IREE_ASSERT_ARGUMENT(value_domain);
@@ -818,6 +823,7 @@ iree_status_t loom_storage_interference_analyze_function(
   *analysis = (loom_storage_interference_t){
       .module = module,
       .fact_table = fact_table,
+      .call_effects = call_effects,
       .value_domain = value_domain,
       .arena = arena,
       .function = function,

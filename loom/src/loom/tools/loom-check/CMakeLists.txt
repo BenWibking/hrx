@@ -61,6 +61,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::file_handle
     iree::io::stream
+    loom::analysis::call_effects
     loom::analysis::liveness
     loom::analysis::liveness_json
     loom::analysis::storage_interference

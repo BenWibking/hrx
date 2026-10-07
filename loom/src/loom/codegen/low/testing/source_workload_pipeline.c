@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "iree/base/internal/arena.h"
+#include "loom/analysis/call_effects.h"
 #include "loom/codegen/low/function.h"
 #include "loom/codegen/low/lower/source_selection.h"
 #include "loom/codegen/low/pipeline/pipeline.h"
@@ -197,6 +198,11 @@ iree_status_t loom_low_source_workload_run_pipeline(
       status =
           loom_low_lower_module_state_create(&lowering_arena, &module_state);
     }
+    loom_call_effects_t* call_effects = NULL;
+    if (iree_status_is_ok(status)) {
+      status = loom_call_effects_analyze_module(module, &lowering_arena,
+                                                &call_effects);
+    }
     loom_op_t** lowered_funcs = NULL;
     if (iree_status_is_ok(status) && selection_list.count == 0) {
       status = iree_make_status(
@@ -226,6 +232,7 @@ iree_status_t loom_low_source_workload_run_pipeline(
           .descriptor_registry = options->descriptor_registry,
           .policy = selection->policy,
           .fact_table = fact_table,
+          .call_effects = call_effects,
           .max_errors = 20,
           .module_state = module_state,
       };

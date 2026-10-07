@@ -83,6 +83,7 @@ loom_cc_library(
     ],
     visibility = _LOWER_VISIBILITY,
     deps = [
+        "//loom/src/loom/analysis:call_effects",
         "//loom/src/loom/analysis:cfg_value_identity",
         "//loom/src/loom/analysis:condition_facts",
         "//loom/src/loom/analysis:consumption",

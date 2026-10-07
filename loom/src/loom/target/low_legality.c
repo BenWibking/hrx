@@ -338,6 +338,11 @@ const loom_value_fact_table_t* loom_target_low_legality_fact_table(
   return context->options->environment->fact_table;
 }
 
+const loom_call_effects_t* loom_target_low_legality_call_effects(
+    const loom_target_low_legality_context_t* context) {
+  return context->options->environment->call_effects;
+}
+
 const loom_local_value_domain_t* loom_target_low_legality_value_domain(
     const loom_target_low_legality_context_t* context) {
   return context->options->environment->value_domain;
