@@ -1,0 +1,143 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+aie2p.target<array> @npu
+
+// The second reservation becomes ready first.
+// A FIFO consumer must still wait for the first reservation's publication.
+
+pipeline.def<kernel> public retain target(@npu) @reordered_publication() run(%output_arg: buffer) {
+  %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %origin = index.constant 0 : offset
+  %payload_bytes = index.constant 8 : offset
+  %capacity = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %payload_bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %first, %first_payload = channel.reserve %records : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %second, %second_payload = channel.reserve %records : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %later_value = scalar.constant 22 : i32
+    view.store %later_value, %second_payload[0] : i32, view<1xi32>
+    channel.publish %second : write<tile<1xi32>>
+    %earlier_value = scalar.constant 11 : i32
+    view.store %earlier_value, %first_payload[0] : i32, view<1xi32>
+    channel.publish %first : write<tile<1xi32>>
+  }
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %first, %first_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %first_output = buffer.view %output[%origin] : buffer -> view<1xi32>
+    %first_copy = kernel.async.copy %first_payload to %first_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
+    kernel.async.wait %first_group {newer_groups = 0} : kernel.async.group
+    channel.release %first : read<tile<1xi32>>
+    %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %next_word = index.constant 4 : offset
+    %second_output = buffer.view %output[%next_word] : buffer -> view<1xi32>
+    %second_copy = kernel.async.copy %second_payload to %second_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %second_group = kernel.async.group %second_copy : kernel.async.token -> kernel.async.group
+    kernel.async.wait %second_group {newer_groups = 0} : kernel.async.group
+    channel.release %second : read<tile<1xi32>>
+  }
+}
+
+// Retiring the second slot must not permit the
+// producer to overwrite the first slot before the first read is released.
+
+pipeline.def<kernel> public retain target(@npu) @reordered_retirement() run(%output_arg: buffer) {
+  %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %origin = index.constant 0 : offset
+  %payload_bytes = index.constant 8 : offset
+  %capacity = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %payload_bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %begin = index.constant 0 : index
+    %count = index.constant 3 : index
+    %step = index.constant 1 : index
+    scf.for %record = [%begin to %count step %step] {
+      %write, %payload = channel.reserve %records : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+      %value = index.cast %record : index to i32
+      view.store %value, %payload[0] : i32, view<1xi32>
+      channel.publish %write : write<tile<1xi32>>
+    }
+  }
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %first, %first_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    channel.release %second : read<tile<1xi32>>
+    %first_output = buffer.view %output[%origin] : buffer -> view<1xi32>
+    %first_copy = kernel.async.copy %first_payload to %first_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %first_group = kernel.async.group %first_copy : kernel.async.token -> kernel.async.group
+    kernel.async.wait %first_group {newer_groups = 0} : kernel.async.group
+    channel.release %first : read<tile<1xi32>>
+    %third, %third_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    channel.release %third : read<tile<1xi32>>
+  }
+}
+
+// A held read rotates through ordinary loop arguments. Wait borrows its ready
+// payload without another admission. Each iteration retires the later read
+// first, then completes DMA from the older record and returns both credits.
+
+pipeline.def<kernel> public retain target(@npu) @rotating_retirement() run(%output_arg: buffer) {
+  %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %origin = index.constant 0 : offset
+  %payload_bytes = index.constant 8 : offset
+  %capacity = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %payload_bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %begin = index.constant 0 : index
+    %count = index.constant 5 : index
+    %step = index.constant 1 : index
+    scf.for %record = [%begin to %count step %step] {
+      %write, %payload = channel.reserve %records : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+      %value = index.cast %record : index to i32
+      view.store %value, %payload[0] : i32, view<1xi32>
+      channel.publish %write : write<tile<1xi32>>
+    }
+  }
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %first, %first_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %begin = index.constant 0 : index
+    %pairs = index.constant 2 : index
+    %step = index.constant 1 : index
+    %word_bytes = index.constant 4 : index
+    %last = scf.for %pair = [%begin to %pairs step %step](%current = %first : read<tile<1xi32>>) -> (read<tile<1xi32>>) {
+      %payload = channel.wait %current : read<tile<1xi32>> -> view<1xi32>
+      %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+      channel.release %second : read<tile<1xi32>>
+      %byte_index = index.mul %pair, %word_bytes : index
+      %offset = index.cast %byte_index : index to offset
+      %destination = buffer.view %output[%offset] : buffer -> view<1xi32>
+      %copy = kernel.async.copy %payload to %destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+      %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+      kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+      channel.release %current : read<tile<1xi32>>
+      %next, %next_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+      scf.yield %next : read<tile<1xi32>>
+    }
+    %last_payload = channel.wait %last : read<tile<1xi32>> -> view<1xi32>
+    %last_offset = index.constant 8 : offset
+    %last_destination = buffer.view %output[%last_offset] : buffer -> view<1xi32>
+    %copy = kernel.async.copy %last_payload to %last_destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+    %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+    kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+    channel.release %last : read<tile<1xi32>>
+  }
+}

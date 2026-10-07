@@ -9,6 +9,106 @@
 
 iree_add_all_subdirs()
 
+loom_target_profile(
+  NAME
+    "npu4"
+  FAMILY
+    "amd.xdna.aie2p"
+  SELECTOR
+    "amd.xdna.strix.17f0_10"
+)
+
+loom_target_profile(
+  NAME
+    "npu5"
+  FAMILY
+    "amd.xdna.aie2p"
+  SELECTOR
+    "amd.xdna.strix_halo.17f0_11"
+)
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
+loom_kernel_binary(
+  NAME
+    "pipeline_completion_npu4"
+  COMPONENT
+    "//experimental/xdna/cts:pipeline_completion_npu4"
+  TARGET
+    "::npu4"
+  OUTPUT
+    "pipeline_completion_npu4.xdna"
+  SRCS
+    "testdata/pipeline_completion.loom"
+  ROOTS
+    "@reordered_publication"
+    "@reordered_retirement"
+    "@rotating_retirement"
+  TESTONLY
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
+loom_kernel_binary(
+  NAME
+    "pipeline_completion_npu5"
+  COMPONENT
+    "//experimental/xdna/cts:pipeline_completion_npu5"
+  TARGET
+    "::npu5"
+  OUTPUT
+    "pipeline_completion_npu5.xdna"
+  SRCS
+    "testdata/pipeline_completion.loom"
+  ROOTS
+    "@reordered_publication"
+    "@reordered_retirement"
+    "@rotating_retirement"
+  TESTONLY
+)
+endif()
+
+if(LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA)
+iree_c_embed_data(
+  NAME
+    pipeline_completion
+  SRCS
+    "${CMAKE_CURRENT_BINARY_DIR}/pipeline_completion_npu4.xdna"
+    "${CMAKE_CURRENT_BINARY_DIR}/pipeline_completion_npu5.xdna"
+  C_FILE_OUTPUT
+    "pipeline_completion.c"
+  H_FILE_OUTPUT
+    "pipeline_completion.h"
+  IDENTIFIER
+    "iree_xdna_pipeline_completion"
+  TESTONLY
+  FLATTEN
+  PUBLIC
+)
+endif()
+
+if(AMDF_BUILD AND AMDF_FAMILY_XDNA AND LOOM_BUILD AND LOOM_TARGET_ARCH_XDNA AND LOOM_EMIT_XDNA AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Windows"))
+iree_cc_test(
+  NAME
+    pipeline_completion_test
+  SRCS
+    "pipeline_completion_test.cc"
+  DEPS
+    ::execution_fixture
+    ::pipeline_completion
+    amdf::headers
+    iree::base
+    iree::testing::gtest
+    libamdf::cts::util::linked_test_main
+  LABELS
+    "iree-build-requirement=libamdf"
+    "iree-build-requirement=libamdf.xdna"
+    "iree-run-requirement=libamdf.resource.xdna"
+    "runtime-resource=amd-xdna"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
 iree_py_library(
   NAME
     assembly_pack_cases
@@ -576,6 +676,7 @@ iree_cc_library(
     amdf::headers
     iree::base
     iree::base::internal::shm
+    iree::base::internal::span
     iree::experimental::xdna::executable
     iree::hal
     iree::hal::drivers::amd::xdna::image::aie2p::npu2
