@@ -22,7 +22,8 @@ typedef struct loom_aie2p_native_channel_t {
   uint32_t byte_offset;
   // Physical byte displacement between adjacent records.
   uint32_t byte_stride;
-  // Whole slot envelope used for neighbor visibility admission.
+  // Whole slot envelope used for neighbor visibility admission. Interleaved
+  // records may have overlapping envelopes and disjoint payload elements.
   uint32_t record_byte_length;
   // Semaphore containing reusable slot credits.
   uint16_t free_lock;

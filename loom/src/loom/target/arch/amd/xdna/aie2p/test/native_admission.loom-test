@@ -95,3 +95,23 @@ pipeline.def<kernel> public retain target(@device) @credit_range() run() {
     channel.publish %write : write<tile<1xi32>>
   }
 }
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+// Interleaved slots still require their entire footprint to fit the allocation.
+pipeline.def<kernel> public retain target(@device) @short_interleaved_storage() run() {
+  %memory = pipeline.memory<workgroup>[0, 2] : pool
+  %bytes = index.constant 24575 : offset
+  %origin = index.constant 0 : offset
+  %slots = index.constant 12 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(64) %bytes : buffer
+  %records = buffer.view %storage[%origin] : buffer -> view<12x16x64xbf16, #encoding.layout.strided<strides=[64, 768, 1]>>
+  // ERROR@+1: XDNA/051 {requirement="specialized byte-addressable channel slot geometry"}
+  %channel = channel.bind<fifo> %records, %slots : view<12x16x64xbf16, #encoding.layout.strided<strides=[64, 768, 1]>>, index -> channel<tile<16x64xbf16>>
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<16x64xbf16>> -> (write<tile<16x64xbf16>>, view<16x64xbf16, #encoding.layout.strided<strides=[768, 1]>>)
+    channel.publish %write : write<tile<16x64xbf16>>
+  }
+}

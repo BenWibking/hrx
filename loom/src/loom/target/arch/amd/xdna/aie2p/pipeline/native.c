@@ -114,7 +114,6 @@ static iree_status_t loom_aie2p_native_select_channels(
         !iree_checked_mul_u64(record.element_span, geometry.element_bit_count,
                               &record_bits) ||
         stride_bits % 8 || record_bits % 8 ||
-        (source->capacity > 1 && stride_bits < record_bits) ||
         !iree_checked_mul_u64(source->capacity - 1, stride_bits / 8, &extent) ||
         !iree_checked_add_u64(extent, record_bits / 8, &extent) ||
         (uint64_t)offset > allocation->byte_length ||
