@@ -172,6 +172,10 @@ loom_test(
             "case": "q8s32_values32",
             "configs": {"model.q8s32.input_capacity": "512"},
         },
+        "values8": {
+            "case": "q8s32_values8",
+            "configs": {"model.q8s32.input_capacity": "1280"},
+        },
     },
 )
 
@@ -372,6 +376,7 @@ iree_execution_test_suite(
     data = [
         "q8s32_specialization.cxx",
         "q8s32_specialization.h",
+        "q8s32_specialization_ambiguous_provider.cxx",
         "q8s32_specialization_providers.cxx",
     ],
     manifests = ["q8s32_specialization.test.json"],
@@ -384,6 +389,7 @@ iree_execution_test_suite(
         "loom-compile": "//loom/src/loom/tools/loom-compile",
         "loom-import-cxx": "//loom/src/loom/tools/loom-import-cxx",
         "loom-link": "//loom/src/loom/tools/loom-link",
+        "loom-opt": "//loom/src/loom/tools/loom-opt",
     },
 )
 
