@@ -393,6 +393,7 @@ loom_corpus_test(
     "memory/view/scalar_exchange.loom"
     "memory/view/selected_crops.loom"
     "memory/view/selection.loom"
+    "kernel/subgroup/match.loom"
     "kernel/subgroup/shuffle_participation.loom"
     "kernel/subgroup/transport.loom"
     "kernel/subgroup/transport_carrier.loom"

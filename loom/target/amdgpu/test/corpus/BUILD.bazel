@@ -121,7 +121,9 @@ _NO_HARDWARE_SUBJECT_EXCLUDES = {
 
 loom_corpus_build(
     name = "all",
-    all_roots_xfail = {"//loom/target/amdgpu:all": ["numeric/conversion/float8_facts.loom"]},
+    all_roots_xfail = {
+        "//loom/target/amdgpu:all": ["numeric/conversion/float8_facts.loom"],
+    },
     catalog = LOOM_CORPUS,
     excludes = {"//loom/target/amdgpu:all": _NO_KERNEL_ARTIFACT_EXCLUDES},
     profiles = ["//loom/target/amdgpu:all"],

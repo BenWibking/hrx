@@ -12,6 +12,7 @@ KERNEL_CORPUS = loom_corpus_manifest(
     name = "kernel",
     package = "//loom/src/loom/test/corpus/kernel",
     scenario_srcs = [
+        "subgroup/match.loom",
         "subgroup/shuffle_participation.loom",
         "subgroup/transport.loom",
         "subgroup/transport_carrier.loom",

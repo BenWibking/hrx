@@ -31,6 +31,7 @@ _KERNEL_SOURCES = [
     "control/schedule/unroll_scope.loom",
     "kernel/subgroup/active_predicate.loom",
     "kernel/subgroup/ballot.loom",
+    "kernel/subgroup/match.loom",
     "kernel/subgroup/shuffle_dynamic.loom",
     "kernel/subgroup/shuffle_participation.loom",
     "kernel/subgroup/transport.loom",
