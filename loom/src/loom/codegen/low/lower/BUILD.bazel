@@ -417,3 +417,18 @@ loom_cc_test(
         "//runtime/src/iree/testing:gtest_main",
     ],
 )
+
+loom_cc_library(
+    name = "task_abi",
+    srcs = ["task_abi.c"],
+    hdrs = ["task_abi.h"],
+    visibility = _LOWER_VISIBILITY,
+    deps = [
+        ":lower",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/kernel",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target/abi/task:state_layout",
+        "//runtime/src/iree/base",
+    ],
+)

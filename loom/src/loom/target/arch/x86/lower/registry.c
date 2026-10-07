@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include "loom/codegen/low/lower/task_abi.h"
 #include "loom/error/error_catalog.h"
 #include "loom/ir/module.h"
 #include "loom/target/abi/task/parameter_layout.h"
@@ -18,7 +19,6 @@
 #include "loom/target/arch/x86/contracts/scalar.h"
 #include "loom/target/arch/x86/contracts/scalar_lower_rules.h"
 #include "loom/target/arch/x86/lower/contraction.h"
-#include "loom/target/arch/x86/lower/kernel.h"
 #include "loom/target/arch/x86/lower/lower.h"
 #include "loom/target/arch/x86/register_classes.h"
 
@@ -428,10 +428,10 @@ static const loom_low_lower_policy_t kX86Avx512LowLowerPolicy = {
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
     .error_catalog = &loom_error_catalog_core,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
-    .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
-    .preselect_op = {.fn = loom_x86_select_kernel_builtin},
-    .emit_op = {.fn = loom_x86_emit_kernel_builtin},
-    .query_op_contract = {.fn = loom_x86_query_kernel_builtin},
+    .emit_preamble = {.fn = loom_low_task_emit_kernel_preamble},
+    .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
+    .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
+    .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_avx512_type, .user_data = NULL},
     .map_argument = {.fn = loom_x86_map_avx512_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_x86_source_type_supported,
@@ -445,10 +445,10 @@ static const loom_low_lower_policy_t kX86Avx2LowLowerPolicy = {
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
     .error_catalog = &loom_error_catalog_core,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
-    .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
-    .preselect_op = {.fn = loom_x86_select_kernel_builtin},
-    .emit_op = {.fn = loom_x86_emit_kernel_builtin},
-    .query_op_contract = {.fn = loom_x86_query_kernel_builtin},
+    .emit_preamble = {.fn = loom_low_task_emit_kernel_preamble},
+    .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
+    .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
+    .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_avx2_type, .user_data = NULL},
     .map_argument = {.fn = loom_x86_map_avx2_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_x86_source_type_supported,
@@ -462,10 +462,10 @@ static const loom_low_lower_policy_t kX86ScalarLowLowerPolicy = {
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
     .error_catalog = &loom_error_catalog_core,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
-    .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
-    .preselect_op = {.fn = loom_x86_select_kernel_builtin},
-    .emit_op = {.fn = loom_x86_emit_kernel_builtin},
-    .query_op_contract = {.fn = loom_x86_query_kernel_builtin},
+    .emit_preamble = {.fn = loom_low_task_emit_kernel_preamble},
+    .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
+    .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
+    .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_scalar_type, .user_data = NULL},
     .map_argument = {.fn = loom_x86_map_scalar_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_x86_source_type_supported,
@@ -477,10 +477,10 @@ static const loom_low_lower_policy_t kX86PackedDotLowLowerPolicy = {
     .name = IREE_SVL("x86-packed-dot-low-lower"),
     .error_catalog = &loom_error_catalog_core,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
-    .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
-    .preselect_op = {.fn = loom_x86_select_kernel_builtin},
-    .emit_op = {.fn = loom_x86_emit_kernel_builtin},
-    .query_op_contract = {.fn = loom_x86_query_kernel_builtin},
+    .emit_preamble = {.fn = loom_low_task_emit_kernel_preamble},
+    .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
+    .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
+    .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_packed_dot_type, .user_data = NULL},
     .descriptor_matrix =
         {
@@ -496,10 +496,10 @@ static const loom_low_lower_policy_t kX86Avx512PackedDotLowLowerPolicy = {
                          IREE_ARRAYSIZE(kX86FunctionStorage)},
     .error_catalog = &loom_error_catalog_core,
     .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
-    .emit_preamble = {.fn = loom_x86_emit_kernel_preamble},
-    .preselect_op = {.fn = loom_x86_select_kernel_builtin},
-    .emit_op = {.fn = loom_x86_emit_kernel_builtin},
-    .query_op_contract = {.fn = loom_x86_query_kernel_builtin},
+    .emit_preamble = {.fn = loom_low_task_emit_kernel_preamble},
+    .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
+    .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
+    .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
     .map_type = {.fn = loom_x86_map_avx512_packed_dot_type, .user_data = NULL},
     .map_argument = {.fn = loom_x86_map_avx512_packed_dot_argument,
                      .user_data = NULL},

@@ -103,27 +103,14 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     iree::hal::drivers::task::executable::library::abi
-    loom::analysis::symbol_facts
     loom::codegen::low::builder
-    loom::codegen::low::descriptors
-    loom::codegen::low::pipeline::pass_environment
-    loom::codegen::low::target_binding
-    loom::error::error_defs
+    loom::codegen::low::transforms::task_abi
     loom::ir
-    loom::ops::func_symbol_facts
-    loom::ops::global
     loom::ops::low
     loom::ops::op_defs
     loom::pass::types
-    loom::rewrite::remap
-    loom::rewrite::rewriter
-    loom::target::abi::task::parameter_layout
-    loom::target::abi::task::state_layout
     loom::target::arch::x86::descriptors::entry
     loom::target::arch::x86::ops
-    loom::target::function_contract
-    loom::target::function_version
-    loom::target::pass_environment
     loom::target::registers
   PUBLIC
 )

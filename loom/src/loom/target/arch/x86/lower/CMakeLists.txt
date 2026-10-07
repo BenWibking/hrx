@@ -15,24 +15,22 @@ loom_cc_library(
     lower
   HDRS
     "contraction.h"
-    "kernel.h"
     "lower.h"
   TEXTUAL_HDRS
     "${IREE_BINARY_DIR}/loom/src/loom/target/arch/x86/contracts/tables.inl"
   SRCS
     "contraction.c"
-    "kernel.c"
     "registry.c"
   DEPS
     iree::base
     loom::codegen::low::descriptors
     loom::codegen::low::lower
+    loom::codegen::low::lower::task_abi
     loom::error::error_defs
     loom::ir
     loom::ops::kernel
     loom::ops::low
     loom::target::abi::task::parameter_layout
-    loom::target::abi::task::state_layout
     loom::target::arch::x86::contracts
     loom::target::arch::x86::packed_dot_contract
     loom::target::arch::x86::packed_dot_contract_projection
