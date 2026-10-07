@@ -105,7 +105,6 @@ loom_cc_library(
         "image_elf.h",
         "object_elf.h",
     ],
-    visibility = _NATIVE_X86_VISIBILITY,
     deps = [
         ":contribution",
         ":elf",
@@ -117,11 +116,32 @@ loom_cc_library(
     ],
 )
 
+# Backend providers contribute function mechanics to the shared module owner.
+loom_cc_library(
+    name = "module",
+    srcs = ["module.c"],
+    hdrs = ["module.h"],
+    visibility = _NATIVE_X86_VISIBILITY,
+    deps = [
+        ":object_elf",
+        ":task_library",
+        "//loom/src/loom/codegen/low/schedule",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ops/global",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/target:entry_selection",
+        "//loom/src/loom/target:provider",
+        "//loom/src/loom/target/abi/task:state_layout",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/io:stream",
+    ],
+)
+
 loom_cc_library(
     name = "task_library",
     srcs = ["task_library.c"],
     hdrs = ["task_library.h"],
-    visibility = _NATIVE_X86_VISIBILITY,
     deps = [
         ":object",
         "//loom/src/loom/target/abi/task:parameter_layout",

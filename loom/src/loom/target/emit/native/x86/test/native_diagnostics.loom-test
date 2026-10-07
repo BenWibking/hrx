@@ -45,7 +45,7 @@ func.def public export("same") @first() {
   func.return
 }
 
-// ERROR@+1: X86/006 {symbol_name="same"}
+// ERROR@+1: BACKEND/056 {symbol_name="same"}
 func.def public export("same") @second() {
   func.return
 }
@@ -53,10 +53,10 @@ func.def public export("same") @second() {
 // ====
 
 // The authored bank relation is valid, but has no native host placement meaning.
-// ERROR@+1: X86/004 {constraint="readonly data without bank placement constraints"}
+// ERROR@+1: BACKEND/055 {constraint="readonly data without bank placement constraints"}
 global.rodata.def @left = conflicts([@right]) bytes("00")
 
-// ERROR@+1: X86/004 {constraint="readonly data without bank placement constraints"}
+// ERROR@+1: BACKEND/055 {constraint="readonly data without bank placement constraints"}
 global.rodata.def @right = conflicts([@left]) bytes("00")
 
 func.def public @table() -> (buffer) {
@@ -69,7 +69,7 @@ func.def public @table() -> (buffer) {
 // A retained import may be compiled into an object, but cannot name a module.
 x86.target<scalar> @target
 
-// ERROR@+1: X86/004 {constraint="unqualified native or object imports"}
+// ERROR@+1: BACKEND/055 {constraint="unqualified native or object imports"}
 low.func.decl import(native, "observe", module = "host") target<x86.scalar.core>(@target) @observe(%value: reg<x86.gpr64>)
 
 low.func.def public target<x86.scalar.core>(@target) @caller(%value: reg<x86.gpr64>) asm {
@@ -82,7 +82,7 @@ low.func.def public target<x86.scalar.core>(@target) @caller(%value: reg<x86.gpr
 // A HAL image cannot defer a live data reference to an external linker.
 global.rodata.decl @external_table
 
-// ERROR@+1: X86/007 {symbol_name="external_table"}
+// ERROR@+1: BACKEND/057 {symbol_name="external_table"}
 kernel.def export("read") @read() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index

@@ -26,30 +26,7 @@ ERR_X86_005 = ErrorDef(
     params=(ErrorParam("operation_name", ParamKind.STRING),),
 )
 
-ERR_X86_006 = ErrorDef(
-    domain=ErrorDomain.X86,
-    code=6,
-    severity=Severity.ERROR,
-    summary="Native exports have the same external name.",
-    message="duplicate native export '{symbol_name}'",
-    params=(ErrorParam("symbol_name", ParamKind.STRING),),
-)
-
-ERR_X86_007 = ErrorDef(
-    domain=ErrorDomain.X86,
-    code=7,
-    severity=Severity.ERROR,
-    summary="A native symbol does not satisfy the artifact contract.",
-    message="x86 native symbol '{symbol_name}' requires {constraint}",
-    params=(
-        ErrorParam("symbol_name", ParamKind.STRING),
-        ErrorParam("constraint", ParamKind.STRING),
-    ),
-)
-
 ALL_X86_ERRORS = (
     ERR_X86_004,
     ERR_X86_005,
-    ERR_X86_006,
-    ERR_X86_007,
 )

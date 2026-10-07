@@ -104,6 +104,29 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
+    module
+  HDRS
+    "module.h"
+  SRCS
+    "module.c"
+  DEPS
+    ::object_elf
+    ::task_library
+    iree::base
+    iree::base::internal::arena
+    iree::io::stream
+    loom::codegen::low::schedule
+    loom::error::error_defs
+    loom::ops::global
+    loom::ops::low
+    loom::target::abi::task::state_layout
+    loom::target::entry_selection
+    loom::target::provider
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     task_library
   HDRS
     "task_library.h"

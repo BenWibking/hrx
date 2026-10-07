@@ -117,15 +117,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     loom::codegen::low::frame
-    loom::error::x86_error_defs
-    loom::ops::global
-    loom::ops::low
-    loom::target::abi::task::parameter_layout
-    loom::target::abi::task::state_layout
-    loom::target::emit::native::object_elf
-    loom::target::emit::native::task_library
-    loom::target::entry_selection
-    loom::target::provider
+    loom::target::emit::native::module
   PUBLIC
 )
 endif()

@@ -9,20 +9,11 @@
 #ifndef LOOM_TARGET_EMIT_NATIVE_X86_MODULE_H_
 #define LOOM_TARGET_EMIT_NATIVE_X86_MODULE_H_
 
-#include "loom/target/provider.h"
+#include "loom/target/emit/native/module.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef enum loom_x86_module_format_e {
-  // Relocatable ELF linker input containing ordinary platform functions.
-  LOOM_X86_MODULE_FORMAT_OBJECT = 0,
-  // Self-contained ELF image exporting ordinary platform functions.
-  LOOM_X86_MODULE_FORMAT_SHARED = 1,
-  // Self-contained ELF image with the task HAL executable-library interface.
-  LOOM_X86_MODULE_FORMAT_HAL_LIBRARY = 2,
-} loom_x86_module_format_t;
 
 // Emits native ELF from prepared Low with the x86 architecture's fact identity.
 // The composing architecture supplies its identity so explicitly requested
@@ -32,7 +23,7 @@ typedef enum loom_x86_module_format_e {
 iree_status_t loom_x86_module_emit(
     const loom_target_emit_request_t* request,
     const loom_target_fact_type_t* target_fact_type,
-    loom_x86_module_format_t format, bool* out_emitted,
+    loom_native_module_format_t format, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact);
 
 #ifdef __cplusplus

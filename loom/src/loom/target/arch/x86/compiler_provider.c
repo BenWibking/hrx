@@ -14,7 +14,7 @@ static iree_status_t loom_x86_compiler_emit_module(
     const loom_target_emit_request_t* request, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
   return loom_x86_module_emit(request, &loom_x86_target_fact_type,
-                              LOOM_X86_MODULE_FORMAT_OBJECT, out_emitted,
+                              LOOM_NATIVE_MODULE_FORMAT_OBJECT, out_emitted,
                               out_artifact);
 }
 
@@ -22,7 +22,7 @@ static iree_status_t loom_x86_compiler_emit_image(
     const loom_target_emit_request_t* request, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
   return loom_x86_module_emit(request, &loom_x86_target_fact_type,
-                              LOOM_X86_MODULE_FORMAT_SHARED, out_emitted,
+                              LOOM_NATIVE_MODULE_FORMAT_SHARED, out_emitted,
                               out_artifact);
 }
 
@@ -30,8 +30,8 @@ static iree_status_t loom_x86_compiler_emit_hal_library(
     const loom_target_emit_request_t* request, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
   return loom_x86_module_emit(request, &loom_x86_target_fact_type,
-                              LOOM_X86_MODULE_FORMAT_HAL_LIBRARY, out_emitted,
-                              out_artifact);
+                              LOOM_NATIVE_MODULE_FORMAT_HAL_LIBRARY,
+                              out_emitted, out_artifact);
 }
 
 static const loom_target_emitter_t loom_x86_hal_library_emitter = {
