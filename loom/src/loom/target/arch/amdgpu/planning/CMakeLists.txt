@@ -384,8 +384,10 @@ loom_cc_library(
   NAME
     wait_plan
   HDRS
+    "wait_actions.h"
     "wait_plan.h"
   SRCS
+    "wait_actions.c"
     "wait_plan.c"
   DEPS
     ::address_state
@@ -413,6 +415,22 @@ loom_cc_library(
     loom::target::arch::amdgpu::refs::target_refs
     loom::util::segmented_storage
   PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX125X_CORE AND LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    wait_actions_test
+  SRCS
+    "wait_actions_test.cc"
+  DEPS
+    ::wait_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
 )
 endif()
 

@@ -332,8 +332,14 @@ loom_cc_library(
 
 loom_cc_library(
     name = "wait_plan",
-    srcs = ["wait_plan.c"],
-    hdrs = ["wait_plan.h"],
+    srcs = [
+        "wait_actions.c",
+        "wait_plan.c",
+    ],
+    hdrs = [
+        "wait_actions.h",
+        "wait_plan.h",
+    ],
     visibility = _AMDGPU_ROOT_VISIBILITY + _AMDGPU_LOWER_VISIBILITY,
     deps = [
         ":address_state",
@@ -360,6 +366,18 @@ loom_cc_library(
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "wait_actions_test",
+    srcs = ["wait_actions_test.cc"],
+    target_compatible_with = loom_amdgpu_descriptor_set_compatible_with(_DESCRIPTOR_SET_GFX125X),
+    deps = [
+        ":wait_plan",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
     ],
 )
 
