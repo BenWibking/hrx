@@ -180,6 +180,13 @@ static loomc_status_t loomc_compile_validate_artifact_options(
     LOOMC_RETURN_IF_ERROR(
         loomc_compile_validate_string_view(options->excluded_roots[i]));
   }
+  const loomc_compile_artifact_flags_t known_artifact_flags =
+      LOOMC_COMPILE_ARTIFACT_FLAG_LAUNCH_CONFIG;
+  if ((options->artifact_flags & ~known_artifact_flags) != 0) {
+    return loomc_make_status(
+        LOOMC_STATUS_INVALID_ARGUMENT,
+        "compile artifact options contain unsupported compiler artifact flags");
+  }
   LOOMC_RETURN_IF_ERROR(loomc_config_validate_text_options(options->config));
   if (options->target_profile != NULL) {
     LOOMC_RETURN_IF_ERROR(loomc_target_profile_validate_environment(
@@ -1104,10 +1111,15 @@ loomc_status_t loomc_compile_artifact(
     selected_pass_program = default_pass_program;
   }
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result)) {
+    const loomc_compile_options_t compile_options = {
+        .type = LOOMC_STRUCTURE_TYPE_COMPILE_OPTIONS,
+        .structure_size = sizeof(compile_options),
+        .artifact_flags = options ? options->artifact_flags : 0,
+    };
     status = loomc_compile_prepared_module_into_result(
-        compiler, workspace, selected_pass_program, module,
-        /*options=*/NULL, /*target_specialization=*/NULL,
-        target_specializations, (loom_target_declaration_binding_list_t){0},
+        compiler, workspace, selected_pass_program, module, &compile_options,
+        /*target_specialization=*/NULL, target_specializations,
+        (loom_target_declaration_binding_list_t){0},
         /*config_application=*/NULL,
         loomc_emit_transaction_compile_report(&emit_transaction),
         option_chain.pass_trace, result);
