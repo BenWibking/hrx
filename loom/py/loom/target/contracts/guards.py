@@ -462,14 +462,16 @@ class Guard:
     @classmethod
     def value_u32_divisor_magic_is_add(
         cls,
-        field: str,
+        numerator: str,
+        divisor: str,
         is_add: bool,
         *,
         diagnostic: GuardDiagnostic | None = None,
     ) -> Self:
         return cls(
             kind=GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
-            field=field,
+            field=divisor,
+            other_field=numerator,
             count=1 if is_add else 0,
             diagnostic=diagnostic,
         )
@@ -1018,6 +1020,9 @@ def _validate_value_fact_guard(
             raise ValueError(f"{source_op.name}: {subject} needs a positive bit count")
         return
     if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD:
+        if guard.other_field is None:
+            raise ValueError(f"{source_op.name}: {subject} needs a numerator")
+        _require_value(source_op, guard.other_field, subject)
         if guard.count not in (0, 1):
             raise ValueError(
                 f"{source_op.name}: {subject} needs an expected add indicator"

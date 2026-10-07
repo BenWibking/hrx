@@ -108,8 +108,10 @@ iree_status_t loom_amdgpu_select_unsigned_i64_division_plan(
       .register_class_id = register_class_id,
   };
   if (divisor > 1) {
-    out_plan->magic =
-        loom_low_lower_unsigned_divisor_magic_info(divisor, 64, UINT64_MAX);
+    out_plan->magic = loom_low_lower_unsigned_divisor_magic_info(
+        divisor, 64,
+        loom_low_lower_unsigned_numerator_maximum(
+            loom_low_lower_context_fact_table(context), operands[0], 64));
   }
   *out_selected = true;
   return iree_ok_status();
@@ -322,6 +324,13 @@ iree_status_t loom_amdgpu_lower_unsigned_i64_division(
   loom_value_id_t quotient = numerator;
   if (plan->divisor == 1) {
     if (remainder) {
+      IREE_RETURN_IF_ERROR(loom_amdgpu_division_emit_constant(
+          context, source_op, 0, pair_type, &quotient));
+    }
+    return loom_low_lower_bind_value(context, plan->result, quotient);
+  }
+  if (plan->magic.multiplier == 0) {
+    if (!remainder) {
       IREE_RETURN_IF_ERROR(loom_amdgpu_division_emit_constant(
           context, source_op, 0, pair_type, &quotient));
     }

@@ -82,15 +82,12 @@ func.def target(@target) @narrow_quotients(%byte: i8, %halfword: i16) -> (i8, i1
 // ----
 low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_quotients(%byte: reg<amdgpu.vgpr>, %halfword: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) asm {
   %22 = v_and_b32_lit %byte, 255
-  %23 = v_mov_b32 2863311531
+  %23 = v_mov_b32 1431655766
   %24 = v_mul_hi_u32 %22, %23
-  %byte_quotient = v_lshrrev_b32_src0_inline %24, 1
+  %byte_quotient = v_lshrrev_b32_src0_inline %24, 0
   %26 = v_and_b32_lit %halfword, 65535
   %27 = v_mov_b32 613566757
   %28 = v_mul_hi_u32 %26, %27
-  %29 = v_sub_nc_u32 %26, %28
-  %30 = v_lshrrev_b32_src0_inline %29, 1
-  %31 = v_add_u32 %30, %28
-  %halfword_quotient = v_lshrrev_b32_src0_inline %31, 2
+  %halfword_quotient = v_lshrrev_b32_src0_inline %28, 0
   return %byte_quotient, %halfword_quotient
 }

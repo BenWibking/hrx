@@ -114,12 +114,19 @@ bool loom_low_lower_rule_float_immediate_facts(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
     loom_value_id_t value_id, loom_value_facts_t* out_facts);
 
-// Derives the unsigned 32-bit constant-divisor recipe for an exact source
-// value. Returns false when the value is unavailable or outside [2,
-// UINT32_MAX].
+// Returns the inclusive unsigned maximum of a scalar numerator at its native
+// product width. Unknown or sign-crossing facts retain the full unsigned
+// domain.
+uint64_t loom_low_lower_unsigned_numerator_maximum(
+    const loom_value_fact_table_t* fact_table, loom_value_id_t numerator,
+    uint32_t bit_width);
+
+// Derives the unsigned 32-bit recipe from the numerator's retained range and an
+// exact divisor. Returns false when the divisor is unavailable or outside
+// [2, UINT32_MAX].
 bool loom_low_lower_rule_value_facts_u32_divisor_magic_info(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
-    loom_value_id_t value_id,
+    loom_value_id_t numerator, loom_value_id_t divisor,
     loom_low_lower_unsigned_divisor_magic_info_t* out_info);
 
 #ifdef __cplusplus

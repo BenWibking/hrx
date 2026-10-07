@@ -576,6 +576,8 @@ class ValueProject:
 
     kind: ValueProjectKind
     source_value: str
+    # Numerator paired with the divisor for reciprocal projections.
+    other_source_value: str = ""
     source_node: str = ""
     target_bit_offset: int = 0
     word_index: int = 0
@@ -636,18 +638,25 @@ class ValueProject:
 
     @classmethod
     def u32_divisor_magic_multiplier(
-        cls, source_value: str, *, bit_width: int = 32, target_bit_offset: int = 0
+        cls,
+        numerator: str,
+        divisor: str,
+        *,
+        bit_width: int = 32,
+        target_bit_offset: int = 0,
     ) -> Self:
         """Projects a reciprocal for a 32- or 64-bit high-half multiply.
 
-        The 32-bit recipe retains its correction and post-shift. The 64-bit
-        reciprocal is ceil(2^64 / divisor): its high product is the u32
-        quotient, and multiplying its low product by the divisor yields the
-        remainder in the high half.
+        The 32-bit recipe consumes the numerator range and retains its correction
+        and post-shift. The 64-bit reciprocal stays ceil(2^64 / divisor): its high
+        product is the u32 quotient, and multiplying its low product by the
+        divisor yields the remainder in the high half. That direct remainder
+        identity requires the full reciprocal precision even for bounded inputs.
         """
         return cls(
             kind=ValueProjectKind.U32_DIVISOR_MAGIC_MULTIPLIER,
-            source_value=source_value,
+            source_value=divisor,
+            other_source_value=numerator,
             target_bit_offset=target_bit_offset,
             multiplier_bit_width=bit_width,
         )
@@ -655,7 +664,8 @@ class ValueProject:
     @classmethod
     def u32_divisor_magic_shift(
         cls,
-        source_value: str,
+        numerator: str,
+        divisor: str,
         *,
         product_bit_width: int,
         target_bit_offset: int = 0,
@@ -667,17 +677,19 @@ class ValueProject:
         """
         return cls(
             kind=ValueProjectKind.U32_DIVISOR_MAGIC_SHIFT,
-            source_value=source_value,
+            source_value=divisor,
+            other_source_value=numerator,
             target_bit_offset=target_bit_offset,
             product_bit_width=product_bit_width,
         )
 
     @classmethod
-    def u32_divisor_magic_multiplier_as_i32(cls, source_value: str) -> Self:
+    def u32_divisor_magic_multiplier_as_i32(cls, numerator: str, divisor: str) -> Self:
         """Projects unsigned reciprocal bits as a signed i32 immediate."""
         return cls(
             kind=ValueProjectKind.U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32,
-            source_value=source_value,
+            source_value=divisor,
+            other_source_value=numerator,
         )
 
     @classmethod
@@ -721,6 +733,17 @@ class ValueProject:
     def __post_init__(self) -> None:
         if not self.source_value:
             raise ValueError(f"{self.kind.value} projection requires a source value")
+        if self.kind in (
+            ValueProjectKind.U32_DIVISOR_MAGIC_MULTIPLIER,
+            ValueProjectKind.U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32,
+            ValueProjectKind.U32_DIVISOR_MAGIC_SHIFT,
+        ):
+            if not self.other_source_value:
+                raise ValueError(f"{self.kind.value} projection requires a numerator")
+        elif self.other_source_value:
+            raise ValueError(
+                f"{self.kind.value} projection does not consume a second value"
+            )
         if self.target_bit_offset < 0:
             raise ValueError(
                 f"{self.kind.value} target bit offset must be non-negative"
@@ -776,6 +799,8 @@ class ValueProject:
                     f"'{self.source_node}'"
                 )
         _require_value(referenced_op, self.source_value, subject)
+        if self.other_source_value:
+            _require_value(referenced_op, self.other_source_value, subject)
         if bound_immediate_name is None:
             raise ValueError(
                 f"{source_op.name}: {subject} must bind one descriptor immediate"

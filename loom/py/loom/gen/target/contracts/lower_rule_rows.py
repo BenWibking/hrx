@@ -80,6 +80,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
 
 _GUARD_OTHER_VALUE_REF_KINDS = frozenset(
     (
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
         GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT_EQ,
         GuardKind.VALUE_STATIC_ELEMENT_COUNT_EQ,
         GuardKind.VALUE_I64_RANGE_LE,
@@ -142,6 +143,14 @@ def guard_uses_other_value_ref(kind: GuardKind) -> bool:
 
 def attr_copy_uses_value_ref(kind: LowerAttrCopyKind) -> bool:
     return kind in _ATTR_COPY_VALUE_REF_KINDS
+
+
+def attr_copy_uses_other_value_ref(kind: LowerAttrCopyKind) -> bool:
+    return kind in (
+        LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_MULTIPLIER,
+        LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32,
+        LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT,
+    )
 
 
 def diagnostic_has_implicit_target_context(row: LowerDiagnostic) -> bool:
@@ -820,6 +829,8 @@ def attr_copy_row(
     _append_field(fields, "target_bit_offset", row.target_bit_offset)
     if attr_copy_uses_value_ref(row.kind):
         _append_field(fields, "value_ref_index", row.value_ref_index, always=True)
+    if attr_copy_uses_other_value_ref(row.kind):
+        _append_field(fields, "other_value_ref_index", row.other_value_ref_index, always=True)
     if row.kind in (
         LowerAttrCopyKind.I64_LITERAL,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,

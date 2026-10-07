@@ -345,13 +345,30 @@ bool loom_low_lower_rule_float_immediate_facts(
   return true;
 }
 
+uint64_t loom_low_lower_unsigned_numerator_maximum(
+    const loom_value_fact_table_t* fact_table, loom_value_id_t numerator,
+    uint32_t bit_width) {
+  const uint64_t mask = UINT64_MAX >> (64 - bit_width);
+  if (fact_table == NULL) {
+    return mask;
+  }
+  const loom_value_facts_t facts =
+      loom_value_fact_table_lookup(fact_table, numerator);
+  if (facts.range_lo >= 0) {
+    return iree_min((uint64_t)facts.range_hi, mask);
+  }
+  // A wholly negative signed interval is contiguous in the unsigned domain.
+  // An interval crossing zero includes -1 and therefore the unsigned maximum.
+  return facts.range_hi < 0 ? (uint64_t)facts.range_hi & mask : mask;
+}
+
 bool loom_low_lower_rule_value_facts_u32_divisor_magic_info(
     const loom_module_t* module, const loom_value_fact_table_t* fact_table,
-    loom_value_id_t value_id,
+    loom_value_id_t numerator, loom_value_id_t divisor,
     loom_low_lower_unsigned_divisor_magic_info_t* out_info) {
   *out_info = (loom_low_lower_unsigned_divisor_magic_info_t){0};
   loom_value_facts_t facts = loom_value_facts_unknown();
-  if (!loom_low_lower_rule_integer_immediate_facts(module, fact_table, value_id,
+  if (!loom_low_lower_rule_integer_immediate_facts(module, fact_table, divisor,
                                                    &facts)) {
     return false;
   }
@@ -360,8 +377,8 @@ bool loom_low_lower_rule_value_facts_u32_divisor_magic_info(
       exact_value > UINT32_MAX) {
     return false;
   }
-  *out_info =
-      loom_low_lower_unsigned_divisor_magic_info((uint32_t)exact_value,
-                                                 /*bit_width=*/32, UINT32_MAX);
+  *out_info = loom_low_lower_unsigned_divisor_magic_info(
+      (uint32_t)exact_value, /*bit_width=*/32,
+      loom_low_lower_unsigned_numerator_maximum(fact_table, numerator, 32));
   return true;
 }

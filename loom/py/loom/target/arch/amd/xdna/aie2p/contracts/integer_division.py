@@ -32,7 +32,7 @@ def _magic_rule(
 ) -> DescriptorRule:
     program = ScalarProgram()
     magic = program.constant(
-        "magic", ValueProject.u32_divisor_magic_multiplier_as_i32("rhs")
+        "magic", ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs")
     )
     mask = program.constant("mask16", 0xFFFF)
     right16 = program.constant("right16", -16)
@@ -59,7 +59,7 @@ def _magic_rule(
         quotient = program.binary("adjusted_quotient", "add.i32", half, quotient)
     shift = program.constant(
         "post_shift",
-        ValueProject.u32_divisor_magic_shift("rhs", product_bit_width=32),
+        ValueProject.u32_divisor_magic_shift("lhs", "rhs", product_bit_width=32),
         descriptor_key="amd.xdna.aie2p.constant.i32.short",
     )
     zero = program.constant("zero", 0)
@@ -83,7 +83,7 @@ def _magic_rule(
             ),
             Guard.value_exact_i64("rhs"),
             Guard.value_i64_range("rhs", 2, (1 << 31) - 1),
-            Guard.value_u32_divisor_magic_is_add("rhs", is_add),
+            Guard.value_u32_divisor_magic_is_add("lhs", "rhs", is_add),
         ),
         emit=tuple(program.emits),
     )

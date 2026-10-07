@@ -209,9 +209,9 @@ func.def target(@target) @index_uniform_div_rem_magic_mul(%value: i32) -> (index
 // ----
 low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @index_uniform_div_rem_magic_mul(%bounded_value: reg<amdgpu.sgpr>) -> (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) asm {
   %divisor = s_mov_b32 5
-  %12 = s_mov_b32 3435973837
+  %12 = s_mov_b32 858993460
   %13 = s_mul_hi_u32 %bounded_value, %12
-  %14 = s_mov_b32 2
+  %14 = s_mov_b32 0
   %quotient = s_lshr_b32 %13, %14
   %19 = s_lshr_b32 %13, %14
   %20 = s_mul_i32 %19, %divisor

@@ -2,6 +2,131 @@
 
 amdgpu.target<gfx11-generic> @target
 
+func.def target(@target) @bounded_uniform_remainder(%input: i64) -> (i64) {
+  %value = scalar.assume %input [range(%input, 0, 9223372036854775807)] : i64
+  %divisor = scalar.constant 7 : i64
+  %result = scalar.remui %value, %divisor : i64
+  func.return %result : i64
+}
+
+// ----
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @bounded_uniform_remainder(%value: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
+  %7 = s_mov_b32 613566757
+  %8 = s_mov_b32 1227133513
+  %10 = slice %value[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %12 = slice %value[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %14 = s_mov_b32 0
+  %15 = s_mul_hi_u32 %10, %7
+  %16 = s_mul_i32 %12, %7
+  %17 = s_mul_hi_u32 %12, %7
+  %24, %25 = s_add_co_u32 %16, %15
+  %26, %27 = s_addc_u32 %17, %14, %25
+  %31 = s_mul_i32 %10, %8
+  %32 = s_mul_hi_u32 %10, %8
+  %39, %40 = s_add_co_u32 %31, %24
+  %41, %42 = s_addc_u32 %32, %14, %40
+  %46 = s_mul_i32 %12, %8
+  %47 = s_mul_hi_u32 %12, %8
+  %54, %55 = s_add_co_u32 %46, %26
+  %56, %57 = s_addc_u32 %47, %14, %55
+  %64, %65 = s_add_co_u32 %54, %41
+  %66, %67 = s_addc_u32 %56, %14, %65
+  %68 = concat(%64, %66) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  %69 = s_mov_b32 1
+  %70 = s_lshr_b64 %68, %69
+  %71 = s_mov_b32 7
+  %74 = slice %70[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %75 = slice %70[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %78 = s_mul_i32 %74, %71
+  %79 = s_mul_hi_u32 %74, %71
+  %80 = s_mul_i32 %74, %14
+  %81 = s_mul_i32 %75, %71
+  %82 = s_add_u32 %79, %80
+  %83 = s_add_u32 %82, %81
+  %89, %90 = s_sub_co_u32 %10, %78
+  %91, %92 = s_subb_u32 %12, %83, %90
+  %result = concat(%89, %91) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx942> @target
+
+// Extension, multiplication and XOR keep the sign bit clear without an
+// assumption on the division itself.
+func.def target(@target) @bounded_varying_quotient(%values: vector<2xi32>) -> (i64) {
+  %wide = vector.extui %values : vector<2xi32> to vector<2xi64>
+  %lhs = vector.extract %wide[0] : vector<2xi64> -> i64
+  %rhs = vector.extract %wide[1] : vector<2xi64> -> i64
+  %multiplier = scalar.constant 2147483647 : i64
+  %product = scalar.muli %lhs, %multiplier : i64
+  %hash = scalar.xori %product, %rhs : i64
+  %divisor = scalar.constant 7 : i64
+  %result = scalar.divui %hash, %divisor : i64
+  func.return %result : i64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core>(@target) abi(hal_kernel) @bounded_varying_quotient(%values: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>) asm {
+  %12 = v_mov_b32 0
+  %13 = slice %values[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %14 = slice %values[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %18 = s_mov_b32 2147483647
+  %19 = s_mov_b32 0
+  %22 = v_mov_b32_copy %18
+  %24 = v_mov_b32_copy %19
+  %30 = v_mul_lo_u32 %13, %22
+  %31 = v_mul_hi_u32 %13, %22
+  %32 = v_mul_lo_u32 %13, %24
+  %33 = v_mul_lo_u32 %12, %22
+  %34 = v_add_u32 %31, %32
+  %35 = v_add_u32 %34, %33
+  %39 = v_xor_b32 %30, %14
+  %42 = v_xor_b32 %35, %12
+  %44 = v_mov_b32 613566757
+  %45 = v_mov_b32 1227133513
+  %52 = v_mul_hi_u32 %39, %44
+  %53 = v_mul_lo_u32 %42, %44
+  %54 = v_mul_hi_u32 %42, %44
+  %61, %62 = v_add_co_u32 %53, %52
+  %63, %64 = v_addc_co_u32 %54, %12, %62
+  %68 = v_mul_lo_u32 %39, %45
+  %69 = v_mul_hi_u32 %39, %45
+  %76, %77 = v_add_co_u32 %68, %61
+  %78, %79 = v_addc_co_u32 %69, %12, %77
+  %83 = v_mul_lo_u32 %42, %45
+  %84 = v_mul_hi_u32 %42, %45
+  %91, %92 = v_add_co_u32 %83, %63
+  %93, %94 = v_addc_co_u32 %84, %12, %92
+  %101, %102 = v_add_co_u32 %91, %78
+  %103, %104 = v_addc_co_u32 %93, %12, %102
+  %105 = concat(%101, %103) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %106 = v_mov_b32 1
+  %result = v_lshrrev_b64 %106, %105
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+func.def target(@target) @bounded_identity_remainder(%input: i64) -> (i64) {
+  %value = scalar.assume %input [range(%input, 0, 6)] : i64
+  %divisor = scalar.constant 7 : i64
+  %result = scalar.remui %value, %divisor : i64
+  func.return %result : i64
+}
+
+// ----
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @bounded_identity_remainder(%result: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
 func.def target(@target) @uniform_remainder(%value: i64) -> (i64) {
   %divisor = scalar.constant 7 : i64
   %result = scalar.remui %value, %divisor : i64

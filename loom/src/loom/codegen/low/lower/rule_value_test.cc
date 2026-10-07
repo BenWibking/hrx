@@ -345,6 +345,60 @@ TEST_F(LowLowerRuleValueTest, ProjectsExactScalarFacts) {
   EXPECT_DOUBLE_EQ(exact_float, 1.5);
 }
 
+TEST_F(LowLowerRuleValueTest, ProjectsUnsignedNumeratorBounds) {
+  const loom_value_id_t numerator = arguments_[0];
+  for (uint32_t width : {32u, 64u}) {
+    const uint64_t mask = UINT64_MAX >> (64 - width);
+    EXPECT_EQ(
+        loom_low_lower_unsigned_numerator_maximum(nullptr, numerator, width),
+        mask);
+    const struct {
+      // Inclusive signed source range minimum.
+      int64_t lower;
+      // Inclusive signed source range maximum.
+      int64_t upper;
+      // Expected maximum after interpreting the source at the native width.
+      uint64_t maximum;
+    } cases[] = {
+        {INT64_MIN, INT64_MAX, mask},
+        {-1, 255, mask},
+        {0, INT64_MAX, width == 32 ? mask : uint64_t{INT64_MAX}},
+        {0, 0, 0},
+        {0, 255, 255},
+        {17, 65535, 65535},
+        {-128, -2, mask - 1},
+    };
+    for (const auto& test : cases) {
+      IREE_ASSERT_OK(loom_value_fact_table_define(
+          &fact_table_, numerator,
+          loom_value_facts_make(test.lower, test.upper, 1)));
+      EXPECT_EQ(loom_low_lower_unsigned_numerator_maximum(&fact_table_,
+                                                          numerator, width),
+                test.maximum);
+    }
+  }
+}
+
+TEST_F(LowLowerRuleValueTest, DerivesBoundedUnsignedDivisorRecipe) {
+  const loom_value_id_t divisor =
+      loom_scalar_constant_result(integer_constant_op_);
+  IREE_ASSERT_OK(loom_value_fact_table_define(&fact_table_, divisor,
+                                              loom_value_facts_exact_i64(7)));
+  for (int64_t maximum :
+       {int64_t{0}, int64_t{6}, int64_t{255}, int64_t{INT32_MAX}}) {
+    IREE_ASSERT_OK(loom_value_fact_table_define(
+        &fact_table_, arguments_[0], loom_value_facts_make(0, maximum, 1)));
+    loom_low_lower_unsigned_divisor_magic_info_t info = {};
+    ASSERT_TRUE(loom_low_lower_rule_value_facts_u32_divisor_magic_info(
+        module_, &fact_table_, arguments_[0], divisor, &info));
+    const auto expected =
+        loom_low_lower_unsigned_divisor_magic_info(7, 32, maximum);
+    EXPECT_EQ(info.multiplier, expected.multiplier);
+    EXPECT_EQ(info.post_shift, expected.post_shift);
+    EXPECT_FALSE(info.is_add);
+  }
+}
+
 TEST_F(LowLowerRuleValueTest, DerivesExactUnsignedDivisorRecipes) {
   const loom_value_id_t value_id =
       loom_scalar_constant_result(integer_constant_op_);
@@ -365,7 +419,7 @@ TEST_F(LowLowerRuleValueTest, DerivesExactUnsignedDivisorRecipes) {
         &fact_table_, value_id, loom_value_facts_exact_i64(divisor)));
     loom_low_lower_unsigned_divisor_magic_info_t info = {};
     ASSERT_TRUE(loom_low_lower_rule_value_facts_u32_divisor_magic_info(
-        module_, &fact_table_, value_id, &info));
+        module_, &fact_table_, arguments_[0], value_id, &info));
     const uint64_t high_multiplier =
         loom_low_lower_u32_divisor_reciprocal(divisor);
     auto check_quotient = [&](uint32_t numerator) {

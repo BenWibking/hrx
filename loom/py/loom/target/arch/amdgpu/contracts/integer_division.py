@@ -110,7 +110,7 @@ def _magic_division_guards(
             _UINT32_MAX if type_pattern == _INDEX else _INT32_MAX,
             diagnostic=_POSITIVE_U32_DIVISOR_DIAGNOSTIC,
         ),
-        Guard.value_u32_divisor_magic_is_add("rhs", is_add),
+        Guard.value_u32_divisor_magic_is_add("lhs", "rhs", is_add),
         *value_guards,
     )
 
@@ -136,7 +136,9 @@ def _magic_division_sgpr_emits(
             descriptor=move,
             results={"dst": ValueRef.temporary("magic")},
             result_types={"dst": _RESULT},
-            immediates={"imm32": ValueProject.u32_divisor_magic_multiplier("rhs")},
+            immediates={
+                "imm32": ValueProject.u32_divisor_magic_multiplier("lhs", "rhs")
+            },
         ),
         EmitDescriptorOp(
             descriptor=multiply_hi,
@@ -191,7 +193,7 @@ def _magic_division_sgpr_emits(
                 result_types={"dst": _RESULT},
                 immediates={
                     "imm32": ValueProject.u32_divisor_magic_shift(
-                        "rhs", product_bit_width=32
+                        "lhs", "rhs", product_bit_width=32
                     )
                 },
             ),
@@ -246,7 +248,9 @@ def _magic_division_vgpr_emits(
             descriptor=move,
             results={"dst": ValueRef.temporary("magic")},
             result_types={"dst": _RESULT},
-            immediates={"imm32": ValueProject.u32_divisor_magic_multiplier("rhs")},
+            immediates={
+                "imm32": ValueProject.u32_divisor_magic_multiplier("lhs", "rhs")
+            },
         ),
         EmitDescriptorOp(
             descriptor=multiply_hi,
@@ -303,7 +307,7 @@ def _magic_division_vgpr_emits(
             result_types={"dst": _RESULT},
             immediates={
                 "imm32": ValueProject.u32_divisor_magic_shift(
-                    "rhs", product_bit_width=32
+                    "lhs", "rhs", product_bit_width=32
                 )
             },
             form=DescriptorEmitForm.OP,

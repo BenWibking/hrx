@@ -3459,7 +3459,7 @@ def test_divisor_magic_shift_retains_product_width() -> None:
                             results={"dst": ValueRef.result("result")},
                             immediates={
                                 "i32_value": ValueProject.u32_divisor_magic_shift(
-                                    "rhs", product_bit_width=width
+                                    "lhs", "rhs", product_bit_width=width
                                 )
                             },
                         ),
@@ -3473,8 +3473,11 @@ def test_divisor_magic_shift_retains_product_width() -> None:
         assert projected.kind == LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT
         assert projected.literal_i64 == width - 32
         assert compiled.value_refs[projected.value_ref_index].index == 1
+        assert compiled.value_refs[projected.other_value_ref_index].index == 0
     _expect_value_error(
-        lambda: ValueProject.u32_divisor_magic_shift("rhs", product_bit_width=16),
+        lambda: ValueProject.u32_divisor_magic_shift(
+            "lhs", "rhs", product_bit_width=16
+        ),
         "product width must be 32 or 64",
     )
     _expect_value_error(
@@ -3485,12 +3488,15 @@ def test_divisor_magic_shift_retains_product_width() -> None:
 
 def test_divisor_magic_multiplier_retains_width() -> None:
     for width in (32, 64):
-        projected = ValueProject.u32_divisor_magic_multiplier("rhs", bit_width=width)
+        projected = ValueProject.u32_divisor_magic_multiplier(
+            "lhs", "rhs", bit_width=width
+        )
         assert projected.source_value == "rhs"
+        assert projected.other_source_value == "lhs"
         assert projected.multiplier_bit_width == width
         assert projected.product_bit_width == 32
     _expect_value_error(
-        lambda: ValueProject.u32_divisor_magic_multiplier("rhs", bit_width=16),
+        lambda: ValueProject.u32_divisor_magic_multiplier("lhs", "rhs", bit_width=16),
         "multiplier width must be 32 or 64",
     )
     _expect_value_error(
@@ -3499,9 +3505,25 @@ def test_divisor_magic_multiplier_retains_width() -> None:
     )
     _expect_value_error(
         lambda: ValueProject.u32_divisor_magic_multiplier(
-            "rhs", bit_width=64, target_bit_offset=1
+            "lhs", "rhs", bit_width=64, target_bit_offset=1
         ),
         "64-bit reciprocal must not use target bit offset",
+    )
+
+
+def test_divisor_magic_requires_explicit_numerator() -> None:
+    for project in (
+        ValueProject.u32_divisor_magic_multiplier("lhs", "rhs"),
+        ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs"),
+        ValueProject.u32_divisor_magic_shift("lhs", "rhs", product_bit_width=32),
+    ):
+        _expect_value_error(
+            lambda project=project: replace(project, other_source_value=""),
+            "projection requires a numerator",
+        )
+    _expect_value_error(
+        lambda: replace(ValueProject.exact_i64("rhs"), other_source_value="lhs"),
+        "projection does not consume a second value",
     )
 
 
@@ -3600,7 +3622,7 @@ def test_word_value_projections_require_signed_i32_immediate() -> None:
 
     for projection in (
         ValueProject.exact_i64_i32_word("lhs", word_index=0),
-        ValueProject.u32_divisor_magic_multiplier_as_i32("rhs"),
+        ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs"),
     ):
         _expect_value_error(
             lambda projection=projection: compile_unsigned_immediate(projection),
@@ -3611,7 +3633,7 @@ def test_word_value_projections_require_signed_i32_immediate() -> None:
 def test_signed_reciprocal_projection_rejects_bit_offset() -> None:
     _expect_value_error(
         lambda: replace(
-            ValueProject.u32_divisor_magic_multiplier_as_i32("rhs"),
+            ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs"),
             target_bit_offset=1,
         ),
         "signed reciprocal projection must not use target bit offset",

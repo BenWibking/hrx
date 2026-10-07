@@ -1206,6 +1206,10 @@ class _LowerRuleSetCompiler:
                 LowerGuard(
                     kind=guard.kind,
                     value_ref_index=value_ref_index,
+                    other_value_ref_index=self._append_value_ref(
+                        source_op,
+                        _value_ref_for_source_field(source_op, guard.other_field),
+                    ),
                     diagnostic_index=self._append_diagnostic_ref(
                         source_op,
                         _guard_diagnostic(
@@ -2196,6 +2200,16 @@ class _LowerRuleSetCompiler:
         )
         if project.source_node:
             value_ref = replace(value_ref, source_node=project.source_node)
+        other_value_ref_index = 0
+        if project.other_source_value:
+            other_value_ref = _value_ref_for_source_field(
+                referenced_op, project.other_source_value
+            )
+            if project.source_node:
+                other_value_ref = replace(
+                    other_value_ref, source_node=project.source_node
+                )
+            other_value_ref_index = self._append_value_ref(source_op, other_value_ref)
         return LowerAttrCopy(
             kind=kind,
             target_name=target_name,
@@ -2203,6 +2217,7 @@ class _LowerRuleSetCompiler:
                 source_op,
                 value_ref,
             ),
+            other_value_ref_index=other_value_ref_index,
             target_bit_offset=project.target_bit_offset,
             source_element_index=project.word_index,
             literal_i64=(

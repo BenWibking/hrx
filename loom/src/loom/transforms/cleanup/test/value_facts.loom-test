@@ -1,5 +1,49 @@
 // RUN: pass canonicalize
 
+// Bounds survive a CFG join and a loop-carried selection before the wide
+// multiply/XOR consumer. No range is asserted on the hash itself.
+func.def @bounded_hash_after_control_flow(%input: i32, %other: i16, %choose: i1, %count: index) -> (i64, i64) {
+  %bounded = scalar.assume %input [range(%input, 0, 2147483647)] : i32
+  %wide = scalar.extui %bounded : i32 to i64
+  %other_wide = scalar.extui %other : i16 to i64
+  cfg.cond_br %choose, ^left, ^right
+^left:
+  cfg.br ^join(%wide: i64)
+^right:
+  cfg.br ^join(%other_wide: i64)
+^join(%joined: i64):
+  %start = index.constant 0 : index
+  %step = index.constant 1 : index
+  %selected = scf.for %iv = [%start to %count step %step](%carried = %joined : i64) -> (i64) {
+    %next = scf.select %choose, %carried, %other_wide : i64
+    scf.yield %next : i64
+  }
+  %multiplier = scalar.constant 4294967295 : i64
+  %product = scalar.muli %selected, %multiplier : i64
+  %hash = scalar.xori %product, %other_wide : i64
+  %lower = test.fact_range_lo %hash : i64 -> i64
+  %upper = test.fact_range_hi %hash : i64 -> i64
+  func.return %lower, %upper : i64, i64
+}
+
+// ----
+func.def @bounded_hash_after_control_flow(%input: i32, %other: i16, %choose: i1, %count: index) -> (i64, i64) {
+  %bounded = scalar.assume %input [range(%input, 0, 2147483647)] : i32
+  %wide = scalar.extui %bounded : i32 to i64
+  %other_wide = scalar.extui %other : i16 to i64
+  cfg.cond_br %choose, ^left, ^right
+^left:
+  cfg.br ^join(%wide: i64)
+^right:
+  cfg.br ^join(%other_wide: i64)
+^join(%joined: i64):
+  %lower = scalar.constant 0 : i64
+  %upper = scalar.constant 9223372036854775807 : i64
+  func.return %lower, %upper : i64, i64
+}
+
+// ====
+
 func.def @cfg_join_unknown_and_zero_is_not_exact_zero(%cond: i1, %input: buffer) -> (f32) {
   %base = index.constant 0 : offset
   %index = index.constant 0 : index

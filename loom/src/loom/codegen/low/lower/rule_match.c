@@ -596,13 +596,16 @@ static bool loom_low_lower_rule_value_facts_exact_power_of_two_i64(
 static bool loom_low_lower_rule_value_facts_u32_divisor_magic_is_add(
     const loom_low_lower_rule_match_context_t* match_context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
-    uint16_t value_ref_index, bool expected_is_add) {
+    uint16_t value_ref_index, uint16_t other_value_ref_index,
+    bool expected_is_add) {
   const loom_value_id_t value_id = loom_low_lower_rule_source_value(
       match_context->module, rule_set, source_op, value_ref_index);
   loom_low_lower_unsigned_divisor_magic_info_t info = {0};
+  const loom_value_id_t numerator = loom_low_lower_rule_source_value(
+      match_context->module, rule_set, source_op, other_value_ref_index);
   return loom_low_lower_rule_value_facts_u32_divisor_magic_info(
-             match_context->module, match_context->fact_table, value_id,
-             &info) &&
+             match_context->module, match_context->fact_table, numerator,
+             value_id, &info) &&
          info.is_add == expected_is_add;
 }
 
@@ -1117,6 +1120,7 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       *out_matches = loom_low_lower_rule_value_facts_u32_divisor_magic_is_add(
           match_context, rule_set, source_op,
           guard->selector.value.value_ref_index,
+          guard->selector.value.other_value_ref_index,
           loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64 != 0);
       return iree_ok_status();
     case LOOM_LOW_LOWER_GUARD_VALUE_EXACT_FLOAT:

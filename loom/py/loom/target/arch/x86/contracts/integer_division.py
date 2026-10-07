@@ -102,7 +102,7 @@ def _reciprocal_rule(
             result_types={"dst": _I64},
             immediates={
                 "imm64": ValueProject.u32_divisor_magic_multiplier(
-                    "rhs", bit_width=32 if operation == "lea_remainder" else 64
+                    "lhs", "rhs", bit_width=32 if operation == "lea_remainder" else 64
                 )
             },
             form=DescriptorEmitForm.CONST,
@@ -137,7 +137,7 @@ def _reciprocal_rule(
                     result_types={"dst": _I64},
                     immediates={
                         "shift": ValueProject.u32_divisor_magic_shift(
-                            "rhs", product_bit_width=64
+                            "lhs", "rhs", product_bit_width=64
                         )
                     },
                 ),

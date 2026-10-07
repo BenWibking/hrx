@@ -331,6 +331,8 @@ typedef struct loom_low_lower_attr_copy_t {
   uint8_t target_bit_offset;
   // Source value-ref table row consumed by value projection rows.
   uint16_t value_ref_index;
+  // Second source value-ref row consumed by two-value projections.
+  uint16_t other_value_ref_index;
   // Dynamic source-memory term ordinal consumed by SOURCE_MEMORY rows.
   uint8_t dynamic_term_index;
   // Literal value emitted by I64_LITERAL rows, byte offset used by
