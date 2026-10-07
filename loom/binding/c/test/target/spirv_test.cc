@@ -29,6 +29,7 @@ namespace {
 
 using loomc::testing::HandlePtr;
 
+using CompilerPtr = HandlePtr<loomc_compiler_t, loomc_compiler_release>;
 using ContextPtr = HandlePtr<loomc_context_t, loomc_context_release>;
 using ModulePtr = HandlePtr<loomc_module_t, loomc_module_release>;
 using PassProgramPtr =
@@ -37,6 +38,8 @@ using ResultPtr = HandlePtr<loomc_result_t, loomc_result_release>;
 using SourcePtr = HandlePtr<loomc_source_t, loomc_source_release>;
 using TargetEnvironmentPtr =
     HandlePtr<loomc_target_environment_t, loomc_target_environment_release>;
+using TargetProfilePtr =
+    HandlePtr<loomc_target_profile_t, loomc_target_profile_release>;
 using WorkspacePtr = HandlePtr<loomc_workspace_t, loomc_workspace_release>;
 
 std::string ToString(loomc_string_view_t value) {
@@ -564,6 +567,86 @@ low.func.def target<spirv.logical.core>(@target) @untyped(%value: reg<spirv.id>)
   ASSERT_EQ(loomc_result_diagnostic_count(result.get()), 1u);
   EXPECT_EQ(ToString(loomc_result_diagnostic_at(result.get(), 0)->code),
             "SPIRV/005");
+}
+
+TEST(TargetSpirvTest, CompileArtifactVerifiesPassProgramOutputBeforeEmission) {
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  ContextPtr context = CreateSpirvContext(target_environment.get());
+  loomc_workspace_t* raw_workspace = nullptr;
+  LOOMC_ASSERT_OK(loomc_workspace_create(nullptr, loomc_allocator_system(),
+                                         &raw_workspace));
+  WorkspacePtr workspace(raw_workspace);
+  SourcePtr source = CreateTextSource("selected_buffer.loom", R"(
+func.def @choose_buffer(%first: buffer, %second: buffer, %choose_first: i1) -> (buffer) {
+  %selected = scf.select %choose_first, %first, %second : buffer
+  func.return %selected : buffer
+}
+)");
+  ModulePtr module =
+      DeserializeModule(context.get(), workspace.get(), source.get());
+
+  loomc_compiler_t* raw_compiler = nullptr;
+  LOOMC_ASSERT_OK(loomc_compiler_create(
+      context.get(), nullptr, loomc_allocator_system(), &raw_compiler));
+  CompilerPtr compiler(raw_compiler);
+  const loomc_target_pipeline_options_t pipeline_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_TARGET_PIPELINE_OPTIONS,
+      /*.structure_size=*/sizeof(pipeline_options),
+      /*.next=*/nullptr,
+      /*.identifier=*/loomc_make_cstring_view("spirv-source-low"),
+      /*.kind=*/LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW,
+      /*.control_flow_lowering=*/
+      LOOMC_TARGET_CONTROL_FLOW_LOWERING_STRUCTURED_LOW,
+      /*.source_to_low_max_errors=*/20,
+  };
+  loomc_pass_program_t* raw_pass_program = nullptr;
+  loomc_result_t* raw_pipeline_result = nullptr;
+  LOOMC_ASSERT_OK(loomc_pass_program_create_from_target_pipeline(
+      context.get(), &pipeline_options, loomc_allocator_system(),
+      &raw_pass_program, &raw_pipeline_result));
+  PassProgramPtr pass_program(raw_pass_program);
+  ResultPtr pipeline_result(raw_pipeline_result);
+  ExpectSucceededResult(pipeline_result.get());
+
+  loomc_target_profile_t* raw_target_profile = nullptr;
+  LOOMC_ASSERT_OK(loomc_target_profile_select(
+      target_environment.get(),
+      loomc_make_cstring_view("spirv:vulkan1.3+bda+extended-types"),
+      loomc_allocator_system(), &raw_target_profile));
+  TargetProfilePtr target_profile(raw_target_profile);
+  const loomc_string_view_t roots[] = {
+      loomc_make_cstring_view("choose_buffer"),
+  };
+  const loomc_emit_options_t emit_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      /*.structure_size=*/sizeof(emit_options),
+      /*.next=*/nullptr,
+      /*.artifact_format=*/loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_SPIRV),
+      /*.identifier=*/loomc_make_cstring_view("selected_buffer.spv"),
+      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
+  };
+  const loomc_compile_artifact_options_t compile_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_COMPILE_ARTIFACT_OPTIONS,
+      /*.structure_size=*/sizeof(compile_options),
+      /*.next=*/nullptr,
+      /*.roots=*/roots,
+      /*.root_count=*/IREE_ARRAYSIZE(roots),
+      /*.excluded_roots=*/nullptr,
+      /*.excluded_root_count=*/0,
+      /*.target_profile=*/target_profile.get(),
+      /*.config=*/nullptr,
+      /*.emit_options=*/&emit_options,
+  };
+  loomc_result_t* raw_result = nullptr;
+  LOOMC_ASSERT_OK(loomc_compile_artifact(
+      compiler.get(), workspace.get(), pass_program.get(), module.get(),
+      &compile_options, loomc_allocator_system(), &raw_result));
+  ResultPtr result(raw_result);
+  EXPECT_FALSE(loomc_result_succeeded(result.get()));
+  EXPECT_EQ(loomc_result_artifact_count(result.get()), 0u);
+  ASSERT_EQ(loomc_result_diagnostic_count(result.get()), 1u);
+  EXPECT_EQ(ToString(loomc_result_diagnostic_at(result.get(), 0)->code),
+            "SPIRV/016");
 }
 
 TEST(TargetSpirvTest, RejectsUnknownEmitDictOptionThroughResult) {

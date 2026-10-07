@@ -677,6 +677,10 @@ void loomc_module_invalidate_verification(loomc_module_t* module) {
   module->verification.context_target = false;
 }
 
+void loomc_module_invalidate_target_verification(loomc_module_t* module) {
+  module->verification.context_target = false;
+}
+
 loom_function_version_owner_t* loomc_module_function_version_owner(
     loomc_module_t* module) {
   return &module->compilation.function_versions;

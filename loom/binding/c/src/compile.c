@@ -713,6 +713,7 @@ static loomc_status_t loomc_compile_prepared_module_into_result(
         loomc_module_source_resolver(module), function_versions,
         launch_config_requested ? &launch_config_program : NULL, compile_report,
         pass_trace_options, result);
+    loomc_module_invalidate_target_verification(module);
   }
   if (loomc_status_is_ok(status) && loomc_result_succeeded(result) &&
       launch_config_requested) {
