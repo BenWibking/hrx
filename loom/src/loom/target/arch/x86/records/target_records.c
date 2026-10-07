@@ -18,6 +18,9 @@
       .default_pointer_bitwidth = 64,                          \
       .index_bitwidth = 64,                                    \
       .offset_bitwidth = 64,                                   \
+      .max_workgroup_size = {1, 1, 1},                         \
+      .max_flat_workgroup_size = 1,                            \
+      .subgroup_size = 1,                                      \
       .memory_spaces =                                         \
           {                                                    \
               .generic = 0,                                    \

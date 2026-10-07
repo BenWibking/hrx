@@ -81,6 +81,8 @@ const loom_target_provider_t loom_x86_compiler_provider = {
         },
     .canonical_module_emitter = &loom_x86_module_emitter,
     .canonical_module_fact_type = &loom_x86_target_fact_type,
+    .canonical_kernel_emitter = &loom_x86_hal_library_emitter,
+    .canonical_kernel_fact_type = &loom_x86_target_fact_type,
 };
 
 static const loom_target_provider_t* const kLoomX86CompilerProviders[] = {

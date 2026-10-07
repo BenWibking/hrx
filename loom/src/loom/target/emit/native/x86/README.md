@@ -71,7 +71,7 @@ memory references; the compiler exits before linking begins.
 A source kernel can also become a task HAL executable library:
 
 ```sh
-loom-compile fill.loom --target=x86:scalar --format=x86-hal --output=fill.so
+loom-compile fill.loom --target=x86:scalar --output=fill.so
 ```
 
 ```loom
@@ -88,10 +88,13 @@ kernel.def export("fill") @fill(%groups: index) {
 }
 ```
 
-Each workgroup invokes the body once. Workgroup size is `(1, 1, 1)`; explicit
-loops within the body own additional work. XYZ IDs and counts come from the
-dispatch's state. The body can call ordinary scalar helpers and use aligned
-invocation-private stack storage across those calls.
+Kernel roots select the task library format automatically; ordinary function
+roots select a relocatable object. `--format=x86-hal` also selects the library
+explicitly. Each workgroup invokes the body once. Workgroup size and subgroup
+size are one; explicit loops within the body own additional work. Global
+invocation coordinates equal workgroup coordinates. XYZ IDs and counts come
+from the dispatch's state. The body can call ordinary scalar helpers and use
+aligned invocation-private stack storage across those calls.
 
 The retained logical signature describes binding ordinals and byte offsets in
 the dispatch constant segment. Bindings are dense in declaration order, while
@@ -114,3 +117,15 @@ compiler exits before loading, artifact bytes are released before dispatch,
 and two semaphore-ordered 3D grids update a nonzero-offset binding. The kernel
 passes aligned private storage to a retained helper. Exact buffer contents and
 guard words check the invocation, call, storage, and binding contracts together.
+Another export checks byte-sized constants and a zero-work dispatch. The same
+checks run on a library produced by the public C embedding example:
+
+```sh
+iree-bazel-run //loom/binding/c/example:compile_artifact -- fill.loom x86:scalar fill.so
+```
+
+That example creates a configured target environment, selects `x86:scalar`,
+and calls `loomc_compile_artifact` with inferred roots and the target's default
+pipeline. It releases the compiler, module, and workspace before writing the
+result-owned executable bytes. Both entry points use the core x86 provider;
+neither owns ABI policy or loads a runtime while compiling.

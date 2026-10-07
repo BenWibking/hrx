@@ -108,7 +108,7 @@ class HalDispatchTest : public ::testing::Test {
   iree_hal_device_group_t* device_group_ = nullptr;
   // Borrowed transfer/dispatch queue from the device.
   iree_hal_queue_t* queue_ = nullptr;
-  // Completion frontier for upload, both dispatches, and download.
+  // Completion frontier for ordered uploads, dispatches, and downloads.
   iree_hal_semaphore_t* semaphore_ = nullptr;
   // Loaded native image, independent of compiler and input-byte lifetimes.
   iree_hal_executable_t* executable_ = nullptr;
@@ -118,7 +118,7 @@ class HalDispatchTest : public ::testing::Test {
 
 TEST_F(HalDispatchTest, GridCallsAndIndependentImageLifetime) {
   ASSERT_NO_FATAL_FAILURE(LoadImage());
-  ASSERT_EQ(iree_hal_executable_function_count(executable_), 1u);
+  ASSERT_EQ(iree_hal_executable_function_count(executable_), 2u);
   iree_hal_executable_function_t function;
   IREE_ASSERT_OK(iree_hal_executable_lookup_function_by_name(
       executable_, IREE_SV("grid"), &function));
@@ -198,6 +198,64 @@ TEST_F(HalDispatchTest, GridCallsAndIndependentImageLifetime) {
         17 * i + first_bias + (i < 3 * 5 * 2 ? 17 * i + second_bias : 0);
     EXPECT_EQ(output[kPrefix + i], expected) << "workgroup " << i;
   }
+}
+
+TEST_F(HalDispatchTest, NarrowParameterAndZeroWork) {
+  ASSERT_NO_FATAL_FAILURE(LoadImage());
+  iree_hal_executable_function_t function;
+  IREE_ASSERT_OK(iree_hal_executable_lookup_function_by_name(
+      executable_, IREE_SV("fill_byte"), &function));
+  iree_hal_executable_function_info_t info;
+  IREE_ASSERT_OK(
+      iree_hal_executable_function_info(executable_, function, &info));
+  EXPECT_EQ(info.constant_byte_length, 1u);
+
+  std::array<uint8_t, 8> output;
+  output.fill(0xc8);
+  iree_hal_buffer_params_t buffer_params = {};
+  buffer_params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
+  buffer_params.usage =
+      IREE_HAL_BUFFER_USAGE_STORAGE | IREE_HAL_BUFFER_USAGE_TRANSFER;
+  IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
+      iree_hal_device_allocator(device_), buffer_params, output.size(),
+      &buffer_));
+  uint64_t uploaded = 1, filled = 2, skipped = 3, downloaded = 4;
+  IREE_ASSERT_OK(iree_hal_queue_upload(queue_, iree_hal_semaphore_list_empty(),
+                                       Completion(&uploaded), output.data(),
+                                       buffer_, 0, output.size()));
+  const iree_hal_buffer_ref_t binding = iree_hal_make_buffer_ref(buffer_, 1, 5);
+  const iree_hal_buffer_ref_list_t bindings = {1, &binding};
+  const uint8_t value = 0xef, unused_value = 0x13;
+  iree_status_t status = iree_hal_queue_dispatch(
+      queue_, Completion(&uploaded), Completion(&filled), executable_, function,
+      iree_hal_make_static_dispatch_config(5, 1, 1),
+      iree_make_const_byte_span(&value, sizeof(value)), bindings,
+      IREE_HAL_DISPATCH_FLAG_NONE);
+  uint64_t completion = uploaded;
+  if (iree_status_is_ok(status)) {
+    completion = filled;
+    status = iree_hal_queue_dispatch(
+        queue_, Completion(&filled), Completion(&skipped), executable_,
+        function, iree_hal_make_static_dispatch_config(0, 1, 1),
+        iree_make_const_byte_span(&unused_value, sizeof(unused_value)),
+        bindings, IREE_HAL_DISPATCH_FLAG_NONE);
+  }
+  if (iree_status_is_ok(status)) {
+    completion = skipped;
+    status = iree_hal_queue_download(queue_, Completion(&skipped),
+                                     Completion(&downloaded), buffer_, 0,
+                                     output.data(), output.size());
+  }
+  if (iree_status_is_ok(status)) {
+    completion = downloaded;
+  }
+  status = iree_status_join(
+      status,
+      iree_hal_semaphore_wait(semaphore_, completion, iree_infinite_timeout(),
+                              IREE_ASYNC_WAIT_FLAG_NONE));
+  IREE_ASSERT_OK(status);
+  EXPECT_THAT(output, ::testing::ElementsAre(0xc8, 0xef, 0xef, 0xef, 0xef, 0xef,
+                                             0xc8, 0xc8));
 }
 
 }  // namespace

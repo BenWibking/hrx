@@ -43,3 +43,17 @@ func.def noinline @mix(%inputs: view<2xi32>) -> (i32) {
   %result = scalar.addi %product, %bias : i32
   func.return %result : i32
 }
+
+// The global invocation coordinate is the workgroup coordinate on the CPU.
+// The constant segment contains exactly one byte, with no host word padding.
+kernel.def export("fill_byte") @fill_byte(%groups: index) {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%groups, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%output: buffer, %value: i8) {
+  %position = kernel.workitem.dispatch.id<x> : index
+  %count = kernel.workgroup.count<x> : index
+  %buffer_base = index.constant 0 : offset
+  %view = buffer.view %output[%buffer_base] : buffer -> view<[%count]xi8>
+  view.store %value, %view[%position] : i8, view<[%count]xi8>
+  kernel.return
+}
