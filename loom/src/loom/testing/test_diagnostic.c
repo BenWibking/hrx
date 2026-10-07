@@ -6,7 +6,6 @@
 
 #include "loom/testing/test_diagnostic.h"
 
-#include <inttypes.h>
 #include <string.h>
 
 #include "loom/error/renderer.h"
@@ -38,51 +37,6 @@ static iree_status_t loom_test_diagnostic_format_type(
                                            &options->text_print_options);
 }
 
-static iree_status_t loom_test_diagnostic_render_string_list(
-    loom_diagnostic_string_list_t string_list, loom_output_stream_t* stream) {
-  if (string_list.count > 0 && !string_list.values) {
-    return iree_make_status(IREE_STATUS_INTERNAL,
-                            "string list param has count > 0 but values NULL");
-  }
-  IREE_RETURN_IF_ERROR(loom_output_stream_write_char(stream, '['));
-  for (iree_host_size_t i = 0; i < string_list.count; ++i) {
-    if (i > 0) {
-      IREE_RETURN_IF_ERROR(loom_output_stream_write_cstring(stream, ", "));
-    }
-    IREE_RETURN_IF_ERROR(
-        loom_output_stream_write(stream, string_list.values[i]));
-  }
-  return loom_output_stream_write_char(stream, ']');
-}
-
-static iree_status_t loom_test_diagnostic_render_param(
-    const loom_diagnostic_param_t* param, loom_type_formatter_t type_formatter,
-    loom_output_stream_t* stream) {
-  switch (param->kind) {
-    case LOOM_PARAM_STRING:
-      return loom_output_stream_write(stream, param->string);
-    case LOOM_PARAM_I64:
-      return loom_output_stream_write_format(stream, "%" PRId64, param->i64);
-    case LOOM_PARAM_U32:
-      return loom_output_stream_write_format(stream, "%" PRIu32, param->u32);
-    case LOOM_PARAM_U64:
-      return loom_output_stream_write_format(stream, "%" PRIu64, param->u64);
-    case LOOM_PARAM_STRING_LIST:
-      return loom_test_diagnostic_render_string_list(param->string_list,
-                                                     stream);
-    case LOOM_PARAM_BOOL:
-      return loom_output_stream_write_cstring(
-          stream, param->boolean ? "true" : "false");
-    case LOOM_PARAM_TYPE:
-      if (type_formatter.fn) {
-        return type_formatter.fn(param->type, type_formatter.user_data, stream);
-      }
-      return loom_output_stream_write_cstring(stream, "<type>");
-    default:
-      return loom_output_stream_write_cstring(stream, "<?>");
-  }
-}
-
 static iree_status_t loom_test_diagnostic_copy_param_values(
     const loom_diagnostic_t* diagnostic, loom_type_formatter_t type_formatter,
     iree_arena_allocator_t* arena, iree_allocator_t host_allocator,
@@ -105,7 +59,7 @@ static iree_status_t loom_test_diagnostic_copy_param_values(
     iree_string_builder_initialize(host_allocator, &builder);
     loom_output_stream_t stream;
     loom_output_stream_for_builder(&builder, &stream);
-    iree_status_t status = loom_test_diagnostic_render_param(
+    iree_status_t status = loom_diagnostic_render_param_value(
         &diagnostic->params[i], type_formatter, &stream);
     if (iree_status_is_ok(status)) {
       status = loom_test_diagnostic_copy_string(
