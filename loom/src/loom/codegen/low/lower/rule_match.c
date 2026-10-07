@@ -1574,6 +1574,27 @@ iree_status_t loom_low_lower_rule_set_select_rule_range_with_match_context(
                                               best_failure)) {
       best_failure = candidate_failure;
     }
+    if (matched_guard_count < rule->guard_count) {
+      const uint16_t guard_ref_index =
+          (uint16_t)(rule->guard_start + matched_guard_count);
+      const loom_low_lower_guard_ref_t guard_index =
+          rule_set->guard_refs[guard_ref_index];
+      const loom_low_lower_guard_t* guard = &rule_set->guards[guard_index];
+      if (guard->kind != LOOM_LOW_LOWER_GUARD_DESCRIPTOR_AVAILABLE) {
+        // An interned root guard program has the same pure result for every
+        // adjacent rule that references it. Descriptor availability is the
+        // exception because its failure also ranks rule-specific memory forms.
+        while ((uint16_t)(i + 1) < rule_count) {
+          const loom_low_lower_rule_t* next_rule =
+              &rule_set->rules[rule_start + i + 1];
+          if (next_rule->guard_start != rule->guard_start ||
+              next_rule->guard_count != rule->guard_count) {
+            break;
+          }
+          ++i;
+        }
+      }
+    }
   }
 
   out_selection->failure = best_failure;

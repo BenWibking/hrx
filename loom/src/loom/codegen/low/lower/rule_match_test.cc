@@ -376,15 +376,17 @@ TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
   guard_payloads[1].i64_range.minimum = 4;
   guard_payloads[1].i64_range.maximum = 8;
   const loom_low_lower_guard_ref_t guard_refs[] = {0, 1};
-  loom_low_lower_rule_t rules[2] = {};
+  loom_low_lower_rule_t rules[3] = {};
   rules[0].guard_start = 0;
   rules[0].guard_count = 1;
-  rules[1].guard_start = 1;
+  rules[1].guard_start = 0;
   rules[1].guard_count = 1;
+  rules[2].guard_start = 1;
+  rules[2].guard_count = 1;
   const loom_low_lower_rule_span_t span = {
       /*.source_op_kind=*/LOOM_OP_INDEX_CONSTANT,
       /*.rule_start=*/0,
-      /*.rule_count=*/2,
+      /*.rule_count=*/3,
   };
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.spans = &span;
@@ -405,8 +407,8 @@ TEST_F(LowLowerRuleMatchTest, SelectsFirstMatchAndResetsReusedSelection) {
   IREE_ASSERT_OK(loom_low_lower_rule_set_select_with_match_context(
       &match_context, &rule_set, source_op, &selection));
 
-  EXPECT_EQ(selection.rule, &rules[1]);
-  EXPECT_EQ(selection.rule_index, 1u);
+  EXPECT_EQ(selection.rule, &rules[2]);
+  EXPECT_EQ(selection.rule_index, 2u);
   EXPECT_TRUE(selection.failure.has_source_op_span);
   ASSERT_EQ(selection.source_node_count, 1u);
   EXPECT_EQ(selection.source_nodes[0], source_op);
