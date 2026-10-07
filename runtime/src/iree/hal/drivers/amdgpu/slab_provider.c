@@ -797,8 +797,12 @@ static iree_status_t iree_hal_amdgpu_slab_provider_wrap_buffer(
   return iree_hal_amdgpu_buffer_create_pooled(
       provider->libhsa, placement, resolved_type, params.access, params.usage,
       atomic_memory_cells, allocation_size, allocation_size,
-      slab->base_ptr + slab_offset, release_callback, provider->buffer_pool,
-      provider->host_allocator, out_buffer);
+      slab->base_ptr + slab_offset,
+      iree_any_bit_set(resolved_type, IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)
+          ? slab->base_ptr + slab_offset
+          : NULL,
+      release_callback, provider->buffer_pool, provider->host_allocator,
+      out_buffer);
 }
 
 static iree_status_t iree_hal_amdgpu_slab_provider_validate_asan_options(

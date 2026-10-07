@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+#include "iree/hal/drivers/amdgpu/buffer.h"
 #include "iree/hal/drivers/amdgpu/host_queue_profile.h"
 #include "iree/hal/drivers/amdgpu/logical_device.h"
 #include "iree/hal/drivers/amdgpu/transient_buffer.h"
@@ -488,6 +489,26 @@ iree_status_t iree_hal_amdgpu_host_queue_materialize_alloca_transaction(
       transaction->reservations, IREE_HAL_POOL_MATERIALIZE_FLAG_NONE,
       transaction->backing_buffers));
   transaction->backing_buffers_held = true;
+  // Legacy pool capabilities do not identify a native owner. Qualify the
+  // application-selected storage before commitment consumes its native table.
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0;
+       i < transaction->request_count && iree_status_is_ok(status); ++i) {
+    iree_hal_buffer_t* backing = transaction->backing_buffers[i];
+    iree_hal_buffer_t* root = iree_hal_buffer_allocated_buffer(backing);
+    if ((!iree_hal_amdgpu_buffer_isa(root) &&
+         !iree_hal_amdgpu_transient_buffer_isa(root)) ||
+        iree_hal_buffer_allocation_placement(backing).device !=
+            queue->logical_device ||
+        !backing->memory.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS]
+             .device_address) {
+      status = iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "allocation pool must provide prepared storage from the AMDGPU "
+          "queue's device");
+    }
+  }
+  IREE_RETURN_IF_ERROR(status);
   iree_hal_amdgpu_host_queue_record_alloca_pool_events(
       queue, allocation_pool, transaction,
       IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_POOL_MATERIALIZE,

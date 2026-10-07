@@ -337,6 +337,31 @@ endif()
 if(IREE_HAL_DRIVER_AMDGPU)
 iree_cc_test(
   NAME
+    native_buffer_tests
+  SRCS
+    "buffer_test.cc"
+  DEPS
+    ::backends
+    ::testdata_amdgpu
+    iree::hal
+    iree::hal::cts::util::test_base
+    iree::hal::cts::util::test_main
+    iree::hal::drivers::amdgpu::headers
+    iree::hal::memory::cpu_slab_provider
+    iree::hal::memory::passthrough_pool
+    iree::hal::memory::tlsf_pool
+  LABELS
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(IREE_HAL_DRIVER_AMDGPU)
+iree_cc_test(
+  NAME
     queue_execution_resource_tests
   DEPS
     ::backends

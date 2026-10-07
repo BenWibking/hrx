@@ -238,6 +238,22 @@ iree_runtime_cc_test(
 )
 
 iree_runtime_cc_test(
+    name = "native_buffer_tests",
+    srcs = ["buffer_test.cc"],
+    deps = [
+        ":backends",
+        ":testdata_amdgpu",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/cts/util:test_base",
+        "//runtime/src/iree/hal/cts/util:test_main",
+        "//runtime/src/iree/hal/drivers/amdgpu:headers",
+        "//runtime/src/iree/hal/memory:cpu_slab_provider",
+        "//runtime/src/iree/hal/memory:passthrough_pool",
+        "//runtime/src/iree/hal/memory:tlsf_pool",
+    ],
+)
+
+iree_runtime_cc_test(
     name = "queue_execution_resource_tests",
     deps = [
         ":backends",

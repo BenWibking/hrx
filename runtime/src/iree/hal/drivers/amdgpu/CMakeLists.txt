@@ -1052,6 +1052,8 @@ iree_cc_test(
     iree::hal::drivers::amdgpu::cts::testdata_amdgpu
     iree::hal::drivers::amdgpu::target::selection
     iree::hal::drivers::amdgpu::util::packet
+    iree::hal::memory::passthrough_pool
+    iree::hal::memory::tlsf_pool
     iree::testing::gtest
     iree::testing::gtest_main
   LABELS

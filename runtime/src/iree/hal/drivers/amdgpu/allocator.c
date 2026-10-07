@@ -271,6 +271,9 @@ typedef struct iree_hal_amdgpu_pointer_range_t {
   // Base address at which GPU agents access the ROCr allocation.
   void* agent_base;
 
+  // Host address of the imported range, or NULL when host access is absent.
+  void* host_pointer;
+
   // Size of the ROCr allocation in bytes.
   iree_device_size_t allocation_size;
 
@@ -585,7 +588,8 @@ static iree_status_t iree_hal_amdgpu_allocator_query_device_pointer_range(
   const bool direct_host_access =
       owner_device && owner_device->memory_system.svm.direct_host_access;
   iree_hal_memory_type_t actual_memory_type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
-  if (fine_grained && !coarse_grained && direct_host_access) {
+  if (fine_grained && !coarse_grained && direct_host_access &&
+      pointer_info.hostBaseAddress) {
     actual_memory_type |=
         IREE_HAL_MEMORY_TYPE_HOST_VISIBLE | IREE_HAL_MEMORY_TYPE_HOST_COHERENT;
   }
@@ -622,6 +626,10 @@ static iree_status_t iree_hal_amdgpu_allocator_query_device_pointer_range(
   }
 
   out_range->agent_base = pointer_info.agentBaseAddress;
+  if (iree_any_bit_set(actual_memory_type, IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)) {
+    out_range->host_pointer =
+        (uint8_t*)pointer_info.hostBaseAddress + byte_offset;
+  }
   out_range->allocation_size = allocation_size;
   out_range->memory_type = actual_memory_type;
   out_range->global_flags = pointer_info.global_flags;
@@ -1643,7 +1651,12 @@ static iree_status_t iree_hal_amdgpu_allocator_allocate_buffer(
         allocator->libhsa, buffer_placement, memory_placement.memory_type,
         compat_params.access, compat_params.usage,
         memory_placement.atomic_memory_cells, allocation_size, byte_length,
-        host_ptr, release_callback, allocator->host_allocator, &buffer);
+        host_ptr,
+        iree_any_bit_set(memory_placement.memory_type,
+                         IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)
+            ? host_ptr
+            : NULL,
+        release_callback, allocator->host_allocator, &buffer);
   }
 
   if (iree_status_is_ok(status)) {
@@ -1862,7 +1875,8 @@ static iree_status_t iree_hal_amdgpu_allocator_import_device_allocation(
       compat_params.access, compat_params.usage, atomic_memory_cells,
       external_buffer->size, external_buffer->size,
       (void*)(uintptr_t)external_buffer->handle.device_allocation.ptr,
-      imported_release_callback, allocator->host_allocator, &buffer);
+      pointer_range.host_pointer, imported_release_callback,
+      allocator->host_allocator, &buffer);
 
   if (iree_status_is_ok(status)) {
     iree_hal_amdgpu_allocator_record_device_buffer_import(
@@ -2022,7 +2036,7 @@ static iree_status_t iree_hal_amdgpu_allocator_import_buffer(
     status = iree_hal_amdgpu_buffer_create(
         allocator->libhsa, placement, compat_params.type, compat_params.access,
         compat_params.usage, memory_placement.atomic_memory_cells,
-        external_buffer->size, external_buffer->size, agent_ptr,
+        external_buffer->size, external_buffer->size, agent_ptr, host_ptr,
         imported_release_callback, allocator->host_allocator, &buffer);
   }
 

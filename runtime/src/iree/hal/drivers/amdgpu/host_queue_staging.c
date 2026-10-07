@@ -429,7 +429,7 @@ iree_status_t iree_hal_amdgpu_staging_pool_initialize(
         IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_USAGE_TRANSFER,
         IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE,
         (iree_device_size_t)total_size, (iree_device_size_t)total_size,
-        host_ptr,
+        host_ptr, host_ptr,
         (iree_hal_buffer_release_callback_t){
             .fn = iree_hal_amdgpu_staging_allocation_release,
             .user_data = release_state,

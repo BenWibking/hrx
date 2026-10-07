@@ -1234,8 +1234,9 @@ iree_hal_amdgpu_aql_command_buffer_resolve_static_buffer_ref(
           iree_hal_amdgpu_transient_buffer_resolve_committed_backing(
               allocated_buffer, &backing_buffer));
     }
-    allocated_buffer = iree_hal_buffer_allocated_buffer(backing_buffer);
   }
+  // Preserve the transient allocation's origin. Its backing may be an interior
+  // pool range; unwrapping that range would discard part of the native offset.
   void* device_ptr = iree_hal_amdgpu_buffer_device_pointer(allocated_buffer);
   if (IREE_UNLIKELY(!device_ptr)) {
     return iree_make_status(

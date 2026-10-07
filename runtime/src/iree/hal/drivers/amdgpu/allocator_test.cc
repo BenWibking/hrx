@@ -474,6 +474,14 @@ TEST_F(AllocatorTest, VirtualMemoryLifecycleUsesNativeState) {
       allocator, kQueueFamilyAffinity0, recommended_page_size,
       virtual_memory.out()));
   ASSERT_NE(nullptr, virtual_memory.get());
+  const iree_hal_buffer_native_binding_slot_t device_slot = {
+      IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+  };
+  EXPECT_EQ(iree_hal_buffer_native_binding(virtual_memory.get(), device_slot)
+                .device_address,
+            (uint64_t)(uintptr_t)iree_hal_amdgpu_buffer_device_pointer(
+                virtual_memory.get()));
   EXPECT_EQ(IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_DEVICE_SCOPE_32 |
                 IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_DEVICE_SCOPE_64,
             iree_hal_amdgpu_buffer_atomic_memory_cells(virtual_memory.get()));
@@ -1763,6 +1771,28 @@ TEST_F(AllocatorTest, HostAllocationImportUsesFinePoolAtomicContract) {
   EXPECT_EQ(root_export.handle.device_allocation.ptr + 128,
             view_export.handle.device_allocation.ptr);
   EXPECT_EQ(64u, view_export.size);
+  const iree_hal_buffer_native_binding_slot_t device_slot = {
+      IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+  };
+  EXPECT_EQ(iree_hal_buffer_native_binding(view, device_slot).device_address,
+            view_export.handle.device_allocation.ptr);
+  iree_byte_span_t host_span = iree_byte_span_empty();
+  IREE_ASSERT_OK(iree_hal_buffer_native_host_span(view, 0, 64, &host_span));
+  EXPECT_EQ(host_span.data, static_cast<uint8_t*>(host_ptr) + 128);
+  EXPECT_EQ(host_span.data_length, 64u);
+  iree_hal_external_buffer_t host_export = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      view, IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &host_export));
+  EXPECT_EQ(host_export.handle.host_allocation.ptr, host_span.data);
+  // The registered execution address does not grant public mapping access.
+  iree_hal_buffer_mapping_t mapping = {};
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_buffer_map_range(
+          view, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+          IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 64, &mapping));
   std::array<uint32_t, 16> exported_values = {};
   IREE_ASSERT_OK(iree_hsa_memory_copy(
       IREE_LIBHSA(&libhsa_), exported_values.data(),

@@ -6,6 +6,8 @@
 
 #include "iree/hal/drivers/amdgpu/transient_buffer.h"
 
+#include "iree/hal/drivers/amdgpu/buffer.h"
+
 typedef enum iree_hal_amdgpu_transient_buffer_deallocation_state_e {
   IREE_HAL_AMDGPU_TRANSIENT_BUFFER_DEALLOCATION_STATE_IDLE = 0,
   IREE_HAL_AMDGPU_TRANSIENT_BUFFER_DEALLOCATION_STATE_QUEUED = 1,
@@ -15,6 +17,9 @@ typedef enum iree_hal_amdgpu_transient_buffer_deallocation_state_e {
 struct iree_hal_amdgpu_transient_buffer_t {
   // Base HAL buffer resource returned to callers.
   iree_hal_buffer_t base;
+
+  // Stable native table captured by views even before allocation commitment.
+  iree_hal_amdgpu_buffer_native_t native;
 
   // Wrapper pool this object returns to when its HAL refcount reaches zero.
   iree_hal_amdgpu_transient_buffer_pool_t* wrapper_pool;
@@ -264,6 +269,9 @@ iree_status_t iree_hal_amdgpu_transient_buffer_create(
       placement, /*allocated_buffer=*/&buffer->base, allocation_size,
       /*byte_offset=*/0, byte_length, params.type, params.access, params.usage,
       &iree_hal_amdgpu_transient_buffer_vtable, &buffer->base);
+  memset(&buffer->native, 0, sizeof(buffer->native));
+  buffer->base.memory.bindings = buffer->native.bindings;
+  buffer->base.host_binding_index = IREE_HAL_AMDGPU_BUFFER_BINDING_HOST;
   buffer->wrapper_pool = wrapper_pool;
   buffer->staged_backing = NULL;
   iree_atomic_store(&buffer->committed_backing, 0, iree_memory_order_relaxed);
@@ -343,6 +351,20 @@ void iree_hal_amdgpu_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
   IREE_ASSERT_TRUE(buffer->staged_backing != NULL);
   IREE_ASSERT_TRUE(
       iree_hal_amdgpu_transient_buffer_load_committed_backing(buffer) == NULL);
+  buffer->native = *iree_hal_amdgpu_buffer_native(buffer->staged_backing);
+  buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS] =
+      iree_hal_buffer_native_binding(
+          buffer->staged_backing,
+          (iree_hal_buffer_native_binding_slot_t){
+              .index = IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS,
+              .type = IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+          });
+  uint8_t* host_pointer =
+      buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST].host_pointer;
+  buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST].host_pointer =
+      host_pointer
+          ? host_pointer + buffer->staged_backing->memory.binding_offset
+          : NULL;
   iree_atomic_store(&buffer->committed_backing,
                     (intptr_t)buffer->staged_backing,
                     iree_memory_order_release);
@@ -353,6 +375,7 @@ void iree_hal_amdgpu_transient_buffer_decommit(iree_hal_buffer_t* base_buffer) {
   iree_hal_amdgpu_transient_buffer_t* buffer =
       iree_hal_amdgpu_transient_buffer_cast(base_buffer);
   iree_atomic_store(&buffer->committed_backing, 0, iree_memory_order_release);
+  memset(&buffer->native, 0, sizeof(buffer->native));
   iree_hal_buffer_release(buffer->staged_backing);
   buffer->staged_backing = NULL;
   iree_atomic_store(
@@ -610,8 +633,13 @@ iree_hal_amdgpu_transient_buffer_query_memory(
       (iree_hal_amdgpu_transient_buffer_t*)base_buffer;
   iree_hal_buffer_t* backing =
       iree_hal_amdgpu_transient_buffer_load_committed_backing(buffer);
-  return backing ? iree_hal_buffer_memory_view(backing)
-                 : (iree_hal_buffer_memory_view_t){0};
+  iree_hal_buffer_memory_view_t view = base_buffer->memory;
+  if (backing) {
+    view = iree_hal_buffer_memory_view(backing);
+    view.bindings = base_buffer->memory.bindings;
+    view.binding_offset = 0;
+  }
+  return view;
 }
 
 static const iree_hal_buffer_vtable_t iree_hal_amdgpu_transient_buffer_vtable =
