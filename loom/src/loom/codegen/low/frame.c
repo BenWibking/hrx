@@ -258,6 +258,7 @@ static iree_status_t loom_low_emission_frame_build_impl(
   }
 
   loom_low_allocation_options_t allocation_options = {
+      .flags = options->allocation_flags,
       .schedule = &out_frame->schedule,
       .budgets = options->allocation_budgets,
       .budget_count = options->allocation_budget_count,

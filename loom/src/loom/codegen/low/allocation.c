@@ -441,6 +441,7 @@ static iree_status_t loom_low_allocation_build_moves(
   }
   if (iree_status_is_ok(status) && state->target_constraints.error_count == 0) {
     const loom_low_allocation_edge_copy_context_t edge_copy_context = {
+        .flags = state->options->flags,
         .placement = &state->placement,
         .move_plan = &state->move_plan,
     };
@@ -702,6 +703,8 @@ iree_status_t loom_low_allocate_function(
         .entry_moves = state.entry_moves,
         .edge_copies = state.edge_copy_plan.copies,
         .edge_copy_count = state.edge_copy_plan.copy_count,
+        .first_coalesced_incoming_copy_by_value_ordinal =
+            state.edge_copy_plan.first_coalesced_incoming_copy_by_value_ordinal,
         .edge_copy_groups = state.edge_copy_plan.groups,
         .edge_copy_group_count = state.edge_copy_plan.group_count,
         .packet_move_groups = state.packet_move_plan.groups,
