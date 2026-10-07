@@ -113,9 +113,14 @@ static iree_status_t loom_x86_loom_check_parse_emit_options(
 
 static iree_status_t loom_x86_loom_check_emit_frame(
     const loom_low_emission_frame_t* frame, iree_string_builder_t* builder,
-    iree_arena_allocator_t* arena) {
+    iree_diagnostic_emitter_t emitter, iree_arena_allocator_t* arena) {
   loom_x86_function_t function;
-  IREE_RETURN_IF_ERROR(loom_x86_function_prepare(frame, arena, &function));
+  bool accepted = false;
+  IREE_RETURN_IF_ERROR(
+      loom_x86_function_prepare(frame, emitter, arena, &accepted, &function));
+  if (!accepted) {
+    return iree_ok_status();
+  }
   IREE_RETURN_IF_ERROR(
       iree_string_builder_append_cstring(builder, "callee-preserved:"));
   if (!function.saved_registers) {
@@ -188,8 +193,18 @@ static iree_status_t loom_x86_loom_check_emit_provider_execute(
   if (!frame_accepted) {
     return iree_ok_status();
   }
-  return loom_x86_loom_check_emit_frame(&frame, &request->result->actual_output,
-                                        request->case_arena);
+  loom_check_diagnostic_emitter_capture_t capture = {
+      .diagnostic_collector = request->diagnostic_collector,
+      .module = request->module,
+      .source_resolver = request->source_resolver,
+  };
+  return loom_x86_loom_check_emit_frame(
+      &frame, &request->result->actual_output,
+      (iree_diagnostic_emitter_t){
+          .fn = loom_check_diagnostic_emitter_capture_emit,
+          .user_data = &capture,
+      },
+      request->case_arena);
 }
 
 static iree_status_t loom_x86_loom_check_emit_provider_append_names(

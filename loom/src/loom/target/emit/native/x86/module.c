@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "iree/io/vec_stream.h"
+#include "loom/error/x86_error_catalog.h"
 #include "loom/ops/global/ops.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/emit/native/image_elf.h"
@@ -45,24 +46,64 @@ typedef struct loom_x86_module_fixups_t {
   iree_host_size_t capacity;
 } loom_x86_module_fixups_t;
 
+static iree_status_t loom_x86_module_reject(iree_diagnostic_emitter_t emitter,
+                                            const loom_op_t* op,
+                                            iree_string_view_t constraint) {
+  const loom_diagnostic_param_t params[] = {loom_param_string(constraint)};
+  return iree_diagnostic_emit(emitter,
+                              &(loom_diagnostic_emission_t){
+                                  .op = op,
+                                  .error = LOOM_ERR_X86_004,
+                                  .params = params,
+                                  .param_count = IREE_ARRAYSIZE(params),
+                              });
+}
+
+static iree_status_t loom_x86_module_reject_symbol(
+    iree_diagnostic_emitter_t emitter, const loom_op_t* op,
+    iree_string_view_t name, iree_string_view_t constraint) {
+  const loom_diagnostic_param_t params[] = {loom_param_string(name),
+                                            loom_param_string(constraint)};
+  return iree_diagnostic_emit(emitter,
+                              &(loom_diagnostic_emission_t){
+                                  .op = op,
+                                  .error = LOOM_ERR_X86_007,
+                                  .params = params,
+                                  .param_count = IREE_ARRAYSIZE(params),
+                              });
+}
+
 static int loom_x86_module_compare_names(const void* lhs, const void* rhs) {
-  return iree_string_view_compare(*(const iree_string_view_t*)lhs,
-                                  *(const iree_string_view_t*)rhs);
+  const loom_native_object_symbol_t* left =
+      *(const loom_native_object_symbol_t* const*)lhs;
+  const loom_native_object_symbol_t* right =
+      *(const loom_native_object_symbol_t* const*)rhs;
+  const int order = iree_string_view_compare(left->name, right->name);
+  // Both pointers are into the same symbol array. Preserve source order among
+  // equal names so the later definition receives the collision diagnostic.
+  return order ? order : (int)(left - right);
 }
 
 // Export names are authored input. Validate the final native namespace before
 // encoding; the object writer consumes trusted symbol records.
 static iree_status_t loom_x86_module_symbols(
     const loom_module_t* module, const loom_target_entry_list_t* entries,
+    loom_target_entry_diagnostic_emitter_t* diagnostics, uint32_t max_errors,
     iree_arena_allocator_t* arena, loom_native_object_symbol_t* symbols,
     iree_host_size_t* out_section_count) {
-  iree_string_view_t* names = NULL;
+  const iree_diagnostic_emitter_t emitter =
+      loom_target_entry_emitter(diagnostics);
+  // Symbol pointers retain both the final spelling and its entry ordinal.
+  const loom_native_object_symbol_t** names = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       arena, entries->count, sizeof(*names), (void**)&names));
   uint16_t export_count = 0;
   iree_host_size_t section_count = 0;
   iree_status_t status = iree_ok_status();
-  for (uint16_t i = 0; i < entries->count && iree_status_is_ok(status); ++i) {
+  for (uint16_t i = 0;
+       i < entries->count && diagnostics->error_count < max_errors &&
+       iree_status_is_ok(status);
+       ++i) {
     const loom_target_entry_t* entry = &entries->values[i];
     const loom_target_export_plan_t* export_plan =
         loom_target_entry_bundle(entry)->export_plan;
@@ -84,9 +125,9 @@ static iree_status_t loom_x86_module_symbols(
           (import_module != LOOM_STRING_ID_INVALID &&
            !iree_string_view_is_empty(
                loom_string_table_get(&module->strings, import_module)))) {
-        status = iree_make_status(
-            IREE_STATUS_UNIMPLEMENTED,
-            "x86 object imports require unqualified native or object symbols");
+        status = loom_x86_module_reject(
+            emitter, entry->func.op,
+            IREE_SV("unqualified native or object imports"));
         continue;
       }
       const loom_string_id_t import_symbol =
@@ -96,13 +137,13 @@ static iree_status_t loom_x86_module_symbols(
       }
     }
     if (exported) {
-      names[export_count++] = name;
+      names[export_count++] = &symbols[i];
     }
     if (iree_string_view_is_empty(name) ||
         iree_string_view_find_char(name, '\0', 0) != IREE_STRING_VIEW_NPOS) {
-      status = iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "native symbol names cannot be empty or contain NUL");
+      status = loom_x86_module_reject(
+          emitter, entry->func.op,
+          IREE_SV("nonempty symbol names without NUL bytes"));
     }
     symbols[i] = (loom_native_object_symbol_t){
         .name = name,
@@ -120,11 +161,26 @@ static iree_status_t loom_x86_module_symbols(
   }
   *out_section_count = section_count;
   qsort(names, export_count, sizeof(*names), loom_x86_module_compare_names);
-  for (uint16_t i = 1; i < export_count && iree_status_is_ok(status); ++i) {
-    if (iree_string_view_equal(names[i - 1], names[i])) {
-      status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                                "duplicate native export '%.*s'",
-                                (int)names[i].size, names[i].data);
+  for (uint16_t i = 1;
+       i < export_count && diagnostics->error_count < max_errors &&
+       iree_status_is_ok(status);
+       ++i) {
+    if (iree_string_view_equal(names[i - 1]->name, names[i]->name)) {
+      const loom_diagnostic_param_t params[] = {
+          loom_param_string(names[i]->name)};
+      const loom_diagnostic_related_op_t previous = {
+          .op = entries->values[names[i - 1] - symbols].func.op,
+          .label = IREE_SV("previous export with this name"),
+      };
+      status = iree_diagnostic_emit(
+          emitter, &(loom_diagnostic_emission_t){
+                       .op = entries->values[names[i] - symbols].func.op,
+                       .error = LOOM_ERR_X86_006,
+                       .params = params,
+                       .param_count = IREE_ARRAYSIZE(params),
+                       .related_ops = &previous,
+                       .related_op_count = 1,
+                   });
     }
   }
   return status;
@@ -161,7 +217,7 @@ static iree_status_t loom_x86_module_collect_rodata(
 
 static iree_status_t loom_x86_module_rodata(
     const loom_module_t* module, const loom_symbol_t* source,
-    loom_native_object_symbol_t* symbol,
+    iree_diagnostic_emitter_t emitter, loom_native_object_symbol_t* symbol,
     loom_native_section_contribution_t* sections,
     iree_host_size_t* section_count) {
   const loom_op_t* op = source->defining_op;
@@ -170,9 +226,8 @@ static iree_status_t loom_x86_module_rodata(
       loom_string_table_get(&module->strings, source->name_id);
   if (iree_string_view_is_empty(name) ||
       iree_string_view_find_char(name, '\0', 0) != IREE_STRING_VIEW_NPOS) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "native symbol names cannot be empty or contain NUL");
+    return loom_x86_module_reject(
+        emitter, op, IREE_SV("nonempty symbol names without NUL bytes"));
   }
   *symbol = (loom_native_object_symbol_t){
       .name = name,
@@ -187,9 +242,9 @@ static iree_status_t loom_x86_module_rodata(
     return iree_ok_status();
   }
   if (loom_global_rodata_def_has_bank_conflicts(op)) {
-    return iree_make_status(
-        IREE_STATUS_UNIMPLEMENTED,
-        "x86 native readonly data has no bank placement contract");
+    return loom_x86_module_reject(
+        emitter, op,
+        IREE_SV("readonly data without bank placement constraints"));
   }
   const iree_const_byte_span_t contents = loom_global_rodata_def_contents(op);
   symbol->size = contents.data_length;
@@ -249,8 +304,9 @@ static iree_status_t loom_x86_module_encode_function(
   }
   loom_x86_function_t function;
   iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0;
-       i < frame.schedule.call_node_count && iree_status_is_ok(status); ++i) {
+  for (iree_host_size_t i = 0; i < frame.schedule.call_node_count &&
+                               *out_accepted && iree_status_is_ok(status);
+       ++i) {
     const loom_op_t* call =
         frame.schedule.nodes[frame.schedule.call_node_indices[i]].op;
     const loom_symbol_ref_t callee = loom_low_func_call_callee(call);
@@ -258,15 +314,22 @@ static iree_status_t loom_x86_module_encode_function(
       const iree_string_view_t name = loom_string_table_get(
           &request->module->strings,
           request->module->symbols.entries[callee.symbol_id].name_id);
+      *out_accepted = false;
       status =
-          iree_make_status(IREE_STATUS_UNIMPLEMENTED,
-                           "x86 callee '@%.*s' has no native object binding",
-                           (int)name.size, name.data);
+          loom_x86_module_reject_symbol(request->diagnostic_emitter, call, name,
+                                        IREE_SV("a native object binding"));
     }
   }
   IREE_RETURN_IF_ERROR(status);
+  if (!*out_accepted) {
+    return iree_ok_status();
+  }
   IREE_RETURN_IF_ERROR(
-      loom_x86_function_prepare(&frame, function_arena, &function));
+      loom_x86_function_prepare(&frame, request->diagnostic_emitter,
+                                function_arena, out_accepted, &function));
+  if (!*out_accepted) {
+    return iree_ok_status();
+  }
   if (function.symbol_fixup_count) {
     IREE_RETURN_IF_ERROR(iree_arena_grow_array(
         request->scratch_arena, fixups->count,
@@ -328,17 +391,23 @@ static iree_status_t loom_x86_module_function(
 }
 
 static iree_status_t loom_x86_module_build_artifact(
-    const loom_target_emit_request_t* request,
+    const loom_target_emit_request_t* source_request,
     const loom_target_fact_type_t* target_fact_type,
     loom_x86_module_format_t format, bool* out_emitted,
     loom_target_emit_artifact_t* out_artifact) {
+  loom_target_entry_diagnostic_emitter_t diagnostics = {
+      .forwarding_emitter = source_request->diagnostic_emitter,
+  };
+  loom_target_emit_request_t counted_request = *source_request;
+  counted_request.diagnostic_emitter = loom_target_entry_emitter(&diagnostics);
+  const loom_target_emit_request_t* request = &counted_request;
   *out_emitted = false;
   *out_artifact = (loom_target_emit_artifact_t){0};
   if (request->artifact_manifest.mode !=
       LOOM_TARGET_ARTIFACT_MANIFEST_MODE_NONE) {
-    return iree_make_status(
-        IREE_STATUS_UNIMPLEMENTED,
-        "x86 native artifacts do not support artifact manifests");
+    return loom_x86_module_reject(
+        request->diagnostic_emitter, NULL,
+        IREE_SV("an artifact request without a manifest"));
   }
   const loom_target_entry_options_t options = {
       .flags = LOOM_TARGET_ENTRY_SELECTION_INCLUDE_PRIVATE |
@@ -346,9 +415,7 @@ static iree_status_t loom_x86_module_build_artifact(
       .function_versions = request->function_versions,
       .max_errors = request->max_errors,
   };
-  loom_target_entry_diagnostic_emitter_t diagnostics = {
-      .forwarding_emitter = request->diagnostic_emitter,
-  };
+  const uint32_t max_errors = loom_target_entry_max_errors(&options, 20);
   loom_target_entry_list_t entries = {0};
   bool accepted = false;
   loom_x86_module_selection_t selection = {
@@ -363,7 +430,7 @@ static iree_status_t loom_x86_module_build_artifact(
       },
       &diagnostics, IREE_SV("x86 native artifact"), request->scratch_arena,
       &accepted, &entries));
-  if (!accepted) {
+  if (!accepted || diagnostics.error_count) {
     return iree_ok_status();
   }
   const loom_target_bundle_t* artifact_bundle =
@@ -389,9 +456,12 @@ static iree_status_t loom_x86_module_build_artifact(
                                                  symbol_count, sizeof(*symbols),
                                                  (void**)&symbols));
   iree_host_size_t section_count = 0;
-  IREE_RETURN_IF_ERROR(loom_x86_module_symbols(request->module, &entries,
-                                               request->scratch_arena, symbols,
-                                               &section_count));
+  IREE_RETURN_IF_ERROR(loom_x86_module_symbols(
+      request->module, &entries, &diagnostics, max_errors,
+      request->scratch_arena, symbols, &section_count));
+  if (diagnostics.error_count) {
+    return iree_ok_status();
+  }
   for (uint16_t i = 0; i < entries.count; ++i) {
     symbol_indices[entries.values[i].func_ref.symbol_id] = i;
   }
@@ -402,26 +472,37 @@ static iree_status_t loom_x86_module_build_artifact(
   iree_host_size_t library_entry_capacity = 0;
   bool has_library_query = false;
   iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0; i < rodata_count && iree_status_is_ok(status);
+  for (iree_host_size_t i = 0;
+       i < rodata_count && diagnostics.error_count < max_errors &&
+       iree_status_is_ok(status);
        ++i) {
-    status = loom_x86_module_rodata(request->module, rodata_symbols[i],
-                                    &symbols[entries.count + i], sections,
-                                    &section_count);
-    if (iree_status_is_ok(status) &&
+    const uint32_t prior_errors = diagnostics.error_count;
+    status = loom_x86_module_rodata(
+        request->module, rodata_symbols[i], request->diagnostic_emitter,
+        &symbols[entries.count + i], sections, &section_count);
+    if (iree_status_is_ok(status) && diagnostics.error_count == prior_errors &&
         format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY &&
         iree_string_view_equal(symbols[entries.count + i].name,
                                IREE_SV(LOOM_X86_HAL_LIBRARY_SYMBOL))) {
       if (!loom_global_rodata_decl_isa(rodata_symbols[i]->defining_op)) {
-        status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                                  "the task HAL library symbol must be a "
-                                  "readonly data declaration");
+        status = loom_x86_module_reject(
+            request->diagnostic_emitter, rodata_symbols[i]->defining_op,
+            IREE_SV(
+                "a readonly data declaration for the task HAL library symbol"));
       } else {
         library_symbol_index = entries.count + i;
       }
     }
   }
+  IREE_RETURN_IF_ERROR(status);
+  if (diagnostics.error_count) {
+    return iree_ok_status();
+  }
   for (uint16_t i = 0;
-       i < entries.count && accepted && iree_status_is_ok(status); ++i) {
+       i < entries.count && diagnostics.error_count < max_errors &&
+       iree_status_is_ok(status);
+       ++i) {
+    accepted = true;
     const bool exported = loom_func_like_is_exported(entries.values[i].func);
     has_library_query |=
         format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY && exported &&
@@ -443,9 +524,11 @@ static iree_status_t loom_x86_module_build_artifact(
             .symbol_index = i,
         };
         if (!loom_low_func_def_isa(entries.values[i].func.op)) {
-          status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                                    "x86 HAL dispatch requires a physical "
-                                    "function and logical parameter layout");
+          accepted = false;
+          status = loom_x86_module_reject(
+              request->diagnostic_emitter, entries.values[i].func.op,
+              IREE_SV(
+                  "a physical task function with a logical parameter layout"));
         } else {
           status = loom_x86_hal_abi_parse(
               request->module, entries.values[i].func.op,
@@ -469,20 +552,43 @@ static iree_status_t loom_x86_module_build_artifact(
     } else {
       const iree_host_size_t section_index =
           symbols[i].section_contribution_index;
+      const iree_host_size_t first_fixup = fixups.count;
       status = loom_x86_module_function(request, &entries.values[i],
                                         symbol_indices, section_index, &fixups,
                                         &accepted, &sections[section_index]);
       symbols[i].size = sections[section_index].contents.data_length;
+      // The prepared fixups are the exact referenced symbols. Unused imports
+      // remain legal; a self-contained image requires definitions only for
+      // references that survived compilation. The HAL library declaration is
+      // filled by the library builder below.
+      for (iree_host_size_t j = first_fixup;
+           format != LOOM_X86_MODULE_FORMAT_OBJECT && j < fixups.count &&
+           diagnostics.error_count < max_errors && iree_status_is_ok(status);
+           ++j) {
+        const iree_host_size_t target_index =
+            fixups.values[j].target_symbol_index;
+        if (symbols[target_index].section_contribution_index ==
+                IREE_HOST_SIZE_MAX &&
+            target_index != library_symbol_index) {
+          status = loom_x86_module_reject_symbol(
+              request->diagnostic_emitter, entries.values[i].func.op,
+              symbols[target_index].name,
+              IREE_SV("a definition in this image; use a relocatable object "
+                      "for external linking"));
+        }
+      }
     }
   }
+  accepted = diagnostics.error_count == 0;
   if (iree_status_is_ok(status) && accepted &&
       format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY) {
     if (!library_entry_count || !has_library_query ||
         library_symbol_index == IREE_HOST_SIZE_MAX) {
-      status = iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "task HAL libraries require dispatch entries, the library query, "
-          "and its readonly library declaration");
+      accepted = false;
+      status = loom_x86_module_reject(
+          request->diagnostic_emitter, entries.values[0].func.op,
+          IREE_SV("task dispatch entries, the library query, and its readonly "
+                  "library declaration"));
     } else {
       loom_x86_hal_library_data_t data;
       status = loom_x86_hal_library_build(

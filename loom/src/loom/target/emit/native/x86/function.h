@@ -72,9 +72,12 @@ typedef struct loom_x86_function_t {
 // reserved RSP. Stack, scratch, and private storage share the native stack;
 // workgroup storage has no ordinary host-function ABI. Call permutations and
 // clobbers come from the shared allocation. Unsupported authored instructions
-// return UNIMPLEMENTED.
+// emit diagnostics and leave |out_accepted| false. Status failures describe
+// allocation or diagnostic-sink failures.
 iree_status_t loom_x86_function_prepare(const loom_low_emission_frame_t* frame,
+                                        iree_diagnostic_emitter_t emitter,
                                         iree_arena_allocator_t* arena,
+                                        bool* out_accepted,
                                         loom_x86_function_t* out_function);
 
 // Encodes the prepared envelope and instructions, then resolves branch fields

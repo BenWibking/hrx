@@ -138,3 +138,26 @@ low.func.def target<x86.scalar.core>(@target) @realigned_callee_saved(%input: re
 callee-preserved: rbx
 stack: 64 bytes, alignment 64
 realignment: r11, saved RSP at +8
+
+// ====
+
+// RUN: emit x86-frame @vector_load
+x86.target<avx2> @target
+
+low.func.def target<x86.avx2.core>(@target) @vector_load(%pointer: reg<x86.gpr64>) -> (reg<x86.xmm>) asm {
+  // ERROR@+1: X86/005 {operation_name="vmovdqu32"}
+  %value = vmovdqu32.load.xmm %pointer {disp32 = 0}
+  return %value
+}
+
+// ====
+
+// The frame admits register allocation independently of native transport.
+// RUN: emit x86-frame @vector_move fixed=%input:physical_register:0:1 fixed=%copy:physical_register:1:1
+x86.target<avx2> @target
+
+low.func.def target<x86.avx2.core>(@target) @vector_move(%input: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
+  // ERROR@+1: X86/004 {constraint="scalar GPR transport"}
+  %copy = copy %input : reg<x86.xmm> -> reg<x86.xmm>
+  return %copy
+}

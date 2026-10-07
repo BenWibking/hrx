@@ -51,11 +51,11 @@ loom_cc_library(
     iree::base
     iree::base::internal
     iree::io::stream
-    loom::analysis::storage_layout
     loom::codegen::low::allocation::unit_location
     loom::codegen::low::frame
     loom::codegen::low::packet
     loom::codegen::low::storage_layout
+    loom::error::x86_error_defs
     loom::ir
     loom::ops::low
     loom::target::arch::x86::register_classes
@@ -137,6 +137,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     loom::codegen::low::frame
+    loom::error::x86_error_defs
     loom::ops::global
     loom::ops::low
     loom::target::arch::x86::hal_abi
@@ -170,6 +171,21 @@ loom_check_test_suite(
     loom_check_file_test
   SRCS
     "test/function.loom-test"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+iree_native_test(
+  NAME
+    "native_diagnostics_test"
+  WORKING_DIRECTORY "${IREE_ROOT_DIR}"
+  ARGS
+    "--target=x86:scalar"
+    "{{${CMAKE_CURRENT_SOURCE_DIR}/test/native_diagnostics.loom-test}}"
+  SRC
+    loom::tools::loom-check::loom-check
+  LABELS
+    "loom-check"
 )
 endif()
 

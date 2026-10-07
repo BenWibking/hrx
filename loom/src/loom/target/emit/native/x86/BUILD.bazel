@@ -14,6 +14,7 @@ load(
 )
 load(
     "//loom/build_tools/bazel:loom_check.bzl",
+    "loom_check_test",
     "loom_check_test_suite",
 )
 
@@ -58,11 +59,11 @@ loom_cc_library(
     hdrs = ["function.h"],
     deps = [
         ":encoding",
-        "//loom/src/loom/analysis:storage_layout",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/codegen/low:packet",
         "//loom/src/loom/codegen/low:storage_layout",
         "//loom/src/loom/codegen/low/allocation:unit_location",
+        "//loom/src/loom/error:x86_error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target/arch/x86:register_classes",
@@ -125,6 +126,7 @@ loom_cc_library(
         ":function",
         ":hal_library",
         "//loom/src/loom/codegen/low:frame",
+        "//loom/src/loom/error:x86_error_defs",
         "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:entry_selection",
@@ -155,6 +157,16 @@ loom_check_test_suite(
     srcs = [
         "test/function.loom-test",
     ],
+)
+
+loom_check_test(
+    name = "native_diagnostics_test",
+    src = "test/native_diagnostics.loom-test",
+    args = ["--target=x86:scalar"],
+    runner = "//loom/src/loom/tools/loom-check:loom-check",
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/target/arch:x86",
+    ]),
 )
 
 # The native object is a normal linker input. The caller contains no compiler
