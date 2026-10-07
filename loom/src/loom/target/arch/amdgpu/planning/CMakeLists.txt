@@ -382,6 +382,42 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU)
 loom_cc_library(
   NAME
+    trans_result_window
+  HDRS
+    "trans_result_window.h"
+  SRCS
+    "trans_result_window.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::allocation
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info_defs
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    trans_result_window_test
+  SRCS
+    "trans_result_window_test.cc"
+  DEPS
+    ::trans_result_window
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info_defs
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_library(
+  NAME
     wait_plan
   HDRS
     "wait_actions.h"
@@ -391,6 +427,7 @@ loom_cc_library(
     "wait_plan.c"
   DEPS
     ::address_state
+    ::trans_result_window
     ::wait_classification
     ::wait_completion
     ::wait_counters
@@ -538,6 +575,7 @@ loom_cc_library(
     ::descriptor_semantics
     ::matrix_coexecution
     ::structural_packet
+    ::trans_result_window
     ::wait_packets
     iree::base
     iree::base::internal::arena

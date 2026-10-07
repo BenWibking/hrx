@@ -331,6 +331,32 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "trans_result_window",
+    srcs = ["trans_result_window.c"],
+    hdrs = ["trans_result_window.h"],
+    deps = [
+        "//loom/src/loom/codegen/low:allocation",
+        "//loom/src/loom/target/arch/amdgpu:target_info_defs",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "trans_result_window_test",
+    srcs = ["trans_result_window_test.cc"],
+    deps = [
+        ":trans_result_window",
+        "//loom/src/loom/target/arch/amdgpu:target_info_defs",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "wait_plan",
     srcs = [
         "wait_actions.c",
@@ -343,6 +369,7 @@ loom_cc_library(
     visibility = _AMDGPU_ROOT_VISIBILITY + _AMDGPU_LOWER_VISIBILITY,
     deps = [
         ":address_state",
+        ":trans_result_window",
         ":wait_classification",
         ":wait_completion",
         ":wait_counters",
@@ -473,6 +500,7 @@ loom_cc_library(
         ":descriptor_semantics",
         ":matrix_coexecution",
         ":structural_packet",
+        ":trans_result_window",
         ":wait_packets",
         "//loom/src/loom/codegen/low:allocation",
         "//loom/src/loom/codegen/low:diagnostics",

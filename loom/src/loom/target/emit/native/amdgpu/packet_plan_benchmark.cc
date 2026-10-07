@@ -469,6 +469,8 @@ struct PlanMetrics {
   iree_host_size_t plan_used_bytes = 0;
   // Arena bytes retained from the block pool.
   iree_host_size_t plan_owned_bytes = 0;
+  // Transient wait-planner bytes discarded after one direct plan build.
+  iree_host_size_t wait_transient_used_bytes = 0;
   // Wait actions produced by the selected plan component.
   iree_host_size_t wait_action_count = 0;
   // GFX11 TRANS-result dependency waits.
@@ -713,6 +715,8 @@ static PlanMetrics BuildReferencePlan(PacketPlanFixture& fixture,
     RecordWaitActionMetrics(plan, metrics);
     metrics.hazard_record_count = plan.hazard_plan.record_count;
     metrics.progress_record_count = plan.progress.record_count;
+    metrics.wait_transient_used_bytes =
+        fixture.transient_arena()->used_allocation_size;
   } else {
     loom_amdgpu_packet_plan_t plan = {};
     AbortOnError(loom_amdgpu_packet_plan_build(&fixture.frame().schedule,
@@ -768,6 +772,8 @@ static void RecordMetrics(benchmark::State& state,
   state.counters["wait_packets"] =
       static_cast<double>(metrics.wait_packet_count);
   state.counters["wait_states"] = static_cast<double>(metrics.wait_state_count);
+  state.counters["wait_transient_arena_bytes"] =
+      static_cast<double>(metrics.wait_transient_used_bytes);
   state.counters["packets_per_second"] = benchmark::Counter(
       static_cast<double>(state.iterations()) * analysis.shape.packet_count,
       benchmark::Counter::kIsRate);
