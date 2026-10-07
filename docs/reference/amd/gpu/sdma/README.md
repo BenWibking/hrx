@@ -18,7 +18,7 @@ depend on the engine generation and native transport.
 | [Constant fill](fill.md) | `CONST_FILL` / `CONSTANT_FILL`: legacy and DWORD count forms, chunk limits, cache/compression fields, caller selection and completion. |
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED`: command-carried DWORD data, policy layouts, dependent transfers and storage lifetime. |
 | [Ordering](ordering.md) | Pending-transfer drains, overlap, NPD and resource ownership. |
-| [Completion stores](fence.md) | `FENCE` / `FENCE_64B`: per-generation policy fields, notification and store widths. |
+| [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: comparisons, retry controls, signal lifetime and scoped layouts. |
 | [Conditional execution](conditional.md) | `COND_EXE`: guarded DWORD ranges, Boolean64 sampling, per-execution predicate state and driver-owned submission conditions. |
 | [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` and fused copy signaling: distinct completion and retirement protocols. |
