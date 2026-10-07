@@ -1269,6 +1269,7 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_fill(
 // Reads a block of data from the buffer at the given offset.
 //
 // Requires that the buffer has the IREE_HAL_BUFFER_USAGE_MAPPING bit set.
+// The source byte range will be invalidated before reading if needed.
 //
 // It is strongly recommended that buffer operations are performed on transfer
 // queues; using this synchronous function may incur additional cache flushes
@@ -1295,8 +1296,9 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_map_write(
 // Copies data from the provided |source_buffer| into the |target_buffer|.
 //
 // Requires that both buffers have the IREE_HAL_BUFFER_USAGE_MAPPING bit set.
-// The byte range in |target_buffer| will be flushed if needed. Both buffers
-// need not come from the same device.
+// The source byte range will be invalidated before copying and the target byte
+// range flushed afterward if needed. The buffers need not come from the same
+// device.
 //
 // It is strongly recommended that buffer operations are performed on transfer
 // queues; using this synchronous function may incur additional cache flushes
