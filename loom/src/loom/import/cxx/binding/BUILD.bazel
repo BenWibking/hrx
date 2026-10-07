@@ -90,6 +90,23 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "function_contracts",
+    srcs = ["function_contracts.cc"],
+    hdrs = ["function_contracts.h"],
+    cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
+    cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
+    deps = [
+        ":predicates",
+        "//loom/src/loom/import/cxx/source",
+        "//loom/src/loom/import/cxx/source:attributes",
+        "//loom/src/loom/import/cxx/source:error",
+        "//loom/src/loom/import/cxx/value:types",
+        "//loom/src/loom/ir",
+        "//third_party:cxx_parser",
+    ],
+)
+
+loom_cc_library(
     name = "config",
     srcs = ["config.cc"],
     hdrs = ["config.h"],
@@ -198,6 +215,7 @@ loom_cc_library(
     cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
     cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [
+        ":function_contracts",
         "//loom/src/loom/import/cxx/source:attributes",
         "//loom/src/loom/import/cxx/source:error",
         "//loom/src/loom/import/cxx/symbol:names",
@@ -306,6 +324,7 @@ loom_cc_library(
         ":check",
         ":decode",
         ":encoding",
+        ":function_contracts",
         ":kernel",
         ":launch",
         ":scalar_bindings",

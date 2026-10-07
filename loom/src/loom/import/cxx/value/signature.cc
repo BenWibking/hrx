@@ -12,10 +12,11 @@ namespace loom::cxx_import {
 
 BoundSignature bind_signature(Types& types,
                               std::span<const cxx::Type* const> sources,
-                              cxx::AST* owner, loom_builder_t* builder) {
+                              cxx::AST* owner, loom_builder_t* builder,
+                              SignatureIdentityRequirement identities) {
   BoundSignature result;
   size_t component_count = 0;
-  bool requires_binding = false;
+  bool requires_binding = identities == SignatureIdentityRequirement::Required;
   for (const auto* source : sources) {
     component_count += types.partition(source, owner).component_count;
     requires_binding |= types.requires_binding(source, owner);

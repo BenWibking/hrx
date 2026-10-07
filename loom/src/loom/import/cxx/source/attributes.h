@@ -21,7 +21,7 @@ class Diagnostics;
 
 // Source positions with distinct binding owners. Declaration bindings own
 // namespace-scope symbols/configs; parameter bindings own entry preconditions.
-enum class BindingAttributeScope { Declaration, Parameter, Local };
+enum class BindingAttributeScope { Declaration, Function, Parameter, Local };
 
 // Rejects binding annotations outside their owning source positions.
 void reject_misplaced_binding_attributes(

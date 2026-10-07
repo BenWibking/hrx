@@ -21,6 +21,7 @@
 #include "loom/import/cxx/binding/check.h"
 #include "loom/import/cxx/binding/decode.h"
 #include "loom/import/cxx/binding/encoding.h"
+#include "loom/import/cxx/binding/function_contracts.h"
 #include "loom/import/cxx/binding/kernel.h"
 #include "loom/import/cxx/binding/launch.h"
 #include "loom/import/cxx/binding/scalar_bindings.h"
@@ -83,13 +84,15 @@ class Intrinsics {
 
   Intrinsics(cxx::TranslationUnit& unit, Diagnostics& diagnostics, Types& types,
              Locations& locations, SymbolNames& names,
-             LaunchContracts& launches, loom_module_t* module)
+             LaunchContracts& launches, FunctionContracts& function_contracts,
+             loom_module_t* module)
       : unit_(unit),
         diagnostics_(diagnostics),
         types_(types),
         locations_(locations),
         names_(names),
         launches_(launches),
+        function_contracts_(function_contracts),
         module_(module) {}
 
   // Admits raw attribute arguments before the frontend's string-only semantic
@@ -157,6 +160,8 @@ class Intrinsics {
   SymbolNames& names_;
   // Source launch contracts supplying configured-kernel workload signatures.
   LaunchContracts& launches_;
+  // Callable predicates projected onto lazy template family declarations.
+  FunctionContracts& function_contracts_;
   // Invocation-owned output module interning static source specifications.
   loom_module_t* module_;
   // Validated bindings indexed by canonical semantic function symbol.

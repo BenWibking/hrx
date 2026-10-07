@@ -95,6 +95,8 @@ loom_check_test_suite(
     "parameter_noalias.cxx-test"
     "parameter_noalias_invalid.cxx-test"
     "pointers.cxx-test"
+    "predicate_contracts.cxx-test"
+    "predicate_contracts_invalid.cxx-test"
     "record_arrays.cxx-test"
     "record_memory.cxx-test"
     "record_memory_invalid.cxx-test"

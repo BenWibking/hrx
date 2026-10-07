@@ -24,6 +24,7 @@
 namespace loom::cxx_import {
 
 class Diagnostics;
+class FunctionContracts;
 class Types;
 
 // One admitted call to a link-selected Loom template family. The C++ function
@@ -50,12 +51,10 @@ class TemplateApplyIntrinsic {
                                                cxx::AST* owner);
 
   // Resolves a concrete source signature against an already interned family.
-  static TemplateApplyIntrinsic resolve(cxx::TranslationUnit& unit,
-                                        Diagnostics& diagnostics, Types& types,
-                                        cxx::FunctionSymbol* function,
-                                        Family* family,
-                                        loom_location_id_t declaration_location,
-                                        cxx::AST* owner);
+  static TemplateApplyIntrinsic resolve(
+      cxx::TranslationUnit& unit, Diagnostics& diagnostics, Types& types,
+      FunctionContracts& contracts, cxx::FunctionSymbol* function,
+      Family* family, loom_location_id_t declaration_location, cxx::AST* owner);
 
   // Emits one family application after the caller has evaluated each operand.
   std::optional<Value> call(std::span<const Value> arguments, Types& types,
@@ -77,17 +76,20 @@ class TemplateApplyIntrinsic {
   }
 
  private:
-  TemplateApplyIntrinsic(Family* family,
+  TemplateApplyIntrinsic(Family* family, FunctionContracts& contracts,
                          std::vector<const cxx::Type*> parameter_types,
                          const cxx::Type* result_type,
                          loom_location_id_t declaration_location)
       : family_(family),
+        contracts_(&contracts),
         parameter_types_(std::move(parameter_types)),
         result_type_(result_type),
         declaration_location_(declaration_location) {}
 
   // Link-selected family retained by the owning Intrinsics registry.
   Family* family_;
+  // Invocation-owned callable contracts projected onto the family declaration.
+  FunctionContracts* contracts_;
   // Frontend-owned semantic parameter types in source order.
   std::vector<const cxx::Type*> parameter_types_;
   // Frontend-owned semantic result type, or null for a void declaration.

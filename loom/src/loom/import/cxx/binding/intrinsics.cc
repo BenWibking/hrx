@@ -174,7 +174,7 @@ Intrinsics::Binding Intrinsics::resolve(cxx::FunctionSymbol* function,
   if (auto family = TemplateApplyIntrinsic::admit(unit_, diagnostics_,
                                                   attribute, owner)) {
     return TemplateApplyIntrinsic::resolve(
-        unit_, diagnostics_, types_, function,
+        unit_, diagnostics_, types_, function_contracts_, function,
         intern_template_family(*family, owner), locations_.get(owner), owner);
   }
   if (auto decode = DecodeIntrinsic::resolve(

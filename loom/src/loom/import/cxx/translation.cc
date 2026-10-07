@@ -29,6 +29,7 @@
 #include "iree/base/api.h"
 #include "loom/import/cxx/binding/assumptions.h"
 #include "loom/import/cxx/binding/config.h"
+#include "loom/import/cxx/binding/function_contracts.h"
 #include "loom/import/cxx/binding/intrinsics.h"
 #include "loom/import/cxx/binding/launch.h"
 #include "loom/import/cxx/binding/loop_schedule.h"
@@ -73,6 +74,7 @@ class Translator final : private Initialization::Evaluation {
         types_(unit, diagnostics),
         scalars_(unit, diagnostics, types_, locations_, builder_),
         names_(unit, diagnostics),
+        function_contracts_(unit, diagnostics),
         configs_(unit, diagnostics, types_, scalars_, locations_, names_),
         target_definitions_(unit, diagnostics, locations_, names_, module),
         template_definitions_(unit, diagnostics),
@@ -83,9 +85,10 @@ class Translator final : private Initialization::Evaluation {
                         objects_, value_arena_, locations_, builder_, *this),
         launches_(unit, diagnostics),
         intrinsics_(unit, diagnostics, types_, locations_, names_, launches_,
-                    module),
+                    function_contracts_, module),
         functions_(unit, diagnostics, module, intrinsics_, launches_, configs_,
-                   target_definitions_, template_definitions_, names_),
+                   function_contracts_, target_definitions_,
+                   template_definitions_, names_),
         options_(options),
         math_flags_(iree_any_bit_set(options.flags,
                                      LOOM_CXX_IMPORT_FLAG_APPROXIMATE_FUNCTIONS)
@@ -2062,6 +2065,8 @@ class Translator final : private Initialization::Evaluation {
   Scalars scalars_;
   // Shared output namespace for callables and configuration symbols.
   SymbolNames names_;
+  // Callable predicates shared by definitions and template declarations.
+  FunctionContracts function_contracts_;
   // Namespace-scope scalar configs retain key identity across source aliases.
   Configs configs_;
   // Source target definitions bind function-like operations without

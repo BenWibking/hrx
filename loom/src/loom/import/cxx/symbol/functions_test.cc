@@ -42,8 +42,9 @@ TEST_F(FunctionsTest, RootsQueueEachConcreteHelperOnceWithPrivateVisibility) {
   Locations locations(source.unit(), source.diagnostics(), module_);
   SymbolNames names(source.unit(), source.diagnostics());
   LaunchContracts launches(source.unit(), source.diagnostics());
+  FunctionContracts function_contracts(source.unit(), source.diagnostics());
   Intrinsics intrinsics(source.unit(), source.diagnostics(), types, locations,
-                        names, launches, module_);
+                        names, launches, function_contracts, module_);
   Scalars scalars(source.unit(), source.diagnostics(), types, locations,
                   builder_);
   Configs configs(source.unit(), source.diagnostics(), types, scalars,
@@ -52,7 +53,7 @@ TEST_F(FunctionsTest, RootsQueueEachConcreteHelperOnceWithPrivateVisibility) {
                                        locations, names, module_);
   TemplateDefinitions template_definitions(source.unit(), source.diagnostics());
   Functions functions(source.unit(), source.diagnostics(), module_, intrinsics,
-                      launches, configs, target_definitions,
+                      launches, configs, function_contracts, target_definitions,
                       template_definitions, names);
   const iree_string_view_t roots[] = {IREE_SV("entry")};
   functions.select(roots);
@@ -94,8 +95,9 @@ TEST_F(FunctionsTest,
   Locations locations(source.unit(), source.diagnostics(), module_);
   SymbolNames names(source.unit(), source.diagnostics());
   LaunchContracts launches(source.unit(), source.diagnostics());
+  FunctionContracts function_contracts(source.unit(), source.diagnostics());
   Intrinsics intrinsics(source.unit(), source.diagnostics(), types, locations,
-                        names, launches, module_);
+                        names, launches, function_contracts, module_);
   Scalars scalars(source.unit(), source.diagnostics(), types, locations,
                   builder_);
   Configs configs(source.unit(), source.diagnostics(), types, scalars,
@@ -104,7 +106,7 @@ TEST_F(FunctionsTest,
                                        locations, names, module_);
   TemplateDefinitions template_definitions(source.unit(), source.diagnostics());
   Functions functions(source.unit(), source.diagnostics(), module_, intrinsics,
-                      launches, configs, target_definitions,
+                      launches, configs, function_contracts, target_definitions,
                       template_definitions, names);
   functions.select({});
   ASSERT_EQ(functions.pending().size(), 2u);

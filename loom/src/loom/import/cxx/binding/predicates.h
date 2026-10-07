@@ -7,6 +7,8 @@
 #ifndef LOOM_IMPORT_CXX_BINDING_PREDICATES_H_
 #define LOOM_IMPORT_CXX_BINDING_PREDICATES_H_
 
+#include <cxx/types_fwd.h>
+
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -40,6 +42,8 @@ struct PredicateValue {
   cxx::ExpressionAST* source;
   // Complete operand after frontend-selected implicit conversions.
   cxx::ExpressionAST* converted;
+  // Unconverted root type before direct record-member selection.
+  const cxx::Type* root_type;
 };
 
 // One exactly representable predicate and its semantic value operands. Before

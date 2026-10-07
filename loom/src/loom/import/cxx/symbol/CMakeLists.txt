@@ -45,6 +45,7 @@ loom_cc_library(
     ::names
     iree::third_party::cxx_parser
     loom::import::cxx::binding::config
+    loom::import::cxx::binding::function_contracts
     loom::import::cxx::binding::intrinsics
     loom::import::cxx::binding::launch
     loom::import::cxx::binding::parameter_contracts
@@ -81,6 +82,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     iree::third_party::cxx_parser
+    loom::import::cxx::binding::function_contracts
     loom::import::cxx::binding::template_definitions
     loom::import::cxx::value::builder_test
     loom::ops::check

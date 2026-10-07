@@ -124,6 +124,31 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    function_contracts
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "function_contracts.h"
+  SRCS
+    "function_contracts.cc"
+  DEPS
+    ::predicates
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::error
+    loom::import::cxx::value::types
+    loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     config
   CXX_STANDARD
     23
@@ -285,6 +310,7 @@ loom_cc_library(
   SRCS
     "template_apply.cc"
   DEPS
+    ::function_contracts
     iree::third_party::cxx_parser
     loom::import::cxx::source::attributes
     loom::import::cxx::source::error
@@ -441,6 +467,7 @@ loom_cc_library(
     ::check
     ::decode
     ::encoding
+    ::function_contracts
     ::kernel
     ::launch
     ::scalar_bindings

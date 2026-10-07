@@ -187,6 +187,7 @@ std::optional<PredicateValue> predicate_value(cxx::TranslationUnit& unit,
   value.members = std::move(members);
   value.source = unwrapped(expression);
   value.converted = expression;
+  value.root_type = identity->type;
   if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(identity)) {
     value.origin = PredicateValueOrigin::Binding;
     value.binding = id->symbol;

@@ -50,6 +50,13 @@ void reject_misplaced_binding_attributes(
               std::string(name) +
                   " requires a leading pointer parameter attribute");
         }
+        if (name == "where" && scope != BindingAttributeScope::Declaration &&
+            scope != BindingAttributeScope::Function) {
+          diagnostics.reject(
+              unit, attribute,
+              "where requires a trailing function attribute or a leading "
+              "config declaration attribute");
+        }
       });
 }
 
@@ -83,13 +90,16 @@ void reject_misplaced_binding_declarator(
                                         bitfield->trailingAttributeList);
   }
   for (auto* chunk : cxx::ListView{declarator->declaratorChunkList}) {
+    auto* function = cxx::ast_cast<cxx::FunctionDeclaratorChunkAST>(chunk);
     cxx::visit(
         [&](auto* part) {
-          reject_misplaced_binding_attributes(unit, diagnostics,
-                                              part->attributeList);
+          reject_misplaced_binding_attributes(
+              unit, diagnostics, part->attributeList,
+              function && function == parameter_owner
+                  ? BindingAttributeScope::Function
+                  : BindingAttributeScope::Local);
         },
         chunk);
-    auto* function = cxx::ast_cast<cxx::FunctionDeclaratorChunkAST>(chunk);
     if (!function || !function->parameterDeclarationClause) {
       continue;
     }
