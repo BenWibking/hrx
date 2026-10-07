@@ -105,6 +105,31 @@ def _packet_value_types(row: _PacketRow) -> tuple[str, ...]:
     return ((row.result_type,) if row.result_type is not None else ()) + row.operand_types
 
 
+@pytest.mark.parametrize("change", ["missing", "extra", "unknown"])
+def test_packet_result_arity_is_owned_by_its_type(change: str) -> None:
+    rows = _packet_rows()
+    has_result = change != "extra"
+    index = next(index for index, row in enumerate(rows) if bool(row.result_count) == has_result)
+    row = rows[index]
+    value_types, value_type_refs = _interned_value_types(rows)
+    assert row.result_count == int(has_result)
+    rendered = row.render(value_type_refs)
+    assert ".result_count" not in rendered
+    result_type_ref = value_type_refs[row.result_type] if has_result else 0
+    assert bool(result_type_ref) == has_result
+    assert f".result_type_ref = {result_type_ref}," in rendered
+
+    mismatched_type = {
+        "missing": None,
+        "extra": next(row.result_type for row in rows if row.result_count),
+        "unknown": value_types[0],
+    }[change]
+    _expect_row_validation_error(
+        (*rows[:index], replace(row, result_type=mismatched_type), *rows[index + 1 :]),
+        "packet result type must match descriptor result count",
+    )
+
+
 def _atomic_model_row(rows, attribute: str, value: str):
     return next(row for row in rows if getattr(row, attribute) == value)
 
@@ -788,7 +813,9 @@ def test_generation_interns_packet_value_types() -> None:
     assert "LOOM_SPIRV_VALUE_CLASS_UNKNOWN" in value_types[0]
     assert len(value_types) < len(rows)
     for row in rows:
-        assert value_type_refs[row.result_type or value_types[0]] < len(value_types)
+        result_type_ref = value_type_refs[row.result_type or value_types[0]]
+        assert result_type_ref < len(value_types)
+        assert bool(result_type_ref) == bool(row.result_count)
         for operand_type in row.encoded_operand_types():
             assert value_type_refs[operand_type] < len(value_types)
 

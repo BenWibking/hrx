@@ -67,7 +67,7 @@ static iree_status_t loom_spirv_emit_atomic_result(
     loom_spirv_emit_state_t* state, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row, loom_spirv_module_value_ref_t value_ref,
     uint32_t* out_result_id) {
-  if (row->result_count == 0) {
+  if (row->result_type_ref == LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN) {
     *out_result_id = loom_spirv_emit_allocate_id(state);
     return iree_ok_status();
   }
@@ -80,7 +80,7 @@ static iree_status_t loom_spirv_emit_define_atomic_result(
     loom_spirv_emit_state_t* state, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row, uint32_t result_id,
     loom_spirv_module_value_ref_t value_ref) {
-  if (row->result_count == 0) {
+  if (row->result_type_ref == LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN) {
     return iree_ok_status();
   }
   value_ref.id = result_id;
@@ -210,7 +210,7 @@ static iree_status_t loom_spirv_emit_float_atomic_result(
     loom_spirv_emit_state_t* state, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row,
     const loom_spirv_module_value_ref_t* float_value, uint32_t integer_id) {
-  if (row->result_count == 0) {
+  if (row->result_type_ref == LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN) {
     return iree_ok_status();
   }
   uint32_t result_id = 0;

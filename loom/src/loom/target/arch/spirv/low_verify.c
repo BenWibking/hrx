@@ -713,7 +713,7 @@ static iree_status_t loom_spirv_low_define_packet_results(
     loom_spirv_low_verify_state_t* state,
     const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row) {
-  if (row->result_count == 0) {
+  if (row->result_type_ref == LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN) {
     return iree_ok_status();
   }
   const loom_value_id_t* results = loom_op_const_results(packet->op);
@@ -730,8 +730,10 @@ static iree_status_t loom_spirv_low_verify_packet(
   if (row == NULL || row->form == LOOM_SPIRV_PACKET_FORM_UNSUPPORTED) {
     return loom_spirv_low_emit_missing_packet_row(context, state, packet);
   }
+  const uint16_t expected_result_count =
+      row->result_type_ref != LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN;
   if (packet->op->operand_count != row->operand_count ||
-      packet->op->result_count != row->result_count) {
+      packet->op->result_count != expected_result_count) {
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(

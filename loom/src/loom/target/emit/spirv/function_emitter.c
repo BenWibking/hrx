@@ -261,7 +261,9 @@ static void loom_spirv_emit_validate_packet_shape(
     const loom_op_t* op, const loom_low_descriptor_packet_t* packet,
     const loom_spirv_packet_row_t* row) {
   (void)packet;
-  IREE_ASSERT_EQ(op->result_count, row->result_count);
+  IREE_ASSERT_EQ(
+      op->result_count,
+      row->result_type_ref != LOOM_SPIRV_PACKET_VALUE_TYPE_REF_UNKNOWN);
   IREE_ASSERT_EQ(op->operand_count, row->operand_count);
 }
 

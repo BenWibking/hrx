@@ -136,7 +136,7 @@ typedef struct loom_spirv_packet_row_t {
       uint32_t instruction;
     } extended_instruction;
   } payload;
-  // Result value-type table ref, or UNKNOWN for result-less packets.
+  // Sole result value-type table ref, or UNKNOWN for result-less packets.
   loom_spirv_packet_value_type_ref_t result_type_ref;
   // Required value-type refs for packet operands. Four-operand packets use one
   // repeated type because the inline type-ref capacity is three.
@@ -144,8 +144,6 @@ typedef struct loom_spirv_packet_row_t {
       operand_type_refs[LOOM_SPIRV_PACKET_OPERAND_TYPE_CAPACITY];
   // Emission algorithm selected for this descriptor.
   loom_spirv_packet_form_t form;
-  // Expected packet result count.
-  uint8_t result_count;
   // Expected packet operand count.
   uint8_t operand_count;
   // Alignment operand for aligned memory access rows.
@@ -154,7 +152,7 @@ typedef struct loom_spirv_packet_row_t {
   loom_spirv_packet_flags_t flags;
 } loom_spirv_packet_row_t;
 
-static_assert(sizeof(loom_spirv_packet_row_t) == 32,
+static_assert(sizeof(loom_spirv_packet_row_t) == 28,
               "SPIR-V packet rows must remain compact");
 
 // Generated value types interned across all packet rows.
