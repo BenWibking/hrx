@@ -311,34 +311,12 @@ iree_c_embed_data(
     identifier = "packet_plan_attention_bf16",
 )
 
-iree_c_embed_data(
-    name = "packet_plan_trans_result_hazard",
-    testonly = True,
-    srcs = ["packet_plan_trans_result_hazard.loom"],
-    c_file_output = "packet_plan_trans_result_hazard.c",
-    flatten = True,
-    h_file_output = "packet_plan_trans_result_hazard.h",
-    identifier = "packet_plan_trans_result_hazard",
-)
-
-iree_c_embed_data(
-    name = "packet_plan_sgpr_read_hazard",
-    testonly = True,
-    srcs = ["packet_plan_sgpr_read_hazard.loom"],
-    c_file_output = "packet_plan_sgpr_read_hazard.c",
-    flatten = True,
-    h_file_output = "packet_plan_sgpr_read_hazard.h",
-    identifier = "packet_plan_sgpr_read_hazard",
-)
-
 loom_cc_benchmark(
     name = "packet_plan_benchmark",
     srcs = ["packet_plan_benchmark.cc"],
     target_compatible_with = loom_amdgpu_descriptor_set_compatible_with(_DESCRIPTOR_SET_GFX125X),
     deps = [
         ":packet_plan_attention_bf16",
-        ":packet_plan_sgpr_read_hazard",
-        ":packet_plan_trans_result_hazard",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/codegen/low:function",
         "//loom/src/loom/codegen/low:target_binding",

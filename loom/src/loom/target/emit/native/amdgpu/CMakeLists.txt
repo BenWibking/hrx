@@ -354,38 +354,6 @@ iree_c_embed_data(
   PUBLIC
 )
 
-iree_c_embed_data(
-  NAME
-    packet_plan_trans_result_hazard
-  SRCS
-    "packet_plan_trans_result_hazard.loom"
-  C_FILE_OUTPUT
-    "packet_plan_trans_result_hazard.c"
-  H_FILE_OUTPUT
-    "packet_plan_trans_result_hazard.h"
-  IDENTIFIER
-    "packet_plan_trans_result_hazard"
-  TESTONLY
-  FLATTEN
-  PUBLIC
-)
-
-iree_c_embed_data(
-  NAME
-    packet_plan_sgpr_read_hazard
-  SRCS
-    "packet_plan_sgpr_read_hazard.loom"
-  C_FILE_OUTPUT
-    "packet_plan_sgpr_read_hazard.c"
-  H_FILE_OUTPUT
-    "packet_plan_sgpr_read_hazard.h"
-  IDENTIFIER
-    "packet_plan_sgpr_read_hazard"
-  TESTONLY
-  FLATTEN
-  PUBLIC
-)
-
 if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX125X_CORE AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 loom_cc_benchmark(
   NAME
@@ -394,8 +362,6 @@ loom_cc_benchmark(
     "packet_plan_benchmark.cc"
   DEPS
     ::packet_plan_attention_bf16
-    ::packet_plan_sgpr_read_hazard
-    ::packet_plan_trans_result_hazard
     iree::base
     iree::base::internal::arena
     iree::testing::benchmark_main
