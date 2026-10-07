@@ -1747,6 +1747,32 @@ TEST_F(AllocatorTest, HostAllocationImportUsesFinePoolAtomicContract) {
     EXPECT_EQ(values[i], kPattern);
   }
 
+  // Device export names the registered HSA agent address, regardless of where
+  // the allocation resides. Views preserve that address plus their offset.
+  iree_hal_external_buffer_t root_export = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &root_export));
+  Ref<iree_hal_buffer_t> view;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_subspan(buffer, 128, 64, host_allocator_, view.out()));
+  iree_hal_external_buffer_t view_export = {};
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      view, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &view_export));
+  EXPECT_EQ(root_export.handle.device_allocation.ptr + 128,
+            view_export.handle.device_allocation.ptr);
+  EXPECT_EQ(64u, view_export.size);
+  std::array<uint32_t, 16> exported_values = {};
+  IREE_ASSERT_OK(iree_hsa_memory_copy(
+      IREE_LIBHSA(&libhsa_), exported_values.data(),
+      reinterpret_cast<void*>(view_export.handle.device_allocation.ptr),
+      sizeof(exported_values)));
+  for (uint32_t value : exported_values) {
+    EXPECT_EQ(kPattern, value);
+  }
+  view.reset();
+
   iree_hal_buffer_release(buffer);
   EXPECT_EQ(release_count, 1);
   iree_allocator_free_aligned(host_allocator_, host_ptr);
@@ -2249,20 +2275,11 @@ TEST_F(AllocatorTest, ExternalBufferExportValidatesMemoryType) {
       test_device.allocator(), params, /*allocation_size=*/4096, &buffer));
 
   iree_hal_external_buffer_t external_buffer = {};
-  if (iree_all_bits_set(iree_hal_buffer_memory_type(buffer),
-                        IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL)) {
-    IREE_ASSERT_OK(iree_hal_buffer_export(
-        buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
-        IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_buffer));
-    EXPECT_NE(external_buffer.handle.device_allocation.ptr, 0u);
-    EXPECT_EQ(external_buffer.size, iree_hal_buffer_allocation_size(buffer));
-  } else {
-    IREE_EXPECT_STATUS_IS(
-        IREE_STATUS_UNAVAILABLE,
-        iree_hal_buffer_export(
-            buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
-            IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_buffer));
-  }
+  IREE_ASSERT_OK(iree_hal_buffer_export(
+      buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
+      IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_buffer));
+  EXPECT_NE(external_buffer.handle.device_allocation.ptr, 0u);
+  EXPECT_EQ(external_buffer.size, iree_hal_buffer_allocation_size(buffer));
 
   IREE_ASSERT_OK(iree_hal_buffer_export(
       buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION,

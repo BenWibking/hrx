@@ -345,58 +345,42 @@ static iree_status_t iree_hal_streaming_buffer_wrap_hrx_buffer(
   iree_hal_external_buffer_t external_ptr;
   iree_status_t status = iree_ok_status();
   bool have_device_ptr = false;
-  bool have_host_ptr = false;
 
   // Try to export as device allocation (works for device-local memory
   // and mapped host memory).
   if (wrapper->buffer) {
-    iree_status_t device_status = iree_hal_buffer_export(
+    status = iree_hal_buffer_export(
         wrapper->buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION,
         IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_ptr);
-    if (iree_status_is_ok(device_status)) {
+    if (iree_status_is_ok(status)) {
       wrapper->device_ptr = (iree_hal_streaming_deviceptr_t)
                                 external_ptr.handle.device_allocation.ptr;
       have_device_ptr = true;
-    } else {
-      iree_status_ignore(device_status);
+    } else if (iree_status_is_unavailable(status) && !imported_host_ptr) {
+      // The HAL reports unsupported native export as UNAVAILABLE. Such buffers
+      // use a synthetic table key below; actual export failures propagate.
+      iree_status_free(status);
+      status = iree_ok_status();
     }
   }
 
-  // For host-local memory, also export as host allocation.
-  // This is needed for hipHostMalloc which returns host pointers.
-  if (wrapper->buffer &&
-      (wrapper->memory_type & IREE_HAL_MEMORY_TYPE_HOST_LOCAL)) {
-    iree_status_t host_status = iree_hal_buffer_export(
-        wrapper->buffer, IREE_HAL_EXTERNAL_BUFFER_TYPE_HOST_ALLOCATION,
-        IREE_HAL_EXTERNAL_BUFFER_FLAG_NONE, &external_ptr);
-    if (iree_status_is_ok(host_status)) {
-      wrapper->host_ptr = (void*)external_ptr.handle.host_allocation.ptr;
-      have_host_ptr = true;
-      // For host-local memory, use host_ptr as device_ptr if we don't have one.
-      if (!have_device_ptr) {
-        wrapper->device_ptr = (iree_hal_streaming_deviceptr_t)wrapper->host_ptr;
-        have_device_ptr = true;
-      }
-    } else {
-      iree_status_ignore(host_status);
-    }
-  }
   if (imported_host_ptr) {
     wrapper->host_ptr = imported_host_ptr;
-    have_host_ptr = true;
   }
-  if (wrapper->buffer && !have_host_ptr &&
-      (wrapper->memory_type & IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)) {
-    iree_status_t map_status = iree_hal_buffer_map_range(
+  // Optional mapping is resolved by the allocator. Only the achieved grant
+  // permits a mapping attempt; a failure with that grant is an allocation
+  // error.
+  if (iree_status_is_ok(status) && wrapper->buffer && !wrapper->host_ptr &&
+      iree_all_bits_set(iree_hal_buffer_allowed_usage(wrapper->buffer),
+                        IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT)) {
+    status = iree_hal_buffer_map_range(
         wrapper->buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-        IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0,
-        wrapper->size, &wrapper->host_mapping);
-    if (iree_status_is_ok(map_status)) {
+        iree_hal_buffer_allowed_access(wrapper->buffer),
+        IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, 0, wrapper->size,
+        &wrapper->host_mapping);
+    if (iree_status_is_ok(status)) {
       wrapper->host_ptr = wrapper->host_mapping.contents.data;
       wrapper->has_host_mapping = true;
-      have_host_ptr = true;
-    } else {
-      iree_status_ignore(map_status);
     }
   }
 
@@ -404,11 +388,11 @@ static iree_status_t iree_hal_streaming_buffer_wrap_hrx_buffer(
   // Remote HAL buffers may not support exporting a device pointer;
   // generate a synthetic device pointer so the buffer table can still map
   // this wrapper.
-  if (!have_device_ptr && imported_host_ptr) {
+  if (iree_status_is_ok(status) && !have_device_ptr && imported_host_ptr) {
     status = iree_make_status(
         IREE_STATUS_UNAVAILABLE,
         "registered host allocation did not export a device-visible pointer");
-  } else if (!have_device_ptr) {
+  } else if (iree_status_is_ok(status) && !have_device_ptr) {
     static iree_atomic_uint64_t g_next_synthetic =
         IREE_ATOMIC_VAR_INIT(0xDEAD000000000000ULL);
     iree_device_size_t aligned_size = 0;
@@ -424,7 +408,6 @@ static iree_status_t iree_hal_streaming_buffer_wrap_hrx_buffer(
       have_device_ptr = true;
     }
   }
-  (void)have_host_ptr;
 
   if (iree_status_is_ok(status)) {
     // Register buffer in context's mapping table.
@@ -505,7 +488,12 @@ static void iree_hal_streaming_buffer_free(
   iree_slim_mutex_deinitialize(&buffer->context_import_mutex);
   iree_hal_streaming_allocation_preparation_deinitialize(&buffer->preparation);
   if (buffer->has_host_mapping) {
-    iree_status_ignore(iree_hal_buffer_unmap_range(&buffer->host_mapping));
+    iree_status_t status = iree_hal_buffer_unmap_range(&buffer->host_mapping);
+    if (!iree_status_is_ok(status)) {
+      // Final release has no error channel. Report the terminal unmap error.
+      iree_status_fprint(stderr, status);
+      iree_status_free(status);
+    }
     memset(&buffer->host_mapping, 0, sizeof(buffer->host_mapping));
     buffer->has_host_mapping = false;
   }
@@ -1287,7 +1275,11 @@ iree_status_t iree_hal_streaming_memory_allocate_device(
   *out_buffer = NULL;
   IREE_TRACE_ZONE_BEGIN(z0);
 
-  iree_hal_buffer_usage_t usage = IREE_HAL_BUFFER_USAGE_DEFAULT;
+  // Preserve a whole-buffer host address when mapping does not change
+  // placement.
+  iree_hal_buffer_usage_t usage = IREE_HAL_BUFFER_USAGE_DEFAULT |
+                                  IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
+                                  IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL;
   iree_hal_memory_type_t memory_type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
   if (iree_any_bit_set(flags, IREE_HAL_STREAMING_MEMORY_FLAG_UNCACHED)) {
     memory_type |= IREE_HAL_MEMORY_TYPE_DEVICE_UNCACHED;
@@ -1343,7 +1335,9 @@ iree_status_t iree_hal_streaming_memory_allocate_device_from_pool(
         "memory-pool allocations cannot satisfy uncached device memory");
   }
   iree_hal_buffer_params_t params = {
-      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
+      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT |
+               IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
+               IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL,
       .access = IREE_HAL_MEMORY_ACCESS_ALL,
       .type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL,
       .queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY,
@@ -2167,7 +2161,7 @@ static iree_status_t iree_hal_streaming_memory_allocate_host_with_context_mode(
   iree_hal_memory_type_t memory_type =
       IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE;
   iree_hal_buffer_params_t params = {
-      .usage = usage,
+      .usage = usage | IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
       .access = IREE_HAL_MEMORY_ACCESS_ALL,
       .type = memory_type,
       .queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY,
@@ -2244,7 +2238,7 @@ iree_hal_streaming_memory_allocate_owned_host_import_with_context_mode(
   iree_hal_buffer_t* buffer = NULL;
   if (iree_status_is_ok(status)) {
     iree_hal_buffer_params_t params = {
-        .usage = usage,
+        .usage = usage | IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
         .access = IREE_HAL_MEMORY_ACCESS_ALL,
         .type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL |
                 IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
@@ -2523,7 +2517,8 @@ static iree_status_t iree_hal_streaming_memory_register_host_with_context_mode(
   IREE_TRACE_ZONE_BEGIN(z0);
 
   iree_hal_buffer_params_t params = {
-      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT,
+      .usage = IREE_HAL_BUFFER_USAGE_DEFAULT |
+               IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
       .access = IREE_HAL_MEMORY_ACCESS_ALL,
       .type =
           IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,

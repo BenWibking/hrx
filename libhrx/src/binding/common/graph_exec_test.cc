@@ -429,7 +429,8 @@ TEST_F(GraphExecTest, BatchMemoryNodePreservesResolvedWriteSemantics) {
   });
 
   const iree_hal_buffer_params_t buffer_params = {
-      /*.usage=*/IREE_HAL_BUFFER_USAGE_DEFAULT,
+      /*.usage=*/IREE_HAL_BUFFER_USAGE_DEFAULT |
+          IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
       /*.access=*/IREE_HAL_MEMORY_ACCESS_ALL,
       /*.type=*/IREE_HAL_MEMORY_TYPE_HOST_LOCAL |
           IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,

@@ -452,9 +452,12 @@ static iree_status_t iree_hal_amdgpu_buffer_export_range(
   void* pointer = (uint8_t*)buffer->host_ptr + local_byte_offset;
   switch (requested_type) {
     case IREE_HAL_EXTERNAL_BUFFER_TYPE_DEVICE_ALLOCATION:
+      // The stored pointer is the HSA agent address, including the address
+      // returned when registering host memory. Visibility, not placement,
+      // determines whether it can be exported as a device allocation.
       if (IREE_UNLIKELY(
               !iree_all_bits_set(iree_hal_buffer_memory_type(base_buffer),
-                                 IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL))) {
+                                 IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE))) {
         return iree_make_status(
             IREE_STATUS_UNAVAILABLE,
             "AMDGPU buffer memory type is not supported for export as an "

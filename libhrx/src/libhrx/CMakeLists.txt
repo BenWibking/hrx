@@ -200,6 +200,20 @@ iree_cc_test(
 
 iree_cc_test(
   NAME
+    status_test
+  SRCS
+    "status_test.cc"
+  DEPS
+    ::hrx_static
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+    libhrx_defs
+)
+
+iree_cc_test(
+  NAME
     buffer_test
   SRCS
     "buffer_test.cc"

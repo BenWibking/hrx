@@ -519,6 +519,19 @@ static iree_status_t hrx_mem_pool_allocate_hal_buffer(
     return status;
   }
 
+  // The backing pool fixes placement. Resolve optional host mapping against
+  // that pool's achieved capabilities before making an exact reservation.
+  if (iree_any_bit_set(params.usage, IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL)) {
+    iree_hal_pool_capabilities_t capabilities;
+    iree_hal_pool_query_capabilities(hal_pool, &capabilities);
+    const iree_hal_buffer_usage_t mapping_usage =
+        IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED |
+        IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
+        IREE_HAL_BUFFER_USAGE_MAPPING_OPTIONAL |
+        IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_RANDOM |
+        IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_SEQUENTIAL_WRITE;
+    params.usage &= ~(mapping_usage & ~capabilities.supported_usage);
+  }
   status = iree_hal_pool_allocate_buffer(hal_pool, params, size,
                                          iree_immediate_timeout(), out_buffer);
   if (!iree_status_is_ok(status) &&
