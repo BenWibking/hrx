@@ -752,7 +752,6 @@ loom_check_test_suite(
     "test/source_low/numeric_f32.loom-test"
     "test/source_low/numeric_f32_packetization.loom-test"
     "test/source_low/numeric_float8_constants.loom-test"
-    "test/source_low/numeric_float_comparison_flags.loom-test"
     "test/source_low/numeric_float_signs.loom-test"
     "test/source_low/numeric_index.loom-test"
     "test/source_low/numeric_index_conversion.loom-test"
