@@ -565,21 +565,21 @@ static iree_status_t loom_amdgpu_build_i32_constant(
   return iree_ok_status();
 }
 
-static iree_status_t loom_amdgpu_build_zero_mask(loom_builder_t* builder,
-                                                 loom_type_t mask_type,
-                                                 loom_location_id_t location,
-                                                 loom_value_id_t* out_value) {
+static iree_status_t loom_amdgpu_build_mask_constant(
+    loom_builder_t* builder, uint64_t value, loom_type_t mask_type,
+    loom_location_id_t location, loom_value_id_t* out_value) {
   *out_value = LOOM_VALUE_ID_INVALID;
   loom_op_t* op = NULL;
-  IREE_RETURN_IF_ERROR(loom_scalar_constant_build(builder, loom_attr_i64(0),
-                                                  mask_type, location, &op));
+  IREE_RETURN_IF_ERROR(loom_scalar_constant_build(
+      builder, loom_attr_i64((int64_t)value), mask_type, location, &op));
   *out_value = loom_scalar_constant_result(op);
   return iree_ok_status();
 }
 
 static iree_status_t loom_amdgpu_build_match_any_lane_step(
     loom_builder_t* builder, loom_value_id_t value, loom_type_t value_type,
-    loom_value_id_t lane_id_i32, uint32_t source_lane_index,
+    loom_value_id_t lane_id_i32, loom_value_id_t active_mask,
+    loom_value_id_t zero_mask, uint32_t source_lane_index,
     loom_value_id_t current_mask, loom_type_t mask_type,
     loom_location_id_t location, loom_value_id_t* out_next_mask) {
   *out_next_mask = LOOM_VALUE_ID_INVALID;
@@ -595,11 +595,24 @@ static iree_status_t loom_amdgpu_build_match_any_lane_step(
   const loom_value_id_t is_source_lane =
       loom_scalar_cmpi_result(is_source_lane_op);
 
+  // Broadcasting from an inactive source lane is undefined. Test the source
+  // bit in the active mask without introducing another subgroup vote.
+  loom_value_id_t source_lane_bit = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(
+      loom_amdgpu_build_mask_constant(builder, UINT64_C(1) << source_lane_index,
+                                      mask_type, location, &source_lane_bit));
+  loom_op_t* active_lane_bit_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_scalar_andi_build(builder, active_mask,
+                                              source_lane_bit, mask_type,
+                                              location, &active_lane_bit_op));
+  const loom_value_id_t active_lane_bit =
+      loom_scalar_andi_result(active_lane_bit_op);
   loom_op_t* source_active_op = NULL;
-  IREE_RETURN_IF_ERROR(loom_kernel_subgroup_vote_any_build(
-      builder, is_source_lane, location, &source_active_op));
+  IREE_RETURN_IF_ERROR(loom_scalar_cmpi_build(
+      builder, LOOM_SCALAR_CMPI_PREDICATE_NE, active_lane_bit, zero_mask,
+      location, &source_active_op));
   const loom_value_id_t source_active =
-      loom_kernel_subgroup_vote_any_result(source_active_op);
+      loom_scalar_cmpi_result(source_active_op);
 
   loom_op_t* if_op = NULL;
   IREE_RETURN_IF_ERROR(
@@ -695,13 +708,20 @@ static iree_status_t loom_amdgpu_legalize_kernel_subgroup_match_any(
       loom_type_scalar(LOOM_SCALAR_TYPE_I32), op->location, &lane_id_i32_op));
   const loom_value_id_t lane_id_i32 = loom_index_cast_result(lane_id_i32_op);
 
+  loom_op_t* active_mask_op = NULL;
+  IREE_RETURN_IF_ERROR(loom_kernel_subgroup_active_mask_build(
+      &rewriter->builder, mask_type, op->location, &active_mask_op));
+  const loom_value_id_t active_mask =
+      loom_kernel_subgroup_active_mask_mask(active_mask_op);
+
   loom_value_id_t current_mask = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_build_zero_mask(
-      &rewriter->builder, mask_type, op->location, &current_mask));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_build_mask_constant(
+      &rewriter->builder, 0, mask_type, op->location, &current_mask));
+  const loom_value_id_t zero_mask = current_mask;
   for (uint32_t i = 0; i < wavefront_size; ++i) {
     IREE_RETURN_IF_ERROR(loom_amdgpu_build_match_any_lane_step(
-        &rewriter->builder, value, value_type, lane_id_i32, i, current_mask,
-        mask_type, op->location, &current_mask));
+        &rewriter->builder, value, value_type, lane_id_i32, active_mask,
+        zero_mask, i, current_mask, mask_type, op->location, &current_mask));
   }
 
   IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
