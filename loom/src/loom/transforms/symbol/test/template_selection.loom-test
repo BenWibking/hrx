@@ -681,7 +681,7 @@ kernel.def @implicit_export() {
 template.decl @demo.workgroup_reduce(%value: f32) -> (f32)
 
 template.def<@demo.workgroup_reduce> @reduce_provider(%value: f32) -> (f32) {
-  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.reduce" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.reduce" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %sum = kernel.workgroup.reduce<addf> %value : f32
   template.return %sum : f32
 }

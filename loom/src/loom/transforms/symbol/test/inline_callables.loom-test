@@ -87,7 +87,7 @@ func.def target(@subgroup64) abi(object_function) @caller_subgroup64() -> (index
 // RUN: pass inline-callables
 
 func.def inline @misplaced_lane_id() -> (index) {
-  // ERROR@+1: STRUCTURE/029 "kernel.subgroup.lane.id" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.subgroup.lane.id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %lane = kernel.subgroup.lane.id : index
   func.return %lane : index
 }

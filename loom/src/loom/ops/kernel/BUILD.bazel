@@ -53,6 +53,7 @@ loom_generated_cc_library(
         "//loom/src/loom/ops/buffer",
         "//loom/src/loom/ops/func",
         "//loom/src/loom/ops/index",
+        "//loom/src/loom/ops/pipeline",
         "//loom/src/loom/ops/scf",
         "//loom/src/loom/ops/target",
         "//loom/src/loom/ops/template",

@@ -215,6 +215,7 @@ iree_py_library(
   DEPS
     loom::py::loom::gen::ops::c_tables
     loom::py::loom::dialect::kernel::kernel
+    loom::py::loom::dialect::pipeline::pipeline
     loom::py::loom::dialect::target::target
 )
 

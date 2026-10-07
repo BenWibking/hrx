@@ -25,6 +25,8 @@ class DialectGeneration:
     parameterized_attrs: Sequence[ParameterizedAttrDef] = ()
     encoding_families: Sequence[EncodingFamilyDef] = ()
     types: Sequence[Any] = ()
+    # Declarations used by structural contracts but emitted by another owner.
+    referenced_ops: Sequence[Op] = ()
 
 
 @dataclass(frozen=True)
@@ -164,8 +166,9 @@ def _load_index_generation() -> DialectGeneration:
 
 def _load_kernel_generation() -> DialectGeneration:
     from loom.dialect.kernel import ALL_KERNEL_OPS, kernel_ops
+    from loom.dialect.pipeline.defs import pipeline_strand
 
-    return DialectGeneration(kernel_ops, list(ALL_KERNEL_OPS), None)
+    return DialectGeneration(kernel_ops, list(ALL_KERNEL_OPS), None, referenced_ops=(pipeline_strand,))
 
 
 def _load_target_generation() -> DialectGeneration:

@@ -199,6 +199,7 @@ iree_py_binary(
     visibility = GENERATOR_VISIBILITY,
     deps = C_TABLES_BASE_DEPS + [
         "//loom/py/loom/dialect/kernel",
+        "//loom/py/loom/dialect/pipeline",
         "//loom/py/loom/dialect/target",
     ],
 )

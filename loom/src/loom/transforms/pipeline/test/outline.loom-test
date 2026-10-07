@@ -1,3 +1,39 @@
+// RUN: pass inline-callables,outline-pipeline-strands,cfg-simplify
+
+// Ordinary inline helpers and outlining preserve execution placement. The
+// outlined body carries kernel operations until physical realization places it.
+
+func.def inline @process_workitem(%output: view<128xi32>) {
+  %item = kernel.workitem.id<x> : index
+  %width = kernel.workgroup.size<x> : index
+  %width_word = index.cast %width : index to i32
+  view.store %width_word, %output[%item] : i32, view<128xi32>
+  func.return
+}
+
+pipeline.def<kernel> @workitem_stream() run(%output: view<128xi32>) {
+  pipeline.strand workers([0, 0, 0], [1, 1, 1], [1, 1, 1]) {
+    func.call @process_workitem(%output) : (view<128xi32>)
+  }
+}
+
+// ----
+pipeline.def<kernel> @workitem_stream() run(%output: view<128xi32>) {
+  pipeline.strand workers([0, 0, 0], [1, 1, 1], [1, 1, 1]) {
+    func.call @__pipeline_strand_0(%output) : (view<128xi32>)
+  }
+}
+
+func.def inline @__pipeline_strand_0(%output: view<128xi32>) {
+  %item = kernel.workitem.id<x> : index
+  %width = kernel.workgroup.size<x> : index
+  %width_word = index.cast %width : index to i32
+  view.store %width_word, %output[%item] : i32, view<128xi32>
+  func.return
+}
+
+// ====
+
 // RUN: pass outline-pipeline-strands,cfg-simplify,outline-pipeline-strands
 
 // The capture set includes a dependent payload width and a bound that is used

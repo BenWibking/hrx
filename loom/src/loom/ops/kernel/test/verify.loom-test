@@ -1,5 +1,65 @@
 // RUN: verify
 
+// Execution queries and collectives describe the strand's participating
+// invocations. They remain valid before outlining into the physical kernel.
+pipeline.def<kernel> @strand_execution_operations() run(%value: f32, %predicate: i1, %lane_index: i32, %lane_width: i32) {
+  pipeline.strand workers([0, 0, 0], [1, 1, 1], [1, 1, 1]) {
+    %item = kernel.workitem.id<x> : index
+    %group = kernel.workgroup.id<y> : index
+    %group_size = kernel.workgroup.size<z> : index
+    %group_count = kernel.workgroup.count<x> : index
+    %dispatch_item = kernel.workitem.dispatch.id<y> : index
+    %cluster = kernel.cluster.id<z> : index
+    %cluster_group = kernel.cluster.workgroup.id<x> : index
+    %cluster_flat = kernel.cluster.workgroup.flat_id : index
+    %cluster_size = kernel.cluster.size<y> : index
+    %cluster_count = kernel.cluster.count<z> : index
+    %subgroup = kernel.subgroup.id : index
+    %subgroup_count = kernel.subgroup.count : index
+    %subgroup_size = kernel.subgroup.size : index
+    %lane = kernel.subgroup.lane.id : index
+    %shuffled, %valid = kernel.subgroup.shuffle<xor> %value, %lane_index, %lane_width : f32, i32, i32
+    %broadcast = kernel.subgroup.broadcast %value from %lane_index : f32, i32
+    %first = kernel.subgroup.broadcast.first %value : f32
+    %subgroup_sum = kernel.subgroup.reduce<addf> %value : f32
+    %subgroup_scan = kernel.subgroup.scan<addf> %value {direction = forward, mode = inclusive} : f32
+    %subgroup_any = kernel.subgroup.vote.any %predicate : i1
+    %subgroup_all = kernel.subgroup.vote.all %predicate : i1
+    %ballot = kernel.subgroup.vote.ballot %predicate : i1 -> i64
+    %active = kernel.subgroup.active.mask : i64
+    %matching = kernel.subgroup.match.any %lane_index : i32 -> i64
+    %matching_all, %equal = kernel.subgroup.match.all %lane_index : i32 -> i64, i1
+    %group_sum = kernel.workgroup.reduce<addf> %value : f32
+    %group_scan = kernel.workgroup.scan<addf> %value {direction = forward, mode = inclusive} : f32
+    %group_any = kernel.workgroup.vote.any %predicate : i1
+    %group_all = kernel.workgroup.vote.all %predicate : i1
+    %group_votes = kernel.workgroup.vote.count %predicate : i1 -> i32
+    kernel.assert %predicate : i1
+  }
+}
+
+// ====
+
+// Construction is outside the executing worker, even inside a kernel-scoped
+// pipeline. Neither a coordinate nor a collective has participants here.
+pipeline.def<kernel> @construction_has_no_worker() run(%value: f32) {
+  // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "one-of-required" "kernel.def or pipeline.strand" "pipeline.def"
+  %item = kernel.workitem.id<x> : index
+  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.reduce" "one-of-required" "kernel.def or pipeline.strand" "pipeline.def"
+  %sum = kernel.workgroup.reduce<addf> %value : f32
+}
+
+// ====
+
+pipeline.def<kernel> @strand_is_not_a_kernel_exit_boundary() run(%done: i1) {
+  pipeline.strand workers([0, 0, 0], [1, 1, 1], [1, 1, 1]) {
+    // ERROR@+1: STRUCTURE/029 "kernel.exit" "parent" "kernel.def" "pipeline.strand"
+    kernel.exit %done : i1
+  }
+}
+
+// ====
+
 func.decl pure @pure_launch_extent(%value: index) -> (index)
 
 kernel.def @pure_launch_configuration_call(%count: index) {
@@ -232,8 +292,8 @@ kernel.def @launch_config_requires_index_operands() {
 
 // ====
 
-func.def @workitem_id_requires_kernel_def() {
-  // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "required" "kernel.def" "func.def"
+func.def @workitem_id_requires_execution_body() {
+  // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %tid = kernel.workitem.id<x> : index
   func.return
 }
@@ -248,7 +308,7 @@ func.def inline @required_inline_defers_kernel_placement() -> (index) {
 // ====
 
 func.def noinline @noinline_does_not_defer_kernel_placement() -> (index) {
-  // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %tid = kernel.workitem.id<x> : index
   func.return %tid : index
 }
@@ -257,7 +317,7 @@ func.def noinline @noinline_does_not_defer_kernel_placement() -> (index) {
 
 func.def inline @nested_isolation_does_not_defer_kernel_placement() {
   test.isolated_region {
-    // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "required" "kernel.def" "test.isolated_region"
+    // ERROR@+1: STRUCTURE/029 "kernel.workitem.id" "one-of-required" "kernel.def or pipeline.strand" "test.isolated_region"
     %tid = kernel.workitem.id<x> : index
     test.yield
   }
@@ -280,40 +340,40 @@ kernel.def @exit_requires_direct_kernel_body() {
 
 // ====
 
-func.def @workgroup_id_requires_kernel_def() {
-  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.id" "required" "kernel.def" "func.def"
+func.def @workgroup_id_requires_execution_body() {
+  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %gid = kernel.workgroup.id<x> : index
   func.return
 }
 
 // ====
 
-func.def @workgroup_size_requires_kernel_def() {
-  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.size" "required" "kernel.def" "func.def"
+func.def @workgroup_size_requires_execution_body() {
+  // ERROR@+1: STRUCTURE/029 "kernel.workgroup.size" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %size = kernel.workgroup.size<x> : index
   func.return
 }
 
 // ====
 
-func.def @cluster_queries_require_kernel_def() {
-  // ERROR@+1: STRUCTURE/029 "kernel.cluster.id" "required" "kernel.def" "func.def"
+func.def @cluster_queries_require_execution_body() {
+  // ERROR@+1: STRUCTURE/029 "kernel.cluster.id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %cluster = kernel.cluster.id<x> : index
-  // ERROR@+1: STRUCTURE/029 "kernel.cluster.workgroup.id" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.cluster.workgroup.id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %local = kernel.cluster.workgroup.id<y> : index
-  // ERROR@+1: STRUCTURE/029 "kernel.cluster.workgroup.flat_id" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.cluster.workgroup.flat_id" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %flat = kernel.cluster.workgroup.flat_id : index
-  // ERROR@+1: STRUCTURE/029 "kernel.cluster.size" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.cluster.size" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %size = kernel.cluster.size<z> : index
-  // ERROR@+1: STRUCTURE/029 "kernel.cluster.count" "required" "kernel.def" "func.def"
+  // ERROR@+1: STRUCTURE/029 "kernel.cluster.count" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %count = kernel.cluster.count<x> : index
   func.return
 }
 
 // ====
 
-func.def @subgroup_collective_requires_kernel_def(%value: f32) {
-  // ERROR@+1: STRUCTURE/029 "kernel.subgroup.reduce" "required" "kernel.def" "func.def"
+func.def @subgroup_collective_requires_execution_body(%value: f32) {
+  // ERROR@+1: STRUCTURE/029 "kernel.subgroup.reduce" "one-of-required" "kernel.def or pipeline.strand" "func.def"
   %sum = kernel.subgroup.reduce<addf> %value : f32
   func.return
 }
@@ -334,7 +394,7 @@ template.decl @demo.isolated_workgroup_reduce() -> (f32)
 template.def<@demo.isolated_workgroup_reduce> @isolated_workgroup_reduce_provider() -> (f32) {
   %result = test.isolated_region -> (f32) {
     %value = test.constant 1.0 : f32
-    // ERROR@+1: STRUCTURE/029 "kernel.workgroup.reduce" "required" "kernel.def" "test.isolated_region"
+    // ERROR@+1: STRUCTURE/029 "kernel.workgroup.reduce" "one-of-required" "kernel.def or pipeline.strand" "test.isolated_region"
     %sum = kernel.workgroup.reduce<addf> %value : f32
     test.yield %sum : f32
   }
