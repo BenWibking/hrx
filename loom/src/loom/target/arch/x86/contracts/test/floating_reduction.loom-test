@@ -147,18 +147,16 @@ func.def target(@target) @f32x16_reassociated_reduce(%values: vector<16xf32>, %i
 
 // ----
 low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (vector<16xf32>, f32) -> (f32)}) @f32x16_reassociated_reduce(%values: reg<x86.zmm>, %initial: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %7 = vextractf32x4.xmm %values, 0
-  %8 = vextractf32x4.xmm %values, 1
-  %9 = vextractf32x4.xmm %values, 2
-  %10 = vextractf32x4.xmm %values, 3
-  %11 = vaddps.xmm %7, %8
-  %12 = vaddps.xmm %9, %10
-  %13 = vaddps.xmm %11, %12
-  %14 = vpsrldq.xmm %13, 8
-  %15 = vaddps.xmm %13, %14
-  %16 = vpsrldq.xmm %15, 4
-  %17 = vaddps.xmm %15, %16
-  %sum = vaddss.xmm %initial, %17
+  %7 = vshufi64x2 %values, %values, 78
+  %8 = vaddps %values, %7
+  %9 = vshufi64x2 %8, %8, 177
+  %10 = vaddps %8, %9
+  %11 = vpsrldq.zmm %10, 8
+  %12 = vaddps %10, %11
+  %13 = vpsrldq.zmm %12, 4
+  %14 = vaddps %12, %13
+  %15 = vextractf32x4.xmm %14, 0
+  %sum = vaddss.xmm %initial, %15
   return %sum
 }
 

@@ -17,10 +17,14 @@ from loom.target.arch.x86.contracts.rule_builders import (
 from loom.target.arch.x86.contracts.rule_builders import (
     emit_descriptor_op as _op_emit,
 )
+from loom.target.arch.x86.contracts.rule_builders import (
+    zmm_reduction_emit_chain as _zmm_reduction_emit_chain,
+)
 from loom.target.arch.x86.vector_families import (
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     FLOAT_EXTREMA_OPERATIONS,
     VectorElement,
@@ -52,12 +56,18 @@ def _float_descriptor(
     element: VectorElement,
     *,
     scalar: bool,
+    vector_bit_width: int = 128,
     descriptor_lookup: _DescriptorLookup,
 ) -> Descriptor:
     packed_suffix, scalar_suffix = _FLOAT_SUFFIXES[element.name]
+    descriptor_prefix = "x86.avx2"
+    register_suffix = "xmm"
+    if not scalar and vector_bit_width == 512:
+        descriptor_prefix = "x86.avx512"
+        register_suffix = "zmm"
     return descriptor_lookup(
-        f"x86.avx2.v{_OPERATION_STEMS[operation]}"
-        f"{scalar_suffix if scalar else packed_suffix}.xmm"
+        f"{descriptor_prefix}.v{_OPERATION_STEMS[operation]}"
+        f"{scalar_suffix if scalar else packed_suffix}.{register_suffix}"
     )
 
 
@@ -68,8 +78,15 @@ def _xmm_chunks(
 ) -> tuple[list[EmitDescriptorOp], tuple[ValueRef, ...], tuple[Descriptor, ...]]:
     if vector_bit_width == 128:
         return [], (ValueRef.operand(operand),), ()
-    extract = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
-    chunks = tuple(ValueRef.temporary(f"{operand}_half{lane}") for lane in range(2))
+    if vector_bit_width == 256:
+        extract = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
+        chunk_count = 2
+    else:
+        extract = descriptor_lookup("x86.avx512.vextractf32x4.xmm.zmm")
+        chunk_count = 4
+    chunks = tuple(
+        ValueRef.temporary(f"{operand}_chunk{lane}") for lane in range(chunk_count)
+    )
     emits = [
         _op_emit(
             descriptor=extract,
@@ -202,18 +219,59 @@ def _float_reduction_rule(
     extra_guards: Sequence[Guard] = (),
     priority: int = 0,
 ) -> DescriptorRule:
-    chunk_emits, chunks, chunk_dependencies = _xmm_chunks(
-        "input", vector_bit_width, descriptor_lookup
-    )
-    packed_combine = _float_descriptor(
-        operation, element, scalar=False, descriptor_lookup=descriptor_lookup
-    )
     scalar_combine = _float_descriptor(
         operation, element, scalar=True, descriptor_lookup=descriptor_lookup
     )
-    dependencies = [*chunk_dependencies, scalar_combine]
-    emits = list(chunk_emits)
-    if reassociated:
+    scalar_type = Scalar(element.name)
+    dependencies = [scalar_combine]
+    emits: list[EmitDescriptorOp] = []
+    if reassociated and vector_bit_width == 512:
+        packed_combine = _float_descriptor(
+            operation,
+            element,
+            scalar=False,
+            vector_bit_width=vector_bit_width,
+            descriptor_lookup=descriptor_lookup,
+        )
+        reduction_emits, reduced, reduction_dependencies = _zmm_reduction_emit_chain(
+            ValueRef.operand("input"),
+            packed_combine,
+            element.bit_width,
+            descriptor_lookup,
+            temporary_prefix="horizontal_",
+        )
+        extract = descriptor_lookup("x86.avx512.vextractf32x4.xmm.zmm")
+        dependencies.extend((packed_combine, *reduction_dependencies, extract))
+        extracted = ValueRef.temporary("horizontal_extracted")
+        emits.extend(reduction_emits)
+        emits.extend(
+            (
+                _op_emit(
+                    descriptor=extract,
+                    operands={"source": reduced},
+                    results={"dst": extracted},
+                    result_types={"dst": DescriptorResultType()},
+                    immediates={"lane": 0},
+                ),
+                _op_emit(
+                    descriptor=scalar_combine,
+                    operands={"lhs": ValueRef.operand("init"), "rhs": extracted},
+                    results={"dst": ValueRef.result("result")},
+                    result_types={"dst": scalar_type},
+                ),
+            )
+        )
+    else:
+        chunk_emits, chunks, chunk_dependencies = _xmm_chunks(
+            "input", vector_bit_width, descriptor_lookup
+        )
+        dependencies.extend(chunk_dependencies)
+        emits.extend(chunk_emits)
+
+    if reassociated and vector_bit_width != 512:
+        packed_combine = _float_descriptor(
+            operation, element, scalar=False, descriptor_lookup=descriptor_lookup
+        )
         reduced = chunks[0]
         if len(chunks) == 2:
             reduced = ValueRef.temporary("half_sum")
@@ -236,7 +294,7 @@ def _float_reduction_rule(
                 temporary_prefix="horizontal_",
             )
         )
-    else:
+    elif not reassociated:
         shuffle = descriptor_lookup(
             f"x86.avx2.vpermil{'ps' if element.name == 'f32' else 'pd'}.xmm"
         )
@@ -250,7 +308,6 @@ def _float_reduction_rule(
                 temporary_prefix="ordered_",
             )
         )
-    scalar_type = Scalar(element.name)
     vector_type = Vector(
         element.name,
         lanes=vector_bit_width // element.bit_width,
@@ -279,10 +336,10 @@ def _float_reduction_rule(
     )
 
 
-def avx2_float_reduction_rules(
+def _float_reduction_rules(
+    vector_bit_widths: Sequence[int],
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[DescriptorRule, ...]:
-    """Generates ordered and reassociated f32/f64 reduction families."""
     return tuple(
         _float_reduction_rule(
             element,
@@ -293,7 +350,7 @@ def avx2_float_reduction_rules(
         )
         for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
         for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+        for vector_bit_width in vector_bit_widths
         for reassociated in (False, True)
     ) + tuple(
         _float_reduction_rule(
@@ -310,8 +367,22 @@ def avx2_float_reduction_rules(
         )
         for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+        for vector_bit_width in vector_bit_widths
     )
+
+
+def avx2_float_reduction_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates ordered and reassociated AVX2 float reductions."""
+    return _float_reduction_rules(AVX2_VECTOR_BIT_WIDTHS, descriptor_lookup)
+
+
+def avx512_float_reduction_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates ordered and reassociated AVX-512 float reductions."""
+    return _float_reduction_rules(AVX512_VECTOR_BIT_WIDTHS, descriptor_lookup)
 
 
 def _float_dot_rule(
@@ -402,12 +473,26 @@ def _float_dot_rule(
     )
 
 
+def _float_dot_rules(
+    vector_bit_widths: Sequence[int],
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    return tuple(
+        _float_dot_rule(element, vector_bit_width, descriptor_lookup)
+        for element in FLOAT_ELEMENTS
+        for vector_bit_width in vector_bit_widths
+    )
+
+
 def avx2_float_dot_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[DescriptorRule, ...]:
     """Generates exact ordered scalar-FMA dots for every AVX2 float shape."""
-    return tuple(
-        _float_dot_rule(element, vector_bit_width, descriptor_lookup)
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    )
+    return _float_dot_rules(AVX2_VECTOR_BIT_WIDTHS, descriptor_lookup)
+
+
+def avx512_float_dot_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates exact ordered scalar-FMA dots for every AVX-512 float shape."""
+    return _float_dot_rules(AVX512_VECTOR_BIT_WIDTHS, descriptor_lookup)

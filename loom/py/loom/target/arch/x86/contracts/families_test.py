@@ -706,120 +706,140 @@ def test_integer_reductions_cover_every_native_combine_family() -> None:
         assert len(integer_rules) == len(expected)
 
 
-def test_avx2_float_reductions_and_dots_cover_both_types_and_widths() -> None:
-    reduction_rules = tuple(
-        rule
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op is vector.vector_reduce
-        and any(
-            guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            and guard.enum_keyword in AVX2_FLOAT_REDUCTION_OPERATIONS
-            for guard in rule.guards
+def test_float_reductions_and_dots_cover_both_types_and_all_widths() -> None:
+    for fragment, vector_bit_widths in (
+        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_VECTOR_BIT_WIDTHS),
+        (X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS),
+    ):
+        reduction_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule)
+            and rule.source_op is vector.vector_reduce
+            and any(
+                guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                and guard.enum_keyword in AVX2_FLOAT_REDUCTION_OPERATIONS
+                for guard in rule.guards
+            )
         )
-    )
-    packed_reduction_rules = tuple(
-        rule
-        for rule in reduction_rules
-        if next(
-            guard.enum_keyword
-            for guard in rule.guards
-            if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-        )
-        in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
-    )
-    packed_expected = {
-        (
-            operation,
-            Vector(
-                element.name,
-                lanes=vector_bit_width // element.bit_width,
-            ),
-            fastmath_guard,
-        )
-        for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-        for fastmath_guard in (
-            GuardKind.INSTANCE_FLAGS_HAS_NONE,
-            GuardKind.INSTANCE_FLAGS_HAS_ALL,
-        )
-    }
-    assert {
-        (
-            next(
+        packed_reduction_rules = tuple(
+            rule
+            for rule in reduction_rules
+            if next(
                 guard.enum_keyword
                 for guard in rule.guards
                 if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            ),
-            _value_type_guard(rule, "input"),
-            next(
-                guard.kind
-                for guard in rule.guards
-                if guard.kind
-                in (
-                    GuardKind.INSTANCE_FLAGS_HAS_ALL,
-                    GuardKind.INSTANCE_FLAGS_HAS_NONE,
-                )
-            ),
+            )
+            in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
         )
-        for rule in packed_reduction_rules
-    } == packed_expected
-    assert len(packed_reduction_rules) == len(packed_expected)
+        assert len(packed_reduction_rules) == (
+            len(AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS)
+            * len(FLOAT_ELEMENTS)
+            * len(vector_bit_widths)
+            * 2
+        )
+        assert {
+            (
+                next(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                ),
+                _value_type_guard(rule, "input"),
+                next(
+                    guard.kind
+                    for guard in rule.guards
+                    if guard.kind
+                    in (
+                        GuardKind.INSTANCE_FLAGS_HAS_ALL,
+                        GuardKind.INSTANCE_FLAGS_HAS_NONE,
+                    )
+                ),
+            )
+            for rule in packed_reduction_rules
+        } == {
+            (
+                operation,
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+                fastmath_guard,
+            )
+            for operation in AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+            for fastmath_guard in (
+                GuardKind.INSTANCE_FLAGS_HAS_NONE,
+                GuardKind.INSTANCE_FLAGS_HAS_ALL,
+            )
+        }
 
-    fast_extrema_rules = tuple(
-        rule
-        for rule in reduction_rules
-        if next(
-            guard.enum_keyword
-            for guard in rule.guards
-            if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-        )
-        in FLOAT_EXTREMA_OPERATIONS
-    )
-    fast_extrema_expected = {
-        (
-            operation,
-            Vector(
-                element.name,
-                lanes=vector_bit_width // element.bit_width,
-            ),
-            frozenset(("reassoc", "nnan", "nsz")),
-        )
-        for operation in FLOAT_EXTREMA_OPERATIONS
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
-    assert {
-        (
-            next(
+        fast_extrema_rules = tuple(
+            rule
+            for rule in reduction_rules
+            if next(
                 guard.enum_keyword
                 for guard in rule.guards
                 if guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            ),
-            _value_type_guard(rule, "input"),
-            frozenset(
-                guard.enum_keyword
-                for guard in rule.guards
-                if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
-            ),
+            )
+            in FLOAT_EXTREMA_OPERATIONS
         )
-        for rule in fast_extrema_rules
-    } == fast_extrema_expected
-    assert len(fast_extrema_rules) == len(fast_extrema_expected)
+        assert len(fast_extrema_rules) == (
+            len(FLOAT_EXTREMA_OPERATIONS) * len(FLOAT_ELEMENTS) * len(vector_bit_widths)
+        )
+        assert {
+            (
+                next(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                ),
+                _value_type_guard(rule, "input"),
+                frozenset(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+                ),
+            )
+            for rule in fast_extrema_rules
+        } == {
+            (
+                operation,
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+                frozenset(("reassoc", "nnan", "nsz")),
+            )
+            for operation in FLOAT_EXTREMA_OPERATIONS
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+        }
 
-    dot_rules = tuple(
-        rule
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_dotf
-    )
-    dot_expected = {
-        Vector(
-            element.name,
-            lanes=vector_bit_width // element.bit_width,
+        dot_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_dotf
         )
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
-    assert {_value_type_guard(rule, "lhs") for rule in dot_rules} == dot_expected
-    assert len(dot_rules) == len(dot_expected)
+        assert len(dot_rules) == len(FLOAT_ELEMENTS) * len(vector_bit_widths)
+        assert {
+            (
+                _value_type_guard(rule, "lhs"),
+                _value_type_guard(rule, "rhs"),
+                _value_type_guard(rule, "init"),
+                _value_type_guard(rule, "result"),
+            )
+            for rule in dot_rules
+        } == {
+            (vector_type, vector_type, scalar_type, scalar_type)
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+            for vector_type in (
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+            )
+            for scalar_type in (Scalar(element.name),)
+        }
