@@ -2587,6 +2587,27 @@ static iree_status_t loom_low_verify_immediate(
                             " uses both direct and sliced encoding fields",
                             immediate_index);
   }
+  if (immediate->encoding_subfield_offset != 0) {
+    const uint16_t encoding_bit_offset =
+        (uint16_t)(immediate->encoding_subfield_offset - 1u);
+    if (immediate->encoding_field_id == 0 ||
+        immediate->encoding_slice_count != 0) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "low immediate %" PRIu32
+          " encoding subfield requires one direct encoding field",
+          immediate_index);
+    }
+    if (immediate->bit_width == 0 ||
+        encoding_bit_offset > 64u - immediate->bit_width) {
+      return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                              "low immediate %" PRIu32
+                              " encoding subfield range [%" PRIu16 ", %" PRIu16
+                              ") does not fit 64 bits",
+                              immediate_index, encoding_bit_offset,
+                              encoding_bit_offset + immediate->bit_width);
+    }
+  }
   if (immediate->encoding_slice_count != 0) {
     uint64_t covered_bits = 0;
     for (uint16_t i = 0; i < immediate->encoding_slice_count; ++i) {

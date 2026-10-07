@@ -504,6 +504,9 @@ class Immediate:
     bit_width: int = 0
     value_step: int = 1
     encoding_field_id: int = 0
+    # Physical bit offset when this immediate populates only a subfield of its
+    # encoding field. None denotes whole-field ownership.
+    encoding_field_bit_offset: int | None = None
     encoding_slices: tuple[ImmediateEncodingSlice, ...] = ()
     enum_domain: str | None = None
     encoding_id: int = 0

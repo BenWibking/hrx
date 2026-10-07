@@ -1219,6 +1219,19 @@ def bit_mask(bit_count: int) -> int:
 def validate_immediate_encoding(descriptor: Descriptor, immediate: Immediate) -> None:
     if immediate.encoding_field_id and immediate.encoding_slices:
         raise ValueError(f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' uses both direct and sliced encoding fields")
+    if immediate.encoding_field_bit_offset is not None:
+        if immediate.encoding_field_id == 0:
+            raise ValueError(f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' has an encoding field bit offset without a direct encoding field")
+        if immediate.encoding_slices:
+            raise ValueError(f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' uses both an encoding field bit offset and sliced encoding fields")
+        if immediate.bit_width <= 0 or immediate.encoding_field_bit_offset < 0 or immediate.encoding_field_bit_offset + immediate.bit_width > 64:
+            raise ValueError(
+                f"descriptor '{descriptor.key}' immediate "
+                f"'{immediate.field_name}' encoding field bit range "
+                f"[{immediate.encoding_field_bit_offset}, "
+                f"{immediate.encoding_field_bit_offset + immediate.bit_width}) "
+                "does not fit 64 bits"
+            )
     if not immediate.encoding_slices:
         return
     covered_bits = 0
@@ -1736,6 +1749,15 @@ def operands_may_share_encoding_field(
 
 
 def validate_descriptor_encoding_fields(descriptor: Descriptor) -> None:
+    def immediate_subfield_mask(immediate: Immediate) -> int | None:
+        bit_offset = immediate.encoding_field_bit_offset
+        if bit_offset is None:
+            return None
+        if immediate.bit_width <= 0 or immediate.bit_width > 64 or bit_offset < 0 or bit_offset + immediate.bit_width > 64:
+            # validate_immediate_encoding owns the detailed range diagnostic.
+            return 0
+        return ((1 << immediate.bit_width) - 1) << bit_offset
+
     fixed_fields: set[int] = set()
     for field_value in descriptor.encoding_field_values:
         if field_value.encoding_field_id != 0:
@@ -1757,6 +1779,29 @@ def validate_descriptor_encoding_fields(descriptor: Descriptor) -> None:
             raise ValueError(
                 f"descriptor '{descriptor.key}' operands '{previous_operand.field_name}' and '{operand.field_name}' share encoding field id {operand.encoding_field_id} without a tied constraint"
             )
+
+    whole_fields = fixed_fields | {operand.encoding_field_id for operand in descriptor.operands if operand.encoding_field_id != 0}
+    immediate_field_masks: dict[int, int | None] = {}
+    for immediate in descriptor.immediates:
+        mappings: list[tuple[int, int | None]] = []
+        if immediate.encoding_field_id != 0:
+            bit_mask = immediate_subfield_mask(immediate)
+            mappings.append((immediate.encoding_field_id, bit_mask))
+        mappings.extend((encoding_slice.encoding_field_id, None) for encoding_slice in immediate.encoding_slices)
+        for field_id, bit_mask in mappings:
+            if field_id in whole_fields:
+                if bit_mask is not None:
+                    raise ValueError(f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' subfield shares encoding field id {field_id} with an operand or fixed value")
+                continue
+            if field_id not in immediate_field_masks:
+                immediate_field_masks[field_id] = bit_mask
+                continue
+            previous_mask = immediate_field_masks[field_id]
+            if previous_mask is None and bit_mask is None:
+                continue
+            if previous_mask is None or bit_mask is None or previous_mask & bit_mask:
+                raise ValueError(f"descriptor '{descriptor.key}' immediate '{immediate.field_name}' subfield overlaps another immediate in encoding field id {field_id}")
+            immediate_field_masks[field_id] = previous_mask | bit_mask
 
 
 def validate_immediate_default(descriptor: Descriptor, immediate: Immediate, enum_domains: dict[str, EnumDomain]) -> None:

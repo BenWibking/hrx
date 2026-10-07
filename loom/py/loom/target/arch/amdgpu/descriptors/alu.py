@@ -7118,6 +7118,118 @@ def _v_mov_b32_copy_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+_PERMLANE_SWAP_CONTROL_IMMEDIATES = (
+    Immediate(
+        "bound_ctrl",
+        ImmediateKind.UNSIGNED,
+        flags=(ImmediateFlag.DEFAULT_VALUE,),
+        bit_width=1,
+        encoding_field_bit_offset=1,
+        unsigned_max=1,
+        default_value=0,
+    ),
+    Immediate(
+        "fi",
+        ImmediateKind.UNSIGNED,
+        flags=(ImmediateFlag.DEFAULT_VALUE,),
+        bit_width=1,
+        encoding_field_bit_offset=0,
+        unsigned_max=1,
+        default_value=0,
+    ),
+)
+
+_PERMLANE_SWAP_CONSTRAINTS = (
+    Constraint(ConstraintKind.TIED, 0, 2),
+    Constraint(ConstraintKind.DESTRUCTIVE, 0, 2),
+    Constraint(ConstraintKind.TIED, 1, 3),
+    Constraint(ConstraintKind.DESTRUCTIVE, 1, 3),
+)
+
+
+def _v_permlane_swap_overlays(
+    lane_count: int,
+) -> tuple[AmdgpuDescriptorOverlay, ...]:
+    mnemonic = f"v_permlane{lane_count}_swap_b32"
+    native_register_values = (
+        _native_result("dst"),
+        _native_result("src"),
+    )
+    compact = AmdgpuDescriptorOverlay(
+        descriptor_key=f"amdgpu.{mnemonic}",
+        instruction_name=mnemonic.upper(),
+        mnemonic=mnemonic,
+        encoding_name="ENC_VOP1",
+        semantic_tag=f"lane.permlane{lane_count}.swap.b32",
+        schedule_class=_SCHEDULE_VALU,
+        operands=(
+            AmdgpuOperandOverlay("VDST", _vgpr_result("dst")),
+            AmdgpuOperandOverlay("SRC0", _vgpr_result("src")),
+            AmdgpuOperandOverlay(
+                "VDST",
+                Operand(
+                    "old_dst",
+                    OperandRole.OPERAND,
+                    _VGPR_ALT,
+                    flags=(OperandFlag.IMPLICIT,),
+                ),
+                role_exception_reason=(
+                    "the encoded destination register is also the tied first swap input"
+                ),
+            ),
+            AmdgpuOperandOverlay(
+                "SRC0",
+                Operand(
+                    "old_src",
+                    OperandRole.OPERAND,
+                    _VGPR_ALT,
+                    flags=(OperandFlag.IMPLICIT,),
+                ),
+                role_exception_reason=(
+                    "the encoded source register is also the tied second swap input"
+                ),
+            ),
+        ),
+        asm_forms=_asm(
+            results=("dst", "src"),
+            operands=("old_dst", "old_src"),
+            native_assembly_values=native_register_values,
+        ),
+        constraints=_PERMLANE_SWAP_CONSTRAINTS,
+        effects=(_CONVERGENT_EFFECT,),
+    )
+    extended_mnemonic = f"{mnemonic}_e64"
+    extended = replace(
+        compact,
+        descriptor_key=f"amdgpu.{mnemonic}.e64",
+        mnemonic=extended_mnemonic,
+        encoding_name="ENC_VOP3",
+        immediate_fields=("OP_SEL", "OP_SEL"),
+        immediates=_PERMLANE_SWAP_CONTROL_IMMEDIATES,
+        asm_forms=_asm(
+            mnemonic=extended_mnemonic,
+            results=("dst", "src"),
+            operands=("old_dst", "old_src"),
+            immediates=("bound_ctrl", "fi"),
+            named_immediates=True,
+            native_assembly_values=(
+                *native_register_values,
+                _native_amdgpu_named_i64_immediate("bound_ctrl"),
+                _native_amdgpu_named_i64_immediate("fi"),
+            ),
+        ),
+    )
+    return compact, extended
+
+
+def _gfx950_permlane_swap_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
+    return tuple(
+        overlay
+        for lane_count in (16, 32)
+        for overlay in _v_permlane_swap_overlays(lane_count)
+    )
+
+
 def _v_mov_b32_dpp_overlay(
     *,
     descriptor_key: str,
@@ -7284,6 +7396,7 @@ def _v_mov_b32_sdwa_overlay() -> AmdgpuDescriptorOverlay:
 
 
 __all__ = (
+    "_gfx950_permlane_swap_overlays",
     "_integer_bitwise_permute_overlays",
     "_integer_bitwise_shift_overlays",
     "_s_add_u32_overlay",

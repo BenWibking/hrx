@@ -445,6 +445,19 @@ static void loom_amdgpu_push_encoding_field_value(
   ++*field_value_count;
 }
 
+static void loom_amdgpu_merge_encoding_field_bits(
+    loom_amdgpu_encoding_field_value_t* field_values,
+    iree_host_size_t* field_value_count, uint16_t field_id, uint64_t value) {
+  for (iree_host_size_t i = 0; i < *field_value_count; ++i) {
+    if (field_values[i].field_id == field_id) {
+      field_values[i].value |= value;
+      return;
+    }
+  }
+  loom_amdgpu_push_encoding_field_value(field_values, field_value_count,
+                                        field_id, value);
+}
+
 static uint16_t loom_amdgpu_descriptor_single_fixed_encoding_field_u16(
     const loom_amdgpu_encode_state_t* state,
     const loom_low_descriptor_t* descriptor) {
@@ -1155,6 +1168,17 @@ static void loom_amdgpu_push_immediate_encoding_field_values(
     uint64_t value, loom_amdgpu_encoding_field_value_t* field_values,
     iree_host_size_t* field_value_count) {
   if (immediate->encoding_slice_count == 0) {
+    if (immediate->encoding_subfield_offset != 0) {
+      const uint16_t bit_offset =
+          (uint16_t)(immediate->encoding_subfield_offset - 1u);
+      const uint64_t subfield_value =
+          (value & loom_amdgpu_low_bit_mask(immediate->bit_width))
+          << bit_offset;
+      loom_amdgpu_merge_encoding_field_bits(field_values, field_value_count,
+                                            immediate->encoding_field_id,
+                                            subfield_value);
+      return;
+    }
     loom_amdgpu_push_encoding_field_value(field_values, field_value_count,
                                           immediate->encoding_field_id, value);
     return;

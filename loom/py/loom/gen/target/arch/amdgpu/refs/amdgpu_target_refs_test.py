@@ -74,6 +74,7 @@ def _descriptor(
     key: str,
     asm_forms: tuple[AsmForm, ...] = (),
     *,
+    semantic_tag: str | None = None,
     schedule_class: str = _SCHEDULE_NONE,
     encoding_format_id: int = 0,
     immediates: tuple[Immediate, ...] = (),
@@ -85,7 +86,7 @@ def _descriptor(
     return Descriptor(
         key=key,
         mnemonic=None,
-        semantic_tag=None,
+        semantic_tag=semantic_tag,
         operands=operands,
         schedule_class=schedule_class,
         asm_forms=asm_forms,
@@ -369,6 +370,19 @@ def test_descriptor_trait_names_classify_dpp_encoding_families() -> None:
         trait_context = amdgpu_target_refs._descriptor_trait_context(descriptor_set)
         traits = amdgpu_target_refs._descriptor_trait_names(trait_context, descriptor_set.descriptors[0])
         assert "LOOM_AMDGPU_DESCRIPTOR_TRAIT_DPP" in traits, format_name
+
+
+def test_descriptor_trait_names_classify_permlane_semantics() -> None:
+    descriptor_set = _descriptor_set(
+        _descriptor(
+            "amdgpu.v_permlane32_swap_b32",
+            semantic_tag="lane.permlane32.swap.b32",
+            schedule_class=_SCHEDULE_VALU,
+        )
+    )
+    trait_context = amdgpu_target_refs._descriptor_trait_context(descriptor_set)
+
+    assert "LOOM_AMDGPU_DESCRIPTOR_TRAIT_PERMLANE" in (amdgpu_target_refs._descriptor_trait_names(trait_context, descriptor_set.descriptors[0]))
 
 
 def test_descriptor_trait_names_include_destination_selection_forwarding() -> None:

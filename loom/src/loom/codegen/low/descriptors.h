@@ -846,6 +846,9 @@ typedef struct loom_low_immediate_t {
   loom_low_immediate_flags_t flags;
   // Encoded immediate width in bits.
   uint16_t bit_width;
+  // One plus the physical bit offset when this immediate owns an encoding
+  // subfield; zero when it owns the entire encoding field.
+  uint8_t encoding_subfield_offset;
   // Positive semantic value granularity. Numeric values must be multiples of
   // this step in addition to satisfying their kind-specific range.
   uint64_t value_step;
