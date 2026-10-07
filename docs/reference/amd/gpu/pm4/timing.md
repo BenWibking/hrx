@@ -110,6 +110,10 @@ boundary.
 
 ## GFX12 timestamp confirmation
 
+The [release selectors](release.md#confirmation-and-notification-selectors)
+separate producing a clock sample from confirming its write or interrupting an
+observer. The following path deliberately defers confirmation.
+
 PAL's GFX12 compute timestamp caller retains stage selection and the CP-DMA
 join, but defers write confirmation. CP-stage `COPY_DATA` uses GPU-clock
 source 9, destination 2 (`tc_l2`), 64-bit count and `WR_CONFIRM=0`.

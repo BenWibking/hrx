@@ -277,6 +277,9 @@ L1/L2 clients. Its generic compute builder chooses BOTTOM_OF_PIPE_TS, end-of-
 pipe index 5, TC/L2 destination and write confirmation without an interrupt.
 [Queue postamble][pal-postamble] [Release builder][pal-eop]
 
+[Completion publication](release.md) describes the full field and selector
+families, native generation differences, event/notification owners and reuse.
+
 The GFX10/GFX11 MEC form has eight DWORDs:
 
 | Word | Fields |

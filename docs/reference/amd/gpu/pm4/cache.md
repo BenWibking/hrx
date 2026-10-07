@@ -288,6 +288,10 @@ GC12.1's repurposed vector-writeback bit. [GFX10/GFX11 sequence][pal-acquire]
 
 ## RELEASE_MEM cache actions
 
+[Completion publication](release.md) owns the complete packet, event/data
+selectors, write confirmation and notification. The cache fields below belong
+to that release sequence and retain their native generation's meanings.
+
 `RELEASE_MEM`, opcode `0x49`, inserts an event whose cache actions precede its
 completion publication. Emitting the packet does not make subsequent command
 processing wait for that publication. A dependent stream still needs the
