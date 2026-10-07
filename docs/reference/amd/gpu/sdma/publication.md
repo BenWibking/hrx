@@ -121,8 +121,10 @@ Submission-size padding is separate from wrapping:
 
 For this padding, ROCr clears the bytes and writes a burst-NOP header with
 `(padding_bytes / 4 - 1) << 16`. The count therefore describes the following
-DWORDs, not bytes. The wrap tail instead remains a sequence of zero DWORD
-NOPs. These are the producer's framing choices; they do not establish an
+DWORDs, not bytes; [NOP representation and firmware selection](ordering.md#nop-representation-and-framing)
+distinguish that field from caller-specific framing requirements. The wrap
+tail instead remains a sequence of zero DWORD NOPs. These are the producer's
+framing choices; they do not establish an
 additional payload dependency. [Minimum-size predicate][blit-minimum]
 [Padding calculation][blit-reserve] [Padding encoding][blit-completion]
 

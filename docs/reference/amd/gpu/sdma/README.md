@@ -17,7 +17,7 @@ depend on the engine generation and native transport.
 | [Rectangular copy](rectangular-copy.md) | `COPY_LINEAR_SUBWIN` / `COPY_LINEAR_RECT`: element units, row/slice pitches, subwindow layouts, tiling and geometry-specific cache controls. |
 | [Constant fill](fill.md) | `CONST_FILL` / `CONSTANT_FILL`: legacy and DWORD count forms, chunk limits, cache/compression fields, caller selection and completion. |
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED` / legacy `DMA_PACKET_WRITE`: direct versus minus-one counts, policy layouts, metadata/control callers, inline versus uploaded input and final storage use. |
-| [Ordering](ordering.md) | Pending-transfer drains, overlap, NPD and resource ownership. |
+| [Ordering](ordering.md) | `NOP` / legacy `DMA_PACKET_NOP`: counted bodies, firmware burst selection, framing versus transfer drains, temporary-buffer reuse, overlap and NPD. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: legacy/classic/wide layouts, policy and retry fields, dependency callers, signal lifetime, and progress versus terminal joins. |
 | [Conditional execution](conditional.md) | `COND_EXE`: guarded DWORD ranges, Boolean64 sampling, per-execution predicate state and driver-owned submission conditions. |
