@@ -9,14 +9,14 @@
 #include "loom/ir/module.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/low/ops.h"
-#include "loom/target/arch/x86/hal_abi.h"
+#include "loom/target/abi/task/state_layout.h"
 #include "loom/target/arch/x86/register_classes.h"
 
 typedef struct loom_x86_kernel_imports_t {
   // First source query for each builtin, retained during operation selection.
   // NULL entries require no import. Preamble emission binds these values once;
   // all other queries alias the corresponding canonical source value.
-  const loom_op_t* sources[LOOM_X86_HAL_BUILTIN_COUNT_];
+  const loom_op_t* sources[LOOM_TASK_BUILTIN_COUNT_];
 } loom_x86_kernel_imports_t;
 
 static const char loom_x86_kernel_imports_key;
@@ -24,11 +24,11 @@ static const char loom_x86_kernel_imports_key;
 static loom_low_lower_plan_id_t loom_x86_kernel_builtin_id(
     const loom_op_t* op) {
   if (loom_kernel_workgroup_id_isa(op)) {
-    return LOOM_X86_HAL_BUILTIN_WORKGROUP_ID_X +
+    return LOOM_TASK_BUILTIN_WORKGROUP_ID_X +
            loom_kernel_workgroup_id_dimension(op);
   }
   if (loom_kernel_workgroup_count_isa(op)) {
-    return LOOM_X86_HAL_BUILTIN_WORKGROUP_COUNT_X +
+    return LOOM_TASK_BUILTIN_WORKGROUP_COUNT_X +
            loom_kernel_workgroup_count_dimension(op);
   }
   return LOOM_LOW_LOWER_PLAN_ID_NONE;
@@ -71,14 +71,14 @@ iree_status_t loom_x86_emit_kernel_preamble(void* user_data,
       context, LOOM_X86_REGISTER_CLASS_GPR64, 1, &type));
   iree_status_t status = iree_ok_status();
   for (unsigned i = 0;
-       i < LOOM_X86_HAL_BUILTIN_COUNT_ && iree_status_is_ok(status); ++i) {
+       i < LOOM_TASK_BUILTIN_COUNT_ && iree_status_is_ok(status); ++i) {
     const loom_op_t* source = imports->sources[i];
     if (!source) {
       continue;
     }
     loom_string_id_t name;
     status =
-        loom_module_intern_string(module, loom_x86_hal_builtins[i].name, &name);
+        loom_module_intern_string(module, loom_task_builtins[i].name, &name);
     loom_op_t* live_in = NULL;
     if (iree_status_is_ok(status)) {
       status = loom_low_live_in_build(loom_low_lower_context_builder(context),

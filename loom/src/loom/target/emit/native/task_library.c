@@ -4,72 +4,25 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/emit/native/x86/hal_library.h"
+#include "loom/target/emit/native/task_library.h"
 
 #include "iree/base/alignment.h"
-#include "loom/target/emit/native/x86/encoding.h"
+#include "loom/target/abi/task/state_layout.h"
 
-// These are the x86-64 ABI offsets, independent of the compiler host's pointer
-// size, alignment, and byte order. The standalone runtime schema checks the
-// adapter wherever the host uses the same data model.
-enum {
-  LOOM_X86_HAL_LIBRARY_SIZE = 112,
-  LOOM_X86_HAL_LIBRARY_EXPORTS = 8,
-  LOOM_X86_HAL_HEADER_SIZE = 24,
-  LOOM_X86_HAL_HEADER_NAME = 8,
-  LOOM_X86_HAL_EXPORT_POINTERS = 8,
-  LOOM_X86_HAL_EXPORT_ATTRIBUTES = 16,
-  LOOM_X86_HAL_EXPORT_PARAMETERS = 24,
-  LOOM_X86_HAL_EXPORT_NAMES = 40,
-  LOOM_X86_HAL_ATTRIBUTES_SIZE = 64,
-  LOOM_X86_HAL_PARAMETER_SIZE = 8,
-};
-
-#if defined(IREE_PTR_SIZE_64)
-static_assert(sizeof(iree_hal_executable_library_v0_t) ==
-                  LOOM_X86_HAL_LIBRARY_SIZE,
-              "update the x86-64 library layout adapter");
-static_assert(offsetof(iree_hal_executable_library_v0_t, exports) ==
-                  LOOM_X86_HAL_LIBRARY_EXPORTS,
-              "update the x86-64 export table offset");
-static_assert(sizeof(iree_hal_executable_library_header_t) ==
-                  LOOM_X86_HAL_HEADER_SIZE,
-              "update the x86-64 library header adapter");
-static_assert(offsetof(iree_hal_executable_library_header_t, name) ==
-                  LOOM_X86_HAL_HEADER_NAME,
-              "update the x86-64 library name offset");
-static_assert(offsetof(iree_hal_executable_export_table_v0_t, ptrs) ==
-                      LOOM_X86_HAL_EXPORT_POINTERS &&
-                  offsetof(iree_hal_executable_export_table_v0_t, attrs) ==
-                      LOOM_X86_HAL_EXPORT_ATTRIBUTES &&
-                  offsetof(iree_hal_executable_export_table_v0_t, params) ==
-                      LOOM_X86_HAL_EXPORT_PARAMETERS &&
-                  offsetof(iree_hal_executable_export_table_v0_t, names) ==
-                      LOOM_X86_HAL_EXPORT_NAMES,
-              "update the x86-64 export table adapter");
-static_assert(sizeof(iree_hal_executable_dispatch_attrs_v0_t) ==
-                  LOOM_X86_HAL_ATTRIBUTES_SIZE,
-              "update the dispatch attribute adapter");
-#endif  // IREE_PTR_SIZE_64
-static_assert(sizeof(iree_hal_executable_dispatch_parameter_v0_t) ==
-                  LOOM_X86_HAL_PARAMETER_SIZE,
-              "update the parameter adapter");
-
-static void loom_x86_hal_library_pointer(loom_x86_hal_library_data_t* data,
-                                         iree_host_size_t section_index,
-                                         iree_host_size_t offset,
-                                         iree_host_size_t symbol_index,
-                                         uint64_t addend) {
+static void loom_native_task_library_pointer(
+    uint32_t pointer_relocation_kind, loom_native_task_library_data_t* data,
+    iree_host_size_t section_index, iree_host_size_t offset,
+    iree_host_size_t symbol_index, uint64_t addend) {
   data->fixups[data->fixup_count++] = (loom_native_object_fixup_t){
       .section_contribution_index = section_index,
       .section_offset = offset,
-      .relocation_kind = LOOM_X86_RELOCATION_POINTER,
+      .relocation_kind = pointer_relocation_kind,
       .target_symbol_index = symbol_index,
       .addend = (int64_t)addend,
   };
 }
 
-static void loom_x86_hal_library_attributes(
+static void loom_native_task_library_attributes(
     const iree_hal_executable_dispatch_attrs_v0_t* attributes, uint8_t* data) {
   iree_unaligned_store_le_u64(data, attributes->flags);
   iree_unaligned_store_le_u16(data + 8, attributes->local_memory_pages);
@@ -81,18 +34,18 @@ static void loom_x86_hal_library_attributes(
   iree_unaligned_store_le_u32(data + 24, attributes->constant_byte_length);
 }
 
-iree_status_t loom_x86_hal_library_build(
-    iree_string_view_t name, const loom_x86_hal_library_entry_t* entries,
+iree_status_t loom_native_task_library_build_64le(
+    iree_string_view_t name, const loom_native_task_library_entry_t* entries,
     uint16_t entry_count, iree_host_size_t library_symbol_index,
-    iree_host_size_t section_index, iree_arena_allocator_t* arena,
-    loom_x86_hal_library_data_t* out_data) {
-  *out_data = (loom_x86_hal_library_data_t){0};
-  const iree_host_size_t header_offset = LOOM_X86_HAL_LIBRARY_SIZE;
+    iree_host_size_t section_index, uint32_t pointer_relocation_kind,
+    iree_arena_allocator_t* arena, loom_native_task_library_data_t* out_data) {
+  *out_data = (loom_native_task_library_data_t){0};
+  const iree_host_size_t header_offset = LOOM_TASK_ABI64_LIBRARY_SIZE;
   const iree_host_size_t pointers_offset =
-      header_offset + LOOM_X86_HAL_HEADER_SIZE;
+      header_offset + LOOM_TASK_ABI64_HEADER_SIZE;
   const iree_host_size_t attributes_offset = pointers_offset + entry_count * 8;
   const iree_host_size_t parameter_pointers_offset =
-      attributes_offset + entry_count * LOOM_X86_HAL_ATTRIBUTES_SIZE;
+      attributes_offset + entry_count * LOOM_TASK_ABI64_ATTRIBUTES_SIZE;
   const iree_host_size_t names_offset =
       parameter_pointers_offset + entry_count * 8;
   const iree_host_size_t parameters_offset = names_offset + entry_count * 8;
@@ -108,7 +61,7 @@ iree_status_t loom_x86_hal_library_build(
            iree_host_size_checked_add(string_length, 1, &string_length);
   }
   const uint64_t strings_offset =
-      parameters_offset + parameter_count * LOOM_X86_HAL_PARAMETER_SIZE;
+      parameters_offset + parameter_count * LOOM_TASK_ABI64_PARAMETER_SIZE;
   iree_host_size_t contents_length = 0;
   if (!fits || strings_offset > IREE_HOST_SIZE_MAX ||
       !iree_host_size_checked_add((iree_host_size_t)strings_offset,
@@ -130,44 +83,49 @@ iree_status_t loom_x86_hal_library_build(
       .contribution_alignment = 8,
       .contents = iree_make_const_byte_span(contents, contents_length),
   };
-  loom_x86_hal_library_pointer(out_data, section_index, 0, library_symbol_index,
-                               header_offset);
+  loom_native_task_library_pointer(pointer_relocation_kind, out_data,
+                                   section_index, 0, library_symbol_index,
+                                   header_offset);
   iree_unaligned_store_le_u32(contents + header_offset,
                               IREE_HAL_EXECUTABLE_LIBRARY_VERSION_0_8);
-  loom_x86_hal_library_pointer(out_data, section_index,
-                               header_offset + LOOM_X86_HAL_HEADER_NAME,
-                               library_symbol_index, strings_offset);
+  loom_native_task_library_pointer(pointer_relocation_kind, out_data,
+                                   section_index,
+                                   header_offset + LOOM_TASK_ABI64_HEADER_NAME,
+                                   library_symbol_index, strings_offset);
   if (!iree_string_view_is_empty(name)) {
     memcpy(contents + strings_offset, name.data, name.size);
   }
-  iree_unaligned_store_le_u32(contents + LOOM_X86_HAL_LIBRARY_EXPORTS,
+  iree_unaligned_store_le_u32(contents + LOOM_TASK_ABI64_LIBRARY_EXPORTS,
                               (uint32_t)entry_count);
   const iree_host_size_t table_fields[] = {
-      LOOM_X86_HAL_EXPORT_POINTERS, LOOM_X86_HAL_EXPORT_ATTRIBUTES,
-      LOOM_X86_HAL_EXPORT_PARAMETERS, LOOM_X86_HAL_EXPORT_NAMES};
+      LOOM_TASK_ABI64_EXPORT_POINTERS, LOOM_TASK_ABI64_EXPORT_ATTRIBUTES,
+      LOOM_TASK_ABI64_EXPORT_PARAMETERS, LOOM_TASK_ABI64_EXPORT_NAMES};
   const iree_host_size_t table_offsets[] = {pointers_offset, attributes_offset,
                                             parameter_pointers_offset,
                                             names_offset};
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(table_fields); ++i) {
-    loom_x86_hal_library_pointer(out_data, section_index,
-                                 LOOM_X86_HAL_LIBRARY_EXPORTS + table_fields[i],
-                                 library_symbol_index, table_offsets[i]);
+    loom_native_task_library_pointer(
+        pointer_relocation_kind, out_data, section_index,
+        LOOM_TASK_ABI64_LIBRARY_EXPORTS + table_fields[i], library_symbol_index,
+        table_offsets[i]);
   }
   iree_host_size_t parameter_offset = parameters_offset;
   iree_host_size_t string_offset = strings_offset + name.size + 1;
   for (iree_host_size_t i = 0; i < entry_count; ++i) {
-    const loom_x86_hal_library_entry_t* entry = &entries[i];
-    loom_x86_hal_library_pointer(out_data, section_index,
-                                 pointers_offset + i * 8, entry->symbol_index,
-                                 0);
-    loom_x86_hal_library_pointer(out_data, section_index,
-                                 parameter_pointers_offset + i * 8,
-                                 library_symbol_index, parameter_offset);
-    loom_x86_hal_library_pointer(out_data, section_index, names_offset + i * 8,
-                                 library_symbol_index, string_offset);
-    loom_x86_hal_library_attributes(
+    const loom_native_task_library_entry_t* entry = &entries[i];
+    loom_native_task_library_pointer(pointer_relocation_kind, out_data,
+                                     section_index, pointers_offset + i * 8,
+                                     entry->symbol_index, 0);
+    loom_native_task_library_pointer(pointer_relocation_kind, out_data,
+                                     section_index,
+                                     parameter_pointers_offset + i * 8,
+                                     library_symbol_index, parameter_offset);
+    loom_native_task_library_pointer(pointer_relocation_kind, out_data,
+                                     section_index, names_offset + i * 8,
+                                     library_symbol_index, string_offset);
+    loom_native_task_library_attributes(
         &entry->abi.attributes,
-        contents + attributes_offset + i * LOOM_X86_HAL_ATTRIBUTES_SIZE);
+        contents + attributes_offset + i * LOOM_TASK_ABI64_ATTRIBUTES_SIZE);
     memcpy(contents + string_offset, entry->name.data, entry->name.size);
     string_offset += entry->name.size + 1;
     for (uint16_t p = 0; p < entry->abi.attributes.parameter_count; ++p) {
@@ -181,7 +139,7 @@ iree_status_t loom_x86_hal_library_build(
                                   parameter->name);
       iree_unaligned_store_le_u16(contents + parameter_offset + 6,
                                   parameter->offset);
-      parameter_offset += LOOM_X86_HAL_PARAMETER_SIZE;
+      parameter_offset += LOOM_TASK_ABI64_PARAMETER_SIZE;
     }
   }
   return iree_ok_status();

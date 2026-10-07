@@ -4,24 +4,14 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/arch/x86/hal_abi.h"
+#include "loom/target/abi/task/parameter_layout.h"
 
 #include "iree/base/alignment.h"
-#include "loom/error/x86_error_catalog.h"
+#include "loom/error/error_catalog.h"
 #include "loom/ir/module.h"
 
-const loom_x86_hal_builtin_info_t
-    loom_x86_hal_builtins[LOOM_X86_HAL_BUILTIN_COUNT_] = {
-        {IREE_SVL("x86.hal.workgroup_id_x"), 2, 0, 4},
-        {IREE_SVL("x86.hal.workgroup_id_y"), 2, 4, 4},
-        {IREE_SVL("x86.hal.workgroup_id_z"), 2, 8, 2},
-        {IREE_SVL("x86.hal.workgroup_count_x"), 1, 12, 4},
-        {IREE_SVL("x86.hal.workgroup_count_y"), 1, 16, 4},
-        {IREE_SVL("x86.hal.workgroup_count_z"), 1, 20, 2},
-};
-
-static uint8_t loom_x86_hal_constant_size(loom_type_t type,
-                                          uint32_t* out_alignment) {
+static uint8_t loom_task_parameter_size(loom_type_t type,
+                                        uint32_t* out_alignment) {
   const loom_scalar_type_t element_type = loom_type_element_type(type);
   const uint32_t element_bits = element_type == LOOM_SCALAR_TYPE_INDEX ||
                                         element_type == LOOM_SCALAR_TYPE_OFFSET
@@ -40,20 +30,20 @@ static uint8_t loom_x86_hal_constant_size(loom_type_t type,
   return (uint8_t)(element_count * element_bytes);
 }
 
-static iree_status_t loom_x86_hal_abi_reject(const loom_op_t* source_op,
-                                             iree_diagnostic_emitter_t emitter,
-                                             iree_string_view_t constraint) {
+static iree_status_t loom_task_parameter_layout_reject(
+    const loom_op_t* source_op, iree_diagnostic_emitter_t emitter,
+    iree_string_view_t constraint) {
   const loom_diagnostic_param_t params[] = {loom_param_string(constraint)};
   return iree_diagnostic_emit(emitter,
                               &(loom_diagnostic_emission_t){
                                   .op = source_op,
-                                  .error = LOOM_ERR_X86_001,
+                                  .error = LOOM_ERR_BACKEND_052,
                                   .params = params,
                                   .param_count = IREE_ARRAYSIZE(params),
                               });
 }
 
-static iree_status_t loom_x86_hal_abi_reject_parameter(
+static iree_status_t loom_task_parameter_layout_reject_parameter(
     const loom_op_t* source_op, iree_diagnostic_emitter_t emitter,
     uint16_t index, loom_type_t type, iree_string_view_t constraint) {
   const loom_diagnostic_param_t params[] = {loom_param_i64(index),
@@ -62,7 +52,7 @@ static iree_status_t loom_x86_hal_abi_reject_parameter(
   return iree_diagnostic_emit(emitter,
                               &(loom_diagnostic_emission_t){
                                   .op = source_op,
-                                  .error = LOOM_ERR_X86_002,
+                                  .error = LOOM_ERR_BACKEND_053,
                                   .params = params,
                                   .param_count = IREE_ARRAYSIZE(params),
                               });
@@ -71,15 +61,13 @@ static iree_status_t loom_x86_hal_abi_reject_parameter(
 // A signature carries logical types in source order; offsets explicitly place
 // each value in either the binding table or the byte-addressed constant table.
 // This contract remains meaningful after dead parameter uses disappear.
-iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
-                                     const loom_op_t* source_op,
-                                     loom_named_attr_slice_t layout,
-                                     iree_diagnostic_emitter_t emitter,
-                                     iree_arena_allocator_t* arena,
-                                     bool* out_accepted,
-                                     loom_x86_hal_abi_t* out_abi) {
+iree_status_t loom_task_parameter_layout_parse(
+    const loom_module_t* module, const loom_op_t* source_op,
+    loom_named_attr_slice_t layout, iree_diagnostic_emitter_t emitter,
+    iree_arena_allocator_t* arena, bool* out_accepted,
+    loom_task_parameter_layout_t* out_abi) {
   *out_accepted = false;
-  *out_abi = (loom_x86_hal_abi_t){0};
+  *out_abi = (loom_task_parameter_layout_t){0};
   const loom_func_type_data_t* signature = NULL;
   const loom_attribute_t* offsets = NULL;
   for (uint16_t i = 0; i < layout.count; ++i) {
@@ -105,7 +93,7 @@ iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
       return iree_diagnostic_emit(emitter,
                                   &(loom_diagnostic_emission_t){
                                       .op = source_op,
-                                      .error = LOOM_ERR_X86_003,
+                                      .error = LOOM_ERR_BACKEND_054,
                                       .params = params,
                                       .param_count = IREE_ARRAYSIZE(params),
                                   });
@@ -113,7 +101,7 @@ iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
   }
   if (!signature || signature->result_count || !offsets ||
       offsets->count != signature->arg_count) {
-    return loom_x86_hal_abi_reject(
+    return loom_task_parameter_layout_reject(
         source_op, emitter,
         IREE_SV("a void logical signature and one offset "
                 "per parameter"));
@@ -121,7 +109,7 @@ iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
   iree_hal_executable_dispatch_parameter_v0_t* rows = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, signature->arg_count,
                                                  sizeof(*rows), (void**)&rows));
-  loom_x86_hal_abi_t abi = {
+  loom_task_parameter_layout_t abi = {
       .attributes = {.workgroup_size_x = 1,
                      .workgroup_size_y = 1,
                      .workgroup_size_z = 1,
@@ -138,7 +126,7 @@ iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
     if (loom_type_is_buffer(type)) {
       if (offset < 0 || offset >= IREE_HAL_EXECUTABLE_MAX_BINDING_COUNT) {
         accepted = false;
-        status = loom_x86_hal_abi_reject_parameter(
+        status = loom_task_parameter_layout_reject_parameter(
             source_op, emitter, i, type,
             IREE_SV("a nonnegative binding ordinal within the dispatch binding "
                     "table"));
@@ -150,12 +138,12 @@ iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
       }
     } else {
       uint32_t alignment = 0;
-      const uint8_t size = loom_x86_hal_constant_size(type, &alignment);
+      const uint8_t size = loom_task_parameter_size(type, &alignment);
       if (!size || offset < 0 ||
           offset >
               (int64_t)IREE_HAL_EXECUTABLE_MAX_CONSTANT_BYTE_LENGTH - size) {
         accepted = false;
-        status = loom_x86_hal_abi_reject_parameter(
+        status = loom_task_parameter_layout_reject_parameter(
             source_op, emitter, i, type,
             IREE_SV(
                 "a byte-addressable scalar or static vector with a "
@@ -177,7 +165,7 @@ iree_status_t loom_x86_hal_abi_parse(const loom_module_t* module,
   return status;
 }
 
-iree_status_t loom_x86_hal_abi_layout_build(
+iree_status_t loom_task_parameter_layout_build(
     loom_module_t* module, const loom_op_t* source_op, const loom_type_t* types,
     uint16_t count, iree_diagnostic_emitter_t emitter,
     iree_arena_allocator_t* scratch_arena, bool* out_accepted,
@@ -197,10 +185,10 @@ iree_status_t loom_x86_hal_abi_layout_build(
       offsets[i] = binding_count++;
     } else {
       uint32_t alignment = 0;
-      const uint8_t size = loom_x86_hal_constant_size(types[i], &alignment);
+      const uint8_t size = loom_task_parameter_size(types[i], &alignment);
       if (!size) {
         accepted = false;
-        status = loom_x86_hal_abi_reject_parameter(
+        status = loom_task_parameter_layout_reject_parameter(
             source_op, emitter, i, types[i],
             IREE_SV("a buffer, byte-addressable scalar, or static vector"));
       } else {
@@ -215,7 +203,7 @@ iree_status_t loom_x86_hal_abi_layout_build(
   }
   if (binding_count > IREE_HAL_EXECUTABLE_MAX_BINDING_COUNT ||
       constant_bytes > IREE_HAL_EXECUTABLE_MAX_CONSTANT_BYTE_LENGTH) {
-    return loom_x86_hal_abi_reject(
+    return loom_task_parameter_layout_reject(
         source_op, emitter,
         IREE_SV("a parameter layout fitting the dispatch binding and constant "
                 "limits"));

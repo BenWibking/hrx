@@ -38,12 +38,12 @@ low.func.def public target<x86.scalar.core>(@target) abi(hal_kernel) abi_layout(
 x86.target<scalar> @target
 
 low.kernel.def target<x86.scalar.core>(@target) abi_layout({offsets = [0], signature = (buffer) -> ()}) workgroup_size(1, 1, 1) @geometry(%output: reg<x86.gpr64>) asm {
-  %x = live_in<x86.hal.workgroup_id_x> : reg<x86.gpr64>
-  %y = live_in<x86.hal.workgroup_id_y> : reg<x86.gpr64>
-  %z = live_in<x86.hal.workgroup_id_z> : reg<x86.gpr64>
-  %count_x = live_in<x86.hal.workgroup_count_x> : reg<x86.gpr64>
-  %count_y = live_in<x86.hal.workgroup_count_y> : reg<x86.gpr64>
-  %count_z = live_in<x86.hal.workgroup_count_z> : reg<x86.gpr64>
+  %x = live_in<task.workgroup_id_x> : reg<x86.gpr64>
+  %y = live_in<task.workgroup_id_y> : reg<x86.gpr64>
+  %z = live_in<task.workgroup_id_z> : reg<x86.gpr64>
+  %count_x = live_in<task.workgroup_count_x> : reg<x86.gpr64>
+  %count_y = live_in<task.workgroup_count_y> : reg<x86.gpr64>
+  %count_z = live_in<task.workgroup_count_z> : reg<x86.gpr64>
   mov.store.gpr64 %x, %output {disp32 = 0}
   mov.store.gpr64 %y, %output {disp32 = 8}
   mov.store.gpr64 %z, %output {disp32 = 16}

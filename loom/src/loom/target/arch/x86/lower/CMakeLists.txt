@@ -28,12 +28,12 @@ loom_cc_library(
     loom::codegen::low::descriptors
     loom::codegen::low::lower
     loom::error::error_defs
-    loom::error::x86_error_defs
     loom::ir
     loom::ops::kernel
     loom::ops::low
+    loom::target::abi::task::parameter_layout
+    loom::target::abi::task::state_layout
     loom::target::arch::x86::contracts
-    loom::target::arch::x86::hal_abi
     loom::target::arch::x86::packed_dot_contract
     loom::target::arch::x86::packed_dot_contract_projection
     loom::target::arch::x86::register_classes

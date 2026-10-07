@@ -9,7 +9,7 @@
 #include "loom/codegen/low/builder.h"
 #include "loom/codegen/low/pipeline/pass_environment.h"
 #include "loom/codegen/low/target_binding.h"
-#include "loom/error/x86_error_catalog.h"
+#include "loom/error/error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/func_symbol_facts.h"
@@ -17,28 +17,14 @@
 #include "loom/ops/low/ops.h"
 #include "loom/rewrite/remap.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/target/abi/task/parameter_layout.h"
+#include "loom/target/abi/task/state_layout.h"
 #include "loom/target/arch/x86/descriptors/entry.h"
-#include "loom/target/arch/x86/hal_abi.h"
 #include "loom/target/arch/x86/ops/ops.h"
 #include "loom/target/arch/x86/register_classes.h"
 #include "loom/target/function_contract.h"
 #include "loom/target/pass_environment.h"
 #include "loom/target/registers.h"
-
-// These are x86-64 target offsets, independent of the compiler host's ABI.
-enum {
-  LOOM_X86_HAL_CONSTANTS_OFFSET = 24,
-  LOOM_X86_HAL_BINDINGS_OFFSET = 40,
-};
-
-#if defined(IREE_PTR_SIZE_64)
-static_assert(offsetof(iree_hal_executable_dispatch_state_v0_t, constants) ==
-                  LOOM_X86_HAL_CONSTANTS_OFFSET,
-              "task constant span ABI changed");
-static_assert(offsetof(iree_hal_executable_dispatch_state_v0_t, binding_ptrs) ==
-                  LOOM_X86_HAL_BINDINGS_OFFSET,
-              "task binding table ABI changed");
-#endif
 
 typedef struct loom_x86_hal_builder_t {
   // Builder owning module-backed entry instructions.
@@ -62,7 +48,7 @@ static iree_status_t loom_x86_hal_reject(loom_pass_t* pass,
   return iree_diagnostic_emit(pass->diagnostic_emitter,
                               &(loom_diagnostic_emission_t){
                                   .op = source,
-                                  .error = LOOM_ERR_X86_001,
+                                  .error = LOOM_ERR_BACKEND_052,
                                   .params = params,
                                   .param_count = IREE_ARRAYSIZE(params),
                               });
@@ -149,7 +135,8 @@ typedef struct loom_x86_hal_parameters_t {
 
 static iree_status_t loom_x86_hal_parameters_prepare(
     loom_pass_t* pass, loom_module_t* module, loom_func_like_t function,
-    const loom_x86_hal_abi_t* abi, loom_x86_hal_parameters_t* out_parameters) {
+    const loom_task_parameter_layout_t* abi,
+    loom_x86_hal_parameters_t* out_parameters) {
   *out_parameters = (loom_x86_hal_parameters_t){0};
   out_parameters->arguments =
       loom_func_like_arg_ids(function, &out_parameters->count);
@@ -192,7 +179,7 @@ static iree_status_t loom_x86_hal_parameters_prepare(
       status = iree_diagnostic_emit(pass->diagnostic_emitter,
                                     &(loom_diagnostic_emission_t){
                                         .op = function.op,
-                                        .error = LOOM_ERR_X86_002,
+                                        .error = LOOM_ERR_BACKEND_053,
                                         .params = params,
                                         .param_count = IREE_ARRAYSIZE(params),
                                     });
@@ -203,7 +190,7 @@ static iree_status_t loom_x86_hal_parameters_prepare(
 
 static iree_status_t loom_x86_hal_build_parameter_imports(
     loom_x86_hal_builder_t* builder, loom_pass_t* pass,
-    loom_func_like_t function, const loom_x86_hal_abi_t* abi,
+    loom_func_like_t function, const loom_task_parameter_layout_t* abi,
     const loom_x86_hal_parameters_t* parameters, loom_value_id_t dispatch,
     loom_value_id_t** out_arguments) {
   const uint16_t argument_count = parameters->count;
@@ -235,10 +222,11 @@ static iree_status_t loom_x86_hal_build_parameter_imports(
     }
     loom_value_id_t* table = binding ? &bindings : &constants;
     if (*table == LOOM_VALUE_ID_INVALID) {
-      status = loom_x86_hal_build_load(builder, dispatch,
-                                       binding ? LOOM_X86_HAL_BINDINGS_OFFSET
-                                               : LOOM_X86_HAL_CONSTANTS_OFFSET,
-                                       8, builder->pointer_type, table);
+      status =
+          loom_x86_hal_build_load(builder, dispatch,
+                                  binding ? LOOM_TASK_ABI64_BINDINGS_OFFSET
+                                          : LOOM_TASK_ABI64_CONSTANTS_OFFSET,
+                                  8, builder->pointer_type, table);
     }
     if (iree_status_is_ok(status)) {
       status = loom_x86_hal_build_load(
@@ -291,10 +279,8 @@ static iree_status_t loom_x86_hal_materialize_body(
         const iree_string_view_t name = loom_string_table_get(
             &builder->ir.module->strings, loom_low_live_in_source(op));
         for (unsigned i = 0;
-             i < LOOM_X86_HAL_BUILTIN_COUNT_ && iree_status_is_ok(status);
-             ++i) {
-          const loom_x86_hal_builtin_info_t* builtin =
-              &loom_x86_hal_builtins[i];
+             i < LOOM_TASK_BUILTIN_COUNT_ && iree_status_is_ok(status); ++i) {
+          const loom_task_builtin_info_t* builtin = &loom_task_builtins[i];
           if (!iree_string_view_equal(name, builtin->name)) {
             continue;
           }
@@ -356,9 +342,9 @@ iree_status_t loom_x86_materialize_hal_kernel_run(loom_pass_t* pass,
     return loom_x86_hal_reject(
         pass, source, IREE_SV("a complete scalar control/addressing contract"));
   }
-  loom_x86_hal_abi_t abi;
+  loom_task_parameter_layout_t abi;
   bool accepted = false;
-  IREE_RETURN_IF_ERROR(loom_x86_hal_abi_parse(
+  IREE_RETURN_IF_ERROR(loom_task_parameter_layout_parse(
       module, source, loom_low_kernel_def_abi_layout(source),
       pass->diagnostic_emitter, pass->arena, &accepted, &abi));
   if (!accepted) {
@@ -538,7 +524,7 @@ iree_status_t loom_x86_materialize_hal_query_run(loom_pass_t* pass,
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(loom_module_intern_string(
-      module, IREE_SV(LOOM_X86_HAL_LIBRARY_SYMBOL), &library_name));
+      module, IREE_SV(LOOM_TASK_LIBRARY_SYMBOL), &library_name));
   uint16_t query_id;
   uint16_t library_id = loom_module_find_symbol(module, library_name);
   const loom_low_descriptor_registry_t* registry =

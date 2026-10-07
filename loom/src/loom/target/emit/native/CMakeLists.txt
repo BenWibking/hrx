@@ -102,6 +102,23 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    task_library
+  HDRS
+    "task_library.h"
+  SRCS
+    "task_library.c"
+  DEPS
+    ::object
+    iree::base
+    iree::base::core_headers
+    iree::base::internal::arena
+    loom::target::abi::task::parameter_layout
+    loom::target::abi::task::state_layout
+  PUBLIC
+)
+
 loom_cc_test(
   NAME
     elf_symbols_test

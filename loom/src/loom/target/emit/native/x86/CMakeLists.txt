@@ -105,25 +105,6 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
-    hal_library
-  HDRS
-    "hal_library.h"
-  SRCS
-    "hal_library.c"
-  DEPS
-    ::encoding
-    iree::base
-    iree::base::core_headers
-    iree::base::internal::arena
-    loom::target::arch::x86::hal_abi
-    loom::target::emit::native::object
-  PUBLIC
-)
-endif()
-
-if(LOOM_TARGET_ARCH_X86)
-loom_cc_library(
-  NAME
     module
   HDRS
     "module.h"
@@ -132,7 +113,6 @@ loom_cc_library(
   DEPS
     ::abi
     ::function
-    ::hal_library
     iree::base
     iree::base::internal::arena
     iree::io::stream
@@ -140,8 +120,10 @@ loom_cc_library(
     loom::error::x86_error_defs
     loom::ops::global
     loom::ops::low
-    loom::target::arch::x86::hal_abi
+    loom::target::abi::task::parameter_layout
+    loom::target::abi::task::state_layout
     loom::target::emit::native::object_elf
+    loom::target::emit::native::task_library
     loom::target::entry_selection
     loom::target::provider
   PUBLIC

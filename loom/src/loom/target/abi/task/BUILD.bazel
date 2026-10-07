@@ -1,0 +1,61 @@
+# Copyright 2026 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+load("//loom/build_tools/bazel:build_defs.bzl", "loom_cc_library", "loom_cc_test")
+
+# Shared compiler contracts for native task providers and artifact producers.
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],
+)
+
+loom_cc_library(
+    name = "parameter_layout",
+    srcs = ["parameter_layout.c"],
+    hdrs = ["parameter_layout.h"],
+    deps = [
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
+    ],
+)
+
+loom_cc_test(
+    name = "parameter_layout_test",
+    srcs = ["parameter_layout_test.cc"],
+    deps = [
+        ":parameter_layout",
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
+    name = "state_layout",
+    srcs = ["state_layout.c"],
+    hdrs = ["state_layout.h"],
+    deps = [
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
+    ],
+)
+
+loom_cc_test(
+    name = "state_layout_test",
+    srcs = ["state_layout_test.cc"],
+    deps = [
+        ":state_layout",
+        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)

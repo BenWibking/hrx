@@ -38,35 +38,6 @@ _X86_PROVIDER_VISIBILITY = [
 # x86 target support
 #===------------------------------------------------------------------------===#
 
-# The task entry ABI is shared by source lowering and native library emission.
-# These consumers depend on the contract, without importing each other.
-loom_cc_library(
-    name = "hal_abi",
-    srcs = ["hal_abi.c"],
-    hdrs = ["hal_abi.h"],
-    visibility = _X86_LOWER_VISIBILITY + _X86_NATIVE_VISIBILITY,
-    deps = [
-        "//loom/src/loom/error:x86_error_defs",
-        "//loom/src/loom/ir",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base:core_headers",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
-    ],
-)
-
-loom_cc_test(
-    name = "hal_abi_test",
-    srcs = ["hal_abi_test.cc"],
-    deps = [
-        ":hal_abi",
-        "//loom/src/loom/ir",
-        "//runtime/src/iree/base/internal:arena",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-    ],
-)
-
 loom_cc_library(
     name = "feature_bits",
     hdrs = ["feature_bits.h"],
@@ -129,7 +100,6 @@ loom_cc_library(
     srcs = ["hal_materialization.c"],
     hdrs = ["hal_materialization.h"],
     deps = [
-        ":hal_abi",
         ":register_classes",
         "//loom/src/loom/analysis:symbol_facts",
         "//loom/src/loom/codegen/low:builder",
@@ -137,7 +107,6 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:target_binding",
         "//loom/src/loom/codegen/low/pipeline:pass_environment",
         "//loom/src/loom/error:error_defs",
-        "//loom/src/loom/error:x86_error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:func_symbol_facts",
         "//loom/src/loom/ops:op_defs",
@@ -150,6 +119,8 @@ loom_cc_library(
         "//loom/src/loom/target:function_version",
         "//loom/src/loom/target:pass_environment",
         "//loom/src/loom/target:registers",
+        "//loom/src/loom/target/abi/task:parameter_layout",
+        "//loom/src/loom/target/abi/task:state_layout",
         "//loom/src/loom/target/arch/x86/descriptors:entry",
         "//loom/src/loom/target/arch/x86/ops",
         "//runtime/src/iree/base",

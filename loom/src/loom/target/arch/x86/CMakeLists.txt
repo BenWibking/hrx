@@ -12,42 +12,6 @@ iree_add_all_subdirs()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
-    hal_abi
-  HDRS
-    "hal_abi.h"
-  SRCS
-    "hal_abi.c"
-  DEPS
-    iree::base
-    iree::base::core_headers
-    iree::base::internal::arena
-    iree::hal::drivers::task::executable::library::abi
-    loom::error::x86_error_defs
-    loom::ir
-  PUBLIC
-)
-endif()
-
-if(LOOM_TARGET_ARCH_X86)
-loom_cc_test(
-  NAME
-    hal_abi_test
-  SRCS
-    "hal_abi_test.cc"
-  DEPS
-    ::hal_abi
-    iree::base::internal::arena
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::ir
-  LABELS
-    "iree-build-requirement=loom.target.arch.x86"
-)
-endif()
-
-if(LOOM_TARGET_ARCH_X86)
-loom_cc_library(
-  NAME
     feature_bits
   HDRS
     "feature_bits.h"
@@ -135,7 +99,6 @@ loom_cc_library(
   SRCS
     "hal_materialization.c"
   DEPS
-    ::hal_abi
     ::register_classes
     iree::base
     iree::base::internal::arena
@@ -146,7 +109,6 @@ loom_cc_library(
     loom::codegen::low::pipeline::pass_environment
     loom::codegen::low::target_binding
     loom::error::error_defs
-    loom::error::x86_error_defs
     loom::ir
     loom::ops::func_symbol_facts
     loom::ops::global
@@ -155,6 +117,8 @@ loom_cc_library(
     loom::pass::types
     loom::rewrite::remap
     loom::rewrite::rewriter
+    loom::target::abi::task::parameter_layout
+    loom::target::abi::task::state_layout
     loom::target::arch::x86::descriptors::entry
     loom::target::arch::x86::ops
     loom::target::function_contract

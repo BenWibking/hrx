@@ -4,7 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/target/arch/x86/hal_abi.h"
+#include "loom/target/abi/task/parameter_layout.h"
 
 #include <vector>
 
@@ -16,7 +16,7 @@
 namespace loom {
 namespace {
 
-class HalAbiTest : public ::testing::Test {
+class TaskParameterLayoutTest : public ::testing::Test {
  protected:
   void SetUp() override {
     iree_arena_block_pool_initialize(4096, iree_allocator_system(), &pool_);
@@ -44,7 +44,8 @@ class HalAbiTest : public ::testing::Test {
   loom_module_t* module_ = nullptr;
 };
 
-TEST_F(HalAbiTest, PackingUsesLogicalElementsAndSeparateBindingOrdinals) {
+TEST_F(TaskParameterLayoutTest,
+       PackingUsesLogicalElementsAndSeparateBindingOrdinals) {
   struct Payload {
     // Logical element passed through the byte-addressed constant segment.
     loom_scalar_type_t type;
@@ -73,15 +74,15 @@ TEST_F(HalAbiTest, PackingUsesLogicalElementsAndSeparateBindingOrdinals) {
                                    loom_type_buffer()};
       loom_named_attr_slice_t layout;
       bool accepted = false;
-      IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(
+      IREE_ASSERT_OK(loom_task_parameter_layout_build(
           module_, nullptr, types, IREE_ARRAYSIZE(types), {}, &scratch_,
           &accepted, &layout));
       ASSERT_TRUE(accepted);
       // The layout survives the scratch arena that computed its byte offsets.
       iree_arena_reset(&scratch_);
-      loom_x86_hal_abi_t abi;
-      IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, nullptr, layout, {},
-                                            &scratch_, &accepted, &abi));
+      loom_task_parameter_layout_t abi;
+      IREE_ASSERT_OK(loom_task_parameter_layout_parse(
+          module_, nullptr, layout, {}, &scratch_, &accepted, &abi));
       ASSERT_TRUE(accepted);
       ASSERT_EQ(abi.attributes.parameter_count, 4u);
       EXPECT_EQ(abi.attributes.binding_count, 2u);
@@ -96,20 +97,20 @@ TEST_F(HalAbiTest, PackingUsesLogicalElementsAndSeparateBindingOrdinals) {
   }
 }
 
-TEST_F(HalAbiTest, ExactDispatchCapacityAndEmptyInterface) {
+TEST_F(TaskParameterLayoutTest, ExactDispatchCapacityAndEmptyInterface) {
   for (loom_type_t type :
        {loom_type_buffer(), loom_type_scalar(LOOM_SCALAR_TYPE_I64)}) {
     const size_t capacity = loom_type_is_buffer(type) ? 64 : 32;
     std::vector<loom_type_t> types(capacity, type);
     loom_named_attr_slice_t layout;
     bool accepted = false;
-    IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(module_, nullptr, types.data(),
-                                                 types.size(), {}, &scratch_,
-                                                 &accepted, &layout));
+    IREE_ASSERT_OK(loom_task_parameter_layout_build(
+        module_, nullptr, types.data(), types.size(), {}, &scratch_, &accepted,
+        &layout));
     ASSERT_TRUE(accepted);
-    loom_x86_hal_abi_t abi;
-    IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, nullptr, layout, {},
-                                          &scratch_, &accepted, &abi));
+    loom_task_parameter_layout_t abi;
+    IREE_ASSERT_OK(loom_task_parameter_layout_parse(
+        module_, nullptr, layout, {}, &scratch_, &accepted, &abi));
     ASSERT_TRUE(accepted);
     EXPECT_EQ(abi.attributes.binding_count,
               loom_type_is_buffer(type) ? 64u : 0u);
@@ -118,33 +119,16 @@ TEST_F(HalAbiTest, ExactDispatchCapacityAndEmptyInterface) {
   }
   loom_named_attr_slice_t layout;
   bool accepted = false;
-  IREE_ASSERT_OK(loom_x86_hal_abi_layout_build(module_, nullptr, nullptr, 0, {},
-                                               &scratch_, &accepted, &layout));
+  IREE_ASSERT_OK(loom_task_parameter_layout_build(
+      module_, nullptr, nullptr, 0, {}, &scratch_, &accepted, &layout));
   ASSERT_TRUE(accepted);
-  loom_x86_hal_abi_t abi;
-  IREE_ASSERT_OK(loom_x86_hal_abi_parse(module_, nullptr, layout, {}, &scratch_,
-                                        &accepted, &abi));
+  loom_task_parameter_layout_t abi;
+  IREE_ASSERT_OK(loom_task_parameter_layout_parse(module_, nullptr, layout, {},
+                                                  &scratch_, &accepted, &abi));
   ASSERT_TRUE(accepted);
   EXPECT_EQ(abi.attributes.parameter_count, 0u);
   EXPECT_EQ(abi.attributes.binding_count, 0u);
   EXPECT_EQ(abi.attributes.constant_byte_length, 0u);
-}
-
-TEST(HalBuiltinTest, StateFieldsMatchTheVersionedSchema) {
-  const size_t offsets[] = {
-      offsetof(iree_hal_executable_workgroup_state_v0_t, workgroup_id_x),
-      offsetof(iree_hal_executable_workgroup_state_v0_t, workgroup_id_y),
-      offsetof(iree_hal_executable_workgroup_state_v0_t, workgroup_id_z),
-      offsetof(iree_hal_executable_dispatch_state_v0_t, workgroup_count_x),
-      offsetof(iree_hal_executable_dispatch_state_v0_t, workgroup_count_y),
-      offsetof(iree_hal_executable_dispatch_state_v0_t, workgroup_count_z),
-  };
-  ASSERT_EQ(IREE_ARRAYSIZE(offsets), LOOM_X86_HAL_BUILTIN_COUNT_);
-  for (size_t i = 0; i < IREE_ARRAYSIZE(offsets); ++i) {
-    EXPECT_EQ(loom_x86_hal_builtins[i].offset, offsets[i]);
-    EXPECT_EQ(loom_x86_hal_builtins[i].size, i % 3 == 2 ? 2u : 4u);
-    EXPECT_EQ(loom_x86_hal_builtins[i].state_argument, i < 3 ? 2u : 1u);
-  }
 }
 
 }  // namespace

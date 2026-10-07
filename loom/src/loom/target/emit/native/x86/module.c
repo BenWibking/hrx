@@ -12,11 +12,12 @@
 #include "loom/error/x86_error_catalog.h"
 #include "loom/ops/global/ops.h"
 #include "loom/ops/low/ops.h"
+#include "loom/target/abi/task/state_layout.h"
 #include "loom/target/emit/native/image_elf.h"
 #include "loom/target/emit/native/object_elf.h"
+#include "loom/target/emit/native/task_library.h"
 #include "loom/target/emit/native/x86/abi.h"
 #include "loom/target/emit/native/x86/function.h"
-#include "loom/target/emit/native/x86/hal_library.h"
 
 typedef struct loom_x86_module_selection_t {
   // Architecture identity supplied by the composing provider.
@@ -467,7 +468,7 @@ static iree_status_t loom_x86_module_build_artifact(
   }
   loom_x86_module_fixups_t fixups = {0};
   iree_host_size_t library_symbol_index = IREE_HOST_SIZE_MAX;
-  loom_x86_hal_library_entry_t* library_entries = NULL;
+  loom_native_task_library_entry_t* library_entries = NULL;
   uint16_t library_entry_count = 0;
   iree_host_size_t library_entry_capacity = 0;
   bool has_library_query = false;
@@ -483,7 +484,7 @@ static iree_status_t loom_x86_module_build_artifact(
     if (iree_status_is_ok(status) && diagnostics.error_count == prior_errors &&
         format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY &&
         iree_string_view_equal(symbols[entries.count + i].name,
-                               IREE_SV(LOOM_X86_HAL_LIBRARY_SYMBOL))) {
+                               IREE_SV(LOOM_TASK_LIBRARY_SYMBOL))) {
       if (!loom_global_rodata_decl_isa(rodata_symbols[i]->defining_op)) {
         status = loom_x86_module_reject(
             request->diagnostic_emitter, rodata_symbols[i]->defining_op,
@@ -519,10 +520,11 @@ static iree_status_t loom_x86_module_build_artifact(
           sizeof(*library_entries), &library_entry_capacity,
           (void**)&library_entries);
       if (iree_status_is_ok(status)) {
-        library_entries[library_entry_count] = (loom_x86_hal_library_entry_t){
-            .name = symbols[i].name,
-            .symbol_index = i,
-        };
+        library_entries[library_entry_count] =
+            (loom_native_task_library_entry_t){
+                .name = symbols[i].name,
+                .symbol_index = i,
+            };
         if (!loom_low_func_def_isa(entries.values[i].func.op)) {
           accepted = false;
           status = loom_x86_module_reject(
@@ -530,7 +532,7 @@ static iree_status_t loom_x86_module_build_artifact(
               IREE_SV(
                   "a physical task function with a logical parameter layout"));
         } else {
-          status = loom_x86_hal_abi_parse(
+          status = loom_task_parameter_layout_parse(
               request->module, entries.values[i].func.op,
               loom_low_func_def_abi_layout(entries.values[i].func.op),
               request->diagnostic_emitter, request->scratch_arena, &accepted,
@@ -590,10 +592,11 @@ static iree_status_t loom_x86_module_build_artifact(
           IREE_SV("task dispatch entries, the library query, and its readonly "
                   "library declaration"));
     } else {
-      loom_x86_hal_library_data_t data;
-      status = loom_x86_hal_library_build(
+      loom_native_task_library_data_t data;
+      status = loom_native_task_library_build_64le(
           request->identifier, library_entries, library_entry_count,
-          library_symbol_index, section_count, request->scratch_arena, &data);
+          library_symbol_index, section_count, LOOM_X86_RELOCATION_POINTER,
+          request->scratch_arena, &data);
       if (iree_status_is_ok(status)) {
         status = iree_arena_grow_array(request->scratch_arena, fixups.count,
                                        fixups.count + data.fixup_count,

@@ -66,7 +66,7 @@ kernel.def export("geometry") @geometry(%groups: index) {
 
 // ----
 low.kernel.def target<x86.scalar.core>(@__loom_target_context_0_0) abi_layout({offsets = [0, 0], signature = (buffer, i1) -> ()}) export("geometry") workgroup_size(1, 1, 1) @geometry(%output: reg<x86.gpr64>, %enabled: reg<x86.gpr32>) asm {
-  %position = live_in<x86.hal.workgroup_id_x> : reg<x86.gpr64>
+  %position = live_in<task.workgroup_id_x> : reg<x86.gpr64>
   %byte = mov.imm32 1
   low.cond_br %enabled, ^write, ^exit : reg<x86.gpr32>
 ^write:

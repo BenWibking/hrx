@@ -103,20 +103,6 @@ loom_cc_library(
 )
 
 loom_cc_library(
-    name = "hal_library",
-    srcs = ["hal_library.c"],
-    hdrs = ["hal_library.h"],
-    deps = [
-        ":encoding",
-        "//loom/src/loom/target/arch/x86:hal_abi",
-        "//loom/src/loom/target/emit/native:object",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base:core_headers",
-        "//runtime/src/iree/base/internal:arena",
-    ],
-)
-
-loom_cc_library(
     name = "module",
     srcs = ["module.c"],
     hdrs = ["module.h"],
@@ -124,15 +110,16 @@ loom_cc_library(
     deps = [
         ":abi",
         ":function",
-        ":hal_library",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/error:x86_error_defs",
         "//loom/src/loom/ops/global",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target:entry_selection",
         "//loom/src/loom/target:provider",
-        "//loom/src/loom/target/arch/x86:hal_abi",
+        "//loom/src/loom/target/abi/task:parameter_layout",
+        "//loom/src/loom/target/abi/task:state_layout",
         "//loom/src/loom/target/emit/native:object_elf",
+        "//loom/src/loom/target/emit/native:task_library",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/io:stream",

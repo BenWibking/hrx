@@ -117,6 +117,21 @@ loom_cc_library(
     ],
 )
 
+loom_cc_library(
+    name = "task_library",
+    srcs = ["task_library.c"],
+    hdrs = ["task_library.h"],
+    visibility = _NATIVE_X86_VISIBILITY,
+    deps = [
+        ":object",
+        "//loom/src/loom/target/abi/task:parameter_layout",
+        "//loom/src/loom/target/abi/task:state_layout",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base:core_headers",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
 loom_cc_test(
     name = "elf_symbols_test",
     srcs = ["elf_symbols_test.cc"],
