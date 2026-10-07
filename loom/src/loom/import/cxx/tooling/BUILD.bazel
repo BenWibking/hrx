@@ -69,6 +69,19 @@ loom_cc_library(
     ],
 )
 
+loom_cc_library(
+    name = "loomc_input",
+    srcs = ["loomc_input.c"],
+    hdrs = ["loomc_input.h"],
+    deps = [
+        ":input",
+        "//loom/binding/c:loomc",
+        "//loom/binding/c/import/cxx",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
 iree_execution_test_suite(
     name = "execution_test",
     data = [

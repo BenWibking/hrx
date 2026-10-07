@@ -28,6 +28,18 @@ _EMIT_AMDGPU_CHECK_DEPS = iree_select({
     "//conditions:default": [],
 })
 
+_IMPORT_CXX_COPTS = iree_select({
+    "//loom/config/import:cxx": ["-DLOOM_CHECK_HAVE_IMPORT_CXX=1"],
+    "//conditions:default": [],
+})
+
+_IMPORT_CXX_DEPS = iree_select({
+    "//loom/config/import:cxx": [
+        "//loom/src/loom/import/cxx/tooling:loomc_input",
+    ],
+    "//conditions:default": [],
+})
+
 _TARGET_SPIRV_CHECK_COPTS = iree_select({
     "//loom/config/target/arch:spirv": [
         "-DLOOM_CHECK_HAVE_TARGET_SPIRV=1",
@@ -121,6 +133,7 @@ _TARGET_XDNA_CHECK_DEPS = iree_select({
 })
 
 _LOOM_CHECK_PROVIDER_COPTS = (
+    _IMPORT_CXX_COPTS +
     _EMIT_AMDGPU_CHECK_COPTS +
     _TARGET_SPIRV_CHECK_COPTS +
     _EMIT_SPIRV_CHECK_COPTS +
@@ -132,6 +145,7 @@ _LOOM_CHECK_PROVIDER_COPTS = (
 )
 
 _LOOM_CHECK_PROVIDER_DEPS = (
+    _IMPORT_CXX_DEPS +
     _EMIT_AMDGPU_CHECK_DEPS +
     _TARGET_SPIRV_CHECK_DEPS +
     _EMIT_SPIRV_CHECK_DEPS +
@@ -398,17 +412,23 @@ loom_cc_library(
 
 loom_cc_library(
     name = "compile",
-    srcs = ["compile.c"],
-    hdrs = ["compile.h"],
+    srcs = [
+        "compile.c",
+        "compile_diagnostics.c",
+    ],
+    hdrs = [
+        "compile.h",
+        "compile_diagnostics.h",
+    ],
     deps = [
         ":execute",
-        "//loom/src/loom/codegen/low:repr",
-        "//loom/src/loom/compile:request",
-        "//loom/src/loom/sanitizer:options",
-        "//loom/src/loom/target:entry_selection",
-        "//loom/src/loom/target:profile",
-        "//loom/src/loom/tooling/compile:pipeline",
-        "//loom/src/loom/tooling/config",
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/testing:test_file",
+        "//loom/src/loom/tooling/input",
+        "//loom/src/loom/tooling/io:source_path",
+        "//loom/src/loom/util:json",
+        "//loom/src/loom/util:stream",
         "//runtime/src/iree/base",
     ],
 )
@@ -468,13 +488,15 @@ loom_cc_library(
     srcs = ["main.c"],
     hdrs = ["main.h"],
     deps = [
+        ":compile",
         ":execute",
         ":file",
         ":json_output",
         ":output",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/sanitizer:options",
-        "//loom/src/loom/target:selection",
         "//loom/src/loom/tooling/cli:help",
+        "//loom/src/loom/tooling/cli:loomc_options",
         "//loom/src/loom/tooling/config",
         "//loom/src/loom/tooling/context",
         "//runtime/src/iree/base",
@@ -555,7 +577,9 @@ loom_cc_binary(
     srcs = ["loom-check.c"],
     copts = _LOOM_CHECK_PROVIDER_COPTS,
     deps = [
+        ":compile",
         ":provider",
+        "//loom/binding/c/target/configured",
         "//loom/src/loom/target/arch/cmd/check:check_provider",
         "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",
@@ -569,8 +593,10 @@ loom_cc_binary(
     srcs = ["loom-check.c"],
     copts = ["-DLOOM_CHECK_HAVE_TEST_PROVIDER=1"] + _LOOM_CHECK_PROVIDER_COPTS,
     deps = [
+        ":compile",
         ":provider",
         ":test_provider",
+        "//loom/binding/c/target/configured",
         "//loom/src/loom/target/arch/cmd/check:check_provider",
         "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",

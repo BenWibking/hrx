@@ -85,6 +85,11 @@ typedef struct loom_check_diagnostic_emitter_capture_t {
 bool loom_check_diagnostic_collector_has_error(
     const loom_check_diagnostic_collector_t* collector);
 
+// Appends one fully materialized diagnostic and updates severity counts.
+iree_status_t loom_check_diagnostic_collector_append(
+    loom_check_diagnostic_collector_t* collector,
+    const loom_check_collected_diagnostic_t* diagnostic);
+
 // Diagnostic sink callback. Renders, stores, and JSON-captures one diagnostic.
 iree_status_t loom_check_diagnostic_collector_sink(
     void* user_data, const loom_diagnostic_t* diagnostic);

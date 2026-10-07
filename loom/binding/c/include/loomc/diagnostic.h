@@ -80,12 +80,26 @@ typedef struct loomc_diagnostic_related_location_t {
   loomc_source_range_t range;
 } loomc_diagnostic_related_location_t;
 
+/// A named diagnostic parameter rendered for structured consumers.
+///
+/// Parameter values use the same canonical human-readable spelling as the
+/// diagnostic message. This keeps compiler-owned parameter variants and type
+/// handles behind the LoomC boundary while allowing tools to match or report
+/// structured values without parsing message text.
+typedef struct loomc_diagnostic_parameter_t {
+  /// Stable parameter name from the diagnostic definition.
+  loomc_string_view_t name;
+
+  /// Canonical human-readable parameter value.
+  loomc_string_view_t value;
+} loomc_diagnostic_parameter_t;
+
 /// Borrowed diagnostic view owned by a result object.
 ///
 /// @lifetime
-/// Diagnostic strings, related locations, and source ranges are owned by the
-/// result that returned this view. They remain valid until that result is
-/// released.
+/// Diagnostic strings, parameters, related locations, and source ranges are
+/// owned by the result that returned this view. They remain valid until that
+/// result is released.
 typedef struct loomc_diagnostic_t {
   /// Diagnostic severity.
   loomc_diagnostic_severity_t severity;
@@ -116,6 +130,13 @@ typedef struct loomc_diagnostic_t {
 
   /// Number of additional resolved locations omitted by the producer's limit.
   loomc_host_size_t related_location_omitted_count;
+
+  /// Named rendered parameters in diagnostic-definition order, or NULL when
+  /// the count is zero.
+  const loomc_diagnostic_parameter_t* parameters;
+
+  /// Number of entries in parameters.
+  loomc_host_size_t parameter_count;
 } loomc_diagnostic_t;
 
 #ifdef __cplusplus

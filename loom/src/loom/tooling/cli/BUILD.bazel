@@ -21,3 +21,15 @@ loom_cc_library(
         "//runtime/src/iree/base/tooling:flags",
     ],
 )
+
+loom_cc_library(
+    name = "loomc_options",
+    srcs = ["loomc_options.c"],
+    hdrs = ["loomc_options.h"],
+    deps = [
+        "//loom/binding/c:loomc",
+        "//loom/src/loom/sanitizer:options",
+        "//loom/src/loom/tooling/config",
+        "//runtime/src/iree/base",
+    ],
+)

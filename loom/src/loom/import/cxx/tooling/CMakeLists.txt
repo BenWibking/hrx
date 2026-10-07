@@ -82,6 +82,24 @@ loom_cc_library(
 )
 endif()
 
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    loomc_input
+  HDRS
+    "loomc_input.h"
+  SRCS
+    "loomc_input.c"
+  DEPS
+    ::input
+    iree::base
+    iree::base::internal::arena
+    loom::binding::c::import::cxx
+    loom::binding::c::loomc
+  PUBLIC
+)
+endif()
+
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_VM)
 iree_execution_test_suite(
   NAME

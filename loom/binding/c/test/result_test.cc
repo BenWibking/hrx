@@ -61,6 +61,8 @@ TEST(ResultTest, OwnsDiagnosticsAndArtifacts) {
   char code[] = "PARSE/001";
   char message[] = "expected a thing";
   char formatted[] = "bad.loom:1:1: error [PARSE/001]: expected a thing\n";
+  char parameter_name[] = "expected_kind";
+  char parameter_value[] = "thing";
   loomc_diagnostic_t diagnostic = {
       /*.severity=*/LOOMC_DIAGNOSTIC_SEVERITY_ERROR,
       /*.code=*/loomc_make_string_view(code, sizeof(code) - 1),
@@ -85,10 +87,18 @@ TEST(ResultTest, OwnsDiagnosticsAndArtifacts) {
   diagnostic.related_locations = &related;
   diagnostic.related_location_count = 1;
   diagnostic.related_location_omitted_count = 2;
+  loomc_diagnostic_parameter_t parameter = {
+      /*.name=*/loomc_make_cstring_view(parameter_name),
+      /*.value=*/loomc_make_cstring_view(parameter_value),
+  };
+  diagnostic.parameters = &parameter;
+  diagnostic.parameter_count = 1;
   LOOMC_ASSERT_OK(loomc_result_add_diagnostic(result, &diagnostic));
   const auto* retained_related =
       loomc_result_diagnostic_at(result, 0)->related_locations;
-  // Growing the result array must not move the owned note payload.
+  const auto* retained_parameters =
+      loomc_result_diagnostic_at(result, 0)->parameters;
+  // Growing the result array must not move owned diagnostic payloads.
   for (int i = 0; i < 8; ++i) {
     LOOMC_ASSERT_OK(loomc_result_add_diagnostic(result, &diagnostic));
   }
@@ -115,7 +125,10 @@ TEST(ResultTest, OwnsDiagnosticsAndArtifacts) {
   message[0] = 'X';
   formatted[0] = 'X';
   label[0] = 'X';
+  parameter_name[0] = 'X';
+  parameter_value[0] = 'X';
   related.range = {};
+  parameter = {};
   format[0] = 'X';
   identifier[0] = 'X';
   contents[0] = 'X';
@@ -142,6 +155,10 @@ TEST(ResultTest, OwnsDiagnosticsAndArtifacts) {
   EXPECT_EQ(retained_related->range.end_column, 4u);
   EXPECT_EQ(ToString(loomc_source_contents(retained_related->range.source)),
             "bad");
+  ASSERT_EQ(stored_diagnostic->parameter_count, 1u);
+  EXPECT_EQ(stored_diagnostic->parameters, retained_parameters);
+  EXPECT_EQ(ToString(retained_parameters->name), "expected_kind");
+  EXPECT_EQ(ToString(retained_parameters->value), "thing");
 
   ASSERT_EQ(loomc_result_artifact_count(result), 1u);
   const loomc_artifact_t* stored_artifact = loomc_result_artifact_at(result, 0);
@@ -231,6 +248,19 @@ TEST(ResultTest, RejectsDiagnosticWithMissingRelatedLocations) {
   EXPECT_EQ(loomc_result_diagnostic_count(result), 0u);
 }
 
+TEST(ResultTest, RejectsDiagnosticWithMissingParameters) {
+  loomc_result_t* result = nullptr;
+  LOOMC_ASSERT_OK(loomc_result_create(LOOMC_RESULT_STATE_FAILED,
+                                      LOOMC_SOURCE_RETENTION_EXACT,
+                                      loomc_allocator_system(), &result));
+  ResultPtr result_owner(result);
+  loomc_diagnostic_t diagnostic = {};
+  diagnostic.parameter_count = 1;
+  LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         loomc_result_add_diagnostic(result, &diagnostic));
+  EXPECT_EQ(loomc_result_diagnostic_count(result), 0u);
+}
+
 TEST(ResultTest, EmptyDiagnosticNeedsNoMetadataPayload) {
   loomc_result_t* result = nullptr;
   LOOMC_ASSERT_OK(loomc_result_create(LOOMC_RESULT_STATE_FAILED,
@@ -245,6 +275,8 @@ TEST(ResultTest, EmptyDiagnosticNeedsNoMetadataPayload) {
   EXPECT_EQ(stored->formatted_text.size, 0u);
   EXPECT_EQ(stored->related_locations, nullptr);
   EXPECT_EQ(stored->related_location_count, 0u);
+  EXPECT_EQ(stored->parameters, nullptr);
+  EXPECT_EQ(stored->parameter_count, 0u);
 }
 
 TEST(ResultTest, RejectsMalformedArtifact) {

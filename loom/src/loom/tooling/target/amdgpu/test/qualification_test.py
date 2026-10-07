@@ -59,6 +59,17 @@ class QualificationTest(unittest.TestCase):
         self.assertEqual(
             report["summary"], {"total": 1, "passed": 1, "failed": 0, "skipped": 0}
         )
+        diagnostics = report["cases"][0]["diagnostics"]
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(diagnostics[0]["diagnostic_code"], "AMDGPU/026")
+        self.assertEqual(
+            diagnostics[0]["params"],
+            {
+                "target_name": "wave32",
+                "subgroup_size": "32",
+                "processor": "gfx942",
+            },
+        )
 
     def test_wrong_diagnostic_identity_fails(self):
         self.rejected.write_text(
