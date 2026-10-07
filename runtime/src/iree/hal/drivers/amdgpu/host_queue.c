@@ -1805,7 +1805,8 @@ static iree_status_t iree_hal_amdgpu_host_queue_enqueue_dealloca(
     }
     const iree_hal_buffer_placement_t placement =
         iree_hal_buffer_allocation_placement(buffers[i]);
-    if (IREE_UNLIKELY(placement.device != queue->logical_device)) {
+    if (IREE_UNLIKELY(!buffers[i]->memory.contract &&
+                      placement.device != queue->logical_device)) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "deallocation buffer %" PRIhsz " belongs to another device", i);

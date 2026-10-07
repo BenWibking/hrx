@@ -50,16 +50,6 @@ class AmdgpuBufferTest : public CtsTestBase<> {
 };
 
 TEST_P(AmdgpuBufferTest, NativeBindingsExecuteFromInteriorPoolRanges) {
-  iree_hal_queue_pool_backend_t backend = {};
-  IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
-      device_, iree_hal_queue_family(transfer_queue_), &backend));
-  iree_hal_passthrough_pool_options_t source_options = {};
-  source_options.epoch_query = backend.epoch_query;
-  Ref<iree_hal_pool_t> source;
-  IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
-      source_options, backend.slab_provider, backend.notification,
-      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
-      source.out()));
   iree_hal_buffer_params_t params = {};
   params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
   params.access = IREE_HAL_MEMORY_ACCESS_ALL;
@@ -71,6 +61,19 @@ TEST_P(AmdgpuBufferTest, NativeBindingsExecuteFromInteriorPoolRanges) {
           iree_hal_queue_family(transfer_queue_))) |
       iree_hal_make_queue_family_affinity(iree_hal_queue_family_ordinal(
           iree_hal_queue_family(dispatch_queue_)));
+  std::array<iree_hal_pool_family_access_t, 2> families = {};
+  families[0].family = iree_hal_queue_family(transfer_queue_);
+  families[0].usage = params.usage;
+  families[1].family = iree_hal_queue_family(dispatch_queue_);
+  families[1].usage = params.usage;
+  const iree_hal_pool_scope_t scope = {
+      families[0].family == families[1].family ? 1u : 2u, families.data(), {}};
+  iree_hal_slab_pool_options_t source_options;
+  iree_hal_slab_pool_options_initialize(&source_options);
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(
+      iree_hal_slab_pool_create(device_group_, scope, &source_options,
+                                iree_allocator_system(), source.out()));
   Ref<iree_hal_buffer_t> backing;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
       source, params, 8192, iree_infinite_timeout(), backing.out()));

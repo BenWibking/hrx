@@ -239,9 +239,6 @@ static bool iree_hal_amdgpu_pool_supports_queue_families(
 static iree_status_t iree_hal_amdgpu_host_queue_validate_alloca_request(
     const iree_hal_pool_capabilities_t* capabilities, iree_host_size_t index,
     iree_hal_pool_reservation_request_t* request) {
-  iree_hal_buffer_params_canonicalize(&request->params);
-  iree_hal_amdgpu_host_queue_apply_pool_optimal_memory_type(capabilities,
-                                                            &request->params);
   if (IREE_UNLIKELY(!iree_all_bits_set(capabilities->memory_type,
                                        request->params.type))) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -290,6 +287,17 @@ iree_status_t iree_hal_amdgpu_host_queue_prepare_alloca_buffers(
   iree_host_size_t prepared_count = 0;
   while (prepared_count < request_count && iree_status_is_ok(status)) {
     out_canonical_requests[prepared_count] = requests[prepared_count];
+    if (pool->memory_contract) {
+      out_canonical_requests[prepared_count].params =
+          pool->memory_contract->buffer_params;
+      out_canonical_requests[prepared_count].params.min_alignment =
+          requests[prepared_count].params.min_alignment;
+    } else {
+      iree_hal_buffer_params_canonicalize(
+          &out_canonical_requests[prepared_count].params);
+      iree_hal_amdgpu_host_queue_apply_pool_optimal_memory_type(
+          &capabilities, &out_canonical_requests[prepared_count].params);
+    }
     status = iree_hal_amdgpu_host_queue_validate_alloca_request(
         &capabilities, prepared_count, &out_canonical_requests[prepared_count]);
     if (!iree_status_is_ok(status)) {
@@ -499,7 +507,9 @@ iree_status_t iree_hal_amdgpu_host_queue_materialize_alloca_transaction(
   // application-selected storage before commitment consumes its native table.
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0;
-       i < transaction->request_count && iree_status_is_ok(status); ++i) {
+       !allocation_pool->memory_contract && i < transaction->request_count &&
+       iree_status_is_ok(status);
+       ++i) {
     iree_hal_buffer_t* backing = transaction->backing_buffers[i];
     iree_hal_buffer_t* root = iree_hal_buffer_allocated_buffer(backing);
     if ((!iree_hal_amdgpu_buffer_isa(root) &&

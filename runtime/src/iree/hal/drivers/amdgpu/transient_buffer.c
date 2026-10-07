@@ -271,6 +271,7 @@ iree_status_t iree_hal_amdgpu_transient_buffer_create(
       &iree_hal_amdgpu_transient_buffer_vtable, &buffer->base);
   memset(&buffer->native, 0, sizeof(buffer->native));
   buffer->base.memory.bindings = buffer->native.bindings;
+  buffer->base.memory.contract = source_pool->memory_contract;
   buffer->base.host_binding_index = IREE_HAL_AMDGPU_BUFFER_BINDING_HOST;
   buffer->wrapper_pool = wrapper_pool;
   buffer->staged_backing = NULL;

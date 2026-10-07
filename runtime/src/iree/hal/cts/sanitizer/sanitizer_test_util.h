@@ -354,6 +354,9 @@ class SanitizerCachedBackendDevice {
   // Returns the cached HAL device.
   iree_hal_device_t* device() const { return device_; }
 
+  // Returns the sealed group owning the cached device's memory scope.
+  iree_hal_device_group_t* device_group() const { return device_group_; }
+
   // Returns the first provisioned queue on the cached HAL device.
   iree_hal_queue_t* queue() const {
     return iree_hal_device_queue(device_, /*family_ordinal=*/0,

@@ -2480,6 +2480,11 @@ iree_hal_amdgpu_logical_device_topology_info(iree_hal_device_t* base_device) {
   return &logical_device->topology_info;
 }
 
+static const iree_hal_memory_backend_t*
+iree_hal_amdgpu_logical_device_memory_backend(iree_hal_device_t* base_device) {
+  return &iree_hal_amdgpu_logical_device_cast(base_device)->memory_backend.base;
+}
+
 // Maximum number of HSA memory-pool link hops we will stack-allocate.
 #define IREE_HAL_AMDGPU_MAX_TOPOLOGY_LINK_HOPS 16
 
@@ -2831,6 +2836,19 @@ static iree_status_t iree_hal_amdgpu_logical_device_assign_topology_info(
     logical_device->frontier_tracker = topology_info->frontier.tracker;
     logical_device->axis = topology_info->frontier.base_axis;
     iree_async_frontier_tracker_retain(logical_device->frontier_tracker);
+    logical_device->memory_backend = (iree_hal_amdgpu_memory_backend_t){
+        .device = base_device,
+        .libhsa = &system->libhsa,
+        .topology = &system->topology,
+        .physical_devices = logical_device->physical_devices,
+        .asan_state = &logical_device->asan,
+        .epoch_query =
+            {
+                .fn = iree_hal_amdgpu_logical_device_query_pool_epoch,
+                .user_data = logical_device,
+            },
+    };
+    iree_hal_amdgpu_memory_backend_initialize(&logical_device->memory_backend);
   } else {
     iree_hal_amdgpu_logical_device_deassign_frontier(logical_device);
   }
@@ -3474,6 +3492,7 @@ static const iree_hal_device_vtable_t iree_hal_amdgpu_logical_device_vtable = {
     .acquire_queue = iree_hal_amdgpu_logical_device_acquire_queue,
     .sample_observation = iree_hal_amdgpu_logical_device_sample_observation,
     .topology_info = iree_hal_amdgpu_logical_device_topology_info,
+    .memory_backend = iree_hal_amdgpu_logical_device_memory_backend,
     .refine_topology_edge = iree_hal_amdgpu_logical_device_refine_topology_edge,
     .assign_topology_info = iree_hal_amdgpu_logical_device_assign_topology_info,
     .create_channel = iree_hal_amdgpu_logical_device_create_channel,

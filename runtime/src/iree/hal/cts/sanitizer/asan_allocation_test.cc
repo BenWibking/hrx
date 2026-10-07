@@ -248,6 +248,74 @@ TEST_P(AsanAllocationTest, InBoundsAccessStaysQuiet) {
                    kAsanReportExpectationFlagNone);
 }
 
+TEST_P(AsanAllocationTest, ScopedSourcesPreserveNativeSanitizerAdvice) {
+  const iree_hal_pool_family_access_t family = {
+      iree_hal_queue_family(queue()),
+      IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_STORAGE};
+  const auto* sanitizer =
+      iree_hal_device_spec_sanitizer(iree_hal_device_spec(device()));
+  for (auto host_access :
+       {IREE_HAL_MEMORY_ACCESS_NONE, IREE_HAL_MEMORY_ACCESS_READ}) {
+    SCOPED_TRACE(host_access);
+    iree_hal_pool_scope_t scope = {1, &family, {}};
+    scope.host.access = host_access;
+    scope.host.modes = host_access ? IREE_HAL_MAPPING_MODE_SCOPED : 0;
+    iree_hal_slab_pool_options_t source_options;
+    iree_hal_slab_pool_options_initialize(&source_options);
+    Ref<iree_hal_pool_t> source;
+    IREE_ASSERT_OK(iree_hal_slab_pool_create(
+        asan_device_.device_group(), scope, &source_options,
+        iree_allocator_system(), source.out()));
+    iree_hal_tlsf_pool_options_t options = {};
+    options.tlsf_options.range_length = 65536;
+    options.asan = sanitizer->asan.pool_options;
+    Ref<iree_hal_pool_t> pool;
+    IREE_ASSERT_OK(iree_hal_tlsf_pool_create(
+        source, &options, iree_allocator_system(), pool.out()));
+    iree_hal_pool_reservation_request_t request = {};
+    request.allocation_size = kAsanAllocationBufferLength;
+    Ref<iree_hal_buffer_t> buffer;
+    SemaphoreList allocated(device(), {0}, {1});
+    IREE_ASSERT_OK(
+        iree_hal_queue_alloca(queue(), iree_hal_semaphore_list_empty(),
+                              allocated, pool, 1, &request, buffer.out()));
+    const uint32_t value = 0x1234ABCD;
+    SemaphoreList filled(device(), {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_fill(queue(), allocated, filled, buffer, 0,
+                                       kAsanAllocationBufferLength, &value,
+                                       sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
+                                                IREE_ASYNC_WAIT_FLAG_NONE));
+    const iree_hal_buffer_ref_t binding =
+        iree_hal_make_buffer_ref(buffer, 0, kAsanAllocationBufferLength);
+    recorder()->Reset();
+    IREE_ASSERT_OK(DispatchAsanAllocationSelector(
+        device(), queue(), executable(), {1, &binding},
+        kAsanAllocationHookLoad2,
+        /*access_length=*/2, /*address_adjustment=*/0));
+    IREE_ASSERT_OK(DispatchAsanAllocationSelector(
+        device(), queue(), executable(), {1, &binding},
+        kAsanAllocationHookReportLoadN, kAsanAllocationSentinelLength,
+        /*address_adjustment=*/0));
+    ExpectAsanReport(
+        /*expected_count=*/1, IREE_HAL_DEVICE_ASAN_ACCESS_KIND_READ,
+        kAsanAllocationSentinelLength, kAsanReportExpectationFlagNone);
+    uint32_t output = 0;
+    SemaphoreList downloaded(device(), {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_download(queue(), filled, downloaded, buffer,
+                                           0, &output, sizeof(output)));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    EXPECT_EQ(output, value);
+    SemaphoreList deallocated(device(), {0}, {1});
+    auto* raw_buffer = buffer.get();
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(queue(), downloaded, deallocated, 1,
+                                           &raw_buffer));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        deallocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  }
+}
+
 TEST_P(AsanAllocationTest, AllocationRedzonesReport) {
   Ref<iree_hal_buffer_t> buffer;
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(

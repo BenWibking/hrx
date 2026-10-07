@@ -117,7 +117,8 @@ static iree_status_t iree_hal_amdgpu_transfer_validate_buffer(
     iree_hal_semaphore_list_t wait_semaphore_list) {
   const iree_hal_buffer_placement_t placement =
       iree_hal_buffer_allocation_placement(buffer);
-  if (!iree_hal_buffer_placement_is_undefined(placement) &&
+  if (!buffer->memory.contract &&
+      !iree_hal_buffer_placement_is_undefined(placement) &&
       placement.device != queue->logical_device) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
