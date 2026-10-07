@@ -892,19 +892,20 @@ static iree_status_t iree_hal_passthrough_pool_materialize_reservations(
       release_callback.user_data = &state->elements[materialized_count];
       staged_buffer = &state->elements[materialized_count].buffer;
     }
+    iree_hal_buffer_params_t params;
+    if (base_pool->memory_contract) {
+      params = base_pool->memory_contract->buffer_params;
+    } else {
+      params = requests[materialized_count].params;
+      iree_hal_buffer_params_canonicalize(&params);
+    }
     status = iree_hal_slab_provider_wrap_buffer(
         pool->slab_provider, &reservation_state->slab,
         reservations[materialized_count].offset,
-        reservations[materialized_count].byte_length,
-        base_pool->memory_contract ? base_pool->memory_contract->buffer_params
-                                   : requests[materialized_count].params,
-        release_callback, staged_buffer);
+        reservations[materialized_count].byte_length, params, release_callback,
+        staged_buffer);
     if (iree_status_is_ok(status)) {
       (*staged_buffer)->memory.contract = base_pool->memory_contract;
-      if (base_pool->memory_contract) {
-        (*staged_buffer)->allowed_usage =
-            base_pool->memory_contract->buffer_params.usage;
-      }
       (*staged_buffer)->memory.backing =
           &reservation_state->buffer_backing.facts;
       (*staged_buffer)->memory.offset = reservations[materialized_count].offset;

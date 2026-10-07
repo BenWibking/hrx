@@ -49,8 +49,7 @@ typedef struct iree_hal_vulkan_slab_provider_options_t {
   // Queue families that may access buffers materialized from this provider.
   iree_hal_queue_family_affinity_t queue_family_affinity_mask;
 
-  // Minimum alignment used by the default suballocating pool over this
-  // provider.
+  // Required whole-allocation alignment captured from native requirements.
   iree_device_size_t min_alignment;
 
   // Physical-device nonCoherentAtomSize used for mapped-memory ranges.
@@ -60,9 +59,9 @@ typedef struct iree_hal_vulkan_slab_provider_options_t {
 // Creates a slab provider that acquires whole Vulkan buffers.
 //
 // |allocator| is borrowed and must outlive the provider and all pools backed by
-// it. This mirrors the device-owned pool lifetime model: default pools are
-// owned by the Vulkan allocator, and materialized buffers borrow their source
-// pools instead of retaining them.
+// it. The sealed group keeps the native owner alive, while each constructed
+// source retains its provider. Materialized buffers borrow their source pool
+// throughout their caller-owned allocation epoch.
 iree_status_t iree_hal_vulkan_slab_provider_create(
     iree_hal_vulkan_allocator_t* allocator,
     iree_hal_vulkan_slab_provider_options_t options,

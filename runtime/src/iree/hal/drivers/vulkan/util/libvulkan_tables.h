@@ -153,6 +153,12 @@ IREE_HAL_VULKAN_DEVICE_PFN(void, vkGetBufferMemoryRequirements,
                                 VkMemoryRequirements* pMemoryRequirements),
                            ARGS(device, buffer, pMemoryRequirements))
 
+IREE_HAL_VULKAN_DEVICE_PFN(void, vkGetDeviceBufferMemoryRequirements,
+                           DECL(VkDevice device,
+                                const VkDeviceBufferMemoryRequirements* pInfo,
+                                VkMemoryRequirements2* pMemoryRequirements),
+                           ARGS(device, pInfo, pMemoryRequirements))
+
 IREE_HAL_VULKAN_DEVICE_PFN(VkResult, vkAllocateMemory,
                            DECL(VkDevice device,
                                 const VkMemoryAllocateInfo* pAllocateInfo,

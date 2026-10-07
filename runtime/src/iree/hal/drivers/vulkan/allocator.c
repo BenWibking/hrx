@@ -1244,41 +1244,6 @@ iree_hal_vulkan_allocator_query_buffer_compatibility(
   return compatibility;
 }
 
-static VkBufferUsageFlags iree_hal_vulkan_buffer_usage_from_hal(
-    const iree_hal_vulkan_allocator_t* allocator,
-    iree_hal_buffer_usage_t hal_usage) {
-  VkBufferUsageFlags usage = 0;
-  if (iree_all_bits_set(hal_usage, IREE_HAL_BUFFER_USAGE_TRANSFER_SOURCE)) {
-    usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-  }
-  if (iree_all_bits_set(hal_usage, IREE_HAL_BUFFER_USAGE_TRANSFER_TARGET)) {
-    usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  }
-  if (iree_any_bit_set(hal_usage,
-                       IREE_HAL_BUFFER_USAGE_DISPATCH_UNIFORM_READ)) {
-    usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-  }
-  if (iree_any_bit_set(hal_usage, IREE_HAL_BUFFER_USAGE_STORAGE)) {
-    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  }
-  if (iree_any_bit_set(hal_usage, IREE_HAL_BUFFER_USAGE_TRANSFER)) {
-    // Device-side transfer polyfills bind buffers as storage buffers even when
-    // the public HAL usage only exposes transfer operations.
-    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  }
-  if (iree_any_bit_set(hal_usage,
-                       IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS)) {
-    usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-  }
-  if (iree_all_bits_set(
-          allocator->enabled_features.general,
-          IREE_HAL_VULKAN_FEATURE_ENABLE_BUFFER_DEVICE_ADDRESSES) &&
-      iree_any_bit_set(hal_usage, IREE_HAL_BUFFER_USAGE_DISPATCH)) {
-    usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-  }
-  return usage;
-}
-
 static iree_status_t iree_hal_vulkan_allocator_resolve_buffer_sharing(
     const iree_hal_vulkan_allocator_t* allocator,
     iree_hal_queue_family_affinity_t queue_family_affinity,
@@ -1336,7 +1301,8 @@ static iree_status_t iree_hal_vulkan_allocator_create_buffer_handle(
       .pNext = create_info_pnext,
       .flags = create_flags,
       .size = (VkDeviceSize)allocation_size,
-      .usage = iree_hal_vulkan_buffer_usage_from_hal(allocator, params->usage),
+      .usage = iree_hal_vulkan_buffer_usage_from_hal(
+          allocator->enabled_features, params->usage),
       .sharingMode = sharing.mode,
       .queueFamilyIndexCount = sharing.queue_family_index_count,
       .pQueueFamilyIndices = sharing.queue_family_index_count

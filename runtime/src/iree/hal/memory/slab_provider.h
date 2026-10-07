@@ -172,8 +172,8 @@ void iree_hal_slab_provider_release_slab(iree_hal_slab_provider_t* provider,
 // buffer implementation for that slab's memory.
 //
 // |slab_offset| and |allocation_size| define the byte range relative to the
-// slab's base. The range must lie fully inside [0, slab->length). |params| is
-// canonicalized before dispatch.
+// slab's base. The range must lie fully inside [0, slab->length). |params|
+// carries the owner's resolved permissions; zero usage grants no operations.
 iree_status_t iree_hal_slab_provider_wrap_buffer(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
     iree_device_size_t slab_offset, iree_device_size_t allocation_size,

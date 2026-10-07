@@ -330,6 +330,32 @@ endif()
 if(IREE_HAL_DRIVER_VULKAN)
 iree_cc_test(
   NAME
+    slab_pool_tests
+  SRCS
+    "slab_pool_test.cc"
+  DEPS
+    ::backends
+    iree::hal
+    iree::hal::cts::util::registry
+    iree::hal::cts::util::test_base
+    iree::hal::cts::util::test_main
+    iree::hal::memory::fixed_block_pool
+    iree::hal::memory::maintenance
+    iree::hal::memory::slab_cache
+    iree::hal::memory::tlsf_pool
+    iree::testing::gtest
+  LABELS
+    "iree-build-requirement=runtime.hal.vulkan"
+    "iree-run-requirement=vulkan.resource.device"
+    "runtime-resource=vulkan-device"
+  RESOURCE_GROUP
+    gpu-device
+)
+endif()
+
+if(IREE_HAL_DRIVER_VULKAN)
+iree_cc_test(
+  NAME
     allocator_guardrail_tests
   SRCS
     "allocator_guardrail_test.cc"

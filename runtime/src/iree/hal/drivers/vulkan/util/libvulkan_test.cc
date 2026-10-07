@@ -49,6 +49,7 @@ TEST(LibVulkanTest, LoadsCoreDeviceWithoutOptionalExtensions) {
   IREE_ASSERT_OK(iree_hal_vulkan_libvulkan_load_device_syms(
       &instance_syms, reinterpret_cast<VkDevice>(&resolver), &device_syms));
   EXPECT_NE(device_syms.vkGetBufferDeviceAddress, nullptr);
+  EXPECT_NE(device_syms.vkGetDeviceBufferMemoryRequirements, nullptr);
   EXPECT_NE(device_syms.vkQueueSubmit2, nullptr);
   EXPECT_EQ(device_syms.vkGetMemoryHostPointerPropertiesEXT, nullptr);
   EXPECT_EQ(device_syms.vkCmdPushDescriptorSetKHR, nullptr);

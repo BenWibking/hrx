@@ -940,12 +940,28 @@ TEST_P(BdaSpirvTest, CommandBufferHandlesOversizedBdaPublication) {
 }
 
 TEST_P(BdaSpirvTest, NativeBindingsExecuteFromInteriorPoolRanges) {
-  iree_hal_buffer_params_t params = SparseDispatchBufferParams();
-  params.access = IREE_HAL_MEMORY_ACCESS_ALL;
-  params.usage |= IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS;
+  std::array<iree_hal_pool_family_access_t, 2> families = {};
+  families[0].family = iree_hal_queue_family(transfer_queue_);
+  families[0].usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
+  families[1].family = iree_hal_queue_family(dispatch_queue_);
+  families[1].usage = IREE_HAL_BUFFER_USAGE_STORAGE |
+                      IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS;
+  iree_hal_pool_scope_t scope = {};
+  scope.family_count = families[0].family == families[1].family ? 1 : 2;
+  if (scope.family_count == 1) {
+    families[0].usage |= families[1].usage;
+  }
+  scope.families = families.data();
+  iree_hal_slab_pool_options_t source_options;
+  iree_hal_slab_pool_options_initialize(&source_options);
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(
+      iree_hal_slab_pool_create(device_group_, scope, &source_options,
+                                iree_allocator_system(), source.out()));
+  const iree_hal_buffer_params_t params = {};
   Ref<iree_hal_buffer_t> backing;
-  IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(device_allocator_, params,
-                                                    8192, backing.out()));
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      source, params, 8192, iree_infinite_timeout(), backing.out()));
   iree_hal_tlsf_pool_options_t options = {};
   options.tlsf_options.frontier_capacity = 4;
   Ref<iree_hal_pool_t> arena_pool;

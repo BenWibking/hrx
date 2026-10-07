@@ -12,6 +12,41 @@
 #include "iree/hal/drivers/vulkan/sparse_buffer.h"
 #include "iree/hal/drivers/vulkan/transient_buffer.h"
 
+VkBufferUsageFlags iree_hal_vulkan_buffer_usage_from_hal(
+    iree_hal_vulkan_features_t enabled_features,
+    iree_hal_buffer_usage_t hal_usage) {
+  VkBufferUsageFlags usage = 0;
+  if (iree_all_bits_set(hal_usage, IREE_HAL_BUFFER_USAGE_TRANSFER_SOURCE)) {
+    usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+  }
+  if (iree_all_bits_set(hal_usage, IREE_HAL_BUFFER_USAGE_TRANSFER_TARGET)) {
+    usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+  }
+  if (iree_any_bit_set(hal_usage,
+                       IREE_HAL_BUFFER_USAGE_DISPATCH_UNIFORM_READ)) {
+    usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+  }
+  if (iree_any_bit_set(hal_usage, IREE_HAL_BUFFER_USAGE_STORAGE)) {
+    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+  }
+  if (iree_any_bit_set(hal_usage, IREE_HAL_BUFFER_USAGE_TRANSFER)) {
+    // Device-side transfer polyfills bind buffers as storage buffers even when
+    // the public HAL usage only exposes transfer operations.
+    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+  }
+  if (iree_any_bit_set(hal_usage,
+                       IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS)) {
+    usage |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+  }
+  if (iree_all_bits_set(
+          enabled_features.general,
+          IREE_HAL_VULKAN_FEATURE_ENABLE_BUFFER_DEVICE_ADDRESSES) &&
+      iree_any_bit_set(hal_usage, IREE_HAL_BUFFER_USAGE_DISPATCH)) {
+    usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  }
+  return usage;
+}
+
 //===----------------------------------------------------------------------===//
 // iree_hal_vulkan_buffer_t
 //===----------------------------------------------------------------------===//

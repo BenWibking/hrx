@@ -344,6 +344,8 @@ iree_cc_library(
     "executable.h"
     "logical_device.c"
     "logical_device.h"
+    "memory_backend.c"
+    "memory_backend.h"
     "physical_device.c"
     "physical_device.h"
     "physical_device_selection.c"

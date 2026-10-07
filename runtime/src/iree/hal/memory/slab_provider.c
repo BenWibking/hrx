@@ -55,7 +55,6 @@ iree_status_t iree_hal_slab_provider_wrap_buffer(
                             " is outside slab length %" PRIdsz,
                             slab_offset, allocation_size, slab->length);
   }
-  iree_hal_buffer_params_canonicalize(&params);
   return provider->vtable->wrap_buffer(provider, slab, slab_offset,
                                        allocation_size, params,
                                        release_callback, out_buffer);

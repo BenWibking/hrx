@@ -9,6 +9,7 @@
 
 #include "iree/base/api.h"
 #include "iree/hal/api.h"
+#include "iree/hal/drivers/vulkan/api.h"
 #include "iree/hal/drivers/vulkan/util/libvulkan.h"
 
 #ifdef __cplusplus
@@ -18,6 +19,12 @@ extern "C" {
 //===----------------------------------------------------------------------===//
 // iree_hal_vulkan_buffer_t
 //===----------------------------------------------------------------------===//
+
+// Native resource usage shared by cold qualification and actual allocation.
+// Transfer polyfills require private storage access independently of grants.
+VkBufferUsageFlags iree_hal_vulkan_buffer_usage_from_hal(
+    iree_hal_vulkan_features_t enabled_features,
+    iree_hal_buffer_usage_t hal_usage);
 
 // Shared mapping state for one dense VkDeviceMemory allocation.
 typedef struct iree_hal_vulkan_buffer_mapping_state_t

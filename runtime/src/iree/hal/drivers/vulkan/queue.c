@@ -7014,33 +7014,45 @@ static iree_status_t iree_hal_vulkan_queue_create_transient_buffer(
     iree_hal_buffer_t** out_buffer) {
   iree_hal_pool_capabilities_t pool_capabilities;
   iree_hal_pool_query_capabilities(pool, &pool_capabilities);
-  iree_hal_pool_reservation_request_t canonical_request;
-  IREE_RETURN_IF_ERROR(iree_hal_vulkan_allocator_resolve_pool_allocation(
-      queue->device_allocator, &pool_capabilities, request->params,
-      request->allocation_size, &canonical_request.params,
-      &canonical_request.allocation_size));
-  if (IREE_UNLIKELY(!iree_all_bits_set(pool_capabilities.memory_type,
-                                       canonical_request.params.type))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "Vulkan allocation request %" PRIhsz
-                            " memory type is not supported by the source pool",
-                            request_index);
-  }
-  if (IREE_UNLIKELY(!iree_all_bits_set(pool_capabilities.supported_usage,
-                                       canonical_request.params.usage))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "Vulkan allocation request %" PRIhsz
-                            " usage is not supported by the source pool",
-                            request_index);
-  }
-  if (IREE_UNLIKELY(!iree_hal_vulkan_pool_supports_queue_families(
-          pool_capabilities.queue_family_affinity,
-          canonical_request.params.queue_family_affinity))) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "Vulkan allocation request %" PRIhsz
-        " queue family affinity is not supported by the source pool",
-        request_index);
+  iree_hal_pool_reservation_request_t canonical_request = *request;
+  if (pool->memory_contract) {
+    canonical_request.params = pool->memory_contract->buffer_params;
+    canonical_request.params.min_alignment = request->params.min_alignment;
+    if (!iree_device_size_checked_align(request->allocation_size, 4,
+                                        &canonical_request.allocation_size)) {
+      return iree_make_status(
+          IREE_STATUS_OUT_OF_RANGE,
+          "Vulkan allocation size overflows dword alignment");
+    }
+  } else {
+    IREE_RETURN_IF_ERROR(iree_hal_vulkan_allocator_resolve_pool_allocation(
+        queue->device_allocator, &pool_capabilities, request->params,
+        request->allocation_size, &canonical_request.params,
+        &canonical_request.allocation_size));
+    if (IREE_UNLIKELY(!iree_all_bits_set(pool_capabilities.memory_type,
+                                         canonical_request.params.type))) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "Vulkan allocation request %" PRIhsz
+          " memory type is not supported by the source pool",
+          request_index);
+    }
+    if (IREE_UNLIKELY(!iree_all_bits_set(pool_capabilities.supported_usage,
+                                         canonical_request.params.usage))) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "Vulkan allocation request %" PRIhsz
+                              " usage is not supported by the source pool",
+                              request_index);
+    }
+    if (IREE_UNLIKELY(!iree_hal_vulkan_pool_supports_queue_families(
+            pool_capabilities.queue_family_affinity,
+            canonical_request.params.queue_family_affinity))) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "Vulkan allocation request %" PRIhsz
+          " queue family affinity is not supported by the source pool",
+          request_index);
+    }
   }
   if (IREE_UNLIKELY(pool_capabilities.max_allocation_size != 0 &&
                     canonical_request.allocation_size >

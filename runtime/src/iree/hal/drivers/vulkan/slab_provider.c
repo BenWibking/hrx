@@ -130,7 +130,7 @@ iree_status_t iree_hal_vulkan_slab_provider_create(
   provider->properties.memory_type = options.memory_type;
   provider->properties.supported_usage = options.supported_usage;
   provider->properties.queue_family_affinity =
-      IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;
+      options.queue_family_affinity_mask;
   provider->properties.atomic_operations = options.atomic_operations;
   provider->queue_family_affinity_mask = options.queue_family_affinity_mask;
   provider->min_alignment = options.min_alignment;
