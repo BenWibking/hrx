@@ -1107,12 +1107,15 @@ static void iree_hal_amdgpu_staging_transfer_pump(
 
     if (!has_waiter_slot &&
         !iree_hal_amdgpu_staging_pool_try_acquire(transfer->pool, &slot)) {
+      // A slot release or cancellation may consume waiter ownership as soon
+      // as it is published. Acquire that reference before making it visible.
+      iree_hal_resource_retain(&transfer->resource);
       iree_hal_amdgpu_staging_pool_wait_result_t wait_result =
           iree_hal_amdgpu_staging_pool_queue_waiter(
               transfer->pool, &transfer->slot_waiter,
               iree_hal_amdgpu_staging_transfer_slot_available, transfer);
-      if (wait_result == IREE_HAL_AMDGPU_STAGING_POOL_WAIT_QUEUED) {
-        iree_hal_resource_retain(&transfer->resource);
+      if (wait_result != IREE_HAL_AMDGPU_STAGING_POOL_WAIT_QUEUED) {
+        iree_hal_resource_release(&transfer->resource);
       }
       if (wait_result != IREE_HAL_AMDGPU_STAGING_POOL_WAIT_RETRY) {
         return;
