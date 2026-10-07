@@ -64,6 +64,7 @@ NUMERIC_CORPUS = loom_corpus_manifest(
         "vector/floating.loom",
         "vector/float_comparison.loom",
         "vector/float_extrema.loom",
+        "vector/insertion.loom",
         "vector/integer_bitwise.loom",
         "vector/integer_comparison.loom",
         "vector/integer_widening.loom",

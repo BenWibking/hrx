@@ -67,6 +67,7 @@ loom_corpus_sources(
     "vector/floating.loom"
     "vector/float_comparison.loom"
     "vector/float_extrema.loom"
+    "vector/insertion.loom"
     "vector/integer_bitwise.loom"
     "vector/integer_comparison.loom"
     "vector/integer_widening.loom"
