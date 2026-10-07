@@ -39,8 +39,9 @@ right to that trailer. [Compute postamble][postamble]
 | Chapter | Native mechanism |
 | --- | --- |
 | [Queue publication](publication.md) | Ring capacity, DWORD frontiers, host visibility, doorbells and the distinct KFD, scheduled DRM and DRM userq owners. |
-| [Memory commands](memory-commands.md) | Memory-operation overview, WRITE_DATA, waits and shader-completion firmware predicates. |
+| [Memory commands](memory-commands.md) | Memory-operation overview, packet framing, waits and shader-completion firmware predicates. |
 | [Control-value copies](copy.md) | COPY_DATA fields, selectors, MEC/ME/PFP differences, GFX12/GC12.1 controls, sampling and result ownership. |
+| [Inline writes](write.md) | WRITE_DATA fields, source-specific routing, captured input, small updates, resident descriptors, control-cell reuse and later command readers. |
 | [Atomic operations](atomics.md) | TC integer operations, returned values, command modes, participant domains and cache/retirement contracts. |
 | [Cache control](cache.md) | Acquire/release fields, native-generation differences, ranges, scopes, recorded BLT/cache history and complete visibility sequences. |
 | [Compiled dispatch](dispatch.md) | Executable backing, register and argument ABI, MEM_ORDERED wait-counter mode, direct launch, runtime state and completion. |
