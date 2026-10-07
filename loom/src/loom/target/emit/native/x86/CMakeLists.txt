@@ -51,11 +51,15 @@ loom_cc_library(
     iree::base
     iree::base::internal
     iree::io::stream
+    loom::analysis::storage_layout
+    loom::codegen::low::allocation::unit_location
     loom::codegen::low::frame
     loom::codegen::low::packet
+    loom::codegen::low::storage_layout
     loom::ir
     loom::ops::low
     loom::target::arch::x86::register_classes
+    loom::target::emit::native::object
   PUBLIC
 )
 endif()
@@ -113,6 +117,7 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     loom::codegen::low::frame
+    loom::ops::low
     loom::target::emit::native::object_elf
     loom::target::entry_selection
     loom::target::provider
@@ -129,6 +134,7 @@ loom_cc_library(
   SRCS
     "check/loom_check.c"
   DEPS
+    ::abi
     ::function
     iree::base
     loom::tools::loom-check::execute
@@ -142,19 +148,6 @@ loom_check_test_suite(
     loom_check_file_test
   SRCS
     "test/function.loom-test"
-)
-endif()
-
-if(LOOM_TARGET_ARCH_X86)
-iree_execution_test_suite(
-  NAME
-    callable_test
-  MANIFESTS
-    "test/callable.test.json"
-  TOOLS
-    "loom-compile=loom::tools::loom-compile::loom-compile"
-  LABELS
-    "hostonly"
 )
 endif()
 

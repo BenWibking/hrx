@@ -29,7 +29,6 @@
 #include "loom/tooling/execution/execution_backend.h"
 #include "loom/tooling/execution/hal/artifact.h"
 #include "loom/tooling/execution/hal/testbench_staging.h"
-#include "loom/tooling/io/source.h"
 #include "loom/util/fact_table.h"
 
 typedef struct loom_run_hal_testbench_actual_sequence_span_t
@@ -270,7 +269,6 @@ void loom_run_hal_testbench_actual_provider_initialize(
   *out_provider = (loom_run_hal_testbench_actual_provider_t){
       .context = options->context,
       .session = options->session,
-      .target_environment = options->target_environment,
       .run_module = options->run_module,
       .pipeline = options->pipeline,
       .target = options->target,
@@ -394,7 +392,7 @@ static iree_status_t loom_run_hal_testbench_clone_compile_module(
 static iree_status_t loom_run_hal_testbench_link_selected_root(
     loom_run_hal_testbench_actual_provider_t* provider,
     const loom_module_t* source_module, iree_string_view_t entry_symbol,
-    loom_source_table_projection_t* sources, loom_module_t** out_module) {
+    loom_linker_source_callback_t source_callback, loom_module_t** out_module) {
   *out_module = NULL;
   const loom_module_t* const source_modules[] = {source_module};
   iree_string_view_t module_name = iree_string_view_empty();
@@ -412,8 +410,7 @@ static iree_status_t loom_run_hal_testbench_link_selected_root(
                   .count = IREE_ARRAYSIZE(root_symbols),
                   .values = root_symbols,
               },
-          .source_callback = {.fn = loom_source_table_project,
-                              .user_data = sources},
+          .source_callback = source_callback,
       },
       loom_run_session_block_pool(provider->session),
       provider->context->host_allocator, out_module);
@@ -423,31 +420,40 @@ static iree_status_t loom_run_hal_testbench_select_compile_root(
     loom_run_hal_testbench_actual_provider_t* provider,
     iree_string_view_t entry_symbol) {
   const loom_module_t* source_module = provider->compile_module.module;
-  loom_source_table_projection_t launch_sources = {
-      .table = provider->compile_module.sources.table,
-      .arena = &provider->compile_module.sources.arena};
-  loom_source_table_projection_t compile_sources = launch_sources;
+  loom_source_storage_t compile_sources;
+  loom_source_storage_initialize(provider->context->host_allocator,
+                                 &compile_sources);
+  loom_source_storage_projection_t source_projection = {
+      .source = &provider->compile_module.sources.table,
+      .target = &compile_sources,
+  };
+  const loom_linker_source_callback_t source_callback = {
+      .fn = loom_source_storage_project,
+      .user_data = &source_projection,
+  };
   loom_module_t* launch_config_module = NULL;
   iree_status_t status = loom_run_hal_testbench_link_selected_root(
-      provider, source_module, entry_symbol, &launch_sources,
+      provider, source_module, entry_symbol, source_callback,
       &launch_config_module);
   loom_module_t* compile_module = NULL;
   if (iree_status_is_ok(status)) {
     status = loom_run_hal_testbench_link_selected_root(
-        provider, source_module, entry_symbol, &compile_sources,
+        provider, source_module, entry_symbol, source_callback,
         &compile_module);
   }
   if (!iree_status_is_ok(status)) {
     loom_module_free(launch_config_module);
+    loom_source_storage_deinitialize(&compile_sources);
     return status;
   }
 
   loom_module_free(provider->compile_module.module);
+  loom_source_storage_deinitialize(&provider->compile_module.sources);
   provider->compile_module.module = compile_module;
-  provider->compile_module.sources.table = compile_sources.table;
-  provider->compile_module.sources.capacity = compile_sources.table.count;
+  provider->compile_module.sources = compile_sources;
   provider->launch_config_module = launch_config_module;
-  provider->launch_config_sources = launch_sources.table;
+  provider->launch_config_sources = compile_sources.table;
+  provider->launch_config_sources.module = launch_config_module;
   return iree_ok_status();
 }
 
@@ -642,12 +648,7 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
                                   export_symbol)
           : entry_symbol;
 
-  if (provider->target_environment == NULL) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "HAL kernel launches require a target environment");
-  }
-
-  if (provider->compile_device_target.artifact_target.target_profile == NULL) {
+  if (provider->compile_device_target.target_profile == NULL) {
     const loom_device_provider_t* device_provider =
         provider->context->device_provider;
     const iree_string_view_t target_specification =
@@ -661,13 +662,10 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
           provider->context->host_allocator, &provider->compile_device_target));
       provider->owns_compile_device_target = true;
     } else {
-      loom_artifact_target_t artifact_target = {0};
-      IREE_RETURN_IF_ERROR(loom_artifact_target_select(
-          device_provider->artifact_provider, provider->target_environment,
-          target_specification, &artifact_target));
-      IREE_RETURN_IF_ERROR(loom_device_provider_select_profile_target(
+      IREE_RETURN_IF_ERROR(loom_device_provider_select_explicit_target(
           device_provider, &provider->context->runtime,
-          artifact_target.target_profile, &provider->compile_device_target));
+          provider->session->target_environment, target_specification,
+          &provider->compile_device_target));
     }
   }
 
@@ -684,22 +682,19 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
         provider->pipeline_snapshot.pipeline_op;
   }
   pipeline_options.target_pipeline_options =
-      provider->context->device_provider->artifact_provider
+      provider->context->device_provider->target_emitter
           ->default_pipeline_options;
   pipeline_options.target_pipeline_options.sanitizer = provider->sanitizer;
-  pipeline_options.target_environment = provider->target_environment;
+  pipeline_options.target_environment = provider->session->target_environment;
   const loom_target_specialization_request_t specialization_request = {
       .function_name = entry_symbol,
-      .target_profile =
-          provider->compile_device_target.artifact_target.target_profile,
+      .target_profile = provider->compile_device_target.target_profile,
   };
   pipeline_options.target_specializations =
       (loom_target_specialization_request_list_t){
           .values = &specialization_request,
           .count = 1,
       };
-  pipeline_options.low_descriptor_registry =
-      loom_run_session_low_descriptor_registry(provider->session);
   pipeline_options.cleanup_pattern_provider_set =
       loom_run_session_cleanup_pattern_provider_set(provider->session);
   pipeline_options.diagnostic_sink = diagnostic_sink;
@@ -762,13 +757,13 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
   const iree_host_size_t emit_error_count = provider->diagnostic_error_count;
   iree_status_t status = loom_run_hal_candidate_emit_target(
       provider->context->device_provider, &provider->compile_device_target,
-      &provider->compile_module, &compile_options,
+      provider->session, &provider->compile_module, &compile_options,
       provider->context->host_allocator, &provider->candidate);
   provider->compile_report_available = true;
   if (!iree_status_is_ok(status)) {
     return status;
   }
-  if (!provider->candidate.artifact_candidate.compiled) {
+  if (!provider->candidate.compiled) {
     if (provider->diagnostic_error_count != emit_error_count) {
       loom_run_hal_testbench_record_compile_rejection(
           provider, IREE_SV("emit"), IREE_SV("emit_diagnostics"),
@@ -778,13 +773,13 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
     return iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
         "device provider '%.*s' did not emit an artifact or diagnostics",
-        (int)provider->context->device_provider->artifact_provider->name.size,
-        provider->context->device_provider->artifact_provider->name.data);
+        (int)provider->context->device_provider->name.size,
+        provider->context->device_provider->name.data);
   }
 
   const loom_device_artifact_t device_artifact = {
-      .executable_target = provider->candidate.device_target.executable_target,
-      .artifact = &provider->candidate.artifact_candidate.artifact,
+      .executable_target = provider->candidate.executable_target,
+      .artifact = &provider->candidate.artifact,
   };
   status = loom_run_hal_prepared_candidate_prepare(
       &provider->context->runtime, &device_artifact,
@@ -1750,7 +1745,6 @@ iree_status_t loom_run_hal_testbench_actual_sequence_initialize(
     const loom_run_hal_testbench_actual_provider_options_t provider_options = {
         .context = options->context,
         .session = options->session,
-        .target_environment = options->target_environment,
         .run_module = options->run_module,
         .pipeline = options->pipeline,
         .target = options->target,

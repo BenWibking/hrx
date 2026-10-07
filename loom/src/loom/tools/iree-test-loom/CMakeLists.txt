@@ -22,7 +22,6 @@ loom_cc_library(
     loom::link::linker
     loom::tooling::execution::session
     loom::tooling::io::file
-    loom::tooling::io::source
   PUBLIC
 )
 
@@ -38,6 +37,7 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::testing::temp_file
     loom::error::source
+    loom::target::provider
     loom::tooling::execution::session
     loom::tooling::io::file
   LABELS
@@ -79,7 +79,6 @@ loom_cc_library(
     loom::target::provider
     loom::tooling::cli::help
     loom::tooling::config
-    loom::tooling::context
     loom::tooling::execution::hal::device_provider
     loom::tooling::execution::hal::scenario_profile
     loom::tooling::execution::hal::testbench_actual

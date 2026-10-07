@@ -39,6 +39,7 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
   loom_builder_t builder;
   loom_builder_initialize(module_, &module_->arena, loom_module_block(module_),
                           &builder);
+  target_definitions_.build(&builder);
   configs_.build(&builder);
   for (const auto& [function, source] : check_cases_) {
     if (!definition(function)) {
@@ -74,6 +75,9 @@ void Functions::select(std::span<const iree_string_view_t> roots) {
     }
   } else {
     for (auto* symbol : definitions) {
+      if (launches_.is_configuration(symbol)) {
+        continue;
+      }
       bool visible = !symbol->isStatic();
       auto* visibility =
           cxx::attributeArgument(symbol->attributes(), "visibility");
@@ -199,7 +203,7 @@ void Functions::collect(cxx::DeclarationAST* declaration,
     for (auto* declarator : cxx::ListView{simple->initDeclaratorList}) {
       auto* function =
           cxx::symbol_cast<cxx::FunctionSymbol>(declarator->symbol);
-      bool is_config = admit_declaration(
+      bool is_module_metadata = admit_declaration(
           declarator->symbol, simple->attributeList, declarator, scope);
       if (scope != DeclarationScope::Namespace) {
         continue;
@@ -210,7 +214,7 @@ void Functions::collect(cxx::DeclarationAST* declaration,
       }
       auto* variable =
           cxx::symbol_cast<cxx::VariableSymbol>(declarator->symbol);
-      if (variable && !is_config && !variable->isExtern() &&
+      if (variable && !is_module_metadata && !variable->isExtern() &&
           (unit_.typeTraits().is_volatile(variable->type()) ||
            !(variable->isConstexpr() ||
              (unit_.typeTraits().is_const(variable->type()) &&
@@ -245,7 +249,9 @@ bool Functions::admit_declaration(
   }
   reject_misplaced_binding_attributes(unit_, diagnostics_, attributes,
                                       BindingAttributeScope::Declaration);
-  bool is_config = configs_.declaration(symbol, attributes, owner);
+  bool is_module_metadata = configs_.declaration(symbol, attributes, owner);
+  is_module_metadata |=
+      target_definitions_.declaration(symbol, attributes, owner);
   admit_symbol(symbol, attributes);
   auto require_namespace_function = [&] {
     if (!function || scope != DeclarationScope::Namespace ||
@@ -323,7 +329,7 @@ bool Functions::admit_declaration(
     diagnostics_.reject(unit_, owner,
                         "check annotations must precede the declaration");
   }
-  return is_config;
+  return is_module_metadata;
 }
 
 void Functions::admit_symbol(
@@ -419,10 +425,17 @@ const std::string& Functions::qualified_name(cxx::FunctionSymbol* symbol) {
   return qualified_names_.emplace(symbol, std::move(spelling)).first->second;
 }
 
-loom_symbol_ref_t Functions::declare(cxx::FunctionSymbol* function) {
+loom_symbol_ref_t Functions::declare(cxx::FunctionSymbol* function,
+                                     cxx::AST* owner) {
   if (auto found = callees_.find(function->canonical());
       found != callees_.end()) {
     return found->second;
+  }
+  if (launches_.is_configuration(function)) {
+    diagnostics_.reject(
+        unit_, owner ? owner : function->declaration(),
+        "kernel configuration functions are owned by their kernels and "
+        "cannot be selected or called");
   }
   auto* body = definition(function);
   // Reaching a specialization through a kernel launch need not odr-use its
@@ -498,8 +511,9 @@ loom_symbol_ref_t Functions::create_symbol(cxx::FunctionSymbol* function,
   return callee;
 }
 
-FunctionBody Functions::define(cxx::FunctionSymbol* symbol, Types& types,
-                               Locations& locations, loom_builder_t* builder) {
+DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
+                                  Locations& locations,
+                                  loom_builder_t* builder) {
   auto* definition = symbol->declaration();
   auto* body = cxx::ast_cast<cxx::CompoundStatementFunctionBodyAST>(
       definition->functionBody);
@@ -535,19 +549,31 @@ FunctionBody Functions::define(cxx::FunctionSymbol* symbol, Types& types,
   bool returns_void = signature->returnType()->kind() == cxx::TypeKind::kVoid;
   std::vector<loom_type_t> arguments;
   std::vector<loom_type_t> results;
+  std::optional<LaunchConfiguration> launch_configuration;
   BoundSignature callable_signature;
   if (kernel) {
     for (auto* parameter : parameters) {
-      arguments.push_back(types.get(parameter->type(), definition));
+      arguments.push_back(
+          types.get(types.unqualified(parameter->type()), definition));
+    }
+    if (auto* configuration = launches_.configuration_function(symbol)) {
+      auto* configuration_symbol = this->definition(configuration);
+      if (!configuration_symbol || !configuration_symbol->declaration()) {
+        diagnostics_.reject(
+            unit_, definition,
+            "kernel configuration function requires a definition");
+      }
+      launch_configuration =
+          launches_.bind_configuration(configuration_symbol, types);
     }
   } else if (!check_case) {
     std::vector<const cxx::Type*> sources;
     sources.reserve(parameters.size() + !returns_void);
     size_t argument_count = 0;
     for (auto* parameter : parameters) {
-      sources.push_back(parameter->type());
-      argument_count +=
-          types.partition(parameter->type(), definition).component_count;
+      auto* value_type = types.unqualified(parameter->type());
+      sources.push_back(value_type);
+      argument_count += types.partition(value_type, definition).component_count;
     }
     if (!returns_void) {
       sources.push_back(signature->returnType());
@@ -570,11 +596,19 @@ FunctionBody Functions::define(cxx::FunctionSymbol* symbol, Types& types,
       diagnostics_.reject(unit_, definition, "kernel must return void");
     }
     auto callee = callees_.at(symbol->canonical());
+    auto target = target_definitions_.reference(symbol);
     auto name_id = module_->symbols.entries[callee.symbol_id].name_id;
-    check(loom_kernel_def_build(builder, 0, 0, {}, LOOM_STRING_ID_INVALID, 0,
-                                callee, nullptr, 0, arguments.data(),
-                                arguments.size(), nullptr, 0,
-                                locations.get(definition), &op));
+    std::span<const loom_type_t> configuration_arguments =
+        launch_configuration ? std::span(launch_configuration->arguments)
+                             : std::span<const loom_type_t>{};
+    check(loom_kernel_def_build(
+        builder,
+        loom_symbol_ref_is_valid(target) ? LOOM_KERNEL_DEF_BUILD_FLAG_HAS_TARGET
+                                         : 0,
+        0, target, LOOM_STRING_ID_INVALID, 0, callee,
+        configuration_arguments.data(), configuration_arguments.size(),
+        arguments.data(), arguments.size(), nullptr, 0,
+        locations.get(definition), &op));
     auto saved =
         loom_builder_enter_region(builder, op, loom_kernel_def_config(op));
     auto spelling = loom_string_table_get(&module_->strings, name_id);
@@ -602,15 +636,32 @@ FunctionBody Functions::define(cxx::FunctionSymbol* symbol, Types& types,
   auto* region = check_case ? loom_check_case_body(op)
                  : kernel   ? loom_kernel_def_body(op)
                             : loom_func_def_body(op);
-  return {definition,
-          body->statement,
-          op,
-          region,
-          signature->returnType(),
-          check_case ? FunctionKind::CheckCase
-          : kernel   ? FunctionKind::Kernel
-                     : FunctionKind::Ordinary,
-          parameter_contracts};
+  FunctionBody function_body = {
+      definition,
+      body->statement,
+      op,
+      region,
+      signature->returnType(),
+      check_case ? FunctionKind::CheckCase
+      : kernel   ? FunctionKind::Kernel
+                 : FunctionKind::Ordinary,
+      parameter_contracts,
+  };
+  std::optional<FunctionBody> configuration;
+  if (launch_configuration) {
+    configuration = FunctionBody{
+        launch_configuration->source,
+        launch_configuration->body,
+        op,
+        loom_kernel_def_config(op),
+        launch_configuration->result_type,
+        launch_configuration->kind == LaunchConfigurationKind::Clustered
+            ? FunctionKind::ClusteredLaunchConfiguration
+            : FunctionKind::LaunchConfiguration,
+        {},
+    };
+  }
+  return {function_body, configuration};
 }
 
 }  // namespace loom::cxx_import

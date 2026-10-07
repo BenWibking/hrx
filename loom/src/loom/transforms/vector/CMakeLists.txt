@@ -247,6 +247,7 @@ loom_cc_library(
   DEPS
     iree::base
     loom::ir
+    loom::ops::index
     loom::ops::vector
     loom::rewrite::rewriter
     loom::target::legalization
@@ -268,6 +269,7 @@ loom_cc_library(
     loom::ops::scf
     loom::ops::vector
     loom::target::legalization
+    loom::util::numeric_format
   PUBLIC
 )
 

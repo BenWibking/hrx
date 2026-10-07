@@ -20,6 +20,12 @@ exports_files([
 ])
 
 loom_test(
+    name = "allocation_instances_test",
+    srcs = ["allocation_instances.loom"],
+    execution_profiles = [VM_REFERENCE_PROFILE],
+)
+
+loom_test(
     name = "buffer_selection_test",
     srcs = ["buffer_selection.loom"],
     execution_profiles = [VM_REFERENCE_PROFILE],
@@ -28,6 +34,12 @@ loom_test(
 loom_test(
     name = "callable_returns_test",
     srcs = ["callable_returns.loom"],
+    execution_profiles = [VM_REFERENCE_PROFILE],
+)
+
+loom_test(
+    name = "callable_storage_test",
+    srcs = ["callable_storage.loom"],
     execution_profiles = [VM_REFERENCE_PROFILE],
 )
 

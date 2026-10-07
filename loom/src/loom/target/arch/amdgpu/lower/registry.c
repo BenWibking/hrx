@@ -621,6 +621,16 @@ LOOM_AMDGPU_DEFINE_DATA_EMIT(loom_amdgpu_emit_vector_cmpf_dispatch,
                              loom_amdgpu_vector_compare_plan_t,
                              loom_amdgpu_lower_vector_cmpf)
 
+LOOM_AMDGPU_DEFINE_DATA_SELECT(
+    loom_amdgpu_select_vector_float_classification_dispatch,
+    loom_amdgpu_vector_float_classification_plan_t,
+    loom_amdgpu_select_vector_float_classification_plan)
+
+LOOM_AMDGPU_DEFINE_DATA_EMIT(
+    loom_amdgpu_emit_vector_float_classification_dispatch,
+    loom_amdgpu_vector_float_classification_plan_t,
+    loom_amdgpu_lower_vector_float_classification)
+
 LOOM_AMDGPU_DEFINE_DATA_SELECT(loom_amdgpu_select_vector_dotf_dispatch,
                                loom_amdgpu_dotf_plan_t,
                                loom_amdgpu_select_vector_dotf_plan)
@@ -1283,6 +1293,8 @@ LOOM_AMDGPU_ASSERT_LEADING_SOURCE_FIELD(loom_amdgpu_vector_compare_plan_t, lhs,
                                         0);
 LOOM_AMDGPU_ASSERT_LEADING_SOURCE_FIELD(loom_amdgpu_vector_compare_plan_t, rhs,
                                         1);
+LOOM_AMDGPU_ASSERT_LEADING_SOURCE_FIELD(
+    loom_amdgpu_vector_float_classification_plan_t, input, 0);
 LOOM_AMDGPU_ASSERT_LEADING_SOURCE_FIELD(loom_amdgpu_vector_select_plan_t,
                                         condition, 0);
 LOOM_AMDGPU_ASSERT_LEADING_SOURCE_FIELD(loom_amdgpu_vector_select_plan_t,
@@ -1822,6 +1834,14 @@ static const loom_target_vector_packet_policy_t kAmdgpuVectorPacketPolicy = {
     .native_bit_count_count = IREE_ARRAYSIZE(kAmdgpuVectorPacketBitCounts),
 };
 
+static iree_status_t loom_amdgpu_materialize_vop3_operands(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t* low_operands, iree_host_size_t operand_count) {
+  IREE_ASSERT_EQ(operand_count, 3);
+  return loom_amdgpu_legalize_vop3_scalar_sources(context, source_op,
+                                                  low_operands);
+}
+
 static const loom_low_lower_policy_t kAmdgpuLowLowerPolicy = {
     .name = IREE_SVL("amdgpu-register-lower"),
     .error_catalog = &loom_amdgpu_error_catalog,
@@ -1842,6 +1862,7 @@ static const loom_low_lower_policy_t kAmdgpuLowLowerPolicy = {
                                .user_data = NULL},
     .materialize_structural_operand =
         {.fn = loom_amdgpu_materialize_structural_operand, .user_data = NULL},
+    .materialize_descriptor_operands = loom_amdgpu_materialize_vop3_operands,
     .emit_cond_branch = {.fn = loom_amdgpu_emit_cond_branch, .user_data = NULL},
     .contract = LOOM_AMDGPU_CONTRACT,
     .descriptor_matrix =

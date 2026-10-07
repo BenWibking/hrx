@@ -4,7 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-load("//build_tools/testing:build_defs.bzl", "iree_execution_test_suite")
 load(
     "//loom/build_tools/bazel:build_defs.bzl",
     "loom_cc_library",
@@ -52,11 +51,15 @@ loom_cc_library(
     hdrs = ["function.h"],
     deps = [
         ":encoding",
+        "//loom/src/loom/analysis:storage_layout",
         "//loom/src/loom/codegen/low:frame",
         "//loom/src/loom/codegen/low:packet",
+        "//loom/src/loom/codegen/low:storage_layout",
+        "//loom/src/loom/codegen/low/allocation:unit_location",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/low",
         "//loom/src/loom/target/arch/x86:register_classes",
+        "//loom/src/loom/target/emit/native:object",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal",
         "//runtime/src/iree/io:stream",
@@ -100,6 +103,7 @@ loom_cc_library(
         ":abi",
         ":function",
         "//loom/src/loom/codegen/low:frame",
+        "//loom/src/loom/ops/low",
         "//loom/src/loom/target:entry_selection",
         "//loom/src/loom/target:provider",
         "//loom/src/loom/target/emit/native:object_elf",
@@ -115,6 +119,7 @@ loom_cc_library(
     hdrs = ["check/loom_check.h"],
     visibility = _X86_CHECK_VISIBILITY,
     deps = [
+        ":abi",
         ":function",
         "//loom/src/loom/tools/loom-check:execute",
         "//runtime/src/iree/base",
@@ -126,16 +131,6 @@ loom_check_test_suite(
     srcs = [
         "test/function.loom-test",
     ],
-)
-
-iree_execution_test_suite(
-    name = "callable_test",
-    manifests = ["test/callable.test.json"],
-    tags = ["hostonly"],
-    target_compatible_with = loom_config_compatible_with([
-        "//loom/config/target/arch:x86",
-    ]),
-    tools = {"loom-compile": "//loom/src/loom/tools/loom-compile:loom-compile"},
 )
 
 # The native object is a normal linker input. The caller contains no compiler

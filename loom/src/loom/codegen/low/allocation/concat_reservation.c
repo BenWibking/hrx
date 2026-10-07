@@ -272,15 +272,12 @@ static bool loom_low_allocation_concat_reservation_find_location_for_source(
   const bool is_explicit =
       loom_low_reg_class_uses_explicit_physical_registers(reg_class);
   if (is_explicit) {
-    // Reserve only a local assembly with one placement for this source and no
-    // downstream storage affinity. A fresh aggregate cannot choose placement
-    // for a broadcast, shared source, or loop/join component independently.
+    // A shared or broadcast source cannot independently reserve one assembly.
+    // Downstream affinities may inherit a fresh result placement; already
+    // assigned edge destinations take precedence in concat coalescing.
     if (loom_low_placement_relation_range_for_source_value_ordinal(
             context->placement, relation->source_ordinal)
-                .count != 1 ||
-        loom_low_placement_relation_range_for_source_value_ordinal(
-            context->placement, relation->result_ordinal)
-                .count != 0) {
+            .count != 1) {
       return false;
     }
   }
@@ -315,7 +312,6 @@ static bool loom_low_allocation_concat_reservation_find_location_for_source(
 
   loom_low_allocation_assignment_t reservation = {
       .value_id = result_interval->value_id,
-      .value_class = result_interval->value_class,
       .descriptor_reg_class_id = capacity.descriptor_reg_class_id,
       .start_point = reservation_start_point,
       .end_point = loom_low_allocation_live_range_interval_storage_end_point(
@@ -748,7 +744,6 @@ iree_status_t loom_low_allocation_concat_reservation_find(
         if (result_tier < source_tier) {
           *out_assignment = source_assignment;
           out_assignment->value_id = source_interval->value_id;
-          out_assignment->value_class = source_interval->value_class;
           out_assignment->start_point =
               context->unit_liveness->values[relation->source_ordinal]
                   .acquisition_start_point;
@@ -764,7 +759,6 @@ iree_status_t loom_low_allocation_concat_reservation_find(
 
   *out_assignment = (loom_low_allocation_assignment_t){
       .value_id = result_interval->value_id,
-      .value_class = result_interval->value_class,
       .descriptor_reg_class_id = capacity.descriptor_reg_class_id,
       .start_point = reservation_start_point,
       .end_point = loom_low_allocation_live_range_interval_storage_end_point(

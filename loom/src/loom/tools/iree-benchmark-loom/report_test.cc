@@ -298,8 +298,7 @@ TEST(BenchmarkReportTest, WritesCanonicalCompileReportTree) {
   capture_options.sink_format = LOOM_COMPILE_REPORT_SINK_FORMAT_JSON;
   capture_options.detail_mode = LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_SUMMARY;
   loom_compile_report_capture_t capture = {};
-  IREE_ASSERT_OK(loom_compile_report_capture_initialize(&capture_options,
-                                                        allocator, &capture));
+  loom_compile_report_capture_initialize(&capture_options, allocator, &capture);
 
   loom_target_compile_report_t* report = &capture.report;
   report->artifact_kind = LOOM_TARGET_COMPILE_ARTIFACT_KIND_TARGET_ARTIFACT;
@@ -914,9 +913,9 @@ TEST(BenchmarkReportTest, WritesArtifactManifestSidecarPath) {
   iree_benchmark_loom_hal_actual_provider_t provider = {};
   provider.context = &context;
   provider.execution.candidate_initialized = true;
-  provider.execution.candidate.artifact_candidate.compiled = true;
-  provider.execution.candidate.artifact_candidate.artifact.sidecars = &sidecar;
-  provider.execution.candidate.artifact_candidate.artifact.sidecar_count = 1;
+  provider.execution.candidate.compiled = true;
+  provider.execution.candidate.artifact.sidecars = &sidecar;
+  provider.execution.candidate.artifact.sidecar_count = 1;
 
   iree_benchmark_loom_run_identity_t run = {};
   run.run_id = IREE_SV("run");

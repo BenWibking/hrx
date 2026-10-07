@@ -13,6 +13,7 @@
 #include "iree/base/internal/arena.h"
 #include "loom/analysis/liveness.h"
 #include "loom/codegen/low/allocation/assignment.h"
+#include "loom/codegen/low/allocation/call.h"
 #include "loom/codegen/low/allocation/fixed_storage_index.h"
 #include "loom/codegen/low/allocation/unit_liveness.h"
 #include "loom/codegen/low/descriptors.h"
@@ -55,18 +56,6 @@ typedef struct loom_low_allocation_fixed_value_t {
   uint32_t location_count;
 } loom_low_allocation_fixed_value_t;
 
-// Location of one formal argument at invocation entry, before the first body
-// block. The ABI producer supplies a valid register-like location in the
-// argument's register class and width. Allocation may choose different storage
-// for its SSA lifetime and retains the required entry transport.
-typedef struct loom_low_allocation_entry_location_t {
-  // Incoming storage kind, or UNASSIGNED when supplied outside register entry
-  // transport (for example, an ABI stack argument loaded by the prologue).
-  loom_low_allocation_location_kind_t location_kind;
-  // Incoming physical register view or first linear target location.
-  uint32_t location_base;
-} loom_low_allocation_entry_location_t;
-
 // Whole-function location range owned by target machinery.
 //
 // Reserved ranges model architectural state that is never allocatable for
@@ -102,6 +91,9 @@ typedef struct loom_low_allocation_resolved_reserved_range_t {
   // Number of contiguous units reserved at |location_base|.
   uint32_t location_count;
 } loom_low_allocation_resolved_reserved_range_t;
+
+typedef struct loom_low_allocation_reserved_range_index_entry_t
+    loom_low_allocation_reserved_range_index_entry_t;
 
 // Target-validated fixed value prepared for allocation.
 //
@@ -245,6 +237,8 @@ typedef struct loom_low_allocation_target_constraints_t {
   loom_low_allocation_resolved_reserved_range_t* reserved_ranges;
   // Number of entries in |reserved_ranges|.
   iree_host_size_t reserved_range_count;
+  // Spatially ordered immutable reservation ranges for linear storage queries.
+  loom_low_allocation_reserved_range_index_entry_t* reserved_range_index;
   // Maximum allocated value or move-scratch location end indexed by
   // descriptor register class ID.
   uint32_t* max_assigned_location_end_by_reg_class;
@@ -372,6 +366,29 @@ bool loom_low_allocation_target_constraints_reserved_range_conflicts(
     const loom_low_allocation_target_constraints_t* constraints,
     uint16_t reg_class_id, loom_low_allocation_location_kind_t location_kind,
     uint32_t location_base, uint32_t location_count);
+
+// Returns true when static reservations can provide ordered availability for
+// |candidate|. Eligible candidates use one continuous unit in a linear
+// register class; every other constraint still requires its normal query.
+bool loom_low_allocation_target_constraints_can_order_reserved_candidate(
+    const loom_low_allocation_target_constraints_t* constraints,
+    const loom_low_allocation_assignment_t* candidate);
+
+// Finds the first location at or after |minimum_base| outside every static
+// reservation, bounded by |maximum_base|. |candidate| must satisfy the ordered
+// reservation predicate above.
+bool loom_low_allocation_target_constraints_find_next_unreserved_location(
+    const loom_low_allocation_target_constraints_t* constraints,
+    const loom_low_allocation_assignment_t* candidate, uint32_t minimum_base,
+    uint32_t maximum_base, uint32_t* out_base);
+
+// Finds the last location at or before |maximum_base| outside every static
+// reservation, bounded by |minimum_base|. Preconditions match the forward
+// query above.
+bool loom_low_allocation_target_constraints_find_previous_unreserved_location(
+    const loom_low_allocation_target_constraints_t* constraints,
+    const loom_low_allocation_assignment_t* candidate, uint32_t minimum_base,
+    uint32_t maximum_base, uint32_t* out_base);
 
 #ifdef __cplusplus
 }  // extern "C"

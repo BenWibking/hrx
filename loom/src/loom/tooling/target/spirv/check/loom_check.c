@@ -10,6 +10,7 @@
 
 #include "loom/target/emit/spirv/module_compiler.h"
 #include "loom/target/entry_selection.h"
+#include "loom/target/provider.h"
 #include "loom/target/tool/spirv.h"
 #include "loom/tooling/compile/pipeline.h"
 #include "loom/tools/loom-check/diagnostics.h"
@@ -302,8 +303,10 @@ static iree_status_t loom_spirv_loom_check_verify_low_module(
       loom_low_verify_scratch_for_module(request->module);
   IREE_RETURN_IF_ERROR(loom_target_entry_verify_low_module(
       request->module, request->low_registry, &entry_options, &verifier_emitter,
-      20, request->environment->low_verify_provider_list, &low_verify_scratch,
-      &low_verify_result));
+      20,
+      loom_target_environment_low_verify_provider_list(
+          request->environment->target_environment),
+      &low_verify_scratch, &low_verify_result));
   if (low_verify_result.error_count != 0 &&
       request->diagnostic_collector->count == 0) {
     return iree_make_status(
@@ -348,9 +351,9 @@ static iree_status_t loom_spirv_loom_check_emit_provider_execute(
           (loom_target_specialization_request_list_t){&specialization, 1};
     }
     status = loom_check_prepare_source_low_module(
-        request->module, &prepare_options, request->low_registry,
-        request->environment, request->source_resolver,
-        request->diagnostic_collector, request->block_pool, &pipeline_result);
+        request->module, &prepare_options, request->environment,
+        request->source_resolver, request->diagnostic_collector,
+        request->block_pool, &pipeline_result);
   } else {
     status = loom_spirv_loom_check_verify_low_module(request);
   }

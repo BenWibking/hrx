@@ -12,6 +12,7 @@
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/scf/ops.h"
 #include "loom/rewrite/rewriter.h"
+#include "loom/util/numeric_format.h"
 
 bool loom_scalar_match_multiply_add(
     const loom_module_t* module, const loom_op_t* multiply_op,
@@ -840,6 +841,74 @@ static iree_status_t loom_scalar_legalize_narrow_binary(
   return iree_ok_status();
 }
 
+// Count the source bits, not the carrier bits. The CTZ sentinel both supplies
+// the narrow zero result and proves that the widened count input is nonzero.
+static iree_status_t loom_scalar_legalize_narrow_bit_count(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  loom_rewriter_t* rewriter = context->rewriter;
+  loom_builder_t* builder = &rewriter->builder;
+  loom_builder_set_before(builder, op);
+  const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
+  const loom_value_id_t input = loom_op_operands(op)[0];
+  const loom_type_t type = loom_module_value_type(context->module, input);
+  const int32_t width = loom_scalar_type_bitwidth(loom_type_element_type(type));
+  loom_value_id_t replacement = input;
+  if (width == 1) {
+    // A predicate has population count equal to itself; both zero counts are
+    // its complement. No wider arithmetic or target count instruction is
+    // needed.
+    if (op->kind != LOOM_OP_SCALAR_CTPOPI) {
+      loom_value_id_t zero = LOOM_VALUE_ID_INVALID;
+      IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_scalar_constant(
+          builder, op->location, type, 0, &zero));
+      loom_op_t* comparison = NULL;
+      IREE_RETURN_IF_ERROR(
+          loom_scalar_cmpi_build(builder, LOOM_SCALAR_CMPI_PREDICATE_EQ, input,
+                                 zero, op->location, &comparison));
+      replacement = loom_scalar_cmpi_result(comparison);
+    }
+  } else {
+    const loom_type_t working_type = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
+    loom_op_t* extension = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_extui_build(
+        builder, input, type, working_type, op->location, &extension));
+    loom_value_id_t operand = loom_scalar_extui_result(extension);
+    if (op->kind == LOOM_OP_SCALAR_CTTZI) {
+      IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_binary_i32_const_rhs(
+          builder, op->location, LOOM_OP_SCALAR_ORI, operand,
+          INT64_C(1) << width, &operand));
+    }
+    loom_op_t* count = NULL;
+    IREE_RETURN_IF_ERROR(loom_builder_allocate_op(builder, op->kind, 1, 1, 0, 0,
+                                                  0, op->location, &count));
+    loom_op_operands(count)[0] = operand;
+    IREE_RETURN_IF_ERROR(loom_builder_define_result(
+        builder, working_type, &loom_op_results(count)[0]));
+    IREE_RETURN_IF_ERROR(loom_builder_finalize_op(builder, count));
+    replacement = loom_op_results(count)[0];
+    if (op->kind == LOOM_OP_SCALAR_CTLZI) {
+      IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_binary_i32_const_rhs(
+          builder, op->location, LOOM_OP_SCALAR_SUBI, replacement, 32 - width,
+          &replacement));
+    }
+    loom_op_t* truncation = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_trunci_build(
+        builder, replacement, working_type, type, op->location, &truncation));
+    replacement = loom_scalar_trunci_result(truncation);
+  }
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, op, &replacement, 1, checkpoint));
+  IREE_RETURN_IF_ERROR(
+      loom_rewriter_replace_all_uses_and_erase(rewriter, op, &replacement, 1));
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN,
+  };
+  return iree_ok_status();
+}
+
 static iree_status_t loom_scalar_legalize_narrow_cmpi(
     const loom_target_legalizer_entry_t* entry,
     loom_target_legalization_context_t* context, loom_op_t* op,
@@ -1016,7 +1085,99 @@ static iree_status_t loom_scalar_legalize_ieee_extrema(
   return iree_ok_status();
 }
 
+static iree_status_t loom_scalar_legalize_float_classification(
+    const loom_target_legalizer_entry_t* entry,
+    loom_target_legalization_context_t* context, loom_op_t* op,
+    loom_target_legalizer_result_t* out_result) {
+  (void)entry;
+  *out_result = (loom_target_legalizer_result_t){
+      .action = LOOM_TARGET_LEGALIZER_ACTION_NO_COMMENT,
+  };
+  const loom_value_id_t input = loom_op_operands(op)[0];
+  const loom_type_t float_type = loom_module_value_type(context->module, input);
+  loom_numeric_float_encoding_t encoding = {0};
+  if (!loom_numeric_float_encoding(loom_type_element_type(float_type),
+                                   &encoding)) {
+    return iree_ok_status();
+  }
+
+  loom_rewriter_t* rewriter = context->rewriter;
+  loom_builder_t* builder = &rewriter->builder;
+  loom_builder_set_before(builder, op);
+  const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
+  loom_value_id_t replacement = LOOM_VALUE_ID_INVALID;
+  if (op->kind == LOOM_OP_SCALAR_ISINFF &&
+      encoding.special_layout == LOOM_NUMERIC_FLOAT_SPECIAL_LAYOUT_FINITE_NAN) {
+    IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_scalar_constant(
+        builder, op->location, loom_type_scalar(LOOM_SCALAR_TYPE_I1), 0,
+        &replacement));
+  } else {
+    const loom_type_t integer_type = loom_type_scalar(encoding.integer_type);
+    loom_op_t* bitcast_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_bitcast_build(
+        builder, input, float_type, integer_type, op->location, &bitcast_op));
+    loom_value_id_t magnitude_mask = LOOM_VALUE_ID_INVALID;
+    IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_scalar_constant(
+        builder, op->location, integer_type, (int64_t)encoding.magnitude_mask,
+        &magnitude_mask));
+    loom_op_t* magnitude_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_andi_build(
+        builder, loom_scalar_bitcast_result(bitcast_op), magnitude_mask,
+        integer_type, op->location, &magnitude_op));
+    loom_value_id_t special_magnitude = LOOM_VALUE_ID_INVALID;
+    IREE_RETURN_IF_ERROR(loom_scalar_legalize_build_scalar_constant(
+        builder, op->location, integer_type,
+        (int64_t)encoding.special_magnitude, &special_magnitude));
+
+    loom_scalar_cmpi_predicate_t predicate = LOOM_SCALAR_CMPI_PREDICATE_EQ;
+    if (op->kind == LOOM_OP_SCALAR_ISNANF) {
+      predicate =
+          encoding.special_layout == LOOM_NUMERIC_FLOAT_SPECIAL_LAYOUT_IEEE
+              ? LOOM_SCALAR_CMPI_PREDICATE_UGT
+              : LOOM_SCALAR_CMPI_PREDICATE_EQ;
+    } else if (op->kind == LOOM_OP_SCALAR_ISFINITEF) {
+      predicate =
+          encoding.special_layout == LOOM_NUMERIC_FLOAT_SPECIAL_LAYOUT_IEEE
+              ? LOOM_SCALAR_CMPI_PREDICATE_ULT
+              : LOOM_SCALAR_CMPI_PREDICATE_NE;
+    }
+    loom_op_t* comparison_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_scalar_cmpi_build(
+        builder, predicate, loom_scalar_andi_result(magnitude_op),
+        special_magnitude, op->location, &comparison_op));
+    replacement = loom_scalar_cmpi_result(comparison_op);
+  }
+
+  IREE_RETURN_IF_ERROR(loom_rewriter_preserve_result_names_on_new_values(
+      rewriter, op, &replacement, 1, checkpoint));
+  IREE_RETURN_IF_ERROR(
+      loom_rewriter_replace_all_uses_and_erase(rewriter, op, &replacement, 1));
+  out_result->action = LOOM_TARGET_LEGALIZER_ACTION_REWRITTEN;
+  return iree_ok_status();
+}
+
 static const loom_target_legalizer_rule_t kScalarLegalizerRules[] = {
+    {
+        .root_kind = LOOM_OP_SCALAR_CTLZI,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1 |
+                                       LOOM_SCALAR_TYPE_SET_I8 |
+                                       LOOM_SCALAR_TYPE_SET_I16,
+        .legalize = loom_scalar_legalize_narrow_bit_count,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_CTTZI,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1 |
+                                       LOOM_SCALAR_TYPE_SET_I8 |
+                                       LOOM_SCALAR_TYPE_SET_I16,
+        .legalize = loom_scalar_legalize_narrow_bit_count,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_CTPOPI,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_I1 |
+                                       LOOM_SCALAR_TYPE_SET_I8 |
+                                       LOOM_SCALAR_TYPE_SET_I16,
+        .legalize = loom_scalar_legalize_narrow_bit_count,
+    },
     {
         .root_kind = LOOM_OP_SCALAR_MINSI,
         .legalize = loom_scalar_legalize_integer_extrema,
@@ -1078,6 +1239,21 @@ static const loom_target_legalizer_rule_t kScalarLegalizerRules[] = {
                                        LOOM_SCALAR_TYPE_SET_F64,
         .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
         .legalize = loom_scalar_legalize_ieee_extrema,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_ISNANF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_scalar_legalize_float_classification,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_ISINFF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_scalar_legalize_float_classification,
+    },
+    {
+        .root_kind = LOOM_OP_SCALAR_ISFINITEF,
+        .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
+        .legalize = loom_scalar_legalize_float_classification,
     },
     {
         .root_kind = LOOM_OP_SCALAR_MAXIMUMF,

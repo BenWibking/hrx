@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from .alu import *
+from .bitwise import *
 from .categories import *
 from .common import *
 from .integer_multiply import *
@@ -107,6 +108,7 @@ _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS: dict[
     "amdgpu.v_fmaak_f32": _v_fmaak_f32_overlay,
     "amdgpu.v_fmac_f32": _v_fmac_f32_overlay,
     "amdgpu.v_fmamk_f32": _v_fmamk_f32_overlay,
+    "amdgpu.v_fmamk_f32.flush_product": (_v_fmamk_f32_product_flushing_overlay),
     "amdgpu.v_pk_fmac_f16": _v_pk_fmac_f16_overlay,
     "amdgpu.v_pk_fma_f16": _v_pk_fma_f16_overlay,
     "amdgpu.v_pk_add_f16": _v_pk_add_f16_overlay,
@@ -145,7 +147,6 @@ _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS: dict[
     "amdgpu.v_sqrt_f64": _v_sqrt_f64_overlay,
     "amdgpu.v_rsq_f64": _v_rsq_f64_overlay,
     "amdgpu.v_ldexp_f64": _v_ldexp_f64_overlay,
-    "amdgpu.v_cmp_class_f64": _v_cmp_class_f64_overlay,
     "amdgpu.v_rsq_f32": _v_rsq_f32_overlay,
     "amdgpu.v_rcp_f32": _v_rcp_f32_overlay,
     "amdgpu.v_rcp_f64": _v_rcp_f64_overlay,
@@ -211,6 +212,7 @@ _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS: dict[
         rhs_type="bf8",
     ),
     **_contract_overlay_builders_from_overlays(_integer_bit_count_overlays()),
+    "amdgpu.v_alignbit_b32": _v_alignbit_b32_overlay,
     **_contract_overlay_builders_from_overlays(_integer_bitwise_shift_overlays()),
     **_contract_overlay_builders_from_overlays(
         _v_cvt_f32_packed8_selection_overlays("ocp", op_sel_field="OPSEL")
@@ -222,6 +224,7 @@ _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS: dict[
     **_contract_overlay_builders_from_overlays(
         _v_cndmask_b32_overlays(include_literal_forms=False)
     ),
+    **_contract_overlay_builders_from_overlays(_v_cmp_class_overlays()),
     **_contract_overlay_builders_from_overlays(_rdna4m_minmax_overlays()),
 }
 

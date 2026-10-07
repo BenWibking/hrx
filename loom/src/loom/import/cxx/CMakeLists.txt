@@ -57,12 +57,14 @@ loom_cc_library(
     loom::import::cxx::binding::launch
     loom::import::cxx::binding::loop_schedule
     loom::import::cxx::binding::parameter_contracts
+    loom::import::cxx::binding::target_definitions
     loom::import::cxx::control::analysis
     loom::import::cxx::source
     loom::import::cxx::source::attributes
     loom::import::cxx::source::catalog
     loom::import::cxx::source::constants
     loom::import::cxx::source::error
+    loom::import::cxx::source::expressions
     loom::import::cxx::source::locations
     loom::import::cxx::source::options
     loom::import::cxx::symbol::functions

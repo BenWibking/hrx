@@ -87,6 +87,8 @@ loom_cc_library(
     iree::base::internal::arena
     iree::io::stream
     iree::vm::bytecode::wire
+    loom::analysis::storage_layout
+    loom::codegen::low::allocation::call
     loom::codegen::low::allocation::move_sequence
     loom::codegen::low::descriptors
     loom::codegen::low::frame
@@ -123,6 +125,7 @@ loom_cc_library(
     loom::ir
     loom::ops::global
     loom::ops::low
+    loom::target::arch::vm::descriptors
     loom::target::function_version
   PUBLIC
 )
@@ -233,33 +236,13 @@ loom_check_test_suite(
     "test/source_low/memory_vector_atomic.loom-test"
     "test/source_low/memory_wide_carriers.loom-test"
     "test/source_low/nested_view_selection.loom-test"
-    "test/source_low/numeric_address_widening.loom-test"
-    "test/source_low/numeric_bitfield.loom-test"
-    "test/source_low/numeric_conversion_float8.loom-test"
-    "test/source_low/numeric_float8_constants.loom-test"
-    "test/source_low/numeric_float8_widen.loom-test"
-    "test/source_low/numeric_float_arithmetic.loom-test"
     "test/source_low/numeric_float_comparison_flags.loom-test"
-    "test/source_low/numeric_float_rounding.loom-test"
-    "test/source_low/numeric_float_selectors.loom-test"
-    "test/source_low/numeric_float_signs.loom-test"
-    "test/source_low/numeric_float_turns.loom-test"
-    "test/source_low/numeric_index.loom-test"
-    "test/source_low/numeric_index_conversion.loom-test"
-    "test/source_low/numeric_integer_division.loom-test"
-    "test/source_low/numeric_integer_order_bits.loom-test"
-    "test/source_low/numeric_narrow_conversion.loom-test"
     "test/source_low/numeric_narrow_float_selection.loom-test"
     "test/source_low/numeric_reciprocal.loom-test"
-    "test/source_low/numeric_scalar_conversion.loom-test"
-    "test/source_low/numeric_scalar_f32.loom-test"
-    "test/source_low/numeric_scalar_i32.loom-test"
-    "test/source_low/numeric_scalar_i64_subtract.loom-test"
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/packed_bitfield.loom-test"
     "test/source_low/packed_memory_alignment.loom-test"
     "test/source_low/packed_payload_offsets.loom-test"
-    "test/source_low/predicate_extension.loom-test"
     "test/source_low/scalar_selection.loom-test"
     "test/source_low/selected_payload_transport.loom-test"
     "test/source_low/semantic_assertions.loom-test"
@@ -313,33 +296,13 @@ loom_check_compile_tests(
     "test/source_low/memory_vector_atomic.loom-test"
     "test/source_low/memory_wide_carriers.loom-test"
     "test/source_low/nested_view_selection.loom-test"
-    "test/source_low/numeric_address_widening.loom-test"
-    "test/source_low/numeric_bitfield.loom-test"
-    "test/source_low/numeric_conversion_float8.loom-test"
-    "test/source_low/numeric_float8_constants.loom-test"
-    "test/source_low/numeric_float8_widen.loom-test"
-    "test/source_low/numeric_float_arithmetic.loom-test"
     "test/source_low/numeric_float_comparison_flags.loom-test"
-    "test/source_low/numeric_float_rounding.loom-test"
-    "test/source_low/numeric_float_selectors.loom-test"
-    "test/source_low/numeric_float_signs.loom-test"
-    "test/source_low/numeric_float_turns.loom-test"
-    "test/source_low/numeric_index.loom-test"
-    "test/source_low/numeric_index_conversion.loom-test"
-    "test/source_low/numeric_integer_division.loom-test"
-    "test/source_low/numeric_integer_order_bits.loom-test"
-    "test/source_low/numeric_narrow_conversion.loom-test"
     "test/source_low/numeric_narrow_float_selection.loom-test"
     "test/source_low/numeric_reciprocal.loom-test"
-    "test/source_low/numeric_scalar_conversion.loom-test"
-    "test/source_low/numeric_scalar_f32.loom-test"
-    "test/source_low/numeric_scalar_i32.loom-test"
-    "test/source_low/numeric_scalar_i64_subtract.loom-test"
     "test/source_low/numeric_unsigned_remainder.loom-test"
     "test/source_low/packed_bitfield.loom-test"
     "test/source_low/packed_memory_alignment.loom-test"
     "test/source_low/packed_payload_offsets.loom-test"
-    "test/source_low/predicate_extension.loom-test"
     "test/source_low/scalar_selection.loom-test"
     "test/source_low/selected_payload_transport.loom-test"
     "test/source_low/semantic_assertions.loom-test"

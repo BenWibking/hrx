@@ -27,35 +27,7 @@
 namespace loom {
 namespace {
 
-using DialectVtablesFn = const loom_op_vtable_t* const* (*)(iree_host_size_t*);
-
-iree_status_t RegisterDialect(loom_context_t* context, uint8_t dialect_id,
-                              DialectVtablesFn dialect_vtables_fn) {
-  iree_host_size_t count = 0;
-  const loom_op_vtable_t* const* vtables = dialect_vtables_fn(&count);
-  return loom_context_register_dialect(context, dialect_id, vtables,
-                                       (uint16_t)count);
-}
-
-iree_status_t RegisterContext(void* user_data, loom_context_t* context) {
-  (void)user_data;
-  IREE_RETURN_IF_ERROR(
-      RegisterDialect(context, LOOM_DIALECT_CHECK, loom_check_dialect_vtables));
-  IREE_RETURN_IF_ERROR(
-      RegisterDialect(context, LOOM_DIALECT_FUNC, loom_func_dialect_vtables));
-  IREE_RETURN_IF_ERROR(
-      RegisterDialect(context, LOOM_DIALECT_INDEX, loom_index_dialect_vtables));
-  IREE_RETURN_IF_ERROR(RegisterDialect(context, LOOM_DIALECT_KERNEL,
-                                       loom_kernel_dialect_vtables));
-  return RegisterDialect(context, LOOM_DIALECT_PASS, loom_pass_dialect_vtables);
-}
-
-iree_status_t InitializeLowDescriptorRegistry(
-    void* user_data, loom_target_low_descriptor_registry_t* out_registry) {
-  (void)user_data;
-  loom_target_core_test_low_descriptor_registry_initialize(out_registry);
-  return iree_ok_status();
-}
+extern const loom_target_provider_t kFakeTargetProvider;
 
 class HalTestbenchActualTest : public ::testing::Test {
  protected:
@@ -64,15 +36,19 @@ class HalTestbenchActualTest : public ::testing::Test {
                                      &block_pool_);
     iree_arena_initialize(&block_pool_, &plan_arena_);
 
+    target_provider_.initialize_low_descriptor_registry =
+        loom_target_core_test_low_descriptor_registry_initialize;
+    loom_target_provider_set_storage_initialize(&target_provider_storage_);
+    IREE_ASSERT_OK(loom_target_provider_set_storage_append(
+        &target_provider_storage_, &target_provider_));
+    IREE_ASSERT_OK(loom_target_provider_set_storage_append(
+        &target_provider_storage_, &kFakeTargetProvider));
+    IREE_ASSERT_OK(loom_target_environment_initialize(
+        &target_provider_storage_.provider_set, &target_environment_));
+
     loom_run_session_options_t options = {};
     loom_run_session_options_initialize(&options);
-    options.register_context = (loom_run_register_context_callback_t){
-        /*.fn=*/RegisterContext,
-    };
-    options.initialize_low_descriptor_registry =
-        (loom_run_initialize_low_descriptor_registry_callback_t){
-            /*.fn=*/InitializeLowDescriptorRegistry,
-        };
+    options.target_environment = &target_environment_;
     options.cleanup_pattern_provider_set =
         loom_cleanup_configured_pattern_provider_set();
     IREE_ASSERT_OK(loom_run_session_initialize(&options, &session_));
@@ -80,6 +56,7 @@ class HalTestbenchActualTest : public ::testing::Test {
 
   void TearDown() override {
     loom_run_session_deinitialize(&session_);
+    loom_target_environment_deinitialize(&target_environment_);
     iree_arena_deinitialize(&plan_arena_);
     iree_arena_block_pool_deinitialize(&block_pool_);
   }
@@ -103,6 +80,9 @@ class HalTestbenchActualTest : public ::testing::Test {
   iree_arena_block_pool_t block_pool_;
   iree_arena_allocator_t plan_arena_;
   loom_run_session_t session_ = {};
+  loom_target_provider_t target_provider_ = {};
+  loom_target_provider_set_storage_t target_provider_storage_ = {};
+  loom_target_environment_t target_environment_ = {};
 };
 
 static loom_testbench_value_t I32Value(int32_t value) {
@@ -218,8 +198,7 @@ static loom_target_provider_t MakeFakeTargetProvider() {
   return provider;
 }
 
-static const loom_target_provider_t kFakeTargetProvider =
-    MakeFakeTargetProvider();
+const loom_target_provider_t kFakeTargetProvider = MakeFakeTargetProvider();
 
 static iree_status_t FakeHalSelectDeviceTarget(
     const loom_device_provider_t* provider,
@@ -240,13 +219,7 @@ static iree_status_t FakeHalSelectDeviceTarget(
           : nullptr;
   *out_target = (loom_device_target_t){
       /*.executable_target=*/executable_target,
-      /*.artifact_target=*/
-      {
-          /*.target_profile=*/&kFakeTargetProfile,
-          /*.target_key=*/executable_target != nullptr
-              ? executable_target->target_key
-              : IREE_SV("fake"),
-      },
+      /*.target_profile=*/&kFakeTargetProfile,
   };
   return iree_ok_status();
 }
@@ -278,17 +251,30 @@ static iree_status_t FakeHalSelectProfileDeviceTarget(
                                    out_target);
 }
 
-static const loom_artifact_provider_t kFakeArtifactProvider = {
+static iree_status_t EmitFakeTargetArtifact(
+    const loom_target_emit_request_t* request, bool* out_emitted,
+    loom_target_emit_artifact_t* out_artifact) {
+  (void)request;
+  *out_emitted = false;
+  *out_artifact = {};
+  return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                          "fake target emitter rejects emission");
+}
+
+static const loom_target_emitter_t kFakeTargetEmitter = {
     /*.name=*/IREE_SVL("fake-hal"),
-    /*.target_profile_type=*/&kFakeTargetProfileType,
-    /*.artifact_kind=*/LOOM_TARGET_COMPILE_ARTIFACT_KIND_HAL_EXECUTABLE,
+    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
+    /*.default_identifier=*/IREE_SVL("fake.bin"),
+    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
     /*.default_pipeline_options=*/{},
+    /*.emit=*/EmitFakeTargetArtifact,
 };
 
 static const loom_device_provider_t kFakeDeviceProvider = {
-    /*.artifact_provider=*/&kFakeArtifactProvider,
+    /*.name=*/IREE_SVL("fake-hal"),
+    /*.target_profile_type=*/&kFakeTargetProfileType,
+    /*.target_emitter=*/&kFakeTargetEmitter,
     /*.driver_name=*/IREE_SVL("fake"),
-    /*.select_target=*/FakeHalSelectDeviceTarget,
     /*.select_compatible_target=*/FakeHalSelectCompatibleDeviceTarget,
     /*.select_profile_target=*/FakeHalSelectProfileDeviceTarget,
 };
@@ -387,14 +373,6 @@ pass.pipeline<module> @debug pipeline {
   IREE_ASSERT_OK(loom_run_hal_testbench_select_kernel_launch(
       &module_plan.cases[0], &kernel_launch));
 
-  const loom_target_provider_t* target_providers[] = {&kFakeTargetProvider};
-  const loom_target_provider_set_t target_provider_set =
-      loom_target_provider_set_make(target_providers,
-                                    IREE_ARRAYSIZE(target_providers));
-  loom_target_environment_t target_environment = {};
-  IREE_ASSERT_OK(loom_target_environment_initialize(&target_provider_set,
-                                                    &target_environment));
-
   loom_run_hal_testbench_context_t context = {};
   loom_run_hal_testbench_context_initialize(
       /*device_provider_registry=*/nullptr, iree_allocator_system(), &context);
@@ -407,7 +385,6 @@ pass.pipeline<module> @debug pipeline {
   loom_run_hal_testbench_actual_provider_options_t options = {};
   options.context = &context;
   options.session = &session_;
-  options.target_environment = &target_environment;
   options.run_module = &run_module;
   options.pipeline = IREE_SV("@debug");
   options.target = target;
@@ -422,8 +399,7 @@ pass.pipeline<module> @debug pipeline {
             expects_explicit_selection ? 1u : 0u);
   EXPECT_EQ(g_compatible_target_selection_count,
             expects_explicit_selection ? 0u : 1u);
-  EXPECT_EQ(provider.compile_device_target.artifact_target.target_profile,
-            &kFakeTargetProfile);
+  EXPECT_EQ(provider.compile_device_target.target_profile, &kFakeTargetProfile);
   EXPECT_EQ(provider.owns_compile_device_target, !expects_explicit_selection);
   EXPECT_EQ(g_projected_target_profile, &kFakeTargetProfile);
 
@@ -449,7 +425,6 @@ pass.pipeline<module> @debug pipeline {
 
   loom_run_hal_testbench_actual_provider_deinitialize(&provider);
   loom_run_hal_testbench_context_deinitialize(&context);
-  loom_target_environment_deinitialize(&target_environment);
   loom_run_module_deinitialize(&run_module);
 }
 
@@ -1120,9 +1095,8 @@ func.def inline @linked_identity(%value: index) -> (index) {
 
   loom_run_hal_testbench_context_t context = {};
   context.device_provider = &kFakeDeviceProvider;
-  // Provider compile only needs target selection before the fake artifact
-  // provider rejects this source; avoid requiring a real HAL device for a
-  // rooted-link contract test.
+  // The fake target emitter rejects emission after the rooted module has been
+  // cloned. Disable transforms so this test can inspect that clone.
   context.runtime_initialized = true;
   context.host_allocator = iree_allocator_system();
 
@@ -1130,12 +1104,13 @@ func.def inline @linked_identity(%value: index) -> (index) {
   options.context = &context;
   options.session = &session_;
   options.run_module = &run_module;
+  options.pipeline = IREE_SV("none");
   options.kernel_launch = kernel_launch;
 
   loom_run_hal_testbench_actual_provider_t provider = {};
   loom_run_hal_testbench_actual_provider_initialize(&options, &provider);
   IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_FAILED_PRECONDITION,
+      IREE_STATUS_INVALID_ARGUMENT,
       loom_run_hal_testbench_actual_provider_compile(&provider));
   EXPECT_TRUE(
       ModuleHasSymbol(provider.compile_module.module, IREE_SV("selected")));

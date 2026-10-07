@@ -50,7 +50,9 @@ loom_check_test_suite(
     "constexpr_bitcast.cxx-test"
     "constexpr_bitcast_cleanup.cxx-test"
     "constexpr_bitcast_invalid.cxx-test"
+    "constexpr_destruction.cxx-test"
     "constexpr_semantics.cxx-test"
+    "constexpr_storage.cxx-test"
     "control_invalid.cxx-test"
     "data_models.cxx-test"
     "encoding_schemas.cxx-test"
@@ -112,8 +114,12 @@ loom_check_test_suite(
     "subgroups_invalid.cxx-test"
     "symbols.cxx-test"
     "symbols_invalid.cxx-test"
+    "targets.cxx-test"
+    "targets_invalid.cxx-test"
     "template_addresses.cxx-test"
     "template_addresses_invalid.cxx-test"
+    "template_apply.cxx-test"
+    "template_apply_invalid.cxx-test"
     "template_calls.cxx-test"
     "template_conversions.cxx-test"
     "template_conversions_invalid.cxx-test"
@@ -136,6 +142,8 @@ loom_check_test_suite(
     "volatile.cxx-test"
     "volatile_invalid.cxx-test"
     "volatile_views.cxx-test"
+    "workload_config.cxx-test"
+    "workload_config_invalid.cxx-test"
   DATA
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/aligned_layout.h"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/import/cxx/test/check_close.cxx"
@@ -1308,6 +1316,15 @@ loom_test_module(
     vector_math_module
   SRCS
     "vector_math.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_test_module(
+  NAME
+    workload_configuration_module
+  SRCS
+    "workload_configuration.cxx"
 )
 endif()
 

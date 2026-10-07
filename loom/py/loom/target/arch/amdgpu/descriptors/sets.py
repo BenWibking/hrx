@@ -32,6 +32,7 @@ from loom.target.arch.amdgpu.isa_xml import (
 
 from .alu import *
 from .atomic import *
+from .bitwise import *
 from .cdna import *
 from .common import *
 from .control import *
@@ -415,8 +416,8 @@ def _cdna_core_overlays(
         *_v_binary_f32_dpp_legacy_overlays(),
         _v_fma_f32_overlay(),
         _v_fmaak_f32_overlay(),
+        _v_fmamk_f32_product_flushing_overlay(),
         _v_fmac_f32_overlay(),
-        _v_fmamk_f32_overlay(),
         *_cdna_scalar_fma_overlays(),
         _v_fma_f64_neg_a_overlay(),
         _v_fma_f64_neg_a_one_overlay(),
@@ -440,7 +441,6 @@ def _cdna_core_overlays(
         _v_sqrt_f64_overlay(),
         _v_rsq_f64_overlay(),
         _v_ldexp_f64_overlay(),
-        _v_cmp_class_f64_overlay(),
         _v_rsq_f32_overlay(),
         _v_rcp_f32_overlay(),
         _v_rcp_f64_overlay(),
@@ -474,6 +474,7 @@ def _cdna_core_overlays(
         _v_cvt_i32_f32_overlay(),
         _v_cvt_u32_f32_overlay(),
         *_v_cmp_overlays(),
+        *_v_cmp_class_cdna_overlays(),
         *_v_cmp_i32_equality_vcc_overlays(),
         *_v_cndmask_b32_overlays(include_literal_forms=False),
         _v_cndmask_b32_dpp_legacy_overlay(),
@@ -1164,6 +1165,7 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         _v_cvt_i32_f32_overlay(),
         _v_cvt_u32_f32_overlay(),
         *_v_cmp_overlays(),
+        *_v_cmp_class_overlays(),
         *_v_cmp_i32_equality_vcc_overlays(),
         *_v_cndmask_b32_overlays(),
         _v_cndmask_b32_dpp16_overlay(),
@@ -1556,7 +1558,7 @@ def _gfx11_core_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         ),
         _s_barrier_overlay(),
         _s_sendmsg_overlay(),
-        _s_sendmsg_rtn_b32_overlay(),
+        *(_s_sendmsg_rtn_overlay(bits) for bits in (32, 64)),
         _s_sethalt_overlay(),
         _s_trap_overlay(),
         *_gfx11_cache_control_overlays(),
@@ -2034,6 +2036,7 @@ def _rdna4_core_overlays(
         _v_cvt_i32_f32_overlay(),
         _v_cvt_u32_f32_overlay(),
         *_v_cmp_overlays(),
+        *_v_cmp_class_overlays(op_sel_field="OPSEL"),
         *_v_cmp_i32_equality_vcc_overlays(),
         *_v_cndmask_b32_overlays(),
         _v_cndmask_b32_dpp16_overlay(),
@@ -2299,7 +2302,7 @@ def _rdna4_core_overlays(
         _s_barrier_signal_all_overlay(),
         _s_barrier_wait_all_overlay(),
         _s_sendmsg_overlay(),
-        _s_sendmsg_rtn_b32_overlay(),
+        *(_s_sendmsg_rtn_overlay(bits) for bits in (32, 64)),
         _s_sethalt_overlay(),
         _s_trap_overlay(),
         *_gfx12_cache_control_overlays(),

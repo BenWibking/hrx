@@ -200,8 +200,8 @@ static iree_status_t loom_vm_testbench_compile(
   }
   loom_target_low_descriptor_registry_t registry = {0};
   if (iree_status_is_ok(status)) {
-    status = loom_target_environment_initialize_low_descriptor_registry(
-        testbench->target_environment, &registry);
+    registry = loom_target_environment_low_descriptor_registry(
+        testbench->target_environment);
   }
   loom_compile_pipeline_result_t pipeline = {0};
   loom_compile_pipeline_options_t options;
@@ -211,7 +211,6 @@ static iree_status_t loom_vm_testbench_compile(
       .fn = loom_source_table_resolve, .user_data = &sources.table};
   options.target_specializations =
       (loom_target_specialization_request_list_t){requests, request_count};
-  options.low_descriptor_registry = &registry;
   options.cleanup_pattern_provider_set =
       testbench->cleanup_pattern_provider_set;
   loom_vm_testbench_pipeline_diagnostic_capture_t pipeline_diagnostic = {
@@ -256,6 +255,7 @@ static iree_status_t loom_vm_testbench_compile(
                 .fn = loom_vm_testbench_capture_emission_diagnostic,
                 .user_data = &emission_diagnostic,
             },
+        .max_errors = options.max_errors,
         .scratch_arena = &arena,
         .allocator = testbench->host_allocator,
     };
