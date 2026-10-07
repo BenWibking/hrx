@@ -75,10 +75,13 @@ updates according to `DXGK_NODEMETADATA_FLAGS::RingBufferFenceRelease`:
 
 | Capability | Progress-fence update owner |
 | --- | --- |
-| `RingBufferFenceRelease = 0` | A user-mode submission places the update at the end of its DMA buffer. A kernel submission uses the KMD signaling path. |
+| `RingBufferFenceRelease = 0` | The user-mode driver (UMD) inserts the update as the last instruction in its DMA buffer. A kernel submission uses the KMD signaling path. |
 | `RingBufferFenceRelease = 1` | The driver/GPU updates progress after neither GPU nor CPU uses the DMA buffer. The native implementation determines the mechanism. |
 
-[Progress-fence contract][native-submit]
+Only the value-one branch explicitly guarantees that both CPU and GPU use of
+the DMA buffer has ended. The value-zero branch specifies the terminal
+instruction and its owner; it does not by itself supply that stronger
+retirement guarantee. [Progress-fence contract][native-submit]
 
 `ContextSchedulingSupported`, `RingBufferFenceRelease`, and
 `UserModeSubmission` are separate node capabilities. The latter is documented
