@@ -64,6 +64,7 @@ func.def inline @gate_up_tile(%input_size: index, %input_view: view<[%input_size
   func.return
 }
 
+// --8<-- [start:fill-input]
 func.def inline @fill_input(%input_size: index, %record: index, %input: buffer, %inputs: channel<tile<[%input_size]xbf16>>) {
   %element_bytes = index.constant 2 : index
   %record_elements = index.mul %record, %input_size : index
@@ -78,6 +79,8 @@ func.def inline @fill_input(%input_size: index, %record: index, %input: buffer, 
   func.return
 }
 
+// --8<-- [end:fill-input]
+// --8<-- [start:drain-output]
 func.def inline @drain_output(%record: index, %outputs: channel<tile<1xf32>>, %output: buffer) {
   %element_bytes = index.constant 4 : index
   %byte_index = index.mul %record, %element_bytes : index
@@ -91,6 +94,7 @@ func.def inline @drain_output(%record: index, %outputs: channel<tile<1xf32>>, %o
   func.return
 }
 
+// --8<-- [end:drain-output]
 pipeline.def<kernel> public retain target(@npu) @ffn_gate_up_quadratic_bf16() run(%input_arg: buffer, %weights_arg: buffer, %output_arg: buffer) {
   %input_size = config.get @ffn_gate_up.input_size : index
   %record_count = index.constant 1 : index
