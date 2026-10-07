@@ -205,7 +205,10 @@ iree_hal_amdgpu_staging_pool_queue_waiter(
   if (iree_any_bit_set(waiter->flags,
                        IREE_HAL_AMDGPU_STAGING_POOL_WAITER_FLAG_QUEUED)) {
     result = IREE_HAL_AMDGPU_STAGING_POOL_WAIT_ALREADY_QUEUED;
-  } else if (pool->available_count > 0) {
+  } else if (pool->available_count > 0 || waiter->slot.buffer) {
+    // A release may assign this waiter's slot between the pump's failed
+    // acquire and this call. Consume it before admitting another wait that
+    // could overwrite the assigned slot.
     result = IREE_HAL_AMDGPU_STAGING_POOL_WAIT_RETRY;
   } else {
     waiter->next = NULL;
@@ -802,14 +805,6 @@ static void iree_hal_amdgpu_staging_transfer_try_finish(
   }
 }
 
-static void iree_hal_amdgpu_staging_chunk_return_slot(
-    iree_hal_amdgpu_staging_chunk_t* chunk) {
-  iree_hal_amdgpu_staging_pool_t* pool = chunk->transfer->pool;
-  const uint32_t slot_ordinal = chunk->slot.ordinal;
-  memset(&chunk->slot, 0, sizeof(chunk->slot));
-  iree_hal_amdgpu_staging_pool_release(pool, slot_ordinal);
-}
-
 static void iree_hal_amdgpu_staging_chunk_finish(
     iree_hal_amdgpu_staging_chunk_t* chunk, bool did_transfer_bytes) {
   iree_hal_amdgpu_staging_transfer_t* transfer = chunk->transfer;
@@ -817,12 +812,16 @@ static void iree_hal_amdgpu_staging_chunk_finish(
   if (did_transfer_bytes) {
     transfer->completed_length += chunk->length;
   }
+  // A concurrent pump may claim this chunk as soon as it becomes idle.
+  // Detach the completed slot before publishing that reusable state.
+  const uint32_t slot_ordinal = chunk->slot.ordinal;
+  memset(&chunk->slot, 0, sizeof(chunk->slot));
   chunk->state = IREE_HAL_AMDGPU_STAGING_CHUNK_IDLE;
   chunk->length = 0;
   chunk->file_progress = 0;
   --transfer->active_chunk_count;
   iree_slim_mutex_unlock(&transfer->mutex);
-  iree_hal_amdgpu_staging_chunk_return_slot(chunk);
+  iree_hal_amdgpu_staging_pool_release(transfer->pool, slot_ordinal);
   iree_hal_amdgpu_staging_transfer_pump(transfer);
   iree_hal_amdgpu_staging_transfer_try_finish(transfer);
 }
