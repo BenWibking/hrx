@@ -1,0 +1,147 @@
+// RUN: emit source-low output=low
+
+x86.target<avx2> @target
+
+func.def target(@target) @integer_xmm_families(%i8_lhs: vector<16xi8>, %i8_rhs: vector<16xi8>, %i16_lhs: vector<8xi16>, %i16_rhs: vector<8xi16>, %i32_lhs: vector<4xi32>, %i32_rhs: vector<4xi32>, %i64_lhs: vector<2xi64>, %i64_rhs: vector<2xi64>) -> (vector<16xi8>, vector<8xi16>, vector<4xi32>, vector<2xi64>) {
+  %i8_add = vector.addi %i8_lhs, %i8_rhs : vector<16xi8>
+  %i8_sub = vector.subi %i8_add, %i8_rhs : vector<16xi8>
+  %i8_min = vector.minsi %i8_sub, %i8_rhs : vector<16xi8>
+  %i8_max = vector.maxsi %i8_min, %i8_lhs : vector<16xi8>
+  %i8_umin = vector.minui %i8_max, %i8_rhs : vector<16xi8>
+  %i8_umax = vector.maxui %i8_umin, %i8_lhs : vector<16xi8>
+  %i8_and = vector.andi %i8_umax, %i8_rhs : vector<16xi8>
+  %i8_or = vector.ori %i8_and, %i8_lhs : vector<16xi8>
+  %i8_result = vector.xori %i8_or, %i8_rhs : vector<16xi8>
+
+  %i16_add = vector.addi %i16_lhs, %i16_rhs : vector<8xi16>
+  %i16_sub = vector.subi %i16_add, %i16_rhs : vector<8xi16>
+  %i16_mul = vector.muli %i16_sub, %i16_rhs : vector<8xi16>
+  %i16_min = vector.minsi %i16_mul, %i16_rhs : vector<8xi16>
+  %i16_max = vector.maxsi %i16_min, %i16_lhs : vector<8xi16>
+  %i16_umin = vector.minui %i16_max, %i16_rhs : vector<8xi16>
+  %i16_result = vector.maxui %i16_umin, %i16_lhs : vector<8xi16>
+
+  %i32_add = vector.addi %i32_lhs, %i32_rhs : vector<4xi32>
+  %i32_sub = vector.subi %i32_add, %i32_rhs : vector<4xi32>
+  %i32_mul = vector.muli %i32_sub, %i32_rhs : vector<4xi32>
+  %i32_min = vector.minsi %i32_mul, %i32_rhs : vector<4xi32>
+  %i32_max = vector.maxsi %i32_min, %i32_lhs : vector<4xi32>
+  %i32_umin = vector.minui %i32_max, %i32_rhs : vector<4xi32>
+  %i32_umax = vector.maxui %i32_umin, %i32_lhs : vector<4xi32>
+  %i32_shl = vector.shli %i32_umax, %i32_rhs : vector<4xi32>
+  %i32_shrs = vector.shrsi %i32_shl, %i32_rhs : vector<4xi32>
+  %i32_result = vector.shrui %i32_shrs, %i32_rhs : vector<4xi32>
+
+  %i64_add = vector.addi %i64_lhs, %i64_rhs : vector<2xi64>
+  %i64_sub = vector.subi %i64_add, %i64_rhs : vector<2xi64>
+  %i64_shl = vector.shli %i64_sub, %i64_rhs : vector<2xi64>
+  %i64_result = vector.shrui %i64_shl, %i64_rhs : vector<2xi64>
+  func.return %i8_result, %i16_result, %i32_result, %i64_result : vector<16xi8>, vector<8xi16>, vector<4xi32>, vector<2xi64>
+}
+
+// ----
+low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({signature = (vector<16xi8>, vector<16xi8>, vector<8xi16>, vector<8xi16>, vector<4xi32>, vector<4xi32>, vector<2xi64>, vector<2xi64>) -> (vector<16xi8>, vector<8xi16>, vector<4xi32>, vector<2xi64>)}) @integer_xmm_families(%i8_lhs: reg<x86.xmm>, %i8_rhs: reg<x86.xmm>, %i16_lhs: reg<x86.xmm>, %i16_rhs: reg<x86.xmm>, %i32_lhs: reg<x86.xmm>, %i32_rhs: reg<x86.xmm>, %i64_lhs: reg<x86.xmm>, %i64_rhs: reg<x86.xmm>) -> (reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>) asm {
+  %i8_add = vpaddb.xmm %i8_lhs, %i8_rhs
+  %i8_sub = vpsubb.xmm %i8_add, %i8_rhs
+  %i8_min = vpminsb.xmm %i8_sub, %i8_rhs
+  %i8_max = vpmaxsb.xmm %i8_min, %i8_lhs
+  %i8_umin = vpminub.xmm %i8_max, %i8_rhs
+  %i8_umax = vpmaxub.xmm %i8_umin, %i8_lhs
+  %i8_and = vpand.xmm %i8_umax, %i8_rhs
+  %i8_or = vpor.xmm %i8_and, %i8_lhs
+  %i8_result = vpxor.xmm %i8_or, %i8_rhs
+  %i16_add = vpaddw.xmm %i16_lhs, %i16_rhs
+  %i16_sub = vpsubw.xmm %i16_add, %i16_rhs
+  %i16_mul = vpmullw.xmm %i16_sub, %i16_rhs
+  %i16_min = vpminsw.xmm %i16_mul, %i16_rhs
+  %i16_max = vpmaxsw.xmm %i16_min, %i16_lhs
+  %i16_umin = vpminuw.xmm %i16_max, %i16_rhs
+  %i16_result = vpmaxuw.xmm %i16_umin, %i16_lhs
+  %i32_add = vpaddd.xmm %i32_lhs, %i32_rhs
+  %i32_sub = vpsubd.xmm %i32_add, %i32_rhs
+  %i32_mul = vpmulld.xmm %i32_sub, %i32_rhs
+  %i32_min = vpminsd.xmm %i32_mul, %i32_rhs
+  %i32_max = vpmaxsd.xmm %i32_min, %i32_lhs
+  %i32_umin = vpminud.xmm %i32_max, %i32_rhs
+  %i32_umax = vpmaxud.xmm %i32_umin, %i32_lhs
+  %i32_shl = vpsllvd.xmm %i32_umax, %i32_rhs
+  %i32_shrs = vpsravd.xmm %i32_shl, %i32_rhs
+  %i32_result = vpsrlvd.xmm %i32_shrs, %i32_rhs
+  %i64_add = vpaddq.xmm %i64_lhs, %i64_rhs
+  %i64_sub = vpsubq.xmm %i64_add, %i64_rhs
+  %i64_shl = vpsllvq.xmm %i64_sub, %i64_rhs
+  %i64_result = vpsrlvq.xmm %i64_shl, %i64_rhs
+  return %i8_result, %i16_result, %i32_result, %i64_result
+}
+
+// ====
+
+x86.target<avx2> @target
+
+func.def target(@target) @float_ymm_families(%f32_lhs: vector<8xf32>, %f32_rhs: vector<8xf32>, %f32_acc: vector<8xf32>, %f64_lhs: vector<4xf64>, %f64_rhs: vector<4xf64>, %f64_acc: vector<4xf64>) -> (vector<8xf32>, vector<4xf64>) {
+  %f32_add = vector.addf %f32_lhs, %f32_rhs : vector<8xf32>
+  %f32_sub = vector.subf %f32_add, %f32_rhs : vector<8xf32>
+  %f32_mul = vector.mulf %f32_sub, %f32_rhs : vector<8xf32>
+  %f32_div = vector.divf %f32_mul, %f32_rhs : vector<8xf32>
+  %f32_result = vector.fmaf %f32_div, %f32_rhs, %f32_acc : vector<8xf32>
+  %f64_add = vector.addf %f64_lhs, %f64_rhs : vector<4xf64>
+  %f64_sub = vector.subf %f64_add, %f64_rhs : vector<4xf64>
+  %f64_mul = vector.mulf %f64_sub, %f64_rhs : vector<4xf64>
+  %f64_div = vector.divf %f64_mul, %f64_rhs : vector<4xf64>
+  %f64_result = vector.fmaf %f64_div, %f64_rhs, %f64_acc : vector<4xf64>
+  func.return %f32_result, %f64_result : vector<8xf32>, vector<4xf64>
+}
+
+// ----
+low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({signature = (vector<8xf32>, vector<8xf32>, vector<8xf32>, vector<4xf64>, vector<4xf64>, vector<4xf64>) -> (vector<8xf32>, vector<4xf64>)}) @float_ymm_families(%f32_lhs: reg<x86.ymm>, %f32_rhs: reg<x86.ymm>, %f32_acc: reg<x86.ymm>, %f64_lhs: reg<x86.ymm>, %f64_rhs: reg<x86.ymm>, %f64_acc: reg<x86.ymm>) -> (reg<x86.ymm>, reg<x86.ymm>) asm {
+  %f32_add = vaddps.ymm %f32_lhs, %f32_rhs
+  %f32_sub = vsubps.ymm %f32_add, %f32_rhs
+  %f32_mul = vmulps.ymm %f32_sub, %f32_rhs
+  %f32_div = vdivps.ymm %f32_mul, %f32_rhs
+  %30 = copy %f32_acc : reg<x86.ymm> -> reg<x86.ymm>
+  %f32_result = vfmadd231ps.ymm %30, %f32_div, %f32_rhs
+  %f64_add = vaddpd.ymm %f64_lhs, %f64_rhs
+  %f64_sub = vsubpd.ymm %f64_add, %f64_rhs
+  %f64_mul = vmulpd.ymm %f64_sub, %f64_rhs
+  %f64_div = vdivpd.ymm %f64_mul, %f64_rhs
+  %36 = copy %f64_acc : reg<x86.ymm> -> reg<x86.ymm>
+  %f64_result = vfmadd231pd.ymm %36, %f64_div, %f64_rhs
+  return %f32_result, %f64_result
+}
+
+// ====
+
+// Scalar floating arithmetic uses the same complete f32/f64 operation family
+// as packed vectors, including division and fused multiply-add.
+x86.target<avx2> @target
+
+func.def target(@target) @scalar_float_arithmetic(%f32_lhs: f32, %f32_rhs: f32, %f32_acc: f32, %f64_lhs: f64, %f64_rhs: f64, %f64_acc: f64) -> (f32, f64) {
+  %f32_add = scalar.addf %f32_lhs, %f32_rhs : f32
+  %f32_sub = scalar.subf %f32_add, %f32_rhs : f32
+  %f32_mul = scalar.mulf %f32_sub, %f32_rhs : f32
+  %f32_div = scalar.divf %f32_mul, %f32_rhs : f32
+  %f32_result = scalar.fmaf %f32_div, %f32_rhs, %f32_acc : f32
+  %f64_add = scalar.addf %f64_lhs, %f64_rhs : f64
+  %f64_sub = scalar.subf %f64_add, %f64_rhs : f64
+  %f64_mul = scalar.mulf %f64_sub, %f64_rhs : f64
+  %f64_div = scalar.divf %f64_mul, %f64_rhs : f64
+  %f64_result = scalar.fmaf %f64_div, %f64_rhs, %f64_acc : f64
+  func.return %f32_result, %f64_result : f32, f64
+}
+
+// ----
+low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({signature = (f32, f32, f32, f64, f64, f64) -> (f32, f64)}) @scalar_float_arithmetic(%f32_lhs: reg<x86.xmm>, %f32_rhs: reg<x86.xmm>, %f32_acc: reg<x86.xmm>, %f64_lhs: reg<x86.xmm>, %f64_rhs: reg<x86.xmm>, %f64_acc: reg<x86.xmm>) -> (reg<x86.xmm>, reg<x86.xmm>) asm {
+  %f32_add = vaddss.xmm %f32_lhs, %f32_rhs
+  %f32_sub = vsubss.xmm %f32_add, %f32_rhs
+  %f32_mul = vmulss.xmm %f32_sub, %f32_rhs
+  %f32_div = vdivss.xmm %f32_mul, %f32_rhs
+  %30 = copy %f32_acc : reg<x86.xmm> -> reg<x86.xmm>
+  %f32_result = vfmadd231ss.xmm %30, %f32_div, %f32_rhs
+  %f64_add = vaddsd.xmm %f64_lhs, %f64_rhs
+  %f64_sub = vsubsd.xmm %f64_add, %f64_rhs
+  %f64_mul = vmulsd.xmm %f64_sub, %f64_rhs
+  %f64_div = vdivsd.xmm %f64_mul, %f64_rhs
+  %36 = copy %f64_acc : reg<x86.xmm> -> reg<x86.xmm>
+  %f64_result = vfmadd231sd.xmm %36, %f64_div, %f64_rhs
+  return %f32_result, %f64_result
+}

@@ -53,6 +53,7 @@ _STORAGE_FORMATS = (
     (("i32", "f32"), 4),
     (_BYTE_STORAGE_TYPES, 1),
     (_WORD_STORAGE_TYPES, 2),
+    (("i64", "f64"), 8),
 )
 
 

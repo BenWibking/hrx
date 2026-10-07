@@ -914,7 +914,13 @@ def _cases() -> Sequence[ContractCase]:
         ),
         *(
             rule
-            for type_pattern, register_width in ((_I1, 32), (_I32, 32), (_I64, 64))
+            for type_pattern, register_width in (
+                (_I1, 32),
+                (_I8, 32),
+                (_I16, 32),
+                (_I32, 32),
+                (_I64, 64),
+            )
             for source_op, operation in (
                 (scalar_bitwise.scalar_andi, "and"),
                 (scalar_bitwise.scalar_ori, "or"),

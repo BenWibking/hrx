@@ -115,22 +115,17 @@ func.def @vector4_reduce(%a: vector<4xf32>, %b: vector<4xf32>, %c: f32) -> (f32)
 
 // ----
 low.func.def target<x86.avx512_packed_dot.core> abi(object_function) abi_layout({signature = (vector<4xf32>, vector<4xf32>, f32) -> (f32)}) @vector4_reduce(%a: reg<x86.xmm>, %b: reg<x86.xmm>, %c: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %23 = vpermilps.xmm %a, 0
-  %24 = vpermilps.xmm %b, 0
-  %25 = copy %c : reg<x86.xmm> -> reg<x86.xmm>
-  %26 = vfmadd231ss.xmm %25, %23, %24
-  %27 = vpermilps.xmm %a, 1
-  %28 = vpermilps.xmm %b, 1
-  %29 = copy %26 : reg<x86.xmm> -> reg<x86.xmm>
-  %30 = vfmadd231ss.xmm %29, %27, %28
-  %31 = vpermilps.xmm %a, 2
-  %32 = vpermilps.xmm %b, 2
-  %33 = copy %30 : reg<x86.xmm> -> reg<x86.xmm>
-  %34 = vfmadd231ss.xmm %33, %31, %32
-  %35 = vpermilps.xmm %a, 3
-  %36 = vpermilps.xmm %b, 3
-  %37 = copy %34 : reg<x86.xmm> -> reg<x86.xmm>
-  %result = vfmadd231ss.xmm %37, %35, %36
+  %11 = copy %c : reg<x86.xmm> -> reg<x86.xmm>
+  %12 = vfmadd231ss.xmm %11, %a, %b
+  %13 = vpermilps.xmm %a, 1
+  %14 = vpermilps.xmm %b, 1
+  %15 = vfmadd231ss.xmm %12, %13, %14
+  %16 = vpermilps.xmm %a, 2
+  %17 = vpermilps.xmm %b, 2
+  %18 = vfmadd231ss.xmm %15, %16, %17
+  %19 = vpermilps.xmm %a, 3
+  %20 = vpermilps.xmm %b, 3
+  %result = vfmadd231ss.xmm %18, %19, %20
   return %result
 }
 

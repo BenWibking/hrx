@@ -16,12 +16,22 @@ iree_py_library(
     "__init__.py"
     "avx2.py"
     "avx512.py"
+    "constants.py"
     "float_narrowing.py"
+    "floating_extrema.py"
     "floating_reduction.py"
     "integer_division.py"
+    "integer_reduction.py"
+    "lane_movement.py"
     "memory.py"
     "packed_dot.py"
+    "predicate.py"
+    "rule_builders.py"
     "scalar.py"
+    "scalar_float.py"
+    "shuffle.py"
+    "vector_arithmetic.py"
+    "vector_construction.py"
   DEPS
     loom::py::loom::core
     loom::py::loom::dialect::buffer::buffer
@@ -32,8 +42,56 @@ iree_py_library(
     loom::py::loom::dialect::vector::vector
     loom::py::loom::dialect::view::view
     loom::py::loom::target::arch::x86::descriptors
+    loom::py::loom::target::arch::x86::vector_families
     loom::py::loom::target::contracts::contracts
     loom::py::loom::target::emit::float_narrowing
+)
+
+iree_py_test(
+  NAME
+    families_test
+  MAIN
+    "../../../../tools/pytest_style_runner.py"
+  SRCS
+    "families_test.py"
+    "../../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.arch.x86.contracts.families_test"
+  DEPS
+    loom::py::loom::target::arch::x86::contracts::contracts
+    loom::py::loom::dialect::scalar::scalar
+    loom::py::loom::dialect::vector::vector
+    loom::py::loom::target::arch::x86::descriptors
+    loom::py::loom::target::arch::x86::vector_families
+    loom::py::loom::target::contracts::contracts
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+)
+
+iree_py_test(
+  NAME
+    predicate_test
+  MAIN
+    "../../../../tools/pytest_style_runner.py"
+  SRCS
+    "predicate_test.py"
+    "../../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.arch.x86.contracts.predicate_test"
+  DEPS
+    loom::py::loom::target::arch::x86::contracts::contracts
+    loom::py::loom::dialect::scalar::scalar
+    loom::py::loom::dialect::scf::scf
+    loom::py::loom::dialect::vector::vector
+    loom::py::loom::target::arch::x86::descriptors
+    loom::py::loom::target::arch::x86::vector_families
+    loom::py::loom::target::contracts::contracts
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
 )
 
 iree_py_test(

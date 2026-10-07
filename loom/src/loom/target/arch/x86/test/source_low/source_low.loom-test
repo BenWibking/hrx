@@ -82,8 +82,8 @@ func.def @i32x16_compare_select(%lhs: vector<16xi32>, %rhs: vector<16xi32>, %fal
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<16xi32>, vector<16xi32>, vector<16xi32>) -> (vector<16xi32>)}) @i32x16_compare_select(%lhs: reg<x86.zmm>, %rhs: reg<x86.zmm>, %fallback: reg<x86.zmm>) -> (reg<x86.zmm>) asm {
-  %signed = vpcmpd.sgt %lhs, %rhs
-  %unsigned = vpcmpud.ugt %lhs, %rhs
+  %signed = vpcmpd %lhs, %rhs, 6
+  %unsigned = vpcmpud %lhs, %rhs, 6
   %selected = vpblendmd %signed, %lhs, %rhs
   %result = vpblendmd %unsigned, %selected, %fallback
   return %result
@@ -103,8 +103,8 @@ func.def @i32x16_mask_and_select(%lhs: vector<16xi32>, %rhs: vector<16xi32>, %fa
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<16xi32>, vector<16xi32>, vector<16xi32>) -> (vector<16xi32>)}) @i32x16_mask_and_select(%lhs: reg<x86.zmm>, %rhs: reg<x86.zmm>, %fallback: reg<x86.zmm>) -> (reg<x86.zmm>) asm {
-  %greater = vpcmpd.sgt %lhs, %rhs
-  %less = vpcmpd.slt %lhs, %rhs
+  %greater = vpcmpd %lhs, %rhs, 6
+  %less = vpcmpd %lhs, %rhs, 1
   %either = korq %greater, %less
   %greater_again = kandq %either, %greater
   %condition = kxorq %greater_again, %less
@@ -203,8 +203,8 @@ func.def @f32x16_compare_select(%lhs: vector<16xf32>, %rhs: vector<16xf32>, %fal
 
 // ----
 low.func.def target<x86.avx512.core> abi(object_function) abi_layout({signature = (vector<16xf32>, vector<16xf32>, vector<16xf32>) -> (vector<16xf32>)}) @f32x16_compare_select(%lhs: reg<x86.zmm>, %rhs: reg<x86.zmm>, %fallback: reg<x86.zmm>) -> (reg<x86.zmm>) asm {
-  %ordered_lt = vcmpps.olt %lhs, %rhs
-  %unordered_ne = vcmpps.une %lhs, %rhs
+  %ordered_lt = vcmpps %lhs, %rhs, 17
+  %unordered_ne = vcmpps %lhs, %rhs, 4
   %selected = vblendmps %ordered_lt, %lhs, %rhs
   %result = vblendmps %unordered_ne, %selected, %fallback
   return %result

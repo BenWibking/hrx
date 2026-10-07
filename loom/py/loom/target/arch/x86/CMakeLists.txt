@@ -32,6 +32,15 @@ iree_py_library(
 
 iree_py_library(
   NAME
+    vector_families
+  SRCS
+    "vector_families.py"
+  DEPS
+    loom::py::loom::target::arch::x86::package_init
+)
+
+iree_py_library(
+  NAME
     dialect
   SRCS
     "dialect.py"
@@ -57,6 +66,7 @@ iree_py_library(
     "descriptors/simd128.py"
   DEPS
     loom::py::loom::target::arch::x86::target_info
+    loom::py::loom::target::arch::x86::vector_families
     loom::py::loom::target::low_descriptors
     loom::py::loom::target::arch::package
 )
@@ -94,6 +104,25 @@ iree_py_test(
     loom::py::loom::target::native_contraction_layout
     loom::py::loom::target::native_coordinate_projection
     loom::py::loom::target::native_layout_facts
+  PACKAGE_DIRS
+    "${PROJECT_SOURCE_DIR}/loom/py"
+    "${PROJECT_BINARY_DIR}/loom/py"
+    "${PROJECT_SOURCE_DIR}"
+)
+
+iree_py_test(
+  NAME
+    vector_families_test
+  MAIN
+    "../../../tools/pytest_style_runner.py"
+  SRCS
+    "vector_families_test.py"
+    "../../../tools/pytest_style_runner.py"
+  ARGS
+    "loom.target.arch.x86.vector_families_test"
+  DEPS
+    loom::py::loom::target::arch::x86::descriptors
+    loom::py::loom::target::arch::x86::vector_families
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"
