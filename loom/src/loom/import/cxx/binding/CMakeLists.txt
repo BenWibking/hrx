@@ -92,6 +92,26 @@ loom_cc_library(
   SRCS
     "assumptions.cc"
   DEPS
+    ::predicates
+    iree::third_party::cxx_parser
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    predicates
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "predicates.h"
+  SRCS
+    "predicates.cc"
+  DEPS
     iree::third_party::cxx_parser
     loom::import::cxx::source
     loom::import::cxx::source::constants
@@ -562,6 +582,30 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::third_party::cxx_parser
     loom::import::cxx::source
+  LABELS
+    "iree-build-requirement=loom.import.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_test(
+  NAME
+    predicates_test
+  SRCS
+    "predicates_test.cc"
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  DEPS
+    ::predicates
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::error
   LABELS
     "iree-build-requirement=loom.import.cxx"
 )

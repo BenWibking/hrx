@@ -25,6 +25,7 @@ exports_files([
     "include/loomcxx/low.h",
     "include/loomcxx/math.h",
     "include/loomcxx/numeric.h",
+    "include/loomcxx/predicate.h",
     "include/loomcxx/scalar.h",
     "include/loomcxx/target.h",
     "include/loomcxx/target/amdgpu.h",

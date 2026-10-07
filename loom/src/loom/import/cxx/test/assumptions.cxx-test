@@ -53,7 +53,7 @@ func.def public @entry(%tokens$0: i32, %capacity$1: i32, %hidden$2: i32) -> (i32
 // Unsupported conjuncts reject the complete assumption.
 [[loom::assume]] void assume(bool);
 unsigned side();
-// ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+// ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
 void entry(unsigned value) { assume(value < 256u && value < (side(), 16u)); }
 
 // ====

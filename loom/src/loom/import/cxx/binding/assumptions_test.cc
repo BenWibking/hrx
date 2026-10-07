@@ -62,16 +62,18 @@ TEST(AssumptionsTest, ConjunctionRetainsBindingsPromotionsAndConstantBounds) {
   EXPECT_EQ(second.predicate.args[2], 255);
   EXPECT_EQ(third.predicate.args[2], 255);
   EXPECT_EQ(fourth.predicate.args[2], 15);
-  EXPECT_EQ(cxx::to_string(first.values[0].binding->symbol->name()), "count");
-  EXPECT_EQ(cxx::to_string(second.values[0].binding->symbol->name()), "byte");
-  EXPECT_EQ(first.values[0].binding->symbol, third.values[0].binding->symbol);
+  EXPECT_EQ(cxx::to_string(first.values[0].binding->name()), "count");
+  EXPECT_EQ(cxx::to_string(second.values[0].binding->name()), "byte");
+  EXPECT_EQ(first.values[0].binding, third.values[0].binding);
   auto traits = source.unit().typeTraits();
+  EXPECT_EQ(traits.integral_representation(second.values[0].source->type)->bits,
+            8);
   EXPECT_EQ(
-      traits.integral_representation(second.values[0].binding->type)->bits, 8);
-  EXPECT_EQ(traits.integral_representation(second.values[0].value->type)->bits,
-            32);
-  EXPECT_EQ(traits.integral_representation(fourth.values[0].value->type)->bits,
-            64);
+      traits.integral_representation(second.values[0].converted->type)->bits,
+      32);
+  EXPECT_EQ(
+      traits.integral_representation(fourth.values[0].converted->type)->bits,
+      64);
 }
 
 TEST(AssumptionsTest, RetainsRelationsNonzeroAndBothBindings) {
@@ -95,28 +97,26 @@ TEST(AssumptionsTest, RetainsRelationsNonzeroAndBothBindings) {
   auto& positive = predicates[0];
   EXPECT_EQ(positive.predicate.kind, LOOM_PREDICATE_GT);
   EXPECT_EQ(positive.predicate.args[1], 0);
-  EXPECT_EQ(cxx::to_string(positive.values[0].binding->symbol->name()),
-            "hidden");
+  EXPECT_EQ(cxx::to_string(positive.values[0].binding->name()), "hidden");
 
   auto& signed_relation = predicates[1];
   EXPECT_EQ(signed_relation.predicate.kind, LOOM_PREDICATE_LE);
-  EXPECT_EQ(cxx::to_string(signed_relation.values[0].binding->symbol->name()),
+  EXPECT_EQ(cxx::to_string(signed_relation.values[0].binding->name()),
             "hidden");
-  EXPECT_EQ(cxx::to_string(signed_relation.values[1].binding->symbol->name()),
-            "limit");
+  EXPECT_EQ(cxx::to_string(signed_relation.values[1].binding->name()), "limit");
 
   auto& unsigned_relation = predicates[2];
   EXPECT_EQ(unsigned_relation.predicate.kind, LOOM_PREDICATE_ULE);
-  EXPECT_EQ(cxx::to_string(unsigned_relation.values[0].binding->symbol->name()),
+  EXPECT_EQ(cxx::to_string(unsigned_relation.values[0].binding->name()),
             "token");
-  EXPECT_EQ(cxx::to_string(unsigned_relation.values[1].binding->symbol->name()),
+  EXPECT_EQ(cxx::to_string(unsigned_relation.values[1].binding->name()),
             "capacity");
 
   auto& unsigned_equality = predicates[3];
   EXPECT_EQ(unsigned_equality.predicate.kind, LOOM_PREDICATE_NE);
-  EXPECT_EQ(cxx::to_string(unsigned_equality.values[0].binding->symbol->name()),
+  EXPECT_EQ(cxx::to_string(unsigned_equality.values[0].binding->name()),
             "token");
-  EXPECT_EQ(cxx::to_string(unsigned_equality.values[1].binding->symbol->name()),
+  EXPECT_EQ(cxx::to_string(unsigned_equality.values[1].binding->name()),
             "capacity");
 
   auto& unsigned_nonzero = predicates[4];
@@ -126,8 +126,7 @@ TEST(AssumptionsTest, RetainsRelationsNonzeroAndBothBindings) {
   auto& boolean_truth = predicates[5];
   EXPECT_EQ(boolean_truth.predicate.kind, LOOM_PREDICATE_NE);
   EXPECT_EQ(boolean_truth.predicate.args[1], 0);
-  EXPECT_EQ(cxx::to_string(boolean_truth.values[0].binding->symbol->name()),
-            "enabled");
+  EXPECT_EQ(cxx::to_string(boolean_truth.values[0].binding->name()), "enabled");
 }
 
 TEST(AssumptionsTest, RetainsUnsignedRelationsAcrossCarrierSignBit) {
@@ -185,14 +184,16 @@ TEST(AssumptionsTest, UsesUsualArithmeticConversionsForOrdering) {
   EXPECT_EQ(predicates[0].predicate.kind, LOOM_PREDICATE_ULT);
   EXPECT_EQ(predicates[1].predicate.kind, LOOM_PREDICATE_LT);
   auto traits = source.unit().typeTraits();
-  for (const auto& value : predicates[0].values) {
-    auto representation = traits.integral_representation(value.value->type);
+  for (size_t i = 0; i < predicates[0].value_count; ++i) {
+    auto representation =
+        traits.integral_representation(predicates[0].values[i].converted->type);
     ASSERT_TRUE(representation.has_value());
     EXPECT_FALSE(representation->isSigned);
     EXPECT_EQ(representation->bits, 32);
   }
-  for (const auto& value : predicates[1].values) {
-    auto representation = traits.integral_representation(value.value->type);
+  for (size_t i = 0; i < predicates[1].value_count; ++i) {
+    auto representation =
+        traits.integral_representation(predicates[1].values[i].converted->type);
     ASSERT_TRUE(representation.has_value());
     EXPECT_TRUE(representation->isSigned);
     EXPECT_EQ(representation->bits, 32);

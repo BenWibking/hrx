@@ -69,6 +69,18 @@ loom_cc_library(
     cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
     cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [
+        ":predicates",
+        "//third_party:cxx_parser",
+    ],
+)
+
+loom_cc_library(
+    name = "predicates",
+    srcs = ["predicates.cc"],
+    hdrs = ["predicates.h"],
+    cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
+    cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
+    deps = [
         "//loom/src/loom/import/cxx/source",
         "//loom/src/loom/import/cxx/source:constants",
         "//loom/src/loom/import/cxx/source:expressions",
@@ -393,6 +405,22 @@ loom_cc_test(
     deps = [
         ":assumptions",
         "//loom/src/loom/import/cxx/source",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+        "//third_party:cxx_parser",
+    ],
+)
+
+loom_cc_test(
+    name = "predicates_test",
+    srcs = ["predicates_test.cc"],
+    cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
+    cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
+    deps = [
+        ":predicates",
+        "//loom/src/loom/import/cxx/source",
+        "//loom/src/loom/import/cxx/source:attributes",
+        "//loom/src/loom/import/cxx/source:error",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
         "//third_party:cxx_parser",

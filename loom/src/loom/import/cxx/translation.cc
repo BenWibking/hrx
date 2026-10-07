@@ -1921,25 +1921,32 @@ class Translator final : private Initialization::Evaluation {
         auto predicates = assumption_predicates(unit_, diagnostics_, call);
         for (const auto& predicate : predicates) {
           for (size_t i = 0; i < predicate.value_count; ++i) {
-            auto* symbol = predicate.values[i].binding->symbol;
+            const auto& source_value = predicate.values[i];
+            if (source_value.origin != PredicateValueOrigin::Binding ||
+                !source_value.members.empty()) {
+              fail(source_value.source,
+                   "assume can refine only direct automatic scalar bindings");
+            }
+            auto* symbol = source_value.binding;
             if (locals_.contains(symbol)) {
-              fail(predicate.values[i].binding,
+              fail(source_value.source,
                    "assume cannot retain facts for an addressable binding "
                    "whose storage may change through an alias");
             }
             if (!values_.contains(symbol)) {
-              fail(predicate.values[i].binding,
+              fail(source_value.source,
                    "assume can retain facts only for an owned automatic "
                    "scalar binding");
             }
           }
         }
         for (const auto& admitted : predicates) {
-          std::array<loom_value_id_t, 2> values;
-          std::array<loom_type_t, 2> value_types;
+          std::array<loom_value_id_t, 3> values;
+          std::array<loom_type_t, 3> value_types;
           for (size_t i = 0; i < admitted.value_count; ++i) {
-            values[i] = expression(admitted.values[i].value).ssa();
-            value_types[i] = types_.get(admitted.values[i].value->type, ast);
+            values[i] = expression(admitted.values[i].converted).ssa();
+            value_types[i] =
+                types_.get(admitted.values[i].converted->type, ast);
           }
           loom_predicate_t predicate = admitted.predicate;
           for (uint8_t i = 0; i < predicate.arg_count; ++i) {
@@ -1954,11 +1961,11 @@ class Translator final : private Initialization::Evaluation {
               &op));
           for (size_t i = 0; i < admitted.value_count; ++i) {
             const auto& source_value = admitted.values[i];
-            values_[source_value.binding->symbol] =
+            values_[source_value.binding] =
                 name(numeric_convert(loom_op_results(op)[i],
-                                     source_value.value->type,
-                                     source_value.binding->type, ast),
-                     cxx::to_string(source_value.binding->symbol->name()));
+                                     source_value.converted->type,
+                                     source_value.source->type, ast),
+                     cxx::to_string(source_value.binding->name()));
           }
         }
         return;
