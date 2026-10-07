@@ -137,3 +137,32 @@ loom_cc_library(
         "//runtime/src/iree/base/internal:arena",
     ],
 )
+
+loom_cc_library(
+    name = "task_abi",
+    srcs = ["task_abi.c"],
+    hdrs = ["task_abi.h"],
+    deps = [
+        "//loom/src/loom/analysis:symbol_facts",
+        "//loom/src/loom/codegen/low:descriptors",
+        "//loom/src/loom/codegen/low:target_binding",
+        "//loom/src/loom/codegen/low/pipeline:pass_environment",
+        "//loom/src/loom/error:error_defs",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:func_symbol_facts",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/global",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/pass:types",
+        "//loom/src/loom/rewrite:remap",
+        "//loom/src/loom/rewrite:rewriter",
+        "//loom/src/loom/target:facts",
+        "//loom/src/loom/target:function_contract",
+        "//loom/src/loom/target:function_version",
+        "//loom/src/loom/target:pass_environment",
+        "//loom/src/loom/target/abi/task:parameter_layout",
+        "//loom/src/loom/target/abi/task:state_layout",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)

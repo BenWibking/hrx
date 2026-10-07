@@ -27,6 +27,11 @@ extern "C" uint32_t replace_narrow(uint8_t* bytes, uint16_t* words,
 extern "C" uint64_t high_mix(uint64_t unused, uint64_t factor, uint64_t word);
 extern "C" uint64_t recurrence(uint64_t first, uint64_t second,
                                uint64_t iterations);
+extern "C" const uint32_t* immutable_data();
+extern "C" const void* empty_data();
+extern "C" const uint8_t* external_data();
+extern "C" uint32_t immutable_lookup(uint64_t position);
+extern "C" const uint8_t native_host_table[] = {7, 19, 41};
 
 extern "C" uint64_t pressure64(const uint64_t* values);
 extern "C" uint32_t pressure32(const uint32_t* values);
@@ -75,6 +80,22 @@ extern "C" uint64_t saturated_permutation(uint64_t, uint64_t, uint64_t,
                                           uint64_t, uint64_t, uint32_t);
 
 namespace {
+
+TEST(NativeCallableTest, ReadonlyDataOutlivesTheCompilerAndCrossesCalls) {
+  const std::array<uint32_t, 4> expected = {0x44332211, 0x7e00ff80, 0x89abcdef,
+                                            0x01234567};
+  const uint32_t* data = immutable_data();
+  ASSERT_NE(data, nullptr);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(data) % 64, 0u);
+  EXPECT_EQ(immutable_data(), data);
+  for (size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_EQ(data[i], expected[i]);
+    EXPECT_EQ(immutable_lookup(i), expected[i] ^ expected[0]);
+  }
+  ASSERT_NE(empty_data(), nullptr);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(empty_data()) % 32, 0u);
+  EXPECT_EQ(external_data(), native_host_table);
+}
 
 TEST(NativeCallableTest, SaturatedLoopPermutation) {
   const std::array<uint64_t, 14> words = {UINT64_C(0x0123456789abcdef),

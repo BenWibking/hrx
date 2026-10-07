@@ -343,6 +343,8 @@ typedef struct loom_low_lower_map_abi_layout_callback_t {
   // Optional callback invoked once while building a low boundary op. The
   // callback returns target-owned structured ABI layout facts; the low op
   // builder canonicalizes and copies the returned slice into the module arena.
+  // A source rejection emits a lowering diagnostic and returns OK; boundary
+  // creation stops before constructing the replacement operation.
   loom_low_lower_map_abi_layout_fn_t fn;
   // Caller-owned payload passed to |fn|.
   void* user_data;

@@ -11,16 +11,6 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
-    pass_requirements
-  HDRS
-    "pass_requirements.h"
-  DEPS
-
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
     legalizer_registry
   HDRS
     "legalizer_registry.h"
@@ -62,7 +52,6 @@ loom_cc_library(
   SRCS
     "pass_environment.c"
   DEPS
-    ::pass_requirements
     iree::base
     loom::codegen::low::descriptors
     loom::pass::environment

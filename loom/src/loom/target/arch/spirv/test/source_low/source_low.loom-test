@@ -343,19 +343,19 @@ low.kernel.def target<spirv.logical.core>(@hal_target) workgroup_size(1, 2, 1) w
   %output_aligned = resource<hal_binding> {index = 1, source_type = hal.buffer} : reg<spirv.ptr.storage_buffer>
   %workgroup_x = OpLoadBuiltin.workgroup_id.x
   %local_y = OpLoadBuiltin.local_invocation_id.y
-  %global_z = OpLoadBuiltin.global_invocation_id.z
+  %global_z = OpLoadBuiltin.workgroup_id.z
   %subgroup_lane = OpLoadBuiltin.subgroup_local_invocation_id
   %sum = OpIAdd %workgroup_x, %local_y : reg<spirv.id : index>
   %sum_with_lane = OpIAdd %sum, %subgroup_lane : reg<spirv.id : index>
   %linear = OpIAdd %sum_with_lane, %global_z : reg<spirv.id : index>
-  %33 = OpConstant.i32 2 : reg<spirv.id : index>
-  %byte_index = OpShiftLeftLogical %linear, %33 : reg<spirv.id : index>
-  %35 = OpBitcast.i32.u32 %byte_index
-  %byte_offset_aligned = OpUConvert.u32.offset64 %35
-  %37 = OpPtrAccessChain.storage_buffer.i32.byte_offset %input_aligned, %byte_offset_aligned
-  %loaded = OpLoad.storage_buffer.i32 %37
-  %39 = OpPtrAccessChain.storage_buffer.i32.byte_offset %output_aligned, %byte_offset_aligned
-  OpStore.storage_buffer.i32 %39, %loaded
+  %34 = OpConstant.i32 2 : reg<spirv.id : index>
+  %byte_index = OpShiftLeftLogical %linear, %34 : reg<spirv.id : index>
+  %36 = OpBitcast.i32.u32 %byte_index
+  %byte_offset_aligned = OpUConvert.u32.offset64 %36
+  %38 = OpPtrAccessChain.storage_buffer.i32.byte_offset %input_aligned, %byte_offset_aligned
+  %loaded = OpLoad.storage_buffer.i32 %38
+  %40 = OpPtrAccessChain.storage_buffer.i32.byte_offset %output_aligned, %byte_offset_aligned
+  OpStore.storage_buffer.i32 %40, %loaded
   return
 }
 

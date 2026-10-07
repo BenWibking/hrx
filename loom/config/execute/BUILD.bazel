@@ -49,6 +49,14 @@ selects.config_setting_group(
     ],
 )
 
+selects.config_setting_group(
+    name = "task_hal",
+    match_all = [
+        ":iree_hal",
+        "//runtime/config/hal:driver_task",
+    ],
+)
+
 # Internal execution provider capabilities. Public execution settings choose the
 # substrate; providers also need the matching Loom target/emitter slice.
 selects.config_setting_group(

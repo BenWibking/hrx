@@ -37,16 +37,6 @@ iree_status_t loom_device_provider_select_profile_target(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "device target profile is required");
   }
-  if (target_profile->type != provider->target_profile_type) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "device provider '%.*s' requires target family '%.*s'; got '%.*s'",
-        (int)provider->name.size, provider->name.data,
-        (int)provider->target_profile_type->name.size,
-        provider->target_profile_type->name.data,
-        target_profile->type ? (int)target_profile->type->name.size : 0,
-        target_profile->type ? target_profile->type->name.data : "");
-  }
   if (provider->select_profile_target == NULL) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

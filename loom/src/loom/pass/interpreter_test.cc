@@ -9,8 +9,10 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/error/error_defs.h"
+#include "loom/ops/test/ops.h"
 #include "loom/pass/report.h"
 #include "loom/pass/test/harness.h"
+#include "loom/rewrite/rewriter.h"
 
 namespace loom {
 namespace {
@@ -184,6 +186,99 @@ TEST_F(PassInterpreterTest, RunsFunctionRootProgram) {
   EXPECT_EQ(trace.noop_invocation_count, 1);
   ASSERT_EQ(trace.event_count, 1u);
   EXPECT_EQ(trace.events[0].function_version, &version);
+}
+
+// Models a lowering pass that replaces the anchored definition and publishes
+// its new implementation before the enclosing pipeline resumes.
+static iree_status_t ReplaceFunction(loom_pass_t* pass, loom_module_t* module,
+                                     loom_func_like_t function) {
+  loom_builder_t builder;
+  loom_builder_initialize(module, &module->arena, nullptr, &builder);
+  loom_builder_set_before(&builder, function.op);
+  loom_op_t* replacement = nullptr;
+  IREE_RETURN_IF_ERROR(loom_test_func_build(
+      &builder, LOOM_TEST_FUNC_BUILD_FLAG_HAS_VISIBILITY,
+      LOOM_TEST_VISIBILITY_PUBLIC, 0, loom_func_like_callee(function), nullptr,
+      0, nullptr, 0, nullptr, 0, nullptr, 0, function.op->location,
+      &replacement));
+  loom_builder_enter_region(&builder, replacement,
+                            loom_test_func_body(replacement));
+  loom_op_t* yield = nullptr;
+  IREE_RETURN_IF_ERROR(loom_test_yield_build(&builder, nullptr, 0,
+                                             function.op->location, &yield));
+  loom_rewriter_t rewriter;
+  loom_rewriter_initialize(&rewriter, module, pass->arena);
+  iree_status_t status = loom_rewriter_erase(&rewriter, function.op);
+  loom_rewriter_deinitialize(&rewriter);
+  IREE_RETURN_IF_ERROR(status);
+  loom_module_link_symbol_defining_op(module, replacement,
+                                      loom_op_vtable(module, replacement));
+  if (pass->function_version) {
+    loom_function_version_update(pass->function_version,
+                                 loom_func_like_cast(module, replacement));
+  }
+  loom_pass_mark_changed(pass);
+  return iree_ok_status();
+}
+
+TEST_F(PassInterpreterTest, FollowsReplacementAcrossNestedPipelineBoundaries) {
+  for (bool module_root : {false, true}) {
+    for (bool has_version : {false, true}) {
+      SCOPED_TRACE(::testing::Message() << "module_root=" << module_root
+                                        << ", has_version=" << has_version);
+      const char* root = module_root
+                             ? "pass.pipeline<module> @pipeline pipeline {"
+                               "  for func { call @body } }"
+                             : "pass.pipeline<func> @pipeline pipeline {"
+                               "  call @body }";
+      std::string source = std::string(root) + R"(
+pass.pipeline<func> @body pipeline {
+  repeat fixed(count = 1) { test.mark-changed }
+  if changed {
+    where attr(name = "visibility", value = "public") { test.noop }
+  }
+}
+test.func @main() { test.yield }
+)";
+      loom_module_t* module =
+          Parse(iree_make_string_view(source.data(), source.size()));
+      ASSERT_NE(module, nullptr);
+      loom_func_like_t original = Function(module, 2);
+      loom_function_version_type_t version_type = {IREE_SVL("test")};
+      loom_function_version_t version = {&version_type, original};
+      loom_function_version_t* version_values[] = {&version};
+      const loom_function_version_list_t versions = {version_values, 1};
+      PassProgramStorage storage;
+      IREE_ASSERT_OK(Compile(module, Pipeline(module, 0), &storage.program));
+      // Bind this test's replacing implementation at the normal callback seam.
+      for (iree_host_size_t i = 0; i < storage.program.instruction_count; ++i) {
+        auto& instruction = storage.program.instructions[i];
+        if (instruction.kind == LOOM_PASS_PROGRAM_INSTRUCTION_INVOKE &&
+            iree_string_view_equal(instruction.invoke.descriptor->key,
+                                   IREE_SV("test.mark-changed"))) {
+          instruction.invoke.function_run = ReplaceFunction;
+        }
+      }
+      loom_test_pass_trace_t trace = {};
+      auto options = InterpreterOptions(&trace);
+      options.function_versions = has_version ? &versions : nullptr;
+      loom_pass_run_result_t result = {};
+      IREE_ASSERT_OK(loom_pass_interpreter_run_program(&storage.program, module,
+                                                       &options, &result));
+      ASSERT_EQ(trace.event_count, 1u);
+      const auto current = loom_func_like_cast(
+          module,
+          module->symbols.entries[loom_func_like_callee(original).symbol_id]
+              .defining_op);
+      EXPECT_NE(current.op, original.op);
+      EXPECT_EQ(trace.events[0].function.op, current.op);
+      EXPECT_EQ(trace.events[0].function_version,
+                has_version ? &version : nullptr);
+      if (has_version) {
+        EXPECT_EQ(version.function.op, current.op);
+      }
+    }
+  }
 }
 
 TEST_F(PassInterpreterTest, AppendsExecutionReportRecords) {

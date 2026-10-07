@@ -51,6 +51,8 @@ typedef enum loom_x86_encoding_form_e {
   LOOM_X86_ENCODING_FORM_RETURN = 24,
   LOOM_X86_ENCODING_FORM_BRANCH_ZERO = 25,
   LOOM_X86_ENCODING_FORM_CALL = 26,
+  // RIP-relative address with a signed displacement in the last four bytes.
+  LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE = 27,
 } loom_x86_encoding_form_t;
 
 // Native fixup identities. Object adapters supply their format's mapping.
@@ -58,6 +60,10 @@ typedef enum loom_x86_relocation_kind_e {
   LOOM_X86_RELOCATION_NONE = 0,
   // Signed rel32 call displacement, relative to the end of its four-byte field.
   LOOM_X86_RELOCATION_CALL = 1,
+  // Signed rel32 data address, relative to the end of its four-byte field.
+  LOOM_X86_RELOCATION_ADDRESS = 2,
+  // Absolute 64-bit image pointer, relocated by the loader's load bias.
+  LOOM_X86_RELOCATION_POINTER = 3,
 } loom_x86_relocation_kind_t;
 
 enum loom_x86_encoding_flag_bits_e {

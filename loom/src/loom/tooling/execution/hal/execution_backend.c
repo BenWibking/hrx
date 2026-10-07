@@ -219,9 +219,6 @@ iree_status_t loom_run_hal_execution_backend_run_one_shot(
   loom_compile_options_t compile_options = *request->compile_options;
   const loom_sanitizer_options_t sanitizer =
       compile_options.target_pipeline_options.sanitizer;
-  compile_options.target_pipeline_options =
-      device_provider->target_emitter->default_pipeline_options;
-  compile_options.target_pipeline_options.sanitizer = sanitizer;
 
   loom_run_hal_runtime_t runtime = {0};
   loom_device_target_t device_target = {0};
@@ -291,6 +288,9 @@ iree_status_t loom_run_hal_execution_backend_run_one_shot(
         &owns_device_target, &device_target);
   }
   if (iree_status_is_ok(status) && entry_selected) {
+    compile_options.target_pipeline_options =
+        device_target.target_emitter->default_pipeline_options;
+    compile_options.target_pipeline_options.sanitizer = sanitizer;
     compile_options.source_resolver =
         loom_run_module_source_resolver(&compile_module);
     status = loom_run_hal_execution_backend_run_pipeline(
@@ -334,16 +334,19 @@ iree_status_t loom_run_hal_execution_backend_run_one_shot(
     invocation_request.options.workgroup_count[2] =
         request->options->hal_workgroup_count[2];
     if (request->options->hal_constant_count >
-        IREE_ARRAYSIZE(invocation_request.options.constants)) {
-      status = iree_make_status(
-          IREE_STATUS_OUT_OF_RANGE,
-          "HAL dispatch constant count %" PRIhsz " exceeds maximum %" PRIhsz,
-          request->options->hal_constant_count,
-          IREE_ARRAYSIZE(invocation_request.options.constants));
+        sizeof(invocation_request.options.constants) /
+            sizeof(request->options->hal_constants[0])) {
+      status = iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                                "HAL dispatch constant count %" PRIhsz
+                                " exceeds maximum %" PRIhsz,
+                                request->options->hal_constant_count,
+                                sizeof(invocation_request.options.constants) /
+                                    sizeof(request->options->hal_constants[0]));
     }
     if (iree_status_is_ok(status)) {
-      invocation_request.options.constant_count =
-          request->options->hal_constant_count;
+      invocation_request.options.constant_byte_length =
+          request->options->hal_constant_count *
+          sizeof(request->options->hal_constants[0]);
       memcpy(invocation_request.options.constants,
              request->options->hal_constants,
              request->options->hal_constant_count *

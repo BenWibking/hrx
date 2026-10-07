@@ -12,6 +12,8 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from loom.dialect.buffer import ALL_BUFFER_OPS
 from loom.dialect.buffer import defs as buffer
+from loom.dialect.globals import ALL_GLOBAL_OPS
+from loom.dialect.globals import defs as globals
 from loom.dialect.index import ALL_INDEX_OPS
 from loom.dialect.index import defs as index
 from loom.dialect.scalar import ALL_SCALAR_OPS
@@ -996,11 +998,30 @@ def _cases() -> Sequence[ContractCase]:
                 "uge",
             )
         ),
-        _const_i32_rule(_I32, descriptor_lookup),
+        *(
+            _const_i32_rule(result_type, descriptor_lookup)
+            for result_type in (_I8, _I16, _I32)
+        ),
         _const_i1_rule(descriptor_lookup),
         _const_scalar_i64_rule(descriptor_lookup),
         _index_const_i64_rule(_INDEX, descriptor_lookup),
         _index_const_i64_rule(_OFFSET, descriptor_lookup),
+        DescriptorRule(
+            source_op=globals.global_load,
+            guards=(
+                Guard.value_type("result", Buffer()),
+                # Readonly byte symbols provide constant-memory buffer roots.
+                # Loading a value global has no such address provenance.
+                Guard.value_memory_space("result", ("constant",)),
+            ),
+            emit=(
+                _op_emit(
+                    descriptor=descriptor_lookup("x86.scalar.lea.symbol.gpr64"),
+                    results={"dst": ValueRef.result("result")},
+                    immediates={"symbol": AttrProject.direct("global")},
+                ),
+            ),
+        ),
         *(
             _integer_compare_rule(
                 index.index_cmp, predicate, type_pattern, "gpr64", descriptor_lookup
@@ -1165,6 +1186,7 @@ def _cases() -> Sequence[ContractCase]:
 
 X86_SCALAR_CONTRACT_DIALECT_OPS = {
     "buffer": ALL_BUFFER_OPS,
+    "global": ALL_GLOBAL_OPS,
     "index": ALL_INDEX_OPS,
     "scalar": ALL_SCALAR_OPS,
     "scf": ALL_SCF_OPS,

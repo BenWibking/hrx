@@ -99,6 +99,7 @@ _LOOM_CONFIG_CMAKE_OPTIONS = {
     "//loom/config/execute:iree_hal_amdgpu": "LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU",
     "//loom/config/execute:iree_hal_vulkan": "LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN",
     "//loom/config/execute:spirv_vulkan_hal": "LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN",
+    "//loom/config/execute:task_hal": "LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK",
     "//loom/config/import:mlir": "LOOM_IMPORT_MLIR",
     "//loom/config/import:tilelang": "LOOM_IMPORT_TILELANG",
     "//loom/config/target:amdgpu": "LOOM_TARGET_AMDGPU",
@@ -1614,6 +1615,7 @@ class LoomBuildFileFunctions(
         self,
         name,
         src,
+        args=None,
         data=None,
         env=None,
         tags=None,
@@ -1633,7 +1635,8 @@ class LoomBuildFileFunctions(
         test_binary_block = self._convert_single_target_block("SRC", runner)
         args_block = self._convert_string_list_block(
             "ARGS",
-            ["{{${CMAKE_CURRENT_SOURCE_DIR}/%s}}" % src],
+            self._convert_test_location_args(args or [])
+            + ["{{${CMAKE_CURRENT_SOURCE_DIR}/%s}}" % src],
             sort=False,
         )
         data_block = self._convert_data_list_block(data)
@@ -1655,7 +1658,14 @@ class LoomBuildFileFunctions(
         )
         self._emit_platform_guard_end(target_compatible_with)
         self._loom_check_compile_tests(
-            name, src, compile_targets, data, env, tags, target_compatible_with
+            name,
+            src,
+            compile_targets,
+            data,
+            env,
+            tags,
+            target_compatible_with,
+            args=args,
         )
 
     def loom_check_compile_tests(
@@ -1723,6 +1733,7 @@ class LoomBuildFileFunctions(
         name,
         srcs,
         size="small",
+        args=None,
         data=None,
         env=None,
         tags=None,
@@ -1752,6 +1763,9 @@ class LoomBuildFileFunctions(
             if runner == default_runner
             else self._convert_single_target_block("RUNNER", runner)
         )
+        args_block = self._convert_string_list_block(
+            "ARGS", self._convert_test_location_args(args), sort=False
+        )
         data_block = self._convert_data_list_block(data)
         env_block = self._convert_string_list_block(
             "ENV", self._convert_test_env(env), sort=False
@@ -1770,6 +1784,7 @@ class LoomBuildFileFunctions(
             f"{name_block}"
             f"{srcs_block}"
             f"{runner_block}"
+            f"{args_block}"
             f"{data_block}"
             f"{env_block}"
             f"{labels_block}"
@@ -1793,7 +1808,15 @@ class LoomBuildFileFunctions(
                 test_name = test_name[len(test_name_prefix_to_strip) :]
             test_name = test_name.replace("/", "_")
             self._loom_check_compile_tests(
-                test_name, src, targets, data, env, tags, target_compatible_with, srcs
+                test_name,
+                src,
+                targets,
+                data,
+                env,
+                tags,
+                target_compatible_with,
+                srcs,
+                args=args,
             )
 
 

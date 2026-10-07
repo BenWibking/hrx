@@ -25,8 +25,12 @@ loom_cc_library(
     iree::base
     loom::codegen::low::descriptors
     loom::codegen::low::lower
+    loom::codegen::low::lower::task_abi
     loom::error::error_defs
     loom::ir
+    loom::ops::kernel
+    loom::ops::low
+    loom::target::abi::task::parameter_layout
     loom::target::arch::x86::contracts
     loom::target::arch::x86::packed_dot_contract
     loom::target::arch::x86::packed_dot_contract_projection

@@ -7,12 +7,14 @@
 #include "loom/target/arch/x86/provider.h"
 
 #include "loom/ir/module.h"
+#include "loom/pass/builder.h"
 #include "loom/target/arch/x86/descriptors/low_registry.h"
 #include "loom/target/arch/x86/legalization.h"
 #include "loom/target/arch/x86/lower/lower.h"
 #include "loom/target/arch/x86/math_policy.h"
 #include "loom/target/arch/x86/ops/ops.h"
 #include "loom/target/arch/x86/ops/registry.h"
+#include "loom/target/arch/x86/pass_registry.h"
 #include "loom/target/arch/x86/records/target_records.h"
 
 typedef struct loom_x86_target_profile_t {
@@ -62,6 +64,28 @@ static iree_status_t loom_x86_select_profile(
   return iree_make_status(IREE_STATUS_NOT_FOUND,
                           "unknown x86 target profile '%.*s'",
                           (int)selector.size, selector.data);
+}
+
+static const loom_target_profile_t* loom_x86_select_cpu_profile(
+    const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
+    const loom_target_profile_t* profile) {
+  if (cpu_data->architecture != IREE_CPU_ARCHITECTURE_X86_64) {
+    return NULL;
+  }
+  // Native ABI transport and byte emission currently implement scalar GPRs.
+  // SIMD profile selection requires native vector transport and OS-enabled
+  // feature requirements before those representations can be executed.
+  if (requirement && (requirement->fact_type != &loom_x86_target_fact_type ||
+                      requirement->selector != LOOM_X86_TARGET_KIND_SCALAR)) {
+    return NULL;
+  }
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(kProfiles); ++i) {
+    if (kProfiles[i].selector == LOOM_X86_TARGET_KIND_SCALAR &&
+        (!profile || profile == &kProfiles[i].base)) {
+      return &kProfiles[i].base;
+    }
+  }
+  return NULL;
 }
 
 static iree_status_t loom_x86_materialize_definition(
@@ -129,9 +153,69 @@ static loom_target_low_call_policy_t loom_x86_select_low_call_policy(
              : LOOM_TARGET_LOW_CALL_POLICY_REQUIRE_INLINE;
 }
 
+static iree_status_t loom_x86_build_kernel_cleanup(loom_builder_t* builder,
+                                                   void* user_data) {
+  (void)user_data;
+  loom_op_t* run = NULL;
+  return loom_pass_ir_build_run(builder, 0, IREE_SV("cfg-simplify"),
+                                loom_named_attr_slice_empty(), &run);
+}
+
+static iree_status_t loom_x86_build_hal_kernel_pass(loom_builder_t* builder,
+                                                    void* user_data) {
+  (void)user_data;
+  loom_op_t* run = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_pass_ir_build_run(builder, 0, IREE_SV("x86-materialize-hal-kernel"),
+                             loom_named_attr_slice_empty(), &run));
+  loom_op_t* changed = NULL;
+  return loom_pass_ir_build_if_changed(builder, loom_x86_build_kernel_cleanup,
+                                       NULL, &changed);
+}
+
+static iree_status_t loom_x86_contribute_pipeline(
+    const loom_target_pipeline_contribution_t* contribution) {
+  if (contribution->phase == LOOM_TARGET_PIPELINE_PHASE_SOURCE_TO_LOW) {
+    loom_op_t* run = NULL;
+    return loom_pass_ir_build_run(contribution->builder, 0,
+                                  IREE_SV("x86-materialize-hal-query"),
+                                  loom_named_attr_slice_empty(), &run);
+  }
+  if (contribution->phase !=
+      LOOM_TARGET_PIPELINE_PHASE_TARGET_LOW_MATERIALIZATION) {
+    return iree_ok_status();
+  }
+  static const struct {
+    // Predicate attribute name.
+    iree_string_view_t name;
+    // Required target property.
+    iree_string_view_t value;
+  } fields[] = {{IREE_SVL("family"), IREE_SVL("x86")},
+                {IREE_SVL("codegen"), IREE_SVL("low_native")},
+                {IREE_SVL("abi"), IREE_SVL("hal_kernel")}};
+  loom_named_attr_t attrs[IREE_ARRAYSIZE(fields)];
+  for (unsigned i = 0; i < IREE_ARRAYSIZE(fields); ++i) {
+    loom_string_id_t value;
+    IREE_RETURN_IF_ERROR(loom_module_intern_string(
+        contribution->builder->module, fields[i].name, &attrs[i].name_id));
+    IREE_RETURN_IF_ERROR(loom_module_intern_string(
+        contribution->builder->module, fields[i].value, &value));
+    attrs[i].value = loom_attr_string(value);
+  }
+  loom_op_t* where = NULL;
+  return loom_pass_ir_build_where(
+      contribution->builder, LOOM_PASS_WHERE_BUILD_FLAG_HAS_ATTRS,
+      IREE_SV("target"),
+      loom_make_named_attr_slice(attrs, IREE_ARRAYSIZE(attrs)),
+      loom_x86_build_hal_kernel_pass, NULL, &where);
+}
+
 const loom_target_provider_t loom_x86_target_provider = {
     .profile_type = &kProfileType,
+    .pass_registry = &loom_x86_pass_registry,
+    .contribute_pipeline = loom_x86_contribute_pipeline,
     .select_profile = loom_x86_select_profile,
+    .select_cpu_profile = loom_x86_select_cpu_profile,
     .materialize_definition = loom_x86_materialize_definition,
     .select_low_call_policy = loom_x86_select_low_call_policy,
     .register_context = loom_x86_ops_register_dialect,

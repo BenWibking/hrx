@@ -143,4 +143,36 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    task_abi
+  HDRS
+    "task_abi.h"
+  SRCS
+    "task_abi.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::symbol_facts
+    loom::codegen::low::descriptors
+    loom::codegen::low::pipeline::pass_environment
+    loom::codegen::low::target_binding
+    loom::error::error_defs
+    loom::ir
+    loom::ops::func_symbol_facts
+    loom::ops::global
+    loom::ops::low
+    loom::ops::op_defs
+    loom::pass::types
+    loom::rewrite::remap
+    loom::rewrite::rewriter
+    loom::target::abi::task::parameter_layout
+    loom::target::abi::task::state_layout
+    loom::target::facts
+    loom::target::function_contract
+    loom::target::function_version
+    loom::target::pass_environment
+  PUBLIC
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

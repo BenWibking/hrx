@@ -19,8 +19,8 @@ namespace {
 loom_x86_instruction_t Instruction(loom_x86_encoding_form_t form,
                                    uint16_t encoding_id = 0,
                                    loom_x86_encoding_operands_t operands = {},
-                                   uint32_t control_target = UINT32_MAX) {
-  return {operands, control_target, static_cast<uint16_t>(form), encoding_id};
+                                   uint32_t reference = UINT32_MAX) {
+  return {operands, reference, static_cast<uint16_t>(form), encoding_id};
 }
 
 // Encoding has independent bitfield tests. These tests isolate the writer's
@@ -101,7 +101,7 @@ TEST_F(FunctionTest, RestoreStackAndRegistersAfterResultTransport) {
   const loom_x86_function_t function = {
       /*.instructions=*/instructions,
       /*.instruction_count=*/IREE_ARRAYSIZE(instructions),
-      /*.call_count=*/0,
+      /*.symbol_fixup_count=*/0,
       /*.block_starts=*/block_starts,
       /*.block_count=*/1,
       /*.saved_registers=*/(1u << 3) | (1u << 12),
@@ -156,7 +156,7 @@ TEST_F(FunctionTest, BranchesSkipEntryTransportAndPreservation) {
   const loom_x86_function_t function = {
       /*.instructions=*/instructions,
       /*.instruction_count=*/IREE_ARRAYSIZE(instructions),
-      /*.call_count=*/0,
+      /*.symbol_fixup_count=*/0,
       /*.block_starts=*/block_starts,
       /*.block_count=*/4,
       /*.saved_registers=*/1u << 3,
@@ -245,6 +245,43 @@ TEST_F(FunctionTest, RealignmentRestoresTheSavedStackPointerBeforePops) {
                                    0x8b | LOOM_X86_ENCODING_REX_W, restore)) +
                 Encode(Instruction(LOOM_X86_ENCODING_FORM_POP, 0, rbx)) +
                 Encode(Instruction(LOOM_X86_ENCODING_FORM_RETURN)));
+}
+
+TEST_F(FunctionTest, SymbolFixupsKeepSectionOffsetsAndTheirOwnNamespace) {
+  const std::string prefix = "preceding section bytes";
+  IREE_ASSERT_OK(iree_io_stream_write(stream_, prefix.size(), prefix.data()));
+  loom_x86_encoding_operands_t address = {};
+  address.result = 0;
+  loom_x86_instruction_t instructions[] = {
+      Instruction(LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE,
+                  0x8d | LOOM_X86_ENCODING_REX_W, address, 2),
+      Instruction(LOOM_X86_ENCODING_FORM_CALL, 0, {}, 0),
+  };
+  iree_host_size_t block_starts[] = {0, IREE_ARRAYSIZE(instructions)};
+  loom_x86_function_t function = {};
+  function.instructions = instructions;
+  function.instruction_count = IREE_ARRAYSIZE(instructions);
+  function.symbol_fixup_count = 2;
+  function.block_starts = block_starts;
+  function.block_count = 1;
+  function.stack.allocation_size = 8;
+  function.stack.alignment = 16;
+  const uint32_t symbol_indices[] = {4, 1, 3};
+  loom_native_object_fixup_t fixups[2];
+  IREE_ASSERT_OK(loom_x86_function_write(&function, symbol_indices, 5, fixups,
+                                         stream_, &arena_));
+  // SUB rsp,8 occupies seven bytes. The first LEA's disp32 begins three bytes
+  // later; the CALL's displacement follows its one-byte opcode.
+  EXPECT_EQ(fixups[0].section_contribution_index, 5u);
+  EXPECT_EQ(fixups[0].section_offset, 10u);
+  EXPECT_EQ(fixups[0].target_symbol_index, 3u);
+  EXPECT_EQ(fixups[0].relocation_kind, LOOM_X86_RELOCATION_ADDRESS);
+  EXPECT_EQ(fixups[0].addend, -4);
+  EXPECT_EQ(fixups[1].section_contribution_index, 5u);
+  EXPECT_EQ(fixups[1].section_offset, 15u);
+  EXPECT_EQ(fixups[1].target_symbol_index, 4u);
+  EXPECT_EQ(fixups[1].relocation_kind, LOOM_X86_RELOCATION_CALL);
+  EXPECT_EQ(fixups[1].addend, -4);
 }
 
 }  // namespace

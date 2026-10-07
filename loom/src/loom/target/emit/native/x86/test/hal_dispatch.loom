@@ -1,0 +1,61 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+x86.target<scalar> @cpu
+
+// One invocation per workgroup. The host chooses the XYZ dispatch dimensions;
+// the worker observes them through the task entry ABI. Bindings and constants
+// remain ordinary source arguments, and library/query glue is compiler-owned.
+kernel.def target(@cpu) export("grid") @grid(%groups_x: index, %groups_y: index, %groups_z: index) {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%groups_x, %groups_y, %groups_z) workgroup_size(%unit, %unit, %unit) : index
+} launch(%output: buffer, %bias: i32) {
+  %x = kernel.workgroup.id<x> : index
+  %y = kernel.workgroup.id<y> : index
+  %z = kernel.workgroup.id<z> : index
+  %count_x = kernel.workgroup.count<x> : index
+  %count_y = kernel.workgroup.count<y> : index
+  %count_z = kernel.workgroup.count<z> : index
+  %row = index.madd %z, %count_y, %y : index
+  %position = index.madd %row, %count_x, %x : index
+  %index = index.cast %position : index to i32
+  // Addressable invocation-local state survives the call to an ordinary helper.
+  %bytes = index.constant 8 : offset
+  %buffer_base = index.constant 0 : offset
+  %storage = buffer.alloca<private> align(64) %bytes : buffer
+  %inputs = buffer.view %storage[%buffer_base] : buffer -> view<2xi32>
+  view.store %index, %inputs[0] : i32, view<2xi32>
+  view.store %bias, %inputs[1] : i32, view<2xi32>
+  %value = func.call noinline @mix(%inputs) : (view<2xi32>) -> (i32)
+  %view = buffer.view %output[%buffer_base] : buffer -> view<[%count_z]x[%count_y]x[%count_x]xi32>
+  %previous = view.load %view[%z, %y, %x] : view<[%count_z]x[%count_y]x[%count_x]xi32> -> i32
+  %sum = scalar.addi %previous, %value : i32
+  view.store %sum, %view[%z, %y, %x] : i32, view<[%count_z]x[%count_y]x[%count_x]xi32>
+  kernel.return
+}
+
+func.def noinline @mix(%inputs: view<2xi32>) -> (i32) {
+  %index = view.load %inputs[0] : view<2xi32> -> i32
+  %bias = view.load %inputs[1] : view<2xi32> -> i32
+  %factor = scalar.constant 17 : i32
+  %product = scalar.muli %index, %factor : i32
+  %result = scalar.addi %product, %bias : i32
+  func.return %result : i32
+}
+
+// The global invocation coordinate is the workgroup coordinate on the CPU.
+// The constant segment contains exactly one byte, with no host word padding.
+kernel.def export("fill_byte") @fill_byte(%groups: index) {
+  %unit = index.constant 1 : index
+  kernel.launch.config workgroups(%groups, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
+} launch(%output: buffer, %value: i8) {
+  %position = kernel.workitem.dispatch.id<x> : index
+  %count = kernel.workgroup.count<x> : index
+  %buffer_base = index.constant 0 : offset
+  %view = buffer.view %output[%buffer_base] : buffer -> view<[%count]xi8>
+  view.store %value, %view[%position] : i8, view<[%count]xi8>
+  kernel.return
+}

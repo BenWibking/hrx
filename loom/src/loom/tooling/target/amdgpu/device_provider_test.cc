@@ -310,15 +310,15 @@ TEST_F(AmdgpuDeviceProviderTest, PrefersExactDeviceTarget) {
   IREE_ASSERT_OK(Initialize(AmdgpuDeviceTargetSet::kGenericAndExact));
   EXPECT_TRUE(iree_string_view_equal(loom_amdgpu_device_provider.name,
                                      IREE_SV("amdgpu-hal")));
-  ASSERT_NE(loom_amdgpu_device_provider.target_emitter, nullptr);
-  EXPECT_TRUE(iree_string_view_equal(
-      loom_amdgpu_device_provider.target_emitter->name, IREE_SV("amdgpu-hal")));
-  EXPECT_EQ(loom_amdgpu_device_provider.target_emitter->target_artifact_format,
-            LOOM_TARGET_ARTIFACT_FORMAT_ELF);
   loom_device_target_t target = {};
   IREE_ASSERT_OK(loom_device_provider_select_compatible_target(
       &loom_amdgpu_device_provider, &runtime_, /*target_requirement=*/nullptr,
       iree_allocator_null(), &target));
+  ASSERT_NE(target.target_emitter, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(target.target_emitter->name,
+                                     IREE_SV("amdgpu-hal")));
+  EXPECT_EQ(target.target_emitter->target_artifact_format,
+            LOOM_TARGET_ARTIFACT_FORMAT_ELF);
   ExpectSelectedTarget(target, IREE_HAL_EXECUTABLE_TARGET_KIND_EXACT,
                        IREE_SV("gfx1151"));
 }

@@ -96,6 +96,40 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "hal_materialization",
+    srcs = ["hal_materialization.c"],
+    hdrs = ["hal_materialization.h"],
+    deps = [
+        ":register_classes",
+        "//loom/src/loom/codegen/low:builder",
+        "//loom/src/loom/codegen/low/transforms:task_abi",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops:op_defs",
+        "//loom/src/loom/ops/low",
+        "//loom/src/loom/pass:types",
+        "//loom/src/loom/target:registers",
+        "//loom/src/loom/target/arch/x86/descriptors:entry",
+        "//loom/src/loom/target/arch/x86/ops",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/hal/drivers/task/executable/library:abi",
+    ],
+)
+
+loom_cc_library(
+    name = "pass_registry",
+    srcs = ["pass_registry.c"],
+    hdrs = ["pass_registry.h"],
+    deps = [
+        ":hal_materialization",
+        "//loom/src/loom/codegen/low/pipeline:pass_environment",
+        "//loom/src/loom/pass:registry",
+        "//loom/src/loom/target:pass_environment",
+        "//loom/src/loom/target:pass_requirements",
+    ],
+)
+
+loom_cc_library(
     name = "provider",
     srcs = ["provider.c"],
     hdrs = ["provider.h"],
@@ -103,7 +137,9 @@ loom_cc_library(
     deps = [
         ":legalization",
         ":math_policy",
+        ":pass_registry",
         "//loom/src/loom/ir",
+        "//loom/src/loom/pass:builder",
         "//loom/src/loom/target:provider",
         "//loom/src/loom/target/arch/x86/descriptors:low_registry",
         "//loom/src/loom/target/arch/x86/lower",
@@ -129,6 +165,9 @@ loom_cc_library(
 loom_check_test_suite(
     name = "loom_check_file_test",
     srcs = [
+        "test/hal_materialization.loom-test",
+        "test/hal_materialization_diagnostics.loom-test",
+        "test/hal_query.loom-test",
         "test/instruction_immediates.loom-test",
         "test/register_classes.loom-test",
         "test/source_low/allocation.loom-test",
@@ -164,6 +203,7 @@ loom_check_test_suite(
         "test/source_low/numeric_index_operands.loom-test",
         "test/source_low/numeric_integer_extrema.loom-test",
         "test/source_low/numeric_integer_widening.loom-test",
+        "test/source_low/numeric_narrow_constants.loom-test",
         "test/source_low/numeric_narrow_widening.loom-test",
         "test/source_low/numeric_offset_wide.loom-test",
         "test/source_low/numeric_scalar_i64.loom-test",
@@ -175,6 +215,7 @@ loom_check_test_suite(
         "test/source_low/packed_memory_alignment.loom-test",
         "test/source_low/packed_memory_values.loom-test",
         "test/source_low/predicate_extension.loom-test",
+        "test/source_low/rodata.loom-test",
         "test/source_low/scalar_selection.loom-test",
         "test/source_low/selected_payload_transport.loom-test",
         "test/source_low/semantic_assertions.loom-test",
@@ -198,7 +239,6 @@ loom_check_test_suite(
         "test/source_low/source_low_schedule_scopes.loom-test",
         "test/source_low/source_low_v4.loom-test",
         "test/source_low/split_barrier.loom-test",
-        "test/source_low/uniform_predicate_control.loom-test",
         "test/source_low/vector_large_insert.loom-test",
         "test/source_low/view_carrier.loom-test",
         "test/source_low/view_transport.loom-test",

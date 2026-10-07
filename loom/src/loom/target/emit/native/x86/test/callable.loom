@@ -4,6 +4,42 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+global.rodata.def @immutable_words = align(64) bytes("1122334480ff007eefcdab8967452301")
+
+global.rodata.def @immutable_empty = align(32) bytes("")
+
+global.rodata.decl @native_host_table
+
+func.def public noinline @immutable_data() -> (buffer) {
+  %data = global.load @immutable_words : buffer
+  func.return %data : buffer
+}
+
+func.def public @empty_data() -> (buffer) {
+  %data = global.load @immutable_empty : buffer
+  func.return %data : buffer
+}
+
+func.def public @external_data() -> (buffer) {
+  %data = global.load @native_host_table : buffer
+  func.return %data : buffer
+}
+
+// Two source functions refer to the same artifact-owned bytes. A pointer
+// returned across a normal helper call remains live during a direct table load.
+func.def public @immutable_lookup(%input: index) -> (i32) {
+  %position = index.assume %input [range(%input, 0, 3)] : index
+  %from_call = func.call @immutable_data() : () -> (buffer)
+  %direct = global.load @immutable_words : buffer
+  %origin = index.constant 0 : offset
+  %direct_view = buffer.view %direct[%origin] : buffer -> view<4xi32>
+  %call_view = buffer.view %from_call[%origin] : buffer -> view<4xi32>
+  %indexed = view.load %direct_view[%position] : view<4xi32> -> i32
+  %first = view.load %call_view[0] : view<4xi32> -> i32
+  %value = scalar.xori %indexed, %first : i32
+  func.return %value : i32
+}
+
 // The platform ABI comes from the compile target. No target-specific source
 // annotation, register name, or runtime calling convention is required.
 func.def public @mix(%input: i64, %delta: i64) -> (i64) {

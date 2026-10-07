@@ -20,6 +20,8 @@ from loom.target.low_descriptors import (
     EnumDomain,
     EnumValue,
     Immediate,
+    ImmediateFlag,
+    ImmediateKind,
     InstructionClass,
     IssueUse,
     LatencyKind,
@@ -474,6 +476,30 @@ X86_SCALAR_PREFIX_DESCRIPTORS = (
 )
 
 X86_SCALAR_SUFFIX_DESCRIPTORS = (
+    Descriptor(
+        key="x86.scalar.lea.symbol.gpr64",
+        encoding_format_id=Form.ADDRESS_PC_RELATIVE,
+        encoding_id=encoding(0x8D, flags=Flag.REX_W),
+        mnemonic="lea",
+        semantic_tag="address.symbol",
+        operands=(_gpr64_result(),),
+        immediates=(
+            Immediate(
+                "symbol",
+                ImmediateKind.ORDINAL,
+                flags=(ImmediateFlag.SYMBOLIC, ImmediateFlag.RELATIVE),
+                bit_width=32,
+                unsigned_max=(2**31) - 1,
+            ),
+        ),
+        asm_forms=_asm(
+            mnemonic="lea.symbol.gpr64",
+            results=("dst",),
+            immediates=("symbol",),
+        ),
+        schedule_class=_SCHEDULE_ADDRESS,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    ),
     _gpr32_destructive_binary_descriptor(
         key="x86.scalar.sub.gpr32",
         opcode=0x29,

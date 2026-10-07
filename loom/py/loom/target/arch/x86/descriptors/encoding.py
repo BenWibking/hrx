@@ -31,6 +31,8 @@ class Form(IntEnum):
     ADDRESS_DISPLACEMENT = 17
     ADDRESS_SCALE = 18
     ADDRESS_ADD_SCALE = 19
+    # Values 20..26 are structural control and ABI forms in the C encoder.
+    ADDRESS_PC_RELATIVE = 27
 
 
 class Flag(IntFlag):

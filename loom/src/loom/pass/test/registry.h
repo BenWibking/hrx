@@ -30,6 +30,8 @@ typedef struct loom_test_pass_trace_event_t {
   iree_string_view_t pass_name;
   // Current module or function symbol name for the callback.
   iree_string_view_t symbol_name;
+  // Current function observed by the callback, or empty for a module pass.
+  loom_func_like_t function;
   // Function version observed by the pass callback, or NULL.
   const loom_function_version_t* function_version;
 } loom_test_pass_trace_event_t;

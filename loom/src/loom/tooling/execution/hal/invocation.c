@@ -302,9 +302,8 @@ iree_status_t loom_run_hal_binding_list_total_byte_length(
 
 static iree_const_byte_span_t loom_run_hal_dispatch_constants(
     const loom_run_hal_invocation_options_t* options) {
-  return iree_make_const_byte_span(
-      (const uint8_t*)options->constants,
-      options->constant_count * sizeof(options->constants[0]));
+  return iree_make_const_byte_span(options->constants,
+                                   options->constant_byte_length);
 }
 
 static iree_status_t loom_run_hal_select_single_function_name(
@@ -575,11 +574,11 @@ static iree_status_t loom_run_hal_queue_dispatch_prepare_options(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "HAL queue dispatch requires an executable");
   }
-  if (options->constant_count > LOOM_RUN_HAL_MAX_CONSTANT_COUNT) {
+  if (options->constant_byte_length > LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH) {
     return iree_make_status(
         IREE_STATUS_OUT_OF_RANGE,
-        "HAL dispatch constant count %" PRIhsz " exceeds maximum %d",
-        options->constant_count, LOOM_RUN_HAL_MAX_CONSTANT_COUNT);
+        "HAL dispatch constant byte length %" PRIhsz " exceeds maximum %d",
+        options->constant_byte_length, LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH);
   }
   if (binding_count > LOOM_RUN_HAL_MAX_BINDING_COUNT) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
@@ -604,8 +603,8 @@ static iree_status_t loom_run_hal_queue_dispatch_prepare_options(
       options->workgroup_count[0], options->workgroup_count[1],
       options->workgroup_count[2]);
   memcpy(out_dispatch->constants, options->constants,
-         options->constant_count * sizeof(options->constants[0]));
-  out_dispatch->constant_count = options->constant_count;
+         options->constant_byte_length);
+  out_dispatch->constant_byte_length = options->constant_byte_length;
   out_dispatch->binding_count = binding_count;
   out_dispatch->semaphore = semaphore;
   out_dispatch->next_signal_value = 1;
@@ -638,8 +637,7 @@ static iree_status_t loom_run_hal_queue_dispatch_execute_on_queue(
       .values = binding_refs,
   };
   const iree_const_byte_span_t constants = iree_make_const_byte_span(
-      dispatch->constants,
-      dispatch->constant_count * sizeof(dispatch->constants[0]));
+      dispatch->constants, dispatch->constant_byte_length);
   uint64_t signal_value = dispatch->next_signal_value;
   const iree_hal_semaphore_list_t wait_semaphores =
       iree_hal_semaphore_list_empty();
@@ -1040,11 +1038,13 @@ static iree_status_t loom_run_hal_process_invocation_bindings(
 
 static iree_status_t loom_run_hal_invocation_plan_validate(
     const loom_run_hal_invocation_plan_t* plan) {
-  if (plan->options.constant_count > LOOM_RUN_HAL_MAX_CONSTANT_COUNT) {
-    return iree_make_status(
-        IREE_STATUS_OUT_OF_RANGE,
-        "HAL dispatch constant count %" PRIhsz " exceeds maximum %d",
-        plan->options.constant_count, LOOM_RUN_HAL_MAX_CONSTANT_COUNT);
+  if (plan->options.constant_byte_length >
+      LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "HAL dispatch constant byte length %" PRIhsz
+                            " exceeds maximum %d",
+                            plan->options.constant_byte_length,
+                            LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH);
   }
   if (plan->bindings.count > LOOM_RUN_HAL_MAX_BINDING_COUNT) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
@@ -1534,11 +1534,11 @@ iree_status_t loom_run_hal_invocation_plan_prepare_from_specs(
       loom_run_hal_binding_specs_validate(bindings, IREE_SV("HAL")));
   IREE_RETURN_IF_ERROR(loom_run_hal_binding_specs_validate(
       expected_bindings, IREE_SV("expected HAL")));
-  if (options->constant_count > LOOM_RUN_HAL_MAX_CONSTANT_COUNT) {
+  if (options->constant_byte_length > LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH) {
     return iree_make_status(
         IREE_STATUS_OUT_OF_RANGE,
-        "HAL dispatch constant count %" PRIhsz " exceeds maximum %d",
-        options->constant_count, LOOM_RUN_HAL_MAX_CONSTANT_COUNT);
+        "HAL dispatch constant byte length %" PRIhsz " exceeds maximum %d",
+        options->constant_byte_length, LOOM_RUN_HAL_MAX_CONSTANT_BYTE_LENGTH);
   }
   if (expected_bindings->count != 0 &&
       expected_bindings->count != bindings->count) {

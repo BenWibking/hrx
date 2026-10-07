@@ -1297,6 +1297,72 @@ ERR_BACKEND_051 = ErrorDef(
     ),
 )
 
+ERR_BACKEND_052 = ErrorDef(
+    domain=ErrorDomain.BACKEND,
+    code=52,
+    severity=Severity.ERROR,
+    summary="Task entry contract is not satisfied.",
+    message="task entry requires {constraint}",
+    params=(ErrorParam("constraint", ParamKind.STRING),),
+)
+
+ERR_BACKEND_053 = ErrorDef(
+    domain=ErrorDomain.BACKEND,
+    code=53,
+    severity=Severity.ERROR,
+    summary="Task parameter is not representable.",
+    message=(
+        "task parameter {parameter_index} of type {actual_type} requires {constraint}"
+    ),
+    params=(
+        ErrorParam("parameter_index", ParamKind.I64),
+        ErrorParam("actual_type", ParamKind.TYPE),
+        ErrorParam("constraint", ParamKind.STRING),
+    ),
+)
+
+ERR_BACKEND_054 = ErrorDef(
+    domain=ErrorDomain.BACKEND,
+    code=54,
+    severity=Severity.ERROR,
+    summary="Task ABI layout field is invalid.",
+    message="task ABI field '{field_name}' requires {constraint}",
+    params=(
+        ErrorParam("field_name", ParamKind.STRING),
+        ErrorParam("constraint", ParamKind.STRING),
+    ),
+)
+
+ERR_BACKEND_055 = ErrorDef(
+    domain=ErrorDomain.BACKEND,
+    code=55,
+    severity=Severity.ERROR,
+    summary="Native artifact contract is not satisfied.",
+    message="native artifact requires {constraint}",
+    params=(ErrorParam("constraint", ParamKind.STRING),),
+)
+
+ERR_BACKEND_056 = ErrorDef(
+    domain=ErrorDomain.BACKEND,
+    code=56,
+    severity=Severity.ERROR,
+    summary="Native exports have the same external name.",
+    message="duplicate native export '{symbol_name}'",
+    params=(ErrorParam("symbol_name", ParamKind.STRING),),
+)
+
+ERR_BACKEND_057 = ErrorDef(
+    domain=ErrorDomain.BACKEND,
+    code=57,
+    severity=Severity.ERROR,
+    summary="A native symbol does not satisfy the artifact contract.",
+    message="native symbol '{symbol_name}' requires {constraint}",
+    params=(
+        ErrorParam("symbol_name", ParamKind.STRING),
+        ErrorParam("constraint", ParamKind.STRING),
+    ),
+)
+
 ALL_BACKEND_ERRORS: tuple[ErrorDef, ...] = (
     ERR_BACKEND_003,
     ERR_BACKEND_005,
@@ -1343,4 +1409,10 @@ ALL_BACKEND_ERRORS: tuple[ErrorDef, ...] = (
     ERR_BACKEND_049,
     ERR_BACKEND_050,
     ERR_BACKEND_051,
+    ERR_BACKEND_052,
+    ERR_BACKEND_053,
+    ERR_BACKEND_054,
+    ERR_BACKEND_055,
+    ERR_BACKEND_056,
+    ERR_BACKEND_057,
 )

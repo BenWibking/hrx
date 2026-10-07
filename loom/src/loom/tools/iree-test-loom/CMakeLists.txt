@@ -113,15 +113,16 @@ endif()
 if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _iree_test_loom_platform_copts "-DIREE_TEST_LOOM_HAVE_WASM=1")
 endif()
+if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK)
+  list(APPEND _iree_test_loom_platform_copts "-DIREE_TEST_LOOM_HAVE_TASK=1")
+endif()
 set(_iree_test_loom_platform_deps "")
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::amdgpu::device_provider)
-  list(APPEND _iree_test_loom_platform_deps loom::tooling::target::amdgpu::execution_provider)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::amdgpu::testbench_requirements)
 endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::spirv::device_provider)
-  list(APPEND _iree_test_loom_platform_deps loom::tooling::target::spirv::execution_provider)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::spirv::testbench_requirements)
 endif()
 if(LOOM_TARGET_ARCH_VM)
@@ -129,6 +130,9 @@ if(LOOM_TARGET_ARCH_VM)
 endif()
 if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _iree_test_loom_platform_deps loom::tooling::target::wasm::testbench)
+endif()
+if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK)
+  list(APPEND _iree_test_loom_platform_deps loom::tooling::target::cpu::task_device)
 endif()
 loom_cc_binary(
   NAME
@@ -140,7 +144,8 @@ loom_cc_binary(
   DEPS
     ::main
     iree::base
-    loom::tooling::execution::execution_provider
+    loom::target::configured::compiler_provider_set
+    loom::target::provider
     loom::tooling::input::configured
     loom::transforms::cleanup::configured
     ${_iree_test_loom_platform_deps}

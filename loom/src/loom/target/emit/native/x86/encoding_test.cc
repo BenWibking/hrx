@@ -75,6 +75,20 @@ TEST(EncodingTest, AddressDisplacementAndSib) {
                  1u << 9);
 }
 
+TEST(EncodingTest, PcRelativeAddressUsesNoBaseRegisterOrSib) {
+  loom_x86_encoding_operands_t operands = {};
+  operands.result = 13;
+  operands.immediate = -4;
+  ExpectEncoding(LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE,
+                 0x8d | LOOM_X86_ENCODING_REX_W, operands,
+                 {0x4c, 0x8d, 0x2d, 0xfc, 0xff, 0xff, 0xff}, 1u << 13);
+  operands.result = 0;
+  operands.immediate = 0x12345678;
+  ExpectEncoding(LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE,
+                 0x8d | LOOM_X86_ENCODING_REX_W, operands,
+                 {0x48, 0x8d, 0x05, 0x78, 0x56, 0x34, 0x12}, 1u << 0);
+}
+
 TEST(EncodingTest, IndexedByteStoreAndNoBaseAddress) {
   loom_x86_encoding_operands_t operands = {};
   operands.inputs[0] = 7;

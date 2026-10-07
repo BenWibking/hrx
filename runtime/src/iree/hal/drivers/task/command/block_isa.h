@@ -362,8 +362,8 @@ static inline uint8_t iree_hal_cmd_region_width_bucket_from_tile_count(
 // At execution, the processor builds iree_hal_executable_dispatch_state_v0_t
 // on the stack per-dispatch with direct pointer assignments:
 //   dispatch_state.constants = {
-//       (const uint8_t*)cmd->constants,
-//       cmd->constant_count * sizeof(uint32_t),
+//       cmd->constants,
+//       cmd->constant_byte_length,
 //   };
 //   dispatch_state.binding_ptrs =
 //       (void* const*)&state->binding_ptrs[cmd->binding_data_base];
@@ -373,12 +373,14 @@ static inline uint8_t iree_hal_cmd_region_width_bucket_from_tile_count(
 //           : NULL;
 // No IREE_STRUCT_LAYOUT computation, no translation, no memcpy.
 typedef struct iree_hal_cmd_dispatch_t {
-  iree_hal_cmd_header_t header;  // opcode=DISPATCH
+  // Command header with opcode DISPATCH.
+  iree_hal_cmd_header_t header;
 
-  // Packing: fills the 4-byte gap between the 4-byte header and the 8-byte-
-  // aligned executable pointer.
-  uint8_t constant_count;
+  // Reserved padding before the aligned executable pointer.
+  uint8_t reserved;
+  // Number of bound buffer spans supplied to the entry.
   uint8_t binding_count;
+  // First binding slot in the block's mutable data region.
   uint16_t binding_data_base;
 
   // Executable and export ordinal. Always set at recording time. Used by
@@ -395,8 +397,9 @@ typedef struct iree_hal_cmd_dispatch_t {
   // Export ordinal within the executable.
   uint16_t export_ordinal;
 
-  // Reserved for future dispatch command fields.
-  uint16_t reserved;
+  // Exact byte length of the inline constant payload, including the full
+  // 256-byte dispatch limit. No word alignment or trailing padding is implied.
+  uint16_t constant_byte_length;
 
   // Profiling sideband data.
   struct {
@@ -438,8 +441,8 @@ typedef struct iree_hal_cmd_dispatch_t {
   // from dispatch_attrs.local_memory_pages * PAGE_SIZE + dynamic_local_memory.
   uint32_t local_memory_size;
 
-  // Push constants, inline in .text. Accessed as cmd->constants[i].
-  uint32_t constants[];
+  // Byte-addressed constants inline in .text. Entry metadata owns their layout.
+  uint8_t constants[];
 } iree_hal_cmd_dispatch_t;
 
 static_assert(offsetof(iree_hal_cmd_dispatch_t, constants) == 68,

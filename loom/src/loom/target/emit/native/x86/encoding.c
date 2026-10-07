@@ -218,6 +218,12 @@ void loom_x86_encode_instruction(
       loom_x86_encode_memory(instruction, encoding_id, result, lhs, rhs,
                              operands->scale, (int32_t)operands->immediate);
       break;
+    case LOOM_X86_ENCODING_FORM_ADDRESS_PC_RELATIVE:
+      loom_x86_encode_prefix(instruction, encoding_id, result, 0, 0, 0);
+      loom_x86_encode_opcode(instruction, encoding_id);
+      loom_x86_encode_byte(instruction, ((result & 7) << 3) | 5);
+      loom_x86_encode_integer(instruction, operands->immediate, 4);
+      break;
     case LOOM_X86_ENCODING_FORM_BRANCH_NONZERO:
     case LOOM_X86_ENCODING_FORM_BRANCH_ZERO:
       loom_x86_encode_registers(instruction, 0x85 | width_flags, lhs, lhs);

@@ -29,7 +29,7 @@ typedef struct loom_kernel_launch_config_program_entry_t
 //
 // The product owns a separate pure host module. Source-to-low captures each
 // selected kernel's residual launch computation while exact specialization and
-// target facts are available. Finalization joins the completed low kernel's
+// target facts are available. Finalization joins the final lowered entry's
 // workgroup-storage requirement and terminates each host function.
 typedef struct loom_kernel_launch_config_program_t {
   // Pass capability embedded for source-to-low observation.
@@ -81,7 +81,7 @@ iree_status_t loom_kernel_launch_config_program_capture(
     const loom_target_facts_t* target_facts,
     const loom_value_fact_table_t* source_facts);
 
-// Completes all captured functions from their final low kernel products.
+// Completes all captured functions from their final lowered entry products.
 //
 // |lowered_module| is the module after the complete pass program. The returned
 // host module is owned by |program| and remains valid until deinitialization.

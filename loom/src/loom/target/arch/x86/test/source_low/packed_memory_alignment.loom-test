@@ -18,10 +18,21 @@ kernel.def @byte_origin() {
 }
 
 // ----
-low.kernel.def target<x86.avx2.core> workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @byte_origin(%source: reg<x86.gpr64>, %destination: reg<x86.gpr64>) asm {
+low.kernel.def target<x86.avx2.core> abi_layout({offsets = [0, 1], signature = (buffer, buffer) -> ()}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @byte_origin(%source: reg<x86.gpr64>, %destination: reg<x86.gpr64>) asm {
   %value = vmovdqu32.load.ymm %source {disp32 = 1}
   vmovdqu32.store.ymm %value, %destination {disp32 = 0}
   return
+}
+
+low.func.def public retain target<x86.avx2.core> abi(object_function) @iree_hal_executable_library_query(%11: reg<x86.gpr32>, %12: reg<x86.gpr64>) -> (reg<x86.gpr64>) asm {
+  %14 = cmp.uge.imm.gpr32 %11, 8
+  low.cond_br %14, ^_bb1, ^_bb2 : reg<x86.gpr32>
+^_bb1:
+  %15 = lea.symbol.gpr64 @iree_hal_executable_library_v0
+  return %15
+^_bb2:
+  %16 = mov.imm64 0
+  return %16
 }
 
 // ====
@@ -43,10 +54,21 @@ kernel.def @halfword_origin() {
 }
 
 // ----
-low.kernel.def target<x86.avx2.core> workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @halfword_origin(%source: reg<x86.gpr64>, %destination: reg<x86.gpr64>) asm {
+low.kernel.def target<x86.avx2.core> abi_layout({offsets = [0, 1], signature = (buffer, buffer) -> ()}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @halfword_origin(%source: reg<x86.gpr64>, %destination: reg<x86.gpr64>) asm {
   %value = vmovdqu32.load.ymm %source {disp32 = 2}
   vmovdqu32.store.ymm %value, %destination {disp32 = 0}
   return
+}
+
+low.func.def public retain target<x86.avx2.core> abi(object_function) @iree_hal_executable_library_query(%11: reg<x86.gpr32>, %12: reg<x86.gpr64>) -> (reg<x86.gpr64>) asm {
+  %14 = cmp.uge.imm.gpr32 %11, 8
+  low.cond_br %14, ^_bb1, ^_bb2 : reg<x86.gpr32>
+^_bb1:
+  %15 = lea.symbol.gpr64 @iree_hal_executable_library_v0
+  return %15
+^_bb2:
+  %16 = mov.imm64 0
+  return %16
 }
 
 // ====
@@ -68,8 +90,19 @@ kernel.def @word_origin() {
 }
 
 // ----
-low.kernel.def target<x86.avx2.core> workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @word_origin(%source: reg<x86.gpr64>, %destination: reg<x86.gpr64>) asm {
+low.kernel.def target<x86.avx2.core> abi_layout({offsets = [0, 1], signature = (buffer, buffer) -> ()}) workgroup_size(1, 1, 1) workgroup_count(1, 1, 1) @word_origin(%source: reg<x86.gpr64>, %destination: reg<x86.gpr64>) asm {
   %value = vmovdqu32.load.ymm %source {disp32 = 4}
   vmovdqu32.store.ymm %value, %destination {disp32 = 0}
   return
+}
+
+low.func.def public retain target<x86.avx2.core> abi(object_function) @iree_hal_executable_library_query(%11: reg<x86.gpr32>, %12: reg<x86.gpr64>) -> (reg<x86.gpr64>) asm {
+  %14 = cmp.uge.imm.gpr32 %11, 8
+  low.cond_br %14, ^_bb1, ^_bb2 : reg<x86.gpr32>
+^_bb1:
+  %15 = lea.symbol.gpr64 @iree_hal_executable_library_v0
+  return %15
+^_bb2:
+  %16 = mov.imm64 0
+  return %16
 }
