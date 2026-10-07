@@ -168,6 +168,7 @@ loom_scenario_test(
             "memory/view/selected_crops.loom:@selected_crop_values": "LOWERING/044",
             "numeric/conversion/conversion.loom:@float_to_integer_values": "TARGET/093",
             "numeric/conversion/conversion.loom:@float_width_values": "TARGET/093",
+            "numeric/conversion/conversion.loom:@floating_rounding_chain_values": "TARGET/003",
             "numeric/conversion/conversion.loom:@integer_to_float_values": "TARGET/093",
             "numeric/conversion/conversion.loom:@integer_width_values": "TARGET/093",
             "numeric/conversion/float8_facts.loom:@float8_fact_values": "TARGET/034",

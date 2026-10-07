@@ -718,10 +718,22 @@ def test_generation_emits_complete_ordinary_vector_integer_matrix() -> None:
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_INTEGER_INSTRUCTIONS)
 
 
-def test_float_binary_packets_preserve_operation_rounding() -> None:
+def test_floating_packets_preserve_operation_rounding() -> None:
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS)
     rows = {row.descriptor_key: row for row in _packet_rows()}
     expected_keys = {f"spirv.op_{operation}.{prefix}{scalar}" for operation in ("fadd", "fsub", "fmul", "fdiv", "frem") for prefix in ("", "v2", "v3", "v4") for scalar in ("f16", "f32", "f64")}
+    expected_keys.update(f"spirv.op_f_convert.{source}.{result}" for source in ("f16", "f32", "f64") for result in ("f16", "f32", "f64") if source != result)
+    expected_keys.update(("spirv.op_f_convert.bf16.f32", "spirv.op_f_convert.f32.bf16"))
+    for width in (8, 16, 32, 64):
+        for scalar in ("f16", "f32", "f64"):
+            expected_keys.update(
+                (
+                    f"spirv.op_convert_s_to_f.i{width}.{scalar}",
+                    f"spirv.op_convert_u_to_f.u{width}.{scalar}",
+                    f"spirv.op_convert_f_to_s.{scalar}.i{width}",
+                    f"spirv.op_convert_f_to_u.{scalar}.u{width}",
+                )
+            )
     assert {key for key, row in rows.items() if row.no_contraction} == expected_keys
 
 

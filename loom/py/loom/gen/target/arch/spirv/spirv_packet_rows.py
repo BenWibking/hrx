@@ -122,6 +122,15 @@ from loom.target.low_descriptors import (  # noqa: E402
 _PACKET_MAX_OPERAND_COUNT = 4
 _PACKET_OPERAND_TYPE_CAPACITY = 3
 _FLOAT_BINARY_OPCODES = frozenset(row.opcode for row in FLOAT_BINARY_OPERATIONS)
+_FLOAT_CONVERSION_OPCODES = frozenset(
+    {
+        "LOOM_SPIRV_OP_F_CONVERT",
+        "LOOM_SPIRV_OP_CONVERT_S_TO_F",
+        "LOOM_SPIRV_OP_CONVERT_U_TO_F",
+        "LOOM_SPIRV_OP_CONVERT_F_TO_S",
+        "LOOM_SPIRV_OP_CONVERT_F_TO_U",
+    }
+)
 
 
 def _c_identifier(value: str) -> str:
@@ -899,6 +908,7 @@ def _conversion_row(row: ScalarConversion) -> _PacketRow:
         result_type=_alu_scalar_value(row.result_type),
         operand_types=(_alu_scalar_value(row.source_type),),
         result_count=1,
+        no_contraction=row.opcode in _FLOAT_CONVERSION_OPCODES,
     )
 
 
@@ -966,7 +976,7 @@ def _ordinary_vector_rows() -> list[_PacketRow]:
             operand_types=tuple(_ordinary_vector_instruction_value(operand_type) for operand_type in row.operand_types),
             result_count=1,
             has_immediate=row.component_index_maximum is not None,
-            no_contraction=row.opcode in _FLOAT_BINARY_OPCODES,
+            no_contraction=row.opcode in _FLOAT_BINARY_OPCODES or row.opcode in _FLOAT_CONVERSION_OPCODES,
         )
         for row in (
             *ORDINARY_VECTOR_INSTRUCTIONS,
