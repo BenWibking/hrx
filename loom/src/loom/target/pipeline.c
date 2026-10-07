@@ -599,6 +599,16 @@ static iree_status_t loom_target_pipeline_build_lexical_workers(
       loom_target_pipeline_build_lexical_worker_body, user_data, &where_op);
 }
 
+static iree_status_t loom_target_pipeline_build_execution_cleanup(
+    loom_builder_t* builder, void* user_data) {
+  IREE_RETURN_IF_ERROR(
+      loom_target_pipeline_build_run(builder, IREE_SV("symbol-dce")));
+  // Realized channel endpoints introduce ordinary source expressions and CFG
+  // forwarding edges after initial normalization. Normalize them under their
+  // worker target contexts before target legalization selects native packets.
+  return loom_target_pipeline_build_inlined_source_cleanup(builder, user_data);
+}
+
 static iree_status_t loom_target_pipeline_build_source_low_body(
     loom_builder_t* builder, void* user_data) {
   const loom_target_pipeline_build_context_t* context =
@@ -624,6 +634,13 @@ static iree_status_t loom_target_pipeline_build_source_low_body(
   // available for legalization. Outlining registers their target versions.
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_run(
       builder, IREE_SV("outline-pipeline-strands")));
+  IREE_RETURN_IF_ERROR(loom_target_pipeline_contribute_phase(
+      builder, context,
+      LOOM_TARGET_PIPELINE_PHASE_SOURCE_EXECUTION_REALIZATION));
+  loom_op_t* execution_changed = NULL;
+  IREE_RETURN_IF_ERROR(loom_pass_ir_build_if_changed(
+      builder, loom_target_pipeline_build_execution_cleanup, user_data,
+      &execution_changed));
   IREE_RETURN_IF_ERROR(loom_target_pipeline_build_for_target_functions(
       builder,
       loom_target_pipeline_build_math_legalization_after_authoring_expansion,

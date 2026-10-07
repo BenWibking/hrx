@@ -1,0 +1,76 @@
+// RUN: emit aie2p-xdna input=source-low
+
+// A service strand gathers panels from padded rows and scatters the results.
+// Its neighboring compute strand retains channel storage while slots rotate.
+// Unused arguments preserve their ABI ordinals around the actual DMA buffers.
+aie2p.target<array> @npu {device_profile = "amd.xdna.strix.17f0_10"}
+
+pipeline.def<kernel> public retain target(@npu) @scale_panels() run(%unused_first: buffer, %input_arg: buffer, %unused_middle: buffer, %output_arg: buffer, %unused_last: buffer) {
+  %input, %output = buffer.assume.alignment %input_arg, %output_arg {minimum_alignment = 64} : buffer, buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %origin = index.constant 0 : offset
+  %storage_bytes = index.constant 64 : offset
+  %slots = index.constant 2 : index
+  %input_storage = buffer.alloca<workgroup> pool(%memory) align(64) %storage_bytes : buffer
+  %input_slots = buffer.view %input_storage[%origin] : buffer -> view<2x2x4xi32>
+  %inputs = channel.bind<fifo> %input_slots, %slots : view<2x2x4xi32>, index -> channel<tile<2x4xi32>>
+  %output_storage = buffer.alloca<workgroup> pool(%memory) align(64) %storage_bytes : buffer
+  %output_slots = buffer.view %output_storage[%origin] : buffer -> view<2x2x4xi32>
+  %outputs = channel.bind<fifo> %output_slots, %slots : view<2x2x4xi32>, index -> channel<tile<2x4xi32>>
+  %begin = index.constant 0 : index
+  %records = index.constant 3 : index
+  %step = index.constant 1 : index
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %record_bytes = index.constant 64 : index
+    scf.for %record = [%begin to %records step %step] {
+      %byte_index = index.mul %record, %record_bytes : index
+      %offset = index.cast %byte_index : index to offset
+      %external_input = buffer.view %input[%offset] : buffer -> view<2x4xi32, #encoding.layout.strided<strides=[8, 1]>>
+      %write, %destination = channel.reserve %inputs : channel<tile<2x4xi32>> -> (write<tile<2x4xi32>>, view<2x4xi32>)
+      %ingress = kernel.async.copy %external_input to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x4xi32, #encoding.layout.strided<strides=[8, 1]>> to view<2x4xi32> -> kernel.async.token
+      %incoming = kernel.async.group %ingress : kernel.async.token -> kernel.async.group
+      kernel.async.wait %incoming {newer_groups = 0} : kernel.async.group
+      channel.publish %write : write<tile<2x4xi32>>
+      %read, %source = channel.acquire %outputs : channel<tile<2x4xi32>> -> (read<tile<2x4xi32>>, view<2x4xi32>)
+      %external_output = buffer.view %output[%offset] : buffer -> view<2x4xi32, #encoding.layout.strided<strides=[6, 1]>>
+      %egress = kernel.async.copy %source to %external_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<2x4xi32> to view<2x4xi32, #encoding.layout.strided<strides=[6, 1]>> -> kernel.async.token
+      %outgoing = kernel.async.group %egress : kernel.async.token -> kernel.async.group
+      kernel.async.wait %outgoing {newer_groups = 0} : kernel.async.group
+      channel.release %read : read<tile<2x4xi32>>
+    }
+  }
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %rows = index.constant 2 : index
+    %columns = index.constant 4 : index
+    %scale = scalar.constant 2 : i32
+    scf.for %record = [%begin to %records step %step] {
+      %read, %source = channel.acquire %inputs : channel<tile<2x4xi32>> -> (read<tile<2x4xi32>>, view<2x4xi32>)
+      %write, %destination = channel.reserve %outputs : channel<tile<2x4xi32>> -> (write<tile<2x4xi32>>, view<2x4xi32>)
+      scf.for %row = [%begin to %rows step %step] {
+        scf.for %column = [%begin to %columns step %step] {
+          %value = view.load %source[%row, %column] : view<2x4xi32> -> i32
+          %scaled = scalar.muli %value, %scale : i32
+          view.store %scaled, %destination[%row, %column] : i32, view<2x4xi32>
+        }
+      }
+      channel.publish %write : write<tile<2x4xi32>>
+      channel.release %read : read<tile<2x4xi32>>
+    }
+  }
+}
+
+// ----
+partition: 1 columns, 6 rows
+entries: 1
+entry 0: 5 bindings, 4 dynamic relocations
+  binding 0: access=0 bytes=0 alignment=0 offset=[0,0]
+  binding 1: access=1 bytes=176 alignment=64 offset=[0,18446744073709551615]
+  binding 2: access=0 bytes=0 alignment=0 offset=[0,0]
+  binding 3: access=2 bytes=168 alignment=64 offset=[0,18446744073709551615]
+  binding 4: access=0 bytes=0 alignment=0 offset=[0,0]
+  relocation 0: binding=1 addend=0 maximum=281474976710480 alignment=4
+  relocation 1: binding=3 addend=0 maximum=281474976710488 alignment=4
+  relocation 2: binding=1 addend=0 maximum=281474976710480 alignment=4
+  relocation 3: binding=3 addend=0 maximum=281474976710488 alignment=4
+  invocation 0: bytes=3456 next=1
+  invocation 1: bytes=548 next=1

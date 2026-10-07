@@ -85,6 +85,16 @@ bool loom_aie2p_array_route_workers(
     loom_xdna_tile_coordinate_t receiver_coordinate,
     uint8_t receiver_dma_channel);
 
+// Connects two programmable stream-switch endpoints. The same physical link
+// allocator is used for DMA payload, core control packets, and task completion
+// streams. The caller owns packet filtering where endpoints multiplex traffic.
+bool loom_aie2p_array_route_stream(
+    loom_aie2p_array_route_builder_t* builder, uint32_t channel_index,
+    uint32_t source_channel_index, loom_xdna_tile_coordinate_t source,
+    loom_xdna_stream_port_t source_port, uint8_t source_channel,
+    loom_xdna_tile_coordinate_t destination,
+    loom_xdna_stream_port_t destination_port, uint8_t destination_channel);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

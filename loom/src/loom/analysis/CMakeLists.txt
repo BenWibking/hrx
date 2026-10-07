@@ -926,6 +926,7 @@ loom_cc_library(
     "pipeline_workers.c"
   DEPS
     ::channel_plan
+    ::kernel_async_legality
     ::pipeline_resources
     iree::base
     iree::base::internal::arena

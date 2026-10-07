@@ -181,6 +181,17 @@ static iree_status_t loom_pipeline_worker_build(
   iree_status_t status = loom_channel_plan_build(
       &worker->value_domain, channel_bindings, worker->binding_count, callables,
       arena, &worker->channels, &rejection);
+  if (iree_status_is_ok(status) &&
+      rejection.kind == LOOM_CHANNEL_PLAN_REJECTION_NONE) {
+    const loom_kernel_async_legality_options_t options = {
+        .value_domain = &worker->value_domain,
+        .fact_table = &worker->facts,
+        .emitter = diagnostic_emitter,
+        .phase_name = IREE_SV("pipeline-worker"),
+    };
+    status = loom_kernel_async_legality_analyze_function(
+        module, worker->function, &options, arena, &worker->asynchronous);
+  }
   loom_local_value_domain_release(&worker->value_domain);
   if (!iree_status_is_ok(status)) {
     return status;
@@ -191,7 +202,7 @@ static iree_status_t loom_pipeline_worker_build(
         IREE_SV("statically bound channels and visible channel-aware calls"),
         diagnostic_emitter);
   }
-  *out_valid = true;
+  *out_valid = worker->asynchronous.error_count == 0;
   return iree_ok_status();
 }
 

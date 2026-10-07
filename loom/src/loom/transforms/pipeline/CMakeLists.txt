@@ -11,6 +11,32 @@ iree_add_all_subdirs()
 
 loom_cc_library(
   NAME
+    realization
+  HDRS
+    "realization.h"
+  SRCS
+    "realization.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::pipeline_resources
+    loom::analysis::pipeline_workers
+    loom::ir
+    loom::ir::symbol_map
+    loom::ops::func
+    loom::ops::special_values
+    loom::pass::types
+    loom::pass::value_facts
+    loom::rewrite::callable
+    loom::rewrite::rewriter
+    loom::target::function_contract
+    loom::target::function_version
+    loom::target::pass_environment
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     channel_materialization
   HDRS
     "channel_materialization.h"

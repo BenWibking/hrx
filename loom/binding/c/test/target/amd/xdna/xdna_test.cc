@@ -21,45 +21,39 @@ using ModulePtr = HandlePtr<loomc_module_t, loomc_module_release>;
 using SequencePtr =
     HandlePtr<loomc_byte_sequence_t, loomc_byte_sequence_release>;
 
-// Two retained exports use one and two workers sharing a private stage. The
-// prepared-low pipeline erases the standalone stage after incorporating it.
+// Multiple exports share a construction template. Repeated image linking must
+// preserve the prepared module and keep returned bytes independently alive.
 constexpr char kSource[] = R"(
-aie2p.target<array> @array_target
-aie2p.target<core> @core_target
+aie2p.target<array> @device
 
-pipeline.def<kernel> public retain target(@array_target) @first() run(%input: buffer, %output: buffer) {
-  %one = index.constant 1 : index
-  %zero = index.constant 0 : offset
-  %workers = group.create %one : index -> group<[%one]>
-  %input_view = buffer.view %input[%zero] : buffer -> view<1x1xi32>
-  %output_view = buffer.view %output[%zero] : buffer -> view<1xi32>
-  %records = pipeline.scatter %input_view across %workers : view<1x1xi32>, group<[%one]> -> pipeline.flow<tile<1xi32>>
-  %result = pipeline.stage @double_value on %workers(%records) : (group<[%one]>, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
-  pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<1xi32>
-  pipeline.finish
+pipeline.def @record(%memory: pool, %row: index) run() {
+  %bytes = index.constant 4 : offset
+  %origin = index.constant 0 : offset
+  %slots = index.constant 1 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %records = buffer.view %storage[%origin] : buffer -> view<1x1xi32>
+  %channel = channel.bind<fifo> %records, %slots : view<1x1xi32>, index -> channel<tile<1xi32>>
+  pipeline.strand workers([0, %row], [1, 1], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %value = scalar.constant 42 : i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
 }
 
-pipeline.def<kernel> public retain target(@array_target) @second() run(%input: buffer, %output: buffer) {
-  %two = index.constant 2 : index
-  %zero = index.constant 0 : offset
-  %workers = group.create %two : index -> group<[%two]>
-  %input_view = buffer.view %input[%zero] : buffer -> view<2x1xi32>
-  %output_view = buffer.view %output[%zero] : buffer -> view<2x1xi32>
-  %records = pipeline.scatter %input_view across %workers : view<2x1xi32>, group<[%two]> -> pipeline.flow<tile<1xi32>>
-  %result = pipeline.stage @double_value on %workers(%records) : (group<[%two]>, pipeline.flow<tile<1xi32>>) -> (pipeline.flow<tile<1xi32>>)
-  pipeline.write %result to %output_view : pipeline.flow<tile<1xi32>>, view<2x1xi32>
-  pipeline.finish
+pipeline.def<kernel> public retain target(@device) @first() run() {
+  %row = index.constant 2 : index
+  %memory = pipeline.memory<workgroup>[0, %row] : pool
+  pipeline.compose @record[%memory, %row]() : [pool, index]()
 }
 
-func.def target(@core_target) @double_value(%input: buffer, %output: buffer) {
-  %input_aligned, %output_aligned = buffer.assume.alignment %input, %output {minimum_alignment = 4} : buffer, buffer
-  %zero = index.constant 0 : offset
-  %input_view = buffer.view %input_aligned[%zero] : buffer -> view<1xi32>
-  %output_view = buffer.view %output_aligned[%zero] : buffer -> view<1xi32>
-  %value = view.load %input_view[0] : view<1xi32> -> i32
-  %doubled = scalar.addi %value, %value : i32
-  view.store %doubled, %output_view[0] : i32, view<1xi32>
-  func.return
+pipeline.def<kernel> public retain target(@device) @second() run() {
+  %south = index.constant 2 : index
+  %north = index.constant 3 : index
+  %south_memory = pipeline.memory<workgroup>[0, %south] : pool
+  %north_memory = pipeline.memory<workgroup>[0, %north] : pool
+  pipeline.compose @record[%south_memory, %south]() : [pool, index]()
+  pipeline.compose @record[%north_memory, %north]() : [pool, index]()
 }
 )";
 
@@ -341,13 +335,15 @@ TEST_F(XdnaTest, PreservesPreparedModuleAcrossRepeatedEmission) {
     result.reset(raw_result);
     ASSERT_TRUE(Succeeded(result.get()));
     ModulePtr module(raw_module);
-    const loomc_target_specialization_t specialization = {
-        loomc_make_cstring_view("first"), profile.get()};
+    const loomc_target_specialization_t specializations[] = {
+        {loomc_make_cstring_view("first"), profile.get()},
+        {loomc_make_cstring_view("second"), profile.get()}};
     loomc_target_specialization_options_t specialization_options = {};
     specialization_options.type =
         LOOMC_STRUCTURE_TYPE_TARGET_SPECIALIZATION_OPTIONS;
-    specialization_options.specializations = &specialization;
-    specialization_options.specialization_count = 1;
+    specialization_options.specializations = specializations;
+    specialization_options.specialization_count =
+        IREE_ARRAYSIZE(specializations);
     loomc_compile_options_t compile_options = {};
     compile_options.type = LOOMC_STRUCTURE_TYPE_COMPILE_OPTIONS;
     compile_options.next = &specialization_options;
@@ -415,8 +411,7 @@ TEST_F(XdnaTest, PreservesPreparedModuleAcrossRepeatedEmission) {
                          LOOMC_ARTIFACT_FORMAT_COMPILE_REPORT_JSON);
         ASSERT_NE(report, nullptr);
         const std::string report_bytes = SequenceText(report->contents);
-        EXPECT_NE(report_bytes.find("first$worker$0"), std::string::npos)
-            << report_bytes;
+        ASSERT_FALSE(report_bytes.empty());
         if (first_report.empty()) {
           first_report = report_bytes;
         } else {

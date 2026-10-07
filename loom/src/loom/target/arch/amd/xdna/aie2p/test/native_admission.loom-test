@@ -1,0 +1,97 @@
+// RUN: emit aie2p-xdna input=source-low
+
+aie2p.target<array> @device
+
+// Physical resources cannot be selected before deployment specialization.
+// ERROR@+1: XDNA/051 {requirement="an exact deployment profile"}
+pipeline.def<kernel> public retain target(@device) @unresolved_device() run() {
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+  }
+}
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+pipeline.def<kernel> public retain target(@device) @overlapping_workers() run() {
+  %memory = pipeline.memory<workgroup>[0, 2] : pool
+  %bytes = index.constant 8 : offset
+  %origin = index.constant 0 : offset
+  %slots = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %records = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %channel = channel.bind<fifo> %records, %slots : view<2x1xi32>, index -> channel<tile<1xi32>>
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %value = scalar.constant 42 : i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+  // ERROR@+1: XDNA/051 {requirement="an independently assigned compute tile for each strand"}
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %value = scalar.constant 42 : i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+pipeline.def<kernel> public retain target(@device) @unsplit_worker_extent() run() {
+  %memory = pipeline.memory<workgroup>[0, 2] : pool
+  %bytes = index.constant 8 : offset
+  %origin = index.constant 0 : offset
+  %slots = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %records = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %channel = channel.bind<fifo> %records, %slots : view<2x1xi32>, index -> channel<tile<1xi32>>
+  // ERROR@+1: XDNA/051 {requirement="a single placed compute tile per strand"}
+  pipeline.strand workers([0, 2], [1, 2], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %value = scalar.constant 42 : i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+pipeline.def<kernel> public retain target(@device) @external_channel_backing() run(%backing: buffer) {
+  %origin = index.constant 0 : offset
+  %slots = index.constant 1 : index
+  %records = buffer.view %backing[%origin] : buffer -> view<1x1xi32>
+  // ERROR@+1: XDNA/051 {requirement="invocation-owned on-chip channel storage"}
+  %channel = channel.bind<fifo> %records, %slots : view<1x1xi32>, index -> channel<tile<1xi32>>
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %value = scalar.constant 42 : i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+pipeline.def<kernel> public retain target(@device) @credit_range() run() {
+  %memory = pipeline.memory<workgroup>[0, 2] : pool
+  %bytes = index.constant 256 : offset
+  %origin = index.constant 0 : offset
+  %slots = index.constant 64 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %records = buffer.view %storage[%origin] : buffer -> view<64x1xi32>
+  // ERROR@+1: XDNA/051 {requirement="a hardware semaphore pair with enough slot credits"}
+  %channel = channel.bind<fifo> %records, %slots : view<64x1xi32>, index -> channel<tile<1xi32>>
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %write, %record = channel.reserve %channel : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+    %value = scalar.constant 42 : i32
+    view.store %value, %record[0] : i32, view<1xi32>
+    channel.publish %write : write<tile<1xi32>>
+  }
+}

@@ -364,15 +364,15 @@ loom_cc_library(
   NAME
     array_plan
   HDRS
+    "array/binding.h"
     "array/channel_resources.h"
     "array/plan.h"
+    "array/route.h"
   SRCS
     "array/binding.c"
-    "array/binding.h"
     "array/channel_resources.c"
     "array/plan.c"
     "array/route.c"
-    "array/route.h"
     "array/topology.c"
     "array/topology.h"
   DEPS
@@ -581,13 +581,35 @@ endif()
 if(LOOM_TARGET_ARCH_XDNA)
 loom_cc_library(
   NAME
+    pipeline_worker
+  HDRS
+    "pipeline/worker.h"
+  SRCS
+    "pipeline/worker.c"
+  DEPS
+    ::core_descriptors
+    iree::base
+    iree::base::internal
+    iree::base::internal::arena
+    loom::codegen::low::builder
+    loom::ir
+    loom::ir::symbol_map
+    loom::ops::low
+    loom::transforms::pipeline::realization
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
     pipeline_pass
   HDRS
     "pipeline/pass.h"
   SRCS
     "pipeline/pass.c"
   DEPS
-    ::pipeline_lower
+    ::pipeline_native
     iree::base
     loom::ir
     loom::ops::pipeline
@@ -595,6 +617,54 @@ loom_cc_library(
     loom::pass::types
     loom::pass::value_facts
     loom::target::function_version
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_XDNA)
+loom_cc_library(
+  NAME
+    pipeline_native
+  HDRS
+    "pipeline/native.h"
+  SRCS
+    "pipeline/channels.c"
+    "pipeline/configuration.c"
+    "pipeline/dma.c"
+    "pipeline/native.c"
+    "pipeline/transport.c"
+  DEPS
+    ::array_abi_layout
+    ::array_plan
+    ::configuration_descriptors
+    ::pipeline_worker
+    ::target_facts
+    ::target_records
+    iree::base
+    iree::base::internal::arena
+    loom::analysis::source_storage_packing
+    loom::analysis::storage_geometry
+    loom::codegen::low::builder
+    loom::ir
+    loom::ops::buffer
+    loom::ops::channel
+    loom::ops::func
+    loom::ops::index
+    loom::ops::low
+    loom::ops::pipeline
+    loom::ops::scalar
+    loom::ops::type_registry
+    loom::rewrite::rewriter
+    loom::target::arch::amd::xdna::aie2p::ops
+    loom::target::arch::amd::xdna::array_facts
+    loom::target::arch::amd::xdna::array_registers
+    loom::target::arch::amd::xdna::error_defs
+    loom::target::facts_builder
+    loom::target::function_version
+    loom::transforms::pipeline::channel_materialization
+    loom::transforms::pipeline::realization
+    loom::transforms::view::offset_expression
+    loom::util::fact_table
   PUBLIC
 )
 endif()
@@ -826,11 +896,9 @@ loom_check_test_suite(
     "test/math_contraction.loom-test"
     "test/math_policy_activations.loom-test"
     "test/module_contracts.loom-test"
-    "test/pipeline_composition.loom-test"
-    "test/pipeline_ports.loom-test"
-    "test/pipeline_record_shapes.loom-test"
-    "test/pipeline_reduce.loom-test"
-    "test/pipeline_rejection.loom-test"
+    "test/native_admission.loom-test"
+    "test/native_bindings.loom-test"
+    "test/native_strands.loom-test"
     "test/source_low/bf16_vectors.loom-test"
     "test/source_low/buffer_selection.loom-test"
     "test/source_low/callable_memory.loom-test"

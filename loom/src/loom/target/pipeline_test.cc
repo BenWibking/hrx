@@ -222,7 +222,8 @@ iree_status_t InspectPipelineRun(void* user_data, loom_op_t* op,
     counts->source_to_low_sanitizer_reporting =
         FindStringOption(count_context->module, loom_pass_run_options(op),
                          IREE_SV("sanitizer-reporting"));
-  } else if (iree_string_view_equal(key, IREE_SV("symbol-dce"))) {
+  } else if (iree_string_view_equal(key, IREE_SV("symbol-dce")) &&
+             counts->source_to_low != 0) {
     ++counts->symbol_dce;
     counts->symbol_dce_ordinal = count_context->current_run_ordinal;
   } else if (iree_string_view_equal(key,

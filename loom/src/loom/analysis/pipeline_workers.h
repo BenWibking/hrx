@@ -7,6 +7,7 @@
 #ifndef LOOM_ANALYSIS_PIPELINE_WORKERS_H_
 #define LOOM_ANALYSIS_PIPELINE_WORKERS_H_
 
+#include "loom/analysis/kernel_async_legality.h"
 #include "loom/analysis/pipeline_resources.h"
 #include "loom/util/cfg_graph.h"
 
@@ -58,6 +59,8 @@ typedef struct loom_pipeline_worker_t {
   loom_local_value_domain_t value_domain;
   // Communication membership and actions established in this occurrence.
   loom_channel_plan_t channels;
+  // Borrowed asynchronous movement and its admitted group completion edges.
+  loom_kernel_async_legality_result_t asynchronous;
   // CFG topology retained for scheduling and handoff analysis.
   const loom_cfg_graph_t* graph;
 } loom_pipeline_worker_t;

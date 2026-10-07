@@ -910,6 +910,15 @@ ERR_XDNA_052 = ErrorDef(
     params=(ErrorParam("mask", ParamKind.U32), ErrorParam("value", ParamKind.U32)),
 )
 
+ERR_XDNA_051 = ErrorDef(
+    domain=ErrorDomain.XDNA,
+    code=51,
+    severity=Severity.ERROR,
+    summary="Resident worker realization cannot satisfy this program.",
+    message="AIE2P resident worker realization requires {requirement}",
+    params=(ErrorParam("requirement", ParamKind.STRING),),
+)
+
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
     ERR_XDNA_002,
@@ -962,4 +971,5 @@ ALL_XDNA_ERRORS = (
     ERR_XDNA_048,
     ERR_XDNA_049,
     ERR_XDNA_052,
+    ERR_XDNA_051,
 )

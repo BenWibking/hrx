@@ -1,0 +1,321 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+#include "loom/target/arch/amd/xdna/aie2p/pipeline/native.h"
+
+#include "loom/analysis/storage_geometry.h"
+#include "loom/ops/channel/ops.h"
+#include "loom/ops/func/ops.h"
+#include "loom/ops/pipeline/ops.h"
+#include "loom/target/arch/amd/xdna/error_catalog.h"
+#include "loom/target/function_version.h"
+#include "loom/util/fact_extensions.h"
+
+iree_status_t loom_aie2p_native_reject(
+    const loom_aie2p_native_context_t* context, const loom_op_t* op,
+    iree_string_view_t requirement) {
+  const loom_diagnostic_param_t params[] = {loom_param_string(requirement)};
+  const loom_diagnostic_emission_t emission = {
+      .op = op,
+      .error = LOOM_ERR_XDNA_051,
+      .params = params,
+      .param_count = IREE_ARRAYSIZE(params),
+  };
+  return iree_diagnostic_emit(context->pass->diagnostic_emitter, &emission);
+}
+
+static iree_status_t loom_aie2p_native_inventory(
+    loom_aie2p_native_context_t* context) {
+  const loom_xdna_array_family_t* family = context->family;
+  const iree_host_size_t tile_count = family->column_count * family->row_count;
+  iree_arena_allocator_t* arena = context->pass->arena;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, tile_count, sizeof(*context->tiles), (void**)&context->tiles));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(arena, tile_count,
+                                                 sizeof(*context->pool_tiles),
+                                                 (void**)&context->pool_tiles));
+  loom_pipeline_resource_pool_t* pools = NULL;
+  loom_pipeline_resource_memory_t* memories = NULL;
+  uint64_t* coordinates = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, tile_count, sizeof(*pools), (void**)&pools));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, tile_count, sizeof(*memories), (void**)&memories));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, tile_count, 2 * sizeof(*coordinates), (void**)&coordinates));
+  context->inventory.pools = pools;
+  context->inventory.memories = memories;
+  for (uint16_t column = 0; column < family->column_count; ++column) {
+    for (uint16_t row = 0; row < family->row_count; ++row) {
+      loom_aie2p_native_tile_t* tile =
+          &context->tiles[column * family->row_count + row];
+      *tile = (loom_aie2p_native_tile_t){.coordinate = {column, row},
+                                         .pool_index = UINT32_MAX};
+      tile->facts = loom_xdna_array_tile_facts(family, tile->coordinate);
+      if (tile->facts->kind != LOOM_XDNA_TILE_KIND_COMPUTE) {
+        continue;
+      }
+      const uint32_t pool = (uint32_t)context->inventory.pool_count++;
+      tile->pool_index = pool;
+      context->pool_tiles[pool] = tile;
+      pools[pool] = (loom_pipeline_resource_pool_t){
+          .memory_space = LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP,
+          .byte_capacity = tile->facts->memory.local_capacity};
+      IREE_RETURN_IF_ERROR(loom_source_storage_packing_create(
+          (loom_source_storage_packing_interference_callback_t){0}, NULL, 0,
+          arena, &pools[pool].packing));
+      coordinates[pool * 2] = column;
+      coordinates[pool * 2 + 1] = row;
+      memories[pool] = (loom_pipeline_resource_memory_t){
+          .coordinates = &coordinates[pool * 2], .rank = 2, .pool_index = pool};
+      ++context->inventory.memory_count;
+    }
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_native_select_channels(
+    loom_aie2p_native_context_t* context, loom_module_t* module,
+    const loom_pipeline_realization_t* realization, bool* out_valid) {
+  const loom_pipeline_resources_t* resources = &realization->resources;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      context->pass->arena, resources->channel_count,
+      sizeof(*context->channels), (void**)&context->channels));
+  for (iree_host_size_t i = 0; i < resources->channel_count; ++i) {
+    const loom_pipeline_resource_channel_t* source = &resources->channels[i];
+    const loom_pipeline_resource_allocation_t* allocation =
+        loom_pipeline_resources_lookup_allocation(
+            resources, source->storage.root_value_id);
+    if (!allocation) {
+      return loom_aie2p_native_reject(
+          context, source->binding,
+          IREE_SV("invocation-owned on-chip channel storage"));
+    }
+    loom_aie2p_native_tile_t* owner =
+        context->pool_tiles[allocation->pool_index];
+    const loom_type_t storage_type = loom_module_value_type(
+        module, loom_channel_bind_storage(source->binding));
+    loom_storage_geometry_t geometry;
+    loom_storage_geometry_span_t record;
+    int64_t offset = 0;
+    uint64_t stride_bits = 0, record_bits = 0, extent = 0;
+    if (!loom_storage_geometry_query(&realization->facts->context, module,
+                                     storage_type, &geometry) ||
+        geometry.rank == 0 ||
+        !loom_storage_geometry_measure(&geometry, 1, &record) ||
+        !loom_value_facts_as_exact_i64(source->storage.base_byte_offset,
+                                       &offset) ||
+        offset < 0 ||
+        !iree_checked_mul_u64(geometry.axes[0].element_stride,
+                              geometry.element_bit_count, &stride_bits) ||
+        !iree_checked_mul_u64(record.element_span, geometry.element_bit_count,
+                              &record_bits) ||
+        stride_bits % 8 || record_bits % 8 ||
+        (source->capacity > 1 && stride_bits < record_bits) ||
+        !iree_checked_mul_u64(source->capacity - 1, stride_bits / 8, &extent) ||
+        !iree_checked_add_u64(extent, record_bits / 8, &extent) ||
+        (uint64_t)offset > allocation->byte_length ||
+        extent > allocation->byte_length - (uint64_t)offset ||
+        stride_bits / 8 > UINT32_MAX ||
+        allocation->byte_offset > UINT32_MAX - (uint64_t)offset) {
+      return loom_aie2p_native_reject(
+          context, source->binding,
+          IREE_SV("specialized byte-addressable channel slot geometry"));
+    }
+    if (source->capacity > (uint64_t)owner->facts->lock_value_maximum ||
+        owner->next_lock + 2 > owner->facts->lock_count) {
+      return loom_aie2p_native_reject(
+          context, source->binding,
+          IREE_SV("a hardware semaphore pair with enough slot credits"));
+    }
+    context->channels[i] = (loom_aie2p_native_channel_t){
+        .source = source,
+        .pool_index = allocation->pool_index,
+        .byte_offset = (uint32_t)(allocation->byte_offset + (uint64_t)offset),
+        .byte_stride = (uint32_t)(stride_bits / 8),
+        .record_byte_length = (uint32_t)(record_bits / 8),
+        .free_lock = owner->next_lock++,
+        .ready_lock = owner->next_lock++,
+        .cursor = {UINT32_MAX, UINT32_MAX}};
+  }
+  *out_valid = true;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_native_select_channel_accesses(
+    loom_aie2p_native_context_t* context,
+    const loom_pipeline_realization_t* realization,
+    const loom_pipeline_worker_t* source, loom_aie2p_native_worker_t* worker) {
+  iree_arena_allocator_t* arena = context->pass->arena;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, realization->resources.channel_count,
+      sizeof(*worker->channels.indices), (void**)&worker->channels.indices));
+  memset(
+      worker->channels.indices, 0xff,
+      realization->resources.channel_count * sizeof(*worker->channels.indices));
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, source->binding_count, sizeof(*worker->channels.accesses),
+      (void**)&worker->channels.accesses));
+  for (iree_host_size_t i = 0; i < source->binding_count; ++i) {
+    const iree_host_size_t index =
+        source->bindings[i].channel - realization->resources.channels;
+    if (worker->channels.indices[index] != UINT32_MAX) {
+      continue;
+    }
+    worker->channels.indices[index] = (uint32_t)worker->channels.count;
+    loom_aie2p_native_channel_access_t* access =
+        &worker->channels.accesses[worker->channels.count++];
+    const loom_aie2p_native_channel_t* channel = &context->channels[index];
+    access->channel = channel;
+    const loom_xdna_tile_coordinate_t owner =
+        context->pool_tiles[channel->pool_index]->coordinate;
+    IREE_RETURN_IF_ERROR(loom_xdna_array_form_load_address(
+        context->family, worker->tile->coordinate, LOOM_XDNA_MEMORY_SPACE_DATA,
+        owner, channel->byte_offset,
+        channel->byte_stride * (channel->source->capacity - 1) +
+            channel->record_byte_length,
+        &access->address));
+    const uint64_t alignment_bits = access->address | channel->byte_stride;
+    access->alignment =
+        alignment_bits ? alignment_bits & (~alignment_bits + 1) : 64;
+    IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
+        context->family, worker->tile->coordinate, owner, channel->free_lock,
+        &access->locks.free));
+    IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
+        context->family, worker->tile->coordinate, owner, channel->ready_lock,
+        &access->locks.ready));
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_aie2p_native_select(
+    void* user_data, loom_module_t* module,
+    const loom_pipeline_realization_t* realization, bool* out_valid) {
+  loom_aie2p_native_context_t* context = user_data;
+  *out_valid = false;
+  if (realization->resources.composition_count) {
+    return loom_aie2p_native_reject(
+        context, realization->resources.compositions[0],
+        IREE_SV("child execution boundaries to be realized separately"));
+  }
+  IREE_RETURN_IF_ERROR(loom_aie2p_native_select_channels(
+      context, module, realization, out_valid));
+  if (!*out_valid) {
+    return iree_ok_status();
+  }
+  *out_valid = false;
+  uint16_t argument_count = 0;
+  const loom_value_id_t* arguments =
+      loom_func_like_arg_ids(realization->function, &argument_count);
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      context->pass->arena, argument_count, sizeof(*context->bindings),
+      (void**)&context->bindings));
+  context->binding_count = argument_count;
+  for (uint16_t i = 0; i < argument_count; ++i) {
+    if (!loom_type_is_buffer(loom_module_value_type(module, arguments[i]))) {
+      return loom_aie2p_native_reject(
+          context, realization->function.op,
+          IREE_SV("buffer invocation arguments after specialization"));
+    }
+    context->bindings[i] = (loom_aie2p_native_binding_t){
+        .root = arguments[i], .byte_length = 1, .byte_alignment = 4};
+  }
+  const iree_host_size_t worker_count = realization->resources.strand_count;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      context->pass->arena, worker_count, sizeof(*context->workers),
+      (void**)&context->workers));
+  for (iree_host_size_t i = 0; i < worker_count; ++i) {
+    const loom_pipeline_worker_t* source = &realization->workers[i];
+    if (source->rank != 2 || source->axes[0].count != 1 ||
+        source->axes[1].count != 1 ||
+        source->axes[0].origin >= context->family->column_count ||
+        source->axes[1].origin >= context->family->row_count) {
+      return loom_aie2p_native_reject(
+          context, source->source->declaration,
+          IREE_SV("a single placed compute tile per strand"));
+    }
+    loom_aie2p_native_tile_t* tile =
+        &context->tiles[source->axes[0].origin * context->family->row_count +
+                        source->axes[1].origin];
+    if (tile->facts->kind != LOOM_XDNA_TILE_KIND_COMPUTE || tile->has_worker) {
+      return loom_aie2p_native_reject(
+          context, source->source->declaration,
+          IREE_SV("an independently assigned compute tile for each strand"));
+    }
+    if (tile->next_lock == tile->facts->lock_count) {
+      return loom_aie2p_native_reject(
+          context, source->source->declaration,
+          IREE_SV("one semaphore for worker completion"));
+    }
+    tile->has_worker = true;
+    context->workers[i] = (loom_aie2p_native_worker_t){
+        .tile = tile, .completion_lock = tile->next_lock++};
+    IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
+        context->family, tile->coordinate, tile->coordinate,
+        context->workers[i].completion_lock,
+        &context->workers[i].completion_selector));
+    IREE_RETURN_IF_ERROR(loom_aie2p_native_select_channel_accesses(
+        context, realization, source, &context->workers[i]));
+    for (iree_host_size_t j = 0; j < source->channels.action_count; ++j) {
+      const loom_channel_plan_action_t* action = &source->channels.actions[j];
+      const loom_op_t* op = action->op;
+      if (!loom_channel_acquire_isa(op) && !loom_channel_reserve_isa(op) &&
+          !loom_channel_publish_isa(op) && !loom_channel_release_isa(op)) {
+        return loom_aie2p_native_reject(
+            context, op,
+            IREE_SV("FIFO acquire/reserve/publish/release channel actions"));
+      }
+      if (loom_channel_acquire_isa(op) || loom_channel_reserve_isa(op)) {
+        const loom_pipeline_resource_channel_t* bound =
+            loom_pipeline_resources_lookup_channel(&realization->resources,
+                                                   action->channel->value_id);
+        loom_aie2p_native_channel_t* channel =
+            &context->channels[bound - realization->resources.channels];
+        uint32_t* cursor = loom_channel_acquire_isa(op)
+                               ? &channel->cursor.reader
+                               : &channel->cursor.writer;
+        if (*cursor != UINT32_MAX && *cursor != i) {
+          return loom_aie2p_native_reject(
+              context, op,
+              IREE_SV("one strand owning each FIFO's read or write cursor"));
+        }
+        *cursor = (uint32_t)i;
+      }
+    }
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_aie2p_native_select_transfers(context, realization, out_valid));
+  if (!*out_valid) {
+    return iree_ok_status();
+  }
+  return loom_pipeline_resources_check_capacity(
+      &realization->resources, realization->function.op,
+      context->pass->diagnostic_emitter, out_valid);
+}
+
+iree_status_t loom_aie2p_pipeline_realize(loom_pass_t* pass,
+                                          loom_module_t* module,
+                                          loom_func_like_t function) {
+  const loom_aie2p_target_facts_t* target = loom_aie2p_target_facts_cast(
+      loom_target_function_version_target_facts(pass->function_version));
+  loom_aie2p_native_context_t context = {.pass = pass, .target = target};
+  if (!target || !target->device_profile) {
+    return loom_aie2p_native_reject(&context, function.op,
+                                    IREE_SV("an exact deployment profile"));
+  }
+  context.family =
+      loom_xdna_device_profile_array_family(target->device_profile);
+  IREE_RETURN_IF_ERROR(loom_aie2p_native_inventory(&context));
+  IREE_RETURN_IF_ERROR(
+      loom_aie2p_worker_builder_initialize(module, pass->arena, &context.code));
+  const loom_pipeline_realization_callback_t callback = {
+      .select = loom_aie2p_native_select,
+      .worker = loom_aie2p_native_emit_worker,
+      .entry = loom_aie2p_native_emit_configuration,
+      .user_data = &context};
+  return loom_pipeline_realize(pass, module, function, &context.inventory,
+                               &callback);
+}

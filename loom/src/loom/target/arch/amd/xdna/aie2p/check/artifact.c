@@ -11,6 +11,7 @@
 #include "iree/schemas/xdna_executable.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/artifact.h"
 #include "loom/tools/loom-check/diagnostics.h"
+#include "loom/tools/loom-check/source_low.h"
 
 static bool loom_aie2p_artifact_check_matches(
     const loom_check_emit_provider_t* provider, iree_string_view_t name) {
@@ -132,14 +133,24 @@ static iree_status_t loom_aie2p_artifact_check_execute(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
   (void)provider;
-  const iree_string_view_t options =
-      iree_string_view_trim(request->target_options);
-  const bool print_sections =
-      iree_string_view_equal(options, IREE_SV("output=sections"));
-  if (!iree_string_view_is_empty(options) && !print_sections) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "aie2p-xdna selects device profiles from IR and "
-                            "accepts only output=sections");
+  iree_string_view_t options = iree_string_view_trim(request->target_options);
+  bool print_sections = false;
+  bool source_low = false;
+  while (!iree_string_view_is_empty(options)) {
+    iree_string_view_t option;
+    iree_string_view_split(options, ' ', &option, &options);
+    options = iree_string_view_trim(options);
+    if (iree_string_view_equal(option, IREE_SV("output=sections")) &&
+        !print_sections) {
+      print_sections = true;
+    } else if (iree_string_view_equal(option, IREE_SV("input=source-low")) &&
+               !source_low) {
+      source_low = true;
+    } else {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "invalid or duplicate aie2p-xdna option '%.*s'",
+                              (int)option.size, option.data);
+    }
   }
   loom_check_diagnostic_emitter_capture_t capture = {
       .diagnostic_collector = request->diagnostic_collector,
@@ -147,8 +158,23 @@ static iree_status_t loom_aie2p_artifact_check_execute(
       .source_resolver = request->source_resolver,
       .emitter = LOOM_EMITTER_PASS,
   };
+  loom_compile_pipeline_result_t pipeline_result = {0};
+  iree_status_t status = iree_ok_status();
+  if (source_low) {
+    loom_check_prepare_source_low_options_t prepare_options;
+    loom_check_prepare_source_low_options_initialize(&prepare_options);
+    status = loom_check_prepare_source_low_module(
+        request->module, &prepare_options, request->environment,
+        request->source_resolver, request->diagnostic_collector,
+        request->block_pool, &pipeline_result);
+  }
+  if (!iree_status_is_ok(status) || request->diagnostic_collector->count != 0) {
+    loom_compile_pipeline_result_deinitialize(&pipeline_result);
+    return status;
+  }
   const loom_aie2p_xdna_artifact_request_t emit_request = {
       .module = request->module,
+      .function_versions = &pipeline_result.function_versions.list,
       .low_descriptor_registry = &request->low_registry->registry,
       .diagnostic_emitter = {loom_check_diagnostic_emitter_capture_emit,
                              &capture},
@@ -157,27 +183,24 @@ static iree_status_t loom_aie2p_artifact_check_execute(
   };
   iree_byte_sequence_t* contents = NULL;
   bool emitted = false;
-  iree_status_t status =
-      loom_aie2p_xdna_compile_artifact(&emit_request, &emitted, &contents);
-  if (iree_status_is_ok(status) && !emitted) {
-    return iree_ok_status();
-  }
+  status = loom_aie2p_xdna_compile_artifact(&emit_request, &emitted, &contents);
   iree_byte_span_t bytes = iree_byte_span_empty();
-  if (iree_status_is_ok(status)) {
+  if (iree_status_is_ok(status) && emitted) {
     status =
         iree_byte_sequence_clone(contents, request->host_allocator, &bytes);
   }
-  if (iree_status_is_ok(status) && print_sections) {
+  if (iree_status_is_ok(status) && emitted && print_sections) {
     status = loom_aie2p_artifact_check_print_sections(
         iree_make_const_byte_span(bytes.data, bytes.data_length),
         &request->result->actual_output);
-  } else if (iree_status_is_ok(status)) {
+  } else if (iree_status_is_ok(status) && emitted) {
     status = loom_aie2p_artifact_check_print(
         iree_make_const_byte_span(bytes.data, bytes.data_length),
         &request->result->actual_output);
   }
   iree_allocator_free(request->host_allocator, bytes.data);
   iree_byte_sequence_release(contents);
+  loom_compile_pipeline_result_deinitialize(&pipeline_result);
   return status;
 }
 
