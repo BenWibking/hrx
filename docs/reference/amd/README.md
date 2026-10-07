@@ -39,6 +39,7 @@ provide exact search terms within the tree.
 | Task | Starting points |
 | --- | --- |
 | Identify the compiler target, physical GC or SDMA IP, and native transport | [Architecture identity and discovery](gpu/architectures.md). |
+| Select a legal wave32 or wave64 program mode | [Wavefront modes and target restrictions](gpu/architectures.md#wavefront-modes), [PM4 launch and waves-per-workgroup policy](gpu/pm4/dispatch.md#register-binding-and-launch). |
 | Select eligible compute resources and queue priority | [CU/WGP affinity, harvested SE/SH/XCC mapping, `COMPUTE_STATIC_THREAD_MGMT_SE*` and native priority translation](gpu/scheduling.md). |
 | Join workgroups inside a cooperative dispatch | [Shared cooperative queues, `ALLOC_QUEUE_GWS`, occupancy and grid barrier memory scopes](gpu/cooperative.md). |
 | Share input traffic across a workgroup cluster | [CDNA5 cluster geometry, `CLUSTER_LOAD`, multicast masks, completion and LDS reuse](gpu/clusters.md). |

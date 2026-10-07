@@ -121,10 +121,20 @@ preemption choices belong to the native launch policy; neither is derived from
 workgroup dimensions. This table describes the cited ordinary path, not every
 ordered-append or alternate-engine dispatch mode.
 
-PAL derives SIMD_DEST_CNTL from whether the rounded waves per workgroup are a
-multiple of four, with settings that can override the choice. This scheduling
-policy is separate from LDS allocation and does not make dispatch packets
-synchronous. [Resource-limit derivation][pal-limits]
+The bound program's wave size must be legal for its
+[target family](../architectures.md#wavefront-modes). For example, GFX11 supports
+wave32 and wave64; GFX12.5 supports only wave32. The GFX10/GFX11 initiator table
+above does not extend either mode availability or packet layout to another
+target.
+
+PAL derives SIMD_DEST_CNTL from whether
+`ceil(workgroup_x * workgroup_y * workgroup_z / wavefront_size)` is a multiple
+of four, with settings that can override the choice. Thus a 128-workitem group
+contains four wave32 waves or two wave64 waves; changing programs can change
+this policy even when the workgroup dimensions stay the same. The wave size
+used here and in the dispatch initiator belongs to the newly bound program.
+This scheduling policy is separate from LDS allocation and does not make
+dispatch packets synchronous. [Resource-limit derivation][pal-limits]
 
 ## Shader wait-counter mode: MEM_ORDERED
 

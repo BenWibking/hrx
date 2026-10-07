@@ -36,11 +36,42 @@ device, and Linux's physical GC12.1.0 remains a separate identifier.
 [Product mapping][cdna5-target] [Build target][cdna5-build-target]
 [LLVM target table][llvm-gfx1250]
 
-The [CDNA5 ISA guide][cdna5-isa] describes wave32 WGP execution, named and
-cluster barriers, and separate asynchronous-memory and tensor-transfer waits.
+The [CDNA5 ISA guide][cdna5-isa] describes WGP execution, named and cluster
+barriers, and separate asynchronous-memory and tensor-transfer waits. Its
+Chapter 1 explicitly limits execution to wave32 despite references to wave64
+elsewhere in the manual. Those references do not establish another supported
+mode. [Wave-mode restriction, 27 July 2026][cdna5-wave-mode]
 The [shader-memory chapter](shader-memory.md) retains LLVM's GFX125x predicates
 for compiler sequences. Native queue admission and PM4/SDMA layouts still come
 from their engine and transport sources.
+
+### Wavefront modes
+
+A compiled program selects a wavefront width supported by its target. The
+workgroup dimensions describe how many workitems execute that program; they
+do not select its wave size. LLVM's target features distinguish fixed-width
+families from families that support both widths:
+
+| Compiler target family | Supported wavefront widths |
+| --- | --- |
+| GFX6–GFX9, including CDNA1–4 `gfx908`, `gfx90a`, `gfx942` and `gfx950` | 64 only. [Generation features][llvm-gcn-waves] |
+| GFX10.1 / GFX10.3 | 32 and 64. [Target table][llvm-gfx10-waves] |
+| GFX11.0 / GFX11.5 / GFX11.7 | 32 and 64. [Target table][llvm-gfx11-waves] |
+| GFX12.0 `gfx1200` / `gfx1201` | 32 and 64. [Target table][llvm-gfx12-waves] |
+| GFX12.5 `gfx1250` / `gfx1251` | 32 only. [Shared feature set][llvm-gfx125-waves] [gfx1251 inheritance][llvm-gfx1251-waves] |
+
+LLVM's AMDGCN feature parser defaults a target supporting both modes to wave32
+when neither mode is explicitly selected. For a fixed-width target, it rejects
+enabling the other width or disabling the native width. A compiler default
+and the set of supported modes are therefore separate facts.
+[Feature selection and validation][llvm-wave-selection]
+
+The compiled wave size travels with the executable's resource requirements.
+A [raw PM4 launch](pm4/dispatch.md#register-binding-and-launch) realizes that
+mode along with the program binding and workgroup geometry. Changing only a
+dispatch bit does not adapt the executable to another wave size. The mode
+table also supplies no native queue-admission or packet-layout rule; those
+remain properties of the engine and transport.
 
 ### Discovering the native SDMA IP
 
@@ -173,6 +204,14 @@ describe the corresponding command and completion owners.
 [cdna5-build-target]: https://github.com/ROCm/TheRock/blob/1cc8ec570e9f5c720de9ce52dc485228c2df0274/cmake/therock_amdgpu_targets.cmake#L245-L246
 [llvm-gfx1250]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L653-L694
 [cdna5-isa]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf
+[cdna5-wave-mode]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf#page=12
+[llvm-gcn-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L1656-L1731
+[llvm-gfx10-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L501-L562
+[llvm-gfx11-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L564-L652
+[llvm-gfx12-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst#L654-L668
+[llvm-gfx125-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L2428-L2444
+[llvm-gfx1251-waves]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L2586-L2588
+[llvm-wave-selection]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/TargetParser/AMDGPUTargetParser.cpp#L647-L703
 [isa]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/isa.cpp
 [llvm]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/docs/AMDGPUUsage.rst
 [sdma]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.c#L2785-L2836
