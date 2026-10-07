@@ -137,7 +137,9 @@ iree_status_t loom_x86_hal_library_build(
   loom_x86_hal_library_pointer(out_data, section_index,
                                header_offset + LOOM_X86_HAL_HEADER_NAME,
                                library_symbol_index, strings_offset);
-  memcpy(contents + strings_offset, name.data, name.size);
+  if (!iree_string_view_is_empty(name)) {
+    memcpy(contents + strings_offset, name.data, name.size);
+  }
   iree_unaligned_store_le_u32(contents + LOOM_X86_HAL_LIBRARY_EXPORTS,
                               (uint32_t)entry_count);
   const iree_host_size_t table_fields[] = {
