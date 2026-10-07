@@ -1405,7 +1405,8 @@ def test_pure_integer_valu_results_are_rematerializable() -> None:
         "amdgpu.v_sub_co_ci_u32",
         "amdgpu.v_lshlrev_b32.src0_16_low16",
         "amdgpu.v_lshlrev_b64",
-        "amdgpu.v_bfe_u32.offset_0_width_16_low16",
+        "amdgpu.v_bfe_i32.offset_0_width_inline_low16",
+        "amdgpu.v_bfe_u32.offset_0_width_inline_low16",
         "amdgpu.v_permlanex16_b32.src12_inline",
     )
     rematerializable_result = Constraint(
