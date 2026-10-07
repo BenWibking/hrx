@@ -817,38 +817,20 @@ static iree_status_t loom_run_hal_testbench_invocation_options_push_constant(
   }
   const loom_scalar_type_t source_scalar_type =
       loom_type_element_type(source_type);
-  iree_host_size_t abi_word_count = 0;
-  if (parameter != NULL) {
-    if (parameter->type !=
-        IREE_HAL_EXECUTABLE_FUNCTION_PARAMETER_TYPE_CONSTANT) {
-      return iree_make_status(
-          IREE_STATUS_FAILED_PRECONDITION,
-          "HAL executable parameter for scalar input is not a constant");
-    }
-    if (parameter->size == 0 ||
-        (parameter->size % sizeof(options->constants[0])) != 0) {
-      return iree_make_status(
-          IREE_STATUS_FAILED_PRECONDITION,
-          "HAL executable constant parameter has invalid byte length %u",
-          (unsigned)parameter->size);
-    }
-    const iree_host_size_t expected_offset =
-        options->constant_count * sizeof(options->constants[0]);
-    if (parameter->offset != expected_offset) {
-      return iree_make_status(
-          IREE_STATUS_FAILED_PRECONDITION,
-          "HAL executable constant parameter offset %u does not match next "
-          "packed offset %" PRIhsz,
-          (unsigned)parameter->offset, expected_offset);
-    }
-    abi_word_count = parameter->size / sizeof(options->constants[0]);
+  if (parameter &&
+      parameter->type != IREE_HAL_EXECUTABLE_FUNCTION_PARAMETER_TYPE_CONSTANT) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "HAL executable parameter for scalar input is not a constant");
   }
+  iree_host_size_t byte_length = parameter ? parameter->size : 0;
+  uint64_t raw_value = 0;
   if (source_scalar_type == LOOM_SCALAR_TYPE_INDEX ||
       source_scalar_type == LOOM_SCALAR_TYPE_OFFSET) {
     int64_t integer_value = 0;
     IREE_RETURN_IF_ERROR(loom_testbench_value_as_i64(value, &integer_value));
-    if (abi_word_count == 0) {
-      if (target_snapshot == NULL) {
+    if (!parameter) {
+      if (!target_snapshot) {
         return iree_make_status(
             IREE_STATUS_FAILED_PRECONDITION,
             "HAL dispatch %s constant requires a selected target carrier",
@@ -858,20 +840,13 @@ static iree_status_t loom_run_hal_testbench_invocation_options_push_constant(
           source_scalar_type == LOOM_SCALAR_TYPE_INDEX
               ? target_snapshot->index_bitwidth
               : target_snapshot->offset_bitwidth;
-      if (target_bitwidth != 32 && target_bitwidth != 64) {
-        return iree_make_status(
-            IREE_STATUS_FAILED_PRECONDITION,
-            "HAL dispatch %s constant has unsupported target carrier width %u",
-            loom_scalar_type_name(source_scalar_type),
-            (unsigned)target_bitwidth);
-      }
-      abi_word_count = target_bitwidth / 32;
+      byte_length = target_bitwidth / 8;
     }
-    if (abi_word_count != 1 && abi_word_count != 2) {
+    if (byte_length != 4 && byte_length != 8) {
       return iree_make_status(
           IREE_STATUS_FAILED_PRECONDITION,
-          "HAL dispatch %s constant has unsupported ABI word count %" PRIhsz,
-          loom_scalar_type_name(source_scalar_type), abi_word_count);
+          "HAL dispatch %s constant has unsupported ABI byte length %" PRIhsz,
+          loom_scalar_type_name(source_scalar_type), byte_length);
     }
     if (source_scalar_type == LOOM_SCALAR_TYPE_OFFSET && integer_value < 0) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
@@ -883,50 +858,61 @@ static iree_status_t loom_run_hal_testbench_invocation_options_push_constant(
         source_scalar_type == LOOM_SCALAR_TYPE_INDEX
             ? integer_value >= INT32_MIN && integer_value <= INT32_MAX
             : (uint64_t)integer_value <= UINT32_MAX;
-    if (abi_word_count == 1 && !fits_32_bit_carrier) {
+    if (byte_length == 4 && !fits_32_bit_carrier) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                               "HAL dispatch %s constant value %" PRId64
                               " does not fit its 32-bit target carrier",
                               loom_scalar_type_name(source_scalar_type),
                               integer_value);
     }
-    if (options->constant_count + abi_word_count >
-        LOOM_RUN_HAL_MAX_CONSTANT_COUNT) {
+    raw_value = (uint64_t)integer_value;
+  } else {
+    uint32_t words[2] = {0};
+    iree_host_size_t word_count = 0;
+    IREE_RETURN_IF_ERROR(iree_tooling_value_write_abi_words(
+        &value->scalar, IREE_ARRAYSIZE(words), words, &word_count));
+    const iree_host_size_t materialized_byte_length =
+        word_count * sizeof(words[0]);
+    if (!parameter) {
+      byte_length = materialized_byte_length;
+    }
+    const iree_host_size_t source_byte_length =
+        iree_max(1, loom_scalar_type_bitwidth(source_scalar_type) / 8);
+    if ((byte_length != 1 && byte_length != 2 && byte_length != 4 &&
+         byte_length != 8) ||
+        byte_length < source_byte_length ||
+        byte_length > materialized_byte_length) {
       return iree_make_status(
-          IREE_STATUS_OUT_OF_RANGE,
-          "HAL dispatch constant count exceeds capacity "
-          "%" PRIhsz,
-          (iree_host_size_t)LOOM_RUN_HAL_MAX_CONSTANT_COUNT);
+          IREE_STATUS_FAILED_PRECONDITION,
+          "HAL dispatch %s constant cannot use reflected byte length %" PRIhsz,
+          loom_scalar_type_name(source_scalar_type), byte_length);
     }
-    const uint64_t raw_value = (uint64_t)integer_value;
-    options->constants[options->constant_count++] = (uint32_t)raw_value;
-    if (abi_word_count == 2) {
-      options->constants[options->constant_count++] =
-          (uint32_t)(raw_value >> 32);
+    if (word_count == 1) {
+      raw_value = words[0];
+    } else {
+      memcpy(&raw_value, words, sizeof(raw_value));
     }
-    return iree_ok_status();
   }
 
-  uint32_t words[2] = {0};
-  iree_host_size_t word_count = 0;
-  IREE_RETURN_IF_ERROR(iree_tooling_value_write_abi_words(
-      &value->scalar, IREE_ARRAYSIZE(words), words, &word_count));
-  if (abi_word_count != 0 && word_count != abi_word_count) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "HAL dispatch %s constant requires %" PRIhsz
-                            " reflected ABI words but materializes %" PRIhsz,
-                            loom_scalar_type_name(source_scalar_type),
-                            abi_word_count, word_count);
-  }
-  if (options->constant_count + word_count > LOOM_RUN_HAL_MAX_CONSTANT_COUNT) {
+  // Reflection owns the byte layout: adjacent source arguments may have ABI
+  // padding, and narrow scalars need not consume an entire 32-bit word.
+  const iree_host_size_t byte_offset =
+      parameter ? parameter->offset : options->constant_byte_length;
+  if (byte_offset > sizeof(options->constants) ||
+      byte_length > sizeof(options->constants) - byte_offset) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "HAL dispatch constant count exceeds capacity "
-                            "%" PRIhsz,
-                            (iree_host_size_t)LOOM_RUN_HAL_MAX_CONSTANT_COUNT);
+                            "HAL dispatch constants exceed capacity %" PRIhsz,
+                            sizeof(options->constants));
   }
-  for (iree_host_size_t i = 0; i < word_count; ++i) {
-    options->constants[options->constant_count++] = words[i];
+  if (byte_offset > options->constant_byte_length) {
+    memset(options->constants + options->constant_byte_length, 0,
+           byte_offset - options->constant_byte_length);
   }
+  uint8_t bytes[sizeof(raw_value)];
+  iree_unaligned_store_le_u64(bytes, raw_value);
+  memcpy(options->constants + byte_offset, bytes, byte_length);
+  options->constant_byte_length =
+      iree_max(options->constant_byte_length, byte_offset + byte_length);
   return iree_ok_status();
 }
 
