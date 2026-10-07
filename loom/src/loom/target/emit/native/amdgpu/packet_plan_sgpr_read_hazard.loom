@@ -1,0 +1,11 @@
+amdgpu.target<gfx1200> @target {subgroup_size = 64}
+
+low.kernel.def schedule(locked) target<amdgpu.rdna4.core>(@target) abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 2, resource_count = 2, resource_offsets = [0, 8], resource_parameter_indices = [0, 1], uses_kernarg_segment_ptr = true}) export("sgpr_read_hazard") workgroup_size(64, 1, 1) workgroup_count(1, 1, 1) @sgpr_read_hazard() asm {
+  %value = live_in<amdgpu.workitem_id.x> : reg<amdgpu.vgpr>
+  %mask = resource<hal_binding> {extent = 128, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %source = resource<hal_binding> {extent = 128, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
+  %selected = v_cndmask_b32_src0_inline %value, %mask {false_value = 0}
+  %replacement = s_or_b64 %source, %source
+  %result = s_and_b64 %replacement, %source
+  return
+}

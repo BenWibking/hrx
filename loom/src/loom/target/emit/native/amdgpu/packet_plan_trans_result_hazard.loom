@@ -1,0 +1,8 @@
+amdgpu.target<gfx1100> @target
+
+low.kernel.def target<amdgpu.rdna3.core>(@target) abi_layout({constant_count = 0, direct_arg_count = 0, direct_arg_names = {}, direct_arg_offsets = [], direct_arg_parameter_indices = [], direct_arg_sizes = [], parameter_count = 0, resource_count = 0, resource_offsets = [], resource_parameter_indices = [], uses_kernarg_segment_ptr = false}) export("trans_result_hazard") workgroup_size(32, 1, 1) workgroup_count(1, 1, 1) @trans_result_hazard() asm {
+  %input = live_in<amdgpu.workitem_id.x> : reg<amdgpu.vgpr>
+  %trans = v_exp_f32 %input
+  %result = v_add_f32 %trans, %input
+  return
+}

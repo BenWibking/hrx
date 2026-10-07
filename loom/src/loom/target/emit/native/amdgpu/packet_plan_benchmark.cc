@@ -42,6 +42,8 @@
 #include "loom/target/arch/amdgpu/planning/vopd_plan.h"
 #include "loom/target/arch/amdgpu/provider.h"
 #include "loom/target/emit/native/amdgpu/packet_plan_attention_bf16.h"
+#include "loom/target/emit/native/amdgpu/packet_plan_sgpr_read_hazard.h"
+#include "loom/target/emit/native/amdgpu/packet_plan_trans_result_hazard.h"
 #include "loom/target/low_descriptor_registry.h"
 #include "loom/target/provider.h"
 #include "loom/tooling/compile/pipeline.h"
@@ -58,9 +60,12 @@ enum class PlanComponent {
   kComplete,
 };
 
-enum class FixtureInputStage {
-  kGeneratedLow,
-  kAuthoredSource,
+enum class FixtureKind {
+  kMemoryControl,
+  kMatrix,
+  kTransResultHazard,
+  kSgprReadHazard,
+  kAttentionBf16,
 };
 
 struct GeneratedMatrixShape {
@@ -92,15 +97,15 @@ struct FrameShape {
 struct FixtureSpec {
   // Stable benchmark row name.
   const char* name;
-  // Compilation stage represented by the fixture input.
-  FixtureInputStage input_stage;
-  // Generated target-low topology; empty for authored source fixtures.
+  // Workload and target mechanism represented by the fixture.
+  FixtureKind kind;
+  // Generated matrix topology; empty for non-matrix fixtures.
   GeneratedMatrixShape generated_matrix;
 };
 
 constexpr FixtureSpec kMemoryControl = {
     /*.name=*/"memory_control",
-    /*.input_stage=*/FixtureInputStage::kGeneratedLow,
+    /*.kind=*/FixtureKind::kMemoryControl,
     /*.generated_matrix=*/{},
 };
 
@@ -108,7 +113,7 @@ constexpr FixtureSpec kMemoryControl = {
 // coexecution path without CFG frontier propagation.
 constexpr FixtureSpec kMatrixSingleBlockCanary = {
     /*.name=*/"matrix_single_block_canary",
-    /*.input_stage=*/FixtureInputStage::kGeneratedLow,
+    /*.kind=*/FixtureKind::kMatrix,
     /*.generated_matrix=*/
     {
         /*.phase_count=*/1,
@@ -119,7 +124,7 @@ constexpr FixtureSpec kMatrixSingleBlockCanary = {
 
 constexpr FixtureSpec kMatrixDependencyCanary = {
     /*.name=*/"matrix_dependency_canary",
-    /*.input_stage=*/FixtureInputStage::kGeneratedLow,
+    /*.kind=*/FixtureKind::kMatrix,
     /*.generated_matrix=*/
     {
         /*.phase_count=*/2,
@@ -136,7 +141,7 @@ constexpr FixtureSpec kMatrixDependencyCanary = {
 // performance proxy.
 constexpr FixtureSpec kMatrixLeaseOverlapStress = {
     /*.name=*/"matrix_lease_overlap_stress",
-    /*.input_stage=*/FixtureInputStage::kGeneratedLow,
+    /*.kind=*/FixtureKind::kMatrix,
     /*.generated_matrix=*/
     {
         /*.phase_count=*/17,
@@ -145,13 +150,29 @@ constexpr FixtureSpec kMatrixLeaseOverlapStress = {
     },
 };
 
+// GFX11 online-softmax-style transcendental result consumed by nearby VALU.
+// This activates the va_vdst dependency-counter path that GFX1250 disables.
+constexpr FixtureSpec kTransResultHazard = {
+    /*.name=*/"trans_result_hazard",
+    /*.kind=*/FixtureKind::kTransResultHazard,
+    /*.generated_matrix=*/{},
+};
+
+// GFX12 wave64 mask reuse after a scalar overwrite. This activates the SGPR
+// pair read/write dependency path that GFX1250 disables.
+constexpr FixtureSpec kSgprReadHazard = {
+    /*.name=*/"sgpr_read_hazard",
+    /*.kind=*/FixtureKind::kSgprReadHazard,
+    /*.generated_matrix=*/{},
+};
+
 // Fixed-shape 4096-token, 18-head, 256-wide online attention workload. The
 // authored source runs through the shared prepared-low pipeline before the
 // immutable planner frame is built, keeping the benchmark coupled to the
 // shipping compilation boundary rather than a retained low-IR snapshot.
 constexpr FixtureSpec kAttentionBf16 = {
     /*.name=*/"attention_bf16",
-    /*.input_stage=*/FixtureInputStage::kAuthoredSource,
+    /*.kind=*/FixtureKind::kAttentionBf16,
     /*.generated_matrix=*/{},
 };
 
@@ -412,12 +433,33 @@ low.kernel.def target<amdgpu.rdna4.gfx125x.core>(@target) abi_layout({constant_c
 }
 
 static std::string BuildGeneratedLowSource(const FixtureSpec& spec) {
-  return spec.generated_matrix.phase_count == 0 ? BuildMemoryControlSource()
-                                                : BuildMatrixSource(spec);
+  switch (spec.kind) {
+    case FixtureKind::kMemoryControl:
+      return BuildMemoryControlSource();
+    case FixtureKind::kMatrix:
+      return BuildMatrixSource(spec);
+    case FixtureKind::kTransResultHazard:
+    case FixtureKind::kSgprReadHazard:
+    case FixtureKind::kAttentionBf16:
+      std::abort();
+  }
+  std::abort();
 }
 
 static iree_string_view_t AttentionBf16Source() {
   const iree_file_toc_t* files = packet_plan_attention_bf16_create();
+  return iree_make_string_view(reinterpret_cast<const char*>(files[0].data),
+                               files[0].size);
+}
+
+static iree_string_view_t TransResultHazardSource() {
+  const iree_file_toc_t* files = packet_plan_trans_result_hazard_create();
+  return iree_make_string_view(reinterpret_cast<const char*>(files[0].data),
+                               files[0].size);
+}
+
+static iree_string_view_t SgprReadHazardSource() {
+  const iree_file_toc_t* files = packet_plan_sgpr_read_hazard_create();
   return iree_make_string_view(reinterpret_cast<const char*>(files[0].data),
                                files[0].size);
 }
@@ -429,6 +471,10 @@ struct PlanMetrics {
   iree_host_size_t plan_owned_bytes = 0;
   // Wait actions produced by the selected plan component.
   iree_host_size_t wait_action_count = 0;
+  // GFX11 TRANS-result dependency waits.
+  iree_host_size_t trans_result_action_count = 0;
+  // GFX12 SGPR-read dependency waits.
+  iree_host_size_t sgpr_read_action_count = 0;
   // Hazard records retained across all selected plan components.
   iree_host_size_t hazard_record_count = 0;
   // Progress records retained across all selected plan components.
@@ -440,6 +486,23 @@ struct PlanMetrics {
   // VOPD pairs selected in a complete packet plan.
   iree_host_size_t vopd_pair_count = 0;
 };
+
+static void RecordWaitActionMetrics(const loom_amdgpu_wait_plan_t& plan,
+                                    PlanMetrics& metrics) {
+  metrics.wait_action_count = plan.action_count;
+  for (iree_host_size_t i = 0; i < plan.action_count; ++i) {
+    switch (plan.actions[i].reason) {
+      case LOOM_AMDGPU_WAIT_PLAN_REASON_TRANS_RESULT_USE:
+        ++metrics.trans_result_action_count;
+        break;
+      case LOOM_AMDGPU_WAIT_PLAN_REASON_VALU_SGPR_READ:
+        ++metrics.sgpr_read_action_count;
+        break;
+      default:
+        break;
+    }
+  }
+}
 
 class PacketPlanFixture {
  public:
@@ -466,12 +529,22 @@ class PacketPlanFixture {
 
     std::string generated_source;
     iree_string_view_t source = iree_string_view_empty();
-    if (spec.input_stage == FixtureInputStage::kAuthoredSource) {
-      source = AttentionBf16Source();
-    } else {
-      generated_source = BuildGeneratedLowSource(spec);
-      source = iree_make_string_view(generated_source.data(),
-                                     generated_source.size());
+    switch (spec.kind) {
+      case FixtureKind::kAttentionBf16:
+        source = AttentionBf16Source();
+        break;
+      case FixtureKind::kTransResultHazard:
+        source = TransResultHazardSource();
+        break;
+      case FixtureKind::kSgprReadHazard:
+        source = SgprReadHazardSource();
+        break;
+      case FixtureKind::kMemoryControl:
+      case FixtureKind::kMatrix:
+        generated_source = BuildGeneratedLowSource(spec);
+        source = iree_make_string_view(generated_source.data(),
+                                       generated_source.size());
+        break;
     }
     loom_text_parse_options_t parse_options = {
         /*.diagnostic_sink=*/{loom_diagnostic_stderr_sink, nullptr},
@@ -486,7 +559,7 @@ class PacketPlanFixture {
       std::abort();
     }
 
-    if (spec.input_stage == FixtureInputStage::kAuthoredSource) {
+    if (spec.kind == FixtureKind::kAttentionBf16) {
       loom_compile_pipeline_options_t pipeline_options = {};
       loom_compile_pipeline_options_initialize(&pipeline_options);
       pipeline_options.target_environment = &target_environment_;
@@ -637,7 +710,7 @@ static PlanMetrics BuildReferencePlan(PacketPlanFixture& fixture,
         &fixture.frame().schedule, &fixture.frame().allocation,
         &fixture.address_state(), fixture.plan_arena(),
         fixture.transient_arena(), &plan));
-    metrics.wait_action_count = plan.action_count;
+    RecordWaitActionMetrics(plan, metrics);
     metrics.hazard_record_count = plan.hazard_plan.record_count;
     metrics.progress_record_count = plan.progress.record_count;
   } else {
@@ -645,7 +718,7 @@ static PlanMetrics BuildReferencePlan(PacketPlanFixture& fixture,
     AbortOnError(loom_amdgpu_packet_plan_build(&fixture.frame().schedule,
                                                &fixture.frame().allocation,
                                                fixture.plan_arena(), &plan));
-    metrics.wait_action_count = plan.wait_plan.action_count;
+    RecordWaitActionMetrics(plan.wait_plan, metrics);
     metrics.hazard_record_count = plan.wait_plan.hazard_plan.record_count +
                                   plan.wait_states.hazard_plan.record_count;
     metrics.progress_record_count = plan.wait_plan.progress.record_count +
@@ -685,6 +758,10 @@ static void RecordMetrics(benchmark::State& state,
       static_cast<double>(analysis.shape.storage_lease_unit_count);
   state.counters["storage_releases"] =
       static_cast<double>(analysis.shape.storage_release_count);
+  state.counters["sgpr_read_actions"] =
+      static_cast<double>(metrics.sgpr_read_action_count);
+  state.counters["trans_result_actions"] =
+      static_cast<double>(metrics.trans_result_action_count);
   state.counters["vopd_pairs"] = static_cast<double>(metrics.vopd_pair_count);
   state.counters["wait_actions"] =
       static_cast<double>(metrics.wait_action_count);
@@ -782,6 +859,34 @@ static void BM_PacketPlan_MatrixLeaseOverlapStress(benchmark::State& state) {
 }
 BENCHMARK(BM_PacketPlan_MatrixLeaseOverlapStress)
     ->Iterations(10)
+    ->Unit(benchmark::kNanosecond);
+
+static void BM_WaitPlan_TransResultHazard(benchmark::State& state) {
+  BenchmarkPlan(state, kTransResultHazard, PlanComponent::kWait);
+}
+BENCHMARK(BM_WaitPlan_TransResultHazard)
+    ->Iterations(2000)
+    ->Unit(benchmark::kNanosecond);
+
+static void BM_PacketPlan_TransResultHazard(benchmark::State& state) {
+  BenchmarkPlan(state, kTransResultHazard, PlanComponent::kComplete);
+}
+BENCHMARK(BM_PacketPlan_TransResultHazard)
+    ->Iterations(2000)
+    ->Unit(benchmark::kNanosecond);
+
+static void BM_WaitPlan_SgprReadHazard(benchmark::State& state) {
+  BenchmarkPlan(state, kSgprReadHazard, PlanComponent::kWait);
+}
+BENCHMARK(BM_WaitPlan_SgprReadHazard)
+    ->Iterations(2000)
+    ->Unit(benchmark::kNanosecond);
+
+static void BM_PacketPlan_SgprReadHazard(benchmark::State& state) {
+  BenchmarkPlan(state, kSgprReadHazard, PlanComponent::kComplete);
+}
+BENCHMARK(BM_PacketPlan_SgprReadHazard)
+    ->Iterations(2000)
     ->Unit(benchmark::kNanosecond);
 
 static void BM_WaitPlan_AttentionBf16(benchmark::State& state) {
