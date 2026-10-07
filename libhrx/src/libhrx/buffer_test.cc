@@ -128,6 +128,74 @@ TEST_F(CpuBufferTest,
   hrx_buffer_release(buffer);
 }
 
+TEST_F(CpuBufferTest, PublicConstructionPreservesNativePointerAccess) {
+  const hrx_buffer_usage_t usages[] = {
+      0, HRX_BUFFER_USAGE_DEFAULT,
+      HRX_BUFFER_USAGE_DEFAULT | HRX_BUFFER_USAGE_MAPPING_SCOPED};
+  for (hrx_buffer_usage_t usage : usages) {
+    for (int construction = 0; construction < 3; ++construction) {
+      SCOPED_TRACE(usage);
+      SCOPED_TRACE(construction);
+      alignas(64) uint8_t storage[64];
+      memset(storage, 0x5A, sizeof(storage));
+      hrx_buffer_t buffer = nullptr;
+      const hrx_buffer_params_t params = {
+          /*.type=*/HRX_MEMORY_TYPE_HOST_LOCAL | HRX_MEMORY_TYPE_DEVICE_VISIBLE,
+          /*.access=*/HRX_MEMORY_ACCESS_ALL,
+          /*.usage=*/usage,
+      };
+      if (construction == 0) {
+        IREE_ASSERT_OK(hrx_status_to_iree(hrx_buffer_allocate(
+            stream_, sizeof(storage), params.type, usage, &buffer)));
+      } else if (construction == 1) {
+        IREE_ASSERT_OK(hrx_status_to_iree(hrx_allocator_allocate_buffer(
+            hrx_device_allocator(device_), params, sizeof(storage), &buffer)));
+      } else {
+        IREE_ASSERT_OK(hrx_status_to_iree(
+            hrx_allocator_import_buffer(hrx_device_allocator(device_), params,
+                                        storage, sizeof(storage), &buffer)));
+      }
+      if (construction != 2) {
+        IREE_ASSERT_OK(hrx_status_to_iree(
+            hrx_synchronous_h2d(device_, storage, buffer, 0, sizeof(storage))));
+      }
+      void* pointer = nullptr;
+      IREE_ASSERT_OK(
+          hrx_status_to_iree(hrx_buffer_get_device_ptr(buffer, &pointer)));
+      ASSERT_NE(pointer, nullptr);
+      EXPECT_FALSE(buffer->is_mapped);
+      EXPECT_EQ(0, memcmp(pointer, storage, sizeof(storage)));
+      if (construction == 2) {
+        EXPECT_EQ(pointer, storage);
+      }
+
+      void* mapped_pointer = nullptr;
+      if (usage & HRX_BUFFER_USAGE_MAPPING_SCOPED) {
+        IREE_ASSERT_OK(hrx_status_to_iree(
+            hrx_buffer_map(buffer, HRX_MAP_READ | HRX_MAP_MAY_ALIAS, 13, 23,
+                           &mapped_pointer)));
+        EXPECT_EQ(static_cast<uint8_t*>(pointer) + 13, mapped_pointer);
+      }
+      const iree_hal_buffer_mapping_t mapping = buffer->mapping;
+      void* repeated_pointer = nullptr;
+      IREE_ASSERT_OK(hrx_status_to_iree(
+          hrx_buffer_get_device_ptr(buffer, &repeated_pointer)));
+      EXPECT_EQ(pointer, repeated_pointer);
+      EXPECT_EQ(0, memcmp(&mapping, &buffer->mapping, sizeof(mapping)));
+      IREE_ASSERT_OK(hrx_status_to_iree(hrx_buffer_unmap(buffer)));
+
+      uint8_t result[64] = {};
+      IREE_ASSERT_OK(hrx_status_to_iree(
+          hrx_synchronous_d2h(device_, buffer, 0, result, sizeof(result))));
+      EXPECT_EQ(0, memcmp(result, storage, sizeof(storage)));
+      hrx_buffer_release(buffer);
+      for (uint8_t value : storage) {
+        EXPECT_EQ(0x5A, value);
+      }
+    }
+  }
+}
+
 TEST_F(CpuBufferTest, HostRegistrationAddressOutlivesRegistryEntry) {
   uint8_t storage[64] = {};
   IREE_ASSERT_OK(hrx_status_to_iree(

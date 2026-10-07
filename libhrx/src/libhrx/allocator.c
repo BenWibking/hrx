@@ -43,7 +43,7 @@ hrx_status_t hrx_allocator_allocate_buffer(hrx_allocator_t allocator,
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
   }
   iree_hal_buffer_params_t hal_params = {
-      .usage = (iree_hal_buffer_usage_t)params.usage,
+      .usage = hrx_buffer_usage_for_device(allocator->device, params.usage),
       .access = (iree_hal_memory_access_t)params.access,
       .type = (iree_hal_memory_type_t)params.type,
       .queue_family_affinity = queue_family_affinity,
@@ -96,7 +96,7 @@ hrx_status_t hrx_allocator_import_buffer(hrx_allocator_t allocator,
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(status));
   }
   iree_hal_buffer_params_t hal_params = {
-      .usage = (iree_hal_buffer_usage_t)params.usage,
+      .usage = hrx_buffer_usage_for_device(allocator->device, params.usage),
       .access = (iree_hal_memory_access_t)params.access,
       .type = (iree_hal_memory_type_t)params.type,
       .queue_family_affinity = queue_family_affinity,

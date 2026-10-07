@@ -625,8 +625,9 @@ HRX_API hrx_status_t hrx_buffer_map(hrx_buffer_t buffer, hrx_map_flags_t flags,
 HRX_API hrx_status_t hrx_buffer_unmap(hrx_buffer_t buffer);
 
 // Returns the whole-buffer native device address. This does not map the buffer
-// or alter an active scoped mapping. CPU buffers must permit persistent mapping
-// to expose their address; scoped mapping permission alone is insufficient.
+// or alter an active scoped mapping. HRX allocates and imports CPU storage with
+// persistent mapping permission to expose its address. A buffer wrapped from an
+// external HAL caller must already permit persistent mapping on CPU storage.
 // The caller retains the buffer while using the address. On failure the output
 // is NULL and the native export error is returned.
 HRX_API hrx_status_t hrx_buffer_get_device_ptr(hrx_buffer_t buffer,

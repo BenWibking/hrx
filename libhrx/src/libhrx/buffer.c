@@ -12,6 +12,16 @@
 #include "hrx_internal.h"
 #include "mem_pool.h"
 
+iree_hal_buffer_usage_t hrx_buffer_usage_for_device(hrx_device_t device,
+                                                    hrx_buffer_usage_t usage) {
+  iree_hal_buffer_usage_t hal_usage =
+      usage ? (iree_hal_buffer_usage_t)usage : IREE_HAL_BUFFER_USAGE_DEFAULT;
+  if (device->type == HRX_ACCELERATOR_CPU) {
+    hal_usage |= IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT;
+  }
+  return hal_usage;
+}
+
 iree_status_t hrx_buffer_create_from_hal(iree_hal_buffer_t* hal_buffer,
                                          hrx_device_t device,
                                          hrx_memory_type_t mem_type,
@@ -69,7 +79,7 @@ hrx_status_t hrx_buffer_allocate(hrx_stream_t stream, size_t size,
   iree_hal_buffer_params_t params = {
       .type = (iree_hal_memory_type_t)mem_type,
       .access = IREE_HAL_MEMORY_ACCESS_ALL,
-      .usage = (iree_hal_buffer_usage_t)usage,
+      .usage = hrx_buffer_usage_for_device(stream->device, usage),
   };
   const iree_hal_buffer_compatibility_t compatibility =
       iree_hal_allocator_query_buffer_compatibility(
