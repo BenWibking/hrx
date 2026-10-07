@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""AVX2 vector shuffle contract families."""
+"""x86 vector shuffle contract families."""
 
 from __future__ import annotations
 
@@ -23,13 +23,11 @@ from loom.target.contracts import (
     DescriptorRule,
     EmitDescriptorOp,
     Guard,
-    Scalar,
     TypePattern,
     ValueRef,
     Vector,
 )
-
-_I64 = Scalar("i64")
+from loom.target.low_descriptors import Descriptor
 
 
 def _immediate_shuffle_rule(
@@ -69,58 +67,51 @@ def _immediate_shuffle_rule(
     )
 
 
-def _mask_half_emits(
-    *,
-    output_byte_offset: int,
-    bytes_per_lane: int,
-    source_byte_offset: int,
-    name: str,
-    descriptor_lookup: _DescriptorLookup,
-) -> tuple[tuple[EmitDescriptorOp, ...], ValueRef]:
-    move_immediate = descriptor_lookup("x86.scalar.movimm.gpr64")
-    move = descriptor_lookup("x86.avx2.vmovq.xmm.gpr64")
-    interleave = descriptor_lookup("x86.avx2.vpunpcklqdq.xmm")
-    emits: list[EmitDescriptorOp] = []
-    qwords: list[ValueRef] = []
-    for chunk_ordinal in range(2):
-        chunk_name = f"{name}_qword{chunk_ordinal}"
-        bits = ValueRef.temporary(f"{chunk_name}_bits")
-        value = ValueRef.temporary(chunk_name)
-        emits.extend(
-            (
-                EmitDescriptorOp(
-                    descriptor=move_immediate,
-                    results={"dst": bits},
-                    result_types={"dst": _I64},
-                    immediates={
-                        "imm64": AttrProject.i64_array_shuffle_mask_chunk(
-                            "source_lanes",
-                            output_byte_offset=(output_byte_offset + chunk_ordinal * 8),
-                            bytes_per_lane=bytes_per_lane,
-                            source_byte_offset=source_byte_offset,
-                        )
-                    },
-                    form=DescriptorEmitForm.CONST,
-                ),
-                _op_emit(
-                    descriptor=move,
-                    operands={"input": bits},
-                    results={"dst": value},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-            )
-        )
-        qwords.append(value)
-    mask = ValueRef.temporary(name)
-    emits.append(
-        _op_emit(
-            descriptor=interleave,
-            operands={"lhs": qwords[0], "rhs": qwords[1]},
-            results={"dst": mask},
-            result_types={"dst": DescriptorResultType()},
-        )
+def _control_load(
+    descriptor: Descriptor,
+    result: ValueRef,
+    projection: AttrProject,
+) -> EmitDescriptorOp:
+    return EmitDescriptorOp(
+        descriptor=descriptor,
+        results={"dst": result},
+        result_types={"dst": DescriptorResultType()},
+        immediates={"data": projection},
+        form=DescriptorEmitForm.OP,
     )
-    return tuple(emits), mask
+
+
+def _read_only_shuffle_rule(
+    *,
+    type_pattern: TypePattern,
+    lane_count: int,
+    load: Descriptor,
+    shuffle: Descriptor,
+    projection: AttrProject,
+    shuffle_operands: dict[str, ValueRef],
+    priority: int = 1,
+) -> DescriptorRule:
+    control = ValueRef.temporary("control")
+    return DescriptorRule(
+        source_op=vector.vector_shuffle,
+        descriptor=shuffle,
+        guards=(
+            Guard.value_type("source", type_pattern),
+            Guard.value_type("result", type_pattern),
+            Guard.i64_array_count("source_lanes", lane_count),
+            Guard.i64_array_elements_range("source_lanes", 0, lane_count - 1),
+            Guard.descriptor_available(load),
+        ),
+        emit=(
+            _control_load(load, control, projection),
+            _op_emit(
+                descriptor=shuffle,
+                operands=shuffle_operands,
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+        priority=priority,
+    )
 
 
 def _xmm_byte_shuffle_rule(
@@ -130,145 +121,38 @@ def _xmm_byte_shuffle_rule(
     descriptor_lookup: _DescriptorLookup,
 ) -> DescriptorRule:
     lane_count = 16 // bytes_per_lane
-    type_pattern = Vector(element_names, lanes=lane_count)
-    shuffle = descriptor_lookup("x86.avx2.vpshufb.xmm")
-    mask_emits, mask = _mask_half_emits(
-        output_byte_offset=0,
-        bytes_per_lane=bytes_per_lane,
-        source_byte_offset=0,
-        name="mask",
-        descriptor_lookup=descriptor_lookup,
-    )
-    return DescriptorRule(
-        source_op=vector.vector_shuffle,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", type_pattern),
-            Guard.value_type("result", type_pattern),
-            Guard.i64_array_count("source_lanes", lane_count),
-            Guard.i64_array_elements_range("source_lanes", 0, lane_count - 1),
-            Guard.descriptor_available(descriptor_lookup("x86.scalar.movimm.gpr64")),
-            Guard.descriptor_available(descriptor_lookup("x86.avx2.vmovq.xmm.gpr64")),
-            Guard.descriptor_available(descriptor_lookup("x86.avx2.vpunpcklqdq.xmm")),
+    return _read_only_shuffle_rule(
+        type_pattern=Vector(element_names, lanes=lane_count),
+        lane_count=lane_count,
+        load=descriptor_lookup("x86.avx2.vmovdqu.rodata.xmm"),
+        shuffle=descriptor_lookup("x86.avx2.vpshufb.xmm"),
+        projection=AttrProject.i64_array_read_only_byte_segment(
+            "source_lanes",
+            bytes_per_lane=bytes_per_lane,
+            source_byte_offset=0,
         ),
-        emit=(
-            *mask_emits,
-            _op_emit(
-                descriptor=shuffle,
-                operands={
-                    "lhs": ValueRef.operand("source"),
-                    "rhs": mask,
-                },
-                results={"dst": ValueRef.result("result")},
-            ),
-        ),
-        priority=1,
+        shuffle_operands={
+            "lhs": ValueRef.operand("source"),
+            "rhs": ValueRef.temporary("control"),
+        },
     )
 
 
 def _ymm_dword_shuffle_rule(
     descriptor_lookup: _DescriptorLookup,
 ) -> DescriptorRule:
-    move_immediate = descriptor_lookup("x86.scalar.movimm.gpr64")
-    move = descriptor_lookup("x86.avx2.vmovq.xmm.gpr64")
-    interleave = descriptor_lookup("x86.avx2.vpunpcklqdq.xmm")
-    zero = descriptor_lookup("x86.avx2.vxorps.zero.ymm")
-    insert = descriptor_lookup("x86.avx2.vinsertf128.ymm.xmm")
-    shuffle = descriptor_lookup("x86.avx2.vpermps.ymm")
-
-    emits: list[EmitDescriptorOp] = []
-    qwords: list[ValueRef] = []
-    for chunk_ordinal in range(4):
-        bits = ValueRef.temporary(f"control_qword{chunk_ordinal}_bits")
-        value = ValueRef.temporary(f"control_qword{chunk_ordinal}")
-        emits.extend(
-            (
-                EmitDescriptorOp(
-                    descriptor=move_immediate,
-                    results={"dst": bits},
-                    result_types={"dst": _I64},
-                    immediates={
-                        "imm64": AttrProject.i64_array_pack_elements(
-                            "source_lanes",
-                            element=chunk_ordinal * 2,
-                            count=2,
-                            bit_width=32,
-                        )
-                    },
-                    form=DescriptorEmitForm.CONST,
-                ),
-                _op_emit(
-                    descriptor=move,
-                    operands={"input": bits},
-                    results={"dst": value},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-            )
-        )
-        qwords.append(value)
-
-    halves = []
-    for half_ordinal in range(2):
-        half = ValueRef.temporary(f"control_half{half_ordinal}")
-        emits.append(
-            _op_emit(
-                descriptor=interleave,
-                operands={
-                    "lhs": qwords[half_ordinal * 2],
-                    "rhs": qwords[half_ordinal * 2 + 1],
-                },
-                results={"dst": half},
-                result_types={"dst": DescriptorResultType()},
-            )
-        )
-        halves.append(half)
-
-    empty = ValueRef.temporary("empty_control")
-    with_low = ValueRef.temporary("control_with_low")
-    control = ValueRef.temporary("control")
-    emits.extend(
-        (
-            _op_emit(
-                descriptor=zero,
-                results={"dst": empty},
-                result_types={"dst": DescriptorResultType()},
-            ),
-            _op_emit(
-                descriptor=insert,
-                operands={"dest": empty, "value": halves[0]},
-                results={"dst": with_low},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"lane": 0},
-            ),
-            _op_emit(
-                descriptor=insert,
-                operands={"dest": with_low, "value": halves[1]},
-                results={"dst": control},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"lane": 1},
-            ),
-            _op_emit(
-                descriptor=shuffle,
-                operands={"control": control, "source": ValueRef.operand("source")},
-                results={"dst": ValueRef.result("result")},
-            ),
-        )
-    )
-    type_pattern = Vector(("i32", "f32"), lanes=8)
-    return DescriptorRule(
-        source_op=vector.vector_shuffle,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", type_pattern),
-            Guard.value_type("result", type_pattern),
-            Guard.i64_array_count("source_lanes", 8),
-            Guard.i64_array_elements_range("source_lanes", 0, 7),
-            *(
-                Guard.descriptor_available(descriptor)
-                for descriptor in (move_immediate, move, interleave, zero, insert)
-            ),
+    return _read_only_shuffle_rule(
+        type_pattern=Vector(("i32", "f32"), lanes=8),
+        lane_count=8,
+        load=descriptor_lookup("x86.avx2.vmovdqu.rodata.ymm"),
+        shuffle=descriptor_lookup("x86.avx2.vpermps.ymm"),
+        projection=AttrProject.i64_array_read_only_elements(
+            "source_lanes", bit_width=32
         ),
-        emit=tuple(emits),
+        shuffle_operands={
+            "control": ValueRef.temporary("control"),
+            "source": ValueRef.operand("source"),
+        },
         priority=2,
     )
 
@@ -281,79 +165,43 @@ def _ymm_byte_shuffle_rule(
 ) -> DescriptorRule:
     lane_count = 32 // bytes_per_lane
     type_pattern = Vector(element_names, lanes=lane_count)
-    duplicate_half = descriptor_lookup("x86.avx2.vpermq.ymm")
+    load = descriptor_lookup("x86.avx2.vmovdqu.rodata.ymm")
+    duplicate = descriptor_lookup("x86.avx2.vpermq.ymm")
     shuffle = descriptor_lookup("x86.avx2.vpshufb.ymm")
     combine = descriptor_lookup("x86.avx2.vpor.ymm")
-    zero = descriptor_lookup("x86.avx2.vxorps.zero.ymm")
-    insert = descriptor_lookup("x86.avx2.vinsertf128.ymm.xmm")
-    move_immediate = descriptor_lookup("x86.scalar.movimm.gpr64")
-    move = descriptor_lookup("x86.avx2.vmovq.xmm.gpr64")
-    interleave = descriptor_lookup("x86.avx2.vpunpcklqdq.xmm")
-
     emits: list[EmitDescriptorOp] = []
-    duplicated_sources = []
+    shuffled_sources: list[ValueRef] = []
     for source_half in range(2):
-        source_ref = ValueRef.temporary(f"source_half{source_half}")
-        emits.append(
-            _op_emit(
-                descriptor=duplicate_half,
-                operands={"source": ValueRef.operand("source")},
-                results={"dst": source_ref},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"control": 0x44 if source_half == 0 else 0xEE},
-            )
-        )
-        duplicated_sources.append(source_ref)
-
-    empty = ValueRef.temporary("empty")
-    emits.append(
-        _op_emit(
-            descriptor=zero,
-            results={"dst": empty},
-            result_types={"dst": DescriptorResultType()},
-        )
-    )
-    shuffled_sources = []
-    for source_half in range(2):
-        mask_halves = []
-        for output_half in range(2):
-            mask_emits, mask_half = _mask_half_emits(
-                output_byte_offset=output_half * 16,
-                bytes_per_lane=bytes_per_lane,
-                source_byte_offset=source_half * 16,
-                name=f"mask{output_half}_{source_half}",
-                descriptor_lookup=descriptor_lookup,
-            )
-            emits.extend(mask_emits)
-            mask_halves.append(mask_half)
-        with_low = ValueRef.temporary(f"mask{source_half}_with_low")
-        full_mask = ValueRef.temporary(f"mask{source_half}")
-        shuffled = ValueRef.temporary(f"shuffled{source_half}")
+        control = ValueRef.temporary(f"control{source_half}")
+        duplicated_source = ValueRef.temporary(f"source{source_half}")
+        shuffled_source = ValueRef.temporary(f"shuffled{source_half}")
         emits.extend(
             (
-                _op_emit(
-                    descriptor=insert,
-                    operands={"dest": empty, "value": mask_halves[0]},
-                    results={"dst": with_low},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"lane": 0},
+                _control_load(
+                    load,
+                    control,
+                    AttrProject.i64_array_read_only_byte_segment(
+                        "source_lanes",
+                        bytes_per_lane=bytes_per_lane,
+                        source_byte_offset=source_half * 16,
+                    ),
                 ),
                 _op_emit(
-                    descriptor=insert,
-                    operands={"dest": with_low, "value": mask_halves[1]},
-                    results={"dst": full_mask},
+                    descriptor=duplicate,
+                    operands={"source": ValueRef.operand("source")},
+                    results={"dst": duplicated_source},
                     result_types={"dst": DescriptorResultType()},
-                    immediates={"lane": 1},
+                    immediates={"control": 0x44 if source_half == 0 else 0xEE},
                 ),
                 _op_emit(
                     descriptor=shuffle,
-                    operands={"lhs": duplicated_sources[source_half], "rhs": full_mask},
-                    results={"dst": shuffled},
+                    operands={"lhs": duplicated_source, "rhs": control},
+                    results={"dst": shuffled_source},
                     result_types={"dst": DescriptorResultType()},
                 ),
             )
         )
-        shuffled_sources.append(shuffled)
+        shuffled_sources.append(shuffled_source)
     emits.append(
         _op_emit(
             descriptor=combine,
@@ -369,18 +217,7 @@ def _ymm_byte_shuffle_rule(
             Guard.value_type("result", type_pattern),
             Guard.i64_array_count("source_lanes", lane_count),
             Guard.i64_array_elements_range("source_lanes", 0, lane_count - 1),
-            *(
-                Guard.descriptor_available(descriptor)
-                for descriptor in (
-                    duplicate_half,
-                    combine,
-                    zero,
-                    insert,
-                    move_immediate,
-                    move,
-                    interleave,
-                )
-            ),
+            *(Guard.descriptor_available(row) for row in (load, duplicate, combine)),
         ),
         emit=tuple(emits),
         priority=1,
@@ -428,4 +265,163 @@ def avx2_shuffle_rules(
         ),
         _ymm_dword_shuffle_rule(descriptor_lookup),
         *byte_lane_rules,
+    )
+
+
+def _zmm_direct_shuffle_rule(
+    *,
+    element_names: tuple[str, ...],
+    element_bit_width: int,
+    mnemonic: str,
+    descriptor_lookup: _DescriptorLookup,
+) -> DescriptorRule:
+    lane_count = 512 // element_bit_width
+    return _read_only_shuffle_rule(
+        type_pattern=Vector(element_names, lanes=lane_count),
+        lane_count=lane_count,
+        load=descriptor_lookup("x86.avx512.vmovdqu64.rodata.zmm"),
+        shuffle=descriptor_lookup(f"x86.avx512.{mnemonic}.zmm"),
+        projection=AttrProject.i64_array_read_only_elements(
+            "source_lanes", bit_width=element_bit_width
+        ),
+        shuffle_operands={
+            "source": ValueRef.operand("source"),
+            "control": ValueRef.temporary("control"),
+        },
+        priority=2,
+    )
+
+
+def _zmm_byte_shuffle_rule(
+    descriptor_lookup: _DescriptorLookup,
+) -> DescriptorRule:
+    type_pattern = Vector(("i8", "f8E4M3", "f8E5M2"), lanes=64)
+    load = descriptor_lookup("x86.avx512.vmovdqu64.rodata.zmm")
+    permute = descriptor_lookup("x86.avx512.vpermw.zmm")
+    shift_right_immediate = descriptor_lookup("x86.avx512.vpsrlw.zmm")
+    shift_right_variable = descriptor_lookup("x86.avx512.vpsrlvw.zmm")
+    shift_left_immediate = descriptor_lookup("x86.avx512.vpsllw.zmm")
+    combine = descriptor_lookup("x86.avx512.vpord.zmm")
+    emits: list[EmitDescriptorOp] = []
+    shifted_bytes: list[ValueRef] = []
+    for byte_parity in range(2):
+        control = ValueRef.temporary(f"control{byte_parity}")
+        selected_words = ValueRef.temporary(f"words{byte_parity}")
+        counts = ValueRef.temporary(f"counts{byte_parity}")
+        selected_bytes = ValueRef.temporary(f"bytes{byte_parity}")
+        emits.extend(
+            (
+                _control_load(
+                    load,
+                    control,
+                    AttrProject.i64_array_read_only_byte_words(
+                        "source_lanes", byte_parity=byte_parity
+                    ),
+                ),
+                _op_emit(
+                    descriptor=permute,
+                    operands={
+                        "source": ValueRef.operand("source"),
+                        "control": control,
+                    },
+                    results={"dst": selected_words},
+                    result_types={"dst": DescriptorResultType()},
+                ),
+                _op_emit(
+                    descriptor=shift_right_immediate,
+                    operands={"source": control},
+                    results={"dst": counts},
+                    result_types={"dst": DescriptorResultType()},
+                    immediates={"shift": 5},
+                ),
+                _op_emit(
+                    descriptor=shift_right_variable,
+                    operands={"lhs": selected_words, "rhs": counts},
+                    results={"dst": selected_bytes},
+                    result_types={"dst": DescriptorResultType()},
+                ),
+            )
+        )
+        shifted_bytes.append(selected_bytes)
+
+    even_high = ValueRef.temporary("even_high")
+    even_low = ValueRef.temporary("even_low")
+    odd_high = ValueRef.temporary("odd_high")
+    emits.extend(
+        (
+            _op_emit(
+                descriptor=shift_left_immediate,
+                operands={"source": shifted_bytes[0]},
+                results={"dst": even_high},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"shift": 8},
+            ),
+            _op_emit(
+                descriptor=shift_right_immediate,
+                operands={"source": even_high},
+                results={"dst": even_low},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"shift": 8},
+            ),
+            _op_emit(
+                descriptor=shift_left_immediate,
+                operands={"source": shifted_bytes[1]},
+                results={"dst": odd_high},
+                result_types={"dst": DescriptorResultType()},
+                immediates={"shift": 8},
+            ),
+            _op_emit(
+                descriptor=combine,
+                operands={"lhs": even_low, "rhs": odd_high},
+                results={"dst": ValueRef.result("result")},
+            ),
+        )
+    )
+    return DescriptorRule(
+        source_op=vector.vector_shuffle,
+        descriptor=permute,
+        guards=(
+            Guard.value_type("source", type_pattern),
+            Guard.value_type("result", type_pattern),
+            Guard.i64_array_count("source_lanes", 64),
+            Guard.i64_array_elements_range("source_lanes", 0, 63),
+            *(
+                Guard.descriptor_available(row)
+                for row in (
+                    load,
+                    shift_right_immediate,
+                    shift_right_variable,
+                    shift_left_immediate,
+                    combine,
+                )
+            ),
+        ),
+        emit=tuple(emits),
+        priority=1,
+    )
+
+
+def avx512_shuffle_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    return (
+        _zmm_byte_shuffle_rule(descriptor_lookup),
+        _zmm_direct_shuffle_rule(
+            element_names=("i16", "f16", "bf16"),
+            element_bit_width=16,
+            mnemonic="vpermw",
+            descriptor_lookup=descriptor_lookup,
+        ),
+        _zmm_direct_shuffle_rule(
+            element_names=("i32", "f32"),
+            element_bit_width=32,
+            mnemonic="vpermd",
+            descriptor_lookup=descriptor_lookup,
+        ),
+        _zmm_direct_shuffle_rule(
+            element_names=("i64", "f64"),
+            element_bit_width=64,
+            mnemonic="vpermq",
+            descriptor_lookup=descriptor_lookup,
+        ),
     )

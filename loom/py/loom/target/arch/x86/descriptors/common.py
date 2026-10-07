@@ -342,6 +342,18 @@ _SHUFFLE_4X2_CONTROL_IMMEDIATE = Immediate(
     unsigned_max=255,
 )
 
+_READ_ONLY_DATA_IMMEDIATE = Immediate(
+    "data",
+    ImmediateKind.ORDINAL,
+    flags=(
+        ImmediateFlag.SYMBOLIC,
+        ImmediateFlag.RELATIVE,
+        ImmediateFlag.READ_ONLY_DATA,
+    ),
+    bit_width=32,
+    unsigned_max=(2**32) - 1,
+)
+
 _INSERTPS_CONTROL_IMMEDIATE = Immediate(
     "control",
     ImmediateKind.UNSIGNED,

@@ -331,5 +331,5 @@ iree_status_t loom_low_source_selection_finalize_policies(
         policy->finalize_module.fn(policy->finalize_module.user_data, module,
                                    module_state, scratch_arena));
   }
-  return iree_ok_status();
+  return loom_low_lower_module_state_finalize(module_state, module);
 }

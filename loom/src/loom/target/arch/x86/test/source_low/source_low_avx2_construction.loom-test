@@ -225,9 +225,8 @@ low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({sig
 
 // ====
 
-// Immediate shuffles cover 32/64-bit lane families directly. Byte/word
-// shuffles retain exact semantics through the shared descriptor scalarizer
-// until a register-mask strategy proves worthwhile.
+// Immediate shuffles cover 32/64-bit lane families directly. Byte and word
+// shuffles load shared controls from read-only data.
 x86.target<avx2> @target
 
 func.def target(@target) @shuffle_families(%i8x16: vector<16xi8>, %f64x4: vector<4xf64>) -> (vector<16xi8>, vector<4xf64>) {
@@ -238,21 +237,16 @@ func.def target(@target) @shuffle_families(%i8x16: vector<16xi8>, %f64x4: vector
 
 // ----
 low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({signature = (vector<16xi8>, vector<4xf64>) -> (vector<16xi8>, vector<4xf64>)}) @shuffle_families(%i8x16: reg<x86.xmm>, %f64x4: reg<x86.ymm>) -> (reg<x86.xmm>, reg<x86.ymm>) asm {
-  %10 = mov.imm64 579005069656919567
-  %11 = vmovq.xmm.gpr64 %10
-  %12 = mov.imm64 283686952306183
-  %13 = vmovq.xmm.gpr64 %12
-  %14 = vpunpcklqdq.xmm %11, %13
-  %i8 = vpshufb.xmm %i8x16, %14
+  %10 = avx2.vmovdqu.rodata.xmm @__low_rodata_81a9947f
+  %i8 = vpshufb.xmm %i8x16, %10
   %f64 = vpermq.ymm %f64x4, 99
   return %i8, %f64
 }
 
 // ====
 
-// Byte-mask construction is shared across the byte and word payload families.
-// YMM masks select from both 128-bit source halves, while dword shuffles use
-// the direct variable-permute form.
+// YMM byte masks select from both 128-bit source halves, while dword shuffles
+// use the direct variable-permute form.
 x86.target<avx2> @target
 
 func.def target(@target) @shuffle_wide_families(%i16x8: vector<8xi16>, %bf16x16: vector<16xbf16>, %f32x8: vector<8xf32>) -> (vector<8xi16>, vector<16xbf16>, vector<8xf32>) {
@@ -264,54 +258,16 @@ func.def target(@target) @shuffle_wide_families(%i16x8: vector<8xi16>, %bf16x16:
 
 // ----
 low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({signature = (vector<8xi16>, vector<16xbf16>, vector<8xf32>) -> (vector<8xi16>, vector<16xbf16>, vector<8xf32>)}) @shuffle_wide_families(%i16x8: reg<x86.xmm>, %bf16x16: reg<x86.ymm>, %f32x8: reg<x86.ymm>) -> (reg<x86.xmm>, reg<x86.ymm>, reg<x86.ymm>) asm {
-  %15 = mov.imm64 650782283951509262
-  %16 = vmovq.xmm.gpr64 %15
-  %17 = mov.imm64 72060901246895878
-  %18 = vmovq.xmm.gpr64 %17
-  %19 = vpunpcklqdq.xmm %16, %18
-  %i16 = vpshufb.xmm %i16x8, %19
-  %21 = vpermq.ymm %bf16x16, 68
-  %22 = vpermq.ymm %bf16x16, 238
-  %23 = vxorps.zero.ymm
-  %24 = mov.imm64 216877019328184448
-  %25 = vmovq.xmm.gpr64 %24
-  %26 = mov.imm64 506233295454109824
-  %27 = vmovq.xmm.gpr64 %26
-  %28 = vpunpcklqdq.xmm %25, %27
-  %29 = mov.imm64 795589571580035200
-  %30 = vmovq.xmm.gpr64 %29
-  %31 = mov.imm64 1084945847705960576
-  %32 = vmovq.xmm.gpr64 %31
-  %33 = vpunpcklqdq.xmm %30, %32
-  %34 = vinsertf128.ymm.xmm %23, %28, 0
-  %35 = vinsertf128.ymm.xmm %34, %33, 1
-  %36 = vpshufb.ymm %21, %35
-  %37 = mov.imm64 -9187328892489167090
-  %38 = vmovq.xmm.gpr64 %37
-  %39 = mov.imm64 -9187333307715548406
-  %40 = vmovq.xmm.gpr64 %39
-  %41 = vpunpcklqdq.xmm %38, %40
-  %42 = mov.imm64 -9187337722941929722
-  %43 = vmovq.xmm.gpr64 %42
-  %44 = mov.imm64 -9187342138168311038
-  %45 = vmovq.xmm.gpr64 %44
-  %46 = vpunpcklqdq.xmm %43, %45
-  %47 = vinsertf128.ymm.xmm %23, %41, 0
-  %48 = vinsertf128.ymm.xmm %47, %46, 1
-  %49 = vpshufb.ymm %22, %48
-  %bf16 = vpor.ymm %36, %49
-  %51 = mov.imm64 7
-  %52 = vmovq.xmm.gpr64 %51
-  %53 = mov.imm64 4294967302
-  %54 = vmovq.xmm.gpr64 %53
-  %55 = mov.imm64 8589934597
-  %56 = vmovq.xmm.gpr64 %55
-  %57 = mov.imm64 12884901892
-  %58 = vmovq.xmm.gpr64 %57
-  %59 = vpunpcklqdq.xmm %52, %54
-  %60 = vpunpcklqdq.xmm %56, %58
-  %62 = vinsertf128.ymm.xmm %23, %59, 0
-  %63 = vinsertf128.ymm.xmm %62, %60, 1
-  %f32 = vpermps.ymm %63, %f32x8
+  %15 = avx2.vmovdqu.rodata.xmm @__low_rodata_6f02e92f
+  %i16 = vpshufb.xmm %i16x8, %15
+  %17 = avx2.vmovdqu.rodata.ymm @__low_rodata_5fe74fdf
+  %18 = vpermq.ymm %bf16x16, 68
+  %19 = vpshufb.ymm %18, %17
+  %20 = avx2.vmovdqu.rodata.ymm @__low_rodata_d6020cbf
+  %21 = vpermq.ymm %bf16x16, 238
+  %22 = vpshufb.ymm %21, %20
+  %bf16 = vpor.ymm %19, %22
+  %24 = avx2.vmovdqu.rodata.ymm @__low_rodata_7cb0971f
+  %f32 = vpermps.ymm %24, %f32x8
   return %i16, %bf16, %f32
 }

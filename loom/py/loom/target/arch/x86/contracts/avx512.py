@@ -23,6 +23,7 @@ from loom.target.arch.x86.contracts.lane_movement import (
     avx512_lane_movement_rules,
 )
 from loom.target.arch.x86.contracts.memory import x86_vector_memory_rules
+from loom.target.arch.x86.contracts.shuffle import avx512_shuffle_rules
 from loom.target.arch.x86.contracts.vector_arithmetic import (
     avx512_vector_arithmetic_rules,
 )
@@ -202,6 +203,7 @@ def _cases() -> Sequence[ContractCase]:
         *avx512_predicate_rules(_descriptor),
         *avx512_vector_arithmetic_rules(_descriptor),
         *avx512_lane_movement_rules(_descriptor),
+        *avx512_shuffle_rules(_descriptor),
         *_memory_rules(),
         _reduce_f32x16_ordered_rule(),
         _reduce_f32x16_reassociated_rule(),

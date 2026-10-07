@@ -11,6 +11,8 @@
 
 #include "iree/base/api.h"
 #include "iree/base/internal/arena.h"
+#include "loom/ir/attribute.h"
+#include "loom/ir/location.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +40,19 @@ iree_status_t loom_low_lower_module_state_create(
 iree_status_t loom_low_lower_module_state_get_or_allocate(
     loom_low_lower_module_state_t* module_state, const void* key,
     iree_host_size_t data_length, void** out_data);
+
+// Interns one immutable byte payload and returns its reserved module symbol.
+// Equal contents share one symbol and retain the maximum requested alignment.
+// Definitions are materialized by loom_low_lower_module_state_finalize after
+// every source function and target policy has finished lowering.
+iree_status_t loom_low_lower_module_state_intern_read_only_data(
+    loom_low_lower_module_state_t* module_state, struct loom_module_t* module,
+    iree_const_byte_span_t contents, uint64_t minimum_alignment,
+    loom_location_id_t location, loom_symbol_ref_t* out_symbol);
+
+// Materializes every interned immutable payload as a global.rodata.def.
+iree_status_t loom_low_lower_module_state_finalize(
+    loom_low_lower_module_state_t* module_state, struct loom_module_t* module);
 
 // Allocates uninitialized pass-local module-state storage.
 iree_status_t loom_low_lower_module_state_allocate(

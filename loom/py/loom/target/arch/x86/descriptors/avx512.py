@@ -28,6 +28,8 @@ from loom.target.low_descriptors import (
     DescriptorSet,
     EnumDomain,
     EnumValue,
+    Immediate,
+    ImmediateKind,
     InstructionClass,
     IssueUse,
     LatencyKind,
@@ -46,6 +48,7 @@ from .common import (
     _ADDRESS_SCALE_ENUM,
     _DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS,
     _LANE_I32X4_IMMEDIATE,
+    _READ_ONLY_DATA_IMMEDIATE,
     _REG_K,
     _REG_XMM,
     _REG_YMM,
@@ -725,6 +728,72 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
                 semantic_tag=f"{semantic}.v512",
             )
             for _, mnemonic, semantic in AVX512_BITWISE_FAMILIES
+        ),
+        *(
+            Descriptor(
+                key=f"x86.avx512.{mnemonic}.zmm",
+                mnemonic=mnemonic,
+                semantic_tag=f"bits.shuffle.i{element_bit_width}x{lane_count}",
+                operands=(
+                    _zmm_result(),
+                    _zmm_operand("source"),
+                    _zmm_operand("control"),
+                ),
+                asm_forms=_asm(
+                    mnemonic=f"avx512.{mnemonic}.zmm",
+                    results=("dst",),
+                    operands=("source", "control"),
+                ),
+                schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            )
+            for mnemonic, element_bit_width, lane_count in (
+                ("vpermw", 16, 32),
+                ("vpermd", 32, 16),
+                ("vpermq", 64, 8),
+            )
+        ),
+        *(
+            Descriptor(
+                key=f"x86.avx512.{mnemonic}.zmm",
+                mnemonic=mnemonic,
+                semantic_tag=f"integer.{semantic}.i16x32",
+                operands=(_zmm_result(), _zmm_operand("source")),
+                immediates=(
+                    Immediate(
+                        "shift",
+                        ImmediateKind.UNSIGNED,
+                        bit_width=8,
+                        unsigned_max=255,
+                    ),
+                ),
+                asm_forms=_asm(
+                    mnemonic=f"avx512.{mnemonic}.zmm",
+                    results=("dst",),
+                    operands=("source",),
+                    immediates=("shift",),
+                ),
+                schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+                flags=(DescriptorFlag.DEAD_REMOVABLE,),
+            )
+            for mnemonic, semantic in (
+                ("vpsllw", "shl"),
+                ("vpsrlw", "shru"),
+            )
+        ),
+        Descriptor(
+            key="x86.avx512.vmovdqu64.rodata.zmm",
+            mnemonic="vmovdqu64",
+            semantic_tag="memory.load.rodata.v512",
+            operands=(_zmm_result(),),
+            immediates=(_READ_ONLY_DATA_IMMEDIATE,),
+            asm_forms=_asm(
+                mnemonic="avx512.vmovdqu64.rodata.zmm",
+                results=("dst",),
+                immediates=("data",),
+            ),
+            schedule_class=_SCHEDULE_MEMORY_LOAD_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
         *(
             _vector_f32_binary_descriptor(

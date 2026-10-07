@@ -51,6 +51,7 @@ from loom.target.low_descriptors import (
 from .common import (
     _DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS,
     _INSERTPS_CONTROL_IMMEDIATE,
+    _READ_ONLY_DATA_IMMEDIATE,
     _REG_XMM,
     _REG_YMM,
     _RESOURCE_ADDRESS,
@@ -826,6 +827,23 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
         )
         for _, mnemonic, semantic in AVX2_BITWISE_FAMILIES
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+    ),
+    *(
+        Descriptor(
+            key=f"x86.avx2.vmovdqu.rodata.{register_suffix}",
+            mnemonic="vmovdqu",
+            semantic_tag=f"memory.load.rodata.v{vector_bit_width}",
+            operands=(_vector_result(vector_bit_width),),
+            immediates=(_READ_ONLY_DATA_IMMEDIATE,),
+            asm_forms=_asm(
+                mnemonic=f"avx2.vmovdqu.rodata.{register_suffix}",
+                results=("dst",),
+                immediates=("data",),
+            ),
+            schedule_class=_VECTOR_INTEGER_SCHEDULE_CLASSES[vector_bit_width],
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        )
+        for vector_bit_width, register_suffix in _VECTOR_REGISTER_SUFFIXES.items()
     ),
     *(
         _vector_compare_descriptor(

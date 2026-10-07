@@ -9,7 +9,10 @@ from loom.dialect.scalar import math as scalar_math
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.avx2 import X86_AVX2_CONTRACT_FRAGMENT
 from loom.target.arch.x86.contracts.avx512 import X86_AVX512_CONTRACT_FRAGMENT
-from loom.target.arch.x86.descriptors import X86_AVX2_DESCRIPTOR_SET
+from loom.target.arch.x86.descriptors import (
+    X86_AVX2_DESCRIPTOR_SET,
+    X86_AVX512_CORE_DESCRIPTOR_SET,
+)
 from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_EXTREMA_OPERATIONS,
     AVX2_FLOAT_REDUCTION_OPERATIONS,
@@ -246,6 +249,31 @@ def test_avx2_shuffles_cover_every_payload_type_and_width() -> None:
         "x86.avx2.vpermps.ymm",
         "x86.avx2.vpermilpd.xmm",
         "x86.avx2.vpermq.ymm",
+    } <= descriptor_keys
+
+
+def test_avx512_shuffles_cover_every_payload_type() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule) and case.source_op is vector.vector_shuffle
+    )
+    expected = {
+        Vector(family.element_names, lanes=512 // family.element_bit_width)
+        for family in AVX2_SHUFFLE_FAMILIES
+    }
+    assert {_value_type_guard(rule, "result") for rule in rules} == expected
+    assert len(rules) == len(expected)
+    descriptor_keys = {
+        descriptor.key for descriptor in X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    }
+    assert {
+        "x86.avx512.vmovdqu64.rodata.zmm",
+        "x86.avx512.vpermd.zmm",
+        "x86.avx512.vpermq.zmm",
+        "x86.avx512.vpermw.zmm",
+        "x86.avx512.vpsllw.zmm",
+        "x86.avx512.vpsrlw.zmm",
     } <= descriptor_keys
 
 
