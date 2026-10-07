@@ -669,7 +669,7 @@ def test_vector_construct_rules_publish_contract_only_storage_rows() -> None:
     expected_rule_counts = {
         vector.vector_from_elements: 12,
         vector.vector_iota: 2,
-        vector.vector_insert: 10,
+        vector.vector_insert: 11,
         vector.vector_splat: 11,
     }
     for source_op, expected_rule_count in expected_rule_counts.items():
@@ -692,7 +692,7 @@ def test_vector_construct_rules_publish_contract_only_storage_rows() -> None:
             assert value_ref.kind == SourceValueKind.RESULT
 
 
-def test_numeric_insertion_uses_the_complete_construction_storage_family() -> None:
+def test_insertion_uses_the_complete_construction_storage_family() -> None:
     compiled = _compiled_arithmetic_rules()
     insertion = {
         pattern.elements[0]: pattern
@@ -703,7 +703,7 @@ def test_numeric_insertion_uses_the_complete_construction_storage_family() -> No
     assert set(insertion) == {
         scalar_type_name(kind)
         for kind in ScalarTypeKind
-        if kind not in (ScalarTypeKind.I1, ScalarTypeKind.INDEX, ScalarTypeKind.OFFSET)
+        if kind not in (ScalarTypeKind.INDEX, ScalarTypeKind.OFFSET)
     }
     for source_op in (
         vector.vector_from_elements,

@@ -1137,8 +1137,6 @@ def _vector_insert_recipe_rules() -> tuple[RecipeRule, ...]:
             ),
         )
         for vector_type in _vector_storage_construct_recipe_types()
-        # Predicates occupy SGPR masks rather than numeric VGPR payloads.
-        if vector_type != _VEC_I1_STATIC
     )
 
 

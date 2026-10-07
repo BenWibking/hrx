@@ -1486,6 +1486,7 @@ loom_corpus_test(
     "kernel/subgroup/shuffle_participation.loom"
     "kernel/subgroup/transport.loom"
     "kernel/subgroup/transport_carrier.loom"
+    "kernel/workgroup/predicate_insertion.loom"
     "function/buffer/arguments.loom"
     "function/buffer/call_overflow.loom"
     "function/buffer/calls.loom"

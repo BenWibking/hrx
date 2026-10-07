@@ -16,6 +16,7 @@
 #include "loom/target/arch/amdgpu/lower/descriptor_ref.h"
 #include "loom/target/arch/amdgpu/lower/emit.h"
 #include "loom/target/arch/amdgpu/lower/legality.h"
+#include "loom/target/arch/amdgpu/lower/mask.h"
 #include "loom/target/arch/amdgpu/lower/types.h"
 #include "loom/target/arch/amdgpu/lower/value/scalar_conversion.h"
 
@@ -918,17 +919,9 @@ static iree_status_t loom_amdgpu_lower_dynamic_predicate_extract(
         context, source_op, low_source, i * plan->element_register_count,
         mask_type, &candidate));
 
-    // Each hardware lane selects its own predicate bit from the mask tuple.
-    loom_value_id_t changed = LOOM_VALUE_ID_INVALID;
-    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
-        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_XOR_B64, selected,
-        candidate, mask_type, &changed));
-    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
-        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_AND_B64, changed,
-        condition, mask_type, &changed));
-    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_binary(
-        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_XOR_B64, selected,
-        changed, mask_type, &selected));
+    IREE_RETURN_IF_ERROR(
+        loom_amdgpu_emit_i1_mask_select(context, source_op, selected, candidate,
+                                        condition, mask_type, &selected));
   }
   return loom_low_lower_bind_value(context, plan->result, selected);
 }
