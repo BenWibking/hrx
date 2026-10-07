@@ -783,7 +783,7 @@ iree_status_t loom_low_allocation_target_constraints_initialize(
     const iree_host_size_t reg_class_count =
         target->descriptor_set->reg_class_count;
     iree_host_size_t location_end_count = 0;
-    if (!iree_host_size_checked_mul(reg_class_count, 2, &location_end_count)) {
+    if (!iree_host_size_checked_mul(reg_class_count, 3, &location_end_count)) {
       return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
                               "register-class extent table exceeds host size");
     }
@@ -793,8 +793,10 @@ iree_status_t loom_low_allocation_target_constraints_initialize(
                                                    (void**)&location_ends));
     memset(location_ends, 0, location_end_count * sizeof(*location_ends));
     out_constraints->max_assigned_location_end_by_reg_class = location_ends;
-    out_constraints->max_constrained_location_end_by_reg_class =
+    out_constraints->max_fixed_location_end_by_reg_class =
         location_ends + reg_class_count;
+    out_constraints->max_constrained_location_end_by_reg_class =
+        location_ends + reg_class_count * 2;
   }
   // Architectural reservations must be valid target locations, even when a
   // tuning budget excludes them from the ordinary allocation candidates.
@@ -1421,6 +1423,13 @@ void loom_low_allocation_target_constraints_record_location_extent(
   }
   if (loom_low_reg_class_fixed_location_range_contains(reg_class, location_base,
                                                        location_count)) {
+    const uint32_t location_end = location_base + location_count;
+    uint32_t* current_end =
+        &constraints
+             ->max_fixed_location_end_by_reg_class[descriptor_reg_class_id];
+    if (*current_end < location_end) {
+      *current_end = location_end;
+    }
     return;
   }
   const loom_low_allocation_assignment_t assignment = {
@@ -1450,6 +1459,9 @@ void loom_low_allocation_target_constraints_rebuild_assignment_location_ends(
     memset(constraints->max_assigned_location_end_by_reg_class, 0,
            reg_class_count *
                sizeof(*constraints->max_assigned_location_end_by_reg_class));
+    memset(constraints->max_fixed_location_end_by_reg_class, 0,
+           reg_class_count *
+               sizeof(*constraints->max_fixed_location_end_by_reg_class));
   }
   for (iree_host_size_t i = 0; i < assignment_count; ++i) {
     const loom_low_allocation_assignment_t* assignment = &assignments[i];

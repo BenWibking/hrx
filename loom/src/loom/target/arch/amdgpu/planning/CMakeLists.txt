@@ -382,13 +382,87 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU)
 loom_cc_library(
   NAME
+    sgpr_read_hazard
+  HDRS
+    "sgpr_read_hazard.h"
+  SRCS
+    "sgpr_read_hazard.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::allocation
+    loom::target::arch::amdgpu::refs::target_refs
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    sgpr_read_hazard_test
+  SRCS
+    "sgpr_read_hazard_test.cc"
+  DEPS
+    ::sgpr_read_hazard
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::amdgpu::refs::target_refs
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_library(
+  NAME
+    trans_result_window
+  HDRS
+    "trans_result_window.h"
+  SRCS
+    "trans_result_window.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::allocation
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info_defs
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    trans_result_window_test
+  SRCS
+    "trans_result_window_test.cc"
+  DEPS
+    ::trans_result_window
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::amdgpu::refs::target_refs
+    loom::target::arch::amdgpu::target_info_defs
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_library(
+  NAME
     wait_plan
   HDRS
+    "wait_actions.h"
     "wait_plan.h"
   SRCS
+    "wait_actions.c"
     "wait_plan.c"
   DEPS
     ::address_state
+    ::sgpr_read_hazard
+    ::trans_result_window
     ::wait_classification
     ::wait_completion
     ::wait_counters
@@ -413,6 +487,22 @@ loom_cc_library(
     loom::target::arch::amdgpu::refs::target_refs
     loom::util::segmented_storage
   PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_AMDGPU_DESCRIPTOR_SET_RDNA4_GFX125X_CORE AND LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    wait_actions_test
+  SRCS
+    "wait_actions_test.cc"
+  DEPS
+    ::wait_plan
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
 )
 endif()
 
@@ -520,6 +610,7 @@ loom_cc_library(
     ::descriptor_semantics
     ::matrix_coexecution
     ::structural_packet
+    ::trans_result_window
     ::wait_packets
     iree::base
     iree::base::internal::arena

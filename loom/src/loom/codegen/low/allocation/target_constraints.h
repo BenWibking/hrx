@@ -243,6 +243,9 @@ typedef struct loom_low_allocation_target_constraints_t {
   // Maximum allocated value or move-scratch location end indexed by
   // descriptor register class ID.
   uint32_t* max_assigned_location_end_by_reg_class;
+  // Maximum assignment or move location end within each descriptor register
+  // class's ABI-fixed location window. Zero denotes an unused fixed window.
+  uint32_t* max_fixed_location_end_by_reg_class;
   // Maximum fixed-value or reserved-range location end indexed by descriptor
   // register class ID.
   uint32_t* max_constrained_location_end_by_reg_class;
