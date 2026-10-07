@@ -56,3 +56,19 @@ COMPILE-REPORT: source_low[6] function=scalar_float8_conversion_expansion source
 COMPILE-REPORT: source_low[7] function=scalar_float8_conversion_expansion source_op=scalar.fptrunc selection=rule plan_key=exact_f32_to_f8e5m2 descriptor_key=amd.xdna.aie2p.or.i32 descriptor_semantic_tag=integer.or.i32 emitted_ops=64
 COMPILE-REPORT: source_low[8] function=scalar_float8_conversion_expansion source_op=scalar.fptrunc selection=rule plan_key=exact_f16_to_f8e4m3 descriptor_key=amd.xdna.aie2p.or.i32 descriptor_semantic_tag=integer.or.i32 emitted_ops=91
 COMPILE-REPORT: source_low[9] function=scalar_float8_conversion_expansion source_op=scalar.fptrunc selection=rule plan_key=exact_bf16_to_f8e5m2 descriptor_key=amd.xdna.aie2p.or.i32 descriptor_semantic_tag=integer.or.i32 emitted_ops=66
+
+// ====
+
+// The approximate reciprocal is native, but multiplying an arbitrary numerator
+// uses the exact scalar multiplication expansion. Track the selected rules and
+// emitted size without snapshotting the software arithmetic sequence.
+func.def @scalar_reciprocal_multiply_expansion(%numerator: f32, %denominator: f32) -> (f32) {
+  %result = scalar.divf<arcp> %numerator, %denominator : f32
+  func.return %result : f32
+}
+
+// ----
+COMPILE-REPORT: summary artifact=none status=OK function=- backend=- bundle=- export=- export_symbol=- config=- lowered=-
+COMPILE-REPORT: source_low selected_ops=1 emitted_ops=164 rows=1 unkeyed_maximum_emitted_ops=0
+COMPILE-REPORT: source_low_target[0] function=scalar_reciprocal_multiply_expansion source=specialization target=- bundle=aie2p-core config=amd.xdna.aie2p.core
+COMPILE-REPORT: source_low[0] function=scalar_reciprocal_multiply_expansion source_op=scalar.divf selection=rule plan_key=approximate_binary32_reciprocal_multiply descriptor_key=amd.xdna.aie2p.reciprocal.f32 descriptor_semantic_tag=floating.reciprocal.f32 emitted_ops=164
