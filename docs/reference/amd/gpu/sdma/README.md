@@ -9,7 +9,7 @@ depend on the engine generation and native transport.
 | [Engine selection](engine-selection.md) | Ordinary/xGMI queue pools, directed engine masks, copy executors, runtime blit/native engine identities, read-only queue observations, and topology routing. |
 | [Queue publication](publication.md) | Byte frontiers, reservation and ordered commit, wrap/padding, native visibility and storage ownership. |
 | [Device-generated commands](device-publication.md) | GPUVM doorbells, shader-authored packets, pre-WPTR visibility, lane progress, and separate command/payload credits. |
-| [Linear copy](copy.md) | `COPY_LINEAR`: byte ranges, count representation, runtime caps, alignment and chunking. |
+| [Linear copy](copy.md) | `COPY_LINEAR` / legacy `DMA_PACKET_COPY`: complete source layouts, metadata and policy selection, native count families, exact byte extents, chunking and storage ownership. |
 | [Buffer exchange](swap.md) | `COPY_LINEAR_SWAP`, `COPY_LINEAR_SWAP_WAITSIGNAL_GFX1250`: equal-sized read/write operands, aligned chunks, engine joins and residency ownership. |
 | [Indirect source and destination](indirect-copy.md) | `COPY_LINEAR_WAITSIGNAL_INDIRECT_GFX1250`, `LINEAR_INDIRECT_SRC` / `DST` / `SRCDST`: execution-time payload addresses, fixed lengths, slot publication and retirement. |
 | [Broadcast and multicast](fanout.md) | `COPY_LINEAR_BROADCAST` / `COPY_BROADCAST_LINEAR`, `COPY_MULTICAST`, fused wait/signal blocks, destination pairing, and joins across copy engines. |
