@@ -17,7 +17,7 @@ func.def @bounded_mask(%value: index) -> (index) {
 
 // A dynamic aligned origin contributes no bits to the masked coordinate.
 func.def @aligned_add(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %bounded = index.assume %lane [range(%lane, 0, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -34,7 +34,7 @@ func.def @aligned_add(%origin: index, %lane: index) -> (index) {
 
 // Alignment and mask identities work with both operand orders.
 func.def @reordered_add(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %bounded = index.assume %lane [range(%lane, 0, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %bounded, %aligned : index
@@ -70,7 +70,7 @@ func.def @tiled_channel(%iteration: index, %lane: index) -> (index) {
 // Alignment may come from either dynamic multiplicand. Other uses of the
 // original flattened index must retain the arithmetic producer.
 func.def @dynamic_stride(%stride: index, %row: index, %lane: index) -> (index, index) {
-  %aligned_stride = index.assume %stride [mul(%stride, 256)] : index
+  %aligned_stride = index.assume %stride [multiple_of(%stride, 256)] : index
   %bounded_lane = index.assume %lane [range(%lane, 0, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.madd %aligned_stride, %row, %bounded_lane : index
@@ -79,7 +79,7 @@ func.def @dynamic_stride(%stride: index, %row: index, %lane: index) -> (index, i
 }
 // ----
 func.def @dynamic_stride(%stride: index, %row: index, %lane: index) -> (index, index) {
-  %aligned_stride = index.assume %stride [mul(%stride, 256)] : index
+  %aligned_stride = index.assume %stride [multiple_of(%stride, 256)] : index
   %bounded_lane = index.assume %lane [range(%lane, 0, 255)] : index
   %linear = index.madd %aligned_stride, %row, %bounded_lane : index
   func.return %linear, %bounded_lane : index, index
@@ -89,7 +89,7 @@ func.def @dynamic_stride(%stride: index, %row: index, %lane: index) -> (index, i
 
 // Alignment need not constrain the sign of the discarded contribution.
 func.def @negative_aligned_origin(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256), range(%origin, -4096, -256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256), range(%origin, -4096, -256)] : index
   %bounded = index.assume %lane [range(%lane, 0, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %bounded, %aligned : index
@@ -106,7 +106,7 @@ func.def @negative_aligned_origin(%origin: index, %lane: index) -> (index) {
 
 // Half-radix alignment still contributes a bit inside the mask.
 func.def @insufficient_alignment(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 128)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 128)] : index
   %bounded = index.assume %lane [range(%lane, 0, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -115,7 +115,7 @@ func.def @insufficient_alignment(%origin: index, %lane: index) -> (index) {
 }
 // ----
 func.def @insufficient_alignment(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 128)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 128)] : index
   %bounded = index.assume %lane [range(%lane, 0, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -127,7 +127,7 @@ func.def @insufficient_alignment(%origin: index, %lane: index) -> (index) {
 
 // The inclusive upper endpoint crosses the radix, so the mask remains.
 func.def @coordinate_crosses_radix(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %bounded = index.assume %lane [range(%lane, 0, 256)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -136,7 +136,7 @@ func.def @coordinate_crosses_radix(%origin: index, %lane: index) -> (index) {
 }
 // ----
 func.def @coordinate_crosses_radix(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %bounded = index.assume %lane [range(%lane, 0, 256)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -148,7 +148,7 @@ func.def @coordinate_crosses_radix(%origin: index, %lane: index) -> (index) {
 
 // A signed coordinate may require the mask even when its upper bound fits.
 func.def @negative_coordinate(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %bounded = index.assume %lane [range(%lane, -1, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -157,7 +157,7 @@ func.def @negative_coordinate(%origin: index, %lane: index) -> (index) {
 }
 // ----
 func.def @negative_coordinate(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %bounded = index.assume %lane [range(%lane, -1, 255)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %bounded : index
@@ -169,7 +169,7 @@ func.def @negative_coordinate(%origin: index, %lane: index) -> (index) {
 
 // Without a range proof, an aligned origin alone cannot recover the addend.
 func.def @unbounded_coordinate(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %lane : index
   %result = index.andi %linear, %mask : index
@@ -177,7 +177,7 @@ func.def @unbounded_coordinate(%origin: index, %lane: index) -> (index) {
 }
 // ----
 func.def @unbounded_coordinate(%origin: index, %lane: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 256)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 256)] : index
   %mask = index.constant 255 : index
   %linear = index.add %aligned, %lane : index
   %result = index.andi %linear, %mask : index
@@ -205,7 +205,7 @@ func.def @noncontiguous_mask(%value: index) -> (index) {
 
 // Large representable radices use the same proof without narrowing to i32.
 func.def @wide_radix(%origin: index, %coordinate: index) -> (index) {
-  %aligned = index.assume %origin [mul(%origin, 4611686018427387904)] : index
+  %aligned = index.assume %origin [multiple_of(%origin, 4611686018427387904)] : index
   %bounded = index.assume %coordinate [range(%coordinate, 0, 4611686018427387903)] : index
   %mask = index.constant 4611686018427387903 : index
   %linear = index.add %aligned, %bounded : index

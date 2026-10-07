@@ -18,7 +18,7 @@ func.def @for_body_facts_survive_lowering() {
 
 // ----
 CHECK: func.def @for_body_facts_survive_lowering*
-CHECK: %position = index.assume *[range(*, 4, 10), mul(*, 2)] : index
+CHECK: %position = index.assume *[range(*, 4, 10), multiple_of(*, 2)] : index
 CHECK: %lo = scalar.constant 4 : i64
 CHECK: %hi = scalar.constant 10 : i64
 CHECK: %divisor = scalar.constant 2 : i64
@@ -253,7 +253,7 @@ func.def target(@narrow) @paired_byte_stream_facts_survive_lowering() {
   %52 = index.cmp slt, %48, %end : index
   cfg.cond_br %52, ^_bb2, ^_bb3
 ^_bb2:
-  %tile = index.assume %48 [range(%48, 0, 6), mul(%48, 2)] : index
+  %tile = index.assume %48 [range(%48, 0, 6), multiple_of(%48, 2)] : index
   %a_lo = scalar.constant 0 : i64
   %a_hi = scalar.constant 1024 : i64
   %a_divisor = scalar.constant 256 : i64

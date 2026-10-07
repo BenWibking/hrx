@@ -650,7 +650,7 @@ kernel.def target(@dispatch_target) @dispatch_rows(%element_count: index) {
   %rounded_count = func.call pure @configuration_only(%element_count) : (index) -> (index)
   %workgroup_count = index.div %rounded_count, %subgroup_size : index
   kernel.launch.config workgroups(%workgroup_count, %two, %one) workgroup_size(%subgroup_size, %one, %one) cluster_size(%one, %two, %one) : index
-} launch(%stride: index, %rows: index, %source: tensor<[%rows]xi32>) where [mul(%rows, 16), mul(%stride, 4)] {
+} launch(%stride: index, %rows: index, %source: tensor<[%rows]xi32>) where [multiple_of(%rows, 16), multiple_of(%stride, 4)] {
   %unused = func.call @implementation_only(%stride) : (index) -> (index)
   kernel.return
 }

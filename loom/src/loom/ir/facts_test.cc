@@ -802,9 +802,9 @@ static loom_predicate_t make_predicate_range(int64_t lo, int64_t hi) {
   return pred;
 }
 
-static loom_predicate_t make_predicate_pow2(void) {
+static loom_predicate_t make_predicate_power_of_two(void) {
   loom_predicate_t pred = {0};
-  pred.kind = (uint8_t)LOOM_PREDICATE_POW2;
+  pred.kind = (uint8_t)LOOM_PREDICATE_POWER_OF_TWO;
   pred.arg_count = 1;
   pred.arg_tags[0] = LOOM_PRED_ARG_VALUE;
   return pred;
@@ -881,7 +881,7 @@ TEST(FactsPredicateConflict, UnsignedRelationUsesCarrierBitOrder) {
 
 TEST(FactsPredicateConflict, DivisibilityRejectsExactNonMultiple) {
   loom_value_facts_t f = loom_value_facts_exact_i64(66);
-  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MUL, 64);
+  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 64);
   loom_value_fact_predicate_conflict_t conflict = {};
   ASSERT_TRUE(loom_value_facts_predicate_conflict(f, &pred, &conflict));
   EXPECT_EQ(conflict.kind, LOOM_VALUE_FACT_PREDICATE_CONFLICT_EXACT_I64);
@@ -891,7 +891,7 @@ TEST(FactsPredicateConflict, DivisibilityRejectsExactNonMultiple) {
 
 TEST(FactsPredicateConflict, PowerOfTwoRejectsExactNonPower) {
   loom_value_facts_t f = loom_value_facts_exact_i64(66);
-  loom_predicate_t pred = make_predicate_pow2();
+  loom_predicate_t pred = make_predicate_power_of_two();
   loom_value_fact_predicate_conflict_t conflict = {};
   ASSERT_TRUE(loom_value_facts_predicate_conflict(f, &pred, &conflict));
   EXPECT_EQ(conflict.kind, LOOM_VALUE_FACT_PREDICATE_CONFLICT_EXACT_I64);
@@ -1058,8 +1058,9 @@ TEST(FactsApplyPredicate, NeZeroSetsNonzeroWithoutTighteningInterval) {
   EXPECT_TRUE(loom_value_facts_is_non_zero(f));
   EXPECT_FALSE(loom_value_facts_is_positive(f));
 
-  loom_predicate_t max_pred = make_predicate_1(LOOM_PREDICATE_MAX, 1024);
-  loom_value_facts_apply_predicate(&f, &max_pred);
+  loom_predicate_t upper_bound_predicate =
+      make_predicate_1(LOOM_PREDICATE_LE, 1024);
+  loom_value_facts_apply_predicate(&f, &upper_bound_predicate);
   EXPECT_EQ(f.range_lo, INT64_MIN);
   EXPECT_EQ(f.range_hi, 1024);
   EXPECT_TRUE(loom_value_facts_is_non_zero(f));
@@ -1097,9 +1098,9 @@ TEST(FactsApplyPredicate, UnsignedRelationRefinesOneSignPartition) {
   EXPECT_EQ(split.range_hi, 10);
 }
 
-TEST(FactsApplyPredicate, Mul) {
+TEST(FactsApplyPredicate, MultipleOf) {
   loom_value_facts_t f = loom_value_facts_unknown();
-  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MUL, 16);
+  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 16);
   loom_value_facts_apply_predicate(&f, &pred);
   EXPECT_EQ(f.known_divisor, 16);
   EXPECT_TRUE(loom_value_facts_divisible_by(f, 16));
@@ -1107,34 +1108,19 @@ TEST(FactsApplyPredicate, Mul) {
   EXPECT_TRUE(loom_value_facts_divisible_by(f, 4));
 }
 
-TEST(FactsApplyPredicate, MulComposition) {
-  // mul(16) then mul(24) → lcm(16, 24) = 48.
+TEST(FactsApplyPredicate, MultipleOfComposition) {
+  // multiple_of(16) then multiple_of(24) implies a divisor of 48.
   loom_value_facts_t f = loom_value_facts_unknown();
-  loom_predicate_t pred1 = make_predicate_1(LOOM_PREDICATE_MUL, 16);
-  loom_predicate_t pred2 = make_predicate_1(LOOM_PREDICATE_MUL, 24);
+  loom_predicate_t pred1 = make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 16);
+  loom_predicate_t pred2 = make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 24);
   loom_value_facts_apply_predicate(&f, &pred1);
   loom_value_facts_apply_predicate(&f, &pred2);
   EXPECT_EQ(f.known_divisor, 48);
 }
 
-TEST(FactsApplyPredicate, Min) {
+TEST(FactsApplyPredicate, PowerOfTwo) {
   loom_value_facts_t f = loom_value_facts_unknown();
-  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MIN, 64);
-  loom_value_facts_apply_predicate(&f, &pred);
-  EXPECT_EQ(f.range_lo, 64);
-  EXPECT_TRUE(loom_value_facts_is_positive(f));
-}
-
-TEST(FactsApplyPredicate, Max) {
-  loom_value_facts_t f = loom_value_facts_unknown();
-  loom_predicate_t pred = make_predicate_1(LOOM_PREDICATE_MAX, 1024);
-  loom_value_facts_apply_predicate(&f, &pred);
-  EXPECT_EQ(f.range_hi, 1024);
-}
-
-TEST(FactsApplyPredicate, Pow2) {
-  loom_value_facts_t f = loom_value_facts_unknown();
-  loom_predicate_t pred = make_predicate_pow2();
+  loom_predicate_t pred = make_predicate_power_of_two();
   loom_value_facts_apply_predicate(&f, &pred);
   EXPECT_TRUE(loom_value_facts_is_power_of_two(f));
 }
@@ -1177,12 +1163,14 @@ TEST(FactsApplyPredicate, Range) {
 }
 
 TEST(FactsApplyPredicate, ComposedTilePredicate) {
-  // Typical tile dimension: mul(64), min(64).
+  // Typical tile dimension: multiple_of(64), ge(64).
   loom_value_facts_t f = loom_value_facts_unknown();
-  loom_predicate_t mul_pred = make_predicate_1(LOOM_PREDICATE_MUL, 64);
-  loom_predicate_t min_pred = make_predicate_1(LOOM_PREDICATE_MIN, 64);
-  loom_value_facts_apply_predicate(&f, &mul_pred);
-  loom_value_facts_apply_predicate(&f, &min_pred);
+  loom_predicate_t multiple_predicate =
+      make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 64);
+  loom_predicate_t lower_bound_predicate =
+      make_predicate_1(LOOM_PREDICATE_GE, 64);
+  loom_value_facts_apply_predicate(&f, &multiple_predicate);
+  loom_value_facts_apply_predicate(&f, &lower_bound_predicate);
   EXPECT_EQ(f.range_lo, 64);
   EXPECT_EQ(f.range_hi, INT64_MAX);
   EXPECT_EQ(f.known_divisor, 64);
@@ -1206,7 +1194,6 @@ TEST(FactsApplyPredicate, BoundsRetainDivisibility) {
       {LOOM_PREDICATE_LT, -60, -64, -64}, {LOOM_PREDICATE_LE, -61, -64, -64},
       {LOOM_PREDICATE_GT, -64, -60, 64},  {LOOM_PREDICATE_GE, -63, -60, 64},
       {LOOM_PREDICATE_GT, 60, 64, 64},    {LOOM_PREDICATE_GE, 61, 64, 64},
-      {LOOM_PREDICATE_MIN, 1, 4, 64},     {LOOM_PREDICATE_MAX, -1, -64, -4},
       {LOOM_PREDICATE_NE, -64, -60, 64},  {LOOM_PREDICATE_NE, 64, -64, 60},
   };
   for (const TestCase& test_case : cases) {
@@ -1228,7 +1215,8 @@ TEST(FactsApplyPredicate, BoundsRetainDivisibility) {
 
 TEST(FactsApplyPredicate, DivisorAndRangeOrderAgree) {
   const loom_predicate_t range = make_predicate_range(-11, 23);
-  const loom_predicate_t multiple = make_predicate_1(LOOM_PREDICATE_MUL, 6);
+  const loom_predicate_t multiple =
+      make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 6);
   loom_value_facts_t range_first = loom_value_facts_unknown();
   loom_value_facts_apply_predicate(&range_first, &range);
   loom_value_facts_apply_predicate(&range_first, &multiple);
@@ -1851,7 +1839,8 @@ TEST(ElementCountFacts, DynamicShapeUsesPredicateRefinedFacts) {
                                  loom_value_facts_unknown(),
                                  loom_value_facts_unknown()};
   loom_predicate_t range_pred = make_predicate_range(16, 128);
-  loom_predicate_t multiple_pred = make_predicate_1(LOOM_PREDICATE_MUL, 16);
+  loom_predicate_t multiple_pred =
+      make_predicate_1(LOOM_PREDICATE_MULTIPLE_OF, 16);
   loom_value_facts_apply_predicate(&facts[2], &range_pred);
   loom_value_facts_apply_predicate(&facts[2], &multiple_pred);
   loom_type_t type =

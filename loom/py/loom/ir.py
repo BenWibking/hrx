@@ -918,7 +918,8 @@ def _canonicalize_encoding_param_value(value: Any) -> Any:
 # Predicates
 # ============================================================================
 
-# Valid predicate kinds. Maps kind name to expected argument count.
+# Valid predicate kinds in bytecode ordinal order. Dictionary insertion order
+# is part of the C/Python wire contract; values are exact argument counts.
 PREDICATE_KINDS: dict[str, int] = {
     "eq": 2,
     "ne": 2,
@@ -926,10 +927,8 @@ PREDICATE_KINDS: dict[str, int] = {
     "le": 2,
     "gt": 2,
     "ge": 2,
-    "mul": 2,  # mul(a, n) — a is a multiple of positive n.
-    "min": 2,  # min(a, n) — a >= n.
-    "max": 2,  # max(a, n) — a <= n.
-    "pow2": 1,  # pow2(a) — a is a power of 2.
+    "multiple_of": 2,  # multiple_of(a, n) — a is a multiple of positive n.
+    "power_of_two": 1,  # power_of_two(a) — a is a power of 2.
     "range": 3,  # range(a, lo, hi) — lo <= a <= hi.
     "not_nan": 1,  # not_nan(a) — a is not NaN.
     "not_inf": 1,  # not_inf(a) — a is not positive or negative infinity.
@@ -972,7 +971,7 @@ class Predicate:
     Used in function where clauses and assume ops to express constraints such
     as "M is a multiple of 16" or "lhs is unsigned less than rhs".
 
-    kind: Predicate kind name ("eq", "lt", "mul", "pow2", "range", etc.).
+    kind: Predicate kind name ("eq", "lt", "multiple_of", "range", etc.).
     args: Tuple of predicate arguments.
     """
 
@@ -1072,13 +1071,9 @@ def evaluate_predicate(predicate: Predicate, values: dict[int, int | float]) -> 
             return args[0] >= args[1]
         case "ult" | "ule" | "ugt" | "uge":
             return _evaluate_unsigned_relation(predicate.kind, args[0], args[1])
-        case "mul":
-            return args[1] != 0 and args[0] % args[1] == 0
-        case "min":
-            return args[0] >= args[1]
-        case "max":
-            return args[0] <= args[1]
-        case "pow2":
+        case "multiple_of":
+            return args[1] > 0 and args[0] % args[1] == 0
+        case "power_of_two":
             value = args[0]
             return isinstance(value, int) and value > 0 and (value & (value - 1)) == 0
         case "range":

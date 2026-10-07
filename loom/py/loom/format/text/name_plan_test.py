@@ -60,8 +60,8 @@ def test_harmless_shadowing_and_independent_functions() -> None:
 def test_global_symbolic_bindings_remain_local_to_each_declaration() -> None:
     parser, _ = _formats()
     text = (
-        "global.constant @first : tile<[%extent]xf32> where [mul(%extent, 16)]\n\n"
-        "global.constant @second : tile<[%extent]xf32> where [mul(%extent, 32)]\n"
+        "global.constant @first : tile<[%extent]xf32> where [multiple_of(%extent, 16)]\n\n"
+        "global.constant @second : tile<[%extent]xf32> where [multiple_of(%extent, 32)]\n"
     )
     loaded, printed = _roundtrip(parser.parse(text))
     assert printed == text

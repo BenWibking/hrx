@@ -116,7 +116,7 @@ global_constant = Op(
     verify="loom_global_constant_verify",
     examples=[
         "global.constant @pi : f32 = 3.14159265358979",
-        "global.constant @weights : tile<[%m]x[%k]xf32> where [mul(%m, 16)]",
+        "global.constant @weights : tile<[%m]x[%k]xf32> where [multiple_of(%m, 16)]",
     ],
 )
 
@@ -165,7 +165,7 @@ global_variable = Op(
     ],
     verify="loom_global_variable_verify",
     examples=[
-        "global.variable @kv_cache : tile<[%s]x[%d]xf32> where [mul(%s, 64)]",
+        "global.variable @kv_cache : tile<[%s]x[%d]xf32> where [multiple_of(%s, 64)]",
         "global.variable @step_count : index = 0",
     ],
 )

@@ -113,11 +113,11 @@ class TunerFlowScenario final : public CompileScenario {
 
 const char* TunerFlowScenario::source_text_ =
     "config.decl @tuner.model.hidden_size : %value: index where [range(%value, "
-    "0, 8192), mul(%value, 16)]\n"
+    "0, 8192), multiple_of(%value, 16)]\n"
     "config.decl @tuner.tile_m : %value: index where [range(%value, 0, 512), "
-    "mul(%value, 16)]\n"
+    "multiple_of(%value, 16)]\n"
     "config.decl @tuner.tile_n : %value: index where [range(%value, 0, 512), "
-    "mul(%value, 16)]\n"
+    "multiple_of(%value, 16)]\n"
     "config.decl @tuner.unroll : %value: index where [range(%value, 1, 16)]\n"
     "func.def public @entry() -> (index) {\n"
     "  %hidden = config.get @tuner.model.hidden_size : index\n"
@@ -271,7 +271,7 @@ class ModelFlowScenario final : public CompileScenario {
       std::ostringstream source;
       source << "config.decl " << config_keys_.back()
              << " : %value: index where [range(%value, 0, 8192), "
-                "mul(%value, 16)]\n";
+                "multiple_of(%value, 16)]\n";
       source << "config.decl " << bias_keys_.back()
              << " : %value: index where [range(%value, 0, 8192)]\n";
       source << "func.decl @identity(%x: index) -> (index)\n";

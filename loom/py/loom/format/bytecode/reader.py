@@ -62,6 +62,7 @@ from loom.ir import (
     BUFFER_TYPE,
     ENCODING_TYPE,
     NONE_TYPE,
+    PREDICATE_KINDS,
     REGION_SOURCE_FLAG_MASK,
     SYMBOL_FLAG_DECLARATION,
     SYMBOL_FLAG_IMPORT,
@@ -2499,26 +2500,7 @@ class BytecodeReader:
         return value
 
     # Predicate kind byte → name mapping (inverse of writer).
-    _PRED_KIND_NAMES: ClassVar[list[str]] = [
-        "eq",
-        "ne",
-        "lt",
-        "le",
-        "gt",
-        "ge",
-        "mul",
-        "min",
-        "max",
-        "pow2",
-        "range",
-        "not_nan",
-        "not_inf",
-        "finite",
-        "ult",
-        "ule",
-        "ugt",
-        "uge",
-    ]
+    _PRED_KIND_NAMES: ClassVar[list[str]] = list(PREDICATE_KINDS)
 
     def _read_predicate_list(
         self,

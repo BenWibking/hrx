@@ -967,7 +967,7 @@ class ReaderTest : public ::testing::Test {
     IREE_CHECK_OK(iree_arena_allocate_array(
         &module->arena, 1, sizeof(loom_predicate_t), (void**)&predicates));
     predicates[0] = loom_predicate_t{
-        /*.kind=*/LOOM_PREDICATE_MUL,
+        /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
         /*.arg_count=*/2,
         /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
         /*.reserved=*/{},
@@ -1313,7 +1313,7 @@ class ReaderTest : public ::testing::Test {
     IREE_CHECK_OK(iree_arena_allocate_array(
         &module->arena, 2, sizeof(loom_predicate_t), (void**)&predicates));
     predicates[0] = loom_predicate_t{
-        /*.kind=*/LOOM_PREDICATE_MUL,
+        /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
         /*.arg_count=*/2,
         /*.arg_tags=*/
         {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST, LOOM_PRED_ARG_NONE},
@@ -3648,7 +3648,7 @@ TEST_F(ReaderTest, IndexRetainsSignatureLocalPredicates) {
       metadata.modules[0].symbols[0];
   ASSERT_EQ(symbol.predicate_count, 2u);
   ASSERT_NE(symbol.predicates, nullptr);
-  EXPECT_EQ(symbol.predicates[0].kind, LOOM_PREDICATE_MUL);
+  EXPECT_EQ(symbol.predicates[0].kind, LOOM_PREDICATE_MULTIPLE_OF);
   EXPECT_EQ(symbol.predicates[0].arg_tags[0], LOOM_PRED_ARG_VALUE);
   EXPECT_EQ(symbol.predicates[0].args[0], 0);
   EXPECT_EQ(symbol.predicates[0].arg_tags[1], LOOM_PRED_ARG_CONST);
@@ -4266,7 +4266,7 @@ TEST_F(ReaderTest, ReadsDynamicGlobalSymbolModule) {
   ASSERT_EQ(predicates.kind, LOOM_ATTR_PREDICATE_LIST);
   ASSERT_EQ(predicates.count, 1u);
   const loom_predicate_t& predicate = predicates.predicate_list[0];
-  EXPECT_EQ(predicate.kind, LOOM_PREDICATE_MUL);
+  EXPECT_EQ(predicate.kind, LOOM_PREDICATE_MULTIPLE_OF);
   EXPECT_EQ(predicate.arg_count, 2u);
   EXPECT_EQ(predicate.arg_tags[0], LOOM_PRED_ARG_VALUE);
   EXPECT_EQ(predicate.args[0], (int64_t)dim_id);

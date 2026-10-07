@@ -2724,12 +2724,12 @@ class TestParsePredicates:
         assert _op_printer().print_module(present_module) == present_text
         assert _op_printer().print_module(absent_module) == absent_text
 
-    def test_single_mul_predicate(self) -> None:
-        """Parse a function with where [mul(%M, 16)]."""
+    def test_single_multiple_of_predicate(self) -> None:
+        """Parse a function with where [multiple_of(%M, 16)]."""
 
         module = self._parse_module(
             "test.func @f(%M: index, %a: tensor<[%M]xf32>)"
-            " where [mul(%M, 16)] {\n"
+            " where [multiple_of(%M, 16)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2738,7 +2738,7 @@ class TestParsePredicates:
         predicates = op.attributes.get("predicates", [])
         assert len(predicates) == 1
         pred = predicates[0]
-        assert pred.kind == "mul"
+        assert pred.kind == "multiple_of"
         assert len(pred.args) == 2
         assert pred.args[0].tag == "value"
         assert pred.args[0].value == op.regions[0].blocks[0].arg_ids[0]
@@ -2750,7 +2750,7 @@ class TestParsePredicates:
 
         module = self._parse_module(
             "test.func @f(%M: index, %K: index, %a: tensor<[%M]x[%K]xf32>)"
-            " where [mul(%M, 16), lt(%K, 1024), ne(%K, 0), range(%M, 32, 512)] {\n"
+            " where [multiple_of(%M, 16), lt(%K, 1024), ne(%K, 0), range(%M, 32, 512)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2758,7 +2758,7 @@ class TestParsePredicates:
         assert op is not None
         predicates = op.attributes.get("predicates", [])
         assert len(predicates) == 4
-        assert predicates[0].kind == "mul"
+        assert predicates[0].kind == "multiple_of"
         assert predicates[1].kind == "lt"
         assert predicates[2].kind == "ne"
         assert predicates[3].kind == "range"
@@ -2769,12 +2769,12 @@ class TestParsePredicates:
         assert range_pred.args[1].value == 32
         assert range_pred.args[2].value == 512
 
-    def test_pow2_single_arg(self) -> None:
-        """Parse pow2(%N) — single-argument predicate."""
+    def test_power_of_two_single_arg(self) -> None:
+        """Parse power_of_two(%N) — single-argument predicate."""
 
         module = self._parse_module(
             "test.func @f(%N: index, %a: tensor<[%N]xf32>)"
-            " where [pow2(%N)] {\n"
+            " where [power_of_two(%N)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2782,18 +2782,18 @@ class TestParsePredicates:
         assert op is not None
         predicates = op.attributes.get("predicates", [])
         assert len(predicates) == 1
-        assert predicates[0].kind == "pow2"
+        assert predicates[0].kind == "power_of_two"
         assert len(predicates[0].args) == 1
 
     def test_predicate_arity_mismatch_rejected(self) -> None:
         """Predicate kind names have fixed arity."""
 
         with pytest.raises(
-            ParseError, match="predicate 'pow2' expects 1 arguments, got 2"
+            ParseError, match="predicate 'power_of_two' expects 1 arguments, got 2"
         ):
             self._parse_module(
                 "test.func @f(%N: index, %a: tensor<[%N]xf32>)"
-                " where [pow2(%N, 16)] {\n"
+                " where [power_of_two(%N, 16)] {\n"
                 "  test.yield\n"
                 "}\n"
             )
@@ -2849,7 +2849,7 @@ class TestParsePredicates:
         """Where clause followed by function body."""
         module = self._parse_module(
             "test.func @f(%M: index, %a: tensor<[%M]xf32>) -> (tensor<[%M]xf32>)"
-            " where [mul(%M, 16)] {\n"
+            " where [multiple_of(%M, 16)] {\n"
             "  test.yield %a : tensor<[%M]xf32>\n"
             "}\n"
         )
@@ -2875,7 +2875,7 @@ class TestPredicateRoundTrip:
     def test_single_predicate_function(self) -> None:
         """Function-like ops must round-trip dim names and predicates."""
         self._roundtrip_text(
-            "test.func @f(%M: index, %a: tensor<[%M]xf32>) where [mul(%M, 16)] {\n"
+            "test.func @f(%M: index, %a: tensor<[%M]xf32>) where [multiple_of(%M, 16)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2883,7 +2883,7 @@ class TestPredicateRoundTrip:
     def test_multiple_predicates_function(self) -> None:
         self._roundtrip_text(
             "test.func @f(%M: index, %K: index, %a: tensor<[%M]x[%K]xf32>) "
-            "where [mul(%M, 16), lt(%K, 1024), range(%M, 32, 512)] {\n"
+            "where [multiple_of(%M, 16), lt(%K, 1024), range(%M, 32, 512)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2897,9 +2897,9 @@ class TestPredicateRoundTrip:
             "}\n"
         )
 
-    def test_pow2_predicate(self) -> None:
+    def test_power_of_two_predicate(self) -> None:
         self._roundtrip_text(
-            "test.func @f(%N: index, %a: tensor<[%N]xf32>) where [pow2(%N)] {\n"
+            "test.func @f(%N: index, %a: tensor<[%N]xf32>) where [power_of_two(%N)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2915,7 +2915,7 @@ class TestPredicateRoundTrip:
     def test_predicates_with_body(self) -> None:
         self._roundtrip_text(
             "test.func @f(%M: index, %a: tensor<[%M]xf32>) -> (tensor<[%M]xf32>)"
-            " where [mul(%M, 16)] {\n"
+            " where [multiple_of(%M, 16)] {\n"
             "  test.yield %a : tensor<[%M]xf32>\n"
             "}\n"
         )
@@ -2923,7 +2923,7 @@ class TestPredicateRoundTrip:
     def test_public_device_with_predicates(self) -> None:
         self._roundtrip_text(
             "test.func public device @vnni(%M: index, %K: index, %w: tensor<[%M]x[%K]xi8>) "
-            "where [mul(%M, 16), mul(%K, 32)] {\n"
+            "where [multiple_of(%M, 16), multiple_of(%K, 32)] {\n"
             "  test.yield\n"
             "}\n"
         )
@@ -2942,7 +2942,7 @@ class TestAssumeOpRoundTrip:
     def test_single_predicate(self) -> None:
         self._roundtrip_text(
             "test.func @f(%M: index) -> (index) {\n"
-            "  %M2 = test.assume %M [mul(%M, 16)] : index\n"
+            "  %M2 = test.assume %M [multiple_of(%M, 16)] : index\n"
             "  test.yield %M2 : index\n"
             "}\n"
         )
@@ -2950,15 +2950,15 @@ class TestAssumeOpRoundTrip:
     def test_multiple_predicates(self) -> None:
         self._roundtrip_text(
             "test.func @f(%M: index, %K: index) -> (index, index) {\n"
-            "  %M2, %K2 = test.assume %M, %K [mul(%M, 16), lt(%K, 1024)] : index, index\n"
+            "  %M2, %K2 = test.assume %M, %K [multiple_of(%M, 16), lt(%K, 1024)] : index, index\n"
             "  test.yield %M2, %K2 : index, index\n"
             "}\n"
         )
 
-    def test_pow2_predicate(self) -> None:
+    def test_power_of_two_predicate(self) -> None:
         self._roundtrip_text(
             "test.func @f(%N: index) -> (index) {\n"
-            "  %N2 = test.assume %N [pow2(%N)] : index\n"
+            "  %N2 = test.assume %N [power_of_two(%N)] : index\n"
             "  test.yield %N2 : index\n"
             "}\n"
         )

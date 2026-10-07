@@ -1846,7 +1846,7 @@ TEST(PredicateLayout, StructSize) {
 TEST(PredicateLayout, FieldOffsets) {
   // Verify fields are at expected offsets for correct packing.
   loom_predicate_t predicate = {0};
-  predicate.kind = LOOM_PREDICATE_MUL;
+  predicate.kind = LOOM_PREDICATE_MULTIPLE_OF;
   predicate.arg_count = 2;
   predicate.arg_tags[0] = LOOM_PRED_ARG_VALUE;
   predicate.arg_tags[1] = LOOM_PRED_ARG_CONST;
@@ -1855,7 +1855,7 @@ TEST(PredicateLayout, FieldOffsets) {
   predicate.args[1] = 16;
   predicate.args[2] = 0;
 
-  EXPECT_EQ(predicate.kind, LOOM_PREDICATE_MUL);
+  EXPECT_EQ(predicate.kind, LOOM_PREDICATE_MULTIPLE_OF);
   EXPECT_EQ(predicate.arg_count, 2);
   EXPECT_EQ(predicate.arg_tags[0], LOOM_PRED_ARG_VALUE);
   EXPECT_EQ(predicate.arg_tags[1], LOOM_PRED_ARG_CONST);
@@ -1868,12 +1868,14 @@ TEST(PredicateLayout, FieldOffsets) {
 TEST(PredicateLayout, AllKindsValid) {
   // Verify all predicate kinds can be stored and retrieved.
   loom_predicate_kind_t kinds[] = {
-      LOOM_PREDICATE_EQ,      LOOM_PREDICATE_NE,     LOOM_PREDICATE_LT,
-      LOOM_PREDICATE_LE,      LOOM_PREDICATE_GT,     LOOM_PREDICATE_GE,
-      LOOM_PREDICATE_MUL,     LOOM_PREDICATE_MIN,    LOOM_PREDICATE_MAX,
-      LOOM_PREDICATE_POW2,    LOOM_PREDICATE_RANGE,  LOOM_PREDICATE_NOT_NAN,
-      LOOM_PREDICATE_NOT_INF, LOOM_PREDICATE_FINITE, LOOM_PREDICATE_ULT,
-      LOOM_PREDICATE_ULE,     LOOM_PREDICATE_UGT,    LOOM_PREDICATE_UGE,
+      LOOM_PREDICATE_EQ,          LOOM_PREDICATE_NE,
+      LOOM_PREDICATE_LT,          LOOM_PREDICATE_LE,
+      LOOM_PREDICATE_GT,          LOOM_PREDICATE_GE,
+      LOOM_PREDICATE_MULTIPLE_OF, LOOM_PREDICATE_POWER_OF_TWO,
+      LOOM_PREDICATE_RANGE,       LOOM_PREDICATE_NOT_NAN,
+      LOOM_PREDICATE_NOT_INF,     LOOM_PREDICATE_FINITE,
+      LOOM_PREDICATE_ULT,         LOOM_PREDICATE_ULE,
+      LOOM_PREDICATE_UGT,         LOOM_PREDICATE_UGE,
   };
   for (int i = 0; i < (int)IREE_ARRAYSIZE(kinds); ++i) {
     loom_predicate_t predicate = {0};
@@ -1921,9 +1923,9 @@ TEST(PredicateLayout, LargeConstants) {
 TEST(PredicateAttr, Construction) {
   // Verify loom_attr_predicate_list constructs the right attribute.
   loom_predicate_t predicates[2] = {};
-  predicates[0].kind = LOOM_PREDICATE_MUL;
+  predicates[0].kind = LOOM_PREDICATE_MULTIPLE_OF;
   predicates[0].arg_count = 2;
-  predicates[1].kind = LOOM_PREDICATE_POW2;
+  predicates[1].kind = LOOM_PREDICATE_POWER_OF_TWO;
   predicates[1].arg_count = 1;
 
   loom_attribute_t attr = loom_attr_predicate_list(predicates, 2);
@@ -2067,7 +2069,7 @@ class PrintPredicateTest : public ::testing::Test {
   uint16_t pred_test_kind_ = 0;
 };
 
-TEST_F(PrintPredicateTest, SingleMulPredicate) {
+TEST_F(PrintPredicateTest, SingleMultipleOfPredicate) {
   // Define a value so we can reference it by name.
   loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
   loom_value_id_t dim_value = def(index_type);
@@ -2076,9 +2078,9 @@ TEST_F(PrintPredicateTest, SingleMulPredicate) {
   loom_string_id_t name_id = intern("M");
   loom_module_value(module_, dim_value)->name_id = name_id;
 
-  // Build: mul(%M, 16)
+  // Build: multiple_of(%M, 16)
   loom_predicate_t predicates[1] = {};
-  predicates[0].kind = LOOM_PREDICATE_MUL;
+  predicates[0].kind = LOOM_PREDICATE_MULTIPLE_OF;
   predicates[0].arg_count = 2;
   predicates[0].arg_tags[0] = LOOM_PRED_ARG_VALUE;
   predicates[0].arg_tags[1] = LOOM_PRED_ARG_CONST;
@@ -2087,7 +2089,7 @@ TEST_F(PrintPredicateTest, SingleMulPredicate) {
 
   loom_op_t* op = build_pred_op(predicates, 1);
   EXPECT_EQ(print_op(op, LOOM_TEXT_PRINT_DEFAULT),
-            "test.predtest [mul(%M, 16)]\n");
+            "test.predtest [multiple_of(%M, 16)]\n");
 }
 
 TEST_F(PrintPredicateTest, MultipleMixedPredicates) {
@@ -2097,9 +2099,9 @@ TEST_F(PrintPredicateTest, MultipleMixedPredicates) {
   loom_string_id_t k_name = intern("K");
   loom_module_value(module_, k_value)->name_id = k_name;
 
-  // Build: [mul(%K, 16), lt(%K, 1024)]
+  // Build: [multiple_of(%K, 16), lt(%K, 1024)]
   loom_predicate_t predicates[2] = {};
-  predicates[0].kind = LOOM_PREDICATE_MUL;
+  predicates[0].kind = LOOM_PREDICATE_MULTIPLE_OF;
   predicates[0].arg_count = 2;
   predicates[0].arg_tags[0] = LOOM_PRED_ARG_VALUE;
   predicates[0].arg_tags[1] = LOOM_PRED_ARG_CONST;
@@ -2115,26 +2117,26 @@ TEST_F(PrintPredicateTest, MultipleMixedPredicates) {
 
   loom_op_t* op = build_pred_op(predicates, 2);
   EXPECT_EQ(print_op(op, LOOM_TEXT_PRINT_DEFAULT),
-            "test.predtest [mul(%K, 16), lt(%K, 1024)]\n");
+            "test.predtest [multiple_of(%K, 16), lt(%K, 1024)]\n");
 }
 
-TEST_F(PrintPredicateTest, Pow2SingleArg) {
+TEST_F(PrintPredicateTest, PowerOfTwoSingleArg) {
   loom_type_t index_type = loom_type_scalar(LOOM_SCALAR_TYPE_INDEX);
   loom_value_id_t value = def(index_type);
 
   loom_string_id_t name = intern("N");
   loom_module_value(module_, value)->name_id = name;
 
-  // Build: [pow2(%N)]
+  // Build: [power_of_two(%N)]
   loom_predicate_t predicates[1] = {};
-  predicates[0].kind = LOOM_PREDICATE_POW2;
+  predicates[0].kind = LOOM_PREDICATE_POWER_OF_TWO;
   predicates[0].arg_count = 1;
   predicates[0].arg_tags[0] = LOOM_PRED_ARG_VALUE;
   predicates[0].args[0] = (int64_t)value;
 
   loom_op_t* op = build_pred_op(predicates, 1);
   EXPECT_EQ(print_op(op, LOOM_TEXT_PRINT_DEFAULT),
-            "test.predtest [pow2(%N)]\n");
+            "test.predtest [power_of_two(%N)]\n");
 }
 
 TEST_F(PrintPredicateTest, RangeThreeArgs) {
@@ -2168,9 +2170,9 @@ TEST_F(PrintPredicateTest, EmptyPredicateList) {
 TEST_F(PrintPredicateTest, AllPredicateKinds) {
   // Verify all predicate kinds print their correct name.
   const char* expected_names[] = {
-      "eq",      "ne",     "lt",  "le",   "gt",    "ge",
-      "mul",     "min",    "max", "pow2", "range", "not_nan",
-      "not_inf", "finite", "ult", "ule",  "ugt",   "uge"};
+      "eq",          "ne",           "lt",    "le",      "gt",      "ge",
+      "multiple_of", "power_of_two", "range", "not_nan", "not_inf", "finite",
+      "ult",         "ule",          "ugt",   "uge"};
   for (int kind = 0; kind < LOOM_PREDICATE_COUNT_; ++kind) {
     loom_predicate_t predicates[1] = {};
     predicates[0].kind = (uint8_t)kind;
@@ -2209,7 +2211,7 @@ TEST_F(PrintPredicateTest, GeneratedTestAssume) {
 
   // Build predicates for the where clause.
   loom_predicate_t predicates[2] = {};
-  predicates[0].kind = LOOM_PREDICATE_MUL;
+  predicates[0].kind = LOOM_PREDICATE_MULTIPLE_OF;
   predicates[0].arg_count = 2;
   predicates[0].arg_tags[0] = LOOM_PRED_ARG_VALUE;
   predicates[0].args[0] = m_id;
@@ -2233,7 +2235,7 @@ TEST_F(PrintPredicateTest, GeneratedTestAssume) {
 
   std::string output = print_op(op, LOOM_TEXT_PRINT_DEFAULT);
   EXPECT_EQ(output,
-            "%2, %3 = test.assume %M, %K [mul(%M, 16), lt(%K, 1024)]"
+            "%2, %3 = test.assume %M, %K [multiple_of(%M, 16), lt(%K, 1024)]"
             " : index, index\n");
 }
 

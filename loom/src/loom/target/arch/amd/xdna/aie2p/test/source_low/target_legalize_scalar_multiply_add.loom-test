@@ -65,7 +65,7 @@ aie2p.target<core> @target
 func.def target(@target) @attribute_observer(%a: i32, %b: i32, %c: i32) -> (i32) {
   %product = scalar.muli %a, %b : i32
   %result = scalar.addi %product, %c : i32
-  %observed = scalar.assume %result [mul(%product, 4)] : i32
+  %observed = scalar.assume %result [multiple_of(%product, 4)] : i32
   func.return %observed : i32
 }
 

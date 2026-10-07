@@ -225,7 +225,7 @@ class WriterFixture {
       loom_value_id_t value_id = LOOM_VALUE_ID_INVALID;
       AbortOnError(loom_module_define_value(module_, index_type, &value_id));
       predicates[value_ordinal] = loom_predicate_t{
-          /*.kind=*/LOOM_PREDICATE_MUL,
+          /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
           /*.arg_count=*/2,
           /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
           /*.reserved=*/{},

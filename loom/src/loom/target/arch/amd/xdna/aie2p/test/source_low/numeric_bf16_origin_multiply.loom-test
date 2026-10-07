@@ -115,7 +115,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @bf16_bitcast_orig
 
 func.def @bf16_dynamic_origin_scale(%input: buffer, %element0: index) -> (vector<16xf32>) {
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 32} : buffer
-  %element = index.assume %element0 [range(%element0, 0, 48), mul(%element0, 16)] : index
+  %element = index.assume %element0 [range(%element0, 0, 48), multiple_of(%element0, 16)] : index
   %origin = index.constant 0 : offset
   %input_view = buffer.view %input_aligned[%origin] : buffer -> view<64xbf16>
   %narrow = vector.load %input_view[%element] : view<64xbf16> -> vector<16xbf16>
@@ -323,7 +323,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @bf16_vector32_sca
 
 func.def @bf16_vector32_scalar_product_store(%values: vector<32xbf16>, %scale: bf16, %output: buffer, %position0: index) {
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 64} : buffer
-  %position = index.assume %position0 [range(%position0, 0, 96), mul(%position0, 32)] : index
+  %position = index.assume %position0 [range(%position0, 0, 96), multiple_of(%position0, 32)] : index
   %origin = index.constant 0 : offset
   %output_view = buffer.view %output_aligned[%origin] : buffer -> view<128xbf16>
   %wide_scale = scalar.extf %scale : bf16 to f32

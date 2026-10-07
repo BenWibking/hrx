@@ -217,7 +217,7 @@ func.def @offset_predicate_literal_must_be_nonnegative(%x: offset) -> (offset) {
 
 func.def @multiple_requires_literal_divisor(%x: i32, %divisor: i32) {
   // ERROR@+1: STRUCTURE/032 "predicates[0].arg[1]" "positive literal divisor"
-  %checked_x, %checked_divisor = sanitizer.assert.value %x, %divisor [mul(%x, %divisor)] : i32, i32
+  %checked_x, %checked_divisor = sanitizer.assert.value %x, %divisor [multiple_of(%x, %divisor)] : i32, i32
   func.return
 }
 
@@ -225,7 +225,7 @@ func.def @multiple_requires_literal_divisor(%x: i32, %divisor: i32) {
 
 func.def @multiple_requires_positive_divisor(%x: i32) -> (i32) {
   // ERROR@+1: STRUCTURE/014 "predicates[0].arg[1]" "0" "positive divisor"
-  %checked = sanitizer.assert.value %x [mul(%x, 0)] : i32
+  %checked = sanitizer.assert.value %x [multiple_of(%x, 0)] : i32
   func.return %checked : i32
 }
 
@@ -272,7 +272,7 @@ func.def @op_float_predicate_rejects_integer(%x: index) {
 
 func.def @op_multiple_requires_positive_divisor(%x: i32) {
   // ERROR@+1: STRUCTURE/014 "predicates[0].arg[1]" "-4" "positive divisor"
-  sanitizer.assert.op %x [mul(%x, -4)] : i32
+  sanitizer.assert.op %x [multiple_of(%x, -4)] : i32
   func.return
 }
 

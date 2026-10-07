@@ -371,7 +371,7 @@ def _make_predicate_function_module() -> Module:
     module = Module(name="test")
     argument_id = module.add_value(Value(name="M", type=INDEX))
     predicate = Predicate(
-        kind="mul",
+        kind="multiple_of",
         args=(
             PredicateArg(tag="value", value=argument_id),
             PredicateArg(tag="const", value=16),

@@ -6,7 +6,7 @@ global.constant @pi : f32 = 3.14159265358979
 // ====
 
 // Typed constant with dynamic dims and predicates.
-global.constant @weights : tile<[%m]x[%k]xf32> where [mul(%m, 16)]
+global.constant @weights : tile<[%m]x[%k]xf32> where [multiple_of(%m, 16)]
 
 // ====
 

@@ -42,7 +42,7 @@ TEST(DecisionProgramTest, SelectsScalarPredicateChoiceFromSsaFacts) {
           },
       },
       {
-          /*.kind=*/LOOM_PREDICATE_MUL,
+          /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
           /*.operand_count=*/2,
           /*.reserved=*/{}, /*.operands=*/
           {

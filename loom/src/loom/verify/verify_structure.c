@@ -795,7 +795,7 @@ static void loom_verify_predicate_list_attr(loom_verify_state_t* state,
     uint8_t constrained_argument_index = UINT8_MAX;
     int64_t constrained_argument_value = 0;
     iree_string_view_t expected_constraint = iree_string_view_empty();
-    if (predicate->kind == LOOM_PREDICATE_MUL &&
+    if (predicate->kind == LOOM_PREDICATE_MULTIPLE_OF &&
         predicate->arg_count == expected_argument_count &&
         predicate->arg_tags[1] == LOOM_PRED_ARG_CONST &&
         predicate->args[1] <= 0) {

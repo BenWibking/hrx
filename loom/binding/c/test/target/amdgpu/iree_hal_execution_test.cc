@@ -24,7 +24,7 @@ kernel.def @double_i32_at_byte_offset() {
   %unit = index.constant 1 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %byte_offset: offset) {
-  %byte_offset_aligned = index.assume %byte_offset [mul(%byte_offset, 4)] : offset
+  %byte_offset_aligned = index.assume %byte_offset [multiple_of(%byte_offset, 4)] : offset
   %input_aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %output_aligned = buffer.assume.alignment %output {minimum_alignment = 4} : buffer
   %input_view = buffer.view %input_aligned[%byte_offset_aligned] : buffer -> view<1xi32>

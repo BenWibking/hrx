@@ -273,6 +273,7 @@ loom_cc_library(
   DEPS
     iree::base
     loom::ir
+    loom::ir::facts
   PUBLIC
 )
 

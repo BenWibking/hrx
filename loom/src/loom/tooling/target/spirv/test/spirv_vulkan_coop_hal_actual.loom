@@ -13,10 +13,10 @@ kernel.def target(@target) @cooperative_matrix_f16_two_tiles() {
   %acc_byte_index = index.mul %workgroup_x, %acc_tile_bytes : index
   %lhs_byte_offset = index.cast %lhs_byte_index : index to offset
   %acc_byte_offset = index.cast %acc_byte_index : index to offset
-  %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [mul(%lhs_byte_offset, 16)] : offset
-  %acc_byte_offset_aligned = index.assume %acc_byte_offset [mul(%acc_byte_offset, 16)] : offset
+  %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [multiple_of(%lhs_byte_offset, 16)] : offset
+  %acc_byte_offset_aligned = index.assume %acc_byte_offset [multiple_of(%acc_byte_offset, 16)] : offset
   %rhs_base = index.constant 0 : offset
-  %rhs_base_aligned = index.assume %rhs_base [mul(%rhs_base, 16)] : offset
+  %rhs_base_aligned = index.assume %rhs_base [multiple_of(%rhs_base, 16)] : offset
   %m = index.constant 16 : index
   %n = index.constant 16 : index
   %k = index.constant 16 : index
@@ -73,7 +73,7 @@ kernel.def target(@target) @dense_projection_tiled_f16_128() {
   %out_tile_index = index.madd %workgroup_m, %n_tiles, %workgroup_n : index
   %out_byte_index = index.mul %out_tile_index, %acc_tile_bytes : index
   %out_byte_offset = index.cast %out_byte_index : index to offset
-  %out_byte_offset_aligned = index.assume %out_byte_offset [mul(%out_byte_offset, 16)] : offset
+  %out_byte_offset_aligned = index.assume %out_byte_offset [multiple_of(%out_byte_offset, 16)] : offset
   %lhs_aligned = buffer.assume.alignment %lhs_buffer {minimum_alignment = 16} : buffer
   %rhs_aligned = buffer.assume.alignment %rhs_buffer {minimum_alignment = 16} : buffer
   %init_aligned = buffer.assume.alignment %init_buffer {minimum_alignment = 16} : buffer
@@ -88,8 +88,8 @@ kernel.def target(@target) @dense_projection_tiled_f16_128() {
     %rhs_byte_index = index.mul %rhs_tile_index, %rhs_tile_bytes : index
     %lhs_byte_offset = index.cast %lhs_byte_index : index to offset
     %rhs_byte_offset = index.cast %rhs_byte_index : index to offset
-    %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [mul(%lhs_byte_offset, 16)] : offset
-    %rhs_byte_offset_aligned = index.assume %rhs_byte_offset [mul(%rhs_byte_offset, 16)] : offset
+    %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [multiple_of(%lhs_byte_offset, 16)] : offset
+    %rhs_byte_offset_aligned = index.assume %rhs_byte_offset [multiple_of(%rhs_byte_offset, 16)] : offset
     %lhs_view = buffer.view %lhs_aligned[%lhs_byte_offset_aligned] : buffer -> view<16x16xf16>
     %rhs_view = buffer.view %rhs_aligned[%rhs_byte_offset_aligned] : buffer -> view<16x16xf16>
     %lhs = vector.fragment.load<lhs> %lhs_view[0, 0] shape [%m, %k] : view<16x16xf16> -> vector<16xf16>
@@ -138,7 +138,7 @@ kernel.def target(@target) @narrow_score_tiled_f16_128x16_m1() {
   %out_tile_index = index.madd %workgroup_m, %n_tiles, %c0 : index
   %out_byte_index = index.mul %out_tile_index, %acc_tile_bytes : index
   %out_byte_offset = index.cast %out_byte_index : index to offset
-  %out_byte_offset_aligned = index.assume %out_byte_offset [mul(%out_byte_offset, 16)] : offset
+  %out_byte_offset_aligned = index.assume %out_byte_offset [multiple_of(%out_byte_offset, 16)] : offset
   %lhs_aligned = buffer.assume.alignment %lhs_buffer {minimum_alignment = 16} : buffer
   %rhs_aligned = buffer.assume.alignment %rhs_buffer {minimum_alignment = 16} : buffer
   %init_aligned = buffer.assume.alignment %init_buffer {minimum_alignment = 16} : buffer
@@ -153,8 +153,8 @@ kernel.def target(@target) @narrow_score_tiled_f16_128x16_m1() {
     %rhs_byte_index = index.mul %rhs_tile_index, %rhs_tile_bytes : index
     %lhs_byte_offset = index.cast %lhs_byte_index : index to offset
     %rhs_byte_offset = index.cast %rhs_byte_index : index to offset
-    %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [mul(%lhs_byte_offset, 16)] : offset
-    %rhs_byte_offset_aligned = index.assume %rhs_byte_offset [mul(%rhs_byte_offset, 16)] : offset
+    %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [multiple_of(%lhs_byte_offset, 16)] : offset
+    %rhs_byte_offset_aligned = index.assume %rhs_byte_offset [multiple_of(%rhs_byte_offset, 16)] : offset
     %lhs_view = buffer.view %lhs_aligned[%lhs_byte_offset_aligned] : buffer -> view<16x16xf16>
     %rhs_view = buffer.view %rhs_aligned[%rhs_byte_offset_aligned] : buffer -> view<16x16xf16>
     %lhs = vector.fragment.load<lhs> %lhs_view[0, 0] shape [%m, %k] : view<16x16xf16> -> vector<16xf16>
@@ -193,7 +193,7 @@ kernel.def target(@target) @narrow_score_tiled_f16_128x16_m2() {
   %out_tile_index0 = index.madd %workgroup_m0, %n_tiles, %c0 : index
   %out_byte_index0 = index.mul %out_tile_index0, %acc_tile_bytes : index
   %out_byte_offset0 = index.cast %out_byte_index0 : index to offset
-  %out_byte_offset_aligned0 = index.assume %out_byte_offset0 [mul(%out_byte_offset0, 16)] : offset
+  %out_byte_offset_aligned0 = index.assume %out_byte_offset0 [multiple_of(%out_byte_offset0, 16)] : offset
   %init_view0 = buffer.view %init_aligned[%out_byte_offset_aligned0] : buffer -> view<16x16xf32>
   %out_view0 = buffer.view %out_aligned[%out_byte_offset_aligned0] : buffer -> view<16x16xf32>
   %init0 = vector.fragment.load<init> %init_view0[0, 0] shape [%m, %n] : view<16x16xf32> -> vector<8xf32>
@@ -204,8 +204,8 @@ kernel.def target(@target) @narrow_score_tiled_f16_128x16_m2() {
     %rhs_byte_index0 = index.mul %rhs_tile_index0, %rhs_tile_bytes : index
     %lhs_byte_offset0 = index.cast %lhs_byte_index0 : index to offset
     %rhs_byte_offset0 = index.cast %rhs_byte_index0 : index to offset
-    %lhs_byte_offset_aligned0 = index.assume %lhs_byte_offset0 [mul(%lhs_byte_offset0, 16)] : offset
-    %rhs_byte_offset_aligned0 = index.assume %rhs_byte_offset0 [mul(%rhs_byte_offset0, 16)] : offset
+    %lhs_byte_offset_aligned0 = index.assume %lhs_byte_offset0 [multiple_of(%lhs_byte_offset0, 16)] : offset
+    %rhs_byte_offset_aligned0 = index.assume %rhs_byte_offset0 [multiple_of(%rhs_byte_offset0, 16)] : offset
     %lhs_view0 = buffer.view %lhs_aligned[%lhs_byte_offset_aligned0] : buffer -> view<16x16xf16>
     %rhs_view0 = buffer.view %rhs_aligned[%rhs_byte_offset_aligned0] : buffer -> view<16x16xf16>
     %lhs0 = vector.fragment.load<lhs> %lhs_view0[0, 0] shape [%m, %k] : view<16x16xf16> -> vector<16xf16>
@@ -217,7 +217,7 @@ kernel.def target(@target) @narrow_score_tiled_f16_128x16_m2() {
   %out_tile_index1 = index.madd %workgroup_m1, %n_tiles, %c0 : index
   %out_byte_index1 = index.mul %out_tile_index1, %acc_tile_bytes : index
   %out_byte_offset1 = index.cast %out_byte_index1 : index to offset
-  %out_byte_offset_aligned1 = index.assume %out_byte_offset1 [mul(%out_byte_offset1, 16)] : offset
+  %out_byte_offset_aligned1 = index.assume %out_byte_offset1 [multiple_of(%out_byte_offset1, 16)] : offset
   %init_view1 = buffer.view %init_aligned[%out_byte_offset_aligned1] : buffer -> view<16x16xf32>
   %out_view1 = buffer.view %out_aligned[%out_byte_offset_aligned1] : buffer -> view<16x16xf32>
   %init1 = vector.fragment.load<init> %init_view1[0, 0] shape [%m, %n] : view<16x16xf32> -> vector<8xf32>
@@ -228,8 +228,8 @@ kernel.def target(@target) @narrow_score_tiled_f16_128x16_m2() {
     %rhs_byte_index1 = index.mul %rhs_tile_index1, %rhs_tile_bytes : index
     %lhs_byte_offset1 = index.cast %lhs_byte_index1 : index to offset
     %rhs_byte_offset1 = index.cast %rhs_byte_index1 : index to offset
-    %lhs_byte_offset_aligned1 = index.assume %lhs_byte_offset1 [mul(%lhs_byte_offset1, 16)] : offset
-    %rhs_byte_offset_aligned1 = index.assume %rhs_byte_offset1 [mul(%rhs_byte_offset1, 16)] : offset
+    %lhs_byte_offset_aligned1 = index.assume %lhs_byte_offset1 [multiple_of(%lhs_byte_offset1, 16)] : offset
+    %rhs_byte_offset_aligned1 = index.assume %rhs_byte_offset1 [multiple_of(%rhs_byte_offset1, 16)] : offset
     %lhs_view1 = buffer.view %lhs_aligned[%lhs_byte_offset_aligned1] : buffer -> view<16x16xf16>
     %rhs_view1 = buffer.view %rhs_aligned[%rhs_byte_offset_aligned1] : buffer -> view<16x16xf16>
     %lhs1 = vector.fragment.load<lhs> %lhs_view1[0, 0] shape [%m, %k] : view<16x16xf16> -> vector<16xf16>

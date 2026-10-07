@@ -22,7 +22,7 @@ func.def target(@target) @store_materialized(%value: vector<64xi32>, %output: bu
 
 func.def target(@target) @store_dynamic(%value: vector<64xi32>, %output: buffer, %base_argument: offset) {
   %aligned = buffer.assume.alignment %output {minimum_alignment = 64} : buffer
-  %base = index.assume %base_argument [range(%base_argument, 0, 768), mul(%base_argument, 64)] : offset
+  %base = index.assume %base_argument [range(%base_argument, 0, 768), multiple_of(%base_argument, 64)] : offset
   %view = buffer.view %aligned[%base] : buffer -> view<8x8xi32>
   %extent = index.constant 8 : index
   vector.fragment.store<result> %value, %view[0, 0] shape [%extent, %extent] : vector<64xi32>, view<8x8xi32>
@@ -31,7 +31,7 @@ func.def target(@target) @store_dynamic(%value: vector<64xi32>, %output: buffer,
 
 func.def target(@target) @store_nested(%value: vector<64xi32>, %output: buffer, %base_argument: offset) {
   %aligned = buffer.assume.alignment %output {minimum_alignment = 64} : buffer
-  %base = index.assume %base_argument [range(%base_argument, 0, 768), mul(%base_argument, 64)] : offset
+  %base = index.assume %base_argument [range(%base_argument, 0, 768), multiple_of(%base_argument, 64)] : offset
   %parent = buffer.view %aligned[%base] : buffer -> view<16x8xi32>
   %view = view.subview %parent[8, 0] : view<16x8xi32> -> view<8x8xi32>
   %extent = index.constant 8 : index

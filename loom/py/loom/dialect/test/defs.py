@@ -2633,8 +2633,8 @@ test_assume = Op(
         TypesOf("results"),
     ],
     examples=[
-        "%M2 = test.assume %M [mul(%M, 16)] : index",
-        "%M2, %K2 = test.assume %M, %K [mul(%M, 16), lt(%K, 1024)] : index, index",
+        "%M2 = test.assume %M [multiple_of(%M, 16)] : index",
+        "%M2, %K2 = test.assume %M, %K [multiple_of(%M, 16), lt(%K, 1024)] : index, index",
     ],
 )
 

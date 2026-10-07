@@ -695,7 +695,7 @@ func.def @lookup_facts_include_default_for_uncovered_range(%variant: index) -> (
 // Divisibility facts prune explicit cases and can prove that a sparse key set
 // still covers every possible selector value.
 func.def @lookup_facts_prune_by_divisor(%variant: index) -> (i64, i64) {
-  %bounded = index.assume %variant [range(%variant, 0, 4), mul(%variant, 2)] : index
+  %bounded = index.assume %variant [range(%variant, 0, 4), multiple_of(%variant, 2)] : index
   %v0 = scalar.constant 10 : i64
   %v1 = scalar.constant 11 : i64
   %v2 = scalar.constant 20 : i64
@@ -1095,7 +1095,7 @@ func.def target(@narrow) @for_additive_byte_streams() {
 // Range-valued scalar seeds, descending subtraction, an unchanged offset, and
 // an invariant captured step share the same finite additive recurrence rule.
 func.def @for_ranged_additive_state(%seed: i32, %stride: offset) {
-  %bounded = scalar.assume %seed [range(%seed, 24, 40), mul(%seed, 8)] : i32
+  %bounded = scalar.assume %seed [range(%seed, 24, 40), multiple_of(%seed, 8)] : i32
   %captured_step = index.assume %stride [range(%stride, 16, 16)] : offset
   %begin = index.constant 0 : index
   %end = index.constant 4 : index
@@ -1130,7 +1130,7 @@ func.def @for_ranged_additive_state(%seed: i32, %stride: offset) {
 
 // ----
 func.def @for_ranged_additive_state(%seed: i32, %stride: offset) {
-  %bounded = scalar.assume %seed [range(%seed, 24, 40), mul(%seed, 8)] : i32
+  %bounded = scalar.assume %seed [range(%seed, 24, 40), multiple_of(%seed, 8)] : i32
   %captured_step = index.constant 16 : offset
   %begin = index.constant 0 : index
   %end = index.constant 4 : index

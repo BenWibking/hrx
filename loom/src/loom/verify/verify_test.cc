@@ -617,7 +617,7 @@ TEST_F(VerifyTest, RejectsPredicateArityMismatch) {
   EnterTestFunc(&index_type, 1, &argument);
 
   loom_predicate_t predicate = {
-      /*.kind=*/LOOM_PREDICATE_POW2,
+      /*.kind=*/LOOM_PREDICATE_POWER_OF_TWO,
       /*.arg_count=*/2,
       /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
       /*.reserved=*/{},
@@ -638,7 +638,7 @@ TEST_F(VerifyTest, RejectsPredicateArityMismatch) {
       << "Expected STRUCTURE/021 predicate-arity diagnostic";
   EXPECT_EQ(GetStringParam(*entry, 0), "predicates");
   ExpectU32Param(*entry, 1, 0u);
-  EXPECT_EQ(GetStringParam(*entry, 2), "pow2");
+  EXPECT_EQ(GetStringParam(*entry, 2), "power_of_two");
   ExpectU32Param(*entry, 3, 1u);
   ExpectU32Param(*entry, 4, 2u);
 }

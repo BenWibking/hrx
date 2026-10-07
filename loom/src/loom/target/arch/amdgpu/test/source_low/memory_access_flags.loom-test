@@ -86,7 +86,7 @@ low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @observe_byte() asm {
 // ====
 
 func.def @observe_dynamic_address(%input: buffer, %byte_offset: offset) -> (i32, i32) {
-  %base = index.assume %byte_offset [range(%byte_offset, 0, 4092), mul(%byte_offset, 4)] : offset
+  %base = index.assume %byte_offset [range(%byte_offset, 0, 4092), multiple_of(%byte_offset, 4)] : offset
   %aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %source = buffer.view %aligned[%base] : buffer -> view<2xi32>
   %first = view.load<volatile> %source[0] : view<2xi32> -> i32

@@ -2,7 +2,7 @@
 
 template.decl @demo.report(%m: index) -> (index)
 
-template.def<@demo.report> priority(10) @aligned(%m: index) -> (index) where [mul(%m, 16)] {
+template.def<@demo.report> priority(10) @aligned(%m: index) -> (index) where [multiple_of(%m, 16)] {
   template.return %m : index
 }
 

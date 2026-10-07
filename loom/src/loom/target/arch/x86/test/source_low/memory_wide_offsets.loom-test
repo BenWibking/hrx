@@ -4,7 +4,7 @@
 func.def @scalar_wide_byte_offset(%input_storage: buffer, %output_storage: buffer, %byte_offset_input: offset) -> (i32) {
   %input = buffer.assume.alignment %input_storage {minimum_alignment = 4} : buffer
   %output = buffer.assume.alignment %output_storage {minimum_alignment = 4} : buffer
-  %byte_offset = index.assume %byte_offset_input [mul(%byte_offset_input, 4)] : offset
+  %byte_offset = index.assume %byte_offset_input [multiple_of(%byte_offset_input, 4)] : offset
   %input_view = buffer.view %input[%byte_offset] : buffer -> view<1xi32>
   %output_view = buffer.view %output[%byte_offset] : buffer -> view<1xi32>
   %loaded = view.load %input_view[0] : view<1xi32> -> i32
@@ -103,7 +103,7 @@ low.func.def target<x86.avx2.core> abi(object_function) @scalar_wide_dynamic_dim
 func.def @scalar_wide_mixed_base(%input_storage: buffer, %output_storage: buffer, %byte_offset_input: offset) -> (i32) {
   %input = buffer.assume.alignment %input_storage {minimum_alignment = 4} : buffer
   %output = buffer.assume.alignment %output_storage {minimum_alignment = 4} : buffer
-  %byte_offset = index.assume %byte_offset_input [mul(%byte_offset_input, 4)] : offset
+  %byte_offset = index.assume %byte_offset_input [multiple_of(%byte_offset_input, 4)] : offset
   %static_base = index.constant 1099511627784 : offset
   %combined_offset = index.add %byte_offset, %static_base : offset
   %input_view = buffer.view %input[%combined_offset] : buffer -> view<1xi32>
@@ -151,7 +151,7 @@ func.def @vector_wide_dynamic_dimensions(%input_storage: buffer, %output_storage
   %input = buffer.assume.alignment %input_storage {minimum_alignment = 16} : buffer
   %output = buffer.assume.alignment %output_storage {minimum_alignment = 16} : buffer
   %row = index.assume %row_input [range(%row_input, 0, 1)] : index
-  %columns = index.assume %columns_input [range(%columns_input, 4, 2147483647), mul(%columns_input, 4)] : index
+  %columns = index.assume %columns_input [range(%columns_input, 4, 2147483647), multiple_of(%columns_input, 4)] : index
   %buffer_base = index.constant 0 : offset
   %input_view = buffer.view %input[%buffer_base] : buffer -> view<2x[%columns]xi32>
   %output_view = buffer.view %output[%buffer_base] : buffer -> view<2x[%columns]xi32>

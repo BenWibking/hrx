@@ -645,7 +645,7 @@ func.def @static_vector_origin_proven_by_shifted_assume_relation(%buffer: buffer
   %limit = index.constant 262137 : index
   %row_offset = index.mul %row, %stride : index
   %origin0 = index.add %row_offset, %column : index
-  %origin = index.assume %origin0 [range(%origin0, 0, 262137), lt(%origin0, %limit), mul(%origin0, 8)] : index
+  %origin = index.assume %origin0 [range(%origin0, 0, 262137), lt(%origin0, %limit), multiple_of(%origin0, 8)] : index
   %view = buffer.view %buffer[%base] : buffer -> view<262144xf16, %layout>
   %loaded = vector.load %view[%origin] : view<262144xf16, %layout> -> vector<8xf16>
   test.use %loaded : vector<8xf16>
@@ -660,7 +660,7 @@ func.def @static_vector_origin_combines_shifted_bound_with_divisor(%buffer: buff
   %late_limit = index.constant 262138 : index
   %row_offset = index.mul %row, %stride : index
   %origin0 = index.add %row_offset, %column : index
-  %origin = index.assume %origin0 [range(%origin0, 0, 262137), lt(%origin0, %late_limit), mul(%origin0, 8)] : index
+  %origin = index.assume %origin0 [range(%origin0, 0, 262137), lt(%origin0, %late_limit), multiple_of(%origin0, 8)] : index
   %view = buffer.view %buffer[%base] : buffer -> view<262144xf16, %layout>
   %loaded = vector.load %view[%origin] : view<262144xf16, %layout> -> vector<8xf16>
   test.use %loaded : vector<8xf16>
@@ -675,7 +675,7 @@ func.def @static_vector_origin_rejects_aligned_origin_at_view_end(%buffer: buffe
   %late_limit = index.constant 262145 : index
   %row_offset = index.mul %row, %stride : index
   %origin0 = index.add %row_offset, %column : index
-  %origin = index.assume %origin0 [range(%origin0, 0, 262144), lt(%origin0, %late_limit), mul(%origin0, 8)] : index
+  %origin = index.assume %origin0 [range(%origin0, 0, 262144), lt(%origin0, %late_limit), multiple_of(%origin0, 8)] : index
   %view = buffer.view %buffer[%base] : buffer -> view<262144xf16, %layout>
   // ERROR@+1: SUBRANGE/010 {op_name="vector.load", vector_extent="8", view_bound="262144", required_origin_upper_bound="262136", constraint_key="vector_footprint.full_vector_upper_bound"}
   %loaded = vector.load %view[%origin] : view<262144xf16, %layout> -> vector<8xf16>
@@ -761,7 +761,7 @@ func.def @dynamic_vector_origin_proven_by_exact_count_minus_extent_relation(%buf
   %n = index.assume %n0 [range(%n0, 262144, 262144)] : index
   %last_start_bias = index.constant 7 : index
   %last_valid_start = index.sub %n, %last_start_bias : index
-  %origin = index.assume %origin0 [ge(%origin0, 0), lt(%origin0, %last_valid_start), mul(%origin0, 8)] : index
+  %origin = index.assume %origin0 [ge(%origin0, 0), lt(%origin0, %last_valid_start), multiple_of(%origin0, 8)] : index
   %view = buffer.view %buffer[%base] : buffer -> view<[%n]xf16, %layout>
   %values = vector.load %view[%origin] : view<[%n]xf16, %layout> -> vector<8xf16>
   test.use %values : vector<8xf16>
@@ -882,7 +882,7 @@ func.def @quantized_q4_row_word_chunk_reports_storage_envelope(%buffer: buffer, 
   %block_word_stride = index.constant 36 : index
   %iteration_column_stride = index.constant 1024 : index
   %row = index.assume %row0 [range(%row0, 0, 32767)] : index
-  %ncols = index.assume %ncols0 [range(%ncols0, 256, 32768), mul(%ncols0, 256)] : index
+  %ncols = index.assume %ncols0 [range(%ncols0, 256, 32768), multiple_of(%ncols0, 256)] : index
   %lane = index.assume %lane0 [range(%lane0, 0, 63)] : index
   %iter = index.assume %iter0 [range(%iter0, 0, 31)] : index
   %q8_word_pair = index.rem %lane, %word_pair_count : index
@@ -914,7 +914,7 @@ func.def @quantized_q4_row_word_chunk_reports_storage_envelope(%buffer: buffer, 
 
 // ====
 
-config.decl @runtime.column_count : %value: index where [range(%value, 3072, 8192), mul(%value, 4)]
+config.decl @runtime.column_count : %value: index where [range(%value, 3072, 8192), multiple_of(%value, 4)]
 
 func.def @config_decl_matvec_block_lane_vec4_origin_is_proven(%buffer: buffer, %base: offset, %lane0: index) {
   %layout = encoding.layout.dense : encoding<layout>

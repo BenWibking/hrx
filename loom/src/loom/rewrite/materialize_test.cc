@@ -979,7 +979,7 @@ TEST_F(MaterializeTest, MovesBlockOpsAndRemapsPredicateAttrs) {
   loom_builder_initialize(source_, &source_->arena, source_block,
                           &source_region_builder);
   loom_predicate_t predicate = {
-      /*.kind=*/LOOM_PREDICATE_MUL,
+      /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
       /*.arg_count=*/2,
       /*.arg_tags=*/{LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST},
       /*.reserved=*/{},

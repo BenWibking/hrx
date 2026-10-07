@@ -312,14 +312,8 @@ loom_template_applicability_evaluate_resolved_predicate(
     case LOOM_PREDICATE_UGE:
       return loom_template_applicability_evaluate_relation(
           &args[0], &args[1], predicate_kind, application_facts);
-    case LOOM_PREDICATE_MIN:
-      return loom_template_applicability_evaluate_relation(
-          &args[0], &args[1], LOOM_PREDICATE_GE, application_facts);
-    case LOOM_PREDICATE_MAX:
-      return loom_template_applicability_evaluate_relation(
-          &args[0], &args[1], LOOM_PREDICATE_LE, application_facts);
-    case LOOM_PREDICATE_MUL:
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_MULTIPLE_OF:
+    case LOOM_PREDICATE_POWER_OF_TWO:
     case LOOM_PREDICATE_RANGE:
     case LOOM_PREDICATE_NOT_NAN:
     case LOOM_PREDICATE_NOT_INF:

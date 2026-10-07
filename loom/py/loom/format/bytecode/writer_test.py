@@ -2301,7 +2301,7 @@ class TestCrossFormatRoundTrip:
 
     def test_dynamic_global_symbol_values_survive_bytecode(self) -> None:
         text = (
-            "global.constant @weights : tile<[%n]xf32> where [mul(%n, 16)]\n"
+            "global.constant @weights : tile<[%n]xf32> where [multiple_of(%n, 16)]\n"
             "\n"
             "func.def @load_weights() -> (index) {\n"
             "  %tile, %m = global.load @weights : tile<[%m]xf32>\n"
@@ -2315,7 +2315,7 @@ class TestCrossFormatRoundTrip:
     def test_static_encoding_global_symbols_survive_bytecode(self) -> None:
         text = (
             "global.constant @weights : tile<[%m]x[%k]xi8, #q8_0<block=32>> "
-            "where [mul(%m, 16)]\n"
+            "where [multiple_of(%m, 16)]\n"
             "\n"
             "func.def @load_weights() {\n"
             "  %tile, %m, %k = global.load @weights : "
@@ -2348,7 +2348,7 @@ class TestCrossFormatRoundTrip:
     def test_ssa_encoding_global_symbols_survive_bytecode(self) -> None:
         text = (
             "global.variable @scratch_view : view<[%n]xf32, %layout> "
-            "where [mul(%n, 16)]\n"
+            "where [multiple_of(%n, 16)]\n"
             "\n"
             "func.def @roundtrip_scratch_view() {\n"
             "  %view, %n, %layout = global.load @scratch_view : "
@@ -2556,7 +2556,9 @@ class TestPredicateBytecodeRoundTrip:
             operation,
             attributes={
                 **operation.attributes,
-                "predicates": [Predicate("pow2", (PredicateArg("value", foreign_id),))],
+                "predicates": [
+                    Predicate("power_of_two", (PredicateArg("value", foreign_id),))
+                ],
             },
         )
         module.body.ops[0] = operation
@@ -2587,7 +2589,7 @@ class TestPredicateBytecodeRoundTrip:
         result_id = module.add_value(Value(name="", type=F32))
         predicates = [
             Predicate(
-                kind="mul",
+                kind="multiple_of",
                 args=(
                     PredicateArg(tag="value", value=m_id),
                     PredicateArg(tag="const", value=16),
@@ -2608,7 +2610,7 @@ class TestPredicateBytecodeRoundTrip:
                 ),
             ),
             Predicate(
-                kind="pow2",
+                kind="power_of_two",
                 args=(PredicateArg(tag="value", value=n_id),),
             ),
             Predicate(
@@ -2660,7 +2662,7 @@ class TestPredicateBytecodeRoundTrip:
         assert len(loaded_preds) == 12
 
         # Verify each predicate survived.
-        assert loaded_preds[0].kind == "mul"
+        assert loaded_preds[0].kind == "multiple_of"
         assert len(loaded_preds[0].args) == 2
         assert loaded_preds[0].args[0].tag == "value"
         assert loaded_preds[0].args[0].value == loaded_op.operands[0]
@@ -2673,7 +2675,7 @@ class TestPredicateBytecodeRoundTrip:
         assert loaded_preds[2].kind == "ne"
         assert loaded_preds[2].args[1].value == 0
 
-        assert loaded_preds[3].kind == "pow2"
+        assert loaded_preds[3].kind == "power_of_two"
         assert len(loaded_preds[3].args) == 1
 
         assert loaded_preds[4].kind == "range"
