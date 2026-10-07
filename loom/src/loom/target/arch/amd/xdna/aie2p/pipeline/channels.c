@@ -18,13 +18,13 @@ typedef struct loom_aie2p_native_endpoint_t {
   loom_symbol_ref_t base;
   // Successor slot helper, or null for a one-slot channel.
   loom_symbol_ref_t next;
-  // Native consuming-credit acquire helper.
+  // Native consuming-credit acquire helper, created on first use.
   loom_symbol_ref_t acquire;
-  // Native producing-credit acquire helper.
+  // Native producing-credit acquire helper, created on first use.
   loom_symbol_ref_t reserve;
-  // Native ready-credit release helper.
+  // Native ready-credit release helper, created on first use.
   loom_symbol_ref_t publish;
-  // Native free-credit release helper.
+  // Native free-credit release helper, created on first use.
   loom_symbol_ref_t release;
   // Alignment common to every physical record address.
   uint64_t alignment;
@@ -95,6 +95,10 @@ static iree_status_t loom_aie2p_native_endpoint(
   const loom_aie2p_native_channel_t* channel = access->channel;
   *endpoint = (loom_aie2p_native_endpoint_t){.access = access,
                                              .next = loom_symbol_ref_null(),
+                                             .acquire = loom_symbol_ref_null(),
+                                             .reserve = loom_symbol_ref_null(),
+                                             .publish = loom_symbol_ref_null(),
+                                             .release = loom_symbol_ref_null(),
                                              .alignment = access->alignment};
   const uint32_t address = access->address;
   loom_aie2p_worker_builder_t* code = &context->code;
@@ -148,18 +152,7 @@ static iree_status_t loom_aie2p_native_endpoint(
         &next, 1, loom_named_attr_slice_empty(), &code->address_type, &base));
     IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&builder, &base, 1));
   }
-  IREE_RETURN_IF_ERROR(loom_aie2p_native_lock_helper(
-      code, AIE2P_CORE_DESCRIPTOR_REF_LOCK_ACQUIRE_IMMEDIATE,
-      access->locks.free, -1, &endpoint->reserve));
-  IREE_RETURN_IF_ERROR(loom_aie2p_native_lock_helper(
-      code, AIE2P_CORE_DESCRIPTOR_REF_LOCK_ACQUIRE_IMMEDIATE,
-      access->locks.ready, -1, &endpoint->acquire));
-  IREE_RETURN_IF_ERROR(loom_aie2p_native_lock_helper(
-      code, AIE2P_CORE_DESCRIPTOR_REF_LOCK_RELEASE_IMMEDIATE,
-      access->locks.free, 1, &endpoint->release));
-  return loom_aie2p_native_lock_helper(
-      code, AIE2P_CORE_DESCRIPTOR_REF_LOCK_RELEASE_IMMEDIATE,
-      access->locks.ready, 1, &endpoint->publish);
+  return iree_ok_status();
 }
 
 static iree_status_t loom_aie2p_native_channel_action(
@@ -173,7 +166,7 @@ static iree_status_t loom_aie2p_native_channel_action(
                                              action->channel->value_id);
   const uint32_t index =
       emitter->indices[channel - emitter->resources->channels];
-  const loom_aie2p_native_endpoint_t* endpoint = &emitter->endpoints[index];
+  loom_aie2p_native_endpoint_t* endpoint = &emitter->endpoints[index];
   loom_builder_t* builder = &rewriter->builder;
   if (loom_channel_acquire_isa(action->op) ||
       loom_channel_reserve_isa(action->op) ||
@@ -184,9 +177,18 @@ static iree_status_t loom_aie2p_native_channel_action(
       record = loom_channel_wait_read(action->op);
     } else {
       const bool write = loom_channel_reserve_isa(action->op);
-      IREE_RETURN_IF_ERROR(loom_aie2p_native_invoke(
-          builder, write ? endpoint->reserve : endpoint->acquire, NULL, 0, NULL,
-          NULL));
+      loom_symbol_ref_t* acquire =
+          write ? &endpoint->reserve : &endpoint->acquire;
+      if (!loom_symbol_ref_is_valid(*acquire)) {
+        IREE_RETURN_IF_ERROR(loom_aie2p_native_lock_helper(
+            &emitter->context->code,
+            AIE2P_CORE_DESCRIPTOR_REF_LOCK_ACQUIRE_IMMEDIATE,
+            write ? endpoint->access->locks.free
+                  : endpoint->access->locks.ready,
+            -1, acquire));
+      }
+      IREE_RETURN_IF_ERROR(
+          loom_aie2p_native_invoke(builder, *acquire, NULL, 0, NULL, NULL));
       const iree_host_size_t cursor = index * 2 + (write ? 1 : 0);
       record = results[0] = state[cursor];
       const loom_type_t buffer_type = loom_type_buffer();
@@ -218,16 +220,20 @@ static iree_status_t loom_aie2p_native_channel_action(
     return iree_ok_status();
   }
   const bool publish = loom_channel_publish_isa(action->op);
-  loom_symbol_ref_t completion =
-      publish ? endpoint->publish : endpoint->release;
+  loom_symbol_ref_t additional = loom_symbol_ref_null();
+  loom_symbol_ref_t* completion =
+      publish ? &endpoint->publish : &endpoint->release;
   if (credits != 1) {
+    completion = &additional;
+  }
+  if (!loom_symbol_ref_is_valid(*completion)) {
     IREE_RETURN_IF_ERROR(loom_aie2p_native_lock_helper(
         &emitter->context->code,
         AIE2P_CORE_DESCRIPTOR_REF_LOCK_RELEASE_IMMEDIATE,
         publish ? endpoint->access->locks.ready : endpoint->access->locks.free,
-        (int32_t)credits, &completion));
+        (int32_t)credits, completion));
   }
-  return loom_aie2p_native_invoke(builder, completion, NULL, 0, NULL, NULL);
+  return loom_aie2p_native_invoke(builder, *completion, NULL, 0, NULL, NULL);
 }
 
 static iree_status_t loom_aie2p_native_channel_exit(

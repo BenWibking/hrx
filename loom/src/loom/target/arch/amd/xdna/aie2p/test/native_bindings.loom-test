@@ -33,79 +33,79 @@ pipeline.def<kernel> public retain target(@device) @copy_record() run(%input: bu
 // ----
 low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_0() asm {
   %40 = mov.local-address 458752
-  %41 = mov.i32 -1
-  acq %41, 48
+  %119 = mov.i32 -1
+  acq %119, 48
   %305 = mov.short 0
-  %50 = mov.local-address 458760
-  %51 = lda %50, 0
-  %52 = lda %50, 4
-  %53 = add.rr %51, %305
-  %54 = ltu %53, %51
-  %55 = add.rr %52, %54
-  %56 = mov.address-to-scalar %40
-  %57 = mov.i32 458752
-  %58 = sub %56, %57
-  %59 = add.rr %58, %305
-  %60 = mov.i32 12
-  %61 = lshl %59, %60
-  %62 = mov.i32 1
-  %63 = or %61, %62
-  %64 = mov.i32 -2147483648
-  %65 = mov.i32 -2147364864
-  mov.ms %64
-  mov.ms %65
-  mov.ms.last %63
-  %67 = mov.i32 -2146316284
-  mov.ms %62
+  %46 = mov.local-address 458760
+  %47 = lda %46, 0
+  %48 = lda %46, 4
+  %49 = add.rr %47, %305
+  %50 = ltu %49, %47
+  %51 = add.rr %48, %50
+  %52 = mov.address-to-scalar %40
+  %53 = mov.i32 458752
+  %54 = sub %52, %53
+  %55 = add.rr %54, %305
+  %56 = mov.i32 12
+  %57 = lshl %55, %56
+  %58 = mov.i32 1
+  %59 = or %57, %58
+  %60 = mov.i32 -2147483648
+  %61 = mov.i32 -2147364864
+  mov.ms %60
+  mov.ms %61
+  mov.ms.last %59
+  %63 = mov.i32 -2146316284
+  mov.ms %58
+  mov.ms %63
+  mov.ms %49
+  mov.ms.last %51
+  %64 = mov.i32 0
+  %67 = mov.i32 -2147361276
+  mov.ms %60
   mov.ms %67
-  mov.ms %53
-  mov.ms.last %55
-  %68 = mov.i32 0
-  %71 = mov.i32 -2147361276
-  mov.ms %64
-  mov.ms %71
-  mov.ms.last %68
-  %73 = mov.i32 119316
-  mov.ms %62
-  mov.ms %73
-  mov.ms.last %68
-  acq %41, 51
-  rel %62, 49
-  acq %41, 49
-  %86 = mov.local-address 458768
-  %87 = lda %86, 0
-  %88 = lda %86, 4
-  %89 = add.rr %87, %305
-  %90 = ltu %89, %87
-  %91 = add.rr %88, %90
-  %94 = sub %56, %57
-  %95 = add.rr %94, %305
-  %97 = lshl %95, %60
-  %99 = or %97, %62
-  %101 = mov.i32 118816
-  mov.ms %64
-  mov.ms %101
-  mov.ms.last %99
-  %103 = mov.i32 1167396
-  mov.ms %62
+  mov.ms.last %64
+  %69 = mov.i32 119316
+  mov.ms %58
+  mov.ms %69
+  mov.ms.last %64
+  acq %119, 51
+  rel %58, 49
+  acq %119, 49
+  %82 = mov.local-address 458768
+  %83 = lda %82, 0
+  %84 = lda %82, 4
+  %85 = add.rr %83, %305
+  %86 = ltu %85, %83
+  %87 = add.rr %84, %86
+  %90 = sub %52, %53
+  %91 = add.rr %90, %305
+  %93 = lshl %91, %56
+  %95 = or %93, %58
+  %97 = mov.i32 118816
+  mov.ms %60
+  mov.ms %97
+  mov.ms.last %95
+  %99 = mov.i32 1167396
+  mov.ms %58
+  mov.ms %99
+  mov.ms %85
+  mov.ms.last %87
+  %101 = mov.i32 -2147483647
+  %103 = mov.i32 -2147364348
+  mov.ms %58
   mov.ms %103
-  mov.ms %89
-  mov.ms.last %91
-  %105 = mov.i32 -2147483647
-  %107 = mov.i32 -2147364348
-  mov.ms %62
-  mov.ms %107
-  mov.ms.last %105
-  %109 = mov.i32 122388
-  mov.ms %64
-  mov.ms %109
-  mov.ms.last %62
-  %110 = mov.ss
-  rel %62, 48
-  rel %62, 50
+  mov.ms.last %101
+  %105 = mov.i32 122388
+  mov.ms %60
+  mov.ms %105
+  mov.ms.last %58
+  %106 = mov.ss
+  rel %58, 48
+  rel %58, 50
   low.br ^_bb1
 ^_bb1:
-  %46 = mov.ss
+  %42 = mov.ss
   low.br ^_bb1
 }
 
