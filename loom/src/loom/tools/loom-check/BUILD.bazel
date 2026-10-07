@@ -402,6 +402,7 @@ loom_cc_library(
         "//loom/src/loom/codegen/low:repr",
         "//loom/src/loom/compile:request",
         "//loom/src/loom/link:linker",
+        "//loom/src/loom/sanitizer:options",
         "//loom/src/loom/target:entry_selection",
         "//loom/src/loom/target:profile",
         "//loom/src/loom/tooling/compile:pipeline",

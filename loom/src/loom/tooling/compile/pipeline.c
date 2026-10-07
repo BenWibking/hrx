@@ -64,12 +64,12 @@ void loom_compile_pipeline_result_deinitialize(
   *result = (loom_compile_pipeline_result_t){0};
 }
 
-bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline) {
+static bool loom_compile_pipeline_is_disabled(iree_string_view_t pipeline) {
   pipeline = iree_string_view_trim(pipeline);
   return iree_string_view_equal(pipeline, IREE_SV("none"));
 }
 
-bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
+static bool loom_compile_pipeline_is_default(iree_string_view_t pipeline) {
   pipeline = iree_string_view_trim(pipeline);
   return iree_string_view_is_empty(pipeline) ||
          iree_string_view_equal(pipeline, IREE_SV("default"));
@@ -85,11 +85,6 @@ static iree_status_t loom_compile_build_default_pipeline(
     const loom_compile_pipeline_options_t* options,
     loom_pass_environment_t pass_environment, loom_op_t** out_pipeline_op) {
   switch (options->default_pipeline) {
-    case LOOM_COMPILE_DEFAULT_PIPELINE_EXPANDED_SOURCE:
-      return loom_target_pipeline_build_to_expanded_source(
-          pipeline_module, IREE_SV("__loom_compile_default"),
-          &options->target_pipeline_options, options->target_environment,
-          pass_environment, out_pipeline_op);
     case LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW:
       return loom_target_pipeline_build_to_source_low(
           pipeline_module, IREE_SV("__loom_compile_default"),
@@ -120,8 +115,6 @@ static iree_status_t loom_compile_build_default_pipeline(
 static iree_string_view_t loom_compile_default_pipeline_stage_name(
     loom_compile_default_pipeline_t default_pipeline) {
   switch (default_pipeline) {
-    case LOOM_COMPILE_DEFAULT_PIPELINE_EXPANDED_SOURCE:
-      return IREE_SV("expanded-source");
     case LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW:
       return IREE_SV("source-low");
     case LOOM_COMPILE_DEFAULT_PIPELINE_SOURCE_LOW_ARTIFACTS:

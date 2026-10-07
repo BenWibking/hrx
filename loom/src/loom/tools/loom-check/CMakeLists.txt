@@ -296,6 +296,7 @@ loom_cc_library(
     loom::codegen::low::repr
     loom::compile::request
     loom::link::linker
+    loom::sanitizer::options
     loom::target::entry_selection
     loom::target::profile
     loom::tooling::compile::pipeline
