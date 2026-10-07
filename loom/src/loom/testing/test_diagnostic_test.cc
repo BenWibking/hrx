@@ -32,21 +32,21 @@ class TestDiagnosticTest : public ::testing::Test {
 };
 
 TEST_F(TestDiagnosticTest, MatchesStructuredConstraints) {
-  const loom_error_def_t* error = loom_error_def_lookup(LOOM_ERROR_DOMAIN_TYPE,
-                                                        /*code=*/3);
-  ASSERT_NE(error, nullptr);
-  iree_string_view_t param_values[] = {IREE_SV("operand"), IREE_SV("i32"),
-                                       IREE_SV("floating-point scalar")};
+  loom_test_diagnostic_param_t params[] = {
+      {/*.name=*/IREE_SV("operand_name"), /*.value=*/IREE_SV("operand")},
+      {/*.name=*/IREE_SV("actual_type"), /*.value=*/IREE_SV("i32")},
+      {/*.name=*/IREE_SV("expected_type"),
+       /*.value=*/IREE_SV("floating-point scalar")},
+  };
   loom_test_diagnostic_t diagnostic = {};
   diagnostic.severity = LOOM_DIAGNOSTIC_ERROR;
   diagnostic.domain = LOOM_ERROR_DOMAIN_TYPE;
   diagnostic.code = 3;
-  diagnostic.error = error;
   diagnostic.origin.line = 7;
   diagnostic.origin.filename = IREE_SV("case.loom-test");
   diagnostic.message = IREE_SV("operand requires a floating-point scalar");
-  diagnostic.param_values = param_values;
-  diagnostic.param_value_count = IREE_ARRAYSIZE(param_values);
+  diagnostic.params = params;
+  diagnostic.param_count = IREE_ARRAYSIZE(params);
 
   loom_test_annotation_t annotation = {};
   annotation.message_substring_count = 1;

@@ -39,6 +39,17 @@ static iree_status_t loom_check_diagnostic_collector_grow(
   return iree_ok_status();
 }
 
+iree_status_t loom_check_diagnostic_collector_append(
+    loom_check_diagnostic_collector_t* collector,
+    const loom_check_collected_diagnostic_t* diagnostic) {
+  if (collector->count >= collector->capacity) {
+    IREE_RETURN_IF_ERROR(loom_check_diagnostic_collector_grow(collector));
+  }
+  collector->diagnostics[collector->count++] = *diagnostic;
+  collector->error_count += diagnostic->severity == LOOM_DIAGNOSTIC_ERROR;
+  return iree_ok_status();
+}
+
 static iree_status_t loom_check_format_type(loom_type_t type, void* user_data,
                                             loom_output_stream_t* stream) {
   const loom_check_diagnostic_collector_t* collector =
@@ -58,19 +69,17 @@ iree_status_t loom_check_diagnostic_collector_sink(
     void* user_data, const loom_diagnostic_t* diagnostic) {
   loom_check_diagnostic_collector_t* collector =
       (loom_check_diagnostic_collector_t*)user_data;
-  if (collector->count >= collector->capacity) {
-    IREE_RETURN_IF_ERROR(loom_check_diagnostic_collector_grow(collector));
-  }
 
   const loom_test_diagnostic_format_options_t format_options = {
       .module = collector->module,
       .text_print_options = collector->type_print_context.options,
   };
+  loom_check_collected_diagnostic_t collected_diagnostic;
   IREE_RETURN_IF_ERROR(loom_test_diagnostic_materialize(
       diagnostic, &format_options, collector->arena, collector->host_allocator,
-      &collector->diagnostics[collector->count]));
-  ++collector->count;
-  collector->error_count += diagnostic->severity == LOOM_DIAGNOSTIC_ERROR;
+      &collected_diagnostic));
+  IREE_RETURN_IF_ERROR(
+      loom_check_diagnostic_collector_append(collector, &collected_diagnostic));
 
   loom_type_formatter_t type_formatter = {loom_check_format_type, collector};
   loom_check_diagnostic_capture_t diagnostic_capture = {

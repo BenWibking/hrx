@@ -258,7 +258,7 @@ static iree_status_t loom_check_process_file(
     if (compile) {
       status = loom_check_execute_compile(
           test_case, i, &report, filename, &input_request, &options->compile,
-          environment, context, block_pool, allocator, &results[i]);
+          environment, block_pool, allocator, &results[i]);
     } else {
       status = loom_check_execute_case(test_case, i, &report, filename,
                                        &input_request, environment, context,

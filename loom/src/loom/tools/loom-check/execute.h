@@ -100,10 +100,10 @@ typedef struct loom_check_result_t {
   // source; apply multiple edits atomically or in descending range order.
   loom_json_value_list_t annotation_edits;
 
-  // Structured diagnostic JSON objects emitted through the shared
-  // loom_diagnostic_json_write_object path. These preserve the full
-  // parser/verifier shape: source ranges, highlights, related locations,
-  // params, field refs, rendered message, and fix hints.
+  // Structured diagnostic JSON objects. Internal checker stages preserve the
+  // complete parser/verifier shape; public compiler qualification preserves
+  // the code, message, source range, related locations, and rendered params
+  // exposed by LoomC.
   loom_json_value_list_t diagnostics;
 } loom_check_result_t;
 
