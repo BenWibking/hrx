@@ -203,7 +203,9 @@ For a smaller provider-selection query, run `select-templates` through
 `loom-opt --pass-report=json` before artifact compilation. Each
 `template-selection` detail row names the enclosing function, contract,
 selected provider, effective target when known, candidate counts, and the
-selection outcome:
+selection outcome. Each following `template-provider` row records one ranked
+candidate as accepted, rejected, or unresolved, whether it won, and the
+decisive target condition or value predicate when applicable:
 
 ```bash
 loom-opt linked.loom \
@@ -215,7 +217,8 @@ loom-opt linked.loom \
 jq '.invocations[]
   | select(.pass == "select-templates")
   | .details[]
-  | select(.category == "template-selection")' /tmp/pass-report.json
+  | select(.category == "template-selection"
+           or .category == "template-provider")' /tmp/pass-report.json
 ```
 
 ## Authoring Pressure Points

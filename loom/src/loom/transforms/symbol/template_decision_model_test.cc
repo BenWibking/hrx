@@ -306,7 +306,7 @@ class TemplateDecisionModelTest : public ::testing::Test {
             LOOM_DECISION_TRUTH_UNKNOWN) {
           const loom_template_decision_constraint_info_t info =
               loom_template_decision_model_constraint_info(
-                  model, evidence[choice_ordinal].unresolved_constraint);
+                  model, evidence[choice_ordinal].decisive_constraint);
           EXPECT_EQ(info.reason,
                     classifications[provider_ordinal].unresolved_reason);
           EXPECT_EQ(
