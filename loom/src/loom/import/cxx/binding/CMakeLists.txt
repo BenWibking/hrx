@@ -26,6 +26,25 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    combining
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "combining.h"
+  SRCS
+    "combining.cc"
+  DEPS
+    loom::ops::combining
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     assembly
   CXX_STANDARD
     23
@@ -317,6 +336,7 @@ loom_cc_library(
   SRCS
     "shaped.cc"
   DEPS
+    ::combining
     ::scalar_bindings
     iree::third_party::cxx_parser
     loom::import::cxx::source::error
@@ -445,11 +465,13 @@ loom_cc_library(
   SRCS
     "kernel.cc"
   DEPS
+    ::combining
     iree::third_party::cxx_parser
     loom::import::cxx::source::error
     loom::import::cxx::value::types
     loom::ir::facts
     loom::ops::atomic
+    loom::ops::combining
     loom::ops::index
     loom::ops::kernel
   PUBLIC

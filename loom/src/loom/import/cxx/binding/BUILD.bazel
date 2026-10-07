@@ -24,6 +24,15 @@ loom_generated_cc_library(
 )
 
 loom_cc_library(
+    name = "combining",
+    srcs = ["combining.cc"],
+    hdrs = ["combining.h"],
+    cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
+    cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
+    deps = ["//loom/src/loom/ops:combining"],
+)
+
+loom_cc_library(
     name = "assembly",
     srcs = ["assembly.cc"],
     hdrs = ["assembly.h"],
@@ -222,6 +231,7 @@ loom_cc_library(
     cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
     cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [
+        ":combining",
         ":scalar_bindings",
         "//loom/src/loom/import/cxx/source:error",
         "//loom/src/loom/import/cxx/value:types",
@@ -310,10 +320,12 @@ loom_cc_library(
     cxx_features = CXX_COMPILER_OPTIONS["cxx_features"],
     cxx_standard = CXX_COMPILER_OPTIONS["cxx_standard"],
     deps = [
+        ":combining",
         "//loom/src/loom/import/cxx/source:error",
         "//loom/src/loom/import/cxx/value:types",
         "//loom/src/loom/ir:facts",
         "//loom/src/loom/ops:atomic",
+        "//loom/src/loom/ops:combining",
         "//loom/src/loom/ops/index",
         "//loom/src/loom/ops/kernel",
         "//third_party:cxx_parser",

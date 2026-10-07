@@ -80,6 +80,61 @@ struct [[loom::clustered_launch_config]] clustered_configuration {
   uint3 workgroup_cluster_size;
 };
 
+// Reduces a scalar or explicit vector across the current subgroup. A nonzero
+// ClusterSize selects independently reduced lane clusters; ClusterStride
+// selects the lane spacing within a cluster and requires ClusterSize. Both are
+// High attributes and therefore compile-time constants rather than SSA values.
+// The result is uniform across the subgroup only when no cluster is selected.
+namespace subgroup::reduce {
+
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "addi")]] T addi(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "addf")]] T addf(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "muli")]] T muli(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "mulf")]] T mulf(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "minsi")]] T minsi(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "maxsi")]] T maxsi(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "minui")]] T minui(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "maxui")]] T maxui(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "andi")]] T andi(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "ori")]] T ori(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "xori")]] T xori(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "minimumf")]] T minimumf(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "maximumf")]] T maximumf(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "minnumf")]] T minnumf(T value);
+template <unsigned long long ClusterSize = 0,
+          unsigned long long ClusterStride = 0, class T>
+[[loom::op("kernel.subgroup.reduce", "maxnumf")]] T maxnumf(T value);
+
+}  // namespace subgroup::reduce
+
 }  // namespace kernel
 
 namespace target {
