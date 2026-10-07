@@ -7,26 +7,35 @@
 #include "loomc/target/iree_hal.h"
 
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 
 #include "iree/testing/gtest.h"
+#include "loomc/context.h"
 #include "loomc/diagnostic.h"
+#include "loomc/module.h"
 #include "loomc/result.h"
+#include "loomc/source.h"
 #include "loomc/target.h"
 #include "loomc/target/spirv/base.h"
 #include "loomc/target/spirv/profile.h"
+#include "loomc/workspace.h"
 #include "test/util.h"
 
 namespace {
 
 using loomc::testing::HandlePtr;
 
+using ContextPtr = HandlePtr<loomc_context_t, loomc_context_release>;
+using ModulePtr = HandlePtr<loomc_module_t, loomc_module_release>;
 using ResultPtr = HandlePtr<loomc_result_t, loomc_result_release>;
+using SourcePtr = HandlePtr<loomc_source_t, loomc_source_release>;
 using TargetEnvironmentPtr =
     HandlePtr<loomc_target_environment_t, loomc_target_environment_release>;
 using TargetProfilePtr =
     HandlePtr<loomc_target_profile_t, loomc_target_profile_release>;
+using WorkspacePtr = HandlePtr<loomc_workspace_t, loomc_workspace_release>;
 
 typedef struct FakeProviderState {
   // Whether this provider recognizes the routed device.
@@ -38,6 +47,48 @@ typedef struct FakeProviderState {
 
 std::string ToString(loomc_string_view_t value) {
   return value.data ? std::string(value.data, value.size) : std::string();
+}
+
+ModulePtr ParseModule(const char* source_text) {
+  loomc_context_t* context = nullptr;
+  LOOMC_EXPECT_OK(
+      loomc_context_create(nullptr, loomc_allocator_system(), &context));
+  ContextPtr context_ptr(context);
+
+  loomc_workspace_t* workspace = nullptr;
+  LOOMC_EXPECT_OK(
+      loomc_workspace_create(nullptr, loomc_allocator_system(), &workspace));
+  WorkspacePtr workspace_ptr(workspace);
+
+  const loomc_source_options_t source_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SOURCE_OPTIONS,
+      /*.structure_size=*/sizeof(source_options),
+      /*.next=*/nullptr,
+      /*.format=*/LOOMC_SOURCE_FORMAT_TEXT,
+      /*.identifier=*/loomc_make_cstring_view("runtime_features.loom"),
+      /*.contents=*/loomc_make_byte_span(source_text, strlen(source_text)),
+      /*.storage=*/LOOMC_SOURCE_STORAGE_COPY,
+  };
+  loomc_source_t* source = nullptr;
+  LOOMC_EXPECT_OK(
+      loomc_source_create(&source_options, loomc_allocator_system(), &source));
+  SourcePtr source_ptr(source);
+
+  loomc_module_t* module = nullptr;
+  loomc_result_t* result = nullptr;
+  LOOMC_EXPECT_OK(loomc_module_deserialize_text_from_source(
+      context_ptr.get(), workspace_ptr.get(), source_ptr.get(), nullptr,
+      loomc_allocator_system(), &module, &result));
+  ResultPtr result_ptr(result);
+  if (result_ptr && !loomc_result_succeeded(result_ptr.get())) {
+    for (loomc_host_size_t i = 0;
+         i < loomc_result_diagnostic_count(result_ptr.get()); ++i) {
+      const loomc_diagnostic_t* diagnostic =
+          loomc_result_diagnostic_at(result_ptr.get(), i);
+      ADD_FAILURE() << ToString(diagnostic->message);
+    }
+  }
+  return ModulePtr(module);
 }
 
 iree_hal_device_t* FakeDevice() {
@@ -290,6 +341,81 @@ TEST(LoomcIreeHalTargetTest, MultipleRoutesStopAtFirstSupportedProvider) {
   EXPECT_EQ(third_state.call_count, 0);
   ASSERT_NE(profile_ptr.get(), nullptr);
   EXPECT_TRUE(loomc_result_succeeded(result_ptr.get()));
+}
+
+TEST(LoomcIreeHalRuntimeFeaturesTest, RejectsInvalidArguments) {
+  iree_hal_device_runtime_feature_flags_t runtime_features =
+      IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_FEEDBACK;
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_INVALID_ARGUMENT,
+      loomc_iree_hal_module_query_runtime_features(
+          nullptr, nullptr, loomc_allocator_system(), &runtime_features));
+  EXPECT_EQ(runtime_features, IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE);
+
+  ModulePtr module = ParseModule("");
+  ASSERT_NE(module, nullptr);
+  LOOMC_EXPECT_STATUS_IS(
+      LOOMC_STATUS_INVALID_ARGUMENT,
+      loomc_iree_hal_module_query_runtime_features(
+          module.get(), nullptr, loomc_allocator_system(), nullptr));
+
+  const loomc_sanitizer_options_t invalid_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SANITIZER_OPTIONS,
+      /*.structure_size=*/sizeof(invalid_options),
+      /*.next=*/nullptr,
+      /*.checks=*/1ull << 63,
+  };
+  runtime_features = IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_FEEDBACK;
+  LOOMC_EXPECT_STATUS_IS(LOOMC_STATUS_INVALID_ARGUMENT,
+                         loomc_iree_hal_module_query_runtime_features(
+                             module.get(), &invalid_options,
+                             loomc_allocator_system(), &runtime_features));
+  EXPECT_EQ(runtime_features, IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE);
+}
+
+TEST(LoomcIreeHalRuntimeFeaturesTest, MapsRequestedSanitizerServices) {
+  ModulePtr module = ParseModule("");
+  ASSERT_NE(module, nullptr);
+  loomc_sanitizer_options_t sanitizer_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SANITIZER_OPTIONS,
+      /*.structure_size=*/sizeof(sanitizer_options),
+      /*.next=*/nullptr,
+      /*.checks=*/LOOMC_SANITIZER_CHECK_ACCESS | LOOMC_SANITIZER_CHECK_RACE,
+      /*.flags=*/0,
+      /*.reporting_mode=*/LOOMC_SANITIZER_REPORTING_MODE_DEFAULT,
+  };
+
+  iree_hal_device_runtime_feature_flags_t runtime_features =
+      IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE;
+  LOOMC_ASSERT_OK(loomc_iree_hal_module_query_runtime_features(
+      module.get(), &sanitizer_options, loomc_allocator_system(),
+      &runtime_features));
+  EXPECT_EQ(runtime_features, IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_FEEDBACK |
+                                  IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_ASAN |
+                                  IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_TSAN);
+
+  sanitizer_options.reporting_mode = LOOMC_SANITIZER_REPORTING_MODE_TRAP;
+  LOOMC_ASSERT_OK(loomc_iree_hal_module_query_runtime_features(
+      module.get(), &sanitizer_options, loomc_allocator_system(),
+      &runtime_features));
+  EXPECT_EQ(runtime_features, IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_ASAN |
+                                  IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_TSAN);
+}
+
+TEST(LoomcIreeHalRuntimeFeaturesTest, FindsAuthoredSanitizerOperations) {
+  ModulePtr module = ParseModule(R"(
+func.def @entry(%value: index) -> (index) {
+  %checked = sanitizer.assert.value %value [ne(%value, 0)] : index
+  func.return %checked : index
+}
+)");
+  ASSERT_NE(module, nullptr);
+
+  iree_hal_device_runtime_feature_flags_t runtime_features =
+      IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE;
+  LOOMC_ASSERT_OK(loomc_iree_hal_module_query_runtime_features(
+      module.get(), nullptr, loomc_allocator_system(), &runtime_features));
+  EXPECT_EQ(runtime_features, IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_FEEDBACK);
 }
 
 }  // namespace

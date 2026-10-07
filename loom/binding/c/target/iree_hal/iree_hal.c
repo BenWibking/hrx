@@ -7,8 +7,54 @@
 #include "loomc/target/iree_hal.h"
 
 #include "diagnostic.h"
+#include "loom/sanitizer/runtime_requirements.h"
 #include "loomc/iree.h"
+#include "module.h"
+#include "option_chain.h"
 #include "result.h"
+
+loomc_status_t loomc_iree_hal_module_query_runtime_features(
+    const loomc_module_t* module,
+    const loomc_sanitizer_options_t* sanitizer_options,
+    loomc_allocator_t allocator,
+    iree_hal_device_runtime_feature_flags_t* out_runtime_features) {
+  if (out_runtime_features == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "out_runtime_features must not be NULL");
+  }
+  *out_runtime_features = IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE;
+  if (module == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "module must not be NULL");
+  }
+
+  loom_sanitizer_options_t resolved_sanitizer_options = {0};
+  LOOMC_RETURN_IF_ERROR(loomc_sanitizer_options_resolve(
+      sanitizer_options, &resolved_sanitizer_options));
+  loom_sanitizer_runtime_requirements_t requirements =
+      LOOM_SANITIZER_RUNTIME_REQUIREMENT_NONE;
+  LOOMC_RETURN_IF_ERROR(
+      loomc_status_from_iree(loom_sanitizer_runtime_requirements_query(
+          loomc_module_const_loom_module(module), &resolved_sanitizer_options,
+          iree_allocator_from_loomc(allocator), &requirements)));
+
+  iree_hal_device_runtime_feature_flags_t runtime_features =
+      IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE;
+  if (iree_any_bit_set(requirements,
+                       LOOM_SANITIZER_RUNTIME_REQUIREMENT_FEEDBACK)) {
+    runtime_features |= IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_FEEDBACK;
+  }
+  if (iree_any_bit_set(requirements,
+                       LOOM_SANITIZER_RUNTIME_REQUIREMENT_ACCESS_SHADOW)) {
+    runtime_features |= IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_ASAN;
+  }
+  if (iree_any_bit_set(requirements,
+                       LOOM_SANITIZER_RUNTIME_REQUIREMENT_RACE_SHADOW)) {
+    runtime_features |= IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_TSAN;
+  }
+  *out_runtime_features = runtime_features;
+  return loomc_ok_status();
+}
 
 static loomc_status_t loomc_iree_hal_validate_string_view(
     loomc_string_view_t value) {

@@ -10,15 +10,18 @@
 #include <stdbool.h>
 
 #include "iree/hal/api.h"
+#include "loomc/module.h"
+#include "loomc/sanitizer.h"
 #include "loomc/target.h"
 
 /// @file
-/// Optional target selection for IREE HAL devices.
+/// Optional compiler integration for IREE HAL devices.
 ///
-/// This leaf is for hosts that already own an `iree_hal_device_t` and need the
-/// compiler target and HAL loader target selected as one operation. Core Loom C
-/// API headers stay free of IREE HAL types; embedders opt in by linking this
-/// leaf and one or more target-family provider leaves.
+/// This leaf is for hosts that compile Loom modules for IREE HAL devices. It
+/// projects source-module requirements into device creation and selects the
+/// compiler target and HAL loader target as one operation. Core Loom C API
+/// headers stay free of IREE HAL types; embedders opt in by linking this leaf
+/// and one or more target-family provider leaves.
 ///
 /// A successful selection preserves the exact executable-target row used to
 /// derive or validate the Loom profile. Callers compile with `target_profile`
@@ -40,6 +43,33 @@ typedef struct loomc_iree_hal_target_options_t loomc_iree_hal_target_options_t;
 /// IREE HAL target provider descriptor.
 typedef struct loomc_iree_hal_target_provider_t
     loomc_iree_hal_target_provider_t;
+
+/// Queries HAL runtime services required by a module and sanitizer policy.
+///
+/// Call this after parsing and linking the source module and before creating
+/// the HAL device that will execute it. `sanitizer_options` must be the same
+/// descriptor, if any, supplied to compilation. The query accounts for both
+/// authored sanitizer operations and sanitizer instrumentation requested by
+/// the caller.
+///
+/// @param module Source module that will be compiled and executed.
+/// @param sanitizer_options Sanitizer compilation options, or `NULL` when no
+/// instrumentation is requested.
+/// @param allocator Host allocator used for transient query storage.
+/// @param out_runtime_features Receives the required HAL runtime feature bits.
+/// Receives `IREE_HAL_DEVICE_RUNTIME_FEATURE_FLAG_NONE` on failure.
+/// @return OK when the requirements were queried. Non-OK statuses represent
+/// API misuse or allocation failures.
+///
+/// @thread_safety
+/// The query holds no mutable process-global state. It may run concurrently
+/// with other read-only module operations when no mutation is active and the
+/// supplied allocator supports concurrent use.
+LOOMC_API_EXPORT loomc_status_t loomc_iree_hal_module_query_runtime_features(
+    const loomc_module_t* module,
+    const loomc_sanitizer_options_t* sanitizer_options,
+    loomc_allocator_t allocator,
+    iree_hal_device_runtime_feature_flags_t* out_runtime_features);
 
 /// One compiler-and-loader target selected from an IREE HAL device.
 typedef struct loomc_iree_hal_target_selection_t {
