@@ -110,9 +110,11 @@ class AmdgpuWaitPlanTest : public ::testing::Test {
     schedule_.block_count = 1;
     schedule_.value_count = 4;
     schedule_.value_ids = block->arg_ids;
+    schedule_.value_producer_nodes = value_producer_nodes_;
     loom_low_schedule_dependency_graph_initialize(&schedule_.dependencies);
     const uint32_t locations[] = {0, 8, 4, 16};
     for (uint32_t i = 0; i < 4; ++i) {
+      value_producer_nodes_[i] = LOOM_LOW_SCHEDULE_NODE_NONE;
       assignments_[i].value_id = block->arg_ids[i];
       assignments_[i].descriptor_reg_class_id = LOOM_AMDGPU_REG_CLASS_ID_SGPR;
       assignments_[i].unit_count = widths[i];
@@ -363,6 +365,8 @@ class AmdgpuWaitPlanTest : public ::testing::Test {
   loom_low_allocation_assignment_t assignments_[4] = {};
   // Direct value-ordinal to assignment mapping.
   uint32_t assignment_indices_[4] = {};
+  // Schedule-owned producer identity for the four live-in arguments.
+  uint32_t value_producer_nodes_[4] = {};
   // Successful allocation consumed by the production planner.
   loom_low_allocation_table_t allocation_ = {};
   // Actual production planner result inspected by each test.

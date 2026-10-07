@@ -133,12 +133,14 @@ loom_low_schedule_table_t Schedule(
     loom_liveness_analysis_t liveness, const loom_low_schedule_block_t* blocks,
     iree_host_size_t block_count, const loom_low_schedule_node_t* nodes,
     iree_host_size_t node_count, const uint32_t* scheduled_node_indices,
-    iree_host_size_t scheduled_node_count) {
+    iree_host_size_t scheduled_node_count,
+    const uint32_t* value_producer_nodes) {
   loom_low_schedule_table_t schedule = {};
   schedule.module = module;
   schedule.function_op = function_op;
   schedule.value_ids = liveness.value_ids;
   schedule.value_count = (loom_value_ordinal_t)liveness.value_count;
+  schedule.value_producer_nodes = value_producer_nodes;
   schedule.liveness = liveness;
   schedule.blocks = blocks;
   schedule.block_count = block_count;
@@ -252,6 +254,10 @@ struct ReleasePoint {
   uint32_t block_index;
   // Packet ordinal within its block when the point maps to a packet.
   uint32_t scheduled_ordinal;
+  // Scheduled node defining the candidate, or NONE to use its lifetime start.
+  uint32_t producer_node = LOOM_LOW_SCHEDULE_NODE_NONE;
+  // Program point of |producer_node|, or UINT32_MAX when it is absent.
+  uint32_t producer_program_point = UINT32_MAX;
 };
 
 class LowAllocationStorageLeaseReleasePointTest
@@ -315,10 +321,15 @@ TEST_P(LowAllocationStorageLeaseReleasePointTest,
                           /*operand=*/1),
   };
   const uint32_t scheduled_node_indices[] = {0, 1, 2, 3, 4, 5, 6};
+  const uint32_t value_producer_nodes[] = {
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+      point.producer_node,
+  };
   loom_low_schedule_table_t schedule =
       Schedule(module, function_op, liveness, schedule_blocks,
                IREE_ARRAYSIZE(schedule_blocks), nodes, IREE_ARRAYSIZE(nodes),
-               scheduled_node_indices, IREE_ARRAYSIZE(scheduled_node_indices));
+               scheduled_node_indices, IREE_ARRAYSIZE(scheduled_node_indices),
+               value_producer_nodes);
   schedule.target.descriptor_set = &descriptor_set;
   loom_low_storage_lease_record_t records[] = {StorageLeaseRecord()};
   records[0].unit_count = 32;
@@ -395,7 +406,9 @@ TEST_P(LowAllocationStorageLeaseReleasePointTest,
             /*ignored_value_ids=*/NULL, /*ignored_value_count=*/0));
     ASSERT_EQ(state.release_action_count, 1u);
     EXPECT_EQ(lease->release_action_index, 0u);
-    EXPECT_EQ(lease->end_point, point.program_point);
+    EXPECT_EQ(lease->end_point, point.producer_program_point == UINT32_MAX
+                                    ? point.program_point
+                                    : point.producer_program_point);
     EXPECT_EQ(state.availability_expiration_count, 0u);
     EXPECT_TRUE(
         loom_low_allocation_storage_lease_state_find_next_available_location(
@@ -433,7 +446,10 @@ INSTANTIATE_TEST_SUITE_P(
                       ReleasePoint{4, UINT32_MAX, 0, 0},
                       ReleasePoint{5, 3, 2, 0}, ReleasePoint{6, 4, 2, 1},
                       ReleasePoint{7, UINT32_MAX, 0, 0},
-                      ReleasePoint{8, 5, 3, 0}, ReleasePoint{9, 6, 3, 1}));
+                      ReleasePoint{8, 5, 3, 0}, ReleasePoint{9, 6, 3, 1},
+                      // The scheduled producer controls release insertion even
+                      // when its packet precedes the source liveness point.
+                      ReleasePoint{9, 3, 2, 0, 3, 5}));
 
 TEST_F(LowAllocationStorageLeaseTest, RejectsLeaseOutsideAllocationLiveness) {
   loom_module_t* module = AllocateModule();
@@ -464,10 +480,14 @@ TEST_F(LowAllocationStorageLeaseTest, RejectsLeaseOutsideAllocationLiveness) {
                           /*operand=*/0),
   };
   const uint32_t scheduled_node_indices[] = {0};
+  const uint32_t value_producer_nodes[] = {
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+  };
   const loom_low_schedule_table_t schedule =
       Schedule(module, function_op, schedule_liveness, schedule_blocks,
                IREE_ARRAYSIZE(schedule_blocks), nodes, IREE_ARRAYSIZE(nodes),
-               scheduled_node_indices, IREE_ARRAYSIZE(scheduled_node_indices));
+               scheduled_node_indices, IREE_ARRAYSIZE(scheduled_node_indices),
+               value_producer_nodes);
   const loom_low_storage_lease_record_t records[] = {StorageLeaseRecord()};
   const loom_low_storage_lease_table_t lease_table =
       StorageLeaseTable(&schedule, records, IREE_ARRAYSIZE(records));

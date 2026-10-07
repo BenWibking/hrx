@@ -40,9 +40,12 @@ class PressureAliasTest : public ::testing::Test {
     values[0].live_unit_count = 2;
     values[0].remaining_use_count = 1;
     values[0].flags |= source_flags;
-    values[1].producer_node = 0;
-    values[2].producer_node = 1;
     values[2].flags = 0;
+    uint32_t value_producer_nodes[] = {
+        LOOM_LOW_SCHEDULE_NODE_NONE,
+        0,
+        1,
+    };
     loom_low_schedule_node_t nodes[2] = {};
     for (auto& node : nodes) {
       node.storage_relation_count = 1;
@@ -66,6 +69,7 @@ class PressureAliasTest : public ::testing::Test {
     domain.value_count = IREE_ARRAYSIZE(values);
     loom_low_schedule_build_state_t state = {};
     state.values = values;
+    state.value_producer_nodes = value_producer_nodes;
     state.nodes = nodes;
     state.value_domain = &domain;
     state.scratch_arena = &arena_;

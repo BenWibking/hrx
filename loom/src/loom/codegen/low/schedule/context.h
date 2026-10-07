@@ -182,8 +182,6 @@ typedef struct loom_low_schedule_unspillable_completion_path_t {
 typedef struct loom_low_schedule_value_record_t {
   // Module value represented by this local record.
   loom_value_id_t value_id;
-  // Defining node index, or NONE for block arguments/external definitions.
-  uint32_t producer_node;
   // First same-class architectural-state writer after the producer.
   loom_low_schedule_state_access_t state_next_write;
   // Register units contributed to the pressure model.
@@ -250,6 +248,8 @@ typedef struct loom_low_schedule_build_state_t {
   const loom_cfg_graph_t* cfg_graph;
   // Dense per-local-value scheduler records indexed by value ordinal.
   loom_low_schedule_value_record_t* values;
+  // Defining schedule node indexed by local value ordinal.
+  uint32_t* value_producer_nodes;
   // Schedule block records indexed by region block ordinal.
   loom_low_schedule_block_t* blocks;
   // Schedule node records indexed by scheduler node ordinal.

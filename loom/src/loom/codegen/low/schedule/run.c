@@ -42,13 +42,23 @@ static iree_status_t loom_low_schedule_initialize_value_records(
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       state->scratch_arena, value_domain->value_count, sizeof(*state->values),
       (void**)&state->values));
+  iree_arena_allocator_t* producer_arena =
+      iree_any_bit_set(state->options->flags,
+                       LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES)
+          ? state->arena
+          : state->scratch_arena;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(producer_arena, value_domain->value_count,
+                                sizeof(*state->value_producer_nodes),
+                                (void**)&state->value_producer_nodes));
+  memset(state->value_producer_nodes, 0xFF,
+         value_domain->value_count * sizeof(*state->value_producer_nodes));
   for (loom_value_ordinal_t ordinal = 0; ordinal < value_domain->value_count;
        ++ordinal) {
     const loom_value_id_t value_id = value_domain->value_ids[ordinal];
     loom_low_schedule_value_record_t* value = &state->values[ordinal];
     *value = (loom_low_schedule_value_record_t){
         .value_id = value_id,
-        .producer_node = LOOM_LOW_SCHEDULE_NODE_NONE,
         .state_next_write =
             {
                 .node_index = LOOM_LOW_SCHEDULE_NODE_NONE,
@@ -1772,6 +1782,11 @@ static iree_status_t loom_low_schedule_build(
         .requirements = model->requirements,
         .value_ids = model->value_domain.value_ids,
         .value_count = model->value_domain.value_count,
+        .value_producer_nodes =
+            iree_any_bit_set(options->flags,
+                             LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES)
+                ? state.value_producer_nodes
+                : NULL,
         .liveness = retain_liveness ? liveness : (loom_liveness_analysis_t){0},
         .pressure_summary_budgets = pressure_summary_budgets,
         .blocks = state.blocks,

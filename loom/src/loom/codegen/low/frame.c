@@ -229,6 +229,10 @@ static iree_status_t loom_low_emission_frame_build_impl(
       .flags = options->schedule_flags,
       .strategy = options->schedule_strategy,
   };
+  if (options->storage_lease_provider != NULL) {
+    schedule_options.flags |=
+        LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
+  }
   if (iree_status_is_ok(status) && model.body->block_count > 1 &&
       options->schedule_strategy == LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL) {
     schedule_options.flags |= LOOM_LOW_SCHEDULE_FLAG_RETAIN_BLOCK_PRESSURE;

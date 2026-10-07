@@ -97,8 +97,8 @@ typedef struct loom_amdgpu_wait_plan_builder_t {
   loom_amdgpu_wait_classification_t classification;
   // Mutable counter state packed over classified producer nodes only.
   loom_amdgpu_wait_producer_state_t* producer_states;
-  // Producer node for each scheduled SSA value ordinal.
-  uint32_t* producer_nodes;
+  // Borrowed schedule-owned producer node indexed by SSA value ordinal.
+  const uint32_t* producer_nodes;
   // Bounded cross-block wait state.
   loom_amdgpu_wait_frontier_t frontier;
   // Target eligibility and ancestor index over canonical schedule loops.
@@ -1019,25 +1019,10 @@ static iree_status_t loom_amdgpu_wait_plan_build_dependency_links(
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_wait_plan_ensure_dependency_visit_state(builder));
 
-  if (value_count != 0) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        builder->transient_arena, value_count, sizeof(*builder->producer_nodes),
-        (void**)&builder->producer_nodes));
-    for (iree_host_size_t i = 0; i < value_count; ++i) {
-      builder->producer_nodes[i] = LOOM_LOW_SCHEDULE_NODE_NONE;
-    }
-  }
+  const uint32_t* producer_nodes = builder->producer_nodes;
 
   for (uint32_t node_index = 0; node_index < schedule->node_count;
        ++node_index) {
-    const loom_low_schedule_node_t* node = &schedule->nodes[node_index];
-    const loom_value_ordinal_t* result_ordinals =
-        loom_low_schedule_node_const_result_ordinals(node);
-    for (uint16_t i = 0; i < node->result_count; ++i) {
-      const loom_value_ordinal_t result_ordinal = result_ordinals[i];
-      IREE_ASSERT_LT(result_ordinal, value_count);
-      builder->producer_nodes[result_ordinal] = node_index;
-    }
     loom_amdgpu_wait_plan_classify_preserved_source(builder, node_index);
   }
   loom_amdgpu_wait_plan_resolve_preserved_sources(builder);
@@ -1052,7 +1037,7 @@ static iree_status_t loom_amdgpu_wait_plan_build_dependency_links(
     if (node->op != NULL && loom_low_br_isa(node->op)) {
       IREE_RETURN_IF_ERROR(
           loom_amdgpu_wait_plan_build_edge_copy_dependency_links(
-              builder, builder->producer_nodes, value_count, consumer_node));
+              builder, producer_nodes, value_count, consumer_node));
       continue;
     }
     if (!loom_amdgpu_wait_plan_node_has_wait_consuming_operands(node)) {
@@ -1079,7 +1064,7 @@ static iree_status_t loom_amdgpu_wait_plan_build_dependency_links(
         const uint32_t visit_epoch =
             loom_amdgpu_wait_plan_begin_dependency_visit(builder);
         IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_visit_dependency_links(
-            builder, builder->producer_nodes, value_count,
+            builder, producer_nodes, value_count,
             operand_ordinals[descriptor_operand->source_value_index],
             consumer_node,
             loom_amdgpu_wait_plan_operand_readiness_mask(
@@ -1092,7 +1077,7 @@ static iree_status_t loom_amdgpu_wait_plan_build_dependency_links(
         const uint32_t visit_epoch =
             loom_amdgpu_wait_plan_begin_dependency_visit(builder);
         IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_visit_dependency_links(
-            builder, builder->producer_nodes, value_count, operand_ordinals[i],
+            builder, producer_nodes, value_count, operand_ordinals[i],
             consumer_node, UINT32_MAX, visit_epoch));
       }
     }
@@ -3138,11 +3123,14 @@ iree_status_t loom_amdgpu_wait_plan_build(
     iree_arena_allocator_t* arena, iree_arena_allocator_t* transient_arena,
     loom_amdgpu_wait_plan_t* out_plan) {
   *out_plan = (loom_amdgpu_wait_plan_t){0};
+  IREE_ASSERT(schedule->value_count == 0 ||
+              schedule->value_producer_nodes != NULL);
   loom_amdgpu_wait_plan_builder_t builder = {
       .schedule = schedule,
       .allocation = allocation,
       .arena = arena,
       .transient_arena = transient_arena,
+      .producer_nodes = schedule->value_producer_nodes,
       .insertion = {.address_state = address_state},
       .processor_properties =
           loom_amdgpu_target_processor_properties_from_resolved_target(

@@ -103,7 +103,7 @@ static void loom_low_schedule_storage_lifetimes_populate(
       if (lifetimes->block_handoffs != NULL &&
           loom_low_schedule_storage_relation_is_handoff(relation)) {
         const uint32_t producer =
-            state->values[relation->source_ordinal].producer_node;
+            state->value_producer_nodes[relation->source_ordinal];
         if (producer != LOOM_LOW_SCHEDULE_NODE_NONE &&
             state->nodes[producer].block_index != node->block_index) {
           const uint32_t block_index = state->nodes[producer].block_index;
@@ -160,7 +160,7 @@ iree_status_t loom_low_schedule_storage_lifetimes_initialize(
         needs_storage_read_tracking = true;
         needs_edge_source_worklist = true;
         const uint32_t producer =
-            state->values[relation->source_ordinal].producer_node;
+            state->value_producer_nodes[relation->source_ordinal];
         if (producer != LOOM_LOW_SCHEDULE_NODE_NONE &&
             state->nodes[producer].block_index != node->block_index) {
           ++handoff_count;

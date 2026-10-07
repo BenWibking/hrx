@@ -169,6 +169,8 @@ enum loom_low_schedule_flag_bits_e {
   // Retains final-issue lower bounds for source suffixes consumed by guarded
   // motion profitability planning.
   LOOM_LOW_SCHEDULE_FLAG_RETAIN_SOURCE_SUFFIX_BOUNDS = 1u << 4,
+  // Retains the defining schedule node for each function-local value.
+  LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES = 1u << 5,
 };
 typedef uint32_t loom_low_schedule_flags_t;
 
@@ -788,6 +790,10 @@ typedef struct loom_low_schedule_table_t {
   const loom_value_id_t* value_ids;
   // Number of entries in |value_ids|.
   loom_value_ordinal_t value_count;
+  // Defining schedule node indexed by local value ordinal, or NONE for block
+  // arguments and external definitions. Present only with
+  // RETAIN_VALUE_PRODUCER_NODES.
+  const uint32_t* value_producer_nodes;
   // Optional source-order liveness analysis. Present only when explicitly
   // retained or required by requested diagnostics; schedule construction may
   // consume transient liveness without publishing it here.
@@ -890,6 +896,17 @@ typedef struct loom_low_schedule_table_t {
   // Number of resource summary records.
   iree_host_size_t resource_summary_count;
 } loom_low_schedule_table_t;
+
+// Returns the defining schedule node for |value_ordinal|, or NONE for a block
+// argument or external definition. The schedule must retain value producers.
+static inline uint32_t loom_low_schedule_value_producer_node(
+    const loom_low_schedule_table_t* schedule,
+    loom_value_ordinal_t value_ordinal) {
+  IREE_ASSERT_ARGUMENT(schedule);
+  IREE_ASSERT_LT(value_ordinal, schedule->value_count);
+  IREE_ASSERT(schedule->value_producer_nodes != NULL);
+  return schedule->value_producer_nodes[value_ordinal];
+}
 
 // Returns the source-order schedule node for |op|, or NULL when |op| does not
 // belong to |schedule|. The returned node retains its final scheduled ordinal.

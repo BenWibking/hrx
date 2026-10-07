@@ -144,6 +144,46 @@ TEST_F(LowEmissionFrameTest, ResidencyQueryConsumesRetainedFunctionFacts) {
   EXPECT_EQ(frame.residency.tier_limit, 2u);
 }
 
+TEST_F(LowEmissionFrameTest, StorageLeaseFrameRetainsValueProducers) {
+  ModulePtr module = ParseModule();
+  const loom_low_storage_lease_provider_t storage_lease_provider = {
+      /*.user_data=*/nullptr,
+      /*.query=*/
+      [](void* user_data, const loom_low_schedule_table_t* schedule,
+         const loom_low_schedule_node_t* node,
+         loom_low_storage_lease_emit_fn_t emit, void* emit_user_data) {
+        (void)user_data;
+        (void)schedule;
+        (void)node;
+        (void)emit;
+        (void)emit_user_data;
+        return iree_ok_status();
+      },
+  };
+  loom_low_emission_frame_options_t options = {};
+  options.descriptor_registry = &registry_.registry;
+  options.storage_lease_provider = &storage_lease_provider;
+  options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY;
+  loom_low_emission_frame_t frame = {};
+  bool accepted = false;
+  IREE_ASSERT_OK(loom_low_emission_frame_build(
+      module.get(), loom_block_op(loom_module_block(module.get()), 0), &options,
+      &arena_, &frame, &accepted));
+  ASSERT_TRUE(accepted);
+
+  // Allocation consumes this relation after scheduler scratch is released.
+  iree_arena_block_pool_trim(&block_pool_);
+  ASSERT_NE(frame.schedule.value_producer_nodes, nullptr);
+  const loom_low_schedule_node_t* load_node = FindNode(frame, LOOM_OP_LOW_OP);
+  ASSERT_NE(load_node, nullptr);
+  ASSERT_EQ(load_node->result_count, 1u);
+  const loom_value_ordinal_t result_ordinal =
+      loom_low_schedule_node_const_result_ordinals(load_node)[0];
+  EXPECT_EQ(
+      loom_low_schedule_value_producer_node(&frame.schedule, result_ordinal),
+      static_cast<uint32_t>(load_node - frame.schedule.nodes));
+}
+
 TEST_F(LowEmissionFrameTest, ReusedRegisterWaitsForPreviousPhysicalRead) {
   const auto strategy = LOOM_LOW_SCHEDULE_STRATEGY_SOURCE_PRIORITY;
   ModulePtr module = ParseModule(R"(
