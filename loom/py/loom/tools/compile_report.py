@@ -65,6 +65,13 @@ combines source policy evidence with the selected target provider's experiments.
 Pipeline depth advice keeps unrolling fixed and cites available final resources;
 a single report does not establish that pipelining increased register use.
 
+Resident pipeline inventories appear under `Pipeline` in `show`: distinct
+images, loaded worker copies, placement, and physical memory occupancy.
+Occupied bytes and address extent are separate; shared reservations count
+once. AIE2P `suggest` uses this inventory for code headroom, bank pressure,
+and local memory pressure. Missing logical channel ownership is unavailable,
+not a zero channel count. Static occupancy alone does not predict stalls.
+
 Detailed reports also show whether loop-carried vector banks were split into
 fixed components, deliberately preserved as whole values, or rejected with a
 stable reason. Source advice proposes controlled rewrites only for dynamic
