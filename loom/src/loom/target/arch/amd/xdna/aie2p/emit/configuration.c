@@ -14,6 +14,7 @@
 #include "loom/codegen/low/schedule/run.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/configuration_descriptors.h"
+#include "loom/target/arch/amd/xdna/aie2p/emit/configuration_report.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/configuration_storage.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/leaf_compile.h"
 #include "loom/target/arch/amd/xdna/error_catalog.h"
@@ -66,6 +67,8 @@ typedef struct loom_aie2p_configuration_emitter_t {
   loom_aie2p_array_program_t* program;
   // Compiled complete workers indexed by source symbol ID.
   loom_aie2p_leaf_contribution_t** workers;
+  // Optional physical inventory collected at reservation and link boundaries.
+  loom_aie2p_configuration_report_t* report;
   // Number of authored-input diagnostics; no product is published on failure.
   uint32_t error_count;
   // Entry-selected initialization function.
@@ -216,6 +219,10 @@ static iree_status_t loom_aie2p_configuration_load(
       return iree_ok_status();
     }
     emitter->workers[symbol.symbol_id] = worker;
+    if (emitter->report) {
+      loom_aie2p_configuration_report_program(
+          emitter->report, (uint32_t)worker->realization.code.byte_length);
+    }
   }
   *out_tile = (loom_aie2p_xdna_tile_t){
       .coordinate = {(uint16_t)column, (uint16_t)row},
@@ -268,6 +275,11 @@ static iree_status_t loom_aie2p_configuration_link(
       tile->contribution->realization.code.byte_length,
       facts->memory.program_capacity);
   tile->linked_tile = linked;
+  if (emitter->report) {
+    IREE_RETURN_IF_ERROR(loom_aie2p_configuration_report_worker(
+        emitter->report, name, tile->coordinate,
+        &tile->contribution->realization, &layout));
+  }
   return iree_ok_status();
 }
 
@@ -705,6 +717,18 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
   if (phase == LOOM_AIE2P_CONFIGURATION_INITIALIZE) {
     // All resident ranges are known before worker data is placed, regardless
     // of where the allocation declarations appear among initialization writes.
+    if (emitter->report) {
+      for (uint16_t column = 0; column < emitter->entry->column_count;
+           ++column) {
+        for (uint16_t row = 0; row < emitter->family->row_count; ++row) {
+          const loom_aie2p_configuration_memory_t* memory =
+              &memories[column * emitter->family->row_count + row];
+          IREE_RETURN_IF_ERROR(loom_aie2p_configuration_report_reservations(
+              emitter->report, (loom_xdna_tile_coordinate_t){column, row},
+              memory->ranges, memory->count));
+        }
+      }
+    }
     for (iree_host_size_t i = 0; i < emitter->entry->tile_count; ++i) {
       const loom_xdna_tile_coordinate_t coordinate = tiles[i].coordinate;
       IREE_RETURN_IF_ERROR(loom_aie2p_configuration_link(
@@ -763,6 +787,11 @@ iree_status_t loom_aie2p_configuration_emit(
   if (emitter.error_count) {
     return iree_ok_status();
   }
+  if (request->compile_report) {
+    IREE_RETURN_IF_ERROR(loom_aie2p_configuration_report_create(
+        request->compile_report, emitter.family, entry.column_count, entry.name,
+        request->scratch_arena, &emitter.report));
+  }
   IREE_RETURN_IF_ERROR(loom_aie2p_configuration_phase_emit(
       &emitter,
       request->module->symbols.entries[emitter.initialize.symbol_id]
@@ -779,6 +808,10 @@ iree_status_t loom_aie2p_configuration_emit(
     return iree_ok_status();
   }
   entry.array_program = emitter.program;
+  if (emitter.report) {
+    IREE_RETURN_IF_ERROR(loom_aie2p_configuration_report_finish(
+        emitter.report, entry.binding_count));
+  }
   *out_entry = entry;
   *out_valid = true;
   return iree_ok_status();

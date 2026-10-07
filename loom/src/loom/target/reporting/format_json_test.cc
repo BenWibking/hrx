@@ -633,6 +633,8 @@ TEST(CompileReportFormatTest, OwnsAndFormatsPipelinePlans) {
   loom_target_compile_report_pipeline_plan_t pipeline_plan = {};
   pipeline_plan.summary.root_name = IREE_SVL("q5_gate_up");
   pipeline_plan.summary.realization = IREE_SVL("spatial-program");
+  pipeline_plan.summary.available_facts =
+      LOOM_TARGET_COMPILE_REPORT_PIPELINE_FACT_CHANNELS;
   pipeline_plan.summary.group_count = 3;
   pipeline_plan.summary.worker_count = 1;
   pipeline_plan.summary.binding_count = 1;
@@ -714,6 +716,71 @@ TEST(CompileReportFormatTest, OwnsAndFormatsPipelinePlans) {
   ExpectObjectValueEquals(second_plan, IREE_SV("root"), IREE_SV("q4_gate_up"));
   iree_string_builder_deinitialize(&builder);
 
+  loom_target_compile_report_deinitialize(&report);
+}
+
+TEST(CompileReportFormatTest, PhysicalInventoryOmitsUnavailableChannelFacts) {
+  loom_target_compile_report_pipeline_memory_row_t memory = {};
+  memory.placement = {2, 1, 1, 0};
+  memory.reserved_byte_count = 72;
+  memory.occupied_byte_count = 72;
+  memory.high_water_byte_count = 131104;
+  memory.capacity_byte_count = 524288;
+  memory.maximum_bank_storage_byte_count = 32;
+  memory.bank_storage_capacity_byte_count = 65536;
+  loom_target_compile_report_pipeline_plan_t plan = {};
+  plan.summary.root_name = IREE_SVL("resident");
+  plan.summary.realization = IREE_SVL("resident-configuration");
+  plan.summary.available_facts =
+      LOOM_TARGET_COMPILE_REPORT_PIPELINE_FACT_PROGRAMS |
+      LOOM_TARGET_COMPILE_REPORT_PIPELINE_FACT_MEMORY;
+  plan.summary.program_count = 1;
+  plan.summary.program_code_byte_count = 128;
+  plan.summary.worker_count = 2;
+  plan.summary.worker_code_byte_count = 256;
+  plan.summary.memory_count = 1;
+  plan.summary.reserved_storage_byte_count = 72;
+  plan.memory_rows = &memory;
+  plan.memory_row_count = 1;
+
+  loom_target_compile_report_t report;
+  loom_target_compile_report_initialize(&report, iree_allocator_system());
+  report.requested_detail_flags =
+      LOOM_TARGET_COMPILE_REPORT_DETAIL_PIPELINE_PLAN_ROWS;
+  IREE_ASSERT_OK(
+      loom_target_compile_report_record_pipeline_plan(&report, &plan));
+  ASSERT_NE(report.pipeline_plans.values[0].memory_rows, &memory);
+  memory = {};
+
+  iree_string_builder_t builder;
+  iree_string_builder_initialize(iree_allocator_system(), &builder);
+  loom_output_stream_t stream;
+  loom_output_stream_for_builder(&builder, &stream);
+  loom_target_compile_report_format_options_t options = {};
+  options.mode = LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_DETAILS;
+  IREE_ASSERT_OK(
+      loom_target_compile_report_format_json(&report, &options, &stream));
+  const iree_string_view_t root =
+      ParseJsonDocument(iree_string_builder_view(&builder));
+  const iree_string_view_t physical =
+      LookupArrayElement(LookupObject(root, IREE_SV("pipeline_plans")), 0);
+  EXPECT_TRUE(iree_string_view_is_empty(
+      TryLookupObject(physical, IREE_SV("channels"))));
+  EXPECT_TRUE(iree_string_view_is_empty(
+      TryLookupObject(physical, IREE_SV("group_count"))));
+  EXPECT_TRUE(iree_string_view_is_empty(
+      TryLookupObject(physical, IREE_SV("hardware_lock_count"))));
+  ExpectObjectUint64Equals(physical, IREE_SV("program_count"), 1);
+  ExpectObjectUint64Equals(physical, IREE_SV("program_code_byte_count"), 128);
+  ExpectObjectUint64Equals(physical, IREE_SV("worker_code_byte_count"), 256);
+  const iree_string_view_t memories =
+      LookupObject(physical, IREE_SV("memories"));
+  ExpectObjectUint64Equals(memories, IREE_SV("count"), 1);
+  const iree_string_view_t row =
+      LookupArrayElement(LookupObject(memories, IREE_SV("rows")), 0);
+  ExpectObjectUint64Equals(row, IREE_SV("occupied_byte_count"), 72);
+  ExpectObjectUint64Equals(row, IREE_SV("high_water_byte_count"), 131104);
+  iree_string_builder_deinitialize(&builder);
   loom_target_compile_report_deinitialize(&report);
 }
 

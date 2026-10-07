@@ -9,6 +9,7 @@
 #include <inttypes.h>
 
 #include "iree/schemas/xdna_executable.h"
+#include "loom/target/reporting/format.h"
 #include "loom/tools/loom-check/source_low.h"
 
 static bool loom_aie2p_artifact_check_matches(
@@ -132,15 +133,23 @@ static iree_status_t loom_aie2p_artifact_check_execute(
     const loom_check_emit_provider_request_t* request) {
   (void)provider;
   iree_string_view_t options = iree_string_view_trim(request->target_options);
-  bool print_sections = false;
+  enum {
+    OUTPUT_ARTIFACT,
+    OUTPUT_SECTIONS,
+    OUTPUT_PIPELINE_REPORT,
+  } output = OUTPUT_ARTIFACT;
   bool source_low = false;
   while (!iree_string_view_is_empty(options)) {
     iree_string_view_t option;
     iree_string_view_split(options, ' ', &option, &options);
     options = iree_string_view_trim(options);
     if (iree_string_view_equal(option, IREE_SV("output=sections")) &&
-        !print_sections) {
-      print_sections = true;
+        output == OUTPUT_ARTIFACT) {
+      output = OUTPUT_SECTIONS;
+    } else if (iree_string_view_equal(option,
+                                      IREE_SV("output=pipeline-report")) &&
+               output == OUTPUT_ARTIFACT) {
+      output = OUTPUT_PIPELINE_REPORT;
     } else if (iree_string_view_equal(option, IREE_SV("input=source-low")) &&
                !source_low) {
       source_low = true;
@@ -150,24 +159,57 @@ static iree_status_t loom_aie2p_artifact_check_execute(
                               (int)option.size, option.data);
     }
   }
+  loom_target_compile_report_t report;
+  loom_target_compile_report_initialize(&report, request->host_allocator);
+  report.requested_detail_flags =
+      LOOM_TARGET_COMPILE_REPORT_DETAIL_PIPELINE_PLAN_ROWS;
+  loom_target_compile_report_t* report_ptr =
+      output == OUTPUT_PIPELINE_REPORT ? &report : NULL;
   loom_target_emit_artifact_t artifact = {0};
   bool emitted = false;
   iree_status_t status = iree_ok_status();
   if (source_low) {
-    const loom_check_prepare_source_low_options_t prepare_options = {0};
+    const loom_check_prepare_source_low_options_t prepare_options = {
+        .report = report_ptr,
+    };
     status = loom_check_emit_source_low_artifact(
         request, &prepare_options, IREE_SV("xdna"), &emitted, &artifact);
   } else {
     status = loom_check_emit_target_artifact(request, IREE_SV("xdna"), NULL,
-                                             &emitted, &artifact);
+                                             report_ptr, &emitted, &artifact);
   }
   iree_const_byte_span_t bytes = iree_const_byte_span_empty();
   iree_byte_span_t owned_contents = iree_byte_span_empty();
-  if (iree_status_is_ok(status) && emitted) {
+  if (iree_status_is_ok(status) && emitted &&
+      output != OUTPUT_PIPELINE_REPORT) {
     status = loom_check_target_artifact_borrow_or_clone_contents(
         &artifact, request->host_allocator, &bytes, &owned_contents);
   }
-  if (iree_status_is_ok(status) && emitted && print_sections) {
+  if (iree_status_is_ok(status) && emitted &&
+      output == OUTPUT_PIPELINE_REPORT) {
+    const loom_target_compile_report_format_options_t format_options = {
+        .mode = LOOM_TARGET_COMPILE_REPORT_FORMAT_MODE_DETAILS,
+    };
+    iree_string_builder_t formatted;
+    iree_string_builder_initialize(request->host_allocator, &formatted);
+    status = loom_target_compile_report_format_text(&report, &format_options,
+                                                    &formatted);
+    // Select the canonical inventory from the public report. Per-function
+    // scheduling and compiler allocation statistics are separate contracts.
+    iree_string_view_t remaining = iree_string_builder_view(&formatted);
+    while (iree_status_is_ok(status) && !iree_string_view_is_empty(remaining)) {
+      iree_string_view_t line;
+      iree_string_view_split(remaining, '\n', &line, &remaining);
+      if (iree_string_view_starts_with(line,
+                                       IREE_SV("COMPILE-REPORT: pipeline"))) {
+        status = iree_string_builder_append_format(
+            &request->result->actual_output, "%.*s\n", (int)line.size,
+            line.data);
+      }
+    }
+    iree_string_builder_deinitialize(&formatted);
+  } else if (iree_status_is_ok(status) && emitted &&
+             output == OUTPUT_SECTIONS) {
     status = loom_aie2p_artifact_check_print_sections(
         bytes, &request->result->actual_output);
   } else if (iree_status_is_ok(status) && emitted) {
@@ -176,6 +218,7 @@ static iree_status_t loom_aie2p_artifact_check_execute(
   }
   iree_allocator_free(request->host_allocator, owned_contents.data);
   loom_target_emit_artifact_release(&artifact);
+  loom_target_compile_report_deinitialize(&report);
   return status;
 }
 

@@ -668,6 +668,7 @@ loom_cc_library(
     loom::ir
     loom::ops::low
     loom::ops::op_defs
+    loom::target::reporting::format
     loom::target::reporting::report
     loom::tools::loom-check::execute
     loom::tools::loom-check::provider
@@ -827,6 +828,7 @@ loom_check_test_suite(
     "test/configuration_contracts.loom-test"
     "test/configuration_data.loom-test"
     "test/configuration_limits.loom-test"
+    "test/configuration_report.loom-test"
     "test/descriptors/bf16_comparison.loom-test"
     "test/descriptors/bfp_move.loom-test"
     "test/descriptors/cascade.loom-test"
@@ -1204,6 +1206,8 @@ loom_cc_library(
     "emit/artifact.c"
     "emit/configuration.c"
     "emit/configuration.h"
+    "emit/configuration_report.c"
+    "emit/configuration_report.h"
   DEPS
     ::array_plan
     ::array_program

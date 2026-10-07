@@ -425,6 +425,7 @@ iree_status_t loom_aie2p_array_report_record(
   loom_target_compile_report_pipeline_plan_summary_t summary = {
       .root_name = root_name,
       .realization = IREE_SV("spatial-program"),
+      .available_facts = LOOM_TARGET_COMPILE_REPORT_PIPELINE_FACT_CHANNELS,
       .group_count = (uint32_t)plan->group_count,
       .worker_count = (uint32_t)plan->worker_count,
       .binding_count = plan->binding_slot_count,
