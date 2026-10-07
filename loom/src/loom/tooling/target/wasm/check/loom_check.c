@@ -6,9 +6,8 @@
 
 #include "loom/tooling/target/wasm/check/loom_check.h"
 
-#include "loom/target/provider.h"
 #include "loom/target/tool/wasm.h"
-#include "loom/tools/loom-check/diagnostics.h"
+#include "loom/tools/loom-check/artifact.h"
 #include "loom/tools/loom-check/requirements.h"
 
 static bool loom_wasm_loom_check_emit_provider_matches(
@@ -153,47 +152,16 @@ static iree_status_t loom_wasm_loom_check_emit_provider_execute(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "wasm-dis does not accept options");
   }
-  loom_check_diagnostic_emitter_capture_t capture = {
-      .diagnostic_collector = request->diagnostic_collector,
-      .module = request->module,
-      .source_resolver = request->source_resolver,
-      .emitter = LOOM_EMITTER_PASS,
-  };
-  const iree_diagnostic_emitter_t diagnostic_emitter = {
-      .fn = loom_check_diagnostic_emitter_capture_emit,
-      .user_data = &capture,
-  };
-  const loom_target_emitter_t* emitter = loom_target_environment_lookup_emitter(
-      request->environment->target_environment, IREE_SV("wasm-binary"));
   loom_target_emit_artifact_t artifact = {0};
   bool emitted = false;
-  iree_status_t status = iree_ok_status();
-  if (emitter == NULL) {
-    status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "Wasm emitter is not linked");
-  }
-  if (iree_status_is_ok(status)) {
-    const loom_target_emit_request_t emit_request = {
-        .target_environment = request->environment->target_environment,
-        .low_descriptor_registry = &request->low_registry->registry,
-        .module = request->module,
-        .identifier = emitter->default_identifier,
-        .diagnostic_emitter = diagnostic_emitter,
-        .scratch_arena = request->case_arena,
-        .allocator = request->host_allocator,
-    };
-    status = emitter->emit(&emit_request, &emitted, &artifact);
-  }
+  iree_status_t status = loom_check_emit_target_artifact(
+      request, IREE_SV("wasm-binary"), /*function_versions=*/NULL, &emitted,
+      &artifact);
   iree_const_byte_span_t contents = iree_const_byte_span_empty();
   iree_byte_span_t owned_contents = iree_byte_span_empty();
   if (iree_status_is_ok(status) && emitted) {
-    if (!iree_byte_sequence_try_get_contiguous_span(artifact.contents,
-                                                    &contents)) {
-      status = iree_byte_sequence_clone(
-          artifact.contents, request->host_allocator, &owned_contents);
-      contents = iree_make_const_byte_span(owned_contents.data,
-                                           owned_contents.data_length);
-    }
+    status = loom_check_target_artifact_borrow_or_clone_contents(
+        &artifact, request->host_allocator, &contents, &owned_contents);
   }
 
   loom_wasm_toolchain_t toolchain;

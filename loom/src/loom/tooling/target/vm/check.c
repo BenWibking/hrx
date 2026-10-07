@@ -8,8 +8,7 @@
 
 #include "iree/vm/bytecode/disassembler.h"
 #include "loom/target/arch/vm/provider.h"
-#include "loom/target/provider.h"
-#include "loom/tools/loom-check/diagnostics.h"
+#include "loom/tools/loom-check/artifact.h"
 #include "loom/tools/loom-check/execute.h"
 #include "loom/tools/loom-check/source_low.h"
 
@@ -33,8 +32,7 @@ static iree_status_t loom_vm_check_emit(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "vm-dis accepts only @function and target options");
   }
-  loom_check_prepare_source_low_options_t prepare_options;
-  loom_check_prepare_source_low_options_initialize(&prepare_options);
+  loom_check_prepare_source_low_options_t prepare_options = {0};
   loom_target_specialization_request_t specialization = {0};
   if (iree_any_bit_set(source_request.options,
                        LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
@@ -44,55 +42,15 @@ static iree_status_t loom_vm_check_emit(
     prepare_options.target_specializations =
         (loom_target_specialization_request_list_t){&specialization, 1};
   }
-  loom_compile_pipeline_result_t pipeline_result = {0};
-  iree_status_t status = loom_check_prepare_source_low_module(
-      request->module, &prepare_options, request->environment,
-      request->source_resolver, request->diagnostic_collector,
-      request->block_pool, &pipeline_result);
-
-  if (!iree_status_is_ok(status) || request->diagnostic_collector->count) {
-    loom_compile_pipeline_result_deinitialize(&pipeline_result);
-    return status;
-  }
-
-  loom_check_diagnostic_emitter_capture_t capture = {
-      .diagnostic_collector = request->diagnostic_collector,
-      .module = request->module,
-      .source_resolver = request->source_resolver,
-      .emitter = LOOM_EMITTER_PASS,
-  };
-  const loom_target_emitter_t* emitter = loom_target_environment_lookup_emitter(
-      request->environment->target_environment, IREE_SV("vm"));
   loom_target_emit_artifact_t artifact = {0};
   bool emitted = false;
-  if (emitter == NULL) {
-    status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "VM emitter is not linked");
-  }
-  if (iree_status_is_ok(status)) {
-    const loom_target_emit_request_t emit_request = {
-        .target_environment = request->environment->target_environment,
-        .low_descriptor_registry = &request->low_registry->registry,
-        .module = request->module,
-        .function_versions = &pipeline_result.function_versions.list,
-        .identifier = emitter->default_identifier,
-        .diagnostic_emitter = {.fn = loom_check_diagnostic_emitter_capture_emit,
-                               .user_data = &capture},
-        .scratch_arena = request->case_arena,
-        .allocator = request->host_allocator,
-    };
-    status = emitter->emit(&emit_request, &emitted, &artifact);
-  }
+  iree_status_t status = loom_check_emit_source_low_artifact(
+      request, &prepare_options, IREE_SV("vm"), &emitted, &artifact);
   iree_const_byte_span_t contents = iree_const_byte_span_empty();
   iree_byte_span_t owned_contents = iree_byte_span_empty();
   if (iree_status_is_ok(status) && emitted) {
-    if (!iree_byte_sequence_try_get_contiguous_span(artifact.contents,
-                                                    &contents)) {
-      status = iree_byte_sequence_clone(
-          artifact.contents, request->host_allocator, &owned_contents);
-      contents = iree_make_const_byte_span(owned_contents.data,
-                                           owned_contents.data_length);
-    }
+    status = loom_check_target_artifact_borrow_or_clone_contents(
+        &artifact, request->host_allocator, &contents, &owned_contents);
   }
   if (iree_status_is_ok(status) && emitted) {
     status = iree_vm_bytecode_disassemble_module(
@@ -104,7 +62,6 @@ static iree_status_t loom_vm_check_emit(
   }
   iree_allocator_free(request->host_allocator, owned_contents.data);
   loom_target_emit_artifact_release(&artifact);
-  loom_compile_pipeline_result_deinitialize(&pipeline_result);
   return status;
 }
 

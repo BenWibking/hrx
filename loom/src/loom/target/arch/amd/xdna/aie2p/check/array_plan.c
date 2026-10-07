@@ -750,15 +750,12 @@ static iree_status_t loom_aie2p_array_plan_check_execute(
       request->target_options, &function_symbol_name, &low_only));
 
   loom_check_prepare_source_low_options_t prepare_options = {0};
-  loom_check_prepare_source_low_options_initialize(&prepare_options);
   prepare_options.control_flow_lowering =
       LOOM_TARGET_CONTROL_FLOW_LOWERING_STRUCTURED_LOW;
-  loom_compile_pipeline_result_t pipeline_result = {0};
   iree_status_t status = loom_check_prepare_source_low_module(
       request->module, &prepare_options, request->environment,
       request->source_resolver, request->diagnostic_collector,
-      request->block_pool, &pipeline_result);
-  loom_compile_pipeline_result_deinitialize(&pipeline_result);
+      request->block_pool);
   IREE_RETURN_IF_ERROR(status);
   if (request->diagnostic_collector->count != 0) {
     return iree_ok_status();
