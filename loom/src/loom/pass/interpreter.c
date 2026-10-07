@@ -60,6 +60,8 @@ typedef struct loom_pass_interpreter_state_t {
 typedef struct loom_pass_interpreter_diagnostic_counter_t {
   // Pass invocation receiving callback-local diagnostic counts.
   loom_pass_t* pass;
+  // Module whose operations are referenced by unqualified diagnostics.
+  const loom_module_t* module;
   // Caller-provided emitter that receives pass diagnostics.
   iree_diagnostic_emitter_t target;
   // Number of diagnostics emitted by the current pass invocation.
@@ -167,7 +169,33 @@ static iree_status_t loom_pass_interpreter_count_diagnostic(
     case LOOM_DIAGNOSTIC_COUNT_:
       break;
   }
-  return iree_diagnostic_emit(counter->target, emission);
+
+  loom_diagnostic_emission_t contextual_emission = *emission;
+  if (!contextual_emission.module) {
+    contextual_emission.module = counter->module;
+  }
+  bool related_ops_need_context = false;
+  for (iree_host_size_t i = 0; i < emission->related_op_count; ++i) {
+    if (!emission->related_ops[i].module) {
+      related_ops_need_context = true;
+      break;
+    }
+  }
+  if (related_ops_need_context) {
+    loom_diagnostic_related_op_t* contextual_related_ops = NULL;
+    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+        counter->pass->arena, emission->related_op_count,
+        sizeof(*contextual_related_ops), (void**)&contextual_related_ops));
+    memcpy(contextual_related_ops, emission->related_ops,
+           emission->related_op_count * sizeof(*contextual_related_ops));
+    for (iree_host_size_t i = 0; i < emission->related_op_count; ++i) {
+      if (!contextual_related_ops[i].module) {
+        contextual_related_ops[i].module = counter->module;
+      }
+    }
+    contextual_emission.related_ops = contextual_related_ops;
+  }
+  return iree_diagnostic_emit(counter->target, &contextual_emission);
 }
 
 static bool loom_pass_interpreter_has_errors(
@@ -291,6 +319,7 @@ static iree_status_t loom_pass_interpreter_emit_failure_diagnostic(
           loom_pass_interpreter_pipeline_name(state, instruction)),
   };
   const loom_diagnostic_emission_t emission = {
+      .module = state->program->source_module,
       .op = instruction->source.op,
       .error = error,
       .params = params,
@@ -377,6 +406,7 @@ static iree_status_t loom_pass_interpreter_invoke(
   iree_arena_initialize(state->options->block_pool, &instance_arena);
 
   loom_pass_interpreter_diagnostic_counter_t diagnostic_counter = {
+      .module = state->module,
       .target = state->options->diagnostic_emitter,
   };
   iree_diagnostic_emitter_t pass_diagnostic_emitter = {
