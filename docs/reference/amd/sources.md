@@ -45,6 +45,13 @@ Manual 1.2][hsa-prm] supplies work-item and workgroup execution rules. AMD's
 manuals; shader instructions and command-processor packets have separate
 representations and owners.
 
+AMD's [Sea Islands 3D/Compute Register Reference Guide, revision 1.0,
+19 September 2012][cik-registers], pp. 196–200, describes legacy dispatch
+geometry and initiator controls. The [dispatch chapter](gpu/pm4/dispatch.md#initiator-field-family)
+separates those meanings from later source layouts and actual caller policy;
+the older cache and context fields are not a substitute for a newer native
+publication or scheduling protocol.
+
 The [RDNA4 ISA guide, 7 April 2025][rdna4-isa], §5.7 and Table 26, supplies
 the architecture's dependency-counter rules used in the
 [shader wait-mode discussion](gpu/pm4/dispatch.md#shader-wait-counter-mode-mem_ordered).
@@ -131,6 +138,7 @@ executes. The corresponding chapter identifies those boundaries.
 [hsa-system]: https://hsafoundation.com/wp-content/uploads/2021/02/HSA-SysArch-1.2.pdf
 [hsa-prm]: https://hsafoundation.com/wp-content/uploads/2021/02/HSA-PRM-1.2.pdf
 [gpu-manuals]: https://gpuopen.com/amd-gpu-architecture-programming-documentation/
+[cik-registers]: https://www.x.org/docs/AMD/old/CIK_3D_registers_v2.pdf#page=196
 [rdna4-isa]: https://gpuopen.com/download/rdna4-instruction-set-architecture.pdf
 [cdna5-isa]: https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/instruction-set-architectures/amd-instinct-cdna5-instruction-set-architecture.pdf
 [isa-xml]: https://gpuopen.com/download/AMD_GPU_MR_ISA_XML_2026_08_06.zip

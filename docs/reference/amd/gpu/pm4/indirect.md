@@ -16,6 +16,18 @@ uses a 32-bit byte offset relative to an address established by SET_BASE; it is
 not the same address operand. [MEC builder][pal-mec] [ME builder][pal-me]
 [Argument layout][pal-args] [Caller contract][pal-api]
 
+| Word | MEC, four DWORDs | ME/PFP graphics form, three DWORDs |
+| --- | --- | --- |
+| 0 | Type 3 in bits 31:30, count 2 in bits 29:16, opcode `0x16` in bits 15:8. | Type 3, count 1, opcode `0x16`. |
+| 1 | `addr_lo`, all 32 bits of the low address; the caller enforces alignment. | `data_offset`, 32-bit byte offset. |
+| 2 | `addr_hi`, all 32 bits of the high address. | `dispatch_initiator`. |
+| 3 | `dispatch_initiator`. | Absent. |
+
+[MEC fields][pal-mec-fields] [Graphics fields][pal-gfx-fields]
+The [dispatch-control family](dispatch.md#initiator-field-family) supplies
+the initiator's source-specific bit meanings. The representation's address
+width does not establish which virtual addresses the native mapping accepts.
+
 PAL's ordinary MEC builder leaves USE_THREAD_DIMENSIONS clear and sets
 COMPUTE_SHADER_EN, FORCE_START_AT_000 and ORDER_MODE, plus the program's wave32
 and selected tunneling/preemption controls. NUM_THREAD_X/Y/Z still describe
@@ -32,6 +44,16 @@ ME/PFP shader-type fields. These actual conventions are recorded separately;
 one does not establish that every low-bit permutation is interchangeable.
 [Header definition][pal-header] [PAL defaults][pal-defaults]
 [RADV emitter][mesa-emit]
+
+RADV selects the absolute-address form specifically when the command buffer
+uses its compute queue and `gfx_level >= GFX7`. Otherwise its emitter supplies
+SET_BASE index 1 and the three-DWORD relative form. RadeonSI's cited shared
+emitter supplies SET_BASE and the relative form; its queue naming alone is
+not a replacement for checking that actual path. PAL's GFX12 graphics caller
+puts the high address bits in SET_BASE and passes the low 32 bits as offset;
+its compute caller needs no SET_BASE for the absolute-address form.
+[RADV engine predicate][mesa-mec-selection] [RadeonSI emitter][mesa-si-indirect]
+[PAL base ownership][pal12-base]
 
 RADV sets ORDER_MODE for its selected GFX7+ devices and clears it for ordered
 dispatches. Compute-only GFX940+ takes a different default from graphics-capable
@@ -96,6 +118,14 @@ pointer cannot replace the final consumer's completion.
 [Execution before cache work][pal-cs-publish]
 [Indirect acquire placement][pal-indirect-acquire]
 
+RADV's indirect-copy meta operation supplies a concrete workitem-count
+producer: its preprocessing shader writes a three-DWORD invocation tuple;
+the caller requests compute-stage completion and buffer cache maintenance
+before consuming it with `unaligned=true`. The tuple's producer and selected
+dispatch mode agree on units. Replacing that producer with workgroup counts
+without changing the consumer would change the launched work.
+[Tuple producer][mesa-meta-counts] [Dependency and consumer][mesa-meta-dispatch]
+
 The tuple's count units do not bound shader data accesses by themselves.
 Backing must cover the work launched by the selected dimensions and the
 program's actual argument-dependent footprint. A shader's internal bound may
@@ -113,6 +143,28 @@ PAL's GFX12 MEC builder retains a four-DWORD absolute-address packet. This
 representation continuity does not make GFX12 resource registers, cache
 operations or preemption policy identical to GFX10/GFX11.
 [GFX12 builder][pal-gfx12] [Direct binding](dispatch.md)
+
+### Interleaved indirect packet views
+
+GFX12 `DISPATCH_INDIRECT_INTERLEAVED`, opcode `0xa8`, also has different
+PFP and ME definitions:
+
+| View | Header and payload words |
+| --- | --- |
+| PFP, three DWORDs | Word 0 type-3/count 1; word 1 32-bit `data_offset`; word 2 initiator. |
+| ME, seven DWORDs | Word 0 type-3/count 5; word 1 `dim_z` in bits 15:0 with bits 31:16 reserved; words 2–3 32-bit `prescale_dim_x/y`; word 4 32-bit `dim_x`; word 5 `dim_y` in bits 15:0 with bits 31:16 reserved; word 6 initiator. |
+
+[PFP definition][pal12-pfp-interleaved] [ME definition][pal12-me-interleaved]
+[Opcode][pal12-opcodes]
+
+PAL's graphics builder writes the PFP offset form and chooses opcode `0xa8`
+when 2D dispatch interleave is selected. Its MEC builder continues to use
+ordinary `0x16`; its compute caller disables 2D dispatch interleave. The
+seven-DWORD ME definition therefore does not describe the bytes authored by
+either ordinary caller, and its prescale semantics cannot be inferred from
+the pointer-based API. The [distribution policy](dispatch.md#gfx12-distribution-controls)
+describes the actual selection, register setup and constraints.
+[Graphics builder][pal12-interleaved-builder] [MEC builder][pal-gfx12]
 
 [pal-mec]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L1538-L1572
 [pal-me]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9CmdUtil.cpp#L1275-L1301
@@ -133,3 +185,14 @@ operations or preemption policy identical to GFX10/GFX11.
 [pal-cs-publish]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/gfx9AcquireReleaseBarrier.cpp#L2027-L2042
 [mesa-align]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/common/ac_gpu_info.c#L1021-L1037
 [pal-gfx12]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L1328-L1360
+[pal-mec-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_mec_pm4_packets.h#L1033-L1060
+[pal-gfx-fields]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx9/chip/gfx9_plus_merged_f32_me_pm4_packets.h#L951-L972
+[mesa-mec-selection]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_cmd_buffer.c#L1275-L1281
+[mesa-si-indirect]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_compute.c#L766-L784
+[pal12-base]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12UniversalCmdBuffer.cpp#L4138-L4157
+[mesa-meta-counts]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/nir/radv_meta_nir.c#L1391-L1425
+[mesa-meta-dispatch]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/meta/radv_meta_copy_indirect_cs.c#L139-L190
+[pal12-pfp-interleaved]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_pfp_pm4_packets.h#L1109-L1130
+[pal12-me-interleaved]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_f32_me_pm4_packets.h#L909-L968
+[pal12-interleaved-builder]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/gfx12CmdUtil.cpp#L1035-L1082
+[pal12-opcodes]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfx12/chip/gfx12_merged_pm4_it_opcodes.h#L176-L177

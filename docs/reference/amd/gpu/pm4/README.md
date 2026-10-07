@@ -46,11 +46,11 @@ right to that trailer. [Compute postamble][postamble]
 | [Completion publication](release.md) | RELEASE_MEM fields, confirmation and interrupt selectors, legacy EVENT_WRITE_EOP/EOS, event/clock/value owners and storage retirement. |
 | [Atomic operations](atomics.md) | TC integer operations, returned values, command modes, participant domains and cache/retirement contracts. |
 | [Cache control](cache.md) | Acquire/release fields, native-generation differences, ranges, scopes, recorded BLT/cache history and complete visibility sequences. |
-| [Compiled dispatch](dispatch.md) | Executable backing, register and argument ABI, MEM_ORDERED wait-counter mode, direct launch, runtime state and completion. |
+| [Compiled dispatch](dispatch.md) | Executable backing, register and argument ABI, DISPATCH_DIRECT and initiator field families, offset/partial-group geometry, GFX12 distribution controls, MEM_ORDERED mode, runtime state and completion. |
 | [Shader register transport](registers.md) | SET_SH_REG, SET_SH_REG_INDEX, PAIRS/PACKED forms, LOAD_SH_REG and LOAD_SH_REG_INDEX; engine and firmware selection, field units, inline copies, borrowed inputs and context lifetime. |
 | [Compute affinity and queue priority](../scheduling.md) | `COMPUTE_STATIC_THREAD_MGMT_SE*`, KMD mask composition, per-SE preambles and the distinct KFD queue controls. |
 | [Group memory](lds.md) | Static and dynamic LDS allocation, workgroup synchronization and resource rebinding. |
-| [Indirect dispatch](indirect.md) | Memory-resident workgroup counts, compiler inputs and producer-to-fetch dependencies. |
+| [Indirect dispatch](indirect.md) | DISPATCH_INDIRECT engine forms, memory-resident workgroup/workitem dimensions, compiler inputs, interleaved packet views and producer-to-fetch dependencies. |
 | [Conditional execution](conditional.md) | COND_EXEC ranges, COND_INDIRECT_BUFFER branches and [reference masking](conditional.md#reference-masking-and-portability), Boolean sampling and reuse, and PRED_EXEC virtual-XCC selection. |
 | [Command buffers](command-buffers.md) | First-level INDIRECT_BUFFER entry/return, CHAIN postambles and continuations, publication, WDDM native retirement and completed-use rebuild. |
 | [Cross-queue handoff](handoff.md) | Release, control signaling, wait, consumer acquire and last-use ownership. |
