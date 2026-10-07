@@ -24,7 +24,7 @@ depend on the engine generation and native transport.
 | [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` and fused copy signaling: distinct completion and retirement protocols. |
 | [Cache maintenance](cache.md) | USER_GCR, scheduled kernel GCR, HDP and command publication. |
 | [Command buffers](command-buffers.md) | Generation-specific IB entries, body and submission alignment, context storage, direct rings and scheduled retirement. |
-| [Timestamps](timing.md) | Global clock samples, transfer ordering and interval interpretation. |
+| [Timestamps](timing.md) | `TIMESTAMP_GET_GLOBAL`: policy layouts, transfer/gang/fanout intervals, sample readiness and lifetime, and native versus translated clock units. |
 
 Payload visibility, a control-word update, notification, and storage
 retirement are separate edges. The programming sequences identify which

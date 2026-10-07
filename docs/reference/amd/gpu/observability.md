@@ -94,8 +94,9 @@ compatibility][pal-calibrated-type]
 
 ROCr obtains wallclock frequency separately and converts signal timestamps
 through paired GPU/system samples. It handles drift and bounded extrapolation,
-translating the interval's end first so resampling does not change scale
-halfway through the interval. GC9.4.3's native reader notes partition
+translating the interval's end first to reduce clock-measurement jitter. Each
+scalar conversion locks the shared clock state separately; the pair has no
+common calibration snapshot. GC9.4.3's native reader notes partition
 variation and reads through GC instance 0. Neither a compiler target nor one
 physical package establishes per-XCC or cross-partition calibration. [ROCr
 frequency][rocr-frequency] · [Translation][rocr-clocks] · [Partition-aware
