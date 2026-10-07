@@ -587,6 +587,7 @@ loom_cc_binary(
     testonly = True,
     srcs = ["check/loom-check.c"],
     deps = [
+        ":artifact",
         ":check_provider",
         "//loom/src/loom/tools/loom-check:provider",
         "//loom/src/loom/tools/loom-check:test_provider",

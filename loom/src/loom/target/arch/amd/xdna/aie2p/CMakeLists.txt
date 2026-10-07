@@ -682,6 +682,7 @@ loom_cc_binary(
   SRCS
     "check/loom-check.c"
   DEPS
+    ::artifact
     ::check_provider
     iree::base
     loom::tools::loom-check::provider
