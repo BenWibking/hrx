@@ -203,22 +203,12 @@ loom_generated_file(
     ]),
 )
 
-loom_cc_test(
+iree_executable_test(
     name = "hal_dispatch_test",
-    srcs = ["hal_dispatch_test.cc"],
+    src = "//loom/src/loom/target/abi/task:dispatch_test_runner",
     args = ["--executable_file=$(rootpath :hal_dispatch_image)"],
     data = [":hal_dispatch_image"],
     target_compatible_with = _TASK_HAL_COMPATIBLE_WITH,
-    deps = [
-        "//runtime/src/iree/async",
-        "//runtime/src/iree/async/util:proactor_pool",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/base/tooling:flags",
-        "//runtime/src/iree/hal",
-        "//runtime/src/iree/hal/drivers",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-    ],
 )
 
 loom_generated_file(
@@ -239,7 +229,7 @@ loom_generated_file(
 
 iree_executable_test(
     name = "hal_dispatch_c_api_test",
-    src = ":hal_dispatch_test",
+    src = "//loom/src/loom/target/abi/task:dispatch_test_runner",
     args = ["--executable_file=$(rootpath :hal_dispatch_c_api_image)"],
     data = [":hal_dispatch_c_api_image"],
     target_compatible_with = _TASK_HAL_COMPATIBLE_WITH,

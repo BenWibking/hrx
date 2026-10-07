@@ -108,6 +108,24 @@ state pointers, imports its parameters, and returns an explicit success value.
 These operations are ordinary Low instructions before allocation; the native
 encoder receives the same prepared form as an ordinary function.
 
+The task contract and its lowering have shared compiler owners:
+
+| Component | Responsibility |
+| --- | --- |
+| `target/abi/task` | Logical parameter layout, reflection records, task builtins, and invocation-state fields. |
+| `codegen/low/lower/task_abi` | Select and import invocation-constant source queries through the target's type mapper. |
+| `codegen/low/transforms/task_abi` | Parameter accesses, predicates, entry/return rewriting, queries, and concrete function-version lifetime. |
+| `target/emit/native/module` and `task_library` | Symbol admission, native contributions, library metadata, artifact fixups, and detached output ownership. |
+| x86 materialization and native emission | Physical carriers, instruction sequences, SysV calls and frames, byte encoding, and relocation facts. |
+
+The task entry interface describes semantic actions, such as importing a
+parameter or a workgroup ID. Targets can realize each action with several
+instructions. Native module assembly calls the target once per function and
+reclaims its scheduling and allocation scratch after retaining output bytes
+and fixups. The implemented task data model and native artifact writers are
+64-bit little-endian; these shared components do not imply an instruction
+encoder or runtime execution support for another architecture.
+
 The compiler also emits the versioned library query as an ordinary Low function.
 Its address reference to the readonly library object becomes a native relocation.
 The artifact contains code, reflection records, and internal pointer fixups; it
@@ -116,14 +134,15 @@ loads the artifact on a compatible task device, and the queue dispatch APIs
 consume its reflected interface. Input artifact bytes can be released once
 loading completes.
 
-`hal_dispatch_test` exercises that public boundary with an explicitly targeted
-grid kernel and an unbound byte kernel in the same library: the
-compiler exits before loading, artifact bytes are released before dispatch,
+The shared `target/abi/task/dispatch_test.cc` consumer exercises that public
+boundary with an explicitly targeted grid kernel and an unbound byte kernel in
+the same library: the compiler exits before loading, artifact bytes are released before dispatch,
 and two semaphore-ordered 3D grids update a nonzero-offset binding. The kernel
 passes aligned private storage to a retained helper. Exact buffer contents and
 guard words check the invocation, call, storage, and binding contracts together.
-Another export checks byte-sized constants and a zero-work dispatch. The same
-checks run on a library produced by the public C embedding example:
+Another export checks byte-sized constants and a zero-work dispatch. The x86
+fixtures supply CLI and C API artifacts to the same consumer. The public C
+embedding example produces the latter library:
 
 ```sh
 iree-bazel-run //loom/binding/c/example:compile_artifact -- fill.loom x86:scalar fill.so

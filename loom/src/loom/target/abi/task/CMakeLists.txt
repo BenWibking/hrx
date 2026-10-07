@@ -64,4 +64,21 @@ loom_cc_test(
     iree::testing::gtest_main
 )
 
+loom_cc_binary(
+  NAME
+    dispatch_test_runner
+  SRCS
+    "dispatch_test.cc"
+  DEPS
+    iree::async
+    iree::async::util::proactor_pool
+    iree::base
+    iree::base::tooling::flags
+    iree::hal
+    iree::hal::drivers
+    iree::testing::gtest
+    iree::testing::gtest_main
+  TESTONLY
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

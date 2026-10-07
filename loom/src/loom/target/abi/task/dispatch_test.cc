@@ -4,6 +4,9 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+// Architecture-independent consumer of the grid/fill_byte task library.
+// Backend tests supply their artifact through --executable_file.
+
 #include <array>
 #include <fstream>
 #include <iterator>

@@ -217,26 +217,15 @@ loom_generated_file(
 endif()
 
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_DRIVER_TASK AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND IREE_ARCH STREQUAL "x86_64")
-loom_cc_test(
+iree_native_test(
   NAME
-    hal_dispatch_test
-  SRCS
-    "hal_dispatch_test.cc"
-  DATA
-    "${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so"
-  DEPS
-    iree::async
-    iree::async::util::proactor_pool
-    iree::base
-    iree::base::tooling::flags
-    iree::hal
-    iree::hal::drivers
-    iree::testing::gtest
-    iree::testing::gtest_main
+    "hal_dispatch_test"
   ARGS
     "--executable_file={{${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so}}"
-  LABELS
-    "iree-build-requirement=loom.target.arch.x86"
+  SRC
+    loom::target::abi::task::dispatch_test_runner
+  DATA
+    "${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch.so"
 )
 endif()
 
@@ -266,7 +255,7 @@ iree_native_test(
   ARGS
     "--executable_file={{${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch_c_api.so}}"
   SRC
-    ::hal_dispatch_test
+    loom::target::abi::task::dispatch_test_runner
   DATA
     "${CMAKE_CURRENT_BINARY_DIR}/hal_dispatch_c_api.so"
 )
