@@ -2,16 +2,27 @@ aie2p.target<array> @array_target
 
 aie2p.target<core> @core_target
 
-pipeline.def<kernel> public retain target(@array_target) @sparse_copy_i32() launch(%input: buffer, %unused: buffer, %output: buffer) {
-  %lanes = index.constant 1 : index
-  %base = index.constant 0 : offset
-  %workers = group.create %lanes : index -> group
-  %input_view = buffer.view %input[%base] : buffer -> view<16xi32>
-  %output_view = buffer.view %output[%base] : buffer -> view<16xi32>
-  %input_flow = pipeline.read %input_view on %workers : view<16xi32>, group -> pipeline.flow<tile<16xi32>>
-  %output_flow = pipeline.stage @copy_record on %workers(%input_flow) : (group, pipeline.flow<tile<16xi32>>) -> (pipeline.flow<tile<16xi32>>)
-  pipeline.write %output_flow to %output_view : pipeline.flow<tile<16xi32>>, view<16xi32>
-  pipeline.return
+low.func.def public retain target<amd.xdna.aie2p.array>(@array_target) abi(array_program) abi_layout({binding_count = 3}) @sparse_copy_i32() asm {
+  %worker_count = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %workers = group %worker_count
+  %worker_rank = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %worker = worker %workers, %worker_rank, @copy_record
+  %input = binding 0, "read"
+  %output = binding 2, "write"
+  %input_sender = sender %input, 0 : reg<aie2p.array.sender : tile<16xi32>>
+  %worker_receiver_0 = receiver %worker, 0 : reg<aie2p.array.receiver : tile<16xi32>>
+  %input_channel_capacity = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %input_channel_records = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %input_channel = channel %input_sender, %worker_receiver_0, %input_channel_capacity, %input_channel_records : reg<aie2p.array.channel : tile<16xi32>>
+  %worker_sender_1 = sender %worker, 1 : reg<aie2p.array.sender : tile<16xi32>>
+  %output_receiver = receiver %output, 0 : reg<aie2p.array.receiver : tile<16xi32>>
+  %worker_1_channel_capacity = constant.u32 2 : reg<aie2p.array.scalar : index>
+  %worker_1_channel_records = constant.u32 1 : reg<aie2p.array.scalar : index>
+  %worker_1_channel = channel %worker_sender_1, %output_receiver, %worker_1_channel_capacity, %worker_1_channel_records : reg<aie2p.array.channel : tile<16xi32>>
+  %worker_column = constant.u32 0 : reg<aie2p.array.scalar : index>
+  %worker_row = constant.u32 2 : reg<aie2p.array.scalar : index>
+  constrain.location %worker, %worker_column, %worker_row
+  return
 }
 
 func.def target(@core_target) @copy_record(%input: buffer, %output: buffer) {
