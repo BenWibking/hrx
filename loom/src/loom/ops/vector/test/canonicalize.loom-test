@@ -78,6 +78,18 @@ func.def @empty_unsigned_remainder() -> (vector<0xi32>) {
 
 // ====
 
+// Identity casts inside one address domain are aliases.
+func.def @index_cast_identity(%value: vector<4xindex>) -> (vector<4xindex>) {
+  %result = vector.index_cast %value : vector<4xindex> to vector<4xindex>
+  func.return %result : vector<4xindex>
+}
+// ----
+func.def @index_cast_identity(%value: vector<4xindex>) -> (vector<4xindex>) {
+  func.return %value : vector<4xindex>
+}
+
+// ====
+
 // A unary concat is the input value itself.
 func.def @concat_unary(%value: vector<4xi8>) -> (vector<4xi8>) {
   %result = vector.concat<0> %value : vector<4xi8> -> vector<4xi8>

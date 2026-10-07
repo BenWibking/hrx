@@ -57,6 +57,7 @@ from loom.dsl import (
     COMMUTATIVE,
     CONSTANT_LIKE,
     DECOMPOSABLE,
+    DISTRIBUTION_TRANSFER,
     ELEMENTWISE,
     ENCODING_SCHEMA,
     ENCODING_TRANSFORM,
@@ -3451,6 +3452,39 @@ vector_signi = _lanewise_unary(
 # Conversions
 # ============================================================================
 
+vector_index_cast = Op(
+    "vector.index_cast",
+    group=vector_ops,
+    phase=OpPhase.EXECUTABLE,
+    doc=(
+        "Lanewise integer conversion at an address boundary. Index uses a "
+        "signed target-selected carrier and offset uses an independently "
+        "selected unsigned carrier. Each lane follows index.cast semantics, "
+        "including 0/1 conversion for i1, source-domain signedness, low-bit "
+        "preservation when narrowing, and destination representability. "
+        "Source and result shapes match exactly. Pure fixed-width integer "
+        "changes use the ordinary vector extension and truncation ops."
+    ),
+    operands=[Operand("input", VECTOR)],
+    results=[Result("result", VECTOR)],
+    constraints=[SameKind("input", "result"), SameShape("input", "result")],
+    facts="loom_vector_index_cast_facts",
+    canonicalize="loom_vector_index_cast_canonicalize",
+    verify="loom_vector_index_cast_verify",
+    traits=[PURE, ELEMENTWISE, DISTRIBUTION_TRANSFER],
+    format=[
+        Ref("input"),
+        COLON,
+        TypeOf("input"),
+        kw("to"),
+        TypeOf("result"),
+    ],
+    examples=[
+        "%indices = vector.index_cast %lanes : vector<16xi32> to vector<16xindex>",
+        "%bytes = vector.index_cast %raw : vector<8xi64> to vector<8xoffset>",
+    ],
+)
+
 vector_extf = _vector_cast(
     "vector.extf",
     phase=OpPhase.EXECUTABLE,
@@ -4384,6 +4418,7 @@ VECTOR_CAST_OPS: tuple[Op, ...] = (
     vector_fptosi,
     vector_fptoui,
     vector_bitcast,
+    vector_index_cast,
 )
 
 VECTOR_BITPACK_OPS: tuple[Op, ...] = (

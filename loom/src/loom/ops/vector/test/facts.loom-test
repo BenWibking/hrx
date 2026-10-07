@@ -1,5 +1,45 @@
 // RUN: pass canonicalize
 
+// An unknown fixed-width source still gives every offset lane the scalar
+// zero-extension domain. This is a per-lane summary, not an equality claim.
+func.def @index_cast_unknown_i8_to_offset(%source: vector<4xi8>) -> (i64, i64) {
+  %offsets = vector.index_cast %source : vector<4xi8> to vector<4xoffset>
+  %lane = vector.extract %offsets[2] : vector<4xoffset> -> offset
+  %lo = test.fact_range_lo %lane : offset -> i64
+  %hi = test.fact_range_hi %lane : offset -> i64
+  func.return %lo, %hi : i64, i64
+}
+// ----
+func.def @index_cast_unknown_i8_to_offset(%source: vector<4xi8>) -> (i64, i64) {
+  %lo = scalar.constant 0 : i64
+  %hi = scalar.constant 255 : i64
+  func.return %lo, %hi : i64, i64
+}
+
+// ====
+
+// Small static lane facts retain each lane independently through the shared
+// scalar address conversion.
+func.def @index_cast_small_lanes_to_index() -> (i64, i64) {
+  %negative = scalar.constant -2 : i16
+  %positive = scalar.constant 7 : i16
+  %source = vector.from_elements %negative, %positive : vector<2xi16>
+  %indices = vector.index_cast %source : vector<2xi16> to vector<2xindex>
+  %lane0 = vector.extract %indices[0] : vector<2xindex> -> index
+  %lane1 = vector.extract %indices[1] : vector<2xindex> -> index
+  %value0 = test.fact_range_lo %lane0 : index -> i64
+  %value1 = test.fact_range_hi %lane1 : index -> i64
+  func.return %value0, %value1 : i64, i64
+}
+// ----
+func.def @index_cast_small_lanes_to_index() -> (i64, i64) {
+  %value0 = scalar.constant -2 : i64
+  %value1 = scalar.constant 7 : i64
+  func.return %value0, %value1 : i64, i64
+}
+
+// ====
+
 // Per-lane FMA facts preserve the exact side of a narrow rounding midpoint.
 func.def @fmaf_bf16_single_rounding() -> (bf16, bf16) {
   %a0 = scalar.constant 1.0078125 : bf16

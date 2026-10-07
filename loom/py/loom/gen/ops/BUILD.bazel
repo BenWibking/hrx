@@ -76,6 +76,7 @@ iree_py_binary(
     visibility = GENERATOR_VISIBILITY,
     deps = [
         ":c_tables",
+        "//loom/py/loom/dialect/index",
         "//loom/py/loom/dialect/scalar",
         "//loom/py/loom/dialect/vector",
     ],
@@ -462,6 +463,7 @@ iree_py_test(
     main = "pytest_style_runner.py",
     deps = [
         ":c_tables",
+        "//loom/py/loom/dialect/index",
         "//loom/py/loom/dialect/scalar",
         "//loom/py/loom/dialect/vector",
     ],

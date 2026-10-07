@@ -202,6 +202,51 @@ static iree_status_t loom_vector_emit_count_mismatch(
                           IREE_ARRAYSIZE(params));
 }
 
+static bool loom_vector_element_type_is_address(loom_type_t type) {
+  if (!loom_type_is_vector(type)) {
+    return false;
+  }
+  const loom_scalar_type_t element_type = loom_type_element_type(type);
+  return element_type == LOOM_SCALAR_TYPE_INDEX ||
+         element_type == LOOM_SCALAR_TYPE_OFFSET;
+}
+
+static bool loom_vector_element_type_is_integer_or_address(loom_type_t type) {
+  if (!loom_type_is_vector(type)) {
+    return false;
+  }
+  const loom_scalar_type_t element_type = loom_type_element_type(type);
+  return loom_scalar_type_is_integer(element_type) ||
+         element_type == LOOM_SCALAR_TYPE_INDEX ||
+         element_type == LOOM_SCALAR_TYPE_OFFSET;
+}
+
+iree_status_t loom_vector_index_cast_verify(const loom_module_t* module,
+                                            const loom_op_t* op,
+                                            iree_diagnostic_emitter_t emitter) {
+  const loom_type_t input_type =
+      loom_module_value_type(module, loom_vector_index_cast_input(op));
+  const loom_type_t result_type =
+      loom_module_value_type(module, loom_vector_index_cast_result(op));
+  if (!loom_vector_element_type_is_integer_or_address(input_type)) {
+    return loom_vector_emit_operand_constraint(
+        emitter, op, IREE_SV("input"), input_type,
+        IREE_SV("vector with integer, index, or offset elements"));
+  }
+  if (!loom_vector_element_type_is_integer_or_address(result_type)) {
+    return loom_vector_emit_result_constraint(
+        emitter, op, IREE_SV("result"), result_type,
+        IREE_SV("vector with integer, index, or offset elements"));
+  }
+  if (!loom_vector_element_type_is_address(input_type) &&
+      !loom_vector_element_type_is_address(result_type)) {
+    return loom_vector_emit_result_constraint(
+        emitter, op, IREE_SV("result"), result_type,
+        IREE_SV("vector index or offset boundary"));
+  }
+  return iree_ok_status();
+}
+
 static uint16_t loom_vector_dynamic_sentinel_count(loom_attribute_t values) {
   uint16_t dynamic_count = 0;
   for (uint16_t i = 0; i < values.count; ++i) {
