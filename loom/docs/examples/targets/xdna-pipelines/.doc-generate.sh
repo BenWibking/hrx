@@ -31,7 +31,8 @@ cleanup() {
 trap cleanup EXIT
 
 for profile in amd.xdna.strix.17f0_10 amd.xdna.strix_halo.17f0_11; do
-  "${script_dir}/run.sh" "${source_file}" "${temporary_root}/${profile}" "${profile}"
+  "${repo_root}/loom/docs/examples/targets/xdna-pipelines/run.sh" \
+    "${source_file}" "${temporary_root}/${profile}" "${profile}"
 done
 
 # Publish source and complete compiler-produced IR, without executable caches.
