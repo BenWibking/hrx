@@ -342,7 +342,18 @@ static void iree_hal_amdgpu_transfer_publish_signals(
     iree_hal_amdgpu_transfer_transaction_t* transaction) {
   iree_status_t status = transaction->failure_status;
   transaction->failure_status = iree_ok_status();
+  // Child completion means native and host staging accesses have retired.
+  // The transaction may outlive the signal while a continuation unwinds, but
+  // its captured buffers must already be available for application reuse.
+  iree_hal_resource_set_free(transaction->resource_set);
+  transaction->resource_set = NULL;
   if (!iree_status_is_ok(status)) {
+    // A failed wait can terminate the transaction before staging starts.
+    for (iree_host_size_t i = 0; i < transaction->operation_count; ++i) {
+      iree_hal_amdgpu_staging_transfer_release(
+          transaction->children[i].staging_transfer);
+      transaction->children[i].staging_transfer = NULL;
+    }
     iree_hal_amdgpu_transfer_fail_signals(transaction, status);
     return;
   }

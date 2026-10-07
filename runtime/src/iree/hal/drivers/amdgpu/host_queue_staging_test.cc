@@ -8,6 +8,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <future>
+#include <memory>
 #include <vector>
 
 #include "iree/hal/api.h"
@@ -484,6 +486,64 @@ TEST_F(HostQueueStagingTest, LogicalDeviceOptionsSetFileStagingPool) {
   ASSERT_NE(physical_device, nullptr);
   EXPECT_EQ(physical_device->file_staging_pool.slot_size, kStagingSlotSize);
   EXPECT_EQ(physical_device->file_staging_pool.slot_count, 2u);
+}
+
+TEST_F(HostQueueStagingTest,
+       CapturedHostTransfersReleaseBuffersBeforeCompletion) {
+  iree_hal_amdgpu_logical_device_options_t options;
+  iree_hal_amdgpu_logical_device_options_initialize(&options);
+  options.preallocate_pools = 0;
+  TestLogicalDevice test_device;
+  IREE_ASSERT_OK(CreateTestDevice(&options, &test_device));
+
+  constexpr iree_device_size_t kBufferSize = 1024;
+  auto input = MakePatternData(kBufferSize);
+  std::vector<uint8_t> output(kBufferSize, 0);
+  Ref<iree_hal_buffer_t> buffer;
+  IREE_ASSERT_OK(CreatePatternedDeviceBuffer(
+      test_device.allocator(), test_device.base_device(), test_device.queue(),
+      kBufferSize, 0x00, buffer.out()));
+
+  for (const auto type : {IREE_HAL_TRANSFER_OPERATION_TYPE_UPLOAD,
+                          IREE_HAL_TRANSFER_OPERATION_TYPE_DOWNLOAD}) {
+    SCOPED_TRACE(type);
+    iree_hal_amdgpu_staging_transfer_t* captured_transfer = nullptr;
+    if (type == IREE_HAL_TRANSFER_OPERATION_TYPE_UPLOAD) {
+      IREE_ASSERT_OK(iree_hal_amdgpu_staging_transfer_create_upload(
+          test_device.first_host_queue(), input.data(), buffer, 0, kBufferSize,
+          &captured_transfer));
+    } else {
+      IREE_ASSERT_OK(iree_hal_amdgpu_staging_transfer_create_download(
+          test_device.first_host_queue(), buffer, 0, output.data(), kBufferSize,
+          &captured_transfer));
+    }
+    std::unique_ptr<iree_hal_amdgpu_staging_transfer_t,
+                    decltype(&iree_hal_amdgpu_staging_transfer_release)>
+        transfer(captured_transfer, iree_hal_amdgpu_staging_transfer_release);
+    struct Completion {
+      // Caller-owned buffer observed at the transfer's completion boundary.
+      iree_hal_buffer_t* buffer;
+      // Publishes the number of owners remaining when completion runs.
+      std::promise<int32_t> reference_count;
+    } completion = {buffer};
+    auto result = completion.reference_count.get_future();
+    const iree_hal_amdgpu_reclaim_action_t action = {
+        [](iree_hal_amdgpu_reclaim_entry_t* entry, void* user_data,
+           iree_status_t status) {
+          EXPECT_EQ(entry, nullptr);
+          IREE_EXPECT_OK(iree_status_clone(status));
+          auto* completion = static_cast<Completion*>(user_data);
+          completion->reference_count.set_value(iree_atomic_ref_count_load(
+              &completion->buffer->resource.ref_count));
+        },
+        &completion,
+    };
+    IREE_ASSERT_OK(iree_hal_amdgpu_staging_transfer_start(
+        transfer.get(), action, /*completion_resource=*/nullptr));
+    // Keeping the completed transaction alive must not keep its buffer alive.
+    EXPECT_EQ(result.get(), 1);
+  }
+  ExpectByteRangeMatches(output, input);
 }
 
 #if IREE_FILE_IO_ENABLE

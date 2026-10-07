@@ -115,7 +115,9 @@ iree_status_t iree_hal_amdgpu_staging_transfer_create_download(
 
 // Starts a captured host transfer. The optional |completion_resource| keeps
 // |completion_action.user_data| live until the action executes. The completion
-// action runs outside notification-ring drain with a NULL reclaim entry.
+// action runs outside notification-ring drain with a NULL reclaim entry after
+// captured buffers and files have been released. The caller may retain the
+// completed transfer without retaining its storage.
 iree_status_t iree_hal_amdgpu_staging_transfer_start(
     iree_hal_amdgpu_staging_transfer_t* transfer,
     iree_hal_amdgpu_reclaim_action_t completion_action,

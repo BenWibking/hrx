@@ -743,6 +743,13 @@ static void iree_hal_amdgpu_staging_transfer_fail_signals_with_borrowed_status(
 
 static void iree_hal_amdgpu_staging_transfer_complete(
     iree_hal_amdgpu_staging_transfer_t* transfer, iree_status_t status) {
+  // All byte accesses have retired. Return captured storage before publishing
+  // completion so a waiter can release its buffers and immediately reuse their
+  // backing, even while a post-drain continuation still retains this transfer.
+  iree_hal_buffer_release(transfer->buffer);
+  transfer->buffer = NULL;
+  iree_hal_file_release(transfer->file);
+  transfer->file = NULL;
   if (transfer->completion_action.fn) {
     transfer->completion_action.fn(
         /*entry=*/NULL, transfer->completion_action.user_data, status);
