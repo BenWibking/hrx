@@ -382,6 +382,40 @@ endif()
 if(LOOM_TARGET_ARCH_AMDGPU)
 loom_cc_library(
   NAME
+    sgpr_read_hazard
+  HDRS
+    "sgpr_read_hazard.h"
+  SRCS
+    "sgpr_read_hazard.c"
+  DEPS
+    iree::base
+    iree::base::internal::arena
+    loom::codegen::low::allocation
+    loom::target::arch::amdgpu::refs::target_refs
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_test(
+  NAME
+    sgpr_read_hazard_test
+  SRCS
+    "sgpr_read_hazard_test.cc"
+  DEPS
+    ::sgpr_read_hazard
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::arch::amdgpu::refs::target_refs
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU)
+loom_cc_library(
+  NAME
     trans_result_window
   HDRS
     "trans_result_window.h"
@@ -427,6 +461,7 @@ loom_cc_library(
     "wait_plan.c"
   DEPS
     ::address_state
+    ::sgpr_read_hazard
     ::trans_result_window
     ::wait_classification
     ::wait_completion

@@ -332,7 +332,7 @@ TEST_F(LowAllocationTargetConstraintsTest,
 }
 
 TEST_F(LowAllocationTargetConstraintsTest,
-       PhysicalExtentsExcludeAbiFixedLocationWindow) {
+       PhysicalExtentsSeparateAbiFixedLocationWindow) {
   loom_low_allocation_target_constraints_t constraints = {};
   IREE_ASSERT_OK(loom_low_allocation_target_constraints_initialize(
       &module_, &function_op_, &target_, /*budgets=*/nullptr,
@@ -355,6 +355,9 @@ TEST_F(LowAllocationTargetConstraintsTest,
           &constraints, reg_class_id,
           LOOM_LOW_ALLOCATION_LOCATION_PHYSICAL_REGISTER),
       6u);
+  EXPECT_EQ(constraints.max_assigned_location_end_by_reg_class[reg_class_id],
+            6u);
+  EXPECT_EQ(constraints.max_fixed_location_end_by_reg_class[reg_class_id], 40u);
 }
 
 TEST_F(LowAllocationTargetConstraintsTest,

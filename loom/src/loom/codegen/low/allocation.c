@@ -121,23 +121,32 @@ static iree_status_t loom_low_allocation_repair_fragmentation(
   scratch_target_constraints.error_count = 0;
   scratch_target_constraints.failure = (loom_low_allocation_failure_t){0};
   scratch_target_constraints.max_assigned_location_end_by_reg_class = NULL;
+  scratch_target_constraints.max_fixed_location_end_by_reg_class = NULL;
 
   iree_status_t status = iree_ok_status();
   const iree_host_size_t reg_class_count =
       state->target.descriptor_set->reg_class_count;
   if (reg_class_count != 0) {
-    status = iree_arena_allocate_array(
-        &scratch_arena, reg_class_count,
-        sizeof(
-            *scratch_target_constraints.max_assigned_location_end_by_reg_class),
-        (void**)&scratch_target_constraints
-            .max_assigned_location_end_by_reg_class);
+    iree_host_size_t location_end_count = 0;
+    if (!iree_host_size_checked_mul(reg_class_count, 2, &location_end_count)) {
+      status =
+          iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
+                           "register-class extent table exceeds host size");
+    }
+    uint32_t* location_ends = NULL;
     if (iree_status_is_ok(status)) {
-      memset(scratch_target_constraints.max_assigned_location_end_by_reg_class,
-             0,
-             reg_class_count *
-                 sizeof(*scratch_target_constraints
-                             .max_assigned_location_end_by_reg_class));
+      status = iree_arena_allocate_array(
+          &scratch_arena, location_end_count,
+          sizeof(*scratch_target_constraints
+                      .max_assigned_location_end_by_reg_class),
+          (void**)&location_ends);
+    }
+    if (iree_status_is_ok(status)) {
+      memset(location_ends, 0, location_end_count * sizeof(*location_ends));
+      scratch_target_constraints.max_assigned_location_end_by_reg_class =
+          location_ends;
+      scratch_target_constraints.max_fixed_location_end_by_reg_class =
+          location_ends + reg_class_count;
     }
   }
 
@@ -175,6 +184,8 @@ static iree_status_t loom_low_allocation_repair_fragmentation(
       state->target_constraints.failure = (loom_low_allocation_failure_t){0};
       state->target_constraints.max_assigned_location_end_by_reg_class =
           scratch_target_constraints.max_assigned_location_end_by_reg_class;
+      state->target_constraints.max_fixed_location_end_by_reg_class =
+          scratch_target_constraints.max_fixed_location_end_by_reg_class;
       state->storage_leases = scratch_storage_leases;
       state->interval_assignment = scratch_result;
     }
@@ -669,6 +680,9 @@ iree_status_t loom_low_allocate_function(
                 .ends_by_reg_class =
                     state.target_constraints
                         .max_assigned_location_end_by_reg_class,
+                .fixed_ends_by_reg_class =
+                    state.target_constraints
+                        .max_fixed_location_end_by_reg_class,
                 .count = state.target.descriptor_set->reg_class_count,
             },
         .assignment_indices_by_value_ordinal =

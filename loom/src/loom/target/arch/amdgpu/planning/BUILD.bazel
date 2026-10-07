@@ -331,6 +331,30 @@ loom_cc_library(
 )
 
 loom_cc_library(
+    name = "sgpr_read_hazard",
+    srcs = ["sgpr_read_hazard.c"],
+    hdrs = ["sgpr_read_hazard.h"],
+    deps = [
+        "//loom/src/loom/codegen/low:allocation",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "sgpr_read_hazard_test",
+    srcs = ["sgpr_read_hazard_test.cc"],
+    deps = [
+        ":sgpr_read_hazard",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+loom_cc_library(
     name = "trans_result_window",
     srcs = ["trans_result_window.c"],
     hdrs = ["trans_result_window.h"],
@@ -369,6 +393,7 @@ loom_cc_library(
     visibility = _AMDGPU_ROOT_VISIBILITY + _AMDGPU_LOWER_VISIBILITY,
     deps = [
         ":address_state",
+        ":sgpr_read_hazard",
         ":trans_result_window",
         ":wait_classification",
         ":wait_completion",
