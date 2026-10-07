@@ -434,19 +434,38 @@ the pool. Result availability, result-copy completion and pool reuse are
 three different observations. [Shader reader][m-query-shader]
 [Reset dependency][m-query-reset]
 
-RadeonSI's GFX11 query-result path supplies a useful source distinction:
-its `PIPE_QUERY_WAIT` branch passes reference `1`, mask `1` and **flags `0`**
-to the common helper. Because that helper preserves the flags, this selects
-always-pass, despite the caller comment describing an availability wait.
-The result shader samples each fence once and suppresses a final result when
-data is missing, except when reporting availability; it does not spin until
-readiness. The surrounding internal operation also requests conditional shader
-joins and cache invalidation.
-These facts establish the emitted comparison and the extra dependencies,
-but do not establish that the comparison itself waits for readiness or prove
-an end-to-end failure for every permitted producer history.
-[Query caller][m-si-query] [Result shader][m-si-query-shader]
+RadeonSI selects its shader-query path for GFX11+ primitive and streamout
+queries. Shader atomics update the counters; a separate bottom-of-pipe release
+publishes the last emitted record's fence when a query ends. CPU result
+retrieval uses buffer mapping synchronization, whereas resource-result
+retrieval launches a compute reader. The resource path does not inherit a
+mandatory CPU wait from the query API.
+[Query selection][m-si-query-select] [Counter producer][m-si-query-counter]
+[Record fence and CPU reader][m-si-query-producer] [Resource-result API][m-query-api]
+
+The resource caller's `PIPE_QUERY_WAIT` branch passes reference `1`, mask `1`
+and **flags `0`** to the common helper. Because that helper preserves the
+flags, this selects always-pass, despite the comment describing an availability
+wait. Before dispatch, the internal-operation helper requests VMEM invalidation
+and consults buffer idleness and binding history. A busy buffer requests PS
+synchronization when fragment-stage history is present, otherwise VS; compute
+history adds CS synchronization. In the ordinary branch without a CB/DB flush,
+stage joins retained after barrier reduction become partial-flush events;
+cache acquisition follows. Those selected packets contain no comparison
+against the record fence.
+[Query caller][m-si-query] [Buffer-idle predicate][m-si-query-idle]
 [Internal-operation dependencies][m-si-query-barriers]
+[Barrier reduction and lowering][m-si-query-lowering]
+
+The result shader samples each visited record's fence once and stops that
+record scan on zero. Its final store depends on the computed missing-data
+state; availability mode writes a Boolean instead. Chained buffers pass a
+summary between dispatches, and each visited record assigns that state again.
+The shader does not spin until readiness. Shader completion, cache visibility
+and observation of the separately produced record marker remain distinct.
+The emitted always-pass packet supplies no readiness test; any guarantee must
+come from the surrounding producer and synchronization protocol.
+[Result shader][m-si-query-shader]
 
 ## Lifetime of a reusable wait protocol
 
@@ -552,5 +571,11 @@ observation. [Polling representation][p-mec]
 [m-query-shader]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_query.c#L1783-L1835
 [m-query-reset]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_query.c#L2561-L2601
 [m-si-query]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx11_query.c#L268-L418
+[m-si-query-select]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/si_query.c#L1202-L1219
+[m-si-query-counter]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_nir_lower_abi.c#L497-L510
+[m-si-query-producer]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx11_query.c#L151-L266
+[m-query-api]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/docs/gallium/context.rst#L430-L440
+[m-si-query-idle]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/si_pipe.h#L2151-L2156
+[m-si-query-lowering]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/si_barrier.c#L40-L319
 [m-si-query-shader]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_shaderlib_nir.c#L766-L977
 [m-si-query-barriers]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/si_barrier.c#L540-L654
