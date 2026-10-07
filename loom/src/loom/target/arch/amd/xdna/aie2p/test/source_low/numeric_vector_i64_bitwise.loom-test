@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/numeric_vector_i64_bitwise.loom-test
 // RUN: emit source-low target=amd.xdna.aie2p:core output=low
 
 func.def @single_wide_element(%lhs: vector<1xi64>, %rhs: vector<1xi64>) -> (vector<1xi64>) {
