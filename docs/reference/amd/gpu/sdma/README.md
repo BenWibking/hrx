@@ -20,6 +20,7 @@ depend on the engine generation and native transport.
 | [Ordering](ordering.md) | Pending-transfer drains, overlap, NPD and resource ownership. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B`: per-generation policy fields, notification and store widths. |
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: comparisons, retry controls, signal lifetime and scoped layouts. |
+| [Conditional execution](conditional.md) | `COND_EXE`: guarded DWORD ranges, Boolean64 sampling, per-execution predicate state and driver-owned submission conditions. |
 | [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` and fused copy signaling: distinct completion and retirement protocols. |
 | [Cache maintenance](cache.md) | USER_GCR, scheduled kernel GCR, HDP and command publication. |
 | [Command buffers](command-buffers.md) | Generation-specific IB entries, body and submission alignment, context storage, direct rings and scheduled retirement. |

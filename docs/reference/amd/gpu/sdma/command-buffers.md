@@ -15,6 +15,10 @@ here. The [Windows submission chapter](../wddm.md) separately describes WDDM
 command addresses, completion publication and native retirement; those native
 contracts are not supplied by the Linux ring wrapper below.
 
+[Conditional execution](conditional.md) describes `COND_EXE` ranges and the
+native submission condition surrounding an IB. A copy predicate and a
+driver-owned preemption condition have different storage and completion owners.
+
 ## Native generation and transport
 
 Linux selects the scheduled backend using native discovery or legacy ASIC
