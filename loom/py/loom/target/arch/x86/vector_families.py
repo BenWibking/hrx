@@ -232,6 +232,19 @@ AVX2_INTEGER_REDUCTION_FAMILIES = (
     ),
 )
 
+AVX512_INTEGER_REDUCTION_FAMILIES = (
+    *(
+        row
+        for row in AVX512_INTEGER_BINARY_FAMILIES
+        if row.source_operation in ("addi", "muli", "minsi", "maxsi", "minui", "maxui")
+    ),
+    *(
+        VectorBinaryFamily(source_operation, mnemonic, semantic, element)
+        for source_operation, mnemonic, semantic in AVX512_BITWISE_FAMILIES
+        for element in INTEGER_ELEMENTS
+    ),
+)
+
 AVX2_INTEGER_COMPARE_MNEMONICS = {
     element.name: (f"vpcmpeq{suffix}", f"vpcmpgt{suffix}")
     for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)

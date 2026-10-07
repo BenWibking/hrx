@@ -28,6 +28,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FLOAT_BINARY_FAMILIES,
     AVX512_FLOAT_FMA_MNEMONICS,
     AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_INTEGER_REDUCTION_FAMILIES,
     AVX512_VECTOR_BIT_WIDTHS,
     AVX512VL_INTEGER_BINARY_FAMILIES,
     AVX512VL_VECTOR_BIT_WIDTHS,
@@ -427,7 +428,8 @@ def test_avx512_arithmetic_covers_every_native_family() -> None:
     actual_direct = {
         (rule.descriptor.key, _value_type_guard(rule, "result"))
         for rule in rules
-        if rule.descriptor.key in direct_descriptor_keys
+        if rule.source_op is not vector.vector_reduce
+        and rule.descriptor.key in direct_descriptor_keys
     }
     assert actual_direct == expected_direct
     assert len(actual_direct) == len(expected_direct)
@@ -452,7 +454,8 @@ def test_avx512_arithmetic_covers_every_native_family() -> None:
     bitwise_rules = tuple(
         rule
         for rule in rules
-        if rule.descriptor.key
+        if rule.source_op is not vector.vector_reduce
+        and rule.descriptor.key
         in {f"x86.avx512.{mnemonic}.zmm" for _, mnemonic, _ in AVX512_BITWISE_FAMILIES}
         and _value_type_guard(rule, "result") != Vector("i1", lanes=64)
     )
@@ -625,52 +628,57 @@ def test_avx2_float_extrema_cover_every_semantic_and_width() -> None:
     )
 
 
-def test_avx2_integer_reductions_cover_every_native_combine_family() -> None:
-    rules = tuple(
-        rule
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule) and rule.source_op is vector.vector_reduce
-    )
-    integer_operations = {
-        row.source_operation for row in AVX2_INTEGER_REDUCTION_FAMILIES
-    }
-    integer_rules = tuple(
-        rule
-        for rule in rules
-        if any(
-            guard.kind == GuardKind.ENUM_ATTR_EQUALS
-            and guard.field == "kind"
-            and guard.enum_keyword in integer_operations
-            for guard in rule.guards
-        )
-    )
-    actual = {
+def test_integer_reductions_cover_every_native_combine_family() -> None:
+    for fragment, families, vector_bit_widths in (
         (
-            operation,
-            _value_type_guard(rule, "input"),
-        )
-        for rule in integer_rules
-        for operation in (
-            next(
-                guard.enum_keyword
+            X86_AVX2_CONTRACT_FRAGMENT,
+            AVX2_INTEGER_REDUCTION_FAMILIES,
+            AVX2_VECTOR_BIT_WIDTHS,
+        ),
+        (
+            X86_AVX512_CONTRACT_FRAGMENT,
+            AVX512_INTEGER_REDUCTION_FAMILIES,
+            AVX512_VECTOR_BIT_WIDTHS,
+        ),
+    ):
+        expected = {
+            (
+                row.source_operation,
+                Vector(
+                    row.element.name,
+                    lanes=vector_bit_width // row.element.bit_width,
+                ),
+            )
+            for row in families
+            for vector_bit_width in vector_bit_widths
+        }
+        expected_operations = {row.source_operation for row in families}
+        integer_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule)
+            and rule.source_op is vector.vector_reduce
+            and any(
+                guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                and guard.field == "kind"
+                and guard.enum_keyword in expected_operations
                 for guard in rule.guards
-                if guard.kind == GuardKind.ENUM_ATTR_EQUALS and guard.field == "kind"
-            ),
+            )
         )
-    }
-    expected = {
-        (
-            row.source_operation,
-            Vector(
-                row.element.name,
-                lanes=vector_bit_width // row.element.bit_width,
-            ),
-        )
-        for row in AVX2_INTEGER_REDUCTION_FAMILIES
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
-    assert actual == expected
-    assert len(integer_rules) == len(expected)
+        actual = {
+            (
+                next(
+                    guard.enum_keyword
+                    for guard in rule.guards
+                    if guard.kind == GuardKind.ENUM_ATTR_EQUALS
+                    and guard.field == "kind"
+                ),
+                _value_type_guard(rule, "input"),
+            )
+            for rule in integer_rules
+        }
+        assert actual == expected
+        assert len(integer_rules) == len(expected)
 
 
 def test_avx2_float_reductions_and_dots_cover_both_types_and_widths() -> None:

@@ -657,6 +657,53 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
+        Descriptor(
+            key="x86.avx512.vshufi64x2.zmm",
+            mnemonic="vshufi64x2",
+            semantic_tag="bits.shuffle.i64x8",
+            operands=(
+                _zmm_result(),
+                _zmm_operand("lhs"),
+                _zmm_operand("rhs"),
+            ),
+            immediates=(
+                Immediate(
+                    "control",
+                    ImmediateKind.UNSIGNED,
+                    bit_width=8,
+                    unsigned_max=255,
+                ),
+            ),
+            asm_forms=_asm(
+                results=("dst",),
+                operands=("lhs", "rhs"),
+                immediates=("control",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        Descriptor(
+            key="x86.avx512.vpsrldq.zmm",
+            mnemonic="vpsrldq",
+            semantic_tag="bits.shift_right_bytes.v512x128",
+            operands=(_zmm_result(), _zmm_operand("source")),
+            immediates=(
+                Immediate(
+                    "bytes",
+                    ImmediateKind.UNSIGNED,
+                    bit_width=8,
+                    unsigned_max=255,
+                ),
+            ),
+            asm_forms=_asm(
+                mnemonic="vpsrldq.zmm",
+                results=("dst",),
+                operands=("source",),
+                immediates=("bytes",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
         *(
             _vector_splat_descriptor(
                 vector_bit_width=vector_bit_width,

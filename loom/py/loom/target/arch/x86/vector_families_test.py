@@ -22,6 +22,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FLOAT_FMA_MNEMONICS,
     AVX512_INTEGER_BINARY_FAMILIES,
     AVX512_INTEGER_COMPARE_MNEMONICS,
+    AVX512_INTEGER_REDUCTION_FAMILIES,
     AVX512_SELECT_MNEMONICS,
     AVX512_VECTOR_BIT_WIDTHS,
     AVX512VL_INTEGER_BINARY_FAMILIES,
@@ -118,6 +119,26 @@ def test_avx512_direct_integer_matrix_matches_core_isa_families() -> None:
             (operation, element)
             for operation in ("shli", "shrsi", "shrui")
             for element in ("i16", "i32", "i64")
+        ),
+    }
+
+
+def test_avx512_integer_reduction_matrix_matches_core_isa_families() -> None:
+    assert {
+        (family.source_operation, family.element.name)
+        for family in AVX512_INTEGER_REDUCTION_FAMILIES
+    } == {
+        *(("addi", element) for element in ("i8", "i16", "i32", "i64")),
+        *(("muli", element) for element in ("i16", "i32", "i64")),
+        *(
+            (operation, element)
+            for operation in ("minsi", "maxsi", "minui", "maxui")
+            for element in ("i8", "i16", "i32", "i64")
+        ),
+        *(
+            (operation, element)
+            for operation in ("andi", "ori", "xori")
+            for element in ("i8", "i16", "i32", "i64")
         ),
     }
 

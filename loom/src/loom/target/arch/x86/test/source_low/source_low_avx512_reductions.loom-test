@@ -1,0 +1,71 @@
+// RUN: emit source-low output=low
+
+// ZMM integer reductions collapse 256-bit halves and 128-bit quarters before
+// applying lane-local byte shifts. The family shares that tree across every
+// associative integer combine, including AVX-512's native i64 multiply.
+x86.target<avx512> @target
+
+func.def target(@target) @integer_reduction_families(%i8_values: vector<64xi8>, %i8_init: i8, %i16_values: vector<32xi16>, %i16_init: i16, %i32_values: vector<16xi32>, %i32_init: i32, %i64_values: vector<8xi64>, %i64_init: i64) -> (i8, i16, i32, i64) {
+  %i8 = vector.reduce<xori> %i8_values, %i8_init : vector<64xi8>, i8
+  %i16 = vector.reduce<addi> %i16_values, %i16_init : vector<32xi16>, i16
+  %i32 = vector.reduce<minui> %i32_values, %i32_init : vector<16xi32>, i32
+  %i64 = vector.reduce<muli> %i64_values, %i64_init : vector<8xi64>, i64
+  func.return %i8, %i16, %i32, %i64 : i8, i16, i32, i64
+}
+
+// ----
+low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (vector<64xi8>, i8, vector<32xi16>, i16, vector<16xi32>, i32, vector<8xi64>, i64) -> (i8, i16, i32, i64)}) @integer_reduction_families(%i8_values: reg<x86.zmm>, %i8_init: reg<x86.gpr32>, %i16_values: reg<x86.zmm>, %i16_init: reg<x86.gpr32>, %i32_values: reg<x86.zmm>, %i32_init: reg<x86.gpr32>, %i64_values: reg<x86.zmm>, %i64_init: reg<x86.gpr64>) -> (reg<x86.gpr32>, reg<x86.gpr32>, reg<x86.gpr32>, reg<x86.gpr64>) asm {
+  %28 = vshufi64x2 %i8_values, %i8_values, 78
+  %29 = vpxord %i8_values, %28
+  %30 = vshufi64x2 %29, %29, 177
+  %31 = vpxord %29, %30
+  %32 = vpsrldq.zmm %31, 8
+  %33 = vpxord %31, %32
+  %34 = vpsrldq.zmm %33, 4
+  %35 = vpxord %33, %34
+  %36 = vpsrldq.zmm %35, 2
+  %37 = vpxord %35, %36
+  %38 = vpsrldq.zmm %37, 1
+  %39 = vpxord %37, %38
+  %40 = vpbroadcastb %i8_init
+  %41 = vpxord %39, %40
+  %42 = vextractf32x4.xmm %41, 0
+  %i8 = vpextrb.xmm %42, 0
+  %44 = vshufi64x2 %i16_values, %i16_values, 78
+  %45 = vpaddw %i16_values, %44
+  %46 = vshufi64x2 %45, %45, 177
+  %47 = vpaddw %45, %46
+  %48 = vpsrldq.zmm %47, 8
+  %49 = vpaddw %47, %48
+  %50 = vpsrldq.zmm %49, 4
+  %51 = vpaddw %49, %50
+  %52 = vpsrldq.zmm %51, 2
+  %53 = vpaddw %51, %52
+  %54 = vpbroadcastw %i16_init
+  %55 = vpaddw %53, %54
+  %56 = vextractf32x4.xmm %55, 0
+  %i16 = vpextrw.xmm %56, 0
+  %58 = vshufi64x2 %i32_values, %i32_values, 78
+  %59 = vpminud %i32_values, %58
+  %60 = vshufi64x2 %59, %59, 177
+  %61 = vpminud %59, %60
+  %62 = vpsrldq.zmm %61, 8
+  %63 = vpminud %61, %62
+  %64 = vpsrldq.zmm %63, 4
+  %65 = vpminud %63, %64
+  %66 = vpbroadcastd %i32_init
+  %67 = vpminud %65, %66
+  %68 = vextractf32x4.xmm %67, 0
+  %i32 = vpextrd.xmm %68, 0
+  %70 = vshufi64x2 %i64_values, %i64_values, 78
+  %71 = vpmullq %i64_values, %70
+  %72 = vshufi64x2 %71, %71, 177
+  %73 = vpmullq %71, %72
+  %74 = vpsrldq.zmm %73, 8
+  %75 = vpmullq %73, %74
+  %76 = vpbroadcastq %i64_init
+  %77 = vpmullq %75, %76
+  %78 = vextractf32x4.xmm %77, 0
+  %i64 = vpextrq.xmm %78, 0
+  return %i8, %i16, %i32, %i64
+}
