@@ -21,7 +21,7 @@ depend on the engine generation and native transport.
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: legacy/classic/wide layouts, policy and retry fields, dependency callers, signal lifetime, and progress versus terminal joins. |
 | [Conditional execution](conditional.md) | `COND_EXE`: guarded DWORD ranges, Boolean64 sampling, per-execution predicate state and driver-owned submission conditions. |
-| [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` and fused copy signaling: distinct completion and retirement protocols. |
+| [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` / legacy `DMA_PACKET_SEMAPHORE`: complete source layouts, directed atomic reach, caller selection, tracker modes and fused signal ownership. |
 | [Cache maintenance](cache.md) | `USER_GCR` / `GCR_REQ` / `GCR_USER`: complete layouts, control-word differences, caller selection, kernel `EMIT_MEM_SYNC`, HDP predicates and release/acquire ownership. |
 | [Command buffers](command-buffers.md) | Generation-specific IB entries, body and submission alignment, context storage, direct rings and scheduled retirement. |
 | [Timestamps](timing.md) | `TIMESTAMP_GET_GLOBAL`: policy layouts, transfer/gang/fanout intervals, sample readiness and lifetime, and native versus translated clock units. |
