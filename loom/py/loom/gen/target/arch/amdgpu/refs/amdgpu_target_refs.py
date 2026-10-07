@@ -543,6 +543,8 @@ def _descriptor_trait_names(
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_TRANSCENDENTAL")
     if descriptor.encoding_format_id in AMDGPU_DPP_ENCODING_FORMAT_IDS:
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_DPP")
+    if (descriptor.semantic_tag or "").startswith("lane.permlane"):
+        trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_PERMLANE")
     if descriptor.key in _READFIRSTLANE_DESCRIPTOR_KEYS:
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_READFIRSTLANE")
     if descriptor.encoding_format_id == AMDGPU_ENCODING_FORMAT_VOP1_SDWA:
