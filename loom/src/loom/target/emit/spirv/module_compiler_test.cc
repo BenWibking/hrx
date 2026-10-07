@@ -213,6 +213,9 @@ low.kernel.def target<spirv.logical.core> workgroup_size(1, 1, 1) @loom_kernel()
   loom_target_facts_t target_facts = {};
   InitializeTargetFacts(&loom_spirv_low_target_bundle_hal_kernel,
                         &target_facts);
+  char export_symbol[] = "retained_entry";
+  target_facts.storage.export_plan.export_symbol =
+      iree_make_cstring_view(export_symbol);
   loom_target_function_version_t function_version =
       MakeFunctionVersion(module.get(), IREE_SV("loom_kernel"), &target_facts);
   loom_function_version_t* version_values[] = {&function_version.base};
@@ -238,8 +241,12 @@ low.kernel.def target<spirv.logical.core> workgroup_size(1, 1, 1) @loom_kernel()
 
   request.flags = LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE;
   request.artifact_manifest.mode = LOOM_TARGET_ARTIFACT_MANIFEST_MODE_SUMMARY;
-  request.artifact_manifest.identifier = IREE_SV("module.manifest.json");
+  char manifest_identifier[] = "module.manifest.json";
+  request.artifact_manifest.identifier =
+      iree_make_cstring_view(manifest_identifier);
   IREE_ASSERT_OK(loom_spirv_module_emitter.emit(&request, &emitted, &artifact));
+  memset(export_symbol, '!', sizeof(export_symbol));
+  memset(manifest_identifier, '!', sizeof(manifest_identifier));
 
   ASSERT_TRUE(emitted);
   ASSERT_NE(artifact.target_bundle, nullptr);
@@ -249,6 +256,9 @@ low.kernel.def target<spirv.logical.core> workgroup_size(1, 1, 1) @loom_kernel()
             LOOM_TARGET_ARTIFACT_FORMAT_SPIRV_BINARY);
   EXPECT_EQ(artifact.target_bundle->export_plan->abi_kind,
             LOOM_TARGET_ABI_HAL_KERNEL);
+  EXPECT_TRUE(
+      iree_string_view_equal(artifact.target_bundle->export_plan->export_symbol,
+                             IREE_SV("retained_entry")));
   EXPECT_EQ(artifact.target_artifact_format,
             LOOM_TARGET_ARTIFACT_FORMAT_SPIRV_BINARY);
   ASSERT_NE(artifact.contents, nullptr);

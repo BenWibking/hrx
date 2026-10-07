@@ -6,6 +6,113 @@
 
 #include "loom/target/provider.h"
 
+#include <stddef.h>
+#include <string.h>
+
+typedef struct loom_target_artifact_metadata_t {
+  // Allocator owning the metadata, descriptors, and trailing string bytes.
+  iree_allocator_t allocator;
+  // Target facts whose structural pointers and strings refer to this
+  // allocation.
+  loom_target_bundle_storage_t target;
+} loom_target_artifact_metadata_t;
+
+static void loom_target_artifact_metadata_release(void* storage) {
+  loom_target_artifact_metadata_t* metadata = storage;
+  iree_allocator_free(metadata->allocator, metadata);
+}
+
+static iree_string_view_t loom_target_artifact_copy_string(
+    iree_string_view_t source, char** cursor) {
+  if (iree_string_view_is_empty(source)) {
+    return iree_string_view_empty();
+  }
+  memcpy(*cursor, source.data, source.size);
+  const iree_string_view_t result = iree_make_string_view(*cursor, source.size);
+  *cursor += source.size;
+  return result;
+}
+
+iree_status_t loom_target_emit_artifact_retain_metadata(
+    const loom_target_bundle_t* target_bundle, iree_host_size_t sidecar_count,
+    const loom_target_emit_sidecar_artifact_t* sidecars,
+    iree_allocator_t allocator, loom_target_emit_artifact_t* artifact) {
+  if (target_bundle == NULL && sidecar_count == 0) {
+    return iree_ok_status();
+  }
+  loom_target_bundle_storage_t target = {0};
+  if (target_bundle != NULL) {
+    target = (loom_target_bundle_storage_t){
+        .snapshot = *target_bundle->snapshot,
+        .export_plan = *target_bundle->export_plan,
+        .config = *target_bundle->config,
+        .bundle = *target_bundle,
+    };
+  }
+  static const uint16_t string_offsets[] = {
+      offsetof(loom_target_bundle_storage_t, bundle.name),
+      offsetof(loom_target_bundle_storage_t, snapshot.name),
+      offsetof(loom_target_bundle_storage_t, export_plan.name),
+      offsetof(loom_target_bundle_storage_t, export_plan.export_symbol),
+      offsetof(loom_target_bundle_storage_t, export_plan.calling_convention),
+      offsetof(loom_target_bundle_storage_t, config.name),
+      offsetof(loom_target_bundle_storage_t, config.contract_set_key),
+  };
+  iree_host_size_t descriptor_bytes = 0;
+  iree_host_size_t allocation_size = 0;
+  bool size_valid =
+      iree_host_size_checked_mul(sidecar_count, sizeof(*sidecars),
+                                 &descriptor_bytes) &&
+      iree_host_size_checked_add(sizeof(loom_target_artifact_metadata_t),
+                                 descriptor_bytes, &allocation_size);
+  for (iree_host_size_t i = 0; size_valid && i < IREE_ARRAYSIZE(string_offsets);
+       ++i) {
+    const iree_string_view_t* field =
+        (const iree_string_view_t*)((const uint8_t*)&target +
+                                    string_offsets[i]);
+    size_valid = iree_host_size_checked_add(allocation_size, field->size,
+                                            &allocation_size);
+  }
+  for (iree_host_size_t i = 0; size_valid && i < sidecar_count; ++i) {
+    size_valid = iree_host_size_checked_add(
+        allocation_size, sidecars[i].identifier.size, &allocation_size);
+  }
+  if (!size_valid) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "artifact metadata allocation size overflow");
+  }
+
+  loom_target_artifact_metadata_t* metadata = NULL;
+  IREE_RETURN_IF_ERROR(iree_allocator_malloc_uninitialized(
+      allocator, allocation_size, (void**)&metadata));
+  *metadata = (loom_target_artifact_metadata_t){
+      .allocator = allocator,
+      .target = target,
+  };
+  loom_target_bundle_storage_rebind(&metadata->target);
+  loom_target_emit_sidecar_artifact_t* owned_sidecars =
+      (loom_target_emit_sidecar_artifact_t*)(metadata + 1);
+  char* cursor = (char*)(owned_sidecars + sidecar_count);
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(string_offsets); ++i) {
+    iree_string_view_t* field =
+        (iree_string_view_t*)((uint8_t*)&metadata->target + string_offsets[i]);
+    *field = loom_target_artifact_copy_string(*field, &cursor);
+  }
+  for (iree_host_size_t i = 0; i < sidecar_count; ++i) {
+    owned_sidecars[i] = sidecars[i];
+    owned_sidecars[i].identifier =
+        loom_target_artifact_copy_string(sidecars[i].identifier, &cursor);
+    iree_byte_sequence_retain(owned_sidecars[i].contents);
+  }
+  artifact->target_bundle =
+      target_bundle != NULL ? &metadata->target.bundle : NULL;
+  artifact->sidecars = sidecar_count != 0 ? owned_sidecars : NULL;
+  artifact->sidecar_count = sidecar_count;
+  artifact->storage = metadata;
+  artifact->release_storage = loom_target_artifact_metadata_release;
+  return iree_ok_status();
+}
+
 void loom_target_emit_artifact_release(loom_target_emit_artifact_t* artifact) {
   if (artifact == NULL) {
     return;

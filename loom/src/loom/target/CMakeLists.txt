@@ -774,6 +774,7 @@ loom_cc_test(
     "provider_test.cc"
   DEPS
     ::provider
+    iree::base
     iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main

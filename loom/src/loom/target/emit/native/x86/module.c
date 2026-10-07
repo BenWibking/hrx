@@ -344,6 +344,7 @@ static iree_status_t loom_x86_module_build_artifact(
       .flags = LOOM_TARGET_ENTRY_SELECTION_INCLUDE_PRIVATE |
                LOOM_TARGET_ENTRY_SELECTION_INCLUDE_DECLARATIONS,
       .function_versions = request->function_versions,
+      .max_errors = request->max_errors,
   };
   loom_target_entry_diagnostic_emitter_t diagnostics = {
       .forwarding_emitter = request->diagnostic_emitter,
@@ -365,6 +366,10 @@ static iree_status_t loom_x86_module_build_artifact(
   if (!accepted) {
     return iree_ok_status();
   }
+  const loom_target_bundle_t* artifact_bundle =
+      format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY
+          ? NULL
+          : loom_target_entry_bundle(&entries.values[0]);
   uint32_t* symbol_indices = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       request->scratch_arena, request->module->symbols.count,
@@ -425,6 +430,9 @@ static iree_status_t loom_x86_module_build_artifact(
     if (format == LOOM_X86_MODULE_FORMAT_HAL_LIBRARY && exported &&
         loom_target_entry_bundle(&entries.values[i])->export_plan->abi_kind ==
             LOOM_TARGET_ABI_HAL_KERNEL) {
+      if (library_entry_count == 0) {
+        artifact_bundle = loom_target_entry_bundle(&entries.values[i]);
+      }
       status = iree_arena_grow_array(
           request->scratch_arena, library_entry_count, library_entry_count + 1,
           sizeof(*library_entries), &library_entry_capacity,
@@ -548,6 +556,12 @@ static iree_status_t loom_x86_module_build_artifact(
   if (iree_status_is_ok(status) && accepted) {
     status = iree_io_vec_stream_move_contents(stream, &out_artifact->contents);
   }
+  if (iree_status_is_ok(status) && accepted &&
+      iree_any_bit_set(request->flags,
+                       LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE)) {
+    status = loom_target_emit_artifact_retain_metadata(
+        artifact_bundle, 0, NULL, request->allocator, out_artifact);
+  }
   if (iree_status_is_ok(status) && accepted) {
     out_artifact->target_artifact_format = LOOM_TARGET_ARTIFACT_FORMAT_ELF;
     *out_emitted = true;
@@ -565,6 +579,9 @@ iree_status_t loom_x86_module_emit(
       iree_arena_checkpoint_save(request->scratch_arena);
   iree_status_t status = loom_x86_module_build_artifact(
       request, target_fact_type, format, out_emitted, out_artifact);
+  if (!iree_status_is_ok(status)) {
+    loom_target_emit_artifact_release(out_artifact);
+  }
   iree_arena_checkpoint_restore(&checkpoint);
   return status;
 }

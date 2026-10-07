@@ -310,21 +310,6 @@ iree_status_t loom_spirv_compile_module_binary(
       allocator, out_emitted, &program, out_module);
 }
 
-typedef struct loom_spirv_module_artifact_storage_t {
-  // Host allocator owning this storage.
-  iree_allocator_t allocator;
-  // Exact target bundle retained for the emitted artifact.
-  loom_target_bundle_storage_t target_bundle_storage;
-  // Artifact manifest sidecar descriptor.
-  loom_target_emit_sidecar_artifact_t artifact_manifest;
-} loom_spirv_module_artifact_storage_t;
-
-static void loom_spirv_module_artifact_storage_release(void* storage) {
-  loom_spirv_module_artifact_storage_t* artifact_storage =
-      (loom_spirv_module_artifact_storage_t*)storage;
-  iree_allocator_free(artifact_storage->allocator, artifact_storage);
-}
-
 static iree_status_t loom_spirv_program_collect_manifest_entries(
     const loom_spirv_program_plan_t* program, iree_arena_allocator_t* arena,
     loom_target_entry_list_t* out_entries) {
@@ -407,40 +392,23 @@ static iree_status_t loom_spirv_module_attach_artifact_metadata(
     }
   }
 
-  loom_spirv_module_artifact_storage_t* storage = NULL;
   if (iree_status_is_ok(status)) {
-    status = iree_allocator_malloc(request->allocator, sizeof(*storage),
-                                   (void**)&storage);
-  }
-  if (iree_status_is_ok(status)) {
-    *storage = (loom_spirv_module_artifact_storage_t){
-        .allocator = request->allocator,
+    const loom_target_emit_sidecar_artifact_t manifest = {
+        .kind = LOOM_TARGET_EMIT_SIDECAR_ARTIFACT_KIND_ARTIFACT_MANIFEST,
+        .identifier = request->artifact_manifest.identifier,
+        .contents = manifest_contents,
     };
-    if (retain_target_bundle) {
-      storage->target_bundle_storage =
-          program->functions[0].target_facts->storage;
-      loom_target_bundle_storage_rebind(&storage->target_bundle_storage);
-      artifact->target_bundle = &storage->target_bundle_storage.bundle;
-    }
-    if (emit_artifact_manifest) {
-      storage->artifact_manifest = (loom_target_emit_sidecar_artifact_t){
-          .kind = LOOM_TARGET_EMIT_SIDECAR_ARTIFACT_KIND_ARTIFACT_MANIFEST,
-          .identifier = request->artifact_manifest.identifier,
-          .contents = manifest_contents,
-      };
-      artifact->sidecars = &storage->artifact_manifest;
-      artifact->sidecar_count = 1;
-      manifest_contents = NULL;
-    }
-    artifact->storage = storage;
-    artifact->release_storage = loom_spirv_module_artifact_storage_release;
-    storage = NULL;
+    status = loom_target_emit_artifact_retain_metadata(
+        retain_target_bundle
+            ? loom_spirv_function_plan_target_bundle(&program->functions[0])
+            : NULL,
+        emit_artifact_manifest ? 1 : 0, &manifest, request->allocator,
+        artifact);
   }
 
   iree_byte_sequence_release(manifest_contents);
   loom_target_artifact_manifest_json_release(&manifest_json,
                                              request->allocator);
-  iree_allocator_free(request->allocator, storage);
   return status;
 }
 

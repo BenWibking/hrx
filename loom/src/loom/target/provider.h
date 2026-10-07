@@ -188,6 +188,18 @@ typedef struct loom_target_emit_artifact_t {
   loom_target_emit_artifact_storage_release_fn_t release_storage;
 } loom_target_emit_artifact_t;
 
+// Attaches owned metadata to an artifact whose metadata fields are empty.
+// Copies the optional bundle, all of its strings, sidecar descriptors, and
+// sidecar identifiers into one allocation. Retains each sidecar byte sequence;
+// the caller keeps its original references. All input storage may be released
+// after this call. Primary contents and listing fields are left unchanged.
+// With no bundle or sidecars this performs no allocation. Failure leaves the
+// artifact unchanged. loom_target_emit_artifact_release owns the result.
+iree_status_t loom_target_emit_artifact_retain_metadata(
+    const loom_target_bundle_t* target_bundle, iree_host_size_t sidecar_count,
+    const loom_target_emit_sidecar_artifact_t* sidecars,
+    iree_allocator_t allocator, loom_target_emit_artifact_t* artifact);
+
 // Releases all storage owned by |artifact| and resets it to a zero-initialized
 // value. Safe to call on a zero-initialized artifact.
 void loom_target_emit_artifact_release(loom_target_emit_artifact_t* artifact);
