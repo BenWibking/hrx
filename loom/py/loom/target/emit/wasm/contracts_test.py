@@ -178,6 +178,75 @@ def test_numeric_memory_shapes_share_exact_v128_accesses() -> None:
         assert counts == {shape: 3 for shape in _expected_numeric_vector_shapes()}
 
 
+def test_static_and_dynamic_insert_cover_every_native_numeric_shape() -> None:
+    shapes_by_index_count = {0: {}, 1: {}}
+    for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
+        if (
+            not isinstance(rule, DescriptorRule)
+            or rule.source_op is not vector.vector_insert
+        ):
+            continue
+        index_count = next(
+            guard.count
+            for guard in rule.guards
+            if guard.kind is GuardKind.OPERAND_SEGMENT_COUNT
+            and guard.field == "indices"
+        )
+        shapes = shapes_by_index_count[index_count]
+        for shape in _numeric_vector_shapes(rule, "result"):
+            assert shape not in shapes
+            shapes[shape] = rule
+            assert len(rule.emit) == (1 if index_count == 0 else 5)
+            if index_count == 0:
+                assert rule.descriptor.key.endswith(".replace_lane")
+    for shapes in shapes_by_index_count.values():
+        assert shapes.keys() == _expected_numeric_vector_shapes()
+
+
+def test_dynamic_insert_masks_select_exactly_one_complete_physical_lane() -> None:
+    lane_counts = set()
+    for rule in WASM_CORE_SIMD128_CONTRACT_FRAGMENT.cases:
+        if (
+            not isinstance(rule, DescriptorRule)
+            or rule.source_op is not vector.vector_insert
+        ):
+            continue
+        if not any(
+            guard.kind is GuardKind.OPERAND_SEGMENT_COUNT and guard.count == 1
+            for guard in rule.guards
+        ):
+            continue
+        result_type = next(
+            guard.type_pattern
+            for guard in rule.guards
+            if guard.kind is GuardKind.VALUE_TYPE and guard.field == "result"
+        )
+        lane_counts.add(result_type.lanes)
+        if result_type.elements == ("i1",):
+            assert [emit.descriptor.key for emit in rule.emit[:2]] == [
+                "wasm.i32.const",
+                "wasm.i32.sub",
+            ]
+            assert len(rule.emit) == 7
+        constant, index, compare, splat, select = rule.emit[-5:]
+        assert constant.descriptor.key == "wasm.v128.const"
+        assert index.descriptor.key == "wasm.i8x16.splat"
+        assert compare.descriptor.key == "wasm.i8x16.eq"
+        assert splat.descriptor.key.endswith(".splat")
+        assert select.descriptor.key == "wasm.v128.bitselect"
+        ordinals = constant.immediates["lo64"].to_bytes(8, "little")
+        ordinals += constant.immediates["hi64"].to_bytes(8, "little")
+        lane_bits = 128 // result_type.lanes
+        for lane in range(result_type.lanes):
+            selected_bytes = bytes(
+                255 if ordinal == lane else 0 for ordinal in ordinals
+            )
+            assert int.from_bytes(selected_bytes, "little") == (
+                ((1 << lane_bits) - 1) << (lane * lane_bits)
+            )
+    assert lane_counts == {2, 4, 8, 16}
+
+
 def test_numeric_bitcasts_alias_every_full_width_shape_pair() -> None:
     actual = {
         (source, result)

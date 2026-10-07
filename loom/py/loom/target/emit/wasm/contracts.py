@@ -87,6 +87,7 @@ _F32 = Scalar("f32")
 _F64 = Scalar("f64")
 _INDEX = Scalar("index")
 _OFFSET = Scalar("offset")
+_V16I8 = Vector("i8", lanes=16)
 _V4I1 = Vector("i1", lanes=4)
 _V4I32 = Vector("i32", lanes=4)
 _V4F32 = Vector("f32", lanes=4)
@@ -1008,6 +1009,78 @@ def _insert_rule(
     )
 
 
+def _dynamic_insert_rule(
+    value_type: TypePattern,
+    dest_type: TypePattern,
+    splat_descriptor_key: str,
+) -> DescriptorRule:
+    # Replicate each lane ordinal across its physical bytes. Equality with the
+    # broadcast index selects every bit of that lane without scalar expansion.
+    # Predicate lanes occupy four bytes, independent of their source bitwidth.
+    bytes_per_lane = 16 // dest_type.lanes
+    ordinals = bytes(byte // bytes_per_lane for byte in range(16))
+    descriptor = _descriptor("wasm.v128.bitselect")
+    value = ValueRef.operand("value")
+    prefix = ()
+    if value_type == _I1:
+        prefix = _predicate_mask_emits(value)
+        value = ValueRef.temporary("predicate_mask")
+    return DescriptorRule(
+        source_op=vector.vector_insert,
+        descriptor=descriptor,
+        guards=(
+            _value_type("value", value_type),
+            _value_type("dest", dest_type),
+            _value_type("result", dest_type),
+            Guard.operand_segment_count("indices", 1),
+            Guard.i64_array_count("static_indices", 1),
+        ),
+        emit=(
+            *prefix,
+            EmitDescriptorOp(
+                descriptor=_descriptor("wasm.v128.const"),
+                results={"dst": ValueRef.temporary("lane_ordinals")},
+                result_types={"dst": _V16I8},
+                immediates={
+                    "lo64": int.from_bytes(ordinals[:8], "little"),
+                    "hi64": int.from_bytes(ordinals[8:], "little"),
+                },
+                form=DescriptorEmitForm.CONST,
+            ),
+            EmitDescriptorOp(
+                descriptor=_descriptor("wasm.i8x16.splat"),
+                operands={"value": ValueRef.operand("indices")},
+                results={"dst": ValueRef.temporary("lane_index")},
+                result_types={"dst": _V16I8},
+            ),
+            EmitDescriptorOp(
+                descriptor=_descriptor("wasm.i8x16.eq"),
+                operands={
+                    "lhs": ValueRef.temporary("lane_ordinals"),
+                    "rhs": ValueRef.temporary("lane_index"),
+                },
+                results={"dst": ValueRef.temporary("lane_mask")},
+                result_types={"dst": _V16I8},
+            ),
+            EmitDescriptorOp(
+                descriptor=_descriptor(splat_descriptor_key),
+                operands={"value": value},
+                results={"dst": ValueRef.temporary("replacement")},
+                result_types={"dst": _V16I8},
+            ),
+            EmitDescriptorOp(
+                descriptor=descriptor,
+                operands={
+                    "true_value": ValueRef.temporary("replacement"),
+                    "false_value": ValueRef.operand("dest"),
+                    "condition": ValueRef.temporary("lane_mask"),
+                },
+                results={"dst": ValueRef.result("result")},
+            ),
+        ),
+    )
+
+
 def _predicate_insert_rule() -> DescriptorRule:
     descriptor = _descriptor("wasm.i32x4.replace_lane")
     return DescriptorRule(
@@ -1780,6 +1853,11 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _predicate_insert_rule(),
         *(
             _insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.replace_lane")
+            for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
+        ),
+        _dynamic_insert_rule(_I1, _V4I1, "wasm.i32x4.splat"),
+        *(
+            _dynamic_insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
             for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
         ),
         *(_shuffle_rule(value_type) for value_type in _NUMERIC_V128_TYPES),

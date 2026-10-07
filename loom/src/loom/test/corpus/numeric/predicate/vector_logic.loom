@@ -132,3 +132,68 @@ check.scenario @predicate_select_values {
   }
   check.return
 }
+
+// Enumerates every source mask, replacement predicate and runtime lane. A
+// vector select observes the whole mask lane, not just its lowest truth bit.
+func.def @predicate_insert(%trial: index, %output: buffer) {
+  %case = index.cast %trial : index to i32
+  %c0 = scalar.constant 0 : i32
+  %c3 = scalar.constant 3 : i32
+  %c4 = scalar.constant 4 : i32
+  %lane_bits = scalar.andi %case, %c3 : i32
+  %lane = index.cast %lane_bits : i32 to index
+  %replacement_bits = scalar.andi %case, %c4 : i32
+  %replacement = scalar.cmpi ne, %replacement_bits, %c0 : i32
+  %source_bits = scalar.shrui %case, %c3 : i32
+  %source0, %source1, %source2, %source3 = func.call @predicate_bits4(%source_bits) : (i32) -> (i1, i1, i1, i1)
+  %source = vector.from_elements %source0, %source1, %source2, %source3 : vector<4xi1>
+  %updated = vector.insert %replacement into %source[%lane] : i1, vector<4xi1>
+  %true_words = vector.constant -1431655766 : vector<4xi32>
+  %false_words = vector.constant 1431655765 : vector<4xi32>
+  %selected = vector.select %updated, %true_words, %false_words : vector<4xi32>
+  %base = index.constant 0 : offset
+  %result = buffer.view %output[%base] : buffer -> view<4xi32>
+  vector.store %selected, %result[0] : vector<4xi32>, view<4xi32>
+  func.return
+}
+
+func.def @predicate_insert_oracle(%trial: index, %output: buffer) {
+  %case = index.cast %trial : index to i32
+  %c0 = scalar.constant 0 : i32
+  %c1 = scalar.constant 1 : i32
+  %c2 = scalar.constant 2 : i32
+  %c3 = scalar.constant 3 : i32
+  %lane = scalar.andi %case, %c3 : i32
+  %replacement_shifted = scalar.shrui %case, %c2 : i32
+  %replacement = scalar.andi %replacement_shifted, %c1 : i32
+  %source = scalar.shrui %case, %c3 : i32
+  %true_word = scalar.constant -1431655766 : i32
+  %false_word = scalar.constant 1431655765 : i32
+  %begin = index.constant 0 : index
+  %end = index.constant 4 : index
+  %step = index.constant 1 : index
+  %base = index.constant 0 : offset
+  %result = buffer.view %output[%base] : buffer -> view<4xi32>
+  scf.for %i = [%begin to %end step %step] {
+    %position = index.cast %i : index to i32
+    %shifted = scalar.shrui %source, %position : i32
+    %bit = scalar.andi %shifted, %c1 : i32
+    %is_inserted = scalar.cmpi eq, %position, %lane : i32
+    %updated = scf.select %is_inserted, %replacement, %bit : i32
+    %condition = scalar.cmpi ne, %updated, %c0 : i32
+    %value = scf.select %condition, %true_word, %false_word : i32
+    view.store %value, %result[%i] : i32, view<4xi32>
+  }
+  func.return
+}
+
+check.scenario @predicate_insert_values {
+  check.trial[128](%trial: index, %entropy: check.entropy) {
+    %storage = check.generate.fill value(123) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@predicate_insert, @predicate_insert_oracle>(%trial, %output) : (index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.return
+}

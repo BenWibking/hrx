@@ -358,6 +358,7 @@ _OP_F32X4_EXTRACT_LANE = _simd_encoding_id(0x1F)
 _OP_F32X4_REPLACE_LANE = _simd_encoding_id(0x20)
 _OP_F64X2_EXTRACT_LANE = _simd_encoding_id(0x21)
 _OP_F64X2_REPLACE_LANE = _simd_encoding_id(0x22)
+_OP_I8X16_EQ = _simd_encoding_id(0x23)
 _OP_I32X4_EQ = _simd_encoding_id(0x37)
 _OP_I32X4_NE = _simd_encoding_id(0x38)
 _OP_I32X4_LT_S = _simd_encoding_id(0x39)
@@ -1216,6 +1217,16 @@ WASM_CORE_SIMD128_DESCRIPTOR_SET = DescriptorSet(
             _OP_F64X2_SPLAT,
             _OP_F64X2_EXTRACT_LANE,
             _OP_F64X2_REPLACE_LANE,
+        ),
+        Descriptor(
+            key="wasm.i8x16.eq",
+            mnemonic="i8x16.eq",
+            semantic_tag="vector.cmp.eq.i8x16",
+            encoding_id=_OP_I8X16_EQ,
+            operands=(_v128_result(), _v128_operand("lhs"), _v128_operand("rhs")),
+            asm_forms=_asm(results=("dst",), operands=("lhs", "rhs")),
+            schedule_class=_SCHEDULE_SIMD_I32X4,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
         Descriptor(
             key="wasm.i32x4.eq",

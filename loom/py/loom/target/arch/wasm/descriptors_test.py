@@ -94,3 +94,14 @@ def test_narrow_lanes_use_unsigned_extract_encodings_and_exact_lane_domains():
             assert immediate.kind is ImmediateKind.UNSIGNED
             assert immediate.unsigned_max == lanes - 1
             assert not immediate.flags
+
+
+def test_byte_equality_is_an_immediate_free_simd_binary_operation():
+    descriptor = next(
+        descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+        if descriptor.key == "wasm.i8x16.eq"
+    )
+    assert descriptor.encoding_id == 0xFD23
+    assert not descriptor.immediates
+    assert len(descriptor.operands) == 3
