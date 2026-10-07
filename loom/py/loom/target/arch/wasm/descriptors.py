@@ -169,6 +169,20 @@ _V128_HI_IMMEDIATE = Immediate(
     unsigned_max=(2**64) - 1,
 )
 
+_LANE_I8X16_IMMEDIATE = Immediate(
+    "lane",
+    ImmediateKind.UNSIGNED,
+    bit_width=4,
+    unsigned_max=15,
+)
+
+_LANE_I16X8_IMMEDIATE = Immediate(
+    "lane",
+    ImmediateKind.UNSIGNED,
+    bit_width=3,
+    unsigned_max=7,
+)
+
 _LANE_I32X4_IMMEDIATE = Immediate(
     "lane",
     ImmediateKind.UNSIGNED,
@@ -326,10 +340,16 @@ _OP_V128_LOAD = _simd_encoding_id(0x00)
 _OP_V128_STORE = _simd_encoding_id(0x0B)
 _OP_V128_CONST = _simd_encoding_id(0x0C)
 _OP_I8X16_SHUFFLE = _simd_encoding_id(0x0D)
+_OP_I8X16_SPLAT = _simd_encoding_id(0x0F)
+_OP_I16X8_SPLAT = _simd_encoding_id(0x10)
 _OP_I32X4_SPLAT = _simd_encoding_id(0x11)
 _OP_I64X2_SPLAT = _simd_encoding_id(0x12)
 _OP_F32X4_SPLAT = _simd_encoding_id(0x13)
 _OP_F64X2_SPLAT = _simd_encoding_id(0x14)
+_OP_I8X16_EXTRACT_LANE_U = _simd_encoding_id(0x16)
+_OP_I8X16_REPLACE_LANE = _simd_encoding_id(0x17)
+_OP_I16X8_EXTRACT_LANE_U = _simd_encoding_id(0x19)
+_OP_I16X8_REPLACE_LANE = _simd_encoding_id(0x1A)
 _OP_I32X4_EXTRACT_LANE = _simd_encoding_id(0x1B)
 _OP_I32X4_REPLACE_LANE = _simd_encoding_id(0x1C)
 _OP_I64X2_EXTRACT_LANE = _simd_encoding_id(0x1D)
@@ -694,6 +714,8 @@ def _lane_descriptors(
     splat: int,
     extract: int,
     insert: int,
+    *,
+    extract_suffix: str = "",
 ) -> tuple[Descriptor, ...]:
     return (
         Descriptor(
@@ -707,8 +729,8 @@ def _lane_descriptors(
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
         Descriptor(
-            key=f"wasm.{type_name}.extract_lane",
-            mnemonic=f"{type_name}.extract_lane",
+            key=f"wasm.{type_name}.extract_lane{extract_suffix}",
+            mnemonic=f"{type_name}.extract_lane{extract_suffix}",
             semantic_tag=f"vector.extract.{type_name}",
             encoding_id=extract,
             operands=(result, _v128_operand("source")),
@@ -1132,6 +1154,28 @@ WASM_CORE_SIMD128_DESCRIPTOR_SET = DescriptorSet(
             ),
             schedule_class=_SCHEDULE_SIMD_I32X4,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        *_lane_descriptors(
+            "i8x16",
+            _i32_result(),
+            _i32_operand("value"),
+            _LANE_I8X16_IMMEDIATE,
+            _SCHEDULE_SIMD_I32X4,
+            _OP_I8X16_SPLAT,
+            _OP_I8X16_EXTRACT_LANE_U,
+            _OP_I8X16_REPLACE_LANE,
+            extract_suffix="_u",
+        ),
+        *_lane_descriptors(
+            "i16x8",
+            _i32_result(),
+            _i32_operand("value"),
+            _LANE_I16X8_IMMEDIATE,
+            _SCHEDULE_SIMD_I32X4,
+            _OP_I16X8_SPLAT,
+            _OP_I16X8_EXTRACT_LANE_U,
+            _OP_I16X8_REPLACE_LANE,
+            extract_suffix="_u",
         ),
         *_lane_descriptors(
             "i32x4",

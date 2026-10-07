@@ -79,6 +79,8 @@ _F8E4M3 = Scalar("f8E4M3")
 _F8E5M2 = Scalar("f8E5M2")
 _BYTE_STORAGE = Scalar(("i8", "f8E4M3", "f8E5M2"))
 _WORD_STORAGE = Scalar(("i16", "f16", "bf16"))
+_V16_BYTE_STORAGE = Vector(_BYTE_STORAGE.elements, lanes=16)
+_V8_WORD_STORAGE = Vector(_WORD_STORAGE.elements, lanes=8)
 _F16 = Scalar("f16")
 _BF16 = Scalar("bf16")
 _F32 = Scalar("f32")
@@ -90,6 +92,23 @@ _V4I32 = Vector("i32", lanes=4)
 _V4F32 = Vector("f32", lanes=4)
 _V2I64 = Vector("i64", lanes=2)
 _V2F64 = Vector("f64", lanes=2)
+
+# A numeric SIMD value is one bit-preserving v128 carrier. SIMD predicates
+# use a distinct four-lane mask representation and are not numeric payloads.
+_NUMERIC_V128_TYPES = (
+    _V16_BYTE_STORAGE,
+    _V8_WORD_STORAGE,
+    Vector(("i32", "f32"), lanes=4),
+    Vector(("i64", "f64"), lanes=2),
+)
+_V128_LANE_TYPES = (
+    (_BYTE_STORAGE, _V16_BYTE_STORAGE, "i8x16", "_u"),
+    (_WORD_STORAGE, _V8_WORD_STORAGE, "i16x8", "_u"),
+    (_I32, _V4I32, "i32x4", ""),
+    (_F32, _V4F32, "f32x4", ""),
+    (_I64, _V2I64, "i64x2", ""),
+    (_F64, _V2F64, "f64x2", ""),
+)
 
 _I64_ATTR_DIAGNOSTIC = GuardDiagnostic(
     ref=target_diagnostic(
@@ -126,6 +145,11 @@ def _descriptor(key: str) -> Descriptor:
 def _type_text(type_pattern: TypePattern) -> str:
     if type_pattern.kind == "buffer":
         return "buffer"
+    if type_pattern.kind == "vector":
+        return " or ".join(
+            f"vector<{type_pattern.lanes}x{element}>"
+            for element in type_pattern.elements
+        )
     if type_pattern == _I1:
         return "i1 scalar"
     if type_pattern == _I8:
@@ -154,16 +178,6 @@ def _type_text(type_pattern: TypePattern) -> str:
         return "f64 scalar"
     if type_pattern in (_INDEX, _OFFSET):
         return "index or offset scalar"
-    if type_pattern == _V4I1:
-        return "vector<4xi1>"
-    if type_pattern == _V4I32:
-        return "vector<4xi32>"
-    if type_pattern == _V4F32:
-        return "vector<4xf32>"
-    if type_pattern == _V2I64:
-        return "vector<2xi64>"
-    if type_pattern == _V2F64:
-        return "vector<2xf64>"
     raise ValueError(f"unknown Wasm type pattern: {type_pattern!r}")
 
 
@@ -299,16 +313,21 @@ def _const_v128_rule(
 
 
 def _const_vector_splat_rule(
-    element_type: str, immediate: str, value: ValueProject, guard: Guard
+    result_type: TypePattern,
+    element_type: str,
+    shape_name: str,
+    immediate: str,
+    value: ValueProject,
+    guard: Guard,
 ) -> DescriptorRule:
-    # A scalar splat represents repeated 32-bit lanes without packing them into
+    # A scalar splat represents repeated lanes without packing them into
     # v128.const's two immediate words and fixed 16-byte payload.
     constant = _descriptor(f"wasm.{element_type}.const")
-    splat = _descriptor(f"wasm.{element_type}x4.splat")
+    splat = _descriptor(f"wasm.{shape_name}.splat")
     return DescriptorRule(
         source_op=vector.vector_constant,
         descriptor=splat,
-        guards=(_value_type("result", Vector(element_type, lanes=4)), guard),
+        guards=(_value_type("result", result_type), guard),
         emit=(
             EmitDescriptorOp(
                 descriptor=constant,
@@ -1033,8 +1052,8 @@ def _shuffle_rule(type_pattern: TypePattern) -> DescriptorRule:
         guards=(
             _value_type("source", type_pattern),
             _value_type("result", type_pattern),
-            Guard.i64_array_count("source_lanes", 4),
-            Guard.i64_array_elements_range("source_lanes", 0, 3),
+            Guard.i64_array_count("source_lanes", type_pattern.lanes),
+            Guard.i64_array_elements_range("source_lanes", 0, type_pattern.lanes - 1),
         ),
         emit=(
             EmitDescriptorOp(
@@ -1047,8 +1066,8 @@ def _shuffle_rule(type_pattern: TypePattern) -> DescriptorRule:
                 immediates=(
                     AttrProject.expand_lane_i64_array_to_byte_lanes(
                         source_attr="source_lanes",
-                        source_lane_count=4,
-                        bytes_per_lane=4,
+                        source_lane_count=type_pattern.lanes,
+                        bytes_per_lane=16 // type_pattern.lanes,
                         target_names=_SHUFFLE_BYTE_NAMES,
                     ),
                 ),
@@ -1470,14 +1489,8 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _conversion_alias_rule(scalar_conversion.scalar_bitcast, _I16, _BF16),
         *(
             _conversion_alias_rule(vector.vector_bitcast, source_type, result_type)
-            for lhs_type, rhs_type in (
-                (_V4I32, _V4F32),
-                (_V2I64, _V2F64),
-            )
-            for source_type, result_type in (
-                (lhs_type, rhs_type),
-                (rhs_type, lhs_type),
-            )
+            for source_type in _NUMERIC_V128_TYPES
+            for result_type in _NUMERIC_V128_TYPES
         ),
         _conversion_alias_rule(scalar_conversion.scalar_trunci, _I32, _I8),
         _conversion_alias_rule(scalar_conversion.scalar_trunci, _I32, _I16),
@@ -1513,22 +1526,42 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
         _const_v128_rule(
             _V2F64, ValueProject.float_bits("result"), Guard.value_exact_float("result")
         ),
-        _const_vector_splat_rule(
-            "i32",
-            "i32_value",
-            ValueProject.exact_i64("result"),
-            Guard.value_exact_i64("result"),
+        *(
+            _const_vector_splat_rule(
+                result_type,
+                "i32",
+                shape_name,
+                "i32_value",
+                ValueProject.exact_i64("result"),
+                Guard.value_exact_i64("result"),
+            )
+            for result_type, shape_name in (
+                (Vector("i8", lanes=16), "i8x16"),
+                (Vector("i16", lanes=8), "i16x8"),
+                (_V4I32, "i32x4"),
+            )
         ),
-        _const_vector_splat_rule(
-            "f32",
-            "bits",
-            ValueProject.float_bits("result"),
-            Guard.value_exact_float("result"),
+        *(
+            _const_vector_splat_rule(
+                result_type,
+                element_type,
+                shape_name,
+                immediate,
+                ValueProject.float_bits("result"),
+                Guard.value_exact_float("result"),
+            )
+            for result_type, element_type, shape_name, immediate in (
+                (Vector(("f8E4M3", "f8E5M2"), lanes=16), "i32", "i8x16", "i32_value"),
+                (Vector(("f16", "bf16"), lanes=8), "i32", "i16x8", "i32_value"),
+                (_V4F32, "f32", "f32x4", "bits"),
+            )
         ),
         *(
             _whole_value_select_rule(value_type, f"wasm.{type_name}.select")
             for value_type, type_name in (
                 (_I1, "i32"),
+                (_BYTE_STORAGE, "i32"),
+                (_WORD_STORAGE, "i32"),
                 (_I32, "i32"),
                 (_I64, "i64"),
                 (_F32, "f32"),
@@ -1536,18 +1569,15 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (_INDEX, "i32"),
                 (_OFFSET, "i32"),
                 (_V4I1, "v128"),
-                (_V4I32, "v128"),
-                (_V4F32, "v128"),
-                (_V2I64, "v128"),
-                (_V2F64, "v128"),
+                *((value_type, "v128") for value_type in _NUMERIC_V128_TYPES),
                 (Buffer(), "i32"),
             )
         ),
         _predicate_splat_rule(),
-        _splat_rule(_I32, _V4I32, "wasm.i32x4.splat"),
-        _splat_rule(_I64, _V2I64, "wasm.i64x2.splat"),
-        _splat_rule(_F32, _V4F32, "wasm.f32x4.splat"),
-        _splat_rule(_F64, _V2F64, "wasm.f64x2.splat"),
+        *(
+            _splat_rule(scalar_type, vector_type, f"wasm.{shape_name}.splat")
+            for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
+        ),
         _select_rule(_V4I1),
         _select_rule(_V4I32),
         _select_rule(_V4F32),
@@ -1558,7 +1588,13 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                 (vector.vector_ori, "or"),
                 (vector.vector_xori, "xor"),
             )
-            for value_type in (_V4I1, _V4I32, _V2I64)
+            for value_type in (
+                _V4I1,
+                Vector("i8", lanes=16),
+                Vector("i16", lanes=8),
+                _V4I32,
+                _V2I64,
+            )
         ),
         _compare_rule(vector.vector_cmpi, "eq", _V4I32, "wasm.i32x4.eq"),
         _compare_rule(vector.vector_cmpi, "ne", _V4I32, "wasm.i32x4.ne"),
@@ -1735,17 +1771,18 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
             )
         ),
         _extract_rule(_V4I1, _I1, "wasm.i32x4.extract_lane"),
-        _extract_rule(_V4I32, _I32, "wasm.i32x4.extract_lane"),
-        _extract_rule(_V4F32, _F32, "wasm.f32x4.extract_lane"),
-        _extract_rule(_V2I64, _I64, "wasm.i64x2.extract_lane"),
-        _extract_rule(_V2F64, _F64, "wasm.f64x2.extract_lane"),
+        *(
+            _extract_rule(
+                vector_type, scalar_type, f"wasm.{shape_name}.extract_lane{suffix}"
+            )
+            for scalar_type, vector_type, shape_name, suffix in _V128_LANE_TYPES
+        ),
         _predicate_insert_rule(),
-        _insert_rule(_I32, _V4I32, "wasm.i32x4.replace_lane"),
-        _insert_rule(_F32, _V4F32, "wasm.f32x4.replace_lane"),
-        _insert_rule(_I64, _V2I64, "wasm.i64x2.replace_lane"),
-        _insert_rule(_F64, _V2F64, "wasm.f64x2.replace_lane"),
-        _shuffle_rule(_V4I32),
-        _shuffle_rule(_V4F32),
+        *(
+            _insert_rule(scalar_type, vector_type, f"wasm.{shape_name}.replace_lane")
+            for scalar_type, vector_type, shape_name, _ in _V128_LANE_TYPES
+        ),
+        *(_shuffle_rule(value_type) for value_type in _NUMERIC_V128_TYPES),
         _shuffle_rule(_V4I1),
         *(
             _memory_rule(
@@ -1794,34 +1831,34 @@ WASM_CORE_SIMD128_CONTRACT_FRAGMENT = ContractFragment(
                     view.view_store,
                 ),
                 (
-                    _V4I32,
+                    _V16_BYTE_STORAGE,
                     "v128.load",
                     "v128.store",
-                    4,
-                    4,
+                    1,
+                    16,
                     vector.vector_load,
                     vector.vector_store,
                 ),
                 (
-                    _V4F32,
+                    _V8_WORD_STORAGE,
                     "v128.load",
                     "v128.store",
-                    4,
-                    4,
-                    vector.vector_load,
-                    vector.vector_store,
-                ),
-                (
-                    _V2I64,
-                    "v128.load",
-                    "v128.store",
-                    8,
                     2,
+                    8,
                     vector.vector_load,
                     vector.vector_store,
                 ),
                 (
-                    _V2F64,
+                    Vector(("i32", "f32"), lanes=4),
+                    "v128.load",
+                    "v128.store",
+                    4,
+                    4,
+                    vector.vector_load,
+                    vector.vector_store,
+                ),
+                (
+                    Vector(("i64", "f64"), lanes=2),
                     "v128.load",
                     "v128.store",
                     8,

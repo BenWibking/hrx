@@ -153,6 +153,12 @@ enum {
   LOOM_WASM_SIMD_SUBOPCODE_V128_STORE = 0x0B,
   LOOM_WASM_SIMD_SUBOPCODE_V128_CONST = 0x0C,
   LOOM_WASM_SIMD_SUBOPCODE_I8X16_SHUFFLE = 0x0D,
+  LOOM_WASM_SIMD_SUBOPCODE_I8X16_SPLAT = 0x0F,
+  LOOM_WASM_SIMD_SUBOPCODE_I16X8_SPLAT = 0x10,
+  LOOM_WASM_SIMD_SUBOPCODE_I8X16_EXTRACT_LANE_U = 0x16,
+  LOOM_WASM_SIMD_SUBOPCODE_I8X16_REPLACE_LANE = 0x17,
+  LOOM_WASM_SIMD_SUBOPCODE_I16X8_EXTRACT_LANE_U = 0x19,
+  LOOM_WASM_SIMD_SUBOPCODE_I16X8_REPLACE_LANE = 0x1A,
   LOOM_WASM_SIMD_SUBOPCODE_I32X4_SPLAT = 0x11,
   LOOM_WASM_SIMD_SUBOPCODE_I32X4_EXTRACT_LANE = 0x1B,
   LOOM_WASM_SIMD_SUBOPCODE_I32X4_REPLACE_LANE = 0x1C,
@@ -212,6 +218,22 @@ enum {
       (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) | LOOM_WASM_SIMD_SUBOPCODE_V128_CONST,
   LOOM_WASM_ENCODING_I8X16_SHUFFLE = (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
                                      LOOM_WASM_SIMD_SUBOPCODE_I8X16_SHUFFLE,
+  LOOM_WASM_ENCODING_I8X16_SPLAT = (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
+                                   LOOM_WASM_SIMD_SUBOPCODE_I8X16_SPLAT,
+  LOOM_WASM_ENCODING_I16X8_SPLAT = (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
+                                   LOOM_WASM_SIMD_SUBOPCODE_I16X8_SPLAT,
+  LOOM_WASM_ENCODING_I8X16_EXTRACT_LANE_U =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
+      LOOM_WASM_SIMD_SUBOPCODE_I8X16_EXTRACT_LANE_U,
+  LOOM_WASM_ENCODING_I8X16_REPLACE_LANE =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
+      LOOM_WASM_SIMD_SUBOPCODE_I8X16_REPLACE_LANE,
+  LOOM_WASM_ENCODING_I16X8_EXTRACT_LANE_U =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
+      LOOM_WASM_SIMD_SUBOPCODE_I16X8_EXTRACT_LANE_U,
+  LOOM_WASM_ENCODING_I16X8_REPLACE_LANE =
+      (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
+      LOOM_WASM_SIMD_SUBOPCODE_I16X8_REPLACE_LANE,
   LOOM_WASM_ENCODING_I32X4_SPLAT = (LOOM_WASM_OPCODE_SIMD_PREFIX << 8) |
                                    LOOM_WASM_SIMD_SUBOPCODE_I32X4_SPLAT,
   LOOM_WASM_ENCODING_I32X4_EXTRACT_LANE =
@@ -826,11 +848,33 @@ static iree_status_t loom_wasm_emit_descriptor_packet(
       return loom_wasm_emit_ternary_stack_op(state, op, descriptor);
     case LOOM_WASM_ENCODING_I8X16_SHUFFLE:
       return loom_wasm_emit_i8x16_shuffle(state, op, descriptor);
+    case LOOM_WASM_ENCODING_I8X16_SPLAT:
+    case LOOM_WASM_ENCODING_I16X8_SPLAT:
     case LOOM_WASM_ENCODING_I64X2_SPLAT:
     case LOOM_WASM_ENCODING_F32X4_SPLAT:
     case LOOM_WASM_ENCODING_F64X2_SPLAT:
     case LOOM_WASM_ENCODING_I32X4_SPLAT:
       return loom_wasm_emit_unary_stack_op(state, op, descriptor);
+    case LOOM_WASM_ENCODING_I8X16_EXTRACT_LANE_U:
+      lane = (uint8_t)loom_wasm_core_simd128_i8x16_extract_lane_u_lane(
+                 loom_low_op_attrs(op))
+                 .i64;
+      break;
+    case LOOM_WASM_ENCODING_I8X16_REPLACE_LANE:
+      lane = (uint8_t)loom_wasm_core_simd128_i8x16_replace_lane_lane(
+                 loom_low_op_attrs(op))
+                 .i64;
+      break;
+    case LOOM_WASM_ENCODING_I16X8_EXTRACT_LANE_U:
+      lane = (uint8_t)loom_wasm_core_simd128_i16x8_extract_lane_u_lane(
+                 loom_low_op_attrs(op))
+                 .i64;
+      break;
+    case LOOM_WASM_ENCODING_I16X8_REPLACE_LANE:
+      lane = (uint8_t)loom_wasm_core_simd128_i16x8_replace_lane_lane(
+                 loom_low_op_attrs(op))
+                 .i64;
+      break;
     case LOOM_WASM_ENCODING_I64X2_EXTRACT_LANE:
       lane = (uint8_t)loom_wasm_core_simd128_i64x2_extract_lane_lane(
                  loom_low_op_attrs(op))

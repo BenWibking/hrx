@@ -118,6 +118,7 @@ loom_check_test_suite(
         "test/source_low/numeric_integer_division.loom-test",
         "test/source_low/numeric_integer_extrema.loom-test",
         "test/source_low/numeric_integer_to_float.loom-test",
+        "test/source_low/numeric_narrow_carriers.loom-test",
         "test/source_low/numeric_unsigned_remainder.loom-test",
         "test/source_low/numeric_vector_constants.loom-test",
         "test/source_low/numeric_vector_f32_values.loom-test",
