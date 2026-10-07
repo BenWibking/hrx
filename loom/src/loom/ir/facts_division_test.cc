@@ -50,6 +50,8 @@ TEST(UnsignedDivisionTransfer, ExactSmallWidths) {
         SCOPED_TRACE(::testing::Message() << "width=" << bit_count << " lhs="
                                           << lhs_bits << " rhs=" << rhs_bits);
         const loom_value_facts_t rhs = ExactBits(rhs_bits, bit_count);
+        EXPECT_EQ(loom_value_facts_remui_is_identity(lhs, rhs, bit_count),
+                  lhs_bits < rhs_bits);
         loom_value_facts_t quotient;
         loom_value_facts_divui(&lhs, &rhs, bit_count, &quotient);
         EXPECT_TRUE(loom_value_facts_is_exact(quotient));
@@ -92,6 +94,8 @@ TEST(UnsignedDivisionTransfer, RepresentativeIntervalsContainEveryResult) {
             loom_value_facts_divui(&lhs, &rhs, 4, &quotient);
             loom_value_facts_t remainder;
             loom_value_facts_remui(&lhs, &rhs, 4, &remainder);
+            const bool identity =
+                loom_value_facts_remui_is_identity(lhs, rhs, 4);
             for (int64_t lhs_value = lhs_lo; lhs_value <= lhs_hi; ++lhs_value) {
               if (lhs_value % lhs.known_divisor != 0) {
                 continue;
@@ -103,6 +107,9 @@ TEST(UnsignedDivisionTransfer, RepresentativeIntervalsContainEveryResult) {
                   continue;
                 }
                 const uint64_t rhs_bits = RawBits(rhs_value, 4);
+                if (identity) {
+                  EXPECT_LT(lhs_bits, rhs_bits);
+                }
                 ExpectContains(quotient,
                                SignedRepresentation(lhs_bits / rhs_bits, 4));
                 ExpectContains(remainder,
@@ -226,6 +233,45 @@ TEST(UnsignedDivisionTransfer, SupportsEitherOutputAlias) {
   dividend = loom_value_facts_exact_i64(-30);
   loom_value_facts_remui(&dividend, &divisor, 32, &divisor);
   EXPECT_EQ(divisor.range_lo, 1);
+}
+
+TEST(UnsignedDivisionTransfer, IdentityRetainsDividendFacts) {
+  for (int32_t bit_count : {8, 16, 32, 64}) {
+    loom_value_facts_t dividend = loom_value_facts_make(12, 60, 6);
+    loom_value_facts_mark_uniform_at_scope(
+        &dividend, LOOM_VALUE_FACT_UNIFORM_SCOPE_WORKGROUP);
+    loom_value_facts_t divisor = loom_value_facts_make(61, 100, 1);
+    loom_value_facts_mark_lane_varying(&divisor);
+    EXPECT_TRUE(
+        loom_value_facts_remui_is_identity(dividend, divisor, bit_count));
+    loom_value_facts_t remainder;
+    loom_value_facts_remui(&dividend, &divisor, bit_count, &remainder);
+    EXPECT_TRUE(loom_value_facts_equal(remainder, dividend));
+
+    // The negative representation is contiguous above the unsigned sign bit.
+    dividend = loom_value_facts_make(-32, -16, 4);
+    divisor = loom_value_facts_make(-15, -1, 1);
+    EXPECT_TRUE(
+        loom_value_facts_remui_is_identity(dividend, divisor, bit_count));
+    loom_value_facts_remui(&dividend, &divisor, bit_count, &remainder);
+    EXPECT_TRUE(loom_value_facts_equal(remainder, dividend));
+  }
+}
+
+TEST(UnsignedDivisionTransfer, IdentityExcludesZeroOverlapAndWrapping) {
+  for (int32_t bit_count : {1, 8, 16, 32, 64}) {
+    const loom_value_facts_t zero = loom_value_facts_exact_i64(0);
+    const loom_value_facts_t one = loom_value_facts_exact_i64(1);
+    EXPECT_FALSE(loom_value_facts_remui_is_identity(zero, zero, bit_count));
+    EXPECT_TRUE(loom_value_facts_remui_is_identity(zero, one, bit_count));
+    EXPECT_FALSE(loom_value_facts_remui_is_identity(one, one, bit_count));
+    EXPECT_FALSE(loom_value_facts_remui_is_identity(
+        one, loom_value_facts_make(0, 1, 1), bit_count));
+    EXPECT_FALSE(loom_value_facts_remui_is_identity(loom_value_facts_unknown(),
+                                                    one, bit_count));
+  }
+  EXPECT_FALSE(loom_value_facts_remui_is_identity(
+      loom_value_facts_make(0, 255, 1), loom_value_facts_exact_i64(257), 8));
 }
 
 TEST(RemsiTransfer, ExactMinimumOverflowPair) {

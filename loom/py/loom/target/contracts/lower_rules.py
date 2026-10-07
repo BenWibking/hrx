@@ -89,7 +89,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _static_element_count_relation_diagnostic,
     _storage_element_format_diagnostic,
     _storage_operand_schema_diagnostic,
-    _u32_divisor_magic_is_add_diagnostic,
+    _u32_divisor_magic_kind_diagnostic,
     _value_no_uses_after_diagnostic,
     _value_no_uses_diagnostic,
     _value_type_diagnostic,
@@ -904,7 +904,7 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_UNSIGNED_BIT_COUNT,
             GuardKind.VALUE_EXACT_I64,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-            GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+            GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
@@ -1197,22 +1197,22 @@ class _LowerRuleSetCompiler:
                 )
             )
             return
-        if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD:
-            if guard.count not in (0, 1):
-                raise ValueError(
-                    f"{source_op.name}: divisor-magic add guard needs 0 or 1"
-                )
+        if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND:
             self._guards.append(
                 LowerGuard(
                     kind=guard.kind,
                     value_ref_index=value_ref_index,
+                    other_value_ref_index=self._append_value_ref(
+                        source_op,
+                        _value_ref_for_source_field(source_op, guard.other_field),
+                    ),
                     diagnostic_index=self._append_diagnostic_ref(
                         source_op,
                         _guard_diagnostic(
                             guard,
-                            _u32_divisor_magic_is_add_diagnostic(
+                            _u32_divisor_magic_kind_diagnostic(
                                 guard.field,
-                                is_add=bool(guard.count),
+                                guard.count,
                             ),
                         ),
                     ),
@@ -2196,6 +2196,16 @@ class _LowerRuleSetCompiler:
         )
         if project.source_node:
             value_ref = replace(value_ref, source_node=project.source_node)
+        other_value_ref_index = 0
+        if project.other_source_value:
+            other_value_ref = _value_ref_for_source_field(
+                referenced_op, project.other_source_value
+            )
+            if project.source_node:
+                other_value_ref = replace(
+                    other_value_ref, source_node=project.source_node
+                )
+            other_value_ref_index = self._append_value_ref(source_op, other_value_ref)
         return LowerAttrCopy(
             kind=kind,
             target_name=target_name,
@@ -2203,6 +2213,7 @@ class _LowerRuleSetCompiler:
                 source_op,
                 value_ref,
             ),
+            other_value_ref_index=other_value_ref_index,
             target_bit_offset=project.target_bit_offset,
             source_element_index=project.word_index,
             literal_i64=(

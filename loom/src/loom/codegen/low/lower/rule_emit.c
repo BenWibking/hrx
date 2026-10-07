@@ -795,11 +795,13 @@ static iree_status_t loom_low_lower_rule_build_attrs(
             loom_low_lower_rule_emit_source_value(context, rule_set, state,
                                                   attr_copy->value_ref_index);
         loom_low_lower_unsigned_divisor_magic_info_t info = {0};
+        const loom_value_id_t numerator = loom_low_lower_rule_emit_source_value(
+            context, rule_set, state, attr_copy->other_value_ref_index);
         const bool has_magic_info =
             loom_low_lower_rule_value_facts_u32_divisor_magic_info(
                 loom_low_lower_context_module(context),
-                loom_low_lower_context_fact_table(context), source_value_id,
-                &info);
+                loom_low_lower_context_fact_table(context), numerator,
+                source_value_id, &info);
         IREE_ASSERT(has_magic_info);
         if (attr_copy->kind ==
             LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32) {

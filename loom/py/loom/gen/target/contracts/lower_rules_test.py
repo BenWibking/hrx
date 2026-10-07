@@ -85,6 +85,7 @@ from loom.target.contracts import (
     SourceNodeRelation,
     SourceOpProject,
     SourceValueKind,
+    UnsignedDivisorMagicKind,
     ValueProject,
     ValueRef,
     Vector,
@@ -784,6 +785,23 @@ def test_validate_c_table_shape_rejects_attr_copy_value_ref_index_oob() -> None:
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
         "lower-rule set 'test.low.generated_c_shape' attr-copy 0 value-ref index references missing value-ref row",
+    )
+
+
+def test_validate_c_table_shape_rejects_attr_copy_numerator_ref_index_oob() -> None:
+    table = _compiled_lower_rule_set(
+        value_refs=(LowerValueRef(kind=SourceValueKind.OPERAND, index=1),),
+        attr_copies=(
+            LowerAttrCopy(
+                kind=LowerAttrCopyKind.VALUE_U32_DIVISOR_MAGIC_SHIFT,
+                target_name="i32_value",
+                other_value_ref_index=1,
+            ),
+        ),
+    )
+    _expect_value_error(
+        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
+        "attr-copy 0 other value-ref index references missing value-ref row",
     )
 
 
@@ -1760,25 +1778,25 @@ def test_generate_lower_rule_set_emits_divisor_magic_projection() -> None:
                     Guard.value_type("lhs", Scalar("i32")),
                     Guard.value_type("rhs", Scalar("i32")),
                     Guard.value_type("result", Scalar("i32")),
-                    Guard.value_u32_divisor_magic_is_add("rhs", False),
+                    Guard.value_u32_divisor_magic_kind("lhs", "rhs", UnsignedDivisorMagicKind.MULTIPLY_SHIFT),
                 ),
                 emit=(
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
                         results={"dst": ValueRef.result("result")},
-                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier("rhs")},
+                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier("lhs", "rhs")},
                     ),
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
                         results={"dst": ValueRef.temporary("shift")},
                         result_types={"dst": ValueRef.result("result")},
-                        immediates={"i32_value": ValueProject.u32_divisor_magic_shift("rhs", product_bit_width=64)},
+                        immediates={"i32_value": ValueProject.u32_divisor_magic_shift("lhs", "rhs", product_bit_width=64)},
                     ),
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
                         results={"dst": ValueRef.temporary("signed_multiplier")},
                         result_types={"dst": ValueRef.result("result")},
-                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier_as_i32("rhs")},
+                        immediates={"i32_value": ValueProject.u32_divisor_magic_multiplier_as_i32("lhs", "rhs")},
                     ),
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
@@ -1793,7 +1811,7 @@ def test_generate_lower_rule_set_emits_divisor_magic_projection() -> None:
 
     generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
 
-    assert "LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_IS_ADD" in generated.source
+    assert "LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_KIND" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_SHIFT" in generated.source

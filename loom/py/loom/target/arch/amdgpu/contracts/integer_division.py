@@ -24,6 +24,7 @@ from loom.target.contracts import (
     GuardDiagnostic,
     Scalar,
     TypePattern,
+    UnsignedDivisorMagicKind,
     ValueMaterializer,
     ValueProject,
     ValueRef,
@@ -65,7 +66,7 @@ def _magic_division_guards(
     type_pattern: TypePattern,
     *,
     register_class: str,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
     divisor_guards: tuple[Guard, ...] = (),
 ) -> tuple[Guard, ...]:
     type_guards = tuple(
@@ -110,7 +111,7 @@ def _magic_division_guards(
             _UINT32_MAX if type_pattern == _INDEX else _INT32_MAX,
             diagnostic=_POSITIVE_U32_DIVISOR_DIAGNOSTIC,
         ),
-        Guard.value_u32_divisor_magic_is_add("rhs", is_add),
+        Guard.value_u32_divisor_magic_kind("lhs", "rhs", kind),
         *value_guards,
     )
 
@@ -118,7 +119,7 @@ def _magic_division_guards(
 def _magic_division_sgpr_emits(
     descriptor_set: DescriptorSet,
     *,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
     result: ValueRef,
 ) -> tuple[EmitDescriptorOp, ...]:
     move = descriptor_by_key(descriptor_set, "amdgpu.s_mov_b32")
@@ -128,7 +129,7 @@ def _magic_division_sgpr_emits(
     add = descriptor_by_key(descriptor_set, "amdgpu.s_add_u32")
     quotient_value = (
         ValueRef.temporary("adjusted_quotient")
-        if is_add
+        if kind.has_add
         else ValueRef.temporary("quotient")
     )
     emits = [
@@ -136,16 +137,20 @@ def _magic_division_sgpr_emits(
             descriptor=move,
             results={"dst": ValueRef.temporary("magic")},
             result_types={"dst": _RESULT},
-            immediates={"imm32": ValueProject.u32_divisor_magic_multiplier("rhs")},
+            immediates={
+                "imm32": ValueProject.u32_divisor_magic_multiplier("lhs", "rhs")
+            },
         ),
         EmitDescriptorOp(
             descriptor=multiply_hi,
             operands={"lhs": _DIRECT_LHS, "rhs": ValueRef.temporary("magic")},
-            results={"dst": ValueRef.temporary("quotient")},
+            results={
+                "dst": ValueRef.temporary("quotient") if kind.has_shift else result
+            },
             result_types={"dst": _RESULT},
         ),
     ]
-    if is_add:
+    if kind.has_add:
         emits.extend(
             [
                 EmitDescriptorOp(
@@ -183,6 +188,8 @@ def _magic_division_sgpr_emits(
                 ),
             ]
         )
+    if not kind.has_shift:
+        return tuple(emits)
     emits.extend(
         [
             EmitDescriptorOp(
@@ -191,7 +198,7 @@ def _magic_division_sgpr_emits(
                 result_types={"dst": _RESULT},
                 immediates={
                     "imm32": ValueProject.u32_divisor_magic_shift(
-                        "rhs", product_bit_width=32
+                        "lhs", "rhs", product_bit_width=32
                     )
                 },
             ),
@@ -210,7 +217,7 @@ def _magic_division_sgpr_emits(
 
 
 def _magic_division_sgpr_descriptors(
-    descriptor_set: DescriptorSet, *, is_add: bool
+    descriptor_set: DescriptorSet, *, kind: UnsignedDivisorMagicKind
 ) -> tuple[Descriptor, ...]:
     move = descriptor_by_key(descriptor_set, "amdgpu.s_mov_b32")
     multiply_hi = descriptor_by_key(descriptor_set, "amdgpu.s_mul_hi_u32")
@@ -219,8 +226,10 @@ def _magic_division_sgpr_descriptors(
     add = descriptor_by_key(descriptor_set, "amdgpu.s_add_u32")
     return (
         (move, multiply_hi, subtract, shift, add)
-        if is_add
+        if kind.has_add
         else (move, multiply_hi, shift)
+        if kind.has_shift
+        else (move, multiply_hi)
     )
 
 
@@ -228,7 +237,7 @@ def _magic_division_vgpr_emits(
     descriptor_set: DescriptorSet,
     *,
     materializer: ValueMaterializer,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
     result: ValueRef,
 ) -> tuple[EmitDescriptorOp, ...]:
     move = descriptor_by_key(descriptor_set, "amdgpu.v_mov_b32")
@@ -238,7 +247,7 @@ def _magic_division_vgpr_emits(
     add = descriptor_by_key(descriptor_set, "amdgpu.v_add_u32")
     quotient_value = (
         ValueRef.temporary("adjusted_quotient")
-        if is_add
+        if kind.has_add
         else ValueRef.temporary("quotient")
     )
     emits = [
@@ -246,7 +255,9 @@ def _magic_division_vgpr_emits(
             descriptor=move,
             results={"dst": ValueRef.temporary("magic")},
             result_types={"dst": _RESULT},
-            immediates={"imm32": ValueProject.u32_divisor_magic_multiplier("rhs")},
+            immediates={
+                "imm32": ValueProject.u32_divisor_magic_multiplier("lhs", "rhs")
+            },
         ),
         EmitDescriptorOp(
             descriptor=multiply_hi,
@@ -254,12 +265,14 @@ def _magic_division_vgpr_emits(
                 "lhs": _materialized_operand("lhs", materializer),
                 "rhs": ValueRef.temporary("magic"),
             },
-            results={"dst": ValueRef.temporary("quotient")},
+            results={
+                "dst": ValueRef.temporary("quotient") if kind.has_shift else result
+            },
             result_types={"dst": _RESULT},
             form=DescriptorEmitForm.OP,
         ),
     ]
-    if is_add:
+    if kind.has_add:
         emits.extend(
             [
                 EmitDescriptorOp(
@@ -295,6 +308,8 @@ def _magic_division_vgpr_emits(
                 ),
             ]
         )
+    if not kind.has_shift:
+        return tuple(emits)
     emits.append(
         EmitDescriptorOp(
             descriptor=shift,
@@ -303,7 +318,7 @@ def _magic_division_vgpr_emits(
             result_types={"dst": _RESULT},
             immediates={
                 "imm32": ValueProject.u32_divisor_magic_shift(
-                    "rhs", product_bit_width=32
+                    "lhs", "rhs", product_bit_width=32
                 )
             },
             form=DescriptorEmitForm.OP,
@@ -313,7 +328,7 @@ def _magic_division_vgpr_emits(
 
 
 def _magic_division_vgpr_descriptors(
-    descriptor_set: DescriptorSet, *, is_add: bool
+    descriptor_set: DescriptorSet, *, kind: UnsignedDivisorMagicKind
 ) -> tuple[Descriptor, ...]:
     move = descriptor_by_key(descriptor_set, "amdgpu.v_mov_b32")
     multiply_hi = descriptor_by_key(descriptor_set, "amdgpu.v_mul_hi_u32")
@@ -322,8 +337,10 @@ def _magic_division_vgpr_descriptors(
     add = descriptor_by_key(descriptor_set, "amdgpu.v_add_u32")
     return (
         (move, multiply_hi, subtract, shift, add)
-        if is_add
+        if kind.has_add
         else (move, multiply_hi, shift)
+        if kind.has_shift
+        else (move, multiply_hi)
     )
 
 
@@ -332,7 +349,7 @@ def _magic_division_sgpr_rule(
     source_op: Op,
     type_pattern: TypePattern,
     *,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
 ) -> DescriptorRule:
     multiply_hi = descriptor_by_key(descriptor_set, "amdgpu.s_mul_hi_u32")
     return DescriptorRule(
@@ -342,13 +359,13 @@ def _magic_division_sgpr_rule(
             *_magic_division_guards(
                 type_pattern,
                 register_class="amdgpu.sgpr",
-                is_add=is_add,
+                kind=kind,
             ),
             *_descriptor_available_guards(
-                *_magic_division_sgpr_descriptors(descriptor_set, is_add=is_add)
+                *_magic_division_sgpr_descriptors(descriptor_set, kind=kind)
             ),
         ),
-        emit=_magic_division_sgpr_emits(descriptor_set, is_add=is_add, result=_RESULT),
+        emit=_magic_division_sgpr_emits(descriptor_set, kind=kind, result=_RESULT),
     )
 
 
@@ -357,7 +374,7 @@ def _magic_division_vgpr_rule(
     source_op: Op,
     type_pattern: TypePattern,
     *,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
 ) -> DescriptorRule:
     materializer = (
         ADDRESS_VGPR_MATERIALIZER if type_pattern == _INDEX else I32_VGPR_MATERIALIZER
@@ -370,14 +387,14 @@ def _magic_division_vgpr_rule(
             *_magic_division_guards(
                 type_pattern,
                 register_class="amdgpu.vgpr",
-                is_add=is_add,
+                kind=kind,
             ),
             *_descriptor_available_guards(
-                *_magic_division_vgpr_descriptors(descriptor_set, is_add=is_add)
+                *_magic_division_vgpr_descriptors(descriptor_set, kind=kind)
             ),
         ),
         emit=_magic_division_vgpr_emits(
-            descriptor_set, materializer=materializer, is_add=is_add, result=_RESULT
+            descriptor_set, materializer=materializer, kind=kind, result=_RESULT
         ),
     )
 
@@ -387,7 +404,7 @@ def _magic_remainder_sgpr_rule(
     source_op: Op,
     type_pattern: TypePattern,
     *,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
 ) -> DescriptorRule:
     multiply_lo = descriptor_by_key(descriptor_set, "amdgpu.s_mul_i32")
     subtract = descriptor_by_key(descriptor_set, "amdgpu.s_sub_u32")
@@ -398,10 +415,10 @@ def _magic_remainder_sgpr_rule(
             *_magic_division_guards(
                 type_pattern,
                 register_class="amdgpu.sgpr",
-                is_add=is_add,
+                kind=kind,
             ),
             *_descriptor_available_guards(
-                *_magic_division_sgpr_descriptors(descriptor_set, is_add=is_add),
+                *_magic_division_sgpr_descriptors(descriptor_set, kind=kind),
                 multiply_lo,
                 subtract,
             ),
@@ -409,7 +426,7 @@ def _magic_remainder_sgpr_rule(
         emit=(
             *_magic_division_sgpr_emits(
                 descriptor_set,
-                is_add=is_add,
+                kind=kind,
                 result=ValueRef.temporary("quotient_final"),
             ),
             EmitDescriptorOp(
@@ -435,7 +452,7 @@ def _magic_remainder_vgpr_rule(
     source_op: Op,
     type_pattern: TypePattern,
     *,
-    is_add: bool,
+    kind: UnsignedDivisorMagicKind,
     product_shift: int | None = None,
 ) -> DescriptorRule:
     materializer = (
@@ -467,11 +484,11 @@ def _magic_remainder_vgpr_rule(
             *_magic_division_guards(
                 type_pattern,
                 register_class="amdgpu.vgpr",
-                is_add=is_add,
+                kind=kind,
                 divisor_guards=product_guards,
             ),
             *_descriptor_available_guards(
-                *_magic_division_vgpr_descriptors(descriptor_set, is_add=is_add),
+                *_magic_division_vgpr_descriptors(descriptor_set, kind=kind),
                 product_descriptor,
                 subtract,
             ),
@@ -480,7 +497,7 @@ def _magic_remainder_vgpr_rule(
             *_magic_division_vgpr_emits(
                 descriptor_set,
                 materializer=materializer,
-                is_add=is_add,
+                kind=kind,
                 result=quotient,
             ),
             EmitDescriptorOp(
@@ -623,14 +640,18 @@ def integer_division_rules(descriptor_set: DescriptorSet) -> tuple[DescriptorRul
     """Builds index and scalar u32 constant division/remainder rules."""
     rules = [
         _magic_remainder_vgpr_rule(
-            descriptor_set, source_op, type_pattern, is_add=False, product_shift=1
+            descriptor_set, source_op, type_pattern, kind=kind, product_shift=1
         )
         for source_op, type_pattern in (
             (index.index_rem, _INDEX),
             (scalar_arithmetic.scalar_remui, _I32),
         )
+        for kind in (
+            UnsignedDivisorMagicKind.MULTIPLY,
+            UnsignedDivisorMagicKind.MULTIPLY_SHIFT,
+        )
     ]
-    for is_add in (False, True):
+    for kind in UnsignedDivisorMagicKind:
         for source_op, type_pattern in (
             (index.index_div, _INDEX),
             (scalar_arithmetic.scalar_divui, _I32),
@@ -638,10 +659,10 @@ def integer_division_rules(descriptor_set: DescriptorSet) -> tuple[DescriptorRul
             rules.extend(
                 (
                     _magic_division_sgpr_rule(
-                        descriptor_set, source_op, type_pattern, is_add=is_add
+                        descriptor_set, source_op, type_pattern, kind=kind
                     ),
                     _magic_division_vgpr_rule(
-                        descriptor_set, source_op, type_pattern, is_add=is_add
+                        descriptor_set, source_op, type_pattern, kind=kind
                     ),
                 )
             )
@@ -652,10 +673,10 @@ def integer_division_rules(descriptor_set: DescriptorSet) -> tuple[DescriptorRul
             rules.extend(
                 (
                     _magic_remainder_sgpr_rule(
-                        descriptor_set, source_op, type_pattern, is_add=is_add
+                        descriptor_set, source_op, type_pattern, kind=kind
                     ),
                     _magic_remainder_vgpr_rule(
-                        descriptor_set, source_op, type_pattern, is_add=is_add
+                        descriptor_set, source_op, type_pattern, kind=kind
                     ),
                 )
             )

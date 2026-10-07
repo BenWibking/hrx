@@ -259,6 +259,8 @@ class LowerAttrCopy:
     source_element_bit_width: int = 0
     target_bit_offset: int = 0
     value_ref_index: int = 0
+    # Second value retained by pairwise immediate projections.
+    other_value_ref_index: int = 0
     literal_i64: int = 0
     dynamic_term_index: int = 0
 

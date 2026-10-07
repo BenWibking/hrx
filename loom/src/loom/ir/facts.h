@@ -875,6 +875,12 @@ void loom_value_facts_divsi(const loom_value_facts_t* lhs,
 void loom_value_facts_remui(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs, int32_t bit_count,
                             loom_value_facts_t* out);
+// Proves that unsigned remainder returns the dividend unchanged. The same
+// width and signed fact representation as divui apply; the proof excludes
+// zero divisors and requires every dividend to be smaller than every divisor.
+bool loom_value_facts_remui_is_identity(loom_value_facts_t lhs,
+                                        loom_value_facts_t rhs,
+                                        int32_t bit_count);
 void loom_value_facts_remsi(const loom_value_facts_t* lhs,
                             const loom_value_facts_t* rhs,
                             loom_value_facts_t* out);

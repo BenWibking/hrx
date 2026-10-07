@@ -28,6 +28,8 @@ typedef struct loom_amdgpu_unsigned_i64_division_plan_t {
   loom_low_lower_unsigned_divisor_magic_info_t magic;
   // Selected SGPR or VGPR carrier for both words of the computation.
   uint16_t register_class_id;
+  // One or two words needed by the quotient in remainder reconstruction.
+  uint8_t quotient_unit_count;
 } loom_amdgpu_unsigned_i64_division_plan_t;
 
 // Selects exact unsigned i64 division or remainder by a constant divisor.

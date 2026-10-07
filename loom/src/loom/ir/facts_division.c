@@ -54,6 +54,19 @@ static int64_t loom_value_facts_unsigned_known_divisor(
                             : facts.known_divisor;
 }
 
+bool loom_value_facts_remui_is_identity(loom_value_facts_t lhs,
+                                        loom_value_facts_t rhs,
+                                        int32_t bit_count) {
+  const uint64_t mask = iree_math_mask_low_bits_u64(UINT64_MAX, bit_count);
+  const loom_value_facts_unsigned_range_t lhs_range =
+      loom_value_facts_unsigned_range(
+          loom_value_facts_wrap_integer(lhs, bit_count), mask);
+  const loom_value_facts_unsigned_range_t rhs_range =
+      loom_value_facts_unsigned_range(
+          loom_value_facts_wrap_integer(rhs, bit_count), mask);
+  return lhs_range.maximum < rhs_range.minimum;
+}
+
 typedef enum loom_value_facts_unsigned_division_kind_e {
   LOOM_VALUE_FACTS_UNSIGNED_QUOTIENT,
   LOOM_VALUE_FACTS_UNSIGNED_REMAINDER,
@@ -93,6 +106,12 @@ static void loom_value_facts_unsigned_division(
     if (rhs_may_be_zero || rhs_range.maximum == 0) {
       *out = loom_value_facts_make_unsigned_result_range(0, bit_mask, bit_count,
                                                          1);
+    } else if (kind == LOOM_VALUE_FACTS_UNSIGNED_REMAINDER &&
+               lhs_range.maximum < rhs_range.minimum) {
+      // No reduction occurs. Preserve the dividend's lower bound,
+      // divisibility, and distribution instead of rebuilding a loose range.
+      *out = lhs_facts;
+      return;
     } else if (kind == LOOM_VALUE_FACTS_UNSIGNED_REMAINDER) {
       const uint64_t lhs_divisor =
           (uint64_t)loom_value_facts_unsigned_known_divisor(lhs_facts);

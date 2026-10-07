@@ -421,16 +421,15 @@ static iree_status_t loom_amdgpu_sanitizer_race_build_scaled_shadow_offset(
     loom_value_id_t ordinal, loom_value_id_t stride,
     loom_value_id_t* out_offset) {
   *out_offset = LOOM_VALUE_ID_INVALID;
-  loom_value_id_t ordinal_wide = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_vgpr64_from_u32(
-      context, source_op, ordinal, &ordinal_wide));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_materialize_low_vgpr_b32(context, source_op,
+                                                            ordinal, &ordinal));
   loom_value_id_t stride_vgpr = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_build_feedback_vgpr_registers(
       loom_low_lower_context_builder(context),
       loom_low_lower_context_descriptor_set(context), stride,
       /*expected_unit_count=*/2, source_op->location, &stride_vgpr));
-  return loom_amdgpu_emit_i64_mul_lo(context, source_op, ordinal_wide,
-                                     stride_vgpr, out_offset);
+  return loom_amdgpu_emit_i64_mul_lo(context, source_op, ordinal, stride_vgpr,
+                                     out_offset);
 }
 
 static iree_status_t loom_amdgpu_sanitizer_race_build_config_guard_values(

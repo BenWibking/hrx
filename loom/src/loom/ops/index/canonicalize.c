@@ -1132,19 +1132,20 @@ iree_status_t loom_index_rem_canonicalize(loom_op_t* op,
     return loom_index_replace_single_result_with_index_constant(op, rewriter,
                                                                 result_type, 0);
   }
+  const loom_value_facts_t lhs_facts = loom_rewriter_value_facts(rewriter, lhs);
+  const loom_value_facts_t rhs_facts = loom_rewriter_value_facts(rewriter, rhs);
+  if (loom_value_facts_is_non_negative(lhs_facts) &&
+      loom_value_facts_is_non_negative(rhs_facts) &&
+      loom_value_facts_remui_is_identity(lhs_facts, rhs_facts, 64)) {
+    return loom_index_replace_single_result_with_value(op, rewriter, lhs);
+  }
   int64_t divisor = 0;
   if (loom_index_query_exact_i64(rewriter, rhs, &divisor) && divisor > 0) {
-    loom_value_facts_t lhs_facts = loom_rewriter_value_facts(rewriter, lhs);
     if (!loom_value_facts_is_float(lhs_facts) &&
         loom_index_value_facts_are_non_negative(rewriter, lhs) &&
         loom_value_facts_divisible_by(lhs_facts, divisor)) {
       return loom_index_replace_single_result_with_index_constant(
           op, rewriter, result_type, 0);
-    }
-    if (!loom_value_facts_is_float(lhs_facts) &&
-        loom_index_value_facts_are_non_negative(rewriter, lhs) &&
-        lhs_facts.range_hi < divisor) {
-      return loom_index_replace_single_result_with_value(op, rewriter, lhs);
     }
 
     loom_value_id_t offset_value = LOOM_VALUE_ID_INVALID;

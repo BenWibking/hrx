@@ -996,6 +996,14 @@ def _validate_c_table_shape(
                 f"{row_subject} value-ref index",
                 "value-ref",
             )
+        _require_u16(row.other_value_ref_index, f"{row_subject} other value-ref index")
+        if lower_rule_rows.attr_copy_uses_other_value_ref(row.kind):
+            _require_table_index(
+                row.other_value_ref_index,
+                len(table.value_refs),
+                f"{row_subject} other value-ref index",
+                "value-ref",
+            )
         _require_u8(row.dynamic_term_index, f"{row_subject} dynamic term index")
         _require_i64(row.literal_i64, f"{row_subject} literal i64")
 
@@ -1270,6 +1278,8 @@ def _validate_c_table_shape(
                 attr_copy = table.attr_copies[attr_copy_index]
                 if lower_rule_rows.attr_copy_uses_value_ref(attr_copy.kind):
                     visible_value_ref_indices.append(attr_copy.value_ref_index)
+                if lower_rule_rows.attr_copy_uses_other_value_ref(attr_copy.kind):
+                    visible_value_ref_indices.append(attr_copy.other_value_ref_index)
         for value_ref_index in visible_value_ref_indices:
             source_node_index = table.value_refs[value_ref_index].source_node_index
             if source_node_index > row.source_node_count:

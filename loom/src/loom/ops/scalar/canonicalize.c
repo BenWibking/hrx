@@ -921,6 +921,13 @@ iree_status_t loom_scalar_remui_canonicalize(loom_op_t* op,
   if (loom_scalar_value_facts_are_exact_i64(rewriter, rhs, 1)) {
     return loom_scalar_replace_single_result_with_i64_constant(op, rewriter, 0);
   }
+  if (loom_value_facts_remui_is_identity(
+          loom_rewriter_value_facts(rewriter, lhs),
+          loom_rewriter_value_facts(rewriter, rhs),
+          loom_scalar_type_bitwidth(loom_type_element_type(
+              loom_scalar_single_result_type(rewriter, op))))) {
+    return loom_scalar_replace_single_result_with_value(op, rewriter, lhs);
+  }
 
   uint64_t divisor = 0;
   if (!loom_scalar_query_power_of_two_bits(rewriter, rhs, &divisor)) {

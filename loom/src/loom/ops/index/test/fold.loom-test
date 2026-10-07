@@ -1,5 +1,21 @@
 // RUN: pass canonicalize
 
+// Runtime positive divisors retain a strictly smaller dividend unchanged.
+func.def @remainder_below_runtime_divisor(%numerator: index, %divisor: index) -> (index) {
+  %bounded = index.assume %numerator [range(%numerator, 12, 60), mul(%numerator, 6)] : index
+  %larger = index.assume %divisor [range(%divisor, 61, 100)] : index
+  %result = index.rem %bounded, %larger : index
+  func.return %result : index
+}
+
+// ----
+func.def @remainder_below_runtime_divisor(%numerator: index, %divisor: index) -> (index) {
+  %bounded = index.assume %numerator [range(%numerator, 12, 60), mul(%numerator, 6)] : index
+  func.return %bounded : index
+}
+
+// ====
+
 // Address-domain constants contribute exact value facts.
 func.def @constant_exact() -> (i64, i64) {
   %c = index.constant 42 : index
