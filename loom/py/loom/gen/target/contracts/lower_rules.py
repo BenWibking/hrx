@@ -280,12 +280,28 @@ def _generate_source(
     string_data_name = f"k{c_table_prefix}StringData"
     lines.extend(emit_c_string_pool(string_pool, string_data_name))
 
+    type_pattern_ranges, type_pattern_range_refs = _intern_optional_rows(tuple(lower_rule_rows.type_pattern_range(row.type_pattern) for row in table.type_patterns))
+    type_pattern_ranges_name = f"k{c_table_prefix}TypePatternRanges"
+    lines.extend(
+        lower_rule_rows.emit_optional_array(
+            type_pattern_ranges_name,
+            "loom_low_lower_type_pattern_range_t",
+            [lower_rule_rows.type_pattern_range_row(shape_range) for shape_range in type_pattern_ranges],
+        )
+    )
+
     type_patterns_name = f"k{c_table_prefix}TypePatterns"
     lines.extend(
         lower_rule_rows.emit_optional_array(
             type_patterns_name,
             "loom_low_lower_type_pattern_t",
-            [lower_rule_rows.type_pattern_row(row.type_pattern) for row in table.type_patterns],
+            [
+                lower_rule_rows.type_pattern_row(
+                    row.type_pattern,
+                    range_ref=type_pattern_range_refs[index],
+                )
+                for index, row in enumerate(table.type_patterns)
+            ],
         )
     )
 
@@ -382,6 +398,16 @@ def _generate_source(
         )
     )
 
+    source_memory_shapes, source_memory_shape_indices = _intern_rows(tuple(lower_rule_rows.source_memory_shape(row) for row in table.source_memories))
+    source_memory_shapes_name = f"k{c_table_prefix}SourceMemoryShapes"
+    lines.extend(
+        lower_rule_rows.emit_optional_array(
+            source_memory_shapes_name,
+            "loom_low_lower_source_memory_shape_t",
+            [lower_rule_rows.source_memory_shape_row(shape) for shape in source_memory_shapes],
+        )
+    )
+
     source_memories_name = f"k{c_table_prefix}SourceMemories"
     lines.extend(
         lower_rule_rows.emit_optional_array(
@@ -390,12 +416,14 @@ def _generate_source(
             [
                 lower_rule_rows.source_memory_row(
                     row,
+                    shape_index=shape_index,
                     byte_offset_materializer_ordinal=byte_offset_ordinal,
                     address_materializer_ordinal=address_ordinal,
                     diagnostics_index=diagnostics_index,
                 )
-                for row, byte_offset_ordinal, address_ordinal, diagnostics_index in zip(
+                for row, shape_index, byte_offset_ordinal, address_ordinal, diagnostics_index in zip(
                     table.source_memories,
+                    source_memory_shape_indices,
                     byte_offset_materializer_ordinals,
                     address_materializer_ordinals,
                     source_memory_diagnostic_indices,
@@ -589,10 +617,14 @@ def _generate_source(
             report_keys=report_keys,
             report_keys_name=report_keys_name,
             type_patterns_name=type_patterns_name,
+            type_pattern_ranges=type_pattern_ranges,
+            type_pattern_ranges_name=type_pattern_ranges_name,
             value_refs_name=value_refs_name,
             source_nodes_name=source_nodes_name,
             materializers_name=materializers_name,
             source_memories_name=source_memories_name,
+            source_memory_shapes=source_memory_shapes,
+            source_memory_shapes_name=source_memory_shapes_name,
             source_memory_diagnostics=source_memory_diagnostics,
             source_memory_diagnostics_name=source_memory_diagnostics_name,
             source_memory_byte_offset_materializers=(source_memory_byte_offset_materializers),
@@ -714,7 +746,7 @@ def _validate_c_table_shape(
     subject = f"lower-rule set '{table.name}'"
     _require_u16(len(table.spans), f"{subject} span count")
     _require_u16(len(table.rules), f"{subject} rule count")
-    _require_u16(len(_collect_report_keys(table)), f"{subject} report-key count")
+    _require_u8(len(_collect_report_keys(table)), f"{subject} report-key count")
     _require_u16(len(table.type_patterns), f"{subject} type-pattern count")
     _require_u16(len(table.value_refs), f"{subject} value-ref count")
     if len(table.source_nodes) > 1 << (16 - SOURCE_NODE_COUNT_BITS):
@@ -832,11 +864,11 @@ def _validate_c_table_shape(
     for index, row in enumerate(table.source_memories):
         row_subject = f"{subject} source-memory {index}"
         constraint = row.constraint
-        _require_u32(
+        _require_u8(
             constraint.element_byte_count,
             f"{row_subject} element byte count",
         )
-        _require_u32(
+        _require_u16(
             constraint.vector_lane_count,
             f"{row_subject} vector lane count",
         )
@@ -852,7 +884,7 @@ def _validate_c_table_shape(
             constraint.static_byte_offset_maximum,
             f"{row_subject} static byte offset maximum",
         )
-        _require_u32(
+        _require_u16(
             constraint.minimum_alignment,
             f"{row_subject} minimum alignment",
         )
@@ -902,7 +934,7 @@ def _validate_c_table_shape(
                 "diagnostic",
             )
         if constraint.cache_policy_build_flags is not None:
-            _require_u32(
+            _require_u8(
                 constraint.cache_policy_build_flags,
                 f"{row_subject} cache policy build flags",
             )
@@ -970,7 +1002,7 @@ def _validate_c_table_shape(
 
     for index, row in enumerate(table.attr_copies):
         row_subject = f"{subject} attr-copy {index}"
-        _require_u16(row.source_attr_index, f"{row_subject} source attr index")
+        _require_u8(row.source_attr_index, f"{row_subject} source attr index")
         _require_u16(
             row.other_source_attr_index,
             f"{row_subject} other source attr index",
@@ -979,7 +1011,7 @@ def _validate_c_table_shape(
             row.source_element_index,
             f"{row_subject} source element index",
         )
-        _require_u16(
+        _require_u8(
             row.source_element_count,
             f"{row_subject} source element count",
         )
@@ -1151,7 +1183,7 @@ def _validate_c_table_shape(
             raise ValueError(f"{row_subject} inactive elide-ref range has a nonzero start")
         if row.report_key:
             _require_report_key(row.report_key, f"{row_subject} report key")
-        _require_u16(row.temporary_count, f"{row_subject} temporary count")
+        _require_u8(row.temporary_count, f"{row_subject} temporary count")
         if row.source_node_start >= 1 << (16 - SOURCE_NODE_COUNT_BITS):
             raise ValueError(f"{row_subject} source-node start exceeds packed capacity")
         _require_u8(row.source_node_count, f"{row_subject} source-node count")
@@ -1307,15 +1339,25 @@ def _validate_type_pattern_c_shape(subject: str, type_pattern: TypePattern) -> N
         return
     _require_u8(len(type_pattern.dims), f"{subject} rank")
     for index, dim in enumerate(type_pattern.dims):
-        _require_i64(dim, f"{subject} static dim {index}")
+        _require_u16(dim, f"{subject} static dim {index}")
     if type_pattern.kind == "view":
         return
     if type_pattern.lanes is not None:
-        _require_i64(type_pattern.lanes, f"{subject} static lanes")
+        _require_u16(type_pattern.lanes, f"{subject} static lanes")
     if isinstance(type_pattern.minimum_lanes, int):
-        _require_i64(type_pattern.minimum_lanes, f"{subject} minimum lanes")
+        _require_u64(type_pattern.minimum_lanes, f"{subject} minimum lanes")
     if isinstance(type_pattern.maximum_lanes, int):
-        _require_i64(type_pattern.maximum_lanes, f"{subject} maximum lanes")
+        _require_u64(type_pattern.maximum_lanes, f"{subject} maximum lanes")
+    if isinstance(type_pattern.minimum_static_elements, int):
+        _require_u64(
+            type_pattern.minimum_static_elements,
+            f"{subject} minimum static elements",
+        )
+    if isinstance(type_pattern.maximum_static_elements, int):
+        _require_u64(
+            type_pattern.maximum_static_elements,
+            f"{subject} maximum static elements",
+        )
 
 
 def _require_u8(value: int, subject: str) -> None:

@@ -8,18 +8,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.vector import defs as vector
 from loom.dsl import Op
+from loom.target.arch.x86.contracts.constants import (
+    f32_vector_constant_rule,
+    floating_vector_zero_rule,
+    i32_vector_constant_rule,
+    i64_vector_constant_rule,
+    integer_vector_zero_rule,
+)
 from loom.target.arch.x86.contracts.floating_reduction import (
-    f32x4_reassociated_reduce_emit_chain,
-    ordered_f32_reduce_emit_chain,
+    ordered_float_reduction_emit_chain,
+    reassociated_float_reduction_emit_chain,
 )
 from loom.target.arch.x86.contracts.memory import x86_vector_memory_rules
 from loom.target.arch.x86.descriptors import X86_AVX512_CORE_DESCRIPTOR_SET
+from loom.target.arch.x86.vector_families import FLOAT_ELEMENTS
 from loom.target.contracts import (
+    AttrProject,
     ContractCase,
     ContractFragment,
     DescriptorEmitForm,
@@ -39,7 +48,9 @@ from loom.target.contracts import (
 from loom.target.low_descriptors import Descriptor
 
 _I32 = Scalar("i32")
+_I64 = Scalar("i64")
 _F32 = Scalar("f32")
+_V2I64 = Vector("i64", lanes=2)
 _V4I1 = Vector("i1", lanes=4)
 _V4I32 = Vector("i32", lanes=4)
 _V4F32 = Vector("f32", lanes=4)
@@ -64,7 +75,7 @@ def _op_emit(
     operands: dict[str, ValueRef] | None = None,
     results: dict[str, ValueRef] | None = None,
     result_types: dict[str, TypePattern] | None = None,
-    immediates: dict[str, int] | None = None,
+    immediates: Mapping[str, AttrProject | int] | None = None,
 ) -> EmitDescriptorOp:
     return EmitDescriptorOp(
         descriptor=descriptor,
@@ -80,6 +91,8 @@ def _splat_rule(
     scalar_type: TypePattern,
     result_type: TypePattern,
     descriptor_key: str,
+    *,
+    priority: int = 0,
 ) -> DescriptorRule:
     descriptor = _descriptor(descriptor_key)
     return DescriptorRule(
@@ -96,6 +109,7 @@ def _splat_rule(
                 results={"dst": ValueRef.result("result")},
             ),
         ),
+        priority=priority,
     )
 
 
@@ -130,7 +144,8 @@ def _select_rule(
 
 def _compare_rule(
     source_op: Op,
-    predicate: str,
+    predicates: Sequence[str] | None,
+    predicate_immediates: Mapping[str, int],
     operand_type: TypePattern,
     result_type: TypePattern,
     descriptor_key: str,
@@ -140,7 +155,11 @@ def _compare_rule(
         source_op=source_op,
         descriptor=descriptor,
         guards=(
-            Guard.enum_attr_equals("predicate", predicate),
+            *(
+                ()
+                if predicates is None
+                else (Guard.enum_attr_in("predicate", predicates),)
+            ),
             Guard.value_type("lhs", operand_type),
             Guard.value_type("rhs", operand_type),
             Guard.value_type("result", result_type),
@@ -153,9 +172,51 @@ def _compare_rule(
                     "rhs": ValueRef.operand("rhs"),
                 },
                 results={"dst": ValueRef.result("result")},
+                immediates={
+                    "predicate": AttrProject.enum_remap(
+                        "predicate",
+                        predicate_immediates,
+                    )
+                },
             ),
         ),
     )
+
+
+_INTEGER_COMPARE_IMMEDIATES = {
+    "eq": 0,
+    "ne": 4,
+    "slt": 1,
+    "sle": 2,
+    "sgt": 6,
+    "sge": 5,
+    "ult": 1,
+    "ule": 2,
+    "ugt": 6,
+    "uge": 5,
+}
+
+_SIGNED_INTEGER_COMPARE_PREDICATES = ("eq", "ne", "slt", "sle", "sgt", "sge")
+_UNSIGNED_INTEGER_COMPARE_PREDICATES = ("ult", "ule", "ugt", "uge")
+
+# Quiet AVX predicates implement the ordered/unordered result while avoiding
+# signaling-NaN exceptions as an implementation artifact.
+_FLOAT_COMPARE_IMMEDIATES = {
+    "oeq": 0,
+    "ogt": 30,
+    "oge": 29,
+    "olt": 17,
+    "ole": 18,
+    "one": 12,
+    "ord": 7,
+    "ueq": 8,
+    "ugt": 22,
+    "uge": 21,
+    "ult": 25,
+    "ule": 26,
+    "une": 4,
+    "uno": 3,
+}
 
 
 def _memory_rules() -> tuple[DescriptorRule, ...]:
@@ -199,8 +260,10 @@ def _reduce_f32x16_ordered_rule() -> DescriptorRule:
         ),
         emit=(
             *_f32x16_extract_emit_chain(extract),
-            *ordered_f32_reduce_emit_chain(
+            *ordered_float_reduction_emit_chain(
                 tuple(ValueRef.temporary(f"q{lane}") for lane in range(4)),
+                FLOAT_ELEMENTS[0],
+                "addf",
                 _descriptor,
                 temporary_prefix="ordered_",
             ),
@@ -260,8 +323,10 @@ def _reduce_f32x16_reassociated_rule() -> DescriptorRule:
         emit=(
             *_f32x16_extract_emit_chain(extract),
             *quarter_sum_emits,
-            *f32x4_reassociated_reduce_emit_chain(
+            *reassociated_float_reduction_emit_chain(
                 ValueRef.temporary("xmm_sum"),
+                FLOAT_ELEMENTS[0],
+                "addf",
                 _descriptor,
                 temporary_prefix="horizontal_",
             ),
@@ -271,89 +336,99 @@ def _reduce_f32x16_reassociated_rule() -> DescriptorRule:
 
 def _cases() -> Sequence[ContractCase]:
     return (
+        _splat_rule(
+            _I32,
+            _V4I32,
+            "x86.avx512.vpbroadcastd.xmm",
+            priority=1,
+        ),
+        _splat_rule(
+            _I64,
+            _V2I64,
+            "x86.avx512.vpbroadcastq.xmm",
+            priority=1,
+        ),
         _splat_rule(_I32, _V16I32, "x86.avx512.vpbroadcastd.zmm"),
         _splat_rule(_F32, _V16F32, "x86.avx512.vbroadcastss.zmm"),
+        floating_vector_zero_rule(_V16F32, _descriptor("x86.avx512.vxorps.zero.zmm")),
+        integer_vector_zero_rule(_V16I32, _descriptor("x86.avx512.vxorps.zero.zmm")),
+        i32_vector_constant_rule(
+            _V4I32,
+            _descriptor("x86.scalar.movimm.gpr32"),
+            _descriptor("x86.avx512.vpbroadcastd.xmm"),
+            broadcast_operand="value",
+            priority=1,
+        ),
+        i64_vector_constant_rule(
+            _V2I64,
+            _descriptor("x86.scalar.movimm.gpr64"),
+            _descriptor("x86.avx512.vpbroadcastq.xmm"),
+            broadcast_operand="value",
+            priority=1,
+        ),
+        i32_vector_constant_rule(
+            _V16I32,
+            _descriptor("x86.scalar.movimm.gpr32"),
+            _descriptor("x86.avx512.vpbroadcastd.zmm"),
+            broadcast_operand="value",
+        ),
+        f32_vector_constant_rule(
+            _V16F32,
+            _descriptor("x86.scalar.movimm.gpr32"),
+            _descriptor("x86.avx2.vmovd.xmm.gpr32"),
+            _descriptor("x86.avx512.vbroadcastss.zmm"),
+        ),
         _select_rule(_V16I1, _V16I32, "x86.avx512.vpblendmd.zmm"),
         _select_rule(_V16I1, _V16F32, "x86.avx512.vblendmps.zmm"),
         _select_rule(_V4I1, _V4I32, "x86.avx512.vpblendmd.xmm"),
         _select_rule(_V4I1, _V4F32, "x86.avx512.vblendmps.xmm"),
         _compare_rule(
-            vector.vector_cmpi, "eq", _V16I32, _V16I1, "x86.avx512.vpcmpd.eq.zmm"
+            vector.vector_cmpi,
+            _SIGNED_INTEGER_COMPARE_PREDICATES,
+            _INTEGER_COMPARE_IMMEDIATES,
+            _V16I32,
+            _V16I1,
+            "x86.avx512.vpcmpd.zmm",
         ),
         _compare_rule(
-            vector.vector_cmpi, "ne", _V16I32, _V16I1, "x86.avx512.vpcmpd.ne.zmm"
+            vector.vector_cmpi,
+            _UNSIGNED_INTEGER_COMPARE_PREDICATES,
+            _INTEGER_COMPARE_IMMEDIATES,
+            _V16I32,
+            _V16I1,
+            "x86.avx512.vpcmpud.zmm",
         ),
         _compare_rule(
-            vector.vector_cmpi, "slt", _V16I32, _V16I1, "x86.avx512.vpcmpd.slt.zmm"
+            vector.vector_cmpi,
+            _SIGNED_INTEGER_COMPARE_PREDICATES,
+            _INTEGER_COMPARE_IMMEDIATES,
+            _V4I32,
+            _V4I1,
+            "x86.avx512.vpcmpd.xmm",
         ),
         _compare_rule(
-            vector.vector_cmpi, "sle", _V16I32, _V16I1, "x86.avx512.vpcmpd.sle.zmm"
+            vector.vector_cmpi,
+            _UNSIGNED_INTEGER_COMPARE_PREDICATES,
+            _INTEGER_COMPARE_IMMEDIATES,
+            _V4I32,
+            _V4I1,
+            "x86.avx512.vpcmpud.xmm",
         ),
         _compare_rule(
-            vector.vector_cmpi, "sgt", _V16I32, _V16I1, "x86.avx512.vpcmpd.sgt.zmm"
+            vector.vector_cmpf,
+            None,
+            _FLOAT_COMPARE_IMMEDIATES,
+            _V16F32,
+            _V16I1,
+            "x86.avx512.vcmpps.zmm",
         ),
         _compare_rule(
-            vector.vector_cmpi, "sge", _V16I32, _V16I1, "x86.avx512.vpcmpd.sge.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpi, "ult", _V16I32, _V16I1, "x86.avx512.vpcmpud.ult.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpi, "ule", _V16I32, _V16I1, "x86.avx512.vpcmpud.ule.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpi, "ugt", _V16I32, _V16I1, "x86.avx512.vpcmpud.ugt.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpi, "uge", _V16I32, _V16I1, "x86.avx512.vpcmpud.uge.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpi, "slt", _V4I32, _V4I1, "x86.avx512.vpcmpd.slt.xmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "oeq", _V16F32, _V16I1, "x86.avx512.vcmpps.oeq.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ogt", _V16F32, _V16I1, "x86.avx512.vcmpps.ogt.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "oge", _V16F32, _V16I1, "x86.avx512.vcmpps.oge.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "olt", _V16F32, _V16I1, "x86.avx512.vcmpps.olt.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ole", _V16F32, _V16I1, "x86.avx512.vcmpps.ole.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "one", _V16F32, _V16I1, "x86.avx512.vcmpps.one.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ord", _V16F32, _V16I1, "x86.avx512.vcmpps.ord.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ueq", _V16F32, _V16I1, "x86.avx512.vcmpps.ueq.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ugt", _V16F32, _V16I1, "x86.avx512.vcmpps.ugt.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "uge", _V16F32, _V16I1, "x86.avx512.vcmpps.uge.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ult", _V16F32, _V16I1, "x86.avx512.vcmpps.ult.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "ule", _V16F32, _V16I1, "x86.avx512.vcmpps.ule.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "une", _V16F32, _V16I1, "x86.avx512.vcmpps.une.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "uno", _V16F32, _V16I1, "x86.avx512.vcmpps.uno.zmm"
-        ),
-        _compare_rule(
-            vector.vector_cmpf, "olt", _V4F32, _V4I1, "x86.avx512.vcmpps.olt.xmm"
+            vector.vector_cmpf,
+            None,
+            _FLOAT_COMPARE_IMMEDIATES,
+            _V4F32,
+            _V4I1,
+            "x86.avx512.vcmpps.xmm",
         ),
         *binary_descriptor_rules(
             tuple(

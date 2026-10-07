@@ -82,6 +82,17 @@ def _enum_attr_diagnostic(field: str, enum_keyword: str) -> DiagnosticRef:
     )
 
 
+def _enum_attr_set_diagnostic(
+    field: str,
+    enum_keywords: tuple[str, ...],
+) -> DiagnosticRef:
+    return _named_constraint_diagnostic(
+        "field",
+        field,
+        "enum_set." + ".".join(enum_keywords),
+    )
+
+
 def _i64_attr_range_diagnostic(
     field: str,
     minimum: int,

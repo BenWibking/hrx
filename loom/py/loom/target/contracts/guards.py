@@ -66,6 +66,7 @@ class GuardKind(Enum):
     VALUE_TYPE = "value_type"
     ATTR_KIND = "attr_kind"
     ENUM_ATTR_EQUALS = "enum_attr_equals"
+    ENUM_ATTR_IN = "enum_attr_in"
     I64_RANGE = "i64_range"
     DESCRIPTOR_AVAILABLE = "descriptor_available"
     VALUE_MATERIALIZABLE = "value_materializable"
@@ -152,6 +153,7 @@ class Guard:
     value_ref: ValueRef | None = None
     attr_type: str | None = None
     enum_keyword: str | None = None
+    enum_keywords: tuple[str, ...] = ()
     count: int | None = None
     element: int | None = None
     minimum: int | None = None
@@ -241,6 +243,25 @@ class Guard:
             kind=GuardKind.ENUM_ATTR_EQUALS,
             field=field,
             enum_keyword=keyword,
+            diagnostic=diagnostic,
+        )
+
+    @classmethod
+    def enum_attr_in(
+        cls,
+        field: str,
+        enum_cases: Sequence[str | EnumCase],
+        *,
+        diagnostic: GuardDiagnostic | None = None,
+    ) -> Self:
+        keywords = tuple(
+            enum_case.keyword if isinstance(enum_case, EnumCase) else enum_case
+            for enum_case in enum_cases
+        )
+        return cls(
+            kind=GuardKind.ENUM_ATTR_IN,
+            field=field,
+            enum_keywords=keywords,
             diagnostic=diagnostic,
         )
 
@@ -778,6 +799,15 @@ class Guard:
             raise ValueError(f"{self.kind.value} attr type must be non-empty")
         if self.enum_keyword is not None and not self.enum_keyword:
             raise ValueError(f"{self.kind.value} enum keyword must be non-empty")
+        if self.kind == GuardKind.ENUM_ATTR_IN:
+            if not self.enum_keywords:
+                raise ValueError(f"{self.kind.value} guard needs enum keywords")
+            if any(not keyword for keyword in self.enum_keywords):
+                raise ValueError(f"{self.kind.value} enum keywords must be non-empty")
+            if len(self.enum_keywords) != len(set(self.enum_keywords)):
+                raise ValueError(f"{self.kind.value} guard repeats an enum keyword")
+        elif self.enum_keywords:
+            raise ValueError(f"{self.kind.value} guard cannot carry enum keywords")
         if self.count is not None and self.count < 0:
             raise ValueError(f"{self.kind.value} count must be non-negative")
         if self.element is not None and self.element < 0:
@@ -853,26 +883,33 @@ class Guard:
             if self.attr_type is None:
                 raise ValueError(f"{source_op.name}: {subject} needs an attr type")
             return
-        if self.kind == GuardKind.ENUM_ATTR_EQUALS:
+        if self.kind in (GuardKind.ENUM_ATTR_EQUALS, GuardKind.ENUM_ATTR_IN):
             attr = _require_attr(source_op, self.field, subject)
             if attr.attr_type != ATTR_TYPE_ENUM:
                 raise ValueError(
                     f"{source_op.name}: {subject} field '{self.field}' "
                     "must be an enum attr"
                 )
-            if self.enum_keyword is None:
-                raise ValueError(f"{source_op.name}: {subject} needs an enum keyword")
             enum_def = attr.enum_def
             if enum_def is None:
                 raise ValueError(
                     f"{source_op.name}: {subject} field '{self.field}' "
                     "has no enum definition"
                 )
-            if self.enum_keyword not in enum_def.keywords:
-                raise ValueError(
-                    f"{source_op.name}: {subject} field '{self.field}' "
-                    f"has no enum case '{self.enum_keyword}'"
-                )
+            keywords = (
+                (self.enum_keyword,)
+                if self.kind == GuardKind.ENUM_ATTR_EQUALS
+                else self.enum_keywords
+            )
+            if keywords == (None,):
+                raise ValueError(f"{source_op.name}: {subject} needs an enum keyword")
+            for keyword in keywords:
+                assert keyword is not None
+                if keyword not in enum_def.keywords:
+                    raise ValueError(
+                        f"{source_op.name}: {subject} field '{self.field}' "
+                        f"has no enum case '{keyword}'"
+                    )
             return
         if self.kind == GuardKind.I64_RANGE:
             attr = _require_attr(source_op, self.field, subject)

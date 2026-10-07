@@ -61,28 +61,32 @@ from .common import (
     _SCHEDULE_MEMORY_STORE_ZMM,
     _SCHEDULE_SCALAR,
     _SCHEDULE_VECTOR_COMPARE_XMM,
+    _SCHEDULE_VECTOR_COMPARE_YMM,
     _SCHEDULE_VECTOR_COMPARE_ZMM,
     _SCHEDULE_VECTOR_DOT_ZMM,
     _SCHEDULE_VECTOR_F32_XMM,
+    _SCHEDULE_VECTOR_F32_YMM,
     _SCHEDULE_VECTOR_F32_ZMM,
     _SCHEDULE_VECTOR_FMA_F32_XMM,
+    _SCHEDULE_VECTOR_FMA_F32_YMM,
     _SCHEDULE_VECTOR_FMA_F32_ZMM,
     _SCHEDULE_VECTOR_I32_XMM,
+    _SCHEDULE_VECTOR_I32_YMM,
     _SCHEDULE_VECTOR_I32_ZMM,
     _asm,
     _gpr32_operand,
+    _gpr64_operand,
     _k_operand,
     _k_result,
     _vector_f32_binary_descriptor,
-    _vector_f32_compare_descriptor,
-    _vector_i32_compare_descriptor,
     _vector_lane_units,
+    _vector_mask_compare_descriptor,
     _vector_mask_select_descriptor,
+    _vector_splat_descriptor,
+    _vector_zero_descriptor,
     _xmm_operand,
     _xmm_result,
-    _zmm_f32_compare_descriptor,
     _zmm_i32_binary_descriptor,
-    _zmm_i32_compare_descriptor,
     _zmm_mask_select_descriptor,
     _zmm_operand,
     _zmm_result,
@@ -228,6 +232,15 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             model_quality=ModelQuality.ESTIMATED,
         ),
         ScheduleClass(
+            _SCHEDULE_VECTOR_I32_YMM,
+            latency_kind=LatencyKind.ESTIMATE,
+            latency_cycles=1,
+            issue_uses=(
+                IssueUse(_RESOURCE_VECTOR, cycles=1, units=_vector_lane_units(256)),
+            ),
+            model_quality=ModelQuality.ESTIMATED,
+        ),
+        ScheduleClass(
             _SCHEDULE_VECTOR_I32_ZMM,
             latency_kind=LatencyKind.ESTIMATE,
             latency_cycles=1,
@@ -242,6 +255,15 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             latency_cycles=1,
             issue_uses=(
                 IssueUse(_RESOURCE_VECTOR, cycles=1, units=_vector_lane_units(128)),
+            ),
+            model_quality=ModelQuality.ESTIMATED,
+        ),
+        ScheduleClass(
+            _SCHEDULE_VECTOR_F32_YMM,
+            latency_kind=LatencyKind.ESTIMATE,
+            latency_cycles=1,
+            issue_uses=(
+                IssueUse(_RESOURCE_VECTOR, cycles=1, units=_vector_lane_units(256)),
             ),
             model_quality=ModelQuality.ESTIMATED,
         ),
@@ -265,6 +287,16 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             model_quality=ModelQuality.ESTIMATED,
         ),
         ScheduleClass(
+            _SCHEDULE_VECTOR_FMA_F32_YMM,
+            latency_kind=LatencyKind.ESTIMATE,
+            latency_cycles=4,
+            minimum_issue_separation_cycles=4,
+            issue_uses=(
+                IssueUse(_RESOURCE_VECTOR, cycles=1, units=_vector_lane_units(256)),
+            ),
+            model_quality=ModelQuality.ESTIMATED,
+        ),
+        ScheduleClass(
             _SCHEDULE_VECTOR_FMA_F32_ZMM,
             latency_kind=LatencyKind.ESTIMATE,
             latency_cycles=4,
@@ -280,6 +312,15 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             latency_cycles=1,
             issue_uses=(
                 IssueUse(_RESOURCE_VECTOR, cycles=1, units=_vector_lane_units(128)),
+            ),
+            model_quality=ModelQuality.ESTIMATED,
+        ),
+        ScheduleClass(
+            _SCHEDULE_VECTOR_COMPARE_YMM,
+            latency_kind=LatencyKind.ESTIMATE,
+            latency_cycles=1,
+            issue_uses=(
+                IssueUse(_RESOURCE_VECTOR, cycles=1, units=_vector_lane_units(256)),
             ),
             model_quality=ModelQuality.ESTIMATED,
         ),
@@ -423,11 +464,17 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
-        _vector_i32_compare_descriptor(
+        _vector_mask_compare_descriptor(
             vector_bit_width=128,
-            key="x86.avx512.vpcmpd.slt.xmm",
-            mnemonic="vpcmpd.slt",
-            semantic_tag="integer.cmp.slt.i32x4",
+            key="x86.avx512.vpcmpd.xmm",
+            mnemonic="vpcmpd",
+            semantic_tag="integer.cmp.signed.i32x4",
+        ),
+        _vector_mask_compare_descriptor(
+            vector_bit_width=128,
+            key="x86.avx512.vpcmpud.xmm",
+            mnemonic="vpcmpud",
+            semantic_tag="integer.cmp.unsigned.i32x4",
         ),
         _vector_mask_select_descriptor(
             vector_bit_width=128,
@@ -436,11 +483,11 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             semantic_tag="integer.select.i32x4",
             schedule_class=_SCHEDULE_VECTOR_I32_XMM,
         ),
-        _vector_f32_compare_descriptor(
+        _vector_mask_compare_descriptor(
             vector_bit_width=128,
-            key="x86.avx512.vcmpps.olt.xmm",
-            mnemonic="vcmpps.olt",
-            semantic_tag="float.cmp.olt.f32x4",
+            key="x86.avx512.vcmpps.xmm",
+            mnemonic="vcmpps",
+            semantic_tag="float.cmp.f32x4",
         ),
         _vector_mask_select_descriptor(
             vector_bit_width=128,
@@ -448,6 +495,22 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             mnemonic="vblendmps",
             semantic_tag="float.select.f32x4",
             schedule_class=_SCHEDULE_VECTOR_F32_XMM,
+        ),
+        _vector_splat_descriptor(
+            vector_bit_width=128,
+            key="x86.avx512.vpbroadcastd.xmm",
+            mnemonic="vpbroadcastd",
+            semantic_tag="integer.splat.i32x4",
+            operand=_gpr32_operand("value"),
+            schedule_class=_SCHEDULE_VECTOR_I32_XMM,
+        ),
+        _vector_splat_descriptor(
+            vector_bit_width=128,
+            key="x86.avx512.vpbroadcastq.xmm",
+            mnemonic="vpbroadcastq",
+            semantic_tag="integer.splat.i64x2",
+            operand=_gpr64_operand("value"),
+            schedule_class=_SCHEDULE_VECTOR_I32_XMM,
         ),
         _zmm_splat_descriptor(
             key="x86.avx512.vpbroadcastd.zmm",
@@ -462,6 +525,10 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             semantic_tag="float.splat.f32x16",
             operand=_xmm_operand("value"),
             schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
+        ),
+        _vector_zero_descriptor(
+            vector_bit_width=512,
+            key="x86.avx512.vxorps.zero.zmm",
         ),
         _zmm_i32_binary_descriptor(
             key="x86.avx512.vpaddd.zmm",
@@ -528,55 +595,17 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             mnemonic="vpsrlvd",
             semantic_tag="integer.shru.i32x16",
         ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpd.eq.zmm",
-            mnemonic="vpcmpd.eq",
-            semantic_tag="integer.cmp.eq.i32x16",
+        _vector_mask_compare_descriptor(
+            vector_bit_width=512,
+            key="x86.avx512.vpcmpd.zmm",
+            mnemonic="vpcmpd",
+            semantic_tag="integer.cmp.signed.i32x16",
         ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpd.ne.zmm",
-            mnemonic="vpcmpd.ne",
-            semantic_tag="integer.cmp.ne.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpd.slt.zmm",
-            mnemonic="vpcmpd.slt",
-            semantic_tag="integer.cmp.slt.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpd.sle.zmm",
-            mnemonic="vpcmpd.sle",
-            semantic_tag="integer.cmp.sle.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpd.sgt.zmm",
-            mnemonic="vpcmpd.sgt",
-            semantic_tag="integer.cmp.sgt.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpd.sge.zmm",
-            mnemonic="vpcmpd.sge",
-            semantic_tag="integer.cmp.sge.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpud.ult.zmm",
-            mnemonic="vpcmpud.ult",
-            semantic_tag="integer.cmp.ult.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpud.ule.zmm",
-            mnemonic="vpcmpud.ule",
-            semantic_tag="integer.cmp.ule.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpud.ugt.zmm",
-            mnemonic="vpcmpud.ugt",
-            semantic_tag="integer.cmp.ugt.i32x16",
-        ),
-        _zmm_i32_compare_descriptor(
-            key="x86.avx512.vpcmpud.uge.zmm",
-            mnemonic="vpcmpud.uge",
-            semantic_tag="integer.cmp.uge.i32x16",
+        _vector_mask_compare_descriptor(
+            vector_bit_width=512,
+            key="x86.avx512.vpcmpud.zmm",
+            mnemonic="vpcmpud",
+            semantic_tag="integer.cmp.unsigned.i32x16",
         ),
         _zmm_mask_select_descriptor(
             key="x86.avx512.vpblendmd.zmm",
@@ -617,75 +646,11 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             schedule_class=_SCHEDULE_VECTOR_FMA_F32_ZMM,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.oeq.zmm",
-            mnemonic="vcmpps.oeq",
-            semantic_tag="float.cmp.oeq.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ogt.zmm",
-            mnemonic="vcmpps.ogt",
-            semantic_tag="float.cmp.ogt.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.oge.zmm",
-            mnemonic="vcmpps.oge",
-            semantic_tag="float.cmp.oge.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.olt.zmm",
-            mnemonic="vcmpps.olt",
-            semantic_tag="float.cmp.olt.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ole.zmm",
-            mnemonic="vcmpps.ole",
-            semantic_tag="float.cmp.ole.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.one.zmm",
-            mnemonic="vcmpps.one",
-            semantic_tag="float.cmp.one.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ord.zmm",
-            mnemonic="vcmpps.ord",
-            semantic_tag="float.cmp.ord.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ueq.zmm",
-            mnemonic="vcmpps.ueq",
-            semantic_tag="float.cmp.ueq.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ugt.zmm",
-            mnemonic="vcmpps.ugt",
-            semantic_tag="float.cmp.ugt.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.uge.zmm",
-            mnemonic="vcmpps.uge",
-            semantic_tag="float.cmp.uge.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ult.zmm",
-            mnemonic="vcmpps.ult",
-            semantic_tag="float.cmp.ult.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.ule.zmm",
-            mnemonic="vcmpps.ule",
-            semantic_tag="float.cmp.ule.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.une.zmm",
-            mnemonic="vcmpps.une",
-            semantic_tag="float.cmp.une.f32x16",
-        ),
-        _zmm_f32_compare_descriptor(
-            key="x86.avx512.vcmpps.uno.zmm",
-            mnemonic="vcmpps.uno",
-            semantic_tag="float.cmp.uno.f32x16",
+        _vector_mask_compare_descriptor(
+            vector_bit_width=512,
+            key="x86.avx512.vcmpps.zmm",
+            mnemonic="vcmpps",
+            semantic_tag="float.cmp.f32x16",
         ),
         _zmm_mask_select_descriptor(
             key="x86.avx512.vblendmps.zmm",

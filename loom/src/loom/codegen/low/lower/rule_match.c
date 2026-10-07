@@ -173,6 +173,7 @@ static iree_status_t loom_low_lower_rule_descriptor_available(
 }
 
 static bool loom_low_lower_rule_type_matches(
+    const loom_low_lower_rule_set_t* rule_set,
     const loom_low_lower_type_pattern_t* pattern, loom_type_t type) {
   if (iree_any_bit_set(pattern->flags, LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND) &&
       loom_type_kind(type) != pattern->type_kind) {
@@ -203,9 +204,11 @@ static bool loom_low_lower_rule_type_matches(
     if (loom_type_rank(type) == 0 || loom_type_dim_is_dynamic_at(type, 0)) {
       return false;
     }
-    const int64_t static_dim0 = loom_type_dim_static_size_at(type, 0);
-    if (static_dim0 < pattern->shape.dim0_range.minimum ||
-        static_dim0 > pattern->shape.dim0_range.maximum) {
+    const loom_low_lower_type_pattern_range_t* range =
+        &rule_set->type_pattern_ranges[pattern->shape.range_ref - 1];
+    const uint64_t static_dim0 =
+        (uint64_t)loom_type_dim_static_size_at(type, 0);
+    if (static_dim0 < range->minimum || static_dim0 > range->maximum) {
       return false;
     }
   }
@@ -221,14 +224,14 @@ static bool loom_low_lower_rule_type_matches(
   if (iree_any_bit_set(
           pattern->flags,
           LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE)) {
+    const loom_low_lower_type_pattern_range_t* range =
+        &rule_set->type_pattern_ranges[pattern->shape.range_ref - 1];
     uint64_t static_element_count = 0;
     if (!loom_type_static_element_count(type, &static_element_count)) {
       return false;
     }
-    if (static_element_count <
-            pattern->shape.static_element_count_range.minimum ||
-        static_element_count >
-            pattern->shape.static_element_count_range.maximum) {
+    if (static_element_count < range->minimum ||
+        static_element_count > range->maximum) {
       return false;
     }
   }
@@ -898,6 +901,7 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       const loom_type_t type =
           loom_low_lower_rule_match_value_type(match_context, value_id);
       *out_matches = loom_low_lower_rule_type_matches(
+          rule_set,
           &rule_set->type_patterns[guard->selector.value.parameter_index],
           type);
       return iree_ok_status();
@@ -921,6 +925,21 @@ static iree_status_t loom_low_lower_rule_guard_matches(
                   .raw ==
               loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_ATTR_ENUM_IN: {
+      const uint16_t attr_index = guard->selector.attribute.attr_index;
+      if (attr_index >= source_op->attribute_count) {
+        return iree_ok_status();
+      }
+      const loom_attribute_t source_attr =
+          loom_op_const_attrs(source_op)[attr_index];
+      if (source_attr.kind != LOOM_ATTR_ENUM || source_attr.raw >= 64) {
+        return iree_ok_status();
+      }
+      const uint64_t enum_mask =
+          loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
+      *out_matches = ((enum_mask >> source_attr.raw) & UINT64_C(1)) != 0;
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_ATTR_I64_RANGE: {
       if (guard->selector.attribute.attr_index >= source_op->attribute_count ||
           loom_op_const_attrs(source_op)[guard->selector.attribute.attr_index]
@@ -1554,6 +1573,27 @@ iree_status_t loom_low_lower_rule_set_select_rule_range_with_match_context(
     if (loom_low_lower_rule_failure_is_better(candidate_failure,
                                               best_failure)) {
       best_failure = candidate_failure;
+    }
+    if (matched_guard_count < rule->guard_count) {
+      const uint16_t guard_ref_index =
+          (uint16_t)(rule->guard_start + matched_guard_count);
+      const loom_low_lower_guard_ref_t guard_index =
+          rule_set->guard_refs[guard_ref_index];
+      const loom_low_lower_guard_t* guard = &rule_set->guards[guard_index];
+      if (guard->kind != LOOM_LOW_LOWER_GUARD_DESCRIPTOR_AVAILABLE) {
+        // An interned root guard program has the same pure result for every
+        // adjacent rule that references it. Descriptor availability is the
+        // exception because its failure also ranks rule-specific memory forms.
+        while ((uint16_t)(i + 1) < rule_count) {
+          const loom_low_lower_rule_t* next_rule =
+              &rule_set->rules[rule_start + i + 1];
+          if (next_rule->guard_start != rule->guard_start ||
+              next_rule->guard_count != rule->guard_count) {
+            break;
+          }
+          ++i;
+        }
+      }
     }
   }
 

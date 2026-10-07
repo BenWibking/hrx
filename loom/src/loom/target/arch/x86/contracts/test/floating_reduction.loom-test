@@ -30,9 +30,9 @@ func.def target(@target) @f32x4_reassociated_reduce(%values: vector<4xf32>, %ini
 
 // ----
 low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({signature = (vector<4xf32>, f32) -> (f32)}) @f32x4_reassociated_reduce(%values: reg<x86.xmm>, %initial: reg<x86.xmm>) -> (reg<x86.xmm>) asm {
-  %7 = vpermilps.xmm %values, 78
+  %7 = vpsrldq.xmm %values, 8
   %8 = vaddps.xmm %values, %7
-  %9 = vpermilps.xmm %8, 177
+  %9 = vpsrldq.xmm %8, 4
   %10 = vaddps.xmm %8, %9
   %sum = vaddss.xmm %initial, %10
   return %sum
@@ -82,9 +82,9 @@ low.func.def target<x86.avx2.core>(@target) abi(object_function) abi_layout({sig
   %7 = vextractf128.xmm %values, 0
   %8 = vextractf128.xmm %values, 1
   %9 = vaddps.xmm %7, %8
-  %10 = vpermilps.xmm %9, 78
+  %10 = vpsrldq.xmm %9, 8
   %11 = vaddps.xmm %9, %10
-  %12 = vpermilps.xmm %11, 177
+  %12 = vpsrldq.xmm %11, 4
   %13 = vaddps.xmm %11, %12
   %sum = vaddss.xmm %initial, %13
   return %sum
@@ -154,9 +154,9 @@ low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({s
   %11 = vaddps.xmm %7, %8
   %12 = vaddps.xmm %9, %10
   %13 = vaddps.xmm %11, %12
-  %14 = vpermilps.xmm %13, 78
+  %14 = vpsrldq.xmm %13, 8
   %15 = vaddps.xmm %13, %14
-  %16 = vpermilps.xmm %15, 177
+  %16 = vpsrldq.xmm %15, 4
   %17 = vaddps.xmm %15, %16
   %sum = vaddss.xmm %initial, %17
   return %sum
@@ -212,9 +212,9 @@ low.func.def target<x86.avx512_packed_dot.core>(@target) abi(object_function) ab
   %14 = vextractf128.xmm %dot, 0
   %15 = vextractf128.xmm %dot, 1
   %16 = vaddps.xmm %14, %15
-  %17 = vpermilps.xmm %16, 78
+  %17 = vpsrldq.xmm %16, 8
   %18 = vaddps.xmm %16, %17
-  %19 = vpermilps.xmm %18, 177
+  %19 = vpsrldq.xmm %18, 4
   %20 = vaddps.xmm %18, %19
   %sum = vaddss.xmm %seed, %20
   return %sum
