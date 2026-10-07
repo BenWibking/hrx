@@ -18,11 +18,13 @@ from loom.target.arch.x86.contracts.rule_builders import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_COMPARE_MNEMONICS,
-    AVX2_FLOAT_EXTREMA_MNEMONICS,
-    AVX2_FLOAT_EXTREMA_OPERATIONS,
     AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_FLOAT_COMPARE_MNEMONICS,
+    AVX512_SELECT_MNEMONICS,
     FLOAT_ELEMENTS,
+    FLOAT_EXTREMA_MNEMONICS,
+    FLOAT_EXTREMA_OPERATIONS,
     VectorElement,
 )
 from loom.target.contracts import (
@@ -58,28 +60,20 @@ _VECTOR_SOURCE_OPS = {
 }
 
 
-def avx2_float_extrema_emit_chain(
+def _float_extrema_emit_chain(
     operation: str,
-    element: VectorElement,
-    register_bit_width: int,
     lhs: ValueRef,
     rhs: ValueRef,
     result: ValueRef,
-    descriptor_lookup: _DescriptorLookup,
+    compare: Descriptor,
+    tie: Descriptor,
+    select: Descriptor,
     *,
     temporary_prefix: str = "",
-) -> tuple[tuple[EmitDescriptorOp, ...], tuple[Descriptor, ...]]:
-    """Emits exact IEEE extrema semantics in one AVX register."""
-    register_suffix = {128: "xmm", 256: "ymm"}[register_bit_width]
-    compare = descriptor_lookup(
-        f"x86.avx2.{AVX2_FLOAT_COMPARE_MNEMONICS[element.name]}.{register_suffix}"
-    )
+) -> tuple[EmitDescriptorOp, ...]:
+    """Emits exact IEEE extrema semantics using resolved ISA operations."""
     is_minimum = operation in ("minimumf", "minnumf")
     propagates_nan = operation in ("minimumf", "maximumf")
-    tie = descriptor_lookup(
-        f"x86.avx2.{'vpor' if is_minimum else 'vpand'}.{register_suffix}"
-    )
-    select = descriptor_lookup(f"x86.avx2.vpblendvb.{register_suffix}")
 
     def temporary(name: str) -> ValueRef:
         return ValueRef.temporary(f"{temporary_prefix}{name}")
@@ -93,7 +87,7 @@ def avx2_float_extrema_emit_chain(
     lhs_result = temporary("lhs_result")
     rhs_nan = temporary("rhs_nan")
     descriptor_result_type = {"dst": DescriptorResultType()}
-    emits = (
+    return (
         _op_emit(
             descriptor=compare,
             operands={"lhs": lhs, "rhs": rhs},
@@ -166,37 +160,70 @@ def avx2_float_extrema_emit_chain(
             results={"dst": result},
         ),
     )
-    return emits, (compare, tie, select)
+
+
+def _avx2_float_extrema_descriptors(
+    operation: str,
+    element: VectorElement,
+    register_bit_width: int,
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[Descriptor, Descriptor, Descriptor]:
+    register_suffix = _REGISTER_SUFFIXES[register_bit_width]
+    return (
+        descriptor_lookup(
+            f"x86.avx2.{AVX2_FLOAT_COMPARE_MNEMONICS[element.name]}.{register_suffix}"
+        ),
+        descriptor_lookup(
+            f"x86.avx2."
+            f"{'vpor' if operation in ('minimumf', 'minnumf') else 'vpand'}."
+            f"{register_suffix}"
+        ),
+        descriptor_lookup(f"x86.avx2.vpblendvb.{register_suffix}"),
+    )
+
+
+def _avx512_float_extrema_descriptors(
+    operation: str,
+    element: VectorElement,
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[Descriptor, Descriptor, Descriptor]:
+    return (
+        descriptor_lookup(
+            f"x86.avx512.{AVX512_FLOAT_COMPARE_MNEMONICS[element.name]}.zmm"
+        ),
+        descriptor_lookup(
+            "x86.avx512."
+            f"{'vpord' if operation in ('minimumf', 'minnumf') else 'vpandd'}."
+            "zmm"
+        ),
+        descriptor_lookup(f"x86.avx512.{AVX512_SELECT_MNEMONICS[element.name]}.zmm"),
+    )
 
 
 def _float_extrema_rule(
     operation: str,
-    element: VectorElement,
     source_type: TypePattern,
-    register_bit_width: int,
     source_op,
-    descriptor_lookup: _DescriptorLookup,
+    descriptors: tuple[Descriptor, Descriptor, Descriptor],
 ) -> DescriptorRule:
-    emits, dependencies = avx2_float_extrema_emit_chain(
+    compare, tie, select = descriptors
+    emits = _float_extrema_emit_chain(
         operation,
-        element,
-        register_bit_width,
         ValueRef.operand("lhs"),
         ValueRef.operand("rhs"),
         ValueRef.result("result"),
-        descriptor_lookup,
+        compare,
+        tie,
+        select,
     )
     return DescriptorRule(
         source_op=source_op,
-        descriptor=dependencies[-1],
+        descriptor=select,
         guards=(
             Guard.value_type("lhs", source_type),
             Guard.value_type("rhs", source_type),
             Guard.value_type("result", source_type),
-            *(
-                Guard.descriptor_available(descriptor)
-                for descriptor in dependencies[:-1]
-            ),
+            *(Guard.descriptor_available(descriptor) for descriptor in (compare, tie)),
         ),
         emit=emits,
     )
@@ -245,19 +272,17 @@ def avx2_float_extrema_rules(
             ),
             _SCALAR_SOURCE_OPS[operation],
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
     )
     exact_scalar_rules = (
         _float_extrema_rule(
             operation,
-            element,
             Scalar(element.name),
-            128,
             _SCALAR_SOURCE_OPS[operation],
-            descriptor_lookup,
+            _avx2_float_extrema_descriptors(operation, element, 128, descriptor_lookup),
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
     )
     fast_vector_rules = (
@@ -265,25 +290,25 @@ def avx2_float_extrema_rules(
             Vector(element.name, lanes=vector_bit_width // element.bit_width),
             descriptor_lookup(
                 f"x86.avx2."
-                f"{AVX2_FLOAT_EXTREMA_MNEMONICS[operation][element.name]}."
+                f"{FLOAT_EXTREMA_MNEMONICS[operation][element.name]}."
                 f"{_REGISTER_SUFFIXES[vector_bit_width]}"
             ),
             _VECTOR_SOURCE_OPS[operation],
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     )
     exact_vector_rules = (
         _float_extrema_rule(
             operation,
-            element,
             Vector(element.name, lanes=vector_bit_width // element.bit_width),
-            vector_bit_width,
             _VECTOR_SOURCE_OPS[operation],
-            descriptor_lookup,
+            _avx2_float_extrema_descriptors(
+                operation, element, vector_bit_width, descriptor_lookup
+            ),
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     )
@@ -293,3 +318,31 @@ def avx2_float_extrema_rules(
         *fast_vector_rules,
         *exact_vector_rules,
     )
+
+
+def avx512_float_extrema_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[DescriptorRule, ...]:
+    """Generates packed f32/f64 ZMM IEEE extrema families."""
+    fast_rules = (
+        _fast_float_extrema_rule(
+            Vector(element.name, lanes=element.lane_count(512)),
+            descriptor_lookup(
+                f"x86.avx512.{FLOAT_EXTREMA_MNEMONICS[operation][element.name]}.zmm"
+            ),
+            _VECTOR_SOURCE_OPS[operation],
+        )
+        for operation in FLOAT_EXTREMA_OPERATIONS
+        for element in FLOAT_ELEMENTS
+    )
+    exact_rules = (
+        _float_extrema_rule(
+            operation,
+            Vector(element.name, lanes=element.lane_count(512)),
+            _VECTOR_SOURCE_OPS[operation],
+            _avx512_float_extrema_descriptors(operation, element, descriptor_lookup),
+        )
+        for operation in FLOAT_EXTREMA_OPERATIONS
+        for element in FLOAT_ELEMENTS
+    )
+    return (*fast_rules, *exact_rules)

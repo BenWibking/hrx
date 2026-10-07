@@ -15,6 +15,9 @@ from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.avx512_predicate import (
     avx512_predicate_rules,
 )
+from loom.target.arch.x86.contracts.floating_extrema import (
+    avx512_float_extrema_rules,
+)
 from loom.target.arch.x86.contracts.floating_reduction import (
     ordered_float_reduction_emit_chain,
     reassociated_float_reduction_emit_chain,
@@ -205,6 +208,7 @@ def _cases() -> Sequence[ContractCase]:
         *avx512_vector_construction_rules(_descriptor),
         *avx512_predicate_rules(_descriptor),
         *avx512_vector_arithmetic_rules(_descriptor),
+        *avx512_float_extrema_rules(_descriptor),
         *avx512_integer_reduction_rules(_descriptor),
         *avx512_lane_movement_rules(_descriptor),
         *avx512_shuffle_rules(_descriptor),

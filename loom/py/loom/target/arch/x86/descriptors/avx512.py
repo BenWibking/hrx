@@ -22,6 +22,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512VL_INTEGER_BINARY_FAMILIES,
     AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FLOAT_EXTREMA_MNEMONICS,
     INTEGER_ELEMENTS,
 )
 from loom.target.low_descriptors import (
@@ -871,6 +872,21 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
                 ),
             )
             for family in AVX512_FLOAT_BINARY_FAMILIES
+        ),
+        *(
+            _vector_f32_binary_descriptor(
+                vector_bit_width=512,
+                key=f"x86.avx512.{mnemonic}.zmm",
+                mnemonic=mnemonic,
+                semantic_tag=(
+                    f"float.fast_extrema.{element.name}x{element.lane_count(512)}"
+                ),
+            )
+            for element in FLOAT_ELEMENTS
+            for mnemonic in (
+                FLOAT_EXTREMA_MNEMONICS["minimumf"][element.name],
+                FLOAT_EXTREMA_MNEMONICS["maximumf"][element.name],
+            )
         ),
         *(
             _vector_fma_descriptor(

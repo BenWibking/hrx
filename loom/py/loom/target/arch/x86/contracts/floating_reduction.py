@@ -18,11 +18,11 @@ from loom.target.arch.x86.contracts.rule_builders import (
     emit_descriptor_op as _op_emit,
 )
 from loom.target.arch.x86.vector_families import (
-    AVX2_FLOAT_EXTREMA_OPERATIONS,
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FLOAT_EXTREMA_OPERATIONS,
     VectorElement,
 )
 from loom.target.contracts import (
@@ -308,7 +308,7 @@ def avx2_float_reduction_rules(
             ),
             priority=1,
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     )

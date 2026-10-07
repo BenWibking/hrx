@@ -287,14 +287,14 @@ AVX2_SCALAR_FLOAT_FMA_MNEMONICS = {
     "f64": "vfmadd231sd",
 }
 
-AVX2_FLOAT_EXTREMA_OPERATIONS = (
+FLOAT_EXTREMA_OPERATIONS = (
     "minimumf",
     "maximumf",
     "minnumf",
     "maxnumf",
 )
 
-AVX2_FLOAT_EXTREMA_MNEMONICS = {
+FLOAT_EXTREMA_MNEMONICS = {
     "minimumf": {"f32": "vminps", "f64": "vminpd"},
     "maximumf": {"f32": "vmaxps", "f64": "vmaxpd"},
     "minnumf": {"f32": "vminps", "f64": "vminpd"},
@@ -312,7 +312,7 @@ AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS = ("addf", "mulf")
 
 AVX2_FLOAT_REDUCTION_OPERATIONS = (
     *AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
-    *AVX2_FLOAT_EXTREMA_OPERATIONS,
+    *FLOAT_EXTREMA_OPERATIONS,
 )
 
 AVX2_PAYLOAD_ELEMENT_NAMES = tuple(
@@ -337,9 +337,9 @@ def validate_vector_families() -> None:
         element.name for element in FLOAT_ELEMENTS
     }:
         raise ValueError("AVX2 floating comparison rows must cover every float element")
-    if set(AVX2_FLOAT_EXTREMA_MNEMONICS) != set(AVX2_FLOAT_EXTREMA_OPERATIONS):
-        raise ValueError("AVX2 packed extrema rows must cover every float semantic")
-    if set(AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS) != set(AVX2_FLOAT_EXTREMA_OPERATIONS):
+    if set(FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS):
+        raise ValueError("packed extrema rows must cover every float semantic")
+    if set(AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS) != set(FLOAT_EXTREMA_OPERATIONS):
         raise ValueError("AVX2 scalar extrema rows must cover every float semantic")
     avx512_keys = [
         (family.source_operation, family.element.name)

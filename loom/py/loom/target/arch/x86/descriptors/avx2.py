@@ -15,7 +15,6 @@ from loom.target.arch.x86.vector_families import (
     AVX2_BITWISE_FAMILIES,
     AVX2_FLOAT_BINARY_FAMILIES,
     AVX2_FLOAT_COMPARE_MNEMONICS,
-    AVX2_FLOAT_EXTREMA_MNEMONICS,
     AVX2_FLOAT_FMA_MNEMONICS,
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_INTEGER_COMPARE_MNEMONICS,
@@ -24,6 +23,7 @@ from loom.target.arch.x86.vector_families import (
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FLOAT_EXTREMA_MNEMONICS,
     INTEGER_ELEMENTS,
     X86_LANE_FAMILIES,
     VectorBinaryFamily,
@@ -934,8 +934,8 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
         )
         for element in FLOAT_ELEMENTS
         for mnemonic in (
-            AVX2_FLOAT_EXTREMA_MNEMONICS["minimumf"][element.name],
-            AVX2_FLOAT_EXTREMA_MNEMONICS["maximumf"][element.name],
+            FLOAT_EXTREMA_MNEMONICS["minimumf"][element.name],
+            FLOAT_EXTREMA_MNEMONICS["maximumf"][element.name],
         )
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     ),

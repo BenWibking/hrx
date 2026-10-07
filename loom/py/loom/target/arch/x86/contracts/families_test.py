@@ -14,7 +14,6 @@ from loom.target.arch.x86.descriptors import (
     X86_AVX512_CORE_DESCRIPTOR_SET,
 )
 from loom.target.arch.x86.vector_families import (
-    AVX2_FLOAT_EXTREMA_OPERATIONS,
     AVX2_FLOAT_REDUCTION_OPERATIONS,
     AVX2_INTEGER_REDUCTION_FAMILIES,
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
@@ -33,6 +32,7 @@ from loom.target.arch.x86.vector_families import (
     AVX512VL_INTEGER_BINARY_FAMILIES,
     AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    FLOAT_EXTREMA_OPERATIONS,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
     X86_LANE_FAMILIES,
@@ -554,34 +554,58 @@ def test_avx512_iotas_cover_every_zmm_integer_element() -> None:
     )
 
 
-def test_avx2_float_extrema_cover_every_semantic_and_width() -> None:
+def test_float_extrema_cover_every_semantic_and_width() -> None:
     vector_source_operations = {
         vector.vector_minimumf: "minimumf",
         vector.vector_maximumf: "maximumf",
         vector.vector_minnumf: "minnumf",
         vector.vector_maxnumf: "maxnumf",
     }
-    actual_vectors = {
-        (
-            vector_source_operations[rule.source_op],
-            _value_type_guard(rule, "result"),
+    for fragment, vector_bit_widths in (
+        (X86_AVX2_CONTRACT_FRAGMENT, AVX2_VECTOR_BIT_WIDTHS),
+        (X86_AVX512_CONTRACT_FRAGMENT, AVX512_VECTOR_BIT_WIDTHS),
+    ):
+        extrema_rules = tuple(
+            rule
+            for rule in fragment.cases
+            if isinstance(rule, DescriptorRule)
+            and rule.source_op in vector_source_operations
         )
-        for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
-        if isinstance(rule, DescriptorRule)
-        and rule.source_op in vector_source_operations
-    }
-    assert actual_vectors == {
-        (
-            operation,
-            Vector(
-                element.name,
-                lanes=vector_bit_width // element.bit_width,
-            ),
+        assert {
+            (
+                vector_source_operations[rule.source_op],
+                _value_type_guard(rule, "result"),
+            )
+            for rule in extrema_rules
+        } == {
+            (
+                operation,
+                Vector(
+                    element.name,
+                    lanes=vector_bit_width // element.bit_width,
+                ),
+            )
+            for operation in FLOAT_EXTREMA_OPERATIONS
+            for element in FLOAT_ELEMENTS
+            for vector_bit_width in vector_bit_widths
+        }
+        priorities_by_cell = {}
+        for rule in extrema_rules:
+            key = (rule.source_op, _value_type_guard(rule, "result"))
+            priorities_by_cell.setdefault(key, set()).add(rule.priority)
+        assert {
+            frozenset(priorities) for priorities in priorities_by_cell.values()
+        } == {frozenset((0, 1))}
+        fast_rules = tuple(rule for rule in extrema_rules if rule.priority == 1)
+        assert all(
+            {
+                guard.enum_keyword
+                for guard in rule.guards
+                if guard.kind == GuardKind.INSTANCE_FLAGS_HAS_ALL
+            }
+            == {"nnan", "nsz"}
+            for rule in fast_rules
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
-        for element in FLOAT_ELEMENTS
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
-    }
 
     scalar_source_operations = {
         scalar_arithmetic.scalar_minimumf: "minimumf",
@@ -600,23 +624,24 @@ def test_avx2_float_extrema_cover_every_semantic_and_width() -> None:
     }
     assert actual_scalars == {
         (operation, Scalar(element.name))
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
     }
 
-    extrema_rules = tuple(
+    scalar_extrema_rules = tuple(
         rule
         for rule in X86_AVX2_CONTRACT_FRAGMENT.cases
         if isinstance(rule, DescriptorRule)
-        and rule.source_op in (*vector_source_operations, *scalar_source_operations)
+        and rule.source_op in scalar_source_operations
     )
-    rule_counts = {}
-    for rule in extrema_rules:
+    priorities_by_cell = {}
+    for rule in scalar_extrema_rules:
         key = (rule.source_op, _value_type_guard(rule, "result"))
-        rule_counts[key] = rule_counts.get(key, 0) + 1
-    assert set(rule_counts.values()) == {2}
-    fast_rules = tuple(rule for rule in extrema_rules if rule.priority == 1)
-    assert len(fast_rules) * 2 == len(extrema_rules)
+        priorities_by_cell.setdefault(key, set()).add(rule.priority)
+    assert {frozenset(priorities) for priorities in priorities_by_cell.values()} == {
+        frozenset((0, 1))
+    }
+    fast_rules = tuple(rule for rule in scalar_extrema_rules if rule.priority == 1)
     assert all(
         {
             guard.enum_keyword
@@ -750,7 +775,7 @@ def test_avx2_float_reductions_and_dots_cover_both_types_and_widths() -> None:
             for guard in rule.guards
             if guard.kind == GuardKind.ENUM_ATTR_EQUALS
         )
-        in AVX2_FLOAT_EXTREMA_OPERATIONS
+        in FLOAT_EXTREMA_OPERATIONS
     )
     fast_extrema_expected = {
         (
@@ -761,7 +786,7 @@ def test_avx2_float_reductions_and_dots_cover_both_types_and_widths() -> None:
             ),
             frozenset(("reassoc", "nnan", "nsz")),
         )
-        for operation in AVX2_FLOAT_EXTREMA_OPERATIONS
+        for operation in FLOAT_EXTREMA_OPERATIONS
         for element in FLOAT_ELEMENTS
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     }
