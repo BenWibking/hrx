@@ -40,10 +40,17 @@ function(amdf_cts_gpu_kernel_set)
     return()
   endif()
   cmake_parse_arguments(_RULE "" "NAME;ENTRY_POINT;NAMESPACE;INPUT_FORMAT"
-    "SRCS;DATA;LIBRARIES;INPUTOPTS;TARGETS" ${ARGN})
+    "SRCS;DATA;LIBRARIES;INPUTOPTS;TARGETS;TARGET_SRCS" ${ARGN})
   if(_RULE_UNPARSED_ARGUMENTS OR NOT _RULE_NAME OR NOT _RULE_SRCS OR
      NOT _RULE_ENTRY_POINT OR NOT _RULE_NAMESPACE OR NOT _RULE_TARGETS)
     message(FATAL_ERROR "Incomplete GPU CTS kernel set declaration")
+  endif()
+  if(_RULE_TARGET_SRCS)
+    list(LENGTH _RULE_TARGETS _TARGET_COUNT)
+    list(LENGTH _RULE_TARGET_SRCS _SOURCE_COUNT)
+    if(NOT _TARGET_COUNT EQUAL _SOURCE_COUNT)
+      message(FATAL_ERROR "GPU CTS target and direct-source counts must match")
+    endif()
   endif()
   set(_SOURCE "${_RULE_NAME}_source")
   loom_module(
@@ -59,7 +66,13 @@ function(amdf_cts_gpu_kernel_set)
   )
   set(_INPUTS)
   set(_SELECTORS)
+  set(_TARGET_INDEX 0)
   foreach(_SELECTOR IN LISTS _RULE_TARGETS)
+    set(_TARGET_SOURCES)
+    if(_RULE_TARGET_SRCS)
+      list(GET _RULE_TARGET_SRCS ${_TARGET_INDEX} _TARGET_SOURCES)
+    endif()
+    math(EXPR _TARGET_INDEX "${_TARGET_INDEX} + 1")
     iree_package_target_name(_PROFILE "::${_SELECTOR}")
     get_target_property(_AVAILABLE "${_PROFILE}" LOOM_PROFILE_AVAILABLE)
     if(NOT _AVAILABLE)
@@ -68,6 +81,7 @@ function(amdf_cts_gpu_kernel_set)
     set(_PRODUCT "${_RULE_NAME}_${_SELECTOR}")
     loom_kernel_binary(
       NAME "${_PRODUCT}"
+      SRCS ${_TARGET_SOURCES}
       TARGET "::${_SELECTOR}"
       OUTPUT "${_PRODUCT}.hsaco"
       LIBRARIES "::${_SOURCE}"

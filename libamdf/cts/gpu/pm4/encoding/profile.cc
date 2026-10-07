@@ -20,6 +20,7 @@ constexpr Pm4CommandProfile kGfx11 = {
     .gl2_writeback_gcr = 1u << 15,
     .resource3_register = 0x2e28,
     .instruction_prefetch_mask = 0x3f,
+    .supports_wave64 = true,
 };
 
 // PAL's GFX12 reserves the former metadata/shared-L1 actions. The common
@@ -32,6 +33,7 @@ constexpr Pm4CommandProfile kGfx12 = {
     .gl2_writeback_gcr = 1u << 15,
     .resource3_register = 0x2e28,
     .instruction_prefetch_mask = 0xff,
+    .supports_wave64 = true,
 };
 
 // Compiler GFX12.5 uses GC12.1. Linux's gfx_v12_1 packet/register definitions
@@ -45,6 +47,7 @@ constexpr Pm4CommandProfile kGfx125 = {
     .gl2_writeback_gcr = (2u << 4) | (1u << 15),
     .resource3_register = 0x2e23,
     .instruction_prefetch_mask = 0xff,
+    .supports_wave64 = false,
 };
 
 }  // namespace

@@ -114,6 +114,7 @@ class AmdfBuildFileFunctions(
         targets,
         entry_point,
         namespace,
+        target_srcs=None,
         data=None,
         deps=None,
         input_format="",
@@ -122,6 +123,10 @@ class AmdfBuildFileFunctions(
         target_compatible_with=None,
     ):
         del visibility
+        if target_srcs is not None and sorted(target_srcs) != sorted(targets):
+            raise ValueError(
+                "target_srcs must name exactly the kernel set's physical targets"
+            )
         capabilities = self._loaded_modules.symbol(
             "//loom/build_tools/amdgpu:target_config.bzl",
             "LOOM_AMDGPU_DESCRIPTOR_SET_CAPABILITY_BY_TARGET",
@@ -160,7 +165,14 @@ class AmdfBuildFileFunctions(
             + self._convert_string_list_block(
                 "INPUTOPTS", self._convert_location_args(inputopts), sort=False
             )
-            + self._convert_string_list_block("TARGETS", targets)
+            + self._convert_string_list_block("TARGETS", targets, sort=False)
+            + self._convert_data_srcs_block(
+                [target_srcs[target] for target in targets]
+                if target_srcs is not None
+                else [],
+                block_name="TARGET_SRCS",
+                sort=False,
+            )
             + self._convert_string_arg_block("ENTRY_POINT", entry_point)
             + self._convert_string_arg_block("NAMESPACE", namespace)
             + ")\n\n"

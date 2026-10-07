@@ -53,6 +53,7 @@ def amdf_cts_gpu_kernel_set(
         targets,
         entry_point,
         namespace,
+        target_srcs = None,
         data = [],
         deps = [],
         input_format = "",
@@ -71,6 +72,8 @@ def amdf_cts_gpu_kernel_set(
       targets: Physical selectors, also naming package-local target profiles.
       entry_point: Exported kernel symbol to extract.
       namespace: C++ namespace containing the kKernels set.
+      target_srcs: Optional physical-selector to direct-source mapping. When
+          present, it supplies one source for every target at link time.
       data: Declared inputs used while admitting the authored sources.
       deps: Reusable Loom libraries linked with the source module.
       input_format: Optional source provider override.
@@ -79,6 +82,8 @@ def amdf_cts_gpu_kernel_set(
       target_compatible_with: Source-provider constraints inherited by the
           relocatable library and every generated target.
     """
+    if target_srcs != None and sorted(target_srcs.keys()) != sorted(targets):
+        fail("target_srcs must name exactly the kernel set's physical targets")
     source_name = name + "_source"
     loom_library(
         name = source_name,
@@ -104,6 +109,7 @@ def amdf_cts_gpu_kernel_set(
         loom_kernel_binary(
             name = product_name,
             testonly = True,
+            srcs = [target_srcs[target]] if target_srcs != None else [],
             deps = [":" + source_name],
             out = product_name + ".hsaco",
             roots = ["@" + entry_point],

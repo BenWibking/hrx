@@ -153,6 +153,26 @@ arguments retain 36 semantic bytes; callers initialize the complete 64-byte
 slot, check the compiler's rounded segment fits, and copy only typed fields.
 Alignment padding never becomes another argument or uninitialized input.
 
+### LDS and wave modes
+
+[lds_exchange.loom](lds_exchange.loom) exchanges tagged words between the two
+halves of a 128-workitem group through 512 bytes of fixed LDS. Its partner
+mapping crosses a wave boundary in both wave32 and wave64. The default catalog
+retains every physical target's ordinary width, including the GFX9 AQL products.
+An alternate catalog supplies wave64 on targets that support both widths.
+Both catalogs link the same authored body with small physical target records
+under `targets/`; target records are ordinary Loom source inputs, not patched
+kernel descriptors.
+
+The [PM4 mode-switch cases](../pm4/wave_mode_test.cc) publish one finite stream
+with wave32, wave64, then wave32 dispatches. The direct case supplies workitem
+counts; the indirect case reads immutable workgroup-count tuples. Each stage
+has distinct arguments and output, and the caller checks the complete outputs,
+guards, arguments, code and command bytes before releasing their native owners.
+The CPU observes only final completion. Alternate case libraries are selected
+with their compiled products, preserving the ordinary corpus in wave32-only
+and GFX9-only configurations.
+
 ## AQL publication and observation
 
 The shared fixture copies the exact target image into coherent system memory

@@ -25,7 +25,7 @@ enum class Pm4MemoryComparison : uint32_t {
   kGreater = 6,
 };
 
-// Compiled RDNA program with no scratch or hidden runtime inputs. The
+// Compiled PM4 compute program with no scratch or hidden runtime inputs. The
 // caller supplies only a kernarg pointer; hardware supplies group/local IDs.
 struct Pm4ComputeProgram {
   // GPU entry address, aligned to 256 bytes and below the 48-bit program limit.
