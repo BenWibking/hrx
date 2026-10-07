@@ -338,7 +338,9 @@ class VerifyTest : public ::testing::Test {
   loom_verify_options_t options_;
 };
 
-static loom_trait_flags_t BadHintPureEffectiveTraits(const loom_op_t* op) {
+static loom_trait_flags_t BadHintPureEffectiveTraits(
+    const loom_module_t* module, const loom_op_t* op) {
+  (void)module;
   (void)op;
   return LOOM_TRAIT_HINT | LOOM_TRAIT_PURE;
 }

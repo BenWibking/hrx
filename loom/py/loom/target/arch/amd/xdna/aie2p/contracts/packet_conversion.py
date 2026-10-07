@@ -31,6 +31,7 @@ from loom.target.contracts import (
     EmitRegisterSlice,
     Guard,
     SourceNode,
+    TypePattern,
     ValueProject,
     ValueRef,
     Vector,
@@ -1354,23 +1355,32 @@ def _integer_bitunpack_rule(
     )
 
 
-def _integer_widen_rule(
+def integer_widen_rule(
     source_op: Op,
     signedness: str,
     rule_shape: IntegerWidenRuleShape,
+    *,
+    input_type: TypePattern | None = None,
+    result_type: TypePattern | None = None,
+    source: ValueRef | None = None,
+    prefix_emits: tuple[ContractEmit, ...] = (),
+    extra_guards: tuple[Guard, ...] = (),
+    report_key: str | None = None,
 ) -> DescriptorRule:
     instruction = rule_shape.instruction
-    source = ValueRef.operand("input")
-    input_emits: tuple[ContractEmit, ...] = ()
+    source = ValueRef.operand("input") if source is None else source
+    input_emits = prefix_emits
     if instruction.slice_input:
-        source = ValueRef.temporary("source_w")
+        sliced_source = ValueRef.temporary("source_w")
         input_emits = (
+            *input_emits,
             EmitRegisterSlice(
-                source=ValueRef.operand("input"),
-                result=source,
+                source=source,
+                result=sliced_source,
                 unit_count=1,
             ),
         )
+        source = sliced_source
     shift, state_emits = integer_widen_state_emits(instruction.ups_mode)
     result = ValueRef.result("result")
     native_result, output_emits = integer_widen_result_emits(
@@ -1385,8 +1395,13 @@ def _integer_widen_rule(
         source_op=source_op,
         descriptor=widen,
         guards=(
-            Guard.value_type("input", rule_shape.input_type),
-            Guard.value_type("result", rule_shape.result_type),
+            Guard.value_type(
+                "input", rule_shape.input_type if input_type is None else input_type
+            ),
+            Guard.value_type(
+                "result", rule_shape.result_type if result_type is None else result_type
+            ),
+            *extra_guards,
         ),
         emit=(
             *input_emits,
@@ -1408,7 +1423,9 @@ def _integer_widen_rule(
             ),
             *output_emits,
         ),
-        report_key=rule_shape.report_key(signedness),
+        report_key=(
+            rule_shape.report_key(signedness) if report_key is None else report_key
+        ),
     )
 
 
@@ -3504,12 +3521,15 @@ def _float_to_fp8_vector_rule(
     )
 
 
-def _integer_truncation_rule(
+def integer_truncation_emits(
     rule_shape: IntegerTruncationRuleShape,
-) -> DescriptorRule:
+    source: ValueRef,
+    result: ValueRef,
+    *,
+    result_type: DescriptorResultType | None = None,
+) -> tuple[ContractEmit, ...]:
     constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
     shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-    source = ValueRef.operand("input")
     emits: list[ContractEmit] = []
     if rule_shape.source_carrier_count == 2:
         low_source = ValueRef.temporary("source_low")
@@ -3537,11 +3557,13 @@ def _integer_truncation_rule(
     for index, control_value in enumerate(rule_shape.instruction.shuffle_controls):
         control = ValueRef.temporary(f"shuffle_control_{index}")
         is_final = index + 1 == len(rule_shape.instruction.shuffle_controls)
-        result = (
-            ValueRef.result("result")
-            if is_final
-            else ValueRef.temporary(f"truncated_{index}")
-        )
+        step_result = result if is_final else ValueRef.temporary(f"truncated_{index}")
+        if is_final:
+            step_result_types = (
+                {"dst": result_type} if result_type is not None else None
+            )
+        else:
+            step_result_types = {"dst": DescriptorResultType()}
         emits.extend(
             (
                 EmitDescriptorOp(
@@ -3558,25 +3580,46 @@ def _integer_truncation_rule(
                         "s2": high_source if index == 0 else current,
                         "mod": control,
                     },
-                    results={"dst": result},
-                    result_types=(
-                        None if is_final else {"dst": DescriptorResultType()}
-                    ),
+                    results={"dst": step_result},
+                    result_types=step_result_types,
                     form=DescriptorEmitForm.OP,
                 ),
             )
         )
-        current = result
+        current = step_result
+
+    return tuple(emits)
+
+
+def integer_truncation_rule(
+    rule_shape: IntegerTruncationRuleShape,
+    *,
+    source_op: Op = vector.vector_trunci,
+    input_type: TypePattern | None = None,
+    result_type: TypePattern | None = None,
+    extra_guards: tuple[Guard, ...] = (),
+    report_key: str | None = None,
+) -> DescriptorRule:
+    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
 
     return DescriptorRule(
-        source_op=vector.vector_trunci,
+        source_op=source_op,
         descriptor=shuffle,
         guards=(
-            Guard.value_type("input", rule_shape.input_type),
-            Guard.value_type("result", rule_shape.result_type),
+            Guard.value_type(
+                "input", rule_shape.input_type if input_type is None else input_type
+            ),
+            Guard.value_type(
+                "result", rule_shape.result_type if result_type is None else result_type
+            ),
+            *extra_guards,
         ),
-        emit=tuple(emits),
-        report_key=rule_shape.report_key,
+        emit=integer_truncation_emits(
+            rule_shape,
+            ValueRef.operand("input"),
+            ValueRef.result("result"),
+        ),
+        report_key=rule_shape.report_key if report_key is None else report_key,
     )
 
 
@@ -3753,7 +3796,7 @@ AIE2P_PACKET_CONVERSION_RULES = (
         for source_lane_count in I4_UNPACK_SOURCE_LANE_COUNTS
     ),
     *(
-        _integer_widen_rule(source_op, signedness, rule_shape)
+        integer_widen_rule(source_op, signedness, rule_shape)
         for source_op, signedness in (
             (vector.vector_extui, "unsigned"),
             (vector.vector_extsi, "signed"),
@@ -3761,7 +3804,7 @@ AIE2P_PACKET_CONVERSION_RULES = (
         for rule_shape in INTEGER_WIDEN_RULE_SHAPES
     ),
     *(
-        _integer_truncation_rule(rule_shape)
+        integer_truncation_rule(rule_shape)
         for rule_shape in INTEGER_TRUNCATION_RULE_SHAPES
     ),
     *(_integer_pack_rule(rule_shape) for rule_shape in INTEGER_PACK_RULE_SHAPES),

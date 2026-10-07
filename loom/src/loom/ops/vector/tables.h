@@ -153,6 +153,7 @@ extern const loom_op_vtable_t loom_vector_uitofp_vtable;
 extern const loom_op_vtable_t loom_vector_fptosi_vtable;
 extern const loom_op_vtable_t loom_vector_fptoui_vtable;
 extern const loom_op_vtable_t loom_vector_bitcast_vtable;
+extern const loom_op_vtable_t loom_vector_index_cast_vtable;
 extern const loom_op_vtable_t loom_vector_bitfield_extractu_vtable;
 extern const loom_op_vtable_t loom_vector_bitfield_extracts_vtable;
 extern const loom_op_vtable_t loom_vector_bitfield_insert_vtable;

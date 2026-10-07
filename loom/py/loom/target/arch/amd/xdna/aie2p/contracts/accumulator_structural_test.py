@@ -10,6 +10,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.accumulator_structural import (
     _ACCUMULATOR_CONCAT_RULES,
     _ACCUMULATOR_CONCAT_TYPE_SPECS,
     _ACCUMULATOR_SLICE_RESULT_SHAPES,
+    _ACCUMULATOR_VECTOR_EXTRACT_RULES,
     _ACCUMULATOR_VECTOR_SHAPES,
     _ACCUMULATOR_VECTOR_SLICE_RULES,
     _accumulator_concat_left_shapes,
@@ -24,6 +25,7 @@ from loom.target.contracts import (
     EmitRegisterConcat,
     EmitRegisterSlice,
     Guard,
+    Scalar,
     TypePattern,
     ValueAliasRule,
     ValueRef,
@@ -145,6 +147,8 @@ def test_accumulator_shapes_use_only_allocatable_native_views() -> None:
     expected_units = {
         "f32": {32: 2, **{lane_count: 4 for lane_count in range(33, 65)}},
         "i32": {lane_count: 4 for lane_count in range(33, 65)},
+        "index": {lane_count: 4 for lane_count in range(33, 65)},
+        "offset": {lane_count: 4 for lane_count in range(33, 65)},
         "i64": {lane_count: 4 for lane_count in range(17, 33)},
     }
     actual_units = {element_type: {} for element_type in expected_units}
@@ -179,7 +183,7 @@ def test_accumulator_slice_results_partition_carrier_boundaries() -> None:
             for shape in _ACCUMULATOR_SLICE_RESULT_SHAPES
             if shape.element_type == element_type
         ]
-        for element_type in ("f32", "i32", "i64")
+        for element_type in ("f32", "i32", "index", "offset", "i64")
     }
     assert actual == {
         "f32": [
@@ -190,6 +194,18 @@ def test_accumulator_slice_results_partition_carrier_boundaries() -> None:
             (49, 64, 4, 4, True),
         ],
         "i32": [
+            (1, 16, 1, 2, False),
+            (17, 32, 2, 4, False),
+            (33, 48, 3, 4, True),
+            (49, 64, 4, 4, True),
+        ],
+        "index": [
+            (1, 16, 1, 2, False),
+            (17, 32, 2, 4, False),
+            (33, 48, 3, 4, True),
+            (49, 64, 4, 4, True),
+        ],
+        "offset": [
             (1, 16, 1, 2, False),
             (17, 32, 2, 4, False),
             (33, 48, 3, 4, True),
@@ -239,6 +255,114 @@ def test_accumulator_slice_rules_cover_carrier_transition_boundaries() -> None:
                 )
                 expected_rule_count += 1
     assert len(_ACCUMULATOR_VECTOR_SLICE_RULES) == expected_rule_count
+
+
+def test_accumulator_extract_rules_cover_every_logical_packet() -> None:
+    expected_rule_count = 0
+    for source_shape in _ACCUMULATOR_VECTOR_SHAPES:
+        result_type = Scalar(source_shape.element_type)
+        source_guard = Guard.value_type("source", source_shape.source_type)
+        result_guard = Guard.value_type("result", result_type)
+        matching_rules = tuple(
+            rule
+            for rule in _ACCUMULATOR_VECTOR_EXTRACT_RULES
+            if source_guard in rule.guards and result_guard in rule.guards
+        )
+        assert len(matching_rules) == source_shape.logical_packet_count + 1
+        expected_rule_count += len(matching_rules)
+
+        for packet_index in range(source_shape.logical_packet_count):
+            packet_lane_base = packet_index * source_shape.packet_lane_count
+            packet_lane_maximum = min(
+                packet_lane_base + source_shape.packet_lane_count - 1,
+                source_shape.maximum_lane_count - 1,
+            )
+            static_rule = next(
+                rule
+                for rule in matching_rules
+                if Guard.i64_array_element_range(
+                    "static_indices",
+                    0,
+                    packet_lane_base,
+                    packet_lane_maximum,
+                )
+                in rule.guards
+            )
+            packet_slice = static_rule.emit[0]
+            assert isinstance(packet_slice, EmitRegisterSlice)
+            assert packet_slice.unit_offset == packet_index
+            assert static_rule.emit[-1].result_types is None
+
+        dynamic_rule = next(
+            rule
+            for rule in matching_rules
+            if Guard.operand_segment_count("indices", 1) in rule.guards
+        )
+        packet_extracts = tuple(
+            emit
+            for emit in dynamic_rule.emit
+            if isinstance(emit, EmitDescriptorOp)
+            and emit.descriptor.key.endswith(".register")
+        )
+        assert len(packet_extracts) == source_shape.logical_packet_count
+        assert all(
+            emit.result_types == {"dst": result_type} for emit in packet_extracts
+        )
+
+    assert len(_ACCUMULATOR_VECTOR_EXTRACT_RULES) == expected_rule_count
+
+
+def test_dynamic_address_extract_selects_all_four_accumulator_packets() -> None:
+    source_shape = _accumulator_source_shape("index", 49)
+    rule = next(
+        rule
+        for rule in _ACCUMULATOR_VECTOR_EXTRACT_RULES
+        if Guard.value_type("source", source_shape.source_type) in rule.guards
+        and Guard.operand_segment_count("indices", 1) in rule.guards
+    )
+    descriptor_keys = _descriptor_keys(rule)
+    assert (
+        descriptor_keys[:6]
+        == [
+            "amd.xdna.aie2p.constant.i32.short",
+            "amd.xdna.aie2p.and.i32",
+        ]
+        * 3
+    )
+    assert (
+        descriptor_keys[6:14]
+        == [
+            "amd.xdna.aie2p.move.accumulator512.to.vector512",
+            "amd.xdna.aie2p.extract.i32.register",
+        ]
+        * 4
+    )
+    assert (
+        descriptor_keys[14:]
+        == [
+            "amd.xdna.aie2p.select.nonzero.i32",
+        ]
+        * 3
+    )
+    assert rule.emit[-1].result_types is None
+
+
+def test_dynamic_i64_extract_selects_both_scalar_register_units() -> None:
+    source_shape = _accumulator_source_shape("i64", 25)
+    rule = next(
+        rule
+        for rule in _ACCUMULATOR_VECTOR_EXTRACT_RULES
+        if Guard.value_type("source", source_shape.source_type) in rule.guards
+        and Guard.operand_segment_count("indices", 1) in rule.guards
+    )
+    joins = tuple(emit for emit in rule.emit if isinstance(emit, EmitRegisterConcat))
+    assert len(joins) == 3
+    assert [join.result_type for join in joins] == [
+        Scalar("i64"),
+        Scalar("i64"),
+        None,
+    ]
+    assert all(len(join.sources) == 2 for join in joins)
 
 
 def test_aligned_accumulator_slices_retain_ordered_mbms_units() -> None:
@@ -436,6 +560,8 @@ def test_accumulator_concat_rules_cover_every_binary_partition_once() -> None:
     result_domains = {
         "f32": range(32, 65),
         "i32": range(33, 65),
+        "index": range(33, 65),
+        "offset": range(33, 65),
         "i64": range(17, 33),
     }
     for element_type, result_lane_counts in result_domains.items():

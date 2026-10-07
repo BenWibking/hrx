@@ -28,6 +28,7 @@ iree_py_library(
     "c_vector_scalarization.py"
   DEPS
     loom::py::loom::gen::ops::c_tables
+    loom::py::loom::dialect::index::index
     loom::py::loom::dialect::scalar::scalar
     loom::py::loom::dialect::vector::vector
 )
@@ -594,6 +595,7 @@ iree_py_test(
     "loom.gen.ops.c_vector_scalarization_test"
   DEPS
     loom::py::loom::gen::ops::c_tables
+    loom::py::loom::dialect::index::index
     loom::py::loom::dialect::scalar::scalar
     loom::py::loom::dialect::vector::vector
   PACKAGE_DIRS

@@ -394,7 +394,8 @@ iree_status_t loom_low_func_call_build(
     iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_low_func_call_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_low_func_call_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_low_func_call_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
@@ -407,7 +408,8 @@ LOOM_DEFINE_VARIADIC_RESULTS(loom_low_op_results, 0)
 LOOM_DEFINE_ATTR_SCOPED_ENUM(loom_low_op_descriptor, 0)
 LOOM_DEFINE_INSTANCE_FLAGS(loom_low_op_memory_flags)
 LOOM_DEFINE_ATTR_DICT(loom_low_op_attrs, 1)
-loom_trait_flags_t loom_low_op_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_low_op_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 
 // LOOM_OP_LOW_CONST: Descriptor-backed constant or immediate materialization into a register.
 // %c0 = low.const<amdgpu.s_mov_b32> {imm = 0} : reg<amdgpu.sgpr x1>
@@ -536,7 +538,8 @@ iree_status_t loom_low_invoke_build(
     iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_low_invoke_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_low_invoke_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_low_invoke_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);

@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from loom.dialect.scalar import ALL_SCALAR_OPS, FastMathFlags
 from loom.dialect.vector import ALL_VECTOR_OPS
-from loom.dsl import FLOAT, I1, INTEGER, Op
+from loom.dialect.vector import defs as vector
+from loom.dsl import DECOMPOSABLE, FLOAT, I1, INTEGER, Op
 
 SCALAR_TO_VECTOR_SUFFIX_EXCLUSIONS = {
     "assume": "scalar.assume refines scalar predicate facts, not vector lanes.",
@@ -54,3 +55,19 @@ def test_vector_float_flags_use_scalar_fastmath_flags() -> None:
     assert reduce_fastmath_ops == {"vector.reduce", "vector.reduce.axes"}
     assert scalar_flags["contract"] == 32
     assert scalar_flags["fast"] == 127
+
+
+def test_shape_preserving_vector_casts_are_decomposable() -> None:
+    casts = (
+        vector.vector_index_cast,
+        vector.vector_extf,
+        vector.vector_fptrunc,
+        vector.vector_extsi,
+        vector.vector_extui,
+        vector.vector_trunci,
+        vector.vector_sitofp,
+        vector.vector_uitofp,
+        vector.vector_fptosi,
+        vector.vector_fptoui,
+    )
+    assert all(DECOMPOSABLE in op.traits for op in casts)

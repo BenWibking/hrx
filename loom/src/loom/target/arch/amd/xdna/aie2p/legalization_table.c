@@ -8,6 +8,7 @@
 
 #include "loom/ir/module.h"
 #include "loom/ops/vector/ops.h"
+#include "loom/target/arch/amd/xdna/aie2p/vector_carrier.h"
 #include "loom/util/fact_table.h"
 
 enum {
@@ -155,7 +156,7 @@ static iree_status_t loom_aie2p_table_lookup_build_selector(
 static bool loom_aie2p_table_lookup_has_vector_carrier(loom_type_t type,
                                                        uint64_t count) {
   const uint32_t bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(type));
+      loom_aie2p_scalar_type_physical_bit_count(loom_type_element_type(type));
   if (bit_count == 1) {
     return count > 0 &&
            count <= LOOM_AIE2P_TABLE_LOOKUP_PREDICATE_PACKET_LANE_COUNT *
@@ -168,27 +169,8 @@ static bool loom_aie2p_table_lookup_has_vector_carrier(loom_type_t type,
 
 static bool loom_aie2p_table_lookup_has_packet_result_carriers(loom_type_t type,
                                                                uint64_t count) {
-  const loom_scalar_type_t element_type = loom_type_element_type(type);
-  const uint32_t bit_count = loom_scalar_type_bitwidth(element_type);
-  if (count == 0) {
-    return false;
-  }
-  if (bit_count == 1) {
-    return count <= LOOM_AIE2P_TABLE_LOOKUP_PREDICATE_PACKET_LANE_COUNT *
-                        LOOM_AIE2P_TABLE_LOOKUP_MAX_PREDICATE_PACKET_COUNT;
-  }
-  if (bit_count != 8 && bit_count != 16 && bit_count != 32 && bit_count != 64) {
-    return false;
-  }
-  if (count <= 1024 / bit_count) {
-    return true;
-  }
-  // The exact 2048-bit accumulator types retain four 512-bit selection
-  // packets. Other vectors above 1024 bits have no source type mapping.
-  return loom_type_rank(type) == 1 &&
-         ((count == 64 && (element_type == LOOM_SCALAR_TYPE_I32 ||
-                           element_type == LOOM_SCALAR_TYPE_F32)) ||
-          (count == 32 && element_type == LOOM_SCALAR_TYPE_I64));
+  return count > 0 && loom_aie2p_vector_carrier_for_type(type).kind !=
+                          LOOM_AIE2P_VECTOR_CARRIER_NONE;
 }
 
 iree_status_t loom_aie2p_table_lookup_rewrite(
@@ -210,8 +192,8 @@ iree_status_t loom_aie2p_table_lookup_rewrite(
       !loom_aie2p_table_lookup_has_vector_carrier(table_type, table_count)) {
     return iree_ok_status();
   }
-  const uint32_t index_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(index_type));
+  const uint32_t index_bit_count = loom_aie2p_scalar_type_physical_bit_count(
+      loom_type_element_type(index_type));
   if (loom_aie2p_table_lookup_has_packet_result_carriers(result_type,
                                                          result_count) &&
       (index_bit_count == 8 || index_bit_count == 16 || index_bit_count == 32 ||
@@ -250,7 +232,21 @@ iree_status_t loom_aie2p_table_lookup_rewrite(
   const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
   loom_value_id_t selection_indices = indices;
   loom_type_t selection_index_type = index_type;
-  if (!has_uniform_index && index_bit_count == 64) {
+  const loom_scalar_type_t index_element_type =
+      loom_type_element_type(index_type);
+  if (!has_uniform_index && index_element_type == LOOM_SCALAR_TYPE_INDEX) {
+    // Defined table indices fit the at-most-128-lane table extent. Make the
+    // target's 32-bit integer carrier explicit before constructing bit tests;
+    // vector.index_cast aliases the physical index carrier on AIE2P.
+    selection_index_type.header = loom_type_make_header(
+        LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_I32, loom_type_rank(index_type),
+        loom_type_flags(index_type));
+    loom_op_t* cast_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_index_cast_build(
+        &rewriter->builder, indices, index_type, selection_index_type,
+        op->location, &cast_op));
+    selection_indices = loom_vector_index_cast_result(cast_op);
+  } else if (!has_uniform_index && index_bit_count == 64) {
     // Every defined lookup index is below the at-most-128-lane table extent.
     // Narrowing to the native word comparison width therefore preserves all
     // defined executions and avoids expanding each selector into a double-word

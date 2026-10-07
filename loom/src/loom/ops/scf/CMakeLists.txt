@@ -53,6 +53,20 @@ loom_cc_test(
 
 loom_cc_test(
   NAME
+    traits_test
+  SRCS
+    "traits_test.cc"
+  DEPS
+    ::scf
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::ir
+    loom::ops::op_defs
+)
+
+loom_cc_test(
+  NAME
     verify_test
   SRCS
     "verify_test.cc"
@@ -76,6 +90,7 @@ loom_generated_cc_library(
     "canonicalize_loop.c"
     "facts.c"
     "forwarding_equivalence.c"
+    "traits.c"
     "verify.c"
   TEXTUAL_HDRS
     "ops.inc"

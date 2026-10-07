@@ -2645,6 +2645,27 @@ static iree_status_t loom_vector_canonicalize_extf(loom_op_t* op,
   return iree_ok_status();
 }
 
+static iree_status_t loom_vector_canonicalize_index_cast(
+    loom_op_t* op, loom_rewriter_t* rewriter, bool* out_changed) {
+  IREE_RETURN_IF_ERROR(
+      loom_vector_fold_constant_lanes(op, rewriter, out_changed));
+  if (*out_changed) {
+    return iree_ok_status();
+  }
+  const loom_value_id_t input = loom_vector_index_cast_input(op);
+  const loom_type_t input_type =
+      loom_module_value_type(rewriter->module, input);
+  const loom_type_t result_type = loom_module_value_type(
+      rewriter->module, loom_vector_index_cast_result(op));
+  if (!loom_type_equal(input_type, result_type)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
+      loom_vector_replace_single_result_with_value(op, rewriter, input));
+  *out_changed = true;
+  return iree_ok_status();
+}
+
 static iree_status_t loom_vector_canonicalize_fptrunc(loom_op_t* op,
                                                       loom_rewriter_t* rewriter,
                                                       bool* out_changed) {
@@ -2772,6 +2793,12 @@ iree_status_t loom_vector_extf_canonicalize(loom_op_t* op,
                                             loom_rewriter_t* rewriter) {
   return loom_vector_canonicalize_uniform_then(op, rewriter,
                                                loom_vector_canonicalize_extf);
+}
+
+iree_status_t loom_vector_index_cast_canonicalize(loom_op_t* op,
+                                                  loom_rewriter_t* rewriter) {
+  return loom_vector_canonicalize_uniform_then(
+      op, rewriter, loom_vector_canonicalize_index_cast);
 }
 
 iree_status_t loom_vector_fptrunc_canonicalize(loom_op_t* op,

@@ -1606,7 +1606,9 @@ iree_status_t loom_low_invoke_verify(const loom_module_t* module,
   return iree_ok_status();
 }
 
-loom_trait_flags_t loom_low_op_effective_traits(const loom_op_t* op) {
+loom_trait_flags_t loom_low_op_effective_traits(const loom_module_t* module,
+                                                const loom_op_t* op) {
+  (void)module;
   // Descriptor traits remain intrinsic even when an access has no modifiers.
   // Volatility strengthens this instance without changing the instruction.
   if (iree_any_bit_set(op->instance_flags, LOOM_MEMORY_ACCESS_FLAG_VOLATILE)) {
@@ -1615,14 +1617,18 @@ loom_trait_flags_t loom_low_op_effective_traits(const loom_op_t* op) {
   return op->traits;
 }
 
-loom_trait_flags_t loom_low_func_call_effective_traits(const loom_op_t* op) {
+loom_trait_flags_t loom_low_func_call_effective_traits(
+    const loom_module_t* module, const loom_op_t* op) {
+  (void)module;
   if (loom_low_func_call_purity(op) != 0) {
     return LOOM_TRAIT_CALLABLE_BOUNDARY | LOOM_TRAIT_PURE;
   }
   return LOOM_TRAIT_CALLABLE_BOUNDARY | LOOM_TRAIT_UNKNOWN_EFFECTS;
 }
 
-loom_trait_flags_t loom_low_invoke_effective_traits(const loom_op_t* op) {
+loom_trait_flags_t loom_low_invoke_effective_traits(const loom_module_t* module,
+                                                    const loom_op_t* op) {
+  (void)module;
   if (loom_low_invoke_purity(op) != 0) {
     return LOOM_TRAIT_CALLABLE_BOUNDARY | LOOM_TRAIT_PURE;
   }

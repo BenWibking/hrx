@@ -10,6 +10,7 @@ from loom.dialect.vector import defs as vector
 from loom.target.arch.amd.xdna.aie2p.contracts.accumulator_structural import (
     _ACCUMULATOR_BITCAST_TYPE_GROUPS,
     _ACCUMULATOR_CONCAT_RULES,
+    _ACCUMULATOR_VECTOR_EXTRACT_RULES,
     _ACCUMULATOR_VECTOR_SLICE_RULES,
     _F32X32_ACCUMULATOR,
 )
@@ -60,12 +61,16 @@ _INDEX = Scalar("index")
 # Ordinary vectors retain one or two full X carriers independently of their
 # logical extent. F32 excludes vector<32xf32>, whose accumulator contract uses
 # a distinct physical representation.
-_VECTOR_CARRIER_SPECS = (
+_BITCAST_VECTOR_CARRIER_SPECS = (
     (("i8", "f8E4M3", "f8E5M2"), 1, 128),
     (("i16", "f16", "bf16"), 2, 64),
     (("i32",), 4, 32),
     (("f32",), 4, 31),
     (("i64", "f64"), 8, 16),
+)
+_VECTOR_CARRIER_SPECS = (
+    *_BITCAST_VECTOR_CARRIER_SPECS,
+    (("index", "offset"), 4, 32),
 )
 
 # Every value matching these patterns and mapped to the ordinary vector file
@@ -78,7 +83,7 @@ _WIDE_VECTOR_BITCAST_TYPES = tuple(
         minimum_static_elements=64 // element_byte_count + 1,
         maximum_static_elements=128 // element_byte_count,
     )
-    for element_types, element_byte_count, _ in _VECTOR_CARRIER_SPECS
+    for element_types, element_byte_count, _ in _BITCAST_VECTOR_CARRIER_SPECS
 )
 
 # Exact 1024-bit ordinary vector-file values that can cross the flat F32x32
@@ -89,7 +94,7 @@ _ORDINARY_1024_BITCAST_TYPES = tuple(
         minimum_static_elements=128 // element_byte_count,
         maximum_static_elements=128 // element_byte_count,
     )
-    for element_types, element_byte_count, _ in _VECTOR_CARRIER_SPECS
+    for element_types, element_byte_count, _ in _BITCAST_VECTOR_CARRIER_SPECS
 )
 
 # Ordinary source vectors wider than one 512-bit X register are carried as two
@@ -146,6 +151,20 @@ _WIDE_VECTOR_EXTRACT_SPECS = (
         1,
     ),
     (
+        Vector("index", minimum_static_elements=17, maximum_static_elements=32),
+        Scalar("index"),
+        16,
+        "i32",
+        1,
+    ),
+    (
+        Vector("offset", minimum_static_elements=17, maximum_static_elements=32),
+        Scalar("offset"),
+        16,
+        "i32",
+        1,
+    ),
+    (
         Vector("f32", minimum_static_elements=17, maximum_static_elements=31),
         Scalar("f32"),
         16,
@@ -189,7 +208,7 @@ _I16_TRANSPOSE_8X8_CONTROLS = (52, 53)
 _PACKED_VECTOR_ELEMENT_TYPES = (
     (("i8", "f8E4M3", "f8E5M2"), 1),
     (("i16", "f16", "bf16"), 2),
-    (("i32", "f32"), 4),
+    (("i32", "f32", "index", "offset"), 4),
     (("i64", "f64"), 8),
 )
 
@@ -208,7 +227,10 @@ _WIDE_VECTOR_CONCAT_SPECS = (
         Vector(("i16", "f16", "bf16"), lanes=32),
         Vector(("i16", "f16", "bf16"), minimum_lanes=33, maximum_lanes=64),
     ),
-    (Vector("i32", lanes=16), Vector("i32", minimum_lanes=17, maximum_lanes=32)),
+    (
+        Vector(("i32", "index", "offset"), lanes=16),
+        Vector(("i32", "index", "offset"), minimum_lanes=17, maximum_lanes=32),
+    ),
     (Vector("f32", lanes=16), Vector("f32", minimum_lanes=17, maximum_lanes=31)),
     (
         Vector(("i64", "f64"), lanes=8),
@@ -1571,6 +1593,7 @@ AIE2P_STRUCTURAL_RULES = (
             ),
         )
     ),
+    *_ACCUMULATOR_VECTOR_EXTRACT_RULES,
     *_ACCUMULATOR_VECTOR_SLICE_RULES,
     *(
         rule

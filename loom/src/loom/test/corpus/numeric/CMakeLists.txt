@@ -61,6 +61,7 @@ loom_corpus_sources(
     "predicate/selection.loom"
     "predicate/truncation.loom"
     "predicate/vector_logic.loom"
+    "vector/address_conversion.loom"
     "vector/conversion.loom"
     "vector/constants.loom"
     "vector/f32.loom"

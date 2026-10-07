@@ -524,7 +524,8 @@ def generate_ops_h(
 
         # Effective traits function declaration (hand-written, linked in).
         if op.effective_traits:
-            lines.append(f"loom_trait_flags_t {op.effective_traits}(const loom_op_t* op);")
+            lines.append(f"loom_trait_flags_t {op.effective_traits}(")
+            lines.append("    const loom_module_t* module, const loom_op_t* op);")
 
         # Fact inference function declaration (hand-written, linked in).
         if op.facts:

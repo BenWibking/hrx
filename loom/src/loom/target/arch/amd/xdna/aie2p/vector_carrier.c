@@ -8,6 +8,20 @@
 
 #include "loom/ir/scalar_type.h"
 
+uint16_t loom_aie2p_scalar_type_physical_bit_count(
+    loom_scalar_type_t element_type) {
+  switch (element_type) {
+    case LOOM_SCALAR_TYPE_INDEX:
+      return LOOM_AIE2P_INDEX_CARRIER_BIT_COUNT;
+    case LOOM_SCALAR_TYPE_OFFSET:
+      return LOOM_AIE2P_OFFSET_CARRIER_BIT_COUNT;
+    default: {
+      const int32_t bit_count = loom_scalar_type_bitwidth(element_type);
+      return bit_count > 0 ? (uint16_t)bit_count : 0;
+    }
+  }
+}
+
 loom_aie2p_vector_carrier_t loom_aie2p_vector_carrier_for_type(
     loom_type_t type) {
   uint64_t element_count = 0;
@@ -19,7 +33,8 @@ loom_aie2p_vector_carrier_t loom_aie2p_vector_carrier_for_type(
 
   const loom_scalar_type_t element_type = loom_type_element_type(type);
   const bool is_rank_one = loom_type_rank(type) == 1;
-  const int32_t element_bit_count = loom_scalar_type_bitwidth(element_type);
+  const uint16_t element_bit_count =
+      loom_aie2p_scalar_type_physical_bit_count(element_type);
   if (is_rank_one && element_count == 32 &&
       element_type == LOOM_SCALAR_TYPE_F32) {
     return (loom_aie2p_vector_carrier_t){
@@ -34,7 +49,9 @@ loom_aie2p_vector_carrier_t loom_aie2p_vector_carrier_for_type(
   const bool has_accumulator_element_type =
       element_type == LOOM_SCALAR_TYPE_I32 ||
       element_type == LOOM_SCALAR_TYPE_I64 ||
-      element_type == LOOM_SCALAR_TYPE_F32;
+      element_type == LOOM_SCALAR_TYPE_F32 ||
+      element_type == LOOM_SCALAR_TYPE_INDEX ||
+      element_type == LOOM_SCALAR_TYPE_OFFSET;
   if (is_rank_one && has_accumulator_element_type && element_bit_count > 0 &&
       element_count > 1024 / (uint32_t)element_bit_count &&
       element_count <= 2048 / (uint32_t)element_bit_count) {

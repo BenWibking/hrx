@@ -252,7 +252,8 @@ iree_status_t loom_template_apply_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_template_apply_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_template_apply_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_template_apply_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_template_apply_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
@@ -285,7 +286,8 @@ iree_status_t loom_template_call_build(
     loom_location_id_t location,
     loom_op_t** out_op);
 iree_status_t loom_template_call_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
-loom_trait_flags_t loom_template_call_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_template_call_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_template_call_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);

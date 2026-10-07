@@ -1,5 +1,23 @@
 // RUN: pass vector-to-scalar,canonicalize
 
+// Targets without a shaped address conversion retain the scalar index.cast
+// reference semantics for each lane.
+func.def @index_cast_lanes(%values: vector<2xi32>) -> (vector<2xindex>) {
+  %result = vector.index_cast %values : vector<2xi32> to vector<2xindex>
+  func.return %result : vector<2xindex>
+}
+// ----
+func.def @index_cast_lanes(%values: vector<2xi32>) -> (vector<2xindex>) {
+  %3 = vector.extract %values[0] : vector<2xi32> -> i32
+  %4 = index.cast %3 : i32 to index
+  %5 = vector.extract %values[1] : vector<2xi32> -> i32
+  %6 = index.cast %5 : i32 to index
+  %result = vector.from_elements %4, %6 : vector<2xindex>
+  func.return %result : vector<2xindex>
+}
+
+// ====
+
 func.def @scalar_selection_is_terminal(%condition: i1, %a: i32, %b: i32) -> (i32) {
   %selected = scf.select %condition, %a, %b : i32
   func.return %selected : i32
