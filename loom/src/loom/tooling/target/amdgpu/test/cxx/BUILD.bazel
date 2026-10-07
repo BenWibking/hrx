@@ -23,14 +23,17 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "q8s32_specialization.h",
+    "q8s32_specialization_providers.loom",
     "q8s32_specialization_providers.cxx",
 ])
 
+_AMDGPU_EXECUTION_PROFILE = amdgpu_execution_profile(
+    name = "amdgpu",
+)
+
 # These sources assert zero access reports against independent reference data.
 _EXECUTION_PROFILES = [
-    amdgpu_execution_profile(
-        name = "amdgpu",
-    ),
+    _AMDGPU_EXECUTION_PROFILE,
     amdgpu_execution_profile(
         name = "amdgpu_access",
         runner_args = [
@@ -153,6 +156,21 @@ loom_test(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
+_Q8S32_VARIANTS = {
+    "values16": {
+        "case": "q8s32_values16",
+        "configs": {"model.q8s32.input_capacity": "768"},
+    },
+    "values32": {
+        "case": "q8s32_values32",
+        "configs": {"model.q8s32.input_capacity": "512"},
+    },
+    "values8": {
+        "case": "q8s32_values8",
+        "configs": {"model.q8s32.input_capacity": "1280"},
+    },
+}
+
 loom_test(
     name = "q8s32_specialization_test",
     srcs = [
@@ -163,20 +181,20 @@ loom_test(
     data = ["q8s32_specialization.h"],
     execution_profiles = _EXECUTION_PROFILES,
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
-    variants = {
-        "values16": {
-            "case": "q8s32_values16",
-            "configs": {"model.q8s32.input_capacity": "768"},
-        },
-        "values32": {
-            "case": "q8s32_values32",
-            "configs": {"model.q8s32.input_capacity": "512"},
-        },
-        "values8": {
-            "case": "q8s32_values8",
-            "configs": {"model.q8s32.input_capacity": "1280"},
-        },
-    },
+    variants = _Q8S32_VARIANTS,
+)
+
+loom_test(
+    name = "q8s32_specialization_loom_providers_test",
+    srcs = [
+        "q8s32_specialization.cxx",
+        "q8s32_specialization_providers.loom",
+    ],
+    benchmark_smoke = False,
+    data = ["q8s32_specialization.h"],
+    execution_profiles = [_AMDGPU_EXECUTION_PROFILE],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    variants = _Q8S32_VARIANTS,
 )
 
 loom_check_test(
@@ -378,6 +396,7 @@ iree_execution_test_suite(
         "q8s32_specialization.h",
         "q8s32_specialization_ambiguous_provider.cxx",
         "q8s32_specialization_providers.cxx",
+        "q8s32_specialization_providers.loom",
     ],
     manifests = ["q8s32_specialization.test.json"],
     tags = ["hostonly"],

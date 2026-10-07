@@ -57,3 +57,7 @@ LOOM_CHECK_CASE(q8s32_values8) {
   // 32 exact products per lane reduced across an 8-lane cluster.
   loom::check::expect_bitwise(output, loom::check::fill<float, 1>(256.0f));
 }
+
+LOOM_CHECK_BENCHMARK(q8s32_values32_benchmark, q8s32_values32);
+LOOM_CHECK_BENCHMARK(q8s32_values16_benchmark, q8s32_values16);
+LOOM_CHECK_BENCHMARK(q8s32_values8_benchmark, q8s32_values8);

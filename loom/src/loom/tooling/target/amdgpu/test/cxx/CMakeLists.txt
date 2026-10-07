@@ -2432,6 +2432,101 @@ endif()
 endif()
 
 if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+loom_test_module(
+  NAME
+    q8s32_specialization_loom_providers_test_module
+  SRCS
+    "q8s32_specialization.cxx"
+    "q8s32_specialization_providers.loom"
+  DATA
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization.h"
+)
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    q8s32_specialization_loom_providers_test_values16_execute_amdgpu_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::q8s32_specialization_loom_providers_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=model.q8s32.input_capacity=768"
+    "--case=q8s32_values16"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    q8s32_specialization_loom_providers_test_values32_execute_amdgpu_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::q8s32_specialization_loom_providers_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=model.q8s32.input_capacity=512"
+    "--case=q8s32_values32"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+
+if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
+loom_execution_test(
+  NAME
+    q8s32_specialization_loom_providers_test_values8_execute_amdgpu_test
+  CORRECTNESS_ONLY
+  MODULE
+    "::q8s32_specialization_loom_providers_test_module"
+  RUNNER_ARGS
+    "--device=amdgpu"
+    "--config=model.q8s32.input_capacity=1280"
+    "--case=q8s32_values8"
+  LABELS
+    "iree-build-requirement=loom.target.arch.amdgpu"
+    "iree-build-requirement=loom.emit.amdgpu"
+    "iree-build-requirement=loom.execute.iree_hal"
+    "iree-build-requirement=runtime.hal.amdgpu"
+    "iree-run-requirement=runtime.resource.amd_gpu"
+    "runtime-resource=amd-gpu"
+    "loom-execution-profile=amdgpu"
+    "loom-target-family=amdgpu"
+    "loom-target-class=gpu"
+    "loom-executor=hardware"
+  RESOURCE_GROUP
+    "gpu-device"
+)
+endif()
+endif()
+
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_AMDGPU AND LOOM_BUILD AND LOOM_EMIT_AMDGPU)
 iree_native_test(
   NAME
     "mxfp_group_dot_lowering"
@@ -3267,6 +3362,7 @@ iree_execution_test_suite(
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization.h"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization_ambiguous_provider.cxx"
     "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization_providers.cxx"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization_providers.loom"
   LABELS
     "hostonly"
 )

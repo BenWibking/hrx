@@ -181,6 +181,40 @@
           ]
         },
         {
+          "name": "select-authored-wave64-values16",
+          "run": {
+            "tool": "loom-link",
+            "args": [
+              "{tmp}/root.loombc",
+              "--library={srcdir}/q8s32_specialization_providers.loom",
+              "--root=@q8s32_specialize",
+              "--target=amdgpu:gfx942",
+              "--config=model.q8s32.input_capacity=768",
+              "--require-resolved-config",
+              "--output={tmp}/authored-gfx942-values16.loom"
+            ]
+          },
+          "files": [
+            {
+              "path": "{tmp}/authored-gfx942-values16.loom",
+              "contains": [
+                "config.def @model.q8s32.input_capacity = 768",
+                "func.def inline @q8s32_lane_dot_split",
+                "@q8s32_wave64_values16",
+                "{cluster_size = 16}",
+                "amdgpu.target<gfx942>"
+              ],
+              "not_contains": [
+                "@q8s32_lane_dot_combined",
+                "@q8s32_wave32_values32",
+                "@q8s32_wave32_values16",
+                "@q8s32_wave64_values32",
+                "@q8s32_generic_lanes8"
+              ]
+            }
+          ]
+        },
+        {
           "name": "select-generic-values8",
           "run": {
             "tool": "loom-link",
@@ -369,6 +403,23 @@
           },
           "files": [
             {"path": "{tmp}/gfx942-values16.hsaco", "non_empty": true}
+          ]
+        },
+        {
+          "name": "compile-authored-wave64-selection",
+          "run": {
+            "tool": "loom-compile",
+            "args": [
+              "{tmp}/authored-gfx942-values16.loom",
+              "--target=amdgpu:gfx942",
+              "--output={tmp}/authored-gfx942-values16.hsaco"
+            ]
+          },
+          "files": [
+            {
+              "path": "{tmp}/authored-gfx942-values16.hsaco",
+              "non_empty": true
+            }
           ]
         },
         {
