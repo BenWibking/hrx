@@ -138,6 +138,13 @@ the compiler's explicit limit and algorithm; the 16-bit ISA mask alone does
 not establish a larger supported population. [Population limit][triton-features]
 · [Mask construction][triton-mask]
 
+The change introducing that split attributes the five-member bound to
+`gfx1250` hardware: masks with more members lose multicast combining. The
+compiler emits a performance remark and divides the group to retain the
+benefit. This rationale concerns combining, not a five-workgroup limit on
+cluster launch. It also does not explain the separate strict-target
+exclusion. [Population-limit rationale][triton-mask-rationale]
+
 ## Completion and storage ownership
 
 Completion belongs to the requesting wave in each recipient workgroup:
@@ -276,6 +283,7 @@ finished. [Directional dependency filter][triton-reuse-filter]
 [clr-packet]: https://github.com/ROCm/rocm-systems/blob/f9ba16bbe70e365b2f59b268e847bef19ad9db6e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L5004-L5029
 [triton-features]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/Dialect/TritonAMDGPU/IR/TargetFeatures.cpp#L254-L270
 [triton-mask]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/Utility.cpp#L403-L473
+[triton-mask-rationale]: https://github.com/triton-lang/triton/commit/71d3f5cf482a3954bf1294d2770aef35d0fa6cd4
 [triton-cluster-barrier]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/BarrierOpToLLVM.cpp#L119-L164
 [triton-gemm-launch]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/python/examples/gluon/gemm_warp_pipeline_cdna5.py#L1172-L1199
 [triton-gemm-loop]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/python/examples/gluon/gemm_warp_pipeline_cdna5.py#L193-L246

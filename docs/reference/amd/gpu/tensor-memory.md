@@ -76,6 +76,25 @@ and bounds handling.
 [Group-1 continuation][isa-group1]
 [Notification and multicast interpretation][isa-padding]
 
+For a valid shader-issued descriptor with restore-only fields zero, the
+first DWORD distinguishes the three forms:
+
+| Descriptor form | Group-0 DWORD 0 |
+| --- | --- |
+| Dense | `0x00000001` |
+| Gather/scatter with 16-bit row indices | `0x80000001` |
+| Gather/scatter with 32-bit row indices | `0xc0000001` |
+
+Table 62, Triton's builder, CK's bitfields and Opus's constant constructor
+agree on these positions. MLIR's `AMDGPUMakeDmaBaseLowering` at the cited
+revision reverses the two bits: it sets bit 30 for gather and bit 31 for
+32-bit indices. Its conversion expectation uses the same ordering. The
+32-bit form sets both bits in either implementation, concealing the
+disagreement; the 16-bit form distinguishes them.
+[Field table][isa-group0] [Triton builder][triton-gather-base]
+[CK representation][ck-group0] [Opus constructor][opus-group0]
+[MLIR lowering][mlir-gather-mode] [Conversion expectation][mlir-gather-check]
+
 ### Dense extents and strides
 
 Native dimension 0 is the innermost, contiguous dimension. `tensor_dimN`
@@ -189,6 +208,18 @@ bit. The table and compiler agree on the biased encodings above; the prose
 does not establish an additional raw-zero rejection rule.
 [Prose][isa-padding] [Field table][isa-group1]
 
+Descriptor APIs also differ in their input units. CK copies
+`TDMLdsPaddingConfig` directly into the encoded fields. Opus's
+`padding<T, IntervalElements, AmountElements>` instead accepts element
+counts and applies the byte scaling and bias: 64 `uint32_t` elements with
+a four-element gap encode as interval `5`, amount `3`. Opus requires both
+decoded counts to be positive when enabled, then separately rejects the
+encoded pair `(0, 0)` while admitting other pairs with one encoded zero.
+That additional constraint differs from the manual's ambiguous zero/nonzero
+wording; agreement on scaling does not settle all raw-zero cases.
+[CK field assignment][ck-padding] [Opus encoding and constraints][opus-padding]
+[Element-count caller][opus-padding-caller]
+
 Triton implements a narrower padded-row store using ordinary store bounds.
 When the padding interval equals the innermost block extent, it widens
 `tile_dim0` by the row's padding amount and clamps `tensor_dim0` to the
@@ -228,6 +259,11 @@ iteration bit clear. Native descriptor iteration and a compiler loop issuing
 several descriptors consequently remain separate programming forms.
 [API][triton-create-api] [Builder][triton-padding]
 
+CK exposes a `uint16_t` iteration count and copies it directly into the
+16-bit slot. This corroborates the representation but supplies no separate
+legal-value rule for the upper byte.
+[Iteration parameter][ck-iteration-config] [Field assignment][ck-iteration]
+
 ## Row gather and scatter
 
 Gather mode describes a 2D tile whose global rows come from an index list.
@@ -242,14 +278,16 @@ for `TENSOR_STORE_FROM_LDS` scatter. [Gather/scatter, §10.11.3.2][isa-iteration
 | 16 bits | Indices 0–7, two per DWORD. | Indices 8–15, two per DWORD. | Up to 16. |
 | 32 bits | Indices 0–3, one per DWORD. | Indices 4–7, one per DWORD. | Up to 8. |
 
-In the public builder, indices within each group occupy consecutive low-to-high
-bit ranges. Thus 16-bit indices 12 and 13 occupy group-3 bits `79:64` and
-`95:80`. Table 67 instead prints `111:96` and `127:112` for those two entries
-inside its `95:64` row, duplicating the following row's positions. The packing
-just stated is the compiler's explicit implementation; the printed table is
-internally inconsistent at those entries.
+Triton, CK and Opus pack indices within each group into consecutive
+low-to-high bit ranges. Thus 16-bit indices 12 and 13 occupy group-3 bits
+`79:64` and `95:80`. Table 67 instead prints `111:96` and `127:112` for
+those two entries inside its `95:64` row, duplicating the following row's
+positions. The three implementations corroborate the consecutive packing;
+the printed table is internally inconsistent at those entries.
 [Tables 66–67][isa-group2] [Table-67 continuation][isa-bounds]
-[Index packing][triton-index-packing]
+[Triton packing][triton-index-packing]
+[CK index array][ck-index-array] [CK group-3 assignment][ck-index-assignment]
+[Opus packing][opus-index-packing]
 
 The ISA permits arbitrary and repeated row indices, but guarantees correct
 out-of-bounds handling only when indices are nondecreasing. An in-bounds
@@ -406,3 +444,15 @@ application's storage-readiness, final-reader or external-publication edge.
 [triton-local-barrier]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/MemoryOpToLLVM.cpp#L620-L667
 [triton-native-wait]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/LoadStoreOpToLLVM.cpp#L2474-L2489
 [llvm-multicast-features]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/llvm/lib/Target/AMDGPU/AMDGPU.td#L2490-L2546
+[ck-group0]: https://github.com/ROCm/composable_kernel/blob/b51e8921db0e11a0a727032d7adcad94aabd8bdd/include/ck_tile/core/arch/amd_tdm_descriptor.hpp#L74-L90
+[ck-padding]: https://github.com/ROCm/composable_kernel/blob/b51e8921db0e11a0a727032d7adcad94aabd8bdd/include/ck_tile/core/arch/amd_tdm_descriptor.hpp#L480-L486
+[ck-iteration-config]: https://github.com/ROCm/composable_kernel/blob/b51e8921db0e11a0a727032d7adcad94aabd8bdd/include/ck_tile/core/arch/amd_tdm_descriptor.hpp#L27-L32
+[ck-iteration]: https://github.com/ROCm/composable_kernel/blob/b51e8921db0e11a0a727032d7adcad94aabd8bdd/include/ck_tile/core/arch/amd_tdm_descriptor.hpp#L553-L561
+[ck-index-array]: https://github.com/ROCm/composable_kernel/blob/b51e8921db0e11a0a727032d7adcad94aabd8bdd/include/ck_tile/core/arch/amd_tdm_descriptor.hpp#L289-L315
+[ck-index-assignment]: https://github.com/ROCm/composable_kernel/blob/b51e8921db0e11a0a727032d7adcad94aabd8bdd/include/ck_tile/core/arch/amd_tdm_descriptor.hpp#L594-L621
+[opus-group0]: https://github.com/ROCm/aiter/blob/42c7e4a817e62bdb2052664c0aa8e6d78b176755/csrc/include/opus/opus.hpp#L2626-L2629
+[opus-padding]: https://github.com/ROCm/aiter/blob/42c7e4a817e62bdb2052664c0aa8e6d78b176755/csrc/include/opus/opus.hpp#L2441-L2469
+[opus-padding-caller]: https://github.com/ROCm/aiter/blob/42c7e4a817e62bdb2052664c0aa8e6d78b176755/op_tests/opus/device/test_tdm_gfx1250.cu#L460-L498
+[opus-index-packing]: https://github.com/ROCm/aiter/blob/42c7e4a817e62bdb2052664c0aa8e6d78b176755/csrc/include/opus/opus.hpp#L2811-L2822
+[mlir-gather-mode]: https://github.com/llvm/llvm-project/blob/906e3ec0647aef01363973edf3cb0104a812589a/mlir/lib/Conversion/AMDGPUToROCDL/AMDGPUToROCDL.cpp#L3684-L3698
+[mlir-gather-check]: https://github.com/llvm/llvm-project/blob/906e3ec0647aef01363973edf3cb0104a812589a/mlir/test/Conversion/AMDGPUToROCDL/gfx1250.mlir#L229-L267
