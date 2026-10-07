@@ -1859,29 +1859,21 @@ static loom_amdgpu_wait_plan_action_flags_t
 loom_amdgpu_wait_plan_storage_release_action_flags(
     const loom_amdgpu_wait_plan_builder_t* builder,
     const loom_low_storage_release_action_t* action) {
-  const loom_amdgpu_wait_plan_action_flags_t allocation_action_flags =
-      LOOM_AMDGPU_WAIT_PLAN_ACTION_FLAG_STORAGE_RELEASE;
-  const loom_low_storage_release_action_index_t* index =
-      &builder->storage_release_action_index;
-  if (index->first_action_indices == NULL) {
+  const loom_low_allocation_storage_lease_t* lease =
+      &builder->allocation->storage_lease_instances[action->lease_record_index];
+  if (lease->release_action_index ==
+      LOOM_LOW_STORAGE_RELEASE_ACTION_INDEX_NONE) {
     return 0;
   }
-  for (uint32_t action_index =
-           index->first_action_indices[action->insertion_node_index];
-       action_index != LOOM_LOW_STORAGE_RELEASE_ACTION_INDEX_NONE;
-       action_index = index->next_action_indices[action_index]) {
-    const loom_low_storage_release_action_t* indexed_action =
-        &builder->allocation->storage_release_actions[action_index];
-    if (indexed_action->lease_record_index == action->lease_record_index &&
-        indexed_action->release_class_id == action->release_class_id &&
-        indexed_action->release_action_id == action->release_action_id &&
-        indexed_action->release_reason_id == action->release_reason_id) {
-      // The generic packet-hazard builder reports indexed allocation actions.
-      // Mark this wait so the target provider does not report it a second time.
-      return allocation_action_flags;
-    }
-  }
-  return 0;
+  const loom_low_storage_release_action_t* indexed_action =
+      &builder->allocation
+           ->storage_release_actions[lease->release_action_index];
+  // The allocator retains exactly one action per lease and rewrites it when an
+  // earlier physical conflict wins. A matching insertion point is therefore
+  // the same action that the generic packet-hazard builder will report.
+  return indexed_action->insertion_node_index == action->insertion_node_index
+             ? LOOM_AMDGPU_WAIT_PLAN_ACTION_FLAG_STORAGE_RELEASE
+             : 0;
 }
 
 static loom_amdgpu_wait_xcnt_group_t loom_amdgpu_wait_plan_node_xcnt_group(
