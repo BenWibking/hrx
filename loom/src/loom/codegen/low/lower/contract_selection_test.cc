@@ -164,29 +164,50 @@ TEST_F(ContractSelectionTest, SelectsExactVectorTypeList) {
       (std::vector<uint16_t>{104, 109}));
 }
 
-TEST_F(ContractSelectionTest, SelectsProjectedVectorTypeList) {
-  constexpr uint32_t kSelectionData[] = {
-      1u | (2u << 16),
-      64u,
-      3u,
-      2u,
-      static_cast<uint32_t>(LOOM_OP_VECTOR_SPLAT) << 16,
-      (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 2u,
-      1u << 16,
-      (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 4u,
-      1u | (1u << 16),
-      7u,
-      9u,
-  };
-  const loom_target_contract_vector_lane_projection_t projection = {
-      /*.source_lane_count=*/4,
-      /*.projected_lane_count=*/2,
-  };
+TEST_F(ContractSelectionTest,
+       ProjectsOperandAndResultTypeKeysWithoutMutatingIr) {
+  const loom_value_id_t vector_value = loom_vector_splat_result(vector_op_);
+  const loom_type_t authored_type =
+      loom_module_value_type(module_, vector_value);
+  loom_op_t* add_op = nullptr;
+  IREE_ASSERT_OK(loom_vector_addi_build(
+      &builder_, /*instance_flags=*/0, vector_value, vector_value,
+      authored_type, LOOM_LOCATION_UNKNOWN, &add_op));
 
-  EXPECT_EQ(
-      Iterate(kSelectionData, LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES,
-              vector_op_, projection),
-      (std::vector<uint16_t>{107}));
+  for (const uint32_t selector : {2u, 3u}) {
+    SCOPED_TRACE(selector == 2u ? "operand type" : "result type");
+    const uint32_t selection_data[] = {
+        1u | (2u << 16),
+        64u,
+        selector,
+        2u,
+        static_cast<uint32_t>(LOOM_OP_VECTOR_ADDI) << 16,
+        (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 2u,
+        1u << 16,
+        (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 4u,
+        1u | (1u << 16),
+        7u,
+        9u,
+    };
+
+    EXPECT_EQ(Iterate(selection_data,
+                      LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES, add_op,
+                      {/*source_lane_count=*/4, /*projected_lane_count=*/2}),
+              (std::vector<uint16_t>{107}));
+    EXPECT_EQ(Iterate(selection_data,
+                      LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES, add_op,
+                      {/*source_lane_count=*/8, /*projected_lane_count=*/2}),
+              (std::vector<uint16_t>{109}));
+    EXPECT_EQ(
+        Iterate(selection_data,
+                LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES, add_op),
+        (std::vector<uint16_t>{109}));
+    EXPECT_TRUE(loom_type_equal(loom_module_value_type(module_, vector_value),
+                                authored_type));
+    EXPECT_TRUE(loom_type_equal(
+        loom_module_value_type(module_, loom_vector_addi_result(add_op)),
+        authored_type));
+  }
 }
 
 TEST_F(ContractSelectionTest, SelectsExactEnumBitmap) {

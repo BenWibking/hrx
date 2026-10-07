@@ -71,3 +71,37 @@ def test_shuffle_has_sixteen_required_lanes_from_both_inputs():
         assert immediate.kind is ImmediateKind.UNSIGNED
         assert immediate.unsigned_max == 31
         assert not immediate.flags
+
+
+def test_narrow_lanes_use_unsigned_extract_encodings_and_exact_lane_domains():
+    descriptors = {
+        descriptor.key: descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+    }
+    for shape, lanes, splat_opcode, extract_opcode, replace_opcode in (
+        ("i8x16", 16, 0xFD0F, 0xFD16, 0xFD17),
+        ("i16x8", 8, 0xFD10, 0xFD19, 0xFD1A),
+    ):
+        assert descriptors[f"wasm.{shape}.splat"].encoding_id == splat_opcode
+        for operation, opcode in (
+            ("extract_lane_u", extract_opcode),
+            ("replace_lane", replace_opcode),
+        ):
+            descriptor = descriptors[f"wasm.{shape}.{operation}"]
+            assert descriptor.encoding_id == opcode
+            (immediate,) = descriptor.immediates
+            assert immediate.field_name == "lane"
+            assert immediate.kind is ImmediateKind.UNSIGNED
+            assert immediate.unsigned_max == lanes - 1
+            assert not immediate.flags
+
+
+def test_byte_equality_is_an_immediate_free_simd_binary_operation():
+    descriptor = next(
+        descriptor
+        for descriptor in WASM_CORE_SIMD128_DESCRIPTOR_SET.descriptors
+        if descriptor.key == "wasm.i8x16.eq"
+    )
+    assert descriptor.encoding_id == 0xFD23
+    assert not descriptor.immediates
+    assert len(descriptor.operands) == 3

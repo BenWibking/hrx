@@ -67,6 +67,14 @@ static bool loom_wasm_type_is_v128_register(loom_type_t type) {
   }
   const int64_t lane_count = loom_type_dim_static_size_at(type, 0);
   switch (loom_type_element_type(type)) {
+    case LOOM_SCALAR_TYPE_I8:
+    case LOOM_SCALAR_TYPE_F8E4M3:
+    case LOOM_SCALAR_TYPE_F8E5M2:
+      return lane_count == 16;
+    case LOOM_SCALAR_TYPE_I16:
+    case LOOM_SCALAR_TYPE_F16:
+    case LOOM_SCALAR_TYPE_BF16:
+      return lane_count == 8;
     case LOOM_SCALAR_TYPE_I1:
     case LOOM_SCALAR_TYPE_I32:
     case LOOM_SCALAR_TYPE_F32:

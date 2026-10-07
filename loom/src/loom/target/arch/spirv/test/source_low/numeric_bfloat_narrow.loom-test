@@ -23,8 +23,8 @@ low.func.def target<spirv.logical.core> abi(shader_entry_point) @narrow_bfloat(%
   %18 = OpConstant.i32 64 : reg<spirv.id>
   %19 = OpBitwiseOr %7, %18 : reg<spirv.id>
   %20 = OpSelect %17, %19, %13 : reg<spirv.id>
-  %21 = OpSConvert.i32.i16 %20 : reg<spirv.id>
-  %narrow = OpBitcast.i16.bf16 %21
+  %21 = OpBitcast.i32.v2bf16 %20 : reg<spirv.id>
+  %narrow = OpCompositeExtract.v2bf16.bf16 %21, 0
   return %narrow
 }
 
@@ -56,8 +56,8 @@ low.func.def target<spirv.logical.core> abi(shader_entry_point) @store_narrow_bf
   %20 = OpConstant.i32 64 : reg<spirv.id>
   %21 = OpBitwiseOr %9, %20 : reg<spirv.id>
   %22 = OpSelect %19, %21, %15 : reg<spirv.id>
-  %23 = OpSConvert.i32.i16 %22 : reg<spirv.id>
-  %narrow = OpBitcast.i16.bf16 %23
+  %23 = OpBitcast.i32.v2bf16 %22 : reg<spirv.id>
+  %narrow = OpCompositeExtract.v2bf16.bf16 %23, 0
   %25 = OpConstant.offset64 0
   %26 = OpPtrAccessChain.storage_buffer.bf16.byte_offset %output, %25
   OpStore.storage_buffer.bf16 %26, %narrow

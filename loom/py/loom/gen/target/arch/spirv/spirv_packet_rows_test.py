@@ -50,14 +50,14 @@ from loom.target.arch.spirv.ordinary_vector import (
 from loom.target.arch.spirv.ordinary_vector_bit_layout import (
     ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS,
 )
+from loom.target.arch.spirv.ordinary_vector_conversion import (
+    ORDINARY_VECTOR_CONVERSION_INSTRUCTIONS,
+)
 from loom.target.arch.spirv.ordinary_vector_float import (
     ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS,
 )
 from loom.target.arch.spirv.ordinary_vector_integer import (
     ORDINARY_VECTOR_INTEGER_INSTRUCTIONS,
-)
-from loom.target.arch.spirv.ordinary_vector_integer_conversion import (
-    ORDINARY_VECTOR_INTEGER_CONVERSION_INSTRUCTIONS,
 )
 from loom.target.arch.spirv.scalar_alu import (
     BOOLEAN_BINARY_OPERATIONS,
@@ -103,6 +103,31 @@ def test_subgroup_ballot_row_carries_the_subgroup_execution_scope() -> None:
 
 def _packet_value_types(row: _PacketRow) -> tuple[str, ...]:
     return ((row.result_type,) if row.result_type is not None else ()) + row.operand_types
+
+
+@pytest.mark.parametrize("change", ["missing", "extra", "unknown"])
+def test_packet_result_arity_is_owned_by_its_type(change: str) -> None:
+    rows = _packet_rows()
+    has_result = change != "extra"
+    index = next(index for index, row in enumerate(rows) if bool(row.result_count) == has_result)
+    row = rows[index]
+    value_types, value_type_refs = _interned_value_types(rows)
+    assert row.result_count == int(has_result)
+    rendered = row.render(value_type_refs)
+    assert ".result_count" not in rendered
+    result_type_ref = value_type_refs[row.result_type] if has_result else 0
+    assert bool(result_type_ref) == has_result
+    assert f".result_type_ref = {result_type_ref}," in rendered
+
+    mismatched_type = {
+        "missing": None,
+        "extra": next(row.result_type for row in rows if row.result_count),
+        "unknown": value_types[0],
+    }[change]
+    _expect_row_validation_error(
+        (*rows[:index], replace(row, result_type=mismatched_type), *rows[index + 1 :]),
+        "packet result type must match descriptor result count",
+    )
 
 
 def _atomic_model_row(rows, attribute: str, value: str):
@@ -718,16 +743,29 @@ def test_generation_emits_complete_ordinary_vector_integer_matrix() -> None:
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_INTEGER_INSTRUCTIONS)
 
 
-def test_float_binary_packets_preserve_operation_rounding() -> None:
+def test_floating_packets_preserve_operation_rounding() -> None:
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS)
     rows = {row.descriptor_key: row for row in _packet_rows()}
     expected_keys = {f"spirv.op_{operation}.{prefix}{scalar}" for operation in ("fadd", "fsub", "fmul", "fdiv", "frem") for prefix in ("", "v2", "v3", "v4") for scalar in ("f16", "f32", "f64")}
+    for prefix in ("", "v2", "v3", "v4"):
+        expected_keys.update(f"spirv.op_f_convert.{prefix}{source}.{prefix}{result}" for source in ("f16", "f32", "f64") for result in ("f16", "f32", "f64") if source != result)
+        for width in (8, 16, 32, 64):
+            for scalar in ("f16", "f32", "f64"):
+                expected_keys.update(
+                    (
+                        f"spirv.op_convert_s_to_f.{prefix}i{width}.{prefix}{scalar}",
+                        f"spirv.op_convert_u_to_f.{prefix}u{width}.{prefix}{scalar}",
+                        f"spirv.op_convert_f_to_s.{prefix}{scalar}.{prefix}i{width}",
+                        f"spirv.op_convert_f_to_u.{prefix}{scalar}.{prefix}u{width}",
+                    )
+                )
+    expected_keys.update(("spirv.op_f_convert.bf16.f32", "spirv.op_f_convert.f32.bf16"))
     assert {key for key, row in rows.items() if row.no_contraction} == expected_keys
 
 
-def test_generation_emits_complete_ordinary_vector_integer_conversions() -> None:
-    assert len(ORDINARY_VECTOR_INTEGER_CONVERSION_INSTRUCTIONS) == 54
-    _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_INTEGER_CONVERSION_INSTRUCTIONS)
+def test_generation_emits_complete_ordinary_vector_conversions() -> None:
+    assert len(ORDINARY_VECTOR_CONVERSION_INSTRUCTIONS) == 216
+    _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_CONVERSION_INSTRUCTIONS)
 
 
 def test_generation_emits_complete_ordinary_vector_bit_layout_rows() -> None:
@@ -775,7 +813,9 @@ def test_generation_interns_packet_value_types() -> None:
     assert "LOOM_SPIRV_VALUE_CLASS_UNKNOWN" in value_types[0]
     assert len(value_types) < len(rows)
     for row in rows:
-        assert value_type_refs[row.result_type or value_types[0]] < len(value_types)
+        result_type_ref = value_type_refs[row.result_type or value_types[0]]
+        assert result_type_ref < len(value_types)
+        assert bool(result_type_ref) == bool(row.result_count)
         for operand_type in row.encoded_operand_types():
             assert value_type_refs[operand_type] < len(value_types)
 

@@ -1126,27 +1126,17 @@ def _vector_iota_recipe_rules() -> tuple[RecipeRule, ...]:
 
 
 def _vector_insert_recipe_rules() -> tuple[RecipeRule, ...]:
-    supported_type_pairs = (
-        (_I32, _VEC_I32_STATIC),
-        (_I64, _VEC_I64_STATIC),
-        (_F32, _VEC_F32_STATIC),
-        (_F64, _VEC_F64_STATIC),
-        (_F16, _VEC_F16_PACKED_STORAGE),
-        (_BF16, _VEC_BF16_PACKED_STORAGE),
-        (_I8, _VEC_I8_PACKED),
-        (_I16, _VEC_I16_PACKED_STORAGE),
-    )
     return tuple(
         RecipeRule(
             source_op=vector.vector_insert,
             guards=(
                 Guard.i64_array_count("static_indices", 1),
-                _value_type("value", scalar_type),
+                _value_type("value", Scalar(vector_type.elements)),
                 _value_type("dest", vector_type),
                 _value_type("result", vector_type),
             ),
         )
-        for scalar_type, vector_type in supported_type_pairs
+        for vector_type in _vector_storage_construct_recipe_types()
     )
 
 

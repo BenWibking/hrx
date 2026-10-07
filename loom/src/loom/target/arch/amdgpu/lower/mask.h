@@ -18,6 +18,17 @@
 extern "C" {
 #endif
 
+// Selects each hardware work-item's bit between two already-materialized
+// SGPR-pair masks. All operands and the result have |mask_type|; |condition|
+// carries one selector bit per hardware work-item, not a uniform Boolean.
+iree_status_t loom_amdgpu_emit_i1_mask_select(loom_low_lower_context_t* context,
+                                              const loom_op_t* source_op,
+                                              loom_value_id_t false_value,
+                                              loom_value_id_t true_value,
+                                              loom_value_id_t condition,
+                                              loom_type_t mask_type,
+                                              loom_value_id_t* out_value);
+
 // Selects the AMDGPU vector.select plan using explicit SGPR-pair masks and b32
 // cndmask packets.
 iree_status_t loom_amdgpu_select_vector_select_plan(
