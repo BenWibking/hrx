@@ -48,26 +48,19 @@ func.def @f32x4_constant_payloads() -> (vector<4xf32>, vector<4xf32>, vector<4xf
 // ----
 low.func.def target<x86.avx512_packed_dot.core> abi(object_function) abi_layout({signature = () -> (vector<4xf32>, vector<4xf32>, vector<4xf32>, vector<4xf32>, vector<4xf32>, vector<4xf32>, vector<4xf32>)}) @f32x4_constant_payloads() -> (reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>, reg<x86.xmm>) asm {
   %21 = mov.imm32 -2147483648
-  %22 = vmovd.xmm.gpr32 %21
-  %signed_payload = avx2.vpbroadcastd.xmm %22
-  %24 = mov.imm32 -1081291571
-  %25 = vmovd.xmm.gpr32 %24
-  %fraction = avx2.vpbroadcastd.xmm %25
-  %27 = mov.imm32 1
-  %28 = vmovd.xmm.gpr32 %27
-  %subnormal = avx2.vpbroadcastd.xmm %28
-  %30 = mov.imm32 8388608
-  %31 = vmovd.xmm.gpr32 %30
-  %normal = avx2.vpbroadcastd.xmm %31
-  %33 = mov.imm32 2139095040
-  %34 = vmovd.xmm.gpr32 %33
-  %positive_infinity = avx2.vpbroadcastd.xmm %34
-  %36 = mov.imm32 -8388608
-  %37 = vmovd.xmm.gpr32 %36
-  %negative_infinity = avx2.vpbroadcastd.xmm %37
-  %39 = mov.imm32 2143289344
-  %40 = vmovd.xmm.gpr32 %39
-  %nan = avx2.vpbroadcastd.xmm %40
+  %signed_payload = vpbroadcastd.xmm %21
+  %23 = mov.imm32 -1081291571
+  %fraction = vpbroadcastd.xmm %23
+  %25 = mov.imm32 1
+  %subnormal = vpbroadcastd.xmm %25
+  %27 = mov.imm32 8388608
+  %normal = vpbroadcastd.xmm %27
+  %29 = mov.imm32 2139095040
+  %positive_infinity = vpbroadcastd.xmm %29
+  %31 = mov.imm32 -8388608
+  %negative_infinity = vpbroadcastd.xmm %31
+  %33 = mov.imm32 2143289344
+  %nan = vpbroadcastd.xmm %33
   return %signed_payload, %fraction, %subnormal, %normal, %positive_infinity, %negative_infinity, %nan
 }
 
@@ -84,10 +77,9 @@ func.def @folded_f32_splat_widths() -> (vector<4xf32>, vector<8xf32>, vector<16x
 // ----
 low.func.def target<x86.avx512_packed_dot.core> abi(object_function) abi_layout({signature = () -> (vector<4xf32>, vector<8xf32>, vector<16xf32>)}) @folded_f32_splat_widths() -> (reg<x86.xmm>, reg<x86.ymm>, reg<x86.zmm>) asm {
   %13 = mov.imm32 1065353216
-  %14 = vmovd.xmm.gpr32 %13
-  %x4 = avx2.vpbroadcastd.xmm %14
-  %x8 = vpbroadcastd.ymm %14
-  %x16 = vbroadcastss %14
+  %x4 = vpbroadcastd.xmm %13
+  %x8 = avx512.vpbroadcastd.ymm %13
+  %x16 = vpbroadcastd %13
   return %x4, %x8, %x16
 }
 
@@ -102,10 +94,9 @@ func.def @bf16_dot2_negative_zero_256(%lhs: vector<16xbf16>, %rhs: vector<16xbf1
 // ----
 low.func.def target<x86.avx512_packed_dot.core> abi(object_function) abi_layout({signature = (vector<16xbf16>, vector<16xbf16>) -> (vector<8xf32>)}) @bf16_dot2_negative_zero_256(%lhs: reg<x86.ymm>, %rhs: reg<x86.ymm>) -> (reg<x86.ymm>) asm {
   %8 = mov.imm32 -2147483648
-  %9 = vmovd.xmm.gpr32 %8
-  %cn0 = vpbroadcastd.ymm %9
-  %11 = copy %cn0 : reg<x86.ymm> -> reg<x86.ymm>
-  %dot = avx512_bf16.vdpbf16ps.ymm %11, %lhs, %rhs
+  %cn0 = avx512.vpbroadcastd.ymm %8
+  %10 = copy %cn0 : reg<x86.ymm> -> reg<x86.ymm>
+  %dot = avx512_bf16.vdpbf16ps.ymm %10, %lhs, %rhs
   return %dot
 }
 
@@ -119,7 +110,6 @@ func.def @f32x16_negative_zero() -> (vector<16xf32>) {
 // ----
 low.func.def target<x86.avx512_packed_dot.core> abi(object_function) abi_layout({signature = () -> (vector<16xf32>)}) @f32x16_negative_zero() -> (reg<x86.zmm>) asm {
   %3 = mov.imm32 -2147483648
-  %4 = vmovd.xmm.gpr32 %3
-  %cn0 = vbroadcastss %4
+  %cn0 = vpbroadcastd %3
   return %cn0
 }

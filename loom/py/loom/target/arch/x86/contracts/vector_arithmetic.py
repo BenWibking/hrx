@@ -4,9 +4,11 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""AVX2 full-register vector arithmetic contract rules."""
+"""x86 full-register vector arithmetic contract rules."""
 
 from __future__ import annotations
+
+from collections.abc import Mapping
 
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.rule_builders import (
@@ -28,7 +30,13 @@ from loom.target.arch.x86.vector_families import (
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_PAYLOAD_ELEMENT_NAMES,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_BITWISE_FAMILIES,
+    AVX512_FLOAT_BINARY_FAMILIES,
+    AVX512_FLOAT_FMA_MNEMONICS,
+    AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
+    VectorBinaryFamily,
 )
 from loom.target.contracts import (
     ContractCase,
@@ -44,8 +52,8 @@ from loom.target.contracts.templates import (
     ternary_descriptor_rules,
 )
 
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm"}
-_REGISTER_CLASSES = {128: "x86.xmm", 256: "x86.ymm"}
+_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_CLASSES = {128: "x86.xmm", 256: "x86.ymm", 512: "x86.zmm"}
 _INTEGER_SOURCE_OPS = {
     "addi": vector.vector_addi,
     "subi": vector.vector_subi,
@@ -73,44 +81,57 @@ _BITWISE_SOURCE_OPS = {
 
 def _direct_vector_family_rules(
     descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    vector_bit_widths: tuple[int, ...],
+    integer_families: tuple[VectorBinaryFamily, ...],
+    float_families: tuple[VectorBinaryFamily, ...],
 ) -> tuple[DescriptorRule, ...]:
     cases = tuple(
         DirectDescriptorCase(
             _INTEGER_SOURCE_OPS[family.source_operation],
             descriptor_lookup(
-                f"x86.avx2.{family.mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
+                f"{descriptor_key_prefix}.{family.mnemonic}."
+                f"{_REGISTER_SUFFIXES[vector_bit_width]}"
             ),
             _full_vector_type(family.element, vector_bit_width),
         )
-        for family in AVX2_INTEGER_BINARY_FAMILIES
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+        for family in integer_families
+        for vector_bit_width in vector_bit_widths
     ) + tuple(
         DirectDescriptorCase(
             _FLOAT_SOURCE_OPS[family.source_operation],
             descriptor_lookup(
-                f"x86.avx2.{family.mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
+                f"{descriptor_key_prefix}.{family.mnemonic}."
+                f"{_REGISTER_SUFFIXES[vector_bit_width]}"
             ),
             _full_vector_type(family.element, vector_bit_width),
         )
-        for family in AVX2_FLOAT_BINARY_FAMILIES
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+        for family in float_families
+        for vector_bit_width in vector_bit_widths
     )
     return binary_descriptor_rules(cases, form=DescriptorEmitForm.OP)
 
 
 def _bitwise_vector_family_rules(
     descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    vector_bit_widths: tuple[int, ...],
+    bitwise_families: tuple[tuple[str, str, str], ...],
+    element_names: tuple[str, ...],
 ) -> tuple[DescriptorRule, ...]:
     value_type = Vector(
-        (*AVX2_PAYLOAD_ELEMENT_NAMES, "i1"),
+        element_names,
         minimum_lanes=2,
-        maximum_lanes=32,
+        maximum_lanes=max(vector_bit_widths) // 8,
     )
     rules: list[DescriptorRule] = []
-    for source_operation, mnemonic, _ in AVX2_BITWISE_FAMILIES:
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS:
+    for source_operation, mnemonic, _ in bitwise_families:
+        for vector_bit_width in vector_bit_widths:
             descriptor = descriptor_lookup(
-                f"x86.avx2.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
+                f"{descriptor_key_prefix}.{mnemonic}."
+                f"{_REGISTER_SUFFIXES[vector_bit_width]}"
             )
             register_class = _REGISTER_CLASSES[vector_bit_width]
             rules.append(
@@ -140,19 +161,23 @@ def _bitwise_vector_family_rules(
 
 def _vector_fma_family_rules(
     descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    vector_bit_widths: tuple[int, ...],
+    fma_mnemonics: Mapping[str, str],
 ) -> tuple[DescriptorRule, ...]:
     return ternary_descriptor_rules(
         tuple(
             DirectDescriptorCase(
                 vector.vector_fmaf,
                 descriptor_lookup(
-                    f"x86.avx2.{AVX2_FLOAT_FMA_MNEMONICS[element.name]}."
+                    f"{descriptor_key_prefix}.{fma_mnemonics[element.name]}."
                     f"{_REGISTER_SUFFIXES[vector_bit_width]}"
                 ),
                 _full_vector_type(element, vector_bit_width),
             )
             for element in FLOAT_ELEMENTS
-            for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+            for vector_bit_width in vector_bit_widths
         ),
         form=DescriptorEmitForm.OP,
         descriptor_a="lhs",
@@ -165,7 +190,51 @@ def avx2_vector_arithmetic_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
-        *_direct_vector_family_rules(descriptor_lookup),
-        *_bitwise_vector_family_rules(descriptor_lookup),
-        *_vector_fma_family_rules(descriptor_lookup),
+        *_direct_vector_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx2",
+            vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+            integer_families=AVX2_INTEGER_BINARY_FAMILIES,
+            float_families=AVX2_FLOAT_BINARY_FAMILIES,
+        ),
+        *_bitwise_vector_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx2",
+            vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+            bitwise_families=AVX2_BITWISE_FAMILIES,
+            element_names=(*AVX2_PAYLOAD_ELEMENT_NAMES, "i1"),
+        ),
+        *_vector_fma_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx2",
+            vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+            fma_mnemonics=AVX2_FLOAT_FMA_MNEMONICS,
+        ),
+    )
+
+
+def avx512_vector_arithmetic_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[ContractCase, ...]:
+    return (
+        *_direct_vector_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
+            integer_families=AVX512_INTEGER_BINARY_FAMILIES,
+            float_families=AVX512_FLOAT_BINARY_FAMILIES,
+        ),
+        *_bitwise_vector_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
+            bitwise_families=AVX512_BITWISE_FAMILIES,
+            element_names=AVX2_PAYLOAD_ELEMENT_NAMES,
+        ),
+        *_vector_fma_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
+            fma_mnemonics=AVX512_FLOAT_FMA_MNEMONICS,
+        ),
     )

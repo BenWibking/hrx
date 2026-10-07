@@ -498,20 +498,6 @@ def _packed_dot_descriptor(
     )
 
 
-def _zmm_i32_binary_descriptor(
-    *,
-    key: str,
-    mnemonic: str,
-    semantic_tag: str,
-) -> Descriptor:
-    return _vector_i32_binary_descriptor(
-        vector_bit_width=512,
-        key=key,
-        mnemonic=mnemonic,
-        semantic_tag=semantic_tag,
-    )
-
-
 def _vector_i32_binary_descriptor(
     *,
     vector_bit_width: int,
@@ -564,6 +550,34 @@ def _vector_f32_binary_descriptor(
     )
 
 
+def _vector_fma_descriptor(
+    *,
+    vector_bit_width: int,
+    key: str,
+    mnemonic: str,
+    semantic_tag: str,
+) -> Descriptor:
+    return Descriptor(
+        key=key,
+        mnemonic=mnemonic,
+        semantic_tag=semantic_tag,
+        operands=(
+            _vector_result(vector_bit_width),
+            _vector_operand(vector_bit_width, "acc"),
+            _vector_operand(vector_bit_width, "lhs"),
+            _vector_operand(vector_bit_width, "rhs"),
+        ),
+        constraints=_DESTRUCTIVE_ACCUMULATOR_CONSTRAINTS,
+        asm_forms=_asm(
+            mnemonic=_vector_asm_mnemonic(mnemonic, vector_bit_width),
+            results=("dst",),
+            operands=("acc", "lhs", "rhs"),
+        ),
+        schedule_class=_vector_fma_f32_schedule_class(vector_bit_width),
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
+
+
 def _vector_zero_descriptor(
     *,
     vector_bit_width: int,
@@ -606,24 +620,6 @@ def _scalar_float_binary_descriptor(
         ),
         schedule_class=_SCHEDULE_VECTOR_F32_XMM,
         flags=(DescriptorFlag.DEAD_REMOVABLE,),
-    )
-
-
-def _zmm_splat_descriptor(
-    *,
-    key: str,
-    mnemonic: str,
-    semantic_tag: str,
-    operand: Operand,
-    schedule_class: str,
-) -> Descriptor:
-    return _vector_splat_descriptor(
-        vector_bit_width=512,
-        key=key,
-        mnemonic=mnemonic,
-        semantic_tag=semantic_tag,
-        operand=operand,
-        schedule_class=schedule_class,
     )
 
 

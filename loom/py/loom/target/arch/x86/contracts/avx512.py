@@ -13,18 +13,17 @@ from collections.abc import Mapping, Sequence
 from loom.dialect.vector import ALL_VECTOR_OPS
 from loom.dialect.vector import defs as vector
 from loom.dsl import Op
-from loom.target.arch.x86.contracts.constants import (
-    f32_vector_constant_rule,
-    floating_vector_zero_rule,
-    i32_vector_constant_rule,
-    i64_vector_constant_rule,
-    integer_vector_zero_rule,
-)
 from loom.target.arch.x86.contracts.floating_reduction import (
     ordered_float_reduction_emit_chain,
     reassociated_float_reduction_emit_chain,
 )
 from loom.target.arch.x86.contracts.memory import x86_vector_memory_rules
+from loom.target.arch.x86.contracts.vector_arithmetic import (
+    avx512_vector_arithmetic_rules,
+)
+from loom.target.arch.x86.contracts.vector_construction import (
+    avx512_vector_construction_rules,
+)
 from loom.target.arch.x86.descriptors import X86_AVX512_CORE_DESCRIPTOR_SET
 from loom.target.arch.x86.vector_families import FLOAT_ELEMENTS
 from loom.target.contracts import (
@@ -43,14 +42,10 @@ from loom.target.contracts import (
     Vector,
     binary_descriptor_rules,
     descriptor_by_key,
-    ternary_descriptor_rules,
 )
 from loom.target.low_descriptors import Descriptor
 
-_I32 = Scalar("i32")
-_I64 = Scalar("i64")
 _F32 = Scalar("f32")
-_V2I64 = Vector("i64", lanes=2)
 _V4I1 = Vector("i1", lanes=4)
 _V4I32 = Vector("i32", lanes=4)
 _V4F32 = Vector("f32", lanes=4)
@@ -84,32 +79,6 @@ def _op_emit(
         result_types=result_types,
         immediates={} if immediates is None else immediates,
         form=DescriptorEmitForm.OP,
-    )
-
-
-def _splat_rule(
-    scalar_type: TypePattern,
-    result_type: TypePattern,
-    descriptor_key: str,
-    *,
-    priority: int = 0,
-) -> DescriptorRule:
-    descriptor = _descriptor(descriptor_key)
-    return DescriptorRule(
-        source_op=vector.vector_splat,
-        descriptor=descriptor,
-        guards=(
-            Guard.value_type("scalar", scalar_type),
-            Guard.value_type("result", result_type),
-        ),
-        emit=(
-            _op_emit(
-                descriptor=descriptor,
-                operands={"value": ValueRef.operand("scalar")},
-                results={"dst": ValueRef.result("result")},
-            ),
-        ),
-        priority=priority,
     )
 
 
@@ -336,48 +305,7 @@ def _reduce_f32x16_reassociated_rule() -> DescriptorRule:
 
 def _cases() -> Sequence[ContractCase]:
     return (
-        _splat_rule(
-            _I32,
-            _V4I32,
-            "x86.avx512.vpbroadcastd.xmm",
-            priority=1,
-        ),
-        _splat_rule(
-            _I64,
-            _V2I64,
-            "x86.avx512.vpbroadcastq.xmm",
-            priority=1,
-        ),
-        _splat_rule(_I32, _V16I32, "x86.avx512.vpbroadcastd.zmm"),
-        _splat_rule(_F32, _V16F32, "x86.avx512.vbroadcastss.zmm"),
-        floating_vector_zero_rule(_V16F32, _descriptor("x86.avx512.vxorps.zero.zmm")),
-        integer_vector_zero_rule(_V16I32, _descriptor("x86.avx512.vxorps.zero.zmm")),
-        i32_vector_constant_rule(
-            _V4I32,
-            _descriptor("x86.scalar.movimm.gpr32"),
-            _descriptor("x86.avx512.vpbroadcastd.xmm"),
-            broadcast_operand="value",
-            priority=1,
-        ),
-        i64_vector_constant_rule(
-            _V2I64,
-            _descriptor("x86.scalar.movimm.gpr64"),
-            _descriptor("x86.avx512.vpbroadcastq.xmm"),
-            broadcast_operand="value",
-            priority=1,
-        ),
-        i32_vector_constant_rule(
-            _V16I32,
-            _descriptor("x86.scalar.movimm.gpr32"),
-            _descriptor("x86.avx512.vpbroadcastd.zmm"),
-            broadcast_operand="value",
-        ),
-        f32_vector_constant_rule(
-            _V16F32,
-            _descriptor("x86.scalar.movimm.gpr32"),
-            _descriptor("x86.avx2.vmovd.xmm.gpr32"),
-            _descriptor("x86.avx512.vbroadcastss.zmm"),
-        ),
+        *avx512_vector_construction_rules(_descriptor),
         _select_rule(_V16I1, _V16I32, "x86.avx512.vpblendmd.zmm"),
         _select_rule(_V16I1, _V16F32, "x86.avx512.vblendmps.zmm"),
         _select_rule(_V4I1, _V4I32, "x86.avx512.vpblendmd.xmm"),
@@ -430,52 +358,16 @@ def _cases() -> Sequence[ContractCase]:
             _V4I1,
             "x86.avx512.vcmpps.xmm",
         ),
-        *binary_descriptor_rules(
-            tuple(
-                DirectDescriptorCase(source_op, _descriptor(descriptor_key), _V16F32)
-                for source_op, descriptor_key in (
-                    (vector.vector_addf, "x86.avx512.vaddps.zmm"),
-                    (vector.vector_subf, "x86.avx512.vsubps.zmm"),
-                    (vector.vector_mulf, "x86.avx512.vmulps.zmm"),
-                )
-            ),
-            form=DescriptorEmitForm.OP,
-        ),
-        *ternary_descriptor_rules(
-            (
-                DirectDescriptorCase(
-                    vector.vector_fmaf,
-                    _descriptor("x86.avx512.vfmadd231ps.zmm"),
-                    _V16F32,
-                ),
-            ),
-            form=DescriptorEmitForm.OP,
-            descriptor_a="lhs",
-            descriptor_b="rhs",
-            descriptor_c="acc",
-        ),
+        *avx512_vector_arithmetic_rules(_descriptor),
         *binary_descriptor_rules(
             tuple(
                 DirectDescriptorCase(
                     source_op, _descriptor(descriptor_key), type_pattern
                 )
                 for source_op, type_pattern, descriptor_key in (
-                    (vector.vector_addi, _V16I32, "x86.avx512.vpaddd.zmm"),
-                    (vector.vector_subi, _V16I32, "x86.avx512.vpsubd.zmm"),
-                    (vector.vector_muli, _V16I32, "x86.avx512.vpmulld.zmm"),
-                    (vector.vector_minsi, _V16I32, "x86.avx512.vpminsd.zmm"),
-                    (vector.vector_maxsi, _V16I32, "x86.avx512.vpmaxsd.zmm"),
-                    (vector.vector_minui, _V16I32, "x86.avx512.vpminud.zmm"),
-                    (vector.vector_maxui, _V16I32, "x86.avx512.vpmaxud.zmm"),
-                    (vector.vector_andi, _V16I32, "x86.avx512.vpandd.zmm"),
                     (vector.vector_andi, _V16I1, "x86.avx512.kandq"),
-                    (vector.vector_ori, _V16I32, "x86.avx512.vpord.zmm"),
                     (vector.vector_ori, _V16I1, "x86.avx512.korq"),
-                    (vector.vector_xori, _V16I32, "x86.avx512.vpxord.zmm"),
                     (vector.vector_xori, _V16I1, "x86.avx512.kxorq"),
-                    (vector.vector_shli, _V16I32, "x86.avx512.vpsllvd.zmm"),
-                    (vector.vector_shrsi, _V16I32, "x86.avx512.vpsravd.zmm"),
-                    (vector.vector_shrui, _V16I32, "x86.avx512.vpsrlvd.zmm"),
                 )
             ),
             form=DescriptorEmitForm.OP,

@@ -1,0 +1,128 @@
+// RUN: emit source-low output=low
+
+x86.target<avx512> @target
+
+func.def target(@target) @construct_zmm_vectors(%i16_value: i16, %bf16_value: bf16) -> (vector<64xi8>, vector<32xi16>, vector<8xi64>, vector<64xf8E4M3>, vector<32xbf16>, vector<8xf64>) {
+  %i8_constant = vector.constant -7 : vector<64xi8>
+  %i16_splat = vector.splat %i16_value : vector<32xi16>
+  %i64_constant = vector.constant 81985529216486895 : vector<8xi64>
+  %f8_constant = vector.constant 1.5 : vector<64xf8E4M3>
+  %bf16_splat = vector.splat %bf16_value : vector<32xbf16>
+  %f64_constant = vector.constant -2.5 : vector<8xf64>
+  func.return %i8_constant, %i16_splat, %i64_constant, %f8_constant, %bf16_splat, %f64_constant : vector<64xi8>, vector<32xi16>, vector<8xi64>, vector<64xf8E4M3>, vector<32xbf16>, vector<8xf64>
+}
+
+// ----
+low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (i16, bf16) -> (vector<64xi8>, vector<32xi16>, vector<8xi64>, vector<64xf8E4M3>, vector<32xbf16>, vector<8xf64>)}) @construct_zmm_vectors(%i16_value: reg<x86.gpr32>, %bf16_value: reg<x86.gpr32>) -> (reg<x86.zmm>, reg<x86.zmm>, reg<x86.zmm>, reg<x86.zmm>, reg<x86.zmm>, reg<x86.zmm>) asm {
+  %22 = mov.imm32 -7
+  %i8_constant = vpbroadcastb %22
+  %i16_splat = vpbroadcastw %i16_value
+  %25 = mov.imm64 81985529216486895
+  %i64_constant = vpbroadcastq %25
+  %27 = mov.imm32 60
+  %f8_constant = vpbroadcastb %27
+  %bf16_splat = vpbroadcastw %bf16_value
+  %30 = mov.imm64 -4610560118520545280
+  %f64_constant = vpbroadcastq %30
+  return %i8_constant, %i16_splat, %i64_constant, %f8_constant, %bf16_splat, %f64_constant
+}
+
+// ====
+
+x86.target<avx512> @target
+
+func.def target(@target) @construct_narrow_vectors(%i8_value: i8, %i16_value: i16) -> (vector<16xi8>, vector<16xi16>) {
+  %i8_splat = vector.splat %i8_value : vector<16xi8>
+  %i16_splat = vector.splat %i16_value : vector<16xi16>
+  func.return %i8_splat, %i16_splat : vector<16xi8>, vector<16xi16>
+}
+
+// ----
+low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (i8, i16) -> (vector<16xi8>, vector<16xi16>)}) @construct_narrow_vectors(%i8_value: reg<x86.gpr32>, %i16_value: reg<x86.gpr32>) -> (reg<x86.xmm>, reg<x86.ymm>) asm {
+  %i8_splat = avx512.vpbroadcastb.xmm %i8_value
+  %i16_splat = avx512.vpbroadcastw.ymm %i16_value
+  return %i8_splat, %i16_splat
+}
+
+// ====
+
+x86.target<avx512> @target
+
+func.def target(@target) @integer_zmm_families(%i8_lhs: vector<64xi8>, %i8_rhs: vector<64xi8>, %i16_lhs: vector<32xi16>, %i16_rhs: vector<32xi16>, %i64_lhs: vector<8xi64>, %i64_rhs: vector<8xi64>) -> (vector<64xi8>, vector<32xi16>, vector<8xi64>) {
+  %i8_add = vector.addi %i8_lhs, %i8_rhs : vector<64xi8>
+  %i8_sub = vector.subi %i8_add, %i8_rhs : vector<64xi8>
+  %i8_min = vector.minsi %i8_sub, %i8_rhs : vector<64xi8>
+  %i8_max = vector.maxsi %i8_min, %i8_lhs : vector<64xi8>
+  %i8_umin = vector.minui %i8_max, %i8_rhs : vector<64xi8>
+  %i8_umax = vector.maxui %i8_umin, %i8_lhs : vector<64xi8>
+  %i8_and = vector.andi %i8_umax, %i8_rhs : vector<64xi8>
+  %i8_or = vector.ori %i8_and, %i8_lhs : vector<64xi8>
+  %i8_result = vector.xori %i8_or, %i8_rhs : vector<64xi8>
+
+  %i16_mul = vector.muli %i16_lhs, %i16_rhs : vector<32xi16>
+  %i16_shl = vector.shli %i16_mul, %i16_rhs : vector<32xi16>
+  %i16_shrs = vector.shrsi %i16_shl, %i16_rhs : vector<32xi16>
+  %i16_result = vector.shrui %i16_shrs, %i16_rhs : vector<32xi16>
+
+  %i64_mul = vector.muli %i64_lhs, %i64_rhs : vector<8xi64>
+  %i64_min = vector.minsi %i64_mul, %i64_rhs : vector<8xi64>
+  %i64_max = vector.maxsi %i64_min, %i64_lhs : vector<8xi64>
+  %i64_umin = vector.minui %i64_max, %i64_rhs : vector<8xi64>
+  %i64_umax = vector.maxui %i64_umin, %i64_lhs : vector<8xi64>
+  %i64_shl = vector.shli %i64_umax, %i64_rhs : vector<8xi64>
+  %i64_shrs = vector.shrsi %i64_shl, %i64_rhs : vector<8xi64>
+  %i64_result = vector.shrui %i64_shrs, %i64_rhs : vector<8xi64>
+  func.return %i8_result, %i16_result, %i64_result : vector<64xi8>, vector<32xi16>, vector<8xi64>
+}
+
+// ----
+low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (vector<64xi8>, vector<64xi8>, vector<32xi16>, vector<32xi16>, vector<8xi64>, vector<8xi64>) -> (vector<64xi8>, vector<32xi16>, vector<8xi64>)}) @integer_zmm_families(%i8_lhs: reg<x86.zmm>, %i8_rhs: reg<x86.zmm>, %i16_lhs: reg<x86.zmm>, %i16_rhs: reg<x86.zmm>, %i64_lhs: reg<x86.zmm>, %i64_rhs: reg<x86.zmm>) -> (reg<x86.zmm>, reg<x86.zmm>, reg<x86.zmm>) asm {
+  %i8_add = vpaddb %i8_lhs, %i8_rhs
+  %i8_sub = vpsubb %i8_add, %i8_rhs
+  %i8_min = vpminsb %i8_sub, %i8_rhs
+  %i8_max = vpmaxsb %i8_min, %i8_lhs
+  %i8_umin = vpminub %i8_max, %i8_rhs
+  %i8_umax = vpmaxub %i8_umin, %i8_lhs
+  %i8_and = vpandd %i8_umax, %i8_rhs
+  %i8_or = vpord %i8_and, %i8_lhs
+  %i8_result = vpxord %i8_or, %i8_rhs
+  %i16_mul = vpmullw %i16_lhs, %i16_rhs
+  %i16_shl = vpsllvw %i16_mul, %i16_rhs
+  %i16_shrs = vpsravw %i16_shl, %i16_rhs
+  %i16_result = vpsrlvw %i16_shrs, %i16_rhs
+  %i64_mul = vpmullq %i64_lhs, %i64_rhs
+  %i64_min = vpminsq %i64_mul, %i64_rhs
+  %i64_max = vpmaxsq %i64_min, %i64_lhs
+  %i64_umin = vpminuq %i64_max, %i64_rhs
+  %i64_umax = vpmaxuq %i64_umin, %i64_lhs
+  %i64_shl = vpsllvq %i64_umax, %i64_rhs
+  %i64_shrs = vpsravq %i64_shl, %i64_rhs
+  %i64_result = vpsrlvq %i64_shrs, %i64_rhs
+  return %i8_result, %i16_result, %i64_result
+}
+
+// ====
+
+x86.target<avx512> @target
+
+func.def target(@target) @floating_zmm_families(%f32_lhs: vector<16xf32>, %f32_rhs: vector<16xf32>, %f64_lhs: vector<8xf64>, %f64_rhs: vector<8xf64>) -> (vector<16xf32>, vector<8xf64>) {
+  %f32_result = vector.divf %f32_lhs, %f32_rhs : vector<16xf32>
+  %f64_add = vector.addf %f64_lhs, %f64_rhs : vector<8xf64>
+  %f64_sub = vector.subf %f64_add, %f64_rhs : vector<8xf64>
+  %f64_mul = vector.mulf %f64_sub, %f64_lhs : vector<8xf64>
+  %f64_div = vector.divf %f64_mul, %f64_rhs : vector<8xf64>
+  %f64_result = vector.fmaf %f64_lhs, %f64_rhs, %f64_div : vector<8xf64>
+  func.return %f32_result, %f64_result : vector<16xf32>, vector<8xf64>
+}
+
+// ----
+low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (vector<16xf32>, vector<16xf32>, vector<8xf64>, vector<8xf64>) -> (vector<16xf32>, vector<8xf64>)}) @floating_zmm_families(%f32_lhs: reg<x86.zmm>, %f32_rhs: reg<x86.zmm>, %f64_lhs: reg<x86.zmm>, %f64_rhs: reg<x86.zmm>) -> (reg<x86.zmm>, reg<x86.zmm>) asm {
+  %f32_result = vdivps %f32_lhs, %f32_rhs
+  %f64_add = vaddpd %f64_lhs, %f64_rhs
+  %f64_sub = vsubpd %f64_add, %f64_rhs
+  %f64_mul = vmulpd %f64_sub, %f64_lhs
+  %f64_div = vdivpd %f64_mul, %f64_rhs
+  %23 = copy %f64_div : reg<x86.zmm> -> reg<x86.zmm>
+  %f64_result = vfmadd231pd %23, %f64_lhs, %f64_rhs
+  return %f32_result, %f64_result
+}

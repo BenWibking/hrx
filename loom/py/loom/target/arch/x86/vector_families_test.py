@@ -4,7 +4,10 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from loom.target.arch.x86.descriptors import X86_AVX2_DESCRIPTOR_SET
+from loom.target.arch.x86.descriptors import (
+    X86_AVX2_DESCRIPTOR_SET,
+    X86_AVX512_CORE_DESCRIPTOR_SET,
+)
 from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_BINARY_FAMILIES,
     AVX2_FLOAT_COMPARE_MNEMONICS,
@@ -12,6 +15,12 @@ from loom.target.arch.x86.vector_families import (
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_INTEGER_COMPARE_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_BITWISE_FAMILIES,
+    AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+    AVX512_FLOAT_BINARY_FAMILIES,
+    AVX512_FLOAT_FMA_MNEMONICS,
+    AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
 )
@@ -82,3 +91,59 @@ def test_avx2_family_rows_materialize_both_register_widths() -> None:
         for mnemonic in family_mnemonics
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
     } <= descriptor_keys
+
+
+def test_avx512_direct_integer_matrix_matches_core_isa_families() -> None:
+    assert {
+        (family.source_operation, family.element.name)
+        for family in AVX512_INTEGER_BINARY_FAMILIES
+    } == {
+        *(
+            (operation, element)
+            for operation in ("addi", "subi")
+            for element in ("i8", "i16", "i32", "i64")
+        ),
+        *(
+            (operation, element)
+            for operation in ("minsi", "maxsi", "minui", "maxui")
+            for element in ("i8", "i16", "i32", "i64")
+        ),
+        *(("muli", element) for element in ("i16", "i32", "i64")),
+        *(
+            (operation, element)
+            for operation in ("shli", "shrsi", "shrui")
+            for element in ("i16", "i32", "i64")
+        ),
+    }
+
+
+def test_avx512_family_rows_materialize_complete_zmm_arithmetic() -> None:
+    assert AVX512_VECTOR_BIT_WIDTHS == (512,)
+    descriptor_keys = {
+        descriptor.key for descriptor in X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    }
+    family_mnemonics = {
+        family.mnemonic
+        for family in (
+            *AVX512_INTEGER_BINARY_FAMILIES,
+            *AVX512_FLOAT_BINARY_FAMILIES,
+        )
+    }
+    family_mnemonics.update(mnemonic for _, mnemonic, _ in AVX512_BITWISE_FAMILIES)
+    family_mnemonics.update(AVX512_FLOAT_FMA_MNEMONICS.values())
+    assert {f"x86.avx512.{mnemonic}.zmm" for mnemonic in family_mnemonics} <= (
+        descriptor_keys
+    )
+
+
+def test_avx512_direct_broadcasts_cover_every_width_and_payload_size() -> None:
+    descriptor_keys = {
+        descriptor.key for descriptor in X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    }
+    register_suffixes = {128: "xmm", 256: "ymm", 512: "zmm"}
+    expected_keys = {
+        f"x86.avx512.{mnemonic}.{register_suffixes[vector_bit_width]}"
+        for mnemonic in ("vpbroadcastb", "vpbroadcastw", "vpbroadcastd", "vpbroadcastq")
+        for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
+    }
+    assert expected_keys <= descriptor_keys

@@ -4,11 +4,12 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""AVX2 vector construction and iota contract rules."""
+"""x86 vector construction and iota contract rules."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from enum import Enum
 
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.constants import (
@@ -29,6 +30,8 @@ from loom.target.arch.x86.contracts.rule_builders import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+    AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
@@ -53,18 +56,8 @@ _I1 = Scalar("i1")
 _I32 = Scalar("i32")
 _I64 = Scalar("i64")
 _V2I64 = Vector("i64", lanes=2)
-_INTEGER_VECTOR_TYPES = Vector(
-    tuple(element.name for element in INTEGER_ELEMENTS),
-    minimum_lanes=2,
-    maximum_lanes=32,
-)
-_FLOAT_VECTOR_TYPES = Vector(
-    tuple(element.name for element in (*STORAGE_ELEMENTS, *FLOAT_ELEMENTS)),
-    minimum_lanes=2,
-    maximum_lanes=32,
-)
-_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm"}
-_REGISTER_CLASSES = {128: "x86.xmm", 256: "x86.ymm"}
+_REGISTER_SUFFIXES = {128: "xmm", 256: "ymm", 512: "zmm"}
+_REGISTER_CLASSES = {128: "x86.xmm", 256: "x86.ymm", 512: "x86.zmm"}
 _INTEGER_BROADCAST_MNEMONICS = {
     8: "vpbroadcastb",
     16: "vpbroadcastw",
@@ -73,24 +66,58 @@ _INTEGER_BROADCAST_MNEMONICS = {
 }
 
 
+class _IntegerBroadcastSource(Enum):
+    GPR = "gpr"
+    XMM_LOW_LANE = "xmm-low-lane"
+
+
+def _integer_lane_move_descriptor(
+    element_bit_width: int,
+    source: _IntegerBroadcastSource,
+    descriptor_lookup: _DescriptorLookup,
+) -> Descriptor | None:
+    if source == _IntegerBroadcastSource.GPR:
+        return None
+    return descriptor_lookup(
+        "x86.avx2.vmovq.xmm.gpr64"
+        if element_bit_width == 64
+        else "x86.avx2.vmovd.xmm.gpr32"
+    )
+
+
 def _vector_zero_rules(
     descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    vector_bit_widths: tuple[int, ...],
 ) -> tuple[DescriptorRule, ...]:
+    maximum_lanes = max(vector_bit_widths) // 8
+    integer_vector_types = Vector(
+        tuple(element.name for element in INTEGER_ELEMENTS),
+        minimum_lanes=2,
+        maximum_lanes=maximum_lanes,
+    )
+    float_vector_types = Vector(
+        tuple(element.name for element in (*STORAGE_ELEMENTS, *FLOAT_ELEMENTS)),
+        minimum_lanes=2,
+        maximum_lanes=maximum_lanes,
+    )
     rules: list[DescriptorRule] = []
-    for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS:
+    for vector_bit_width in vector_bit_widths:
         descriptor = descriptor_lookup(
-            f"x86.avx2.vxorps.zero.{_REGISTER_SUFFIXES[vector_bit_width]}"
+            f"{descriptor_key_prefix}.vxorps.zero."
+            f"{_REGISTER_SUFFIXES[vector_bit_width]}"
         )
         register_class = _REGISTER_CLASSES[vector_bit_width]
         rules.extend(
             (
                 integer_vector_zero_rule(
-                    _INTEGER_VECTOR_TYPES,
+                    integer_vector_types,
                     descriptor,
                     result_register_class=register_class,
                 ),
                 floating_vector_zero_rule(
-                    _FLOAT_VECTOR_TYPES,
+                    float_vector_types,
                     descriptor,
                     result_register_class=register_class,
                 ),
@@ -101,6 +128,11 @@ def _vector_zero_rules(
 
 def _uniform_vector_constant_rules(
     descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    vector_bit_widths: tuple[int, ...],
+    broadcast_source: _IntegerBroadcastSource,
+    priority: int = 0,
 ) -> tuple[DescriptorRule, ...]:
     rules: list[DescriptorRule] = []
     for element in INTEGER_ELEMENTS:
@@ -115,17 +147,19 @@ def _uniform_vector_constant_rules(
                     if element.bit_width == 64
                     else "x86.scalar.movimm.gpr32"
                 ),
-                descriptor_lookup(
-                    "x86.avx2.vmovq.xmm.gpr64"
-                    if element.bit_width == 64
-                    else "x86.avx2.vmovd.xmm.gpr32"
+                _integer_lane_move_descriptor(
+                    element.bit_width,
+                    broadcast_source,
+                    descriptor_lookup,
                 ),
                 descriptor_lookup(
-                    f"x86.avx2.{_INTEGER_BROADCAST_MNEMONICS[element.bit_width]}."
+                    f"{descriptor_key_prefix}."
+                    f"{_INTEGER_BROADCAST_MNEMONICS[element.bit_width]}."
                     f"{_REGISTER_SUFFIXES[vector_bit_width]}"
                 ),
+                priority=priority,
             )
-            for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+            for vector_bit_width in vector_bit_widths
         )
     for element in (*STORAGE_ELEMENTS, *FLOAT_ELEMENTS):
         lane_type = _full_vector_type(element, 128)
@@ -139,45 +173,55 @@ def _uniform_vector_constant_rules(
                     if element.bit_width == 64
                     else "x86.scalar.movimm.gpr32"
                 ),
-                descriptor_lookup(
-                    "x86.avx2.vmovq.xmm.gpr64"
-                    if element.bit_width == 64
-                    else "x86.avx2.vmovd.xmm.gpr32"
+                _integer_lane_move_descriptor(
+                    element.bit_width,
+                    broadcast_source,
+                    descriptor_lookup,
                 ),
                 descriptor_lookup(
-                    f"x86.avx2.{_INTEGER_BROADCAST_MNEMONICS[element.bit_width]}."
+                    f"{descriptor_key_prefix}."
+                    f"{_INTEGER_BROADCAST_MNEMONICS[element.bit_width]}."
                     f"{_REGISTER_SUFFIXES[vector_bit_width]}"
                 ),
+                priority=priority,
             )
-            for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+            for vector_bit_width in vector_bit_widths
         )
     return tuple(rules)
 
 
 def _vector_splat_rules(
     descriptor_lookup: _DescriptorLookup,
+    *,
+    descriptor_key_prefix: str,
+    integer_vector_bit_widths: tuple[int, ...],
+    float_vector_bit_widths: tuple[int, ...],
+    broadcast_source: _IntegerBroadcastSource,
+    priority: int = 0,
 ) -> tuple[DescriptorRule, ...]:
     rules: list[DescriptorRule] = []
     for element in (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS):
         scalar_type = Scalar(element.name)
         lane_type = _full_vector_type(element, 128)
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS:
+        for vector_bit_width in integer_vector_bit_widths:
             result_type = _full_vector_type(element, vector_bit_width)
             rules.append(
                 integer_vector_splat_rule(
                     scalar_type,
                     result_type,
-                    descriptor_lookup(
-                        "x86.avx2.vmovq.xmm.gpr64"
-                        if element.bit_width == 64
-                        else "x86.avx2.vmovd.xmm.gpr32"
+                    _integer_lane_move_descriptor(
+                        element.bit_width,
+                        broadcast_source,
+                        descriptor_lookup,
                     ),
                     descriptor_lookup(
-                        f"x86.avx2.{_INTEGER_BROADCAST_MNEMONICS[element.bit_width]}."
+                        f"{descriptor_key_prefix}."
+                        f"{_INTEGER_BROADCAST_MNEMONICS[element.bit_width]}."
                         f"{_REGISTER_SUFFIXES[vector_bit_width]}"
                     ),
                     broadcast_operand="value",
                     lane_type=lane_type,
+                    priority=priority,
                 )
             )
     for element, mnemonic in (
@@ -188,15 +232,18 @@ def _vector_splat_rules(
             _splat_rule(
                 Scalar(element.name),
                 _full_vector_type(element, vector_bit_width),
-                f"x86.avx2.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}",
+                f"{descriptor_key_prefix}.{mnemonic}."
+                f"{_REGISTER_SUFFIXES[vector_bit_width]}",
                 descriptor_lookup,
             )
-            for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+            for vector_bit_width in float_vector_bit_widths
         )
     return tuple(rules)
 
 
-def _vector_bitcast_alias_rules() -> tuple[ValueAliasRule, ...]:
+def _vector_bitcast_alias_rules(
+    vector_bit_widths: tuple[int, ...],
+) -> tuple[ValueAliasRule, ...]:
     """Aliases bit-compatible full-register float and integer payloads."""
     rules: list[ValueAliasRule] = []
     for float_elements, integer_element, element_bit_width in (
@@ -205,7 +252,7 @@ def _vector_bitcast_alias_rules() -> tuple[ValueAliasRule, ...]:
         (("f32",), "i32", 32),
         (("f64",), "i64", 64),
     ):
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS:
+        for vector_bit_width in vector_bit_widths:
             lane_count = vector_bit_width // element_bit_width
             integer_type = Vector(integer_element, lanes=lane_count)
             float_type = Vector(float_elements, lanes=lane_count)
@@ -807,10 +854,25 @@ def avx2_vector_construction_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
-        *_vector_zero_rules(descriptor_lookup),
-        *_uniform_vector_constant_rules(descriptor_lookup),
-        *_vector_splat_rules(descriptor_lookup),
-        *_vector_bitcast_alias_rules(),
+        *_vector_zero_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx2",
+            vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+        ),
+        *_uniform_vector_constant_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx2",
+            vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+            broadcast_source=_IntegerBroadcastSource.XMM_LOW_LANE,
+        ),
+        *_vector_splat_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx2",
+            integer_vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+            float_vector_bit_widths=AVX2_VECTOR_BIT_WIDTHS,
+            broadcast_source=_IntegerBroadcastSource.XMM_LOW_LANE,
+        ),
+        *_vector_bitcast_alias_rules(AVX2_VECTOR_BIT_WIDTHS),
         *(
             _integer_iota_rule(
                 element,
@@ -822,4 +884,32 @@ def avx2_vector_construction_rules(
             for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
             for unit_step in (True, False)
         ),
+    )
+
+
+def avx512_vector_construction_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[ContractCase, ...]:
+    return (
+        *_vector_zero_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
+        ),
+        *_uniform_vector_constant_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            vector_bit_widths=AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+            broadcast_source=_IntegerBroadcastSource.GPR,
+            priority=1,
+        ),
+        *_vector_splat_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            integer_vector_bit_widths=AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+            float_vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
+            broadcast_source=_IntegerBroadcastSource.GPR,
+            priority=1,
+        ),
+        *_vector_bitcast_alias_rules(AVX512_VECTOR_BIT_WIDTHS),
     )

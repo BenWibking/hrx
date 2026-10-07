@@ -8,6 +8,7 @@ from loom.dialect.scalar import arithmetic as scalar_arithmetic
 from loom.dialect.scalar import math as scalar_math
 from loom.dialect.vector import defs as vector
 from loom.target.arch.x86.contracts.avx2 import X86_AVX2_CONTRACT_FRAGMENT
+from loom.target.arch.x86.contracts.avx512 import X86_AVX512_CONTRACT_FRAGMENT
 from loom.target.arch.x86.descriptors import X86_AVX2_DESCRIPTOR_SET
 from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_EXTREMA_OPERATIONS,
@@ -15,12 +16,20 @@ from loom.target.arch.x86.vector_families import (
     AVX2_INTEGER_REDUCTION_FAMILIES,
     AVX2_LANE_FAMILIES,
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
+    AVX2_PAYLOAD_ELEMENT_NAMES,
     AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_SHUFFLE_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_BITWISE_FAMILIES,
+    AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
+    AVX512_FLOAT_BINARY_FAMILIES,
+    AVX512_FLOAT_FMA_MNEMONICS,
+    AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
+    STORAGE_ELEMENTS,
 )
 from loom.target.contracts import (
     DescriptorRule,
@@ -228,6 +237,153 @@ def test_avx2_float_bitcasts_cover_every_storage_family_and_width() -> None:
     }
     assert actual == expected
     assert len(rules) == len(expected)
+
+
+def test_avx512_construction_covers_every_zmm_payload_type() -> None:
+    descriptor_rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+    )
+    payload_elements = (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS, *FLOAT_ELEMENTS)
+    expected_constant_types = {
+        Vector(element.name, lanes=vector_bit_width // element.bit_width)
+        for element in payload_elements
+        for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
+    }
+    constant_rules = tuple(
+        rule
+        for rule in descriptor_rules
+        if rule.source_op is vector.vector_constant
+        and rule.descriptor.key.startswith("x86.avx512.vpbroadcast")
+    )
+    assert {_value_type_guard(rule, "result") for rule in constant_rules} == (
+        expected_constant_types
+    )
+    assert len(constant_rules) == len(expected_constant_types)
+
+    splat_rules = tuple(
+        rule
+        for rule in descriptor_rules
+        if rule.source_op is vector.vector_splat
+        and rule.descriptor.key.startswith(
+            ("x86.avx512.vpbroadcast", "x86.avx512.vbroadcast")
+        )
+    )
+    expected_splat_types = {
+        *(
+            Vector(element.name, lanes=vector_bit_width // element.bit_width)
+            for element in (*INTEGER_ELEMENTS, *STORAGE_ELEMENTS)
+            for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
+        ),
+        *(
+            Vector(element.name, lanes=512 // element.bit_width)
+            for element in FLOAT_ELEMENTS
+        ),
+    }
+    assert {_value_type_guard(rule, "result") for rule in splat_rules} == (
+        expected_splat_types
+    )
+    assert len(splat_rules) == len(expected_splat_types)
+
+    bitcast_rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, ValueAliasRule) and case.source_op is vector.vector_bitcast
+    )
+    expected_bitcasts = {
+        (source_type, result_type)
+        for float_elements, integer_element, element_bit_width in (
+            (("f8E4M3", "f8E5M2"), "i8", 8),
+            (("f16", "bf16"), "i16", 16),
+            (("f32",), "i32", 32),
+            (("f64",), "i64", 64),
+        )
+        for lane_count in (512 // element_bit_width,)
+        for source_type, result_type in (
+            (
+                Vector(float_elements, lanes=lane_count),
+                Vector(integer_element, lanes=lane_count),
+            ),
+            (
+                Vector(integer_element, lanes=lane_count),
+                Vector(float_elements, lanes=lane_count),
+            ),
+        )
+    }
+    assert {
+        (
+            _value_type_guard(rule, "input"),
+            _value_type_guard(rule, "result"),
+        )
+        for rule in bitcast_rules
+    } == expected_bitcasts
+    assert len(bitcast_rules) == len(expected_bitcasts)
+
+
+def test_avx512_arithmetic_covers_every_native_zmm_family() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+    )
+    expected_direct = {
+        (
+            family.mnemonic,
+            Vector(family.element.name, lanes=512 // family.element.bit_width),
+        )
+        for family in (
+            *AVX512_INTEGER_BINARY_FAMILIES,
+            *AVX512_FLOAT_BINARY_FAMILIES,
+        )
+    }
+    direct_descriptor_keys = {
+        f"x86.avx512.{mnemonic}.zmm" for mnemonic, _ in expected_direct
+    }
+    actual_direct = {
+        (rule.descriptor.mnemonic, _value_type_guard(rule, "result"))
+        for rule in rules
+        if rule.descriptor.key in direct_descriptor_keys
+    }
+    assert actual_direct == expected_direct
+    assert len(actual_direct) == len(expected_direct)
+
+    expected_fma = {
+        (
+            mnemonic,
+            Vector(element.name, lanes=512 // element.bit_width),
+        )
+        for element in FLOAT_ELEMENTS
+        for mnemonic in (AVX512_FLOAT_FMA_MNEMONICS[element.name],)
+    }
+    actual_fma = {
+        (rule.descriptor.mnemonic, _value_type_guard(rule, "result"))
+        for rule in rules
+        if rule.source_op is vector.vector_fmaf
+        and rule.descriptor.key.startswith("x86.avx512.")
+    }
+    assert actual_fma == expected_fma
+    assert len(actual_fma) == len(expected_fma)
+
+    bitwise_rules = tuple(
+        rule
+        for rule in rules
+        if rule.descriptor.key
+        in {f"x86.avx512.{mnemonic}.zmm" for _, mnemonic, _ in AVX512_BITWISE_FAMILIES}
+    )
+    assert {
+        (rule.source_op.name, rule.descriptor.mnemonic) for rule in bitwise_rules
+    } == {
+        (f"vector.{source_operation}", mnemonic)
+        for source_operation, mnemonic, _ in AVX512_BITWISE_FAMILIES
+    }
+    assert {_value_type_guard(rule, "result") for rule in bitwise_rules} == {
+        Vector(
+            AVX2_PAYLOAD_ELEMENT_NAMES,
+            minimum_lanes=2,
+            maximum_lanes=max(AVX512_VECTOR_BIT_WIDTHS) // 8,
+        )
+    }
 
 
 def test_avx2_iotas_cover_every_integer_element_and_width() -> None:
