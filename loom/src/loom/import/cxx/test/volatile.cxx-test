@@ -314,3 +314,55 @@ func.def public @c_parameter_observation(%value$10: i32) -> (i32) {
   %value$17 = view.load<volatile> %value_view[0] : view<1xi32> -> i32
   func.return %value$17 : i32
 }
+
+// ====
+// A volatile parameter is materialized with one observed store per field.
+struct Record { unsigned values[2]; };
+unsigned record_object(volatile Record input) { return input.values[1]; }
+
+// ----
+func.def public @record_object(%input_values_0: i32, %input_values_1: i32) -> (i32) {
+  %3 = index.constant 8 : offset
+  %input_storage = buffer.alloca<private> align(4) %3 : buffer
+  %30 = index.constant 0 : offset
+  %10 = buffer.view %input_storage[%30] : buffer -> view<1xi32>
+  view.store<volatile> %input_values_0, %10[0] : i32, view<1xi32>
+  %29 = index.constant 4 : offset
+  %14 = buffer.view %input_storage[%29] : buffer -> view<1xi32>
+  view.store<volatile> %input_values_1, %14[0] : i32, view<1xi32>
+  %27 = view.load<volatile> %14[0] : view<1xi32> -> i32
+  func.return %27 : i32
+}
+
+// ====
+// Qualifiers on an aggregate apply to each nested array initialization store.
+struct Record { unsigned values[2][2]; };
+unsigned record_initializer(unsigned input) {
+  volatile Record value{{{input, 7}, {11, 13}}};
+  return value.values[0][0] + value.values[1][1];
+}
+
+// ----
+func.def public @record_initializer(%input: i32) -> (i32) {
+  %2 = index.constant 16 : offset
+  %value_storage = buffer.alloca<private> align(4) %2 : buffer
+  %73 = index.constant 0 : offset
+  %9 = buffer.view %value_storage[%73] : buffer -> view<1xi32>
+  view.store<volatile> %input, %9[0] : i32, view<1xi32>
+  %12 = scalar.constant 7 : i32
+  %72 = index.constant 4 : offset
+  %14 = buffer.view %value_storage[%72] : buffer -> view<1xi32>
+  view.store<volatile> %12, %14[0] : i32, view<1xi32>
+  %17 = scalar.constant 11 : i32
+  %71 = index.constant 8 : offset
+  %19 = buffer.view %value_storage[%71] : buffer -> view<1xi32>
+  view.store<volatile> %17, %19[0] : i32, view<1xi32>
+  %22 = scalar.constant 13 : i32
+  %70 = index.constant 12 : offset
+  %24 = buffer.view %value_storage[%70] : buffer -> view<1xi32>
+  view.store<volatile> %22, %24[0] : i32, view<1xi32>
+  %45 = view.load<volatile> %9[0] : view<1xi32> -> i32
+  %66 = view.load<volatile> %24[0] : view<1xi32> -> i32
+  %67 = scalar.addi %45, %66 : i32
+  func.return %67 : i32
+}

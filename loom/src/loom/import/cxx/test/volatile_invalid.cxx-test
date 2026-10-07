@@ -4,13 +4,6 @@
 unsigned pointer_object(unsigned* volatile input) { return *input; }
 
 // ====
-// Whole-record initialization needs aggregate memory operations rather than a
-// scalar or vector store.
-struct Record { unsigned value; };
-// ERROR@+1: LOWERING/059 "addressable record parameters require aggregate object initialization"
-unsigned record_object(volatile Record input) { return input.value; }
-
-// ====
 // Namespace storage cannot be substituted with a volatile initializer.
 // ERROR@+1: LOWERING/059 "global storage definitions require a global-storage projection"
 const volatile unsigned observed = 7;

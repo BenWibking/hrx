@@ -32,6 +32,25 @@ loom_cc_library(
     ],
 )
 
+# Copied C++ array records cross a native call and preserve independent storage
+# through the public task HAL runner.
+iree_executable_test(
+    name = "array_records_test",
+    src = "//loom/src/loom/tools/iree-test-loom",
+    args = [
+        "$(rootpath //loom/src/loom/import/cxx/test:array_records_module)",
+        "--device=task",
+    ],
+    data = ["//loom/src/loom/import/cxx/test:array_records_module"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+        "//loom/config/target/arch:x86",
+        "//runtime/config/hal:executable_loader_embedded_elf",
+        "//loom/config/execute:task_hal",
+        "//loom/config/target/arch:vm",
+    ]) + ["@platforms//cpu:x86_64"],
+)
+
 # Exercises shared corpus programs through the task HAL and independent VM oracle.
 [
     iree_executable_test(

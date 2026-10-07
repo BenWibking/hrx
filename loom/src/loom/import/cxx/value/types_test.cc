@@ -213,7 +213,19 @@ TEST(TypesTest, FixedArrayStorageRetainsNestedSourceLayout) {
   EXPECT_EQ(types.storage_size(array, owner), 408);
   EXPECT_EQ(types.partition(control->getPointerType(array), owner).kind,
             ValueKind::Pointer);
-  EXPECT_THROW(types.partition(block, owner), SourceRejected);
+  EXPECT_EQ(types.partition(block, owner).component_count, 134u);
+  const auto& array_partition = types.partition(array, owner);
+  EXPECT_EQ(array_partition.kind, ValueKind::Array);
+  EXPECT_EQ(array_partition.component_count, 402u);
+  EXPECT_EQ(static_cast<const ArrayPartition&>(array_partition).element,
+            &types.partition(block, owner));
+  const auto* records = types.record(source_type("Records"), owner);
+  EXPECT_EQ(records->component_count, 403u);
+  EXPECT_EQ(records->component_names.back(), "blocks_2_quants_127");
+  const auto* vectors = types.record(source_type("Vectors"), owner);
+  EXPECT_EQ(vectors->component_count, 7u);
+  EXPECT_EQ(vectors->component_names.back(), "values_1_2");
+  EXPECT_FALSE(types.requires_binding(source_type("Vectors"), owner));
   EXPECT_THROW(types.storage_size(control->getUnboundedArrayType(block), owner),
                SourceRejected);
 }

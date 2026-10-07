@@ -153,16 +153,31 @@ StorageProjection Storage::advance(StorageProjection base,
 
 StorageProjection Storage::member(StorageProjection base,
                                   cxx::FieldSymbol* field, cxx::AST* owner) {
+  return subobject(base, *field->offsetInClass(), owner);
+}
+
+StorageProjection Storage::element(StorageProjection base,
+                                   const cxx::BoundedArrayType* type,
+                                   size_t index, cxx::AST* owner) {
+  return index == 0 ? base
+                    : subobject(base,
+                                index * types_.storage_size(type->elementType(),
+                                                            owner),
+                                owner);
+}
+
+StorageProjection Storage::subobject(StorageProjection base,
+                                     uint64_t byte_offset, cxx::AST* owner) {
   auto source = locations_.get(owner);
-  auto field_offset = scalars_.integer(*field->offsetInClass(),
-                                       LOOM_SCALAR_TYPE_OFFSET, source);
+  auto field_offset =
+      scalars_.integer(byte_offset, LOOM_SCALAR_TYPE_OFFSET, source);
   loom_op_t* op;
   check(loom_index_add_build(&builder_, base.pointer.byte_offset, field_offset,
                              loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET), source,
                              &op));
   Pointer pointer =
       constrain_origin({base.pointer.root, loom_op_results(op)[0]}, owner);
-  return {pointer, std::gcd(base.alignment, *field->offsetInClass()), true};
+  return {pointer, std::gcd(base.alignment, byte_offset), true};
 }
 
 StorageAccess Storage::dereference(StorageProjection base,
@@ -294,9 +309,9 @@ StorageAllocation Storage::allocate(const cxx::Type* type,
   // the declared extent. Aggregate, nested-array and vector-array elements use
   // a byte footprint view while later object projections recover typed field
   // or vector views from the allocation root and source layout.
-  bool byte_footprint = array && (source_kind == cxx::TypeKind::kClass ||
-                                  source_kind == cxx::TypeKind::kBoundedArray ||
-                                  source_kind == cxx::TypeKind::kVector);
+  bool byte_footprint = source_kind == cxx::TypeKind::kClass ||
+                        source_kind == cxx::TypeKind::kBoundedArray ||
+                        (array && source_kind == cxx::TypeKind::kVector);
   auto* vector = byte_footprint ? nullptr : types_.vector(view_source_type);
   auto element = byte_footprint
                      ? loom_type_scalar(LOOM_SCALAR_TYPE_I8)

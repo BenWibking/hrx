@@ -1,15 +1,4 @@
 // RUN: verify
-// Whole-object copies have no admitted memory operation.
-struct Record { unsigned value; };
-// ERROR@+1: LOWERING/059 "unsupported C++ type: const ::Record"
-Record read(const Record* record) { return *record; }
-
-// ====
-struct Record { unsigned value; };
-// ERROR@+1: LOWERING/059 "unsupported C++ type: ::Record"
-void write(Record* record, Record value) { *record = value; }
-
-// ====
 union Record { unsigned integer; float real; };
 // ERROR@+1: LOWERING/059 "record storage requires a complete aggregate without unions, bases or nontrivial lifecycle operations"
 unsigned read(const Record* record) { return record->integer; }
