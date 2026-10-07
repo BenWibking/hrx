@@ -17,6 +17,7 @@
 #include "loom/codegen/low/schedule/descriptor_rows.h"
 #include "loom/codegen/low/schedule/diagnostics.h"
 #include "loom/codegen/low/schedule/graph.h"
+#include "loom/codegen/low/schedule/memory_completion.h"
 #include "loom/codegen/low/schedule/pressure.h"
 #include "loom/codegen/low/schedule/ready_frontier.h"
 #include "loom/codegen/low/schedule/ready_policy.h"
@@ -1743,6 +1744,12 @@ static iree_status_t loom_low_schedule_build(
   if (iree_status_is_ok(status) && state.error_count == 0) {
     status = loom_low_schedule_run_list_scheduler(&state, node_count);
   }
+  if (iree_status_is_ok(status) && state.error_count == 0 &&
+      iree_any_bit_set(
+          options->flags,
+          LOOM_LOW_SCHEDULE_FLAG_RETAIN_ACYCLIC_MEMORY_COMPLETIONS)) {
+    status = loom_low_schedule_build_acyclic_memory_completions(&state);
+  }
   if (iree_status_is_ok(status) && state.error_count == 0) {
     loom_low_schedule_compact_model_summaries(&state);
     loom_low_schedule_compact_resource_summaries(&state);
@@ -1832,6 +1839,8 @@ static iree_status_t loom_low_schedule_build(
             state.matrix_coexecution_source_use_count,
         .effect_uses = state.effect_uses,
         .effect_use_count = state.effect_use_count,
+        .memory_completion_edges = state.memory_completion_edges,
+        .memory_completion_edge_count = state.memory_completion_edge_count,
         .hazard_uses = state.hazard_uses,
         .hazard_use_count = state.hazard_use_count,
         .hazard_gaps = state.hazard_gaps,

@@ -291,6 +291,8 @@ typedef struct loom_low_schedule_build_state_t {
   loom_low_schedule_candidate_decision_t* candidate_decisions;
   // Descriptor effects in scheduled order.
   loom_low_schedule_effect_use_t* effect_uses;
+  // Exact cross-block memory completions retained for target consumers.
+  loom_low_schedule_memory_completion_edge_t* memory_completion_edges;
   // Descriptor hazard rows in scheduled order.
   loom_low_schedule_hazard_use_t* hazard_uses;
   // Minimum-distance hazard gaps in scheduled order.
@@ -435,6 +437,8 @@ typedef struct loom_low_schedule_build_state_t {
   iree_host_size_t resource_use_count;
   // Number of populated effect_uses entries.
   iree_host_size_t effect_use_count;
+  // Number of populated memory_completion_edges entries.
+  iree_host_size_t memory_completion_edge_count;
   // Number of populated hazard_uses entries.
   iree_host_size_t hazard_use_count;
   // Number of populated hazard_gaps entries.
