@@ -73,14 +73,16 @@ class ContractSelectionTest : public ::testing::Test {
   std::vector<uint16_t> Iterate(
       const uint32_t* selection_data,
       loom_low_lower_contract_case_iteration_mode_t mode,
-      const loom_op_t* source_op = nullptr) {
+      const loom_op_t* source_op = nullptr,
+      loom_target_contract_vector_lane_projection_t vector_lane_projection =
+          {}) {
     const loom_target_contract_index_t index = {
         0, 0, nullptr, 0, nullptr, 0, nullptr, selection_data,
     };
     loom_low_lower_contract_case_iterator_t iterator;
     loom_low_lower_contract_case_iterator_initialize(
         module_, &index, kEntry, source_op != nullptr ? source_op : compare_op_,
-        mode, &iterator);
+        vector_lane_projection, mode, &iterator);
     std::vector<uint16_t> cases;
     uint16_t case_index = UINT16_MAX;
     while (loom_low_lower_contract_case_iterator_next(&iterator, &case_index)) {
@@ -160,6 +162,31 @@ TEST_F(ContractSelectionTest, SelectsExactVectorTypeList) {
       Iterate(kSelectionData, LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES,
               vector_op_),
       (std::vector<uint16_t>{104, 109}));
+}
+
+TEST_F(ContractSelectionTest, SelectsProjectedVectorTypeList) {
+  constexpr uint32_t kSelectionData[] = {
+      1u | (2u << 16),
+      64u,
+      3u,
+      2u,
+      static_cast<uint32_t>(LOOM_OP_VECTOR_SPLAT) << 16,
+      (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 2u,
+      1u << 16,
+      (2u << 28) | (LOOM_SCALAR_TYPE_I32 << 16) | 4u,
+      1u | (1u << 16),
+      7u,
+      9u,
+  };
+  const loom_target_contract_vector_lane_projection_t projection = {
+      /*.source_lane_count=*/4,
+      /*.projected_lane_count=*/2,
+  };
+
+  EXPECT_EQ(
+      Iterate(kSelectionData, LOOM_LOW_LOWER_CONTRACT_CASE_ITERATION_CANDIDATES,
+              vector_op_, projection),
+      (std::vector<uint16_t>{107}));
 }
 
 TEST_F(ContractSelectionTest, SelectsExactEnumBitmap) {
