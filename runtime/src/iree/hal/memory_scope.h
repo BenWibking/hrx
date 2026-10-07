@@ -152,6 +152,8 @@ typedef struct iree_hal_memory_contract_t {
   const void* domain;
   // Number of dense site entries, including wildcard zero.
   uint32_t scope_count;
+  // Complete native publication format, with types owned by this contract.
+  iree_hal_buffer_binding_layout_t binding_layout;
   // Global permission projection consumed by native buffer wrappers.
   iree_hal_buffer_params_t buffer_params;
   // Achieved owned-backing guarantee, independent of the original preference.
@@ -162,11 +164,13 @@ typedef struct iree_hal_memory_contract_t {
   iree_hal_memory_scope_access_t scopes[];
 } iree_hal_memory_contract_t;
 
-// Allocates empty construction metadata with no native bindings. The producer
-// fills trusted qualified facts before publishing any pool or buffer.
+// Copies the native layout and allocates empty site metadata. The producer
+// fills trusted qualified facts before publishing any pool or buffer; every
+// materialized allocation supplies the captured native table format.
 IREE_API_EXPORT iree_status_t iree_hal_memory_contract_create(
-    const void* domain, uint32_t scope_count, iree_allocator_t host_allocator,
-    iree_hal_memory_contract_t** out_contract);
+    const void* domain, uint32_t scope_count,
+    const iree_hal_buffer_binding_layout_t* binding_layout,
+    iree_allocator_t host_allocator, iree_hal_memory_contract_t** out_contract);
 IREE_API_EXPORT void iree_hal_memory_contract_retain(
     iree_hal_memory_contract_t* contract);
 IREE_API_EXPORT void iree_hal_memory_contract_release(

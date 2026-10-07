@@ -130,8 +130,8 @@ static iree_status_t iree_hal_host_slab_pool_query(
   plan->trace_name = options->trace_name;
   iree_status_t status = iree_hal_memory_contract_create(
       iree_hal_device_group_memory_domain(group),
-      iree_hal_device_group_memory_scope_count(group), host_allocator,
-      &plan->contract);
+      iree_hal_device_group_memory_scope_count(group),
+      iree_hal_heap_buffer_binding_layout(), host_allocator, &plan->contract);
   if (iree_status_is_ok(status)) {
     iree_hal_memory_contract_t* contract = plan->contract;
     contract->host = host;

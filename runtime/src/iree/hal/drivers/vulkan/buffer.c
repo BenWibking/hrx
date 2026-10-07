@@ -123,6 +123,21 @@ static iree_hal_vulkan_buffer_t* iree_hal_vulkan_buffer_cast(
   return (iree_hal_vulkan_buffer_t*)base_value;
 }
 
+const iree_hal_buffer_binding_layout_t* iree_hal_vulkan_buffer_binding_layout(
+    void) {
+  static const uint16_t types[] = {
+      IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+  };
+  static const iree_hal_buffer_binding_layout_t layout = {
+      .byte_length = sizeof(iree_hal_vulkan_buffer_native_t),
+      .binding_count = IREE_ARRAYSIZE(types),
+      .host_binding_index = IREE_HAL_BUFFER_NATIVE_BINDING_INDEX_NONE,
+      .types = types,
+  };
+  return &layout;
+}
+
 void iree_hal_vulkan_buffer_initialize_bindings(
     iree_hal_buffer_t* buffer, VkDeviceMemory device_memory, VkBuffer handle,
     VkDeviceSize handle_length, VkDeviceAddress device_address,

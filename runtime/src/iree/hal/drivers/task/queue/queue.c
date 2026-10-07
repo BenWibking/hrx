@@ -1778,10 +1778,12 @@ static iree_status_t iree_hal_task_queue_drain_alloca_submit_reservations(
       operation->alloca.pool, operation->alloca.request_count,
       operation->alloca.requests, operation->alloca.reservations,
       IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, operation->alloca.backing_buffers);
-  // Pools are caller-supplied; qualify native CPU access before publishing any
-  // of the batch. Slot loads at commit then consume this established contract.
+  // Unscoped pools are caller-supplied and require native CPU qualification.
+  // Scoped sources already establish the complete representation at creation.
   for (iree_host_size_t i = 0;
-       i < operation->alloca.request_count && iree_status_is_ok(status); ++i) {
+       !operation->alloca.pool->memory_contract &&
+       i < operation->alloca.request_count && iree_status_is_ok(status);
+       ++i) {
     iree_byte_span_t span;
     status = iree_hal_buffer_native_host_span(
         operation->alloca.backing_buffers[i], 0,
@@ -4098,7 +4100,8 @@ static iree_status_t iree_hal_task_queue_capture_transfer_buffer(
     iree_hal_buffer_t* buffer) {
   const iree_hal_buffer_placement_t placement =
       iree_hal_buffer_allocation_placement(buffer);
-  if (!iree_hal_buffer_placement_is_undefined(placement) &&
+  if (!buffer->memory.contract &&
+      !iree_hal_buffer_placement_is_undefined(placement) &&
       placement.device != queue->device) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

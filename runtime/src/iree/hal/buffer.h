@@ -897,6 +897,25 @@ typedef struct iree_hal_buffer_native_binding_slot_t {
 // Sentinel for an interface with no prepared native binding.
 #define IREE_HAL_BUFFER_NATIVE_BINDING_INDEX_NONE UINT16_MAX
 
+// Immutable native table format captured by the storage producer. Generic
+// bindings occupy the prefix; trailing backend facts are value data, aligned
+// no more strictly than a binding. Any referenced storage is borrowed from the
+// materialized backing. Copying a table never acquires native ownership.
+typedef struct iree_hal_buffer_binding_layout_t {
+  // Complete table size in bytes, including trailing backend facts.
+  uint32_t byte_length;
+  // Number of generic native binding entries at the start of the table.
+  uint16_t binding_count;
+  // Private host execution slot, or NATIVE_BINDING_INDEX_NONE.
+  uint16_t host_binding_index;
+  // Borrowed interface type per entry; determines native offset arithmetic.
+  const uint16_t* types;
+} iree_hal_buffer_binding_layout_t;
+
+// Native format used by coherent host buffers, independent of public maps.
+IREE_API_EXPORT const iree_hal_buffer_binding_layout_t*
+iree_hal_heap_buffer_binding_layout(void);
+
 // Native allocation lifecycle operations. Qualification happens when a child
 // allocator is constructed; accepted advice is infallible at caller-ordered
 // allocation and release execution boundaries.
@@ -972,6 +991,16 @@ iree_hal_buffer_memory_view(const iree_hal_buffer_t* buffer);
 IREE_API_EXPORT iree_hal_buffer_native_binding_t
 iree_hal_buffer_native_binding(const iree_hal_buffer_t* buffer,
                                iree_hal_buffer_native_binding_slot_t slot);
+
+// Publishes a complete source-qualified native table into stable wrapper
+// storage of at least layout->byte_length bytes. All entries are translated to
+// source byte zero; absent optional addresses stay absent. The layout and
+// source are trusted producer state. The caller orders publication before
+// native reads and retains source backing throughout the copied table's use.
+IREE_API_EXPORT void iree_hal_buffer_copy_bindings(
+    const iree_hal_buffer_t* source,
+    const iree_hal_buffer_binding_layout_t* layout,
+    iree_hal_buffer_native_binding_t* target);
 
 // Resolves a host execution span from an already-prepared native binding.
 // Used by CPU execution backends at the buffer-reference boundary. Fails if

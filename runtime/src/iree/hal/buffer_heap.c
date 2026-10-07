@@ -14,6 +14,18 @@
 #include "iree/hal/buffer_heap_impl.h"
 #include "iree/hal/resource.h"
 
+IREE_API_EXPORT const iree_hal_buffer_binding_layout_t*
+iree_hal_heap_buffer_binding_layout(void) {
+  static const uint16_t types[] = {IREE_HAL_BUFFER_INTERFACE_HOST};
+  static const iree_hal_buffer_binding_layout_t layout = {
+      .byte_length = sizeof(iree_hal_buffer_native_binding_t),
+      .binding_count = IREE_ARRAYSIZE(types),
+      .host_binding_index = 0,
+      .types = types,
+  };
+  return &layout;
+}
+
 typedef enum iree_hal_heap_buffer_storage_mode_e {
   // Allocated as a [metadata, data] slab.
   // The base metadata pointer must be freed with iree_allocator_free_aligned.

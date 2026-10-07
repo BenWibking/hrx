@@ -228,8 +228,25 @@ bool iree_hal_amdgpu_buffer_isa(const iree_hal_buffer_t* buffer) {
                               &iree_hal_amdgpu_buffer_vtable);
 }
 
+const iree_hal_buffer_binding_layout_t* iree_hal_amdgpu_buffer_binding_layout(
+    void) {
+  static const uint16_t types[] = {
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_HOST,
+  };
+  static const iree_hal_buffer_binding_layout_t layout = {
+      .byte_length = sizeof(iree_hal_amdgpu_buffer_native_t),
+      .binding_count = IREE_ARRAYSIZE(types),
+      .host_binding_index = IREE_HAL_AMDGPU_BUFFER_BINDING_HOST,
+      .types = types,
+  };
+  return &layout;
+}
+
 // Packet emission may precede alloca commitment. Resolve that staged edge once;
 // any nested committed backing already carries its own prepared native table.
+// Scoped sources are qualified at the queue/recording family boundary and
+// preserve that table regardless of which backend owns the transient wrapper.
 static const iree_hal_buffer_t* iree_hal_amdgpu_buffer_resolve_native(
     iree_hal_buffer_t* buffer) {
   iree_hal_buffer_t* root = iree_hal_buffer_allocated_buffer(buffer);
@@ -241,7 +258,7 @@ static const iree_hal_buffer_t* iree_hal_amdgpu_buffer_resolve_native(
     root = iree_hal_buffer_allocated_buffer(buffer);
   }
   if (!iree_hal_amdgpu_buffer_isa(root) &&
-      !iree_hal_amdgpu_transient_buffer_isa(root)) {
+      !iree_hal_amdgpu_transient_buffer_isa(root) && !buffer->memory.contract) {
     return NULL;
   }
   return buffer;

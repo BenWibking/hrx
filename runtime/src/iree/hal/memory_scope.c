@@ -60,18 +60,26 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_resolve_memory_scope(
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_memory_contract_create(
-    const void* domain, uint32_t scope_count, iree_allocator_t host_allocator,
+    const void* domain, uint32_t scope_count,
+    const iree_hal_buffer_binding_layout_t* binding_layout,
+    iree_allocator_t host_allocator,
     iree_hal_memory_contract_t** out_contract) {
   *out_contract = NULL;
   iree_hal_memory_contract_t* contract = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc(
       host_allocator,
-      sizeof(*contract) + scope_count * sizeof(*contract->scopes),
+      sizeof(*contract) + scope_count * sizeof(*contract->scopes) +
+          binding_layout->binding_count * sizeof(*binding_layout->types),
       (void**)&contract));
   iree_atomic_ref_count_init(&contract->ref_count);
   contract->host_allocator = host_allocator;
   contract->domain = domain;
   contract->scope_count = scope_count;
+  uint16_t* binding_types = (uint16_t*)&contract->scopes[scope_count];
+  memcpy(binding_types, binding_layout->types,
+         binding_layout->binding_count * sizeof(*binding_types));
+  contract->binding_layout = *binding_layout;
+  contract->binding_layout.types = binding_types;
   for (uint32_t i = 0; i < scope_count; ++i) {
     memset(contract->scopes[i].bindings, 0xFF,
            sizeof(contract->scopes[i].bindings));

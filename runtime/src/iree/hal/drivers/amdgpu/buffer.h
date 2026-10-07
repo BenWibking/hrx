@@ -43,6 +43,10 @@ typedef struct iree_hal_amdgpu_buffer_native_t {
   iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells;
 } iree_hal_amdgpu_buffer_native_t;
 
+// Complete ROCr native format, including private atomic capability cells.
+const iree_hal_buffer_binding_layout_t* iree_hal_amdgpu_buffer_binding_layout(
+    void);
+
 // Returns captured facts from a qualified, prepared AMDGPU buffer.
 static inline const iree_hal_amdgpu_buffer_native_t*
 iree_hal_amdgpu_buffer_native(const iree_hal_buffer_t* buffer) {
@@ -146,9 +150,11 @@ void iree_hal_amdgpu_buffer_set_profile_allocation(
 // Returns true if |buffer| directly wraps ROCr storage.
 bool iree_hal_amdgpu_buffer_isa(const iree_hal_buffer_t* buffer);
 
-// Returns the agent base pointer for the given |buffer|, or NULL if |buffer|
-// is not an AMDGPU buffer or has no staged storage. Host accessibility and its
-// address are independent of this GPU address.
+// Returns the agent base pointer for a buffer qualified for ROCr execution, or
+// NULL if an unscoped buffer is not ROCr-owned or has no staged storage. Scoped
+// buffers have already passed the queue/recording family boundary. Their
+// wrapper owner may be another backend. Host accessibility is independent of
+// this address.
 //
 // This is the entire allocated_buffer and must be offset by
 // iree_hal_buffer_byte_offset and the binding offset when computing kernarg

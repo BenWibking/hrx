@@ -8,6 +8,7 @@
 
 load("//build_tools/amdgpu:cts.bzl", "iree_amdgpu_hal_cts_testdata")
 load("//build_tools/bazel:cmake.bzl", "iree_cmake_extra_content")
+load("//build_tools/bazel:select.bzl", "iree_select")
 load("//runtime/build_tools/bazel:cc.bzl", "iree_runtime_cc_library")
 load("//runtime/build_tools/bazel:cc_test.bzl", "iree_runtime_cc_test")
 load("//runtime/build_tools/bazel:hal_cts.bzl", "iree_runtime_hal_cts_test_suite")
@@ -249,6 +250,26 @@ iree_runtime_cc_test(
         "//runtime/src/iree/hal/drivers/amdgpu:headers",
         "//runtime/src/iree/hal/memory:cpu_slab_provider",
         "//runtime/src/iree/hal/memory:passthrough_pool",
+        "//runtime/src/iree/hal/memory:tlsf_pool",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "heterogeneous_slab_pool_tests",
+    srcs = ["heterogeneous_slab_pool_test.cc"],
+    target_compatible_with = iree_select({
+        "//runtime/config/hal:driver_task": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":backends",
+        ":testdata_amdgpu",
+        "//runtime/src/iree/hal/cts/util:test_base",
+        "//runtime/src/iree/hal/cts/util:test_main",
+        "//runtime/src/iree/hal/drivers/task/registration",
+        "//runtime/src/iree/hal/memory:fixed_block_pool",
+        "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/hal/memory:slab_cache",
         "//runtime/src/iree/hal/memory:tlsf_pool",
     ],
 )

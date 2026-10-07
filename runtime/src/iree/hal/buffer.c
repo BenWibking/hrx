@@ -286,20 +286,21 @@ iree_hal_buffer_memory_view(const iree_hal_buffer_t* buffer) {
   return view;
 }
 
-IREE_API_EXPORT iree_hal_buffer_native_binding_t
-iree_hal_buffer_native_binding(const iree_hal_buffer_t* buffer,
-                               iree_hal_buffer_native_binding_slot_t slot) {
-  const iree_device_size_t offset = buffer->memory.binding_offset;
-  iree_hal_buffer_native_binding_t binding =
-      buffer->memory.bindings[slot.index];
-  switch ((iree_hal_buffer_interface_t)slot.type) {
+static iree_hal_buffer_native_binding_t iree_hal_buffer_offset_native_binding(
+    iree_hal_buffer_native_binding_t binding, iree_hal_buffer_interface_t type,
+    iree_device_size_t offset) {
+  switch (type) {
     case IREE_HAL_BUFFER_INTERFACE_HOST:
-      binding.host_pointer += offset;
+      if (binding.host_pointer) {
+        binding.host_pointer += offset;
+      }
       break;
     case IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS:
     case IREE_HAL_BUFFER_INTERFACE_XDNA_SHIM_DMA:
     case IREE_HAL_BUFFER_INTERFACE_XDNA_FIRMWARE:
-      binding.device_address += offset;
+      if (binding.device_address) {
+        binding.device_address += offset;
+      }
       break;
     case IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER:
       binding.vulkan.offset += offset;
@@ -315,6 +316,26 @@ iree_hal_buffer_native_binding(const iree_hal_buffer_t* buffer,
       break;
   }
   return binding;
+}
+
+IREE_API_EXPORT iree_hal_buffer_native_binding_t
+iree_hal_buffer_native_binding(const iree_hal_buffer_t* buffer,
+                               iree_hal_buffer_native_binding_slot_t slot) {
+  return iree_hal_buffer_offset_native_binding(
+      buffer->memory.bindings[slot.index],
+      (iree_hal_buffer_interface_t)slot.type, buffer->memory.binding_offset);
+}
+
+IREE_API_EXPORT void iree_hal_buffer_copy_bindings(
+    const iree_hal_buffer_t* source,
+    const iree_hal_buffer_binding_layout_t* layout,
+    iree_hal_buffer_native_binding_t* target) {
+  memcpy(target, source->memory.bindings, layout->byte_length);
+  for (uint16_t i = 0; i < layout->binding_count; ++i) {
+    target[i] = iree_hal_buffer_offset_native_binding(
+        target[i], (iree_hal_buffer_interface_t)layout->types[i],
+        source->memory.binding_offset);
+  }
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_buffer_native_host_span(

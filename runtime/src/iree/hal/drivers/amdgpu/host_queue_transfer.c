@@ -115,10 +115,15 @@ static const iree_hal_resource_vtable_t
 static iree_status_t iree_hal_amdgpu_transfer_validate_buffer(
     iree_hal_amdgpu_host_queue_t* queue, iree_hal_buffer_t* buffer,
     iree_hal_semaphore_list_t wait_semaphore_list) {
+  if (buffer->memory.contract) {
+    // The public queue boundary qualified this family's native access. The
+    // allocating backend publishes its table before the transfer's waits
+    // complete; capture must not read bindings from an uncommitted allocation.
+    return iree_ok_status();
+  }
   const iree_hal_buffer_placement_t placement =
       iree_hal_buffer_allocation_placement(buffer);
-  if (!buffer->memory.contract &&
-      !iree_hal_buffer_placement_is_undefined(placement) &&
+  if (!iree_hal_buffer_placement_is_undefined(placement) &&
       placement.device != queue->logical_device) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

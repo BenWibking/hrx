@@ -14,6 +14,68 @@
 
 namespace {
 
+TEST(BufferBindingTest, PublishesEveryInterfaceAndPreservesNativeFacts) {
+  uint8_t storage[256] = {};
+  const uint16_t types[] = {
+      IREE_HAL_BUFFER_INTERFACE_HOST,
+      IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
+      IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER,
+      IREE_HAL_BUFFER_INTERFACE_XDNA_SHIM_DMA,
+      IREE_HAL_BUFFER_INTERFACE_XDNA_FIRMWARE,
+      IREE_HAL_BUFFER_INTERFACE_RDMA,
+      IREE_HAL_BUFFER_INTERFACE_REGISTERED_IO,
+      IREE_HAL_BUFFER_INTERFACE_REMOTE,
+  };
+  struct NativeTable {
+    // Generic representations copied and translated by the shared publisher.
+    iree_hal_buffer_native_binding_t bindings[IREE_ARRAYSIZE(types)];
+    // Producer-specific value data borrowed unchanged by native consumers.
+    uint64_t native_facts;
+  } source = {}, target = {};
+  source.bindings[0].host_pointer = storage;
+  source.bindings[1].device_address = 0x1000;
+  source.bindings[2].vulkan = {7, 64};
+  source.bindings[3].device_address = 0x2000;
+  source.bindings[4].device_address = 0x3000;
+  source.bindings[5].rdma = {0x4000, 11, 22};
+  source.bindings[6].registered_io = {storage, 33, 128};
+  source.bindings[7].remote = {44, 256};
+  source.native_facts = 0x123456789ABCDEF0;
+  const iree_hal_buffer_binding_layout_t layout = {
+      sizeof(source), IREE_ARRAYSIZE(types), 0, types};
+  iree_hal_buffer_t buffer = {};
+  buffer.memory.bindings = source.bindings;
+  buffer.memory.binding_offset = 16;
+  iree_hal_buffer_copy_bindings(&buffer, &layout, target.bindings);
+  EXPECT_EQ(target.bindings[0].host_pointer, storage + 16);
+  EXPECT_EQ(target.bindings[1].device_address, 0x1010u);
+  EXPECT_EQ(target.bindings[2].vulkan.buffer, 7u);
+  EXPECT_EQ(target.bindings[2].vulkan.offset, 80u);
+  EXPECT_EQ(target.bindings[3].device_address, 0x2010u);
+  EXPECT_EQ(target.bindings[4].device_address, 0x3010u);
+  EXPECT_EQ(target.bindings[5].rdma.address, 0x4010u);
+  EXPECT_EQ(target.bindings[5].rdma.local_key, 11u);
+  EXPECT_EQ(target.bindings[5].rdma.remote_key, 22u);
+  EXPECT_EQ(target.bindings[6].registered_io.table, storage);
+  EXPECT_EQ(target.bindings[6].registered_io.index, 33u);
+  EXPECT_EQ(target.bindings[6].registered_io.offset, 144u);
+  EXPECT_EQ(target.bindings[7].remote.object_id, 44u);
+  EXPECT_EQ(target.bindings[7].remote.offset, 272u);
+  EXPECT_EQ(target.native_facts, source.native_facts);
+
+  // A resource without an optional raw address does not acquire one merely
+  // because its view begins at a nonzero offset.
+  source.bindings[0].host_pointer = nullptr;
+  for (uint16_t index : {1, 3, 4}) {
+    source.bindings[index].device_address = 0;
+  }
+  iree_hal_buffer_copy_bindings(&buffer, &layout, target.bindings);
+  EXPECT_EQ(target.bindings[0].host_pointer, nullptr);
+  for (uint16_t index : {1, 3, 4}) {
+    EXPECT_EQ(target.bindings[index].device_address, 0u);
+  }
+}
+
 static std::string FormatMemoryType(iree_hal_memory_type_t memory_type) {
   iree_bitfield_string_temp_t temporary;
   const iree_string_view_t value =

@@ -189,26 +189,9 @@ void iree_hal_vulkan_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
     IREE_ASSERT_TRUE(buffer->staged_backing != NULL);
     IREE_ASSERT_TRUE(buffer->committed_backing == NULL);
     buffer->committed_backing = buffer->staged_backing;
-    buffer->native = *iree_hal_vulkan_buffer_native(buffer->committed_backing);
-    buffer->native.bindings[IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE] =
-        iree_hal_buffer_native_binding(
-            buffer->committed_backing,
-            (iree_hal_buffer_native_binding_slot_t){
-                .index = IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE,
-                .type = IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER,
-            });
-    const uint64_t base_address =
-        buffer->committed_backing->memory
-            .bindings[IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS]
-            .device_address;
-    buffer->native.bindings[IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS] =
-        (iree_hal_buffer_native_binding_t){
-            .device_address =
-                base_address
-                    ? base_address +
-                          buffer->committed_backing->memory.binding_offset
-                    : 0,
-        };
+    iree_hal_buffer_copy_bindings(buffer->committed_backing,
+                                  iree_hal_vulkan_buffer_binding_layout(),
+                                  buffer->native.bindings);
   }
   iree_slim_mutex_unlock(&buffer->mutex);
 }

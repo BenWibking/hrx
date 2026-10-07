@@ -9334,6 +9334,7 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_shape(
 }
 
 static iree_status_t iree_hal_vulkan_queue_validate_dispatch_binding(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_buffer_ref_t* binding, VkDescriptorType descriptor_type) {
   if (binding->reserved != 0 || binding->buffer_slot != 0 || !binding->buffer) {
     return iree_make_status(
@@ -9347,7 +9348,7 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_binding(
   switch (descriptor_type) {
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
       IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-          iree_hal_buffer_allowed_usage(binding->buffer),
+          iree_hal_buffer_family_usage(binding->buffer, queue_family),
           IREE_HAL_BUFFER_USAGE_DISPATCH_UNIFORM_READ));
       IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
           iree_hal_buffer_allowed_access(binding->buffer),
@@ -9356,7 +9357,7 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_binding(
     }
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER: {
       IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
-          iree_hal_buffer_allowed_usage(binding->buffer),
+          iree_hal_buffer_family_usage(binding->buffer, queue_family),
           IREE_HAL_BUFFER_USAGE_STORAGE));
       break;
     }
@@ -9375,6 +9376,7 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_binding(
 
 static iree_status_t
 iree_hal_vulkan_queue_validate_dispatch_indirect_parameters(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_buffer_ref_t* workgroup_count_ref) {
   const iree_device_size_t workgroup_count_length = sizeof(uint32_t[3]);
   if (workgroup_count_ref->reserved != 0 ||
@@ -9400,8 +9402,8 @@ iree_hal_vulkan_queue_validate_dispatch_indirect_parameters(
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(workgroup_count_ref->buffer),
       IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(workgroup_count_ref->buffer),
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+      workgroup_count_ref->buffer, queue_family,
       IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
       iree_hal_buffer_allowed_access(workgroup_count_ref->buffer),
@@ -9412,6 +9414,7 @@ iree_hal_vulkan_queue_validate_dispatch_indirect_parameters(
 }
 
 static iree_status_t iree_hal_vulkan_queue_validate_dispatch_bda(
+    const iree_hal_queue_family_t* queue_family,
     const iree_hal_vulkan_pipeline_t* pipeline,
     iree_const_byte_span_t constants,
     const iree_hal_buffer_ref_list_t bindings) {
@@ -9421,7 +9424,7 @@ static iree_status_t iree_hal_vulkan_queue_validate_dispatch_bda(
   for (iree_host_size_t i = 0; iree_status_is_ok(status) && i < bindings.count;
        ++i) {
     status = iree_hal_vulkan_queue_validate_dispatch_binding(
-        &bindings.values[i], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        queue_family, &bindings.values[i], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     if (!iree_status_is_ok(status)) {
       status = iree_status_annotate_f(status, "binding[%" PRIhsz "]", i);
     }
@@ -9503,9 +9506,6 @@ static iree_status_t iree_hal_vulkan_queue_resolve_dispatch_indirect_parameters(
   *out_offset = 0;
   const iree_hal_buffer_ref_t* workgroup_count_ref =
       &submission->dispatch.config.workgroup_count_ref;
-  IREE_RETURN_IF_ERROR(
-      iree_hal_vulkan_queue_validate_dispatch_indirect_parameters(
-          workgroup_count_ref));
 
   iree_hal_buffer_t* backing_buffer = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_buffer_resolve_backing(
@@ -9802,13 +9802,13 @@ iree_status_t iree_hal_vulkan_queue_submit_dispatch(
         "Vulkan queue_dispatch constants must be 4-byte aligned");
   }
   if (iree_status_is_ok(status)) {
-    status = iree_hal_vulkan_queue_validate_dispatch_bda(pipeline, constants,
-                                                         bindings);
+    status = iree_hal_vulkan_queue_validate_dispatch_bda(
+        queue->base.queue_family, pipeline, constants, bindings);
   }
   if (iree_status_is_ok(status) &&
       iree_hal_dispatch_uses_indirect_parameters(flags)) {
     status = iree_hal_vulkan_queue_validate_dispatch_indirect_parameters(
-        &config.workgroup_count_ref);
+        queue->base.queue_family, &config.workgroup_count_ref);
   }
   if (iree_status_is_ok(status)) {
     status = iree_hal_vulkan_queue_validate_semaphore_list(

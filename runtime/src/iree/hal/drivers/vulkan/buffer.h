@@ -51,6 +51,10 @@ typedef struct iree_hal_vulkan_buffer_native_t {
   VkDeviceSize handle_length;
 } iree_hal_vulkan_buffer_native_t;
 
+// Complete Vulkan native format, including resource extent and dense memory.
+const iree_hal_buffer_binding_layout_t* iree_hal_vulkan_buffer_binding_layout(
+    void);
+
 // Returns captured facts from a qualified, prepared Vulkan buffer. The table
 // is inline in its retained allocation owner, including for transient views.
 static inline const iree_hal_vulkan_buffer_native_t*

@@ -352,20 +352,9 @@ void iree_hal_amdgpu_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
   IREE_ASSERT_TRUE(buffer->staged_backing != NULL);
   IREE_ASSERT_TRUE(
       iree_hal_amdgpu_transient_buffer_load_committed_backing(buffer) == NULL);
-  buffer->native = *iree_hal_amdgpu_buffer_native(buffer->staged_backing);
-  buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS] =
-      iree_hal_buffer_native_binding(
-          buffer->staged_backing,
-          (iree_hal_buffer_native_binding_slot_t){
-              .index = IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS,
-              .type = IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS,
-          });
-  uint8_t* host_pointer =
-      buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST].host_pointer;
-  buffer->native.bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_HOST].host_pointer =
-      host_pointer
-          ? host_pointer + buffer->staged_backing->memory.binding_offset
-          : NULL;
+  iree_hal_buffer_copy_bindings(buffer->staged_backing,
+                                iree_hal_amdgpu_buffer_binding_layout(),
+                                buffer->native.bindings);
   iree_atomic_store(&buffer->committed_backing,
                     (intptr_t)buffer->staged_backing,
                     iree_memory_order_release);

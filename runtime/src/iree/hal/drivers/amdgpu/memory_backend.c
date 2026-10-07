@@ -231,7 +231,11 @@ static iree_status_t iree_hal_amdgpu_slab_pool_query_memory(
   iree_hal_buffer_usage_t usage = IREE_HAL_BUFFER_USAGE_NONE;
   for (iree_host_size_t i = 0; i < scope.family_count; ++i) {
     const iree_hal_pool_family_access_t* access = &scope.families[i];
-    if ((access->interfaces & ~((uint64_t)interfaces)) ||
+    const iree_hal_memory_backend_t* participant =
+        iree_hal_device_memory_backend(
+            iree_hal_queue_family_device(access->family));
+    if ((participant->type == IREE_HAL_MEMORY_BACKEND_HOST && !host_visible) ||
+        (access->interfaces & ~((uint64_t)interfaces)) ||
         (!host_visible &&
          iree_any_bit_set(access->requirements,
                           IREE_HAL_POOL_ACCESS_REQUIRE_COHERENT_WITH_HOST))) {
@@ -297,9 +301,15 @@ static iree_status_t iree_hal_amdgpu_slab_pool_query_memory(
   for (iree_host_size_t i = 0;
        i < scope.family_count && supported && iree_status_is_ok(status); ++i) {
     const iree_hal_queue_family_t* family = scope.families[i].family;
+    const iree_hal_memory_backend_t* participant_base =
+        iree_hal_device_memory_backend(iree_hal_queue_family_device(family));
+    if (participant_base->type == IREE_HAL_MEMORY_BACKEND_HOST) {
+      // Native CPU access is qualified for all host agents below. Execution
+      // and public host mappings use the same coherent physical storage.
+      continue;
+    }
     const iree_hal_amdgpu_memory_backend_t* participant =
-        (const iree_hal_amdgpu_memory_backend_t*)iree_hal_device_memory_backend(
-            iree_hal_queue_family_device(family));
+        (const iree_hal_amdgpu_memory_backend_t*)participant_base;
 #if !IREE_HAL_AMDGPU_LIBHSA_STATIC
     // Handles are meaningful only inside the same loaded native runtime.
     if (participant->libhsa->hsa_init != backend->libhsa->hsa_init) {
@@ -358,7 +368,8 @@ static iree_status_t iree_hal_amdgpu_slab_pool_query_memory(
         iree_hal_amdgpu_memory_atomic_source_masks(cells);
     status = iree_hal_memory_contract_create(
         iree_hal_device_group_memory_domain(group),
-        iree_hal_device_group_memory_scope_count(group), host_allocator,
+        iree_hal_device_group_memory_scope_count(group),
+        iree_hal_amdgpu_buffer_binding_layout(), host_allocator,
         &plan->contract);
   }
   if (iree_status_is_ok(status) && supported) {
@@ -408,15 +419,22 @@ static iree_status_t iree_hal_amdgpu_slab_pool_query(
   if (options->placement.mode == IREE_HAL_POOL_PLACEMENT_REQUIRED) {
     return iree_ok_status();
   }
+  bool has_native_family = false;
   for (iree_host_size_t i = 0; i < scope.family_count; ++i) {
     const iree_hal_pool_family_access_t* access = &scope.families[i];
     const iree_hal_memory_backend_t* backend = iree_hal_device_memory_backend(
         iree_hal_queue_family_device(access->family));
-    if (!backend || backend->type != IREE_HAL_MEMORY_BACKEND_ROCR ||
+    if (!backend ||
+        (backend->type != IREE_HAL_MEMORY_BACKEND_ROCR &&
+         backend->type != IREE_HAL_MEMORY_BACKEND_HOST) ||
         iree_any_bit_set(access->requirements,
                          IREE_HAL_POOL_ACCESS_REQUIRE_UNCACHED)) {
       return iree_ok_status();
     }
+    has_native_family |= backend->type == IREE_HAL_MEMORY_BACKEND_ROCR;
+  }
+  if (scope.family_count && !has_native_family) {
+    return iree_ok_status();
   }
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0; i < iree_hal_device_group_device_count(group) &&

@@ -30,11 +30,6 @@ struct iree_hal_task_transient_buffer_t {
   // Base HAL buffer resource exposed to callers.
   iree_hal_buffer_t base;
 
-  // Stable slot shared by subspans, including those created before commitment.
-  // The caller orders native reads after commit and before decommit; view
-  // construction only copies the immutable array address from base.memory.
-  iree_hal_buffer_native_binding_t native_binding;
-
   // Host allocator used for wrapper storage and teardown.
   iree_allocator_t host_allocator;
 
@@ -62,6 +57,11 @@ struct iree_hal_task_transient_buffer_t {
 
   // State controlling exclusive queue deallocation capture.
   iree_hal_task_transient_buffer_deallocation_state_t deallocation_state;
+
+  // Source-sized native table shared by subspans made before commitment. The
+  // caller orders native reads after commit and before decommit. Trailing
+  // native facts borrow the retained backing's allocation epoch.
+  iree_hal_buffer_native_binding_t bindings[];
 };
 
 static const iree_hal_buffer_vtable_t iree_hal_task_transient_buffer_vtable;
@@ -69,6 +69,12 @@ static const iree_hal_buffer_vtable_t iree_hal_task_transient_buffer_vtable;
 static iree_hal_task_transient_buffer_t* iree_hal_task_transient_buffer_cast(
     iree_hal_buffer_t* buffer) {
   return (iree_hal_task_transient_buffer_t*)buffer;
+}
+
+static const iree_hal_buffer_binding_layout_t*
+iree_hal_task_transient_buffer_binding_layout(const iree_hal_pool_t* pool) {
+  return pool->memory_contract ? &pool->memory_contract->binding_layout
+                               : iree_hal_heap_buffer_binding_layout();
 }
 
 static iree_status_t iree_hal_task_transient_buffer_retain_host_backing(
@@ -104,18 +110,21 @@ iree_status_t iree_hal_task_transient_buffer_create(
   }
   IREE_TRACE_ZONE_BEGIN(z0);
 
+  const iree_hal_buffer_binding_layout_t* binding_layout =
+      iree_hal_task_transient_buffer_binding_layout(source_pool);
   iree_hal_task_transient_buffer_t* buffer = NULL;
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0,
-      iree_allocator_malloc(host_allocator, sizeof(*buffer), (void**)&buffer));
+      z0, iree_allocator_malloc(host_allocator,
+                                sizeof(*buffer) + binding_layout->byte_length,
+                                (void**)&buffer));
 
   iree_hal_buffer_initialize(
       placement, /*allocated_buffer=*/&buffer->base, allocation_size,
       /*byte_offset=*/0, byte_length, params.type, params.access, params.usage,
       &iree_hal_task_transient_buffer_vtable, &buffer->base);
-  buffer->base.memory.bindings = &buffer->native_binding;
+  buffer->base.memory.bindings = buffer->bindings;
   buffer->base.memory.contract = source_pool->memory_contract;
-  buffer->base.host_binding_index = 0;
+  buffer->base.host_binding_index = binding_layout->host_binding_index;
   buffer->host_allocator = host_allocator;
   buffer->profile_id = (uint64_t)iree_atomic_fetch_add(
       &iree_hal_task_transient_buffer_next_profile_id, 1,
@@ -181,12 +190,21 @@ void iree_hal_task_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
   IREE_ASSERT_TRUE(buffer->staged_backing != NULL);
   IREE_ASSERT_TRUE(buffer->committed_backing == NULL);
   buffer->committed_backing = buffer->staged_backing;
-  buffer->native_binding = iree_hal_buffer_native_binding(
-      buffer->committed_backing,
-      (iree_hal_buffer_native_binding_slot_t){
-          .index = buffer->committed_backing->host_binding_index,
-          .type = IREE_HAL_BUFFER_INTERFACE_HOST,
-      });
+  if (buffer->source_pool->memory_contract) {
+    iree_hal_buffer_copy_bindings(
+        buffer->committed_backing,
+        &buffer->source_pool->memory_contract->binding_layout,
+        buffer->bindings);
+  } else {
+    // Unscoped materialization qualifies only host access, whose slot may
+    // differ from the Task wrapper's single host representation.
+    buffer->bindings[0] = iree_hal_buffer_native_binding(
+        buffer->committed_backing,
+        (iree_hal_buffer_native_binding_slot_t){
+            .index = buffer->committed_backing->host_binding_index,
+            .type = IREE_HAL_BUFFER_INTERFACE_HOST,
+        });
+  }
   iree_slim_mutex_unlock(&buffer->mutex);
 }
 
@@ -197,7 +215,9 @@ void iree_hal_task_transient_buffer_decommit(iree_hal_buffer_t* base_buffer) {
   iree_hal_buffer_t* staged_backing = buffer->staged_backing;
   buffer->staged_backing = NULL;
   buffer->committed_backing = NULL;
-  buffer->native_binding.host_pointer = NULL;
+  memset(buffer->bindings, 0,
+         iree_hal_task_transient_buffer_binding_layout(buffer->source_pool)
+             ->byte_length);
   iree_slim_mutex_unlock(&buffer->mutex);
   iree_hal_buffer_release(staged_backing);
 }
