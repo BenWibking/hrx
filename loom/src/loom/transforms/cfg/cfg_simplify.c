@@ -1799,8 +1799,13 @@ iree_status_t loom_cfg_simplify_run(loom_pass_t* pass, loom_module_t* module,
     loom_op_t* pending_op = NULL;
     while (iree_status_is_ok(status) &&
            (pending_op = loom_rewriter_pop(&rewriter)) != NULL) {
+      bool erased = false;
+      status = loom_rewriter_erase_if_dead(&rewriter, pending_op, &erased);
       bool folded = false;
-      status = loom_rewriter_try_fold(&rewriter, pending_op, &folded);
+      if (iree_status_is_ok(status) && !erased) {
+        status = loom_rewriter_try_fold(&rewriter, pending_op, &folded);
+      }
+      any_changed |= erased || folded;
     }
     if (!iree_status_is_ok(status)) {
       break;

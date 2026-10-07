@@ -122,6 +122,7 @@ func.def @ancestor_types_and_attributes(%choose: i1, %element: f32) {
   scf.if %choose {
     test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
     %annotated = test.attrs %element {shape = #test.options<mode = fast, element_type = vector<[%width]xf32>>} : f32
+    test.use %annotated : f32
   } else {
     %c0 = index.constant 0 : index
     %bounded = index.assume %c0 [lt(%c0, %width)] : index
@@ -137,6 +138,7 @@ func.def @ancestor_types_and_attributes(%choose: i1, %element: f32) {
   scf.if %choose {
     test.decl @nested_signature(%storage: group<[%width]>) -> (i32)
     %annotated = test.attrs %element {shape = #test.options<mode = fast, element_type = vector<[%width]xf32>>} : f32
+    test.use %annotated : f32
   } else {
     %c0 = index.constant 0 : index
     %bounded = index.assume %c0 [lt(%c0, %width)] : index
@@ -362,8 +364,6 @@ low.func.def target<test.low.core>(@target) @fused_concat_dominates_consumer(%ch
   %low = test.const.i32 7
   %high = test.const.i32 11
   %pair = concat(%low, %high) : (reg<test.i32>, reg<test.i32>) -> reg<test.i32 x2>
-  low.cond_br %choose, ^consumer, ^exit : reg<test.i32>
-^consumer:
   return %pair
 ^exit:
   return %seed

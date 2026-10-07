@@ -377,10 +377,8 @@ func.def @merge_tails_entering_loop(%choice: i32, %selector: i32, %value: i32) -
 
 // ----
 func.def @merge_tails_entering_loop(%choice: i32, %selector: i32, %value: i32) -> (i32) {
-  %c0 = scalar.constant 0 : i32
   %step = scalar.constant 1 : i32
   %key = scalar.constant 5 : i32
-  %choose = scalar.cmpi eq, %choice, %c0 : i32
   %left_match = scalar.cmpi eq, %selector, %key : i32
   cfg.cond_br %left_match, ^matched, ^left_loop
 ^left_loop:

@@ -90,12 +90,13 @@ typedef struct loom_condition_integer_relation_t {
   loom_condition_integer_operand_t right;
 } loom_condition_integer_relation_t;
 
-// Exact Boolean truth derived while traversing a condition expression.
+// Exact predicate truth derived while traversing a condition expression.
+// Register predicates retain the branch outcome, not an integer value of one.
 typedef struct loom_condition_boolean_fact_t {
-  // Boolean SSA value whose result is known.
+  // SSA predicate whose truth is known.
   loom_value_id_t value_id;
 
-  // Exact result of the Boolean SSA value.
+  // Exact truth of the predicate.
   bool value;
 } loom_condition_boolean_fact_t;
 

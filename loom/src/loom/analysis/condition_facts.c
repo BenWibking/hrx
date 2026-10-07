@@ -725,7 +725,8 @@ static iree_status_t loom_condition_facts_process_derivation(
     loom_condition_derivation_t* out_derivation,
     loom_condition_edge_refinement_set_t* out_refinements, bool* out_complete) {
   const loom_module_t* module = query->module;
-  if (loom_condition_value_is_i1(module, frame->value_id)) {
+  if (loom_condition_value_is_i1(module, frame->value_id) ||
+      loom_type_is_register(loom_module_value_type(module, frame->value_id))) {
     IREE_RETURN_IF_ERROR(loom_condition_fact_set_append_boolean_fact(
         out_derivation, frame->value_id, frame->assumed_truth));
   }

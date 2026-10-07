@@ -142,8 +142,6 @@ func.def @loop_batch(%count: i32, %input: i32) -> (i32) {
 func.def @loop_batch(%count: i32, %input: i32) -> (i32) {
   %c0 = scalar.constant 0 : i32
   %c1 = scalar.constant 1 : i32
-  %true = scalar.constant true : i1
-  %false = scalar.constant false : i1
   cfg.br ^header(%c0: i32, %input: i32)
 ^header(%iteration: i32, %value: i32):
   %more = scalar.cmpi slt, %iteration, %count : i32

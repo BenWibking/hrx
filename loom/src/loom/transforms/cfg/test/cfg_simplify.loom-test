@@ -15,7 +15,6 @@ func.def @folds_constant_branch_and_removes_dead(%a: i32, %b: i32) -> (i32) {
 
 // ----
 func.def @folds_constant_branch_and_removes_dead(%a: i32, %b: i32) -> (i32) {
-  %cond = scalar.constant 1 : i1
   %sum = test.addi %a, %b : i32
   func.return %sum : i32
 }

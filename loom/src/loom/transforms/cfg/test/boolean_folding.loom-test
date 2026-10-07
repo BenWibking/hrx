@@ -110,7 +110,6 @@ func.def @fold_opposite_entry_facts(%x: i32, %y: i32, %value: i32) -> (i32) {
 
 // ----
 func.def @fold_opposite_entry_facts(%x: i32, %y: i32, %value: i32) -> (i32) {
-  %truth = scalar.constant true : i1
   %gate = scalar.cmpi slt, %x, %y : i32
   cfg.cond_br %gate, ^less, ^otherwise
 ^otherwise:
@@ -162,7 +161,6 @@ func.def @fold_branch_payload(%x: i32, %y: i32, %value: i32) -> (i32) {
   %gate = scalar.cmpi slt, %x, %y : i32
   cfg.cond_br %gate, ^forward, ^other
 ^forward:
-  %still_same = scalar.constant true : i1
   %combined = scalar.constant true : i1
   %bit = scalar.extui %combined : i1 to i32
   %result = scalar.addi %value, %bit : i32

@@ -493,6 +493,7 @@ loom_cc_library(
     iree::base::internal::arena
     loom::ir
     loom::ops::cfg
+    loom::ops::low
     loom::util::adaptive_sort
     loom::util::cfg_graph
     loom::util::dominance

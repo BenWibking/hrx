@@ -11,6 +11,7 @@
 #include "loom/analysis/cfg_condition_operand_domain.h"
 #include "loom/analysis/cfg_condition_relation_table.h"
 #include "loom/ops/cfg/ops.h"
+#include "loom/ops/low/ops.h"
 #include "loom/util/adaptive_sort.h"
 
 //===----------------------------------------------------------------------===//
@@ -600,12 +601,11 @@ static iree_status_t loom_cfg_condition_relation_derive_edges(
         .target = cfg_edge->target_block_index,
         .active = true,
     };
-    if (!loom_cfg_cond_br_isa(cfg_edge->terminator) ||
-        cfg_edge->successor_index >= 2) {
+    if (!loom_cfg_cond_br_isa(cfg_edge->terminator) &&
+        !loom_low_cond_br_isa(cfg_edge->terminator)) {
       continue;
     }
-    const loom_value_id_t condition =
-        loom_cfg_cond_br_condition(cfg_edge->terminator);
+    const loom_value_id_t condition = cfg_edge->selector_value_id;
     const bool assumed_truth = cfg_edge->successor_index == 0;
     IREE_RETURN_IF_ERROR(loom_condition_facts_query_complete(
         &query, solver->fact_table, condition, assumed_truth, &derivation));

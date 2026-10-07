@@ -381,7 +381,7 @@ bool loom_op_is_trivially_dead(const loom_module_t* module,
     return false;
   }
   loom_trait_flags_t traits = loom_op_effective_traits(module, op);
-  if (iree_any_bit_set(traits, LOOM_TRAIT_HINT)) {
+  if (iree_any_bit_set(traits, LOOM_TRAIT_HINT | LOOM_TRAIT_SYMBOL_DEFINE)) {
     return false;
   }
   if (loom_traits_are_convergent(traits)) {

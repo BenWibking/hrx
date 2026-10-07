@@ -75,6 +75,7 @@ loom_cc_library(
     iree::base
     iree::base::internal::arena
     loom::ops::cfg
+    loom::ops::low
     loom::ops::op_defs
     loom::rewrite::rewriter
     loom::util::cfg_graph
@@ -138,6 +139,7 @@ loom_cc_library(
     loom::analysis::condition_facts
     loom::ir
     loom::ops::cfg
+    loom::ops::low
     loom::rewrite::rewriter
     loom::util::fact_table
   PUBLIC
