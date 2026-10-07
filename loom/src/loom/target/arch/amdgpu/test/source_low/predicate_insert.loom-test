@@ -60,17 +60,15 @@ low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @dynamic_predicate(%value
   %16 = concat(%14, %15) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
   %17 = v_mov_b32_copy %lane
   %18 = slice %previous[0] : reg<amdgpu.sgpr x4> -> reg<amdgpu.sgpr x2>
-  %19 = v_mov_b32 0
-  %20 = v_cmp_eq_i32 %17, %19
-  %21 = s_xor_b64 %18, %16
-  %22 = s_and_b64 %21, %20
-  %23 = s_xor_b64 %18, %22
-  %24 = slice %previous[2] : reg<amdgpu.sgpr x4> -> reg<amdgpu.sgpr x2>
-  %25 = v_mov_b32 1
-  %26 = v_cmp_eq_i32 %17, %25
-  %27 = s_xor_b64 %24, %16
-  %28 = s_and_b64 %27, %26
-  %29 = s_xor_b64 %24, %28
-  %result = concat(%23, %29) : (reg<amdgpu.sgpr x2>, reg<amdgpu.sgpr x2>) -> reg<amdgpu.sgpr x4>
+  %19 = v_cmp_eq_i32_src1_inline %17 {rhs = 0}
+  %20 = s_xor_b64 %18, %16
+  %21 = s_and_b64 %20, %19
+  %22 = s_xor_b64 %18, %21
+  %23 = slice %previous[2] : reg<amdgpu.sgpr x4> -> reg<amdgpu.sgpr x2>
+  %24 = v_cmp_eq_i32_src1_inline %17 {rhs = 1}
+  %25 = s_xor_b64 %23, %16
+  %26 = s_and_b64 %25, %24
+  %27 = s_xor_b64 %23, %26
+  %result = concat(%22, %27) : (reg<amdgpu.sgpr x2>, reg<amdgpu.sgpr x2>) -> reg<amdgpu.sgpr x4>
   return %result
 }

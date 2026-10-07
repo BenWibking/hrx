@@ -503,15 +503,13 @@ low.func.def target<amdgpu.gfx11.generic.core>(@gfx11_target) abi(hal_kernel) @f
   %18 = v_mov_b32_copy %lane
   %19 = v_and_b32_lit %dest, 4294901760
   %20 = v_or_b32 %19, %17
-  %21 = v_mov_b32 0
-  %22 = v_cmp_eq_i32 %18, %21
-  %23 = v_cndmask_b32 %dest, %20, %22
-  %24 = v_and_b32_lit %dest, 65535
-  %25 = v_lshlrev_b32_src0_inline %17, 16
-  %26 = v_or_b32 %24, %25
-  %27 = v_mov_b32 1
-  %28 = v_cmp_eq_i32 %18, %27
-  %result = v_cndmask_b32 %23, %26, %28
+  %21 = v_cmp_eq_i32_src1_inline %18 {rhs = 0}
+  %22 = v_cndmask_b32 %dest, %20, %21
+  %23 = v_and_b32_lit %dest, 65535
+  %24 = v_lshlrev_b32_src0_inline %17, 16
+  %25 = v_or_b32 %23, %24
+  %26 = v_cmp_eq_i32_src1_inline %18 {rhs = 1}
+  %result = v_cndmask_b32 %22, %25, %26
   return %result
 }
 

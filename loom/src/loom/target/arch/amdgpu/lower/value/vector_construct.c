@@ -1602,25 +1602,10 @@ static iree_status_t loom_amdgpu_compare_dynamic_insert_lane(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t index_lane, uint32_t lane_ordinal, loom_type_t lane_type,
     loom_type_t mask_lane_type, loom_value_id_t* out_mask) {
-  *out_mask = LOOM_VALUE_ID_INVALID;
-
-  loom_value_id_t ordinal = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_const_u32(
-      context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_V_MOV_B32, lane_ordinal,
-      lane_type, &ordinal));
-
-  const loom_value_id_t compare_operands[] = {
-      index_lane,
-      ordinal,
-  };
-  loom_op_t* compare_op = NULL;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_op(
+  return loom_amdgpu_emit_vgpr_compare_immediate(
       context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_V_CMP_EQ_I32,
-      compare_operands, IREE_ARRAYSIZE(compare_operands),
-      loom_make_named_attr_slice(NULL, 0), &mask_lane_type, 1, &compare_op));
-
-  *out_mask = loom_value_slice_get(loom_low_op_results(compare_op), 0);
-  return iree_ok_status();
+      LOOM_AMDGPU_DESCRIPTOR_REF_V_CMP_EQ_I32_SRC1_INLINE, index_lane,
+      lane_ordinal, lane_type, mask_lane_type, out_mask);
 }
 
 static iree_status_t loom_amdgpu_lower_predicate_vector_insert(
