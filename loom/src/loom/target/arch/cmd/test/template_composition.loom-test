@@ -37,13 +37,13 @@ command.program.def public @selected_schedule() launch(%storage: buffer) {
 
 // ----
 low.func.def public retain target<cmd.core> abi(command_program) abi_layout({entry_count = 1, executable_count = 1, fixed_buffer_count = 0, rebindable_binding_count = 1}) @selected_schedule() asm {
-  %11 = resource<command_input> {index = 0, source_type = buffer} : reg<cmd.binding>
-  %12 = resource<command_input> {index = 0, source_type = index} : reg<cmd.executable>
-  %13 = resource<command_input> {index = 0, source_type = index} : reg<cmd.entry>
-  %14 = cmd.constant.u64 0
-  %15 = cmd.constant.u64 -1
-  %16 = cmd.constant.u32 1
-  cmd.dispatch.direct<%12, %13>[%16, %16, %16](%11, %14, %15)
+  %15 = resource<command_input> {index = 0, source_type = buffer} : reg<cmd.binding>
+  %16 = resource<command_input> {index = 0, source_type = index} : reg<cmd.executable>
+  %17 = resource<command_input> {index = 0, source_type = index} : reg<cmd.entry>
+  %18 = cmd.constant.u64 0
+  %19 = cmd.constant.u64 -1
+  %20 = cmd.constant.u32 1
+  cmd.dispatch.direct<%16, %17>[%20, %20, %20](%15, %18, %19)
   return
 }
 
@@ -76,14 +76,14 @@ command.program.def public @exact_schedule() launch(%storage: buffer) {
 
 // ----
 low.func.def public retain target<cmd.core> abi(command_program) abi_layout({entry_count = 1, executable_count = 1, fixed_buffer_count = 0, rebindable_binding_count = 1}) @exact_schedule() asm {
-  %12 = resource<command_input> {index = 0, source_type = buffer} : reg<cmd.binding>
-  %13 = resource<command_input> {index = 0, source_type = index} : reg<cmd.executable>
-  %14 = resource<command_input> {index = 0, source_type = index} : reg<cmd.entry>
-  %15 = cmd.constant.u64 0
-  %16 = cmd.constant.u64 -1
-  %17 = cmd.constant.u32 8
-  %18 = cmd.constant.u32 1
-  cmd.dispatch.direct<%13, %14>[%17, %18, %18](%12, %15, %16)
+  %16 = resource<command_input> {index = 0, source_type = buffer} : reg<cmd.binding>
+  %17 = resource<command_input> {index = 0, source_type = index} : reg<cmd.executable>
+  %18 = resource<command_input> {index = 0, source_type = index} : reg<cmd.entry>
+  %19 = cmd.constant.u64 0
+  %20 = cmd.constant.u64 -1
+  %21 = cmd.constant.u32 8
+  %22 = cmd.constant.u32 1
+  cmd.dispatch.direct<%17, %18>[%21, %22, %22](%16, %19, %20)
   return
 }
 
@@ -117,11 +117,11 @@ command.program.def public @fallback_schedule(%count: index) launch() {
 
 // ----
 low.func.def public retain target<cmd.core> abi(command_program) abi_layout({entry_count = 1, executable_count = 1, fixed_buffer_count = 0, rebindable_binding_count = 0}) @fallback_schedule() asm {
-  %3 = resource<command_input> {index = 0, source_type = index} : reg<cmd.executable>
-  %4 = resource<command_input> {index = 0, source_type = index} : reg<cmd.entry>
-  %5 = cmd.constant.u32 8
-  %6 = cmd.constant.u32 1
-  cmd.dispatch.direct<%3, %4>[%5, %6, %6]()
+  %7 = resource<command_input> {index = 0, source_type = index} : reg<cmd.executable>
+  %8 = resource<command_input> {index = 0, source_type = index} : reg<cmd.entry>
+  %9 = cmd.constant.u32 8
+  %10 = cmd.constant.u32 1
+  cmd.dispatch.direct<%7, %8>[%9, %10, %10]()
   return
 }
 
