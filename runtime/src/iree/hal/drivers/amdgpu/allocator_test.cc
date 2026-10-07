@@ -5,9 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <array>
-#include <condition_variable>
 #include <cstring>
-#include <mutex>
 #include <vector>
 
 #include "iree/hal/api.h"
@@ -295,26 +293,18 @@ static iree_device_size_t OversizedAllocationSize(
   return tlsf_range_length + 1;
 }
 
-// Observe quarantine counters only after the already-published cleanup
-// has finished. Logical buffer release does not wait for native retirement.
-static void WaitForMemoryMaintenance(iree_hal_memory_maintenance_t* owner) {
-  struct Barrier : iree_hal_memory_maintenance_entry_t {
-    // Protects completion and the callback's last notification access.
-    std::mutex mutex;
-    // Publishes completion of all preceding native releases.
-    std::condition_variable condition;
-    // Set by the worker while holding the mutex.
-    bool complete = false;
-  } barrier;
-  barrier.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
-    auto* barrier = static_cast<Barrier*>(entry);
-    std::lock_guard<std::mutex> lock(barrier->mutex);
-    barrier->complete = true;
-    barrier->condition.notify_all();
-  };
-  iree_hal_memory_maintenance_enqueue(owner, &barrier);
-  std::unique_lock<std::mutex> lock(barrier.mutex);
-  barrier.condition.wait(lock, [&] { return barrier.complete; });
+// The caller has finished publishing releases. Drain on the captured owner so
+// TLSF returns and the native retirements they enqueue all finish before the
+// observation. A FIFO barrier alone does not join work enqueued behind it.
+static void DrainMemoryMaintenance(iree_hal_memory_maintenance_t* owner) {
+  iree_hal_memory_maintenance_call(
+      owner,
+      [](void* user_data) {
+        auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+        while (iree_hal_memory_maintenance_run_one(owner)) {
+        }
+      },
+      owner);
 }
 
 static const char* QueryHostIncompatibilityReason(
@@ -1135,7 +1125,7 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeDefaultQuarantineRetention) {
   iree_hal_buffer_release(buffer);
   iree_hal_buffer_release(small_buffer);
 
-  WaitForMemoryMaintenance(
+  DrainMemoryMaintenance(
       test_device.logical_device()->physical_devices[0]->memory_maintenance);
 
   asan = QueryAsanObservation(test_device.device());
@@ -1189,7 +1179,7 @@ TEST_F(AllocatorTest, AsanDiagnosticsExposeZeroQuarantineRelease) {
       test_device.allocator(), params, allocation_size, &buffer, &ptr));
   iree_hal_buffer_release(buffer);
 
-  WaitForMemoryMaintenance(
+  DrainMemoryMaintenance(
       test_device.logical_device()->physical_devices[0]->memory_maintenance);
 
   asan = QueryAsanObservation(test_device.device());
