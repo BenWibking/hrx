@@ -44,6 +44,7 @@ class XdnaPipelineCompletionTest : public XdnaExecutionFixture {
         PrepareExecution({resolved_bindings_.data(), 1}, &first_));
     for (uint32_t generation = 0; generation < 3; ++generation) {
       SCOPED_TRACE(generation);
+      const size_t output_binding = generation % resolved_bindings_.size();
       std::array<BindingValues, 3> expected;
       for (size_t binding = 0; binding < expected.size(); ++binding) {
         for (size_t i = 0; i < kElementCount; ++i) {
@@ -52,12 +53,33 @@ class XdnaPipelineCompletionTest : public XdnaExecutionFixture {
         }
       }
       for (size_t i = 0; i < results.size(); ++i) {
-        expected[0][i] = ~results[i];
+        expected[output_binding][i] = ~results[i];
       }
       for (size_t binding = 0; binding < expected.size(); ++binding) {
         ASSERT_NO_FATAL_FAILURE(WriteBinding(binding, expected[binding]));
       }
-      std::copy(results.begin(), results.end(), expected[0].begin());
+      // Rebind only after the previous invocation has retired. The same
+      // context and command storage must now use the new buffer's DMA address.
+      iree_hal_amd_xdna_executable_storage_t storage = {};
+      storage.memory = first_.instructions.memory;
+      storage.mapping =
+          iree_make_byte_span(first_.instructions.pointer, first_.byte_length);
+      ASSERT_EQ(api_->memory_query_address(storage.memory, 0,
+                                           AMDF_MEMORY_ADDRESS_XDNA_FIRMWARE,
+                                           &storage.device_address),
+                AMDF_STATUS_OK);
+      IREE_ASSERT_OK(iree_hal_amd_xdna_executable_bind(
+          executable_, entry_ordinal_, 1, &storage, 1,
+          &resolved_bindings_[output_binding]));
+      first_.original_instructions.assign(
+          first_.instructions.pointer,
+          first_.instructions.pointer + first_.byte_length);
+      ASSERT_EQ(api_->host_mapping_cache_control(
+                    first_.instructions.mapping,
+                    AMDF_HOST_CACHE_OPERATION_FLUSH, 0, first_.byte_length),
+                AMDF_STATUS_OK);
+      std::copy(results.begin(), results.end(),
+                expected[output_binding].begin());
       ASSERT_NO_FATAL_FAILURE(RunExecution(first_));
       ASSERT_NO_FATAL_FAILURE(VerifyBindings(expected));
     }
@@ -80,12 +102,14 @@ TEST_F(XdnaPipelineCompletionTest, RotatesOwnedReadsAcrossLoopIterations) {
 }
 
 TEST_F(XdnaPipelineCompletionTest, ProjectsFixedRecordAddresses) {
-  constexpr std::array<uint32_t, 9> results = {1, 0, 1, 11, 10, 11, 21, 20, 21};
+  constexpr std::array<uint32_t, 10> results = {1,  0,  1,  11, 10,
+                                                11, 21, 20, 21, 21};
   CheckPipeline(IREE_SV("projected_single_slot"), results);
 }
 
 TEST_F(XdnaPipelineCompletionTest, ProjectsRotatingRecordAddresses) {
-  constexpr std::array<uint32_t, 9> results = {1, 0, 1, 11, 10, 11, 21, 20, 21};
+  constexpr std::array<uint32_t, 10> results = {1,  0,  1,  11, 10,
+                                                11, 21, 20, 21, 21};
   CheckPipeline(IREE_SV("projected_ring"), results);
 }
 

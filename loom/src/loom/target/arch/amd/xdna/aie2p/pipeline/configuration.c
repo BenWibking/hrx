@@ -318,8 +318,8 @@ static iree_status_t loom_aie2p_native_config_bindings(
          transfer; transfer = transfer->next) {
       const loom_symbolic_expr_t* offset =
           &transfer->external_view->begin_byte_offset;
-      const uint64_t begin =
-          loom_symbolic_expr_is_constant(offset) ? offset->constant : 0;
+      const bool external_dynamic = !loom_symbolic_expr_is_constant(offset);
+      const uint64_t begin = external_dynamic ? 0 : offset->constant;
       loom_value_id_t range[] = {bindings[transfer->binding],
                                  LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
       IREE_RETURN_IF_ERROR(
@@ -336,13 +336,20 @@ static iree_status_t loom_aie2p_native_config_bindings(
           NULL, 0, LOOM_LOCATION_UNKNOWN, &op));
       loom_value_id_t operands[] = {LOOM_VALUE_ID_INVALID,
                                     loom_op_results(op)[0]};
-      // Configuration writes address the memory owner's allocation space.
-      // The worker's self-memory load aperture is a separate core address.
-      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_constant(
-          config,
-          tile_address + worker->tile->facts->memory.local_base +
-              transfer->base_storage_offset,
-          &operands[0]));
+      // Constant offsets bind directly into this site's dedicated descriptor.
+      // Dynamic offsets load a relocated base through the worker's aperture;
+      // configuration writes use the memory owner's allocation address space.
+      const uint64_t address =
+          external_dynamic
+              ? tile_address + worker->tile->facts->memory.local_base +
+                    transfer->base_storage_offset
+              : loom_xdna_register_field_address_admitted(
+                    context->family,
+                    LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_BD_WORD1_BASE_ADDRESS_LOW,
+                    transfer->path->shim->coordinate,
+                    &transfer->shim_descriptor);
+      IREE_RETURN_IF_ERROR(
+          loom_aie2p_native_config_constant(config, address, &operands[0]));
       IREE_RETURN_IF_ERROR(loom_low_build_resolved_descriptor_op(
           &config->builder, config->descriptors,
           &config->descriptors->descriptors

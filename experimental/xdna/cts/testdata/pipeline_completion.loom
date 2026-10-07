@@ -45,6 +45,8 @@ pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffe
     %output_record_bytes = index.constant 12 : index
     %word_bytes = index.constant 4 : index
     %fields = index.constant 2 : index
+    %snapshot_offset = index.constant 36 : offset
+    %snapshot = buffer.view %output[%snapshot_offset] : buffer -> view<1xi32>
     scf.for %record = [%begin to %count step %step] {
       %read, %payload = channel.acquire %records : channel<tile<4xi32>> -> (read<tile<4xi32>>, view<4xi32>)
       %record_index = index.mul %record, %output_record_bytes : index
@@ -64,6 +66,11 @@ pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffe
         %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
         %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
         kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+        // Update one fixed snapshot location from the varying local field.
+        // The last field of the last record must win across descriptor reuse.
+        %snapshot_copy = kernel.async.copy %source to %snapshot {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+        %snapshot_group = kernel.async.group %snapshot_copy : kernel.async.token -> kernel.async.group
+        kernel.async.wait %snapshot_group {newer_groups = 0} : kernel.async.group
       }
       channel.release %read : read<tile<4xi32>>
     }

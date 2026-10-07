@@ -462,6 +462,17 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
               selected->local_words, &reason)) {
         return loom_aie2p_native_reject(context, request->op, reason);
       }
+      // Each transfer site owns its descriptors. A fixed slot and projection
+      // need no per-issue address patch, even when the site repeats in a loop.
+      if (borrow.channel->source->capacity == 1 &&
+          loom_symbolic_expr_is_constant(&local_view->projection_byte_offset)) {
+        const uint32_t address =
+            borrow.channel->byte_offset +
+            (uint32_t)local_view->projection_byte_offset.constant;
+        selected->local_words[0] |= loom_xdna_register_field_encode_admitted(
+            LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD0_BASE_ADDRESS,
+            address >> local_tile->facts->dma.address_encoding_shift);
+      }
       if (ingress) {
         selected->completion_lock = local_tile->next_lock++;
         IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
@@ -475,13 +486,15 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
                 LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_RELEASE_VALUE,
                 1);
       }
-      IREE_RETURN_IF_ERROR(loom_source_storage_packing_reserve(
-          context->inventory.pools[worker->tile->pool_index].packing, 8, 8,
-          NULL, 0, &selected->base_storage_offset));
-      IREE_RETURN_IF_ERROR(loom_xdna_array_form_load_address(
-          context->family, worker->tile->coordinate,
-          LOOM_XDNA_MEMORY_SPACE_DATA, worker->tile->coordinate,
-          selected->base_storage_offset, 8, &selected->base_load_address));
+      if (!loom_symbolic_expr_is_constant(&external_view->begin_byte_offset)) {
+        IREE_RETURN_IF_ERROR(loom_source_storage_packing_reserve(
+            context->inventory.pools[worker->tile->pool_index].packing, 8, 8,
+            NULL, 0, &selected->base_storage_offset));
+        IREE_RETURN_IF_ERROR(loom_xdna_array_form_load_address(
+            context->family, worker->tile->coordinate,
+            LOOM_XDNA_MEMORY_SPACE_DATA, worker->tile->coordinate,
+            selected->base_storage_offset, 8, &selected->base_load_address));
+      }
       loom_aie2p_native_binding_t* binding =
           &context->bindings[selected->binding];
       binding->byte_length =

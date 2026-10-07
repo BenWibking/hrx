@@ -138,9 +138,10 @@ typedef struct loom_aie2p_native_transfer_t {
   loom_aie2p_native_dma_path_t* path;
   // Caller buffer ordinal supplying the external base.
   uint32_t binding;
-  // Worker-local eight-byte address pair patched at invocation entry.
+  // Worker-local address pair for a runtime-varying external offset. Unused
+  // when invocation binding patches the dedicated Shim descriptor directly.
   uint64_t base_storage_offset;
-  // Worker-visible load address of that relocated address pair.
+  // Worker-visible load address of the dynamic transfer's relocated base.
   uint32_t base_load_address;
   // Local descriptor allocated for this static transfer site.
   uint16_t local_descriptor;
