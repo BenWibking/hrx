@@ -1320,8 +1320,8 @@ static iree_status_t loom_low_lower_plan_op_from_contract_index(
     loom_low_lower_contract_case_iterator_t iterator;
     const bool used_candidates =
         loom_low_lower_contract_case_iterator_initialize(
-            context->module, index, op_entry, source_op, iteration_mode,
-            &iterator);
+            context->module, index, op_entry, source_op,
+            match_context.vector_lane_projection, iteration_mode, &iterator);
     uint16_t case_index = UINT16_MAX;
     while (loom_low_lower_contract_case_iterator_next(&iterator, &case_index)) {
       const loom_target_contract_case_t* contract_case =
