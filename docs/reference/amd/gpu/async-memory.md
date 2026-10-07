@@ -172,6 +172,21 @@ underflow rule. The reload field remains 16 bits wide, independently of the
 pending-count width.
 [Compiler initialization and layout][triton-barrier-init]
 
+MLIR's `amdgpu.ds_barrier_state` also fixes the pending width at 29, but
+describes the reload count as bits `63:32`. Its initializer masks `N-1` to
+29 bits and places that value in both DWORDs. This differs from table 70's
+16-bit reload field and zero upper bits: the compiler representation does
+not establish a wider hardware reload count. The source disagreement needs
+a hardware or ABI clarification before those upper bits carry count data.
+[MLIR state type][mlir-barrier-layout]
+[MLIR initialization][mlir-barrier-init]
+
+Initialization also has a separate ordering contract. MLIR emits an
+eight-byte workgroup-release atomic store, without synchronizing the waves.
+The caller supplies the cross-wave dependency before other waves use the
+object; atomic initialization alone does not provide Triton's workgroup
+rendezvous. [MLIR initialization contract][mlir-barrier-init-contract]
+
 Linux's **GC12.1.0** register definitions expose
 `LDS_CONFIG.PEND_CNT_WIDTH` at bits **13:8**, with shift `8` and mask
 `0x00003f00`. This identifies a register-level width field, while the shader
@@ -326,6 +341,9 @@ fill and final-reader boundaries for each recipient's storage.
 [triton-async-arrive]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/include/Dialect/TritonAMDGPU/IR/TritonAMDGPUOps.td#L1362-L1373
 [triton-async-arrive-lowering]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/LoadStoreOpToLLVM.cpp#L2517-L2535
 [triton-barrier-init]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/BarrierOpToLLVM.cpp#L10-L53
+[mlir-barrier-layout]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/mlir/include/mlir/Dialect/AMDGPU/IR/AMDGPUTypes.td#L73-L95
+[mlir-barrier-init]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/mlir/lib/Conversion/AMDGPUToROCDL/AMDGPUToROCDL.cpp#L3403-L3464
+[mlir-barrier-init-contract]: https://github.com/llvm/llvm-project/blob/6e714c8d91116794cb699cdf80c26afe9cda3ef3/mlir/include/mlir/Dialect/AMDGPU/IR/AMDGPUOps.td#L2051-L2085
 [triton-barrier-arrive-wait]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/lib/TritonAMDGPUToLLVM/BarrierOpToLLVM.cpp#L58-L118
 [triton-ring-init]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/python/examples/gluon/f16_gemm_cdna5.py#L903-L942
 [triton-phase]: https://github.com/triton-lang/triton/blob/8262c9a91a1d6828ad4f36437fa0046daa67720d/third_party/amd/python/examples/gluon/f16_gemm_cdna5.py#L779-L804
