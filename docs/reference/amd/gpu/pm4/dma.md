@@ -2,10 +2,10 @@
 
 DMA_DATA performs command-processor copies, fills and prefetches. It runs
 through PM4, not an [SDMA queue](../sdma/README.md), and has different
-completion controls from confirmed [COPY_DATA](memory-commands.md). The caller
-owns both transfer ranges and command storage, publishes prior producers
-before DMA reads, and joins DMA writes before applying consumer visibility
-operations or releasing the storage.
+completion controls from [COPY_DATA](copy.md). The caller owns both transfer
+ranges and command storage, publishes prior producers before DMA reads, and
+joins DMA writes before applying consumer visibility operations or releasing
+the storage.
 
 ## Representation and controls
 

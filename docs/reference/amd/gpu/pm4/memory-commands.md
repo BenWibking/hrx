@@ -27,6 +27,9 @@ callers use specific low bits, so the applicable caller matters.
 | WAIT_REG_MEM64, `0x93` | Nine DWORDs. Eight-byte-aligned address, reference low/high at words 4–5, mask low/high at 6–7, polling controls at 8. |
 | NOP, `0x10` | Ordinary type-3 count describes a packet of at least two DWORDs. PAL also emits a special one-DWORD NOP with count `0x3fff`. Padding requirements come from the containing transport. |
 
+The [COPY_DATA chapter](copy.md) gives the complete operand and selector views,
+MEC/ME/PFP differences, GFX12/GC12.1 fields, selected callers and result owners.
+
 [Copy layout][copy-layout] [Copy builder][copy-builder]
 [Write layout][write-layout] [Write builder][write-builder]
 [Wait layouts][wait-layout] [Wait builders][wait-builders]
