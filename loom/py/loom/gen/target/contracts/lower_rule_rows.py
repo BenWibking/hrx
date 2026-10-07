@@ -90,6 +90,27 @@ _GUARD_OTHER_VALUE_REF_KINDS = frozenset(
     )
 )
 
+_GUARD_NO_PAYLOAD_KINDS = frozenset(
+    (
+        GuardKind.VALUE_TYPE,
+        GuardKind.ATTR_KIND,
+        GuardKind.DESCRIPTOR_AVAILABLE,
+        GuardKind.VALUE_MATERIALIZABLE,
+        GuardKind.LOW_VALUE_REGISTER_CLASS,
+        GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT_EQ,
+        GuardKind.VALUE_STATIC_ELEMENT_COUNT_EQ,
+        GuardKind.VALUE_EXACT_I64,
+        GuardKind.VALUE_EXACT_FLOAT,
+        GuardKind.VALUE_NOT_NAN,
+        GuardKind.VALUE_I64_RANGE_LE,
+        GuardKind.VALUE_I64_RANGE_GE,
+        GuardKind.VALUE_STORAGE_OPERAND_SCHEMA,
+        GuardKind.VALUE_NO_USES,
+        GuardKind.VALUE_NO_USES_AFTER,
+        GuardKind.VECTOR_EXTRACT_SHAPE,
+    )
+)
+
 _ATTR_COPY_VALUE_REF_KINDS = frozenset(
     (
         LowerAttrCopyKind.VALUE_EXACT_I64,
@@ -520,21 +541,38 @@ def guard_row(
     row: LowerGuard,
     *,
     storage_operand_schema_ordinals: Mapping[EncodingOperandSummaryDef, int] | None = None,
+    payload_ordinal: int = 0,
 ) -> list[str]:
     fields: list[str] = []
     _append_field(fields, "kind", lower_rule_spelling.GUARD_KIND_C_NAMES[row.kind], always=True)
 
     if guard_uses_value_ref(row.kind):
-        _append_field(fields, "value_ref_index", row.value_ref_index, always=True)
+        _append_field(
+            fields,
+            "selector.value.value_ref_index",
+            row.value_ref_index,
+            always=True,
+        )
     if guard_uses_other_value_ref(row.kind):
         _append_field(
             fields,
-            "other_value_ref_index",
+            "selector.value.other_value_ref_index",
             row.other_value_ref_index,
             always=True,
         )
 
     if row.kind in (
+        GuardKind.VALUE_PACKED_INTEGER_PAYLOAD_FROM_LANES,
+        GuardKind.VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD,
+        GuardKind.VECTOR_EXTRACT_SHAPE,
+    ):
+        _append_field(
+            fields,
+            "selector.value.parameter_index",
+            row.attr_index,
+            always=True,
+        )
+    elif row.kind in (
         GuardKind.ATTR_KIND,
         GuardKind.ENUM_ATTR_EQUALS,
         GuardKind.I64_RANGE,
@@ -542,24 +580,26 @@ def guard_row(
         GuardKind.I64_ARRAY_COUNT,
         GuardKind.I64_ARRAY_ELEMENT_RANGE,
         GuardKind.I64_ARRAY_ELEMENTS_RANGE,
-        GuardKind.VALUE_PACKED_INTEGER_PAYLOAD_FROM_LANES,
-        GuardKind.VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD,
-        GuardKind.VECTOR_EXTRACT_SHAPE,
     ):
-        _append_field(fields, "attr_index", row.attr_index, always=True)
+        _append_field(
+            fields,
+            "selector.attribute.attr_index",
+            row.attr_index,
+            always=True,
+        )
 
     if row.kind == GuardKind.VALUE_TYPE:
         _append_field(
             fields,
-            "index",
-            f"{{.type_pattern_index = {row.type_pattern_index}}}",
+            "selector.value.parameter_index",
+            row.type_pattern_index,
             always=True,
         )
     elif row.kind == GuardKind.I64_ARRAY_ELEMENT_RANGE:
         _append_field(
             fields,
-            "index",
-            f"{{.element_index = {row.u64}}}",
+            "selector.attribute.element_index",
+            row.u64,
             always=True,
         )
     elif row.kind == GuardKind.VALUE_STORAGE_OPERAND_SCHEMA:
@@ -569,8 +609,8 @@ def guard_row(
             raise ValueError("storage operand-schema guard is missing its table")
         _append_field(
             fields,
-            "index",
-            f"{{.element_index = {storage_operand_schema_ordinals[row.storage_operand_schema]}}}",
+            "selector.value.parameter_index",
+            storage_operand_schema_ordinals[row.storage_operand_schema],
             always=True,
         )
     if row.diagnostic_index != 0xFFFF:
@@ -582,6 +622,28 @@ def guard_row(
         )
     if row.kind == GuardKind.ATTR_KIND:
         _append_field(fields, "attr_kind", lower_rule_spelling.attr_kind_c_name(row.attr_kind), always=True)
+    if row.kind == GuardKind.DESCRIPTOR_AVAILABLE:
+        _append_field(
+            fields,
+            "selector.descriptor.descriptor_ref",
+            _descriptor_ref_index(descriptor_refs, row.descriptor),
+            always=True,
+        )
+    if row.kind == GuardKind.LOW_VALUE_REGISTER_CLASS:
+        _append_field(
+            fields,
+            "selector.value.parameter_index",
+            row.register_class_id,
+            always=True,
+        )
+    if payload_ordinal:
+        _append_field(fields, "payload_ordinal", payload_ordinal, always=True)
+    return fields
+
+
+def guard_payload_row(row: LowerGuard) -> list[str]:
+    """Returns the kind-selected immediate payload stored outside a guard."""
+
     u64_payload: str | None = None
     if row.kind in (
         GuardKind.ENUM_ATTR_EQUALS,
@@ -604,28 +666,9 @@ def guard_row(
     elif row.kind == GuardKind.VALUE_MEMORY_SPACE:
         u64_payload = lower_rule_spelling.memory_space_mask(row.memory_spaces)
     if u64_payload is not None:
-        _append_field(
-            fields,
-            "payload",
-            f"{{.u64 = {u64_payload}}}",
-            always=True,
-        )
-    elif row.kind == GuardKind.VALUE_EXACT_POWER_OF_TWO_I64:
-        _append_field(
-            fields,
-            "payload",
-            f"{{.addend = {_c_i64_literal(row.addend)}}}",
-            always=True,
-        )
-    if row.kind == GuardKind.DESCRIPTOR_AVAILABLE:
-        _append_field(
-            fields,
-            "descriptor_ref",
-            _descriptor_ref_index(descriptor_refs, row.descriptor),
-            always=True,
-        )
-    if row.kind == GuardKind.LOW_VALUE_REGISTER_CLASS:
-        _append_field(fields, "register_class_id", row.register_class_id, always=True)
+        return [f".u64 = {u64_payload}"]
+    if row.kind == GuardKind.VALUE_EXACT_POWER_OF_TWO_I64:
+        return [f".addend = {_c_i64_literal(row.addend)}"]
     if row.kind in (
         GuardKind.I64_RANGE,
         GuardKind.I64_ARRAY_ELEMENT_RANGE,
@@ -633,23 +676,15 @@ def guard_row(
         GuardKind.VALUE_I64_RANGE,
         GuardKind.TARGET_SUBGROUP_SIZE_RANGE,
     ):
-        _append_field(
-            fields,
-            "payload",
-            f"{{.i64_range = {{.minimum = {_c_i64_literal(row.minimum_i64)}, .maximum = {_c_i64_literal(row.maximum_i64)}}}}}",
-            always=True,
-        )
-    elif row.kind in (
+        return [f".i64_range = {{.minimum = {_c_i64_literal(row.minimum_i64)}, .maximum = {_c_i64_literal(row.maximum_i64)}}}"]
+    if row.kind in (
         GuardKind.VALUE_PACKED_INTEGER_PAYLOAD_FROM_LANES,
         GuardKind.VALUE_PACKED_INTEGER_LANES_FROM_PAYLOAD,
     ):
-        _append_field(
-            fields,
-            "payload",
-            f"{{.packed_integer = {{.storage_payload_multiple = UINT32_C({row.u64}), .storage_unit_bit_count = UINT32_C({row.minimum_i64}), .maximum_lane_count = UINT32_C({row.maximum_i64})}}}}",
-            always=True,
-        )
-    return fields
+        return [f".packed_integer = {{.storage_payload_multiple = UINT32_C({row.u64}), .storage_unit_bit_count = UINT32_C({row.minimum_i64}), .maximum_lane_count = UINT32_C({row.maximum_i64})}}"]
+    if row.kind in _GUARD_NO_PAYLOAD_KINDS:
+        return []
+    raise ValueError(f"unclassified lower guard payload kind: {row.kind.value}")
 
 
 def storage_operand_schema_row(schema: EncodingOperandSummaryDef) -> list[str]:
@@ -923,7 +958,6 @@ def rule_row(
     report_key_ordinals: Mapping[str, int],
 ) -> list[str]:
     fields: list[str] = []
-    _append_field(fields, "source_op_kind", lower_rule_spelling.op_c_name(row.source_op), always=True)
     if row.flags:
         _append_field(fields, "flags", _rule_flags_c_expression(row.flags), always=True)
     if row.report_key:
@@ -1017,6 +1051,8 @@ def rule_set_row(
     diagnostic_params_name: str,
     diagnostic_param_refs: tuple[int, ...],
     diagnostic_param_refs_name: str,
+    guard_payloads: tuple[tuple[str, ...], ...],
+    guard_payloads_name: str,
     guard_rows: tuple[LowerGuard, ...],
     guards_name: str,
     storage_operand_schemas: tuple[EncodingOperandSummaryDef, ...],
@@ -1104,6 +1140,12 @@ def rule_set_row(
         "diagnostic_param_refs",
         diagnostic_param_refs,
         diagnostic_param_refs_name,
+    )
+    _append_table_fields(
+        fields,
+        "guard_payloads",
+        guard_payloads,
+        guard_payloads_name,
     )
     _append_table_fields(fields, "guards", guard_rows, guards_name)
     _append_table_fields(

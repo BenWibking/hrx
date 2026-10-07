@@ -45,6 +45,7 @@ class CompiledCase:
 
     system: ContractSystem
     row_index: int = CONTRACT_ROW_NONE
+    priority: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,11 +101,14 @@ def compile_contract_index(
     """
     if len(fragments) > 0xFF:
         raise ValueError("contract index binding count exceeds uint8_t")
-    cases_by_op: dict[int, list[CompiledIndexCase]] = {}
+    cases_by_op: dict[int, list[tuple[int, CompiledIndexCase]]] = {}
     for binding_index, fragment in enumerate(fragments):
         for span in fragment.op_spans:
             cases_by_op.setdefault(span.op_kind, []).extend(
-                CompiledIndexCase(case.system, binding_index, case.row_index)
+                (
+                    case.priority,
+                    CompiledIndexCase(case.system, binding_index, case.row_index),
+                )
                 for case in fragment.cases[
                     span.case_start : span.case_start + span.case_count
                 ]
@@ -121,8 +125,9 @@ def compile_contract_index(
         dialect = dialects[(op_kind >> 8) - dialect_base_id]
         op_index = op_kind & 0xFF
         dialect.extend([(CONTRACT_ROW_NONE, 0)] * (op_index + 1 - len(dialect)))
+        op_cases.sort(key=lambda item: -item[0])
         dialect[op_index] = (len(cases), len(op_cases))
-        cases.extend(op_cases)
+        cases.extend(case for _, case in op_cases)
     if len(cases) > 0xFFFF:
         raise ValueError("contract index case count exceeds uint16_t")
     return CompiledContractIndex(
@@ -224,10 +229,12 @@ def _compile_case(
     lower_rule_index: int,
     descriptor_matrix_index: int,
 ) -> CompiledCase:
+    priority = contract_case_priority(contract_case)
     if isinstance(contract_case, DescriptorRule):
         return CompiledCase(
             system=ContractSystem.DESCRIPTOR_RULE,
             row_index=descriptor_rule_index,
+            priority=priority,
         )
     if isinstance(contract_case, (ValueAliasRule, OrdinalValueAliasRule)):
         if lower_rule_index == CONTRACT_ROW_NONE:
@@ -238,6 +245,7 @@ def _compile_case(
         return CompiledCase(
             system=ContractSystem.VALUE_ALIAS,
             row_index=lower_rule_index,
+            priority=priority,
         )
     if isinstance(contract_case, ValueElideRule):
         if lower_rule_index == CONTRACT_ROW_NONE:
@@ -248,6 +256,7 @@ def _compile_case(
         return CompiledCase(
             system=ContractSystem.VALUE_ELIDE,
             row_index=lower_rule_index,
+            priority=priority,
         )
     if isinstance(contract_case, RecipeRule):
         if lower_rule_index == CONTRACT_ROW_NONE:
@@ -258,6 +267,7 @@ def _compile_case(
         return CompiledCase(
             system=ContractSystem.RECIPE_RULE,
             row_index=lower_rule_index,
+            priority=priority,
         )
     if isinstance(contract_case, DescriptorMatrixRule):
         if descriptor_matrix_index == CONTRACT_ROW_NONE:
@@ -268,6 +278,7 @@ def _compile_case(
         return CompiledCase(
             system=ContractSystem.DESCRIPTOR_MATRIX,
             row_index=descriptor_matrix_index,
+            priority=priority,
         )
     raise TypeError(f"unsupported contract case {contract_case!r}")
 

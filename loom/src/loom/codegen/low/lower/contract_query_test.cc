@@ -114,7 +114,8 @@ class SingleOpContract {
                                                    entries_};
   // Query-ready index, with the same representation as generated policy tables.
   loom_target_contract_index_t index_ = {
-      OpKind >> 8, 1, &dialect_, 1, kContractCases, 1, kContractBindings,
+      OpKind >> 8,    1, &dialect_,         1,
+      kContractCases, 1, kContractBindings, nullptr,
   };
 };
 
@@ -321,7 +322,6 @@ TEST(LowContractQueryTest, ContractIndexDescriptorRuleSelectsLegalCase) {
   emit.descriptor_ref = 0;
   const loom_low_lower_emit_ref_t emit_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = kSourceOpKind;
   rule.emit_count = 1;
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.string_pool = kRuleStringPool;
@@ -370,6 +370,110 @@ TEST(LowContractQueryTest, ContractIndexDescriptorRuleSelectsLegalCase) {
   EXPECT_EQ(result.selected_descriptor, &kDescriptor);
 }
 
+TEST(LowContractQueryTest, IndexedMissReplaysCompleteOrderForBestRejection) {
+  iree_arena_block_pool_t block_pool;
+  iree_arena_block_pool_initialize(4096, iree_allocator_system(), &block_pool);
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(&block_pool, &arena);
+
+  loom_low_lower_guard_payload_t guard_payload = {};
+  guard_payload.u64 = 1;
+  loom_low_lower_guard_t guards[2] = {};
+  guards[0].kind = LOOM_LOW_LOWER_GUARD_INSTANCE_FLAGS_HAS_ALL;
+  guards[0].diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
+  guards[0].payload_ordinal = 1;
+  guards[1] = guards[0];
+  guards[1].diagnostic_index = 0;
+  const loom_low_lower_guard_ref_t guard_refs[] = {0, 1};
+  loom_low_lower_rule_t rules[2] = {};
+  rules[0].guard_count = 1;
+  rules[1].guard_start = 1;
+  rules[1].guard_count = 1;
+  const loom_low_lower_diagnostic_t diagnostic = {
+      /*.error_ref=*/LOOM_ERR_TARGET_003_REF,
+  };
+  loom_low_lower_rule_set_t rule_set = {};
+  rule_set.rules = rules;
+  rule_set.rule_count = IREE_ARRAYSIZE(rules);
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
+  rule_set.guards = guards;
+  rule_set.guard_count = IREE_ARRAYSIZE(guards);
+  rule_set.guard_refs = guard_refs;
+  rule_set.guard_ref_count = IREE_ARRAYSIZE(guard_refs);
+  rule_set.diagnostics = &diagnostic;
+  rule_set.diagnostic_count = 1;
+  const loom_low_lower_rule_set_t* rule_sets[] = {&rule_set};
+
+  const loom_target_contract_descriptor_rule_t descriptor_rules[] = {{0}, {1}};
+  const loom_target_contract_fragment_t fragment = {
+      LOOM_TARGET_CONTRACT_FRAGMENT_FLAG_TARGET_QUERY,
+      IREE_ARRAYSIZE(descriptor_rules),
+      descriptor_rules,
+      0,
+      nullptr,
+  };
+  const loom_target_contract_binding_t binding = {&fragment, 0};
+  const loom_target_contract_case_t cases[] = {
+      {LOOM_TARGET_CONTRACT_SYSTEM_DESCRIPTOR_RULE, 0, 0},
+      {LOOM_TARGET_CONTRACT_SYSTEM_DESCRIPTOR_RULE, 0, 1},
+  };
+  loom_target_contract_op_entry_t entries[(kSourceOpKind & 0xFF) + 1] = {};
+  entries[loom_op_dialect_index(kSourceOpKind)] = {
+      0,
+      2,
+  };
+  const loom_target_contract_dialect_table_t dialect = {IREE_ARRAYSIZE(entries),
+                                                        entries};
+  // The generated candidate row visits only case 0. Both cases reject, so the
+  // query must replay the complete authored order and retain case 1's better
+  // diagnostic.
+  const uint32_t selection_data[] = {
+      1, 2, 1, 0, 1u | (static_cast<uint32_t>(kSourceOpKind) << 16), 0,
+  };
+  const loom_target_contract_index_t index = {
+      kSourceOpKind >> 8,
+      1,
+      &dialect,
+      IREE_ARRAYSIZE(cases),
+      cases,
+      1,
+      &binding,
+      selection_data,
+  };
+  const loom_low_lower_contract_query_options_t options = {
+      /*.contract_index=*/&index,
+      /*.rule_sets=*/
+      {
+          /*.count=*/IREE_ARRAYSIZE(rule_sets),
+          /*.values=*/rule_sets,
+      },
+  };
+  const loom_target_facts_t target_facts = MakeTargetFacts();
+  loom_target_contract_query_environment_t environment = {};
+  environment.target_facts = &target_facts;
+  environment.arena = &arena;
+  loom_op_t op = {};
+  op.kind = kSourceOpKind;
+  loom_target_contract_query_result_t result =
+      loom_target_contract_query_result_empty();
+
+  IREE_ASSERT_OK(loom_low_lower_query_target_contract(&environment, &options,
+                                                      &op, &result));
+
+  EXPECT_EQ(result.outcome, LOOM_TARGET_CONTRACT_QUERY_UNSUPPORTED);
+  EXPECT_EQ(result.case_index, 1);
+  EXPECT_EQ(result.rule_set_index, 0);
+  EXPECT_EQ(result.diagnostic_index, 0);
+  EXPECT_NE(result.rejection, nullptr);
+  if (result.rejection != nullptr) {
+    EXPECT_EQ(result.rejection->error_ref, LOOM_ERR_TARGET_003_REF);
+  }
+
+  iree_arena_deinitialize(&arena);
+  iree_arena_block_pool_deinitialize(&block_pool);
+}
+
 TEST_F(LowContractQuerySourceMemoryTest,
        ScopedValueTypesSelectNarrowVectorRuleWithoutMutatingIr) {
   const loom_type_t authored_type = loom_type_shaped_1d(
@@ -401,13 +505,19 @@ TEST_F(LowContractQuerySourceMemoryTest,
   loom_low_lower_guard_t guard = {};
   guard.kind = LOOM_LOW_LOWER_GUARD_VALUE_TYPE;
   guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
-  guard.value_ref_index = 0;
-  guard.index.type_pattern_index = 0;
+  guard.selector.value.value_ref_index = 0;
+  guard.selector.value.parameter_index = 0;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_VECTOR_NEGF;
   rule.guard_count = 1;
+  const loom_low_lower_rule_span_t span = {
+      /*.source_op_kind=*/LOOM_OP_VECTOR_NEGF,
+      /*.rule_start=*/0,
+      /*.rule_count=*/1,
+  };
   loom_low_lower_rule_set_t rule_set = {};
+  rule_set.spans = &span;
+  rule_set.span_count = 1;
   rule_set.rules = &rule;
   rule_set.rule_count = 1;
   rule_set.guards = &guard;
@@ -458,23 +568,26 @@ TEST(LowContractQueryTest, TargetSubgroupSizeRangeRequiresKnownInRangeSize) {
       /*.key_string_ref=*/kRuleStringDescriptor,
   };
   loom_low_lower_guard_t guard = {};
+  loom_low_lower_guard_payload_t guard_payload = {};
   guard.kind = LOOM_LOW_LOWER_GUARD_TARGET_SUBGROUP_SIZE_RANGE;
   guard.diagnostic_index = LOOM_LOW_LOWER_DIAGNOSTIC_NONE;
-  guard.payload.i64_range.minimum = 1;
-  guard.payload.i64_range.maximum = 32;
+  guard.payload_ordinal = 1;
+  guard_payload.i64_range.minimum = 1;
+  guard_payload.i64_range.maximum = 32;
   const loom_low_lower_guard_ref_t guard_ref = 0;
   loom_low_lower_emit_t emit = {};
   emit.kind = LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP;
   emit.descriptor_ref = 0;
   const loom_low_lower_emit_ref_t emit_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = kSourceOpKind;
   rule.guard_count = 1;
   rule.emit_count = 1;
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.string_pool = kRuleStringPool;
   rule_set.rules = &rule;
   rule_set.rule_count = 1;
+  rule_set.guard_payloads = &guard_payload;
+  rule_set.guard_payload_count = 1;
   rule_set.guards = &guard;
   rule_set.guard_count = 1;
   rule_set.guard_refs = &guard_ref;
@@ -580,7 +693,6 @@ TEST(LowContractQueryTest, ContractIndexDescriptorRuleReportsRejectedCase) {
   diagnostic.error_ref = LOOM_ERR_TARGET_003_REF;
   diagnostic.param_count = IREE_ARRAYSIZE(diagnostic_params);
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = kSourceOpKind;
   rule.guard_count = 1;
   loom_low_lower_rule_set_t rule_set = {};
   rule_set.string_pool = kRuleStringPool;
@@ -717,7 +829,6 @@ TEST_F(LowContractQuerySourceMemoryTest,
   emit.source_memory_ordinal = 1;
   const loom_low_lower_emit_ref_t emit_ref = 0;
   loom_low_lower_rule_t rule = {};
-  rule.source_op_kind = LOOM_OP_VECTOR_LOAD;
   rule.emit_count = 1;
 
   loom_low_lower_rule_set_t rule_set = {};

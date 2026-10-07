@@ -56,7 +56,7 @@ def _index_fragment(op_kind: int, *rows: int) -> CompiledContractFragment:
     )
 
 
-def test_compile_index_preserves_binding_and_local_order() -> None:
+def test_compile_index_orders_priority_then_binding_and_local_order() -> None:
     first = _index_fragment(0x703, 4, 2)
     second = _index_fragment(0x703, 9)
     for fragments, rows in (
@@ -70,6 +70,17 @@ def test_compile_index_preserves_binding_and_local_order() -> None:
             CompiledIndexCase(ContractSystem.VALUE_ALIAS, binding, row)
             for binding, row in rows
         )
+
+    prioritized_second = replace(
+        second,
+        cases=(replace(second.cases[0], priority=1),),
+    )
+    index = compile_contract_index((first, prioritized_second))
+    assert index.cases == (
+        CompiledIndexCase(ContractSystem.VALUE_ALIAS, 1, 9),
+        CompiledIndexCase(ContractSystem.VALUE_ALIAS, 0, 4),
+        CompiledIndexCase(ContractSystem.VALUE_ALIAS, 0, 2),
+    )
 
 
 def test_compile_index_preserves_dialect_holes_and_fragment_ordinals() -> None:
@@ -241,6 +252,7 @@ def test_compile_contract_fragment_orders_cases_by_priority() -> None:
 
     assert compiled.op_spans[0].case_count == 3
     assert [row.row_index for row in compiled.cases] == [1, 2, 0]
+    assert [row.priority for row in compiled.cases] == [2, 2, 0]
     assert [row.rule_index for row in compiled.descriptor_rules] == [10, 11, 12]
 
 

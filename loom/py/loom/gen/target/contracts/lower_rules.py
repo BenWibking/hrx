@@ -464,6 +464,22 @@ def _generate_source(
             [lower_rule_rows.storage_operand_schema_row(schema) for schema in storage_operand_schemas],
         )
     )
+
+    guard_payload_candidates: list[tuple[str, ...] | None] = []
+    for row in unique_guards:
+        payload_fields = lower_rule_rows.guard_payload_row(row)
+        guard_payload_candidates.append(tuple(payload_fields) if payload_fields else None)
+    # Each guard contributes at most one payload, so the validated uint16 guard
+    # count also bounds these one-based payload ordinals.
+    guard_payloads, guard_payload_ordinals = _intern_optional_rows(guard_payload_candidates)
+    guard_payloads_name = f"k{c_table_prefix}GuardPayloads"
+    lines.extend(
+        lower_rule_rows.emit_optional_array(
+            guard_payloads_name,
+            "loom_low_lower_guard_payload_t",
+            [list(payload_fields) for payload_fields in guard_payloads],
+        )
+    )
     guards_name = f"k{c_table_prefix}Guards"
     lines.extend(
         lower_rule_rows.emit_optional_array(
@@ -474,8 +490,9 @@ def _generate_source(
                     descriptor_refs,
                     row,
                     storage_operand_schema_ordinals=storage_operand_schema_ordinals,
+                    payload_ordinal=guard_payload_ordinals[index],
                 )
-                for row in unique_guards
+                for index, row in enumerate(unique_guards)
             ],
         )
     )
@@ -588,6 +605,8 @@ def _generate_source(
             diagnostic_params_name=diagnostic_params_name,
             diagnostic_param_refs=diagnostic_param_refs,
             diagnostic_param_refs_name=diagnostic_param_refs_name,
+            guard_payloads=guard_payloads,
+            guard_payloads_name=guard_payloads_name,
             guard_rows=unique_guards,
             guards_name=guards_name,
             storage_operand_schemas=storage_operand_schemas,
@@ -1006,7 +1025,11 @@ def _validate_c_table_shape(
         if is_structural_emit and row.operand_materialization is not DescriptorOperandMaterialization.DIRECT:
             raise ValueError(f"{row_subject} structural emit cannot materialize descriptor operands")
         _require_u16(row.operand_ref_start, f"{row_subject} operand-ref start")
-        _require_u8(row.operand_ref_count, f"{row_subject} operand-ref count")
+        _require_unsigned_bits(
+            row.operand_ref_count,
+            3,
+            f"{row_subject} operand-ref count",
+        )
         _require_table_range(
             row.operand_ref_start,
             row.operand_ref_count,
@@ -1019,8 +1042,9 @@ def _validate_c_table_shape(
             allowed_operand_mask = (1 << row.operand_ref_count) - 1
             if row.copy_operand_mask & ~allowed_operand_mask:
                 raise ValueError(f"{row_subject} copy operand mask references an operand outside operand-ref range: {row.copy_operand_mask}")
-        _require_u8(
+        _require_unsigned_bits(
             row.accumulator_operand_index,
+            2,
             f"{row_subject} accumulator operand index",
         )
         if row.kind == LowerEmitKind.DESCRIPTOR_OP_ACCUMULATE_LANES and row.accumulator_operand_index >= row.operand_ref_count:
@@ -1030,7 +1054,11 @@ def _validate_c_table_shape(
             row.result_type_pattern_start,
             f"{row_subject} result type-pattern start",
         )
-        _require_u8(row.result_ref_count, f"{row_subject} result-ref count")
+        _require_unsigned_bits(
+            row.result_ref_count,
+            2,
+            f"{row_subject} result-ref count",
+        )
         if row.flags & LOWER_EMIT_FLAG_RESULT_TYPE_PATTERN and row.flags & LOWER_EMIT_FLAG_RESULT_DESCRIPTOR_TYPE:
             raise ValueError(f"{row_subject} cannot use both result type-pattern and descriptor result-type flags")
         if row.flags & LOWER_EMIT_FLAG_RESULT_TYPE_PATTERN and row.result_ref_count != 0 and not row.flags & LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS:
@@ -1064,7 +1092,11 @@ def _validate_c_table_shape(
                 "value-ref",
             )
         _require_u16(row.attr_copy_start, f"{row_subject} attr-copy start")
-        _require_u8(row.attr_copy_count, f"{row_subject} attr-copy count")
+        _require_unsigned_bits(
+            row.attr_copy_count,
+            5,
+            f"{row_subject} attr-copy count",
+        )
         _require_table_range(
             row.attr_copy_start,
             row.attr_copy_count,
@@ -1073,7 +1105,11 @@ def _validate_c_table_shape(
             "attr-copy",
         )
         _require_u16(row.tied_result_start, f"{row_subject} tied-result start")
-        _require_u8(row.tied_result_count, f"{row_subject} tied-result count")
+        _require_unsigned_bits(
+            row.tied_result_count,
+            1,
+            f"{row_subject} tied-result count",
+        )
         _require_table_range(
             row.tied_result_start,
             row.tied_result_count,
@@ -1095,6 +1131,7 @@ def _validate_c_table_shape(
 
     for index, row in enumerate(table.rules):
         row_subject = f"{subject} rule {index}"
+        _require_u8(row.flags, f"{row_subject} flags")
         action_range_count = int(row.emit_count != 0) + int(row.alias_ref_count != 0) + int(row.elide_ref_count != 0)
         if action_range_count > 1:
             raise ValueError(f"{row_subject} cannot carry more than one action range")
@@ -1151,7 +1188,7 @@ def _validate_c_table_shape(
             f"{row_subject} aggregate guard count",
         )
         _require_u16(row.guard_start, f"{row_subject} guard start")
-        _require_u16(row.guard_count, f"{row_subject} guard count")
+        _require_u8(row.guard_count, f"{row_subject} guard count")
         _require_table_range(
             row.guard_start,
             row.guard_count,
@@ -1274,6 +1311,11 @@ def _validate_type_pattern_c_shape(subject: str, type_pattern: TypePattern) -> N
 def _require_u8(value: int, subject: str) -> None:
     if not 0 <= value <= _U8_MAX:
         raise ValueError(f"{subject} exceeds uint8_t: {value}")
+
+
+def _require_unsigned_bits(value: int, bit_count: int, subject: str) -> None:
+    if not 0 <= value < 1 << bit_count:
+        raise ValueError(f"{subject} exceeds {bit_count}-bit unsigned storage: {value}")
 
 
 def _require_u8_not_reserved_any(value: int, subject: str) -> None:
