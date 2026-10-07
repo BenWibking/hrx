@@ -61,10 +61,13 @@ shader-visible grid-size inputs.
 
 ## Register binding and launch
 
-SET_SH_REG uses opcode `0x76`. Its register operand is a DWORD offset from
-`0x2c00`; the compute shader type is selected in the header. The following
-intervals are the ordinary GFX11 compute binding surface, not a requirement to
-overwrite all neighboring queue-context registers. [Register map][pal-registers]
+PAL's SET_SH_REG builder uses opcode `0x76` and a DWORD register offset from
+`0x2c00`, passing `ShaderCompute` through its shared header builder. The
+[register-transport chapter](registers.md) separates the engine-specific header
+views, indexed and pair forms, memory-backed loads and their lifetimes. The
+following intervals are the ordinary GFX11 compute binding surface, not a
+requirement to overwrite all neighboring queue-context registers.
+[Register map][pal-registers]
 [Packet construction][pal-set] [Compute binding][pal-binding]
 
 | Register interval | Meaning |

@@ -52,6 +52,11 @@ its predicate retains that compute-engine restriction.
 [PAL user data][pal-abi] [RADV grid input][mesa-grid]
 [SGPR policy][mesa-grid-policy]
 
+The [register-transport chapter](registers.md#indexed-load_sh_reg_index)
+describes the load's address modes, data formats and source-storage lifetime.
+Its direct-address grid-input flow is distinct from PFP offset-mode loads
+used by execute-indirect command generation.
+
 Other compiler inputs can include dispatch pointers, hidden grid sizes,
 preloaded arguments or scratch state. They must match the actual entry ABI.
 PAL's public indirect-dispatch API expressly excludes HSA-ABI pipelines;

@@ -47,6 +47,7 @@ right to that trailer. [Compute postamble][postamble]
 | [Atomic operations](atomics.md) | TC integer operations, returned values, command modes, participant domains and cache/retirement contracts. |
 | [Cache control](cache.md) | Acquire/release fields, native-generation differences, ranges, scopes, recorded BLT/cache history and complete visibility sequences. |
 | [Compiled dispatch](dispatch.md) | Executable backing, register and argument ABI, MEM_ORDERED wait-counter mode, direct launch, runtime state and completion. |
+| [Shader register transport](registers.md) | SET_SH_REG, SET_SH_REG_INDEX, PAIRS/PACKED forms, LOAD_SH_REG and LOAD_SH_REG_INDEX; engine and firmware selection, field units, inline copies, borrowed inputs and context lifetime. |
 | [Compute affinity and queue priority](../scheduling.md) | `COMPUTE_STATIC_THREAD_MGMT_SE*`, KMD mask composition, per-SE preambles and the distinct KFD queue controls. |
 | [Group memory](lds.md) | Static and dynamic LDS allocation, workgroup synchronization and resource rebinding. |
 | [Indirect dispatch](indirect.md) | Memory-resident workgroup counts, compiler inputs and producer-to-fetch dependencies. |
