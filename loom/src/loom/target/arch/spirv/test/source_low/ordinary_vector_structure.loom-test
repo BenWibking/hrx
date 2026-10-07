@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/ordinary_vector_structure.loom-test
 // RUN: emit source-low target=spirv:vulkan1.3+bda+hal output=low control-flow=structured-low
 
 kernel.def @ordinary_vector_structure_i32() {
