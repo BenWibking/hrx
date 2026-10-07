@@ -28,6 +28,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [ROCm target identities][therock-targets] | `1cc8ec570e9f5c720de9ce52dc485228c2df0274` | CDNA5 product-to-compiler-target mapping, kept separate from native GC and SDMA IP. |
 | [AMD atomic-operation tables][legacy-rocm] | `85a16825737e43a14ff431754b359380e78062a7` | Architecture-specific atomic operation tables and their separate PCIe-route interpretations. |
 | [Windows DDI][windows-ddi] | `7515063cea4c9e98db6a92986c5b4ddb0463fd16` | Native submission, monitored fences, mapping, residency, and destruction contracts. |
+| [Windows driver model guides][windows-guides] | `2d03b8b58143ec94b2ae56e2ddc11ec64133fb2c` | Monitored-fence mapping and wait ownership, native GPU-fence enablement, storage and notification ordering. |
 | [XDNA driver][xdna] | `8dfda66f67a84aecf26cf68336efc9e4cc1756c3` | Array contexts, firmware command envelopes, native completion, power management, and diagnostic access. |
 | [AI Engine driver][aie] | `2855a032366e3d19dab893e7c263b14bb920cd64` | Register descriptions, timers, event counters, stream switches, DMA, and trace configuration. |
 | [AI Engine binary utilities][aiebu] | `e82e28cbb237dcfd6c3029d85dc604515367ee24` | AIE2 transaction encoding, AIE2PS CERT controller instructions and task-wait ownership, and ELF platform identities. |
@@ -116,6 +117,7 @@ executes. The corresponding chapter identifies those boundaries.
 [therock-targets]: https://github.com/ROCm/TheRock/tree/1cc8ec570e9f5c720de9ce52dc485228c2df0274
 [legacy-rocm]: https://github.com/ROCm/legacy-rocm-build/tree/85a16825737e43a14ff431754b359380e78062a7
 [windows-ddi]: https://github.com/MicrosoftDocs/windows-driver-docs-ddi/tree/7515063cea4c9e98db6a92986c5b4ddb0463fd16
+[windows-guides]: https://github.com/MicrosoftDocs/windows-driver-docs/tree/2d03b8b58143ec94b2ae56e2ddc11ec64133fb2c
 [d3d12-sharing]: https://learn.microsoft.com/en-us/windows/win32/direct3d12/shared-heaps
 [d3d12-sync]: https://learn.microsoft.com/en-us/windows/win32/direct3d12/user-mode-heap-synchronization
 [xdna]: https://github.com/amd/xdna-driver/tree/8dfda66f67a84aecf26cf68336efc9e4cc1756c3

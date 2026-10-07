@@ -129,9 +129,10 @@ describe their own fetch, chaining and retirement rules. A shared packet body
 does not make the surrounding transports interchangeable.
 
 Windows WDDM has native submission, monitored-fence, mapping, residency, and
-destruction contracts. Those contracts belong to the Windows queue owner; a
-Linux doorbell/write-pointer sequence supplies no Windows submission rule. The
-[source map](../sources.md) identifies the native driver and ABI evidence.
+destruction contracts. The [Windows transport chapter](wddm.md) distinguishes
+context submission with a separate signal from hardware-queue progress and
+native GPU-fence capabilities. A Linux doorbell/write-pointer sequence supplies
+no Windows submission or retirement rule.
 
 ### KFD queue storage
 

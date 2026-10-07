@@ -149,35 +149,22 @@ separate execution join, not a requirement to store fences in command bytes.
 
 ## Native submission retirement
 
-WDDM hardware-queue submission supplies a GPU `CommandBuffer` address, a
-`CommandLength` in bytes, and a `HwQueueProgressFenceId` identifying native
-completion. A command's own output marker and that progress fence describe
-different observations. The native fence's update owner depends on the node's
-`RingBufferFenceRelease` capability: [Submission fields][wddm-submit]
-[Native fence contract][wddm-native-submit]
+Windows submission has its own [acceptance, progress-fence and retirement
+protocol](../wddm.md). A command's output marker and the native progress fence
+have different owners; the node's `RingBufferFenceRelease` capability defines
+when and by whom the native fence is updated.
 
-| Node capability | Native progress-fence update contract |
-| --- | --- |
-| `RingBufferFenceRelease = 0` | For a UMD submission, the UMD places the update at the end of the DMA buffer. Kernel submissions use the corresponding driver signaling path. |
-| `RingBufferFenceRelease = 1` | The driver/GPU updates progress after neither GPU nor CPU uses the DMA buffer; the exact mechanism belongs to the native implementation. |
+ROCr's `WDDMDevice::SubmitToHwQueue` provides the command address, byte length
+and progress point alongside WKMI private submission data. The public WKMI
+helper accepts no continuation address and returns no native trailer location.
+Those interfaces therefore supply no address to which a caller could chain
+to resume an opaque native wrapper. [ROCr hardware-queue submission][rocr-wddm-submit]
+[WKMI submission interface][wkmi-submit]
 
-Microsoft defines this bit separately from context scheduling support.
-Hardware scheduling being enabled alone does not identify the fence-update
-contract. [Node capabilities][wddm-node-flags]
-
-ROCr's `WDDMDevice::SubmitToHwQueue` provides a public caller: it fills WKMI
-private data, submits the address, byte length and progress point, then frees
-the host private data after the call. That private-data lifetime is expressly
-permitted by the WDDM DDI. The public WKMI submission helper accepts no
-continuation address and returns no native trailer location. These interfaces
-therefore do not supply an address to which a caller could chain to resume an
-opaque native wrapper. [ROCr hardware-queue submission][rocr-wddm-submit]
-[WKMI submission interface][wkmi-submit] [Private-data lifetime][wddm-native-submit]
-
-The complete scheduled lifetime consequently needs both the command graph's
-execution/cache completion and the selected transport's native retirement.
-Seeing a payload marker in the final chained body alone does not establish
-that the native submission has released its command backing.
+The complete scheduled lifetime needs both the command graph's execution/cache
+completion and the selected transport's native retirement. Seeing a payload
+marker in the final chained body alone does not establish that the native
+submission has released its command backing.
 
 ## CPU rebuild after completed use
 
@@ -269,8 +256,5 @@ mutation or a substitute for the firmware contract of an AQL carrier.
 [mesa-chain]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_cs.c#L560-L592
 [pal-chain-return]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/gfxCmdStream.cpp#L519-L549
 [pal-submit-postamble]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/os/amdgpu/amdgpuQueue.cpp#L1235-L1313
-[wddm-submit]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/ns-d3dkmthk-_d3dkmt_submitcommandtohwqueue
-[wddm-native-submit]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmddi/ns-d3dkmddi-_dxgkarg_submitcommandtohwqueue
-[wddm-node-flags]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmdt/ns-d3dkmdt-_dxgk_nodemetadata_flags
 [rocr-wddm-submit]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/libhsakmt/src/dxg/wddm/device.cpp#L1134-L1164
 [wkmi-submit]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/shared/amdgpu-windows-interop/wkmi/wkmi.h#L299-L312

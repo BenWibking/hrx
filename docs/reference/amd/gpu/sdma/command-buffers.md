@@ -11,7 +11,9 @@ fetch or retirement. [Scheduled owner][schedule] [ROCr producer][rocr-inline]
 The [queue-publication chapter](publication.md) describes primary-ring
 capacity, wrapping, pointer units, host visibility and final storage use for
 both transports. Those rules surround the indirect-body protocol described
-here.
+here. The [Windows submission chapter](../wddm.md) separately describes WDDM
+command addresses, completion publication and native retirement; those native
+contracts are not supplied by the Linux ring wrapper below.
 
 ## Native generation and transport
 

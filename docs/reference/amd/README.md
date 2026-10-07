@@ -46,6 +46,7 @@ provide exact search terms within the tree.
 | Reserve, publish and reuse queue storage | [PM4 ring frontiers](gpu/pm4/publication.md), [AQL header and doorbell publication](gpu/aql/publication.md), [SDMA reservation and ordered commit](gpu/sdma/publication.md). |
 | Populate an AQL metadata-prefetch ring | [Paired slots, four headers, kernarg preload and `CP_HQD_KD_CNTL`](gpu/aql/metadata.md). |
 | Wake a host when GPU work changes a signal | [Native mailbox/event representation, interrupt decoding and check-to-sleep ordering](gpu/notifications.md). |
+| Submit Windows GPU work and observe native completion | [WDDM command acceptance, `RingBufferFenceRelease`, monitored fences and native GPU waits](gpu/wddm.md). |
 | Launch a compiled GPU program | [PM4 `SET_SH_REG` and `DISPATCH_DIRECT`](gpu/pm4/dispatch.md), [AQL kernel dispatch and descriptors](gpu/aql/dispatch.md). |
 | Bind shared workgroup storage | [PM4 `LDS_SIZE`](gpu/pm4/lds.md), [AQL group storage](gpu/aql/dispatch.md#static-and-dynamic-group-storage). |
 | Stream tensor tiles through LDS | [TDM descriptor fields, stride units, padding and row gather/scatter](gpu/tensor-memory.md), [asynchronous completion and ready/empty slot reuse](gpu/async-memory.md). |

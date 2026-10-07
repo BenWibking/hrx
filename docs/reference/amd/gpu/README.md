@@ -17,6 +17,7 @@ resource-lifetime protocol.
 | [Tensor descriptors and LDS layouts](tensor-memory.md) | CDNA5 TDM address/stride units, 1D–5D fields, iteration, padding, row gather/scatter, descriptor advancement and per-wave issue. |
 | [Workgroup clusters and multicast](clusters.md) | CDNA5 `CLUSTER_LOAD`, `workgroup_mask`, per-requestor completion, cluster barrier membership, extended AQL geometry and local LDS reuse. |
 | [Native signals and host notification](notifications.md) | `event_mailbox_ptr`, KFD event ages, interrupt decoding, sleeping waits and notification-storage lifetime. |
+| [Windows submission and fences](wddm.md) | WDDM context and hardware-queue submissions, accepted work, monitored-fence width, native progress and final storage use. |
 | [PM4](pm4/README.md) | Compute dispatch, memory commands, cache control, and command-buffer execution. |
 | [AQL](aql/README.md) | Packet publication, dispatch, dependencies, vendor command carriers, and profiling. |
 | [SDMA](sdma/README.md) | Transfer-engine operations and signaling protocols. |
