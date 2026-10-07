@@ -99,23 +99,30 @@ def _bfloat_narrow_rule(
         )
 
     if result_kind is _BfloatNarrowResult.NATIVE:
-        conversion_descriptor = logical_core_descriptor(
-            f"spirv.op_s_convert.{integer_suffix}.i16"
+        # The rounded payload occupies the low 16 bits. Native BF16 does not
+        # imply Int16 support; reinterpret the full-width carrier and extract
+        # its first component instead of introducing an i16 intermediate.
+        vector_suffix = f"v{source_format.bit_width // BF16_FORMAT.bit_width}bf16"
+        bitcast_descriptor = logical_core_descriptor(
+            f"spirv.op_bitcast.{integer_suffix}.{vector_suffix}"
         )
-        emits.append(
-            emit_descriptor_op(
-                descriptor=conversion_descriptor,
-                operands={"input": carrier_ref},
-                results={"dst": ValueRef.temporary("narrow_bits")},
-                result_types={"dst": DescriptorResultType()},
-            )
-        )
-        bitcast_descriptor = logical_core_descriptor("spirv.op_bitcast.i16.bf16")
         emits.append(
             emit_descriptor_op(
                 descriptor=bitcast_descriptor,
-                operands={"input": ValueRef.temporary("narrow_bits")},
+                operands={"input": carrier_ref},
+                results={"dst": ValueRef.temporary("packed_bfloat")},
+                result_types={"dst": DescriptorResultType()},
+            )
+        )
+        extract_descriptor = logical_core_descriptor(
+            f"spirv.op_composite_extract.{vector_suffix}.bf16"
+        )
+        emits.append(
+            emit_descriptor_op(
+                descriptor=extract_descriptor,
+                operands={"composite": ValueRef.temporary("packed_bfloat")},
                 results={"dst": ValueRef.result("result")},
+                immediates={"component_index": 0},
             )
         )
     elif not direct_carrier_result:

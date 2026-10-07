@@ -102,6 +102,7 @@ iree_py_test(
     main = "pytest_style_runner.py",
     deps = [
         ":contracts",
+        "//loom/py/loom/target/arch/spirv:features",
     ],
 )
 
