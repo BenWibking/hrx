@@ -160,7 +160,9 @@ loom_cc_library(
   SRCS
     "config.cc"
   DEPS
+    ::predicates
     iree::third_party::cxx_parser
+    loom::analysis::symbol_value_constraints
     loom::import::cxx::source::attributes
     loom::import::cxx::source::error
     loom::import::cxx::source::locations

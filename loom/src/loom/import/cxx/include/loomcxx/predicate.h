@@ -52,7 +52,9 @@ template <class T>
 [[loom::predicate_result]] T result();
 
 // Subject-implicit overloads constrain a loom::config declaration. The
-// omitted first operand is the declared config value.
+// omitted first operand is the declared config value. Explicit arguments use
+// that value's source type; integer literals therefore retain their ordinary
+// C++ suffix requirements.
 template <class T>
 [[loom::predicate("eq")]] bool eq(T value);
 template <class T>

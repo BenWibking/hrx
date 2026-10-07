@@ -429,25 +429,6 @@ void append_unsigned_constant_predicate(
                             constant.signed_value, predicates);
 }
 
-bool accepts_source_type(cxx::TranslationUnit& unit, loom_predicate_kind_t kind,
-                         const cxx::Type* type) {
-  const auto traits = unit.typeTraits();
-  switch (kind) {
-    case LOOM_PREDICATE_EQ:
-    case LOOM_PREDICATE_NE:
-      return traits.is_arithmetic(type) || traits.is_enum(type);
-    case LOOM_PREDICATE_NOT_NAN:
-    case LOOM_PREDICATE_NOT_INF:
-    case LOOM_PREDICATE_FINITE:
-      return traits.is_floating_point(type);
-    default: {
-      auto representation = traits.integral_representation(type);
-      return representation && representation->bits > 0 &&
-             representation->bits <= 64;
-    }
-  }
-}
-
 void append_helper_predicate(cxx::TranslationUnit& unit,
                              Diagnostics& diagnostics,
                              cxx::CallExpressionAST* call,
@@ -490,8 +471,9 @@ void append_helper_predicate(cxx::TranslationUnit& unit,
     }
     auto operand =
         predicate_operand(unit, diagnostics, expression, carrier_type);
+    projected.argument_types[argument_index] = expression->type;
     if (auto* value = std::get_if<PredicateValue>(&operand)) {
-      if (!accepts_source_type(unit, kind, value->source->type)) {
+      if (!predicate_accepts_source_type(unit, kind, value->source->type)) {
         diagnostics.reject(unit, value->source,
                            std::string(loom_predicate_kind_name(kind)) +
                                " does not accept this C++ value type");
@@ -644,6 +626,26 @@ void collect_predicates(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
 }
 
 }  // namespace
+
+bool predicate_accepts_source_type(cxx::TranslationUnit& unit,
+                                   loom_predicate_kind_t kind,
+                                   const cxx::Type* type) {
+  const auto traits = unit.typeTraits();
+  switch (kind) {
+    case LOOM_PREDICATE_EQ:
+    case LOOM_PREDICATE_NE:
+      return traits.is_arithmetic(type) || traits.is_enum(type);
+    case LOOM_PREDICATE_NOT_NAN:
+    case LOOM_PREDICATE_NOT_INF:
+    case LOOM_PREDICATE_FINITE:
+      return traits.is_floating_point(type);
+    default: {
+      auto representation = traits.integral_representation(type);
+      return representation && representation->bits > 0 &&
+             representation->bits <= 64;
+    }
+  }
+}
 
 std::vector<ProjectedPredicate> project_predicates(
     cxx::TranslationUnit& unit, Diagnostics& diagnostics,

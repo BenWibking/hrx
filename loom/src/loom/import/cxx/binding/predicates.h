@@ -54,6 +54,9 @@ struct ProjectedPredicate {
   std::array<PredicateValue, 3> values;
   // Number of active entries in values.
   uint8_t value_count;
+  // Frontend-selected source type for each explicit predicate argument. An
+  // implicit config subject has no source argument and leaves its entry null.
+  std::array<const cxx::Type*, 3> argument_types;
   // Predicate template whose VALUE payloads index values.
   loom_predicate_t predicate;
 };
@@ -64,6 +67,12 @@ enum class PredicateSubject {
   Explicit,
   Implicit,
 };
+
+// Returns whether |kind| accepts a scalar value with the resolved source type.
+// Consumers with implicit subjects validate that subject through this query.
+bool predicate_accepts_source_type(cxx::TranslationUnit& unit,
+                                   loom_predicate_kind_t kind,
+                                   const cxx::Type* type);
 
 // Projects a pure C++ conjunction into Loom predicate templates. Resolution
 // follows semantic symbols and frontend-selected implicit conversions; calls,
