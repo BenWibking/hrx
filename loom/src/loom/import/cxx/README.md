@@ -1078,6 +1078,48 @@ priority annotations; conflicting redeclarations diagnose at the source
 attribute. Calling or selecting an implementation function directly is an
 error because it would bypass late template selection.
 
+Providers can depend on a normalized target fact without naming a backend or
+processor. A trailing `loom::where` comparison against
+`loom::target::subgroup_size()` becomes the template's parameterized target
+condition, while ordinary value clauses remain value predicates:
+
+```cpp
+#include <loomcxx/kernel.h>
+#include <loomcxx/predicate.h>
+
+LOOM_TEMPLATE_DECL("guide.scale")
+unsigned scale(unsigned value)
+    [[loom::where(loom::predicate::multiple_of(value, 8u))]];
+
+LOOM_TEMPLATE_DEF(scale)
+[[loom::priority(20)]] unsigned scale_wave64(unsigned value)
+    [[loom::where(loom::target::subgroup_size() == 64u && value > 0u)]] {
+  return value + value;
+}
+
+LOOM_TEMPLATE_DEF(scale)
+[[loom::priority(20)]] unsigned scale_wave32(unsigned value)
+    [[loom::where(32u == loom::target::subgroup_size() && value > 0u)]] {
+  return value << 1u;
+}
+
+LOOM_TEMPLATE_DEF(scale)
+[[loom::priority(1)]] unsigned scale_fallback(unsigned value) {
+  return value * 2u;
+}
+```
+
+The specialized providers import with
+`requires [#target.subgroup.size<64>]` and
+`requires [#target.subgroup.size<32>]`; both independently retain
+`where [ne(%value, 0)]`. The family retains its
+`where [multiple_of(%value, 8)]` contract. Link-time template selection uses
+the selected target facts and proven call-site value facts without a
+preprocessor branch or runtime comparison. An exact subgroup condition can
+also appear on the family declaration when every provider and application has
+that requirement. Other comparisons diagnose because the current target
+condition represents exact subgroup size, not a range or exclusion.
+
 Providers compose across translation units. A header-only library can publish
 them with its callers, while a provider-only `.cxx` file can import to its own
 Loom module and link as a normal library dependency. The latter keeps target

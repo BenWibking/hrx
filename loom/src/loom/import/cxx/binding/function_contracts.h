@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "loom/import/cxx/binding/target_requirements.h"
 #include "loom/import/cxx/source/source.h"
 #include "loom/ir/attribute.h"
 
@@ -51,6 +52,9 @@ class FunctionContracts {
   // Returns whether this callable has a nonempty native predicate contract.
   bool has_predicates(cxx::FunctionSymbol* function) const;
 
+  // Returns whether this callable has target applicability requirements.
+  bool has_requirements(cxx::FunctionSymbol* function) const;
+
   // Substitutes flattened argument/result or kernel argument identities into
   // the admitted predicate templates. The identities must be reserved for the
   // immediately following callable build and remain owned by the builder.
@@ -58,6 +62,10 @@ class FunctionContracts {
       cxx::FunctionSymbol* function, Types& types,
       std::span<const loom_value_id_t> identities,
       FunctionContractSignature signature, cxx::AST* owner) const;
+
+  // Materializes admitted target applicability requirements in |module|.
+  std::vector<loom_attribute_t> bind_requirements(cxx::FunctionSymbol* function,
+                                                  loom_module_t* module) const;
 
  private:
   enum class RootKind {
@@ -94,11 +102,12 @@ class FunctionContracts {
   struct Contract {
     // Conjunction in the first constrained declaration's source order.
     std::vector<Predicate> predicates;
+    // Target conditions in the first constrained declaration's source order.
+    std::vector<ProjectedTargetRequirement> requirements;
   };
 
   static bool predicate_equal(const Predicate& left, const Predicate& right);
-  static bool contract_equal(const std::vector<Predicate>& left,
-                             const std::vector<Predicate>& right);
+  static bool contract_equal(const Contract& left, const Contract& right);
 
   // Frontend semantic identities and type relationships.
   cxx::TranslationUnit& unit_;

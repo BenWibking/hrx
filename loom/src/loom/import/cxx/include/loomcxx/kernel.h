@@ -84,9 +84,10 @@ struct [[loom::clustered_launch_config]] clustered_configuration {
 
 namespace target {
 
-// Reads the selected target's subgroup width while computing launch geometry.
-// This is a compilation input, unlike loom::subgroup_size(), which queries the
-// executing kernel topology.
+// Reads the selected target's subgroup width in launch configuration code or
+// a trailing loom::where template applicability contract. This is a
+// compilation input, unlike loom::subgroup_size(), which queries the executing
+// kernel topology.
 [[loom::op("target.subgroup.size")]] unsigned subgroup_size();
 
 }  // namespace target

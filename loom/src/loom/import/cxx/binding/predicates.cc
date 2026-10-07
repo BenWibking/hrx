@@ -22,6 +22,7 @@
 #include <utility>
 #include <variant>
 
+#include "loom/import/cxx/source/attributes.h"
 #include "loom/import/cxx/source/constants.h"
 #include "loom/import/cxx/source/expressions.h"
 
@@ -36,14 +37,6 @@ struct PredicateConstant {
 };
 
 using PredicateOperand = std::variant<PredicateValue, PredicateConstant>;
-
-cxx::ExpressionAST* unwrapped(cxx::ExpressionAST* expression) {
-  expression = strip_implicit_casts(expression);
-  while (auto* nested = cxx::ast_cast<cxx::NestedExpressionAST>(expression)) {
-    expression = strip_implicit_casts(nested->expression);
-  }
-  return expression;
-}
 
 int64_t signed_payload(uint64_t value, int bit_count) {
   if (bit_count == 64) {
@@ -121,32 +114,10 @@ std::optional<bool> constant_truth(cxx::TranslationUnit& unit,
   return interpreter.toBool(*constant);
 }
 
-const cxx::Attribute* semantic_attribute(cxx::FunctionSymbol* function,
-                                         std::string_view spelling) {
-  if (!function || !function->attributes()) {
-    return nullptr;
-  }
-  for (const auto& attribute : *function->attributes()) {
-    if (attribute.attributeNamespace && attribute.name &&
-        attribute.attributeNamespace->name() == "loom" &&
-        attribute.name->name() == spelling) {
-      return &attribute;
-    }
-  }
-  return nullptr;
-}
-
-cxx::FunctionSymbol* called_function(cxx::CallExpressionAST* call) {
-  auto* id = cxx::ast_cast<cxx::IdExpressionAST>(
-      unwrapped(call ? call->baseExpression : nullptr));
-  return id ? cxx::symbol_cast<cxx::FunctionSymbol>(id->symbol) : nullptr;
-}
-
 std::optional<loom_predicate_kind_t> helper_kind(cxx::TranslationUnit& unit,
                                                  Diagnostics& diagnostics,
                                                  cxx::CallExpressionAST* call) {
-  auto* function = called_function(call);
-  auto* attribute = semantic_attribute(function, "predicate");
+  auto* attribute = annotation(direct_callee(call), "predicate");
   if (!attribute) {
     return std::nullopt;
   }
@@ -162,13 +133,13 @@ std::optional<loom_predicate_kind_t> helper_kind(cxx::TranslationUnit& unit,
 }
 
 bool is_result_call(cxx::CallExpressionAST* call) {
-  return semantic_attribute(called_function(call), "predicate_result");
+  return annotation(direct_callee(call), "predicate_result");
 }
 
 std::optional<PredicateValue> predicate_value(cxx::TranslationUnit& unit,
                                               Diagnostics& diagnostics,
                                               cxx::ExpressionAST* expression) {
-  auto* identity = unwrapped(expression);
+  auto* identity = unwrap_expression(expression);
   std::vector<cxx::FieldSymbol*> members;
   while (auto* member = cxx::ast_cast<cxx::MemberExpressionAST>(identity)) {
     auto* field = cxx::symbol_cast<cxx::FieldSymbol>(member->symbol);
@@ -179,13 +150,13 @@ std::optional<PredicateValue> predicate_value(cxx::TranslationUnit& unit,
           "predicate member paths require direct non-static record fields");
     }
     members.push_back(field);
-    identity = unwrapped(member->baseExpression);
+    identity = unwrap_expression(member->baseExpression);
   }
   std::reverse(members.begin(), members.end());
 
   PredicateValue value = {};
   value.members = std::move(members);
-  value.source = unwrapped(expression);
+  value.source = unwrap_expression(expression);
   value.converted = expression;
   value.root_type = identity->type;
   if (auto* id = cxx::ast_cast<cxx::IdExpressionAST>(identity)) {
@@ -512,7 +483,7 @@ void collect_predicates(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
                         PredicateSubject subject,
                         std::vector<ProjectedPredicate>& predicates) {
   auto* condition =
-      cxx::ast_cast<cxx::BinaryExpressionAST>(unwrapped(expression));
+      cxx::ast_cast<cxx::BinaryExpressionAST>(unwrap_expression(expression));
   if (condition && !condition->symbol &&
       condition->op == cxx::TokenKind::T_AMP_AMP) {
     collect_predicates(unit, diagnostics, condition->leftExpression, subject,
@@ -528,8 +499,8 @@ void collect_predicates(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
     reject_false(unit, diagnostics, expression);
   }
 
-  if (auto* call =
-          cxx::ast_cast<cxx::CallExpressionAST>(unwrapped(expression))) {
+  if (auto* call = cxx::ast_cast<cxx::CallExpressionAST>(
+          unwrap_expression(expression))) {
     if (auto kind = helper_kind(unit, diagnostics, call)) {
       append_helper_predicate(unit, diagnostics, call, *kind, subject,
                               predicates);
@@ -545,7 +516,7 @@ void collect_predicates(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
     return;
   }
   if (auto* unary =
-          cxx::ast_cast<cxx::UnaryExpressionAST>(unwrapped(expression));
+          cxx::ast_cast<cxx::UnaryExpressionAST>(unwrap_expression(expression));
       unary && !unary->symbol && unary->op == cxx::TokenKind::T_EXCLAIM) {
     if (auto value = predicate_value(unit, diagnostics, unary->expression);
         value && traits.is_integral(value->source->type)) {

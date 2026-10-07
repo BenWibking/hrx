@@ -114,6 +114,7 @@ loom_cc_library(
   DEPS
     iree::third_party::cxx_parser
     loom::import::cxx::source
+    loom::import::cxx::source::attributes
     loom::import::cxx::source::constants
     loom::import::cxx::source::expressions
     loom::ir
@@ -136,12 +137,40 @@ loom_cc_library(
     "function_contracts.cc"
   DEPS
     ::predicates
+    ::target_requirements
     iree::third_party::cxx_parser
     loom::import::cxx::source
     loom::import::cxx::source::attributes
     loom::import::cxx::source::error
+    loom::import::cxx::source::expressions
     loom::import::cxx::value::types
     loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    target_requirements
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "target_requirements.h"
+  SRCS
+    "target_requirements.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::constants
+    loom::import::cxx::source::error
+    loom::import::cxx::source::expressions
+    loom::ir
+    loom::ops::target
   PUBLIC
 )
 endif()
@@ -629,6 +658,30 @@ loom_cc_test(
     "rtti"
   DEPS
     ::predicates
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::error
+  LABELS
+    "iree-build-requirement=loom.import.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_test(
+  NAME
+    target_requirements_test
+  SRCS
+    "target_requirements_test.cc"
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  DEPS
+    ::target_requirements
     iree::testing::gtest
     iree::testing::gtest_main
     iree::third_party::cxx_parser

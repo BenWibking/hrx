@@ -102,16 +102,23 @@ loom_symbol_ref_t TemplateApplyIntrinsic::materialize(
     auto predicates =
         contracts_->bind(family_->function, types, signature.identities,
                          FunctionContractSignature::Flattened, owner);
+    auto requirements =
+        contracts_->bind_requirements(family_->function, builder->module);
     if (!predicates.empty()) {
       build_flags |= LOOM_TEMPLATE_DECL_BUILD_FLAG_HAS_PREDICATES;
+    }
+    if (!requirements.empty()) {
+      build_flags |= LOOM_TEMPLATE_DECL_BUILD_FLAG_HAS_REQUIRES;
     }
     check(loom_template_decl_build(
         &declaration_builder, build_flags, /*visibility=*/0,
         /*retain=*/0,
         annotated(family_->function, "device") ? LOOM_TEMPLATE_CC_DEVICE : 0,
         /*purity=*/0, /*temperature=*/0, loom_symbol_ref_null(),
-        loom_parameterized_attr_array_empty(), family_->reference,
-        argument_types, argument_count, result_types, result_count,
+        loom_make_parameterized_attr_array(requirements.data(),
+                                           requirements.size()),
+        family_->reference, argument_types, argument_count, result_types,
+        result_count,
         /*tied_results=*/nullptr,
         /*tied_result_count=*/0, predicates.data(), predicates.size(),
         declaration_location_, &family_->declaration));

@@ -602,9 +602,15 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
   }
   bool returns_void = signature->returnType()->kind() == cxx::TypeKind::kVoid;
   bool has_predicates = function_contracts_.has_predicates(symbol);
+  bool has_requirements = function_contracts_.has_requirements(symbol);
   if (check_case && has_predicates) {
     diagnostics_.reject(unit_, definition,
                         "check cases cannot carry callable predicates");
+  }
+  if (has_requirements && !template_definition) {
+    diagnostics_.reject(
+        unit_, definition,
+        "target requirements require a template family or definition");
   }
   std::vector<loom_type_t> arguments;
   std::vector<loom_type_t> results;
@@ -720,11 +726,16 @@ DefinedFunction Functions::define(cxx::FunctionSymbol* symbol, Types& types,
     if (!predicates.empty()) {
       flags |= LOOM_TEMPLATE_DEF_BUILD_FLAG_HAS_PREDICATES;
     }
+    auto requirements = function_contracts_.bind_requirements(symbol, module_);
+    if (!requirements.empty()) {
+      flags |= LOOM_TEMPLATE_DEF_BUILD_FLAG_HAS_REQUIRES;
+    }
     check(loom_template_def_build(
         builder, flags, family.reference, /*visibility=*/0, /*retain=*/0,
         is_device ? LOOM_TEMPLATE_CC_DEVICE : 0,
         /*purity=*/0, /*temperature=*/0, target,
-        loom_parameterized_attr_array_empty(),
+        loom_make_parameterized_attr_array(requirements.data(),
+                                           requirements.size()),
         template_definition->priority.value_or(0),
         callees_.at(symbol->canonical()), arguments.data(), arguments.size(),
         results.data(), results.size(), /*tied_results=*/nullptr,

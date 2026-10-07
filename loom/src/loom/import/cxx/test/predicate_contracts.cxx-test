@@ -75,8 +75,19 @@ unsigned scaled(unsigned value)
     [[loom::where(loom::predicate::multiple_of(value, 8u))]];
 
 LOOM_TEMPLATE_DEF(scaled)
-[[loom::priority(1)]] unsigned scaled_fallback(unsigned value)
-    [[loom::where(value > 0u)]] {
+[[loom::priority(20)]] unsigned scaled_wave64(unsigned value)
+    [[loom::where(loom::target::subgroup_size() == 64u && value > 0u)]] {
+  return value;
+}
+
+LOOM_TEMPLATE_DEF(scaled)
+[[loom::priority(20)]] unsigned scaled_wave32(unsigned value)
+    [[loom::where(32u == loom::target::subgroup_size() && value > 0u)]] {
+  return value;
+}
+
+LOOM_TEMPLATE_DEF(scaled)
+[[loom::priority(1)]] unsigned scaled_fallback(unsigned value) {
   return value;
 }
 
@@ -90,6 +101,35 @@ func.def public @apply(%value: i32) -> (i32) {
 
 template.decl @test.scaled(%2: i32) -> (i32) where [multiple_of(%2, 8)]
 
-template.def<@test.scaled> priority(1) @scaled_fallback(%value: i32) -> (i32) where [ne(%value, 0)] {
+template.def<@test.scaled> requires [#target.subgroup.size<64>] priority(20) @scaled_wave64(%value: i32) -> (i32) where [ne(%value, 0)] {
   template.return %value : i32
 }
+
+template.def<@test.scaled> requires [#target.subgroup.size<32>] priority(20) @scaled_wave32(%value: i32) -> (i32) where [ne(%value, 0)] {
+  template.return %value : i32
+}
+
+template.def<@test.scaled> priority(1) @scaled_fallback(%value: i32) -> (i32) {
+  template.return %value : i32
+}
+
+// ====
+// A family-level target condition constrains every application before
+// provider selection while retaining independent value predicates.
+#include <loomcxx/kernel.h>
+#include <loomcxx/predicate.h>
+
+LOOM_TEMPLATE_DECL("test.wave64_only")
+unsigned wave64_only(unsigned value)
+    [[loom::where(loom::target::subgroup_size() == 64u &&
+                  loom::predicate::multiple_of(value, 16u))]];
+
+unsigned use_wave64(unsigned value) { return wave64_only(value); }
+
+// ----
+func.def public @use_wave64(%value: i32) -> (i32) {
+  %4 = template.apply<@test.wave64_only>(%value) : (i32) -> (i32)
+  func.return %4 : i32
+}
+
+template.decl requires [#target.subgroup.size<64>] @test.wave64_only(%2: i32) -> (i32) where [multiple_of(%2, 16)]

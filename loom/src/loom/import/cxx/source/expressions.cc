@@ -7,6 +7,7 @@
 #include "loom/import/cxx/source/expressions.h"
 
 #include <cxx/ast.h>
+#include <cxx/symbols.h>
 
 namespace loom::cxx_import {
 
@@ -16,6 +17,20 @@ cxx::ExpressionAST* strip_implicit_casts(cxx::ExpressionAST* expression) {
     expression = cast->expression;
   }
   return expression;
+}
+
+cxx::ExpressionAST* unwrap_expression(cxx::ExpressionAST* expression) {
+  expression = strip_implicit_casts(expression);
+  while (auto* nested = cxx::ast_cast<cxx::NestedExpressionAST>(expression)) {
+    expression = strip_implicit_casts(nested->expression);
+  }
+  return expression;
+}
+
+cxx::FunctionSymbol* direct_callee(cxx::CallExpressionAST* call) {
+  auto* id = cxx::ast_cast<cxx::IdExpressionAST>(
+      unwrap_expression(call ? call->baseExpression : nullptr));
+  return id ? cxx::symbol_cast<cxx::FunctionSymbol>(id->symbol) : nullptr;
 }
 
 cxx::ConditionExpressionAST* condition_declaration(
