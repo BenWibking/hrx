@@ -1435,7 +1435,7 @@ def _vector_extract_dynamic_rule(
     )
 
 
-def _predicate_boolean_bytes_emits(
+def predicate_boolean_bytes_emits(
     source: ValueRef,
     result: ValueRef,
     *,
@@ -1485,7 +1485,7 @@ def _vector_predicate_extract_rule(*, dynamic_index: bool) -> DescriptorRule:
         else "amd.xdna.aie2p.extract.i8.immediate"
     )
     boolean_bytes = ValueRef.temporary("boolean_bytes")
-    materialize_emits, _ = _predicate_boolean_bytes_emits(
+    materialize_emits, _ = predicate_boolean_bytes_emits(
         ValueRef.operand("source"),
         boolean_bytes,
         temporary_prefix="predicate_extract",
@@ -1656,7 +1656,7 @@ def _vector_predicate_insert_rule(
     compare = _descriptor("amd.xdna.aie2p.cmp.lt.unsigned.i8x64")
     boolean_bytes = ValueRef.temporary("predicate_insert_boolean_bytes")
     updated_bytes = ValueRef.temporary("predicate_insert_updated_bytes")
-    materialize_emits, zeros = _predicate_boolean_bytes_emits(
+    materialize_emits, zeros = predicate_boolean_bytes_emits(
         ValueRef.operand("dest"),
         boolean_bytes,
         temporary_prefix="predicate_insert",

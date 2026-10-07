@@ -809,6 +809,7 @@ loom_check_test_suite(
     "test/source_low/vector_constant.loom-test"
     "test/source_low/vector_dot_interleave.loom-test"
     "test/source_low/vector_float_comparison.loom-test"
+    "test/source_low/vector_index_conversion.loom-test"
     "test/source_low/vector_large_insert.loom-test"
     "test/source_low/vector_mask_select.loom-test"
     "test/source_low/vector_memory.loom-test"

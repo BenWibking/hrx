@@ -44,6 +44,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.floating_sign import (
 from loom.target.arch.amd.xdna.aie2p.contracts.i64 import AIE2P_I64_RULES
 from loom.target.arch.amd.xdna.aie2p.contracts.index_conversion import (
     AIE2P_INDEX_CONVERSION_RULES,
+    AIE2P_VECTOR_INDEX_CONVERSION_RULES,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.integer_division import (
     AIE2P_INTEGER_DIVISION_RULES,
@@ -151,6 +152,7 @@ def aie2p_core_cases() -> Sequence[ContractCase]:
             )
         ),
         *AIE2P_INDEX_CONVERSION_RULES,
+        *AIE2P_VECTOR_INDEX_CONVERSION_RULES,
         *(
             core_rules._binary_rule(source_op, type_pattern, descriptor_key)
             for source_op, descriptor_key in (
