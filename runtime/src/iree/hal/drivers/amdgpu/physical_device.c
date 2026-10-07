@@ -11,6 +11,7 @@
 #include "iree/async/frontier_tracker.h"
 #include "iree/async/notification.h"
 #include "iree/hal/drivers/amdgpu/abi/signal.h"
+#include "iree/hal/drivers/amdgpu/access_policy.h"
 #include "iree/hal/drivers/amdgpu/hostcall_provider.h"
 #include "iree/hal/drivers/amdgpu/pm4_command_buffer.h"
 #include "iree/hal/drivers/amdgpu/slab_provider.h"
@@ -740,23 +741,45 @@ iree_hal_amdgpu_physical_device_initialize_default_pool_resources(
   IREE_RETURN_IF_ERROR(
       iree_hal_amdgpu_slab_provider_query_memory_pool_properties(
           libhsa, coarse_block_memory_pool, &properties));
+  iree_hal_amdgpu_access_agent_list_t access_agents;
+  IREE_RETURN_IF_ERROR(iree_hal_amdgpu_access_agent_list_resolve_memory_agents(
+      &system->topology, IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY, &access_agents));
+  const iree_hal_queue_family_affinity_t family_affinity =
+      system->topology.gpu_agent_count == IREE_HAL_MAX_QUEUE_FAMILIES
+          ? IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY
+          : (((iree_hal_queue_family_affinity_t)1
+              << system->topology.gpu_agent_count) -
+             1);
+  iree_hal_amdgpu_atomic_memory_source_masks_t atomic_source_masks;
+  IREE_RETURN_IF_ERROR(iree_hal_amdgpu_atomic_memory_query_source_masks(
+      libhsa, &system->topology, coarse_block_memory_pool,
+      HSA_AMD_MEMORY_POOL_STANDARD_FLAG, &atomic_source_masks));
+  const bool asan_enabled =
+      iree_hal_asan_pool_options_is_enabled(&options->default_pool.asan);
   const iree_hal_amdgpu_slab_provider_options_t default_slab_options = {
-      .flags =
-          iree_hal_asan_pool_options_is_enabled(&options->default_pool.asan)
-              ? IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_ASAN_SHADOW |
-                    IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_ASAN_VMM
-              : IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_NONE,
+      .flags = asan_enabled ? IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_ASAN_SHADOW |
+                                  IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_ASAN_VMM
+                            : IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_NONE,
       .memory_pool = coarse_block_memory_pool,
       .vmem_memory_type = IREE_HAL_AMDGPU_VMEM_MEMORY_TYPE_DEFAULT,
       .asan_state = asan_state,
       .memory_type = properties.memory_type,
       .supported_usage = properties.supported_usage,
+      .access =
+          {
+              .queue_family_affinity = family_affinity,
+              .agent_count = asan_enabled
+                                 ? (uint32_t)system->topology.all_agent_count
+                                 : access_agents.count,
+              .agents = asan_enabled ? system->topology.all_agents
+                                     : access_agents.values,
+              .atomic_source_masks = atomic_source_masks,
+          },
   };
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_slab_provider_create(
-      logical_device, libhsa, &system->topology, default_slab_options,
-      device_ordinal, &out_physical_device->materialized_buffer_pool,
-      slab_trace_name, host_allocator,
-      &out_physical_device->default_slab_provider));
+      logical_device, libhsa, default_slab_options, device_ordinal,
+      &out_physical_device->materialized_buffer_pool, slab_trace_name,
+      host_allocator, &out_physical_device->default_slab_provider));
 
   if (properties.allocation_alignment < options->default_pool.alignment) {
     return iree_make_status(
@@ -805,6 +828,10 @@ iree_hal_amdgpu_physical_device_initialize_default_pool_resources(
       iree_hal_amdgpu_format_pool_trace_name(host_trace_name,
                                              IREE_ARRAYSIZE(host_trace_name),
                                              "host-slab", device_ordinal);
+  IREE_RETURN_IF_ERROR(iree_hal_amdgpu_atomic_memory_query_source_masks(
+      libhsa, &system->topology,
+      out_physical_device->host_memory_pools.fine_pool,
+      HSA_AMD_MEMORY_POOL_STANDARD_FLAG, &atomic_source_masks));
   const iree_hal_amdgpu_slab_provider_options_t host_slab_options = {
       .flags =
           iree_hal_asan_pool_options_is_enabled(&options->default_pool.asan)
@@ -818,12 +845,18 @@ iree_hal_amdgpu_physical_device_initialize_default_pool_resources(
                      IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
       .supported_usage =
           iree_hal_amdgpu_physical_device_mappable_pool_supported_usage(),
+      .access =
+          {
+              .queue_family_affinity = family_affinity,
+              .agent_count = access_agents.count,
+              .agents = access_agents.values,
+              .atomic_source_masks = atomic_source_masks,
+          },
   };
   IREE_RETURN_IF_ERROR(iree_hal_amdgpu_slab_provider_create(
-      logical_device, libhsa, &system->topology, host_slab_options,
-      device_ordinal, &out_physical_device->materialized_buffer_pool,
-      host_slab_trace_name, host_allocator,
-      &out_physical_device->default_host_slab_provider));
+      logical_device, libhsa, host_slab_options, device_ordinal,
+      &out_physical_device->materialized_buffer_pool, host_slab_trace_name,
+      host_allocator, &out_physical_device->default_host_slab_provider));
   return iree_ok_status();
 }
 

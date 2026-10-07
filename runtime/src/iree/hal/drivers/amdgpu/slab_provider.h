@@ -18,7 +18,6 @@
 extern "C" {
 #endif  // __cplusplus
 
-typedef struct iree_hal_amdgpu_topology_t iree_hal_amdgpu_topology_t;
 typedef struct iree_hal_amdgpu_asan_state_t iree_hal_amdgpu_asan_state_t;
 
 //===----------------------------------------------------------------------===//
@@ -71,6 +70,18 @@ typedef struct iree_hal_amdgpu_slab_provider_options_t {
 
   // HAL buffer usage bits supported by buffers materialized from slabs.
   iree_hal_buffer_usage_t supported_usage;
+
+  // Qualified native access captured before provider construction.
+  struct {
+    // Device-local family mask used by legacy buffer placement metadata.
+    iree_hal_queue_family_affinity_t queue_family_affinity;
+    // Number of unique native agents granted access to every slab.
+    uint32_t agent_count;
+    // Borrowed during creation; the provider copies exactly |agent_count|.
+    const hsa_agent_t* agents;
+    // Per-family atomic capabilities already qualified for this memory pool.
+    iree_hal_amdgpu_atomic_memory_source_masks_t atomic_source_masks;
+  } access;
 } iree_hal_amdgpu_slab_provider_options_t;
 
 // Queries HSA memory-pool properties used by AMDGPU slab providers and pools.
@@ -87,17 +98,17 @@ iree_status_t iree_hal_amdgpu_slab_provider_query_memory_pool_properties(
 // When IREE_HAL_AMDGPU_SLAB_PROVIDER_FLAG_ASAN_VMM is also set, slabs are HSA
 // VMM mappings inside |options.asan_state|'s application window instead of
 // ordinary HSA memory-pool allocations. In all allocation modes the provider
-// grants every agent in |topology| access to the slab and wraps slab slices as
+// grants every captured |options.access| agent access and wraps slab slices as
 // iree_hal_amdgpu_buffer_t views. Materialized buffers preserve the requested
 // queue-family accessibility independently of the physical GPU memory pool
 // owning the slab. View wrappers are allocated from |buffer_pool|, which must
 // be in the same physical-device lifetime domain as the backing HSA memory.
-// The provider borrows |device|, |libhsa|, |topology|,
+// No topology is retained or queried during acquisition.
+// The provider borrows |device|, |libhsa|,
 // |options.asan_state|, and |buffer_pool|; the owning physical/logical device
 // must outlive the provider and every pool/buffer created from it.
 iree_status_t iree_hal_amdgpu_slab_provider_create(
     iree_hal_device_t* device, const iree_hal_amdgpu_libhsa_t* libhsa,
-    const iree_hal_amdgpu_topology_t* topology,
     iree_hal_amdgpu_slab_provider_options_t options,
     iree_host_size_t physical_device_ordinal,
     iree_hal_amdgpu_buffer_pool_t* buffer_pool, iree_string_view_t trace_name,

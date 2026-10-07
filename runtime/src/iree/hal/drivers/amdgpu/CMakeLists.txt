@@ -1522,7 +1522,9 @@ iree_cc_test(
   SRCS
     "slab_provider_test.cc"
   DEPS
+    ::access_policy
     ::amdgpu
+    ::atomic_memory
     ::headers
     iree::async
     iree::base
