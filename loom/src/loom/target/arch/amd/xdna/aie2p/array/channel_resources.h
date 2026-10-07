@@ -170,8 +170,8 @@ loom_aie2p_array_channel_resources_propose_compute(
 loom_aie2p_array_channel_resource_failure_t
 loom_aie2p_array_channel_resources_propose_shim(
     const loom_aie2p_array_tile_resources_t* resources,
-    loom_xdna_tile_coordinate_t coordinate,
-    loom_xdna_dma_direction_t direction, uint16_t descriptor_count,
+    loom_xdna_tile_coordinate_t coordinate, loom_xdna_dma_direction_t direction,
+    uint16_t descriptor_count,
     loom_aie2p_array_shim_endpoint_proposal_t* out_proposal);
 
 // Applies a previously selected ring transition without placement work.
