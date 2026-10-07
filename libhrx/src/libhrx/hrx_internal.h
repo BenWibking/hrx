@@ -17,6 +17,7 @@
 #include "iree/hal/drivers/task/executable/loaders/registration/init.h"
 #include "iree/hal/utils/resource_set.h"
 #include "iree_hal_compat.h"
+#include "mem_pool_backing.h"
 #include "runtime.h"
 
 #ifdef __cplusplus
@@ -249,6 +250,8 @@ typedef struct hrx_device_s {
   // |hal_device|, which must outlive every use.
   iree_hal_queue_t* dispatch_queue;
   iree_hal_device_group_t* hal_device_group;
+  // Shared native backing and retention coordination for public memory pools.
+  hrx_mem_pool_backing_t mem_pool_backing;
   bool profiling_active;
   hrx_allocator_s allocator;           // Inline, owned by device.
   hrx_buffer_table_t buffer_table;     // Device-pointer-to-buffer lookup.
@@ -477,7 +480,7 @@ typedef struct hrx_mem_pool_s {
   // References held by public handles and bounded allocations.
   iree_atomic_ref_count_t ref_count;
 
-  // Device whose HAL pool backend supplies this pool's backing storage.
+  // Retained device owning the cache shared by compatible public pools.
   hrx_device_t device;
 
   // HIP/CUDA-style creation properties used for attribute queries.
@@ -486,8 +489,8 @@ typedef struct hrx_mem_pool_s {
   // TLSF HAL pool serving suballocated and dedicated ordinary backing.
   iree_hal_pool_t* hal_pool;
 
-  // Explicit retention cache owning live and idle TLSF backing slabs.
-  iree_hal_pool_t* backing_cache;
+  // Embedded request linked into the device's shared retention policy.
+  hrx_mem_pool_retention_t retention;
 
   // Bytes charged to the immutable |props.max_size| allocation limit.
   size_t allocation_budget_current;
@@ -507,10 +510,10 @@ typedef struct hrx_mem_pool_s {
   // True when opportunistic reuse is allowed.
   bool reuse_allow_opportunistic;
 
-  // Current bytes reserved from the system for this pool.
+  // Current backing borrowed by this child, excluding shared idle storage.
   uint64_t reserved_mem_current;
 
-  // Peak bytes reserved from the system for this pool.
+  // Peak backing borrowed by this child, including padding and fragmentation.
   uint64_t reserved_mem_high;
 
   // Current backing bytes charged to live allocations.

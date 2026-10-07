@@ -834,6 +834,7 @@ hrx_status_t hrx_cpu_initialize(uint32_t flags) {
   iree_hal_allocator_retain(dev->allocator.hal_allocator);
   iree_atomic_ref_count_init(&dev->allocator.ref_count);
   dev->allocator.device = dev;
+  hrx_mem_pool_backing_initialize(&dev->mem_pool_backing);
   hrx_buffer_table_initialize(&dev->buffer_table);
   iree_arena_block_pool_initialize(/*block_size=*/32 * 1024,
                                    iree_allocator_system(), &dev->block_pool);
@@ -1080,6 +1081,7 @@ hrx_status_t hrx_gpu_initialize_with_device_extensions(
     iree_hal_allocator_retain(dev->allocator.hal_allocator);
     iree_atomic_ref_count_init(&dev->allocator.ref_count);
     dev->allocator.device = dev;
+    hrx_mem_pool_backing_initialize(&dev->mem_pool_backing);
     hrx_buffer_table_initialize(&dev->buffer_table);
     iree_arena_block_pool_initialize(/*block_size=*/32 * 1024,
                                      iree_allocator_system(), &dev->block_pool);

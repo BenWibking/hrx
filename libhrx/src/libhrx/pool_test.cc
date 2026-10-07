@@ -48,6 +48,12 @@ class CpuPoolTest : public ::testing::Test {
         backend_.maintenance);
   }
 
+  iree_hal_pool_stats_t BackingStats() {
+    iree_hal_pool_stats_t stats = {};
+    iree_hal_pool_query_stats(device_->mem_pool_backing.cache, &stats);
+    return stats;
+  }
+
   // CPU device supplying backing storage for the pools under test.
   hrx_device_t device_ = nullptr;
   // Borrowed memory and progress sources from the device's transfer family.
@@ -300,6 +306,8 @@ TEST_F(CpuPoolTest, MemoryPoolServesSmallAndLargeBuffersFromOneAllocator) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &live_backing_bytes)));
   EXPECT_EQ(live_backing_bytes, 0u);
+  WaitForMaintenance();
+  EXPECT_EQ(BackingStats().bytes_committed, 0u);
   hrx_mem_pool_release(pool);
 }
 
@@ -344,7 +352,8 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   uint64_t retained_bytes = 0;
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
-  EXPECT_EQ(retained_bytes, committed_bytes);
+  EXPECT_EQ(retained_bytes, 0u);
+  EXPECT_EQ(BackingStats().bytes_committed, committed_bytes);
 
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
       pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, committed_bytes)));
@@ -352,7 +361,8 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   WaitForMaintenance();
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
-  EXPECT_EQ(retained_bytes, committed_bytes);
+  EXPECT_EQ(retained_bytes, 0u);
+  EXPECT_EQ(BackingStats().bytes_committed, committed_bytes);
 
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
       pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, 0)));
@@ -361,6 +371,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
   EXPECT_EQ(retained_bytes, 0u);
+  EXPECT_EQ(BackingStats().bytes_committed, 0u);
 
   IREE_ASSERT_OK(hrx_status_to_iree(
       hrx_mem_pool_allocate_buffer(pool, params, 1024, &buffer)));
@@ -369,7 +380,17 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
   EXPECT_EQ(retained_bytes, 0u);
+  WaitForMaintenance();
+  EXPECT_EQ(BackingStats().bytes_committed, 0u);
   hrx_mem_pool_release(pool);
+}
+
+TEST_F(CpuPoolTest, MemoryPoolAllocationRequiresPool) {
+  hrx_buffer_t buffer = reinterpret_cast<hrx_buffer_t>(uintptr_t{1});
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        hrx_status_to_iree(hrx_mem_pool_allocate_buffer(
+                            nullptr, {}, 1024, &buffer)));
+  EXPECT_EQ(buffer, nullptr);
 }
 
 }  // namespace

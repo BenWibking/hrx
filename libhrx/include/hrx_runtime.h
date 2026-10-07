@@ -959,8 +959,14 @@ typedef enum hrx_mem_pool_attr_t {
   HRX_MEM_POOL_ATTR_REUSE_FOLLOW_EVENT_DEPENDENCIES = 0,
   HRX_MEM_POOL_ATTR_REUSE_ALLOW_INTERNAL_DEPENDENCIES = 1,
   HRX_MEM_POOL_ATTR_REUSE_ALLOW_OPPORTUNISTIC = 2,
+  // Retained-byte floor contributed to the device's shared backing cache.
+  // Compatible pools share storage, so their floors combine by maximum.
   HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD = 3,
+  // Bytes borrowed by this pool, including padding and fragmentation. Empty
+  // slabs return to the device cache and cease to be charged to this pool;
+  // shared idle storage is not counted again for every potential borrower.
   HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT = 4,
+  // Peak bytes borrowed by this pool. Writing zero resets the watermark.
   HRX_MEM_POOL_ATTR_RESERVED_MEM_HIGH = 5,
   HRX_MEM_POOL_ATTR_USED_MEM_CURRENT = 6,
   HRX_MEM_POOL_ATTR_USED_MEM_HIGH = 7,
@@ -988,13 +994,18 @@ HRX_API hrx_status_t hrx_mem_pool_get_attribute(hrx_mem_pool_t pool,
 HRX_API hrx_status_t hrx_mem_pool_set_attribute(hrx_mem_pool_t pool,
                                                 hrx_mem_pool_attr_t attr,
                                                 uint64_t value);
+// Returns unused child backing and trims the shared device cache, preserving
+// |min_bytes_to_keep| and every other pool's current retention request. This
+// replaces this pool's floor until an attribute update or automatic release
+// applies its configured threshold again. It does not allocate missing bytes.
 HRX_API hrx_status_t hrx_mem_pool_trim(hrx_mem_pool_t pool,
                                        size_t min_bytes_to_keep);
 
-// Trims unused backing storage toward the pool's configured release threshold.
-// This is intended for stream-ordered free completion paths. Reclamation runs
-// on the memory owner without waiting here; retained-byte statistics converge
-// after queued whole-slab returns and the ordered cache sweep complete.
+// Returns unused child backing and applies the configured release threshold to
+// the device's shared cache, preserving other pools' retention requests. This
+// is intended for stream-ordered free completion paths. Reclamation runs on
+// the memory owner without waiting here; statistics converge after queued
+// whole-slab returns and the ordered cache sweep complete.
 HRX_API hrx_status_t hrx_mem_pool_release_unused(hrx_mem_pool_t pool);
 
 // Records a logical allocation backed by |pool|. Logical usage is distinct

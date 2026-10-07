@@ -32,6 +32,7 @@ HRX_SRCS = [
     "graph_exec.c",
     "host_allocator.c",
     "mem_pool.c",
+    "mem_pool_backing.c",
     "pool.c",
     "queue_ops.c",
     "runtime.c",
@@ -48,6 +49,7 @@ HRX_HDRS = [
     "device.h",
     "hrx_internal.h",
     "mem_pool.h",
+    "mem_pool_backing.h",
     "runtime.h",
     "transfer.h",
     "vmm_slab_provider.h",
@@ -196,6 +198,40 @@ hrx_cc_test(
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+hrx_cc_test(
+    name = "mem_pool_backing_test",
+    srcs = ["mem_pool_backing_test.cc"],
+    deps = [
+        ":hrx_static",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/hal/memory:slab_cache",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
+hrx_cc_test(
+    name = "mem_pool_backing_gpu_test",
+    srcs = ["mem_pool_backing_test.cc"],
+    copts = ["-DHRX_TEST_GPU=1"],
+    resource_group = "iree-hal-drivers-amdgpu-tests",
+    tags = [
+        "iree-run-requirement=runtime.resource.amd_gpu",
+        "runtime-resource=amd-gpu",
+    ],
+    deps = [
+        ":hrx_static",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/hal/memory:slab_cache",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
     ],
