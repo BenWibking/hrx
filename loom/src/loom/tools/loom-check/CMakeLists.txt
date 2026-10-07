@@ -298,7 +298,6 @@ loom_cc_library(
     iree::base
     loom::codegen::low::repr
     loom::compile::request
-    loom::link::linker
     loom::sanitizer::options
     loom::target::entry_selection
     loom::target::profile

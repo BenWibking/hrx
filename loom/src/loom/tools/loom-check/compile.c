@@ -8,7 +8,6 @@
 
 #include "loom/codegen/low/repr.h"
 #include "loom/compile/request.h"
-#include "loom/link/linker.h"
 #include "loom/target/entry_selection.h"
 #include "loom/tooling/compile/pipeline.h"
 #include "loom/tools/loom-check/diagnostics.h"
@@ -101,36 +100,21 @@ static iree_status_t loom_check_compile_request(
   projected_options.source_resolver = (loom_source_resolver_t){
       .fn = loom_source_table_resolve, .user_data = &source_projection.table};
   const loom_compile_pipeline_options_t* pipeline_options = &projected_options;
-  const loom_module_t* const sources[] = {source_module};
-  const loom_link_options_t link_options = {
-      .module_name = source_module->name_id < source_module->strings.count
-                         ? loom_string_table_get(&source_module->strings,
-                                                 source_module->name_id)
-                         : iree_string_view_empty(),
-      .source_callback = {.fn = loom_source_table_project,
-                          .user_data = &source_projection},
-  };
   loom_module_t* module = NULL;
-  iree_status_t status = loom_link_materialized_modules(
-      sources, IREE_ARRAYSIZE(sources), &link_options, block_pool, allocator,
-      &module);
-  collector->module = module;
   uint32_t error_count = 0;
   loom_target_specialization_request_list_t target_specializations = {0};
-  if (iree_status_is_ok(status)) {
-    const loom_target_entry_options_t entry_options = {
-        .diagnostic_sink = pipeline_options->diagnostic_sink,
-        .source_resolver = pipeline_options->source_resolver,
-        .max_errors = pipeline_options->max_errors,
-    };
-    status = loom_compile_request_materialize(
-        request, pipeline_options->target_environment, &entry_options, module,
-        LOOM_COMPILE_REQUEST_SOURCE_TRANSFERRED, &source_projection,
-        collector->arena, block_pool, &module, &target_specializations,
-        &error_count);
-    collector->module = module;
-    projected_options.target_specializations = target_specializations;
-  }
+  const loom_target_entry_options_t entry_options = {
+      .diagnostic_sink = pipeline_options->diagnostic_sink,
+      .source_resolver = pipeline_options->source_resolver,
+      .max_errors = pipeline_options->max_errors,
+  };
+  iree_status_t status = loom_compile_request_materialize(
+      request, pipeline_options->target_environment, &entry_options,
+      source_module, LOOM_COMPILE_REQUEST_SOURCE_BORROWED, &source_projection,
+      collector->arena, block_pool, &module, &target_specializations,
+      &error_count);
+  collector->module = module;
+  projected_options.target_specializations = target_specializations;
   loom_compile_pipeline_result_t pipeline_result = {0};
   if (iree_status_is_ok(status) &&
       collector->error_count == initial_error_count) {
