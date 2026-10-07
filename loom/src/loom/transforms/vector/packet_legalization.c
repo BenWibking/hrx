@@ -55,11 +55,25 @@ static uint32_t loom_vector_packet_structural_lane_limit(
   return 0;
 }
 
+static int32_t loom_vector_packet_element_bit_count(
+    const loom_target_vector_packet_policy_t* policy,
+    loom_scalar_type_t element_type) {
+  if (element_type == LOOM_SCALAR_TYPE_INDEX && policy->index_bit_count != 0) {
+    return policy->index_bit_count;
+  }
+  if (element_type == LOOM_SCALAR_TYPE_OFFSET &&
+      policy->offset_bit_count != 0) {
+    return policy->offset_bit_count;
+  }
+  return loom_scalar_type_bitwidth(element_type);
+}
+
 static uint32_t loom_vector_packet_lane_count_for_bit_count(
     const loom_target_vector_packet_policy_t* policy, loom_type_t vector_type,
     uint16_t packet_bit_count) {
   const loom_scalar_type_t element_type = loom_type_element_type(vector_type);
-  const int32_t element_bit_count = loom_scalar_type_bitwidth(element_type);
+  const int32_t element_bit_count =
+      loom_vector_packet_element_bit_count(policy, element_type);
   if (element_bit_count <= 0 || packet_bit_count == 0 ||
       packet_bit_count % (uint32_t)element_bit_count != 0) {
     return 0;
@@ -88,12 +102,12 @@ static bool loom_vector_packet_static_lane_count(loom_type_t vector_type,
   return true;
 }
 
-static bool loom_vector_packet_payload_bit_count(loom_type_t vector_type,
-                                                 uint32_t lane_count,
-                                                 uint64_t* out_bit_count) {
+static bool loom_vector_packet_payload_bit_count(
+    const loom_target_vector_packet_policy_t* policy, loom_type_t vector_type,
+    uint32_t lane_count, uint64_t* out_bit_count) {
   *out_bit_count = 0;
-  const int32_t element_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(vector_type));
+  const int32_t element_bit_count = loom_vector_packet_element_bit_count(
+      policy, loom_type_element_type(vector_type));
   if (element_bit_count <= 0) {
     return false;
   }
@@ -145,7 +159,7 @@ static bool loom_vector_packet_shape_from_type(
   uint32_t chunk_lane_count = 0;
   uint64_t payload_bit_count = 0;
   if (!loom_vector_packet_static_lane_count(vector_type, &lane_count) ||
-      !loom_vector_packet_payload_bit_count(vector_type, lane_count,
+      !loom_vector_packet_payload_bit_count(policy, vector_type, lane_count,
                                             &payload_bit_count) ||
       payload_bit_count <= policy->maximum_unpacketized_bit_count ||
       !loom_vector_packet_select_native_chunk_lane_count(
@@ -231,7 +245,7 @@ static bool loom_vector_packet_uniform_shape_from_type(
   const uint32_t lane_count = (uint32_t)lane_count_u64;
   uint32_t chunk_lane_count = 0;
   uint64_t payload_bit_count = 0;
-  if (!loom_vector_packet_payload_bit_count(vector_type, lane_count,
+  if (!loom_vector_packet_payload_bit_count(policy, vector_type, lane_count,
                                             &payload_bit_count) ||
       payload_bit_count <= policy->maximum_unpacketized_bit_count ||
       !loom_vector_packet_select_native_chunk_lane_count(
@@ -724,8 +738,8 @@ static bool loom_vector_packet_select_snapshot_shape(
       packet_lane_count % chunk_lane_count != 0) {
     const loom_type_t result_type =
         loom_module_value_type(module, loom_vector_concat_result(op));
-    const int32_t element_bit_count =
-        loom_scalar_type_bitwidth(loom_type_element_type(result_type));
+    const int32_t element_bit_count = loom_vector_packet_element_bit_count(
+        packetization->policy, loom_type_element_type(result_type));
     if (element_bit_count <= 0) {
       return false;
     }
@@ -1673,8 +1687,8 @@ static iree_status_t loom_vector_packet_build_staging_view(
     const loom_vector_packet_shape_t* shape, const loom_op_t* source_op,
     loom_value_id_t* out_staging_view) {
   *out_staging_view = LOOM_VALUE_ID_INVALID;
-  const int32_t element_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(vector_type));
+  const int32_t element_bit_count = loom_vector_packet_element_bit_count(
+      packetization->policy, loom_type_element_type(vector_type));
   IREE_ASSERT_GT(element_bit_count, 0);
   IREE_ASSERT_EQ(element_bit_count % 8, 0);
   const int64_t byte_count =

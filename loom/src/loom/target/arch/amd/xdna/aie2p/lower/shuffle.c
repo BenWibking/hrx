@@ -123,8 +123,8 @@ static bool loom_aie2p_shuffle_plan_from_op(
     return false;
   }
 
-  const int32_t element_bit_count =
-      loom_scalar_type_bitwidth(loom_type_element_type(source_type));
+  const uint16_t element_bit_count = loom_aie2p_scalar_type_physical_bit_count(
+      loom_type_element_type(source_type));
   const int64_t element_count = loom_type_dim_static_size_at(source_type, 0);
 
   const uint8_t packet_lane_count =

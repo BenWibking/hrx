@@ -35,6 +35,17 @@ typedef struct loom_aie2p_vector_carrier_t {
   uint32_t unit_count;
 } loom_aie2p_vector_carrier_t;
 
+enum {
+  LOOM_AIE2P_INDEX_CARRIER_BIT_COUNT = 32,
+  LOOM_AIE2P_OFFSET_CARRIER_BIT_COUNT = 32,
+};
+
+// Returns the physical AIE2P lane width for |element_type|. Address domains
+// use the target's 32-bit address representation instead of their abstract
+// source width.
+uint16_t loom_aie2p_scalar_type_physical_bit_count(
+    loom_scalar_type_t element_type);
+
 // Returns the complete AIE2P source-vector carrier mapping for |type|.
 // Unsupported, dynamic, and empty vectors return a NONE carrier.
 loom_aie2p_vector_carrier_t loom_aie2p_vector_carrier_for_type(

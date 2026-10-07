@@ -69,6 +69,9 @@ _F16_VECTOR = Vector("f16", minimum_static_elements=1, maximum_static_elements=3
 _BF16_VECTOR = Vector("bf16", minimum_static_elements=1, maximum_static_elements=32)
 _I32_VECTOR = Vector("i32", minimum_static_elements=1, maximum_static_elements=16)
 _F32_VECTOR = Vector("f32", minimum_static_elements=1, maximum_static_elements=16)
+_INDEX_VECTOR = Vector("index", minimum_static_elements=1, maximum_static_elements=16)
+_OFFSET_VECTOR = Vector("offset", minimum_static_elements=1, maximum_static_elements=16)
+_ADDRESS_VECTOR_TYPES = (_INDEX_VECTOR, _OFFSET_VECTOR)
 _F32X32_VECTOR = Vector("f32", lanes=32)
 _I32_MATRIX_ACCUMULATOR = Vector("i32", lanes=64)
 _I1_VECTOR = Vector("i1", minimum_static_elements=1, maximum_static_elements=64)
@@ -85,6 +88,7 @@ _BITCAST_VECTOR_TYPES = (
     _F32_VECTOR,
     *AIE2P_PAIR_VECTOR_TYPES,
 )
+_WHOLE_VECTOR_SELECT_TYPES = (*_BITCAST_VECTOR_TYPES, *_ADDRESS_VECTOR_TYPES)
 
 _I8_MIN = -(2**7)
 _I8_MAX = (2**7) - 1
@@ -1238,6 +1242,41 @@ def _vector_constant_rule(
             constant_descriptor_key,
             broadcast_descriptor_key,
             AttrProject.direct("value"),
+            carrier,
+            unit_count,
+        ),
+    )
+
+
+def _address_vector_constant_rule(
+    result_type: TypePattern,
+    constant_descriptor_key: str,
+    minimum: int,
+    maximum: int,
+    *,
+    carrier: _VectorConstantCarrier = _VectorConstantCarrier.NATIVE,
+    unit_count: int = 1,
+) -> DescriptorRule:
+    """Materializes target-width address lanes without changing their domain."""
+
+    immediate = (
+        ValueProject.exact_i64_i32_word("result", word_index=0)
+        if maximum > _I32_MAX
+        else AttrProject.direct("value")
+    )
+    broadcast_descriptor_key = "amd.xdna.aie2p.splat.i32x16"
+    return DescriptorRule(
+        source_op=vector.vector_constant,
+        descriptor=_descriptor(broadcast_descriptor_key),
+        guards=(
+            Guard.attr_kind("value", "i64"),
+            Guard.value_type("result", result_type),
+            Guard.i64_range("value", minimum, maximum),
+        ),
+        emit=_vector_constant_emits(
+            constant_descriptor_key,
+            broadcast_descriptor_key,
+            immediate,
             carrier,
             unit_count,
         ),

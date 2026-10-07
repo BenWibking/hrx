@@ -25,6 +25,7 @@ from loom.target.contracts import (
     EmitRegisterConcat,
     EmitRegisterSlice,
     Guard,
+    Scalar,
     TypePattern,
     ValueAliasRule,
     ValueRef,
@@ -97,6 +98,10 @@ _ACCUMULATOR_VECTOR_SHAPES = (
     _AccumulatorVectorShape("f32", 49, 64, 16, 4, 4),
     _AccumulatorVectorShape("i32", 33, 48, 16, 3, 4),
     _AccumulatorVectorShape("i32", 49, 64, 16, 4, 4),
+    _AccumulatorVectorShape("index", 33, 48, 16, 3, 4),
+    _AccumulatorVectorShape("index", 49, 64, 16, 4, 4),
+    _AccumulatorVectorShape("offset", 33, 48, 16, 3, 4),
+    _AccumulatorVectorShape("offset", 49, 64, 16, 4, 4),
     _AccumulatorVectorShape("i64", 17, 24, 8, 3, 4),
     _AccumulatorVectorShape("i64", 25, 32, 8, 4, 4),
 )
@@ -144,10 +149,18 @@ def _accumulator_slice_result_shapes() -> tuple[_AccumulatorSliceResultShape, ..
     ordinary_lane_maximums = {
         "f32": 31,
         "i32": 32,
+        "index": 32,
+        "offset": 32,
         "i64": 16,
     }
     result_shapes: list[_AccumulatorSliceResultShape] = []
-    for element_type, packet_lane_count in (("f32", 16), ("i32", 16), ("i64", 8)):
+    for element_type, packet_lane_count in (
+        ("f32", 16),
+        ("i32", 16),
+        ("index", 16),
+        ("offset", 16),
+        ("i64", 8),
+    ):
         ordinary_lane_maximum = ordinary_lane_maximums[element_type]
         result_shapes.append(
             _AccumulatorSliceResultShape(
@@ -523,6 +536,326 @@ def _accumulator_vector_slice_rules() -> tuple[ValueAliasRule | DescriptorRule, 
 _ACCUMULATOR_VECTOR_SLICE_RULES = _accumulator_vector_slice_rules()
 
 
+def _accumulator_extract_select_emits(
+    true_value: ValueRef,
+    false_value: ValueRef,
+    selector: ValueRef,
+    result: ValueRef,
+    temporary_result_type: TypePattern | None,
+    result_unit_count: int,
+    temporary_prefix: str,
+) -> tuple[ContractEmit, ...]:
+    """Selects one scalar payload whose low-level carrier may span ER units."""
+
+    select = _descriptor("amd.xdna.aie2p.select.nonzero.i32")
+    if result_unit_count == 1:
+        return (
+            EmitDescriptorOp(
+                descriptor=select,
+                operands={"s0": true_value, "s1": false_value, "s2": selector},
+                results={"d0": result},
+                result_types=(
+                    None
+                    if temporary_result_type is None
+                    else {"d0": temporary_result_type}
+                ),
+                copy_operands=("s2",),
+                form=DescriptorEmitForm.OP,
+            ),
+        )
+
+    emits: list[ContractEmit] = []
+    selected_units: list[ValueRef] = []
+    for unit_index in range(result_unit_count):
+        true_unit = ValueRef.temporary(f"{temporary_prefix}_true_{unit_index}")
+        false_unit = ValueRef.temporary(f"{temporary_prefix}_false_{unit_index}")
+        selected_unit = ValueRef.temporary(f"{temporary_prefix}_selected_{unit_index}")
+        emits.extend(
+            (
+                EmitRegisterSlice(
+                    source=true_value,
+                    result=true_unit,
+                    unit_offset=unit_index,
+                    unit_count=1,
+                ),
+                EmitRegisterSlice(
+                    source=false_value,
+                    result=false_unit,
+                    unit_offset=unit_index,
+                    unit_count=1,
+                ),
+                EmitDescriptorOp(
+                    descriptor=select,
+                    operands={
+                        "s0": true_unit,
+                        "s1": false_unit,
+                        "s2": selector,
+                    },
+                    results={"d0": selected_unit},
+                    result_types={"d0": DescriptorResultType()},
+                    copy_operands=("s2",),
+                    form=DescriptorEmitForm.OP,
+                ),
+            )
+        )
+        selected_units.append(selected_unit)
+    emits.append(
+        EmitRegisterConcat(
+            sources=selected_units,
+            result=result,
+            result_type=temporary_result_type,
+        )
+    )
+    return tuple(emits)
+
+
+def _accumulator_extract_packet_emits(
+    source: ValueRef,
+    packet_index: int,
+    local_index: ValueRef | AttrProject,
+    result: ValueRef,
+    temporary_result_type: TypePattern | None,
+    storage: str,
+) -> tuple[ContractEmit, ...]:
+    """Moves one accumulator unit to X and extracts one scalar lane."""
+
+    accumulator = ValueRef.temporary(f"packet_{packet_index}_accumulator")
+    packet = ValueRef.temporary(f"packet_{packet_index}_vector")
+    if isinstance(local_index, ValueRef):
+        extract = _descriptor(f"amd.xdna.aie2p.extract.{storage}.register")
+        extract_operands = {"s1": packet, "idx": local_index}
+        extract_immediates = ()
+    else:
+        extract = _descriptor(f"amd.xdna.aie2p.extract.{storage}.immediate")
+        extract_operands = {"s1": packet}
+        extract_immediates = {"idx": local_index}
+    return (
+        EmitRegisterSlice(
+            source=source,
+            result=accumulator,
+            unit_offset=packet_index,
+            unit_count=1,
+        ),
+        EmitDescriptorOp(
+            descriptor=_descriptor("amd.xdna.aie2p.move.accumulator512.to.vector512"),
+            operands={"src": accumulator},
+            results={"dst": packet},
+            result_types={"dst": DescriptorResultType()},
+            form=DescriptorEmitForm.OP,
+        ),
+        EmitDescriptorOp(
+            descriptor=extract,
+            operands=extract_operands,
+            results={"dst": result},
+            result_types=(
+                None
+                if temporary_result_type is None
+                else {"dst": temporary_result_type}
+            ),
+            immediates=extract_immediates,
+            form=DescriptorEmitForm.OP,
+        ),
+    )
+
+
+def _accumulator_extract_static_rule(
+    source_shape: _AccumulatorVectorShape,
+    packet_index: int,
+) -> DescriptorRule:
+    """Extracts a statically selected lane from one accumulator packet."""
+
+    result_type = Scalar(source_shape.element_type)
+    storage = "i64" if source_shape.element_type == "i64" else "i32"
+    packet_lane_count = source_shape.packet_lane_count
+    packet_lane_base = packet_index * packet_lane_count
+    packet_lane_maximum = min(
+        packet_lane_base + packet_lane_count - 1,
+        source_shape.maximum_lane_count - 1,
+    )
+    immediate = (
+        AttrProject.i64_array_element_plus_literal(
+            "static_indices", element=0, literal=-packet_lane_base
+        )
+        if packet_lane_base
+        else AttrProject.i64_array_element("static_indices", element=0)
+    )
+    return DescriptorRule(
+        source_op=vector.vector_extract,
+        descriptor=_descriptor(f"amd.xdna.aie2p.extract.{storage}.immediate"),
+        guards=(
+            Guard.value_type("source", source_shape.source_type),
+            Guard.value_type("result", result_type),
+            Guard.operand_segment_count("indices", 0),
+            Guard.i64_array_count("static_indices", 1),
+            Guard.i64_array_element_range(
+                "static_indices",
+                0,
+                packet_lane_base,
+                packet_lane_maximum,
+            ),
+        ),
+        emit=_accumulator_extract_packet_emits(
+            ValueRef.operand("source"),
+            packet_index,
+            immediate,
+            ValueRef.result("result"),
+            None,
+            storage,
+        ),
+    )
+
+
+def _accumulator_extract_dynamic_rule(
+    source_shape: _AccumulatorVectorShape,
+) -> DescriptorRule:
+    """Extracts a dynamic lane through packet-local reads and scalar selects."""
+
+    result_type = Scalar(source_shape.element_type)
+    storage = "i64" if source_shape.element_type == "i64" else "i32"
+    result_unit_count = 2 if source_shape.element_type == "i64" else 1
+    constant = _descriptor("amd.xdna.aie2p.constant.i32.short")
+    bitwise_and = _descriptor("amd.xdna.aie2p.and.i32")
+    local_index = ValueRef.temporary("local_index")
+    emits: list[ContractEmit] = []
+    selectors: list[ValueRef] = []
+    index_components = [
+        ("local_index", source_shape.packet_lane_count - 1),
+        ("packet_bit_0", source_shape.packet_lane_count),
+    ]
+    if source_shape.logical_packet_count > 2:
+        index_components.append(("packet_bit_1", 2 * source_shape.packet_lane_count))
+    for name, mask in index_components:
+        mask_value = ValueRef.temporary(f"{name}_mask")
+        result = local_index if name == "local_index" else ValueRef.temporary(name)
+        emits.extend(
+            (
+                EmitDescriptorOp(
+                    descriptor=constant,
+                    results={"dst": mask_value},
+                    result_types={"dst": Scalar("i32")},
+                    immediates={"i": mask},
+                    form=DescriptorEmitForm.CONST,
+                ),
+                EmitDescriptorOp(
+                    descriptor=bitwise_and,
+                    operands={
+                        "s0": ValueRef.operand("indices"),
+                        "s1": mask_value,
+                    },
+                    results={"d0": result},
+                    result_types={"d0": Scalar("i32")},
+                    form=DescriptorEmitForm.OP,
+                ),
+            )
+        )
+        if name != "local_index":
+            selectors.append(result)
+
+    packet_values: list[ValueRef] = []
+    for packet_index in range(source_shape.logical_packet_count):
+        packet_value = ValueRef.temporary(f"packet_{packet_index}_value")
+        emits.extend(
+            _accumulator_extract_packet_emits(
+                ValueRef.operand("source"),
+                packet_index,
+                local_index,
+                packet_value,
+                result_type,
+                storage,
+            )
+        )
+        packet_values.append(packet_value)
+
+    if len(packet_values) == 2:
+        emits.extend(
+            _accumulator_extract_select_emits(
+                packet_values[1],
+                packet_values[0],
+                selectors[0],
+                ValueRef.result("result"),
+                None,
+                result_unit_count,
+                "packet_pair",
+            )
+        )
+    else:
+        while len(packet_values) < 4:
+            packet_values.append(packet_values[-1])
+        low_pair = ValueRef.temporary("low_pair")
+        high_pair = ValueRef.temporary("high_pair")
+        emits.extend(
+            _accumulator_extract_select_emits(
+                packet_values[1],
+                packet_values[0],
+                selectors[0],
+                low_pair,
+                result_type,
+                result_unit_count,
+                "low_pair",
+            )
+        )
+        emits.extend(
+            _accumulator_extract_select_emits(
+                packet_values[3],
+                packet_values[2],
+                selectors[0],
+                high_pair,
+                result_type,
+                result_unit_count,
+                "high_pair",
+            )
+        )
+        emits.extend(
+            _accumulator_extract_select_emits(
+                high_pair,
+                low_pair,
+                selectors[1],
+                ValueRef.result("result"),
+                None,
+                result_unit_count,
+                "packet_quartet",
+            )
+        )
+
+    return DescriptorRule(
+        source_op=vector.vector_extract,
+        descriptor=_descriptor(f"amd.xdna.aie2p.extract.{storage}.register"),
+        guards=(
+            Guard.value_type("source", source_shape.source_type),
+            Guard.value_type("result", result_type),
+            Guard.value_type("indices", Scalar("index")),
+            Guard.operand_segment_count("indices", 1),
+            Guard.i64_array_count("static_indices", 1),
+            Guard.i64_array_element_range(
+                "static_indices",
+                0,
+                -(2**63),
+                -(2**63),
+            ),
+        ),
+        emit=tuple(emits),
+    )
+
+
+def _accumulator_vector_extract_rules() -> tuple[DescriptorRule, ...]:
+    """Builds static and dynamic scalar extraction for every accumulator."""
+
+    return tuple(
+        rule
+        for source_shape in _ACCUMULATOR_VECTOR_SHAPES
+        for rule in (
+            *(
+                _accumulator_extract_static_rule(source_shape, packet_index)
+                for packet_index in range(source_shape.logical_packet_count)
+            ),
+            _accumulator_extract_dynamic_rule(source_shape),
+        )
+    )
+
+
+_ACCUMULATOR_VECTOR_EXTRACT_RULES = _accumulator_vector_extract_rules()
+
+
 @dataclass(frozen=True, slots=True)
 class _AccumulatorConcatOperandShape:
     """One input interval with a fixed logical packet and carrier shape."""
@@ -564,6 +897,8 @@ class _AccumulatorConcatOperandShape:
 _ACCUMULATOR_CONCAT_TYPE_SPECS = (
     ("f32", 4, 16),
     ("i32", 4, 16),
+    ("index", 4, 16),
+    ("offset", 4, 16),
     ("i64", 8, 8),
 )
 
