@@ -183,6 +183,11 @@ static iree_status_t loom_pipeline_worker_build(
       arena, &worker->channels, &rejection);
   if (iree_status_is_ok(status) &&
       rejection.kind == LOOM_CHANNEL_PLAN_REJECTION_NONE) {
+    status = loom_channel_completion_analyze(&worker->channels, worker->graph,
+                                             arena, &worker->completion);
+  }
+  if (iree_status_is_ok(status) &&
+      rejection.kind == LOOM_CHANNEL_PLAN_REJECTION_NONE) {
     const loom_kernel_async_legality_options_t options = {
         .value_domain = &worker->value_domain,
         .fact_table = &worker->facts,

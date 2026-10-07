@@ -262,10 +262,12 @@ static iree_status_t loom_aie2p_native_select(
       const loom_channel_plan_action_t* action = &source->channels.actions[j];
       const loom_op_t* op = action->op;
       if (!loom_channel_acquire_isa(op) && !loom_channel_reserve_isa(op) &&
-          !loom_channel_publish_isa(op) && !loom_channel_release_isa(op)) {
+          !loom_channel_publish_isa(op) && !loom_channel_release_isa(op) &&
+          !loom_channel_wait_isa(op)) {
         return loom_aie2p_native_reject(
             context, op,
-            IREE_SV("FIFO acquire/reserve/publish/release channel actions"));
+            IREE_SV(
+                "FIFO acquire/reserve/wait/publish/release channel actions"));
       }
       if (loom_channel_acquire_isa(op) || loom_channel_reserve_isa(op)) {
         const loom_pipeline_resource_channel_t* bound =
@@ -282,6 +284,28 @@ static iree_status_t loom_aie2p_native_select(
               IREE_SV("one strand owning each FIFO's read or write cursor"));
         }
         *cursor = (uint32_t)i;
+      }
+    }
+    if (source->completion.requirement !=
+        LOOM_CHANNEL_COMPLETION_REQUIREMENT_NONE) {
+      static const iree_string_view_t requirements[] = {
+          IREE_SVL(""),
+          IREE_SVL("FIFO acquire/reserve/wait/publish/release channel actions"),
+          IREE_SVL("statically resolved FIFO record completion identities"),
+          IREE_SVL("compatible FIFO completion frontiers at control joins"),
+          IREE_SVL("independent slot reuse across blocking channel admission"),
+      };
+      return loom_aie2p_native_reject(
+          context, source->completion.op,
+          requirements[source->completion.requirement]);
+    }
+    for (iree_host_size_t j = 0; j < source->channels.action_count; ++j) {
+      const loom_channel_plan_action_t* action = &source->channels.actions[j];
+      if (source->completion.credits[j] >
+          (uint32_t)tile->facts->lock_value_maximum) {
+        return loom_aie2p_native_reject(
+            context, action->op,
+            IREE_SV("a completed FIFO prefix within semaphore credit range"));
       }
     }
   }

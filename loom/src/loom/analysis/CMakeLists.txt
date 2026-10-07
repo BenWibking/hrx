@@ -798,6 +798,22 @@ loom_cc_test(
 
 loom_cc_library(
   NAME
+    channel_completion
+  HDRS
+    "channel_completion.h"
+  SRCS
+    "channel_completion.c"
+  DEPS
+    ::channel_plan
+    iree::base
+    iree::base::internal::arena
+    loom::ops::channel
+    loom::util::cfg_graph
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
     channel_handoff
   HDRS
     "channel_handoff.h"
@@ -925,6 +941,7 @@ loom_cc_library(
   SRCS
     "pipeline_workers.c"
   DEPS
+    ::channel_completion
     ::channel_plan
     ::kernel_async_legality
     ::pipeline_resources

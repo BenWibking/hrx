@@ -861,6 +861,7 @@ loom_check_test_suite(
     "test/module_contracts.loom-test"
     "test/native_admission.loom-test"
     "test/native_bindings.loom-test"
+    "test/native_completion.loom-test"
     "test/native_strands.loom-test"
     "test/source_low/bf16_vectors.loom-test"
     "test/source_low/buffer_selection.loom-test"

@@ -115,3 +115,82 @@ pipeline.def<kernel> public retain target(@device) @short_interleaved_storage() 
     channel.publish %write : write<tile<16x64xbf16>>
   }
 }
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+// The third input can reuse the released second slot while the first is held.
+// An aggregate-prefix ring cannot preserve this progress contract: delaying
+// the second credit until the first release would block before that release.
+pipeline.def<kernel> public retain target(@device) @independent_slot_reuse() run() {
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %bytes = index.constant 8 : offset
+  %origin = index.constant 0 : offset
+  %capacity = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %begin = index.constant 0 : index
+    %count = index.constant 3 : index
+    %step = index.constant 1 : index
+    scf.for %record = [%begin to %count step %step] {
+      %write, %payload = channel.reserve %records : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+      %value = index.cast %record : index to i32
+      view.store %value, %payload[0] : i32, view<1xi32>
+      channel.publish %write : write<tile<1xi32>>
+    }
+  }
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %first, %first_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    channel.release %second : read<tile<1xi32>>
+    // ERROR@+1: XDNA/051 {requirement="independent slot reuse across blocking channel admission"}
+    %third, %third_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    channel.release %third : read<tile<1xi32>>
+    channel.release %first : read<tile<1xi32>>
+  }
+}
+
+// ====
+
+aie2p.target<array> @device {device_profile = "amd.xdna.strix.17f0_10"}
+
+// Both branches preserve ownership, but select a different FIFO record for
+// the same final release. A constant credit delta cannot implement this join.
+pipeline.def<kernel> public retain target(@device) @selected_retirement_order() run() {
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %bytes = index.constant 8 : offset
+  %origin = index.constant 0 : offset
+  %capacity = index.constant 2 : index
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<2x1xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<2x1xi32>, index -> channel<tile<1xi32>>
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %begin = index.constant 0 : index
+    %step = index.constant 1 : index
+    scf.for %record = [%begin to %capacity step %step] {
+      %write, %payload = channel.reserve %records : channel<tile<1xi32>> -> (write<tile<1xi32>>, view<1xi32>)
+      %value = index.cast %record : index to i32
+      view.store %value, %payload[0] : i32, view<1xi32>
+      channel.publish %write : write<tile<1xi32>>
+    }
+  }
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %first, %first_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %second, %second_payload = channel.acquire %records : channel<tile<1xi32>> -> (read<tile<1xi32>>, view<1xi32>)
+    %first_value = view.load %first_payload[0] : view<1xi32> -> i32
+    %second_value = view.load %second_payload[0] : view<1xi32> -> i32
+    %first_is_smaller = scalar.cmpi slt, %first_value, %second_value : i32
+    %remaining = scf.if %first_is_smaller -> (read<tile<1xi32>>) {
+      channel.release %first : read<tile<1xi32>>
+      scf.yield %second : read<tile<1xi32>>
+    } else {
+      channel.release %second : read<tile<1xi32>>
+      // ERROR@+1: XDNA/051 {requirement="compatible FIFO completion frontiers at control joins"}
+      scf.yield %first : read<tile<1xi32>>
+    }
+    channel.release %remaining : read<tile<1xi32>>
+  }
+}

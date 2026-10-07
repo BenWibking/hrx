@@ -709,6 +709,19 @@ loom_cc_test(
 )
 
 loom_cc_library(
+    name = "channel_completion",
+    srcs = ["channel_completion.c"],
+    hdrs = ["channel_completion.h"],
+    deps = [
+        ":channel_plan",
+        "//loom/src/loom/ops/channel",
+        "//loom/src/loom/util:cfg_graph",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_library(
     name = "channel_handoff",
     srcs = ["channel_handoff.c"],
     hdrs = ["channel_handoff.h"],
@@ -822,6 +835,7 @@ loom_cc_library(
     srcs = ["pipeline_workers.c"],
     hdrs = ["pipeline_workers.h"],
     deps = [
+        ":channel_completion",
         ":channel_plan",
         ":kernel_async_legality",
         ":pipeline_resources",

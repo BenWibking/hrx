@@ -251,18 +251,20 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
   for (iree_host_size_t j = 0; j < source->channels.action_count; ++j) {
     const loom_channel_plan_action_t* action = &source->channels.actions[j];
     if (!loom_channel_acquire_isa(action->op) &&
-        !loom_channel_reserve_isa(action->op)) {
+        !loom_channel_reserve_isa(action->op) &&
+        !loom_channel_wait_isa(action->op)) {
       continue;
     }
     const loom_pipeline_resource_channel_t* bound =
         loom_pipeline_resources_lookup_channel(&realization->resources,
                                                action->channel->value_id);
     const loom_value_id_t* results = loom_op_const_results(action->op);
-    const loom_value_ordinal_t ordinal =
-        loom_local_value_domain_ordinal(&source->value_domain, results[1]);
+    const bool wait = loom_channel_wait_isa(action->op);
+    const loom_value_ordinal_t ordinal = loom_local_value_domain_ordinal(
+        &source->value_domain, results[wait ? 0 : 1]);
     borrows[ordinal] = (loom_aie2p_native_borrow_t){
         .channel = &context->channels[bound - realization->resources.channels],
-        .record = results[0]};
+        .record = wait ? loom_channel_wait_read(action->op) : results[0]};
   }
   uint8_t next_control = 0;
   bool has_egress = false;

@@ -84,6 +84,23 @@ Invocation completion joins worker completion before releasing the owned
 resources. Instruction-image replacement requires a further target realization;
 channel storage and ownership are independent of instruction residency.
 
+Hardware FIFO credits describe a completed prefix, not an arbitrary count of
+finished records. If a strand reserves A then B and publishes B first, that
+publication exposes no credit; publishing A exposes both. Read retirement uses
+the same rule so returning B cannot let a producer overwrite a still-owned A.
+Shared worker analysis retains these per-action credit counts through branches
+and loop-carried accesses. An already acquired read can cross a loop argument
+and use `channel.wait` to borrow its payload again without another admission.
+
+Reclamation delay cannot introduce a new wait cycle. A schedule that releases B
+and needs another channel admission before releasing A requires independently
+reusable storage, rather than this aggregate-prefix ring. Likewise, control
+joins requiring runtime completion state need a record-aware realization.
+The native selector diagnoses those requirements before emitting the program;
+they are not invalid generic channel semantics. The
+[completion fixtures](aie2p/test/native_completion.loom-test) exercise reordered
+publication, reclamation, loop rotation and branch-local completion.
+
 For directly authored physical array programs, the
 [array plan](aie2p/array/plan.h) owns worker placement, endpoint storage,
 ring slots, locks, DMA channels and buffer descriptors, stream routes, and
