@@ -15,7 +15,7 @@ depend on the engine generation and native transport.
 | [Broadcast and multicast](fanout.md) | `COPY_LINEAR_BROADCAST` / `COPY_BROADCAST_LINEAR`, `COPY_MULTICAST`, fused wait/signal blocks, destination pairing, and joins across copy engines. |
 | [Batch composition](fanout.md#batch-composition-and-descriptor-ownership) | `hsa_amd_memory_async_batch_copy`: operation/entry/packet counts, agent and engine grouping, descriptor-control propagation and per-operation completion ownership. |
 | [Rectangular copy](rectangular-copy.md) | `COPY_LINEAR_SUBWIN` / `COPY_LINEAR_RECT`: element units, row/slice pitches, subwindow layouts, tiling and geometry-specific cache controls. |
-| [Constant fill](fill.md) | `CONST_FILL`: pattern width, count units, generation differences and completion. |
+| [Constant fill](fill.md) | `CONST_FILL` / `CONSTANT_FILL`: legacy and DWORD count forms, chunk limits, cache/compression fields, caller selection and completion. |
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED`: command-carried DWORD data, policy layouts, dependent transfers and storage lifetime. |
 | [Ordering](ordering.md) | Pending-transfer drains, overlap, NPD and resource ownership. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B`: per-generation policy fields, notification and store widths. |
