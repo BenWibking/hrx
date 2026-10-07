@@ -442,7 +442,7 @@ static uint32_t loom_low_schedule_value_register_packing_completion_sink(
     const loom_low_schedule_build_state_t* state,
     loom_value_ordinal_t value_ordinal, uint16_t resource_id) {
   const loom_low_schedule_value_record_t* value = &state->values[value_ordinal];
-  const uint32_t producer_node = value->producer_node;
+  const uint32_t producer_node = state->value_producer_nodes[value_ordinal];
   if (producer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
       iree_any_bit_set(value->flags, LOOM_LOW_SCHEDULE_VALUE_FLAG_FORWARDED)) {
     return LOOM_LOW_SCHEDULE_NODE_NONE;
@@ -682,8 +682,10 @@ static bool loom_low_schedule_candidate_advances_register_packing_completion(
       loom_low_schedule_node_const_operand_ordinals(candidate);
   for (uint16_t operand_index = 0; operand_index < candidate->operand_count;
        ++operand_index) {
+    const loom_value_ordinal_t value_ordinal = operand_ordinals[operand_index];
     const loom_low_schedule_value_record_t* value =
-        &state->values[operand_ordinals[operand_index]];
+        &state->values[value_ordinal];
+    const uint32_t producer_node = state->value_producer_nodes[value_ordinal];
     // The working-set comparison assumes the candidate replaces its producer.
     // A non-final use retains that storage and can expand an arbitrarily large
     // fanout before the operands needed to retire any result are ready.
@@ -691,9 +693,8 @@ static bool loom_low_schedule_candidate_advances_register_packing_completion(
         value->remaining_use_count !=
             pressure_state->candidate_operand_use_counts
                 [operand_ordinals[operand_index]] ||
-        value->producer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
-        state->nodes[value->producer_node].block_index !=
-            candidate->block_index) {
+        producer_node == LOOM_LOW_SCHEDULE_NODE_NONE ||
+        state->nodes[producer_node].block_index != candidate->block_index) {
       continue;
     }
     bool is_resource_member = false;
@@ -713,7 +714,7 @@ static bool loom_low_schedule_candidate_advances_register_packing_completion(
     uint64_t producer_activation_units = 0;
     const uint64_t producer_working_set =
         loom_low_schedule_node_register_packing_working_set(
-            state, value->producer_node, resource, &producer_activation_units);
+            state, producer_node, resource, &producer_activation_units);
     if (producer_activation_units != 0 &&
         candidate_working_set <= producer_working_set) {
       return true;
