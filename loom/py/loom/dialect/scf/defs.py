@@ -213,6 +213,7 @@ scf_select = Op(
     constraints=[SameType("true_value", "false_value", "result")],
     traits=[PURE, SAFE_TO_SPECULATE, DISTRIBUTION_TRANSFER],
     canonicalize="loom_scf_select_canonicalize",
+    effective_traits="loom_scf_select_effective_traits",
     facts="loom_scf_select_facts",
     format=[
         Ref("condition"),
