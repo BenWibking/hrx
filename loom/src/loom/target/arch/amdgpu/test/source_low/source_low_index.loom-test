@@ -417,15 +417,14 @@ low.kernel.def target<amdgpu.gfx11.generic.core> abi_layout({constant_count = 0,
   %input_view = resource<hal_binding> {extent = 20, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %output_view = resource<hal_binding> {extent = 20, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %16 = v_mov_b32 858993460
-  %17 = v_mul_hi_u32 %lane, %16
-  %quotient = v_lshrrev_b32_src0_inline %17, 0
-  %22 = v_mov_b32 5
-  %23 = v_mul_lo_u32 %quotient, %22
-  %remainder = v_sub_nc_u32 %lane, %23
-  %25 = v_lshlrev_b32_src0_inline %quotient, 2
-  %loaded = global_load_b32_saddr %25, %input_view
-  %27 = v_lshlrev_b32_src0_inline %remainder, 2
-  global_store_b32_saddr %27, %loaded, %output_view
+  %quotient = v_mul_hi_u32 %lane, %16
+  %20 = v_mov_b32 5
+  %21 = v_mul_lo_u32 %quotient, %20
+  %remainder = v_sub_nc_u32 %lane, %21
+  %23 = v_lshlrev_b32_src0_inline %quotient, 2
+  %loaded = global_load_b32_saddr %23, %input_view
+  %25 = v_lshlrev_b32_src0_inline %remainder, 2
+  global_store_b32_saddr %25, %loaded, %output_view
   return
 }
 
@@ -454,15 +453,14 @@ low.kernel.def target<amdgpu.gfx11.generic.core> abi_layout({constant_count = 0,
   %input_view = resource<hal_binding> {extent = 28, index = 0, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %output_view = resource<hal_binding> {extent = 28, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %16 = v_mov_b32 613566757
-  %17 = v_mul_hi_u32 %lane, %16
-  %quotient = v_lshrrev_b32_src0_inline %17, 0
-  %22 = v_mov_b32 7
-  %23 = v_mul_lo_u32 %quotient, %22
-  %remainder = v_sub_nc_u32 %lane, %23
-  %25 = v_lshlrev_b32_src0_inline %quotient, 2
-  %loaded = global_load_b32_saddr %25, %input_view
-  %27 = v_lshlrev_b32_src0_inline %remainder, 2
-  global_store_b32_saddr %27, %loaded, %output_view
+  %quotient = v_mul_hi_u32 %lane, %16
+  %20 = v_mov_b32 7
+  %21 = v_mul_lo_u32 %quotient, %20
+  %remainder = v_sub_nc_u32 %lane, %21
+  %23 = v_lshlrev_b32_src0_inline %quotient, 2
+  %loaded = global_load_b32_saddr %23, %input_view
+  %25 = v_lshlrev_b32_src0_inline %remainder, 2
+  global_store_b32_saddr %25, %loaded, %output_view
   return
 }
 

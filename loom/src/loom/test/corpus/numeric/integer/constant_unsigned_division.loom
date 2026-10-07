@@ -1,3 +1,66 @@
+// Independent identity oracle: no quotient or remainder in the reference.
+func.def @bounded_remainder_identities(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<4xi32>
+  %results = buffer.view %output[%base] : buffer -> view<8xi32>
+  %loaded = vector.load %values[0] : view<4xi32> -> vector<4xi32>
+  %mask = vector.constant 255 : vector<4xi32>
+  %bounded = vector.andi %loaded, %mask : vector<4xi32>
+  %divisors = vector.constant 257 : vector<4xi32>
+  %identities = vector.remui %bounded, %divisors : vector<4xi32>
+  vector.store %identities, %results[0] : vector<4xi32>, view<8xi32>
+  %begin = index.constant 0 : index
+  %end = index.constant 4 : index
+  %step = index.constant 1 : index
+  %byte_mask = scalar.constant 255 : i32
+  %divisor = scalar.constant 257 : i32
+  scf.for %lane = [%begin to %end step %step] {
+    %value = view.load %values[%lane] : view<4xi32> -> i32
+    %byte = scalar.andi %value, %byte_mask : i32
+    %result = scalar.remui %byte, %divisor : i32
+    %position = index.add %lane, %end : index
+    view.store %result, %results[%position] : i32, view<8xi32>
+  }
+  func.return
+}
+
+func.def @bounded_remainder_identity_oracle(%input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<4xi32>
+  %results = buffer.view %output[%base] : buffer -> view<8xi32>
+  %begin = index.constant 0 : index
+  %end = index.constant 4 : index
+  %step = index.constant 1 : index
+  %mask = scalar.constant 255 : i32
+  scf.for %lane = [%begin to %end step %step] {
+    %value = view.load %values[%lane] : view<4xi32> -> i32
+    %byte = scalar.andi %value, %mask : i32
+    %position = index.add %lane, %end : index
+    view.store %byte, %results[%lane] : i32, view<8xi32>
+    view.store %byte, %results[%position] : i32, view<8xi32>
+  }
+  func.return
+}
+
+check.scenario @bounded_remainder_identity_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(254) step(1) : tensor<4xi32>
+    %output = check.generate.fill value(-1) : tensor<8xi32>
+    check.compare<@bounded_remainder_identities, @bounded_remainder_identity_oracle>(%input, %output) : (tensor<4xi32>, tensor<8xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<8xi32>
+    }
+  }
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%seed) range(-2147483648 to 2147483647) : tensor<4xi32>
+    %output = check.generate.fill value(-1) : tensor<8xi32>
+    check.compare<@bounded_remainder_identities, @bounded_remainder_identity_oracle>(%input, %output) : (tensor<4xi32>, tensor<8xi32>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<8xi32>
+    }
+  }
+  check.return
+}
+
 // Byte and halfword division use unsigned promotion to the same u32 recipes.
 func.def @constant_narrow_quotients(%dynamic_zero: i32, %uniform_bits: i64, %input: buffer, %output: buffer) {
   %base = index.constant 0 : offset

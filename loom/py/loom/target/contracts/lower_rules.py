@@ -89,7 +89,7 @@ from loom.target.contracts.lower_rule_diagnostics import (
     _static_element_count_relation_diagnostic,
     _storage_element_format_diagnostic,
     _storage_operand_schema_diagnostic,
-    _u32_divisor_magic_is_add_diagnostic,
+    _u32_divisor_magic_kind_diagnostic,
     _value_no_uses_after_diagnostic,
     _value_no_uses_diagnostic,
     _value_type_diagnostic,
@@ -904,7 +904,7 @@ class _LowerRuleSetCompiler:
             GuardKind.VALUE_UNSIGNED_BIT_COUNT,
             GuardKind.VALUE_EXACT_I64,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-            GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+            GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
@@ -1197,11 +1197,7 @@ class _LowerRuleSetCompiler:
                 )
             )
             return
-        if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD:
-            if guard.count not in (0, 1):
-                raise ValueError(
-                    f"{source_op.name}: divisor-magic add guard needs 0 or 1"
-                )
+        if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND:
             self._guards.append(
                 LowerGuard(
                     kind=guard.kind,
@@ -1214,9 +1210,9 @@ class _LowerRuleSetCompiler:
                         source_op,
                         _guard_diagnostic(
                             guard,
-                            _u32_divisor_magic_is_add_diagnostic(
+                            _u32_divisor_magic_kind_diagnostic(
                                 guard.field,
-                                is_add=bool(guard.count),
+                                guard.count,
                             ),
                         ),
                     ),

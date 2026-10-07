@@ -1866,6 +1866,39 @@ static iree_status_t loom_vector_canonicalize_divf(loom_op_t* op,
   return iree_ok_status();
 }
 
+static bool loom_vector_unsigned_remainder_is_identity(
+    loom_rewriter_t* rewriter, const loom_value_id_t* operands,
+    loom_scalar_type_t element_type) {
+  const loom_fact_context_t* context = &rewriter->fact_table->context;
+  loom_value_facts_t uniform[2];
+  loom_value_fact_small_static_lanes_t elements[2] = {{0}};
+  for (uint32_t i = 0; i < 2; ++i) {
+    const loom_value_facts_t facts =
+        loom_rewriter_value_facts(rewriter, operands[i]);
+    if (loom_value_facts_query_all_equal_element(context, facts, &uniform[i])) {
+      elements[i].lanes = &uniform[i];
+      elements[i].count = 1;
+    } else if (!loom_value_facts_query_small_static_lanes(context, facts,
+                                                          &elements[i])) {
+      return false;
+    }
+    if (elements[i].count == 0) {
+      // Verified operand shapes agree; an empty result is the empty dividend.
+      return true;
+    }
+  }
+  const int32_t bit_count = loom_scalar_type_bitwidth(element_type);
+  const iree_host_size_t count = iree_max(elements[0].count, elements[1].count);
+  for (iree_host_size_t i = 0; i < count; ++i) {
+    if (!loom_value_facts_remui_is_identity(
+            elements[0].lanes[elements[0].count == 1 ? 0 : i],
+            elements[1].lanes[elements[1].count == 1 ? 0 : i], bit_count)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static iree_status_t loom_vector_canonicalize_binary_identity(
     loom_op_t* op, loom_rewriter_t* rewriter, bool* out_changed) {
   *out_changed = false;
@@ -1892,6 +1925,12 @@ static iree_status_t loom_vector_canonicalize_binary_identity(
 
   loom_value_id_t replacement = LOOM_VALUE_ID_INVALID;
   switch (op->kind) {
+    case LOOM_OP_VECTOR_REMUI:
+      if (loom_vector_unsigned_remainder_is_identity(rewriter, operands,
+                                                     element_type)) {
+        replacement = lhs;
+      }
+      break;
     case LOOM_OP_VECTOR_ADDI:
     case LOOM_OP_VECTOR_ORI:
       if (loom_vector_value_is_all_exact_i64(rewriter, lhs, 0)) {

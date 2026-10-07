@@ -33,6 +33,7 @@ from loom.target.contracts import (
     Scalar,
     SourceValueKind,
     TypePattern,
+    UnsignedDivisorMagicKind,
     compile_lower_rule_set,
 )
 
@@ -168,11 +169,16 @@ def test_constant_unsigned_quotients_cover_both_register_classes() -> None:
             key.endswith("mul_hi_u32") for key in _rule_descriptor_keys(compiled, rule)
         )
     )
-    # Both magic variants share the index implementation, with scalar i32
+    # Every reciprocal shape shares the index implementation, with scalar i32
     # materialization instead of nonnegative address-value materialization.
-    assert len(index_sequences) == 4
-    assert scalar_sequences[:4] == index_sequences
-    assert scalar_sequences[4:] == (
+    magic_count = 2 * len(UnsignedDivisorMagicKind)
+    assert len(index_sequences) == magic_count
+    assert scalar_sequences[:magic_count] == index_sequences
+    assert index_sequences[:2] == (
+        ("amdgpu.s_mov_b32", "amdgpu.s_mul_hi_u32"),
+        ("amdgpu.v_mov_b32", "amdgpu.v_mul_hi_u32"),
+    )
+    assert scalar_sequences[magic_count:] == (
         (
             "amdgpu.s_cmp_ge_u32",
             "amdgpu.s_mov_b32",

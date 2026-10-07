@@ -119,8 +119,8 @@ func.def target(@target) @bounded_identity_remainder(%input: i64) -> (i64) {
 }
 
 // ----
-low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @bounded_identity_remainder(%result: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
-  return %result
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @bounded_identity_remainder(%value: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
+  return %value
 }
 
 // ====

@@ -95,10 +95,8 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @constant_remainde
   %57 = mac %56, %48, %50
   %58 = lshl %55, %21
   %59 = add.rr %57, %58
-  %62 = sub %36, %36
-  %63 = lshl %59, %62
-  %64 = mul %63, %divisor
-  %index_remainder = sub %position, %64
+  %60 = mul %59, %divisor
+  %index_remainder = sub %position, %60
   return %remainder, %index_remainder
 }
 
@@ -286,28 +284,23 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @bounded_constant_
   %30 = mac %29, %21, %23
   %31 = lshl %28, %19
   %32 = add.rr %30, %31
-  %33 = mov.short 0
-  %35 = sub %33, %33
-  %36 = lshl %32, %35
-  %37 = mul %36, %c3
-  %third = sub %word, %37
-  %39 = mov.i32 613566757
-  %42 = and %bounded, %18
-  %43 = lshl %bounded, %19
-  %44 = and %39, %18
-  %45 = lshl %39, %19
-  %46 = mul %42, %44
-  %47 = lshl %46, %19
-  %48 = mac %47, %43, %44
-  %49 = and %48, %18
-  %50 = mac %49, %42, %45
-  %51 = lshl %48, %19
-  %52 = mac %51, %43, %45
-  %53 = lshl %50, %19
-  %54 = add.rr %52, %53
-  %57 = sub %33, %33
-  %58 = lshl %54, %57
-  %59 = mul %58, %c7
-  %seventh = sub %bounded, %59
+  %33 = mul %32, %c3
+  %third = sub %word, %33
+  %35 = mov.i32 613566757
+  %38 = and %bounded, %18
+  %39 = lshl %bounded, %19
+  %40 = and %35, %18
+  %41 = lshl %35, %19
+  %42 = mul %38, %40
+  %43 = lshl %42, %19
+  %44 = mac %43, %39, %40
+  %45 = and %44, %18
+  %46 = mac %45, %38, %41
+  %47 = lshl %44, %19
+  %48 = mac %47, %39, %41
+  %49 = lshl %46, %19
+  %50 = add.rr %48, %49
+  %51 = mul %50, %c7
+  %seventh = sub %bounded, %51
   return %third, %seventh
 }

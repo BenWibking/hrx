@@ -44,6 +44,14 @@ loom_low_lower_unsigned_divisor_magic_info_t
 loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor, uint32_t bit_width,
                                            uint64_t numerator_maximum);
 
+// Arithmetic shape of an exact unsigned reciprocal recipe. The multiplier-only
+// form consumes the high product directly without an identity post-shift.
+typedef enum loom_low_lower_unsigned_divisor_magic_kind_e {
+  LOOM_LOW_LOWER_UNSIGNED_DIVISOR_MAGIC_MULTIPLY = 0,
+  LOOM_LOW_LOWER_UNSIGNED_DIVISOR_MAGIC_MULTIPLY_SHIFT = 1,
+  LOOM_LOW_LOWER_UNSIGNED_DIVISOR_MAGIC_MULTIPLY_ADD_SHIFT = 2,
+} loom_low_lower_unsigned_divisor_magic_kind_t;
+
 // Returns ceil(2^64 / divisor), for a divisor in [2, UINT32_MAX]. For a u32
 // numerator n, high64(n * reciprocal) is n / divisor and
 // high64(low64(n * reciprocal) * divisor) is n % divisor. The full reciprocal

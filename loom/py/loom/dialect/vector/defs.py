@@ -2821,7 +2821,7 @@ vector_remui = _lanewise_binary(
     result_constraint=INTEGER_ELEMENT,
     doc="Lanewise unsigned integer remainder of same-typed vector operands.",
     facts="loom_vector_remui_facts",
-    canonicalize="loom_vector_uniform_result_canonicalize",
+    canonicalize="loom_vector_binary_identity_canonicalize",
 )
 
 vector_ceildivsi = _lanewise_binary(

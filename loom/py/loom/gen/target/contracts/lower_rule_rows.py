@@ -60,7 +60,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
         GuardKind.VALUE_UNSIGNED_BIT_COUNT,
         GuardKind.VALUE_EXACT_I64,
         GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-        GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.VALUE_EXACT_FLOAT,
         GuardKind.VALUE_NOT_NAN,
         GuardKind.VALUE_I64_RANGE,
@@ -80,7 +80,7 @@ _GUARD_VALUE_REF_KINDS = frozenset(
 
 _GUARD_OTHER_VALUE_REF_KINDS = frozenset(
     (
-        GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT_EQ,
         GuardKind.VALUE_STATIC_ELEMENT_COUNT_EQ,
         GuardKind.VALUE_I64_RANGE_LE,
@@ -662,7 +662,7 @@ def guard_payload_row(row: LowerGuard) -> list[str]:
         GuardKind.I64_ARRAY_COUNT,
         GuardKind.VALUE_SIGNED_BIT_COUNT,
         GuardKind.VALUE_UNSIGNED_BIT_COUNT,
-        GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+        GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
         GuardKind.VALUE_FLOAT_EQUALS,
         GuardKind.INSTANCE_FLAGS_HAS_ALL,
         GuardKind.INSTANCE_FLAGS_HAS_NONE,

@@ -687,9 +687,9 @@ typedef enum loom_low_lower_guard_kind_e {
   // Source value facts plus payload.addend must be an exact positive
   // power-of-two integer, without signed overflow.
   LOOM_LOW_LOWER_GUARD_VALUE_EXACT_POWER_OF_TWO_I64 = 16,
-  // Source value facts must be an exact unsigned 32-bit divisor whose magic
-  // division recipe uses the add adjustment indicated by u64.
-  LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_IS_ADD = 17,
+  // Source divisor and numerator facts select the reciprocal arithmetic shape
+  // in u64, a loom_low_lower_unsigned_divisor_magic_kind_t.
+  LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_KIND = 17,
   // Source value facts must be an exact floating-point value.
   LOOM_LOW_LOWER_GUARD_VALUE_EXACT_FLOAT = 18,
   // Source value facts must prove every non-floating integer element is
@@ -751,7 +751,7 @@ static_assert(LOOM_ATTR_COUNT_ <= UINT8_MAX,
               "attribute kinds must fit in uint8_t guard storage");
 
 typedef union loom_low_lower_guard_payload_t {
-  // Required enum value, divisor adjustment, expected count, bit-count limit,
+  // Required enum value, divisor recipe kind, expected count, bit-count limit,
   // register unit count, exact f64 bit pattern, flag mask, storage element
   // format, or memory-space mask.
   uint64_t u64;

@@ -85,6 +85,7 @@ from loom.target.contracts import (
     SourceNodeRelation,
     SourceOpProject,
     SourceValueKind,
+    UnsignedDivisorMagicKind,
     ValueProject,
     ValueRef,
     Vector,
@@ -1777,7 +1778,7 @@ def test_generate_lower_rule_set_emits_divisor_magic_projection() -> None:
                     Guard.value_type("lhs", Scalar("i32")),
                     Guard.value_type("rhs", Scalar("i32")),
                     Guard.value_type("result", Scalar("i32")),
-                    Guard.value_u32_divisor_magic_is_add("lhs", "rhs", False),
+                    Guard.value_u32_divisor_magic_kind("lhs", "rhs", UnsignedDivisorMagicKind.MULTIPLY_SHIFT),
                 ),
                 emit=(
                     EmitDescriptorOp(
@@ -1810,7 +1811,7 @@ def test_generate_lower_rule_set_emits_divisor_magic_projection() -> None:
 
     generated = generate_lower_rule_set(table, dialect_ops={"scalar": ALL_SCALAR_OPS})
 
-    assert "LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_IS_ADD" in generated.source
+    assert "LOOM_LOW_LOWER_GUARD_VALUE_U32_DIVISOR_MAGIC_KIND" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32" in generated.source
     assert "LOOM_LOW_LOWER_ATTR_COPY_VALUE_U32_DIVISOR_MAGIC_SHIFT" in generated.source

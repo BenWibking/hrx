@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import Enum, unique
+from enum import Enum, IntEnum, unique
 from typing import Self
 
 from loom.dsl import (
@@ -43,6 +43,23 @@ _MAX_U32 = 0xFFFFFFFF
 
 
 @unique
+class UnsignedDivisorMagicKind(IntEnum):
+    """Arithmetic shape of an exact word-sized reciprocal recipe."""
+
+    MULTIPLY = 0
+    MULTIPLY_SHIFT = 1
+    MULTIPLY_ADD_SHIFT = 2
+
+    @property
+    def has_add(self) -> bool:
+        return self is self.MULTIPLY_ADD_SHIFT
+
+    @property
+    def has_shift(self) -> bool:
+        return self is not self.MULTIPLY
+
+
+@unique
 class GuardKind(Enum):
     """Selection guard kind for descriptor-rule contracts."""
 
@@ -64,7 +81,7 @@ class GuardKind(Enum):
     VALUE_UNSIGNED_BIT_COUNT = "value_unsigned_bit_count"
     VALUE_EXACT_I64 = "value_exact_i64"
     VALUE_EXACT_POWER_OF_TWO_I64 = "value_exact_power_of_two_i64"
-    VALUE_U32_DIVISOR_MAGIC_IS_ADD = "value_u32_divisor_magic_is_add"
+    VALUE_U32_DIVISOR_MAGIC_KIND = "value_u32_divisor_magic_kind"
     VALUE_EXACT_FLOAT = "value_exact_float"
     VALUE_NOT_NAN = "value_not_nan"
     VALUE_I64_RANGE = "value_i64_range"
@@ -460,19 +477,19 @@ class Guard:
         )
 
     @classmethod
-    def value_u32_divisor_magic_is_add(
+    def value_u32_divisor_magic_kind(
         cls,
         numerator: str,
         divisor: str,
-        is_add: bool,
+        kind: UnsignedDivisorMagicKind,
         *,
         diagnostic: GuardDiagnostic | None = None,
     ) -> Self:
         return cls(
-            kind=GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+            kind=GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             field=divisor,
             other_field=numerator,
-            count=1 if is_add else 0,
+            count=kind,
             diagnostic=diagnostic,
         )
 
@@ -894,7 +911,7 @@ class Guard:
             GuardKind.VALUE_UNSIGNED_BIT_COUNT,
             GuardKind.VALUE_EXACT_I64,
             GuardKind.VALUE_EXACT_POWER_OF_TWO_I64,
-            GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD,
+            GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND,
             GuardKind.VALUE_EXACT_FLOAT,
             GuardKind.VALUE_NOT_NAN,
             GuardKind.VALUE_I64_RANGE,
@@ -1019,13 +1036,13 @@ def _validate_value_fact_guard(
         if guard.count is None or guard.count <= 0:
             raise ValueError(f"{source_op.name}: {subject} needs a positive bit count")
         return
-    if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_IS_ADD:
+    if guard.kind == GuardKind.VALUE_U32_DIVISOR_MAGIC_KIND:
         if guard.other_field is None:
             raise ValueError(f"{source_op.name}: {subject} needs a numerator")
         _require_value(source_op, guard.other_field, subject)
-        if guard.count not in (0, 1):
+        if not isinstance(guard.count, UnsignedDivisorMagicKind):
             raise ValueError(
-                f"{source_op.name}: {subject} needs an expected add indicator"
+                f"{source_op.name}: {subject} needs a reciprocal recipe kind"
             )
         return
     if guard.kind == GuardKind.VALUE_I64_RANGE and (

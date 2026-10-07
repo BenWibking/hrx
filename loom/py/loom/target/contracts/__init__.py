@@ -57,7 +57,12 @@ from loom.target.contracts.fragments import (
     ContractFragment,
     contract_fragment_public_header,
 )
-from loom.target.contracts.guards import Guard, GuardDiagnostic, GuardKind
+from loom.target.contracts.guards import (
+    Guard,
+    GuardDiagnostic,
+    GuardKind,
+    UnsignedDivisorMagicKind,
+)
 from loom.target.contracts.immediates import (
     AttrProject,
     AttrProjectKind,
@@ -239,6 +244,7 @@ __all__ = [
     "SourceNode",
     "SourceNodeRelation",
     "TypePattern",
+    "UnsignedDivisorMagicKind",
     "ValueAliasRule",
     "ValueElideRule",
     "ValueMaterializer",
