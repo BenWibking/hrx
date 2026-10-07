@@ -386,16 +386,55 @@ shader; its query-reset callers above are the concrete DMA-immediate fills.
 [Upload construction][m-si-upload]
 [PAL ordinary fill][p-fill-selection]
 
-ROCr's PC-sampling readback supplies a separate count-encoding discrepancy.
-Its loop takes `min(bytes, 1 << 26)`, then masks the value to 26 bits while
-advancing source, destination and remaining bytes by the unmasked chunk.
-At exactly `1 << 26`, that arithmetic encodes zero. The sample/host-buffer
-bounds can exceed that size; they do not establish a smaller-chunk invariant.
-This source loop therefore cannot define the maximum ordinary transfer size.
-[Readback loop][r-sample-copy] [Chunk constant][r-sample-chunk]
+### Readback counts and record boundaries
+
+ROCr's PC-sampling readback distinguishes a sample count, an aggregate byte
+extent, and each DMA packet's byte count. Its `e531543` implementation caps a
+chunk at `(1 << 26) - 1` and advances both addresses and remaining bytes by
+exactly the encoded count. A 64 MiB contiguous span therefore becomes
+67,108,863 bytes followed by one byte. A packet boundary can split a 64-byte
+sample; the host consumes records only after the complete readback, rather
+than interpreting each DMA packet as a record batch. Circular-buffer wrap
+splits the destination into two spans, each independently packetized.
+[Chunk bound][r-sample-chunk-fixed] [Packet loop][r-sample-copy-fixed]
+[Host publication][r-sample-publish-fixed] [Record consumer][r-sample-consumer-fixed]
+[Record layouts][r-sample-records]
+
+The earlier `8d57824` loop instead caps at `1 << 26` and masks that value to
+26 bits while advancing by the unmasked chunk. At exactly 64 MiB it encodes
+zero. The corrected bound avoids that representation mismatch; neither source
+establishes a special maximum-length meaning for zero.
+[Earlier loop][r-sample-copy] [Earlier bound][r-sample-chunk]
 [Count macro][r-dma-fields]
-[Sampling allocation bounds][r-sample-bounds] [Readback clamp][r-sample-clamp]
-[Default allocation cap][r-sample-limit]
+
+Reachability depends on the caller's allocation policy. The cited
+rocprofiler-sdk selects a total session buffer of 64 MiB when
+`gfx_target_version / 100` is `904`, `905` or `1205`, and 4 MiB otherwise.
+With the default device-buffer cap, ROCr divides that request among XCCs and
+halves each share for one trap buffer: at most 32 MiB or 2 MiB respectively,
+before any additional division. That SDK path does not reach the old 64 MiB
+chunk boundary. The public ROCr constructor accepts larger requests in
+multiples of two records; for example, 128 MiB per XCC produces a 64 MiB
+trap buffer under the default 256 MiB cap, subject to successful native
+allocation and sampling admission.
+[SDK caller][r-sample-sdk-caller] [SDK sizes][r-sample-sdk-sizes]
+[Constructor][r-sample-constructor] [Allocation arithmetic][r-sample-bounds-fixed]
+[Default cap][r-sample-limit]
+
+The aggregate extent has a separate source-width issue: that newer readback
+assigns `sample_count * sample_size` to a 32-bit `to_copy` before splitting
+the spans. A 4 GiB product narrows to zero even though each packet chunk is
+representable. The configurable device-buffer cap has no matching upper-bound
+check in its parser. This is an aggregate-count mismatch under larger custom
+buffer configurations, not a DMA packet limit or a property of the SDK's small
+buffers. A wider aggregate would also need a command-capacity bound: each
+DMA adds seven DWORDs to a fixed 4 KiB construction array, and the queue's
+staged IB accepts fewer than 4 KiB of commands.
+[Aggregate width][r-sample-total-fixed] [Assignment and host clamp][r-sample-clamp-fixed]
+[Configurable cap][r-sample-cap-parser] [Construction storage][r-sample-storage-fixed]
+[IB capacity][r-sample-ib-size-fixed] [IB copy][r-sample-ib-fixed]
+
+### Copy alignment and prefetch ranges
 
 RADV can choose CP DMA for an unaligned copy; 32-byte alignment is a performance
 preference. Fill requires a DWORD-aligned destination and length and repeats a
@@ -493,6 +532,10 @@ publishing host-buffer progress. Target buffers, result bytes and the shared
 executable IB retain their distinct owners, including the
 [carrier's completed-use requirement](../aql/transfers.md).
 [Producer wait and cache step][r-sample-producer] [Copy and final observer][r-sample-copy]
+The newer readback holds an outer `pcs_pm4_mutex_` across both the atomic
+exchange and copy submit-and-wait pairs. That caller-level owner extends
+beyond the helper's submission mutex and protects the shared executable IB
+through both normal completions. [Complete readback owner][r-sample-owner-fixed]
 
 Shader completion, DMA completion, payload visibility and command retirement
 remain separate edges. PAL's MEC control discrepancy, a logical busy flag,
@@ -587,8 +630,6 @@ or an intermediate write-confirm choice cannot substitute for a missing edge.
 [m-si-upload]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_shader_binary.c#L122-L221
 [p-fill-selection]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/rpm/rsrcProcMgr.cpp#L3171-L3332
 [r-sample-copy]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4871-L4953
-[r-sample-bounds]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4075-L4138
-[r-sample-clamp]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4794-L4825
 [r-sample-limit]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/util/flag.h#L74-L74
 [r-sample-chunk]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L102-L102
 [m-si-prefetch]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/si_state_draw.cpp#L642-L720
@@ -606,3 +647,19 @@ or an intermediate write-confirm choice cannot substitute for a missing edge.
 [m-gfx81-control]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/registers/gfx81.json#L9995-L10006
 [m-si-upload-select]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/gfx/si_shader_binary.c#L313-L337
 [r-clr-wait]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/pal/palresource.cpp#L1711-L1726
+[r-sample-chunk-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L102-L102
+[r-sample-copy-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4934-L4973
+[r-sample-publish-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4996-L5015
+[r-sample-consumer-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L5092-L5166
+[r-sample-records]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/inc/hsa_ven_amd_pc_sampling.h#L59-L106
+[r-sample-sdk-caller]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocprofiler-sdk/source/lib/rocprofiler-sdk/pc_sampling/hsa_adapter.cpp#L309-L337
+[r-sample-sdk-sizes]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocprofiler-sdk/source/lib/rocprofiler-sdk/pc_sampling/utils.cpp#L73-L104
+[r-sample-constructor]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/pcs/pcs_runtime.cpp#L126-L156
+[r-sample-bounds-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4122-L4143
+[r-sample-total-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4731-L4733
+[r-sample-clamp-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4848-L4880
+[r-sample-cap-parser]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/util/flag.h#L300-L306
+[r-sample-storage-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L3901-L3926
+[r-sample-ib-size-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp#L98-L98
+[r-sample-ib-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp#L1618-L1640
+[r-sample-owner-fixed]: https://github.com/ROCm/rocm-systems/blob/e53154361af6ec17954c64c020e7c66701669ef4/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp#L4716-L5016
