@@ -90,11 +90,13 @@ iree_py_test(
     name = "contracts_test",
     srcs = [
         "float_narrowing_test.py",
+        "float_payload_test.py",
         "index_test.py",
         "//loom/py/loom/tools:pytest_style_runner.py",
     ],
     args = [
         "loom.target.arch.spirv.contracts.float_narrowing_test",
+        "loom.target.arch.spirv.contracts.float_payload_test",
         "loom.target.arch.spirv.contracts.index_test",
     ],
     main = "pytest_style_runner.py",

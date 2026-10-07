@@ -4,23 +4,37 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""BF16 conversions with source-defined rounding independent of Vulkan defaults."""
+"""BF16 rounding and bit-preserving transport through native or integer carriers."""
 
 from enum import Enum, unique
 
 from loom.dialect.scalar import conversion
+from loom.dialect.view import defs as view
 from loom.target.arch.spirv.contracts.descriptor_rule import (
     descriptor_feature_guards,
     emit_descriptor_op,
     float_narrowing_descriptors,
     logical_core_descriptor,
 )
+from loom.target.arch.spirv.contracts.memory import (
+    source_memory_address_feature_guards,
+    storage_buffer_address_materializer,
+    storage_buffer_source_memory,
+    workgroup_address_materializer,
+    workgroup_carrier_guard,
+    workgroup_source_memory,
+)
+from loom.target.arch.spirv.scalar_memory import storage_buffer_scalar_by_suffix
 from loom.target.contracts import (
     DescriptorResultType,
     DescriptorRule,
+    EmitDescriptorOp,
     Guard,
     Scalar,
+    SourceMemoryAddressCoordinateType,
+    SourceMemoryOperation,
     ValueRef,
+    View,
 )
 from loom.target.emit.float_narrowing import (
     BF16_FORMAT,
@@ -168,62 +182,157 @@ def bfloat_narrow_rules() -> tuple[DescriptorRule, ...]:
     )
 
 
+def _bfloat_carrier_to_i16_emits(
+    source: ValueRef, result: ValueRef
+) -> tuple[EmitDescriptorOp, ...]:
+    descriptor = logical_core_descriptor("spirv.op_s_convert.i32.i16")
+    return (
+        emit_descriptor_op(
+            descriptor=descriptor,
+            operands={"input": source},
+            results={"dst": result},
+            result_types={"dst": Scalar("i16")},
+        ),
+    )
+
+
 def bfloat_carrier_to_i16_rule() -> DescriptorRule:
     """Observes an i32-carried BF16 value through its native i16 bit view."""
-    descriptor = logical_core_descriptor("spirv.op_s_convert.i32.i16")
+    emits = _bfloat_carrier_to_i16_emits(
+        ValueRef.operand("input"), ValueRef.result("result")
+    )
     return DescriptorRule(
         source_op=conversion.scalar_bitcast,
-        descriptor=descriptor,
+        descriptor=emits[-1].descriptor,
         guards=(
             Guard.value_type("input", Scalar("bf16")),
             Guard.value_type("result", Scalar("i16")),
-            *descriptor_feature_guards(descriptor),
+            *descriptor_feature_guards(*(step.descriptor for step in emits)),
         ),
-        emit=(
-            emit_descriptor_op(
-                descriptor=descriptor,
-                operands={"input": ValueRef.operand("input")},
-                results={"dst": ValueRef.result("result")},
-            ),
+        emit=emits,
+    )
+
+
+def _bfloat_carrier_from_i16_emits(
+    source: ValueRef, result: ValueRef
+) -> tuple[EmitDescriptorOp, ...]:
+    signed_to_unsigned = logical_core_descriptor("spirv.op_bitcast.i16.u16")
+    widen = logical_core_descriptor("spirv.op_u_convert.u16.u32")
+    unsigned_to_signed = logical_core_descriptor("spirv.op_bitcast.u32.i32")
+    return (
+        emit_descriptor_op(
+            descriptor=signed_to_unsigned,
+            operands={"input": source},
+            results={"dst": ValueRef.temporary("unsigned_bits")},
+            result_types={"dst": DescriptorResultType()},
+        ),
+        emit_descriptor_op(
+            descriptor=widen,
+            operands={"input": ValueRef.temporary("unsigned_bits")},
+            results={"dst": ValueRef.temporary("wide_unsigned_bits")},
+            result_types={"dst": DescriptorResultType()},
+        ),
+        emit_descriptor_op(
+            descriptor=unsigned_to_signed,
+            operands={"input": ValueRef.temporary("wide_unsigned_bits")},
+            results={"dst": result},
+            result_types={"dst": Scalar("i32")},
         ),
     )
 
 
 def bfloat_carrier_from_i16_rule() -> DescriptorRule:
     """Constructs an i32-carried BF16 value from its native i16 bit view."""
-    signed_to_unsigned = logical_core_descriptor("spirv.op_bitcast.i16.u16")
-    widen = logical_core_descriptor("spirv.op_u_convert.u16.u32")
-    unsigned_to_signed = logical_core_descriptor("spirv.op_bitcast.u32.i32")
+    emits = _bfloat_carrier_from_i16_emits(
+        ValueRef.operand("input"), ValueRef.result("result")
+    )
     return DescriptorRule(
         source_op=conversion.scalar_bitcast,
-        descriptor=unsigned_to_signed,
+        descriptor=emits[-1].descriptor,
         guards=(
             Guard.value_type("input", Scalar("i16")),
             Guard.value_type("result", Scalar("bf16")),
-            *descriptor_feature_guards(
-                signed_to_unsigned,
-                widen,
-                unsigned_to_signed,
-            ),
+            *descriptor_feature_guards(*(step.descriptor for step in emits)),
         ),
-        emit=(
-            emit_descriptor_op(
-                descriptor=signed_to_unsigned,
-                operands={"input": ValueRef.operand("input")},
-                results={"dst": ValueRef.temporary("unsigned_bits")},
-                result_types={"dst": DescriptorResultType()},
-            ),
-            emit_descriptor_op(
-                descriptor=widen,
-                operands={"input": ValueRef.temporary("unsigned_bits")},
-                results={"dst": ValueRef.temporary("wide_unsigned_bits")},
-                result_types={"dst": DescriptorResultType()},
-            ),
-            emit_descriptor_op(
-                descriptor=unsigned_to_signed,
-                operands={"input": ValueRef.temporary("wide_unsigned_bits")},
-                results={"dst": ValueRef.result("result")},
-            ),
-        ),
+        emit=emits,
         report_key="bfloat16_carrier_from_i16_bits",
     )
+
+
+def bfloat_carrier_memory_rules() -> tuple[DescriptorRule, ...]:
+    """Transports software BF16 payloads through same-width integer storage."""
+    scalar = storage_buffer_scalar_by_suffix("i16")
+    assert scalar is not None
+    paths = (
+        (
+            "storage_buffer",
+            storage_buffer_address_materializer(scalar),
+            storage_buffer_source_memory,
+            (),
+        ),
+        *(
+            (
+                "workgroup",
+                workgroup_address_materializer(scalar, coordinate_type),
+                workgroup_source_memory,
+                (workgroup_carrier_guard(scalar.suffix),),
+            )
+            for coordinate_type in (
+                SourceMemoryAddressCoordinateType.INDEX,
+                SourceMemoryAddressCoordinateType.OFFSET,
+            )
+        ),
+    )
+    rules: list[DescriptorRule] = []
+    for space, address_materializer, source_memory, carrier_guards in paths:
+        for operation in (SourceMemoryOperation.LOAD, SourceMemoryOperation.STORE):
+            is_load = operation is SourceMemoryOperation.LOAD
+            descriptor = logical_core_descriptor(
+                f"spirv.op_{'load' if is_load else 'store'}.{space}.{scalar.suffix}"
+            )
+            stored_bits = ValueRef.temporary("stored_bits")
+            operands = {"ptr": ValueRef.source_memory_address()}
+            if not is_load:
+                operands["value"] = stored_bits
+            memory_emit = emit_descriptor_op(
+                descriptor=descriptor,
+                operands=operands,
+                results={"dst": stored_bits} if is_load else None,
+                result_types={"dst": DescriptorResultType()} if is_load else None,
+                source_memory=source_memory(operation, scalar),
+                source_memory_address_materializer=address_materializer,
+            )
+            emits = (
+                (
+                    memory_emit,
+                    *_bfloat_carrier_from_i16_emits(
+                        stored_bits, ValueRef.result("result")
+                    ),
+                )
+                if is_load
+                else (
+                    *_bfloat_carrier_to_i16_emits(
+                        ValueRef.operand("value"), stored_bits
+                    ),
+                    memory_emit,
+                )
+            )
+            rules.append(
+                DescriptorRule(
+                    source_op=view.view_load if is_load else view.view_store,
+                    descriptor=descriptor,
+                    guards=(
+                        Guard.value_type("view", View("bf16")),
+                        Guard.value_type(
+                            "result" if is_load else "value", Scalar("bf16")
+                        ),
+                        *carrier_guards,
+                        *source_memory_address_feature_guards(address_materializer),
+                        *descriptor_feature_guards(
+                            *(step.descriptor for step in emits)
+                        ),
+                    ),
+                    emit=emits,
+                )
+            )
+    return tuple(rules)

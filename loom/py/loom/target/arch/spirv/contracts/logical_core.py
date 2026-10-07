@@ -36,6 +36,7 @@ from loom.target.arch.spirv.builtins import (
 from loom.target.arch.spirv.contracts.atomic import SPIRV_ATOMIC_CONTRACT_CASES
 from loom.target.arch.spirv.contracts.bfloat import (
     bfloat_carrier_from_i16_rule,
+    bfloat_carrier_memory_rules,
     bfloat_carrier_to_i16_rule,
     bfloat_narrow_rules,
 )
@@ -255,6 +256,44 @@ def _boolean_constant_rule(row: BooleanConstant) -> DescriptorRule:
     )
 
 
+def _float_payload_constant_rule(
+    source_types: tuple[str, ...], carrier_suffix: str
+) -> DescriptorRule:
+    # Raw FP8 payloads span 0..255, beyond the signed-i8 constant immediate.
+    # An i32 literal followed by integer narrowing preserves every payload bit.
+    constant = _descriptor("spirv.op_constant.i32")
+    result = ValueRef.result("result")
+    payload = result if carrier_suffix == "i32" else ValueRef.temporary("payload")
+    emits = [
+        EmitDescriptorOp(
+            descriptor=constant,
+            results={"dst": payload},
+            result_types={"dst": _I32},
+            immediates={"i32_value": ValueProject.float_bits("result")},
+            form=DescriptorEmitForm.CONST,
+        )
+    ]
+    if carrier_suffix != "i32":
+        emits.append(
+            _descriptor_emit(
+                descriptor=_descriptor(f"spirv.op_s_convert.i32.{carrier_suffix}"),
+                operands={"input": payload},
+                results={"dst": result},
+            )
+        )
+    return DescriptorRule(
+        source_op=scalar_conversion.scalar_constant,
+        descriptor=emits[-1].descriptor,
+        guards=(
+            Guard.attr_kind("value", "f64"),
+            Guard.value_type("result", Scalar(source_types)),
+            Guard.value_exact_float("result"),
+            *_feature_guards(*(step.descriptor for step in emits)),
+        ),
+        emit=tuple(emits),
+    )
+
+
 def _scalar_constant_rules() -> tuple[DescriptorRule, ...]:
     return (
         tuple(_boolean_constant_rule(row) for row in BOOLEAN_CONSTANTS)
@@ -263,6 +302,10 @@ def _scalar_constant_rules() -> tuple[DescriptorRule, ...]:
             for scalar_pair in INTEGER_SCALAR_ALU_TYPE_PAIRS
         )
         + tuple(_float_constant_rule(scalar) for scalar in FLOAT_CONSTANT_TYPES)
+        + (
+            _float_payload_constant_rule(("f8E4M3", "f8E5M2"), "i8"),
+            _float_payload_constant_rule(("bf16",), "i32"),
+        )
     )
 
 
@@ -1477,6 +1520,8 @@ def _select_rules() -> tuple[DescriptorRule, ...]:
         for scalar in SCALAR_ALU_TYPES
     ]
     rules.append(_select_rule(Scalar("bf16"), "spirv.op_select.bf16"))
+    rules.append(_select_rule(Scalar(("f8E4M3", "f8E5M2")), "spirv.op_select.i8"))
+    rules.append(_select_rule(Scalar("bf16"), "spirv.op_select.i32"))
     rules.append(_select_rule(_I1, "spirv.op_select.bool"))
     rules.append(_select_rule(Buffer(), "spirv.op_select.storage_buffer"))
     return tuple(rules)
@@ -1516,6 +1561,7 @@ SPIRV_LOGICAL_CORE_CONTRACT_FRAGMENT = ContractFragment(
         _raw_storage_buffer_byte_load_rule(),
         _raw_storage_buffer_byte_store_rule(),
         *_storage_buffer_rules(),
+        *bfloat_carrier_memory_rules(),
         *SPIRV_ATOMIC_CONTRACT_CASES,
         *SPIRV_SUBGROUP_CONTRACT_CASES,
         *_control_barrier_rules(),

@@ -184,3 +184,72 @@ check.scenario @workgroup_packet_exchange_bits {
   }
   check.return
 }
+
+// A BF16-only allocation must choose a storage type available on the target.
+// Every word pattern crosses global memory, a scalar select and a Workgroup
+// barrier before a different wave reads it. Two trials exercise both choices.
+kernel.def @workgroup_bfloat_payload_exchange() {
+  %unit = index.constant 1 : index
+  %groups = index.constant 512 : index
+  %width = index.constant 128 : index
+  kernel.launch.config workgroups(%groups, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
+} launch(%parity: index, %input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %bytes = index.constant 256 : offset
+  %scratch = buffer.alloca<workgroup> align(2) %bytes : buffer
+  %shared = buffer.view %scratch[%base] : buffer -> view<128xbf16>
+  %source = buffer.view %input[%base] : buffer -> view<65536xbf16>
+  %destination = buffer.view %output[%base] : buffer -> view<65536xbf16>
+  %group = kernel.workgroup.id<x> : index
+  %lane = kernel.workitem.id<x> : index
+  %width = index.constant 128 : index
+  %half = index.constant 64 : index
+  %step = index.constant 1 : index
+  %group_base = index.mul %group, %width : index
+  %position = index.add %group_base, %lane : index
+  %lane_parity = index.andi %lane, %step : index
+  %keep = index.cmp eq, %lane_parity, %parity : index
+  %input_value = view.load %source[%position] : view<65536xbf16> -> bf16
+  %fallback = scalar.constant -0.0 : bf16
+  %selected = scf.select %keep, %input_value, %fallback : bf16
+  view.store %selected, %shared[%lane] : bf16, view<128xbf16>
+  kernel.barrier<workgroup> scope(workgroup) ordering(acq_rel)
+  %peer = index.xori %lane, %half : index
+  %received = view.load %shared[%peer] : view<128xbf16> -> bf16
+  view.store %received, %destination[%position] : bf16, view<65536xbf16>
+  kernel.return
+}
+
+// The oracle uses integer payloads and directly addresses the peer's input.
+func.def @workgroup_bfloat_payload_oracle(%parity: index, %input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %source = buffer.view %input[%base] : buffer -> view<65536xi16>
+  %destination = buffer.view %output[%base] : buffer -> view<65536xi16>
+  %begin = index.constant 0 : index
+  %end = index.constant 65536 : index
+  %step = index.constant 1 : index
+  %half = index.constant 64 : index
+  %fallback_bits = scalar.constant -32768 : i16
+  scf.for %position = [%begin to %end step %step] {
+    %peer = index.xori %position, %half : index
+    %peer_parity = index.andi %peer, %step : index
+    %keep = index.cmp eq, %peer_parity, %parity : index
+    %payload = view.load %source[%peer] : view<65536xi16> -> i16
+    %selected = scf.select %keep, %payload, %fallback_bits : i16
+    view.store %selected, %destination[%position] : i16, view<65536xi16>
+  }
+  func.return
+}
+
+check.scenario @workgroup_bfloat_payload_bits {
+  check.trial[2](%parity: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(-32768) step(1) : tensor<65536xi16>
+    %storage = check.generate.fill value(23130) : tensor<65544xi16>
+    %output = check.tensor.view %storage offset(8) : tensor<65544xi16> -> tensor<65536xi16>
+    check.compare<@workgroup_bfloat_payload_exchange, @workgroup_bfloat_payload_oracle>(%parity, %input, %output) : (index, tensor<65536xi16>, tensor<65536xi16>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<65536xi16>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<65544xi16>
+    }
+  }
+  check.return
+}

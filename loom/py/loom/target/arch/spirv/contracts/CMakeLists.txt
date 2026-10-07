@@ -101,10 +101,12 @@ iree_py_test(
     "../../../../tools/pytest_style_runner.py"
   SRCS
     "float_narrowing_test.py"
+    "float_payload_test.py"
     "index_test.py"
     "../../../../tools/pytest_style_runner.py"
   ARGS
     "loom.target.arch.spirv.contracts.float_narrowing_test"
+    "loom.target.arch.spirv.contracts.float_payload_test"
     "loom.target.arch.spirv.contracts.index_test"
   DEPS
     loom::py::loom::target::arch::spirv::contracts::contracts
