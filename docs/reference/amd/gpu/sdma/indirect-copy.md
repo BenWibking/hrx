@@ -208,11 +208,13 @@ unknown pointee. [Command representation][command]
 [Array storage][clr-buckets] [Submission and joins][clr-submit]
 [Memory bookkeeping][clr-join]
 
-The public `srcAccessOrder` options have separate semantics. For example,
-the caller's `DuringApiCall` snapshot is implemented for pageable
-`BatchWriteMemoryOp` inputs. Indirect copies take `BatchCopyMemoryCommand`
-instead. That snapshot does not make an indirect address slot disposable at
-API return. [Attribute definitions][hip-flags] [Command creation][hip-enqueue]
+The `srcAccessOrder` field distinguishes source consumption from command
+completion. The [source-lifetime comparison](../recipes/host-device.md#source-consumption-and-copy-completion)
+details the public header disagreement and the pageable `DuringApiCall`
+snapshot paths. Indirect copies instead take `BatchCopyMemoryCommand`, carrying
+the slot's address for later device access. Capturing pageable input therefore
+does not establish that an indirect slot or its payload can be reused at API
+return. [Attribute definitions][hip-flags] [Command creation][hip-enqueue]
 
 When HIP routes work onto another device's queue, it carries the original
 stream's preceding command as a dependency and adds a joining marker back to

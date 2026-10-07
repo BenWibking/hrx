@@ -532,6 +532,73 @@ update, so its storage cannot be destroyed during the leader's last read.
 [Completion and notification][sdma-notification]
 [Gang-signal final use][sdma-gang]
 
+## Source consumption and copy completion
+
+A staged upload has three distinct storage lifetimes: the original CPU input,
+the staging range read by the transfer, and the GPU destination. Capturing the
+input into independently owned staging ends the original source's borrow. The
+staging range stays borrowed through the transfer; the destination stays
+borrowed through its downstream consumers. A path that completes the capture
+before API return permits early reuse of the original input without implying
+destination readiness.
+
+HIP's `hipMemcpySrcAccessOrder` enum describes these source-access policies:
+
+| Value | Source-access semantics described by the enum |
+| --- | --- |
+| `hipMemcpySrcAccessOrderStream` (`1`) | Source access follows stream order; API return supplies no source-completion boundary. |
+| `hipMemcpySrcAccessOrderDuringApiCall` (`2`) | Access may occur outside stream order, but all source accesses finish before API return. |
+| `hipMemcpySrcAccessOrderAny` (`3`) | Access may occur outside stream order and after API return; this permits reordering without requiring it. |
+
+[Access-order definition][hip-source-order]
+
+At ROCm systems revision `105dd4ff35`, the public `hipMemcpyBatchAsync`
+declaration marks its attribute-array parameters unsupported, while the
+implementation accepts these three access-order values and translates them
+into copy metadata. The enum describes the requested semantics; the public
+declaration and accepted implementation paths disagree about attribute support.
+[Public declaration][hip-batch-declaration]
+[Attribute validation][hip-batch-validation] [Metadata translation][hip-copy-metadata]
+
+The pageable host-to-device path implements `DuringApiCall` capture in both
+dispatch modes. With queued dispatch, `EnqueueBatchCommands` copies input bytes
+into vectors owned by `BatchWriteMemoryCommand` before enqueueing. With direct
+dispatch, `Command::enqueue` calls the backend inline, and `WriteBufferBatch`
+disables host pinning for this access order. `getBuffer` then supplies staging,
+and CPU copies consume the original input before the API returns successfully.
+Device work uses that staging afterward. Stream order alone does not protect
+input that this path may capture before its preceding producer completes.
+[Snapshot owner][hip-batch-enqueue] [Command storage][clr-write-command]
+[Direct dispatch][clr-command-enqueue] [Staging selection][clr-batch-write]
+[Buffer selection][clr-staging-buffer]
+
+Registered host/device and device/device operands instead take
+`BatchCopyMemoryCommand`. The same classification admits supported swap and
+indirect modes and rejects them for pageable transfers. Its `copyBufferBatch`
+path carries preceding stream dependencies to the engines and joins their
+completion signals, but selects no source snapshot or CPU completion wait from
+`srcAccessOrder`. The device-side join orders subsequent work; it does not
+consume the current source on the API thread. Thus this implementation does
+not establish the enum's early-retirement contract for mapped operands merely
+by accepting `DuringApiCall`. [Operand classification][hip-batch-classification]
+[Mapped copy path][clr-batch-copy] [Device completion join][clr-batch-copy-join]
+
+For a caller-owned staging flow, the reusable boundaries are explicit:
+
+1. The CPU obtains ready input and copies it into an available staging range.
+   Completion of that CPU copy permits reuse of the original input.
+2. The CPU publishes staging to the transfer engine with the required memory
+   visibility and execution dependency.
+3. Transfer completion ends the staging borrow and makes the destination ready
+   for a dependent consumer with the matching acquire operation.
+4. The final destination consumer completes before that destination is reused.
+
+When a transfer reads registered input directly, there is no independent
+snapshot to return that first credit: the original allocation remains the
+device's source until it has finished reading it. An
+[indirect copy](../sdma/indirect-copy.md) also has
+address-slot lifetimes distinct from the payloads those slots select.
+
 ## Peer GPU handoff
 
 A second GPU adds another agent, mapping and directed access path. HSA AGENT
@@ -691,3 +758,15 @@ can erase the very completion that consumer still needs to observe.
 [svm-handler-retirement]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp#L2030-L2045
 [clr-signal-reset]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L997-L1002
 [clr-signal-reuse]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L779-L805
+[hip-source-order]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/hip/include/hip/driver_types.h#L469-L493
+[hip-batch-declaration]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/hip/include/hip/hip_runtime_api.h#L6344-L6361
+[hip-batch-validation]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L3245-L3314
+[hip-copy-metadata]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L2902-L2959
+[hip-batch-enqueue]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L2961-L3011
+[clr-write-command]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/platform/command.hpp#L1324-L1364
+[clr-command-enqueue]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/platform/command.cpp#L382-L446
+[clr-batch-write]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L2918-L3028
+[clr-staging-buffer]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L1043-L1084
+[hip-batch-classification]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/hipamd/src/hip_memory.cpp#L3103-L3186
+[clr-batch-copy]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocblit.cpp#L3160-L3280
+[clr-batch-copy-join]: https://github.com/ROCm/rocm-systems/blob/105dd4ff35798f95646353bc08f6c885416ae17e/projects/clr/rocclr/device/rocm/rocvirtual.cpp#L3750-L3816
