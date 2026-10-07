@@ -29,7 +29,9 @@ typedef struct iree_hal_pool_buffer_range_t {
 
 // Qualifies and retains a prepared buffer range. Rounds its endpoints inward to
 // alignment, including the backing's independent maintenance granule. No bytes
-// outside the supplied range are used. Failure leaves an empty output.
+// outside the supplied range are used. The requested address alignment must be
+// supported by the backing; the maintenance granule may be larger without
+// implying stronger address alignment. Failure leaves an empty output.
 iree_status_t iree_hal_pool_buffer_range_initialize(
     iree_hal_buffer_t* buffer, iree_device_size_t offset,
     iree_device_size_t length, iree_device_size_t alignment,

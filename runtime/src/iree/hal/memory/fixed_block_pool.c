@@ -500,9 +500,7 @@ static iree_status_t iree_hal_fixed_block_pool_resolve_geometry(
                             "invalid fixed-block pool geometry");
   }
   IREE_RETURN_IF_ERROR(iree_hal_asan_pool_options_validate(&options->asan));
-  iree_device_size_t alignment =
-      iree_max(options->alignment ? options->alignment : 1,
-               capabilities->maintenance_alignment);
+  iree_device_size_t alignment = options->alignment ? options->alignment : 1;
   iree_device_size_t max_alignment = capabilities->max_allocation_alignment;
   if (source_offset) {
     max_alignment = iree_min(
@@ -529,6 +527,9 @@ static iree_status_t iree_hal_fixed_block_pool_resolve_geometry(
         IREE_STATUS_INVALID_ARGUMENT,
         "protected block alignment exceeds backing support");
   }
+  // Padding separates independently maintained storage regions. It does not
+  // increase the native address alignment advertised for each block.
+  alignment = iree_max(alignment, capabilities->maintenance_alignment);
   if (!iree_device_size_checked_align(backing_block_size, alignment,
                                       &backing_block_size)) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,

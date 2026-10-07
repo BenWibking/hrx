@@ -121,6 +121,29 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
     return status;
   }
 
+  // Prepares real host storage whose 256-byte maintenance coordinates have a
+  // 64-byte residue in the native address space. Captured facts belong to this
+  // native storage producer and remain alive until all views and pools retire.
+  iree_status_t CreateMaintenanceBuffer(iree_hal_buffer_t** out_buffer) {
+    maintenance_storage_.fill(0x11);
+    maintenance_backing_.notification = notification_;
+    maintenance_backing_.tracker = tracker_;
+    maintenance_backing_.maintenance = maintenance_;
+    maintenance_backing_.allocation_alignment = 64;
+    maintenance_backing_.maintenance_alignment = 256;
+    const iree_hal_buffer_placement_t placement = {
+        nullptr, IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY,
+        IREE_HAL_BUFFER_PLACEMENT_FLAG_NONE};
+    IREE_RETURN_IF_ERROR(iree_hal_heap_buffer_wrap(
+        placement, IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE,
+        IREE_HAL_MEMORY_ACCESS_ALL, params_.usage, 4096,
+        iree_make_byte_span(maintenance_storage_.data() + 64, 4096), {},
+        allocator_, out_buffer));
+    (*out_buffer)->memory.backing = &maintenance_backing_;
+    buffers_.push_back(*out_buffer);
+    return iree_ok_status();
+  }
+
   // Allocator for metadata and real CPU slab backing.
   iree_allocator_t allocator_ = iree_allocator_system();
   // Progress owner shared by the native source and child pools.
@@ -141,6 +164,10 @@ class BufferRangeTest : public ::testing::TestWithParam<bool> {
   std::vector<iree_hal_buffer_t*> buffers_;
   // Common permissions used by native and child allocations.
   iree_hal_buffer_params_t params_ = {};
+  // Imported native storage with explicit padding before byte zero.
+  alignas(256) std::array<uint8_t, 4096 + 64> maintenance_storage_;
+  // Immutable native facts borrowed by the imported buffer and descendants.
+  iree_hal_buffer_backing_facts_t maintenance_backing_ = {};
 };
 
 TEST_P(BufferRangeTest, InheritsExactHistoryThroughSplitsAndRollback) {
@@ -325,6 +352,124 @@ TEST_P(BufferRangeTest, AlignsNativeCoordinatesWithinVisibleRange) {
   IREE_ASSERT_OK(
       iree_hal_buffer_map_read(source, 0, actual.data(), actual.size()));
   EXPECT_EQ(expected, actual);
+}
+
+TEST_P(BufferRangeTest, MaintenanceGranulesPreserveFiniteNativeAlignment) {
+  iree_hal_buffer_t* source = nullptr;
+  IREE_ASSERT_OK(CreateMaintenanceBuffer(&source));
+  iree_hal_buffer_t* view = nullptr;
+  IREE_ASSERT_OK(iree_hal_buffer_subspan(source, 3, 4093, allocator_, &view));
+  buffers_.push_back(view);
+  iree_hal_pool_t* child = nullptr;
+  if (GetParam()) {
+    iree_hal_tlsf_pool_options_t options = {};
+    options.tlsf_options.alignment = 64;
+    IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+        view, 2, 1024, &options, allocator_, &child));
+  } else {
+    iree_hal_fixed_block_pool_options_t options = {};
+    options.block_size = 13;
+    options.alignment = 64;
+    IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
+        view, 2, 1024, &options, allocator_, &child));
+  }
+  pools_.push_back(child);
+  iree_hal_pool_capabilities_t capabilities;
+  iree_hal_pool_query_capabilities(child, &capabilities);
+  EXPECT_EQ(capabilities.max_allocation_alignment, 64u);
+  EXPECT_EQ(capabilities.maintenance_alignment, 256u);
+  params_.min_alignment = 128;
+  iree_hal_buffer_t* invalid = nullptr;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Allocate(child, 13, &invalid));
+  EXPECT_EQ(invalid, nullptr);
+  params_.min_alignment = 64;
+  std::array<uint8_t, 4096> expected;
+  expected.fill(0x11);
+  for (iree_device_size_t offset : {256, 512, 768}) {
+    iree_hal_buffer_t* allocation = nullptr;
+    IREE_ASSERT_OK(Allocate(child, 13, &allocation));
+    EXPECT_EQ(iree_hal_buffer_memory_view(allocation).offset, offset);
+    iree_byte_span_t native;
+    IREE_ASSERT_OK(iree_hal_buffer_native_host_span(
+        allocation, 0, IREE_HAL_WHOLE_BUFFER, &native));
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(native.data) % 256, 64u);
+    std::fill_n(native.data, native.data_length, 0xD5);
+    std::fill_n(expected.data() + offset, 13, 0xD5);
+  }
+  std::array<uint8_t, 4096> actual;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_map_read(source, 0, actual.data(), actual.size()));
+  EXPECT_EQ(actual, expected);
+}
+
+TEST_P(BufferRangeTest, MaintenanceGranulesSurviveGrowableChildren) {
+  iree_hal_buffer_t* source = nullptr;
+  IREE_ASSERT_OK(CreateMaintenanceBuffer(&source));
+  iree_hal_fixed_block_pool_options_t parent_options = {};
+  parent_options.block_size = 1024;
+  iree_hal_pool_t* parent = nullptr;
+  IREE_ASSERT_OK(iree_hal_fixed_block_pool_create_from_buffer(
+      source, 0, IREE_HAL_WHOLE_BUFFER, &parent_options, allocator_, &parent));
+  pools_.push_back(parent);
+  iree_hal_pool_t* child = nullptr;
+  iree_hal_pool_reservation_request_t backing_request;
+  if (GetParam()) {
+    iree_hal_tlsf_pool_options_t options = {};
+    options.tlsf_options.range_length = 512;
+    IREE_ASSERT_OK(iree_hal_tlsf_pool_query_backing_request(parent, &options,
+                                                            &backing_request));
+    IREE_ASSERT_OK(
+        iree_hal_tlsf_pool_create(parent, &options, allocator_, &child));
+  } else {
+    iree_hal_fixed_block_pool_options_t options = {};
+    options.block_size = 13;
+    options.blocks_per_slab = 2;
+    IREE_ASSERT_OK(iree_hal_fixed_block_pool_query_backing_request(
+        parent, &options, &backing_request));
+    IREE_ASSERT_OK(
+        iree_hal_fixed_block_pool_create(parent, &options, allocator_, &child));
+  }
+  pools_.push_back(child);
+  EXPECT_EQ(backing_request.params.min_alignment, 64u);
+  EXPECT_EQ(backing_request.allocation_size, 512u);
+  params_.min_alignment = 128;
+  iree_hal_buffer_t* invalid = nullptr;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Allocate(child, 13, &invalid));
+  params_.min_alignment = 64;
+  std::array<uint8_t, 4096> expected;
+  expected.fill(0x11);
+  for (int i = 0; i < 6; ++i) {
+    iree_hal_buffer_t* allocation = nullptr;
+    IREE_ASSERT_OK(Allocate(child, 13, &allocation));
+    const auto offset = iree_hal_buffer_memory_view(allocation).offset;
+    EXPECT_EQ(offset % 256, 0u);
+    iree_byte_span_t native;
+    IREE_ASSERT_OK(iree_hal_buffer_native_host_span(
+        allocation, 0, IREE_HAL_WHOLE_BUFFER, &native));
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(native.data) % 256, 64u);
+    const uint8_t value = 0xD0 + i;
+    std::fill_n(native.data, native.data_length, value);
+    std::fill_n(expected.data() + offset, 13, value);
+  }
+  if (GetParam()) {
+    // A larger allocation takes TLSF's dedicated reservation path through
+    // the same backing pool and must preserve both coordinate guarantees.
+    iree_hal_buffer_t* allocation = nullptr;
+    IREE_ASSERT_OK(Allocate(child, 577, &allocation));
+    const auto offset = iree_hal_buffer_memory_view(allocation).offset;
+    EXPECT_EQ(offset % 256, 0u);
+    std::array<uint8_t, 577> payload;
+    payload.fill(0xE7);
+    IREE_ASSERT_OK(iree_hal_buffer_map_write(allocation, 0, payload.data(),
+                                             payload.size()));
+    std::copy(payload.begin(), payload.end(), expected.begin() + offset);
+  }
+  std::array<uint8_t, 4096> actual;
+  IREE_ASSERT_OK(
+      iree_hal_buffer_map_read(source, 0, actual.data(), actual.size()));
+  EXPECT_EQ(actual, expected);
 }
 
 INSTANTIATE_TEST_SUITE_P(Strategies, BufferRangeTest, ::testing::Bool(),

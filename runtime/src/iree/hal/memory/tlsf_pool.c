@@ -644,7 +644,9 @@ static iree_status_t iree_hal_tlsf_pool_prepare_slab(
                 .usage = pool->capabilities.supported_usage,
                 .queue_family_affinity =
                     pool->capabilities.queue_family_affinity,
-                .min_alignment = pool->slab_options.alignment,
+                .min_alignment =
+                    iree_min(pool->slab_options.alignment,
+                             pool->capabilities.max_allocation_alignment),
             },
         .allocation_size = pool->backing_slab_length,
     };
@@ -665,7 +667,7 @@ static iree_status_t iree_hal_tlsf_pool_prepare_slab(
     }
     if (iree_status_is_ok(status)) {
       status = iree_hal_pool_buffer_range_initialize(
-          buffer, 0, IREE_HAL_WHOLE_BUFFER, pool->slab_options.alignment,
+          buffer, 0, IREE_HAL_WHOLE_BUFFER, request.params.min_alignment,
           &pool->asan_options, &slab->range);
       slab->range.memory.reuse_frontier = info.reuse_frontier;
     }
@@ -980,8 +982,7 @@ static void iree_hal_tlsf_pool_return_allocation(
 
 static iree_status_t iree_hal_tlsf_pool_calculate_backing_geometry(
     const iree_hal_tlsf_pool_options_t* options,
-    iree_device_size_t maintenance_alignment, iree_device_size_t* out_alignment,
-    iree_device_size_t* out_length) {
+    iree_device_size_t* out_alignment, iree_device_size_t* out_length) {
   iree_device_size_t alignment = options->tlsf_options.alignment;
   if (!alignment) {
     alignment = IREE_HAL_MEMORY_TLSF_MIN_ALIGNMENT;
@@ -992,7 +993,6 @@ static iree_status_t iree_hal_tlsf_pool_calculate_backing_geometry(
         IREE_STATUS_INVALID_ARGUMENT,
         "TLSF alignment must be a power of two at least 16");
   }
-  alignment = iree_max(alignment, maintenance_alignment);
   iree_device_size_t length = options->tlsf_options.range_length;
   if (iree_hal_asan_pool_options_is_enabled(&options->asan)) {
     alignment =
@@ -1019,7 +1019,7 @@ static iree_status_t iree_hal_tlsf_pool_resolve_backing_request(
   iree_device_size_t alignment = 0;
   iree_device_size_t length = 0;
   IREE_RETURN_IF_ERROR(iree_hal_tlsf_pool_calculate_backing_geometry(
-      options, capabilities->maintenance_alignment, &alignment, &length));
+      options, &alignment, &length));
   if (!options->tlsf_options.range_length) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "TLSF range_length must be > 0");
@@ -1028,6 +1028,16 @@ static iree_status_t iree_hal_tlsf_pool_resolve_backing_request(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "TLSF alignment exceeds backing pool support");
   }
+  // Native address alignment and storage-relative maintenance endpoints are
+  // independent. Reserve complete granules without asking the parent to
+  // strengthen its native address guarantee.
+  const iree_device_size_t granule =
+      iree_max(alignment, capabilities->maintenance_alignment);
+  if (!iree_device_size_checked_align(length, granule, &length)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "TLSF backing size overflows maintenance granule");
+  }
+  alignment = iree_min(granule, capabilities->max_allocation_alignment);
   if (capabilities->max_allocation_size &&
       length > capabilities->max_allocation_size) {
     return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
@@ -1099,12 +1109,13 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
         z0, iree_hal_tlsf_pool_resolve_backing_request(&capabilities, &options,
                                                        &request));
-    tlsf_options.alignment = request.params.min_alignment;
+    tlsf_options.alignment = iree_max(request.params.min_alignment,
+                                      capabilities.maintenance_alignment);
     backing_slab_length = request.allocation_size;
   } else {
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
         z0, iree_hal_tlsf_pool_calculate_backing_geometry(
-                &options, 1, &tlsf_options.alignment, &backing_slab_length));
+                &options, &tlsf_options.alignment, &backing_slab_length));
     backing_slab_length = source_range.length;
     tlsf_options.range_length = source_range.length;
     capabilities = (iree_hal_pool_capabilities_t){
@@ -1120,6 +1131,8 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
         .maintenance_alignment =
             source_range.memory.backing->maintenance_alignment,
     };
+    tlsf_options.alignment =
+        iree_max(tlsf_options.alignment, capabilities.maintenance_alignment);
   }
   if (!tlsf_options.frontier_capacity) {
     tlsf_options.frontier_capacity =
@@ -1260,8 +1273,7 @@ IREE_API_EXPORT iree_status_t iree_hal_tlsf_pool_create_from_buffer(
   iree_hal_pool_buffer_range_t range;
   IREE_RETURN_IF_ERROR(iree_hal_pool_buffer_range_initialize(
       buffer, offset, length, alignment, &resolved.asan, &range));
-  resolved.tlsf_options.alignment =
-      iree_max(alignment, range.memory.backing->maintenance_alignment);
+  resolved.tlsf_options.alignment = alignment;
   resolved.tlsf_options.range_length = range.length;
   resolved.tlsf_options.initial_frontier = range.memory.reuse_frontier;
   iree_hal_pool_epoch_query_t epoch_query = {
@@ -1814,7 +1826,9 @@ static iree_status_t iree_hal_tlsf_pool_acquire_reservations(
                   .usage = pool->capabilities.supported_usage,
                   .queue_family_affinity =
                       pool->capabilities.queue_family_affinity,
-                  .min_alignment = element->geometry.alignment,
+                  .min_alignment =
+                      iree_min(element->geometry.alignment,
+                               pool->capabilities.max_allocation_alignment),
               },
           .allocation_size = element->geometry.length,
       };
@@ -1999,9 +2013,6 @@ static void iree_hal_tlsf_pool_query_capabilities(
   *out_capabilities = pool->capabilities;
   out_capabilities->min_allocation_size = 1;
   out_capabilities->max_allocation_size = pool->max_reservation_size;
-  if (!pool->backing_pool) {
-    out_capabilities->max_allocation_alignment = pool->slab_options.alignment;
-  }
 }
 
 static iree_status_t iree_hal_tlsf_pool_validate_asan(

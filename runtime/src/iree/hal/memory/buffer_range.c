@@ -31,12 +31,15 @@ iree_status_t iree_hal_pool_buffer_range_initialize(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "range alignment must be a power of two");
   }
-  alignment =
-      iree_max(alignment ? alignment : 1, backing->maintenance_alignment);
+  alignment = alignment ? alignment : 1;
   if (alignment > backing->allocation_alignment) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "range alignment exceeds native backing guarantee");
   }
+  // Maintenance is aligned in native storage coordinates. A larger granule
+  // changes the managed endpoints without promising a stronger address
+  // alignment than the caller requested from the backing.
+  alignment = iree_max(alignment, backing->maintenance_alignment);
   IREE_RETURN_IF_ERROR(iree_hal_asan_pool_options_validate(asan));
   if (iree_hal_asan_pool_options_is_enabled(asan)) {
     if (!backing->advice) {
