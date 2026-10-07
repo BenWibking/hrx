@@ -232,7 +232,21 @@ iree_status_t loom_aie2p_table_lookup_rewrite(
   const loom_value_id_t checkpoint = loom_rewriter_value_checkpoint(rewriter);
   loom_value_id_t selection_indices = indices;
   loom_type_t selection_index_type = index_type;
-  if (!has_uniform_index && index_bit_count == 64) {
+  const loom_scalar_type_t index_element_type =
+      loom_type_element_type(index_type);
+  if (!has_uniform_index && index_element_type == LOOM_SCALAR_TYPE_INDEX) {
+    // Defined table indices fit the at-most-128-lane table extent. Make the
+    // target's 32-bit integer carrier explicit before constructing bit tests;
+    // vector.index_cast aliases the physical index carrier on AIE2P.
+    selection_index_type.header = loom_type_make_header(
+        LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_I32, loom_type_rank(index_type),
+        loom_type_flags(index_type));
+    loom_op_t* cast_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_vector_index_cast_build(
+        &rewriter->builder, indices, index_type, selection_index_type,
+        op->location, &cast_op));
+    selection_indices = loom_vector_index_cast_result(cast_op);
+  } else if (!has_uniform_index && index_bit_count == 64) {
     // Every defined lookup index is below the at-most-128-lane table extent.
     // Narrowing to the native word comparison width therefore preserves all
     // defined executions and avoids expanding each selector into a double-word
