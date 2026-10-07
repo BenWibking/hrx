@@ -59,6 +59,8 @@ IREE_API_EXPORT void iree_hal_queue_family_initialize(
   out_queue_family->device = device;
   out_queue_family->ordinal = ordinal;
   out_queue_family->spec = spec;
+  out_queue_family->memory.domain = NULL;
+  out_queue_family->memory.queue_scope_id = UINT32_MAX;
 }
 
 //===----------------------------------------------------------------------===//
@@ -548,8 +550,8 @@ static iree_status_t iree_hal_queue_validate_atomic_target(
   }
   IREE_RETURN_IF_ERROR(
       iree_hal_buffer_validate_range(target_buffer, target_offset, byte_count));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(target_buffer), usage));
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+      target_buffer, iree_hal_queue_family(queue), usage));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
       iree_hal_buffer_allowed_access(target_buffer), access));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
@@ -759,6 +761,9 @@ iree_hal_queue_alloca(iree_hal_queue_t* queue,
                 IREE_STATUS_INVALID_ARGUMENT,
                 "queue allocations require a readiness signal semaphore"));
   }
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, iree_hal_pool_validate_family_usage(
+              pool, iree_hal_queue_family(queue), IREE_HAL_BUFFER_USAGE_NONE));
   for (iree_host_size_t i = 0; i < request_count; ++i) {
     if (IREE_UNLIKELY(requests[i].allocation_size == 0)) {
       IREE_RETURN_AND_END_ZONE_IF_ERROR(
@@ -766,6 +771,9 @@ iree_hal_queue_alloca(iree_hal_queue_t* queue,
                                "allocation request %" PRIhsz
                                " has a zero allocation size",
                                i));
+    }
+    if (pool->memory_contract) {
+      continue;
     }
     const iree_hal_queue_family_affinity_t request_affinity =
         requests[i].params.queue_family_affinity
@@ -823,8 +831,12 @@ IREE_API_EXPORT iree_status_t iree_hal_queue_dealloca(
     }
     const iree_hal_buffer_placement_t placement =
         iree_hal_buffer_allocation_placement(buffers[i]);
-    iree_status_t status = iree_hal_queue_validate_family_access(
-        queue, placement.queue_family_affinity);
+    iree_status_t status = iree_hal_buffer_validate_family_usage(
+        buffers[i], iree_hal_queue_family(queue), IREE_HAL_BUFFER_USAGE_NONE);
+    if (iree_status_is_ok(status)) {
+      status = iree_hal_queue_validate_family_access(
+          queue, placement.queue_family_affinity);
+    }
     if (!iree_status_is_ok(status)) {
       IREE_RETURN_AND_END_ZONE_IF_ERROR(
           z0,
@@ -847,8 +859,8 @@ static iree_status_t iree_hal_queue_validate_transfer_buffer(
                             "transfer buffer is null");
   }
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_range(buffer, offset, length));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(buffer), required_usage));
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+      buffer, iree_hal_queue_family(queue), required_usage));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
       iree_hal_buffer_allowed_access(buffer), required_access));
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(

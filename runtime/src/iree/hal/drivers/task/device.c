@@ -24,6 +24,7 @@
 #include "iree/hal/drivers/task/queue/queue.h"
 #include "iree/hal/drivers/task/semaphore.h"
 #include "iree/hal/memory/cpu_slab_provider.h"
+#include "iree/hal/memory/host_memory_backend.h"
 #include "iree/hal/memory/maintenance_thread.h"
 #include "iree/hal/utils/file_registry.h"
 
@@ -70,14 +71,8 @@ typedef struct iree_hal_task_device_t {
   // Transfer strategy threshold inherited by all queues.
   iree_device_size_t inline_transfer_threshold;
 
-  // Shared slab provider offered to explicitly created queue-allocation pools.
-  iree_hal_slab_provider_t* pool_slab_provider;
-
-  // Shared notification offered to explicitly created queue-allocation pools.
-  iree_async_notification_t* pool_notification;
-
-  // Shared placement-local memory worker independent of execution callbacks.
-  iree_hal_memory_maintenance_t* memory_maintenance;
+  // Owned native CPU memory resources, exposed as an immutable borrowed view.
+  iree_hal_host_memory_backend_t memory_backend;
 
   // Proactor pool for async I/O. Retained for the lifetime of the device to
   // ensure proactor threads outlive all device resources (semaphores, etc.).
@@ -339,12 +334,13 @@ iree_status_t iree_hal_task_device_create(
 
   if (iree_status_is_ok(status)) {
     status = iree_hal_cpu_slab_provider_create(
-        /*min_alignment=*/0, host_allocator, &device->pool_slab_provider);
+        /*min_alignment=*/0, host_allocator,
+        &device->memory_backend.slab_provider);
   }
   if (iree_status_is_ok(status)) {
-    status = iree_async_notification_create(device->proactor,
-                                            IREE_ASYNC_NOTIFICATION_FLAG_NONE,
-                                            &device->pool_notification);
+    status = iree_async_notification_create(
+        device->proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE,
+        &device->memory_backend.notification);
   }
   if (iree_status_is_ok(status)) {
     // Completion callbacks can synchronously destroy pools. Their cleanup
@@ -354,7 +350,7 @@ iree_status_t iree_hal_task_device_create(
       iree_thread_affinity_set_group_any(default_node_id, &memory_affinity);
     }
     status = iree_hal_memory_maintenance_thread_create(
-        memory_affinity, host_allocator, &device->memory_maintenance);
+        memory_affinity, host_allocator, &device->memory_backend.maintenance);
   }
 
   if (iree_status_is_ok(status)) {
@@ -415,6 +411,14 @@ iree_status_t iree_hal_task_device_create(
   }
 
   if (iree_status_is_ok(status)) {
+    iree_hal_host_memory_backend_initialize(
+        device->memory_backend.slab_provider,
+        device->memory_backend.notification, device->memory_backend.maintenance,
+        (iree_hal_pool_epoch_query_t){
+            .fn = iree_hal_task_device_query_pool_epoch,
+            .user_data = device,
+        },
+        &device->memory_backend);
     *out_device = (iree_hal_device_t*)device;
   } else {
     iree_hal_device_release((iree_hal_device_t*)device);
@@ -462,9 +466,9 @@ static void iree_hal_task_device_destroy(iree_hal_device_t* base_device) {
     iree_hal_executable_loader_release(device->loaders[i]);
   }
 
-  iree_hal_slab_provider_release(device->pool_slab_provider);
-  iree_hal_memory_maintenance_release(device->memory_maintenance);
-  iree_async_notification_release(device->pool_notification);
+  iree_hal_slab_provider_release(device->memory_backend.slab_provider);
+  iree_hal_memory_maintenance_release(device->memory_backend.maintenance);
+  iree_async_notification_release(device->memory_backend.notification);
   iree_hal_allocator_release(device->device_allocator);
   iree_hal_channel_provider_release(device->channel_provider);
   iree_hal_device_spec_release(device->device_spec);
@@ -752,14 +756,19 @@ iree_hal_task_device_query_semaphore_compatibility(
   return IREE_HAL_SEMAPHORE_COMPATIBILITY_ALL;
 }
 
+static const iree_hal_memory_backend_t* iree_hal_task_device_memory_backend(
+    iree_hal_device_t* base_device) {
+  return &iree_hal_task_device_cast(base_device)->memory_backend.base;
+}
+
 static iree_status_t iree_hal_task_device_query_queue_pool_backend(
     iree_hal_device_t* base_device, const iree_hal_queue_family_t* queue_family,
     iree_hal_queue_pool_backend_t* out_backend) {
   (void)queue_family;
   iree_hal_task_device_t* device = iree_hal_task_device_cast(base_device);
-  out_backend->slab_provider = device->pool_slab_provider;
-  out_backend->notification = device->pool_notification;
-  out_backend->maintenance = device->memory_maintenance;
+  out_backend->slab_provider = device->memory_backend.slab_provider;
+  out_backend->notification = device->memory_backend.notification;
+  out_backend->maintenance = device->memory_backend.maintenance;
   out_backend->epoch_query = (iree_hal_pool_epoch_query_t){
       .fn = iree_hal_task_device_query_pool_epoch,
       .user_data = device,
@@ -905,4 +914,5 @@ static const iree_hal_device_vtable_t iree_hal_task_device_vtable = {
     .profiling_begin = iree_hal_task_device_profiling_begin,
     .profiling_flush = iree_hal_task_device_profiling_flush,
     .profiling_end = iree_hal_task_device_profiling_end,
+    .memory_backend = iree_hal_task_device_memory_backend,
 };

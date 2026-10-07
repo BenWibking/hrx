@@ -67,6 +67,25 @@ iree_cc_test(
     iree::testing::gtest
 )
 
+iree_cc_test(
+  NAME
+    slab_pool_tests
+  SRCS
+    "slab_pool_test.cc"
+  DEPS
+    ::backends
+    ::executable_testdata
+    iree::hal
+    iree::hal::cts::util::registry
+    iree::hal::cts::util::test_base
+    iree::hal::cts::util::test_main
+    iree::hal::memory::fixed_block_pool
+    iree::hal::memory::maintenance
+    iree::hal::memory::slab_cache
+    iree::hal::memory::tlsf_pool
+    iree::testing::gtest
+)
+
 iree_runtime_hal_cts_test_suite(
   BACKENDS
     ::backends

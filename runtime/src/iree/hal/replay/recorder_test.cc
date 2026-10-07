@@ -828,6 +828,27 @@ TEST(ReplayRecorderTest, WrappedImportsAndExportsPreserveNativeBufferViews) {
   iree_hal_allocator_t* allocator = iree_hal_device_allocator(wrapped_device);
   ASSERT_NE(nullptr, allocator);
 
+  // Wrapper families name the same memory sites without sharing mutable
+  // family objects. Pool contracts prepared before wrapping stay applicable.
+  iree_hal_device_t* source_device =
+      iree_hal_device_group_device_at(source_group, 0);
+  for (auto kind : {IREE_HAL_MEMORY_SITE_HOST, IREE_HAL_MEMORY_SITE_QUEUE,
+                    IREE_HAL_MEMORY_SITE_PROGRAM}) {
+    iree_hal_memory_site_t source_site = {
+        kind, iree_hal_device_queue_family(source_device, 0)};
+    iree_hal_memory_site_t wrapped_site = {
+        kind, iree_hal_device_queue_family(wrapped_device, 0)};
+    iree_hal_memory_scope_t source_scope;
+    iree_hal_memory_scope_t wrapped_scope;
+    IREE_ASSERT_OK(iree_hal_device_group_resolve_memory_scope(
+        source_group, source_site, &source_scope));
+    IREE_ASSERT_OK(iree_hal_device_group_resolve_memory_scope(
+        wrapped_group, wrapped_site, &wrapped_scope));
+    EXPECT_EQ(source_scope.domain, wrapped_scope.domain);
+    EXPECT_EQ(source_scope.id, wrapped_scope.id);
+    EXPECT_NE(source_site.family, wrapped_site.family);
+  }
+
   iree_hal_buffer_params_t params = {0};
   params.type = IREE_HAL_MEMORY_TYPE_HOST_VISIBLE;
   params.access = IREE_HAL_MEMORY_ACCESS_ALL;

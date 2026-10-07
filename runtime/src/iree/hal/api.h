@@ -26,6 +26,7 @@
 #include "iree/hal/executable.h"        // IWYU pragma: export
 #include "iree/hal/fence.h"             // IWYU pragma: export
 #include "iree/hal/file.h"              // IWYU pragma: export
+#include "iree/hal/memory_scope.h"      // IWYU pragma: export
 #include "iree/hal/pool.h"              // IWYU pragma: export
 #include "iree/hal/pool_set.h"          // IWYU pragma: export
 #include "iree/hal/pool_wait.h"         // IWYU pragma: export
@@ -36,6 +37,7 @@
 #include "iree/hal/queue.h"             // IWYU pragma: export
 #include "iree/hal/resource.h"          // IWYU pragma: export
 #include "iree/hal/semaphore.h"         // IWYU pragma: export
+#include "iree/hal/slab_pool.h"         // IWYU pragma: export
 #include "iree/hal/string_util.h"       // IWYU pragma: export
 #include "iree/hal/topology.h"          // IWYU pragma: export
 

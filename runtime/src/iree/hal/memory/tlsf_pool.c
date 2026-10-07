@@ -1148,7 +1148,10 @@ static iree_status_t iree_hal_tlsf_pool_create_impl(
       proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification);
   if (iree_status_is_ok(status)) {
     status = iree_hal_pool_initialize(
-        &iree_hal_tlsf_pool_vtable, notification,
+        &iree_hal_tlsf_pool_vtable,
+        backing_pool ? backing_pool->memory_contract
+                     : source_range.memory.contract,
+        notification,
         backing_pool ? backing_pool->wait_sources
                      : (iree_hal_pool_wait_source_list_t){0},
         frontier_tracker, host_allocator, &pool->base);

@@ -20,6 +20,10 @@ typedef struct iree_async_notification_t iree_async_notification_t;
 
 // Options for creating a pass-through HAL pool.
 typedef struct iree_hal_passthrough_pool_options_t {
+  // Qualified immutable memory contract retained by the pool, or NULL when
+  // individual reservation parameters describe access.
+  iree_hal_memory_contract_t* memory_contract;
+
   // Optional native completion probe inherited by child allocators. The
   // borrowed context remains alive with the pool's sealed device group.
   iree_hal_pool_epoch_query_t epoch_query;

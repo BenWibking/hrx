@@ -261,6 +261,13 @@ IREE_API_EXPORT iree_status_t iree_hal_device_query_queue_pool_backend(
   return status;
 }
 
+IREE_API_EXPORT const iree_hal_memory_backend_t* iree_hal_device_memory_backend(
+    iree_hal_device_t* device) {
+  return _VTABLE_DISPATCH(device, memory_backend)
+             ? _VTABLE_DISPATCH(device, memory_backend)(device)
+             : NULL;
+}
+
 IREE_API_EXPORT iree_status_t iree_hal_device_wait_semaphores(
     iree_hal_device_t* device, iree_async_wait_mode_t wait_mode,
     const iree_hal_semaphore_list_t semaphore_list, iree_timeout_t timeout,

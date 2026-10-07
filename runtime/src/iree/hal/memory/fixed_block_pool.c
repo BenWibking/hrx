@@ -647,7 +647,9 @@ static iree_status_t iree_hal_fixed_block_pool_create_impl(
       proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification);
   if (iree_status_is_ok(status)) {
     status = iree_hal_pool_initialize(
-        &iree_hal_fixed_block_pool_vtable, notification,
+        &iree_hal_fixed_block_pool_vtable,
+        backing_pool ? backing_pool->memory_contract : range->memory.contract,
+        notification,
         backing_pool ? backing_pool->wait_sources
                      : (iree_hal_pool_wait_source_list_t){0},
         backing_pool ? backing_pool->frontier_tracker

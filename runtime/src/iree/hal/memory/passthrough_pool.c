@@ -410,10 +410,10 @@ iree_status_t iree_hal_passthrough_pool_create(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
   memset(pool, 0, sizeof(*pool));
-  iree_status_t status =
-      iree_hal_pool_initialize(&iree_hal_passthrough_pool_vtable, notification,
-                               (iree_hal_pool_wait_source_list_t){0},
-                               frontier_tracker, host_allocator, &pool->base);
+  iree_status_t status = iree_hal_pool_initialize(
+      &iree_hal_passthrough_pool_vtable, options.memory_contract, notification,
+      (iree_hal_pool_wait_source_list_t){0}, frontier_tracker, host_allocator,
+      &pool->base);
   if (!iree_status_is_ok(status)) {
     iree_allocator_free(host_allocator, pool);
     IREE_TRACE_ZONE_END(z0);
@@ -896,8 +896,15 @@ static iree_status_t iree_hal_passthrough_pool_materialize_reservations(
         pool->slab_provider, &reservation_state->slab,
         reservations[materialized_count].offset,
         reservations[materialized_count].byte_length,
-        requests[materialized_count].params, release_callback, staged_buffer);
+        base_pool->memory_contract ? base_pool->memory_contract->buffer_params
+                                   : requests[materialized_count].params,
+        release_callback, staged_buffer);
     if (iree_status_is_ok(status)) {
+      (*staged_buffer)->memory.contract = base_pool->memory_contract;
+      if (base_pool->memory_contract) {
+        (*staged_buffer)->allowed_usage =
+            base_pool->memory_contract->buffer_params.usage;
+      }
       (*staged_buffer)->memory.backing =
           &reservation_state->buffer_backing.facts;
       (*staged_buffer)->memory.offset = reservations[materialized_count].offset;
@@ -951,6 +958,10 @@ static void iree_hal_passthrough_pool_query_capabilities(
       pool->slab_properties.allocation_alignment;
   out_capabilities->maintenance_alignment =
       pool->slab_properties.maintenance_alignment;
+  if (base_pool->memory_contract) {
+    out_capabilities->supported_usage =
+        base_pool->memory_contract->buffer_params.usage;
+  }
 }
 
 static iree_status_t iree_hal_passthrough_pool_validate_asan(

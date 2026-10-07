@@ -68,7 +68,7 @@ typedef struct iree_hal_routing_test_pool_t {
   iree_hal_pool_t base;
 
   // Capabilities returned when registering this pool in a pool set.
-  iree_hal_pool_capabilities_t capabilities = {0};
+  iree_hal_pool_capabilities_t capabilities = {};
 } iree_hal_routing_test_pool_t;
 
 static void iree_hal_routing_test_pool_destroy(iree_hal_pool_t* base_pool) {
@@ -162,7 +162,7 @@ static iree_hal_routing_test_pool_t* CreateRoutingTestPool(
   IREE_CHECK_OK(iree_async_notification_create(
       test_proactor(), IREE_ASYNC_NOTIFICATION_FLAG_NONE, &notification));
   IREE_CHECK_OK(iree_hal_pool_initialize(
-      &iree_hal_routing_test_pool_vtable, notification, {},
+      &iree_hal_routing_test_pool_vtable, nullptr, notification, {},
       test_frontier_tracker(), iree_allocator_system(), &pool->base));
   iree_async_notification_release(notification);
   pool->capabilities.memory_type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;

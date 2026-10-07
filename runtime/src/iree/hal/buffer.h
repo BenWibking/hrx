@@ -23,6 +23,7 @@ extern "C" {
 
 typedef struct iree_hal_allocator_t iree_hal_allocator_t;
 typedef struct iree_hal_device_t iree_hal_device_t;
+typedef struct iree_hal_memory_contract_t iree_hal_memory_contract_t;
 
 //===----------------------------------------------------------------------===//
 // Types and Enums
@@ -938,6 +939,9 @@ typedef struct iree_hal_buffer_backing_facts_t {
 // Prepared storage facts carried by a buffer independently of its native handle
 // representation. The visible length remains iree_hal_buffer_byte_length().
 typedef struct iree_hal_buffer_memory_view_t {
+  // Borrowed immutable access contract, flattened from the allocation owner.
+  // NULL for storage described solely by allocation parameters.
+  iree_hal_memory_contract_t* contract;
   // Borrowed native binding array, or NULL without prepared native access.
   // The array address is immutable; queue-ordered allocations publish its
   // entries at commitment, before any caller-ordered execution access.

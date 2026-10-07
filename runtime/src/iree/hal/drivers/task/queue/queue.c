@@ -4363,6 +4363,17 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
         "workgroup count buffer does not have the capacity to store the "
         "required 3 uint32_t values");
   }
+  if (uses_indirect_parameters) {
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+        config.workgroup_count_ref.buffer, queue->base.queue_family,
+        IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS));
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
+        iree_hal_buffer_allowed_access(config.workgroup_count_ref.buffer),
+        IREE_HAL_MEMORY_ACCESS_READ));
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_range(
+        config.workgroup_count_ref.buffer, config.workgroup_count_ref.offset,
+        sizeof(iree_hal_dispatch_params_t)));
+  }
 
   for (iree_host_size_t i = 0; i < binding_count; ++i) {
     if (!bindings[i].buffer || bindings[i].buffer_slot != 0) {
@@ -4371,7 +4382,8 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
           "task queue_dispatch requires direct non-null buffer bindings");
     }
     IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
-        iree_hal_buffer_allowed_usage(bindings[i].buffer),
+        iree_hal_buffer_family_usage(bindings[i].buffer,
+                                     queue->base.queue_family),
         IREE_HAL_BUFFER_USAGE_STORAGE));
   }
 
@@ -4551,46 +4563,49 @@ static bool iree_hal_task_pool_supports_queue_families(
 }
 
 static iree_status_t iree_hal_task_queue_validate_alloca_request(
-    iree_hal_task_queue_t* queue,
+    iree_hal_task_queue_t* queue, const iree_hal_pool_t* pool,
     const iree_hal_pool_capabilities_t* capabilities, iree_host_size_t index,
     iree_hal_pool_reservation_request_t* request) {
-  if (iree_any_bit_set(request->params.type, IREE_HAL_MEMORY_TYPE_OPTIMAL)) {
-    request->params.type &= ~IREE_HAL_MEMORY_TYPE_OPTIMAL;
-    request->params.type |= capabilities->memory_type;
-  }
-  const iree_hal_buffer_compatibility_t compatibility =
-      iree_hal_allocator_query_buffer_compatibility(
-          queue->device_allocator, request->params, request->allocation_size,
-          &request->params, /*out_allocation_size=*/NULL);
-  if (IREE_UNLIKELY(!iree_all_bits_set(
-          compatibility, IREE_HAL_BUFFER_COMPATIBILITY_ALLOCATABLE))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "allocation request %" PRIhsz
-                            " is not allocatable on this device",
-                            index);
-  }
-  if (IREE_UNLIKELY(!iree_all_bits_set(capabilities->memory_type,
-                                       request->params.type))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "allocation request %" PRIhsz
-                            " memory type is not supported by the source pool",
-                            index);
-  }
-  if (IREE_UNLIKELY(!iree_all_bits_set(capabilities->supported_usage,
-                                       request->params.usage))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "allocation request %" PRIhsz
-                            " usage is not supported by the source pool",
-                            index);
-  }
-  if (IREE_UNLIKELY(!iree_hal_task_pool_supports_queue_families(
-          capabilities->queue_family_affinity,
-          request->params.queue_family_affinity))) {
-    return iree_make_status(
-        IREE_STATUS_INVALID_ARGUMENT,
-        "allocation request %" PRIhsz
-        " queue family affinity is not supported by the source pool",
-        index);
+  if (!pool->memory_contract) {
+    if (iree_any_bit_set(request->params.type, IREE_HAL_MEMORY_TYPE_OPTIMAL)) {
+      request->params.type &= ~IREE_HAL_MEMORY_TYPE_OPTIMAL;
+      request->params.type |= capabilities->memory_type;
+    }
+    const iree_hal_buffer_compatibility_t compatibility =
+        iree_hal_allocator_query_buffer_compatibility(
+            queue->device_allocator, request->params, request->allocation_size,
+            &request->params, /*out_allocation_size=*/NULL);
+    if (IREE_UNLIKELY(!iree_all_bits_set(
+            compatibility, IREE_HAL_BUFFER_COMPATIBILITY_ALLOCATABLE))) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "allocation request %" PRIhsz
+                              " is not allocatable on this device",
+                              index);
+    }
+    if (IREE_UNLIKELY(!iree_all_bits_set(capabilities->memory_type,
+                                         request->params.type))) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "allocation request %" PRIhsz
+          " memory type is not supported by the source pool",
+          index);
+    }
+    if (IREE_UNLIKELY(!iree_all_bits_set(capabilities->supported_usage,
+                                         request->params.usage))) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "allocation request %" PRIhsz
+                              " usage is not supported by the source pool",
+                              index);
+    }
+    if (IREE_UNLIKELY(!iree_hal_task_pool_supports_queue_families(
+            capabilities->queue_family_affinity,
+            request->params.queue_family_affinity))) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "allocation request %" PRIhsz
+          " queue family affinity is not supported by the source pool",
+          index);
+    }
   }
   if (IREE_UNLIKELY(capabilities->max_allocation_size != 0 &&
                     request->allocation_size >
@@ -4635,8 +4650,13 @@ static iree_status_t iree_hal_task_queue_alloca(
   for (iree_host_size_t i = 0; i < request_count && iree_status_is_ok(status);
        ++i) {
     canonical_requests[i] = requests[i];
+    if (pool->memory_contract) {
+      canonical_requests[i].params = pool->memory_contract->buffer_params;
+      canonical_requests[i].params.min_alignment =
+          requests[i].params.min_alignment;
+    }
     status = iree_hal_task_queue_validate_alloca_request(
-        queue, &pool_capabilities, i, &canonical_requests[i]);
+        queue, pool, &pool_capabilities, i, &canonical_requests[i]);
     if (!iree_status_is_ok(status)) {
       break;
     }
@@ -4688,7 +4708,8 @@ static iree_status_t iree_hal_task_queue_dealloca(
     }
     const iree_hal_buffer_placement_t placement =
         iree_hal_buffer_allocation_placement(buffers[i]);
-    if (IREE_UNLIKELY(placement.device != queue->device)) {
+    if (IREE_UNLIKELY(!buffers[i]->memory.contract &&
+                      placement.device != queue->device)) {
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "deallocation buffer %" PRIhsz " belongs to another device", i);

@@ -15,6 +15,7 @@
 #include "iree/hal/buffer.h"
 #include "iree/hal/detail.h"
 #include "iree/hal/executable.h"
+#include "iree/hal/memory_scope.h"
 #include "iree/hal/resource.h"
 
 // Returns success iff the command buffer was created for the given categories.
@@ -58,6 +59,10 @@ static iree_status_t iree_hal_command_buffer_validate_buffer_compatibility(
     iree_hal_buffer_t* buffer,
     iree_hal_buffer_compatibility_t required_compatibility,
     iree_hal_buffer_usage_t intended_usage) {
+  if (buffer->memory.contract) {
+    return iree_hal_buffer_validate_family_usage(
+        buffer, command_buffer->queue_family, IREE_HAL_BUFFER_USAGE_NONE);
+  }
   iree_hal_buffer_compatibility_t allowed_compatibility =
       iree_hal_allocator_query_buffer_compatibility(
           validation_state->device_allocator,
@@ -125,11 +130,12 @@ static iree_status_t iree_hal_command_buffer_validate_binding_requirements(
   // Verify buffer compatibility.
   if (requirements.requires_storage) {
     IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
-        iree_hal_buffer_allowed_usage(binding.buffer),
+        iree_hal_buffer_family_usage(binding.buffer,
+                                     command_buffer->queue_family),
         IREE_HAL_BUFFER_USAGE_STORAGE));
   }
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(binding.buffer), requirements.usage));
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+      binding.buffer, command_buffer->queue_family, requirements.usage));
   if (requirements.access != IREE_HAL_MEMORY_ACCESS_NONE) {
     IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
         iree_hal_buffer_allowed_access(binding.buffer), requirements.access));

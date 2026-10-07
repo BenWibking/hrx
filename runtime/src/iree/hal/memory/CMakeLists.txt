@@ -11,6 +11,21 @@ iree_add_all_subdirs()
 
 iree_cc_library(
   NAME
+    host_memory_backend
+  HDRS
+    "host_memory_backend.h"
+  SRCS
+    "host_memory_backend.c"
+  DEPS
+    ::passthrough_pool
+    ::slab_provider
+    iree::base
+    iree::hal
+  PUBLIC
+)
+
+iree_cc_library(
+  NAME
     buffer_range
   HDRS
     "buffer_range.h"

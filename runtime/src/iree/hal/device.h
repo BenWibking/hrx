@@ -106,6 +106,7 @@ typedef struct iree_async_proactor_pool_t iree_async_proactor_pool_t;
 typedef struct iree_async_frontier_tracker_t iree_async_frontier_tracker_t;
 typedef struct iree_async_notification_t iree_async_notification_t;
 typedef struct iree_hal_slab_provider_t iree_hal_slab_provider_t;
+typedef struct iree_hal_memory_backend_t iree_hal_memory_backend_t;
 
 // Device creation parameter extension types.
 //
@@ -651,6 +652,12 @@ IREE_API_EXPORT iree_status_t iree_hal_device_query_queue_pool_backend(
     iree_hal_device_t* device, const iree_hal_queue_family_t* queue_family,
     iree_hal_queue_pool_backend_t* out_backend);
 
+// Borrows immutable native memory owners established before device publication.
+// NULL means the device supplies no slab construction backend. This performs no
+// allocation, registration, or capability discovery.
+IREE_API_EXPORT const iree_hal_memory_backend_t* iree_hal_device_memory_backend(
+    iree_hal_device_t* device);
+
 // Blocks the caller until the semaphores reach or exceed the specified payload
 // values or the |timeout| elapses. All semaphores in |semaphore_list| must be
 // created from this device (or be imported into it).
@@ -847,6 +854,10 @@ typedef struct iree_hal_device_vtable_t {
       const iree_hal_device_profiling_options_t* options);
   iree_status_t(IREE_API_PTR* profiling_flush)(iree_hal_device_t* device);
   iree_status_t(IREE_API_PTR* profiling_end)(iree_hal_device_t* device);
+
+  // Optional infallible view of already-created native memory resources.
+  const iree_hal_memory_backend_t*(IREE_API_PTR* memory_backend)(
+      iree_hal_device_t* device);
 } iree_hal_device_vtable_t;
 IREE_HAL_ASSERT_VTABLE_LAYOUT(iree_hal_device_vtable_t);
 

@@ -12,6 +12,7 @@
 
 #include "iree/hal/allocator.h"
 #include "iree/hal/detail.h"
+#include "iree/hal/memory_scope.h"
 
 #define _VTABLE_DISPATCH(buffer, method_name) \
   IREE_HAL_VTABLE_DISPATCH(buffer, iree_hal_buffer, method_name)
@@ -1055,7 +1056,9 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_prepare_map_range(
   }
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_hal_buffer_validate_access(
-              iree_hal_buffer_allowed_access(buffer), memory_access));
+              buffer->memory.contract ? buffer->memory.contract->host.access
+                                      : iree_hal_buffer_allowed_access(buffer),
+              memory_access));
 
   // Persistent mapping requires the buffer was allocated to support it.
   const bool is_persistent =

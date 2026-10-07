@@ -24,6 +24,7 @@ IREE_HAL_API_RETAIN_RELEASE(pool);
 
 IREE_API_EXPORT iree_status_t iree_hal_pool_initialize(
     const iree_hal_pool_vtable_t* vtable,
+    iree_hal_memory_contract_t* memory_contract,
     iree_async_notification_t* notification,
     iree_hal_pool_wait_source_list_t backing_sources,
     iree_async_frontier_tracker_t* frontier_tracker,
@@ -40,6 +41,8 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_initialize(
         host_allocator, source_count, sizeof(*sources), (void**)&sources));
   }
   iree_hal_resource_initialize(vtable, &out_pool->resource);
+  out_pool->memory_contract = memory_contract;
+  iree_hal_memory_contract_retain(memory_contract);
   out_pool->notification = notification;
   sources[0] = notification;
   iree_async_notification_retain(notification);
@@ -63,6 +66,7 @@ IREE_API_EXPORT iree_status_t iree_hal_pool_initialize(
 }
 
 IREE_API_EXPORT void iree_hal_pool_deinitialize(iree_hal_pool_t* pool) {
+  iree_hal_memory_contract_release(pool->memory_contract);
   for (iree_host_size_t i = 0; i < pool->wait_sources.count; ++i) {
     iree_async_notification_release(pool->wait_sources.values[i]);
   }
@@ -148,6 +152,9 @@ IREE_API_EXPORT void iree_hal_pool_query_capabilities(
   IREE_ASSERT_ARGUMENT(out_capabilities);
   memset(out_capabilities, 0, sizeof(*out_capabilities));
   _VTABLE_DISPATCH(pool, query_capabilities)(pool, out_capabilities);
+  if (pool->memory_contract) {
+    out_capabilities->placement = pool->memory_contract->placement;
+  }
 }
 
 IREE_API_EXPORT void iree_hal_pool_query_stats(

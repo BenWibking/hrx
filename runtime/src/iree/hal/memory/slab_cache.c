@@ -194,7 +194,11 @@ static iree_status_t iree_hal_slab_cache_validate_request(
                             "cache request exceeds backing pool geometry");
   }
   iree_hal_buffer_params_t params = request->params;
-  iree_hal_buffer_params_canonicalize(&params);
+  if (cache->base.memory_contract) {
+    params = cache->base.memory_contract->buffer_params;
+  } else {
+    iree_hal_buffer_params_canonicalize(&params);
+  }
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       cache->capabilities.memory_type,
       params.type & ~IREE_HAL_MEMORY_TYPE_OPTIMAL));
@@ -570,7 +574,8 @@ iree_status_t iree_hal_slab_cache_create(
       &notification);
   if (iree_status_is_ok(status)) {
     status = iree_hal_pool_initialize(
-        &iree_hal_slab_cache_vtable, notification, backing_pool->wait_sources,
+        &iree_hal_slab_cache_vtable, backing_pool->memory_contract,
+        notification, backing_pool->wait_sources,
         backing_pool->frontier_tracker, host_allocator, &cache->base);
   }
   iree_async_notification_release(notification);

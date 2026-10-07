@@ -182,6 +182,7 @@ iree_cc_library(
     iree::hal::drivers::task::executable::loader
     iree::hal::drivers::task::queue
     iree::hal::memory::cpu_slab_provider
+    iree::hal::memory::host_memory_backend
     iree::hal::memory::maintenance
     iree::hal::memory::maintenance_thread
     iree::hal::utils::files

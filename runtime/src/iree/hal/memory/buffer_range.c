@@ -6,6 +6,8 @@
 
 #include "iree/hal/memory/buffer_range.h"
 
+#include "iree/hal/memory_scope.h"
+
 iree_status_t iree_hal_pool_buffer_range_initialize(
     iree_hal_buffer_t* buffer, iree_device_size_t offset,
     iree_device_size_t length, iree_device_size_t alignment,
@@ -73,7 +75,11 @@ iree_status_t iree_hal_pool_buffer_range_materialize(
     iree_hal_buffer_release_callback_t release_callback,
     iree_allocator_t host_allocator, iree_hal_buffer_t** out_buffer) {
   *out_buffer = NULL;
-  iree_hal_buffer_params_canonicalize(&params);
+  if (range->memory.contract) {
+    params = range->memory.contract->buffer_params;
+  } else {
+    iree_hal_buffer_params_canonicalize(&params);
+  }
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(range->buffer),
       params.type & ~IREE_HAL_MEMORY_TYPE_OPTIMAL));

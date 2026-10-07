@@ -14,6 +14,7 @@
 #include "iree/base/api.h"
 #include "iree/hal/atomic.h"
 #include "iree/hal/buffer.h"
+#include "iree/hal/memory_scope.h"
 #include "iree/hal/resource.h"
 
 #ifdef __cplusplus
@@ -237,6 +238,11 @@ enum iree_hal_pool_trim_flag_bits_e {
 // Used by iree_hal_pool_set_t for routing allocation requests to compatible
 // pools.
 typedef struct iree_hal_pool_capabilities_t {
+  // Achieved owned-backing placement. AUTOMATIC promises no particular node;
+  // REQUIRED reports the node enforced by native allocation. Imported storage
+  // keeps its own placement and is not relocated by this guarantee.
+  iree_hal_pool_placement_t placement;
+
   // Memory type properties provided by this pool's slab provider. Checked
   // against the required bits in iree_hal_buffer_params_t.type.
   iree_hal_memory_type_t memory_type;
@@ -724,6 +730,9 @@ struct iree_hal_pool_t {
   // Base HAL resource state. Must be at offset zero.
   iree_hal_resource_t resource;
 
+  // Retained immutable access facts shared by all backing and child views.
+  iree_hal_memory_contract_t* memory_contract;
+
   // Owned notification for changes in this pool's available capacity.
   iree_async_notification_t* notification;
 
@@ -751,11 +760,13 @@ struct iree_hal_pool_t {
 
 // Initializes |out_pool| with one owning reference. Captures and retains the
 // local |notification| and immutable, distinct |backing_sources|. Single-source
-// pools use inline storage. Borrows the non-NULL |frontier_tracker|; all
+// pools use inline storage. Retains |memory_contract| when provided.
+// Borrows the non-NULL |frontier_tracker|; all
 // reservation frontiers use the tracker's registered axes. On failure no
 // references are retained and the output requires no deinitialization.
 IREE_API_EXPORT iree_status_t iree_hal_pool_initialize(
     const iree_hal_pool_vtable_t* vtable,
+    iree_hal_memory_contract_t* memory_contract,
     iree_async_notification_t* notification,
     iree_hal_pool_wait_source_list_t backing_sources,
     iree_async_frontier_tracker_t* frontier_tracker,

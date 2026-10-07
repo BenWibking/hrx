@@ -67,6 +67,24 @@ iree_runtime_cc_test(
     ],
 )
 
+iree_runtime_cc_test(
+    name = "slab_pool_tests",
+    srcs = ["slab_pool_test.cc"],
+    deps = [
+        ":backends",
+        ":executable_testdata",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/hal/cts/util:registry",
+        "//runtime/src/iree/hal/cts/util:test_base",
+        "//runtime/src/iree/hal/cts/util:test_main",
+        "//runtime/src/iree/hal/memory:fixed_block_pool",
+        "//runtime/src/iree/hal/memory:maintenance",
+        "//runtime/src/iree/hal/memory:slab_cache",
+        "//runtime/src/iree/hal/memory:tlsf_pool",
+        "//runtime/src/iree/testing:gtest",
+    ],
+)
+
 iree_runtime_hal_cts_test_suite(
     backends = ":backends",
 )

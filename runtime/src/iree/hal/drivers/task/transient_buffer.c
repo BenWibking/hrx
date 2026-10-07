@@ -114,6 +114,7 @@ iree_status_t iree_hal_task_transient_buffer_create(
       /*byte_offset=*/0, byte_length, params.type, params.access, params.usage,
       &iree_hal_task_transient_buffer_vtable, &buffer->base);
   buffer->base.memory.bindings = &buffer->native_binding;
+  buffer->base.memory.contract = source_pool->memory_contract;
   buffer->base.host_binding_index = 0;
   buffer->host_allocator = host_allocator;
   buffer->profile_id = (uint64_t)iree_atomic_fetch_add(
@@ -421,7 +422,7 @@ iree_hal_task_transient_buffer_query_memory(
     const iree_hal_buffer_t* base_buffer) {
   iree_hal_task_transient_buffer_t* buffer =
       (iree_hal_task_transient_buffer_t*)base_buffer;
-  iree_hal_buffer_memory_view_t view = {0};
+  iree_hal_buffer_memory_view_t view = buffer->base.memory;
   iree_slim_mutex_lock(&buffer->mutex);
   if (buffer->committed_backing) {
     view = iree_hal_buffer_memory_view(buffer->committed_backing);

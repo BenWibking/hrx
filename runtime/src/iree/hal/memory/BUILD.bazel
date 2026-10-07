@@ -20,6 +20,18 @@ package(
 )
 
 iree_runtime_cc_library(
+    name = "host_memory_backend",
+    srcs = ["host_memory_backend.c"],
+    hdrs = ["host_memory_backend.h"],
+    deps = [
+        ":passthrough_pool",
+        ":slab_provider",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+    ],
+)
+
+iree_runtime_cc_library(
     name = "buffer_range",
     srcs = ["buffer_range.c"],
     hdrs = ["buffer_range.h"],

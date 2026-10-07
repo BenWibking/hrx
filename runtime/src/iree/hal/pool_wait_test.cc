@@ -103,9 +103,9 @@ class PoolWaitTest : public ::testing::Test {
 
     // The waiter consumes only captured pool facts. Actual allocation and
     // materialization are exercised by pool_test and the queue CTS.
-    IREE_ASSERT_OK(iree_hal_pool_initialize(&pool_vtable_, notifications_[0],
-                                            {2, notifications_}, tracker_,
-                                            iree_allocator_system(), &pool_));
+    IREE_ASSERT_OK(iree_hal_pool_initialize(
+        &pool_vtable_, nullptr, notifications_[0], {2, notifications_},
+        tracker_, iree_allocator_system(), &pool_));
     EXPECT_EQ(pool_.wait_sources.count, 2u);
     IREE_ASSERT_OK(
         iree_hal_pool_wait_create(&pool_, iree_allocator_system(), &wait_));
