@@ -357,6 +357,7 @@ TEST_P(TaskSlabPoolTest, InteriorArenasInheritTheCompleteScope) {
                                          0, &result, sizeof(result)));
   Wait(downloaded);
   EXPECT_EQ(result, value);
+  EXPECT_EQ(iree_atomic_ref_count_load(&buffer.get()->resource.ref_count), 1);
   buffer.reset();
   arena.reset();
   region.reset();

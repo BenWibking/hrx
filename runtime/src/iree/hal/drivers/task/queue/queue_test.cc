@@ -170,6 +170,78 @@ TEST_P(TaskQueueTest, ExecutesBindingsWithDeclaredPermissions) {
   iree_hal_device_group_release(device_group);
 }
 
+TEST_P(TaskQueueTest, TransfersReleaseBuffersBeforeTerminalSignal) {
+  for (bool fail_dependency : {false, true}) {
+    for (size_t length : {16u, 512u * 1024u}) {
+      SCOPED_TRACE(fail_dependency);
+      SCOPED_TRACE(length);
+      iree_hal_device_group_t* device_group = nullptr;
+      IREE_ASSERT_OK(CreateDeviceGroup(&device_group));
+      auto* device = iree_hal_device_group_device_at(device_group, 0);
+      auto* queue = iree_hal_device_queue(device, 0, 0);
+      iree_hal_semaphore_t* ready = nullptr;
+      iree_hal_semaphore_t* completion = nullptr;
+      IREE_ASSERT_OK(iree_hal_semaphore_create(
+          device, IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY, 0,
+          IREE_HAL_SEMAPHORE_FLAG_DEFAULT, &ready));
+      IREE_ASSERT_OK(iree_hal_semaphore_create(
+          device, IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY, 0,
+          IREE_HAL_SEMAPHORE_FLAG_DEFAULT, &completion));
+      struct ReleaseState {
+        // Borrowed signal queried while the final buffer reference retires.
+        iree_hal_semaphore_t* completion;
+        // Number of completed release callbacks.
+        std::atomic<uint32_t> count{0};
+      } release_state = {completion};
+      iree_hal_buffer_release_callback_t release_callback = {
+          [](void* user_data, iree_hal_buffer_t* buffer) {
+            auto* state = static_cast<ReleaseState*>(user_data);
+            uint64_t value = UINT64_MAX;
+            IREE_EXPECT_OK(iree_hal_semaphore_query(state->completion, &value));
+            EXPECT_EQ(value, 0u);
+            state->count.fetch_add(1, std::memory_order_release);
+          },
+          &release_state,
+      };
+      std::vector<uint8_t> source(length, 0xA5);
+      std::vector<uint8_t> target(length, 0x00);
+      iree_hal_buffer_t* buffer = nullptr;
+      IREE_ASSERT_OK(iree_hal_heap_buffer_wrap(
+          iree_hal_buffer_placement_undefined(),
+          IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
+          IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_USAGE_TRANSFER, length,
+          iree_make_byte_span(target.data(), target.size()), release_callback,
+          iree_allocator_system(), &buffer));
+      uint64_t value = 1;
+      const iree_hal_semaphore_list_t waits = {1, &ready, &value};
+      const iree_hal_semaphore_list_t signals = {1, &completion, &value};
+      IREE_ASSERT_OK(iree_hal_queue_upload(queue, waits, signals, source.data(),
+                                           buffer, 0, length));
+      // The accepted operation owns the final buffer reference. Its explicit
+      // dependency keeps that ownership alive until the caller drops its copy.
+      iree_hal_buffer_release(buffer);
+      if (fail_dependency) {
+        iree_hal_semaphore_fail(ready,
+                                iree_status_from_code(IREE_STATUS_CANCELLED));
+        IREE_EXPECT_STATUS_IS(
+            IREE_STATUS_CANCELLED,
+            iree_hal_semaphore_list_wait(signals, iree_infinite_timeout(),
+                                         IREE_ASYNC_WAIT_FLAG_NONE));
+        EXPECT_EQ(target, std::vector<uint8_t>(length, 0x00));
+      } else {
+        IREE_ASSERT_OK(iree_hal_semaphore_signal(ready, value, nullptr));
+        IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+            signals, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+        EXPECT_EQ(target, source);
+      }
+      EXPECT_EQ(release_state.count.load(std::memory_order_acquire), 1u);
+      iree_hal_semaphore_release(completion);
+      iree_hal_semaphore_release(ready);
+      iree_hal_device_group_release(device_group);
+    }
+  }
+}
+
 TEST_P(TaskQueueTest, ReleasesDeviceGroupWithAcceptedExecuteInFlight) {
   // Repeated immediate destruction drives shutdown across the control-to-
   // compute ownership handoff without externally waiting for completion.

@@ -705,6 +705,16 @@ static void iree_hal_task_queue_op_abort_dealloca(
   operation->dealloca.marks_owned = false;
 }
 
+// Terminal semaphore publication permits callers to destroy allocation pools.
+// Drop captured buffer references before publishing to finish queue ownership.
+static void iree_hal_task_queue_op_release_resources(
+    iree_hal_task_queue_op_t* operation) {
+  if (operation->resource_set) {
+    iree_hal_resource_set_free(operation->resource_set);
+    operation->resource_set = NULL;
+  }
+}
+
 // Discards an operation that could not be captured for submission. Signal
 // semaphores are released without modification because no queue work became
 // visible to the caller.
@@ -715,10 +725,7 @@ static void iree_hal_task_queue_op_discard(
   iree_hal_task_queue_op_release_alloca_memory_wait(operation);
   iree_hal_task_queue_op_abort_dealloca(operation);
   iree_hal_semaphore_list_release(operation->signal_semaphores);
-  if (operation->resource_set) {
-    iree_hal_resource_set_free(operation->resource_set);
-    operation->resource_set = NULL;
-  }
+  iree_hal_task_queue_op_release_resources(operation);
   iree_task_scope_t* scope = operation->scope;
   iree_arena_allocator_t arena = operation->arena;
   operation = NULL;
@@ -738,6 +745,7 @@ static void iree_hal_task_queue_op_destroy(iree_hal_task_queue_op_t* operation,
 
   iree_hal_task_queue_op_release_alloca_memory_wait(operation);
   iree_hal_task_queue_op_abort_dealloca(operation);
+  iree_hal_task_queue_op_release_resources(operation);
 
   // Fail signal semaphores on error (stores the error status in each), then
   // always release the semaphore references regardless of success/failure.
@@ -745,12 +753,6 @@ static void iree_hal_task_queue_op_destroy(iree_hal_task_queue_op_t* operation,
     iree_hal_semaphore_list_fail(operation->signal_semaphores, failure_status);
   }
   iree_hal_semaphore_list_release(operation->signal_semaphores);
-
-  // Release retained resources (command buffers, binding table buffers).
-  if (operation->resource_set) {
-    iree_hal_resource_set_free(operation->resource_set);
-    operation->resource_set = NULL;
-  }
 
   // Capture scope before arena deinitialization frees the operation.
   iree_task_scope_t* scope = operation->scope;
@@ -792,13 +794,14 @@ static void iree_hal_task_queue_op_advance_frontier(
                                       operation->axis, epoch);
 }
 
-// Completes an operation successfully: signals semaphores, advances the
-// frontier, then destroys the operation (freeing the arena).
+// Completes an operation successfully: releases captured resources, signals
+// semaphores, advances the frontier, and destroys the operation.
 static void iree_hal_task_queue_op_complete(
     iree_hal_task_queue_op_t* operation) {
   // Publish profiling before user-visible completion. Waiters may flush and
   // end profiling immediately after signal semaphores are reached.
   iree_hal_task_queue_profile_finish_host_execution(operation, IREE_STATUS_OK);
+  iree_hal_task_queue_op_release_resources(operation);
   iree_status_t status = iree_hal_semaphore_list_signal(
       operation->signal_semaphores, /*frontier=*/NULL);
 
@@ -1742,6 +1745,7 @@ static iree_status_t iree_hal_task_queue_drain_host_call(
     iree_status_t call_status =
         operation->host_call.call.fn(operation->host_call.call.user_data,
                                      operation->host_call.args, &context);
+    iree_hal_task_queue_op_release_resources(operation);
     if (is_nonblocking || iree_status_is_deferred(call_status)) {
       // User callback will signal in the future (or fire-and-forget).
       iree_status_free(call_status);
