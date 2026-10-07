@@ -91,6 +91,11 @@ class Storage {
   // Packing changes the origin, without asserting natural field alignment.
   StorageProjection member(StorageProjection base, cxx::FieldSymbol* field,
                            cxx::AST* owner);
+  // Projects an in-bounds constant element of an admitted fixed array. Source
+  // subobject offsets need no signed pointer-arithmetic conversion chain.
+  StorageProjection element(StorageProjection base,
+                            const cxx::BoundedArrayType* type, size_t index,
+                            cxx::AST* owner);
   // Constructs addressing for an integral subscript without narrowing pointer
   // byte arithmetic through target-selected index.
   // Unsupported source types are diagnosed at owner. The C++ driver separately
@@ -110,16 +115,18 @@ class Storage {
   // Writes to the same resolved location with the source element qualifiers.
   void store(const StorageAccess& access, loom_value_id_t value,
              const cxx::Type* element_type, cxx::AST* owner);
-  // Allocates an admitted scalar, vector or fixed array using its source layout
-  // and explicit alignment. Each execution creates a fresh root; initialization
-  // is emitted separately. The driver owns storage-duration and scope
-  // admission. Record, nested-array and vector-array elements remain
-  // addressable objects and do not acquire a whole-object SSA representation.
+  // Allocates an admitted scalar, vector, record or fixed array using its
+  // source layout and explicit alignment. Each execution creates a fresh root;
+  // initialization is emitted separately. The driver owns storage-duration and
+  // scope admission. Aggregate footprints use bytes; Objects projects their
+  // value components independently of the backing allocation.
   StorageAllocation allocate(const cxx::Type* type,
                              loom_value_fact_memory_space_t memory_space,
                              int64_t explicit_alignment, cxx::AST* owner);
 
  private:
+  StorageProjection subobject(StorageProjection base, uint64_t byte_offset,
+                              cxx::AST* owner);
   // Publishes the defined-source dereference range for a compiler-owned
   // allocation. External buffer roots have no importer-owned extent and pass
   // through unchanged.

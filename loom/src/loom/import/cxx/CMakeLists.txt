@@ -70,6 +70,8 @@ loom_cc_library(
     loom::import::cxx::source::options
     loom::import::cxx::symbol::functions
     loom::import::cxx::value::bitcast
+    loom::import::cxx::value::initialization
+    loom::import::cxx::value::objects
     loom::import::cxx::value::representation
     loom::import::cxx::value::scalar
     loom::import::cxx::value::signature

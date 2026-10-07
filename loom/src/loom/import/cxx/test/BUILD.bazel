@@ -28,6 +28,7 @@ loom_check_test_suite(
     name = "compiler_test",
     srcs = [
         "aggregate_constants.cxx-test",
+        "array_records.cxx-test",
         "assembly.cxx-test",
         "assembly_invalid.cxx-test",
         "assumptions.cxx-test",
@@ -246,6 +247,22 @@ loom_test(
     srcs = ["local_arrays.cxx"],
     execution_profiles = [VM_REFERENCE_PROFILE],
     target_compatible_with = _HOST_COMPATIBILITY,
+)
+
+loom_test(
+    name = "array_records_test",
+    srcs = ["array_records.cxx"],
+    execution_profiles = [VM_REFERENCE_PROFILE],
+    target_compatible_with = _HOST_COMPATIBILITY,
+)
+
+loom_test_module(
+    name = "array_records_module",
+    srcs = [
+        "array_records_kernel.cxx",
+        "array_records_kernel.loom",
+    ],
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
 loom_test(

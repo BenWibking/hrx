@@ -28,6 +28,20 @@ loom_cc_library(
 )
 endif()
 
+if(LOOM_IMPORT_CXX AND LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
+iree_native_test(
+  NAME
+    "array_records_test"
+  ARGS
+    "{{$<TARGET_FILE:loom::import::cxx::test::array_records_module>}}"
+    "--device=task"
+  SRC
+    loom::tools::iree-test-loom
+  DATA
+    "loom::import::cxx::test::array_records_module"
+)
+endif()
+
 if(LOOM_TARGET_ARCH_X86 AND IREE_HAL_EXECUTABLE_LOADER_EMBEDDED_ELF AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_TASK AND LOOM_TARGET_ARCH_VM AND IREE_ARCH STREQUAL "x86_64")
 iree_native_test(
   NAME

@@ -47,6 +47,20 @@ struct RecordPartition final : Partition {
   std::vector<MemberPartition> members;
   // Retained member paths used to name newly bound High components.
   std::vector<std::string> component_names;
+  // Whether any component needs destination identities to bind its High type.
+  bool requires_binding = false;
+};
+
+// A fixed source array transported as immutable element components inside an
+// enclosing value. This is not array decay: borrowing an array's address uses
+// its source-layout object storage instead of the value partition.
+struct ArrayPartition final : Partition {
+  // Canonical bounded source type, including its element layout and extent.
+  const cxx::BoundedArrayType* source;
+  // Retained recursive element structure, shared by all positions.
+  const Partition* element;
+  // Whether element types depend on destination SSA identities.
+  bool requires_binding;
 };
 
 // Canonical source encoding object projected to one first-class High encoding
@@ -127,6 +141,8 @@ class Types {
   bool requires_binding(const cxx::Type* input, cxx::AST* owner);
   // Returns a record's admitted source schema, or null for a non-record type.
   const RecordPartition* record(const cxx::Type* input, cxx::AST* owner);
+  // Returns a fixed array's value schema, or null for a non-array type.
+  const ArrayPartition* array(const cxx::Type* input, cxx::AST* owner);
   // Direct lookup of a member slice retained by its owning record's admission.
   const MemberPartition& member(cxx::FieldSymbol* field, cxx::AST* owner);
   // Admits a resolved constructor only when the source partition represents
@@ -174,6 +190,10 @@ class Types {
   // Stable source partitions, independent of every particular SSA binding.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<RecordPartition>>
       records_;
+  // Array schemas retain the element partition once, independently of length.
+  std::unordered_map<const cxx::BoundedArrayType*,
+                     std::unique_ptr<ArrayPartition>>
+      arrays_;
   // Admitted special source objects, keyed by concrete specialization.
   std::unordered_map<cxx::ClassSymbol*, std::unique_ptr<EncodingPartition>>
       encodings_;

@@ -1,0 +1,93 @@
+// Copyright 2026 The IREE Authors
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+#ifndef LOOM_IMPORT_CXX_VALUE_INITIALIZATION_H_
+#define LOOM_IMPORT_CXX_VALUE_INITIALIZATION_H_
+
+#include <cxx/ast_fwd.h>
+
+#include "loom/import/cxx/value/objects.h"
+#include "loom/import/cxx/value/vector.h"
+
+namespace loom::cxx_import {
+
+// Source aggregate initialization has two destinations: immutable components
+// and addressable objects. In-place initialization publishes each completed
+// subobject before evaluating the next clause; value copies capture all source
+// components before any destination store. The resolved AST supplies clause
+// ordering, defaults and conversions, independently of the target ABI.
+class Initialization {
+ public:
+  // Borrowed source-expression evaluator. Initializer traversal controls when
+  // each clause executes; the surrounding translator owns its expression and
+  // conversion semantics. This interface owns no source or output state.
+  class Evaluation {
+   public:
+    virtual Value expression(cxx::ExpressionAST* expression) = 0;
+    virtual Value convert(cxx::ExpressionAST* expression, const cxx::Type* type,
+                          cxx::AST* owner) = 0;
+
+   protected:
+    ~Evaluation() = default;
+  };
+
+  Initialization(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
+                 Types& types, Scalars& scalars, Vectors& vectors,
+                 Storage& storage, Objects& objects, ValueArena& arena,
+                 Locations& locations, loom_builder_t& builder,
+                 Evaluation& evaluation)
+      : unit_(unit),
+        diagnostics_(diagnostics),
+        types_(types),
+        scalars_(scalars),
+        vectors_(vectors),
+        storage_(storage),
+        objects_(objects),
+        arena_(arena),
+        locations_(locations),
+        builder_(builder),
+        evaluation_(evaluation) {}
+
+  // Builds value-initialized components; an empty list includes zero/default
+  // members supplied by source normalization.
+  Value value(const cxx::Type* type, cxx::List<cxx::ExpressionAST*>* elements,
+              cxx::AST* owner);
+  // Initializes an already allocated object from a present source initializer.
+  // Array scalar elements keep the allocation's retained typed view.
+  void storage(StorageAllocation allocation, const cxx::Type* type,
+               cxx::ExpressionAST* initializer, cxx::AST* owner);
+
+ private:
+  void object(StorageProjection destination, const cxx::Type* type,
+              cxx::ExpressionAST* initializer, cxx::AST* owner);
+
+  // Source type traits retain qualifiers on memory subobjects.
+  cxx::TranslationUnit& unit_;
+  // Source admission failures retain their owning clause.
+  Diagnostics& diagnostics_;
+  // Canonical array and record component schemas.
+  Types& types_;
+  // Scalar zero and array index construction.
+  Scalars& scalars_;
+  // Explicit vector construction from admitted element clauses.
+  Vectors& vectors_;
+  // Source-layout memory operations and allocation projections.
+  Storage& storage_;
+  // Whole-object value snapshots and subobject projections.
+  Objects& objects_;
+  // Immutable component storage scoped to the translated function.
+  ValueArena& arena_;
+  // Source provenance attached to initialization operations.
+  Locations& locations_;
+  // Borrowed insertion point owned by the surrounding translator.
+  loom_builder_t& builder_;
+  // Borrowed evaluator outlives all initializer traversal.
+  Evaluation& evaluation_;
+};
+
+}  // namespace loom::cxx_import
+
+#endif  // LOOM_IMPORT_CXX_VALUE_INITIALIZATION_H_
