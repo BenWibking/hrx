@@ -208,6 +208,12 @@ static void iree_hal_amdgpu_host_queue_release_transient_reservations(
         state->pool, params, buffer, &state->reservations[i],
         iree_hal_buffer_byte_length(buffer), submission_id,
         queue_frontier ? queue_frontier->entry_count : 0);
+    iree_hal_amdgpu_host_queue_record_memory_event(
+        state->queue, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_DEALLOCA,
+        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
+        state->pool, params, buffer, &state->reservations[i],
+        iree_hal_buffer_byte_length(buffer), submission_id,
+        /*frontier_entry_count=*/0);
   }
 }
 
@@ -540,6 +546,28 @@ void iree_hal_amdgpu_host_queue_release_alloca_transaction(
   }
 }
 
+typedef struct iree_hal_amdgpu_host_queue_alloca_profile_state_t {
+  // Queue publishing the allocation epoch.
+  iree_hal_amdgpu_host_queue_t* queue;
+  // Pool supplying the transaction's reservations.
+  iree_hal_pool_t* pool;
+  // Borrowed until the synchronous submission callback returns.
+  const iree_hal_amdgpu_alloca_transaction_t* transaction;
+} iree_hal_amdgpu_host_queue_alloca_profile_state_t;
+
+static void iree_hal_amdgpu_host_queue_record_committed_alloca(
+    void* user_data, const iree_async_frontier_t* queue_frontier,
+    uint64_t submission_id) {
+  (void)queue_frontier;
+  const iree_hal_amdgpu_host_queue_alloca_profile_state_t* state =
+      (const iree_hal_amdgpu_host_queue_alloca_profile_state_t*)user_data;
+  iree_hal_amdgpu_host_queue_record_alloca_pool_events(
+      state->queue, state->pool, state->transaction,
+      IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_ALLOCA,
+      IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, submission_id,
+      /*has_reservations=*/true);
+}
+
 static uint64_t iree_hal_amdgpu_host_queue_finish_alloca_materialization(
     iree_hal_amdgpu_host_queue_t* queue,
     iree_hal_amdgpu_alloca_transaction_t* transaction,
@@ -565,6 +593,11 @@ static uint64_t iree_hal_amdgpu_host_queue_finish_alloca_materialization(
 
   iree_hal_amdgpu_host_queue_profile_event_info_t profile_event_info =
       iree_hal_amdgpu_host_queue_alloca_profile_event_info(transaction);
+  iree_hal_amdgpu_host_queue_alloca_profile_state_t profile_state = {
+      .queue = queue,
+      .pool = allocation_pool,
+      .transaction = transaction,
+  };
   const uint64_t submission_epoch =
       iree_hal_amdgpu_host_queue_finish_barrier_submission(
           queue, &transaction->wait_resolution, signal_semaphore_list,
@@ -573,14 +606,12 @@ static uint64_t iree_hal_amdgpu_host_queue_finish_alloca_materialization(
           },
           (iree_hal_resource_t* const*)transaction->buffers,
           transaction->request_count, &profile_event_info,
-          iree_hal_amdgpu_host_queue_post_commit_callback_null(),
+          (iree_hal_amdgpu_host_queue_post_commit_callback_t){
+              .fn = iree_hal_amdgpu_host_queue_record_committed_alloca,
+              .user_data = &profile_state,
+          },
           /*resource_set=*/NULL, submission_flags, submission);
   profile_event_info.submission_id = submission_epoch;
-  iree_hal_amdgpu_host_queue_record_alloca_pool_events(
-      queue, allocation_pool, transaction,
-      IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_ALLOCA,
-      IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, submission_epoch,
-      /*has_reservations=*/true);
   iree_hal_amdgpu_host_queue_record_profile_queue_event(
       queue, &transaction->wait_resolution, signal_semaphore_list,
       &profile_event_info);
@@ -883,20 +914,6 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_dealloca(
           },
           /*resource_set=*/NULL, submission_flags, &submission);
   profile_event_info.submission_id = submission_epoch;
-  for (iree_host_size_t i = 0; i < transaction->buffer_count; ++i) {
-    iree_hal_buffer_t* buffer = transaction->buffers[i];
-    const iree_hal_buffer_params_t params = {
-        .type = iree_hal_buffer_memory_type(buffer),
-        .access = iree_hal_buffer_allowed_access(buffer),
-        .usage = iree_hal_buffer_allowed_usage(buffer),
-    };
-    iree_hal_amdgpu_host_queue_record_memory_event(
-        queue, IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_DEALLOCA,
-        IREE_HAL_PROFILE_MEMORY_EVENT_FLAG_QUEUE_OPERATION, UINT32_MAX,
-        transaction->pool, params, buffer, &transaction->reservations[i],
-        iree_hal_buffer_byte_length(buffer), submission_epoch,
-        /*frontier_entry_count=*/0);
-  }
   iree_hal_amdgpu_host_queue_record_profile_queue_event(
       queue, resolution, signal_semaphore_list, &profile_event_info);
   return iree_ok_status();

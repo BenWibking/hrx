@@ -92,9 +92,9 @@ static iree_status_t iree_hal_amdgpu_host_queue_submit_tsan_state_initialize(
         /*inout_resource_set=*/NULL,
         IREE_HAL_AMDGPU_HOST_QUEUE_SUBMISSION_FLAG_NONE, &submission);
     iree_hal_amdgpu_host_queue_publish_submission_kernargs(queue, &submission);
+    iree_hal_amdgpu_aql_ring_commit(packet, header, setup);
     iree_hal_amdgpu_notification_ring_publish_epoch(&queue->notification_ring,
                                                     submission_epoch);
-    iree_hal_amdgpu_aql_ring_commit(packet, header, setup);
     iree_hal_amdgpu_aql_ring_doorbell(&queue->aql_ring,
                                       submission.first_packet_id);
   }

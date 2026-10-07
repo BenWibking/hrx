@@ -370,10 +370,11 @@ uint64_t iree_hal_amdgpu_notification_ring_advance_epoch(
 
 // Publishes host-owned metadata for |epoch| to the completion drain.
 //
-// Must be called after the submission path has initialized the epoch's reclaim
-// entry and notification entries and before it commits any AQL packet that can
-// complete the epoch. This gives the host completion thread an explicit
-// acquire/release edge for metadata that is not otherwise visible to the GPU.
+// Called after packet assembly and the submission path's last access to any
+// resource transferred to the reclaim entry, before ringing the doorbell.
+// Completion drains acquire this publication before accessing or releasing
+// those resources. Device completion may arrive first; drains clamp to the last
+// published epoch and retry from the last drained epoch so it cannot be lost.
 void iree_hal_amdgpu_notification_ring_publish_epoch(
     iree_hal_amdgpu_notification_ring_t* ring, uint64_t epoch);
 
