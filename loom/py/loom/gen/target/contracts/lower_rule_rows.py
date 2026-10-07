@@ -125,6 +125,7 @@ _ATTR_COPY_VALUE_REF_KINDS = frozenset(
         LowerAttrCopyKind.VALUE_I32_AS_U32_BITS,
         LowerAttrCopyKind.VALUE_FLOAT_BITS,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F32_I32,
+        LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I64,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
@@ -584,6 +585,7 @@ def guard_row(
     elif row.kind in (
         GuardKind.ATTR_KIND,
         GuardKind.ENUM_ATTR_EQUALS,
+        GuardKind.ENUM_ATTR_IN,
         GuardKind.I64_RANGE,
         GuardKind.OPERAND_SEGMENT_COUNT,
         GuardKind.I64_ARRAY_COUNT,
@@ -656,6 +658,7 @@ def guard_payload_row(row: LowerGuard) -> list[str]:
     u64_payload: str | None = None
     if row.kind in (
         GuardKind.ENUM_ATTR_EQUALS,
+        GuardKind.ENUM_ATTR_IN,
         GuardKind.OPERAND_SEGMENT_COUNT,
         GuardKind.LOW_VALUE_REGISTER_UNIT_COUNT,
         GuardKind.VALUE_STATIC_DIM0_MULTIPLE,
@@ -760,12 +763,16 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.DIRECT,
         LowerAttrCopyKind.ENUM_ORDINAL,
+        LowerAttrCopyKind.ENUM_REMAP,
         LowerAttrCopyKind.I64_LOG2,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER,
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
         LowerAttrCopyKind.I64_LOW_BIT_MASK,
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_MASK,
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_CLEAR_MASK,
@@ -778,6 +785,7 @@ def attr_copy_row(
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_MASK,
         LowerAttrCopyKind.I64_SHIFTED_LOW_BIT_CLEAR_MASK,
         LowerAttrCopyKind.I64_LITERAL_MINUS_ATTRS,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -788,13 +796,17 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.I64_ARRAY_ELEMENT,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER,
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
         LowerAttrCopyKind.VALUE_EXACT_I64_I32_WORD,
         LowerAttrCopyKind.VALUE_FLOAT_AS_F64_I32_WORD,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -806,9 +818,11 @@ def attr_copy_row(
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,
@@ -819,6 +833,8 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
         LowerAttrCopyKind.ATTRS_PACK_CONSECUTIVE,
+        LowerAttrCopyKind.ENUM_REMAP,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
     ):
         _append_field(
             fields,
@@ -834,7 +850,10 @@ def attr_copy_row(
     if row.kind in (
         LowerAttrCopyKind.I64_LITERAL,
         LowerAttrCopyKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_QUOTIENT,
+        LowerAttrCopyKind.I64_ARRAY_ELEMENT_REMAINDER,
         LowerAttrCopyKind.I64_ARRAY_LANE_BYTE,
+        LowerAttrCopyKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
         LowerAttrCopyKind.I64_LITERAL_MINUS_ATTR,
         LowerAttrCopyKind.I64_LITERAL_MINUS_ATTRS,
         LowerAttrCopyKind.I64_ATTR_MINUS_LITERAL,
@@ -846,6 +865,7 @@ def attr_copy_row(
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_LITERAL_MINUS_STATIC_DIM_SCALED,
         LowerAttrCopyKind.VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK,
+        LowerAttrCopyKind.ENUM_REMAP,
     ):
         _append_field(
             fields,

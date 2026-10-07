@@ -14,10 +14,13 @@ from enum import Enum, unique
 from typing import Self
 
 from loom.dsl import ATTR_TYPE_ENUM, ATTR_TYPE_I64, ATTR_TYPE_I64_ARRAY, Op
-from loom.target.contracts.descriptors import _require_immediate
+from loom.target.contracts.descriptors import (
+    _require_immediate,
+    _validate_immediate_literal,
+)
 from loom.target.contracts.kinds import SourceValueKind
 from loom.target.contracts.source import ValueRef, _require_attr, _require_value
-from loom.target.low_descriptors import Descriptor, ImmediateKind
+from loom.target.low_descriptors import Descriptor, DescriptorSet, ImmediateKind
 
 _I64_MIN = -(2**63)
 _I64_MAX = 2**63 - 1
@@ -29,10 +32,14 @@ class AttrProjectKind(Enum):
 
     DIRECT = "direct"
     ENUM_ORDINAL = "enum_ordinal"
+    ENUM_REMAP = "enum_remap"
     I64_LOG2 = "i64_log2"
     I64_ARRAY_ELEMENT = "i64_array_element"
     I64_ARRAY_ELEMENT_PLUS_LITERAL = "i64_array_element_plus_literal"
+    I64_ARRAY_ELEMENT_QUOTIENT = "i64_array_element_quotient"
+    I64_ARRAY_ELEMENT_REMAINDER = "i64_array_element_remainder"
     I64_ARRAY_LANE_BYTE_OFFSET = "i64_array_lane_byte_offset"
+    I64_ARRAY_SHUFFLE_MASK_CHUNK = "i64_array_shuffle_mask_chunk"
     I64_ARRAY_PACK_ELEMENTS = "i64_array_pack_elements"
     ATTRS_PACK_CONSECUTIVE = "attrs_pack_consecutive"
     I64_LOW_BIT_MASK = "i64_low_bit_mask"
@@ -59,6 +66,7 @@ class ValueProjectKind(Enum):
     I32_AS_U32_BITS = "i32_as_u32_bits"
     FLOAT_BITS = "float_bits"
     FLOAT_AS_F32_I32 = "float_as_f32_i32"
+    FLOAT_AS_F64_I64 = "float_as_f64_i64"
     FLOAT_AS_F64_I32_WORD = "float_as_f64_i32_word"
 
 
@@ -80,6 +88,13 @@ _SIGNED_I32_VALUE_PROJECT_KINDS = (
     *_I32_WORD_VALUE_PROJECT_KINDS,
     ValueProjectKind.FLOAT_AS_F32_I32,
     ValueProjectKind.U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32,
+)
+
+_SIGNED_I64_VALUE_PROJECT_KINDS = (ValueProjectKind.FLOAT_AS_F64_I64,)
+
+_SIGNED_FLOAT_VALUE_PROJECT_KINDS = (
+    ValueProjectKind.FLOAT_AS_F32_I32,
+    ValueProjectKind.FLOAT_AS_F64_I64,
 )
 
 
@@ -116,6 +131,7 @@ class AttrProject:
     source_lane_count: int | None = None
     bytes_per_lane: int | None = None
     target_names: tuple[str, ...] = ()
+    enum_values: tuple[tuple[str, int], ...] = ()
 
     @classmethod
     def direct(cls, source_attr: str) -> Self:
@@ -124,6 +140,15 @@ class AttrProject:
     @classmethod
     def enum_ordinal(cls, source_attr: str) -> Self:
         return cls(kind=AttrProjectKind.ENUM_ORDINAL, source_attr=source_attr)
+
+    @classmethod
+    def enum_remap(cls, source_attr: str, values: Mapping[str, int]) -> Self:
+        """Maps source enum cases to compact target immediate values."""
+        return cls(
+            kind=AttrProjectKind.ENUM_REMAP,
+            source_attr=source_attr,
+            enum_values=tuple(sorted(values.items())),
+        )
 
     @classmethod
     def i64_log2(cls, source_attr: str) -> Self:
@@ -161,6 +186,44 @@ class AttrProject:
         )
 
     @classmethod
+    def i64_array_element_quotient(
+        cls,
+        source_attr: str,
+        *,
+        element: int,
+        divisor: int,
+        target_bit_offset: int = 0,
+    ) -> Self:
+        if divisor <= 0:
+            raise ValueError("i64-array element quotient divisor must be positive")
+        return cls(
+            kind=AttrProjectKind.I64_ARRAY_ELEMENT_QUOTIENT,
+            source_attr=source_attr,
+            element=element,
+            literal_i64=divisor,
+            target_bit_offset=target_bit_offset,
+        )
+
+    @classmethod
+    def i64_array_element_remainder(
+        cls,
+        source_attr: str,
+        *,
+        element: int,
+        divisor: int,
+        target_bit_offset: int = 0,
+    ) -> Self:
+        if divisor <= 0:
+            raise ValueError("i64-array element remainder divisor must be positive")
+        return cls(
+            kind=AttrProjectKind.I64_ARRAY_ELEMENT_REMAINDER,
+            source_attr=source_attr,
+            element=element,
+            literal_i64=divisor,
+            target_bit_offset=target_bit_offset,
+        )
+
+    @classmethod
     def i64_array_lane_byte_offset(
         cls,
         source_attr: str,
@@ -195,6 +258,26 @@ class AttrProject:
             count=count,
             bit_width=bit_width,
             target_bit_offset=target_bit_offset,
+        )
+
+    @classmethod
+    def i64_array_shuffle_mask_chunk(
+        cls,
+        source_attr: str,
+        *,
+        output_byte_offset: int,
+        bytes_per_lane: int,
+        source_byte_offset: int,
+        source_byte_count: int = 16,
+    ) -> Self:
+        """Packs eight PSHUFB selectors for one source byte segment."""
+        return cls(
+            kind=AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+            source_attr=source_attr,
+            element=output_byte_offset,
+            bytes_per_lane=bytes_per_lane,
+            literal_i64=source_byte_offset,
+            count=source_byte_count,
         )
 
     @classmethod
@@ -309,7 +392,10 @@ class AttrProject:
             )
         literal_kinds = (
             AttrProjectKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+            AttrProjectKind.I64_ARRAY_ELEMENT_QUOTIENT,
+            AttrProjectKind.I64_ARRAY_ELEMENT_REMAINDER,
             AttrProjectKind.I64_ARRAY_LANE_BYTE_OFFSET,
+            AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
             AttrProjectKind.I64_LITERAL_MINUS_ATTR,
             AttrProjectKind.I64_LITERAL_MINUS_ATTRS,
             AttrProjectKind.I64_ATTR_MINUS_LITERAL,
@@ -338,7 +424,12 @@ class AttrProject:
             in (
                 AttrProjectKind.I64_LOG2,
                 *mask_kinds,
-                *literal_kinds,
+                AttrProjectKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+                AttrProjectKind.I64_ARRAY_LANE_BYTE_OFFSET,
+                AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
+                AttrProjectKind.I64_LITERAL_MINUS_ATTR,
+                AttrProjectKind.I64_LITERAL_MINUS_ATTRS,
+                AttrProjectKind.I64_ATTR_MINUS_LITERAL,
             )
             and self.target_bit_offset != 0
         ):
@@ -347,20 +438,34 @@ class AttrProject:
             )
         if self.count is not None and self.bit_width is not None:
             packed_bit_count = self.count * self.bit_width
-            if packed_bit_count + self.target_bit_offset > 63:
-                raise ValueError(
-                    f"{self.kind.value} packed bit count must fit in signed i64"
-                )
+            if packed_bit_count + self.target_bit_offset > 64:
+                raise ValueError(f"{self.kind.value} packed bit count must fit in i64")
         if self.source_lane_count is not None and self.source_lane_count < 0:
             raise ValueError(
                 f"{self.kind.value} source lane count must be non-negative"
             )
         if self.bytes_per_lane is not None and self.bytes_per_lane <= 0:
             raise ValueError(f"{self.kind.value} bytes per lane must be positive")
+        if self.kind == AttrProjectKind.ENUM_REMAP:
+            if not self.enum_values:
+                raise ValueError("enum_remap projection requires enum values")
+            keywords = tuple(keyword for keyword, _ in self.enum_values)
+            if len(keywords) != len(set(keywords)):
+                raise ValueError("enum_remap projection repeats an enum keyword")
+            if any(not keyword for keyword in keywords):
+                raise ValueError("enum_remap projection keywords must be non-empty")
+            if any(
+                not isinstance(value, int) or isinstance(value, bool)
+                for _, value in self.enum_values
+            ):
+                raise ValueError("enum_remap projection values must be integers")
+        elif self.enum_values:
+            raise ValueError(f"{self.kind.value} projection must not carry enum values")
 
     def validate(
         self,
         source_op: Op,
+        descriptor_set: DescriptorSet,
         descriptor: Descriptor,
         bound_immediate_name: str | None,
     ) -> None:
@@ -389,6 +494,15 @@ class AttrProject:
                     f"{source_op.name}: {subject} descriptor immediate "
                     f"'{bound_immediate_name}' must be an enum immediate"
                 )
+            return
+        if self.kind == AttrProjectKind.ENUM_REMAP:
+            self._validate_enum_remap(
+                source_op,
+                descriptor_set,
+                descriptor,
+                bound_immediate_name,
+                subject,
+            )
             return
         if self.kind == AttrProjectKind.ATTRS_PACK_CONSECUTIVE:
             if bound_immediate_name is None:
@@ -456,7 +570,10 @@ class AttrProject:
         if self.kind in (
             AttrProjectKind.I64_ARRAY_ELEMENT,
             AttrProjectKind.I64_ARRAY_ELEMENT_PLUS_LITERAL,
+            AttrProjectKind.I64_ARRAY_ELEMENT_QUOTIENT,
+            AttrProjectKind.I64_ARRAY_ELEMENT_REMAINDER,
             AttrProjectKind.I64_ARRAY_LANE_BYTE_OFFSET,
+            AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK,
         ):
             if bound_immediate_name is None:
                 raise ValueError(
@@ -466,10 +583,31 @@ class AttrProject:
             if self.element is None:
                 raise ValueError(f"{source_op.name}: {subject} needs an element")
             if (
+                self.kind
+                in (
+                    AttrProjectKind.I64_ARRAY_ELEMENT_QUOTIENT,
+                    AttrProjectKind.I64_ARRAY_ELEMENT_REMAINDER,
+                )
+                and self.literal_i64 <= 0
+            ):
+                raise ValueError(
+                    f"{source_op.name}: {subject} needs a positive divisor"
+                )
+            if (
                 self.kind == AttrProjectKind.I64_ARRAY_LANE_BYTE_OFFSET
                 and self.bytes_per_lane is None
             ):
                 raise ValueError(f"{source_op.name}: {subject} needs bytes_per_lane")
+            if self.kind == AttrProjectKind.I64_ARRAY_SHUFFLE_MASK_CHUNK:
+                if self.bytes_per_lane is None or self.count is None:
+                    raise ValueError(
+                        f"{source_op.name}: {subject} needs bytes_per_lane/count"
+                    )
+                if self.count > 128:
+                    raise ValueError(
+                        f"{source_op.name}: {subject} source byte count must fit "
+                        "the PSHUFB selector domain"
+                    )
             return
         if self.kind == AttrProjectKind.I64_ARRAY_PACK_ELEMENTS:
             if bound_immediate_name is None:
@@ -500,6 +638,65 @@ class AttrProject:
             )
         for name in self.target_names:
             _require_immediate(descriptor, name, subject)
+
+    def _validate_enum_remap(
+        self,
+        source_op: Op,
+        descriptor_set: DescriptorSet,
+        descriptor: Descriptor,
+        bound_immediate_name: str | None,
+        subject: str,
+    ) -> None:
+        if bound_immediate_name is None:
+            raise ValueError(
+                f"{source_op.name}: {subject} must bind one descriptor immediate"
+            )
+        immediate = _require_immediate(descriptor, bound_immediate_name, subject)
+        attr = _require_attr(source_op, self.source_attr, subject)
+        if attr.attr_type != ATTR_TYPE_ENUM or attr.enum_def is None:
+            raise ValueError(
+                f"{source_op.name}: {subject} source attr "
+                f"'{self.source_attr}' must be an enum attr"
+            )
+        if immediate.kind not in (ImmediateKind.UNSIGNED, ImmediateKind.ORDINAL):
+            raise ValueError(
+                f"{source_op.name}: {subject} descriptor immediate "
+                f"'{bound_immediate_name}' must be an unsigned or ordinal immediate"
+            )
+        source_keywords = set(attr.enum_def.keywords)
+        projected_keywords = {keyword for keyword, _ in self.enum_values}
+        if projected_keywords != source_keywords:
+            missing = sorted(source_keywords - projected_keywords)
+            extra = sorted(projected_keywords - source_keywords)
+            details = []
+            if missing:
+                details.append(f"missing {missing}")
+            if extra:
+                details.append(f"unknown {extra}")
+            raise ValueError(
+                f"{source_op.name}: {subject} must map every source enum "
+                f"case ({', '.join(details)})"
+            )
+        for _, value in self.enum_values:
+            _validate_immediate_literal(
+                source_op,
+                descriptor_set,
+                descriptor,
+                immediate,
+                value,
+            )
+        case_span = max(case.value for case in attr.enum_def.cases) + 1
+        bit_width = max(1, max(value for _, value in self.enum_values).bit_length())
+        if bit_width > 32:
+            raise ValueError(
+                f"{source_op.name}: {subject} target values need "
+                f"{bit_width} bits; at most 32 are available"
+            )
+        if case_span * bit_width > 95:
+            raise ValueError(
+                f"{source_op.name}: {subject} packed map needs "
+                f"{case_span * bit_width} bits; at most 95 are available"
+            )
 
     def _validate_i64_attr_projection(
         self,
@@ -722,6 +919,14 @@ class ValueProject:
         )
 
     @classmethod
+    def float_as_f64_i64(cls, source_value: str) -> Self:
+        """Projects exact f64 bits reinterpreted as a signed i64."""
+        return cls(
+            kind=ValueProjectKind.FLOAT_AS_F64_I64,
+            source_value=source_value,
+        )
+
+    @classmethod
     def float_as_f64_i32_word(cls, source_value: str, *, word_index: int) -> Self:
         """Projects one signed i32 word from an exact f64 bit pattern."""
         return cls(
@@ -757,6 +962,13 @@ class ValueProject:
                 )
         elif self.word_index != 0:
             raise ValueError(f"{self.kind.value} projection must not name an i32 word")
+        if (
+            self.kind in _SIGNED_FLOAT_VALUE_PROJECT_KINDS
+            and self.target_bit_offset != 0
+        ):
+            raise ValueError(
+                f"{self.kind.value} projection must not use target bit offset"
+            )
         if (
             self.kind == ValueProjectKind.U32_DIVISOR_MAGIC_MULTIPLIER_AS_I32
             and self.target_bit_offset != 0
@@ -812,6 +1024,13 @@ class ValueProject:
             raise ValueError(
                 f"{source_op.name}: {subject} descriptor immediate "
                 f"'{bound_immediate_name}' must be a signed 32-bit immediate"
+            )
+        if self.kind in _SIGNED_I64_VALUE_PROJECT_KINDS and (
+            immediate.kind != ImmediateKind.SIGNED or immediate.bit_width != 64
+        ):
+            raise ValueError(
+                f"{source_op.name}: {subject} descriptor immediate "
+                f"'{bound_immediate_name}' must be a signed 64-bit immediate"
             )
 
 

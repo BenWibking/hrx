@@ -308,6 +308,18 @@ typedef enum loom_low_lower_attr_copy_kind_e {
   // selected by source_element_index, multiplied by source_element_count, then
   // offset by literal_i64.
   LOOM_LOW_LOWER_ATTR_COPY_VALUE_TYPE_STATIC_DIM_LOW_BITS_MASK = 35,
+  // Emits exact f64 source value bits reinterpreted as a signed i64 packet
+  // attribute.
+  LOOM_LOW_LOWER_ATTR_COPY_VALUE_FLOAT_AS_F64_I64 = 36,
+  // Maps a source enum ordinal through a generated packed immediate table.
+  LOOM_LOW_LOWER_ATTR_COPY_ENUM_REMAP = 37,
+  // Emits one i64_array element divided by a positive literal_i64.
+  LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_ELEMENT_QUOTIENT = 38,
+  // Emits one i64_array element modulo a positive literal_i64.
+  LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_ELEMENT_REMAINDER = 39,
+  // Packs eight byte selectors for one PSHUFB source segment. Selectors outside
+  // the segment use the high-bit zeroing form.
+  LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_SHUFFLE_MASK_CHUNK = 40,
 } loom_low_lower_attr_copy_kind_t;
 
 typedef struct loom_low_lower_attr_copy_t {
@@ -317,15 +329,19 @@ typedef struct loom_low_lower_attr_copy_t {
   loom_string_ref_t target_name_string_ref;
   // Primary source op attribute ordinal consumed by projection rows.
   uint16_t source_attr_index;
-  // Second source op attribute ordinal consumed by two-attr projections.
+  // Second source op attribute ordinal consumed by two-attr projections, or
+  // low 16 bits of the packed enum-remap upper word.
   uint16_t other_source_attr_index;
   // First source i64_array element ordinal, i32 word ordinal, or shaped
-  // dimension ordinal consumed by the projection row.
+  // dimension ordinal consumed by the projection row, or high 16 bits of the
+  // packed enum-remap upper word.
   uint16_t source_element_index;
   // Number of source elements consumed by PACK_ELEMENTS rows, byte stride
-  // used by I64_ARRAY_LANE_BYTE rows, or scale used by VALUE_TYPE rows.
+  // used by I64_ARRAY_LANE_BYTE and SHUFFLE_MASK_CHUNK rows, scale used by
+  // VALUE_TYPE rows, or source enum case span used by ENUM_REMAP rows.
   uint16_t source_element_count;
-  // Bit width of each packed source element for PACK_ELEMENTS rows.
+  // Bit width of each packed source element, enum-remap value, or source byte
+  // segment length for SHUFFLE_MASK_CHUNK rows.
   uint8_t source_element_bit_width;
   // Low bit position of the projected or packed value in the emitted i64.
   uint8_t target_bit_offset;
@@ -336,8 +352,11 @@ typedef struct loom_low_lower_attr_copy_t {
   // Dynamic source-memory term ordinal consumed by SOURCE_MEMORY rows.
   uint8_t dynamic_term_index;
   // Literal value emitted by I64_LITERAL rows, byte offset used by
-  // I64_ARRAY_LANE_BYTE rows, or divisor used by SOURCE_MEMORY quotient and
-  // remainder rows, or the width adjustment for divisor magic projections.
+  // I64_ARRAY_LANE_BYTE rows, source segment offset used by
+  // SHUFFLE_MASK_CHUNK rows, or divisor used by SOURCE_MEMORY quotient and
+  // remainder rows, divisor used by I64_ARRAY_ELEMENT quotient and remainder
+  // rows, the width adjustment for divisor magic projections, or the low 63
+  // bits of a packed enum-remap table.
   int64_t literal_i64;
 } loom_low_lower_attr_copy_t;
 static_assert(sizeof(loom_low_lower_attr_copy_t) == 32,
@@ -741,6 +760,8 @@ typedef enum loom_low_lower_guard_kind_e {
   LOOM_LOW_LOWER_GUARD_VALUE_STORAGE_OPERAND_SCHEMA = 36,
   // Retained source value facts prove that the value cannot be NaN.
   LOOM_LOW_LOWER_GUARD_VALUE_NOT_NAN = 37,
+  // Source enum attribute value must be present in the u64 bit set.
+  LOOM_LOW_LOWER_GUARD_ATTR_ENUM_IN = 38,
   // Maximum guard kind value plus one.
   LOOM_LOW_LOWER_GUARD_COUNT_,
 } loom_low_lower_guard_kind_t;

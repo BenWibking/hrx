@@ -921,6 +921,21 @@ static iree_status_t loom_low_lower_rule_guard_matches(
                   .raw ==
               loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
       return iree_ok_status();
+    case LOOM_LOW_LOWER_GUARD_ATTR_ENUM_IN: {
+      const uint16_t attr_index = guard->selector.attribute.attr_index;
+      if (attr_index >= source_op->attribute_count) {
+        return iree_ok_status();
+      }
+      const loom_attribute_t source_attr =
+          loom_op_const_attrs(source_op)[attr_index];
+      if (source_attr.kind != LOOM_ATTR_ENUM || source_attr.raw >= 64) {
+        return iree_ok_status();
+      }
+      const uint64_t enum_mask =
+          loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
+      *out_matches = ((enum_mask >> source_attr.raw) & UINT64_C(1)) != 0;
+      return iree_ok_status();
+    }
     case LOOM_LOW_LOWER_GUARD_ATTR_I64_RANGE: {
       if (guard->selector.attribute.attr_index >= source_op->attribute_count ||
           loom_op_const_attrs(source_op)[guard->selector.attribute.attr_index]
