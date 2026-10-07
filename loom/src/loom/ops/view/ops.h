@@ -128,7 +128,8 @@ iree_status_t loom_view_load_build(
     loom_type_t result_type,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_memory_access_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_memory_access_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_view_load_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -167,7 +168,8 @@ iree_status_t loom_view_store_build(
     loom_optional uint8_t cache_temporal,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_memory_access_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_memory_access_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_view_store_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);
@@ -357,7 +359,8 @@ iree_status_t loom_view_atomic_load_build(
     loom_type_t result_type,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_view_atomic_load_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_view_atomic_load_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_view_atomic_observation_facts(
     loom_fact_context_t* context,
     const loom_module_t* module, const loom_op_t* op,
@@ -398,7 +401,8 @@ iree_status_t loom_view_atomic_store_build(
     loom_optional uint8_t cache_temporal,
     loom_location_id_t location,
     loom_op_t** out_op);
-loom_trait_flags_t loom_view_atomic_store_effective_traits(const loom_op_t* op);
+loom_trait_flags_t loom_view_atomic_store_effective_traits(
+    const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_view_atomic_store_verify(
     const loom_module_t* module, const loom_op_t* op,
     iree_diagnostic_emitter_t emitter);

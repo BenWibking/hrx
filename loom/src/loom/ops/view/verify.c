@@ -195,7 +195,9 @@ iree_status_t loom_view_store_verify(const loom_module_t* module,
                                   emitter);
 }
 
-loom_trait_flags_t loom_view_atomic_load_effective_traits(const loom_op_t* op) {
+loom_trait_flags_t loom_view_atomic_load_effective_traits(
+    const loom_module_t* module, const loom_op_t* op) {
+  (void)module;
   const loom_trait_flags_t traits = op->traits & ~LOOM_TRAIT_MEMORY_FENCE;
   return loom_view_atomic_load_ordering(op) == LOOM_ATOMIC_ORDERING_RELAXED
              ? traits
@@ -203,7 +205,8 @@ loom_trait_flags_t loom_view_atomic_load_effective_traits(const loom_op_t* op) {
 }
 
 loom_trait_flags_t loom_view_atomic_store_effective_traits(
-    const loom_op_t* op) {
+    const loom_module_t* module, const loom_op_t* op) {
+  (void)module;
   const loom_trait_flags_t traits = op->traits & ~LOOM_TRAIT_MEMORY_FENCE;
   return loom_view_atomic_store_ordering(op) == LOOM_ATOMIC_ORDERING_RELAXED
              ? traits

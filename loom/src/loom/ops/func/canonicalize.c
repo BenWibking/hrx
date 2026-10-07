@@ -19,6 +19,8 @@ iree_status_t loom_func_call_canonicalize(loom_op_t* op,
                                        loom_attr_enum(LOOM_FUNC_PURITY_PURE));
 }
 
-loom_trait_flags_t loom_func_call_effective_traits(const loom_op_t* op) {
+loom_trait_flags_t loom_func_call_effective_traits(const loom_module_t* module,
+                                                   const loom_op_t* op) {
+  (void)module;
   return loom_callable_effects_traits(loom_func_call_purity(op));
 }
