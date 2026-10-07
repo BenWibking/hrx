@@ -308,7 +308,8 @@ TEST_P(BufferRangeTest, AlignsNativeCoordinatesWithinVisibleRange) {
     IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                           iree_hal_tlsf_pool_create_from_buffer(
                               view, 2, 64, &options, allocator_, &child));
-    options.tlsf_options.alignment = 128;
+    options.tlsf_options.alignment =
+        iree_hal_buffer_memory_view(source).backing->allocation_alignment * 2;
     IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                           iree_hal_tlsf_pool_create_from_buffer(
                               view, 2, 64, &options, allocator_, &child));
@@ -322,7 +323,8 @@ TEST_P(BufferRangeTest, AlignsNativeCoordinatesWithinVisibleRange) {
     IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                           iree_hal_fixed_block_pool_create_from_buffer(
                               view, 2, 64, &options, allocator_, &child));
-    options.alignment = 128;
+    options.alignment =
+        iree_hal_buffer_memory_view(source).backing->allocation_alignment * 2;
     IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                           iree_hal_fixed_block_pool_create_from_buffer(
                               view, 2, 64, &options, allocator_, &child));

@@ -165,7 +165,8 @@ static void iree_hal_vulkan_slab_provider_destroy(
 
 static iree_status_t iree_hal_vulkan_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t alignment, iree_hal_slab_t* out_slab) {
+  (void)alignment;
   IREE_ASSERT_ARGUMENT(out_slab);
   iree_hal_vulkan_slab_provider_t* provider =
       iree_hal_vulkan_slab_provider_cast(base_provider);
@@ -394,6 +395,8 @@ static void iree_hal_vulkan_slab_provider_query_properties(
   *out_properties = provider->properties;
   out_properties->allocation_alignment =
       provider->min_alignment ? provider->min_alignment : 1;
+  out_properties->max_allocation_alignment =
+      out_properties->allocation_alignment;
   out_properties->maintenance_alignment =
       iree_any_bit_set(provider->memory_property_flags,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&

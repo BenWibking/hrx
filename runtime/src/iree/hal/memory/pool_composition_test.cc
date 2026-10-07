@@ -454,7 +454,8 @@ TEST_P(PoolCompositionTest, ParentPreparesAdvertisedChildAlignment) {
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(child, &capabilities);
   iree_hal_pool_reservation_request_t request = {params_, 64};
-  request.params.min_alignment = capabilities.max_allocation_alignment;
+  request.params.min_alignment =
+      iree_min(4096, capabilities.max_allocation_alignment);
   iree_hal_pool_reservation_t reservation;
   IREE_ASSERT_OK(iree_hal_pool_acquire_reservations(
       child, 1, &request, nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
@@ -587,7 +588,7 @@ TEST_P(FixedBlockPoolCompositionTest,
   iree_hal_pool_capabilities_t source_capabilities;
   iree_hal_pool_query_capabilities(source, &source_capabilities);
   cache_options.slab.params.min_alignment =
-      source_capabilities.max_allocation_alignment;
+      iree_min(4096, source_capabilities.max_allocation_alignment);
   iree_hal_pool_t* cache = nullptr;
   IREE_ASSERT_OK(
       iree_hal_slab_cache_create(source, &cache_options, allocator_, &cache));

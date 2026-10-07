@@ -408,7 +408,7 @@ TEST_P(TaskQueueAllocaTest, SiblingPoolResumesThroughBackingNotificationOwner) {
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(source, &capabilities);
   cache_options.slab.params.min_alignment =
-      capabilities.max_allocation_alignment;
+      iree_min(4096, capabilities.max_allocation_alignment);
   cache_options.slab.params.type = IREE_HAL_MEMORY_TYPE_HOST_LOCAL;
   cache_options.slab.params.access = IREE_HAL_MEMORY_ACCESS_ALL;
   cache_options.slab.params.usage =

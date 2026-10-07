@@ -28,8 +28,9 @@ void iree_hal_slab_provider_release(iree_hal_slab_provider_t* provider) {
 
 iree_status_t iree_hal_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
-  return provider->vtable->acquire_slab(provider, min_length, out_slab);
+    iree_device_size_t min_alignment, iree_hal_slab_t* out_slab) {
+  return provider->vtable->acquire_slab(provider, min_length, min_alignment,
+                                        out_slab);
 }
 
 void iree_hal_slab_provider_release_slab(iree_hal_slab_provider_t* provider,
@@ -159,6 +160,7 @@ void iree_hal_slab_provider_query_properties(
     iree_hal_slab_provider_properties_t* out_properties) {
   memset(out_properties, 0, sizeof(*out_properties));
   out_properties->allocation_alignment = 1;
+  out_properties->max_allocation_alignment = 1;
   out_properties->maintenance_alignment = 1;
   provider->vtable->query_properties(provider, out_properties);
 }
@@ -204,7 +206,7 @@ static void iree_hal_slab_buffer_prefault(void* user_data,
 
 void iree_hal_slab_buffer_backing_initialize(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
-    iree_async_notification_t* notification,
+    iree_device_size_t min_alignment, iree_async_notification_t* notification,
     iree_async_frontier_tracker_t* tracker,
     iree_hal_memory_maintenance_t* maintenance,
     iree_hal_slab_buffer_backing_t* out_backing) {
@@ -223,7 +225,8 @@ void iree_hal_slab_buffer_backing_initialize(
       .tracker = tracker,
       .maintenance = maintenance,
       .advice = &out_backing->advice,
-      .allocation_alignment = properties.allocation_alignment,
+      .allocation_alignment =
+          iree_max(properties.allocation_alignment, min_alignment),
       .maintenance_alignment = properties.maintenance_alignment,
       .atomic_operations = properties.atomic_operations,
   };

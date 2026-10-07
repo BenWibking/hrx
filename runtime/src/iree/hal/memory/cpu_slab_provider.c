@@ -57,13 +57,18 @@ static void iree_hal_cpu_slab_provider_destroy(
 
 static iree_status_t iree_hal_cpu_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t min_alignment, iree_hal_slab_t* out_slab) {
   iree_hal_cpu_slab_provider_t* provider =
       (iree_hal_cpu_slab_provider_t*)base_provider;
   memset(out_slab, 0, sizeof(*out_slab));
+  if (min_length > IREE_HOST_SIZE_MAX) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "CPU slab length exceeds host address space");
+  }
   void* ptr = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc_aligned(
-      provider->host_allocator, min_length, provider->allocation_alignment,
+      provider->host_allocator, min_length,
+      iree_max(min_alignment, provider->allocation_alignment),
       /*offset=*/0, &ptr));
   out_slab->base_ptr = (uint8_t*)ptr;
   out_slab->length = min_length;
@@ -175,6 +180,8 @@ static void iree_hal_cpu_slab_provider_query_properties(
       (const iree_hal_cpu_slab_provider_t*)base_provider;
   out_properties->memory_type = IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE;
   out_properties->allocation_alignment = provider->allocation_alignment;
+  out_properties->max_allocation_alignment =
+      iree_min(IREE_HOST_SIZE_MAX, IREE_DEVICE_SIZE_MAX) / 2 + 1;
   out_properties->maintenance_alignment = 1;
   out_properties->supported_usage = IREE_HAL_CPU_SLAB_PROVIDER_BUFFER_USAGE;
   out_properties->queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;

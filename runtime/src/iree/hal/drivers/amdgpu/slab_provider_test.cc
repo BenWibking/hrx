@@ -130,7 +130,8 @@ TEST_F(SlabProviderTest, CapturesAccessBeforeNativeAcquisition) {
     memset(&agents, 0, sizeof(agents));
     memset(&options, 0, sizeof(options));
     iree_hal_slab_t slab = {};
-    IREE_ASSERT_OK(iree_hal_slab_provider_acquire_slab(provider, 128, &slab));
+    IREE_ASSERT_OK(iree_hal_slab_provider_acquire_slab(
+        provider, 128, /*min_alignment=*/1, &slab));
     std::array<uint32_t, 32> values;
     values.fill(0xA5A5A5A5u);
     IREE_ASSERT_OK(iree_hsa_memory_copy(IREE_LIBHSA(&libhsa_), slab.base_ptr,

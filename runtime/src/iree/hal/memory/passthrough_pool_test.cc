@@ -153,7 +153,8 @@ static void iree_hal_test_opaque_slab_provider_destroy(
 
 static iree_status_t iree_hal_test_opaque_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t alignment, iree_hal_slab_t* out_slab) {
+  (void)alignment;
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)base_provider;
   memset(out_slab, 0, sizeof(*out_slab));
@@ -257,6 +258,7 @@ static void iree_hal_test_opaque_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
   out_properties->allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
+  out_properties->max_allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
   out_properties->memory_type =
       IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE |
       IREE_HAL_MEMORY_TYPE_HOST_COHERENT | IREE_HAL_MEMORY_TYPE_HOST_CACHED;
@@ -389,20 +391,20 @@ TEST_F(PassthroughPoolTest, ReserveRelease) {
   ReleaseOneReservation(pool_, &reservation, NULL);
 }
 
-TEST_F(PassthroughPoolTest, AlignmentUsesNativeBackingGuarantee) {
-  auto request = MakeReservationRequest(256, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
+TEST_F(PassthroughPoolTest, AlignmentStrengthensNativeBackingGuarantee) {
+  auto request = MakeReservationRequest(256, 4096);
   request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
   iree_hal_buffer_t* buffer = nullptr;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
       pool_, request.params, request.allocation_size, iree_infinite_timeout(),
       &buffer));
+  EXPECT_EQ(iree_hal_buffer_memory_view(buffer).backing->allocation_alignment,
+            4096u);
   iree_hal_buffer_mapping_t mapping = {};
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
       IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 256, &mapping));
-  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) %
-                IREE_HAL_HEAP_BUFFER_ALIGNMENT,
-            0u);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) % 4096, 0u);
   memset(mapping.contents.data, 0x6B, 256);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
   uint8_t actual[256] = {};
@@ -599,7 +601,7 @@ TEST_F(PassthroughPoolTest, NoGrowthDoesNotJoinBlockedMaintenance) {
 TEST_F(PassthroughPoolTest, ReservationTransactionValidatesBeforeAcquiring) {
   const iree_hal_pool_reservation_request_t requests[2] = {
       MakeReservationRequest(1024, 16),
-      MakeReservationRequest(1024, IREE_HAL_HEAP_BUFFER_ALIGNMENT * 2),
+      MakeReservationRequest(1024, 3),
   };
   iree_hal_pool_reservation_t reservations[2];
   memset(reservations, 0xA5, sizeof(reservations));
@@ -724,6 +726,16 @@ TEST(PassthroughPool, FailedMaterializationTransactionRetainsEveryReservation) {
 }
 
 TEST_F(PassthroughPoolTest, ReserveRejectsUnsupportedAlignment) {
+  // This native provider has a fixed alignment limit. The ordinary host
+  // provider can satisfy larger alignments separately on each acquisition.
+  iree_hal_slab_provider_t* provider = nullptr;
+  IREE_ASSERT_OK(
+      iree_hal_test_opaque_slab_provider_create(allocator_, &provider));
+  iree_hal_pool_release(pool_);
+  IREE_ASSERT_OK(iree_hal_passthrough_pool_create({}, provider, notification_,
+                                                  tracker_, test_maintenance(),
+                                                  allocator_, &pool_));
+  iree_hal_slab_provider_release(provider);
   iree_hal_pool_reservation_t reservation;
   iree_hal_pool_acquire_info_t reserve_info;
   iree_hal_pool_acquire_result_t result;

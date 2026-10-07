@@ -62,17 +62,23 @@ TEST(SlabProviderTest, CPUAlignmentMatchesActualStorage) {
     EXPECT_EQ(properties.allocation_alignment,
               iree_max(alignment, IREE_HAL_HEAP_BUFFER_ALIGNMENT));
 
-    iree_hal_slab_t slab = {};
-    IREE_ASSERT_OK(iree_hal_slab_provider_acquire_slab(provider, 127, &slab));
-    EXPECT_EQ(reinterpret_cast<uintptr_t>(slab.base_ptr) %
-                  properties.allocation_alignment,
-              0u);
-    EXPECT_GE(slab.length, 127u);
-    memset(slab.base_ptr, 0x6B, 127);
-    for (iree_host_size_t i = 0; i < 127; ++i) {
-      EXPECT_EQ(slab.base_ptr[i], 0x6B);
+    for (iree_host_size_t requested_alignment : {1, 64, 256, 4096}) {
+      SCOPED_TRACE(requested_alignment);
+      EXPECT_GE(properties.max_allocation_alignment, requested_alignment);
+      iree_hal_slab_t slab = {};
+      IREE_ASSERT_OK(iree_hal_slab_provider_acquire_slab(
+          provider, 127, requested_alignment, &slab));
+      EXPECT_EQ(
+          reinterpret_cast<uintptr_t>(slab.base_ptr) %
+              iree_max(requested_alignment, properties.allocation_alignment),
+          0u);
+      EXPECT_GE(slab.length, 127u);
+      memset(slab.base_ptr, 0x6B, 127);
+      for (iree_host_size_t i = 0; i < 127; ++i) {
+        EXPECT_EQ(slab.base_ptr[i], 0x6B);
+      }
+      iree_hal_slab_provider_release_slab(provider, &slab);
     }
-    iree_hal_slab_provider_release_slab(provider, &slab);
     iree_hal_slab_provider_release(provider);
   }
 }

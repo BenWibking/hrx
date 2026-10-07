@@ -41,6 +41,9 @@ typedef struct iree_hal_slab_provider_properties_t {
   // Guaranteed power-of-two alignment of acquired slab byte zero.
   iree_device_size_t allocation_alignment;
 
+  // Largest power-of-two alignment accepted for an individual acquisition.
+  iree_device_size_t max_allocation_alignment;
+
   // Smallest independently maintained byte granule; one for coherent storage.
   iree_device_size_t maintenance_alignment;
 
@@ -159,10 +162,13 @@ void iree_hal_slab_provider_retain(iree_hal_slab_provider_t* provider);
 // Releases a reference. Destroys the provider when the count reaches zero.
 void iree_hal_slab_provider_release(iree_hal_slab_provider_t* provider);
 
-// Acquires a slab of at least |min_length| bytes from the provider.
+// Acquires a slab of at least |min_length| bytes from the provider. The caller
+// has validated the nonzero power-of-two |min_alignment| against the provider's
+// maximum. The returned storage satisfies both this request and the provider's
+// guaranteed allocation alignment.
 iree_status_t iree_hal_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab);
+    iree_device_size_t min_alignment, iree_hal_slab_t* out_slab);
 
 // Releases a previously acquired slab back to the provider.
 void iree_hal_slab_provider_release_slab(iree_hal_slab_provider_t* provider,
@@ -251,9 +257,10 @@ typedef struct iree_hal_slab_buffer_backing_t {
 } iree_hal_slab_buffer_backing_t;
 
 // Initializes facts after the slab descriptor reaches its stable owned address.
+// |min_alignment| is the alignment used to acquire this slab.
 void iree_hal_slab_buffer_backing_initialize(
     iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab,
-    iree_async_notification_t* notification,
+    iree_device_size_t min_alignment, iree_async_notification_t* notification,
     iree_async_frontier_tracker_t* tracker,
     iree_hal_memory_maintenance_t* maintenance,
     iree_hal_slab_buffer_backing_t* out_backing);
@@ -271,6 +278,7 @@ struct iree_hal_slab_provider_vtable_t {
   // release_slab when done.
   iree_status_t (*acquire_slab)(iree_hal_slab_provider_t* provider,
                                 iree_device_size_t min_length,
+                                iree_device_size_t min_alignment,
                                 iree_hal_slab_t* out_slab);
 
   // Releases a previously acquired slab back to the platform.

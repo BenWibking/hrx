@@ -122,7 +122,8 @@ class HeterogeneousSlabPoolTest : public CtsTestBase<> {
     iree_hal_pool_capabilities_t capabilities;
     iree_hal_pool_query_capabilities(pool, &capabilities);
     iree_hal_pool_reservation_request_t request = {};
-    request.params.min_alignment = capabilities.max_allocation_alignment;
+    request.params.min_alignment =
+        iree_min(4096, capabilities.max_allocation_alignment);
     request.allocation_size = 256;
     return request;
   }
@@ -163,7 +164,7 @@ TEST_P(HeterogeneousSlabPoolTest, BothQueuesPublishSharedNativeStorage) {
   iree_hal_slab_cache_options_initialize(&cache_options);
   cache_options.slab.allocation_size = 65536;
   cache_options.slab.params.min_alignment =
-      capabilities.max_allocation_alignment;
+      iree_min(4096, capabilities.max_allocation_alignment);
   Ref<iree_hal_pool_t> cache;
   IREE_ASSERT_OK(iree_hal_slab_cache_create(
       source, &cache_options, iree_allocator_system(), cache.out()));
@@ -625,7 +626,7 @@ TEST_P(HeterogeneousSlabPoolTest, DispatchRequiresItsOwnFamilyGrants) {
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(allowed_source, &capabilities);
   iree_hal_buffer_params_t params = {};
-  params.min_alignment = capabilities.max_allocation_alignment;
+  params.min_alignment = iree_min(4096, capabilities.max_allocation_alignment);
   Ref<iree_hal_buffer_t> allowed_buffer;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(allowed_source, params, 32,
                                                iree_infinite_timeout(),
@@ -646,7 +647,8 @@ TEST_P(HeterogeneousSlabPoolTest, DispatchRequiresItsOwnFamilyGrants) {
                                              iree_allocator_system(),
                                              restricted_source.out()));
     iree_hal_pool_query_capabilities(restricted_source, &capabilities);
-    params.min_alignment = capabilities.max_allocation_alignment;
+    params.min_alignment =
+        iree_min(4096, capabilities.max_allocation_alignment);
     Ref<iree_hal_buffer_t> restricted_buffer;
     IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(restricted_source, params, 32,
                                                  iree_infinite_timeout(),

@@ -529,12 +529,12 @@ static iree_status_t iree_hal_passthrough_pool_validate_reservation_request(
                             ") must be a power of two",
                             alignment);
   }
-  if (alignment > pool->slab_properties.allocation_alignment) {
+  if (alignment > pool->slab_properties.max_allocation_alignment) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "reservation alignment %" PRIdsz
                             " exceeds pass-through pool alignment %" PRIdsz,
                             alignment,
-                            pool->slab_properties.allocation_alignment);
+                            pool->slab_properties.max_allocation_alignment);
   }
   if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options)) {
     iree_hal_asan_allocation_layout_t asan_layout;
@@ -563,8 +563,10 @@ static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
   }
 
   iree_hal_slab_t slab;
+  const iree_device_size_t backing_alignment =
+      iree_max(alignment, asan_layout.backing_offset_alignment);
   IREE_RETURN_IF_ERROR(iree_hal_slab_provider_acquire_slab(
-      pool->slab_provider, backing_length, &slab));
+      pool->slab_provider, backing_length, backing_alignment, &slab));
   if (iree_hal_asan_pool_options_is_enabled(&pool->asan_options) &&
       slab.length != asan_layout.backing_length) {
     iree_status_t status =
@@ -586,8 +588,8 @@ static iree_status_t iree_hal_passthrough_pool_acquire_one_reservation(
   reservation_state->pool = base_pool;
   reservation_state->slab = slab;
   iree_hal_slab_buffer_backing_initialize(
-      pool->slab_provider, &reservation_state->slab, pool->base.notification,
-      pool->base.frontier_tracker, pool->maintenance,
+      pool->slab_provider, &reservation_state->slab, backing_alignment,
+      pool->base.notification, pool->base.frontier_tracker, pool->maintenance,
       &reservation_state->buffer_backing);
   reservation_state->charged_length = slab.length;
   reservation_state->asan_layout = asan_layout;
@@ -956,7 +958,7 @@ static void iree_hal_passthrough_pool_query_capabilities(
   out_capabilities->min_allocation_size = 0;
   out_capabilities->max_allocation_size = 0;
   out_capabilities->max_allocation_alignment =
-      pool->slab_properties.allocation_alignment;
+      pool->slab_properties.max_allocation_alignment;
   out_capabilities->maintenance_alignment =
       pool->slab_properties.maintenance_alignment;
   if (base_pool->memory_contract) {

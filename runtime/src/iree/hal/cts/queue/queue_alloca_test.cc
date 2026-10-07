@@ -80,9 +80,9 @@ const iree_hal_slab_provider_vtable_t SubspanSlabProvider::vtable_ = {
     },
     /*.acquire_slab=*/
     [](iree_hal_slab_provider_t* provider, iree_device_size_t min_length,
-       iree_hal_slab_t* out_slab) {
-      return iree_hal_slab_provider_acquire_slab(Cast(provider)->inner_,
-                                                 min_length, out_slab);
+       iree_device_size_t min_alignment, iree_hal_slab_t* out_slab) {
+      return iree_hal_slab_provider_acquire_slab(
+          Cast(provider)->inner_, min_length, min_alignment, out_slab);
     },
     /*.release_slab=*/
     [](iree_hal_slab_provider_t* provider, const iree_hal_slab_t* slab) {
@@ -337,7 +337,12 @@ TEST_P(QueueAllocaTest, IndependentAllocatorsShareCachedNativeBacking) {
     iree_hal_slab_cache_options_t cache_options;
     iree_hal_slab_cache_options_initialize(&cache_options);
     cache_options.slab = MakeRequest(transfer_queue_, 65536);
-    cache_options.slab.params.min_alignment = properties.allocation_alignment;
+    // Share one class satisfying both the native guarantee and the 256-byte
+    // fixed-block stride, including sources that strengthen alignment on
+    // demand.
+    cache_options.slab.params.min_alignment =
+        iree_max(properties.allocation_alignment,
+                 iree_min(256, properties.max_allocation_alignment));
     Ref<iree_hal_pool_t> cache;
     IREE_ASSERT_OK(iree_hal_slab_cache_create(
         native, &cache_options, iree_allocator_system(), cache.out()));
@@ -423,7 +428,7 @@ TEST_P(QueueAllocaTest, BlockedSiblingResumesFromSharedCache) {
     iree_hal_pool_capabilities_t capabilities;
     iree_hal_pool_query_capabilities(source, &capabilities);
     cache_options.slab.params.min_alignment =
-        capabilities.max_allocation_alignment;
+        iree_min(4096, capabilities.max_allocation_alignment);
     Ref<iree_hal_pool_t> cache;
     IREE_ASSERT_OK(iree_hal_slab_cache_create(
         source, &cache_options, iree_allocator_system(), cache.out()));
@@ -698,7 +703,8 @@ TEST_P(QueueAllocaTest, PluralSmallLargeAndAlignedTransaction) {
   }
   iree_hal_pool_capabilities_t capabilities;
   iree_hal_pool_query_capabilities(pool, &capabilities);
-  requests.back().params.min_alignment = capabilities.max_allocation_alignment;
+  requests.back().params.min_alignment =
+      iree_min(4096, capabilities.max_allocation_alignment);
   std::array<iree_hal_buffer_t*, kAllocationSizes.size()> raw_buffers = {};
   SemaphoreList empty_wait;
   SemaphoreList alloca_signal(device_, {0}, {1});

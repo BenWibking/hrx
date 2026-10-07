@@ -151,7 +151,8 @@ static void iree_hal_test_opaque_slab_provider_destroy(
 
 static iree_status_t iree_hal_test_opaque_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t alignment, iree_hal_slab_t* out_slab) {
+  (void)alignment;
   iree_hal_test_opaque_slab_provider_t* provider =
       (iree_hal_test_opaque_slab_provider_t*)base_provider;
   memset(out_slab, 0, sizeof(*out_slab));
@@ -249,6 +250,7 @@ static void iree_hal_test_opaque_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
   out_properties->allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
+  out_properties->max_allocation_alignment = IREE_HAL_HEAP_BUFFER_ALIGNMENT;
   out_properties->memory_type =
       IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE |
       IREE_HAL_MEMORY_TYPE_HOST_COHERENT | IREE_HAL_MEMORY_TYPE_HOST_CACHED;
@@ -955,26 +957,25 @@ TEST_F(FixedBlockPoolTest, ConcurrentUseRevalidatesTheEntireBatch) {
   ReleaseOneReservation(pool_, &anchor, nullptr);
 }
 
-TEST_F(FixedBlockPoolTest, AlignmentRequiresBothBackingAndBlockStride) {
-  // The 256-byte stride is divisible by 128, but the CPU provider guarantees
-  // only 64-byte alignment of the slab itself.
+TEST_F(FixedBlockPoolTest, AlignmentStrengthensBackingWithinBlockStride) {
+  // Native CPU storage can be aligned on demand. A fixed-block pool must still
+  // reject alignment beyond its 256-byte block stride.
   iree_hal_pool_reservation_t reservation;
   memset(&reservation, 0xA5, sizeof(reservation));
   const auto original = reservation;
   iree_hal_pool_acquire_info_t info;
   iree_hal_pool_acquire_result_t result;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_INVALID_ARGUMENT,
-      AcquireOneReservation(pool_, 128, 2 * IREE_HAL_HEAP_BUFFER_ALIGNMENT,
-                            nullptr, IREE_HAL_POOL_RESERVE_FLAG_NONE,
-                            &reservation, &info, &result));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        AcquireOneReservation(pool_, 128, 512, nullptr,
+                                              IREE_HAL_POOL_RESERVE_FLAG_NONE,
+                                              &reservation, &info, &result));
   EXPECT_EQ(memcmp(&reservation, &original, sizeof(original)), 0);
   iree_hal_pool_stats_t stats;
   iree_hal_pool_query_stats(pool_, &stats);
   EXPECT_EQ(stats.reserve_count, 0u);
   EXPECT_EQ(stats.bytes_reserved, 0u);
 
-  auto request = MakeReservationRequest(128, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
+  auto request = MakeReservationRequest(128, 256);
   request.params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
   iree_hal_buffer_t* buffer = nullptr;
   IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
@@ -984,9 +985,7 @@ TEST_F(FixedBlockPoolTest, AlignmentRequiresBothBackingAndBlockStride) {
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_ALL,
       IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 128, &mapping));
-  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) %
-                IREE_HAL_HEAP_BUFFER_ALIGNMENT,
-            0u);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(mapping.contents.data) % 256, 0u);
   memset(mapping.contents.data, 0x6B, 128);
   IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
   uint8_t actual[128] = {};
