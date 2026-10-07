@@ -45,21 +45,16 @@ pipeline.def<kernel> public retain target(@npu) @reordered_publication() run(%ou
 // ----
 low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_0() asm {
   %first_payload = mov.local-address 393216
-  %373 = mov.i32 -1
-  acq %373, 32
-  %375 = mov.address-to-scalar %first_payload
-  %376 = mov.i32 4
-  %377 = add.rr %375, %376
-  %378 = mov.i32 393224
-  %379 = eq %377, %378
-  low.cond_br %379, ^_bb1, ^_bb2 : reg<aie2p.er>
-^_bb1:
-  low.br ^_bb3(%first_payload: reg<aie2p.ep>)
-^_bb2:
-  %381 = mov.scalar-to-address %377
-  low.br ^_bb3(%381: reg<aie2p.ep>)
-^_bb3(%second_payload: reg<aie2p.ep>):
-  acq %373, 32
+  %371 = mov.i32 -1
+  acq %371, 32
+  %55 = mov.address-to-scalar %first_payload
+  %56 = mov.i32 4
+  %57 = add.rr %55, %56
+  %58 = mov.i32 393224
+  %59 = eq %57, %58
+  low.cond_br %59, ^_bb2, ^_bb3 : reg<aie2p.er>
+^_bb4(%second_payload: reg<aie2p.ep>):
+  acq %371, 32
   %later_value = mov.short 22
   st %later_value, %second_payload, 0
   %earlier_value = mov.short 11
@@ -68,38 +63,38 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_0() asm {
   rel %75, 33
   %62 = mov.i32 1
   rel %62, 48
-  low.br ^_bb4
-^_bb4:
+  low.br ^_bb1
+^_bb1:
   %63 = mov.ss
-  low.br ^_bb4
+  low.br ^_bb1
+^_bb2:
+  low.br ^_bb4(%first_payload: reg<aie2p.ep>)
+^_bb3:
+  %61 = mov.scalar-to-address %57
+  low.br ^_bb4(%61: reg<aie2p.ep>)
 }
 
 low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
   %77 = mov.local-address 458752
-  %372 = mov.i32 -1
-  acq %372, 49
-  %384 = mov.address-to-scalar %77
-  %385 = mov.i32 4
-  %386 = add.rr %384, %385
-  %387 = mov.i32 458760
-  %388 = eq %386, %387
-  low.cond_br %388, ^_bb1, ^_bb2 : reg<aie2p.er>
-^_bb1:
-  low.br ^_bb3(%77: reg<aie2p.ep>)
-^_bb2:
-  %390 = mov.scalar-to-address %386
-  low.br ^_bb3(%390: reg<aie2p.ep>)
-^_bb3(%391: reg<aie2p.ep>):
-  %368 = mov.short 0
+  %370 = mov.i32 -1
+  acq %370, 49
+  %80 = mov.address-to-scalar %77
+  %81 = mov.i32 4
+  %82 = add.rr %80, %81
+  %83 = mov.i32 458760
+  %84 = eq %82, %83
+  low.cond_br %84, ^_bb2, ^_bb3 : reg<aie2p.er>
+^_bb4(%372: reg<aie2p.ep>):
+  %367 = mov.short 0
   %92 = mov.local-address 458760
   %93 = lda %92, 0
   %94 = lda %92, 4
-  %95 = add.rr %93, %368
+  %95 = add.rr %93, %367
   %96 = ltu %95, %93
   %97 = add.rr %94, %96
   %99 = mov.i32 458752
-  %100 = sub %384, %99
-  %101 = add.rr %100, %368
+  %100 = sub %80, %99
+  %101 = add.rr %100, %367
   %102 = mov.i32 12
   %103 = lshl %101, %102
   %104 = mov.i32 1
@@ -125,17 +120,17 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
   mov.ms.last %110
   %116 = mov.ss
   rel %104, 48
-  acq %372, 49
-  %370 = mov.short 4
+  acq %370, 49
+  %368 = mov.short 4
   %128 = mov.local-address 458768
   %129 = lda %128, 0
   %130 = lda %128, 4
-  %131 = add.rr %129, %370
+  %131 = add.rr %129, %368
   %132 = ltu %131, %129
   %133 = add.rr %130, %132
-  %134 = mov.address-to-scalar %391
+  %134 = mov.address-to-scalar %372
   %136 = sub %134, %99
-  %137 = add.rr %136, %368
+  %137 = add.rr %136, %367
   %139 = lshl %137, %102
   %141 = or %139, %104
   %143 = mov.i32 118816
@@ -157,10 +152,15 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
   %152 = mov.ss
   rel %104, 48
   rel %104, 50
-  low.br ^_bb4
-^_bb4:
+  low.br ^_bb1
+^_bb1:
   %88 = mov.ss
-  low.br ^_bb4
+  low.br ^_bb1
+^_bb2:
+  low.br ^_bb4(%77: reg<aie2p.ep>)
+^_bb3:
+  %86 = mov.scalar-to-address %82
+  low.br ^_bb4(%86: reg<aie2p.ep>)
 }
 
 low.func.def target<amd.xdna.aie2p.configuration>(@__aie2p_worker_helper_14) @__aie2p_worker_helper_15() asm {
@@ -397,30 +397,30 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_0() asm {
 ^_bb6:
   %66 = mov.scalar-to-address %62
   low.br ^_bb7(%66: reg<aie2p.ep>)
-^_bb7(%353: reg<aie2p.ep>):
+^_bb7(%331: reg<aie2p.ep>):
   st %value, %payload, 0
   %83 = mov.i32 1
   rel %83, 33
   %326 = add.rr %value, %step
-  low.br ^_bb1(%326: reg<aie2p.er>, %353: reg<aie2p.ep>)
+  low.br ^_bb1(%326: reg<aie2p.er>, %331: reg<aie2p.ep>)
 }
 
 low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
   %85 = mov.local-address 458752
-  %333 = mov.i32 -1
-  acq %333, 49
-  acq %333, 49
-  %330 = mov.short 0
+  %330 = mov.i32 -1
+  acq %330, 49
+  acq %330, 49
+  %328 = mov.short 0
   %100 = mov.local-address 458760
   %101 = lda %100, 0
   %102 = lda %100, 4
-  %103 = add.rr %101, %330
+  %103 = add.rr %101, %328
   %104 = ltu %103, %101
   %105 = add.rr %102, %104
   %106 = mov.address-to-scalar %85
   %107 = mov.i32 458752
   %108 = sub %106, %107
-  %109 = add.rr %108, %330
+  %109 = add.rr %108, %328
   %110 = mov.i32 12
   %111 = lshl %109, %110
   %112 = mov.i32 1
@@ -447,13 +447,28 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
   %124 = mov.ss
   %144 = mov.i32 2
   rel %144, 48
-  acq %333, 49
+  acq %330, 49
   rel %112, 48
   rel %112, 50
   low.br ^_bb1
 ^_bb1:
   %96 = mov.ss
   low.br ^_bb1
+}
+
+low.func.def target<amd.xdna.aie2p.core> @__aie2p_worker_helper_6(%86: reg<aie2p.ep>) -> (reg<aie2p.ep>) asm {
+  %88 = mov.address-to-scalar %86
+  %89 = mov.i32 4
+  %90 = add.rr %88, %89
+  %91 = mov.i32 458760
+  %92 = eq %90, %91
+  low.cond_br %92, ^_bb1, ^_bb2 : reg<aie2p.er>
+^_bb1:
+  %93 = mov.local-address 458752
+  return %93
+^_bb2:
+  %94 = mov.scalar-to-address %90
+  return %94
 }
 
 low.func.def target<amd.xdna.aie2p.configuration>(@__aie2p_worker_helper_13) @__aie2p_worker_helper_14() asm {
@@ -1069,26 +1084,26 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_0() asm {
 ^_bb6:
   %56 = mov.scalar-to-address %52
   low.br ^_bb7(%56: reg<aie2p.ep>)
-^_bb7(%197: reg<aie2p.ep>):
+^_bb7(%187: reg<aie2p.ep>):
   st %value, %payload, 0
   %73 = mov.i32 1
   rel %73, 33
   %178 = add.rr %value, %step
-  low.br ^_bb1(%178: reg<aie2p.er>, %197: reg<aie2p.ep>)
+  low.br ^_bb1(%178: reg<aie2p.er>, %187: reg<aie2p.ep>)
 }
 
 low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
   %first_payload = mov.local-address 458752
-  %186 = mov.i32 -1
-  acq %186, 49
-  %188 = mov.address-to-scalar %first_payload
-  %189 = mov.i32 4
-  %190 = add.rr %188, %189
-  %191 = mov.i32 458760
-  %192 = eq %190, %191
-  low.cond_br %192, ^_bb4, ^_bb5 : reg<aie2p.er>
-^_bb6(%second_payload: reg<aie2p.ep>):
-  acq %186, 49
+  %185 = mov.i32 -1
+  acq %185, 49
+  %79 = mov.address-to-scalar %first_payload
+  %80 = mov.i32 4
+  %81 = add.rr %79, %80
+  %82 = mov.i32 458760
+  %83 = eq %81, %82
+  low.cond_br %83, ^_bb5, ^_bb6 : reg<aie2p.er>
+^_bb7(%second_payload: reg<aie2p.ep>):
+  acq %185, 49
   %first_value = lda %first_payload, 0
   %second_value = lda %second_payload, 0
   %first_is_smaller = lt %first_value, %second_value
@@ -1096,24 +1111,24 @@ low.func.def inline target<amd.xdna.aie2p.core> @__pipeline_worker_1() asm {
 ^_bb1:
   %86 = mov.i32 1
   rel %86, 50
-  low.br ^_bb7
+  low.br ^_bb4
 ^_bb2:
-  %185 = mov.i32 1
-  rel %185, 48
-  rel %185, 48
+  %184 = mov.i32 1
+  rel %184, 48
+  rel %184, 48
   low.br ^_bb1
 ^_bb3:
   %106 = mov.i32 2
   rel %106, 48
   low.br ^_bb1
 ^_bb4:
-  low.br ^_bb6(%first_payload: reg<aie2p.ep>)
-^_bb5:
-  %194 = mov.scalar-to-address %190
-  low.br ^_bb6(%194: reg<aie2p.ep>)
-^_bb7:
   %87 = mov.ss
-  low.br ^_bb7
+  low.br ^_bb4
+^_bb5:
+  low.br ^_bb7(%first_payload: reg<aie2p.ep>)
+^_bb6:
+  %85 = mov.scalar-to-address %81
+  low.br ^_bb7(%85: reg<aie2p.ep>)
 }
 
 low.func.def target<amd.xdna.aie2p.configuration>(@__aie2p_worker_helper_11) @__aie2p_worker_helper_12() asm {

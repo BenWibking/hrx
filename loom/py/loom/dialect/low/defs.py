@@ -714,6 +714,7 @@ low_func_call = Op(
         ),
     ],
     effective_traits="loom_low_func_call_effective_traits",
+    canonicalize="loom_low_func_call_canonicalize",
     verify="loom_low_func_call_verify",
     format=[
         OptionalGroup([Attr("purity")], anchor="purity"),
@@ -1697,6 +1698,7 @@ low_invoke = Op(
         ),
     ],
     effective_traits="loom_low_invoke_effective_traits",
+    canonicalize="loom_low_invoke_canonicalize",
     verify="loom_low_invoke_verify",
     format=[
         OptionalGroup([Attr("purity")], anchor="purity"),

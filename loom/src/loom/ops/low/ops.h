@@ -394,6 +394,7 @@ iree_status_t loom_low_func_call_build(
     iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
+iree_status_t loom_low_func_call_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 loom_trait_flags_t loom_low_func_call_effective_traits(
     const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_low_func_call_verify(
@@ -538,6 +539,7 @@ iree_status_t loom_low_invoke_build(
     iree_host_size_t tied_result_count,
     loom_location_id_t location,
     loom_op_t** out_op);
+iree_status_t loom_low_invoke_canonicalize(loom_op_t* op, loom_rewriter_t* rewriter);
 loom_trait_flags_t loom_low_invoke_effective_traits(
     const loom_module_t* module, const loom_op_t* op);
 iree_status_t loom_low_invoke_verify(

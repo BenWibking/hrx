@@ -7,10 +7,33 @@
 #include <stdint.h>
 
 #include "loom/ir/module.h"
+#include "loom/ops/callable_effects.h"
 #include "loom/ops/low/capture.h"
 #include "loom/ops/low/ops.h"
 #include "loom/rewrite/rewriter.h"
 #include "loom/target/registers.h"
+
+iree_status_t loom_low_func_call_canonicalize(loom_op_t* op,
+                                              loom_rewriter_t* rewriter) {
+  if (loom_low_func_call_purity(op) != 0 ||
+      !loom_callable_effects_callee_is_pure(rewriter->module,
+                                            loom_low_func_call_callee(op))) {
+    return iree_ok_status();
+  }
+  return loom_low_func_call_rewrite_purity(
+      rewriter, op, loom_attr_enum(LOOM_LOW_PURITY_PURE));
+}
+
+iree_status_t loom_low_invoke_canonicalize(loom_op_t* op,
+                                           loom_rewriter_t* rewriter) {
+  if (loom_low_invoke_purity(op) != 0 ||
+      !loom_callable_effects_callee_is_pure(rewriter->module,
+                                            loom_low_invoke_callee(op))) {
+    return iree_ok_status();
+  }
+  return loom_low_invoke_rewrite_purity(rewriter, op,
+                                        loom_attr_enum(LOOM_LOW_PURITY_PURE));
+}
 
 static loom_op_t* loom_low_defining_op(loom_rewriter_t* rewriter,
                                        loom_value_id_t value_id) {
