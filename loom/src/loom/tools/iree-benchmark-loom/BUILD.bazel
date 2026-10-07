@@ -29,7 +29,6 @@ _AMDGPU_TARGET_COPTS = iree_select({
 _AMDGPU_TARGET_DEPS = iree_select({
     "//loom/config/execute:amdgpu_hal": [
         "//loom/src/loom/tooling/target/amdgpu:device_provider",
-        "//loom/src/loom/tooling/target/amdgpu:execution_provider",
         "//loom/src/loom/tooling/target/amdgpu:testbench_requirements",
     ],
     "//conditions:default": [],
@@ -45,7 +44,6 @@ _SPIRV_VULKAN_TARGET_COPTS = iree_select({
 _SPIRV_VULKAN_TARGET_DEPS = iree_select({
     "//loom/config/execute:spirv_vulkan_hal": [
         "//loom/src/loom/tooling/target/spirv:device_provider",
-        "//loom/src/loom/tooling/target/spirv:execution_provider",
         "//loom/src/loom/tooling/target/spirv:testbench_requirements",
     ],
     "//conditions:default": [],
@@ -151,7 +149,6 @@ loom_cc_library(
         "//loom/src/loom/tooling/compile:report_capture",
         "//loom/src/loom/tooling/config",
         "//loom/src/loom/tooling/execution:benchmark",
-        "//loom/src/loom/tooling/execution:one_shot",
         "//loom/src/loom/tooling/execution:session",
         "//loom/src/loom/tooling/execution/hal:artifact",
         "//loom/src/loom/tooling/execution/hal:benchmark",
@@ -294,7 +291,7 @@ loom_cc_binary(
     copts = _IREE_BENCHMARK_LOOM_TARGET_COPTS,
     deps = [
         ":main",
-        "//loom/src/loom/tooling/execution:execution_provider",
+        "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/execution/hal:artifact",
         "//loom/src/loom/tooling/execution/hal:device_provider",
         "//loom/src/loom/tooling/input:configured",

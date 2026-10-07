@@ -9,10 +9,10 @@
 
 #include "iree/hal/api.h"
 #include "loom/ir/module.h"
-#include "loom/tooling/execution/execution_provider.h"
+#include "loom/target/provider.h"
 #include "loom/tools/iree-test-loom/main.h"
 
-static const loom_run_execution_provider_set_t
+static const loom_target_provider_set_t
     kIreeTestLoomScenarioFailureProviderSet = {0};
 
 typedef struct iree_test_loom_scenario_failure_profile_t {
@@ -211,8 +211,8 @@ iree_test_loom_scenario_failure_bind_profile(
 }
 
 int main(int argc, char** argv) {
-  loom_run_execution_environment_t environment;
-  iree_status_t status = loom_run_execution_environment_initialize(
+  loom_target_environment_t environment;
+  iree_status_t status = loom_target_environment_initialize(
       &kIreeTestLoomScenarioFailureProviderSet, &environment);
   if (!iree_status_is_ok(status)) {
     iree_status_fprint(stderr, status);
@@ -230,8 +230,7 @@ int main(int argc, char** argv) {
   };
   const iree_test_loom_configuration_t configuration = {
       .tool_name = "iree-test-loom-scenario-failure-test",
-      .target_environment =
-          loom_run_execution_environment_target_environment(&environment),
+      .target_environment = &environment,
       .scenario_target_profile =
           {
               .fn = iree_test_loom_scenario_failure_bind_profile,
@@ -244,6 +243,6 @@ int main(int argc, char** argv) {
           },
   };
   const int exit_code = iree_test_loom_main(argc, argv, &configuration);
-  loom_run_execution_environment_deinitialize(&environment);
+  loom_target_environment_deinitialize(&environment);
   return exit_code;
 }

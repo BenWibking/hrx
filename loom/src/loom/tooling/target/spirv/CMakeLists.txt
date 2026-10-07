@@ -62,24 +62,6 @@ loom_cc_library(
 )
 endif()
 
-if(LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
-loom_cc_library(
-  NAME
-    execution_provider
-  HDRS
-    "execution_provider.h"
-  SRCS
-    "execution_provider.c"
-  DEPS
-    ::device_provider
-    iree::base
-    loom::target::arch::spirv::compiler_provider
-    loom::tooling::execution::execution_provider
-    loom::tooling::execution::hal::execution_backend
-  PUBLIC
-)
-endif()
-
 if(IREE_HAL_DRIVER_VULKAN AND LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV)
 loom_cc_library(
   NAME
@@ -473,7 +455,7 @@ iree_native_test(
     "{{${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/spirv/test/multiple_entries.loom}}"
     "--device=vulkan"
     "--vulkan_validation_layers=false"
-    "--function=@combine"
+    "--root=@combine"
     "--kernel-input-buffer=1xi32=6"
     "--kernel-input-buffer=1xi32=10"
     "--kernel-input-buffer=1xi32=0"

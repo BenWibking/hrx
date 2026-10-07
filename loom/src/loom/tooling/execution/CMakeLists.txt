@@ -23,32 +23,6 @@ loom_cc_library(
 
 loom_cc_library(
   NAME
-    execution_provider
-  HDRS
-    "execution_provider.h"
-  SRCS
-    "execution_provider.c"
-  DEPS
-    ::execution_backend
-    iree::base
-    loom::target::provider
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    execution_backend
-  HDRS
-    "execution_backend.h"
-  SRCS
-    "execution_backend.c"
-  DEPS
-    iree::base
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
     measurement
   HDRS
     "measurement.h"
@@ -56,22 +30,6 @@ loom_cc_library(
     "measurement.c"
   DEPS
     iree::base
-  PUBLIC
-)
-
-loom_cc_library(
-  NAME
-    one_shot
-  HDRS
-    "one_shot.h"
-  SRCS
-    "one_shot.c"
-  DEPS
-    ::session
-    iree::base
-    loom::ir
-    loom::ops::kernel
-    loom::tooling::compile::options
   PUBLIC
 )
 
@@ -111,21 +69,6 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::util::stream
-)
-
-loom_cc_test(
-  NAME
-    one_shot_test
-  SRCS
-    "one_shot_test.cc"
-  DEPS
-    ::one_shot
-    ::session
-    iree::base
-    iree::testing::gtest
-    iree::testing::gtest_main
-    loom::target::low_descriptor_registry_core_test
-    loom::target::provider
 )
 
 loom_cc_test(

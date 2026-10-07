@@ -82,20 +82,6 @@ loom_cc_library(
 )
 
 loom_cc_library(
-    name = "execution_provider",
-    srcs = ["execution_provider.c"],
-    hdrs = ["execution_provider.h"],
-    target_compatible_with = _SPIRV_VULKAN_HAL_COMPATIBLE_WITH,
-    deps = [
-        ":device_provider",
-        "//loom/src/loom/target/arch/spirv:compiler_provider",
-        "//loom/src/loom/tooling/execution:execution_provider",
-        "//loom/src/loom/tooling/execution/hal:execution_backend",
-        "//runtime/src/iree/base",
-    ],
-)
-
-loom_cc_library(
     name = "testbench_requirements",
     srcs = ["testbench_requirements.c"],
     hdrs = ["testbench_requirements.h"],
@@ -233,7 +219,7 @@ iree_executable_test(
         "$(rootpath test/multiple_entries.loom)",
         "--device=vulkan",
         "--vulkan_validation_layers=false",
-        "--function=@combine",
+        "--root=@combine",
         "--kernel-input-buffer=1xi32=6",
         "--kernel-input-buffer=1xi32=10",
         "--kernel-input-buffer=1xi32=0",

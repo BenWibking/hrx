@@ -114,12 +114,7 @@ TARGET_EXECUTION_BAZEL_DEPS_PATTERN = re.compile(
     r"\b(?:deps|implementation_deps)\s*=\s*\[(?P<body>.*?)\]", re.DOTALL
 )
 
-TARGET_PRIVATE_EXECUTION_SYMBOL_PATTERN = re.compile(
-    r"\b(?:"
-    r"loom_run_hal_[A-Za-z0-9_]*"
-    r"|loom_run_execution_(?:backend|provider)[A-Za-z0-9_]*"
-    r")\b"
-)
+TARGET_PRIVATE_EXECUTION_SYMBOL_PATTERN = re.compile(r"\bloom_run_hal_[A-Za-z0-9_]*\b")
 
 TOOLING_FLAGS_INCLUDE_PATTERN = re.compile(
     r"#\s*include\s+[<\"]iree/base/tooling/flags\.h[>\"]"

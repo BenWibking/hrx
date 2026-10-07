@@ -161,7 +161,7 @@ loom_cc_binary(
     iree::base
     iree::hal
     loom::ir
-    loom::tooling::execution::execution_provider
+    loom::target::provider
     loom::tooling::testbench::scenario::executor
   TESTONLY
 )
