@@ -280,12 +280,28 @@ def _generate_source(
     string_data_name = f"k{c_table_prefix}StringData"
     lines.extend(emit_c_string_pool(string_pool, string_data_name))
 
+    type_pattern_ranges, type_pattern_range_refs = _intern_optional_rows(tuple(lower_rule_rows.type_pattern_range(row.type_pattern) for row in table.type_patterns))
+    type_pattern_ranges_name = f"k{c_table_prefix}TypePatternRanges"
+    lines.extend(
+        lower_rule_rows.emit_optional_array(
+            type_pattern_ranges_name,
+            "loom_low_lower_type_pattern_range_t",
+            [lower_rule_rows.type_pattern_range_row(shape_range) for shape_range in type_pattern_ranges],
+        )
+    )
+
     type_patterns_name = f"k{c_table_prefix}TypePatterns"
     lines.extend(
         lower_rule_rows.emit_optional_array(
             type_patterns_name,
             "loom_low_lower_type_pattern_t",
-            [lower_rule_rows.type_pattern_row(row.type_pattern) for row in table.type_patterns],
+            [
+                lower_rule_rows.type_pattern_row(
+                    row.type_pattern,
+                    range_ref=type_pattern_range_refs[index],
+                )
+                for index, row in enumerate(table.type_patterns)
+            ],
         )
     )
 
@@ -589,6 +605,8 @@ def _generate_source(
             report_keys=report_keys,
             report_keys_name=report_keys_name,
             type_patterns_name=type_patterns_name,
+            type_pattern_ranges=type_pattern_ranges,
+            type_pattern_ranges_name=type_pattern_ranges_name,
             value_refs_name=value_refs_name,
             source_nodes_name=source_nodes_name,
             materializers_name=materializers_name,
@@ -970,7 +988,7 @@ def _validate_c_table_shape(
 
     for index, row in enumerate(table.attr_copies):
         row_subject = f"{subject} attr-copy {index}"
-        _require_u16(row.source_attr_index, f"{row_subject} source attr index")
+        _require_u8(row.source_attr_index, f"{row_subject} source attr index")
         _require_u16(
             row.other_source_attr_index,
             f"{row_subject} other source attr index",
@@ -979,7 +997,7 @@ def _validate_c_table_shape(
             row.source_element_index,
             f"{row_subject} source element index",
         )
-        _require_u16(
+        _require_u8(
             row.source_element_count,
             f"{row_subject} source element count",
         )
@@ -1307,15 +1325,25 @@ def _validate_type_pattern_c_shape(subject: str, type_pattern: TypePattern) -> N
         return
     _require_u8(len(type_pattern.dims), f"{subject} rank")
     for index, dim in enumerate(type_pattern.dims):
-        _require_i64(dim, f"{subject} static dim {index}")
+        _require_u16(dim, f"{subject} static dim {index}")
     if type_pattern.kind == "view":
         return
     if type_pattern.lanes is not None:
-        _require_i64(type_pattern.lanes, f"{subject} static lanes")
+        _require_u16(type_pattern.lanes, f"{subject} static lanes")
     if isinstance(type_pattern.minimum_lanes, int):
-        _require_i64(type_pattern.minimum_lanes, f"{subject} minimum lanes")
+        _require_u64(type_pattern.minimum_lanes, f"{subject} minimum lanes")
     if isinstance(type_pattern.maximum_lanes, int):
-        _require_i64(type_pattern.maximum_lanes, f"{subject} maximum lanes")
+        _require_u64(type_pattern.maximum_lanes, f"{subject} maximum lanes")
+    if isinstance(type_pattern.minimum_static_elements, int):
+        _require_u64(
+            type_pattern.minimum_static_elements,
+            f"{subject} minimum static elements",
+        )
+    if isinstance(type_pattern.maximum_static_elements, int):
+        _require_u64(
+            type_pattern.maximum_static_elements,
+            f"{subject} maximum static elements",
+        )
 
 
 def _require_u8(value: int, subject: str) -> None:

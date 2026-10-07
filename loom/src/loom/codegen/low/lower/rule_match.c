@@ -173,6 +173,7 @@ static iree_status_t loom_low_lower_rule_descriptor_available(
 }
 
 static bool loom_low_lower_rule_type_matches(
+    const loom_low_lower_rule_set_t* rule_set,
     const loom_low_lower_type_pattern_t* pattern, loom_type_t type) {
   if (iree_any_bit_set(pattern->flags, LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND) &&
       loom_type_kind(type) != pattern->type_kind) {
@@ -203,9 +204,11 @@ static bool loom_low_lower_rule_type_matches(
     if (loom_type_rank(type) == 0 || loom_type_dim_is_dynamic_at(type, 0)) {
       return false;
     }
-    const int64_t static_dim0 = loom_type_dim_static_size_at(type, 0);
-    if (static_dim0 < pattern->shape.dim0_range.minimum ||
-        static_dim0 > pattern->shape.dim0_range.maximum) {
+    const loom_low_lower_type_pattern_range_t* range =
+        &rule_set->type_pattern_ranges[pattern->shape.range_ref - 1];
+    const uint64_t static_dim0 =
+        (uint64_t)loom_type_dim_static_size_at(type, 0);
+    if (static_dim0 < range->minimum || static_dim0 > range->maximum) {
       return false;
     }
   }
@@ -221,14 +224,14 @@ static bool loom_low_lower_rule_type_matches(
   if (iree_any_bit_set(
           pattern->flags,
           LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE)) {
+    const loom_low_lower_type_pattern_range_t* range =
+        &rule_set->type_pattern_ranges[pattern->shape.range_ref - 1];
     uint64_t static_element_count = 0;
     if (!loom_type_static_element_count(type, &static_element_count)) {
       return false;
     }
-    if (static_element_count <
-            pattern->shape.static_element_count_range.minimum ||
-        static_element_count >
-            pattern->shape.static_element_count_range.maximum) {
+    if (static_element_count < range->minimum ||
+        static_element_count > range->maximum) {
       return false;
     }
   }
@@ -898,6 +901,7 @@ static iree_status_t loom_low_lower_rule_guard_matches(
       const loom_type_t type =
           loom_low_lower_rule_match_value_type(match_context, value_id);
       *out_matches = loom_low_lower_rule_type_matches(
+          rule_set,
           &rule_set->type_patterns[guard->selector.value.parameter_index],
           type);
       return iree_ok_status();

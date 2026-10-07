@@ -30,27 +30,27 @@ typedef uint16_t loom_low_lower_descriptor_ref_t;
 #define LOOM_LOW_LOWER_DESCRIPTOR_REF_NONE UINT16_MAX
 
 // Returns a scalar element-type bit for type-pattern masks.
-#define LOOM_LOW_LOWER_SCALAR_TYPE_BIT(type) (UINT64_C(1) << (uint32_t)(type))
+#define LOOM_LOW_LOWER_SCALAR_TYPE_BIT(type) \
+  ((loom_scalar_type_set_t)(1u << (uint32_t)(type)))
 
 // Bitset of fields checked by a type pattern.
-typedef uint16_t loom_low_lower_type_pattern_flags_t;
+typedef uint8_t loom_low_lower_type_pattern_flags_t;
 
 // Type kind must match type_kind.
-#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND ((uint16_t)1u << 0)
+#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND ((uint8_t)1u << 0)
 // Scalar or shaped element type must be in element_type_mask.
-#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT ((uint16_t)1u << 1)
+#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT ((uint8_t)1u << 1)
 // Shaped rank must match rank.
-#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK ((uint16_t)1u << 2)
+#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK ((uint8_t)1u << 2)
 // First shaped dimension must equal shape.exact.dim0.
-#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0 ((uint16_t)1u << 3)
-// First shaped dimension must be inside shape.dim0_range.
-#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0_RANGE ((uint16_t)1u << 4)
+#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0 ((uint8_t)1u << 3)
+// First shaped dimension must be inside the referenced range row.
+#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0_RANGE ((uint8_t)1u << 4)
 // Second shaped dimension must equal shape.exact.dim1.
-#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM1 ((uint16_t)1u << 5)
-// Total static shaped element count must be inside
-// shape.static_element_count_range.
+#define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM1 ((uint8_t)1u << 5)
+// Total static shaped element count must be inside the referenced range row.
 #define LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE \
-  ((uint16_t)1u << 6)
+  ((uint8_t)1u << 6)
 
 typedef struct loom_low_lower_type_pattern_t {
   // Type fields this pattern checks.
@@ -60,36 +60,32 @@ typedef struct loom_low_lower_type_pattern_t {
   // Required rank when the RANK flag is set.
   uint8_t rank;
   // Allowed element scalar types when the ELEMENT flag is set.
-  uint64_t element_type_mask;
+  loom_scalar_type_set_t element_type_mask;
   // Shape constraint selected by the static-shape flags. Python generation
-  // proves that exact dimensions, a dimension range, and a total-element range
-  // are mutually exclusive.
+  // proves that exact dimensions and a range reference are mutually exclusive.
   union {
     // Exact static dimensions used by STATIC_DIM0 and STATIC_DIM1.
     struct {
       // Required first static dimension.
-      int64_t dim0;
+      uint16_t dim0;
       // Required second static dimension.
-      int64_t dim1;
+      uint16_t dim1;
     } exact;
-    // Inclusive first-dimension range used by STATIC_DIM0_RANGE.
-    struct {
-      // Inclusive minimum first dimension.
-      int64_t minimum;
-      // Inclusive maximum first dimension.
-      int64_t maximum;
-    } dim0_range;
-    // Inclusive total-element range used by STATIC_ELEMENT_COUNT_RANGE.
-    struct {
-      // Inclusive minimum total static element count.
-      uint64_t minimum;
-      // Inclusive maximum total static element count.
-      uint64_t maximum;
-    } static_element_count_range;
+    // One-based wide range row used by the range flags.
+    uint16_t range_ref;
   } shape;
 } loom_low_lower_type_pattern_t;
-static_assert(sizeof(loom_low_lower_type_pattern_t) == 32,
+static_assert(sizeof(loom_low_lower_type_pattern_t) == 10,
               "lower type-pattern rows must remain compact");
+
+typedef struct loom_low_lower_type_pattern_range_t {
+  // Inclusive minimum dimension or total static element count.
+  uint64_t minimum;
+  // Inclusive maximum dimension or total static element count.
+  uint64_t maximum;
+} loom_low_lower_type_pattern_range_t;
+static_assert(sizeof(loom_low_lower_type_pattern_range_t) == 16,
+              "lower type-pattern range rows must be 16 bytes");
 
 typedef uint8_t loom_low_lower_value_ref_kind_t;
 
@@ -214,7 +210,9 @@ typedef struct loom_low_lower_source_node_t {
 static_assert(sizeof(loom_low_lower_source_node_t) == 12,
               "loom_low_lower_source_node_t must be 12 bytes");
 
-typedef enum loom_low_lower_attr_copy_kind_e {
+typedef uint8_t loom_low_lower_attr_copy_kind_t;
+
+enum loom_low_lower_attr_copy_kind_e {
   // Copy the source op attribute directly into the emitted low packet.
   LOOM_LOW_LOWER_ATTR_COPY_DIRECT = 0,
   // Copy one i64_array element as an i64 attribute into the emitted low packet.
@@ -320,37 +318,14 @@ typedef enum loom_low_lower_attr_copy_kind_e {
   // Packs eight byte selectors for one PSHUFB source segment. Selectors outside
   // the segment use the high-bit zeroing form.
   LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_SHUFFLE_MASK_CHUNK = 40,
-} loom_low_lower_attr_copy_kind_t;
+  // Maximum attribute-copy kind plus one.
+  LOOM_LOW_LOWER_ATTR_COPY_COUNT_,
+};
+
+static_assert(LOOM_LOW_LOWER_ATTR_COPY_COUNT_ <= UINT8_MAX,
+              "lower attribute-copy kinds must fit in uint8_t storage");
 
 typedef struct loom_low_lower_attr_copy_t {
-  // Attribute projection operation to perform.
-  loom_low_lower_attr_copy_kind_t kind;
-  // Rule-set string reference for the target low packet attribute name.
-  loom_string_ref_t target_name_string_ref;
-  // Primary source op attribute ordinal consumed by projection rows.
-  uint16_t source_attr_index;
-  // Second source op attribute ordinal consumed by two-attr projections, or
-  // low 16 bits of the packed enum-remap upper word.
-  uint16_t other_source_attr_index;
-  // First source i64_array element ordinal, i32 word ordinal, or shaped
-  // dimension ordinal consumed by the projection row, or high 16 bits of the
-  // packed enum-remap upper word.
-  uint16_t source_element_index;
-  // Number of source elements consumed by PACK_ELEMENTS rows, byte stride
-  // used by I64_ARRAY_LANE_BYTE and SHUFFLE_MASK_CHUNK rows, scale used by
-  // VALUE_TYPE rows, or source enum case span used by ENUM_REMAP rows.
-  uint16_t source_element_count;
-  // Bit width of each packed source element, enum-remap value, or source byte
-  // segment length for SHUFFLE_MASK_CHUNK rows.
-  uint8_t source_element_bit_width;
-  // Low bit position of the projected or packed value in the emitted i64.
-  uint8_t target_bit_offset;
-  // Source value-ref table row consumed by value projection rows.
-  uint16_t value_ref_index;
-  // Second source value-ref row consumed by two-value projections.
-  uint16_t other_value_ref_index;
-  // Dynamic source-memory term ordinal consumed by SOURCE_MEMORY rows.
-  uint8_t dynamic_term_index;
   // Literal value emitted by I64_LITERAL rows, byte offset used by
   // I64_ARRAY_LANE_BYTE rows, source segment offset used by
   // SHUFFLE_MASK_CHUNK rows, or divisor used by SOURCE_MEMORY quotient and
@@ -358,9 +333,40 @@ typedef struct loom_low_lower_attr_copy_t {
   // rows, the width adjustment for divisor magic projections, or the low 63
   // bits of a packed enum-remap table.
   int64_t literal_i64;
+  // Rule-set string reference for the target low packet attribute name.
+  loom_string_ref_t target_name_string_ref;
+  // Kind-selected secondary source index.
+  union {
+    // Second source op attribute ordinal consumed by two-attr projections, or
+    // low 16 bits of the packed enum-remap upper word.
+    uint16_t other_source_attr_index;
+    // Second source value-ref row consumed by two-value projections.
+    uint16_t other_value_ref_index;
+  };
+  // First source i64_array element ordinal, i32 word ordinal, or shaped
+  // dimension ordinal consumed by the projection row, or high 16 bits of the
+  // packed enum-remap upper word.
+  uint16_t source_element_index;
+  // Source value-ref table row consumed by value projection rows.
+  uint16_t value_ref_index;
+  // Attribute projection operation to perform.
+  loom_low_lower_attr_copy_kind_t kind;
+  // Primary source op attribute ordinal consumed by projection rows.
+  uint8_t source_attr_index;
+  // Number of source elements consumed by PACK_ELEMENTS rows, byte stride used
+  // by I64_ARRAY_LANE_BYTE and SHUFFLE_MASK_CHUNK rows, scale used by
+  // VALUE_TYPE rows, or source enum case span used by ENUM_REMAP rows.
+  uint8_t source_element_count;
+  // Bit width of each packed source element, enum-remap value, or source byte
+  // segment length for SHUFFLE_MASK_CHUNK rows.
+  uint8_t source_element_bit_width;
+  // Low bit position of the projected or packed value in the emitted i64.
+  uint8_t target_bit_offset;
+  // Dynamic source-memory term ordinal consumed by SOURCE_MEMORY rows.
+  uint8_t dynamic_term_index;
 } loom_low_lower_attr_copy_t;
-static_assert(sizeof(loom_low_lower_attr_copy_t) == 32,
-              "loom_low_lower_attr_copy_t must be 32 bytes");
+static_assert(sizeof(loom_low_lower_attr_copy_t) == 24,
+              "loom_low_lower_attr_copy_t must be 24 bytes");
 
 typedef uint8_t loom_low_lower_diagnostic_param_kind_t;
 
@@ -1102,6 +1108,10 @@ typedef struct loom_low_lower_rule_set_t {
   const loom_low_lower_type_pattern_t* type_patterns;
   // Number of rows in type_patterns.
   uint16_t type_pattern_count;
+  // Interned wide ranges referenced by type-pattern rows.
+  const loom_low_lower_type_pattern_range_t* type_pattern_ranges;
+  // Number of rows in type_pattern_ranges.
+  uint16_t type_pattern_range_count;
   // Source value-reference rows referenced by guards and emits.
   const loom_low_lower_value_ref_t* value_refs;
   // Number of rows in value_refs.

@@ -408,24 +408,61 @@ def test_validate_c_table_shape_rejects_structural_primary_emit() -> None:
 
 def test_validate_c_table_shape_rejects_oversized_type_payload() -> None:
     table = _compiled_lower_rule_set(
-        type_patterns=(LowerTypePattern(Vector("i32", lanes=2**63)),),
+        type_patterns=(LowerTypePattern(Vector("i32", lanes=0x10000)),),
     )
 
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static lanes exceeds int64_t",
+        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static lanes exceeds uint16_t",
     )
 
 
 def test_validate_c_table_shape_rejects_oversized_view_dimension() -> None:
     table = _compiled_lower_rule_set(
-        type_patterns=(LowerTypePattern(View("i32", dims=(2**63, 4))),),
+        type_patterns=(LowerTypePattern(View("i32", dims=(0x10000, 4))),),
     )
 
     _expect_value_error(
         lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
-        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static dim 0 exceeds int64_t",
+        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 static dim 0 exceeds uint16_t",
     )
+
+
+def test_validate_c_table_shape_rejects_oversized_static_element_range() -> None:
+    table = _compiled_lower_rule_set(
+        type_patterns=(
+            LowerTypePattern(
+                Vector(
+                    "i32",
+                    minimum_static_elements=1,
+                    maximum_static_elements=2**64,
+                )
+            ),
+        ),
+    )
+
+    _expect_value_error(
+        lambda: _validate_c_table_shape(table, _c_shape_contract(), ()),
+        "lower-rule set 'test.low.generated_c_shape' type-pattern 0 maximum static elements exceeds uint64_t",
+    )
+
+
+def test_validate_c_table_shape_rejects_oversized_attr_copy_byte_fields() -> None:
+    row = LowerAttrCopy(
+        kind=LowerAttrCopyKind.I64_ARRAY_PACK_ELEMENTS,
+        target_name="value",
+    )
+    for field_name, field_subject in (
+        ("source_attr_index", "source attr index"),
+        ("source_element_count", "source element count"),
+    ):
+        table = _compiled_lower_rule_set(
+            attr_copies=(replace(row, **{field_name: 0x100}),),
+        )
+        _expect_value_error(
+            lambda table=table: _validate_c_table_shape(table, _c_shape_contract(), ()),
+            f"lower-rule set 'test.low.generated_c_shape' attr-copy 0 {field_subject} exceeds uint8_t",
+        )
 
 
 def test_validate_c_table_shape_rejects_rule_guard_range_oob() -> None:
@@ -1612,8 +1649,12 @@ def test_generate_lower_rule_set_emits_static_element_count_type_pattern() -> No
     type_pattern_start = generated.source.index("LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE")
     type_pattern_end = generated.source.index("},", type_pattern_start)
     type_pattern_text = generated.source[type_pattern_start:type_pattern_end]
-    assert ".shape.static_element_count_range.minimum = 1," in type_pattern_text
-    assert ".shape.static_element_count_range.maximum = 8," in type_pattern_text
+    assert ".shape.range_ref = 1," in type_pattern_text
+    range_start = generated.source.index("static const loom_low_lower_type_pattern_range_t")
+    range_end = generated.source.index("};", range_start)
+    range_text = generated.source[range_start:range_end]
+    assert ".minimum = 1," in range_text
+    assert ".maximum = 8," in range_text
 
     guard_start = generated.source.index("LOOM_LOW_LOWER_GUARD_VECTOR_EXTRACT_SHAPE")
     guard_end = generated.source.index("},", guard_start)

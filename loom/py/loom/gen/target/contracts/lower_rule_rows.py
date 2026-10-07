@@ -1066,6 +1066,8 @@ def rule_set_row(
     report_keys: tuple[str, ...],
     report_keys_name: str,
     type_patterns_name: str,
+    type_pattern_ranges: tuple[object, ...],
+    type_pattern_ranges_name: str,
     value_refs_name: str,
     source_nodes_name: str,
     materializers_name: str,
@@ -1116,6 +1118,12 @@ def rule_set_row(
         "type_patterns",
         table.type_patterns,
         type_patterns_name,
+    )
+    _append_table_fields(
+        fields,
+        "type_pattern_ranges",
+        type_pattern_ranges,
+        type_pattern_ranges_name,
     )
     _append_table_fields(fields, "value_refs", table.value_refs, value_refs_name)
     _append_table_fields(
@@ -1283,7 +1291,33 @@ def diagnostic_param_row(
     return fields
 
 
-def type_pattern_row(type_pattern: TypePattern) -> list[str]:
+def type_pattern_range(
+    type_pattern: TypePattern,
+) -> tuple[int | str, int | str] | None:
+    if type_pattern.minimum_lanes is not None and type_pattern.maximum_lanes is not None:
+        return type_pattern.minimum_lanes, type_pattern.maximum_lanes
+    if type_pattern.minimum_static_elements is not None and type_pattern.maximum_static_elements is not None:
+        return (
+            type_pattern.minimum_static_elements,
+            type_pattern.maximum_static_elements,
+        )
+    return None
+
+
+def type_pattern_range_row(
+    shape_range: tuple[int | str, int | str],
+) -> list[str]:
+    return [
+        f".minimum = {lower_rule_spelling.c_expression(shape_range[0])}",
+        f".maximum = {lower_rule_spelling.c_expression(shape_range[1])}",
+    ]
+
+
+def type_pattern_row(
+    type_pattern: TypePattern,
+    *,
+    range_ref: int = 0,
+) -> list[str]:
     flags = ["LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_KIND"]
     if type_pattern.elements:
         flags.append("LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_ELEMENT")
@@ -1311,22 +1345,16 @@ def type_pattern_row(type_pattern: TypePattern) -> list[str]:
             row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0"
             row.append(f".shape.exact.dim0 = {lower_rule_spelling.c_expression(type_pattern.lanes)}")
         elif type_pattern.minimum_lanes is not None and type_pattern.maximum_lanes is not None:
+            if range_ref == 0:
+                raise ValueError("generated vector lane range is missing its table ref")
             row.append(".rank = 1")
             row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_RANK | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_DIM0_RANGE"
-            row.extend(
-                [
-                    f".shape.dim0_range.minimum = {lower_rule_spelling.c_expression(type_pattern.minimum_lanes)}",
-                    f".shape.dim0_range.maximum = {lower_rule_spelling.c_expression(type_pattern.maximum_lanes)}",
-                ]
-            )
+            row.append(f".shape.range_ref = {range_ref}")
         elif type_pattern.minimum_static_elements is not None and type_pattern.maximum_static_elements is not None:
+            if range_ref == 0:
+                raise ValueError("generated vector static element range is missing its table ref")
             row[0] += " | LOOM_LOW_LOWER_TYPE_PATTERN_FLAG_STATIC_ELEMENT_COUNT_RANGE"
-            row.extend(
-                [
-                    f".shape.static_element_count_range.minimum = {lower_rule_spelling.c_expression(type_pattern.minimum_static_elements)}",
-                    f".shape.static_element_count_range.maximum = {lower_rule_spelling.c_expression(type_pattern.maximum_static_elements)}",
-                ]
-            )
+            row.append(f".shape.range_ref = {range_ref}")
         else:
             raise ValueError("generated vector type patterns require static shape")
     return row
