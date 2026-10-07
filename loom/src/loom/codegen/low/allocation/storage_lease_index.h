@@ -66,16 +66,10 @@ typedef struct loom_low_allocation_storage_lease_unit_query_t {
   const loom_low_allocation_storage_lease_unit_index_t* index;
   // Optional membership unioned with temporal matches, even outside time.
   const loom_low_allocation_storage_lease_selection_t* selection;
-  // Target-storage identity key shared by aliasing register classes.
-  uint32_t storage_key;
-  // Physical-register or target-ID unit-directory ordinal.
-  uint32_t unit_root_ordinal;
-  // First physical unit in the queried range.
-  uint32_t location_base;
-  // Number of physical units in the queried range.
-  uint32_t location_count;
-  // Next physical unit offset not yet visited.
-  uint32_t next_unit_offset;
+  // Inclusive maximum key in the selected storage/unit directory range.
+  uint64_t maximum_unit_key;
+  // Next materialized physical-unit directory leaf, or UINT32_MAX.
+  uint32_t next_unit_index;
   // Physical unit whose temporal tree is currently being visited.
   uint32_t active_location;
   // Inclusive lower bound on a matching lease's end point.
