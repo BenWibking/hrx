@@ -15,6 +15,7 @@ loom_corpus_sources(
   MANIFEST
     "kernel"
   SRCS
+    "subgroup/match.loom"
     "subgroup/shuffle_participation.loom"
     "subgroup/transport.loom"
     "subgroup/transport_carrier.loom"
