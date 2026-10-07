@@ -16,8 +16,18 @@ typedef struct loom_aie2p_native_endpoint_t {
   const loom_aie2p_native_channel_access_t* access;
   // Initial physical slot address helper.
   loom_symbol_ref_t base;
-  // Successor slot helper, or null for a one-slot channel.
+  // First slot's address, defined in the worker entry block.
+  loom_value_id_t initial;
+  // Successor slot helper, or null when this worker advances no cursor.
   loom_symbol_ref_t next;
+  // Mutable state indices for directions owned by this worker. One-slot
+  // channels use initial directly and require no threaded state.
+  struct {
+    // Current read address; used only by an owned multi-slot acquire.
+    iree_host_size_t reader;
+    // Current write address; used only by an owned multi-slot reserve.
+    iree_host_size_t writer;
+  } cursor;
   // Native consuming-credit acquire helper, created on first use.
   loom_symbol_ref_t acquire;
   // Native producing-credit acquire helper, created on first use.
@@ -38,7 +48,7 @@ typedef struct loom_aie2p_native_channel_emitter_t {
   // Endpoint index by construction channel index; unused entries are
   // UINT32_MAX.
   const uint32_t* indices;
-  // Bound endpoints in private cursor-state order.
+  // Bound endpoints in the worker's retained channel-access order.
   loom_aie2p_native_endpoint_t* endpoints;
   // Worker-owned source actions and completion deltas, retained before
   // rewriting.
@@ -111,7 +121,9 @@ static iree_status_t loom_aie2p_native_endpoint(
   IREE_RETURN_IF_ERROR(
       loom_aie2p_native_address(code, &builder, address, &base));
   IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&builder, &base, 1));
-  if (channel->source->capacity > 1) {
+  if (channel->source->capacity > 1 &&
+      (channel->cursor.reader == code->worker_index ||
+       channel->cursor.writer == code->worker_index)) {
     IREE_RETURN_IF_ERROR(loom_aie2p_worker_helper(
         code, &code->address_type, 1, &code->address_type, 1, &builder,
         &endpoint->next, &function));
@@ -189,14 +201,17 @@ static iree_status_t loom_aie2p_native_channel_action(
       }
       IREE_RETURN_IF_ERROR(
           loom_aie2p_native_invoke(builder, *acquire, NULL, 0, NULL, NULL));
-      const iree_host_size_t cursor = index * 2 + (write ? 1 : 0);
-      record = results[0] = state[cursor];
-      const loom_type_t buffer_type = loom_type_buffer();
+      record = endpoint->initial;
       if (loom_symbol_ref_is_valid(endpoint->next)) {
+        const iree_host_size_t cursor =
+            write ? endpoint->cursor.writer : endpoint->cursor.reader;
+        record = state[cursor];
+        const loom_type_t buffer_type = loom_type_buffer();
         IREE_RETURN_IF_ERROR(
             loom_aie2p_native_invoke(builder, endpoint->next, &state[cursor], 1,
                                      &buffer_type, &state[cursor]));
       }
+      results[0] = record;
       view_result = 1;
     }
     const loom_type_t buffer_type = loom_type_buffer();
@@ -307,12 +322,24 @@ iree_status_t loom_aie2p_native_emit_worker(
   loom_value_id_t* state = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
       arena, endpoint_count * 2, sizeof(*state), (void**)&state));
+  iree_host_size_t state_count = 0;
   const loom_type_t buffer_type = loom_type_buffer();
   for (iree_host_size_t i = 0; i < endpoint_count; ++i) {
+    loom_aie2p_native_endpoint_t* endpoint = &emitter.endpoints[i];
     IREE_RETURN_IF_ERROR(
-        loom_aie2p_native_invoke(&rewriter->builder, emitter.endpoints[i].base,
-                                 NULL, 0, &buffer_type, &state[i * 2]));
-    state[i * 2 + 1] = state[i * 2];
+        loom_aie2p_native_invoke(&rewriter->builder, endpoint->base, NULL, 0,
+                                 &buffer_type, &endpoint->initial));
+    if (loom_symbol_ref_is_valid(endpoint->next)) {
+      const loom_aie2p_native_channel_t* channel = endpoint->access->channel;
+      if (channel->cursor.reader == worker_index) {
+        endpoint->cursor.reader = state_count;
+        state[state_count++] = endpoint->initial;
+      }
+      if (channel->cursor.writer == worker_index) {
+        endpoint->cursor.writer = state_count;
+        state[state_count++] = endpoint->initial;
+      }
+    }
   }
   loom_type_t* carriers = NULL;
   IREE_RETURN_IF_ERROR(
@@ -329,7 +356,7 @@ iree_status_t loom_aie2p_native_emit_worker(
   const loom_channel_materialization_options_t options = {
       .carrier_types = carriers,
       .initial_state = state,
-      .state_count = endpoint_count * 2,
+      .state_count = state_count,
       .emit = {.fn = loom_aie2p_native_channel_action,
                .exit = loom_aie2p_native_channel_exit,
                .user_data = &emitter}};
