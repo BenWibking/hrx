@@ -809,13 +809,21 @@ void loom_low_allocation_storage_lease_unit_query_initialize(
   out_query->maximum_unit_key = (storage_key << 32) | maximum_location;
   const uint32_t unit_root_ordinal =
       loom_low_allocation_storage_lease_unit_root_ordinal(location_kind);
-  out_query->next_unit_index =
-      location_count == 1
-          ? loom_low_allocation_storage_lease_index_find_unit(
-                index, unit_root_ordinal, minimum_unit_key)
-          : loom_low_allocation_storage_lease_index_find_first_unit_in_range(
-                index, index->unit_roots[unit_root_ordinal], minimum_unit_key,
-                out_query->maximum_unit_key);
+  if (location_count == 1) {
+    const uint32_t unit_index =
+        loom_low_allocation_storage_lease_index_find_unit(
+            index, unit_root_ordinal, minimum_unit_key);
+    if (unit_index != UINT32_MAX) {
+      out_query->active_location = location_base;
+      out_query->stack[out_query->stack_count++] =
+          index->nodes[unit_index].data.unit.temporal_root;
+    }
+  } else {
+    out_query->next_unit_index =
+        loom_low_allocation_storage_lease_index_find_first_unit_in_range(
+            index, index->unit_roots[unit_root_ordinal], minimum_unit_key,
+            out_query->maximum_unit_key);
+  }
 }
 
 bool loom_low_allocation_storage_lease_unit_query_next(
