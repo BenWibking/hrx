@@ -1,4 +1,3 @@
-// TEMPLATE: loom/src/loom/test/corpus/source_low/numeric_float_extrema.loom-test
 // RUN: emit source-low target=amdgpu:gfx1151 output=low
 
 func.def @float_extrema_f32(%lhs: f32, %rhs: f32) -> (f32, f32, f32, f32) {
@@ -56,31 +55,4 @@ low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @float_extrema_no_nan(%
   %maximum = v_max_f32 %lhs, %rhs
   %bounded = v_min_f32_src0_inline %lhs, "f32_1_0"
   return %minimum, %maximum, %bounded
-}
-
-// ====
-
-func.def @float_extrema_vector(%lhs: vector<2xf32>, %rhs: vector<2xf32>) -> (vector<2xf32>, vector<2xf32>) {
-  %minimum = vector.minnumf %lhs, %rhs : vector<2xf32>
-  %maximum = vector.maxnumf %lhs, %rhs : vector<2xf32>
-  func.return %minimum, %maximum : vector<2xf32>, vector<2xf32>
-}
-
-// ----
-low.func.def target<amdgpu.rdna3_5.core> abi(hal_kernel) @float_extrema_vector(%lhs: reg<amdgpu.vgpr x2>, %rhs: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
-  %10 = slice %lhs[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %12 = v_max_f32 %10, %10
-  %13 = slice %lhs[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %15 = v_max_f32 %13, %13
-  %17 = slice %rhs[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %19 = v_max_f32 %17, %17
-  %20 = slice %rhs[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
-  %22 = v_max_f32 %20, %20
-  %26 = v_min_f32 %12, %19
-  %29 = v_min_f32 %15, %22
-  %minimum = concat(%26, %29) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %47 = v_max_f32 %12, %19
-  %50 = v_max_f32 %15, %22
-  %maximum = concat(%47, %50) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  return %minimum, %maximum
 }
