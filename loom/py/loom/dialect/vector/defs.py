@@ -447,7 +447,7 @@ def _vector_cast(
         ],
         facts=facts,
         canonicalize=canonicalize,
-        traits=[PURE, ELEMENTWISE, *traits],
+        traits=[PURE, ELEMENTWISE, DECOMPOSABLE, *traits],
         format=[
             Ref("input"),
             COLON,
@@ -3471,7 +3471,7 @@ vector_index_cast = Op(
     facts="loom_vector_index_cast_facts",
     canonicalize="loom_vector_index_cast_canonicalize",
     verify="loom_vector_index_cast_verify",
-    traits=[PURE, ELEMENTWISE, DISTRIBUTION_TRANSFER],
+    traits=[PURE, ELEMENTWISE, DECOMPOSABLE, DISTRIBUTION_TRANSFER],
     format=[
         Ref("input"),
         COLON,
