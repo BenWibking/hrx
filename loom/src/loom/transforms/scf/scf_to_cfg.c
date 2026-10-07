@@ -1456,6 +1456,10 @@ iree_status_t loom_scf_to_cfg_run(loom_pass_t* pass, loom_module_t* module,
 
   bool any_changed = false;
   while (iree_status_is_ok(status) && !loom_pass_has_error_diagnostics(pass)) {
+    status = loom_scf_to_cfg_collect_frontier(&state, function);
+    if (!iree_status_is_ok(status) || state.frontier.count == 0) {
+      break;
+    }
     status = loom_pass_value_facts_acquire(
         pass, module,
         loom_pass_value_fact_scope_function_for_target(
@@ -1463,10 +1467,6 @@ iree_status_t loom_scf_to_cfg_run(loom_pass_t* pass, loom_module_t* module,
             loom_target_function_version_target_facts(pass->function_version)),
         &state.fact_table);
     if (!iree_status_is_ok(status)) {
-      break;
-    }
-    status = loom_scf_to_cfg_collect_frontier(&state, function);
-    if (!iree_status_is_ok(status) || state.frontier.count == 0) {
       break;
     }
     status = loom_scf_to_cfg_lower_frontier(&state);
