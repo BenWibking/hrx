@@ -563,14 +563,24 @@ static loom_value_facts_t loom_kernel_launch_workitem_dispatch_id_facts(
       loom_kernel_launch_workgroup_size_facts(context, module, dimension);
 
   int64_t upper_bound = 0;
-  if (!iree_checked_mul_i64(count_facts.range_hi, size_facts.range_hi,
-                            &upper_bound) ||
-      upper_bound < 1) {
-    return target_facts;
+  if (iree_checked_mul_i64(count_facts.range_hi, size_facts.range_hi,
+                           &upper_bound) &&
+      upper_bound >= 1) {
+    const loom_value_facts_t launch_facts =
+        loom_value_facts_make(0, upper_bound - 1, 1);
+    target_facts =
+        loom_kernel_intersect_integer_facts(launch_facts, target_facts);
   }
-  const loom_value_facts_t launch_facts =
-      loom_value_facts_make(0, upper_bound - 1, 1);
-  return loom_kernel_intersect_integer_facts(launch_facts, target_facts);
+  // A unit-size axis makes the dispatch coordinate exactly the workgroup
+  // coordinate, even when the other axes contain several invocations.
+  int64_t size = 0;
+  if (loom_value_facts_as_exact_i64(size_facts, &size) && size == 1) {
+    loom_value_facts_mark_workgroup_uniform(&target_facts);
+    loom_kernel_mark_workgroup_topology_domain(dimension, &target_facts);
+  } else {
+    loom_value_facts_mark_lane_varying(&target_facts);
+  }
+  return target_facts;
 }
 
 static uint32_t loom_kernel_max_subgroup_size(
@@ -784,7 +794,6 @@ iree_status_t loom_kernel_workitem_dispatch_id_facts(
   (void)operand_facts;
   result_facts[0] = loom_kernel_launch_workitem_dispatch_id_facts(
       context, module, loom_kernel_workitem_dispatch_id_dimension(op));
-  loom_value_facts_mark_lane_varying(&result_facts[0]);
   return iree_ok_status();
 }
 
