@@ -2,9 +2,11 @@
 
 `source_to_module_benchmark` measures preprocessing, source type checking,
 import, module verification, and release through `loomc_module_import_cxx`.
-Its `NoIncludes`, `StdFloat`, `Numeric`, and `Vector` cases use the same BF16
-function body; the latter three add only `<stdfloat>`, `<loomcxx/numeric.h>`,
-or `<loomcxx/vector.h>`. Comparing them isolates the cost of each facade. The
+Its `NoIncludes`, `StdFloat`, `Numeric`, `Vector`, `EncodingType`, and `Encoding`
+cases use the same BF16 function body. Each named include case adds only its
+corresponding facade header: `<stdfloat>`, `<loomcxx/numeric.h>`,
+`<loomcxx/vector.h>`, `<loomcxx/encoding_type.h>`, or `<loomcxx/encoding.h>`.
+Comparing them isolates the cost of each facade. The
 source handle, context, and workspace are reused while every iteration parses
 the source again. These cases need the C++ importer and embedded includes,
 without requiring a target backend.
@@ -29,12 +31,8 @@ compilation precedes measurement; parsed C++ ASTs are not cached.
 Build an optimized executable before collecting numbers:
 
 ```sh
-iree-bazel-build --config=loom-importer-cxx \
+iree-bazel-build --config=opt --config=loom-importer-cxx \
   --//loom/config/target:enable=amdgpu --//loom/config/emit:enable=amdgpu \
-  -c opt --features=thin_lto \
-  --copt=-O3 --cxxopt=-O3 --host_copt=-O3 --host_cxxopt=-O3 \
-  --copt=-march=native --cxxopt=-march=native \
-  --host_copt=-march=native --host_cxxopt=-march=native \
   //loom/binding/c/benchmark/import/cxx:source_to_hsaco_benchmark
 
 bazel-bin/loom/binding/c/benchmark/import/cxx/source_to_hsaco_benchmark \
@@ -42,6 +40,12 @@ bazel-bin/loom/binding/c/benchmark/import/cxx/source_to_hsaco_benchmark \
   --benchmark_report_aggregates_only=true \
   --benchmark_out=source-to-hsaco.json --benchmark_out_format=json
 ```
+
+The shared `opt` configuration owns optimization and ThinLTO settings. An
+ISA-specific comparison names its intended measurement CPU explicitly:
+`-march=native` in a remote build describes the build worker. Run matched
+executables under the measurement runner's exclusion policy, after builds and
+artifact transfer have finished.
 
 The benchmark uses the normal embedded facade headers, so its build requires
 `embed_includes`. Artifact byte counts and workspace allocation counters are
