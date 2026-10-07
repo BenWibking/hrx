@@ -21,6 +21,7 @@ loom_cc_binary(
     loom::binding::c::target::configured
     loom::sanitizer::options
     loom::tooling::cli::help
+    loom::tooling::cli::loomc_options
     loom::tooling::config
     loom::tooling::io::file
     loom::tooling::io::source_path

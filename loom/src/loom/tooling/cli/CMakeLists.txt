@@ -22,4 +22,19 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_library(
+  NAME
+    loomc_options
+  HDRS
+    "loomc_options.h"
+  SRCS
+    "loomc_options.c"
+  DEPS
+    iree::base
+    loom::binding::c::loomc
+    loom::sanitizer::options
+    loom::tooling::config
+  PUBLIC
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###
