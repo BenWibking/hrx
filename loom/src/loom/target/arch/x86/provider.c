@@ -66,6 +66,28 @@ static iree_status_t loom_x86_select_profile(
                           (int)selector.size, selector.data);
 }
 
+static const loom_target_profile_t* loom_x86_select_cpu_profile(
+    const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
+    const loom_target_profile_t* profile) {
+  if (cpu_data->architecture != IREE_CPU_ARCHITECTURE_X86_64) {
+    return NULL;
+  }
+  // Native ABI transport and byte emission currently implement scalar GPRs.
+  // SIMD profile selection requires native vector transport and OS-enabled
+  // feature requirements before those representations can be executed.
+  if (requirement && (requirement->fact_type != &loom_x86_target_fact_type ||
+                      requirement->selector != LOOM_X86_TARGET_KIND_SCALAR)) {
+    return NULL;
+  }
+  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(kProfiles); ++i) {
+    if (kProfiles[i].selector == LOOM_X86_TARGET_KIND_SCALAR &&
+        (!profile || profile == &kProfiles[i].base)) {
+      return &kProfiles[i].base;
+    }
+  }
+  return NULL;
+}
+
 static iree_status_t loom_x86_materialize_definition(
     loom_builder_t* builder, const loom_resolved_target_t* resolved_target,
     loom_symbol_ref_t symbol, loom_location_id_t location) {
@@ -193,6 +215,7 @@ const loom_target_provider_t loom_x86_target_provider = {
     .pass_registry = &loom_x86_pass_registry,
     .contribute_pipeline = loom_x86_contribute_pipeline,
     .select_profile = loom_x86_select_profile,
+    .select_cpu_profile = loom_x86_select_cpu_profile,
     .materialize_definition = loom_x86_materialize_definition,
     .select_low_call_policy = loom_x86_select_low_call_policy,
     .register_context = loom_x86_ops_register_dialect,

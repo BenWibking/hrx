@@ -151,6 +151,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::target::provider
+    loom::target::selection
 )
 
 loom_cc_library(

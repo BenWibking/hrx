@@ -129,3 +129,19 @@ and calls `loomc_compile_artifact` with inferred roots and the target's default
 pipeline. It releases the compiler, module, and workspace before writing the
 result-owned executable bytes. Both entry points use the core x86 provider;
 neither owns ABI policy or loads a runtime while compiling.
+
+The shared scenario runner selects its native profile from CPU facts published
+by the task device. For example, on an x86-64 task device:
+
+```sh
+iree-test-loom loom/src/loom/test/corpus/control/loop/scalar_state.loom --device=task
+```
+
+The runner compiles and executes the subject through the public task loader and compares
+its runtime observations against the independent VM oracle. The same HAL
+candidate, buffer staging, submission, and comparison path serves GPU targets.
+The task adapter only projects device capabilities and selects an eligible core
+emitter; it owns no instruction lowering or ABI materialization. The scalar
+native profile requires no optional CPU features. SIMD profiles are available
+for source-to-Low compilation, but native execution selection requires their
+vector ABI transport and instruction encoding before admitting them.

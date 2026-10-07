@@ -17,7 +17,7 @@ static void loom_run_hal_candidate_initialize(
 }
 
 static void loom_run_hal_candidate_initialize_report(
-    const loom_device_provider_t* provider,
+    const loom_device_provider_t* provider, const loom_device_target_t* target,
     const loom_compile_options_t* options) {
   loom_target_compile_report_t* report = options->report;
   if (report == NULL) {
@@ -26,7 +26,7 @@ static void loom_run_hal_candidate_initialize_report(
   loom_target_compile_report_initialize_if_empty(report, report->allocator);
   report->artifact_kind = LOOM_TARGET_COMPILE_ARTIFACT_KIND_HAL_EXECUTABLE;
   report->backend_name = provider->name;
-  report->target_family_name = provider->target_profile_type->name;
+  report->target_family_name = target->target_profile->type->name;
 }
 
 static void loom_run_hal_candidate_record_report_status(
@@ -39,7 +39,7 @@ static void loom_run_hal_candidate_record_report_status(
   }
   report->artifact_kind = LOOM_TARGET_COMPILE_ARTIFACT_KIND_HAL_EXECUTABLE;
   report->backend_name = provider->name;
-  report->target_family_name = provider->target_profile_type->name;
+  report->target_family_name = target->target_profile->type->name;
   report->target_key = candidate->compiled
                            ? target->executable_target->target_key
                            : iree_string_view_empty();
@@ -53,10 +53,10 @@ static void loom_run_hal_candidate_record_report_status(
 }
 
 static iree_status_t loom_run_hal_candidate_emit(
-    const loom_device_provider_t* provider, loom_run_session_t* session,
+    const loom_device_target_t* target, loom_run_session_t* session,
     loom_run_module_t* run_module, const loom_compile_options_t* options,
     iree_allocator_t allocator, loom_run_hal_candidate_t* candidate) {
-  const loom_target_emitter_t* emitter = provider->target_emitter;
+  const loom_target_emitter_t* emitter = target->target_emitter;
   IREE_ASSERT(emitter != NULL && emitter->emit != NULL);
 
   const loom_target_entry_options_t target_options = {
@@ -120,9 +120,9 @@ iree_status_t loom_run_hal_candidate_emit_target(
     const loom_compile_options_t* options, iree_allocator_t allocator,
     loom_run_hal_candidate_t* out_candidate) {
   loom_run_hal_candidate_initialize(target, out_candidate);
-  loom_run_hal_candidate_initialize_report(provider, options);
+  loom_run_hal_candidate_initialize_report(provider, target, options);
   iree_status_t status = loom_run_hal_candidate_emit(
-      provider, session, run_module, options, allocator, out_candidate);
+      target, session, run_module, options, allocator, out_candidate);
   loom_run_hal_candidate_record_report_status(
       provider, target, options, out_candidate, iree_status_code(status));
   if (!iree_status_is_ok(status)) {

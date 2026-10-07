@@ -144,6 +144,10 @@ static const loom_target_provider_t kFakeTargetProvider =
 static const loom_target_provider_t kOtherTargetProvider =
     MakeTargetProvider(&kOtherProfileType, SelectOtherProfile);
 
+static const loom_target_emitter_t kFakeEmitter = {
+    /*.name=*/IREE_SVL("fake"),
+};
+
 typedef struct FakeDeviceProvider {
   // Device provider exposed to the production selection wrapper.
   loom_device_provider_t base;
@@ -162,6 +166,7 @@ static iree_status_t FakeSelectProfileTarget(
   *out_target = (loom_device_target_t){
       /*.executable_target=*/provider->returned_executable_target,
       /*.target_profile=*/target_profile,
+      /*.target_emitter=*/&kFakeEmitter,
   };
   return iree_ok_status();
 }
@@ -247,7 +252,6 @@ class DeviceProviderTest : public ::testing::Test {
     runtime_.dispatch_queue = &dispatch_queue_;
 
     provider_.base.name = IREE_SV("fake-device");
-    provider_.base.target_profile_type = &kFakeProfileType;
     provider_.base.driver_name = IREE_SV("fake");
     provider_.base.select_profile_target = FakeSelectProfileTarget;
     provider_.returned_executable_target =
@@ -279,14 +283,13 @@ TEST_F(DeviceProviderTest, AcceptsBorrowedProfileAndDeviceTarget) {
   EXPECT_EQ(target.executable_target, provider_.returned_executable_target);
 }
 
-TEST_F(DeviceProviderTest, RejectsAnotherProfileFamily) {
+TEST_F(DeviceProviderTest, AcceptsProviderSelectedProfileFamily) {
   Initialize();
-  loom_device_target_t target = {};
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_INVALID_ARGUMENT,
-      loom_device_provider_select_profile_target(&provider_.base, &runtime_,
-                                                 &kOtherProfile, &target));
-  EXPECT_EQ(target.executable_target, nullptr);
+  const loom_device_target_t target = Select(&kOtherProfile);
+
+  EXPECT_EQ(target.target_profile, &kOtherProfile);
+  EXPECT_EQ(target.target_emitter, &kFakeEmitter);
+  EXPECT_EQ(target.executable_target, provider_.returned_executable_target);
 }
 
 TEST_F(DeviceProviderTest, SelectsExplicitNamedTarget) {
@@ -310,14 +313,15 @@ TEST_F(DeviceProviderTest, RejectsMalformedExplicitTarget) {
   EXPECT_EQ(target.executable_target, nullptr);
 }
 
-TEST_F(DeviceProviderTest, RejectsExplicitTargetFromAnotherFamily) {
+TEST_F(DeviceProviderTest, SelectsExplicitTargetFromAnotherFamily) {
   Initialize();
   loom_device_target_t target = {};
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
-                        loom_device_provider_select_explicit_target(
-                            &provider_.base, &runtime_, &target_environment_,
-                            IREE_SV("other:target-456"), &target));
-  EXPECT_EQ(target.executable_target, nullptr);
+  IREE_ASSERT_OK(loom_device_provider_select_explicit_target(
+      &provider_.base, &runtime_, &target_environment_,
+      IREE_SV("other:target-456"), &target));
+  EXPECT_EQ(target.target_profile, &kOtherProfile);
+  EXPECT_EQ(target.target_emitter, &kFakeEmitter);
+  EXPECT_EQ(target.executable_target, provider_.returned_executable_target);
 }
 
 }  // namespace

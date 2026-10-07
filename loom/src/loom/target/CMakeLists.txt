@@ -684,6 +684,7 @@ loom_cc_library(
     ::profile
     ::resolved_target
     iree::base
+    iree::base::cpu_data
     iree::base::internal::arena
     loom::codegen::low::lower
     loom::codegen::low::verify

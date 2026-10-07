@@ -208,6 +208,25 @@ static loom_target_provider_t MakeFakeTargetProvider() {
 
 const loom_target_provider_t kFakeTargetProvider = MakeFakeTargetProvider();
 
+static iree_status_t EmitFakeTargetArtifact(
+    const loom_target_emit_request_t* request, bool* out_emitted,
+    loom_target_emit_artifact_t* out_artifact) {
+  (void)request;
+  *out_emitted = false;
+  *out_artifact = {};
+  return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                          "fake target emitter rejects emission");
+}
+
+static const loom_target_emitter_t kFakeTargetEmitter = {
+    /*.name=*/IREE_SVL("fake-hal"),
+    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
+    /*.default_identifier=*/IREE_SVL("fake.bin"),
+    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
+    /*.default_pipeline_options=*/{},
+    /*.emit=*/EmitFakeTargetArtifact,
+};
+
 static iree_status_t FakeHalSelectDeviceTarget(
     const loom_device_provider_t* provider,
     const loom_run_hal_runtime_t* runtime, iree_allocator_t allocator,
@@ -228,6 +247,7 @@ static iree_status_t FakeHalSelectDeviceTarget(
   *out_target = (loom_device_target_t){
       /*.executable_target=*/executable_target,
       /*.target_profile=*/&kFakeTargetProfile,
+      /*.target_emitter=*/&kFakeTargetEmitter,
   };
   return iree_ok_status();
 }
@@ -259,29 +279,8 @@ static iree_status_t FakeHalSelectProfileDeviceTarget(
                                    out_target);
 }
 
-static iree_status_t EmitFakeTargetArtifact(
-    const loom_target_emit_request_t* request, bool* out_emitted,
-    loom_target_emit_artifact_t* out_artifact) {
-  (void)request;
-  *out_emitted = false;
-  *out_artifact = {};
-  return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                          "fake target emitter rejects emission");
-}
-
-static const loom_target_emitter_t kFakeTargetEmitter = {
-    /*.name=*/IREE_SVL("fake-hal"),
-    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
-    /*.default_identifier=*/IREE_SVL("fake.bin"),
-    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
-    /*.default_pipeline_options=*/{},
-    /*.emit=*/EmitFakeTargetArtifact,
-};
-
 static const loom_device_provider_t kFakeDeviceProvider = {
     /*.name=*/IREE_SVL("fake-hal"),
-    /*.target_profile_type=*/&kFakeTargetProfileType,
-    /*.target_emitter=*/&kFakeTargetEmitter,
     /*.driver_name=*/IREE_SVL("fake"),
     /*.select_compatible_target=*/FakeHalSelectCompatibleDeviceTarget,
     /*.select_profile_target=*/FakeHalSelectProfileDeviceTarget,

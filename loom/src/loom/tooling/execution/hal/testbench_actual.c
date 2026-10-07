@@ -718,8 +718,7 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
         provider->pipeline_snapshot.pipeline_op;
   }
   pipeline_options.target_pipeline_options =
-      provider->context->device_provider->target_emitter
-          ->default_pipeline_options;
+      provider->compile_device_target.target_emitter->default_pipeline_options;
   pipeline_options.target_pipeline_options.sanitizer = provider->sanitizer;
   pipeline_options.target_environment = provider->session->target_environment;
   const loom_target_specialization_request_t specialization_request = {

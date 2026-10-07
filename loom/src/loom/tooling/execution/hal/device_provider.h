@@ -31,6 +31,8 @@ typedef struct loom_device_target_t {
   const iree_hal_executable_target_t* executable_target;
   // Immutable structured target profile selected for compilation.
   const loom_target_profile_t* target_profile;
+  // Core emitter for this selected profile, borrowed from compiler providers.
+  const loom_target_emitter_t* target_emitter;
 } loom_device_target_t;
 
 typedef iree_status_t (*loom_device_provider_select_compatible_target_fn_t)(
@@ -49,14 +51,11 @@ typedef void (*loom_device_provider_deinitialize_target_fn_t)(
     const loom_device_provider_t* provider, loom_device_target_t* target,
     iree_allocator_t allocator);
 
-// Live device adapter for one target family, core emitter, and HAL driver.
+// Live device adapter for one HAL driver. Target selection owns the compiler
+// family and emitter, allowing one driver to execute several CPU architectures.
 struct loom_device_provider_t {
   // Stable provider name surfaced in diagnostics and execution results.
   iree_string_view_t name;
-  // Required target-family profile representation.
-  const loom_target_profile_type_t* target_profile_type;
-  // Non-NULL core target emitter used after target selection and compilation.
-  const loom_target_emitter_t* target_emitter;
   // IREE HAL driver name used to create the runtime device.
   iree_string_view_t driver_name;
   // Selects the most specific concrete device target satisfying an immutable
@@ -93,8 +92,8 @@ iree_status_t loom_device_provider_select_profile_target(
 // Selects a named static target and matches it against the active device.
 //
 // |target_specification| must use `family:selector` syntax. The selected
-// profile must belong to |provider|'s artifact family and be supported by the
-// active device. The returned target borrows the process-lifetime profile and
+// profile must be supported by |provider| and the active device. The returned
+// target borrows the process-lifetime profile and
 // an executable target row from the active device spec and requires no
 // teardown.
 iree_status_t loom_device_provider_select_explicit_target(

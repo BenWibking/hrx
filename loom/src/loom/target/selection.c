@@ -88,3 +88,44 @@ iree_status_t loom_target_environment_select_profile(
   *out_profile = profile;
   return iree_ok_status();
 }
+
+iree_status_t loom_target_environment_select_cpu_profile(
+    const loom_target_environment_t* environment,
+    const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
+    const loom_target_profile_t* profile,
+    const loom_target_profile_t** out_profile) {
+  *out_profile = NULL;
+  const loom_target_provider_set_t* providers = environment->provider_set;
+  const loom_target_profile_t* selected = NULL;
+  for (iree_host_size_t i = 0; i < providers->provider_count; ++i) {
+    const loom_target_provider_t* provider = providers->providers[i];
+    if (!provider->select_cpu_profile) {
+      continue;
+    }
+    const loom_target_profile_t* candidate =
+        provider->select_cpu_profile(cpu_data, requirement, profile);
+    if (!candidate) {
+      continue;
+    }
+    if (selected) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "multiple compiler providers accept this CPU");
+    }
+    selected = candidate;
+  }
+  if (!selected) {
+    const iree_string_view_t architecture =
+        iree_cpu_architecture_name(cpu_data->architecture);
+    const iree_string_view_t requested =
+        profile       ? profile->target_bundle->name
+        : requirement ? loom_target_facts_identity_name(requirement)
+                      : IREE_SV("automatic");
+    return iree_make_status(
+        IREE_STATUS_UNAVAILABLE,
+        "no native CPU profile for '%.*s' satisfies target '%.*s'",
+        (int)architecture.size, architecture.data, (int)requested.size,
+        requested.data);
+  }
+  *out_profile = selected;
+  return iree_ok_status();
+}

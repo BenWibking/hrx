@@ -104,6 +104,35 @@ static loom_target_provider_t MakeFakeTargetProvider() {
 static const loom_target_provider_t kFakeTargetProvider =
     MakeFakeTargetProvider();
 
+static iree_status_t EmitFakeTargetArtifact(
+    const loom_target_emit_request_t* request, bool* out_emitted,
+    loom_target_emit_artifact_t* out_artifact) {
+  g_observation.emission_event_ordinal = ++g_observation.next_event_ordinal;
+  g_observation.emitted_function_version_count =
+      request->function_versions != nullptr ? request->function_versions->count
+                                            : 0;
+  if (g_observation.emitted_function_version_count == 1) {
+    g_observation.emitted_target_facts =
+        loom_target_function_version_target_facts(
+            request->function_versions->values[0]);
+  }
+  *out_emitted = false;
+  *out_artifact = {};
+  return iree_ok_status();
+}
+
+static const loom_target_emitter_t kFakeTargetEmitter = {
+    /*.name=*/IREE_SVL("fake-hal"),
+    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
+    /*.default_identifier=*/IREE_SVL("fake.bin"),
+    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
+    /*.default_pipeline_options=*/
+    {
+        /*.source_to_low_max_errors=*/73,
+    },
+    /*.emit=*/EmitFakeTargetArtifact,
+};
+
 static iree_status_t SelectFakeDeviceProfileTarget(
     const loom_device_provider_t* provider,
     const loom_run_hal_runtime_t* runtime,
@@ -143,38 +172,10 @@ static iree_status_t SelectFakeDeviceProfileTarget(
   *out_target = (loom_device_target_t){
       /*.executable_target=*/result.target,
       /*.target_profile=*/target_profile,
+      /*.target_emitter=*/&kFakeTargetEmitter,
   };
   return iree_ok_status();
 }
-
-static iree_status_t EmitFakeTargetArtifact(
-    const loom_target_emit_request_t* request, bool* out_emitted,
-    loom_target_emit_artifact_t* out_artifact) {
-  g_observation.emission_event_ordinal = ++g_observation.next_event_ordinal;
-  g_observation.emitted_function_version_count =
-      request->function_versions != nullptr ? request->function_versions->count
-                                            : 0;
-  if (g_observation.emitted_function_version_count == 1) {
-    g_observation.emitted_target_facts =
-        loom_target_function_version_target_facts(
-            request->function_versions->values[0]);
-  }
-  *out_emitted = false;
-  *out_artifact = {};
-  return iree_ok_status();
-}
-
-static const loom_target_emitter_t kFakeTargetEmitter = {
-    /*.name=*/IREE_SVL("fake-hal"),
-    /*.public_artifact_format=*/IREE_SVL("fake-hal"),
-    /*.default_identifier=*/IREE_SVL("fake.bin"),
-    /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
-    /*.default_pipeline_options=*/
-    {
-        /*.source_to_low_max_errors=*/73,
-    },
-    /*.emit=*/EmitFakeTargetArtifact,
-};
 
 class HalExecutionBackendTest : public ::testing::Test {
  protected:
@@ -235,8 +236,6 @@ pass.pipeline<module> @debug pipeline {
 
   loom_device_provider_t device_provider = {};
   device_provider.name = IREE_SV("fake-task-hal");
-  device_provider.target_profile_type = &kFakeTargetProfileType;
-  device_provider.target_emitter = &kFakeTargetEmitter;
   device_provider.driver_name = IREE_SV("task");
   device_provider.select_profile_target = SelectFakeDeviceProfileTarget;
 
