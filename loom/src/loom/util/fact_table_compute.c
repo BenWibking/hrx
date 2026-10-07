@@ -1043,51 +1043,6 @@ static iree_status_t loom_value_fact_table_compute_cfg_region_tree(
   return status;
 }
 
-iree_status_t loom_value_fact_table_compute_region_tree(
-    loom_value_fact_table_t* table, const loom_module_t* module,
-    loom_region_t* region, loom_op_t* parent_op) {
-  if (!region) {
-    return iree_ok_status();
-  }
-  loom_value_facts_t temporal_scope = loom_value_facts_unknown();
-  bool may_repeat = false;
-  if (!parent_op || parent_op == table->context.function.op) {
-    loom_value_facts_mark_cluster_uniform(&temporal_scope);
-  } else {
-    temporal_scope = loom_value_fact_table_block_temporal_scope(
-        table, parent_op->parent_block);
-    may_repeat =
-        loom_loop_like_isa(loom_loop_like_cast(module, parent_op)) ||
-        loom_value_fact_table_block_may_repeat(table, parent_op->parent_block);
-  }
-  IREE_RETURN_IF_ERROR(loom_value_fact_table_set_region_temporal_scope(
-      table, region, temporal_scope, may_repeat));
-  if (iree_any_bit_set(region->flags, LOOM_REGION_INSTANCE_FLAG_CFG)) {
-    return loom_value_fact_table_compute_cfg_region_tree(table, module, region,
-                                                         parent_op);
-  }
-  loom_block_t* block = NULL;
-  loom_region_for_each_block(region, block) {
-    IREE_RETURN_IF_ERROR(
-        loom_value_fact_table_seed_block_args(table, module, block, parent_op));
-    loom_op_t* op = NULL;
-    loom_block_for_each_op(block, op) {
-      IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_op(table, module, op));
-      const loom_op_vtable_t* vtable = loom_op_vtable(module, op);
-      if (loom_value_fact_op_summarizes_nested_regions(vtable)) {
-        // Structured fact summaries visit their own nested regions.
-        continue;
-      }
-      loom_region_t** regions = loom_op_regions(op);
-      for (uint8_t i = 0; i < op->region_count; ++i) {
-        IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_region_tree(
-            table, module, regions[i], op));
-      }
-    }
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_value_fact_table_seed_projected_func_args(
     loom_value_fact_table_t* table, const loom_module_t* module,
     loom_func_like_t function, loom_region_t* region, loom_op_t* parent_op) {
@@ -1169,19 +1124,21 @@ typedef struct loom_value_fact_region_branch_result_state_t {
   bool all_source_values_match;
 } loom_value_fact_region_branch_result_state_t;
 
-static iree_status_t loom_value_fact_table_compute_region_branch_summary(
+// Branch regions define disjoint SSA values. Join their yields after all
+// regions have been evaluated, without retaining a native call frame during
+// descent.
+static iree_status_t loom_value_fact_table_compute_region_branch_results(
     loom_value_fact_table_t* table, const loom_module_t* module, loom_op_t* op,
     bool* out_changed) {
-  loom_region_branch_t branch = loom_region_branch_cast(module, op);
-  IREE_ASSERT(loom_region_branch_isa(branch));
-
-  loom_value_fact_region_branch_result_state_t* result_states = NULL;
-  if (op->result_count > 0) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        table->transient_arena, op->result_count,
-        sizeof(loom_value_fact_region_branch_result_state_t),
-        (void**)&result_states));
+  if (op->result_count == 0) {
+    return iree_ok_status();
   }
+  loom_region_branch_t branch = loom_region_branch_cast(module, op);
+  loom_value_fact_region_branch_result_state_t* result_states = NULL;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      table->transient_arena, op->result_count,
+      sizeof(loom_value_fact_region_branch_result_state_t),
+      (void**)&result_states));
 
   uint8_t visited_region_count = 0;
   const loom_value_id_t* results = loom_op_const_results(op);
@@ -1192,21 +1149,9 @@ static iree_status_t loom_value_fact_table_compute_region_branch_summary(
     if (!region) {
       continue;
     }
-    const loom_region_branch_truth_t truth =
-        loom_region_branch_region_truth(branch, region_index);
-    if (truth != LOOM_REGION_BRANCH_TRUTH_UNKNOWN) {
-      IREE_RETURN_IF_ERROR(
-          loom_value_fact_table_set_region_branch_truth(table, region, truth));
-    }
-    IREE_RETURN_IF_ERROR(
-        loom_value_fact_table_compute_region_tree(table, module, region, op));
     loom_op_t* terminator =
         loom_region_branch_region_terminator(module, branch, region_index);
     IREE_ASSERT(terminator);
-    if (op->result_count == 0) {
-      ++visited_region_count;
-      continue;
-    }
 
     IREE_ASSERT_EQ(terminator->operand_count, op->result_count);
     const loom_value_id_t* yielded_values = loom_op_const_operands(terminator);
@@ -1238,9 +1183,6 @@ static iree_status_t loom_value_fact_table_compute_region_branch_summary(
     ++visited_region_count;
   }
 
-  if (op->result_count == 0) {
-    return iree_ok_status();
-  }
   IREE_ASSERT_GT(visited_region_count, 0);
 
   loom_value_facts_t* result_facts = NULL;
@@ -1289,7 +1231,7 @@ static iree_status_t loom_value_fact_table_compute_scoped_op(
         table, module, (loom_op_t*)op, out_changed);
   }
   if (vtable && vtable->region_branch) {
-    return loom_value_fact_table_compute_region_branch_summary(
+    return loom_value_fact_table_compute_region_branch_results(
         table, module, (loom_op_t*)op, out_changed);
   }
   if (!vtable || !vtable->infer_facts) {
@@ -1376,11 +1318,9 @@ static iree_status_t loom_value_fact_table_compute_scoped_op(
                                                  out_changed);
 }
 
-iree_status_t loom_value_fact_table_compute_op_and_report(
+static iree_status_t loom_value_fact_table_compute_op_in_target_scope(
     loom_value_fact_table_t* table, const loom_module_t* module,
     const loom_op_t* op, bool* out_changed) {
-  IREE_RETURN_IF_ERROR(
-      loom_value_fact_table_seed_nested_target_scopes(table, module, op));
   if (!table->regions.has_independent_targets) {
     return loom_value_fact_table_compute_scoped_op(table, module, op,
                                                    out_changed);
@@ -1392,6 +1332,174 @@ iree_status_t loom_value_fact_table_compute_op_and_report(
       loom_value_fact_table_compute_scoped_op(table, module, op, out_changed);
   table->context.target_facts = parent_target;
   return status;
+}
+
+static iree_status_t loom_value_fact_table_seed_branch_region(
+    loom_value_fact_table_t* table, loom_region_branch_t branch,
+    loom_region_t* region, uint8_t region_index) {
+  const loom_region_branch_truth_t truth =
+      loom_region_branch_region_truth(branch, region_index);
+  if (truth == LOOM_REGION_BRANCH_TRUTH_UNKNOWN) {
+    return iree_ok_status();
+  }
+  return loom_value_fact_table_set_region_branch_truth(table, region, truth);
+}
+
+iree_status_t loom_value_fact_table_compute_op_and_report(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    const loom_op_t* op, bool* out_changed) {
+  IREE_RETURN_IF_ERROR(
+      loom_value_fact_table_seed_nested_target_scopes(table, module, op));
+  const loom_region_branch_t branch =
+      op->region_count ? loom_region_branch_cast(module, (loom_op_t*)op)
+                       : (loom_region_branch_t){0};
+  if (loom_region_branch_isa(branch)) {
+    for (uint8_t i = 0; i < op->region_count; ++i) {
+      loom_region_t* region = loom_region_branch_region(module, branch, i);
+      if (!region) {
+        continue;
+      }
+      IREE_RETURN_IF_ERROR(
+          loom_value_fact_table_seed_branch_region(table, branch, region, i));
+      IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_region_tree(
+          table, module, region, (loom_op_t*)op));
+    }
+  }
+  return loom_value_fact_table_compute_op_in_target_scope(table, module, op,
+                                                          out_changed);
+}
+
+// Continuations for acyclic lexical descent. Loop and CFG solvers retain their
+// own fixed-point iteration; each body evaluation uses this same traversal.
+typedef struct loom_value_fact_region_frame_t {
+  // Region whose blocks are being evaluated.
+  loom_region_t* region;
+  // Owner supplying block-argument and execution-scope facts.
+  loom_op_t* parent_op;
+  // Next block to seed after the current block's operations finish.
+  uint16_t next_block_index;
+  // Next operation in the current block, or NULL at the block's end.
+  loom_op_t* next_op;
+  // Suspended operation while its nested regions are evaluated.
+  struct {
+    // Owner of the regions, or NULL when no descent is pending.
+    loom_op_t* op;
+    // Branch contract requiring a result join, or NULL for ordinary regions.
+    const loom_region_branch_vtable_t* branch;
+    // Next region of op to evaluate.
+    uint8_t next_region_index;
+  } children;
+} loom_value_fact_region_frame_t;
+
+static iree_status_t loom_value_fact_table_begin_region(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    loom_region_t* region, loom_op_t* parent_op,
+    loom_value_fact_region_frame_t* out_frame) {
+  *out_frame = (loom_value_fact_region_frame_t){
+      .region = region,
+      .parent_op = parent_op,
+  };
+  loom_value_facts_t temporal_scope = loom_value_facts_unknown();
+  bool may_repeat = false;
+  if (!parent_op || parent_op == table->context.function.op) {
+    loom_value_facts_mark_cluster_uniform(&temporal_scope);
+  } else {
+    temporal_scope = loom_value_fact_table_block_temporal_scope(
+        table, parent_op->parent_block);
+    may_repeat =
+        loom_loop_like_isa(loom_loop_like_cast(module, parent_op)) ||
+        loom_value_fact_table_block_may_repeat(table, parent_op->parent_block);
+  }
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_set_region_temporal_scope(
+      table, region, temporal_scope, may_repeat));
+  if (iree_any_bit_set(region->flags, LOOM_REGION_INSTANCE_FLAG_CFG)) {
+    out_frame->next_block_index = region->block_count;
+    return loom_value_fact_table_compute_cfg_region_tree(table, module, region,
+                                                         parent_op);
+  }
+  return iree_ok_status();
+}
+
+iree_status_t loom_value_fact_table_compute_region_tree(
+    loom_value_fact_table_t* table, const loom_module_t* module,
+    loom_region_t* region, loom_op_t* parent_op) {
+  if (!region) {
+    return iree_ok_status();
+  }
+  // Flat regions need no traversal allocation. Nested regions grow the stack
+  // in the existing transient arena instead of consuming native stack space.
+  loom_value_fact_region_frame_t root_frame;
+  IREE_RETURN_IF_ERROR(loom_value_fact_table_begin_region(
+      table, module, region, parent_op, &root_frame));
+  loom_value_fact_region_frame_t* stack = &root_frame;
+  iree_host_size_t stack_capacity = 1;
+  iree_host_size_t stack_count = 1;
+  while (stack_count > 0) {
+    loom_value_fact_region_frame_t* frame = &stack[stack_count - 1];
+    if (frame->children.op) {
+      loom_op_t* op = frame->children.op;
+      if (frame->children.next_region_index < op->region_count) {
+        const uint8_t region_index = frame->children.next_region_index++;
+        loom_region_t* child = loom_op_regions(op)[region_index];
+        if (!child) {
+          continue;
+        }
+        if (frame->children.branch) {
+          const loom_region_branch_t branch = {
+              .op = op, .vtable = frame->children.branch};
+          IREE_RETURN_IF_ERROR(loom_value_fact_table_seed_branch_region(
+              table, branch, child, region_index));
+        }
+        if (stack_count == stack_capacity) {
+          IREE_RETURN_IF_ERROR(iree_arena_grow_array(
+              table->transient_arena, stack_count, stack_count + 1,
+              sizeof(*stack), &stack_capacity, (void**)&stack));
+        }
+        IREE_RETURN_IF_ERROR(loom_value_fact_table_begin_region(
+            table, module, child, op, &stack[stack_count]));
+        ++stack_count;
+        continue;
+      }
+      if (frame->children.branch) {
+        IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_op_in_target_scope(
+            table, module, op, NULL));
+      }
+      frame->children.op = NULL;
+      continue;
+    }
+    if (!frame->next_op) {
+      if (frame->next_block_index == frame->region->block_count) {
+        --stack_count;
+        continue;
+      }
+      loom_block_t* block = frame->region->blocks[frame->next_block_index++];
+      if (!block) {
+        continue;
+      }
+      IREE_RETURN_IF_ERROR(loom_value_fact_table_seed_block_args(
+          table, module, block, frame->parent_op));
+      frame->next_op = block->first_op;
+      continue;
+    }
+    loom_op_t* op = frame->next_op;
+    frame->next_op = op->next_op;
+    IREE_RETURN_IF_ERROR(
+        loom_value_fact_table_seed_nested_target_scopes(table, module, op));
+    const loom_op_vtable_t* vtable = loom_op_vtable(module, op);
+    const loom_region_branch_vtable_t* branch =
+        vtable ? vtable->region_branch : NULL;
+    if (!branch) {
+      IREE_RETURN_IF_ERROR(loom_value_fact_table_compute_op_in_target_scope(
+          table, module, op, NULL));
+      if (!op->region_count || (vtable && vtable->loop_like)) {
+        continue;
+      }
+    }
+    frame->children.op = op;
+    frame->children.branch = branch;
+    frame->children.next_region_index = 0;
+  }
+  return iree_ok_status();
 }
 
 iree_status_t loom_value_fact_table_compute_region(

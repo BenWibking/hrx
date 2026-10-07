@@ -768,7 +768,8 @@ iree_status_t loom_value_fact_table_compute_op_and_report(
     const loom_op_t* op, bool* out_changed);
 
 // Computes nested regions using the already established function context.
-// Structured summaries own calls for their regions, including iterative solves.
+// Acyclic lexical descent retains continuations in transient storage. LoopLike
+// and CFG summaries own the iterative solves for their regions.
 iree_status_t loom_value_fact_table_compute_region_tree(
     loom_value_fact_table_t* table, const loom_module_t* module,
     loom_region_t* region, loom_op_t* parent_op);
