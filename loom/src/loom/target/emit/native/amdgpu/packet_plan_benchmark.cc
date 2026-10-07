@@ -561,6 +561,8 @@ class PacketPlanFixture {
         loom_amdgpu_placement_instruction_preferences(&resolved_target);
     frame_options.schedule_pair_affinities = pair_affinities;
     frame_options.schedule_structural_state_reads = structural_state_reads;
+    frame_options.schedule_flags =
+        LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
     frame_options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL;
     frame_options.allocation_fixed_values = abi_verify_result.fixed_values;
     frame_options.allocation_fixed_value_count =
