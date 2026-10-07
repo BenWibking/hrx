@@ -17,7 +17,7 @@ specific definition, builder, caller, or resource owner that supports a claim.
 | [ROCm device libraries][rocm-device-libs] | `8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec` | OCKL hidden grid state, GWS versus atomic barrier selection, split arrival/wait and workgroup/agent/system fence composition. |
 | [Linux][linux] | `50d05c7c76c96b90462f24debacca971d2e86713` | Native UAPI, queue descriptors, memory mappings, engine emitters, and driver resource lifetimes. |
 | [Linux memory transports][linux-memory-transports] | `fe2ec83746e501645709761605c2464a44fd2929` | Exporter runtime PM references and their relation to P2P eligibility and memory placement; KFD's noncached HDP remap, native availability and host flush sequence; SVM prefetch placement, partial migration and native completion; VM ioctl and cache-topology counterparts to runtime size requests. |
-| [ROCm AMDGPU native VM interface][rocm-amdgpu-vm] | `820212794d184710298efcecce42c0215bfc9c6a` | Render-node VM ioctl and cache-topology publication, compared with [the `releases/therock-7.14` revision][rocm-amdgpu-therock] `5081d704e60e807e9541c355c53df57d88ea8cde` for persisting-cache admission. |
+| [ROCm AMDGPU native driver][rocm-amdgpu] | `820212794d184710298efcecce42c0215bfc9c6a` | Render-node VM ioctl, cache-topology publication, and MES V12.1 partition-level scheduler coordination. Compared with [the `releases/therock-7.14` revision][rocm-amdgpu-therock] `5081d704e60e807e9541c355c53df57d88ea8cde` for persisting-cache admission. |
 | [Vulkan specification][vulkan] | `01aaacd99480487bf63830959513c5ca8ceb996d` | External memory and semaphore capabilities, handle ownership, host-pointer imports, resource ownership transfers, host visibility, and performance-query lifetimes. |
 | [LLVM ABI and memory model][llvm-abi] | `6e714c8d91116794cb699cdf80c26afe9cda3ef3` | Kernel descriptors, initial registers, wave-mode availability and target-feature validation, address spaces, shader memory ordering, availability/visibility, the matching cache-control emitter and target predicates, and MLIR's LDS barrier representation and initialization contract. |
 | [LLVM compiler implementation][llvm-compiler] | `6dfe1677ab8dffbc6ec13d53a1e0215d75147689` | Executable fetch padding, dispatch inputs, partial workgroups, and target feature selection. |
@@ -104,7 +104,7 @@ executes. The corresponding chapter identifies those boundaries.
 [rocm-device-libs]: https://github.com/ROCm/llvm-project/tree/8cd9ac8c8f12ab07e92229ea9d690b49e866b8ec/amd/device-libs
 [linux]: https://github.com/torvalds/linux/tree/50d05c7c76c96b90462f24debacca971d2e86713
 [linux-memory-transports]: https://github.com/torvalds/linux/tree/fe2ec83746e501645709761605c2464a44fd2929
-[rocm-amdgpu-vm]: https://github.com/ROCm/amdgpu/tree/820212794d184710298efcecce42c0215bfc9c6a
+[rocm-amdgpu]: https://github.com/ROCm/amdgpu/tree/820212794d184710298efcecce42c0215bfc9c6a
 [rocm-amdgpu-therock]: https://github.com/ROCm/amdgpu/tree/5081d704e60e807e9541c355c53df57d88ea8cde
 [vulkan]: https://github.com/KhronosGroup/Vulkan-Docs/tree/01aaacd99480487bf63830959513c5ca8ceb996d
 [llvm-abi]: https://github.com/llvm/llvm-project/tree/6e714c8d91116794cb699cdf80c26afe9cda3ef3

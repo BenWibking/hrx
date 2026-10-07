@@ -140,6 +140,16 @@ updates mapped-GWS accounting. The V9 CP scheduler writer sets
 [Queue state][kfd-update] · [CP queue mapping][cp-map-queue] ·
 [CP process mapping][cp-map-process] · [MES input][mes-input]
 
+Attachment also supplies `UPDATE_FLAG_IS_GWS` to the MQD update. In the V9
+MQD manager, a supplied update record and native GC ≥9.4.2 cause
+`COMPUTE_RESOURCE_LIMITS.FORCE_SIMD_DIST` to follow that flag: set when the
+flag is present, cleared when absent. This predicate belongs to the V9
+manager; it is not a rule for all later native GC identities. The V12 and
+V12.1 MQD builders do not consume this flag. The MQD register setting and
+the queue's MES scheduling field are separate emitted properties.
+[Attachment update][kfd-attach] · [V9 MQD update][mqd9-gws] ·
+[V12 MQD builder][mqd12] · [V12.1 MQD builder][mqd121]
+
 AMD's April 2024 MES specification, `MES_SCH_API_ADD_QUEUE`, p. 25,
 identifies `exclusively_scheduled` as the cooperative-launch flag. Its
 separate `is_long_running` flag describes a queue with a long-running
@@ -165,6 +175,13 @@ an unqualified exclusivity guarantee for V12 firmware.
 [V11 writer][mes11] · [V12 writer][mes12] · [V12.1 writer][mes121] ·
 [V12 API layout][mes12-layout]
 
+The common KFD caller zero-initializes `mes_add_queue_input` and leaves
+`gws_base` and `gws_size` zero. The V12/V12.1 writers copy those zero values;
+the device's GWS admission count does not implicitly reach these fields.
+They therefore do not distinguish a cooperatively attached queue in this
+path. [Common KFD input][mes-input] · [V12 writer][mes12] ·
+[V12.1 writer][mes121]
+
 Attachment is a native queue transition, outside the shader barrier's hot
 path. The cited queue manager changes GWS ownership/accounting before its
 fallible queue update; the operation does not promise rollback to the prior
@@ -172,6 +189,28 @@ state on every error. Queue destruction removes the queue through the native
 scheduler, then releases its resource wrapper or marker accounting.
 [Attachment transition][kfd-attach] · [Queue destruction][kfd-destroy] ·
 [Resource cleanup][kfd-cleanup]
+
+### MES coordination across XCCs
+
+MES V12.1 also has a partition-level mode named `mes_coop_mode`. In AMD's
+cited native driver, unified-MES initialization calls
+`mes_v12_1_setup_coop_mode` before publishing hardware resources. For more
+than one XCC, SPX, DPX and QPX modes enable coordination and select a master
+XCC for each partition; CPX disables it. A single-XCC device returns without
+enabling the mode. The selection consumes partition topology, independently
+of a queue's `is_gws` property. [Initialization][mes121-init] ·
+[Partition selection][mes121-coop-mode]
+
+For this mode, the driver sets `SET_HW_RSRC_1.mes_coop_mode` and publishes
+`coop_sch_shared_mc_addr` as a command buffer shared by the master and
+subordinate scheduler instances. With coordination enabled, it publishes
+these fields for the scheduler pipe; the KIQ pipe additionally requires
+masked KIQ firmware version ≥`0x74`. Queue addition and removal
+route through the selected master MES. These are scheduler-group resources
+and routing rules; they supply no per-queue cooperative-grid marker in the
+cited writers. [Resource layout][mes121-coop-layout] ·
+[Resource publication][mes121-coop-resources] ·
+[Queue addition and removal][mes121-coop-routing]
 
 ## Occupancy and participating workgroups
 
@@ -408,11 +447,19 @@ memory contracts of every participating queue and device.
 [kfd-update]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device_queue_manager.c#L1130-L1160
 [cp-map-queue]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_packet_manager_v9.c#L227-L247
 [cp-map-process]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_packet_manager_v9.c#L32-L64
-[mes-input]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device_queue_manager.c#L243-L271
+[mes-input]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_device_queue_manager.c#L207-L281
+[mqd9-gws]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_mqd_manager_v9.c#L334-L341
+[mqd12]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_mqd_manager_v12.c#L183-L245
+[mqd121]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_mqd_manager_v12_1.c#L239-L322
 [mes11]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/mes_v11_0.c#L321-L379
 [mes12]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/mes_v12_0.c#L306-L361
 [mes121]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdgpu/mes_v12_1.c#L289-L348
 [mes12-layout]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/include/mes_v12_api_def.h#L357-L388
+[mes121-init]: https://github.com/ROCm/amdgpu/blob/820212794d184710298efcecce42c0215bfc9c6a/drivers/gpu/drm/amd/amdgpu/mes_v12_1.c#L1821-L1833
+[mes121-coop-mode]: https://github.com/ROCm/amdgpu/blob/820212794d184710298efcecce42c0215bfc9c6a/drivers/gpu/drm/amd/amdgpu/mes_v12_1.c#L1872-L1909
+[mes121-coop-layout]: https://github.com/ROCm/amdgpu/blob/820212794d184710298efcecce42c0215bfc9c6a/drivers/gpu/drm/amd/include/mes_v12_api_def.h#L314-L336
+[mes121-coop-resources]: https://github.com/ROCm/amdgpu/blob/820212794d184710298efcecce42c0215bfc9c6a/drivers/gpu/drm/amd/amdgpu/mes_v12_1.c#L655-L682
+[mes121-coop-routing]: https://github.com/ROCm/amdgpu/blob/820212794d184710298efcecce42c0215bfc9c6a/drivers/gpu/drm/amd/amdgpu/mes_v12_1.c#L289-L373
 [mes-manual]: https://gpuopen.com/download/documentation/micro_engine_scheduler.pdf#page=25
 [mes-scope]: https://gpuopen.com/amd-gpu-architecture-programming-documentation/
 [kfd-destroy]: https://github.com/torvalds/linux/blob/50d05c7c76c96b90462f24debacca971d2e86713/drivers/gpu/drm/amd/amdkfd/kfd_process_queue_manager.c#L557-L586
