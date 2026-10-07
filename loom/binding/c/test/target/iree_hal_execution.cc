@@ -238,30 +238,32 @@ iree_hal_physical_device_affinity_t QueueFamilyPhysicalDeviceAffinity(
       .physical_device_affinity;
 }
 
-loomc_status_t CreateHalTargetProfile(
+loomc_status_t SelectHalTarget(
     const IreeHalKernelExecutionTarget& target,
     loomc_target_environment_t* target_environment, iree_hal_device_t* device,
     const iree_hal_queue_family_t* queue_family, TargetProfilePtr* out_profile,
+    const iree_hal_executable_target_t** out_executable_target,
     ResultPtr* out_result) {
-  loomc_iree_hal_profile_options_t profile_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS,
-      /*.structure_size=*/sizeof(profile_options),
+  loomc_iree_hal_target_options_t target_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
+      /*.structure_size=*/sizeof(target_options),
       /*.next=*/nullptr,
       /*.identifier=*/target.target_profile_identifier,
       /*.device=*/device,
       /*.physical_device_affinity=*/
-      target.executable_target_selection.physical_device_affinity |
-          QueueFamilyPhysicalDeviceAffinity(device, queue_family),
-      /*.providers=*/target.profile_providers,
-      /*.provider_count=*/target.profile_provider_count,
+      QueueFamilyPhysicalDeviceAffinity(device, queue_family),
+      /*.target_profile=*/nullptr,
+      /*.providers=*/target.target_providers,
+      /*.provider_count=*/target.target_provider_count,
   };
-  loomc_target_profile_t* profile = nullptr;
+  loomc_iree_hal_target_selection_t selection = {};
   loomc_result_t* result = nullptr;
-  loomc_status_t status = loomc_target_profile_create_iree_hal(
-      target_environment, &profile_options, loomc_allocator_system(), &profile,
+  loomc_status_t status = loomc_target_select_iree_hal(
+      target_environment, &target_options, loomc_allocator_system(), &selection,
       &result);
   if (loomc_status_is_ok(status)) {
-    out_profile->reset(profile);
+    out_profile->reset(selection.target_profile);
+    *out_executable_target = selection.executable_target;
     out_result->reset(result);
   }
   return status;
@@ -308,36 +310,37 @@ loomc_status_t DeserializeSource(loomc_context_t* context,
   return status;
 }
 
-loomc_status_t CompileModule(const IreeHalKernelExecutionTarget& target,
-                             loomc_compiler_t* compiler,
-                             loomc_workspace_t* workspace,
-                             loomc_pass_program_t* pass_program,
-                             loomc_target_profile_t* target_profile,
-                             loomc_module_t* module, ResultPtr* out_result) {
-  const loomc_target_specialization_t specialization = {
-      /*.function_symbol=*/target.kernel_export_name,
-      /*.target_profile=*/target_profile,
-  };
-  loomc_target_specialization_options_t target_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_TARGET_SPECIALIZATION_OPTIONS,
-      /*.structure_size=*/sizeof(target_options),
+loomc_status_t CompileArtifact(const IreeHalKernelExecutionTarget& target,
+                               loomc_compiler_t* compiler,
+                               loomc_workspace_t* workspace,
+                               loomc_pass_program_t* pass_program,
+                               loomc_target_profile_t* target_profile,
+                               loomc_module_t* module, ResultPtr* out_result) {
+  const loomc_emit_options_t emit_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      /*.structure_size=*/sizeof(emit_options),
       /*.next=*/nullptr,
-      /*.specializations=*/&specialization,
-      /*.specialization_count=*/1,
+      /*.artifact_format=*/target.artifact_format,
+      /*.identifier=*/target.artifact_identifier,
+      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
   };
-  loomc_compile_options_t compile_options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_COMPILE_OPTIONS,
+  const loomc_compile_artifact_options_t compile_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_COMPILE_ARTIFACT_OPTIONS,
       /*.structure_size=*/sizeof(compile_options),
-      /*.next=*/&target_options,
-      /*.module_name=*/target.module_name,
+      /*.next=*/nullptr,
+      /*.roots=*/&target.kernel_export_name,
+      /*.root_count=*/1,
+      /*.excluded_roots=*/nullptr,
+      /*.excluded_root_count=*/0,
+      /*.target_profile=*/target_profile,
+      /*.config=*/nullptr,
+      /*.emit_options=*/&emit_options,
       /*.artifact_flags=*/LOOMC_COMPILE_ARTIFACT_FLAG_LAUNCH_CONFIG,
-      /*.config_flags=*/0,
-      /*.config_module=*/nullptr,
   };
   loomc_result_t* result = nullptr;
-  loomc_status_t status =
-      loomc_compile_module(compiler, workspace, pass_program, module,
-                           &compile_options, loomc_allocator_system(), &result);
+  loomc_status_t status = loomc_compile_artifact(
+      compiler, workspace, pass_program, module, &compile_options,
+      loomc_allocator_system(), &result);
   if (loomc_status_is_ok(status)) {
     out_result->reset(result);
   }
@@ -372,27 +375,9 @@ iree_status_t AllocateStorageBuffer(iree_hal_device_t* device,
 }
 
 iree_status_t PrepareExecutableFromArtifact(
-    const IreeHalKernelExecutionTarget& target, iree_hal_device_t* device,
+    const iree_hal_executable_target_t* executable_target,
     iree_hal_queue_t* dispatch_queue, const loomc_artifact_t* artifact,
     iree_hal_executable_t** out_executable) {
-  iree_hal_executable_target_selection_t target_selection =
-      target.executable_target_selection;
-  target_selection.physical_device_affinity |=
-      QueueFamilyPhysicalDeviceAffinity(device,
-                                        iree_hal_queue_family(dispatch_queue));
-  const iree_hal_executable_target_selection_result_t target_result =
-      iree_hal_device_spec_select_executable_target(
-          iree_hal_device_spec(device), &target_selection);
-  if (target_result.outcome ==
-      IREE_HAL_EXECUTABLE_TARGET_SELECTION_OUTCOME_NO_MATCH) {
-    return iree_make_status(IREE_STATUS_UNAVAILABLE,
-                            "HAL device does not advertise the test target");
-  } else if (target_result.outcome ==
-             IREE_HAL_EXECUTABLE_TARGET_SELECTION_OUTCOME_AMBIGUOUS) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "HAL device advertises ambiguous test targets");
-  }
-
   iree_hal_executable_load_params_t load_params;
   iree_hal_executable_load_params_initialize(&load_params);
   loomc_byte_span_t executable_data = loomc_byte_span_empty();
@@ -400,9 +385,9 @@ iree_status_t PrepareExecutableFromArtifact(
       artifact->contents, loomc_allocator_system(), &executable_data)));
   load_params.executable_data = iree_make_const_byte_span(
       executable_data.data, executable_data.data_length);
-  iree_status_t status = iree_hal_executable_load(
-      iree_hal_queue_family(dispatch_queue), target_result.target, &load_params,
-      out_executable);
+  iree_status_t status =
+      iree_hal_executable_load(iree_hal_queue_family(dispatch_queue),
+                               executable_target, &load_params, out_executable);
   loomc_allocator_free(loomc_allocator_system(), (void*)executable_data.data);
   return status;
 }
@@ -466,18 +451,14 @@ void RunIreeHalKernelExecutionTest(
   ASSERT_FALSE(loomc_string_view_is_empty(target.target_profile_identifier));
   ASSERT_FALSE(loomc_string_view_is_empty(target.source_identifier));
   ASSERT_FALSE(loomc_string_view_is_empty(target.source_text));
-  ASSERT_FALSE(loomc_string_view_is_empty(target.module_name));
   ASSERT_FALSE(loomc_string_view_is_empty(target.kernel_export_name));
   ASSERT_FALSE(loomc_string_view_is_empty(target.target_pipeline_identifier));
   ASSERT_FALSE(loomc_string_view_is_empty(target.artifact_format));
   ASSERT_FALSE(loomc_string_view_is_empty(target.artifact_identifier));
-  ASSERT_FALSE(
-      iree_string_view_is_empty(target.executable_target_selection.family));
-  ASSERT_NE(target.profile_providers, nullptr);
-  ASSERT_GT(target.profile_provider_count, 0u);
+  ASSERT_NE(target.target_providers, nullptr);
+  ASSERT_GT(target.target_provider_count, 0u);
   ASSERT_NE(target.create_target_environment, nullptr);
   ASSERT_NE(target.validate_target_profile, nullptr);
-  ASSERT_NE(target.emit_module, nullptr);
 
   ProactorPoolPtr proactor_pool;
   FrontierTrackerPtr frontier_tracker;
@@ -514,14 +495,17 @@ void RunIreeHalKernelExecutionTest(
   LOOMC_ASSERT_OK(CreateSource(target, &source));
 
   TargetProfilePtr target_profile;
+  const iree_hal_executable_target_t* executable_target = nullptr;
   ResultPtr result;
-  LOOMC_ASSERT_OK(CreateHalTargetProfile(
-      target, target_environment.get(), device.get(),
-      iree_hal_queue_family(dispatch_queue), &target_profile, &result));
-  if (!ResultSucceeded(result.get(), "IREE HAL target profile creation")) {
+  LOOMC_ASSERT_OK(
+      SelectHalTarget(target, target_environment.get(), device.get(),
+                      iree_hal_queue_family(dispatch_queue), &target_profile,
+                      &executable_target, &result));
+  if (!ResultSucceeded(result.get(), "IREE HAL target selection")) {
     GTEST_SKIP() << target.label << " did not produce a usable target profile";
   }
   ASSERT_NE(target_profile.get(), nullptr);
+  ASSERT_NE(executable_target, nullptr);
   result.reset();
 
   const char* profile_skip_reason = nullptr;
@@ -550,10 +534,10 @@ void RunIreeHalKernelExecutionTest(
   ASSERT_TRUE(ResultSucceeded(result.get(), "target pipeline creation"));
   result.reset();
 
-  LOOMC_ASSERT_OK(CompileModule(target, compiler.get(), workspace.get(),
-                                pass_program.get(), target_profile.get(),
-                                module.get(), &result));
-  ASSERT_TRUE(ResultSucceeded(result.get(), "module compilation"));
+  LOOMC_ASSERT_OK(CompileArtifact(target, compiler.get(), workspace.get(),
+                                  pass_program.get(), target_profile.get(),
+                                  module.get(), &result));
+  ASSERT_TRUE(ResultSucceeded(result.get(), "artifact compilation"));
 
   const loomc_artifact_t* launch_config_artifact = FindArtifact(
       result.get(), LOOMC_ARTIFACT_KIND_LAUNCH_CONFIG,
@@ -576,15 +560,6 @@ void RunIreeHalKernelExecutionTest(
       launch_program_ptr.get(), launch_function,
       /*workload_argument_bits=*/nullptr,
       /*workload_argument_count=*/0, &launch_config));
-  result.reset();
-
-  loomc_result_t* emit_result = nullptr;
-  loomc_status_t emit_status = target.emit_module(
-      target_environment.get(), workspace.get(), module.get(),
-      target.artifact_format, target.artifact_identifier, &emit_result);
-  result.reset(emit_result);
-  LOOMC_ASSERT_OK(emit_status);
-  ASSERT_TRUE(ResultSucceeded(result.get(), "artifact emission"));
   const loomc_artifact_t* artifact = FindArtifact(
       result.get(), LOOMC_ARTIFACT_KIND_EXECUTABLE, target.artifact_format);
   ASSERT_NE(artifact, nullptr);
@@ -592,7 +567,7 @@ void RunIreeHalKernelExecutionTest(
 
   iree_hal_executable_t* executable = nullptr;
   IREE_ASSERT_OK(PrepareExecutableFromArtifact(
-      target, device.get(), dispatch_queue, artifact, &executable));
+      executable_target, dispatch_queue, artifact, &executable));
   ExecutablePtr executable_ptr(executable);
 
   execute({device.get(), transfer_queue, dispatch_queue, executable_ptr.get(),

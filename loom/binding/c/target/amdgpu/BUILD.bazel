@@ -70,6 +70,7 @@ loom_cc_library(
         "//loom/binding/c:loomc",
         "//loom/binding/c/target/iree_hal",
         "//loom/src/loom/target/arch/amdgpu:artifact_key",
+        "//loom/src/loom/target/arch/amdgpu:profile",
         "//loom/src/loom/target/arch/amdgpu:target_info",
         "//runtime/src/iree/hal",
     ],

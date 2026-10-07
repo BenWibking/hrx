@@ -225,24 +225,29 @@ void ExpectFailedSpirvIreeHalResult(const loomc_result_t* result) {
   EXPECT_EQ(ToString(diagnostic->code), "SPIRV/IREE_HAL");
 }
 
-TargetProfilePtr CreateProfileFromHal(
+TargetProfilePtr SelectTargetFromHal(
     loomc_target_environment_t* target_environment, FakeHalDevice* device,
-    loomc_result_t** out_result) {
+    loomc_result_t** out_result,
+    const iree_hal_executable_target_t** out_executable_target = nullptr) {
   iree_hal_device_t* hal_device = reinterpret_cast<iree_hal_device_t*>(device);
-  loomc_spirv_iree_hal_profile_options_t options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_PROFILE_OPTIONS,
+  loomc_spirv_iree_hal_target_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_TARGET_OPTIONS,
       /*.structure_size=*/sizeof(options),
       /*.next=*/nullptr,
       /*.identifier=*/loomc_make_cstring_view("fake-vulkan"),
       /*.device=*/hal_device,
       /*.physical_device_affinity=*/0,
+      /*.target_profile=*/nullptr,
   };
-  loomc_target_profile_t* profile = nullptr;
-  loomc_status_t status = loomc_target_profile_create_spirv_iree_hal(
-      target_environment, &options, loomc_allocator_system(), &profile,
+  loomc_iree_hal_target_selection_t selection = {};
+  loomc_status_t status = loomc_target_select_spirv_iree_hal(
+      target_environment, &options, loomc_allocator_system(), &selection,
       out_result);
   LOOMC_EXPECT_OK(status);
-  return TargetProfilePtr(profile);
+  if (out_executable_target != nullptr) {
+    *out_executable_target = selection.executable_target;
+  }
+  return TargetProfilePtr(selection.target_profile);
 }
 
 TEST(LoomcSpirvIreeHalTargetTest, CreatesProfileFromHalFacts) {
@@ -257,11 +262,15 @@ TEST(LoomcSpirvIreeHalTargetTest, CreatesProfileFromHalFacts) {
   InitializeFakeDevice(device_spec.get(), &device);
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   loomc_result_t* result = nullptr;
-  TargetProfilePtr profile =
-      CreateProfileFromHal(target_environment.get(), &device, &result);
+  const iree_hal_executable_target_t* executable_target = nullptr;
+  TargetProfilePtr profile = SelectTargetFromHal(
+      target_environment.get(), &device, &result, &executable_target);
   ResultPtr result_ptr(result);
 
   ASSERT_NE(profile.get(), nullptr);
+  ASSERT_NE(executable_target, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(executable_target->target_key,
+                                     IREE_SV("vulkan1.3+bda")));
   ExpectSucceededResult(result_ptr.get());
   loomc_spirv_limit_value_t limit = {};
   LOOMC_EXPECT_OK(loomc_spirv_target_profile_query_limit(
@@ -297,7 +306,7 @@ TEST(LoomcSpirvIreeHalTargetTest, MissingExecutableTargetFailsResult) {
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   loomc_result_t* result = nullptr;
   TargetProfilePtr profile =
-      CreateProfileFromHal(target_environment.get(), &device, &result);
+      SelectTargetFromHal(target_environment.get(), &device, &result);
   ResultPtr result_ptr(result);
 
   EXPECT_EQ(profile.get(), nullptr);
@@ -314,7 +323,7 @@ TEST(LoomcSpirvIreeHalTargetTest, MissingRequiredHalFactFailsResult) {
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   loomc_result_t* result = nullptr;
   TargetProfilePtr profile =
-      CreateProfileFromHal(target_environment.get(), &device, &result);
+      SelectTargetFromHal(target_environment.get(), &device, &result);
   ResultPtr result_ptr(result);
 
   EXPECT_EQ(profile.get(), nullptr);
@@ -332,7 +341,7 @@ TEST(LoomcSpirvIreeHalTargetTest, MissingWorkgroupStorageLimitFailsResult) {
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   loomc_result_t* result = nullptr;
   TargetProfilePtr profile =
-      CreateProfileFromHal(target_environment.get(), &device, &result);
+      SelectTargetFromHal(target_environment.get(), &device, &result);
   ResultPtr result_ptr(result);
 
   EXPECT_EQ(profile.get(), nullptr);
@@ -347,29 +356,115 @@ TEST(LoomcSpirvIreeHalTargetTest, ProviderRoutesThroughGenericHalRouter) {
   InitializeFakeDevice(device_spec.get(), &device);
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   iree_hal_device_t* hal_device = reinterpret_cast<iree_hal_device_t*>(&device);
-  const loomc_iree_hal_profile_provider_t* providers[] = {
-      loomc_spirv_iree_hal_profile_provider(),
+  const loomc_iree_hal_target_provider_t* providers[] = {
+      loomc_spirv_iree_hal_target_provider(),
   };
-  loomc_iree_hal_profile_options_t options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS,
+  loomc_iree_hal_target_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
       /*.structure_size=*/sizeof(options),
       /*.next=*/nullptr,
       /*.identifier=*/loomc_make_cstring_view("router"),
       /*.device=*/hal_device,
       /*.physical_device_affinity=*/0,
+      /*.target_profile=*/nullptr,
       /*.providers=*/providers,
       /*.provider_count=*/IREE_ARRAYSIZE(providers),
   };
   loomc_result_t* result = nullptr;
-  loomc_target_profile_t* profile = nullptr;
-  LOOMC_ASSERT_OK(loomc_target_profile_create_iree_hal(
-      target_environment.get(), &options, loomc_allocator_system(), &profile,
+  loomc_iree_hal_target_selection_t selection = {};
+  LOOMC_ASSERT_OK(loomc_target_select_iree_hal(
+      target_environment.get(), &options, loomc_allocator_system(), &selection,
       &result));
-  TargetProfilePtr profile_ptr(profile);
+  TargetProfilePtr profile_ptr(selection.target_profile);
   ResultPtr result_ptr(result);
 
   ASSERT_NE(profile_ptr.get(), nullptr);
+  ASSERT_NE(selection.executable_target, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(selection.executable_target->target_key,
+                                     IREE_SV("vulkan1.3+bda")));
   ExpectSucceededResult(result_ptr.get());
+}
+
+TEST(LoomcSpirvIreeHalTargetTest,
+     ForcedProfilePreservesExactCompilerAndLoaderPair) {
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(CreateVulkanDeviceSpec(
+      RequiredVulkanFeatures(), kCompleteDeviceSpecFlags, &device_spec));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  loomc_target_profile_t* requested_profile = nullptr;
+  LOOMC_ASSERT_OK(loomc_target_profile_select(
+      target_environment.get(), loomc_make_cstring_view("spirv:vulkan1.3+bda"),
+      loomc_allocator_system(), &requested_profile));
+  TargetProfilePtr requested_profile_ptr(requested_profile);
+  const loomc_iree_hal_target_provider_t* providers[] = {
+      loomc_spirv_iree_hal_target_provider(),
+  };
+  loomc_iree_hal_target_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
+      /*.structure_size=*/sizeof(options),
+      /*.next=*/nullptr,
+      /*.identifier=*/loomc_string_view_empty(),
+      /*.device=*/reinterpret_cast<iree_hal_device_t*>(&device),
+      /*.physical_device_affinity=*/0,
+      /*.target_profile=*/requested_profile_ptr.get(),
+      /*.providers=*/providers,
+      /*.provider_count=*/IREE_ARRAYSIZE(providers),
+  };
+  loomc_iree_hal_target_selection_t selection = {};
+  loomc_result_t* result = nullptr;
+  LOOMC_ASSERT_OK(loomc_target_select_iree_hal(
+      target_environment.get(), &options, loomc_allocator_system(), &selection,
+      &result));
+  TargetProfilePtr selected_profile_ptr(selection.target_profile);
+  ResultPtr result_ptr(result);
+
+  ExpectSucceededResult(result_ptr.get());
+  EXPECT_EQ(selected_profile_ptr.get(), requested_profile_ptr.get());
+  ASSERT_NE(selection.executable_target, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(selection.executable_target->target_key,
+                                     IREE_SV("vulkan1.3+bda")));
+}
+
+TEST(LoomcSpirvIreeHalTargetTest, ForcedProfileMustMatchLoaderContract) {
+  DeviceSpecPtr device_spec;
+  IREE_ASSERT_OK(CreateVulkanDeviceSpec(
+      RequiredVulkanFeatures(), kCompleteDeviceSpecFlags, &device_spec));
+  FakeHalDevice device = {};
+  InitializeFakeDevice(device_spec.get(), &device);
+  TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
+  loomc_target_profile_t* requested_profile = nullptr;
+  LOOMC_ASSERT_OK(loomc_target_profile_select(
+      target_environment.get(),
+      loomc_make_cstring_view("spirv:vulkan1.3+bda+extended-types"),
+      loomc_allocator_system(), &requested_profile));
+  TargetProfilePtr requested_profile_ptr(requested_profile);
+  const loomc_iree_hal_target_provider_t* providers[] = {
+      loomc_spirv_iree_hal_target_provider(),
+  };
+  loomc_iree_hal_target_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
+      /*.structure_size=*/sizeof(options),
+      /*.next=*/nullptr,
+      /*.identifier=*/loomc_string_view_empty(),
+      /*.device=*/reinterpret_cast<iree_hal_device_t*>(&device),
+      /*.physical_device_affinity=*/0,
+      /*.target_profile=*/requested_profile_ptr.get(),
+      /*.providers=*/providers,
+      /*.provider_count=*/IREE_ARRAYSIZE(providers),
+  };
+  loomc_iree_hal_target_selection_t selection = {};
+  loomc_result_t* result = nullptr;
+  LOOMC_ASSERT_OK(loomc_target_select_iree_hal(
+      target_environment.get(), &options, loomc_allocator_system(), &selection,
+      &result));
+  TargetProfilePtr selected_profile_ptr(selection.target_profile);
+  ResultPtr result_ptr(result);
+
+  EXPECT_EQ(selected_profile_ptr.get(), nullptr);
+  EXPECT_EQ(selection.executable_target, nullptr);
+  ExpectFailedSpirvIreeHalResult(result_ptr.get());
 }
 
 TEST(LoomcSpirvIreeHalTargetTest, ProviderMissLetsRouterReportUnsupported) {
@@ -377,25 +472,26 @@ TEST(LoomcSpirvIreeHalTargetTest, ProviderMissLetsRouterReportUnsupported) {
   InitializeFakeDevice(nullptr, &device);
   TargetEnvironmentPtr target_environment = CreateSpirvTargetEnvironment();
   iree_hal_device_t* hal_device = reinterpret_cast<iree_hal_device_t*>(&device);
-  const loomc_iree_hal_profile_provider_t* providers[] = {
-      loomc_spirv_iree_hal_profile_provider(),
+  const loomc_iree_hal_target_provider_t* providers[] = {
+      loomc_spirv_iree_hal_target_provider(),
   };
-  loomc_iree_hal_profile_options_t options = {
-      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS,
+  loomc_iree_hal_target_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
       /*.structure_size=*/sizeof(options),
       /*.next=*/nullptr,
       /*.identifier=*/loomc_make_cstring_view("miss"),
       /*.device=*/hal_device,
       /*.physical_device_affinity=*/0,
+      /*.target_profile=*/nullptr,
       /*.providers=*/providers,
       /*.provider_count=*/IREE_ARRAYSIZE(providers),
   };
   loomc_result_t* result = nullptr;
-  loomc_target_profile_t* profile = nullptr;
-  LOOMC_ASSERT_OK(loomc_target_profile_create_iree_hal(
-      target_environment.get(), &options, loomc_allocator_system(), &profile,
+  loomc_iree_hal_target_selection_t selection = {};
+  LOOMC_ASSERT_OK(loomc_target_select_iree_hal(
+      target_environment.get(), &options, loomc_allocator_system(), &selection,
       &result));
-  TargetProfilePtr profile_ptr(profile);
+  TargetProfilePtr profile_ptr(selection.target_profile);
   ResultPtr result_ptr(result);
 
   EXPECT_EQ(profile_ptr.get(), nullptr);

@@ -30,6 +30,7 @@ loom_cc_library(
         "spirv.c",
     ],
     hdrs = [
+        "profile_match.h",
         "profile_rows.h",
         "//loom/binding/c:include/loomc/target/spirv.h",
         "//loom/binding/c:include/loomc/target/spirv/base.h",
