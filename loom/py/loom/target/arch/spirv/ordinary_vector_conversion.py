@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""Source-of-truth rows for native SPIR-V vector integer conversions."""
+"""Scalar numeric conversion semantics lifted to native SPIR-V vectors."""
 
 from __future__ import annotations
 
@@ -12,26 +12,33 @@ from dataclasses import dataclass
 
 from loom.target.arch.spirv.ordinary_vector import (
     NATIVE_ORDINARY_VECTOR_LANE_COUNTS,
+    ORDINARY_VECTOR_TYPES,
     OrdinaryVectorInstruction,
     OrdinaryVectorType,
 )
 from loom.target.arch.spirv.ordinary_vector_integer import (
     ORDINARY_VECTOR_INTEGER_TYPE_PAIRS,
 )
-from loom.target.arch.spirv.scalar_alu import ScalarAluType
+from loom.target.arch.spirv.scalar_alu import (
+    FLOAT_SCALAR_ALU_TYPES,
+    SIGNED_INTEGER_SCALAR_ALU_TYPES,
+    ScalarAluType,
+)
 from loom.target.arch.spirv.scalar_conversion import (
-    SIGNED_INTEGER_WIDTH_CONVERSIONS,
-    UNSIGNED_INTEGER_WIDTH_CONVERSIONS,
+    LOW_SCALAR_CONVERSIONS,
     ScalarConversion,
 )
 
 
 @dataclass(frozen=True, slots=True)
-class OrdinaryVectorIntegerConversion:
-    """One scalar integer conversion lifted to a native vector type pair."""
+class OrdinaryVectorConversion:
+    """One scalar numeric conversion lifted to a native vector type pair."""
 
+    # Owning scalar opcode, interpretation and feature contract.
     scalar_conversion: ScalarConversion
+    # Native input shape with the opcode's physical component signedness.
     source_type: OrdinaryVectorType
+    # Native output shape with the opcode's physical component signedness.
     result_type: OrdinaryVectorType
 
     def __post_init__(self) -> None:
@@ -48,6 +55,10 @@ class OrdinaryVectorIntegerConversion:
                 raise ValueError("scalar and vector conversion encodings must match")
             if component_type.feature_atoms != scalar_type.feature_atoms:
                 raise ValueError("scalar and vector conversion features must match")
+        if self.scalar_conversion.feature_atoms:
+            raise ValueError(
+                "native numeric conversions cannot drop instruction features"
+            )
 
     @property
     def instruction(self) -> OrdinaryVectorInstruction:
@@ -69,67 +80,56 @@ class OrdinaryVectorIntegerConversion:
         )
 
 
-_INTEGER_VECTOR_TYPES_BY_SCALAR_SUFFIX_AND_LANE = {
-    (vector_type.component_type.suffix, type_pair.lane_count): vector_type
-    for type_pair in ORDINARY_VECTOR_INTEGER_TYPE_PAIRS
-    for vector_type in (type_pair.signed, type_pair.unsigned)
+_CONVERSION_VECTOR_TYPES = (
+    *ORDINARY_VECTOR_TYPES,
+    *(type_pair.unsigned for type_pair in ORDINARY_VECTOR_INTEGER_TYPE_PAIRS),
+)
+_VECTOR_TYPES_BY_SCALAR_SUFFIX_AND_LANE = {
+    (vector_type.component_type.suffix, vector_type.lane_count): vector_type
+    for vector_type in _CONVERSION_VECTOR_TYPES
 }
-if len(_INTEGER_VECTOR_TYPES_BY_SCALAR_SUFFIX_AND_LANE) != (
-    2 * len(ORDINARY_VECTOR_INTEGER_TYPE_PAIRS)
-):
-    raise ValueError("integer vector scalar suffix and lane pairs must be unique")
+if len(_VECTOR_TYPES_BY_SCALAR_SUFFIX_AND_LANE) != len(_CONVERSION_VECTOR_TYPES):
+    raise ValueError("vector scalar suffix and lane pairs must be unique")
 
 
-def _integer_vector_type(
+def _vector_type(
     scalar_type: ScalarAluType,
     lane_count: int,
 ) -> OrdinaryVectorType:
-    vector_type = _INTEGER_VECTOR_TYPES_BY_SCALAR_SUFFIX_AND_LANE.get(
+    vector_type = _VECTOR_TYPES_BY_SCALAR_SUFFIX_AND_LANE.get(
         (scalar_type.suffix, lane_count)
     )
     if vector_type is None:
         raise ValueError(
-            f"{scalar_type.suffix}: missing v{lane_count} integer vector type"
+            f"{scalar_type.suffix}: missing v{lane_count} numeric vector type"
         )
     return vector_type
 
 
-def _lift_integer_conversion(
-    scalar_conversion: ScalarConversion,
-) -> tuple[OrdinaryVectorIntegerConversion, ...]:
-    return tuple(
-        OrdinaryVectorIntegerConversion(
-            scalar_conversion=scalar_conversion,
-            source_type=_integer_vector_type(
-                scalar_conversion.source_type,
-                lane_count,
-            ),
-            result_type=_integer_vector_type(
-                scalar_conversion.result_type,
-                lane_count,
-            ),
-        )
-        for lane_count in NATIVE_ORDINARY_VECTOR_LANE_COUNTS
+# BF16/FP8 payloads and predicates have different representation contracts.
+# Bit-layout conversions are owned by ordinary_vector_bit_layout.
+_NUMERIC_SOURCE_TYPES = frozenset(
+    scalar.source_type
+    for scalar in (*SIGNED_INTEGER_SCALAR_ALU_TYPES, *FLOAT_SCALAR_ALU_TYPES)
+)
+NATIVE_VECTOR_SCALAR_CONVERSIONS = tuple(
+    conversion
+    for conversion in LOW_SCALAR_CONVERSIONS
+    if conversion.source_op_key != "bitcast"
+    and conversion.source_type.source_type in _NUMERIC_SOURCE_TYPES
+    and conversion.result_type.source_type in _NUMERIC_SOURCE_TYPES
+)
+
+ORDINARY_VECTOR_CONVERSIONS = tuple(
+    OrdinaryVectorConversion(
+        scalar_conversion=conversion,
+        source_type=_vector_type(conversion.source_type, lane_count),
+        result_type=_vector_type(conversion.result_type, lane_count),
     )
-
-
-SIGNED_ORDINARY_VECTOR_INTEGER_CONVERSIONS = tuple(
-    vector_conversion
-    for scalar_conversion in SIGNED_INTEGER_WIDTH_CONVERSIONS
-    for vector_conversion in _lift_integer_conversion(scalar_conversion)
+    for conversion in NATIVE_VECTOR_SCALAR_CONVERSIONS
+    for lane_count in NATIVE_ORDINARY_VECTOR_LANE_COUNTS
 )
 
-UNSIGNED_ORDINARY_VECTOR_INTEGER_CONVERSIONS = tuple(
-    vector_conversion
-    for scalar_conversion in UNSIGNED_INTEGER_WIDTH_CONVERSIONS
-    for vector_conversion in _lift_integer_conversion(scalar_conversion)
-)
-
-ORDINARY_VECTOR_INTEGER_CONVERSIONS = (
-    *SIGNED_ORDINARY_VECTOR_INTEGER_CONVERSIONS,
-    *UNSIGNED_ORDINARY_VECTOR_INTEGER_CONVERSIONS,
-)
-
-ORDINARY_VECTOR_INTEGER_CONVERSION_INSTRUCTIONS = tuple(
-    conversion.instruction for conversion in ORDINARY_VECTOR_INTEGER_CONVERSIONS
+ORDINARY_VECTOR_CONVERSION_INSTRUCTIONS = tuple(
+    conversion.instruction for conversion in ORDINARY_VECTOR_CONVERSIONS
 )

@@ -322,6 +322,7 @@ _NO_EXTENDED_TYPES_XFAILS = {
     "numeric/conversion/float8_facts.loom:@float8_facts": "TARGET/003",
     "numeric/conversion/integer_floating.loom:@floating_integer_shapes": "TARGET/003",
     "numeric/conversion/integer_floating.loom:@integer_floating_shapes": "TARGET/003",
+    "numeric/conversion/integer_floating.loom:@loop_carried_floating_conversions": "TARGET/003",
     "numeric/conversion/integer_widths.loom:@integer_conversion_shapes": "TARGET/003",
     "numeric/conversion/narrow_vectors.loom:@narrow_vector_floating_shapes": "TARGET/003",
     "numeric/float/narrow_reduction.loom:@narrow_reduction": "TARGET/003",

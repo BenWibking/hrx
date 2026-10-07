@@ -42,6 +42,7 @@ iree_py_library(
     loom::py::loom::target::arch::spirv::extended_math
     loom::py::loom::target::arch::spirv::ordinary_vector
     loom::py::loom::target::arch::spirv::ordinary_vector_bit_layout
+    loom::py::loom::target::arch::spirv::ordinary_vector_conversion
     loom::py::loom::target::arch::spirv::scalar_alu
     loom::py::loom::target::arch::spirv::scalar_constant
     loom::py::loom::target::arch::spirv::scalar_conversion
@@ -100,17 +101,20 @@ iree_py_test(
   MAIN
     "../../../../tools/pytest_style_runner.py"
   SRCS
+    "conversion_test.py"
     "float_narrowing_test.py"
     "float_payload_test.py"
     "index_test.py"
     "../../../../tools/pytest_style_runner.py"
   ARGS
+    "loom.target.arch.spirv.contracts.conversion_test"
     "loom.target.arch.spirv.contracts.float_narrowing_test"
     "loom.target.arch.spirv.contracts.float_payload_test"
     "loom.target.arch.spirv.contracts.index_test"
   DEPS
     loom::py::loom::target::arch::spirv::contracts::contracts
     loom::py::loom::target::arch::spirv::features
+    loom::py::loom::target::arch::spirv::ordinary_vector_conversion
   PACKAGE_DIRS
     "${PROJECT_SOURCE_DIR}/loom/py"
     "${PROJECT_BINARY_DIR}/loom/py"

@@ -94,6 +94,10 @@ from loom.target.arch.spirv.cooperative_matrix import (
     CooperativeMatrixCase,
 )
 from loom.target.arch.spirv.descriptors import SPIRV_LOGICAL_CORE_DESCRIPTOR_SET
+from loom.target.arch.spirv.ordinary_vector import NATIVE_ORDINARY_VECTOR_LANE_COUNTS
+from loom.target.arch.spirv.ordinary_vector_conversion import (
+    NATIVE_VECTOR_SCALAR_CONVERSIONS,
+)
 from loom.target.arch.spirv.scalar_alu import (
     BFLOAT16_SCALAR_TYPE,
     BOOLEAN_BINARY_OPERATIONS,
@@ -335,23 +339,84 @@ def _binary_rule(
     )
 
 
-def _conversion_rule(row: ScalarConversion) -> DescriptorRule:
-    descriptor = _descriptor(row.key)
+def _numeric_type_pattern(
+    scalar: ScalarAluType, lane_count: int | None = None
+) -> TypePattern:
+    if lane_count is None:
+        return Scalar(scalar.source_type)
+    return Vector(scalar.source_type, lanes=lane_count)
+
+
+def _value_type_suffix(scalar: ScalarAluType, lane_count: int | None) -> str:
+    if lane_count is None or lane_count == 1:
+        return scalar.suffix
+    return f"v{lane_count}{scalar.suffix}"
+
+
+def _conversion_rule(
+    row: ScalarConversion, lane_count: int | None = None
+) -> DescriptorRule:
+    source_suffix = _value_type_suffix(row.source_type, lane_count)
+    result_suffix = _value_type_suffix(row.result_type, lane_count)
+    descriptor = _descriptor(
+        f"spirv.op_{row.descriptor_suffix}.{source_suffix}.{result_suffix}"
+    )
+    emits: list[EmitDescriptorOp] = []
+    input_ref = ValueRef.operand("input")
+    result_ref = ValueRef.result("result")
+    if row.source_op_key in ("extui", "uitofp"):
+        source_pair = _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE[row.source_type.source_type]
+        input_ref = ValueRef.temporary("unsigned_input")
+        emits.append(
+            _integer_view_emit(
+                source_type=source_pair.signed,
+                result_type=source_pair.unsigned,
+                input_ref=ValueRef.operand("input"),
+                output_ref=input_ref,
+                lane_count=lane_count,
+            )
+        )
+    if row.source_op_key in ("extui", "fptoui"):
+        result_ref = ValueRef.temporary("unsigned_result")
+    result_types = None
+    if result_ref.kind == SourceValueKind.TEMPORARY:
+        result_types = {"dst": DescriptorResultType()}
+    emits.append(
+        _descriptor_emit(
+            descriptor=descriptor,
+            operands={"input": input_ref},
+            results={"dst": result_ref},
+            result_types=result_types,
+        )
+    )
+    if row.source_op_key in ("extui", "fptoui"):
+        result_pair = _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE[row.result_type.source_type]
+        emits.append(
+            _integer_view_emit(
+                source_type=result_pair.unsigned,
+                result_type=result_pair.signed,
+                input_ref=result_ref,
+                output_ref=ValueRef.result("result"),
+                lane_count=lane_count,
+            )
+        )
     return DescriptorRule(
-        source_op=_CONVERSION_SOURCE_OPS[row.source_op_key],
+        source_op=(
+            _CONVERSION_SOURCE_OPS[row.source_op_key]
+            if lane_count is None
+            else getattr(vector, f"vector_{row.source_op_key}")
+        ),
         descriptor=descriptor,
         guards=(
-            Guard.value_type("input", Scalar(row.source_type.source_type)),
-            Guard.value_type("result", Scalar(row.result_type.source_type)),
+            Guard.value_type(
+                "input", _numeric_type_pattern(row.source_type, lane_count)
+            ),
+            Guard.value_type(
+                "result", _numeric_type_pattern(row.result_type, lane_count)
+            ),
             *_feature_guards(descriptor),
         ),
-        emit=(
-            _descriptor_emit(
-                descriptor=descriptor,
-                operands={"input": ValueRef.operand("input")},
-                results={"dst": ValueRef.result("result")},
-            ),
-        ),
+        emit=tuple(emits),
     )
 
 
@@ -435,8 +500,14 @@ def _builtin_scalar_index_rules() -> tuple[DescriptorRule, ...]:
     )
 
 
-def _integer_view_key(source_type: ScalarAluType, result_type: ScalarAluType) -> str:
-    return f"spirv.op_bitcast.{source_type.suffix}.{result_type.suffix}"
+def _bitcast_key(
+    source_type: ScalarAluType,
+    result_type: ScalarAluType,
+    lane_count: int | None = None,
+) -> str:
+    source_suffix = _value_type_suffix(source_type, lane_count)
+    result_suffix = _value_type_suffix(result_type, lane_count)
+    return f"spirv.op_bitcast.{source_suffix}.{result_suffix}"
 
 
 def _integer_view_emit(
@@ -445,12 +516,15 @@ def _integer_view_emit(
     result_type: ScalarAluType,
     input_ref: ValueRef,
     output_ref: ValueRef,
+    lane_count: int | None = None,
 ) -> EmitDescriptorOp:
-    result_type_binding: ResultTypeBinding = Scalar(result_type.source_type)
+    result_type_binding: ResultTypeBinding = _numeric_type_pattern(
+        result_type, lane_count
+    )
     if output_ref.kind == SourceValueKind.TEMPORARY:
         result_type_binding = DescriptorResultType()
     return _descriptor_emit(
-        descriptor=_descriptor(_integer_view_key(source_type, result_type)),
+        descriptor=_descriptor(_bitcast_key(source_type, result_type, lane_count)),
         operands={"input": input_ref},
         results={"dst": output_ref},
         result_types={"dst": result_type_binding},
@@ -502,93 +576,6 @@ def _unsigned_binary_rule(
             ),
         ),
     )
-
-
-def _unsigned_conversion_rule(row: ScalarConversion) -> DescriptorRule:
-    descriptor = _descriptor(row.key)
-    source_op = _CONVERSION_SOURCE_OPS[row.source_op_key]
-    if row.source_op_key == "extui":
-        source_pair = _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE[row.source_type.source_type]
-        result_pair = _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE[row.result_type.source_type]
-        return DescriptorRule(
-            source_op=source_op,
-            descriptor=descriptor,
-            guards=(
-                Guard.value_type("input", Scalar(row.source_type.source_type)),
-                Guard.value_type("result", Scalar(row.result_type.source_type)),
-                *_feature_guards(descriptor),
-            ),
-            emit=(
-                _integer_view_emit(
-                    source_type=source_pair.signed,
-                    result_type=source_pair.unsigned,
-                    input_ref=ValueRef.operand("input"),
-                    output_ref=ValueRef.temporary("unsigned_input"),
-                ),
-                _descriptor_emit(
-                    descriptor=descriptor,
-                    operands={"input": ValueRef.temporary("unsigned_input")},
-                    results={"dst": ValueRef.temporary("unsigned_result")},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-                _integer_view_emit(
-                    source_type=result_pair.unsigned,
-                    result_type=result_pair.signed,
-                    input_ref=ValueRef.temporary("unsigned_result"),
-                    output_ref=ValueRef.result("result"),
-                ),
-            ),
-        )
-    if row.source_op_key == "uitofp":
-        source_pair = _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE[row.source_type.source_type]
-        return DescriptorRule(
-            source_op=source_op,
-            descriptor=descriptor,
-            guards=(
-                Guard.value_type("input", Scalar(row.source_type.source_type)),
-                Guard.value_type("result", Scalar(row.result_type.source_type)),
-                *_feature_guards(descriptor),
-            ),
-            emit=(
-                _integer_view_emit(
-                    source_type=source_pair.signed,
-                    result_type=source_pair.unsigned,
-                    input_ref=ValueRef.operand("input"),
-                    output_ref=ValueRef.temporary("unsigned_input"),
-                ),
-                _descriptor_emit(
-                    descriptor=descriptor,
-                    operands={"input": ValueRef.temporary("unsigned_input")},
-                    results={"dst": ValueRef.result("result")},
-                ),
-            ),
-        )
-    if row.source_op_key == "fptoui":
-        result_pair = _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE[row.result_type.source_type]
-        return DescriptorRule(
-            source_op=source_op,
-            descriptor=descriptor,
-            guards=(
-                Guard.value_type("input", Scalar(row.source_type.source_type)),
-                Guard.value_type("result", Scalar(row.result_type.source_type)),
-                *_feature_guards(descriptor),
-            ),
-            emit=(
-                _descriptor_emit(
-                    descriptor=descriptor,
-                    operands={"input": ValueRef.operand("input")},
-                    results={"dst": ValueRef.temporary("unsigned_result")},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-                _integer_view_emit(
-                    source_type=result_pair.unsigned,
-                    result_type=result_pair.signed,
-                    input_ref=ValueRef.temporary("unsigned_result"),
-                    output_ref=ValueRef.result("result"),
-                ),
-            ),
-        )
-    raise ValueError(f"unsupported unsigned SPIR-V scalar conversion {row.key}")
 
 
 def _compare_rule(
@@ -1160,7 +1147,7 @@ def _view_load_workgroup_integer_carrier_rule(
 ) -> DescriptorRule:
     float_type, integer_type, integer_scalar = _float_integer_carrier(scalar)
     descriptor = _descriptor(f"spirv.op_load.workgroup.{integer_scalar.suffix}")
-    bitcast_descriptor = _descriptor(_integer_view_key(integer_type, float_type))
+    bitcast_descriptor = _descriptor(_bitcast_key(integer_type, float_type))
     address_materializer = _workgroup_address_materializer(
         integer_scalar, coordinate_type
     )
@@ -1203,7 +1190,7 @@ def _view_store_workgroup_integer_carrier_rule(
 ) -> DescriptorRule:
     float_type, integer_type, integer_scalar = _float_integer_carrier(scalar)
     descriptor = _descriptor(f"spirv.op_store.workgroup.{integer_scalar.suffix}")
-    bitcast_descriptor = _descriptor(_integer_view_key(float_type, integer_type))
+    bitcast_descriptor = _descriptor(_bitcast_key(float_type, integer_type))
     address_materializer = _workgroup_address_materializer(
         integer_scalar, coordinate_type
     )
@@ -1409,10 +1396,6 @@ _INTEGER_ALU_TYPE_PAIR_BY_SOURCE_TYPE = {
 }
 
 
-def _scalar_type_pattern(scalar: ScalarAluType) -> TypePattern:
-    return Scalar(scalar.source_type)
-
-
 def _scalar_binary_rule(
     scalar: ScalarAluType,
     operation: ScalarBinaryOperation,
@@ -1420,7 +1403,7 @@ def _scalar_binary_rule(
 ) -> DescriptorRule:
     return _binary_rule(
         source_ops[operation.source_op_key],
-        _scalar_type_pattern(scalar),
+        _numeric_type_pattern(scalar),
         f"spirv.op_{operation.descriptor_suffix}.{scalar.suffix}",
     )
 
@@ -1483,7 +1466,12 @@ def _conversion_rules() -> tuple[DescriptorRule, ...]:
     rules.append(bfloat_carrier_from_i16_rule())
     rules.append(bfloat_carrier_to_i16_rule())
     rules.extend(float8_narrow_rules())
-    rules.extend(_unsigned_conversion_rule(row) for row in UNSIGNED_SCALAR_CONVERSIONS)
+    rules.extend(_conversion_rule(row) for row in UNSIGNED_SCALAR_CONVERSIONS)
+    rules.extend(
+        _conversion_rule(row, lane_count)
+        for row in NATIVE_VECTOR_SCALAR_CONVERSIONS
+        for lane_count in (1, *NATIVE_ORDINARY_VECTOR_LANE_COUNTS)
+    )
     rules.extend(
         integer_to_boolean_rule(scalar_conversion.scalar_trunci, scalar.source_type)
         for scalar in SIGNED_INTEGER_SCALAR_ALU_TYPES
@@ -1496,7 +1484,7 @@ def _compare_rules() -> tuple[DescriptorRule, ...]:
         _compare_rule(
             scalar_comparison.scalar_cmpi,
             predicate,
-            _scalar_type_pattern(scalar),
+            _numeric_type_pattern(scalar),
             f"spirv.op_{predicate.descriptor_suffix}.{scalar.suffix}",
         )
         for scalar in SIGNED_INTEGER_SCALAR_ALU_TYPES
@@ -1516,7 +1504,7 @@ def _compare_rules() -> tuple[DescriptorRule, ...]:
 
 def _select_rules() -> tuple[DescriptorRule, ...]:
     rules = [
-        _select_rule(_scalar_type_pattern(scalar), f"spirv.op_select.{scalar.suffix}")
+        _select_rule(_numeric_type_pattern(scalar), f"spirv.op_select.{scalar.suffix}")
         for scalar in SCALAR_ALU_TYPES
     ]
     rules.append(_select_rule(Scalar("bf16"), "spirv.op_select.bf16"))
