@@ -16,7 +16,7 @@ depend on the engine generation and native transport.
 | [Batch composition](fanout.md#batch-composition-and-descriptor-ownership) | `hsa_amd_memory_async_batch_copy`: operation/entry/packet counts, agent and engine grouping, descriptor-control propagation and per-operation completion ownership. |
 | [Rectangular copy](rectangular-copy.md) | `COPY_LINEAR_SUBWIN` / `COPY_LINEAR_RECT`: element units, row/slice pitches, subwindow layouts, tiling and geometry-specific cache controls. |
 | [Constant fill](fill.md) | `CONST_FILL` / `CONSTANT_FILL`: legacy and DWORD count forms, chunk limits, cache/compression fields, caller selection and completion. |
-| [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED`: command-carried DWORD data, policy layouts, dependent transfers and storage lifetime. |
+| [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED` / legacy `DMA_PACKET_WRITE`: direct versus minus-one counts, policy layouts, metadata/control callers, inline versus uploaded input and final storage use. |
 | [Ordering](ordering.md) | Pending-transfer drains, overlap, NPD and resource ownership. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: comparisons, retry controls, signal lifetime and scoped layouts. |
