@@ -152,6 +152,7 @@ TEST_P(Pm4ConditionalTest, ShaderPredicateControlsImmutableReplay) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
@@ -173,7 +174,7 @@ TEST_P(Pm4ConditionalTest, ShaderPredicateControlsImmutableReplay) {
   Pm4CommandWriter indirect(expected_indirect.data(), *pm4_profile_);
   indirect.SystemBarrier();
   indirect.BindCompute(program, arguments->device_address);
-  indirect.DispatchWave32(kGridSize, 1, 1);
+  indirect.Dispatch(program, kGridSize, 1, 1);
   indirect.SystemBarrier();
 
   const uint64_t predicate_address =
@@ -211,7 +212,7 @@ TEST_P(Pm4ConditionalTest, ShaderPredicateControlsImmutableReplay) {
   const size_t first_body_word = indirect.word_count();
   indirect.BindCompute(program, arguments->device_address +
                                     kConsumerArgumentWord * sizeof(uint32_t));
-  indirect.DispatchWave32(kGridSize, 1, 1);
+  indirect.Dispatch(program, kGridSize, 1, 1);
   if (parameters.body == ConditionalBody::kDispatchAndMarker) {
     indirect.CopyData32(epoch_address, control->device_address +
                                            kSelectedWord * sizeof(uint32_t));

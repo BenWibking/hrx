@@ -389,6 +389,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         product.program.resource2,
         product.program.resource3,
         product.group_segment_byte_length,
+        product.wavefront_size,
         {product.required_workgroup_size[0], product.required_workgroup_size[1],
          product.required_workgroup_size[2]}};
     const uint64_t entry_offset = product.entry_byte_offset;
@@ -485,7 +486,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     Pm4CommandWriter writer(gpu_commands_.data(), *pm4_profile_);
     writer.SystemBarrier();
     writer.BindCompute(program, argument_address);
-    writer.DispatchWave32(1, 1, 1);
+    writer.Dispatch(program, 1, 1, 1);
     writer.SystemBarrier();
     gpu_command_word_count_ = writer.word_count();
     RecordProperty("resident_gpu_target", product.target);

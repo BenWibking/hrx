@@ -91,12 +91,14 @@ TEST_F(Pm4DispatchTest, SwitchesBetweenTransformAndLdsKernels) {
                                          transform.program.resource2,
                                          transform.program.resource3,
                                          transform.group_segment_byte_length,
+                                         transform.wavefront_size,
                                          {transform.workgroup_size(), 1, 1}};
   Pm4ComputeProgram lds_program = {0,
                                    lds.program.resource1,
                                    lds.program.resource2,
                                    lds.program.resource3,
                                    lds.group_segment_byte_length,
+                                   lds.wavefront_size,
                                    {lds.workgroup_size(), 1, 1}};
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(
       transform.executable, transform.entry_byte_offset, &transform_program,
@@ -255,17 +257,17 @@ TEST_F(Pm4DispatchTest, SwitchesBetweenTransformAndLdsKernels) {
 
     commands.SystemBarrier();
     commands.BindCompute(transform_program, arguments->device_address);
-    commands.DispatchWave32(kTransformGridSize, 1, 1);
+    commands.Dispatch(transform_program, kTransformGridSize, 1, 1);
     // T0 -> L changes bindings after T0 completes; L has no input buffer.
     commands.SystemBarrier();
     commands.BindCompute(lds_program,
                          arguments->device_address + kArgumentStride);
-    commands.DispatchWave32(kLdsGridSize, 1, 1);
+    commands.Dispatch(lds_program, kLdsGridSize, 1, 1);
     // L -> T1 is the payload dependency. Restore T's full ordinary binding.
     commands.SystemBarrier();
     commands.BindCompute(transform_program,
                          arguments->device_address + kArgumentStride * 2);
-    commands.DispatchWave32(kTransformGridSize, 1, 1);
+    commands.Dispatch(transform_program, kTransformGridSize, 1, 1);
     // This independent drain owns all shader lifetimes, even on a bad payload.
     commands.SystemBarrier();
     commands.WriteData32(completion->device_address + kCompletionByteOffset,

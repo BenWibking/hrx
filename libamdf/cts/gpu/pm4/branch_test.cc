@@ -149,6 +149,7 @@ TEST_P(Pm4BranchTest, ShaderOperandSelectsRetainedGraph) {
       kernel.program.resource2,
       kernel.program.resource3,
       kernel.group_segment_byte_length,
+      kernel.wavefront_size,
       {kernel.workgroup_size(), 1, 1},
   };
   ASSERT_NO_FATAL_FAILURE(PrepareProgram(kernel.executable,
@@ -190,7 +191,7 @@ TEST_P(Pm4BranchTest, ShaderOperandSelectsRetainedGraph) {
     commands.BindCompute(program,
                          arguments->device_address +
                              (arm + 1) * kArgumentStride * sizeof(uint32_t));
-    commands.DispatchWave32(kGridSize, 1, 1);
+    commands.Dispatch(program, kGridSize, 1, 1);
     commands.CopyData32(
         epoch_address,
         control->device_address + kSelectedWords[arm] * sizeof(uint32_t));
@@ -205,7 +206,7 @@ TEST_P(Pm4BranchTest, ShaderOperandSelectsRetainedGraph) {
   Pm4CommandWriter root(expected_graph.data(), *pm4_profile_);
   root.SystemBarrier();
   root.BindCompute(program, arguments->device_address);
-  root.DispatchWave32(kGridSize, 1, 1);
+  root.Dispatch(program, kGridSize, 1, 1);
   root.SystemBarrier();
   root.PadToEightWords(14);
   root.BranchIndirectBuffer(operand_address, operand.reference, operand.mask,

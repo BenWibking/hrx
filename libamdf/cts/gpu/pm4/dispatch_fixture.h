@@ -65,6 +65,7 @@ class Pm4DispatchTest : public Pm4CommandTest {
                    std::to_string(program->resource2));
     RecordProperty(prefix + "_compute_pgm_rsrc3",
                    std::to_string(program->resource3));
+    RecordProperty(prefix + "_wavefront_size", program->wavefront_size);
     program->entry_address = entry_address;
     if (out_code != nullptr) {
       *out_code = code;

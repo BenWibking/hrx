@@ -25,7 +25,7 @@ enum class Pm4MemoryComparison : uint32_t {
   kGreater = 6,
 };
 
-// Compiled RDNA wave32 program with no scratch or hidden runtime inputs. The
+// Compiled RDNA program with no scratch or hidden runtime inputs. The
 // caller supplies only a kernarg pointer; hardware supplies group/local IDs.
 struct Pm4ComputeProgram {
   // GPU entry address, aligned to 256 bytes and below the 48-bit program limit.
@@ -40,6 +40,8 @@ struct Pm4ComputeProgram {
   uint32_t resource3;
   // Total group-segment allocation in bytes, within the target's group limit.
   uint32_t group_segment_byte_length;
+  // Compiled workitems per wave (32 or 64), shared by binding and dispatch.
+  uint32_t wavefront_size;
   // Complete workgroup dimensions in workitems, matching the compiled program.
   uint32_t workgroup_size[3];
 };
@@ -86,15 +88,18 @@ class Pm4CommandWriter {
   // Binds ordinary shader inputs without touching profiling, dispatch-pointer,
   // scratch or scheduler context. The caller separately publishes code/data.
   void BindCompute(const Pm4ComputeProgram& program, uint64_t kernarg_address);
-  // Direct wave32 launch in thread units, starting at zero with complete
-  // groups. Shader completion and memory visibility require an explicit
-  // subsequent completion/cache operation.
-  void DispatchWave32(uint32_t x, uint32_t y, uint32_t z);
-  // MEC wave32 launch from three uint32 workgroup counts at a four-byte-aligned
-  // GPU byte address. The caller publishes the complete tuple before fetch,
-  // retains it unchanged through its last consumer, supplies the shader ABI,
-  // and separately joins shader completion.
-  void DispatchIndirectWave32(uint64_t argument_address);
+  // Launches the bound program in thread units, starting at zero with complete
+  // groups. The program supplies the compiled wave size; shader completion and
+  // memory visibility require an explicit subsequent completion/cache
+  // operation.
+  void Dispatch(const Pm4ComputeProgram& program, uint32_t x, uint32_t y,
+                uint32_t z);
+  // MEC launch of the bound program from three uint32 workgroup counts at a
+  // four-byte-aligned GPU byte address. The caller publishes the complete tuple
+  // before fetch, retains it unchanged through its last consumer, supplies the
+  // shader ABI, and separately joins shader completion.
+  void DispatchIndirect(const Pm4ComputeProgram& program,
+                        uint64_t argument_address);
   // Calls one immutable first-level MEC command IB and returns to the ring.
   // The caller publishes 1..0xfffff DWORDs in four-byte-aligned owned
   // executable backing wholly below 2^48 before ring publication. Complete
