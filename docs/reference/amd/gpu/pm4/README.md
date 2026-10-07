@@ -54,7 +54,7 @@ right to that trailer. [Compute postamble][postamble]
 | [Conditional execution](conditional.md) | COND_EXEC ranges, COND_INDIRECT_BUFFER branches and [reference masking](conditional.md#reference-masking-and-portability), Boolean sampling and reuse, and PRED_EXEC virtual-XCC selection. |
 | [Command buffers](command-buffers.md) | First-level INDIRECT_BUFFER entry/return, CHAIN postambles and continuations, publication, WDDM native retirement and completed-use rebuild. |
 | [Cross-queue handoff](handoff.md) | Release, control signaling, wait, consumer acquire and last-use ownership. |
-| [Command-processor DMA](dma.md) | DMA_DATA copies, fills, prefetch, completion discrepancies and cache routing. |
+| [Command-processor DMA](dma.md) | CP_DMA, DMA_DATA and DMA_DATA_FILL_MULTI fields; engine and count revisions, actual copy/fill/prefetch selection, completion, cache routing and source/destination lifetimes. |
 | [Timing](timing.md) | Sampling stage, timestamp visibility, clock domains and profiling ownership. |
 | [Performance counters](counters.md) | Event and instance selection, register fields, sample widths, collection sequencing and completed-use result ownership. |
 | [Performance queries](counter-queries.md) | RADV/Vulkan profiling locks, private submission serialization, counter-pass layout, result decoding and native clock-owner lifetime. |
