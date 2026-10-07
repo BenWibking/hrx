@@ -9,9 +9,8 @@
 #include <stdint.h>
 
 #include "loom/target/entry_selection.h"
-#include "loom/target/provider.h"
 #include "loom/target/tool/spirv.h"
-#include "loom/tooling/compile/pipeline.h"
+#include "loom/tools/loom-check/artifact.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/requirements.h"
 #include "loom/tools/loom-check/source_low.h"
@@ -273,22 +272,12 @@ static iree_status_t loom_spirv_loom_check_emit_provider_execute(
   loom_spirv_loom_check_emit_request_t emit_request = {0};
   IREE_RETURN_IF_ERROR(loom_spirv_loom_check_parse_emit_request(
       request->target_options, &emit_request));
-  loom_check_diagnostic_emitter_capture_t capture = {
-      .diagnostic_collector = request->diagnostic_collector,
-      .module = request->module,
-      .source_resolver = request->source_resolver,
-      .emitter = LOOM_EMITTER_PASS,
-  };
-  const iree_diagnostic_emitter_t diagnostic_emitter = {
-      .fn = loom_check_diagnostic_emitter_capture_emit,
-      .user_data = &capture,
-  };
 
-  loom_compile_pipeline_result_t pipeline_result = {0};
+  loom_target_emit_artifact_t artifact = {0};
+  bool emitted = false;
   iree_status_t status = iree_ok_status();
   if (emit_request.input == LOOM_SPIRV_LOOM_CHECK_INPUT_SOURCE_LOW) {
-    loom_check_prepare_source_low_options_t prepare_options;
-    loom_check_prepare_source_low_options_initialize(&prepare_options);
+    loom_check_prepare_source_low_options_t prepare_options = {0};
     prepare_options.control_flow_lowering = emit_request.control_flow_lowering;
     loom_target_specialization_request_t specialization = {0};
     if (iree_any_bit_set(emit_request.flags,
@@ -299,49 +288,27 @@ static iree_status_t loom_spirv_loom_check_emit_provider_execute(
       prepare_options.target_specializations =
           (loom_target_specialization_request_list_t){&specialization, 1};
     }
-    status = loom_check_prepare_source_low_module(
-        request->module, &prepare_options, request->environment,
-        request->source_resolver, request->diagnostic_collector,
-        request->block_pool, &pipeline_result);
+    status = loom_check_emit_source_low_artifact(
+        request, &prepare_options, IREE_SV("spirv"), &emitted, &artifact);
   } else {
     status = loom_spirv_loom_check_verify_low_module(request);
+    if (iree_status_is_ok(status) &&
+        request->diagnostic_collector->count == 0) {
+      const loom_function_version_list_t function_versions = {0};
+      status = loom_check_emit_target_artifact(
+          request, IREE_SV("spirv"), &function_versions, &emitted, &artifact);
+    }
   }
-  if (!iree_status_is_ok(status) || request->diagnostic_collector->count != 0) {
-    loom_compile_pipeline_result_deinitialize(&pipeline_result);
+  if (!iree_status_is_ok(status)) {
+    loom_target_emit_artifact_release(&artifact);
     return status;
   }
 
-  const loom_target_emitter_t* emitter = loom_target_environment_lookup_emitter(
-      request->environment->target_environment, IREE_SV("spirv"));
-  loom_target_emit_artifact_t artifact = {0};
-  bool emitted = false;
-  if (emitter == NULL) {
-    status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "SPIR-V emitter is not linked");
-  }
-  if (iree_status_is_ok(status)) {
-    const loom_target_emit_request_t target_emit_request = {
-        .target_environment = request->environment->target_environment,
-        .low_descriptor_registry = &request->low_registry->registry,
-        .module = request->module,
-        .function_versions = &pipeline_result.function_versions.list,
-        .identifier = emitter->default_identifier,
-        .diagnostic_emitter = diagnostic_emitter,
-        .scratch_arena = request->case_arena,
-        .allocator = request->host_allocator,
-    };
-    status = emitter->emit(&target_emit_request, &emitted, &artifact);
-  }
   iree_const_byte_span_t contents = iree_const_byte_span_empty();
   iree_byte_span_t owned_contents = iree_byte_span_empty();
   if (iree_status_is_ok(status) && emitted) {
-    if (!iree_byte_sequence_try_get_contiguous_span(artifact.contents,
-                                                    &contents)) {
-      status = iree_byte_sequence_clone(
-          artifact.contents, request->host_allocator, &owned_contents);
-      contents = iree_make_const_byte_span(owned_contents.data,
-                                           owned_contents.data_length);
-    }
+    status = loom_check_target_artifact_borrow_or_clone_contents(
+        &artifact, request->host_allocator, &contents, &owned_contents);
   }
 
   loom_spirv_toolchain_t toolchain;
@@ -367,7 +334,6 @@ static iree_status_t loom_spirv_loom_check_emit_provider_execute(
   loom_tool_output_deinitialize(&disassembly, request->host_allocator);
   iree_allocator_free(request->host_allocator, owned_contents.data);
   loom_target_emit_artifact_release(&artifact);
-  loom_compile_pipeline_result_deinitialize(&pipeline_result);
   return status;
 }
 

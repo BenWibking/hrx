@@ -12,8 +12,8 @@
 #include "loom/error/source.h"
 #include "loom/sanitizer/options.h"
 #include "loom/target/selection.h"
-#include "loom/tooling/compile/pipeline.h"
-#include "loom/tools/loom-check/execute.h"
+#include "loom/target/specialization.h"
+#include "loom/tools/loom-check/artifact.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,11 +74,6 @@ iree_status_t loom_check_resolve_source_target(
 
 // Source-to-target-low preparation options for emit providers.
 typedef struct loom_check_prepare_source_low_options_t {
-  // Pass pipeline spelling. Empty or "default" runs the default source-to-low
-  // pipeline; "none" is accepted for already-low focused tests.
-  iree_string_view_t pipeline;
-  // Default pipeline used when |pipeline| is empty or "default".
-  loom_compile_default_pipeline_t default_pipeline;
   // Source-to-low legality diagnostics emitted while selecting target-low.
   loom_target_low_legality_diagnostic_flags_t source_low_diagnostic_flags;
   // Control-flow lowering shape used when building the default pipeline.
@@ -91,15 +86,8 @@ typedef struct loom_check_prepare_source_low_options_t {
   loom_target_compile_report_t* report;
 } loom_check_prepare_source_low_options_t;
 
-// Initializes source-to-low preparation options with the normal user-facing
-// target-low pipeline.
-void loom_check_prepare_source_low_options_initialize(
-    loom_check_prepare_source_low_options_t* out_options);
-
-// Verifies |module| as source IR, lowers it through the selected source-to-low
-// pipeline, and verifies the resulting target-low module. The caller owns
-// |out_pipeline_result| and deinitializes it after all consumers of its
-// retained function versions, including text projection, finish.
+// Verifies |module| as source IR, lowers it through the source-to-low pipeline,
+// and verifies the resulting target-low module.
 //
 // Infrastructure failures return a non-OK status. User IR failures are emitted
 // into |diagnostic_collector| and return OK so loom-check can match structured
@@ -110,8 +98,16 @@ iree_status_t loom_check_prepare_source_low_module(
     const loom_check_environment_t* environment,
     loom_source_resolver_t source_resolver,
     loom_check_diagnostic_collector_t* diagnostic_collector,
-    iree_arena_block_pool_t* block_pool,
-    loom_compile_pipeline_result_t* out_pipeline_result);
+    iree_arena_block_pool_t* block_pool);
+
+// Prepares source IR and invokes the target emitter named by
+// |public_artifact_format| while retained compiler function versions remain
+// live. The caller releases |out_artifact| when |out_emitted| is true.
+iree_status_t loom_check_emit_source_low_artifact(
+    const loom_check_emit_provider_request_t* request,
+    const loom_check_prepare_source_low_options_t* options,
+    iree_string_view_t public_artifact_format, bool* out_emitted,
+    loom_target_emit_artifact_t* out_artifact);
 
 // Runs source lowering and renders the selected artifact. User IR diagnostics
 // accumulate in the collector; infrastructure and malformed-request failures

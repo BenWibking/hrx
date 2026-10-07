@@ -159,6 +159,7 @@ loom_cc_library(
     name = "execute",
     srcs = [
         "analysis.c",
+        "artifact.c",
         "comparison.c",
         "diagnostics.c",
         "emit.c",
@@ -173,6 +174,7 @@ loom_cc_library(
     ],
     hdrs = [
         "analysis.h",
+        "artifact.h",
         "comparison.h",
         "diagnostics.h",
         "execute.h",
@@ -240,6 +242,7 @@ loom_cc_library(
         "//loom/src/loom/target:predicate",
         "//loom/src/loom/target:provider",
         "//loom/src/loom/target:selection",
+        "//loom/src/loom/target:specialization",
         "//loom/src/loom/target:types",
         "//loom/src/loom/target/reporting:format",
         "//loom/src/loom/target/reporting:low",
@@ -401,7 +404,6 @@ loom_cc_library(
         ":execute",
         "//loom/src/loom/codegen/low:repr",
         "//loom/src/loom/compile:request",
-        "//loom/src/loom/link:linker",
         "//loom/src/loom/sanitizer:options",
         "//loom/src/loom/target:entry_selection",
         "//loom/src/loom/target:profile",

@@ -20,9 +20,7 @@ loom_cc_library(
   DEPS
     iree::base
     loom::target::entry_selection
-    loom::target::provider
     loom::target::tool::spirv
-    loom::tooling::compile::pipeline
     loom::tools::loom-check::execute
     loom::verify
   PUBLIC
