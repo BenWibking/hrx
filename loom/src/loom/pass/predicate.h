@@ -8,6 +8,13 @@
 // predicate selects a function anchor by its defining operation's canonical
 // spelling, independently of the function's symbol name or attributes. It
 // observes only that operation; a nonmatching body is never traversed.
+//
+// The source and low predicates select function anchors without or with an
+// authored representation contract, respectively. They take no attributes and
+// compose with target predicates: source normalization skips Low callables,
+// while Low cleanup can select both helpers and kernel entries. Selection uses
+// the current function signature, including in a resumed compilation, without
+// inspecting its body or relying on the passes that produced it.
 
 #ifndef LOOM_PASS_PREDICATE_H_
 #define LOOM_PASS_PREDICATE_H_

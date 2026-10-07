@@ -376,7 +376,17 @@ static iree_status_t loom_pass_verify_where(
                             "pass.where predicate must not be empty");
   }
   loom_named_attr_slice_t attrs = loom_pass_where_attrs(op);
-  if (iree_string_view_equal(predicate, IREE_SV("op"))) {
+  if (iree_string_view_equal(predicate, IREE_SV("source")) ||
+      iree_string_view_equal(predicate, IREE_SV("low"))) {
+    if (current_kind != LOOM_PASS_FUNCTION) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "pass.where %.*s predicate requires func anchor",
+                              (int)predicate.size, predicate.data);
+    }
+    IREE_RETURN_IF_ERROR(loom_pass_verify_where_attrs_are(
+        state->module, attrs, iree_string_view_empty(),
+        iree_string_view_empty()));
+  } else if (iree_string_view_equal(predicate, IREE_SV("op"))) {
     if (current_kind != LOOM_PASS_FUNCTION) {
       return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                               "pass.where op predicate requires func anchor");

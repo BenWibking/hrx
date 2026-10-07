@@ -197,6 +197,28 @@ TEST_F(PassVerifyTest, RejectsUnknownWherePredicateWithoutProvider) {
                              "}\n"));
 }
 
+TEST_F(PassVerifyTest, RejectsRepresentationPredicateWithoutFunctionAnchor) {
+  ExpectVerifyStatus(IREE_STATUS_INVALID_ARGUMENT,
+                     IREE_SV("pass.pipeline<module> @pipeline pipeline {\n"
+                             "  where source {}\n"
+                             "}\n"));
+  ExpectVerifyStatus(IREE_STATUS_INVALID_ARGUMENT,
+                     IREE_SV("pass.pipeline<module> @pipeline pipeline {\n"
+                             "  where low {}\n"
+                             "}\n"));
+}
+
+TEST_F(PassVerifyTest, RejectsRepresentationPredicateAttributes) {
+  ExpectVerifyStatus(IREE_STATUS_INVALID_ARGUMENT,
+                     IREE_SV("pass.pipeline<func> @pipeline pipeline {\n"
+                             "  where source(name = \"function\") {}\n"
+                             "}\n"));
+  ExpectVerifyStatus(IREE_STATUS_INVALID_ARGUMENT,
+                     IREE_SV("pass.pipeline<func> @pipeline pipeline {\n"
+                             "  where low(name = \"function\") {}\n"
+                             "}\n"));
+}
+
 TEST_F(PassVerifyTest, VerifiesProviderWherePredicate) {
   PassTestPredicateCapture predicate_capture;
   loom_pass_predicate_provider_t provider =

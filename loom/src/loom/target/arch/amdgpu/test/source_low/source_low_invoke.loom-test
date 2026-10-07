@@ -238,6 +238,7 @@ low.func.def target<amdgpu.rdna3_5.core>(@caller_target) abi(hal_kernel) @locked
   low.schedule.fence
   %first = v_add_u32 %value, %value
   low.schedule.fence
+  low.schedule.fence
   %second = v_add_u32 %first, %value
   low.schedule.fence
   return %second
