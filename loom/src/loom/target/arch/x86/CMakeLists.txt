@@ -263,6 +263,7 @@ loom_check_test_suite(
     "test/source_low/numeric_index_operands.loom-test"
     "test/source_low/numeric_integer_extrema.loom-test"
     "test/source_low/numeric_integer_widening.loom-test"
+    "test/source_low/numeric_narrow_constants.loom-test"
     "test/source_low/numeric_narrow_widening.loom-test"
     "test/source_low/numeric_offset_wide.loom-test"
     "test/source_low/numeric_scalar_i64.loom-test"

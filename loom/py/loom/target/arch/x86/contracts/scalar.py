@@ -998,7 +998,10 @@ def _cases() -> Sequence[ContractCase]:
                 "uge",
             )
         ),
-        _const_i32_rule(_I32, descriptor_lookup),
+        *(
+            _const_i32_rule(result_type, descriptor_lookup)
+            for result_type in (_I8, _I16, _I32)
+        ),
         _const_i1_rule(descriptor_lookup),
         _const_scalar_i64_rule(descriptor_lookup),
         _index_const_i64_rule(_INDEX, descriptor_lookup),
