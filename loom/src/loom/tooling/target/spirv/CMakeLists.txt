@@ -19,10 +19,9 @@ loom_cc_library(
     "check/loom_check.c"
   DEPS
     iree::base
-    loom::target::entry_selection
     loom::target::tool::spirv
+    loom::tools::loom-check::compile
     loom::tools::loom-check::execute
-    loom::verify
   PUBLIC
 )
 endif()

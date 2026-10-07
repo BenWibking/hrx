@@ -173,7 +173,6 @@ loom_cc_library(
     name = "execute",
     srcs = [
         "analysis.c",
-        "artifact.c",
         "comparison.c",
         "diagnostics.c",
         "emit.c",
@@ -188,7 +187,6 @@ loom_cc_library(
     ],
     hdrs = [
         "analysis.h",
-        "artifact.h",
         "comparison.h",
         "diagnostics.h",
         "execute.h",
@@ -536,9 +534,11 @@ loom_cc_library(
         "test_provider.h",
         "test_schedule_provider.h",
     ],
+    linkstatic = True,
     deps = [
         ":execute",
         ":provider",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/codegen/low:allocation",
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:function_model",
@@ -550,8 +550,10 @@ loom_cc_library(
         "//loom/src/loom/codegen/low/schedule",
         "//loom/src/loom/codegen/low/schedule:dependencies",
         "//loom/src/loom/ir",
+        "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/target/test:provider",
         "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
     ],
 )
 

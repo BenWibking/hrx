@@ -248,6 +248,23 @@ static iree_status_t loom_amdgpu_extract_vgpr_bitfield(
 
   const bool sign_extend =
       mode == LOOM_AMDGPU_BITFIELD_EXTRACT_MODE_SIGN_EXTEND;
+  const bool source_defines_low16 =
+      bit_offset == 0 && bit_count <= 16 &&
+      loom_amdgpu_low_value_defines_vgpr_low16(context, low_source);
+  if (source_defines_low16) {
+    const loom_amdgpu_vgpr_bfe_extract_flags_t bfe_flags =
+        LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SOURCE_LOW16 |
+        (sign_extend ? LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SIGN_EXTEND
+                     : LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_NONE);
+    bool selected_bfe = false;
+    IREE_RETURN_IF_ERROR(loom_amdgpu_try_emit_vgpr_b32_bfe_extract(
+        context, source_op, low_source, bit_offset, bit_count, bfe_flags,
+        lane_type, out_value, &selected_bfe));
+    IREE_ASSERT(selected_bfe,
+                "partial-register BFE descriptor must be available");
+    return iree_ok_status();
+  }
+
   const loom_amdgpu_vgpr_sdwa_extract_flags_t sdwa_flags =
       sign_extend ? LOOM_AMDGPU_VGPR_SDWA_EXTRACT_FLAG_SIGN_EXTEND
                   : LOOM_AMDGPU_VGPR_SDWA_EXTRACT_FLAG_NONE;

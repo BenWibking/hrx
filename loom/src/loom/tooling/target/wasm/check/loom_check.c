@@ -7,7 +7,7 @@
 #include "loom/tooling/target/wasm/check/loom_check.h"
 
 #include "loom/target/tool/wasm.h"
-#include "loom/tools/loom-check/artifact.h"
+#include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/requirements.h"
 
 static bool loom_wasm_loom_check_emit_provider_matches(
@@ -18,20 +18,18 @@ static bool loom_wasm_loom_check_emit_provider_matches(
 
 static iree_status_t loom_wasm_loom_check_emit_provider_check_requirements(
     const loom_check_emit_provider_t* provider,
-    const loom_test_case_t* test_case, loom_check_result_t* result,
-    bool* out_continue_execution) {
-  iree_string_view_t emit_target =
-      iree_string_view_trim(test_case->emit_target);
-  iree_string_view_t target_name = iree_string_view_empty();
-  iree_string_view_t target_options = iree_string_view_empty();
-  iree_string_view_split(emit_target, ' ', &target_name, &target_options);
-  target_name = iree_string_view_trim(target_name);
-
-  if (!iree_string_view_equal(target_name, IREE_SV("wasm-dis"))) {
+    const loom_test_case_t* test_case, iree_string_view_t target_options,
+    loom_check_result_t* result, bool* out_continue_execution) {
+  IREE_RETURN_IF_ERROR(loom_check_require_declared_requirement(
+      test_case, IREE_SV("wasm-objdump"), result, out_continue_execution));
+  if (!*out_continue_execution) {
     return iree_ok_status();
   }
-  return loom_check_require_declared_requirement(
-      test_case, IREE_SV("wasm-objdump"), result, out_continue_execution);
+  if (!iree_string_view_is_empty(target_options)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "wasm-dis does not accept options");
+  }
+  return iree_ok_status();
 }
 
 static bool loom_wasm_loom_check_is_hex_digit(char value) {
@@ -147,39 +145,32 @@ static iree_status_t loom_wasm_loom_check_strip_objdump_preamble(
 static iree_status_t loom_wasm_loom_check_emit_provider_execute(
     const loom_check_emit_provider_t* provider,
     const loom_check_emit_provider_request_t* request) {
-  if (!iree_string_view_is_empty(
-          iree_string_view_trim(request->target_options))) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "wasm-dis does not accept options");
-  }
-  loom_target_emit_artifact_t artifact = {0};
-  bool emitted = false;
-  iree_status_t status = loom_check_emit_target_artifact(
-      request, IREE_SV("wasm-binary"), /*function_versions=*/NULL, &emitted,
-      &artifact);
-  iree_const_byte_span_t contents = iree_const_byte_span_empty();
-  iree_byte_span_t owned_contents = iree_byte_span_empty();
-  if (iree_status_is_ok(status) && emitted) {
-    status = loom_check_target_artifact_borrow_or_clone_contents(
-        &artifact, request->host_allocator, &contents, &owned_contents);
-  }
+  const loom_check_compile_artifact_options_t compile_options = {
+      .artifact_format = IREE_SV("wasm-binary"),
+  };
+  loomc_source_t* artifact_source = NULL;
+  iree_status_t status =
+      loom_check_compile_artifact(request, &compile_options, &artifact_source);
+  const loomc_byte_span_t source_contents =
+      loomc_source_contents(artifact_source);
+  const iree_const_byte_span_t contents = iree_make_const_byte_span(
+      source_contents.data, source_contents.data_length);
 
   loom_wasm_toolchain_t toolchain;
   loom_wasm_toolchain_initialize_from_environment(&toolchain);
   loom_tool_output_t disassembly = {0};
-  if (iree_status_is_ok(status) && emitted) {
+  if (iree_status_is_ok(status) && artifact_source != NULL) {
     status = loom_wasm_tool_disassemble_binary(
         &toolchain, contents, request->host_allocator, &disassembly);
   }
-  if (iree_status_is_ok(status) && emitted) {
+  if (iree_status_is_ok(status) && artifact_source != NULL) {
     status = loom_wasm_loom_check_strip_objdump_preamble(
         iree_make_string_view(disassembly.data, disassembly.length),
         &request->result->actual_output);
   }
 
   loom_tool_output_deinitialize(&disassembly, request->host_allocator);
-  iree_allocator_free(request->host_allocator, owned_contents.data);
-  loom_target_emit_artifact_release(&artifact);
+  loomc_source_release(artifact_source);
   return status;
 }
 
@@ -221,6 +212,7 @@ static iree_status_t loom_wasm_loom_check_requirement_provider_append_names(
 
 const loom_check_emit_provider_t loom_wasm_loom_check_emit_provider = {
     .name = IREE_SVL("wasm"),
+    .consumes_source = true,
     .match = loom_wasm_loom_check_emit_provider_matches,
     .check_requirements = loom_wasm_loom_check_emit_provider_check_requirements,
     .execute = loom_wasm_loom_check_emit_provider_execute,

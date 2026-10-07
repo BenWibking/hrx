@@ -43,7 +43,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %38 = v_cndmask_b32 %34, %35, %37
   %39 = v_lshlrev_b32_src0_inline %38, 16
   %40 = v_cvt_f16_f32 %39
-  %41 = v_bfe_u32_offset_0_width_16_low16 %40
+  %41 = v_bfe_u32_offset_0_width_inline_low16 %40
   %42 = v_cvt_pk_u16_u32 %41, %41
   %43 = v_pk_mul_f16 %19, %42
   %44 = v_perm_b32_src1_zero_src2_lit %12, 327685
@@ -68,7 +68,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %70 = v_cndmask_b32 %66, %35, %69
   %71 = v_lshlrev_b32_src0_inline %70, 16
   %72 = v_cvt_f16_f32 %71
-  %73 = v_bfe_u32_offset_0_width_16_low16 %72
+  %73 = v_bfe_u32_offset_0_width_inline_low16 %72
   %74 = v_cvt_pk_u16_u32 %73, %73
   %75 = v_pk_mul_f16 %50, %74
   %76 = v_perm_b32_src1_zero_src2_lit %12, 393222
@@ -93,7 +93,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %102 = v_cndmask_b32 %98, %35, %101
   %103 = v_lshlrev_b32_src0_inline %102, 16
   %104 = v_cvt_f16_f32 %103
-  %105 = v_bfe_u32_offset_0_width_16_low16 %104
+  %105 = v_bfe_u32_offset_0_width_inline_low16 %104
   %106 = v_cvt_pk_u16_u32 %105, %105
   %107 = v_pk_mul_f16 %82, %106
   %108 = v_perm_b32_src1_zero_src2_lit %12, 458759
@@ -118,7 +118,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %134 = v_cndmask_b32 %130, %35, %133
   %135 = v_lshlrev_b32_src0_inline %134, 16
   %136 = v_cvt_f16_f32 %135
-  %137 = v_bfe_u32_offset_0_width_16_low16 %136
+  %137 = v_bfe_u32_offset_0_width_inline_low16 %136
   %138 = v_cvt_pk_u16_u32 %137, %137
   %139 = v_pk_mul_f16 %114, %138
   %140 = slice %payload[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
@@ -144,7 +144,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %166 = v_cndmask_b32 %162, %35, %165
   %167 = v_lshlrev_b32_src0_inline %166, 16
   %168 = v_cvt_f16_f32 %167
-  %169 = v_bfe_u32_offset_0_width_16_low16 %168
+  %169 = v_bfe_u32_offset_0_width_inline_low16 %168
   %170 = v_cvt_pk_u16_u32 %169, %169
   %171 = v_pk_mul_f16 %147, %170
   %172 = v_perm_b32_src1_zero_src2_lit %140, 327685
@@ -169,7 +169,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %198 = v_cndmask_b32 %194, %35, %197
   %199 = v_lshlrev_b32_src0_inline %198, 16
   %200 = v_cvt_f16_f32 %199
-  %201 = v_bfe_u32_offset_0_width_16_low16 %200
+  %201 = v_bfe_u32_offset_0_width_inline_low16 %200
   %202 = v_cvt_pk_u16_u32 %201, %201
   %203 = v_pk_mul_f16 %178, %202
   %204 = v_perm_b32_src1_zero_src2_lit %140, 393222
@@ -194,7 +194,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %230 = v_cndmask_b32 %226, %35, %229
   %231 = v_lshlrev_b32_src0_inline %230, 16
   %232 = v_cvt_f16_f32 %231
-  %233 = v_bfe_u32_offset_0_width_16_low16 %232
+  %233 = v_bfe_u32_offset_0_width_inline_low16 %232
   %234 = v_cvt_pk_u16_u32 %233, %233
   %235 = v_pk_mul_f16 %210, %234
   %236 = v_perm_b32_src1_zero_src2_lit %140, 458759
@@ -219,7 +219,7 @@ low.func.def target<amdgpu.rdna4.core>(@target) abi(hal_kernel) @decode_e2m1_e4m
   %262 = v_cndmask_b32 %258, %35, %261
   %263 = v_lshlrev_b32_src0_inline %262, 16
   %264 = v_cvt_f16_f32 %263
-  %265 = v_bfe_u32_offset_0_width_16_low16 %264
+  %265 = v_bfe_u32_offset_0_width_inline_low16 %264
   %266 = v_cvt_pk_u16_u32 %265, %265
   %267 = v_pk_mul_f16 %242, %266
   %decoded = concat(%43, %75, %107, %139, %171, %203, %235, %267) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x8>

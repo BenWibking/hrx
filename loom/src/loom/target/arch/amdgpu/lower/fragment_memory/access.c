@@ -312,7 +312,7 @@ iree_status_t loom_amdgpu_emit_fragment_memory_low_subword_load_packet(
   if (loom_amdgpu_low_value_defines_vgpr_low16(context, low_packet)) {
     return loom_amdgpu_emit_vgpr_unary(
         context, source_op,
-        LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_16_LOW16,
+        LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_INLINE_LOW16,
         low_packet, vgpr_type, out_full_packet);
   }
 

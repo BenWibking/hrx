@@ -125,10 +125,9 @@ LOOMC_API_PRIVATE void loomc_module_clear_sources(
     loomc_module_t* module, const loom_module_t* internal_module);
 
 // Establishes structural and target-Low input invariants before compilation or
-// direct emission. Successful verification against the module context is
-// retained across trusted compiler transforms. Other target environments are
-// checked without retaining their lifetime. Diagnostics mark |result| failed;
-// status is reserved for infrastructure failures.
+// direct emission. Other target environments are checked without retaining
+// their lifetime. Diagnostics mark |result| failed; status is reserved for
+// infrastructure failures.
 LOOMC_API_PRIVATE loomc_status_t
 loomc_module_verify(loomc_module_t* module,
                     const loomc_target_environment_t* target_environment,
@@ -136,6 +135,10 @@ loomc_module_verify(loomc_module_t* module,
 
 // Invalidates input verification after an unsuccessful mutating operation.
 LOOMC_API_PRIVATE void loomc_module_invalidate_verification(
+    loomc_module_t* module);
+
+// Invalidates target-Low verification after a trusted structural transform.
+LOOMC_API_PRIVATE void loomc_module_invalidate_target_verification(
     loomc_module_t* module);
 
 // Validates source deserialization options without selecting a format.

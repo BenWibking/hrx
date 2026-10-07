@@ -1309,7 +1309,7 @@ static iree_status_t loom_amdgpu_compose_vgpr_16bit_float_lane_bits(
     if (register_bit_offset == 0) {
       return loom_amdgpu_emit_vgpr_unary(
           context, source_op,
-          LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_16_LOW16,
+          LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_INLINE_LOW16,
           low_value, lane_type, out_low_value);
     }
     if (register_bit_offset == 16) {

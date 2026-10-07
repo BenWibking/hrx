@@ -347,7 +347,7 @@ func.def target(@gfx11_target) @f16_fma_mixlo_insert_f32(%dest: vector<2xf16>, %
 // ----
 low.func.def target<amdgpu.gfx11.generic.core>(@gfx11_target) abi(hal_kernel) @f16_fma_mixlo_insert_f32(%dest: reg<amdgpu.vgpr>, %a: reg<amdgpu.vgpr>, %b: reg<amdgpu.vgpr>, %c: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
   %result = v_fma_mixlo_f16_f32_f32_f32 %dest, %a, %b, %c
-  %14 = v_bfe_u32_offset_0_width_16_low16 %result
+  %14 = v_bfe_u32_offset_0_width_inline_low16 %result
   return %14
 }
 
@@ -432,7 +432,7 @@ func.def target(@gfx9_4_target) @f16_mad_mixlo_insert_f32(%dest: vector<2xf16>, 
 // ----
 low.func.def target<amdgpu.gfx9_4.generic.core>(@gfx9_4_target) abi(hal_kernel) @f16_mad_mixlo_insert_f32(%dest: reg<amdgpu.vgpr>, %a: reg<amdgpu.vgpr>, %b: reg<amdgpu.vgpr>, %c: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
   %result = v_mad_mixlo_f16_f32_f32_f32 %dest, %a, %b, %c
-  %14 = v_bfe_u32_offset_0_width_16_low16 %result
+  %14 = v_bfe_u32_offset_0_width_inline_low16 %result
   return %14
 }
 
@@ -499,7 +499,7 @@ func.def target(@gfx11_target) @f16_fma_mix_dynamic_insert_rejected(%dest: vecto
 low.func.def target<amdgpu.gfx11.generic.core>(@gfx11_target) abi(hal_kernel) @f16_fma_mix_dynamic_insert_rejected(%dest: reg<amdgpu.vgpr>, %a: reg<amdgpu.vgpr>, %b: reg<amdgpu.vgpr>, %c: reg<amdgpu.vgpr>, %lane: reg<amdgpu.sgpr>) -> (reg<amdgpu.vgpr>) asm {
   %fma = v_fma_f32 %a, %b, %c
   %half = v_cvt_f16_f32 %fma
-  %17 = v_bfe_u32_offset_0_width_16_low16 %half
+  %17 = v_bfe_u32_offset_0_width_inline_low16 %half
   %18 = v_mov_b32_copy %lane
   %19 = v_and_b32_lit %dest, 4294901760
   %20 = v_or_b32 %19, %17
@@ -531,7 +531,7 @@ func.def target(@gfx11_target) @f16_fma_mix_mulf_requires_relaxed_zero_add_rejec
 low.func.def target<amdgpu.gfx11.generic.core>(@gfx11_target) abi(hal_kernel) @f16_fma_mix_mulf_requires_relaxed_zero_add_rejected(%dest: reg<amdgpu.vgpr>, %a: reg<amdgpu.vgpr>, %b: reg<amdgpu.vgpr>) -> (reg<amdgpu.vgpr>) asm {
   %product = v_mul_f32 %a, %b
   %half = v_cvt_f16_f32 %product
-  %13 = v_bfe_u32_offset_0_width_16_low16 %half
+  %13 = v_bfe_u32_offset_0_width_inline_low16 %half
   %14 = v_and_b32_lit %dest, 4294901760
   %result = v_or_b32 %14, %13
   return %result

@@ -12,7 +12,6 @@
 #include "loom/tooling/input/configured.h"
 #include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/provider.h"
-#include "loomc/target/configured.h"
 
 #ifndef LOOM_CHECK_HAVE_TEST_PROVIDER
 #define LOOM_CHECK_HAVE_TEST_PROVIDER 0
@@ -23,6 +22,8 @@
 
 #if LOOM_CHECK_HAVE_TEST_PROVIDER
 #include "loom/tools/loom-check/test_provider.h"
+#else
+#include "loomc/target/configured.h"
 #endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
 #if LOOM_CHECK_HAVE_IMPORT_CXX
 #include "loom/import/cxx/tooling/loomc_input.h"
@@ -133,7 +134,11 @@ int main(int argc, char** argv) {
   IREE_TRACE_APP_ENTER();
   IREE_TRACE_ZONE_BEGIN(z0);
   const loom_check_compile_provider_t compile_provider = {
+#if LOOM_CHECK_HAVE_TEST_PROVIDER
+      .create_target_environment = loom_check_test_create_target_environment,
+#else
       .create_target_environment = loomc_target_environment_create_configured,
+#endif  // LOOM_CHECK_HAVE_TEST_PROVIDER
 #if LOOM_CHECK_HAVE_IMPORT_CXX
       .import = loom_check_import_source,
 #endif  // LOOM_CHECK_HAVE_IMPORT_CXX

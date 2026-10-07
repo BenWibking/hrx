@@ -417,6 +417,8 @@ typedef enum loom_amdgpu_vgpr_bfe_extract_flag_bits_e {
   LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_NONE = 0u,
   // Selects the signed bitfield extraction form.
   LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SIGN_EXTEND = 1u << 0,
+  // The source defines only the low 16-bit register part.
+  LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SOURCE_LOW16 = 1u << 1,
 } loom_amdgpu_vgpr_bfe_extract_flag_bits_t;
 typedef uint32_t loom_amdgpu_vgpr_bfe_extract_flags_t;
 

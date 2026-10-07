@@ -137,9 +137,12 @@ TEST_F(ContextTest, FinalizeBuildsOpNameLookupTable) {
       &kTestOpVtable,
   };
 
+  EXPECT_FALSE(
+      loom_context_is_dialect_registered(&context_, LOOM_DIALECT_TEST));
   IREE_ASSERT_OK(loom_context_register_dialect(
       &context_, LOOM_DIALECT_TEST, kTestDialectVtables,
       IREE_ARRAYSIZE(kTestDialectVtables)));
+  EXPECT_TRUE(loom_context_is_dialect_registered(&context_, LOOM_DIALECT_TEST));
   IREE_ASSERT_OK(loom_context_finalize(&context_));
 
   loom_op_kind_t kind = LOOM_OP_KIND_UNKNOWN;

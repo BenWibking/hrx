@@ -435,8 +435,7 @@ static iree_status_t loom_check_parse_pass_target(
         return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                                 "duplicate pass option 'target'");
       }
-      IREE_RETURN_IF_ERROR(
-          loom_target_specification_parse(value, &request->target));
+      request->target = value;
       request->options |= LOOM_CHECK_SOURCE_LOW_OPTION_TARGET;
     } else {
       if (value.size <= 1 || value.data[0] != '@' ||
@@ -550,10 +549,14 @@ static iree_status_t loom_check_execute_pass_with_output(
   if (iree_status_is_ok(status) && run_result.error_count == 0 &&
       iree_any_bit_set(target_request.options,
                        LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
+    loom_target_specification_t target = {0};
     loom_target_specialization_request_t specialization;
-    status = loom_check_resolve_source_target(
-        module, environment->target_environment, target_request.function_name,
-        &target_request.target, &specialization);
+    status = loom_target_specification_parse(target_request.target, &target);
+    if (iree_status_is_ok(status)) {
+      status = loom_check_resolve_source_target(
+          module, environment->target_environment, target_request.function_name,
+          &target, &specialization);
+    }
     if (iree_status_is_ok(status)) {
       uint32_t specialization_error_count = 0;
       status = loom_target_specialize_functions(

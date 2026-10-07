@@ -50,27 +50,27 @@ low.kernel.def target<amdgpu.rdna3.core>(@target) abi_layout({constant_count = 0
   %43 = v_lshrrev_b32_src0_inline %37, 4
   %44 = v_lshl_add_u32_shift_imm %43, %42, 7
   %45 = global_load_d16_b16_saddr %44, %gate_view
-  %46 = v_bfe_u32_offset_0_width_16_low16 %45
+  %46 = v_bfe_u32_offset_0_width_inline_low16 %45
   %47 = global_load_d16_b16_saddr %44, %gate_view {offset = 256}
-  %48 = v_bfe_u32_offset_0_width_16_low16 %47
+  %48 = v_bfe_u32_offset_0_width_inline_low16 %47
   %49 = v_lshlrev_b32_src0_inline %48, 16
   %50 = v_or_b32 %46, %49
   %51 = global_load_d16_b16_saddr %44, %gate_view {offset = 512}
-  %52 = v_bfe_u32_offset_0_width_16_low16 %51
+  %52 = v_bfe_u32_offset_0_width_inline_low16 %51
   %53 = global_load_d16_b16_saddr %44, %gate_view {offset = 768}
-  %54 = v_bfe_u32_offset_0_width_16_low16 %53
+  %54 = v_bfe_u32_offset_0_width_inline_low16 %53
   %55 = v_lshlrev_b32_src0_inline %54, 16
   %56 = v_or_b32 %52, %55
   %57 = global_load_d16_b16_saddr %44, %gate_view {offset = 1024}
-  %58 = v_bfe_u32_offset_0_width_16_low16 %57
+  %58 = v_bfe_u32_offset_0_width_inline_low16 %57
   %59 = global_load_d16_b16_saddr %44, %gate_view {offset = 1280}
-  %60 = v_bfe_u32_offset_0_width_16_low16 %59
+  %60 = v_bfe_u32_offset_0_width_inline_low16 %59
   %61 = v_lshlrev_b32_src0_inline %60, 16
   %62 = v_or_b32 %58, %61
   %63 = global_load_d16_b16_saddr %44, %gate_view {offset = 1536}
-  %64 = v_bfe_u32_offset_0_width_16_low16 %63
+  %64 = v_bfe_u32_offset_0_width_inline_low16 %63
   %65 = global_load_d16_b16_saddr %44, %gate_view {offset = 1792}
-  %66 = v_bfe_u32_offset_0_width_16_low16 %65
+  %66 = v_bfe_u32_offset_0_width_inline_low16 %65
   %67 = v_lshlrev_b32_src0_inline %66, 16
   %68 = v_or_b32 %64, %67
   %71 = v_lshlrev_b32_src0_inline %50, 16
@@ -82,27 +82,27 @@ low.kernel.def target<amdgpu.rdna3.core>(@target) abi_layout({constant_count = 0
   %83 = v_lshlrev_b32_src0_inline %68, 16
   %85 = v_and_b32_lit %68, 4294901760
   %87 = global_load_d16_b16_saddr %44, %gate_view {offset = 32}
-  %88 = v_bfe_u32_offset_0_width_16_low16 %87
+  %88 = v_bfe_u32_offset_0_width_inline_low16 %87
   %89 = global_load_d16_b16_saddr %44, %gate_view {offset = 288}
-  %90 = v_bfe_u32_offset_0_width_16_low16 %89
+  %90 = v_bfe_u32_offset_0_width_inline_low16 %89
   %91 = v_lshlrev_b32_src0_inline %90, 16
   %92 = v_or_b32 %88, %91
   %93 = global_load_d16_b16_saddr %44, %gate_view {offset = 544}
-  %94 = v_bfe_u32_offset_0_width_16_low16 %93
+  %94 = v_bfe_u32_offset_0_width_inline_low16 %93
   %95 = global_load_d16_b16_saddr %44, %gate_view {offset = 800}
-  %96 = v_bfe_u32_offset_0_width_16_low16 %95
+  %96 = v_bfe_u32_offset_0_width_inline_low16 %95
   %97 = v_lshlrev_b32_src0_inline %96, 16
   %98 = v_or_b32 %94, %97
   %99 = global_load_d16_b16_saddr %44, %gate_view {offset = 1056}
-  %100 = v_bfe_u32_offset_0_width_16_low16 %99
+  %100 = v_bfe_u32_offset_0_width_inline_low16 %99
   %101 = global_load_d16_b16_saddr %44, %gate_view {offset = 1312}
-  %102 = v_bfe_u32_offset_0_width_16_low16 %101
+  %102 = v_bfe_u32_offset_0_width_inline_low16 %101
   %103 = v_lshlrev_b32_src0_inline %102, 16
   %104 = v_or_b32 %100, %103
   %105 = global_load_d16_b16_saddr %44, %gate_view {offset = 1568}
-  %106 = v_bfe_u32_offset_0_width_16_low16 %105
+  %106 = v_bfe_u32_offset_0_width_inline_low16 %105
   %107 = global_load_d16_b16_saddr %44, %gate_view {offset = 1824}
-  %108 = v_bfe_u32_offset_0_width_16_low16 %107
+  %108 = v_bfe_u32_offset_0_width_inline_low16 %107
   %109 = v_lshlrev_b32_src0_inline %108, 16
   %110 = v_or_b32 %106, %109
   %113 = v_lshlrev_b32_src0_inline %92, 16
@@ -298,27 +298,27 @@ low.kernel.def target<amdgpu.rdna3.core>(@target) abi_layout({constant_count = 0
   %output_view = resource<hal_binding> {extent = 512, index = 1, source_type = hal.buffer} : reg<amdgpu.sgpr x2>
   %22 = v_lshlrev_b32_src0_inline %19, 1
   %23 = global_load_d16_b16_saddr %22, %gate_view
-  %24 = v_bfe_u32_offset_0_width_16_low16 %23
+  %24 = v_bfe_u32_offset_0_width_inline_low16 %23
   %25 = global_load_d16_b16_saddr %22, %gate_view {offset = 64}
-  %26 = v_bfe_u32_offset_0_width_16_low16 %25
+  %26 = v_bfe_u32_offset_0_width_inline_low16 %25
   %27 = v_lshlrev_b32_src0_inline %26, 16
   %28 = v_or_b32 %24, %27
   %29 = global_load_d16_b16_saddr %22, %gate_view {offset = 128}
-  %30 = v_bfe_u32_offset_0_width_16_low16 %29
+  %30 = v_bfe_u32_offset_0_width_inline_low16 %29
   %31 = global_load_d16_b16_saddr %22, %gate_view {offset = 192}
-  %32 = v_bfe_u32_offset_0_width_16_low16 %31
+  %32 = v_bfe_u32_offset_0_width_inline_low16 %31
   %33 = v_lshlrev_b32_src0_inline %32, 16
   %34 = v_or_b32 %30, %33
   %35 = global_load_d16_b16_saddr %22, %gate_view {offset = 256}
-  %36 = v_bfe_u32_offset_0_width_16_low16 %35
+  %36 = v_bfe_u32_offset_0_width_inline_low16 %35
   %37 = global_load_d16_b16_saddr %22, %gate_view {offset = 320}
-  %38 = v_bfe_u32_offset_0_width_16_low16 %37
+  %38 = v_bfe_u32_offset_0_width_inline_low16 %37
   %39 = v_lshlrev_b32_src0_inline %38, 16
   %40 = v_or_b32 %36, %39
   %41 = global_load_d16_b16_saddr %22, %gate_view {offset = 384}
-  %42 = v_bfe_u32_offset_0_width_16_low16 %41
+  %42 = v_bfe_u32_offset_0_width_inline_low16 %41
   %43 = global_load_d16_b16_saddr %22, %gate_view {offset = 448}
-  %44 = v_bfe_u32_offset_0_width_16_low16 %43
+  %44 = v_bfe_u32_offset_0_width_inline_low16 %43
   %45 = v_lshlrev_b32_src0_inline %44, 16
   %46 = v_or_b32 %42, %45
   %49 = v_lshlrev_b32_src0_inline %28, 16

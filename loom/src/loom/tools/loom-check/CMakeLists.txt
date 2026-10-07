@@ -30,7 +30,6 @@ loom_cc_library(
     execute
   HDRS
     "analysis.h"
-    "artifact.h"
     "comparison.h"
     "diagnostics.h"
     "execute.h"
@@ -41,7 +40,6 @@ loom_cc_library(
     "source_low.h"
   SRCS
     "analysis.c"
-    "artifact.c"
     "comparison.c"
     "diagnostics.c"
     "emit.c"
@@ -421,6 +419,8 @@ loom_cc_library(
     ::execute
     ::provider
     iree::base
+    iree::base::threading
+    loom::binding::c::loomc
     loom::codegen::low::allocation
     loom::codegen::low::descriptors
     loom::codegen::low::function_model
@@ -432,6 +432,7 @@ loom_cc_library(
     loom::codegen::low::storage_layout
     loom::codegen::low::storage_transport
     loom::ir
+    loom::target::configured::compiler_provider_set
     loom::target::test::provider
   TESTONLY
   PUBLIC

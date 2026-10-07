@@ -1,5 +1,5 @@
 // TEMPLATE: loom/src/loom/test/corpus/source_low/buffer_selection.loom-test
-// RUN: emit spirv-dis input=source-low target=spirv:vulkan1.3+bda+extended-types control-flow=structured-low validate
+// RUN: emit spirv-dis @choose_buffer input=source-low target=spirv:vulkan1.3+bda+extended-types control-flow=structured-low validate
 // REQUIRES: spirv-dis, spirv-val
 
 // A selected reference retains the ordinary buffer result ABI.
@@ -11,6 +11,7 @@ func.def @choose_buffer(%first: buffer, %second: buffer, %choose_first: i1) -> (
 
 // ====
 
+// RUN: emit spirv-dis @exchange_selected_byte input=source-low target=spirv:vulkan1.3+bda+extended-types control-flow=structured-low validate
 // A selected reference remains a buffer for both reads and writes.
 func.def @exchange_selected_byte(%first: buffer, %second: buffer, %choose_first: i1, %position_input: offset, %replacement: i32) -> (i32) {
   %position = index.assume %position_input [range(%position_input, 0, 1024)] : offset
@@ -115,6 +116,7 @@ func.def @exchange_selected_byte(%first: buffer, %second: buffer, %choose_first:
 
 // ====
 
+// RUN: emit spirv-dis @selected_buffer_coordinate input=source-low target=spirv:vulkan1.3+bda+extended-types control-flow=structured-low validate
 // Canonicalization may select the components independently, but both selections
 // retain the same condition and therefore the same complete coordinate.
 func.def @selected_buffer_coordinate(%first: buffer, %second: buffer, %first_origin_input: offset, %second_origin_input: offset, %choose_first: i1) -> (i32) {
@@ -223,6 +225,7 @@ func.def @selected_buffer_coordinate(%first: buffer, %second: buffer, %first_ori
 
 // ====
 
+// RUN: emit spirv-dis @rotate_buffer_coordinates input=source-low target=spirv:vulkan1.3+bda+extended-types control-flow=structured-low validate
 // Rotating a reference and its origin carries both values over the same edge.
 func.def @rotate_buffer_coordinates(%first: buffer, %second: buffer, %first_origin_input: offset, %second_origin_input: offset, %count: index) -> (i32) {
   %first_origin = index.assume %first_origin_input [range(%first_origin_input, 0, 1024)] : offset

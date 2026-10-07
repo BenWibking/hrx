@@ -1231,9 +1231,9 @@ iree_status_t loom_amdgpu_materialize_full_low_vgpr_b32(
   loom_op_t* low_op = NULL;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_op(
       context, source_op,
-      LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_16_LOW16, operands,
-      IREE_ARRAYSIZE(operands), loom_make_named_attr_slice(NULL, 0), &low_type,
-      1, &low_op));
+      LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_INLINE_LOW16,
+      operands, IREE_ARRAYSIZE(operands), loom_make_named_attr_slice(NULL, 0),
+      &low_type, 1, &low_op));
   *out_low_value = loom_value_slice_get(loom_low_op_results(low_op), 0);
   return iree_ok_status();
 }
@@ -1781,9 +1781,10 @@ iree_status_t loom_amdgpu_try_emit_vgpr_b32_bfe_extract(
     loom_value_id_t* out_value, bool* out_selected) {
   *out_value = LOOM_VALUE_ID_INVALID;
   *out_selected = false;
-  IREE_ASSERT(
-      !iree_any_bit_set(flags, ~LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SIGN_EXTEND),
-      "unsupported AMDGPU BFE extract flags");
+  IREE_ASSERT(!iree_any_bit_set(
+                  flags, ~(LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SIGN_EXTEND |
+                           LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SOURCE_LOW16)),
+              "unsupported AMDGPU BFE extract flags");
   if (bit_offset > 31 || bit_count < 1 || bit_count > 32 ||
       bit_offset + bit_count > 32) {
     return iree_ok_status();
@@ -1791,9 +1792,18 @@ iree_status_t loom_amdgpu_try_emit_vgpr_b32_bfe_extract(
 
   const bool sign_extend =
       iree_any_bit_set(flags, LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SIGN_EXTEND);
+  const bool reads_low16 =
+      iree_any_bit_set(flags, LOOM_AMDGPU_VGPR_BFE_EXTRACT_FLAG_SOURCE_LOW16);
+  IREE_ASSERT(!reads_low16 || (bit_offset == 0 && bit_count <= 16),
+              "partial-register BFE must stay within the low 16 bits");
   const loom_amdgpu_descriptor_ref_t descriptor_ref =
-      sign_extend ? LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_I32_OFFSET_WIDTH_INLINE
-                  : LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_WIDTH_INLINE;
+      reads_low16
+          ? (sign_extend
+                 ? LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_I32_OFFSET_0_WIDTH_INLINE_LOW16
+                 : LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_0_WIDTH_INLINE_LOW16)
+          : (sign_extend
+                 ? LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_I32_OFFSET_WIDTH_INLINE
+                 : LOOM_AMDGPU_DESCRIPTOR_REF_V_BFE_U32_OFFSET_WIDTH_INLINE);
   loom_low_lower_resolved_descriptor_t descriptor = {0};
   bool present = false;
   IREE_RETURN_IF_ERROR(loom_amdgpu_resolve_descriptor_ref_if_present(

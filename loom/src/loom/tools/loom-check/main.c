@@ -423,13 +423,11 @@ int loom_check_main(
   loomc_config_binding_t* config_bindings = NULL;
   loomc_config_options_t config_options = {0};
   loomc_sanitizer_options_t loomc_sanitizer = {0};
-  loomc_target_environment_t* target_environment = NULL;
-  loomc_context_t* compile_context = NULL;
-  loomc_workspace_t* compile_workspace = NULL;
-  loomc_compiler_t* compiler = NULL;
+  loom_check_compile_session_t compile_session = {
+      .provider = compile_provider,
+      .host_allocator = host_allocator,
+  };
   loomc_target_profile_t* target_profile = NULL;
-  const loomc_allocator_t loom_allocator =
-      loomc_allocator_from_iree(host_allocator);
   const iree_string_view_t target =
       iree_string_view_trim(iree_make_cstring_view(FLAG_target));
   const bool compile_enabled = !iree_string_view_is_empty(target);
@@ -487,43 +485,9 @@ int loom_check_main(
     status = loom_tooling_config_set_append_assignment(&config_set,
                                                        configs.values[i]);
   }
-  if (iree_status_is_ok(status) && compile_enabled &&
-      (compile_provider == NULL ||
-       compile_provider->create_target_environment == NULL)) {
-    status = iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "loom-check runner has no compiler target environment");
-  }
   if (iree_status_is_ok(status) && compile_enabled) {
-    status = iree_status_from_loomc(compile_provider->create_target_environment(
-        loom_allocator, &target_environment));
-  }
-  if (iree_status_is_ok(status) && compile_enabled) {
-    const loomc_context_target_options_t target_options = {
-        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
-        .structure_size = sizeof(target_options),
-        .target_environment = target_environment,
-    };
-    const loomc_context_options_t context_options = {
-        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
-        .structure_size = sizeof(context_options),
-        .next = &target_options,
-    };
-    status = iree_status_from_loomc(loomc_context_create(
-        &context_options, loom_allocator, &compile_context));
-  }
-  if (iree_status_is_ok(status) && compile_enabled) {
-    status = iree_status_from_loomc(loomc_workspace_create(
-        /*options=*/NULL, loom_allocator, &compile_workspace));
-  }
-  if (iree_status_is_ok(status) && compile_enabled) {
-    status = iree_status_from_loomc(loomc_compiler_create(
-        compile_context, /*options=*/NULL, loom_allocator, &compiler));
-  }
-  if (iree_status_is_ok(status) && compile_enabled) {
-    status = iree_status_from_loomc(loomc_target_profile_select(
-        target_environment, loomc_string_view_from_iree(target), loom_allocator,
-        &target_profile));
+    status = loom_check_compile_session_select_target_profile(
+        &compile_session, target, &target_profile);
   }
   if (iree_status_is_ok(status) && compile_enabled) {
     status = loom_tooling_cli_make_loomc_config_options(
@@ -540,15 +504,10 @@ int loom_check_main(
   const loom_check_process_options_t process_options = {
       .compile =
           {
-              .context = compile_context,
-              .compiler = compiler,
-              .workspace = compile_workspace,
+              .session = &compile_session,
               .target_profile = target_profile,
               .config = &config_options,
               .sanitizer = sanitizer_enabled ? &loomc_sanitizer : NULL,
-              .import = compile_provider ? compile_provider->import : NULL,
-              .import_user_data =
-                  compile_provider ? compile_provider->import_user_data : NULL,
           },
       .input_format = iree_make_cstring_view(FLAG_input_format),
       .mode = FLAG_check_templates ? LOOM_CHECK_PROCESS_CHECK_TEMPLATES
@@ -566,6 +525,7 @@ int loom_check_main(
 
   if (iree_status_is_ok(status)) {
     loom_check_environment_t environment = *base_environment;
+    environment.compile_session = &compile_session;
     if (argc < 2) {
       // No positional args: read from stdin.
       status = loom_check_read_and_process(
@@ -595,10 +555,7 @@ int loom_check_main(
     loom_context_deinitialize(&context);
   }
   loomc_target_profile_release(target_profile);
-  loomc_compiler_release(compiler);
-  loomc_workspace_release(compile_workspace);
-  loomc_context_release(compile_context);
-  loomc_target_environment_release(target_environment);
+  loom_check_compile_session_deinitialize(&compile_session);
   iree_allocator_free(host_allocator, config_bindings);
   loom_tooling_config_set_deinitialize(&config_set);
   iree_arena_block_pool_deinitialize(&block_pool);
