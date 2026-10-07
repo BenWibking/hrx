@@ -32,6 +32,8 @@ MEC/ME/PFP differences, GFX12/GC12.1 fields, selected callers and result owners.
 The [WRITE_DATA chapter](write.md) separates inline input capture, destination
 routing and confirmation from prior-reader completion, consumer visibility and
 storage reuse.
+The [wait chapter](wait.md) gives complete comparison, operation and polling
+fields together with native dependency and control-storage ownership.
 
 [Copy layout][copy-layout] [Copy builder][copy-builder]
 [Write layout][write-layout] [Write builder][write-builder]
