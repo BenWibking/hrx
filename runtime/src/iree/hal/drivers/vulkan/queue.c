@@ -5368,6 +5368,21 @@ static iree_status_t iree_hal_vulkan_queue_stage_alloca_reservations(
       submission->alloca.pool, submission->alloca.request_count,
       submission->alloca.requests, submission->alloca.reservations,
       IREE_HAL_POOL_MATERIALIZE_FLAG_NONE, submission->alloca.backing_buffers);
+  // Legacy pool capabilities describe usages but carry no native owner.
+  // Qualify materialized storage before publishing Vulkan-native bindings.
+  for (iree_host_size_t i = 0;
+       i < submission->alloca.request_count && iree_status_is_ok(status); ++i) {
+    iree_hal_buffer_t* backing = NULL;
+    status = iree_hal_vulkan_buffer_resolve_backing(
+        submission->alloca.backing_buffers[i], &backing);
+    if (iree_status_is_ok(status) &&
+        iree_hal_buffer_allocation_placement(backing).device !=
+            (iree_hal_device_t*)submission->queue->device) {
+      status = iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "allocation pool provides storage from a different Vulkan device");
+    }
+  }
   if (iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
       iree_hal_vulkan_transient_buffer_attach_reservation(
@@ -5390,6 +5405,10 @@ static iree_status_t iree_hal_vulkan_queue_stage_alloca_reservations(
         submission->alloca.reservations,
         submission->alloca.wait_frontier->entry_count);
   } else {
+    for (iree_host_size_t i = 0; i < submission->alloca.request_count; ++i) {
+      iree_hal_buffer_release(submission->alloca.backing_buffers[i]);
+      submission->alloca.backing_buffers[i] = NULL;
+    }
     iree_hal_vulkan_queue_release_alloca_reservations(submission,
                                                       iree_status_code(status));
   }
@@ -9479,15 +9498,6 @@ static iree_status_t iree_hal_vulkan_queue_resolve_dispatch_indirect_parameters(
   iree_hal_buffer_t* backing_buffer = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_buffer_resolve_backing(
       workgroup_count_ref->buffer, &backing_buffer));
-  iree_hal_buffer_t* allocated_buffer =
-      iree_hal_buffer_allocated_buffer(backing_buffer);
-  if (!iree_hal_vulkan_buffer_isa(allocated_buffer) &&
-      !iree_hal_vulkan_sparse_buffer_isa(allocated_buffer)) {
-    return iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "Vulkan queue_dispatch indirect workgroup parameter buffer is not "
-        "backed by the Vulkan HAL");
-  }
 
   VkDeviceMemory memory = VK_NULL_HANDLE;
   IREE_RETURN_IF_ERROR(

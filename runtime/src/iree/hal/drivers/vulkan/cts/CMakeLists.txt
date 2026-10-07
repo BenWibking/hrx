@@ -593,6 +593,7 @@ iree_cc_test(
     iree::hal::cts::util::test_main
     iree::hal::drivers::vulkan
     iree::hal::drivers::vulkan::headers
+    iree::hal::memory::tlsf_pool
     iree::testing::gtest
   LABELS
     "vulkan_uses_vk_khr_buffer_device_address"

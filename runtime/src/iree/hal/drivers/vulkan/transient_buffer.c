@@ -7,6 +7,7 @@
 #include "iree/hal/drivers/vulkan/transient_buffer.h"
 
 #include "iree/base/threading/mutex.h"
+#include "iree/hal/drivers/vulkan/buffer.h"
 
 static iree_atomic_int64_t iree_hal_vulkan_transient_buffer_next_profile_id =
     IREE_ATOMIC_VAR_INIT(1);
@@ -48,6 +49,10 @@ struct iree_hal_vulkan_transient_buffer_t {
 
   // Borrowed pool selected for this logical allocation epoch.
   iree_hal_pool_t* source_pool;
+
+  // Stable table borrowed by views created before allocation commitment.
+  // Caller-ordered commit/decommit publishes and clears only these entries.
+  iree_hal_vulkan_buffer_native_t native;
 
   // Optional queue-allocation reservation owned by this wrapper while armed.
   iree_hal_pool_reservation_t reservation;
@@ -123,6 +128,8 @@ iree_status_t iree_hal_vulkan_transient_buffer_create(
   buffer->staged_backing = NULL;
   buffer->committed_backing = NULL;
   buffer->source_pool = source_pool;
+  buffer->base.memory.contract = source_pool->memory_contract;
+  buffer->base.memory.bindings = buffer->native.bindings;
   memset(&buffer->reservation, 0, sizeof(buffer->reservation));
   buffer->reservation_armed = 0;
   buffer->deallocation_state =
@@ -182,6 +189,26 @@ void iree_hal_vulkan_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
     IREE_ASSERT_TRUE(buffer->staged_backing != NULL);
     IREE_ASSERT_TRUE(buffer->committed_backing == NULL);
     buffer->committed_backing = buffer->staged_backing;
+    buffer->native = *iree_hal_vulkan_buffer_native(buffer->committed_backing);
+    buffer->native.bindings[IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE] =
+        iree_hal_buffer_native_binding(
+            buffer->committed_backing,
+            (iree_hal_buffer_native_binding_slot_t){
+                .index = IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE,
+                .type = IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER,
+            });
+    const uint64_t base_address =
+        buffer->committed_backing->memory
+            .bindings[IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS]
+            .device_address;
+    buffer->native.bindings[IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS] =
+        (iree_hal_buffer_native_binding_t){
+            .device_address =
+                base_address
+                    ? base_address +
+                          buffer->committed_backing->memory.binding_offset
+                    : 0,
+        };
   }
   iree_slim_mutex_unlock(&buffer->mutex);
 }
@@ -193,6 +220,7 @@ void iree_hal_vulkan_transient_buffer_decommit(iree_hal_buffer_t* base_buffer) {
   iree_hal_buffer_t* staged_backing = buffer->staged_backing;
   buffer->staged_backing = NULL;
   buffer->committed_backing = NULL;
+  memset(&buffer->native, 0, sizeof(buffer->native));
   iree_slim_mutex_unlock(&buffer->mutex);
   iree_hal_buffer_release(staged_backing);
 }
@@ -455,10 +483,12 @@ iree_hal_vulkan_transient_buffer_query_memory(
     const iree_hal_buffer_t* base_buffer) {
   iree_hal_vulkan_transient_buffer_t* buffer =
       (iree_hal_vulkan_transient_buffer_t*)base_buffer;
-  iree_hal_buffer_memory_view_t view = {0};
+  iree_hal_buffer_memory_view_t view = base_buffer->memory;
   iree_slim_mutex_lock(&buffer->mutex);
   if (buffer->committed_backing) {
     view = iree_hal_buffer_memory_view(buffer->committed_backing);
+    view.bindings = base_buffer->memory.bindings;
+    view.binding_offset = 0;
   }
   iree_slim_mutex_unlock(&buffer->mutex);
   return view;

@@ -23,6 +23,42 @@ extern "C" {
 typedef struct iree_hal_vulkan_buffer_mapping_state_t
     iree_hal_vulkan_buffer_mapping_state_t;
 
+// Native slots shared by dense, sparse, and queue-ordered Vulkan storage.
+// The address slot is usable only when buffer device address was enabled for
+// the resource. Public host mapping is independent of both native slots.
+enum iree_hal_vulkan_buffer_binding_index_e {
+  IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE = 0,
+  IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS = 1,
+  IREE_HAL_VULKAN_BUFFER_BINDING_COUNT = 2,
+};
+
+// Inline native facts shared by dense, sparse and queue-ordered storage.
+// A view borrows this table throughout its caller-owned allocation epoch.
+typedef struct iree_hal_vulkan_buffer_native_t {
+  // Generic native slots at offset zero, referenced by buffer->memory.bindings.
+  iree_hal_buffer_native_binding_t
+      bindings[IREE_HAL_VULKAN_BUFFER_BINDING_COUNT];
+  // Dense backing identity, or VK_NULL_HANDLE for sparse storage.
+  VkDeviceMemory device_memory;
+  // Complete native resource extent, independent of the HAL view length.
+  VkDeviceSize handle_length;
+} iree_hal_vulkan_buffer_native_t;
+
+// Returns captured facts from a qualified, prepared Vulkan buffer. The table
+// is inline in its retained allocation owner, including for transient views.
+static inline const iree_hal_vulkan_buffer_native_t*
+iree_hal_vulkan_buffer_native(const iree_hal_buffer_t* buffer) {
+  return (const iree_hal_vulkan_buffer_native_t*)buffer->memory.bindings;
+}
+
+// Initializes inline native facts and attaches their stable table to |buffer|.
+// |handle_offset| is independent of the buffer's maintenance origin. The owner
+// keeps |native| alive for the complete buffer lifetime.
+void iree_hal_vulkan_buffer_initialize_bindings(
+    iree_hal_buffer_t* buffer, VkDeviceMemory device_memory, VkBuffer handle,
+    VkDeviceSize handle_length, VkDeviceAddress device_address,
+    VkDeviceSize handle_offset, iree_hal_vulkan_buffer_native_t* native);
+
 // Wraps a bound Vulkan buffer allocation in an iree_hal_buffer_t.
 iree_status_t iree_hal_vulkan_buffer_create(
     const iree_hal_vulkan_device_syms_t* syms, VkDevice logical_device,
@@ -71,7 +107,7 @@ iree_hal_vulkan_buffer_mapping_state_t* iree_hal_vulkan_buffer_mapping_state(
 iree_status_t iree_hal_vulkan_buffer_resolve_backing(
     iree_hal_buffer_t* buffer, iree_hal_buffer_t** out_backing_buffer);
 
-// Returns the byte offset into |backing_buffer| for |buffer| plus
+// Returns the byte offset into the native resource for |buffer| plus
 // |local_byte_offset|. When |buffer| is a subspan of a transient wrapper this
 // preserves both the staged backing view offset and the original wrapper view
 // offset.
@@ -101,7 +137,8 @@ iree_hal_vulkan_buffer_range_dword_alignment(
     iree_hal_buffer_t* buffer, iree_device_size_t local_byte_offset,
     iree_device_size_t local_byte_length);
 
-// Returns the Vulkan memory and buffer handles backing |buffer|.
+// Returns the Vulkan memory and buffer handles backing |buffer|. Sparse
+// storage has no single dense memory identity and returns VK_NULL_HANDLE.
 iree_status_t iree_hal_vulkan_buffer_handle(iree_hal_buffer_t* buffer,
                                             VkDeviceMemory* out_memory,
                                             VkBuffer* out_handle);

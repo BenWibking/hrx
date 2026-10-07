@@ -55,6 +55,8 @@ struct HalTraits;
 CTS_HAL_TRAITS(iree_hal_buffer_t, iree_hal_buffer_release);
 CTS_HAL_TRAITS(iree_hal_buffer_view_t, iree_hal_buffer_view_release);
 CTS_HAL_TRAITS(iree_hal_command_buffer_t, iree_hal_command_buffer_release);
+CTS_HAL_TRAITS(iree_hal_device_t, iree_hal_device_release);
+CTS_HAL_TRAITS(iree_hal_device_group_t, iree_hal_device_group_release);
 CTS_HAL_TRAITS(iree_hal_semaphore_t, iree_hal_semaphore_release);
 CTS_HAL_TRAITS(iree_hal_executable_t, iree_hal_executable_release);
 CTS_HAL_TRAITS(iree_hal_file_t, iree_hal_file_release);

@@ -271,6 +271,7 @@ iree_cc_library(
   SRCS
     "transient_buffer.c"
   DEPS
+    ::headers
     iree::async
     iree::base
     iree::base::threading

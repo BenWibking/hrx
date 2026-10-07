@@ -2664,8 +2664,8 @@ static iree_status_t iree_hal_vulkan_allocator_virtual_memory_map(
 
   VkDeviceMemory ignored_memory = VK_NULL_HANDLE;
   VkBuffer handle = VK_NULL_HANDLE;
-  IREE_RETURN_IF_ERROR(iree_hal_vulkan_sparse_buffer_handle(
-      virtual_buffer, &ignored_memory, &handle));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_vulkan_buffer_handle(virtual_buffer, &ignored_memory, &handle));
   VkMemoryRequirements memory_requirements = {0};
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_sparse_buffer_memory_requirements(
       virtual_buffer, &memory_requirements));
@@ -2735,8 +2735,8 @@ static iree_status_t iree_hal_vulkan_allocator_virtual_memory_unmap(
 
   VkDeviceMemory ignored_memory = VK_NULL_HANDLE;
   VkBuffer handle = VK_NULL_HANDLE;
-  IREE_RETURN_IF_ERROR(iree_hal_vulkan_sparse_buffer_handle(
-      virtual_buffer, &ignored_memory, &handle));
+  IREE_RETURN_IF_ERROR(
+      iree_hal_vulkan_buffer_handle(virtual_buffer, &ignored_memory, &handle));
   VkMemoryRequirements memory_requirements = {0};
   IREE_RETURN_IF_ERROR(iree_hal_vulkan_sparse_buffer_memory_requirements(
       virtual_buffer, &memory_requirements));

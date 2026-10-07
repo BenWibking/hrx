@@ -210,6 +210,7 @@ iree_runtime_cc_library(
     hdrs = ["transient_buffer.h"],
     visibility = ["//visibility:private"],
     deps = [
+        ":headers",
         "//runtime/src/iree/async",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/threading",

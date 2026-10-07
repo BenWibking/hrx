@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+#include "iree/hal/drivers/vulkan/buffer.h"
 #include "iree/hal/drivers/vulkan/queue.h"
 
 //===----------------------------------------------------------------------===//
@@ -35,25 +36,22 @@ typedef struct iree_hal_vulkan_sparse_buffer_t {
   // Device-level Vulkan dispatch table copied from the creating device.
   iree_hal_vulkan_device_syms_t syms;
 
-  // Vulkan logical device that owns |handle| and |physical_blocks|.
+  // Vulkan logical device that owns the sparse buffer and |physical_blocks|.
   VkDevice logical_device;
 
-  // Vulkan buffer handle with VK_BUFFER_CREATE_SPARSE_BINDING_BIT set.
-  VkBuffer handle;
+  // Inline native facts shared with dense and queue-ordered Vulkan storage.
+  iree_hal_vulkan_buffer_native_t native;
 
   // Internal sparse-buffer behavior flags.
   iree_hal_vulkan_sparse_buffer_flags_t flags;
 
-  // Memory requirements reported for |handle|.
+  // Memory requirements reported for the sparse buffer resource.
   VkMemoryRequirements memory_requirements;
-
-  // Device pointer returned by vkGetBufferDeviceAddress.
-  VkDeviceAddress device_address;
 
   // Count of allocated physical VkDeviceMemory blocks.
   iree_host_size_t physical_block_count;
 
-  // Physical VkDeviceMemory blocks bound into |handle| in order.
+  // Physical VkDeviceMemory blocks bound into the sparse buffer in order.
   VkDeviceMemory physical_blocks[];
 } iree_hal_vulkan_sparse_buffer_t;
 
@@ -262,8 +260,11 @@ static iree_status_t iree_hal_vulkan_sparse_buffer_commit_sync(
   }
   if (iree_status_is_ok(status)) {
     status = iree_hal_vulkan_sparse_buffer_bind_sync(
-        sparse_binding_queue, placement, buffer->handle, physical_block_count,
-        binds);
+        sparse_binding_queue, placement,
+        (VkBuffer)buffer->native
+            .bindings[IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE]
+            .vulkan.buffer,
+        physical_block_count, binds);
   }
 
   iree_allocator_free(buffer->host_allocator, binds);
@@ -332,7 +333,9 @@ iree_status_t iree_hal_vulkan_sparse_buffer_create_bound_sync(
     buffer->host_allocator = host_allocator;
     buffer->syms = *syms;
     buffer->logical_device = logical_device;
-    buffer->handle = handle;
+    iree_hal_vulkan_buffer_initialize_bindings(
+        &buffer->base, VK_NULL_HANDLE, handle, allocation_size,
+        /*device_address=*/0, /*handle_offset=*/0, &buffer->native);
     buffer->flags = IREE_HAL_VULKAN_SPARSE_BUFFER_FLAG_NONE;
     buffer->memory_requirements = memory_requirements;
 
@@ -340,9 +343,9 @@ iree_status_t iree_hal_vulkan_sparse_buffer_create_bound_sync(
         buffer, sparse_binding_queue, placement, memory_requirements,
         memory_type_index, max_allocation_size, memory_allocate_flags);
     if (iree_status_is_ok(status)) {
-      buffer->device_address =
-          iree_hal_vulkan_sparse_buffer_query_device_address(
-              &buffer->syms, buffer->logical_device, buffer->handle);
+      buffer->native.bindings[IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS]
+          .device_address = iree_hal_vulkan_sparse_buffer_query_device_address(
+          &buffer->syms, buffer->logical_device, handle);
     }
   }
 
@@ -388,11 +391,13 @@ iree_status_t iree_hal_vulkan_sparse_buffer_create_unbound(
     buffer->host_allocator = host_allocator;
     buffer->syms = *syms;
     buffer->logical_device = logical_device;
-    buffer->handle = handle;
     buffer->flags = IREE_HAL_VULKAN_SPARSE_BUFFER_FLAG_VIRTUAL_RESERVATION;
     buffer->memory_requirements = memory_requirements;
-    buffer->device_address = iree_hal_vulkan_sparse_buffer_query_device_address(
-        &buffer->syms, buffer->logical_device, buffer->handle);
+    iree_hal_vulkan_buffer_initialize_bindings(
+        &buffer->base, VK_NULL_HANDLE, handle, allocation_size,
+        iree_hal_vulkan_sparse_buffer_query_device_address(
+            &buffer->syms, buffer->logical_device, handle),
+        /*handle_offset=*/0, &buffer->native);
     *out_buffer = &buffer->base;
   }
 
@@ -409,10 +414,13 @@ static void iree_hal_vulkan_sparse_buffer_destroy(
   IREE_TRACE_ZONE_APPEND_VALUE_I64(
       z0, (int64_t)iree_hal_buffer_allocation_size(base_buffer));
 
-  if (buffer->handle) {
-    IREE_TRACE_FREE_NAMED(IREE_HAL_VULKAN_ALLOCATOR_ID, (void*)buffer->handle);
+  const VkBuffer handle =
+      (VkBuffer)buffer->native.bindings[IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE]
+          .vulkan.buffer;
+  if (handle) {
+    IREE_TRACE_FREE_NAMED(IREE_HAL_VULKAN_ALLOCATOR_ID, (void*)handle);
     iree_vkDestroyBuffer(IREE_VULKAN_DEVICE(&buffer->syms),
-                         buffer->logical_device, buffer->handle,
+                         buffer->logical_device, handle,
                          /*pAllocator=*/NULL);
   }
   iree_hal_vulkan_sparse_buffer_free_physical_blocks(
@@ -442,25 +450,6 @@ bool iree_hal_vulkan_sparse_buffer_is_virtual_reservation(
       IREE_HAL_VULKAN_SPARSE_BUFFER_FLAG_VIRTUAL_RESERVATION);
 }
 
-iree_status_t iree_hal_vulkan_sparse_buffer_handle(iree_hal_buffer_t* buffer,
-                                                   VkDeviceMemory* out_memory,
-                                                   VkBuffer* out_handle) {
-  IREE_ASSERT_ARGUMENT(buffer);
-  IREE_ASSERT_ARGUMENT(out_memory);
-  IREE_ASSERT_ARGUMENT(out_handle);
-  iree_hal_buffer_t* allocated_buffer =
-      iree_hal_buffer_allocated_buffer(buffer);
-  if (!iree_hal_vulkan_sparse_buffer_isa(allocated_buffer)) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "buffer is not backed by a Vulkan sparse buffer");
-  }
-  iree_hal_vulkan_sparse_buffer_t* vulkan_buffer =
-      iree_hal_vulkan_sparse_buffer_cast(allocated_buffer);
-  *out_memory = VK_NULL_HANDLE;
-  *out_handle = vulkan_buffer->handle;
-  return iree_ok_status();
-}
-
 iree_status_t iree_hal_vulkan_sparse_buffer_memory_requirements(
     iree_hal_buffer_t* buffer, VkMemoryRequirements* out_memory_requirements) {
   IREE_ASSERT_ARGUMENT(buffer);
@@ -474,33 +463,6 @@ iree_status_t iree_hal_vulkan_sparse_buffer_memory_requirements(
   iree_hal_vulkan_sparse_buffer_t* vulkan_buffer =
       iree_hal_vulkan_sparse_buffer_cast(allocated_buffer);
   *out_memory_requirements = vulkan_buffer->memory_requirements;
-  return iree_ok_status();
-}
-
-iree_status_t iree_hal_vulkan_sparse_buffer_device_address(
-    iree_hal_buffer_t* buffer, VkDeviceAddress* out_device_address) {
-  IREE_ASSERT_ARGUMENT(buffer);
-  IREE_ASSERT_ARGUMENT(out_device_address);
-  iree_hal_buffer_t* allocated_buffer =
-      iree_hal_buffer_allocated_buffer(buffer);
-  if (!iree_hal_vulkan_sparse_buffer_isa(allocated_buffer)) {
-    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                            "buffer is not backed by a Vulkan sparse buffer");
-  }
-  iree_hal_vulkan_sparse_buffer_t* vulkan_buffer =
-      iree_hal_vulkan_sparse_buffer_cast(allocated_buffer);
-  if (vulkan_buffer->device_address == 0) {
-    *out_device_address = 0;
-    return iree_ok_status();
-  }
-  const iree_device_size_t byte_offset = iree_hal_buffer_byte_offset(buffer);
-  uint64_t device_address = 0;
-  if (!iree_checked_add_u64(vulkan_buffer->device_address, byte_offset,
-                            &device_address)) {
-    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
-                            "Vulkan sparse buffer device address overflows");
-  }
-  *out_device_address = device_address;
   return iree_ok_status();
 }
 
