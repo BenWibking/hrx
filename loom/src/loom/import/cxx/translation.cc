@@ -21,6 +21,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -840,14 +841,20 @@ class Translator final : private Initialization::Evaluation {
   }
 
   // The condition has already executed. Each arm starts from that same state
-  // and yields its value followed by the bindings it may have changed.
+  // and yields its optional value followed by bindings it may have changed.
+  // Object initialization uses void arms that publish directly to storage.
   template <typename Then, typename Else>
-  Value conditional_value(cxx::ExpressionAST* ast, loom_value_id_t condition,
-                          Then then_value, Else else_value) {
+  auto conditional(cxx::ExpressionAST* ast, loom_value_id_t condition,
+                   Then then_value, Else else_value) {
+    constexpr bool has_value = !std::is_void_v<std::invoke_result_t<Then>>;
     auto written = live_mutations(ast);
-    auto value_count = types_.partition(ast->type, ast).component_count;
-    std::vector<const cxx::Type*> sources = {ast->type};
-    sources.reserve(1 + written.size());
+    auto value_count =
+        has_value ? types_.partition(ast->type, ast).component_count : 0;
+    std::vector<const cxx::Type*> sources;
+    sources.reserve((has_value ? 1 : 0) + written.size());
+    if constexpr (has_value) {
+      sources.push_back(ast->type);
+    }
     for (auto* symbol : written) {
       sources.push_back(symbol->type());
     }
@@ -861,7 +868,11 @@ class Translator final : private Initialization::Evaluation {
     auto saved =
         loom_builder_enter_region(&builder_, op, loom_scf_if_then_region(op));
     std::vector<loom_value_id_t> yielded;
-    then_value().append_to(yielded);
+    if constexpr (has_value) {
+      then_value().append_to(yielded);
+    } else {
+      then_value();
+    }
     auto mutations = current(written);
     yielded.insert(yielded.end(), mutations.begin(), mutations.end());
     loom_op_t* yield;
@@ -872,15 +883,39 @@ class Translator final : private Initialization::Evaluation {
     saved =
         loom_builder_enter_region(&builder_, op, loom_scf_if_else_region(op));
     yielded.clear();
-    else_value().append_to(yielded);
+    if constexpr (has_value) {
+      else_value().append_to(yielded);
+    } else {
+      else_value();
+    }
     mutations = current(written);
     yielded.insert(yielded.end(), mutations.begin(), mutations.end());
     check(loom_scf_yield_build(&builder_, yielded.data(), yielded.size(),
                                source, &yield));
     loom_builder_restore(&builder_, saved);
     bind_values(written, loom_op_results(op) + value_count);
-    return value_arena_.capture(types_.partition(ast->type, ast),
-                                {loom_op_results(op), value_count});
+    if constexpr (has_value) {
+      return value_arena_.capture(types_.partition(ast->type, ast),
+                                  {loom_op_results(op), value_count});
+    }
+  }
+
+  void conditional_object(StorageProjection destination, const cxx::Type* type,
+                          cxx::ConditionalExpressionAST* select) override {
+    if (types_.vector(select->condition->type)) {
+      fail(select, "vector conditions require lane-wise selection");
+    }
+    auto condition = expression(select->condition).ssa();
+    conditional(
+        select, condition,
+        [&] {
+          initialization_.object(destination, type, select->iftrueExpression,
+                                 select);
+        },
+        [&] {
+          initialization_.object(destination, type, select->iffalseExpression,
+                                 select);
+        });
   }
 
   std::optional<IntrinsicCallResult> atomic_builtin(
@@ -1015,7 +1050,7 @@ class Translator final : private Initialization::Evaluation {
         fail(ast, "vector conditions require lane-wise selection");
       }
       auto condition = expression(select->condition).ssa();
-      return conditional_value(
+      return conditional(
           ast, condition, [&] { return expression(select->iftrueExpression); },
           [&] { return expression(select->iffalseExpression); });
     }
@@ -1156,9 +1191,8 @@ class Translator final : private Initialization::Evaluation {
         };
         auto skipped = [&] { return left; };
         return binary->op == cxx::TokenKind::T_AMP_AMP
-                   ? conditional_value(ast, left.ssa(), evaluate_right, skipped)
-                   : conditional_value(ast, left.ssa(), skipped,
-                                       evaluate_right);
+                   ? conditional(ast, left.ssa(), evaluate_right, skipped)
+                   : conditional(ast, left.ssa(), skipped, evaluate_right);
       }
       auto right = expression(binary->rightExpression);
       if (left.is_pointer() || right.is_pointer()) {
@@ -1851,7 +1885,7 @@ class Translator final : private Initialization::Evaluation {
     }
   }
 
-  void effect(cxx::ExpressionAST* ast) {
+  void effect(cxx::ExpressionAST* ast) override {
     if (auto* binary = cxx::ast_cast<cxx::BinaryExpressionAST>(ast);
         binary && !binary->symbol && binary->op == cxx::TokenKind::T_COMMA) {
       effect(binary->leftExpression);

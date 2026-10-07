@@ -116,6 +116,16 @@ void Initialization::object(StorageProjection destination,
         object(destination, type, nested->expression, owner);
         return;
       }
+      if (auto* select = cxx::ast_cast<cxx::ConditionalExpressionAST>(clause)) {
+        evaluation_.conditional_object(destination, type, select);
+        return;
+      }
+      if (auto* binary = cxx::ast_cast<cxx::BinaryExpressionAST>(clause);
+          binary && !binary->symbol && binary->op == cxx::TokenKind::T_COMMA) {
+        evaluation_.effect(binary->leftExpression);
+        object(destination, type, binary->rightExpression, owner);
+        return;
+      }
       cxx::List<cxx::ExpressionAST*>* arguments = nullptr;
       if (auto* construction =
               cxx::ast_cast<cxx::BracedTypeConstructionAST>(clause)) {

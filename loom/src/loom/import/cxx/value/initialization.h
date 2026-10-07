@@ -29,6 +29,11 @@ class Initialization {
     virtual Value expression(cxx::ExpressionAST* expression) = 0;
     virtual Value convert(cxx::ExpressionAST* expression, const cxx::Type* type,
                           cxx::AST* owner) = 0;
+    virtual void effect(cxx::ExpressionAST* expression) = 0;
+    // Branch construction retains the translator's automatic-binding joins.
+    virtual void conditional_object(
+        StorageProjection destination, const cxx::Type* type,
+        cxx::ConditionalExpressionAST* expression) = 0;
 
    protected:
     ~Evaluation() = default;
@@ -59,11 +64,12 @@ class Initialization {
   // Array scalar elements keep the allocation's retained typed view.
   void storage(StorageAllocation allocation, const cxx::Type* type,
                cxx::ExpressionAST* initializer, cxx::AST* owner);
-
- private:
+  // Constructs a projected object, including one selected initializer arm.
+  // The caller has already allocated and admitted the destination storage.
   void object(StorageProjection destination, const cxx::Type* type,
               cxx::ExpressionAST* initializer, cxx::AST* owner);
 
+ private:
   // Source type traits retain qualifiers on memory subobjects.
   cxx::TranslationUnit& unit_;
   // Source admission failures retain their owning clause.

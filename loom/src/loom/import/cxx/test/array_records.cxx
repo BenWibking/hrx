@@ -46,6 +46,15 @@ static unsigned elided() {
   return value.words[1] + 100u * wrapped.words[1] + 10000u * direct.words[1];
 }
 
+// Only the selected initializer runs, and its scalar mutations join the same
+// surrounding bindings as an ordinary conditional expression.
+static unsigned selected(unsigned choice) {
+  unsigned marker = 3;
+  Command value = choice ? Command{{++marker, value.words[0] + 2}}
+                         : (marker += 7, Command{{13, value.words[0] + 2}});
+  return value.words[0] + 100u * value.words[1] + 10000u * marker;
+}
+
 static unsigned memory(unsigned index) {
   Command records[2] = {{{5u, 7u}}, {{11u, 13u}}};
   Command saved = records[index];
@@ -135,6 +144,8 @@ LOOM_CHECK_CASE(record_array_copies) {
 LOOM_CHECK_CASE(record_array_initialization) {
   const auto sequence = ordered();
   const auto elided_sequence = elided();
+  const auto selected_first = selected(1);
+  const auto selected_second = selected(0);
   const auto first = nested(0);
   const auto second = nested(1);
   const auto temporary_first = temporary(0);
@@ -144,6 +155,8 @@ LOOM_CHECK_CASE(record_array_initialization) {
   const auto vector_second = vector_elements(1);
   loom::check::expect_equal(sequence, 13110753u);
   loom::check::expect_equal(elided_sequence, 332519u);
+  loom::check::expect_equal(selected_first, 40604u);
+  loom::check::expect_equal(selected_second, 101513u);
   loom::check::expect_equal(first, 83u);
   loom::check::expect_equal(second, 83u);
   loom::check::expect_equal(temporary_first, 5u);
