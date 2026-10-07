@@ -1,4 +1,4 @@
-// RUN: with-checks pass scf-to-cfg,ownership-lifetime
+// RUN: pass scf-to-cfg,ownership-lifetime
 
 // The arithmetic leaf borrows payloads; it has no channel capability.
 func.decl @add_partial(%partial: view<256xf32>, %accumulator: view<256xf32>)
@@ -24,17 +24,36 @@ pipeline.def @reduce_partials() run(%partials: channel<tile<256xf32>>, %output_w
 }
 
 // ----
-CHECK: func.def noinline @accumulate(*) -> (write<tile<256xf32>>) {
-CHECK: channel.release %read : read<tile<256xf32>>
-CHECK: func.return %write : write<tile<256xf32>>
-CHECK: pipeline.def @reduce_partials() run(*) {
-CHECK: %updated = func.call @accumulate(*)
-CHECK: channel.publish %finished : write<tile<256xf32>>
-CHECK-NOT: *scf.*
+func.decl @add_partial(%partial: view<256xf32>, %accumulator: view<256xf32>)
+
+func.def noinline @accumulate(%partials: channel<tile<256xf32>>, %write: write<tile<256xf32>>, %accumulator: view<256xf32>) -> (write<tile<256xf32>>) {
+  %read, %partial = channel.acquire %partials : channel<tile<256xf32>> -> (read<tile<256xf32>>, view<256xf32>)
+  func.call @add_partial(%partial, %accumulator) : (view<256xf32>, view<256xf32>)
+  channel.release %read : read<tile<256xf32>>
+  func.return %write : write<tile<256xf32>>
+}
+
+pipeline.def @reduce_partials() run(%partials: channel<tile<256xf32>>, %output_write: write<tile<256xf32>>, %accumulator: view<256xf32>, %count: index) {
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  cfg.br ^_bb1(%c0: index, %output_write: write<tile<256xf32>>)
+^_bb1(%19: index, %write: write<tile<256xf32>>):
+  %22 = index.cmp slt, %19, %count : index
+  cfg.cond_br %22, ^_bb2, ^_bb3
+^_bb2:
+  %i = index.assume %19 [lt(%19, %count)] : index
+  %updated = func.call @accumulate(%partials, %write, %accumulator) : (channel<tile<256xf32>>, write<tile<256xf32>>, view<256xf32>) -> (write<tile<256xf32>>)
+  %23 = index.add %i, %c1 : index
+  cfg.br ^_bb1(%23: index, %updated: write<tile<256xf32>>)
+^_bb3:
+  cfg.br ^_bb4(%write: write<tile<256xf32>>)
+^_bb4(%finished: write<tile<256xf32>>):
+  channel.publish %finished : write<tile<256xf32>>
+}
 
 // ====
 
-// RUN: with-checks pass scf-to-cfg,ownership-lifetime
+// RUN: pass scf-to-cfg,ownership-lifetime
 
 // Admission need not wait for payload readiness. The pending input is passed
 // around the loop; copy owns its read while transport waits and forwards it.
@@ -52,11 +71,25 @@ pipeline.def @forward_records() run(%initial: read<tile<256xf32>>, %incoming: ch
 }
 
 // ----
-CHECK: pipeline.def @forward_records() run(*) {
-CHECK: channel.copy %pending -> %write : read<tile<256xf32>>, write<tile<256xf32>>
-CHECK: %next = channel.accept %incoming : channel<tile<256xf32>> -> read<tile<256xf32>>
-CHECK: channel.release %last : read<tile<256xf32>>
-CHECK-NOT: *scf.*
+pipeline.def @forward_records() run(%initial: read<tile<256xf32>>, %incoming: channel<tile<256xf32>>, %outgoing: channel<tile<256xf32>>, %count: index) {
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  cfg.br ^_bb1(%c0: index, %initial: read<tile<256xf32>>)
+^_bb1(%13: index, %pending: read<tile<256xf32>>):
+  %16 = index.cmp slt, %13, %count : index
+  cfg.cond_br %16, ^_bb2, ^_bb3
+^_bb2:
+  %i = index.assume %13 [lt(%13, %count)] : index
+  %write, %destination = channel.reserve %outgoing : channel<tile<256xf32>> -> (write<tile<256xf32>>, view<256xf32>)
+  channel.copy %pending -> %write : read<tile<256xf32>>, write<tile<256xf32>>
+  %next = channel.accept %incoming : channel<tile<256xf32>> -> read<tile<256xf32>>
+  %17 = index.add %i, %c1 : index
+  cfg.br ^_bb1(%17: index, %next: read<tile<256xf32>>)
+^_bb3:
+  cfg.br ^_bb4(%pending: read<tile<256xf32>>)
+^_bb4(%last: read<tile<256xf32>>):
+  channel.release %last : read<tile<256xf32>>
+}
 
 // ====
 
