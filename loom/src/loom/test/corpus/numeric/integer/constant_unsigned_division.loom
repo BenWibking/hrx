@@ -996,6 +996,67 @@ check.scenario @bounded_wide_division_values {
   check.return
 }
 
+// A 35-bit numerator divided by nine has a u32 quotient, whose product with
+// the divisor still needs both words when reconstructing the remainder.
+func.def @narrow_remainder_product(%divisor_input: i64, %uniform: i64, %input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<4xi64>
+  %results = buffer.view %output[%base] : buffer -> view<5xi64>
+  %mask = scalar.constant 34359738367 : i64
+  %divisor = scalar.constant 9 : i64
+  %bounded = scalar.andi %uniform, %mask : i64
+  %remainder = scalar.remui %bounded, %divisor : i64
+  view.store %remainder, %results[0] : i64, view<5xi64>
+  %loaded = vector.load %values[0] : view<4xi64> -> vector<4xi64>
+  %masks = vector.splat %mask : vector<4xi64>
+  %lanes = vector.andi %loaded, %masks : vector<4xi64>
+  %divisors = vector.splat %divisor : vector<4xi64>
+  %remainders = vector.remui %lanes, %divisors : vector<4xi64>
+  vector.store %remainders, %results[1] : vector<4xi64>, view<5xi64>
+  func.return
+}
+
+func.def @dynamic_narrow_remainder_product(%divisor: i64, %uniform: i64, %input: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<4xi64>
+  %results = buffer.view %output[%base] : buffer -> view<5xi64>
+  %mask = scalar.constant 34359738367 : i64
+  %bounded = scalar.andi %uniform, %mask : i64
+  %remainder = scalar.remui %bounded, %divisor : i64
+  view.store %remainder, %results[0] : i64, view<5xi64>
+  %loaded = vector.load %values[0] : view<4xi64> -> vector<4xi64>
+  %masks = vector.splat %mask : vector<4xi64>
+  %lanes = vector.andi %loaded, %masks : vector<4xi64>
+  %divisors = vector.splat %divisor : vector<4xi64>
+  %remainders = vector.remui %lanes, %divisors : vector<4xi64>
+  vector.store %remainders, %results[1] : vector<4xi64>, view<5xi64>
+  func.return
+}
+
+check.scenario @narrow_remainder_product_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %divisor = check.literal value(9) : i64
+    %uniform = check.literal value(-1) : i64
+    %input = check.generate.iota offset(34359738366) step(1) : tensor<4xi64>
+    %output = check.generate.fill value(-123) : tensor<5xi64>
+    check.compare<@narrow_remainder_product, @dynamic_narrow_remainder_product>(%divisor, %uniform, %input, %output) : (i64, i64, tensor<4xi64>, tensor<5xi64>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<5xi64>
+    }
+  }
+  check.trial[32](%trial: index, %entropy: check.entropy) {
+    %uniform_entropy = check.entropy.fork %entropy name("uniform") : check.entropy
+    %uniform = check.entropy.read %uniform_entropy[%trial] : check.entropy -> i64
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %divisor = check.literal value(9) : i64
+    %input = check.generate.random.uniform seed(%seed) range(-9223372036854775808 to 9223372036854775807) : tensor<4xi64>
+    %output = check.generate.fill value(-123) : tensor<5xi64>
+    check.compare<@narrow_remainder_product, @dynamic_narrow_remainder_product>(%divisor, %uniform, %input, %output) : (i64, i64, tensor<4xi64>, tensor<5xi64>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<5xi64>
+    }
+  }
+  check.return
+}
+
 check.scenario @constant_index_boundary_division_values {
   check.trial[1](%trial: index, %entropy: check.entropy) {
     %zero = check.literal value(0) : index

@@ -35,17 +35,104 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @bounded
   %69 = s_mov_b32 1
   %70 = s_lshr_b64 %68, %69
   %71 = s_mov_b32 7
-  %74 = slice %70[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %75 = slice %70[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %78 = s_mul_i32 %74, %71
-  %79 = s_mul_hi_u32 %74, %71
-  %80 = s_mul_i32 %74, %14
-  %81 = s_mul_i32 %75, %71
-  %82 = s_add_u32 %79, %80
-  %83 = s_add_u32 %82, %81
-  %89, %90 = s_sub_co_u32 %10, %78
-  %91, %92 = s_subb_u32 %12, %83, %90
-  %result = concat(%89, %91) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  %72 = slice %70[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %73 = slice %70[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %74 = s_mul_i32 %72, %71
+  %75 = s_mul_hi_u32 %72, %71
+  %76 = s_mul_i32 %73, %71
+  %77 = s_add_u32 %75, %76
+  %83, %84 = s_sub_co_u32 %10, %74
+  %85, %86 = s_subb_u32 %12, %77, %84
+  %result = concat(%83, %85) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx11-generic> @target
+
+// Both quotient and divisor fit one unsigned word, but their product remains
+// two words for the full-width subtraction.
+func.def target(@target) @narrow_quotient_and_divisor(%input: i64) -> (i64) {
+  %value = scalar.assume %input [range(%input, 0, 30064771071)] : i64
+  %divisor = scalar.constant 7 : i64
+  %result = scalar.remui %value, %divisor : i64
+  func.return %result : i64
+}
+
+// ----
+low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @narrow_quotient_and_divisor(%value: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.sgpr x2>) asm {
+  %7 = s_mov_b32 2454267027
+  %8 = s_mov_b32 613566756
+  %10 = slice %value[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %12 = slice %value[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %14 = s_mov_b32 0
+  %15 = s_mul_hi_u32 %10, %7
+  %16 = s_mul_i32 %12, %7
+  %17 = s_mul_hi_u32 %12, %7
+  %24, %25 = s_add_co_u32 %16, %15
+  %26, %27 = s_addc_u32 %17, %14, %25
+  %31 = s_mul_i32 %10, %8
+  %32 = s_mul_hi_u32 %10, %8
+  %39, %40 = s_add_co_u32 %31, %24
+  %41, %42 = s_addc_u32 %32, %14, %40
+  %46 = s_mul_i32 %12, %8
+  %54, %55 = s_add_co_u32 %46, %26
+  %64, %65 = s_add_co_u32 %54, %41
+  %70 = s_mov_b32 7
+  %71 = s_mul_i32 %64, %70
+  %72 = s_mul_hi_u32 %64, %70
+  %78, %79 = s_sub_co_u32 %10, %71
+  %80, %81 = s_subb_u32 %12, %72, %79
+  %result = concat(%78, %80) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  return %result
+}
+
+// ====
+
+amdgpu.target<gfx942> @target
+
+// A divisor above one word guarantees a one-word unsigned quotient, including
+// numerators with the sign bit set.
+func.def target(@target) @narrow_quotient_wide_divisor(%values: vector<2xi64>) -> (i64) {
+  %value = vector.extract %values[0] : vector<2xi64> -> i64
+  %divisor = scalar.constant 4294967297 : i64
+  %result = scalar.remui %value, %divisor : i64
+  func.return %result : i64
+}
+
+// ----
+low.func.def target<amdgpu.cdna3.core>(@target) abi(hal_kernel) @narrow_quotient_wide_divisor(%values: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x2>) asm {
+  %8 = v_mov_b32 1
+  %9 = v_mov_b32 4294967295
+  %95 = slice %values[0] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
+  %94 = slice %values[1] : reg<amdgpu.vgpr x4> -> reg<amdgpu.vgpr>
+  %15 = v_mov_b32 0
+  %16 = v_mul_hi_u32 %95, %8
+  %17 = v_mul_lo_u32 %94, %8
+  %18 = v_mul_hi_u32 %94, %8
+  %25, %26 = v_add_co_u32 %17, %16
+  %27, %28 = v_addc_co_u32 %18, %15, %26
+  %32 = v_mul_lo_u32 %95, %9
+  %33 = v_mul_hi_u32 %95, %9
+  %40, %41 = v_add_co_u32 %32, %25
+  %42, %43 = v_addc_co_u32 %33, %15, %41
+  %47 = v_mul_lo_u32 %94, %9
+  %48 = v_mul_hi_u32 %94, %9
+  %55, %56 = v_add_co_u32 %47, %27
+  %57, %58 = v_addc_co_u32 %48, %15, %56
+  %65, %66 = v_add_co_u32 %55, %42
+  %67, %68 = v_addc_co_u32 %57, %15, %66
+  %69 = concat(%65, %67) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %70 = v_mov_b32 32
+  %71 = v_lshrrev_b64 %70, %69
+  %72 = slice %71[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
+  %78 = v_mul_lo_u32 %72, %8
+  %79 = v_mul_hi_u32 %72, %8
+  %81 = v_add_u32 %79, %78
+  %87, %88 = v_sub_co_u32 %95, %78
+  %89, %90 = v_subb_co_u32 %94, %81, %88
+  %result = concat(%87, %89) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
   return %result
 }
 
@@ -73,37 +160,31 @@ low.func.def target<amdgpu.cdna3.core>(@target) abi(hal_kernel) @bounded_varying
   %13 = slice %values[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
   %14 = slice %values[1] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
   %18 = s_mov_b32 2147483647
-  %19 = s_mov_b32 0
-  %22 = v_mov_b32_copy %18
-  %24 = v_mov_b32_copy %19
-  %30 = v_mul_lo_u32 %13, %22
-  %31 = v_mul_hi_u32 %13, %22
-  %32 = v_mul_lo_u32 %13, %24
-  %33 = v_mul_lo_u32 %12, %22
-  %34 = v_add_u32 %31, %32
-  %35 = v_add_u32 %34, %33
-  %39 = v_xor_b32 %30, %14
-  %42 = v_xor_b32 %35, %12
-  %44 = v_mov_b32 613566757
-  %45 = v_mov_b32 1227133513
-  %52 = v_mul_hi_u32 %39, %44
-  %53 = v_mul_lo_u32 %42, %44
-  %54 = v_mul_hi_u32 %42, %44
-  %61, %62 = v_add_co_u32 %53, %52
-  %63, %64 = v_addc_co_u32 %54, %12, %62
-  %68 = v_mul_lo_u32 %39, %45
-  %69 = v_mul_hi_u32 %39, %45
-  %76, %77 = v_add_co_u32 %68, %61
-  %78, %79 = v_addc_co_u32 %69, %12, %77
-  %83 = v_mul_lo_u32 %42, %45
-  %84 = v_mul_hi_u32 %42, %45
-  %91, %92 = v_add_co_u32 %83, %63
-  %93, %94 = v_addc_co_u32 %84, %12, %92
-  %101, %102 = v_add_co_u32 %91, %78
-  %103, %104 = v_addc_co_u32 %93, %12, %102
-  %105 = concat(%101, %103) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
-  %106 = v_mov_b32 1
-  %result = v_lshrrev_b64 %106, %105
+  %23 = v_mov_b32_copy %18
+  %24 = v_mul_lo_u32 %13, %23
+  %25 = v_mul_hi_u32 %13, %23
+  %29 = v_xor_b32 %24, %14
+  %32 = v_xor_b32 %25, %12
+  %34 = v_mov_b32 613566757
+  %35 = v_mov_b32 1227133513
+  %42 = v_mul_hi_u32 %29, %34
+  %43 = v_mul_lo_u32 %32, %34
+  %44 = v_mul_hi_u32 %32, %34
+  %51, %52 = v_add_co_u32 %43, %42
+  %53, %54 = v_addc_co_u32 %44, %12, %52
+  %58 = v_mul_lo_u32 %29, %35
+  %59 = v_mul_hi_u32 %29, %35
+  %66, %67 = v_add_co_u32 %58, %51
+  %68, %69 = v_addc_co_u32 %59, %12, %67
+  %73 = v_mul_lo_u32 %32, %35
+  %74 = v_mul_hi_u32 %32, %35
+  %81, %82 = v_add_co_u32 %73, %53
+  %83, %84 = v_addc_co_u32 %74, %12, %82
+  %91, %92 = v_add_co_u32 %81, %68
+  %93, %94 = v_addc_co_u32 %83, %12, %92
+  %95 = concat(%91, %93) : (reg<amdgpu.vgpr>, reg<amdgpu.vgpr>) -> reg<amdgpu.vgpr x2>
+  %96 = v_mov_b32 1
+  %result = v_lshrrev_b64 %96, %95
   return %result
 }
 
@@ -168,17 +249,15 @@ low.func.def target<amdgpu.gfx11.generic.core>(@target) abi(hal_kernel) @uniform
   %88 = s_mov_b32 2
   %89 = s_lshr_b64 %87, %88
   %90 = s_mov_b32 7
-  %93 = slice %89[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %94 = slice %89[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
-  %97 = s_mul_i32 %93, %90
-  %98 = s_mul_hi_u32 %93, %90
-  %99 = s_mul_i32 %93, %13
-  %100 = s_mul_i32 %94, %90
-  %101 = s_add_u32 %98, %99
-  %102 = s_add_u32 %101, %100
-  %108, %109 = s_sub_co_u32 %9, %97
-  %110, %111 = s_subb_u32 %11, %102, %109
-  %result = concat(%108, %110) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
+  %91 = slice %89[0] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %92 = slice %89[1] : reg<amdgpu.sgpr x2> -> reg<amdgpu.sgpr>
+  %93 = s_mul_i32 %91, %90
+  %94 = s_mul_hi_u32 %91, %90
+  %95 = s_mul_i32 %92, %90
+  %96 = s_add_u32 %94, %95
+  %102, %103 = s_sub_co_u32 %9, %93
+  %104, %105 = s_subb_u32 %11, %96, %103
+  %result = concat(%102, %104) : (reg<amdgpu.sgpr>, reg<amdgpu.sgpr>) -> reg<amdgpu.sgpr x2>
   return %result
 }
 

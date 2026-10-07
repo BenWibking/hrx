@@ -17,15 +17,16 @@
 extern "C" {
 #endif
 
-// Materializes an address operand in a two-unit carrier of |register_class_id|
-// (SGPR or VGPR), preserving the source numeric value. A one-unit signed
-// source is sign-extended unless retained facts prove it nonnegative; offsets
-// are unsigned. Two-unit inputs retain both words. Scalar materialization
-// requires a uniform source operand.
-iree_status_t loom_amdgpu_lookup_or_materialize_address_i64_operand(
+// Materializes an integer or address operand in |register_class_id| (SGPR or
+// VGPR), preserving its complete numeric value. |minimum_unit_count| is one
+// for consumers accepting a compact unsigned word or two for pair consumers.
+// Indexed source facts permit a one-word result only for a proven u32 value.
+// Other inputs retain both words or sign/zero-extend a one-word carrier as
+// required by their source domain. Scalar materialization requires uniformity.
+iree_status_t loom_amdgpu_lookup_or_materialize_integer_operand(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value, uint32_t register_class_id,
-    loom_value_id_t* out_low_value);
+    uint8_t minimum_unit_count, loom_value_id_t* out_low_value);
 
 // Sign-extends a one-unit SGPR or VGPR value into a two-unit carrier in the
 // same register class. The low word is retained and the high word replicates
@@ -44,8 +45,10 @@ iree_status_t loom_amdgpu_emit_sgpr64_binary_carry(
     loom_amdgpu_descriptor_ref_t high_descriptor_ref, loom_value_id_t low_lhs,
     loom_value_id_t low_rhs, loom_value_id_t* out_low_result);
 
-// Emits the low 64 bits of a product. Both inputs use the same two-unit SGPR
-// or VGPR carrier, which is also the result carrier.
+// Emits the low 64 bits of a product from one- or two-unit operands in the same
+// SGPR or VGPR class. One-unit inputs are unsigned words with an implicit zero
+// high word. The result always has two units; absent cross products are
+// omitted.
 iree_status_t loom_amdgpu_emit_i64_mul_lo(loom_low_lower_context_t* context,
                                           const loom_op_t* source_op,
                                           loom_value_id_t low_lhs,
