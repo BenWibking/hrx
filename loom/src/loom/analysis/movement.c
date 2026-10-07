@@ -726,11 +726,10 @@ static iree_status_t loom_movement_describe_vector(
 }
 
 typedef enum loom_movement_async_transfer_mode_e {
-  // Source and destination byte footprints must be statically equal.
+  // Source and destination logical payload byte counts must be exact and equal.
   LOOM_MOVEMENT_ASYNC_TRANSFER_EQUAL_ENDPOINTS = 0,
 
-  // The source byte footprint is the transferred payload; destination padding
-  // is legal.
+  // One source payload is gathered into a larger collective destination.
   LOOM_MOVEMENT_ASYNC_TRANSFER_SOURCE_LENGTH = 1,
 } loom_movement_async_transfer_mode_t;
 
@@ -862,41 +861,77 @@ loom_movement_async_descriptor_for(loom_op_kind_t op_kind) {
   return NULL;
 }
 
-static bool loom_movement_set_equal_endpoint_transfer(
-    loom_movement_request_t* request) {
-  if (!iree_any_bit_set(request->source.flags,
-                        LOOM_MOVEMENT_ENDPOINT_STATIC_LENGTH) ||
-      !iree_any_bit_set(request->dest.flags,
-                        LOOM_MOVEMENT_ENDPOINT_STATIC_LENGTH)) {
+// Endpoint envelopes own bounds and hazards; padding is not transfer payload.
+// Payload shape depends only on logical extents and element width, including
+// layouts whose physical realization is selected later by the target.
+static bool loom_movement_view_payload_byte_count(
+    const loom_movement_analysis_t* analysis, loom_type_t type,
+    int64_t* out_byte_count) {
+  const int32_t element_bits =
+      loom_scalar_type_bitwidth(loom_type_element_type(type));
+  if (element_bits <= 0 || element_bits % 8 != 0) {
     return false;
   }
-  if (request->source.static_byte_length != request->dest.static_byte_length) {
+  int64_t byte_count = element_bits / 8;
+  for (uint8_t i = 0; i < loom_type_rank(type); ++i) {
+    int64_t extent = 0;
+    if (loom_type_dim_is_dynamic_at(type, i)) {
+      if (!loom_value_facts_as_exact_i64(
+              loom_value_fact_table_lookup(
+                  analysis->expression_context.fact_table,
+                  loom_type_dim_value_id_at(type, i)),
+              &extent)) {
+        return false;
+      }
+    } else {
+      extent = loom_type_dim_static_size_at(type, i);
+    }
+    if (extent < 0 || !iree_checked_mul_i64(byte_count, extent, &byte_count)) {
+      return false;
+    }
+  }
+  *out_byte_count = byte_count;
+  return true;
+}
+
+static bool loom_movement_set_equal_endpoint_transfer(
+    const loom_movement_analysis_t* analysis,
+    loom_movement_request_t* request) {
+  int64_t source_bytes = 0, dest_bytes = 0;
+  if (!loom_movement_view_payload_byte_count(analysis, request->source.type,
+                                             &source_bytes) ||
+      !loom_movement_view_payload_byte_count(analysis, request->dest.type,
+                                             &dest_bytes)) {
+    return false;
+  }
+  if (source_bytes != dest_bytes) {
     return false;
   }
   request->flags |= LOOM_MOVEMENT_REQUEST_STATIC_TRANSFER;
-  request->transferred_byte_count = request->source.static_byte_length;
+  request->transferred_byte_count = source_bytes;
   return true;
 }
 
 static bool loom_movement_set_source_length_transfer(
+    const loom_movement_analysis_t* analysis,
     loom_movement_request_t* request) {
-  if (!iree_any_bit_set(request->source.flags,
-                        LOOM_MOVEMENT_ENDPOINT_STATIC_LENGTH)) {
+  if (!loom_movement_view_payload_byte_count(
+          analysis, request->source.type, &request->transferred_byte_count)) {
     return false;
   }
   request->flags |= LOOM_MOVEMENT_REQUEST_STATIC_TRANSFER;
-  request->transferred_byte_count = request->source.static_byte_length;
   return true;
 }
 
 static bool loom_movement_apply_async_transfer(
+    const loom_movement_analysis_t* analysis,
     const loom_movement_async_descriptor_t* descriptor,
     loom_movement_request_t* request) {
   switch (descriptor->transfer_mode) {
     case LOOM_MOVEMENT_ASYNC_TRANSFER_EQUAL_ENDPOINTS:
-      return loom_movement_set_equal_endpoint_transfer(request);
+      return loom_movement_set_equal_endpoint_transfer(analysis, request);
     case LOOM_MOVEMENT_ASYNC_TRANSFER_SOURCE_LENGTH:
-      return loom_movement_set_source_length_transfer(request);
+      return loom_movement_set_source_length_transfer(analysis, request);
   }
   return false;
 }
@@ -958,7 +993,7 @@ static iree_status_t loom_movement_describe_async(
     diagnostic->rejection_bits |= LOOM_MOVEMENT_REJECTION_ENDPOINT;
     return loom_movement_describe_result(false, out_described);
   }
-  if (!loom_movement_apply_async_transfer(descriptor, request)) {
+  if (!loom_movement_apply_async_transfer(analysis, descriptor, request)) {
     diagnostic->rejection_bits |= LOOM_MOVEMENT_REJECTION_FOOTPRINT;
     return loom_movement_describe_result(false, out_described);
   }

@@ -581,7 +581,7 @@ static iree_status_t loom_kernel_verify_same_byte_count(
         IREE_SV("view with a byte-addressable footprint"));
   }
 
-  // Movement analysis requires equal concrete footprints before selecting a
+  // Movement analysis requires equal concrete payload sizes before selecting a
   // target transfer. Source verification can only reject a known mismatch.
   if (source_byte_count < 0 || dest_byte_count < 0 ||
       source_byte_count == dest_byte_count) {

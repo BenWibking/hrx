@@ -289,3 +289,49 @@ func.def @copy_rejects_specialized_extent_mismatch(%input: buffer, %enabled: i1)
   kernel.async.wait %group {newer_groups = 0} : kernel.async.group
   func.return
 }
+
+// ====
+
+// Symbolic payload sizes resolve without canonicalizing the view types. The
+// padding belongs to each endpoint's storage, not the bytes being transferred.
+func.def @copy_padded_rows_with_resolved_extents(%input: buffer, %output: buffer, %enabled: i1) {
+  %origin = index.constant 0 : offset
+  %rows = index.constant 2 : index
+  %allocation_size = index.constant 32 : offset
+  %input_layout = encoding.layout.strided [8, 1] : encoding<layout>
+  %output_layout = encoding.layout.strided [6, 1] : encoding<layout>
+  %global_input = buffer.assume.memory_space<global> %input : buffer
+  %global_output = buffer.assume.memory_space<global> %output : buffer
+  %source = buffer.view %global_input[%origin] : buffer -> view<[%rows]x4xi32, %input_layout>
+  %destination = buffer.view %global_output[%origin] : buffer -> view<[%rows]x4xi32, %output_layout>
+  %storage = buffer.alloca<workgroup> align(32) %allocation_size : buffer
+  %scratch = buffer.view %storage[%origin] : buffer -> view<[%rows]x4xi32>
+  %load = kernel.async.copy %source to %scratch {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<[%rows]x4xi32, %input_layout> to view<[%rows]x4xi32> -> kernel.async.token
+  %loaded = kernel.async.group %load : kernel.async.token -> kernel.async.group
+  kernel.async.wait %loaded {newer_groups = 0} : kernel.async.group
+  %store = kernel.async.copy.mask %scratch to %destination, %enabled {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<[%rows]x4xi32> to view<[%rows]x4xi32, %output_layout>, i1 -> kernel.async.token
+  %stored = kernel.async.group %store : kernel.async.token -> kernel.async.group
+  kernel.async.wait %stored {newer_groups = 0} : kernel.async.group
+  func.return
+}
+
+// ====
+
+// The last row lives beyond the 32-byte payload's contiguous extent. Its read
+// still conflicts with the transfer until completion covers the storage span.
+func.def @copy_padded_destination_requires_wait(%input: buffer) {
+  %origin = index.constant 0 : offset
+  %allocation_size = index.constant 48 : offset
+  %layout = encoding.layout.strided [8, 1] : encoding<layout>
+  %global = buffer.assume.memory_space<global> %input : buffer
+  %source = buffer.view %global[%origin] : buffer -> view<2x4xi32>
+  %storage = buffer.alloca<workgroup> align(16) %allocation_size : buffer
+  %destination = buffer.view %storage[%origin] : buffer -> view<2x4xi32, %layout>
+  %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = global_to_workgroup} : view<2x4xi32> to view<2x4xi32, %layout> -> kernel.async.token
+  %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+  // ERROR@+1: LOWERING/028 {op_name="view.load", phase_name="kernel-async-legality"}
+  %value = view.load %destination[1, 3] : view<2x4xi32, %layout> -> i32
+  test.use %value : i32
+  kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+  func.return
+}
