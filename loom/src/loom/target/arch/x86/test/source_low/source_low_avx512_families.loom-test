@@ -105,6 +105,55 @@ low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({s
 
 x86.target<avx512> @target
 
+func.def target(@target) @integer_avx512vl_families(%i16x8_lhs: vector<8xi16>, %i16x8_rhs: vector<8xi16>, %i16x16_lhs: vector<16xi16>, %i16x16_rhs: vector<16xi16>, %i64x2_lhs: vector<2xi64>, %i64x2_rhs: vector<2xi64>, %i64x4_lhs: vector<4xi64>, %i64x4_rhs: vector<4xi64>) -> (vector<8xi16>, vector<16xi16>, vector<2xi64>, vector<4xi64>) {
+  %i16x8_shl = vector.shli %i16x8_lhs, %i16x8_rhs : vector<8xi16>
+  %i16x8_shrs = vector.shrsi %i16x8_shl, %i16x8_rhs : vector<8xi16>
+  %i16x8_result = vector.shrui %i16x8_shrs, %i16x8_rhs : vector<8xi16>
+  %i16x16_shl = vector.shli %i16x16_lhs, %i16x16_rhs : vector<16xi16>
+  %i16x16_shrs = vector.shrsi %i16x16_shl, %i16x16_rhs : vector<16xi16>
+  %i16x16_result = vector.shrui %i16x16_shrs, %i16x16_rhs : vector<16xi16>
+  %i64x2_mul = vector.muli %i64x2_lhs, %i64x2_rhs : vector<2xi64>
+  %i64x2_mins = vector.minsi %i64x2_mul, %i64x2_rhs : vector<2xi64>
+  %i64x2_maxs = vector.maxsi %i64x2_mins, %i64x2_lhs : vector<2xi64>
+  %i64x2_minu = vector.minui %i64x2_maxs, %i64x2_rhs : vector<2xi64>
+  %i64x2_maxu = vector.maxui %i64x2_minu, %i64x2_lhs : vector<2xi64>
+  %i64x2_result = vector.shrsi %i64x2_maxu, %i64x2_rhs : vector<2xi64>
+  %i64x4_mul = vector.muli %i64x4_lhs, %i64x4_rhs : vector<4xi64>
+  %i64x4_mins = vector.minsi %i64x4_mul, %i64x4_rhs : vector<4xi64>
+  %i64x4_maxs = vector.maxsi %i64x4_mins, %i64x4_lhs : vector<4xi64>
+  %i64x4_minu = vector.minui %i64x4_maxs, %i64x4_rhs : vector<4xi64>
+  %i64x4_maxu = vector.maxui %i64x4_minu, %i64x4_lhs : vector<4xi64>
+  %i64x4_result = vector.shrsi %i64x4_maxu, %i64x4_rhs : vector<4xi64>
+  func.return %i16x8_result, %i16x16_result, %i64x2_result, %i64x4_result : vector<8xi16>, vector<16xi16>, vector<2xi64>, vector<4xi64>
+}
+
+// ----
+low.func.def target<x86.avx512.core>(@target) abi(object_function) abi_layout({signature = (vector<8xi16>, vector<8xi16>, vector<16xi16>, vector<16xi16>, vector<2xi64>, vector<2xi64>, vector<4xi64>, vector<4xi64>) -> (vector<8xi16>, vector<16xi16>, vector<2xi64>, vector<4xi64>)}) @integer_avx512vl_families(%i16x8_lhs: reg<x86.xmm>, %i16x8_rhs: reg<x86.xmm>, %i16x16_lhs: reg<x86.ymm>, %i16x16_rhs: reg<x86.ymm>, %i64x2_lhs: reg<x86.xmm>, %i64x2_rhs: reg<x86.xmm>, %i64x4_lhs: reg<x86.ymm>, %i64x4_rhs: reg<x86.ymm>) -> (reg<x86.xmm>, reg<x86.ymm>, reg<x86.xmm>, reg<x86.ymm>) asm {
+  %i16x8_shl = vpsllvw.xmm %i16x8_lhs, %i16x8_rhs
+  %i16x8_shrs = vpsravw.xmm %i16x8_shl, %i16x8_rhs
+  %i16x8_result = vpsrlvw.xmm %i16x8_shrs, %i16x8_rhs
+  %i16x16_shl = vpsllvw.ymm %i16x16_lhs, %i16x16_rhs
+  %i16x16_shrs = vpsravw.ymm %i16x16_shl, %i16x16_rhs
+  %i16x16_result = vpsrlvw.ymm %i16x16_shrs, %i16x16_rhs
+  %i64x2_mul = vpmullq.xmm %i64x2_lhs, %i64x2_rhs
+  %i64x2_mins = vpminsq.xmm %i64x2_mul, %i64x2_rhs
+  %i64x2_maxs = vpmaxsq.xmm %i64x2_mins, %i64x2_lhs
+  %i64x2_minu = vpminuq.xmm %i64x2_maxs, %i64x2_rhs
+  %i64x2_maxu = vpmaxuq.xmm %i64x2_minu, %i64x2_lhs
+  %i64x2_result = vpsravq.xmm %i64x2_maxu, %i64x2_rhs
+  %i64x4_mul = vpmullq.ymm %i64x4_lhs, %i64x4_rhs
+  %i64x4_mins = vpminsq.ymm %i64x4_mul, %i64x4_rhs
+  %i64x4_maxs = vpmaxsq.ymm %i64x4_mins, %i64x4_lhs
+  %i64x4_minu = vpminuq.ymm %i64x4_maxs, %i64x4_rhs
+  %i64x4_maxu = vpmaxuq.ymm %i64x4_minu, %i64x4_lhs
+  %i64x4_result = vpsravq.ymm %i64x4_maxu, %i64x4_rhs
+  return %i16x8_result, %i16x16_result, %i64x2_result, %i64x4_result
+}
+
+// ====
+
+x86.target<avx512> @target
+
 func.def target(@target) @floating_zmm_families(%f32_lhs: vector<16xf32>, %f32_rhs: vector<16xf32>, %f64_lhs: vector<8xf64>, %f64_rhs: vector<8xf64>) -> (vector<16xf32>, vector<8xf64>) {
   %f32_result = vector.divf %f32_lhs, %f32_rhs : vector<16xf32>
   %f64_add = vector.addf %f64_lhs, %f64_rhs : vector<8xf64>

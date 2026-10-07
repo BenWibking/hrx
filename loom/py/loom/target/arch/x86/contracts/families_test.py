@@ -29,6 +29,8 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FLOAT_FMA_MNEMONICS,
     AVX512_INTEGER_BINARY_FAMILIES,
     AVX512_VECTOR_BIT_WIDTHS,
+    AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
@@ -397,27 +399,33 @@ def test_avx512_construction_covers_every_zmm_payload_type() -> None:
     assert len(bitcast_rules) == len(expected_bitcasts)
 
 
-def test_avx512_arithmetic_covers_every_native_zmm_family() -> None:
+def test_avx512_arithmetic_covers_every_native_family() -> None:
     rules = tuple(
         case
         for case in X86_AVX512_CONTRACT_FRAGMENT.cases
         if isinstance(case, DescriptorRule)
     )
+    register_suffixes = {128: "xmm", 256: "ymm", 512: "zmm"}
     expected_direct = {
         (
-            family.mnemonic,
+            f"x86.avx512.{family.mnemonic}.zmm",
             Vector(family.element.name, lanes=512 // family.element.bit_width),
         )
-        for family in (
-            *AVX512_INTEGER_BINARY_FAMILIES,
-            *AVX512_FLOAT_BINARY_FAMILIES,
+        for family in (*AVX512_INTEGER_BINARY_FAMILIES, *AVX512_FLOAT_BINARY_FAMILIES)
+    } | {
+        (
+            f"x86.avx512.{family.mnemonic}.{register_suffixes[vector_bit_width]}",
+            Vector(
+                family.element.name,
+                lanes=vector_bit_width // family.element.bit_width,
+            ),
         )
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+        for vector_bit_width in AVX512VL_VECTOR_BIT_WIDTHS
     }
-    direct_descriptor_keys = {
-        f"x86.avx512.{mnemonic}.zmm" for mnemonic, _ in expected_direct
-    }
+    direct_descriptor_keys = {descriptor_key for descriptor_key, _ in expected_direct}
     actual_direct = {
-        (rule.descriptor.mnemonic, _value_type_guard(rule, "result"))
+        (rule.descriptor.key, _value_type_guard(rule, "result"))
         for rule in rules
         if rule.descriptor.key in direct_descriptor_keys
     }

@@ -24,6 +24,8 @@ from loom.target.arch.x86.vector_families import (
     AVX512_INTEGER_COMPARE_MNEMONICS,
     AVX512_SELECT_MNEMONICS,
     AVX512_VECTOR_BIT_WIDTHS,
+    AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
 )
@@ -137,6 +139,34 @@ def test_avx512_family_rows_materialize_complete_zmm_arithmetic() -> None:
     assert {f"x86.avx512.{mnemonic}.zmm" for mnemonic in family_mnemonics} <= (
         descriptor_keys
     )
+
+
+def test_avx512vl_rows_materialize_only_non_avx2_integer_cells() -> None:
+    assert AVX512VL_VECTOR_BIT_WIDTHS == AVX2_VECTOR_BIT_WIDTHS
+    assert {
+        (family.source_operation, family.element.name)
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+    } == {
+        ("muli", "i64"),
+        ("minsi", "i64"),
+        ("maxsi", "i64"),
+        ("minui", "i64"),
+        ("maxui", "i64"),
+        ("shli", "i16"),
+        ("shrsi", "i16"),
+        ("shrui", "i16"),
+        ("shrsi", "i64"),
+    }
+
+    descriptor_keys = {
+        descriptor.key for descriptor in X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    }
+    register_suffixes = {128: "xmm", 256: "ymm"}
+    assert {
+        f"x86.avx512.{family.mnemonic}.{register_suffixes[vector_bit_width]}"
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+        for vector_bit_width in AVX512VL_VECTOR_BIT_WIDTHS
+    } <= descriptor_keys
 
 
 def test_avx512_direct_broadcasts_cover_every_width_and_payload_size() -> None:

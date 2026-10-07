@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 AVX2_VECTOR_BIT_WIDTHS = (128, 256)
 AVX512_VECTOR_BIT_WIDTHS = (512,)
+AVX512VL_VECTOR_BIT_WIDTHS = AVX2_VECTOR_BIT_WIDTHS
 AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS = (
     *AVX2_VECTOR_BIT_WIDTHS,
     *AVX512_VECTOR_BIT_WIDTHS,
@@ -170,6 +171,16 @@ AVX512_INTEGER_BINARY_FAMILIES = (
     VectorBinaryFamily("shrsi", "vpsravq", "integer.shrs", INTEGER_ELEMENTS[3]),
 )
 
+_AVX2_INTEGER_BINARY_KEYS = frozenset(
+    (family.source_operation, family.element.name)
+    for family in AVX2_INTEGER_BINARY_FAMILIES
+)
+AVX512VL_INTEGER_BINARY_FAMILIES = tuple(
+    family
+    for family in AVX512_INTEGER_BINARY_FAMILIES
+    if (family.source_operation, family.element.name) not in _AVX2_INTEGER_BINARY_KEYS
+)
+
 AVX2_FLOAT_BINARY_FAMILIES = tuple(
     VectorBinaryFamily(source_operation, f"v{stem}{suffix}", semantic, element)
     for source_operation, stem, semantic in (
@@ -323,6 +334,11 @@ def validate_vector_families() -> None:
     ]
     if len(avx512_keys) != len(set(avx512_keys)):
         raise ValueError("duplicate AVX-512 source-operation and element family")
+    if {
+        (family.source_operation, family.element.name)
+        for family in AVX512VL_INTEGER_BINARY_FAMILIES
+    } != set(avx512_keys) - _AVX2_INTEGER_BINARY_KEYS:
+        raise ValueError("AVX-512VL rows must contain exactly the non-AVX2 cells")
     if set(AVX512_INTEGER_COMPARE_MNEMONICS) != {
         element.name for element in INTEGER_ELEMENTS
     }:

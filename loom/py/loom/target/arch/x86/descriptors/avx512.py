@@ -19,6 +19,8 @@ from loom.target.arch.x86.vector_families import (
     AVX512_INTEGER_BINARY_FAMILIES,
     AVX512_INTEGER_COMPARE_MNEMONICS,
     AVX512_SELECT_MNEMONICS,
+    AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
 )
@@ -707,6 +709,22 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
                 ("vpmovzxbd", 128, 32),
                 ("vpmovzxbq", 128, 64),
             )
+        ),
+        *(
+            _vector_i32_binary_descriptor(
+                vector_bit_width=vector_bit_width,
+                key=(
+                    f"x86.avx512.{family.mnemonic}."
+                    f"{_REGISTER_SUFFIXES[vector_bit_width]}"
+                ),
+                mnemonic=family.mnemonic,
+                semantic_tag=(
+                    f"{family.semantic}.{family.element.name}x"
+                    f"{family.element.lane_count(vector_bit_width)}"
+                ),
+            )
+            for family in AVX512VL_INTEGER_BINARY_FAMILIES
+            for vector_bit_width in AVX512VL_VECTOR_BIT_WIDTHS
         ),
         *(
             _vector_i32_binary_descriptor(

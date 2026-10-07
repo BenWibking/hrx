@@ -35,6 +35,8 @@ from loom.target.arch.x86.vector_families import (
     AVX512_FLOAT_FMA_MNEMONICS,
     AVX512_INTEGER_BINARY_FAMILIES,
     AVX512_VECTOR_BIT_WIDTHS,
+    AVX512VL_INTEGER_BINARY_FAMILIES,
+    AVX512VL_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     VectorBinaryFamily,
 )
@@ -223,6 +225,13 @@ def avx512_vector_arithmetic_rules(
             vector_bit_widths=AVX512_VECTOR_BIT_WIDTHS,
             integer_families=AVX512_INTEGER_BINARY_FAMILIES,
             float_families=AVX512_FLOAT_BINARY_FAMILIES,
+        ),
+        *_direct_vector_family_rules(
+            descriptor_lookup,
+            descriptor_key_prefix="x86.avx512",
+            vector_bit_widths=AVX512VL_VECTOR_BIT_WIDTHS,
+            integer_families=AVX512VL_INTEGER_BINARY_FAMILIES,
+            float_families=(),
         ),
         *_bitwise_vector_family_rules(
             descriptor_lookup,
