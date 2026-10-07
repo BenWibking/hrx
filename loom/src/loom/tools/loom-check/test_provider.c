@@ -9,11 +9,14 @@
 #include "loom/tools/loom-check/test_provider.h"
 
 #include "iree/base/api.h"
+#include "iree/base/threading/call_once.h"
+#include "loom/binding/c/src/target.h"
 #include "loom/codegen/low/allocation.h"
 #include "loom/codegen/low/packet_hazard_plan.h"
 #include "loom/codegen/low/packet_hazard_plan_json.h"
 #include "loom/codegen/low/packet_progress.h"
 #include "loom/ir/ir.h"
+#include "loom/target/configured/compiler_provider_set.h"
 #include "loom/target/test/provider.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/execute.h"
@@ -26,6 +29,29 @@ enum {
   LOOM_CHECK_TEST_SYNTHETIC_PROGRESS_CLASS_ISSUE = 1,
   LOOM_CHECK_TEST_SYNTHETIC_HAZARD_ACTION_PADDING = 1,
 };
+
+static loom_target_provider_set_storage_t test_compiler_provider_storage;
+static iree_once_flag test_compiler_provider_once = IREE_ONCE_FLAG_INIT;
+
+static void loom_check_test_compiler_provider_set_initialize(void) {
+  loom_target_provider_set_storage_initialize(&test_compiler_provider_storage);
+  IREE_CHECK_OK(loom_target_provider_set_storage_append_set(
+      &test_compiler_provider_storage,
+      loom_configured_compiler_provider_set()));
+  IREE_CHECK_OK(loom_target_provider_set_storage_append(
+      &test_compiler_provider_storage,
+      loom_check_test_provider.target_provider));
+}
+
+loomc_status_t loom_check_test_create_target_environment(
+    loomc_allocator_t allocator,
+    loomc_target_environment_t** out_target_environment) {
+  iree_call_once(&test_compiler_provider_once,
+                 loom_check_test_compiler_provider_set_initialize);
+  return loomc_target_environment_create_from_provider_set(
+      &test_compiler_provider_storage.provider_set, allocator,
+      out_target_environment);
+}
 
 typedef enum loom_check_test_synthetic_hazard_case_e {
   LOOM_CHECK_TEST_SYNTHETIC_HAZARD_CASE_ACTION = 0,

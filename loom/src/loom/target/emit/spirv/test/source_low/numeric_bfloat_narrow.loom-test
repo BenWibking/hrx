@@ -1,4 +1,4 @@
-// RUN: emit spirv-dis input=source-low target=spirv:vulkan1.3+bda+extended-types validate
+// RUN: emit spirv-dis @store_narrow_bfloat input=source-low target=spirv:vulkan1.3+bda+extended-types validate
 // REQUIRES: spirv-dis, spirv-val
 
 func.def @store_narrow_bfloat(%input: f32, %output: buffer) {

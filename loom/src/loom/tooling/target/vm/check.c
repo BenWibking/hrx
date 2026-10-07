@@ -8,7 +8,7 @@
 
 #include "iree/vm/bytecode/disassembler.h"
 #include "loom/target/arch/vm/provider.h"
-#include "loom/tools/loom-check/artifact.h"
+#include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/execute.h"
 #include "loom/tools/loom-check/source_low.h"
 
@@ -32,27 +32,21 @@ static iree_status_t loom_vm_check_emit(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "vm-dis accepts only @function and target options");
   }
-  loom_check_prepare_source_low_options_t prepare_options = {0};
-  loom_target_specialization_request_t specialization = {0};
-  if (iree_any_bit_set(source_request.options,
-                       LOOM_CHECK_SOURCE_LOW_OPTION_TARGET)) {
-    IREE_RETURN_IF_ERROR(loom_check_resolve_source_target(
-        request->module, request->environment->target_environment,
-        source_request.function_name, &source_request.target, &specialization));
-    prepare_options.target_specializations =
-        (loom_target_specialization_request_list_t){&specialization, 1};
-  }
-  loom_target_emit_artifact_t artifact = {0};
-  bool emitted = false;
-  iree_status_t status = loom_check_emit_source_low_artifact(
-      request, &prepare_options, IREE_SV("vm"), &emitted, &artifact);
-  iree_const_byte_span_t contents = iree_const_byte_span_empty();
-  iree_byte_span_t owned_contents = iree_byte_span_empty();
-  if (iree_status_is_ok(status) && emitted) {
-    status = loom_check_target_artifact_borrow_or_clone_contents(
-        &artifact, request->host_allocator, &contents, &owned_contents);
-  }
-  if (iree_status_is_ok(status) && emitted) {
+  const loom_check_compile_artifact_options_t compile_options = {
+      .artifact_format = IREE_SV("vm"),
+      .root = source_request.function_name,
+      .target = source_request.target,
+      .lower_source_to_low = true,
+      .control_flow_lowering = LOOMC_TARGET_CONTROL_FLOW_LOWERING_CFG,
+  };
+  loomc_source_t* artifact_source = NULL;
+  iree_status_t status =
+      loom_check_compile_artifact(request, &compile_options, &artifact_source);
+  const loomc_byte_span_t source_contents =
+      loomc_source_contents(artifact_source);
+  const iree_const_byte_span_t contents = iree_make_const_byte_span(
+      source_contents.data, source_contents.data_length);
+  if (iree_status_is_ok(status) && artifact_source != NULL) {
     status = iree_vm_bytecode_disassemble_module(
         contents,
         (iree_vm_bytecode_disassembler_write_callback_t){
@@ -60,8 +54,7 @@ static iree_status_t loom_vm_check_emit(
             .user_data = &request->result->actual_output},
         request->host_allocator);
   }
-  iree_allocator_free(request->host_allocator, owned_contents.data);
-  loom_target_emit_artifact_release(&artifact);
+  loomc_source_release(artifact_source);
   return status;
 }
 
@@ -73,6 +66,7 @@ static iree_status_t loom_vm_check_append_names(
 
 static const loom_check_emit_provider_t loom_vm_check_emit_provider = {
     .name = IREE_SVL("vm"),
+    .consumes_source = true,
     .match = loom_vm_check_match,
     .execute = loom_vm_check_emit,
     .append_names = loom_vm_check_append_names,

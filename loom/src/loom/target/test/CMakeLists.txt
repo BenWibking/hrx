@@ -63,6 +63,7 @@ loom_cc_library(
     ::lower
     ::target_record_table
     iree::base
+    loom::ops::test
     loom::pass::test::registry
     loom::target::low_descriptor_registry_core_test
     loom::target::provider

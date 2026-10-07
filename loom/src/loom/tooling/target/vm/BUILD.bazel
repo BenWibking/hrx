@@ -22,6 +22,7 @@ loom_cc_library(
     visibility = _VM_CHECK_VISIBILITY,
     deps = [
         "//loom/src/loom/target/arch/vm:provider",
+        "//loom/src/loom/tools/loom-check:compile",
         "//loom/src/loom/tools/loom-check:execute",
         "//loom/src/loom/tools/loom-check:provider",
         "//runtime/src/iree/base",

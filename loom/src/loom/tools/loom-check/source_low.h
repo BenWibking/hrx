@@ -13,7 +13,7 @@
 #include "loom/sanitizer/options.h"
 #include "loom/target/selection.h"
 #include "loom/target/specialization.h"
-#include "loom/tools/loom-check/artifact.h"
+#include "loom/tools/loom-check/execute.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,8 +53,8 @@ typedef struct loom_check_source_low_request_t {
   // Optional source function to specialize. With TARGET but no name, select
   // the sole definition or the unique public entry among private helpers.
   iree_string_view_t function_name;
-  // Parsed target profile specification for the selected function.
-  loom_target_specification_t target;
+  // Complete family:selector target spelling borrowed from the RUN line.
+  iree_string_view_t target;
 } loom_check_source_low_request_t;
 
 // Parses optional @function and source-low options. An explicit function
@@ -99,15 +99,6 @@ iree_status_t loom_check_prepare_source_low_module(
     loom_source_resolver_t source_resolver,
     loom_check_diagnostic_collector_t* diagnostic_collector,
     iree_arena_block_pool_t* block_pool);
-
-// Prepares source IR and invokes the target emitter named by
-// |public_artifact_format| while retained compiler function versions remain
-// live. The caller releases |out_artifact| when |out_emitted| is true.
-iree_status_t loom_check_emit_source_low_artifact(
-    const loom_check_emit_provider_request_t* request,
-    const loom_check_prepare_source_low_options_t* options,
-    iree_string_view_t public_artifact_format, bool* out_emitted,
-    loom_target_emit_artifact_t* out_artifact);
 
 // Runs source lowering and renders the selected artifact. User IR diagnostics
 // accumulate in the collector; infrastructure and malformed-request failures

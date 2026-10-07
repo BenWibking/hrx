@@ -1,4 +1,4 @@
-// RUN: emit spirv-dis input=source-low target=spirv:vulkan1.3+bda+extended-types validate
+// RUN: emit spirv-dis @replace_bfloat input=source-low target=spirv:vulkan1.3+bda+extended-types validate
 // REQUIRES: spirv-dis, spirv-val
 
 // Conversion consumes the captured value, even when its source is overwritten.
