@@ -335,7 +335,14 @@ static iree_hal_memory_maintenance_t* test_maintenance() {
 }
 
 static void WaitForMaintenance() {
-  iree_hal_memory_maintenance_call(test_maintenance(), [](void*) {}, nullptr);
+  iree_hal_memory_maintenance_call(
+      test_maintenance(),
+      [](void* user_data) {
+        auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+        while (iree_hal_memory_maintenance_run_one(owner)) {
+        }
+      },
+      test_maintenance());
 }
 
 static iree_status_t CreateFinitePool(

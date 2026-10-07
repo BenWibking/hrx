@@ -154,7 +154,14 @@ class SlabCacheTest : public ::testing::Test {
   }
 
   void Drain() {
-    iree_hal_memory_maintenance_call(maintenance_, [](void*) {}, nullptr);
+    iree_hal_memory_maintenance_call(
+        maintenance_,
+        [](void* user_data) {
+          auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+          while (iree_hal_memory_maintenance_run_one(owner)) {
+          }
+        },
+        maintenance_);
   }
 
   iree_status_t Acquire(iree_hal_pool_t* pool, iree_device_size_t length,
@@ -501,9 +508,8 @@ TEST_F(SlabCacheTest, TrimIncludesQueuedChildReturnsDuringNativePreparation) {
   iree_hal_pool_release_reservations(children[1], 1, &reservations[1], nullptr);
   iree_hal_pool_trim(cache_, IREE_HAL_POOL_TRIM_FLAG_ALL, 0);
   native_allocator_.Resume();
-  // The first sweep observes the second generation and moves behind its
-  // return. A second ordered observation includes that requeued sweep.
-  Drain();
+  // The first sweep moves behind the second generation's child return.
+  // Draining joins that requeued sweep and all resulting parent returns.
   Drain();
   iree_hal_slab_cache_stats_t cache_stats;
   IREE_ASSERT_OK(iree_hal_slab_cache_query_stats(cache_, &cache_stats));

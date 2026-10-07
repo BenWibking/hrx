@@ -3,9 +3,6 @@
 
 #include "vmm_slab_provider.h"
 
-#include <condition_variable>
-#include <mutex>
-
 #include "hrx_internal.h"
 #include "iree/hal/memory/maintenance.h"
 #include "iree/hal/memory/passthrough_pool.h"
@@ -83,23 +80,16 @@ class VmmSlabProviderTest : public ::testing::Test {
   }
 
   void WaitForMaintenance() {
-    struct Barrier : iree_hal_memory_maintenance_entry_t {
-      // Protects completion and the callback's final notification access.
-      std::mutex mutex;
-      // Publishes completion of preceding native releases.
-      std::condition_variable condition;
-      // Set by the worker while holding the mutex.
-      bool complete = false;
-    } barrier;
-    barrier.fn = [](iree_hal_memory_maintenance_entry_t* entry) {
-      auto* barrier = static_cast<Barrier*>(entry);
-      std::lock_guard<std::mutex> lock(barrier->mutex);
-      barrier->complete = true;
-      barrier->condition.notify_all();
-    };
-    iree_hal_memory_maintenance_enqueue(maintenance_, &barrier);
-    std::unique_lock<std::mutex> lock(barrier.mutex);
-    barrier.condition.wait(lock, [&] { return barrier.complete; });
+    // Producers have stopped. Child returns may enqueue native releases behind
+    // this call, so the owner must drain them before stats can be observed.
+    iree_hal_memory_maintenance_call(
+        maintenance_,
+        [](void* user_data) {
+          auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+          while (iree_hal_memory_maintenance_run_one(owner)) {
+          }
+        },
+        maintenance_);
   }
 
   // Whether the fixture owns an initialized GPU runtime.

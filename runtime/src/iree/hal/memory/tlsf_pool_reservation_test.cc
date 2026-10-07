@@ -92,7 +92,14 @@ class TLSFPoolReservationTest : public ::testing::Test {
   }
 
   void Drain() {
-    iree_hal_memory_maintenance_call(maintenance_, [](void*) {}, nullptr);
+    iree_hal_memory_maintenance_call(
+        maintenance_,
+        [](void* user_data) {
+          auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+          while (iree_hal_memory_maintenance_run_one(owner)) {
+          }
+        },
+        maintenance_);
   }
 
   void CheckBytes(iree_hal_buffer_t* buffer, uint8_t pattern,

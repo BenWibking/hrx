@@ -126,7 +126,14 @@ class PoolCompositionTest : public ::testing::TestWithParam<
   }
 
   void WaitForMaintenance() {
-    iree_hal_memory_maintenance_call(maintenance_, [](void*) {}, nullptr);
+    iree_hal_memory_maintenance_call(
+        maintenance_,
+        [](void* user_data) {
+          auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+          while (iree_hal_memory_maintenance_run_one(owner)) {
+          }
+        },
+        maintenance_);
   }
 
   static iree_hal_pool_stats_t Stats(iree_hal_pool_t* pool) {

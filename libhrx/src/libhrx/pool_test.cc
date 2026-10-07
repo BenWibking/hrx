@@ -35,6 +35,19 @@ class CpuPoolTest : public ::testing::Test {
     };
   }
 
+  void WaitForMaintenance() {
+    // Producers have stopped. Join child returns and the cache/native work
+    // they enqueue before observing retention or changing the trim phase.
+    iree_hal_memory_maintenance_call(
+        backend_.maintenance,
+        [](void* user_data) {
+          auto* owner = static_cast<iree_hal_memory_maintenance_t*>(user_data);
+          while (iree_hal_memory_maintenance_run_one(owner)) {
+          }
+        },
+        backend_.maintenance);
+  }
+
   // CPU device supplying backing storage for the pools under test.
   hrx_device_t device_ = nullptr;
   // Borrowed memory and progress sources from the device's transfer family.
@@ -312,6 +325,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   ASSERT_GE(committed_bytes, 1024u);
 
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_trim(pool, 0)));
+  WaitForMaintenance();
   iree_hal_buffer_mapping_t mapping;
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       buffer->hal_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
@@ -326,6 +340,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
 
   IREE_ASSERT_OK(hrx_status_to_iree(
       hrx_mem_pool_trim(pool, static_cast<size_t>(committed_bytes))));
+  WaitForMaintenance();
   uint64_t retained_bytes = 0;
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
@@ -334,7 +349,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
       pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, committed_bytes)));
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_release_unused(pool)));
-  iree_hal_memory_maintenance_call(backend_.maintenance, [](void*) {}, nullptr);
+  WaitForMaintenance();
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
   EXPECT_EQ(retained_bytes, committed_bytes);
@@ -342,7 +357,7 @@ TEST_F(CpuPoolTest, MemoryPoolTrimPreservesLiveBuffersAndRetentionFloor) {
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_set_attribute(
       pool, HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD, 0)));
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_release_unused(pool)));
-  iree_hal_memory_maintenance_call(backend_.maintenance, [](void*) {}, nullptr);
+  WaitForMaintenance();
   IREE_ASSERT_OK(hrx_status_to_iree(hrx_mem_pool_get_attribute(
       pool, HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT, &retained_bytes)));
   EXPECT_EQ(retained_bytes, 0u);
