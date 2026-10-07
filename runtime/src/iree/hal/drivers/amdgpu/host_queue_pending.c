@@ -218,7 +218,7 @@ static void iree_hal_amdgpu_pending_op_abort_unsubmitted_dealloca(
     return;
   }
   for (iree_host_size_t i = 0; i < op->dealloca.transaction.buffer_count; ++i) {
-    iree_hal_amdgpu_transient_buffer_abort_dealloca(
+    iree_hal_buffer_allocation_abort_dealloca(
         op->dealloca.transaction.buffers[i]);
   }
 }

@@ -22,6 +22,8 @@ extern "C" {
 #endif  // __cplusplus
 
 typedef struct iree_hal_allocator_t iree_hal_allocator_t;
+typedef struct iree_hal_buffer_allocation_vtable_t
+    iree_hal_buffer_allocation_vtable_t;
 typedef struct iree_hal_device_t iree_hal_device_t;
 typedef struct iree_hal_memory_contract_t iree_hal_memory_contract_t;
 
@@ -1503,6 +1505,8 @@ typedef struct iree_hal_buffer_vtable_t {
   // submission.
   iree_hal_buffer_memory_view_t(IREE_API_PTR* query_memory)(
       const iree_hal_buffer_t* buffer);
+  // Static queue allocation lifecycle, or NULL for ordinary buffer storage.
+  const iree_hal_buffer_allocation_vtable_t* allocation;
 } iree_hal_buffer_vtable_t;
 static_assert(offsetof(iree_hal_buffer_vtable_t, recycle) == 0,
               "iree_hal_resource_vtable_t expects destroy at offset 0, we want "

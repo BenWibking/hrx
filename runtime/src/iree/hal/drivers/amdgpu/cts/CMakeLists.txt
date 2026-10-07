@@ -368,6 +368,7 @@ iree_cc_test(
   DEPS
     ::backends
     ::testdata_amdgpu
+    iree::hal::cts::util::profile_test_util
     iree::hal::cts::util::test_base
     iree::hal::cts::util::test_main
     iree::hal::drivers::task::registration

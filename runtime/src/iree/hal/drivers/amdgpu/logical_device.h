@@ -304,7 +304,7 @@ bool iree_hal_amdgpu_logical_device_should_profile_dispatch(
     uint32_t export_ordinal, uint64_t command_buffer_id, uint32_t command_index,
     uint32_t physical_device_ordinal, uint32_t queue_ordinal);
 
-// Returns a session-local allocation id, or 0 when memory profiling is off.
+// Returns a process-wide allocation id, or 0 when memory profiling is off.
 //
 // |out_session_id| receives the active profiling session id owning the returned
 // allocation id. Callers that may release after a later profiling session

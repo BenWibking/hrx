@@ -1796,23 +1796,6 @@ static iree_status_t iree_hal_amdgpu_host_queue_enqueue_dealloca(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_host_size_t buffer_count, iree_hal_buffer_t* const* buffers) {
-  for (iree_host_size_t i = 0; i < buffer_count; ++i) {
-    if (IREE_UNLIKELY(!iree_hal_amdgpu_transient_buffer_isa(buffers[i]))) {
-      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                              "deallocation buffer %" PRIhsz
-                              " is not an AMDGPU queue allocation root",
-                              i);
-    }
-    const iree_hal_buffer_placement_t placement =
-        iree_hal_buffer_allocation_placement(buffers[i]);
-    if (IREE_UNLIKELY(!buffers[i]->memory.contract &&
-                      placement.device != queue->logical_device)) {
-      return iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "deallocation buffer %" PRIhsz " belongs to another device", i);
-    }
-  }
-
   iree_arena_allocator_t scratch_arena;
   iree_arena_initialize(queue->block_pool, &scratch_arena);
   iree_hal_pool_reservation_t* reservations = NULL;
@@ -1827,13 +1810,13 @@ static iree_status_t iree_hal_amdgpu_host_queue_enqueue_dealloca(
   iree_host_size_t marked_count = 0;
   while (marked_count < buffer_count && iree_status_is_ok(status)) {
     iree_hal_pool_t* buffer_pool = NULL;
-    status = iree_hal_amdgpu_transient_buffer_begin_dealloca(
-        buffers[marked_count], &buffer_pool);
+    status = iree_hal_buffer_allocation_begin_dealloca(buffers[marked_count],
+                                                       &buffer_pool);
     if (iree_status_is_ok(status)) {
       if (marked_count == 0) {
         source_pool = buffer_pool;
       } else if (IREE_UNLIKELY(source_pool != buffer_pool)) {
-        iree_hal_amdgpu_transient_buffer_abort_dealloca(buffers[marked_count]);
+        iree_hal_buffer_allocation_abort_dealloca(buffers[marked_count]);
         status = iree_make_status(
             IREE_STATUS_INVALID_ARGUMENT,
             "deallocation transaction spans multiple source pools");
@@ -1844,7 +1827,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_enqueue_dealloca(
   }
   if (!iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < marked_count; ++i) {
-      iree_hal_amdgpu_transient_buffer_abort_dealloca(buffers[i]);
+      iree_hal_buffer_allocation_abort_dealloca(buffers[i]);
     }
     iree_arena_deinitialize(&scratch_arena);
     return status;
@@ -1878,7 +1861,7 @@ static iree_status_t iree_hal_amdgpu_host_queue_enqueue_dealloca(
   status = iree_hal_amdgpu_host_queue_op_submission_end(&submission, status);
   if (!iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < buffer_count; ++i) {
-      iree_hal_amdgpu_transient_buffer_abort_dealloca(buffers[i]);
+      iree_hal_buffer_allocation_abort_dealloca(buffers[i]);
     }
   }
   iree_arena_deinitialize(&scratch_arena);

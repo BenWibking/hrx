@@ -29,16 +29,6 @@ static void iree_hal_amdgpu_host_queue_populate_memory_event_pool_stats(
   event->pool_slab_count = stats.slab_count;
 }
 
-static uint64_t iree_hal_amdgpu_host_queue_memory_profile_allocation_id(
-    iree_hal_buffer_t* buffer) {
-  return iree_hal_amdgpu_transient_buffer_profile_allocation_id(buffer);
-}
-
-static uint64_t iree_hal_amdgpu_host_queue_memory_profile_session_id(
-    iree_hal_buffer_t* buffer) {
-  return iree_hal_amdgpu_transient_buffer_profile_session_id(buffer);
-}
-
 static void iree_hal_amdgpu_host_queue_record_memory_event(
     iree_hal_amdgpu_host_queue_t* queue,
     iree_hal_profile_memory_event_type_t type,
@@ -54,11 +44,12 @@ static void iree_hal_amdgpu_host_queue_record_memory_event(
 
   iree_hal_profile_memory_event_t event =
       iree_hal_profile_memory_event_default();
+  const iree_hal_buffer_allocation_profile_t allocation_profile =
+      iree_hal_buffer_allocation_profile(buffer);
   event.type = type;
   event.flags = flags;
   event.result = result;
-  event.allocation_id =
-      iree_hal_amdgpu_host_queue_memory_profile_allocation_id(buffer);
+  event.allocation_id = allocation_profile.id;
   event.pool_id = (uint64_t)(uintptr_t)pool;
   event.submission_id = submission_id;
   event.physical_device_ordinal =
@@ -79,9 +70,15 @@ static void iree_hal_amdgpu_host_queue_record_memory_event(
     }
   }
   iree_hal_amdgpu_host_queue_populate_memory_event_pool_stats(pool, &event);
+  // Session numbers belong to their originating device. A foreign queue
+  // records this allocation in its own active capture using the shared ID.
+  const uint64_t session_id =
+      iree_hal_buffer_allocation_placement(buffer).device ==
+              queue->logical_device
+          ? allocation_profile.session_id
+          : 0;
   iree_hal_amdgpu_logical_device_record_profile_memory_event_for_session(
-      queue->logical_device,
-      iree_hal_amdgpu_host_queue_memory_profile_session_id(buffer), &event);
+      queue->logical_device, session_id, &event);
 }
 
 static uint32_t iree_hal_amdgpu_host_size_saturate_u32(iree_host_size_t value) {
@@ -122,8 +119,7 @@ iree_hal_amdgpu_host_queue_alloca_profile_event_info(
       .type = IREE_HAL_PROFILE_QUEUE_EVENT_TYPE_ALLOCA,
       .allocation_id =
           transaction->request_count == 1
-              ? iree_hal_amdgpu_host_queue_memory_profile_allocation_id(
-                    transaction->buffers[0])
+              ? iree_hal_buffer_allocation_profile(transaction->buffers[0]).id
               : 0,
       .payload_length =
           iree_hal_amdgpu_alloca_transaction_total_length(transaction),
@@ -139,8 +135,7 @@ iree_hal_amdgpu_host_queue_dealloca_profile_event_info(
       .type = IREE_HAL_PROFILE_QUEUE_EVENT_TYPE_DEALLOCA,
       .allocation_id =
           transaction->buffer_count == 1
-              ? iree_hal_amdgpu_host_queue_memory_profile_allocation_id(
-                    transaction->buffers[0])
+              ? iree_hal_buffer_allocation_profile(transaction->buffers[0]).id
               : 0,
       .payload_length =
           iree_hal_amdgpu_dealloca_transaction_total_length(transaction),
@@ -170,7 +165,7 @@ static void iree_hal_amdgpu_host_queue_decommit_transient_buffers(
     return;
   }
   for (uint16_t i = entry->signal_semaphore_count; i < entry->count; ++i) {
-    iree_hal_amdgpu_transient_buffer_decommit(
+    iree_hal_buffer_allocation_decommit(
         (iree_hal_buffer_t*)entry->resources[i]);
   }
 }
@@ -317,13 +312,14 @@ iree_status_t iree_hal_amdgpu_host_queue_prepare_alloca_buffers(
         queue->transient_buffer_pool, &out_buffers[prepared_count]);
     if (iree_status_is_ok(status)) {
       uint64_t session_id = 0;
-      const uint64_t allocation_id =
+      uint64_t allocation_id =
           iree_hal_amdgpu_logical_device_allocate_profile_memory_allocation_id(
               queue->logical_device, &session_id);
-      if (allocation_id != 0) {
-        iree_hal_amdgpu_transient_buffer_set_profile_allocation(
-            out_buffers[prepared_count], session_id, allocation_id);
+      if (!allocation_id) {
+        allocation_id = iree_hal_buffer_allocation_next_id();
       }
+      iree_hal_amdgpu_transient_buffer_set_profile_allocation(
+          out_buffers[prepared_count], session_id, allocation_id);
       ++prepared_count;
     }
   }
@@ -762,7 +758,7 @@ static void iree_hal_amdgpu_sanitized_dealloca_complete(
       (iree_hal_amdgpu_sanitized_dealloca_t*)user_data;
   if (!iree_status_is_ok(status)) {
     for (iree_host_size_t i = 0; i < state->buffer_count; ++i) {
-      iree_hal_amdgpu_transient_buffer_abort_dealloca(state->buffers[i]);
+      iree_hal_buffer_allocation_abort_dealloca(state->buffers[i]);
     }
     iree_hal_semaphore_list_fail(state->signal_semaphore_list,
                                  iree_status_clone(status));
@@ -772,9 +768,9 @@ static void iree_hal_amdgpu_sanitized_dealloca_complete(
     iree_hal_buffer_t* buffer = state->buffers[i];
     iree_hal_pool_t* source_pool = NULL;
     iree_hal_pool_reservation_t reservation;
-    iree_hal_amdgpu_transient_buffer_take_dealloca_reservation(
-        buffer, &source_pool, &reservation);
-    iree_hal_amdgpu_transient_buffer_decommit(buffer);
+    iree_hal_buffer_allocation_take_dealloca_reservation(buffer, &source_pool,
+                                                         &reservation);
+    iree_hal_buffer_allocation_decommit(buffer);
     // The barrier has completed every prior use. Empty history here records
     // actual retirement, independent of later queue-frontier publication.
     iree_hal_pool_advise_asan_reservations(
@@ -899,7 +895,7 @@ iree_status_t iree_hal_amdgpu_host_queue_submit_dealloca(
 
   for (iree_host_size_t i = 0; i < transaction->buffer_count; ++i) {
     iree_hal_pool_t* source_pool = NULL;
-    iree_hal_amdgpu_transient_buffer_take_dealloca_reservation(
+    iree_hal_buffer_allocation_take_dealloca_reservation(
         transaction->buffers[i], &source_pool, &transaction->reservations[i]);
     IREE_ASSERT_TRUE(source_pool == transaction->pool);
   }

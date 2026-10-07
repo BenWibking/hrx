@@ -55,10 +55,10 @@ struct iree_hal_amdgpu_transient_buffer_t {
   // dependencies. The complete state is terminal until the wrapper is recycled.
   iree_atomic_int32_t deallocation_state;
 
-  // Profiling session id owning |profile_allocation_id|.
+  // Origin device's profiling session, or zero when capture was inactive.
   uint64_t profile_session_id;
 
-  // Session-local profiling allocation id for this queue_alloca lifecycle.
+  // Process-wide profiling allocation id for this queue_alloca lifecycle.
   uint64_t profile_allocation_id;
 };
 
@@ -304,18 +304,15 @@ void iree_hal_amdgpu_transient_buffer_set_profile_allocation(
   buffer->profile_allocation_id = allocation_id;
 }
 
-uint64_t iree_hal_amdgpu_transient_buffer_profile_allocation_id(
+static iree_hal_buffer_allocation_profile_t
+iree_hal_amdgpu_transient_buffer_allocation_profile(
     iree_hal_buffer_t* base_buffer) {
   iree_hal_amdgpu_transient_buffer_t* buffer =
       iree_hal_amdgpu_transient_buffer_cast(base_buffer);
-  return buffer->profile_allocation_id;
-}
-
-uint64_t iree_hal_amdgpu_transient_buffer_profile_session_id(
-    iree_hal_buffer_t* base_buffer) {
-  iree_hal_amdgpu_transient_buffer_t* buffer =
-      iree_hal_amdgpu_transient_buffer_cast(base_buffer);
-  return buffer->profile_session_id;
+  return (iree_hal_buffer_allocation_profile_t){
+      .id = buffer->profile_allocation_id,
+      .session_id = buffer->profile_session_id,
+  };
 }
 
 void iree_hal_amdgpu_transient_buffer_attach_reservation(
@@ -360,7 +357,8 @@ void iree_hal_amdgpu_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
                     iree_memory_order_release);
 }
 
-void iree_hal_amdgpu_transient_buffer_decommit(iree_hal_buffer_t* base_buffer) {
+static void iree_hal_amdgpu_transient_buffer_decommit(
+    iree_hal_buffer_t* base_buffer) {
   IREE_ASSERT_ARGUMENT(base_buffer);
   iree_hal_amdgpu_transient_buffer_t* buffer =
       iree_hal_amdgpu_transient_buffer_cast(base_buffer);
@@ -384,7 +382,7 @@ bool iree_hal_amdgpu_transient_buffer_is_deallocated(
          IREE_HAL_AMDGPU_TRANSIENT_BUFFER_DEALLOCATION_STATE_COMPLETE;
 }
 
-iree_status_t iree_hal_amdgpu_transient_buffer_begin_dealloca(
+static iree_status_t iree_hal_amdgpu_transient_buffer_begin_dealloca(
     iree_hal_buffer_t* base_buffer, iree_hal_pool_t** out_pool) {
   IREE_ASSERT_ARGUMENT(base_buffer);
   IREE_ASSERT_ARGUMENT(out_pool);
@@ -403,7 +401,7 @@ iree_status_t iree_hal_amdgpu_transient_buffer_begin_dealloca(
   return iree_ok_status();
 }
 
-void iree_hal_amdgpu_transient_buffer_abort_dealloca(
+static void iree_hal_amdgpu_transient_buffer_abort_dealloca(
     iree_hal_buffer_t* base_buffer) {
   IREE_ASSERT_ARGUMENT(base_buffer);
   iree_hal_amdgpu_transient_buffer_t* buffer =
@@ -434,7 +432,7 @@ bool iree_hal_amdgpu_transient_buffer_query_reservation(
   return true;
 }
 
-void iree_hal_amdgpu_transient_buffer_take_dealloca_reservation(
+static void iree_hal_amdgpu_transient_buffer_take_dealloca_reservation(
     iree_hal_buffer_t* base_buffer, iree_hal_pool_t** out_pool,
     iree_hal_pool_reservation_t* out_reservation) {
   IREE_ASSERT_ARGUMENT(base_buffer);
@@ -632,6 +630,16 @@ iree_hal_amdgpu_transient_buffer_query_memory(
   return view;
 }
 
+static const iree_hal_buffer_allocation_vtable_t
+    iree_hal_amdgpu_transient_buffer_allocation_vtable = {
+        .profile = iree_hal_amdgpu_transient_buffer_allocation_profile,
+        .begin_dealloca = iree_hal_amdgpu_transient_buffer_begin_dealloca,
+        .abort_dealloca = iree_hal_amdgpu_transient_buffer_abort_dealloca,
+        .take_dealloca_reservation =
+            iree_hal_amdgpu_transient_buffer_take_dealloca_reservation,
+        .decommit = iree_hal_amdgpu_transient_buffer_decommit,
+};
+
 static const iree_hal_buffer_vtable_t iree_hal_amdgpu_transient_buffer_vtable =
     {
         .recycle = iree_hal_buffer_recycle,
@@ -642,4 +650,5 @@ static const iree_hal_buffer_vtable_t iree_hal_amdgpu_transient_buffer_vtable =
         .invalidate_range = iree_hal_amdgpu_transient_buffer_invalidate_range,
         .flush_range = iree_hal_amdgpu_transient_buffer_flush_range,
         .query_memory = iree_hal_amdgpu_transient_buffer_query_memory,
+        .allocation = &iree_hal_amdgpu_transient_buffer_allocation_vtable,
 };

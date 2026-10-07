@@ -839,9 +839,8 @@ uint64_t iree_hal_amdgpu_logical_device_allocate_profile_memory_allocation_id(
     return 0;
   }
 
-  return iree_hal_amdgpu_profile_event_streams_allocate_memory_allocation_id(
-      &logical_device->profiling.event_streams,
-      logical_device->profiling.session_id, out_session_id);
+  *out_session_id = logical_device->profiling.session_id;
+  return iree_hal_buffer_allocation_next_id();
 }
 
 bool iree_hal_amdgpu_logical_device_record_profile_memory_event_for_session(

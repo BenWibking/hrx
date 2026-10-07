@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "iree/hal/buffer.h"
+#include "iree/hal/buffer_allocation.h"
 #include "iree/hal/command_buffer.h"
 #include "iree/hal/detail.h"
 #include "iree/hal/device.h"
@@ -828,14 +829,27 @@ IREE_API_EXPORT iree_status_t iree_hal_queue_dealloca(
                                "deallocation buffer %" PRIhsz
                                " is not an allocation root",
                                i));
+    } else if (IREE_UNLIKELY(!iree_hal_buffer_allocation_vtable(buffers[i]))) {
+      IREE_RETURN_AND_END_ZONE_IF_ERROR(
+          z0, iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                               "deallocation buffer %" PRIhsz
+                               " is not a queue allocation root",
+                               i));
     }
     const iree_hal_buffer_placement_t placement =
         iree_hal_buffer_allocation_placement(buffers[i]);
     iree_status_t status = iree_hal_buffer_validate_family_usage(
         buffers[i], iree_hal_queue_family(queue), IREE_HAL_BUFFER_USAGE_NONE);
-    if (iree_status_is_ok(status)) {
-      status = iree_hal_queue_validate_family_access(
-          queue, placement.queue_family_affinity);
+    if (iree_status_is_ok(status) && !buffers[i]->memory.contract) {
+      if (placement.device !=
+          iree_hal_queue_family_device(queue->queue_family)) {
+        status =
+            iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                             "deallocation buffer belongs to another device");
+      } else {
+        status = iree_hal_queue_validate_family_access(
+            queue, placement.queue_family_affinity);
+      }
     }
     if (!iree_status_is_ok(status)) {
       IREE_RETURN_AND_END_ZONE_IF_ERROR(

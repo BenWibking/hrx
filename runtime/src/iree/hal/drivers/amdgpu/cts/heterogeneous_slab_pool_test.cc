@@ -5,7 +5,9 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <array>
+#include <vector>
 
+#include "iree/hal/cts/util/profile_test_util.h"
 #include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/drivers/task/registration/driver_module.h"
 #include "iree/hal/memory/fixed_block_pool.h"
@@ -105,6 +107,24 @@ class HeterogeneousSlabPoolTest : public CtsTestBase<> {
           }
         },
         source->maintenance);
+  }
+
+  iree_status_t CreateSource(iree_hal_pool_t** out_source) {
+    const iree_hal_pool_scope_t scope = {
+        families_.size(), families_.data(), {}};
+    iree_hal_slab_pool_options_t options;
+    iree_hal_slab_pool_options_initialize(&options);
+    return iree_hal_slab_pool_create(group_, scope, &options,
+                                     iree_allocator_system(), out_source);
+  }
+
+  iree_hal_pool_reservation_request_t MakeRequest(iree_hal_pool_t* pool) {
+    iree_hal_pool_capabilities_t capabilities;
+    iree_hal_pool_query_capabilities(pool, &capabilities);
+    iree_hal_pool_reservation_request_t request = {};
+    request.params.min_alignment = capabilities.max_allocation_alignment;
+    request.allocation_size = 256;
+    return request;
   }
 
   // Private driver registry for the ordinary Task creation path.
@@ -292,10 +312,11 @@ TEST_P(HeterogeneousSlabPoolTest, BothQueuesPublishSharedNativeStorage) {
                                     IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, 64,
                                     &mapping));
       subspan.reset();
-      SemaphoreList deallocated(devices_[allocating_device], {0}, {1});
+      const size_t freeing_device = 1 - allocating_device;
+      SemaphoreList deallocated(devices_[freeing_device], {0}, {1});
       auto* raw_buffer = buffer.get();
       IREE_ASSERT_OK(iree_hal_queue_dealloca(
-          queues_[allocating_device], downloaded, deallocated, 1, &raw_buffer));
+          queues_[freeing_device], downloaded, deallocated, 1, &raw_buffer));
       IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
           deallocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
       buffer.reset();
@@ -314,6 +335,282 @@ TEST_P(HeterogeneousSlabPoolTest, BothQueuesPublishSharedNativeStorage) {
   JoinMaintenance(source);
   iree_hal_pool_query_stats(source, &stats);
   EXPECT_EQ(stats.bytes_committed, 0u);
+}
+
+TEST_P(HeterogeneousSlabPoolTest, MixedBatchDeallocaBeforeCommit) {
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(CreateSource(source.out()));
+  const auto request = MakeRequest(source);
+  for (size_t freeing_device = 0; freeing_device < devices_.size();
+       ++freeing_device) {
+    SCOPED_TRACE(freeing_device);
+    SemaphoreList gate(devices_[0], {0}, {1});
+    SemaphoreList allocated(devices_[0], {0, 0}, {1, 1});
+    SemaphoreList deallocated(devices_[freeing_device], {0}, {1});
+    std::array<Ref<iree_hal_buffer_t>, 2> buffers;
+    std::array<iree_hal_buffer_t*, 2> roots = {};
+    iree_status_t status = iree_ok_status();
+    size_t submitted_count = 0;
+    while (submitted_count < buffers.size() && iree_status_is_ok(status)) {
+      const iree_hal_semaphore_list_t signal = {
+          1, &allocated.semaphores[submitted_count],
+          &allocated.payload_values[submitted_count]};
+      status =
+          iree_hal_queue_alloca(queues_[submitted_count], gate, signal, source,
+                                1, &request, buffers[submitted_count].out());
+      if (iree_status_is_ok(status)) {
+        roots[submitted_count] = buffers[submitted_count].get();
+        ++submitted_count;
+      }
+    }
+    bool release_submitted = false;
+    if (iree_status_is_ok(status)) {
+      status = iree_hal_queue_dealloca(queues_[freeing_device], allocated,
+                                       deallocated, roots.size(), roots.data());
+      release_submitted = iree_status_is_ok(status);
+    }
+    EXPECT_FALSE(iree_hal_semaphore_list_poll(deallocated));
+    // Open the gate and join accepted work even when submission fails, so a
+    // failing assertion cannot strand a device behind an unsignaled dependency.
+    status =
+        iree_status_join(status, iree_hal_semaphore_list_signal(gate, nullptr));
+    const iree_hal_semaphore_list_t accepted = {
+        submitted_count, allocated.semaphores.data(),
+        allocated.payload_values.data()};
+    status = iree_status_join(
+        status, iree_hal_semaphore_list_wait(accepted, iree_infinite_timeout(),
+                                             IREE_ASYNC_WAIT_FLAG_NONE));
+    if (release_submitted) {
+      status = iree_status_join(
+          status,
+          iree_hal_semaphore_list_wait(deallocated, iree_infinite_timeout(),
+                                       IREE_ASYNC_WAIT_FLAG_NONE));
+    }
+    IREE_ASSERT_OK(status);
+    for (auto& buffer : buffers) {
+      buffer.reset();
+    }
+    JoinMaintenance(source);
+    iree_hal_pool_stats_t stats;
+    iree_hal_pool_query_stats(source, &stats);
+    EXPECT_EQ(stats.reservation_count, 0u);
+    EXPECT_EQ(stats.bytes_committed, 0u);
+  }
+}
+
+TEST_P(HeterogeneousSlabPoolTest, RejectedMixedDeallocaPreservesAllEpochs) {
+  std::array<Ref<iree_hal_pool_t>, 2> sources;
+  for (auto& source : sources) {
+    IREE_ASSERT_OK(CreateSource(source.out()));
+  }
+  for (size_t freeing_device = 0; freeing_device < devices_.size();
+       ++freeing_device) {
+    SCOPED_TRACE(freeing_device);
+    std::array<Ref<iree_hal_buffer_t>, 3> buffers;
+    for (size_t i = 0; i < buffers.size(); ++i) {
+      auto* source = sources[i / 2].get();
+      const auto request = MakeRequest(source);
+      SemaphoreList allocated(devices_[i % 2], {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_alloca(
+          queues_[i % 2], iree_hal_semaphore_list_empty(), allocated, source, 1,
+          &request, buffers[i].out()));
+      IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+          allocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    }
+    SemaphoreList rejected(devices_[freeing_device], {0}, {1});
+    // Both wrapper kinds are marked before the final entry rejects the batch.
+    iree_hal_buffer_t* duplicate[] = {buffers[0], buffers[1], buffers[0]};
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_FAILED_PRECONDITION,
+        iree_hal_queue_dealloca(queues_[freeing_device],
+                                iree_hal_semaphore_list_empty(), rejected,
+                                IREE_ARRAYSIZE(duplicate), duplicate));
+    iree_hal_buffer_t* mixed_pools[] = {buffers[0], buffers[1], buffers[2]};
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_INVALID_ARGUMENT,
+        iree_hal_queue_dealloca(queues_[freeing_device],
+                                iree_hal_semaphore_list_empty(), rejected,
+                                IREE_ARRAYSIZE(mixed_pools), mixed_pools));
+    EXPECT_FALSE(iree_hal_semaphore_list_poll(rejected));
+    for (size_t i = 0; i < buffers.size(); ++i) {
+      const uint32_t pattern = 0xAA001100 + i;
+      SemaphoreList filled(devices_[1], {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_fill(
+          queues_[1], iree_hal_semaphore_list_empty(), filled, buffers[i], 0,
+          256, &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+      std::array<uint32_t, 64> output = {};
+      SemaphoreList downloaded(devices_[0], {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_download(queues_[0], filled, downloaded,
+                                             buffers[i], 0, output.data(),
+                                             sizeof(output)));
+      IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+          downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+      for (auto value : output) {
+        EXPECT_EQ(value, pattern);
+      }
+    }
+    iree_hal_buffer_t* same_pool[] = {buffers[0], buffers[1]};
+    SemaphoreList released(devices_[freeing_device], {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(
+        queues_[freeing_device], iree_hal_semaphore_list_empty(), released,
+        IREE_ARRAYSIZE(same_pool), same_pool));
+    auto* other_pool = buffers[2].get();
+    SemaphoreList all_released(devices_[freeing_device], {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[freeing_device], released,
+                                           all_released, 1, &other_pool));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        all_released, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    for (auto& buffer : buffers) {
+      buffer.reset();
+    }
+    for (auto& source : sources) {
+      JoinMaintenance(source);
+      iree_hal_pool_stats_t stats;
+      iree_hal_pool_query_stats(source, &stats);
+      EXPECT_EQ(stats.reservation_count, 0u);
+      EXPECT_EQ(stats.bytes_committed, 0u);
+    }
+  }
+}
+
+TEST_P(HeterogeneousSlabPoolTest, AllocationIdentitySpansDeviceCaptures) {
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(CreateSource(source.out()));
+  const std::array<iree_hal_pool_reservation_request_t, 2> requests = {
+      MakeRequest(source), MakeRequest(source)};
+  const auto data_families = IREE_HAL_DEVICE_PROFILING_DATA_QUEUE_EVENTS |
+                             IREE_HAL_DEVICE_PROFILING_DATA_MEMORY_EVENTS;
+  // Device-local capture numbers are deliberately different.
+  TestProfileSink prior_sink;
+  TestProfileSinkInitialize(&prior_sink);
+  DeviceProfilingScope gpu_profiling(devices_[1]);
+  IREE_ASSERT_OK(
+      gpu_profiling.Begin(data_families, TestProfileSinkAsBase(&prior_sink)));
+  IREE_ASSERT_OK(gpu_profiling.End());
+  for (size_t buffer_count : {1, 2}) {
+    SCOPED_TRACE(buffer_count);
+    std::array<TestProfileSink, 2> sinks;
+    for (auto& sink : sinks) {
+      TestProfileSinkInitialize(&sink);
+    }
+    DeviceProfilingScope cpu_profiling(devices_[0]);
+    DeviceProfilingScope gpu_capture(devices_[1]);
+    IREE_ASSERT_OK(
+        cpu_profiling.Begin(data_families, TestProfileSinkAsBase(&sinks[0])));
+    IREE_ASSERT_OK(
+        gpu_capture.Begin(data_families, TestProfileSinkAsBase(&sinks[1])));
+    std::array<std::array<uint64_t, 2>, 2> identities = {};
+    for (size_t allocating_device = 0; allocating_device < devices_.size();
+         ++allocating_device) {
+      const size_t freeing_device = 1 - allocating_device;
+      std::array<iree_hal_buffer_t*, 2> roots = {};
+      SemaphoreList allocated(devices_[allocating_device], {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_alloca(
+          queues_[allocating_device], iree_hal_semaphore_list_empty(),
+          allocated, source, buffer_count, requests.data(), roots.data()));
+      std::array<Ref<iree_hal_buffer_t>, 2> buffers;
+      for (size_t i = 0; i < buffer_count; ++i) {
+        buffers[i].reset(roots[i]);
+        identities[allocating_device][i] =
+            iree_hal_buffer_allocation_profile(buffers[i]).id;
+        EXPECT_NE(identities[allocating_device][i], 0u);
+      }
+      SemaphoreList released(devices_[freeing_device], {0}, {1});
+      IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[freeing_device], allocated,
+                                             released, buffer_count,
+                                             roots.data()));
+      IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+          released, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    }
+    IREE_ASSERT_OK(cpu_profiling.End());
+    IREE_ASSERT_OK(gpu_capture.End());
+    EXPECT_NE(identities[0][0], identities[1][0]);
+    if (buffer_count == 2) {
+      EXPECT_NE(identities[0][0], identities[0][1]);
+      EXPECT_NE(identities[1][0], identities[1][1]);
+    }
+    EXPECT_NE(sinks[0].session_id, sinks[1].session_id);
+    for (size_t device = 0; device < devices_.size(); ++device) {
+      SCOPED_TRACE(device);
+      size_t allocation_count = 0;
+      size_t release_count = 0;
+      for (const auto& event : sinks[device].queue_events) {
+        if (event.type == IREE_HAL_PROFILE_QUEUE_EVENT_TYPE_ALLOCA) {
+          EXPECT_EQ(event.allocation_id,
+                    buffer_count == 1 ? identities[device][0] : 0);
+          EXPECT_EQ(event.operation_count, buffer_count);
+          ++allocation_count;
+        } else if (event.type == IREE_HAL_PROFILE_QUEUE_EVENT_TYPE_DEALLOCA) {
+          EXPECT_EQ(event.allocation_id,
+                    buffer_count == 1 ? identities[1 - device][0] : 0);
+          EXPECT_EQ(event.operation_count, buffer_count);
+          ++release_count;
+        }
+      }
+      EXPECT_EQ(allocation_count, 1u);
+      EXPECT_EQ(release_count, 1u);
+      std::vector<uint64_t> allocation_ids;
+      std::vector<uint64_t> release_ids;
+      for (const auto& event : sinks[device].memory_events) {
+        if (event.type == IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_ALLOCA) {
+          allocation_ids.push_back(event.allocation_id);
+          EXPECT_EQ(event.length, requests[0].allocation_size);
+        } else if (event.type ==
+                   IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_DEALLOCA) {
+          release_ids.push_back(event.allocation_id);
+          EXPECT_EQ(event.length, requests[0].allocation_size);
+        }
+      }
+      EXPECT_EQ(allocation_ids, std::vector<uint64_t>(
+                                    identities[device].begin(),
+                                    identities[device].begin() + buffer_count));
+      EXPECT_EQ(
+          release_ids,
+          std::vector<uint64_t>(identities[1 - device].begin(),
+                                identities[1 - device].begin() + buffer_count));
+      EXPECT_FALSE(sinks[device].write_after_end);
+    }
+  }
+}
+
+TEST_P(HeterogeneousSlabPoolTest, UnprofiledAllocationRetainsItsIdentity) {
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(CreateSource(source.out()));
+  const auto request = MakeRequest(source);
+  for (size_t allocating_device = 0; allocating_device < devices_.size();
+       ++allocating_device) {
+    SCOPED_TRACE(allocating_device);
+    const size_t freeing_device = 1 - allocating_device;
+    Ref<iree_hal_buffer_t> buffer;
+    SemaphoreList allocated(devices_[allocating_device], {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_alloca(
+        queues_[allocating_device], iree_hal_semaphore_list_empty(), allocated,
+        source, 1, &request, buffer.out()));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        allocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    const uint64_t identity = iree_hal_buffer_allocation_profile(buffer).id;
+    EXPECT_NE(identity, 0u);
+    TestProfileSink sink;
+    TestProfileSinkInitialize(&sink);
+    DeviceProfilingScope profiling(devices_[freeing_device]);
+    IREE_ASSERT_OK(profiling.Begin(IREE_HAL_DEVICE_PROFILING_DATA_MEMORY_EVENTS,
+                                   TestProfileSinkAsBase(&sink)));
+    auto* root = buffer.get();
+    SemaphoreList released(devices_[freeing_device], {0}, {1});
+    IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[freeing_device], allocated,
+                                           released, 1, &root));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        released, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    IREE_ASSERT_OK(profiling.End());
+    size_t release_count = 0;
+    for (const auto& event : sink.memory_events) {
+      if (event.type == IREE_HAL_PROFILE_MEMORY_EVENT_TYPE_QUEUE_DEALLOCA) {
+        EXPECT_EQ(event.allocation_id, identity);
+        ++release_count;
+      }
+    }
+    EXPECT_EQ(release_count, 1u);
+  }
 }
 
 TEST_P(HeterogeneousSlabPoolTest, DispatchRequiresItsOwnFamilyGrants) {
