@@ -6,6 +6,80 @@
 
 aie2p.target<array> @npu
 
+// Read different projections from each retained record. The nonzero storage
+// origin separates the slot address from the memory owner's aperture. Capacity
+// one keeps that address fixed; capacity two rotates it while the dynamic
+// projection and external output offset advance independently.
+
+pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffer) {
+  %output = buffer.assume.alignment %output_arg {minimum_alignment = 4} : buffer
+  %memory = pipeline.memory<workgroup>[0, 3] : pool
+  %origin = index.constant 4 : offset
+  %record_bytes = index.constant 16 : index
+  %slot_bytes = index.mul %capacity, %record_bytes : index
+  %payload_bytes = index.cast %slot_bytes : index to offset
+  %storage_bytes = index.add %payload_bytes, %origin : offset
+  %storage = buffer.alloca<workgroup> pool(%memory) align(4) %storage_bytes : buffer
+  %slots = buffer.view %storage[%origin] : buffer -> view<[%capacity]x4xi32>
+  %records = channel.bind<fifo> %slots, %capacity : view<[%capacity]x4xi32>, index -> channel<tile<4xi32>>
+  %begin = index.constant 0 : index
+  %count = index.constant 3 : index
+  %step = index.constant 1 : index
+
+  pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
+    %fields = index.constant 4 : index
+    %record_scale = index.constant 10 : index
+    scf.for %record = [%begin to %count step %step] {
+      %write, %payload = channel.reserve %records : channel<tile<4xi32>> -> (write<tile<4xi32>>, view<4xi32>)
+      %record_value = index.mul %record, %record_scale : index
+      scf.for %field = [%begin to %fields step %step] {
+        %field_value = index.add %record_value, %field : index
+        %value = index.cast %field_value : index to i32
+        view.store %value, %payload[%field] : i32, view<4xi32>
+      }
+      channel.publish %write : write<tile<4xi32>>
+    }
+  }
+
+  pipeline.strand workers([0, 3], [1, 1], [1, 1]) {
+    %output_record_bytes = index.constant 12 : index
+    %word_bytes = index.constant 4 : index
+    %fields = index.constant 2 : index
+    scf.for %record = [%begin to %count step %step] {
+      %read, %payload = channel.acquire %records : channel<tile<4xi32>> -> (read<tile<4xi32>>, view<4xi32>)
+      %record_index = index.mul %record, %output_record_bytes : index
+      %record_offset = index.cast %record_index : index to offset
+      %fixed_source = view.subview %payload[1] : view<4xi32> -> view<1xi32>
+      %fixed_output = buffer.view %output[%record_offset] : buffer -> view<1xi32>
+      %fixed_copy = kernel.async.copy %fixed_source to %fixed_output {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+      %fixed_group = kernel.async.group %fixed_copy : kernel.async.token -> kernel.async.group
+      kernel.async.wait %fixed_group {newer_groups = 0} : kernel.async.group
+      scf.for %field = [%begin to %fields step %step] {
+        %source = view.subview %payload[%field] : view<4xi32> -> view<1xi32>
+        %output_field = index.add %field, %step : index
+        %field_index = index.mul %output_field, %word_bytes : index
+        %output_index = index.add %record_index, %field_index : index
+        %output_offset = index.cast %output_index : index to offset
+        %destination = buffer.view %output[%output_offset] : buffer -> view<1xi32>
+        %copy = kernel.async.copy %source to %destination {cache_scope = cu, cache_temporal = regular, direction = workgroup_to_global} : view<1xi32> to view<1xi32> -> kernel.async.token
+        %group = kernel.async.group %copy : kernel.async.token -> kernel.async.group
+        kernel.async.wait %group {newer_groups = 0} : kernel.async.group
+      }
+      channel.release %read : read<tile<4xi32>>
+    }
+  }
+}
+
+pipeline.def<kernel> public retain target(@npu) @projected_single_slot() run(%output: buffer) {
+  %capacity = index.constant 1 : index
+  pipeline.compose @projected_records[%capacity](%output) : [index](buffer)
+}
+
+pipeline.def<kernel> public retain target(@npu) @projected_ring() run(%output: buffer) {
+  %capacity = index.constant 2 : index
+  pipeline.compose @projected_records[%capacity](%output) : [index](buffer)
+}
+
 // The second reservation becomes ready first.
 // A FIFO consumer must still wait for the first reservation's publication.
 

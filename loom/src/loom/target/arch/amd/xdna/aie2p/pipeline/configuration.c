@@ -278,10 +278,10 @@ static iree_status_t loom_aie2p_native_config_bindings(
     loom_aie2p_native_configuration_t* config,
     const loom_pipeline_realization_t* realization) {
   const loom_aie2p_native_context_t* context = config->context;
-  loom_value_id_t* spans;
+  loom_value_id_t* bindings;
   IREE_RETURN_IF_ERROR(
       iree_arena_allocate_array(context->pass->arena, context->binding_count,
-                                sizeof(*spans), (void**)&spans));
+                                sizeof(*bindings), (void**)&bindings));
   for (iree_host_size_t i = 0; i < context->binding_count; ++i) {
     const loom_aie2p_native_binding_t* binding = &context->bindings[i];
     if (!binding->access) {
@@ -306,17 +306,7 @@ static iree_status_t loom_aie2p_native_config_bindings(
              [AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_BINDING],
         0, operands, 4, loom_named_attr_slice_empty(), &config->binding_type, 1,
         NULL, 0, LOOM_LOCATION_UNKNOWN, &op));
-    loom_value_id_t range[] = {loom_op_results(op)[0], LOOM_VALUE_ID_INVALID,
-                               operands[2]};
-    IREE_RETURN_IF_ERROR(
-        loom_aie2p_native_config_constant(config, 0, &range[1]));
-    IREE_RETURN_IF_ERROR(loom_low_build_resolved_descriptor_op(
-        &config->builder, config->descriptors,
-        &config->descriptors->descriptors
-             [AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_RANGE],
-        0, range, 3, loom_named_attr_slice_empty(), &config->span_type, 1, NULL,
-        0, LOOM_LOCATION_UNKNOWN, &op));
-    spans[i] = loom_op_results(op)[0];
+    bindings[i] = loom_op_results(op)[0];
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
@@ -326,8 +316,26 @@ static iree_status_t loom_aie2p_native_config_bindings(
                                       << context->family->row_shift;
     for (const loom_aie2p_native_transfer_t* transfer = worker->transfers;
          transfer; transfer = transfer->next) {
+      const loom_symbolic_expr_t* offset =
+          &transfer->external_view->begin_byte_offset;
+      const uint64_t begin =
+          loom_symbolic_expr_is_constant(offset) ? offset->constant : 0;
+      loom_value_id_t range[] = {bindings[transfer->binding],
+                                 LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
+      IREE_RETURN_IF_ERROR(
+          loom_aie2p_native_config_constant(config, begin, &range[1]));
+      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_constant(
+          config, context->bindings[transfer->binding].byte_length - begin,
+          &range[2]));
+      loom_op_t* op;
+      IREE_RETURN_IF_ERROR(loom_low_build_resolved_descriptor_op(
+          &config->builder, config->descriptors,
+          &config->descriptors->descriptors
+               [AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_RANGE],
+          0, range, 3, loom_named_attr_slice_empty(), &config->span_type, 1,
+          NULL, 0, LOOM_LOCATION_UNKNOWN, &op));
       loom_value_id_t operands[] = {LOOM_VALUE_ID_INVALID,
-                                    spans[transfer->binding]};
+                                    loom_op_results(op)[0]};
       // Configuration writes address the memory owner's allocation space.
       // The worker's self-memory load aperture is a separate core address.
       IREE_RETURN_IF_ERROR(loom_aie2p_native_config_constant(
@@ -335,7 +343,6 @@ static iree_status_t loom_aie2p_native_config_bindings(
           tile_address + worker->tile->facts->memory.local_base +
               transfer->base_storage_offset,
           &operands[0]));
-      loom_op_t* op;
       IREE_RETURN_IF_ERROR(loom_low_build_resolved_descriptor_op(
           &config->builder, config->descriptors,
           &config->descriptors->descriptors

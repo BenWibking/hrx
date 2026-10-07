@@ -40,6 +40,8 @@ loom_kernel_binary(
   SRCS
     "testdata/pipeline_completion.loom"
   ROOTS
+    "@projected_single_slot"
+    "@projected_ring"
     "@reordered_publication"
     "@reordered_retirement"
     "@rotating_retirement"
@@ -60,6 +62,8 @@ loom_kernel_binary(
   SRCS
     "testdata/pipeline_completion.loom"
   ROOTS
+    "@projected_single_slot"
+    "@projected_ring"
     "@reordered_publication"
     "@reordered_retirement"
     "@rotating_retirement"

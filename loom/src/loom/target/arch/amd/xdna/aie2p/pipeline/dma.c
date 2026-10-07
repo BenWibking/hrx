@@ -22,20 +22,108 @@ static uint32_t loom_aie2p_native_register_offset(
   return (uint32_t)(address - origin);
 }
 
+static iree_status_t loom_aie2p_native_dma_local_word(
+    loom_aie2p_native_context_t* context,
+    const loom_aie2p_native_transfer_t* transfer, loom_builder_t* builder,
+    loom_value_id_t projection, loom_value_id_t record,
+    loom_value_id_t* out_word) {
+  loom_aie2p_worker_builder_t* code = &context->code;
+  const loom_aie2p_native_dma_path_t* path = transfer->path;
+  const loom_symbolic_expr_t* offset =
+      &transfer->local_view->projection_byte_offset;
+  const uint32_t constant_offset =
+      projection == LOOM_VALUE_ID_INVALID ? (uint32_t)offset->constant : 0;
+  const uint32_t constant_address =
+      transfer->local_channel->byte_offset + constant_offset;
+  const uint8_t encoding_shift = path->local->facts->dma.address_encoding_shift;
+  if (record == LOOM_VALUE_ID_INVALID && projection == LOOM_VALUE_ID_INVALID) {
+    const uint32_t word =
+        transfer->local_words[0] |
+        loom_xdna_register_field_encode_admitted(
+            LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD0_BASE_ADDRESS,
+            constant_address >> encoding_shift);
+    return loom_aie2p_worker_constant(code, builder, (int32_t)word, out_word);
+  }
+  loom_value_id_t address;
+  if (record != LOOM_VALUE_ID_INVALID) {
+    loom_value_id_t pointer, window;
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_op(
+        code, builder, AIE2P_CORE_DESCRIPTOR_REF_MOVE_LOCAL_ADDRESS_TO_SCALAR,
+        &record, 1, loom_named_attr_slice_empty(), &code->scalar_type,
+        &pointer));
+    // Translate the worker-visible aperture and any constant projection in
+    // one subtraction. Native arithmetic is modulo the 32-bit address word.
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
+        code, builder, (int32_t)(path->local_window - constant_offset),
+        &window));
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
+        code, builder, AIE2P_CORE_DESCRIPTOR_REF_SUB_I32, pointer, window,
+        &address));
+  } else if (constant_address == 0) {
+    address = projection;
+    projection = LOOM_VALUE_ID_INVALID;
+  } else {
+    IREE_RETURN_IF_ERROR(
+        loom_aie2p_worker_constant(code, builder, constant_address, &address));
+  }
+  if (projection != LOOM_VALUE_ID_INVALID) {
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
+        code, builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, address, projection,
+        &address));
+  }
+  loom_xdna_register_field_info_t address_field;
+  IREE_RETURN_IF_ERROR(loom_xdna_register_field_info(
+      LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD0_BASE_ADDRESS,
+      &address_field));
+  loom_value_id_t shift, address_bits, length;
+  IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
+      code, builder, address_field.least_significant_bit - encoding_shift,
+      &shift));
+  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
+      code, builder, AIE2P_CORE_DESCRIPTOR_REF_LSHL_I32, address, shift,
+      &address_bits));
+  IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
+      code, builder, transfer->local_words[0], &length));
+  return loom_aie2p_worker_binary(code, builder,
+                                  AIE2P_CORE_DESCRIPTOR_REF_OR_I32,
+                                  address_bits, length, out_word);
+}
+
 static iree_status_t loom_aie2p_native_dma_submit_helper(
     loom_aie2p_native_context_t* context,
     loom_aie2p_native_transfer_t* transfer) {
   loom_aie2p_worker_builder_t* code = &context->code;
   const loom_aie2p_native_dma_path_t* path = transfer->path;
-  const loom_type_t types[] = {code->scalar_type, code->scalar_type,
-                               code->address_type};
+  const bool external_dynamic = !loom_symbolic_expr_is_constant(
+      &transfer->external_view->begin_byte_offset);
+  const bool projection_dynamic = !loom_symbolic_expr_is_constant(
+      &transfer->local_view->projection_byte_offset);
+  const bool record_dynamic = transfer->local_channel->source->capacity > 1;
+  loom_type_t types[3];
+  iree_host_size_t argument_count = 0;
+  if (external_dynamic) {
+    types[argument_count++] = code->scalar_type;
+  }
+  if (projection_dynamic) {
+    types[argument_count++] = code->scalar_type;
+  }
+  if (record_dynamic) {
+    types[argument_count++] = code->address_type;
+  }
   loom_builder_t builder;
   loom_op_t* function;
-  IREE_RETURN_IF_ERROR(
-      loom_aie2p_worker_helper(code, types, IREE_ARRAYSIZE(types), NULL, 0,
-                               &builder, &transfer->submit, &function));
+  IREE_RETURN_IF_ERROR(loom_aie2p_worker_helper(code, types, argument_count,
+                                                NULL, 0, &builder,
+                                                &transfer->submit, &function));
   const loom_value_id_t* arguments =
       loom_region_entry_block(loom_low_func_def_body(function))->arg_ids;
+  iree_host_size_t argument_index = 0;
+  const loom_value_id_t external_offset =
+      external_dynamic ? arguments[argument_index++] : LOOM_VALUE_ID_INVALID;
+  const loom_value_id_t local_offset =
+      projection_dynamic ? arguments[argument_index++] : LOOM_VALUE_ID_INVALID;
+  const loom_value_id_t local_record =
+      record_dynamic ? arguments[argument_index++] : LOOM_VALUE_ID_INVALID;
   const loom_named_attr_t address_attr = {
       .name_id = code->integer_name,
       .value = loom_attr_i64(transfer->base_load_address)};
@@ -53,47 +141,22 @@ static iree_status_t loom_aie2p_native_dma_submit_helper(
         loom_make_named_attr_slice(&displacement, 1), &code->scalar_type,
         i ? &high : &low));
   }
-  loom_value_id_t external_low, carry, external_high;
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, low, arguments[0],
-      &external_low));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_CMP_ULT_I32, external_low, low,
-      &carry));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, high, carry,
-      &external_high));
-  loom_value_id_t pointer, window, relative, address, shift, address_bits,
-      length, local_word;
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_op(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_MOVE_LOCAL_ADDRESS_TO_SCALAR,
-      &arguments[2], 1, loom_named_attr_slice_empty(), &code->scalar_type,
-      &pointer));
-  IREE_RETURN_IF_ERROR(
-      loom_aie2p_worker_constant(code, &builder, path->local_window, &window));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_SUB_I32, pointer, window,
-      &relative));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, relative, arguments[1],
-      &address));
-  loom_xdna_register_field_info_t address_field;
-  IREE_RETURN_IF_ERROR(loom_xdna_register_field_info(
-      LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD0_BASE_ADDRESS,
-      &address_field));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
-      code, &builder,
-      address_field.least_significant_bit -
-          path->local->facts->dma.address_encoding_shift,
-      &shift));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-      code, &builder, AIE2P_CORE_DESCRIPTOR_REF_LSHL_I32, address, shift,
-      &address_bits));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
-      code, &builder, transfer->local_words[0], &length));
-  IREE_RETURN_IF_ERROR(
-      loom_aie2p_worker_binary(code, &builder, AIE2P_CORE_DESCRIPTOR_REF_OR_I32,
-                               address_bits, length, &local_word));
+  loom_value_id_t external_low = low, external_high = high;
+  if (external_dynamic) {
+    loom_value_id_t carry;
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
+        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, low, external_offset,
+        &external_low));
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
+        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_CMP_ULT_I32, external_low,
+        low, &carry));
+    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
+        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, high, carry,
+        &external_high));
+  }
+  loom_value_id_t local_word;
+  IREE_RETURN_IF_ERROR(loom_aie2p_native_dma_local_word(
+      context, transfer, &builder, local_offset, local_record, &local_word));
   const uint32_t local_descriptor = loom_aie2p_native_register_offset(
       context, path->local,
       LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD0_BASE_ADDRESS,
@@ -186,7 +249,11 @@ iree_status_t loom_aie2p_native_emit_transfers(
     const loom_value_id_t anchors[] = {transfer->external_view->view_value_id,
                                        transfer->local_view->view_value_id};
     loom_value_id_t arguments[3];
+    iree_host_size_t argument_count = 0;
     for (unsigned i = 0; i < 2; ++i) {
+      if (loom_symbolic_expr_is_constant(expressions[i])) {
+        continue;
+      }
       loom_value_id_t offset;
       IREE_RETURN_IF_ERROR(loom_view_materialize_offset_expression(
           builder, expressions[i], LOOM_VALUE_ID_INVALID, anchors[i], &offset));
@@ -201,15 +268,16 @@ iree_status_t loom_aie2p_native_emit_transfers(
                                    loom_type_scalar(LOOM_SCALAR_TYPE_I64),
                                    loom_type_scalar(LOOM_SCALAR_TYPE_I32),
                                    LOOM_LOCATION_UNKNOWN, &narrowed));
-      arguments[i] = loom_op_results(narrowed)[0];
+      arguments[argument_count++] = loom_op_results(narrowed)[0];
     }
-    arguments[2] = transfer->local_record;
+    if (transfer->local_channel->source->capacity > 1) {
+      arguments[argument_count++] = transfer->local_record;
+    }
     loom_builder_set_before(builder, transfer->source->request.op);
     loom_op_t* invoke;
-    IREE_RETURN_IF_ERROR(
-        loom_low_invoke_build(builder, 0, 0, 0, transfer->submit, arguments,
-                              IREE_ARRAYSIZE(arguments), NULL, 0, NULL, 0,
-                              LOOM_LOCATION_UNKNOWN, &invoke));
+    IREE_RETURN_IF_ERROR(loom_low_invoke_build(
+        builder, 0, 0, 0, transfer->submit, arguments, argument_count, NULL, 0,
+        NULL, 0, LOOM_LOCATION_UNKNOWN, &invoke));
     loom_builder_set_before(builder, transfer->completion);
     IREE_RETURN_IF_ERROR(loom_low_invoke_build(builder, 0, 0, 0, transfer->wait,
                                                NULL, 0, NULL, 0, NULL, 0,

@@ -158,6 +158,8 @@ typedef struct loom_aie2p_native_transfer_t {
   const loom_view_region_t* external_view;
   // Canonical local endpoint projection, retained through emission.
   const loom_view_region_t* local_view;
+  // Admitted channel geometry owning the local record's physical slots.
+  const loom_aie2p_native_channel_t* local_channel;
   // Read/write capability carrying the local record address after realization.
   loom_value_id_t local_record;
   // Selected ordinary helper that submits both endpoint descriptors.

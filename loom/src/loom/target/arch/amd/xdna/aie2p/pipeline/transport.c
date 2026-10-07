@@ -447,6 +447,7 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
           .shim_descriptor = shim->next_descriptor++,
           .external_view = external_view,
           .local_view = local_view,
+          .local_channel = borrow.channel,
           .local_record = borrow.record};
       *tail = selected;
       tail = &selected->next;

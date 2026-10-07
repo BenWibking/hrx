@@ -79,5 +79,15 @@ TEST_F(XdnaPipelineCompletionTest, RotatesOwnedReadsAcrossLoopIterations) {
   CheckPipeline(IREE_SV("rotating_retirement"), results);
 }
 
+TEST_F(XdnaPipelineCompletionTest, ProjectsFixedRecordAddresses) {
+  constexpr std::array<uint32_t, 9> results = {1, 0, 1, 11, 10, 11, 21, 20, 21};
+  CheckPipeline(IREE_SV("projected_single_slot"), results);
+}
+
+TEST_F(XdnaPipelineCompletionTest, ProjectsRotatingRecordAddresses) {
+  constexpr std::array<uint32_t, 9> results = {1, 0, 1, 11, 10, 11, 21, 20, 21};
+  CheckPipeline(IREE_SV("projected_ring"), results);
+}
+
 }  // namespace
 }  // namespace iree::experimental::xdna::testing
