@@ -740,6 +740,19 @@ loom_cc_library(
   PUBLIC
 )
 
+loom_cc_test(
+  NAME
+    physical_domains_test
+  SRCS
+    "physical_domains_test.cc"
+  DEPS
+    ::physical_domains
+    iree::base::internal::arena
+    iree::testing::gtest
+    iree::testing::gtest_main
+    loom::target::test::descriptors
+)
+
 loom_cc_library(
   NAME
     scalar_packing
