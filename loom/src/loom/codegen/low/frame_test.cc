@@ -727,6 +727,8 @@ low.func.def target<test.low.core> @fixed_loop(%initial: reg<test.fixed.r0>, %co
   ASSERT_EQ(frame.allocation.error_count, 0u);
   EXPECT_EQ(frame.allocation.spill_count, 0u);
   EXPECT_EQ(frame.allocation.materialized_copy_count, 0u);
+  EXPECT_EQ(frame.allocation.first_coalesced_incoming_copy_by_value_ordinal,
+            nullptr);
   for (iree_host_size_t i = 0; i < frame.allocation.assignment_count; ++i) {
     const auto& assignment = frame.allocation.assignments[i];
     if (assignment.descriptor_reg_class_id ==
@@ -734,6 +736,59 @@ low.func.def target<test.low.core> @fixed_loop(%initial: reg<test.fixed.r0>, %co
       EXPECT_EQ(assignment.location_base, 0u);
     }
   }
+
+  loom_low_emission_frame_options_t options = {};
+  options.descriptor_registry = &registry_.registry;
+  options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL;
+  options.allocation_flags =
+      LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX;
+  loom_low_emission_frame_t indexed_frame = {};
+  bool accepted = false;
+  IREE_ASSERT_OK(loom_low_emission_frame_build(
+      module.get(), loom_block_op(loom_module_block(module.get()), 0), &options,
+      &arena_, &indexed_frame, &accepted));
+  ASSERT_TRUE(accepted);
+  ASSERT_EQ(indexed_frame.allocation.error_count, 0u);
+  ASSERT_NE(
+      indexed_frame.allocation.first_coalesced_incoming_copy_by_value_ordinal,
+      nullptr);
+
+  const loom_region_t* body =
+      loom_low_func_def_body(loom_block_op(loom_module_block(module.get()), 0));
+  const loom_block_t* entry = loom_region_const_block(body, 0);
+  const loom_block_t* loop = loom_region_const_block(body, 1);
+  const loom_block_t* loop_body = loom_region_const_block(body, 2);
+  const loom_value_id_t destination_value_id = loom_block_arg_id(loop, 0);
+  const loom_value_id_t expected_source_value_ids[] = {
+      loom_low_br_args(loop_body->last_op).values[0],
+      loom_low_br_args(entry->last_op).values[0],
+  };
+  loom_value_ordinal_t destination_ordinal = LOOM_VALUE_ORDINAL_INVALID;
+  for (loom_value_ordinal_t i = 0;
+       i < indexed_frame.allocation.liveness.value_count; ++i) {
+    if (indexed_frame.allocation.liveness.value_ids[i] ==
+        destination_value_id) {
+      destination_ordinal = i;
+      break;
+    }
+  }
+  ASSERT_NE(destination_ordinal, LOOM_VALUE_ORDINAL_INVALID);
+
+  uint32_t copy_index =
+      indexed_frame.allocation
+          .first_coalesced_incoming_copy_by_value_ordinal[destination_ordinal];
+  for (const loom_value_id_t expected_source_value_id :
+       expected_source_value_ids) {
+    ASSERT_NE(copy_index, LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE);
+    ASSERT_LT(copy_index, indexed_frame.allocation.edge_copy_count);
+    const auto& copy = indexed_frame.allocation.edge_copies[copy_index];
+    EXPECT_EQ(copy.kind, LOOM_LOW_ALLOCATION_COPY_COALESCED);
+    EXPECT_EQ(copy.destination_ordinal, destination_ordinal);
+    EXPECT_EQ(indexed_frame.allocation.liveness.value_ids[copy.source_ordinal],
+              expected_source_value_id);
+    copy_index = copy.next_coalesced_incoming_copy_index;
+  }
+  EXPECT_EQ(copy_index, LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE);
 }
 
 TEST_F(LowEmissionFrameTest, StateOnlyScheduleLivenessIsTransient) {

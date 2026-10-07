@@ -29,6 +29,14 @@ extern "C" {
 typedef struct loom_low_allocation_storage_lease_unit_index_t
     loom_low_allocation_storage_lease_unit_index_t;
 
+enum loom_low_allocation_flag_bits_e {
+  // Retain coalesced branch inputs indexed by destination value ordinal.
+  LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX = 1u << 0,
+};
+typedef uint32_t loom_low_allocation_flags_t;
+
+#define LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE UINT32_MAX
+
 typedef enum loom_low_allocation_remark_kind_e {
   // Unknown or uninitialized remark kind.
   LOOM_LOW_ALLOCATION_REMARK_UNKNOWN = 0,
@@ -131,8 +139,9 @@ typedef struct loom_low_allocation_edge_copy_t {
   loom_value_ordinal_t source_ordinal;
   // Function-local ordinal of the destination block argument.
   loom_value_ordinal_t destination_ordinal;
-  // Assignment index for |source_ordinal|.
-  uint32_t source_assignment_index;
+  // Previous coalesced edge-copy index for |destination_ordinal|, or
+  // LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE when absent or materialized.
+  uint32_t next_coalesced_incoming_copy_index;
   // Assignment index for |destination_ordinal|.
   uint32_t destination_assignment_index;
   // Unit offset inside the source assignment.
@@ -291,6 +300,9 @@ typedef struct loom_low_allocation_table_t {
   const loom_low_allocation_edge_copy_t* edge_copies;
   // Number of records in |edge_copies|.
   iree_host_size_t edge_copy_count;
+  // First coalesced incoming edge-copy index by local value ordinal, or NULL
+  // when the consumer did not request the retained relation.
+  const uint32_t* first_coalesced_incoming_copy_by_value_ordinal;
   // Per-low.br groups indexing |edge_copies|.
   const loom_low_allocation_edge_copy_group_t* edge_copy_groups;
   // Number of records in |edge_copy_groups|.

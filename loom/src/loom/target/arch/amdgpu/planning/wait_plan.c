@@ -54,13 +54,6 @@ typedef struct loom_amdgpu_wait_producer_state_t {
 static_assert(sizeof(loom_amdgpu_wait_producer_state_t) == 80,
               "preserved readiness must fit existing producer-state padding");
 
-typedef struct loom_amdgpu_wait_block_arg_source_t {
-  // Source value ordinal forwarded by a coalesced incoming edge segment.
-  loom_value_ordinal_t source_ordinal;
-  // Next source record for the same destination block argument.
-  uint32_t next_source;
-} loom_amdgpu_wait_block_arg_source_t;
-
 typedef enum loom_amdgpu_wait_xcnt_group_e {
   LOOM_AMDGPU_WAIT_XCNT_GROUP_NONE = 0,
   LOOM_AMDGPU_WAIT_XCNT_GROUP_VMEM = 1,
@@ -107,10 +100,10 @@ typedef struct loom_amdgpu_wait_plan_builder_t {
   uint32_t* first_dependency_link_by_consumer;
   // Relevant counter dependency links.
   loom_amdgpu_wait_dependency_t* dependency_links;
-  // First coalesced incoming segment per block-argument value ordinal.
-  uint32_t* first_block_arg_source_by_value;
-  // Coalesced incoming segment sources retained from allocation.
-  loom_amdgpu_wait_block_arg_source_t* block_arg_sources;
+  // Borrowed first coalesced incoming copy by destination value ordinal.
+  const uint32_t* first_coalesced_incoming_copy_by_value_ordinal;
+  // Borrowed edge-copy rows linked by the incoming-copy index.
+  const loom_low_allocation_edge_copy_t* edge_copies;
   // First SSA dependency indexed by loop-entry block and counter.
   uint32_t* loop_entry_dependency_links;
   // Counter classes fully drained at each planned loop-entry block.
@@ -136,8 +129,6 @@ typedef struct loom_amdgpu_wait_plan_builder_t {
   iree_host_size_t dependency_link_count;
   // Allocated dependency link capacity.
   iree_host_size_t dependency_link_capacity;
-  // Number of populated block-argument source records.
-  iree_host_size_t block_arg_source_count;
   // Monotonic DFS epoch for dependency forwarding.
   uint32_t dependency_visit_epoch;
   // Sparse action accumulation before exact retained publication.
@@ -519,51 +510,11 @@ loom_amdgpu_wait_plan_edge_copy_group(
       builder->allocation, node->source_ordinal);
 }
 
-// A materialized edge segment consumes its source before the branch. Only
-// coalesced segments can carry pending producer state into the destination;
-// their exact sources are retained by allocation, including packed payloads.
-static iree_status_t loom_amdgpu_wait_plan_build_block_arg_sources(
-    loom_amdgpu_wait_plan_builder_t* builder) {
-  const loom_low_schedule_table_t* schedule = builder->schedule;
-  const loom_low_allocation_table_t* allocation = builder->allocation;
-  if (allocation->edge_copy_count == 0) {
-    return iree_ok_status();
-  }
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      builder->transient_arena, schedule->value_count,
-      sizeof(*builder->first_block_arg_source_by_value),
-      (void**)&builder->first_block_arg_source_by_value));
-  memset(builder->first_block_arg_source_by_value, 0xFF,
-         schedule->value_count *
-             sizeof(*builder->first_block_arg_source_by_value));
-  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      builder->transient_arena, allocation->edge_copy_count,
-      sizeof(*builder->block_arg_sources),
-      (void**)&builder->block_arg_sources));
-  for (iree_host_size_t i = 0; i < allocation->edge_copy_count; ++i) {
-    const loom_low_allocation_edge_copy_t* copy = &allocation->edge_copies[i];
-    if (copy->kind != LOOM_LOW_ALLOCATION_COPY_COALESCED) {
-      continue;
-    }
-    const loom_value_ordinal_t destination_ordinal = copy->destination_ordinal;
-    const loom_value_ordinal_t source_ordinal = copy->source_ordinal;
-    builder->block_arg_sources[builder->block_arg_source_count] =
-        (loom_amdgpu_wait_block_arg_source_t){
-            .source_ordinal = source_ordinal,
-            .next_source =
-                builder->first_block_arg_source_by_value[destination_ordinal],
-        };
-    builder->first_block_arg_source_by_value[destination_ordinal] =
-        (uint32_t)builder->block_arg_source_count++;
-  }
-  return iree_ok_status();
-}
-
 static iree_status_t loom_amdgpu_wait_plan_ensure_dependency_visit_state(
     loom_amdgpu_wait_plan_builder_t* builder) {
   const loom_low_schedule_table_t* schedule = builder->schedule;
   if (schedule->value_count == 0 ||
-      (builder->first_block_arg_source_by_value == NULL &&
+      (builder->first_coalesced_incoming_copy_by_value_ordinal == NULL &&
        builder->classification.forwarding_node_count == 0)) {
     return iree_ok_status();
   }
@@ -687,18 +638,20 @@ static iree_status_t loom_amdgpu_wait_plan_visit_dependency_links(
           &worklist_count);
       continue;
     }
-    if (builder->first_block_arg_source_by_value != NULL) {
-      uint32_t source_index =
-          builder->first_block_arg_source_by_value[current_ordinal];
-      if (source_index != LOOM_LOW_SCHEDULE_NODE_NONE) {
+    if (builder->first_coalesced_incoming_copy_by_value_ordinal != NULL) {
+      uint32_t copy_index =
+          builder
+              ->first_coalesced_incoming_copy_by_value_ordinal[current_ordinal];
+      if (copy_index != LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE) {
         const iree_host_size_t range_begin = worklist_count;
-        while (source_index != LOOM_LOW_SCHEDULE_NODE_NONE) {
-          const loom_amdgpu_wait_block_arg_source_t* source =
-              &builder->block_arg_sources[source_index];
+        while (copy_index != LOOM_LOW_ALLOCATION_EDGE_COPY_INDEX_NONE) {
+          IREE_ASSERT_LT(copy_index, builder->allocation->edge_copy_count);
+          const loom_low_allocation_edge_copy_t* copy =
+              &builder->edge_copies[copy_index];
           loom_amdgpu_wait_plan_push_dependency_visit_ordinal(
-              builder, value_count, source->source_ordinal, visit_epoch,
+              builder, value_count, copy->source_ordinal, visit_epoch,
               &worklist_count);
-          source_index = source->next_source;
+          copy_index = copy->next_coalesced_incoming_copy_index;
         }
         loom_amdgpu_wait_plan_reverse_dependency_visit_range(
             builder->dependency_visit_worklist, range_begin, worklist_count);
@@ -1015,7 +968,6 @@ static iree_status_t loom_amdgpu_wait_plan_build_dependency_links(
     loom_amdgpu_wait_plan_builder_t* builder) {
   const loom_low_schedule_table_t* schedule = builder->schedule;
   const iree_host_size_t value_count = schedule->value_count;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_wait_plan_build_block_arg_sources(builder));
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_wait_plan_ensure_dependency_visit_state(builder));
 
@@ -3125,6 +3077,9 @@ iree_status_t loom_amdgpu_wait_plan_build(
   *out_plan = (loom_amdgpu_wait_plan_t){0};
   IREE_ASSERT(schedule->value_count == 0 ||
               schedule->value_producer_nodes != NULL);
+  IREE_ASSERT(allocation->edge_copy_count == 0 ||
+              allocation->first_coalesced_incoming_copy_by_value_ordinal !=
+                  NULL);
   loom_amdgpu_wait_plan_builder_t builder = {
       .schedule = schedule,
       .allocation = allocation,
@@ -3136,6 +3091,11 @@ iree_status_t loom_amdgpu_wait_plan_build(
           loom_amdgpu_target_processor_properties_from_resolved_target(
               &schedule->target),
   };
+  if (allocation->edge_copy_count != 0) {
+    builder.first_coalesced_incoming_copy_by_value_ordinal =
+        allocation->first_coalesced_incoming_copy_by_value_ordinal;
+    builder.edge_copies = allocation->edge_copies;
+  }
   loom_amdgpu_wait_packet_analyze_target(schedule->target.descriptor_set,
                                          &builder.wait_packet_target);
   loom_amdgpu_wait_actions_initialize(&builder.actions);

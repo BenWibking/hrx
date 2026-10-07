@@ -844,6 +844,8 @@ class LowKernelEmitter {
     frame_options.allocation_fixed_values = abi_verify_result.fixed_values;
     frame_options.allocation_fixed_value_count =
         abi_verify_result.fixed_value_count;
+    frame_options.allocation_flags =
+        LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX;
     frame_options.storage_lease_provider = &storage_lease_provider;
     loom_low_emission_frame_t frame = {};
     bool frame_accepted = false;

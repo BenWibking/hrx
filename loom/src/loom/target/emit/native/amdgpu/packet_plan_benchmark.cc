@@ -79,6 +79,10 @@ struct FrameShape {
   iree_host_size_t packet_count;
   // Number of physical allocation assignments.
   iree_host_size_t assignment_count;
+  // Number of finalized branch edge-copy segments.
+  iree_host_size_t edge_copy_count;
+  // Number of branch segments coalesced into destination storage.
+  iree_host_size_t coalesced_edge_copy_count;
   // Number of matrix-class packets.
   iree_host_size_t matrix_packet_count;
   // Number of storage lease records.
@@ -193,6 +197,8 @@ static FrameAnalysis AnalyzeFrame(const loom_low_emission_frame_t& frame) {
           /*.block_count=*/frame.schedule.block_count,
           /*.packet_count=*/frame.schedule.scheduled_node_count,
           /*.assignment_count=*/frame.allocation.assignment_count,
+          /*.edge_copy_count=*/frame.allocation.edge_copy_count,
+          /*.coalesced_edge_copy_count=*/0,
           /*.matrix_packet_count=*/0,
           /*.storage_lease_count=*/
           frame.allocation.storage_leases.record_count,
@@ -237,6 +243,12 @@ static FrameAnalysis AnalyzeFrame(const loom_low_emission_frame_t& frame) {
         HashValue(analysis.signature, assignment.location_base);
     analysis.signature =
         HashValue(analysis.signature, assignment.location_count);
+  }
+  for (iree_host_size_t i = 0; i < frame.allocation.edge_copy_count; ++i) {
+    if (frame.allocation.edge_copies[i].kind ==
+        LOOM_LOW_ALLOCATION_COPY_COALESCED) {
+      ++analysis.shape.coalesced_edge_copy_count;
+    }
   }
   for (iree_host_size_t i = 0;
        i < frame.allocation.storage_lease_instance_count; ++i) {
@@ -563,6 +575,8 @@ class PacketPlanFixture {
     frame_options.schedule_structural_state_reads = structural_state_reads;
     frame_options.schedule_flags =
         LOOM_LOW_SCHEDULE_FLAG_RETAIN_VALUE_PRODUCER_NODES;
+    frame_options.allocation_flags =
+        LOOM_LOW_ALLOCATION_FLAG_RETAIN_COALESCED_INCOMING_INDEX;
     frame_options.schedule_strategy = LOOM_LOW_SCHEDULE_STRATEGY_RESOURCE_STALL;
     frame_options.allocation_fixed_values = abi_verify_result.fixed_values;
     frame_options.allocation_fixed_value_count =
@@ -672,6 +686,10 @@ static void RecordMetrics(benchmark::State& state,
   state.counters["assignments"] =
       static_cast<double>(analysis.shape.assignment_count);
   state.counters["blocks"] = static_cast<double>(analysis.shape.block_count);
+  state.counters["coalesced_edge_copies"] =
+      static_cast<double>(analysis.shape.coalesced_edge_copy_count);
+  state.counters["edge_copies"] =
+      static_cast<double>(analysis.shape.edge_copy_count);
   state.counters["frame_arena_bytes"] =
       static_cast<double>(fixture.frame_arena_used_bytes());
   state.counters["planned_hazards"] =
