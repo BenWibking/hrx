@@ -38,7 +38,6 @@ loom_generated_cc_library(
     loom::error::error_defs
     loom::ir
     loom::ir::facts
-    loom::ops::combining
     loom::ops::function_contract_verify
     loom::ops::op_defs
     loom::ops::type_registry

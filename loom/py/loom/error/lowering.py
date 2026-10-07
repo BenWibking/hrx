@@ -634,54 +634,6 @@ ERR_LOWERING_055 = ErrorDef(
     ),
 )
 
-# ERR_LOWERING_056: Pipeline folds require different record shapes.
-ERR_LOWERING_056 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=56,
-    severity=Severity.ERROR,
-    summary="Pipeline folds require different record shapes.",
-    message=(
-        "pipeline group {group} folds require one record shape; stage "
-        "{stage} requires a separate or nested frame"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("stage", ParamKind.U32),
-    ),
-    fix_hint="Place folds with different record shapes in separate groups.",
-)
-
-# ERR_LOWERING_057: Pipeline stage has an incompatible record cadence.
-ERR_LOWERING_057 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=57,
-    severity=Severity.ERROR,
-    summary="Pipeline stage has an incompatible record cadence.",
-    message=(
-        "pipeline group {group} stage {stage} record shape is neither the "
-        "shared record cadence nor its completed frame"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("stage", ParamKind.U32),
-    ),
-    fix_hint="Place stages with independent record cadences in separate groups.",
-)
-
-# ERR_LOWERING_058: Pipeline stage requires nested frame execution.
-ERR_LOWERING_058 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=58,
-    severity=Severity.ERROR,
-    summary="Pipeline stage requires nested frame execution.",
-    message="pipeline group {group} stage {stage} requires nested frame execution",
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("stage", ParamKind.U32),
-    ),
-    fix_hint="Place nested folds in separate groups.",
-)
-
 # ERR_LOWERING_059: Source construct has no supported IR projection.
 ERR_LOWERING_059 = ErrorDef(
     domain=ErrorDomain.LOWERING,
@@ -690,69 +642,6 @@ ERR_LOWERING_059 = ErrorDef(
     summary="Unsupported source-language construct.",
     message="cannot import source construct: {detail}",
     params=(ErrorParam("detail", ParamKind.STRING),),
-)
-
-# ERR_LOWERING_060: Multi-lane pipeline output lacks its lane dimension.
-ERR_LOWERING_060 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=60,
-    severity=Severity.ERROR,
-    summary="Pipeline output requires a leading lane dimension.",
-    message=(
-        "multi-lane pipeline output requires a leading lane dimension "
-        "for {lane_count} source-group lanes"
-    ),
-    params=(ErrorParam("lane_count", ParamKind.U32),),
-)
-
-# ERR_LOWERING_061: Pipeline output lane extent differs from its group.
-ERR_LOWERING_061 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=61,
-    severity=Severity.ERROR,
-    summary="Pipeline output lane extent differs from its source group.",
-    message=(
-        "pipeline output leading dimension must equal source-group "
-        "cardinality; got {extent}, expected {lane_count}"
-    ),
-    params=(
-        ErrorParam("extent", ParamKind.U32),
-        ErrorParam("lane_count", ParamKind.U32),
-    ),
-)
-
-# ERR_LOWERING_062: Pipeline record sequences have different temporal ranks.
-ERR_LOWERING_062 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=62,
-    severity=Severity.ERROR,
-    summary="Pipeline record sequences have different temporal ranks.",
-    message=(
-        "pipeline record shapes must match; "
-        "got {rank} temporal dimensions, expected {expected_rank}"
-    ),
-    params=(
-        ErrorParam("rank", ParamKind.U32),
-        ErrorParam("expected_rank", ParamKind.U32),
-    ),
-)
-
-# ERR_LOWERING_063: Pipeline record sequences have different temporal extents.
-ERR_LOWERING_063 = ErrorDef(
-    domain=ErrorDomain.LOWERING,
-    code=63,
-    severity=Severity.ERROR,
-    summary="Pipeline record sequences have different temporal extents.",
-    message=(
-        "pipeline record shapes must match; "
-        "temporal dimension {dimension} has extent {extent}, "
-        "expected {expected_extent}"
-    ),
-    params=(
-        ErrorParam("dimension", ParamKind.U32),
-        ErrorParam("extent", ParamKind.U32),
-        ErrorParam("expected_extent", ParamKind.U32),
-    ),
 )
 
 # ERR_LOWERING_064: Sanitizer assertion cannot be materialized.
@@ -842,14 +731,7 @@ ALL_LOWERING_ERRORS: tuple[ErrorDef, ...] = (
     ERR_LOWERING_053,
     ERR_LOWERING_054,
     ERR_LOWERING_055,
-    ERR_LOWERING_056,
-    ERR_LOWERING_057,
-    ERR_LOWERING_058,
     ERR_LOWERING_059,
-    ERR_LOWERING_060,
-    ERR_LOWERING_061,
-    ERR_LOWERING_062,
-    ERR_LOWERING_063,
     ERR_LOWERING_064,
     ERR_LOWERING_065,
     ERR_LOWERING_066,

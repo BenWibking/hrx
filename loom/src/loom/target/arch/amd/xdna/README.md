@@ -9,9 +9,9 @@ compilation does not invoke the AIE SDK, LLVM, Python, or an external linker.
 This directory owns device facts and AIE2P target mechanics. The shared Loom
 compiler owns IR analysis, canonicalization, scheduling, register allocation,
 and pass lifecycles. The target supplies descriptors, legal realizations,
-physical constraints, and native encoding. The experimental pipeline dialect
-provides an authoring path for streamed workers; its representation is
-provisional and subject to redesign.
+physical constraints, and native encoding. Pipeline strands author complete
+resident worker programs. Typed channels carry record ownership, and explicit
+worker coordinates and memory pools select placement before native emission.
 
 ## Start here
 
@@ -45,15 +45,17 @@ profile and family tables rather than assumptions about one attached device.
 ## Compilation path
 
 ```text
-High functions + experimental pipeline composition
+Pipeline strands + typed channels + explicit storage
                  |
-      shared analyses and target legalization
+      shared construction and worker preparation
                  |
-     AIE2P core Low + AIE2P array Low
+      target channel/storage realization
+                 |
+    complete AIE2P core Low + configuration Low
           |                    |
-   schedule / allocate    logical topology
+   schedule / allocate    selected physical resources
           |                    |
-   packetize / encode     physical resource plan
+   packetize / encode          |
           |                    |
    detached native leaf ------+
    + retained requirements    |
@@ -66,12 +68,24 @@ High functions + experimental pipeline composition
                          .xdna ELF
 ```
 
-The [pipeline lowering](aie2p/pipeline/lower.h) consumes composition relations
-and materializes workers, channels, and entry bindings. A logical group names
-participants; physical placement and transport are decisions of the array
-plan. Consumers use the indexed relations retained by their producers.
+The [pipeline realization](aie2p/pipeline/native.h) consumes shared construction,
+worker and channel plans. Worker preparation preserves caller storage facts
+through inlining and ordinary SCF transforms. Channel realization supplies local
+views, ownership waits and publications, and strided DMA operations before memory
+legalization. Invocation bindings retain their source argument ordinals and
+required access spans. Consumers use indexed relations retained by their
+producers.
 
-The [array plan](aie2p/array/plan.h) owns worker placement, endpoint storage,
+The initial native path requires specialized singleton worker domains, explicit
+tile storage, and bounded single-producer/single-consumer channels. Complete
+worker images must fit the selected tile instruction budget. Unsupported
+placement, transfer or code-size requirements are diagnosed before emission.
+Invocation completion joins worker completion before releasing the owned
+resources. Instruction-image replacement requires a further target realization;
+channel storage and ownership are independent of instruction residency.
+
+For directly authored physical array programs, the
+[array plan](aie2p/array/plan.h) owns worker placement, endpoint storage,
 ring slots, locks, DMA channels and buffer descriptors, stream routes, and
 completion resources. It selects external DMA, adjacent shared-memory windows,
 or routed DMA according to the communication pattern and physical constraints.
@@ -118,7 +132,7 @@ recompile a leaf to discover its requirements.
 | [aie2p/legalization.c](aie2p/legalization.c), [math_policy.h](aie2p/math_policy.h), [low_verify.h](aie2p/low_verify.h) | Supported High realizations, floating-point policy, and authored Low contracts. |
 | [aie2p/contracts/](aie2p/contracts/), [lower/](aie2p/lower/) | Declarative legalization contracts and their C lowering mechanics. |
 | [aie2p/descriptors/](aie2p/descriptors/), [machine/](aie2p/machine/), [encoding/](aie2p/encoding/) | Instruction forms, physical registers, operand constraints, native bit encodings, and packet formats. |
-| [aie2p/pipeline/](aie2p/pipeline/) | Experimental composition analysis and lowering to array/core Low. |
+| [aie2p/pipeline/](aie2p/pipeline/) | Realization of complete strands, explicit memory and owned channels into core/configuration Low. |
 | [aie2p/array/](aie2p/array/) | Topology, resource planning, routes, resident worker protocols, and native commands. |
 | [aie2p/emit/](aie2p/emit/) | Leaf compilation, packet planning, detached objects, tile linking, reports, and final `.xdna` production. |
 | [aie2p/test/](aie2p/test/) | Authored compiler regressions and descriptor/encoding coverage. |

@@ -19,52 +19,6 @@ ERR_XDNA_001 = ErrorDef(
     fix_hint="Provide a non-empty record sequence for the worker fold.",
 )
 
-# ERR_XDNA_002: AIE2P worker requires a frame-completion phase.
-ERR_XDNA_002 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=2,
-    severity=Severity.ERROR,
-    summary="AIE2P worker requires a frame-completion phase.",
-    message=(
-        "AIE2P pipeline group {group} has frame-completion stages that "
-        "require a phased worker program"
-    ),
-    params=(ErrorParam("group", ParamKind.U32),),
-    fix_hint="Place completion stages in a separate group.",
-)
-
-# ERR_XDNA_003: AIE2P worker outputs require different firing phases.
-ERR_XDNA_003 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=3,
-    severity=Severity.ERROR,
-    summary="AIE2P worker outputs require different firing phases.",
-    message=(
-        "AIE2P pipeline group {group} requires compatible folds on every "
-        "boundary output; mixed cadences require a phased worker program"
-    ),
-    params=(ErrorParam("group", ParamKind.U32),),
-    fix_hint="Place recordwise and folded outputs in separate groups.",
-)
-
-# ERR_XDNA_004: AIE2P internal buffered flow requires a ring state machine.
-ERR_XDNA_004 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=4,
-    severity=Severity.ERROR,
-    summary="AIE2P internal buffered flow requires a ring state machine.",
-    message=(
-        "AIE2P pipeline group {group} flow {flow} has capacity {capacity}; "
-        "buffered same-group flow requires a composite ring state machine"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("flow", ParamKind.U32),
-        ErrorParam("capacity", ParamKind.U32),
-    ),
-    fix_hint="Place the buffered flow producer and consumer in separate groups.",
-)
-
 # ERR_XDNA_005: AIE2P worker channel cycle requires interleaved phases.
 ERR_XDNA_005 = ErrorDef(
     domain=ErrorDomain.XDNA,
@@ -120,91 +74,6 @@ ERR_XDNA_007 = ErrorDef(
     ),
     params=(ErrorParam("channel", ParamKind.U32),),
     fix_hint="Reduce independent streams crossing the link or change worker placement.",
-)
-
-# ERR_XDNA_008: AIE2P array pipeline requires kernel materialization scope.
-ERR_XDNA_008 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=8,
-    severity=Severity.ERROR,
-    summary="AIE2P array pipeline requires kernel materialization scope.",
-    message=(
-        "AIE2P array pipeline requires kernel materialization scope; got '{scope}'"
-    ),
-    params=(ErrorParam("scope", ParamKind.STRING),),
-    fix_hint="Declare pipeline.def<kernel> for one resident array executable.",
-)
-
-# ERR_XDNA_009: AIE2P pipeline exceeds resident compute capacity.
-ERR_XDNA_009 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=9,
-    severity=Severity.ERROR,
-    summary="AIE2P pipeline exceeds resident compute capacity.",
-    message=(
-        "AIE2P pipeline requires {instance_count} resident instances "
-        "but has {compute_tile_count} compute tiles"
-    ),
-    params=(
-        ErrorParam("instance_count", ParamKind.U32),
-        ErrorParam("compute_tile_count", ParamKind.U32),
-    ),
-    fix_hint="Reduce the total resident group lane count.",
-)
-
-# ERR_XDNA_010: AIE2P composite stages have different core targets.
-ERR_XDNA_010 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=10,
-    severity=Severity.ERROR,
-    summary="AIE2P composite stages have different core targets.",
-    message=(
-        "AIE2P pipeline group {group} stage '@{entry}' uses target "
-        "'@{actual_target}', but its other stages use '@{expected_target}'"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("entry", ParamKind.STRING),
-        ErrorParam("actual_target", ParamKind.STRING),
-        ErrorParam("expected_target", ParamKind.STRING),
-    ),
-    fix_hint="Use one exact core target for all stages in a resident group.",
-)
-
-# ERR_XDNA_011: AIE2P composite flow has no representable private record.
-ERR_XDNA_011 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=11,
-    severity=Severity.ERROR,
-    summary="AIE2P composite flow has no representable private record.",
-    message=(
-        "AIE2P pipeline group {group} internal flow {flow} requires a "
-        "whole-byte tile whose bit count fits in 64 bits; got {tile_type}"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("flow", ParamKind.U32),
-        ErrorParam("tile_type", ParamKind.TYPE),
-    ),
-    fix_hint="Use byte-complete internal records with a representable total size.",
-)
-
-# ERR_XDNA_012: AIE2P composite worker exceeds callable ABI capacity.
-ERR_XDNA_012 = ErrorDef(
-    domain=ErrorDomain.XDNA,
-    code=12,
-    severity=Severity.ERROR,
-    summary="AIE2P composite worker exceeds callable ABI capacity.",
-    message=(
-        "AIE2P pipeline group {group} requires {port_count} composite buffer "
-        "arguments; the callable ABI supports at most {maximum}"
-    ),
-    params=(
-        ErrorParam("group", ParamKind.U32),
-        ErrorParam("port_count", ParamKind.U32),
-        ErrorParam("maximum", ParamKind.U32),
-    ),
-    fix_hint="Split the stages across groups or reduce distinct boundary flows.",
 )
 
 # ERR_XDNA_013: A worker coordinate lies outside the physical array.
@@ -921,17 +790,9 @@ ERR_XDNA_051 = ErrorDef(
 
 ALL_XDNA_ERRORS = (
     ERR_XDNA_001,
-    ERR_XDNA_002,
-    ERR_XDNA_003,
-    ERR_XDNA_004,
     ERR_XDNA_005,
     ERR_XDNA_006,
     ERR_XDNA_007,
-    ERR_XDNA_008,
-    ERR_XDNA_009,
-    ERR_XDNA_010,
-    ERR_XDNA_011,
-    ERR_XDNA_012,
     ERR_XDNA_013,
     ERR_XDNA_014,
     ERR_XDNA_015,
