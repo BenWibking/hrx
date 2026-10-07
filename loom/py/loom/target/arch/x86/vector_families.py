@@ -77,7 +77,7 @@ STORAGE_ELEMENTS = (
     VectorElement("bf16", 16),
 )
 
-AVX2_LANE_FAMILIES = (
+X86_LANE_FAMILIES = (
     VectorLaneFamily(
         8,
         ("i8", "f8E4M3", "f8E5M2"),

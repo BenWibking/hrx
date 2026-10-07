@@ -14,7 +14,6 @@ from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_EXTREMA_OPERATIONS,
     AVX2_FLOAT_REDUCTION_OPERATIONS,
     AVX2_INTEGER_REDUCTION_FAMILIES,
-    AVX2_LANE_FAMILIES,
     AVX2_PACKED_FLOAT_REDUCTION_OPERATIONS,
     AVX2_PAYLOAD_ELEMENT_NAMES,
     AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
@@ -30,6 +29,7 @@ from loom.target.arch.x86.vector_families import (
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
     STORAGE_ELEMENTS,
+    X86_LANE_FAMILIES,
 )
 from loom.target.contracts import (
     DescriptorRule,
@@ -126,7 +126,7 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
             Scalar(row.element_names),
             (0, vector_bit_width // row.element_bit_width - 1),
         )
-        for row in AVX2_LANE_FAMILIES
+        for row in X86_LANE_FAMILIES
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
         for source_op in (vector.vector_extract, vector.vector_insert)
     }
@@ -154,6 +154,54 @@ def test_avx2_lane_movement_covers_every_payload_type_and_width() -> None:
             (lane, lane),
         )
         for lane in range(2)
+    )
+    actual = {
+        (
+            rule.source_op.name,
+            _value_type_guard(
+                rule, "source" if rule.source_op is vector.vector_extract else "dest"
+            ),
+            _value_type_guard(
+                rule, "result" if rule.source_op is vector.vector_extract else "value"
+            ),
+            _static_index_range(rule),
+        )
+        for rule in rules
+    }
+    assert actual == expected
+    assert len(rules) == len(expected)
+
+
+def test_avx512_lane_movement_covers_every_zmm_payload_type() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule)
+        and case.source_op in (vector.vector_extract, vector.vector_insert)
+        and _value_type_guard(
+            case, "result" if case.source_op is vector.vector_extract else "value"
+        )
+        != Scalar("i1")
+    )
+    expected = {
+        (
+            source_op.name,
+            Vector(row.element_names, lanes=512 // row.element_bit_width),
+            Scalar(row.element_names),
+            (0, 512 // row.element_bit_width - 1),
+        )
+        for row in X86_LANE_FAMILIES
+        for source_op in (vector.vector_extract, vector.vector_insert)
+    }
+    expected.update(
+        (
+            source_op.name,
+            Vector(element_name, lanes=512 // element_bit_width),
+            Scalar(element_name),
+            (0, 512 // element_bit_width - 1),
+        )
+        for element_name, element_bit_width in (("f32", 32), ("f64", 64))
+        for source_op in (vector.vector_extract, vector.vector_insert)
     )
     actual = {
         (
@@ -412,6 +460,44 @@ def test_avx2_iotas_cover_every_integer_element_and_width() -> None:
         )
         for element in INTEGER_ELEMENTS
         for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS
+        for priority in (0, 1)
+    }
+    assert actual == expected
+    assert len(rules) == len(expected)
+    assert all(
+        any(
+            guard.kind == GuardKind.VALUE_I64_RANGE
+            and guard.field == "step"
+            and guard.minimum == 1
+            and guard.maximum == 1
+            for guard in rule.guards
+        )
+        for rule in rules
+        if rule.priority == 1
+    )
+
+
+def test_avx512_iotas_cover_every_zmm_integer_element() -> None:
+    rules = tuple(
+        case
+        for case in X86_AVX512_CONTRACT_FRAGMENT.cases
+        if isinstance(case, DescriptorRule) and case.source_op is vector.vector_iota
+    )
+    actual = {
+        (
+            _value_type_guard(rule, "base"),
+            _value_type_guard(rule, "result"),
+            rule.priority,
+        )
+        for rule in rules
+    }
+    expected = {
+        (
+            Scalar(element.name),
+            Vector(element.name, lanes=512 // element.bit_width),
+            priority,
+        )
+        for element in INTEGER_ELEMENTS
         for priority in (0, 1)
     }
     assert actual == expected

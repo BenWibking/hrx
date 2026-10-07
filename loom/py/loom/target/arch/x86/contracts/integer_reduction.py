@@ -17,8 +17,8 @@ from loom.target.arch.x86.contracts.rule_builders import (
 )
 from loom.target.arch.x86.vector_families import (
     AVX2_INTEGER_REDUCTION_FAMILIES,
-    AVX2_LANE_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
+    X86_LANE_FAMILIES,
     VectorBinaryFamily,
 )
 from loom.target.contracts import (
@@ -35,7 +35,7 @@ from loom.target.low_descriptors import Descriptor
 _REGISTER_SUFFIXES = {128: "xmm", 256: "ymm"}
 _LANE_MNEMONICS = {
     row.element_bit_width: (row.extract_mnemonic, row.insert_mnemonic)
-    for row in AVX2_LANE_FAMILIES
+    for row in X86_LANE_FAMILIES
 }
 
 

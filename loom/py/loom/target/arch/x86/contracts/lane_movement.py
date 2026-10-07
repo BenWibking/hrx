@@ -4,7 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""AVX2 scalar lane movement contract rules."""
+"""x86 scalar lane movement contract rules."""
 
 from __future__ import annotations
 
@@ -16,8 +16,9 @@ from loom.target.arch.x86.contracts.rule_builders import (
     emit_descriptor_op as _op_emit,
 )
 from loom.target.arch.x86.vector_families import (
-    AVX2_LANE_FAMILIES,
     AVX2_VECTOR_BIT_WIDTHS,
+    AVX512_VECTOR_BIT_WIDTHS,
+    X86_LANE_FAMILIES,
 )
 from loom.target.contracts import (
     AttrProject,
@@ -44,6 +45,19 @@ def _lane_descriptor_key(mnemonic: str, element_bit_width: int) -> str:
     return f"x86.avx2.{mnemonic}.xmm"
 
 
+def _chunk_descriptor_keys(vector_bit_width: int) -> tuple[str, str]:
+    return {
+        256: (
+            "x86.avx2.vextractf128.xmm.ymm",
+            "x86.avx2.vinsertf128.ymm.xmm",
+        ),
+        512: (
+            "x86.avx512.vextractf32x4.xmm.zmm",
+            "x86.avx512.vinsertf32x4.zmm.xmm",
+        ),
+    }[vector_bit_width]
+
+
 def _lane_extract_rule(
     *,
     element_names: tuple[str, ...],
@@ -53,7 +67,7 @@ def _lane_extract_rule(
     descriptor_lookup: _DescriptorLookup,
 ) -> DescriptorRule:
     lane_count = vector_bit_width // element_bit_width
-    half_lane_count = 128 // element_bit_width
+    chunk_lane_count = 128 // element_bit_width
     source_type = Vector(element_names, lanes=lane_count)
     result_type = Scalar(element_names)
     descriptor = descriptor_lookup(descriptor_key)
@@ -61,22 +75,22 @@ def _lane_extract_rule(
     dependencies: list[Descriptor] = []
     source = ValueRef.operand("source")
     lane: AttrProject = AttrProject.i64_array_element("static_indices", element=0)
-    if vector_bit_width == 256:
-        extract_half = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
-        dependencies.append(extract_half)
-        source = ValueRef.temporary("half")
+    if vector_bit_width > 128:
+        extract_chunk = descriptor_lookup(_chunk_descriptor_keys(vector_bit_width)[0])
+        dependencies.append(extract_chunk)
+        source = ValueRef.temporary("chunk")
         lane = AttrProject.i64_array_element_remainder(
-            "static_indices", element=0, divisor=half_lane_count
+            "static_indices", element=0, divisor=chunk_lane_count
         )
         emits.append(
             _op_emit(
-                descriptor=extract_half,
+                descriptor=extract_chunk,
                 operands={"source": ValueRef.operand("source")},
                 results={"dst": source},
                 result_types={"dst": DescriptorResultType()},
                 immediates={
                     "lane": AttrProject.i64_array_element_quotient(
-                        "static_indices", element=0, divisor=half_lane_count
+                        "static_indices", element=0, divisor=chunk_lane_count
                     )
                 },
             )
@@ -113,7 +127,7 @@ def _lane_insert_rule(
     descriptor_lookup: _DescriptorLookup,
 ) -> DescriptorRule:
     lane_count = vector_bit_width // element_bit_width
-    half_lane_count = 128 // element_bit_width
+    chunk_lane_count = 128 // element_bit_width
     value_type = Scalar(element_names)
     vector_type = Vector(element_names, lanes=lane_count)
     descriptor = descriptor_lookup(descriptor_key)
@@ -121,22 +135,22 @@ def _lane_insert_rule(
     dependencies: list[Descriptor] = []
     dest = ValueRef.operand("dest")
     lane: AttrProject = AttrProject.i64_array_element("static_indices", element=0)
-    if vector_bit_width == 256:
-        extract_half = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
-        dependencies.append(extract_half)
-        dest = ValueRef.temporary("half")
+    if vector_bit_width > 128:
+        extract_chunk = descriptor_lookup(_chunk_descriptor_keys(vector_bit_width)[0])
+        dependencies.append(extract_chunk)
+        dest = ValueRef.temporary("chunk")
         lane = AttrProject.i64_array_element_remainder(
-            "static_indices", element=0, divisor=half_lane_count
+            "static_indices", element=0, divisor=chunk_lane_count
         )
         emits.append(
             _op_emit(
-                descriptor=extract_half,
+                descriptor=extract_chunk,
                 operands={"source": ValueRef.operand("dest")},
                 results={"dst": dest},
                 result_types={"dst": DescriptorResultType()},
                 immediates={
                     "lane": AttrProject.i64_array_element_quotient(
-                        "static_indices", element=0, divisor=half_lane_count
+                        "static_indices", element=0, divisor=chunk_lane_count
                     )
                 },
             )
@@ -144,7 +158,7 @@ def _lane_insert_rule(
     inserted = (
         ValueRef.result("result")
         if vector_bit_width == 128
-        else ValueRef.temporary("inserted_half")
+        else ValueRef.temporary("inserted_chunk")
     )
     emits.append(
         _op_emit(
@@ -158,13 +172,13 @@ def _lane_insert_rule(
         )
     )
     primary_descriptor = descriptor
-    if vector_bit_width == 256:
-        insert_half = descriptor_lookup("x86.avx2.vinsertf128.ymm.xmm")
-        dependencies.append(insert_half)
-        primary_descriptor = insert_half
+    if vector_bit_width > 128:
+        insert_chunk = descriptor_lookup(_chunk_descriptor_keys(vector_bit_width)[1])
+        dependencies.append(insert_chunk)
+        primary_descriptor = insert_chunk
         emits.append(
             _op_emit(
-                descriptor=insert_half,
+                descriptor=insert_chunk,
                 operands={
                     "dest": ValueRef.operand("dest"),
                     "value": inserted,
@@ -172,7 +186,7 @@ def _lane_insert_rule(
                 results={"dst": ValueRef.result("result")},
                 immediates={
                     "lane": AttrProject.i64_array_element_quotient(
-                        "static_indices", element=0, divisor=half_lane_count
+                        "static_indices", element=0, divisor=chunk_lane_count
                     )
                 },
             )
@@ -194,13 +208,13 @@ def _lane_insert_rule(
 
 
 def _lane_movement_rules(
-    descriptor_lookup: _DescriptorLookup,
+    vector_bit_widths: tuple[int, ...], descriptor_lookup: _DescriptorLookup
 ) -> tuple[DescriptorRule, ...]:
     rules: list[DescriptorRule] = []
-    for row in AVX2_LANE_FAMILIES:
+    for row in X86_LANE_FAMILIES:
         extract_key = _lane_descriptor_key(row.extract_mnemonic, row.element_bit_width)
         insert_key = _lane_descriptor_key(row.insert_mnemonic, row.element_bit_width)
-        for vector_bit_width in AVX2_VECTOR_BIT_WIDTHS:
+        for vector_bit_width in vector_bit_widths:
             rules.extend(
                 (
                     _lane_extract_rule(
@@ -258,7 +272,7 @@ def _floating_extract_rule(
 ) -> DescriptorRule:
     element_bit_width = 32 if element_name == "f32" else 64
     lane_count = vector_bit_width // element_bit_width
-    half_lane_count = 128 // element_bit_width
+    chunk_lane_count = 128 // element_bit_width
     source_type = Vector(element_name, lanes=lane_count)
     result_type = Scalar(element_name)
     permute = descriptor_lookup(
@@ -268,22 +282,22 @@ def _floating_extract_rule(
     dependencies: list[Descriptor] = []
     source = ValueRef.operand("source")
     lane: AttrProject = AttrProject.i64_array_element("static_indices", element=0)
-    if vector_bit_width == 256:
-        extract_half = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
-        dependencies.append(extract_half)
-        source = ValueRef.temporary("half")
+    if vector_bit_width > 128:
+        extract_chunk = descriptor_lookup(_chunk_descriptor_keys(vector_bit_width)[0])
+        dependencies.append(extract_chunk)
+        source = ValueRef.temporary("chunk")
         lane = AttrProject.i64_array_element_remainder(
-            "static_indices", element=0, divisor=half_lane_count
+            "static_indices", element=0, divisor=chunk_lane_count
         )
         emits.append(
             _op_emit(
-                descriptor=extract_half,
+                descriptor=extract_chunk,
                 operands={"source": ValueRef.operand("source")},
                 results={"dst": source},
                 result_types={"dst": DescriptorResultType()},
                 immediates={
                     "lane": AttrProject.i64_array_element_quotient(
-                        "static_indices", element=0, divisor=half_lane_count
+                        "static_indices", element=0, divisor=chunk_lane_count
                     )
                 },
             )
@@ -323,10 +337,10 @@ def _insert_f32_rule(
     lane: AttrProject = AttrProject.i64_array_element(
         "static_indices", element=0, target_bit_offset=4
     )
-    if vector_bit_width == 256:
-        extract_half = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
-        dependencies.append(extract_half)
-        dest = ValueRef.temporary("half")
+    if vector_bit_width > 128:
+        extract_chunk = descriptor_lookup(_chunk_descriptor_keys(vector_bit_width)[0])
+        dependencies.append(extract_chunk)
+        dest = ValueRef.temporary("chunk")
         lane = AttrProject.i64_array_element_remainder(
             "static_indices",
             element=0,
@@ -335,7 +349,7 @@ def _insert_f32_rule(
         )
         emits.append(
             _op_emit(
-                descriptor=extract_half,
+                descriptor=extract_chunk,
                 operands={"source": ValueRef.operand("dest")},
                 results={"dst": dest},
                 result_types={"dst": DescriptorResultType()},
@@ -349,7 +363,7 @@ def _insert_f32_rule(
     inserted = (
         ValueRef.result("result")
         if vector_bit_width == 128
-        else ValueRef.temporary("inserted_half")
+        else ValueRef.temporary("inserted_chunk")
     )
     emits.append(
         _op_emit(
@@ -363,13 +377,13 @@ def _insert_f32_rule(
         )
     )
     primary_descriptor = insert
-    if vector_bit_width == 256:
-        insert_half = descriptor_lookup("x86.avx2.vinsertf128.ymm.xmm")
-        dependencies.append(insert_half)
-        primary_descriptor = insert_half
+    if vector_bit_width > 128:
+        insert_chunk = descriptor_lookup(_chunk_descriptor_keys(vector_bit_width)[1])
+        dependencies.append(insert_chunk)
+        primary_descriptor = insert_chunk
         emits.append(
             _op_emit(
-                descriptor=insert_half,
+                descriptor=insert_chunk,
                 operands={
                     "dest": ValueRef.operand("dest"),
                     "value": inserted,
@@ -399,30 +413,34 @@ def _insert_f32_rule(
     )
 
 
-def _insert_f64x4_rule(descriptor_lookup: _DescriptorLookup) -> DescriptorRule:
-    extract_half = descriptor_lookup("x86.avx2.vextractf128.xmm.ymm")
+def _insert_f64_wide_rule(
+    vector_bit_width: int, descriptor_lookup: _DescriptorLookup
+) -> DescriptorRule:
+    extract_chunk_key, insert_chunk_key = _chunk_descriptor_keys(vector_bit_width)
+    extract_chunk = descriptor_lookup(extract_chunk_key)
     move_bits = descriptor_lookup("x86.avx2.vmovq.gpr64.xmm")
     insert_lane = descriptor_lookup("x86.avx2.vpinsrq.xmm")
-    insert_half = descriptor_lookup("x86.avx2.vinsertf128.ymm.xmm")
+    insert_chunk = descriptor_lookup(insert_chunk_key)
+    lane_count = vector_bit_width // 64
     return DescriptorRule(
         source_op=vector.vector_insert,
-        descriptor=insert_half,
+        descriptor=insert_chunk,
         guards=(
             Guard.value_type("value", _F64),
-            Guard.value_type("dest", Vector("f64", lanes=4)),
-            Guard.value_type("result", Vector("f64", lanes=4)),
+            Guard.value_type("dest", Vector("f64", lanes=lane_count)),
+            Guard.value_type("result", Vector("f64", lanes=lane_count)),
             Guard.operand_segment_count("indices", 0),
             Guard.i64_array_count("static_indices", 1),
-            Guard.i64_array_element_range("static_indices", 0, 0, 3),
-            Guard.descriptor_available(extract_half),
+            Guard.i64_array_element_range("static_indices", 0, 0, lane_count - 1),
+            Guard.descriptor_available(extract_chunk),
             Guard.descriptor_available(move_bits),
             Guard.descriptor_available(insert_lane),
         ),
         emit=(
             _op_emit(
-                descriptor=extract_half,
+                descriptor=extract_chunk,
                 operands={"source": ValueRef.operand("dest")},
-                results={"dst": ValueRef.temporary("half")},
+                results={"dst": ValueRef.temporary("chunk")},
                 result_types={"dst": DescriptorResultType()},
                 immediates={
                     "lane": AttrProject.i64_array_element_quotient(
@@ -439,10 +457,10 @@ def _insert_f64x4_rule(descriptor_lookup: _DescriptorLookup) -> DescriptorRule:
             _op_emit(
                 descriptor=insert_lane,
                 operands={
-                    "dest": ValueRef.temporary("half"),
+                    "dest": ValueRef.temporary("chunk"),
                     "value": ValueRef.temporary("value_bits"),
                 },
-                results={"dst": ValueRef.temporary("inserted_half")},
+                results={"dst": ValueRef.temporary("inserted_chunk")},
                 result_types={"dst": DescriptorResultType()},
                 immediates={
                     "lane": AttrProject.i64_array_element_remainder(
@@ -451,10 +469,10 @@ def _insert_f64x4_rule(descriptor_lookup: _DescriptorLookup) -> DescriptorRule:
                 },
             ),
             _op_emit(
-                descriptor=insert_half,
+                descriptor=insert_chunk,
                 operands={
                     "dest": ValueRef.operand("dest"),
-                    "value": ValueRef.temporary("inserted_half"),
+                    "value": ValueRef.temporary("inserted_chunk"),
                 },
                 results={"dst": ValueRef.result("result")},
                 immediates={
@@ -471,7 +489,7 @@ def avx2_lane_movement_rules(
     descriptor_lookup: _DescriptorLookup,
 ) -> tuple[ContractCase, ...]:
     return (
-        *_lane_movement_rules(descriptor_lookup),
+        *_lane_movement_rules(AVX2_VECTOR_BIT_WIDTHS, descriptor_lookup),
         *(
             _floating_extract_rule(element_name, vector_bit_width, descriptor_lookup)
             for element_name in ("f32", "f64")
@@ -483,5 +501,26 @@ def avx2_lane_movement_rules(
         ),
         _insert_f64_rule(0, descriptor_lookup),
         _insert_f64_rule(1, descriptor_lookup),
-        _insert_f64x4_rule(descriptor_lookup),
+        _insert_f64_wide_rule(256, descriptor_lookup),
+    )
+
+
+def avx512_lane_movement_rules(
+    descriptor_lookup: _DescriptorLookup,
+) -> tuple[ContractCase, ...]:
+    return (
+        *_lane_movement_rules(AVX512_VECTOR_BIT_WIDTHS, descriptor_lookup),
+        *(
+            _floating_extract_rule(element_name, vector_bit_width, descriptor_lookup)
+            for element_name in ("f32", "f64")
+            for vector_bit_width in AVX512_VECTOR_BIT_WIDTHS
+        ),
+        *(
+            _insert_f32_rule(vector_bit_width, descriptor_lookup)
+            for vector_bit_width in AVX512_VECTOR_BIT_WIDTHS
+        ),
+        *(
+            _insert_f64_wide_rule(vector_bit_width, descriptor_lookup)
+            for vector_bit_width in AVX512_VECTOR_BIT_WIDTHS
+        ),
     )

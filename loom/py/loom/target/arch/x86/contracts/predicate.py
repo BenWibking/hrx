@@ -27,11 +27,11 @@ from loom.target.arch.x86.contracts.rule_builders import (
 from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_COMPARE_MNEMONICS,
     AVX2_INTEGER_COMPARE_MNEMONICS,
-    AVX2_LANE_FAMILIES,
     AVX2_PAYLOAD_ELEMENT_NAMES,
     AVX2_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
+    X86_LANE_FAMILIES,
     VectorElement,
 )
 from loom.target.contracts import (
@@ -588,7 +588,7 @@ def _predicate_lane_movement_rules(
 ) -> tuple[DescriptorRule, ...]:
     lane_mnemonics = {
         row.element_bit_width: (row.extract_mnemonic, row.insert_mnemonic)
-        for row in AVX2_LANE_FAMILIES
+        for row in X86_LANE_FAMILIES
     }
     move_zero = descriptor_lookup("x86.scalar.movimm.gpr32")
     subtract = descriptor_lookup("x86.scalar.sub.gpr32")

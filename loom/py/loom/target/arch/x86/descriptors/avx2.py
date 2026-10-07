@@ -19,13 +19,13 @@ from loom.target.arch.x86.vector_families import (
     AVX2_FLOAT_FMA_MNEMONICS,
     AVX2_INTEGER_BINARY_FAMILIES,
     AVX2_INTEGER_COMPARE_MNEMONICS,
-    AVX2_LANE_FAMILIES,
     AVX2_SCALAR_FLOAT_BINARY_FAMILIES,
     AVX2_SCALAR_FLOAT_EXTREMA_MNEMONICS,
     AVX2_SCALAR_FLOAT_FMA_MNEMONICS,
     AVX2_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
+    X86_LANE_FAMILIES,
     VectorBinaryFamily,
     VectorLaneFamily,
 )
@@ -496,7 +496,7 @@ _X86_AVX2_VECTOR_DESCRIPTORS = (
     ),
     *(
         descriptor
-        for row in AVX2_LANE_FAMILIES
+        for row in X86_LANE_FAMILIES
         for descriptor in (
             _vector_lane_extract_descriptor(row),
             _vector_lane_insert_descriptor(row),

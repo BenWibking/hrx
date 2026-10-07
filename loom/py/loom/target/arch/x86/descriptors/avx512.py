@@ -85,6 +85,7 @@ from .common import (
     _SCHEDULE_VECTOR_I32_XMM,
     _SCHEDULE_VECTOR_I32_YMM,
     _SCHEDULE_VECTOR_I32_ZMM,
+    _TWO_LANE_IMMEDIATE,
     _asm,
     _gpr32_operand,
     _gpr64_operand,
@@ -123,6 +124,30 @@ def _direct_broadcast_asm_mnemonic(
     ):
         return f"avx512.{mnemonic}.{_REGISTER_SUFFIXES[vector_bit_width]}"
     return None
+
+
+def _zmm_widen_descriptor(
+    mnemonic: str,
+    source_bit_width: int,
+    result_element_bit_width: int,
+) -> Descriptor:
+    source_suffix = _REGISTER_SUFFIXES[source_bit_width]
+    return Descriptor(
+        key=f"x86.avx512.{mnemonic}.zmm.{source_suffix}",
+        mnemonic=mnemonic,
+        semantic_tag=(
+            f"integer.extui.i8x{512 // result_element_bit_width}."
+            f"i{result_element_bit_width}x{512 // result_element_bit_width}"
+        ),
+        operands=(_zmm_result(), _vector_operand(source_bit_width, "source")),
+        asm_forms=_asm(
+            mnemonic=f"avx512.{mnemonic}.zmm.{source_suffix}",
+            results=("dst",),
+            operands=("source",),
+        ),
+        schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+        flags=(DescriptorFlag.DEAD_REMOVABLE,),
+    )
 
 
 def _predicate_conversion_descriptor(
@@ -561,6 +586,72 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
             schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
             flags=(DescriptorFlag.DEAD_REMOVABLE,),
         ),
+        Descriptor(
+            key="x86.avx512.vinsertf32x4.zmm.xmm",
+            mnemonic="vinsertf32x4",
+            semantic_tag="bits.insert.128.zmm",
+            operands=(
+                _zmm_result(),
+                _zmm_operand("dest"),
+                _xmm_operand("value"),
+            ),
+            immediates=(_LANE_I32X4_IMMEDIATE,),
+            asm_forms=_asm(
+                mnemonic="vinsertf32x4.zmm.xmm",
+                results=("dst",),
+                operands=("dest", "value"),
+                immediates=("lane",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_F32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        Descriptor(
+            key="x86.avx512.vextracti64x4.ymm.zmm",
+            mnemonic="vextracti64x4",
+            semantic_tag="bits.extract.256.zmm",
+            operands=(_vector_result(256), _zmm_operand("source")),
+            immediates=(_TWO_LANE_IMMEDIATE,),
+            asm_forms=_asm(
+                mnemonic="vextracti64x4.ymm",
+                results=("dst",),
+                operands=("source",),
+                immediates=("lane",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        Descriptor(
+            key="x86.avx512.vinserti64x4.zmm.ymm",
+            mnemonic="vinserti64x4",
+            semantic_tag="bits.insert.256.zmm",
+            operands=(
+                _zmm_result(),
+                _zmm_operand("dest"),
+                _vector_operand(256, "value"),
+            ),
+            immediates=(_TWO_LANE_IMMEDIATE,),
+            asm_forms=_asm(
+                mnemonic="vinserti64x4.zmm.ymm",
+                results=("dst",),
+                operands=("dest", "value"),
+                immediates=("lane",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
+        Descriptor(
+            key="x86.avx512.vpmovwb.ymm.zmm",
+            mnemonic="vpmovwb",
+            semantic_tag="integer.trunci.i16x32.i8x32",
+            operands=(_vector_result(256), _zmm_operand("source")),
+            asm_forms=_asm(
+                mnemonic="avx512.vpmovwb.ymm.zmm",
+                results=("dst",),
+                operands=("source",),
+            ),
+            schedule_class=_SCHEDULE_VECTOR_I32_ZMM,
+            flags=(DescriptorFlag.DEAD_REMOVABLE,),
+        ),
         *(
             _vector_splat_descriptor(
                 vector_bit_width=vector_bit_width,
@@ -605,6 +696,14 @@ X86_AVX512_CORE_DESCRIPTOR_SET = DescriptorSet(
         _vector_zero_descriptor(
             vector_bit_width=512,
             key="x86.avx512.vxorps.zero.zmm",
+        ),
+        *(
+            _zmm_widen_descriptor(mnemonic, source_bit_width, element_bit_width)
+            for mnemonic, source_bit_width, element_bit_width in (
+                ("vpmovzxbw", 256, 16),
+                ("vpmovzxbd", 128, 32),
+                ("vpmovzxbq", 128, 64),
+            )
         ),
         *(
             _vector_i32_binary_descriptor(
