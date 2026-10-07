@@ -361,3 +361,26 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
 }
 
 // ----
+
+// ====
+// RUN: emit aie2p-xdna
+
+// Unused declarations obey the same dense ABI order as used bindings.
+aie2p.target<configuration> @configuration {device_profile = "amd.xdna.strix.17f0_10"}
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration) abi(array_program) @with_unused_arguments() asm {
+  %columns = constant 1 : reg<aie2p.config.scalar : i64>
+  entry %columns, @initialize, @invoke
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration) @initialize() asm {
+  return
+}
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration) @invoke() asm {
+  %skipped_ordinal = constant 1 : reg<aie2p.config.scalar : i64>
+  // ERROR@+1: XDNA/043 {actual="1", expected="0"}
+  binding.unused %skipped_ordinal
+  return
+}

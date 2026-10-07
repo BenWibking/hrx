@@ -489,3 +489,15 @@ low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @invoke
   wait.mask32 %status, %mask, %value
   return
 }
+
+// ====
+// RUN: format bytecode
+
+// An unused ABI declaration has no addressable result.
+aie2p.target<configuration> @configuration
+
+low.func.def target<amd.xdna.aie2p.configuration>(@configuration) @declare_arguments() asm {
+  %ordinal = constant 0 : reg<aie2p.config.scalar : i64>
+  binding.unused %ordinal
+  return
+}

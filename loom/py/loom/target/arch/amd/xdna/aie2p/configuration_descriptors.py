@@ -130,6 +130,9 @@ _DESCRIPTORS = (
             *(_operand(name) for name in ("ordinal", "access", "length", "alignment")),
         ),
     ),
+    # Preserve an unused public argument ordinal without a memory requirement
+    # or a binding value that could be used to form a relocated address.
+    _instruction("binding.unused", (_operand("ordinal"),)),
     _instruction(
         "range",
         (

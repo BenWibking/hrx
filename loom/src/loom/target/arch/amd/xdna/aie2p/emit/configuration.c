@@ -402,6 +402,7 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
         values[results[0]].scalar =
             loom_aie2p_configuration_configuration_constant_value(attrs).i64;
         continue;
+      case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_BINDING_UNUSED:
       case AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_BINDING: {
         if (SCALAR(0) != emitter->entry->binding_count) {
           const loom_diagnostic_param_t params[] = {
@@ -410,6 +411,12 @@ static iree_status_t loom_aie2p_configuration_phase_emit(
           };
           status = loom_aie2p_configuration_diagnose(
               emitter, op, LOOM_ERR_XDNA_043, params, IREE_ARRAYSIZE(params));
+          continue;
+        }
+        if (opcode ==
+            AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_BINDING_UNUSED) {
+          bindings[emitter->entry->binding_count++] =
+              (iree_xdna_elf_binding_record_t){0};
           continue;
         }
         IREE_RETURN_IF_ERROR(loom_aie2p_configuration_check_scalar(
