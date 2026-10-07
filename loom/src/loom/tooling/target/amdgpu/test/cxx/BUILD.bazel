@@ -148,6 +148,28 @@ loom_test(
     target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
 )
 
+loom_test(
+    name = "q8s32_specialization_test",
+    srcs = [
+        "q8s32_specialization.cxx",
+        "q8s32_specialization_providers.cxx",
+    ],
+    benchmark_smoke = False,
+    data = ["q8s32_specialization.h"],
+    execution_profiles = _EXECUTION_PROFILES,
+    target_compatible_with = loom_config_compatible_with(["//loom/config/import:cxx"]),
+    variants = {
+        "values16": {
+            "case": "q8s32_values16",
+            "configs": {"model.q8s32.input_capacity": "768"},
+        },
+        "values32": {
+            "case": "q8s32_values32",
+            "configs": {"model.q8s32.input_capacity": "512"},
+        },
+    },
+)
+
 loom_check_test(
     name = "mxfp_group_dot_lowering",
     src = "mxfp_group_dot.cxx-test",
@@ -337,6 +359,26 @@ iree_execution_test_suite(
     tools = {
         "loom-compile": "//loom/src/loom/tools/loom-compile",
         "loom-import-cxx": "//loom/src/loom/tools/loom-import-cxx",
+    },
+)
+
+iree_execution_test_suite(
+    name = "q8s32_specialization_link_test",
+    data = [
+        "q8s32_specialization.cxx",
+        "q8s32_specialization.h",
+        "q8s32_specialization_providers.cxx",
+    ],
+    manifests = ["q8s32_specialization.test.json"],
+    tags = ["hostonly"],
+    target_compatible_with = loom_config_compatible_with([
+        "//loom/config/import:cxx",
+        "//loom/config/target:amdgpu_artifacts",
+    ]),
+    tools = {
+        "loom-compile": "//loom/src/loom/tools/loom-compile",
+        "loom-import-cxx": "//loom/src/loom/tools/loom-import-cxx",
+        "loom-link": "//loom/src/loom/tools/loom-link",
     },
 )
 
