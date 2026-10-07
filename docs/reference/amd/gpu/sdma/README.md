@@ -19,7 +19,7 @@ depend on the engine generation and native transport.
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED` / legacy `DMA_PACKET_WRITE`: direct versus minus-one counts, policy layouts, metadata/control callers, inline versus uploaded input and final storage use. |
 | [Ordering](ordering.md) | Pending-transfer drains, overlap, NPD and resource ownership. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
-| [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: comparisons, retry controls, signal lifetime and scoped layouts. |
+| [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: legacy/classic/wide layouts, policy and retry fields, dependency callers, signal lifetime, and progress versus terminal joins. |
 | [Conditional execution](conditional.md) | `COND_EXE`: guarded DWORD ranges, Boolean64 sampling, per-execution predicate state and driver-owned submission conditions. |
 | [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` and fused copy signaling: distinct completion and retirement protocols. |
 | [Cache maintenance](cache.md) | USER_GCR, scheduled kernel GCR, HDP and command publication. |

@@ -80,12 +80,13 @@ builder][rocr-gcr], [factory][rocr-select]
 
 ## HDP and command publication
 
-ROCr places applicable HDP maintenance after dependency waits and before GCR
-and payload work. Its support predicate includes major 9 and later except
-10.1, and excludes a GPU-to-CPU XGMI link. That predicate, the selected backing
-and transport remain part of the recipe. In-stream HDP or GCR cannot publish
-the command bytes needed to fetch that same command; ring backing and host
-publication ordering have their own contract. [Support][rocr-init],
+ROCr's ordinary `SubmitCommand` places applicable HDP maintenance after
+dependency waits and before GCR and payload work. Its support predicate
+includes major 9 and later except 10.1, and excludes a GPU-to-CPU XGMI link.
+That predicate, the selected backing and transport remain part of the recipe.
+In-stream HDP or GCR cannot publish the command bytes needed to fetch that
+same command; ring backing and host publication ordering have their own
+contract. [Support][rocr-init],
 [stream order][rocr-submit]
 
 The HDP enable setting is sampled at initialization and checked at stream
