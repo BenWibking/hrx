@@ -296,28 +296,6 @@ static bool loom_aie2p_low_verify_is_core_body_op(
   return op->parent_block->parent_region == function_body;
 }
 
-static iree_status_t loom_aie2p_low_verify_emit_call_policy_error(
-    loom_low_verify_context_t* context,
-    const loom_aie2p_low_verify_state_t* state, const loom_op_t* op) {
-  const loom_symbol_ref_t callee = loom_low_func_call_callee(op);
-  const loom_diagnostic_param_t params[] = {
-      loom_param_string(loom_low_diagnostic_target_key(state->target)),
-      loom_param_string(loom_low_diagnostic_export_name(state->target)),
-      loom_param_string(loom_low_diagnostic_config_key(state->target)),
-      loom_param_string(state->function_name),
-      loom_param_string(loom_low_diagnostic_operation_name(state->module, op)),
-      loom_param_with_field_ref(
-          loom_param_string(
-              loom_low_diagnostic_symbol_name(state->module, callee)),
-          loom_low_func_call_callee_diagnostic_ref()),
-      loom_param_string(IREE_SV(
-          "the selected target requires every Low call to be inlined before "
-          "emission")),
-  };
-  return loom_low_verify_context_emit(context, op, LOOM_ERR_TARGET_072, params,
-                                      IREE_ARRAYSIZE(params));
-}
-
 static iree_status_t loom_aie2p_low_verify_emit_unsupported_core_op(
     loom_low_verify_context_t* context,
     const loom_aie2p_low_verify_state_t* state, const loom_op_t* op) {
@@ -349,9 +327,10 @@ static iree_status_t loom_aie2p_low_verify_core_op(
           LOOM_AIE2P_CORE_STRUCTURE_UNSUPPORTED) {
     return iree_ok_status();
   }
+  // Low helpers are valid authored and intermediate IR. The common pipeline
+  // applies the target's required-inline policy before native frame admission.
   if (loom_low_func_call_isa(packet->op)) {
-    return loom_aie2p_low_verify_emit_call_policy_error(context, state,
-                                                        packet->op);
+    return iree_ok_status();
   }
   return loom_aie2p_low_verify_emit_unsupported_core_op(context, state,
                                                         packet->op);

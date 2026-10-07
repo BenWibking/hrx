@@ -822,6 +822,7 @@ loom_check_test_suite(
     "test/leaf_rematerialization.loom-test"
     "test/leaf_schedule.loom-test"
     "test/leaf_state_read_timing.loom-test"
+    "test/low_calls.loom-test"
     "test/math_contraction.loom-test"
     "test/math_policy_activations.loom-test"
     "test/module_contracts.loom-test"
@@ -1072,8 +1073,11 @@ loom_cc_library(
     loom::codegen::low::allocation::diagnostics
     loom::codegen::low::allocation::target_constraints
     loom::codegen::low::descriptors
+    loom::codegen::low::diagnostics
     loom::codegen::low::frame
+    loom::error::error_defs
     loom::ir
+    loom::ops::low
     loom::target::reporting::low
     loom::target::reporting::report
     loom::util::fact_table

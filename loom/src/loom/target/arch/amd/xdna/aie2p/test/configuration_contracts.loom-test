@@ -427,9 +427,9 @@ CHECK-NOT: func.call *
 CHECK-NOT: *low.invoke *
 
 // ====
-// RUN: verify
+// RUN: emit source-low output=module
 
-// A complete image has no call edges awaiting materialization.
+// Configuration worker references preserve the ordinary helper-inlining path.
 aie2p.target<configuration> @configuration_target
 
 aie2p.target<core> @core_target
@@ -439,15 +439,30 @@ low.func.def target<amd.xdna.aie2p.core>(@core_target) @helper() asm {
 }
 
 low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
-  // ERROR@+1: TARGET/072 {function_name="worker", op_name="low.func.call", callee_name="helper"}
   low.func.call @helper() : ()
   return
 }
 
-low.func.def target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
-  %zero = constant 0 : reg<aie2p.config.scalar : i64>
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %column = constant 0 : reg<aie2p.config.scalar : i64>
   %row = constant 2 : reg<aie2p.config.scalar : i64>
-  program.load %zero, %row, @worker
+  program.load %column, %row, @worker
+  return
+}
+
+// ----
+aie2p.target<configuration> @configuration_target
+
+aie2p.target<core> @core_target
+
+low.func.def target<amd.xdna.aie2p.core>(@core_target) @worker() asm {
+  return
+}
+
+low.func.def public retain target<amd.xdna.aie2p.configuration>(@configuration_target) @initialize() asm {
+  %column = constant 0 : reg<aie2p.config.scalar : i64>
+  %row = constant 2 : reg<aie2p.config.scalar : i64>
+  program.load %column, %row, @worker
   return
 }
 
