@@ -44,6 +44,7 @@ from loom.target.low_descriptors import (
     Effect,
     EncodingFieldValue,
     Immediate,
+    ImmediateEncodingSlice,
     Operand,
     OperandAddressMapKind,
     OperandFlag,
@@ -302,29 +303,34 @@ def _materialize_immediates(
         ) from exc
 
 
-def _mapped_immediate_field_names(
+def _mapped_immediate_fields(
     overlay: AmdgpuDescriptorOverlay,
-) -> tuple[str, ...]:
-    if overlay.immediate_fields:
-        return overlay.immediate_fields
-    field_names: list[str] = []
-    for immediate in overlay.immediates:
-        field_ids = (
-            (immediate.encoding_field_id,) if immediate.encoding_field_id else ()
-        ) + tuple(
-            encoding_slice.encoding_field_id
-            for encoding_slice in immediate.encoding_slices
-        )
+) -> tuple[tuple[str, Immediate, ImmediateEncodingSlice | None], ...]:
+    mapped_fields: list[tuple[str, Immediate, ImmediateEncodingSlice | None]] = []
+    for immediate in _materialize_immediates(overlay):
         try:
-            field_names.extend(
-                amdgpu_encoding_field_name(field_id) for field_id in field_ids
+            if immediate.encoding_field_id:
+                mapped_fields.append(
+                    (
+                        amdgpu_encoding_field_name(immediate.encoding_field_id),
+                        immediate,
+                        None,
+                    )
+                )
+            mapped_fields.extend(
+                (
+                    amdgpu_encoding_field_name(encoding_slice.encoding_field_id),
+                    immediate,
+                    encoding_slice,
+                )
+                for encoding_slice in immediate.encoding_slices
             )
         except KeyError as exc:
             raise AmdgpuDescriptorOverlayError(
                 f"descriptor overlay '{overlay.descriptor_key}' immediate "
                 f"'{immediate.field_name}' references unmapped encoding field"
             ) from exc
-    return tuple(field_names)
+    return tuple(mapped_fields)
 
 
 def _materialize_encoding_field_values(
@@ -589,7 +595,7 @@ def _validate_operand_overlay(
             )
         covered_fields.add(ignored_operand.xml_field_name)
 
-    for immediate_field in _mapped_immediate_field_names(overlay):
+    for immediate_field, immediate, encoding_slice in _mapped_immediate_fields(overlay):
         xml_operand = xml_operands.get(immediate_field)
         if xml_operand is not None:
             if not xml_operand.is_input or xml_operand.is_output:
@@ -608,32 +614,36 @@ def _validate_operand_overlay(
                 f"missing immediate encoding field '{immediate_field}' on instruction "
                 f"'{instruction.name}' encoding '{encoding.encoding_name}'"
             )
-    for immediate in overlay.immediates:
-        for encoding_slice in immediate.encoding_slices:
-            try:
-                field_name = amdgpu_encoding_field_name(
-                    encoding_slice.encoding_field_id
-                )
-            except KeyError as exc:
-                raise AmdgpuDescriptorOverlayError(
-                    f"descriptor overlay '{overlay.descriptor_key}' immediate "
-                    f"'{immediate.field_name}' references unmapped sliced "
-                    f"encoding field id {encoding_slice.encoding_field_id}"
-                ) from exc
-            if field_name not in encoding_fields:
+        bit_count = _encoding_field_bit_count(encoding_fields, immediate_field)
+        if bit_count is None and xml_operand is not None:
+            bit_count = xml_operand.size_bits
+        if encoding_slice is not None:
+            if immediate_field not in encoding_fields:
                 raise AmdgpuDescriptorOverlayError(
                     f"descriptor overlay '{overlay.descriptor_key}' immediate "
                     f"'{immediate.field_name}' references missing sliced "
-                    f"encoding field '{field_name}' on instruction "
+                    f"encoding field '{immediate_field}' on instruction "
                     f"'{instruction.name}' encoding '{encoding.encoding_name}'"
                 )
-            bit_count = _encoding_field_bit_count(encoding_fields, field_name)
             if bit_count is not None and encoding_slice.bit_count > bit_count:
                 raise AmdgpuDescriptorOverlayError(
                     f"descriptor overlay '{overlay.descriptor_key}' immediate "
-                    f"'{immediate.field_name}' slice for field '{field_name}' "
+                    f"'{immediate.field_name}' slice for field "
+                    f"'{immediate_field}' "
                     f"copies {encoding_slice.bit_count} bits into {bit_count}-bit field"
                 )
+        elif (
+            immediate.encoding_field_bit_offset is not None
+            and bit_count is not None
+            and immediate.encoding_field_bit_offset + immediate.bit_width > bit_count
+        ):
+            raise AmdgpuDescriptorOverlayError(
+                f"descriptor overlay '{overlay.descriptor_key}' immediate "
+                f"'{immediate.field_name}' subfield range "
+                f"[{immediate.encoding_field_bit_offset}, "
+                f"{immediate.encoding_field_bit_offset + immediate.bit_width}) "
+                f"exceeds {bit_count}-bit encoding field '{immediate_field}'"
+            )
     for field_name, _value in overlay.fixed_encoding_fields:
         xml_operand = xml_operands.get(field_name)
         if field_name not in encoding_fields and xml_operand is None:
@@ -871,6 +881,20 @@ def _format_architectural_xml_operand(xml_operand: AmdgpuIsaOperand) -> str:
 
 
 def _validate_unique_overlay_fields(overlay: AmdgpuDescriptorOverlay) -> None:
+    def immediate_subfield_mask(
+        immediate: Immediate,
+        encoding_slice: ImmediateEncodingSlice | None,
+    ) -> int | None:
+        bit_offset = immediate.encoding_field_bit_offset
+        if (
+            encoding_slice is not None
+            or bit_offset is None
+            or bit_offset < 0
+            or immediate.bit_width <= 0
+        ):
+            return None
+        return ((1 << immediate.bit_width) - 1) << bit_offset
+
     covered_fields: set[str] = set()
     operand_fields: dict[str, list[int]] = {}
     for operand_index, operand_overlay in enumerate(overlay.operands):
@@ -894,12 +918,27 @@ def _validate_unique_overlay_fields(overlay: AmdgpuDescriptorOverlay) -> None:
                 "operands"
             )
         covered_fields.add(ignored_operand.xml_field_name)
-    for immediate_field in _mapped_immediate_field_names(overlay):
+    immediate_field_masks: dict[str, int | None] = {}
+    for immediate_field, immediate, encoding_slice in _mapped_immediate_fields(overlay):
         if immediate_field in covered_fields:
-            raise AmdgpuDescriptorOverlayError(
-                f"descriptor overlay '{overlay.descriptor_key}' repeats XML field "
-                f"'{immediate_field}' across operands and immediates"
-            )
+            if immediate_field not in immediate_field_masks:
+                raise AmdgpuDescriptorOverlayError(
+                    f"descriptor overlay '{overlay.descriptor_key}' repeats XML "
+                    f"field '{immediate_field}' across operands and immediates"
+                )
+            previous_mask = immediate_field_masks[immediate_field]
+            bit_mask = immediate_subfield_mask(immediate, encoding_slice)
+            if previous_mask is None or bit_mask is None or previous_mask & bit_mask:
+                raise AmdgpuDescriptorOverlayError(
+                    f"descriptor overlay '{overlay.descriptor_key}' uses "
+                    f"overlapping immediate subfields for XML field "
+                    f"'{immediate_field}'"
+                )
+            immediate_field_masks[immediate_field] = previous_mask | bit_mask
+            continue
+        immediate_field_masks[immediate_field] = immediate_subfield_mask(
+            immediate, encoding_slice
+        )
         covered_fields.add(immediate_field)
     for fixed_field, _value in overlay.fixed_encoding_fields:
         if fixed_field in covered_fields:
