@@ -7,6 +7,7 @@
 #include "iree/hal/drivers/amdgpu/host_queue_staging.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <future>
@@ -542,6 +543,15 @@ TEST_F(HostQueueStagingTest,
     };
     IREE_ASSERT_OK(iree_hal_amdgpu_staging_transfer_start(
         transfer.get(), action, /*completion_resource=*/nullptr));
+    // A caller-side wait may retire newer GPU work while the completion thread
+    // runs deferred callbacks. Neither may expose captures from a partial
+    // drain.
+    while (result.wait_for(std::chrono::nanoseconds(0)) !=
+           std::future_status::ready) {
+      iree_hal_amdgpu_host_queue_drain_completions_for_waiter(
+          test_device.first_host_queue());
+      std::this_thread::yield();
+    }
     // Keeping the completed transaction alive must not keep its buffer alive.
     EXPECT_EQ(result.get(), 1);
   }

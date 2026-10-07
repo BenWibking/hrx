@@ -371,12 +371,17 @@ void iree_hal_amdgpu_host_queue_enqueue_post_drain_action(
 
 static void iree_hal_amdgpu_host_queue_run_post_drain_actions(
     iree_hal_amdgpu_host_queue_t* queue) {
+  // A waiter can publish more actions while retiring a newer completion batch.
+  // Join that retirement before detaching its actions so their callbacks cannot
+  // publish terminal completion while reclaim entries still own resources.
+  iree_slim_mutex_lock(&queue->locks.completion_drain_mutex);
   iree_slim_mutex_lock(&queue->locks.post_drain_mutex);
   iree_hal_amdgpu_host_queue_post_drain_action_t* action =
       queue->post_drain.head;
   queue->post_drain.head = NULL;
   queue->post_drain.tail = NULL;
   iree_slim_mutex_unlock(&queue->locks.post_drain_mutex);
+  iree_slim_mutex_unlock(&queue->locks.completion_drain_mutex);
 
   while (action) {
     iree_hal_amdgpu_host_queue_post_drain_action_t* next_action = action->next;
