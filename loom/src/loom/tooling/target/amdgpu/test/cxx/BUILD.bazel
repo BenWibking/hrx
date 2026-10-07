@@ -21,6 +21,11 @@ load("//loom/target/amdgpu:execution_profiles.bzl", "amdgpu_execution_profile")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "q8s32_specialization.h",
+    "q8s32_specialization_providers.cxx",
+])
+
 # These sources assert zero access reports against independent reference data.
 _EXECUTION_PROFILES = [
     amdgpu_execution_profile(

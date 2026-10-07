@@ -2,14 +2,36 @@
 
 `source_to_module_benchmark` measures preprocessing, source type checking,
 import, module verification, and release through `loomc_module_import_cxx`.
-Its `NoIncludes`, `StdFloat`, `Numeric`, `Vector`, `EncodingType`, and `Encoding`
-cases use the same BF16 function body. Each named include case adds only its
-corresponding facade header: `<stdfloat>`, `<loomcxx/numeric.h>`,
-`<loomcxx/vector.h>`, `<loomcxx/encoding_type.h>`, or `<loomcxx/encoding.h>`.
-Comparing them isolates the cost of each facade. The
-source handle, context, and workspace are reused while every iteration parses
-the source again. These cases need the C++ importer and embedded includes,
-without requiring a target backend.
+Its no-use cases share one BF16 function body while adding one facade or facade
+combination: `<stdfloat>`, `<loomcxx/numeric.h>`, `<loomcxx/vector.h>`,
+`<loomcxx/encoding_type.h>`, `<loomcxx/encoding.h>`,
+`<loomcxx/predicate.h>`, `<loomcxx/kernel.h>`, or the kernel and predicate
+facades together. Comparing them with `NoIncludes` isolates header cost.
+
+`Q8S32Providers` imports the checked Q8S32 provider translation unit used by
+the target specialization tests. Its user header is served through the public
+source-provider callback, while the normal embedded facade supplies Loom
+headers. This case measures a production-shaped library import with BF16
+vectors, signed byte conversion, dot products, clustered reductions, semantic
+predicates, and five template providers. The source handles, context, and
+workspace are reused while every iteration preprocesses and parses the source
+again; no parsed C++ state is cached. These cases require the C++ importer and
+embedded includes without requiring a target backend.
+
+On an AMD Ryzen AI Max+ 395, a 2026-10-07 optimized run measured these median
+wall times over seven repetitions of 50 imports each:
+
+| Source | Source text to verified module |
+| --- | ---: |
+| Tiny BF16 function, no includes | 0.317 ms |
+| Tiny BF16 function and `predicate.h` | 0.562 ms |
+| Tiny BF16 function and `kernel.h` | 0.977 ms |
+| Tiny BF16 function and both facades | 1.235 ms |
+| Q8S32 provider library | 2.450 ms |
+
+The benchmark lease was held, CPU scaling and ASLR were disabled, and the
+canonical optimized configuration supplied optimization and ThinLTO. Repetition
+coefficients of variation ranged from 0.7% to 6.3%.
 
 ## Source to HSACO
 

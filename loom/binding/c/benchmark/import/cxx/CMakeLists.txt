@@ -30,6 +30,25 @@ iree_c_embed_data(
 )
 endif()
 
+if(LOOM_IMPORT_CXX AND LOOM_IMPORT_CXX_EMBED_INCLUDES)
+iree_c_embed_data(
+  NAME
+    q8s32_sources
+  SRCS
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization.h"
+    "${PROJECT_SOURCE_DIR}/loom/src/loom/tooling/target/amdgpu/test/cxx/q8s32_specialization_providers.cxx"
+  C_FILE_OUTPUT
+    "q8s32_sources.c"
+  H_FILE_OUTPUT
+    "q8s32_sources.h"
+  IDENTIFIER
+    "loomc_cxx_benchmark_q8s32_sources"
+  TESTONLY
+  FLATTEN
+  PUBLIC
+)
+endif()
+
 if(LOOM_IMPORT_CXX AND LOOM_IMPORT_CXX_EMBED_INCLUDES AND LOOM_EMIT_AMDGPU)
 loom_cc_benchmark(
   NAME
@@ -55,6 +74,7 @@ loom_cc_benchmark(
   SRCS
     "source_to_module_benchmark.cc"
   DEPS
+    ::q8s32_sources
     iree::base
     iree::testing::benchmark_main
     loom::binding::c::benchmark::compile_throughput_benchmark_harness
