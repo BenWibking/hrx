@@ -161,7 +161,7 @@ loom_cc_library(
   DEPS
     iree::base
     iree::hal
-    loom::target::provider
+    loom::target::types
   PUBLIC
 )
 

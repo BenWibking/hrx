@@ -86,7 +86,7 @@ loom_cc_library(
     name = "artifact",
     hdrs = ["artifact.h"],
     deps = [
-        "//loom/src/loom/target:provider",
+        "//loom/src/loom/target:types",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
     ],

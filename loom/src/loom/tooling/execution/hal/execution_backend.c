@@ -320,7 +320,8 @@ iree_status_t loom_run_hal_execution_backend_run_one_shot(
       !request->options->hal_emit_only) {
     const loom_device_artifact_t device_artifact = {
         .executable_target = candidate.executable_target,
-        .artifact = &candidate.artifact,
+        .contents = candidate.artifact.contents,
+        .target_bundle = candidate.artifact.target_bundle,
     };
     loom_run_hal_invocation_request_t invocation_request = {0};
     loom_run_hal_invocation_request_initialize(&invocation_request);

@@ -783,7 +783,8 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
 
   const loom_device_artifact_t device_artifact = {
       .executable_target = provider->candidate.executable_target,
-      .artifact = &provider->candidate.artifact,
+      .contents = provider->candidate.artifact.contents,
+      .target_bundle = provider->candidate.artifact.target_bundle,
   };
   status = loom_run_hal_prepared_candidate_prepare(
       &provider->context->runtime, &device_artifact,
