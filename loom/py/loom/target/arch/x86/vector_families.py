@@ -238,6 +238,26 @@ AVX2_FLOAT_FMA_MNEMONICS = {
 
 AVX512_FLOAT_FMA_MNEMONICS = AVX2_FLOAT_FMA_MNEMONICS
 
+AVX512_INTEGER_COMPARE_MNEMONICS = {
+    element.name: (f"vpcmp{suffix}", f"vpcmpu{suffix}")
+    for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+}
+
+AVX512_FLOAT_COMPARE_MNEMONICS = AVX2_FLOAT_COMPARE_MNEMONICS
+
+AVX512_SELECT_MNEMONICS = {
+    **{
+        element.name: f"vpblendm{suffix}"
+        for element, suffix in zip(INTEGER_ELEMENTS, ("b", "w", "d", "q"), strict=True)
+    },
+    **{
+        element.name: f"vpblendm{suffix}"
+        for element, suffix in zip(STORAGE_ELEMENTS, ("b", "b", "w", "w"), strict=True)
+    },
+    "f32": "vblendmps",
+    "f64": "vblendmpd",
+}
+
 AVX2_SCALAR_FLOAT_FMA_MNEMONICS = {
     "f32": "vfmadd231ss",
     "f64": "vfmadd231sd",
@@ -303,6 +323,14 @@ def validate_vector_families() -> None:
     ]
     if len(avx512_keys) != len(set(avx512_keys)):
         raise ValueError("duplicate AVX-512 source-operation and element family")
+    if set(AVX512_INTEGER_COMPARE_MNEMONICS) != {
+        element.name for element in INTEGER_ELEMENTS
+    }:
+        raise ValueError(
+            "AVX-512 integer comparison rows must cover every integer element"
+        )
+    if set(AVX512_SELECT_MNEMONICS) != set(AVX2_PAYLOAD_ELEMENT_NAMES):
+        raise ValueError("AVX-512 select rows must cover every payload element")
 
 
 validate_vector_families()

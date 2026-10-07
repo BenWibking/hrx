@@ -247,6 +247,7 @@ loom_check_test_suite(
     "test/source_low/source_low_avx2_reductions.loom-test"
     "test/source_low/source_low_avx512_families.loom-test"
     "test/source_low/source_low_avx512_packed_dot.loom-test"
+    "test/source_low/source_low_avx512_predicates.loom-test"
     "test/source_low/source_low_avx_vnni.loom-test"
     "test/source_low/source_low_contraction.loom-test"
     "test/source_low/source_low_invoke.loom-test"

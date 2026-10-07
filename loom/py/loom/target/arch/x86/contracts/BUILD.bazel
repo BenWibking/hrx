@@ -17,6 +17,7 @@ iree_py_library(
         "__init__.py",
         "avx2.py",
         "avx512.py",
+        "avx512_predicate.py",
         "constants.py",
         "float_narrowing.py",
         "floating_extrema.py",

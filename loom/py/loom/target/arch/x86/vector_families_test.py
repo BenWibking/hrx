@@ -18,8 +18,11 @@ from loom.target.arch.x86.vector_families import (
     AVX512_BITWISE_FAMILIES,
     AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS,
     AVX512_FLOAT_BINARY_FAMILIES,
+    AVX512_FLOAT_COMPARE_MNEMONICS,
     AVX512_FLOAT_FMA_MNEMONICS,
     AVX512_INTEGER_BINARY_FAMILIES,
+    AVX512_INTEGER_COMPARE_MNEMONICS,
+    AVX512_SELECT_MNEMONICS,
     AVX512_VECTOR_BIT_WIDTHS,
     FLOAT_ELEMENTS,
     INTEGER_ELEMENTS,
@@ -147,3 +150,47 @@ def test_avx512_direct_broadcasts_cover_every_width_and_payload_size() -> None:
         for vector_bit_width in AVX512_DIRECT_BROADCAST_VECTOR_BIT_WIDTHS
     }
     assert expected_keys <= descriptor_keys
+
+
+def test_avx512_predicate_descriptors_cover_every_core_width_and_element() -> None:
+    descriptor_keys = {
+        descriptor.key for descriptor in X86_AVX512_CORE_DESCRIPTOR_SET.descriptors
+    }
+    register_suffixes = {128: "xmm", 256: "ymm", 512: "zmm"}
+    assert {
+        f"x86.avx512.{mnemonic}.{register_suffixes[vector_bit_width]}"
+        for vector_bit_width in (128, 256, 512)
+        for mnemonics in AVX512_INTEGER_COMPARE_MNEMONICS.values()
+        for mnemonic in mnemonics
+    } <= descriptor_keys
+    assert {
+        f"x86.avx512.{mnemonic}.{register_suffixes[vector_bit_width]}"
+        for vector_bit_width in (128, 256, 512)
+        for mnemonic in AVX512_FLOAT_COMPARE_MNEMONICS.values()
+    } <= descriptor_keys
+    assert {
+        f"x86.avx512.{mnemonic}.{register_suffixes[vector_bit_width]}"
+        for vector_bit_width in (128, 256, 512)
+        for mnemonic in AVX512_SELECT_MNEMONICS.values()
+    } <= descriptor_keys
+
+    carrier_rows = {
+        2: ("q", "xmm"),
+        4: ("d", "xmm"),
+        8: ("w", "xmm"),
+        16: ("b", "xmm"),
+        32: ("b", "ymm"),
+        64: ("b", "zmm"),
+    }
+    assert {
+        key
+        for element_suffix, register_suffix in carrier_rows.values()
+        for key in (
+            f"x86.avx512.vpmovm2{element_suffix}.{register_suffix}.k",
+            f"x86.avx512.vpmov{element_suffix}2m.k.{register_suffix}",
+        )
+    } <= descriptor_keys
+    assert {
+        "x86.avx512.kmovq.k.gpr64",
+        "x86.avx512.kmovq.gpr64.k",
+    } <= descriptor_keys

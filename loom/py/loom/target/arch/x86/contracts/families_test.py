@@ -370,6 +370,7 @@ def test_avx512_arithmetic_covers_every_native_zmm_family() -> None:
         for rule in rules
         if rule.descriptor.key
         in {f"x86.avx512.{mnemonic}.zmm" for _, mnemonic, _ in AVX512_BITWISE_FAMILIES}
+        and _value_type_guard(rule, "result") != Vector("i1", lanes=64)
     )
     assert {
         (rule.source_op.name, rule.descriptor.mnemonic) for rule in bitwise_rules
