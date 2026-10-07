@@ -429,6 +429,19 @@ TEST(U32DivisorReciprocalTest, PreservesQuotientAndRemainder) {
   }
 }
 
+static uint64_t ApplyUnsignedDivisionRecipe(
+    uint64_t numerator, uint32_t bit_width,
+    loom_low_lower_unsigned_divisor_magic_info_t info) {
+  uint64_t high = 0, low = 0;
+  iree_math_mul_u64_to_u128(numerator, info.multiplier, &high, &low);
+  uint64_t quotient =
+      bit_width == 64 ? high : (low >> bit_width) | (high << (64 - bit_width));
+  if (info.is_add) {
+    quotient = ((numerator - quotient) >> 1) + quotient;
+  }
+  return quotient >> info.post_shift;
+}
+
 TEST(UnsignedDivisorMagicTest, ExactAcrossWidthsAndUnsignedBoundaries) {
   uint64_t random = UINT64_C(0x362b48f137159da3);
   for (uint32_t bit_width = 2; bit_width <= 64; ++bit_width) {
@@ -436,17 +449,10 @@ TEST(UnsignedDivisorMagicTest, ExactAcrossWidthsAndUnsignedBoundaries) {
     const uint64_t half = UINT64_C(1) << (bit_width - 1);
     auto check_divisor = [&](uint64_t divisor) {
       const auto info =
-          loom_low_lower_unsigned_divisor_magic_info(divisor, bit_width);
+          loom_low_lower_unsigned_divisor_magic_info(divisor, bit_width, mask);
       auto check_numerator = [&](uint64_t numerator) {
-        uint64_t high = 0, low = 0;
-        iree_math_mul_u64_to_u128(numerator, info.multiplier, &high, &low);
-        uint64_t quotient =
-            bit_width == 64 ? high
-                            : (low >> bit_width) | (high << (64 - bit_width));
-        if (info.is_add) {
-          quotient = ((numerator - quotient) >> 1) + quotient;
-        }
-        quotient >>= info.post_shift;
+        const uint64_t quotient =
+            ApplyUnsignedDivisionRecipe(numerator, bit_width, info);
         ASSERT_EQ(quotient, numerator / divisor)
             << "width=" << bit_width << " numerator=" << numerator
             << " divisor=" << divisor;
@@ -487,6 +493,81 @@ TEST(UnsignedDivisorMagicTest, ExactAcrossWidthsAndUnsignedBoundaries) {
     for (uint64_t divisor : {half, half + 1, mask}) {
       check_divisor(divisor);
     }
+  }
+}
+
+TEST(UnsignedDivisorMagicTest, ExactForEverySmallNumeratorBound) {
+  for (uint32_t bit_width = 2; bit_width <= 7; ++bit_width) {
+    const uint64_t mask = UINT64_MAX >> (64 - bit_width);
+    for (uint64_t divisor = 2; divisor <= mask; ++divisor) {
+      for (uint64_t maximum = 0; maximum <= mask; ++maximum) {
+        const auto info = loom_low_lower_unsigned_divisor_magic_info(
+            divisor, bit_width, maximum);
+        for (uint64_t numerator = 0; numerator <= maximum; ++numerator) {
+          const uint64_t quotient =
+              ApplyUnsignedDivisionRecipe(numerator, bit_width, info);
+          ASSERT_EQ(quotient, numerator / divisor)
+              << "width=" << bit_width << " divisor=" << divisor
+              << " maximum=" << maximum << " numerator=" << numerator;
+          ASSERT_EQ(numerator - quotient * divisor, numerator % divisor);
+        }
+      }
+    }
+  }
+}
+
+TEST(UnsignedDivisorMagicTest, ExactForWideNumeratorBounds) {
+  uint64_t random = UINT64_C(0x6351a39b72ce814d);
+  for (uint32_t bit_width = 8; bit_width <= 64; ++bit_width) {
+    const uint64_t mask = UINT64_MAX >> (64 - bit_width);
+    const uint64_t half = UINT64_C(1) << (bit_width - 1);
+    for (uint32_t sample = 0; sample < 128; ++sample) {
+      random ^= random << 13;
+      random ^= random >> 7;
+      random ^= random << 17;
+      const uint64_t divisor = sample < 64 ? sample + 2 : (random & mask) | 2;
+      for (uint64_t maximum : {UINT64_C(0), UINT64_C(1), divisor - 1, divisor,
+                               half - 1, half, half + 1, mask, random & mask}) {
+        const auto info = loom_low_lower_unsigned_divisor_magic_info(
+            divisor, bit_width, maximum);
+        const uint64_t multiple = (maximum / divisor) * divisor;
+        auto check_numerator = [&](uint64_t numerator) {
+          if (numerator > maximum) {
+            return;
+          }
+          const uint64_t quotient =
+              ApplyUnsignedDivisionRecipe(numerator, bit_width, info);
+          ASSERT_EQ(quotient, numerator / divisor)
+              << "width=" << bit_width << " divisor=" << divisor
+              << " maximum=" << maximum << " numerator=" << numerator;
+          ASSERT_EQ(numerator - quotient * divisor, numerator % divisor);
+        };
+        for (uint64_t numerator :
+             {UINT64_C(0), UINT64_C(1), divisor - 1, divisor,
+              (divisor + 1) & mask, (multiple - 1) & mask, multiple,
+              (multiple + 1) & mask, maximum}) {
+          check_numerator(numerator);
+        }
+        for (uint32_t i = 0; i < 16; ++i) {
+          random ^= random << 13;
+          random ^= random >> 7;
+          random ^= random << 17;
+          check_numerator(random & maximum);
+        }
+      }
+    }
+  }
+}
+
+TEST(UnsignedDivisorMagicTest, NumeratorBoundRemovesAddAdjustment) {
+  for (uint32_t bit_width : {32u, 64u}) {
+    const uint64_t mask = UINT64_MAX >> (64 - bit_width);
+    const auto unbounded =
+        loom_low_lower_unsigned_divisor_magic_info(7, bit_width, mask);
+    const auto bounded =
+        loom_low_lower_unsigned_divisor_magic_info(7, bit_width, mask >> 1);
+    EXPECT_TRUE(unbounded.is_add);
+    EXPECT_FALSE(bounded.is_add);
   }
 }
 

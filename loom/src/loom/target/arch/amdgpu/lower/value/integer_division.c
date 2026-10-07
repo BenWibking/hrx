@@ -108,7 +108,8 @@ iree_status_t loom_amdgpu_select_unsigned_i64_division_plan(
       .register_class_id = register_class_id,
   };
   if (divisor > 1) {
-    out_plan->magic = loom_low_lower_unsigned_divisor_magic_info(divisor, 64);
+    out_plan->magic =
+        loom_low_lower_unsigned_divisor_magic_info(divisor, 64, UINT64_MAX);
   }
   *out_selected = true;
   return iree_ok_status();

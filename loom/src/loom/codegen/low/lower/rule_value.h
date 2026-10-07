@@ -31,14 +31,18 @@ typedef struct loom_low_lower_unsigned_divisor_magic_info_t {
   bool is_add;
 } loom_low_lower_unsigned_divisor_magic_info_t;
 
-// Derives an exact unsigned constant-divisor recipe for a |bit_width|-bit
-// numerator. The width is in [2, 64] and divisor is in [2, 2^bit_width - 1].
-// With q = high_bit_width(n * multiplier), the quotient is q >> post_shift,
-// or (((n - q) >> 1) + q) >> post_shift when is_add is set. Every numerator
-// bit participates; no narrower range or floating-point approximation is used.
+// Derives an exact unsigned constant-divisor recipe using a |bit_width|-bit
+// high-half multiply. The width is in [2, 64]. Divisor is in [2, 2^bit_width -
+// 1] and numerator_maximum is an inclusive bound in [0, 2^bit_width - 1]. The
+// bound restricts the input domain, not the width of the high-half
+// multiplication. With q = high_bit_width(n * multiplier), the quotient is q >>
+// post_shift, or (((n - q) >> 1) + q) >> post_shift when is_add is set. A zero
+// multiplier represents an always-zero quotient. Every input bit participates;
+// the range proof permits a smaller reciprocal without truncating the
+// numerator.
 loom_low_lower_unsigned_divisor_magic_info_t
-loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor,
-                                           uint32_t bit_width);
+loom_low_lower_unsigned_divisor_magic_info(uint64_t divisor, uint32_t bit_width,
+                                           uint64_t numerator_maximum);
 
 // Returns ceil(2^64 / divisor), for a divisor in [2, UINT32_MAX]. For a u32
 // numerator n, high64(n * reciprocal) is n / divisor and
