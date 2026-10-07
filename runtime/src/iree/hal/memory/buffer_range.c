@@ -53,6 +53,7 @@ iree_status_t iree_hal_pool_buffer_range_initialize(
   out_range->offset = offset + padding;
   out_range->length = (length - padding) & ~(alignment - 1);
   memory.offset += padding;
+  memory.binding_offset += offset + padding;
   out_range->memory = memory;
   out_range->buffer = buffer;
   iree_hal_buffer_retain(buffer);
@@ -95,6 +96,7 @@ iree_status_t iree_hal_pool_buffer_range_materialize(
   (*out_buffer)->allowed_usage = params.usage;
   (*out_buffer)->memory = range->memory;
   (*out_buffer)->memory.offset += offset;
+  (*out_buffer)->memory.binding_offset += offset;
   (*out_buffer)->memory.reuse_frontier = reuse_frontier;
   return iree_ok_status();
 }

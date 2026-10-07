@@ -40,7 +40,7 @@ typedef struct iree_hal_block_command_buffer_t {
   // Recording produced by end(). Consumed by the queue or released on destroy.
   iree_hal_cmd_block_recording_t recording;
 
-  // Direct transient bindings that must be mapped after queue waits resolve.
+  // Direct transient bindings resolved after queue waits publish their backing.
   iree_hal_buffer_binding_t* late_bindings;
 
   // Number of entries in late_bindings.
@@ -370,13 +370,12 @@ static void iree_hal_block_command_buffer_profile_append_dispatch(
 // Binding helpers
 //===----------------------------------------------------------------------===//
 
-// Returns true when |buffer| must be mapped at queue-execute time instead of
-// command-buffer record time. Transient buffers are queue-owned memory with a
-// dealloca operation, so their mappings must be scoped to queue execution even
-// if the backing is already committed while the command buffer records.
+// Queue-owned allocation handles resolve after waits even if storage happens
+// to be committed during recording. Subspans retain the same allocation root.
 static bool iree_hal_block_command_buffer_needs_late_binding(
     iree_hal_buffer_t* buffer) {
-  return iree_hal_task_transient_buffer_isa(buffer);
+  return iree_hal_task_transient_buffer_isa(
+      iree_hal_buffer_allocated_buffer(buffer));
 }
 
 // Finds or appends a late direct binding for a transient buffer. Late slots are
@@ -440,18 +439,11 @@ const iree_hal_buffer_binding_t* iree_hal_block_command_buffer_late_bindings(
   return command_buffer->late_bindings;
 }
 
-// Resolves |count| buffer references into fixup entries. For each ref:
-//   - Direct ready non-transient buffer: maps the buffer persistently and
-//     stores the host pointer inline in the fixup.
-//   - Direct transient buffer: records a late binding slot that the queue maps
-//     after waits resolve.
-//   - Indirect buffer: records the binding table slot and offset for runtime
-//     resolution by the processor.
-//
-// Direct non-transient buffers use PERSISTENT mapping: the buffer is retained
-// by the resource_set for the CB's lifetime, so the pointer is stable.
-// Queue-owned transients are retained but mapped only during queue execution so
-// dealloca can be ordered against the scoped mapping lifetime.
+// Resolves direct ready references to borrowed native execution pointers. The
+// resource set retains ordinary buffers for the recording lifetime. Transient
+// references retain only their handles and resolve after queue waits; the
+// caller orders deallocation after every execution. Indirect references retain
+// their binding-table slot and offset for execution-time address resolution.
 //
 // The fixup data_index fields are pre-filled by the builder and preserved.
 static iree_status_t iree_hal_block_command_buffer_resolve_refs(
@@ -474,16 +466,13 @@ static iree_status_t iree_hal_block_command_buffer_resolve_refs(
         continue;
       }
 
-      // Direct: map the buffer now.
-      iree_hal_buffer_mapping_t mapping = {{0}};
-      IREE_RETURN_IF_ERROR(iree_hal_buffer_map_range(
-          buffer_refs[i].buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-          iree_hal_buffer_allowed_access(buffer_refs[i].buffer),
-          IREE_HAL_BUFFER_MAP_FLAG_MAY_ALIAS, buffer_refs[i].offset,
-          buffer_refs[i].length, &mapping));
-      fixups[i].host_ptr = mapping.contents.data;
-      fixups[i].offset = 0;  // map_range already applied the offset.
-      fixups[i].length = mapping.contents.data_length;
+      iree_byte_span_t span = iree_byte_span_empty();
+      IREE_RETURN_IF_ERROR(iree_hal_buffer_native_host_span(
+          buffer_refs[i].buffer, buffer_refs[i].offset, buffer_refs[i].length,
+          &span));
+      fixups[i].host_ptr = span.data;
+      fixups[i].offset = 0;
+      fixups[i].length = span.data_length;
       fixups[i].slot = 0;
     } else {
       // Indirect: record binding table slot for runtime resolution.

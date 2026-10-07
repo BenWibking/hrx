@@ -196,6 +196,8 @@ iree_hal_buffer_t* iree_hal_replay_recorder_buffer_initialize_proxy(
       iree_hal_buffer_allowed_access(base_buffer),
       iree_hal_buffer_allowed_usage(base_buffer),
       &iree_hal_replay_recorder_buffer_vtable, &buffer->base);
+  buffer->base.memory = base_buffer->memory;
+  buffer->base.host_binding_index = base_buffer->host_binding_index;
   buffer->host_allocator = host_allocator;
   buffer->recorder = recorder;
   iree_hal_replay_recorder_retain(buffer->recorder);

@@ -180,14 +180,6 @@ iree_hal_heap_allocator_query_buffer_compatibility(
   // Heap memory is coherent cached UMA for CPU devices.
   params->type = iree_hal_heap_allocator_memory_type;
 
-  // Host currently uses mapping to copy buffers, which is done a lot.
-  // We could probably remove this mutation by preventing copies in those cases.
-  // TODO(benvanik): check if transfer is still required for DMA copy source.
-  params->usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED |
-                   IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
-                   IREE_HAL_BUFFER_USAGE_MAPPING_ACCESS_RANDOM |
-                   IREE_HAL_BUFFER_USAGE_TRANSFER;
-
   return compatibility;
 }
 

@@ -898,10 +898,9 @@ static iree_status_t iree_hal_passthrough_pool_materialize_reservations(
         reservations[materialized_count].byte_length,
         requests[materialized_count].params, release_callback, staged_buffer);
     if (iree_status_is_ok(status)) {
-      (*staged_buffer)->memory = (iree_hal_buffer_memory_view_t){
-          .backing = &reservation_state->buffer_backing.facts,
-          .offset = reservations[materialized_count].offset,
-      };
+      (*staged_buffer)->memory.backing =
+          &reservation_state->buffer_backing.facts;
+      (*staged_buffer)->memory.offset = reservations[materialized_count].offset;
       ++materialized_count;
     } else {
       iree_hal_passthrough_pool_reservation_state_release_reference(

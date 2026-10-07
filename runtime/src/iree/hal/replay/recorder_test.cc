@@ -831,8 +831,9 @@ TEST(ReplayRecorderTest, WrappedImportsAndExportsPreserveNativeBufferViews) {
   iree_hal_buffer_params_t params = {0};
   params.type = IREE_HAL_MEMORY_TYPE_HOST_VISIBLE;
   params.access = IREE_HAL_MEMORY_ACCESS_ALL;
-  params.usage =
-      IREE_HAL_BUFFER_USAGE_MAPPING | IREE_HAL_BUFFER_USAGE_SHARING_EXPORT;
+  params.usage = IREE_HAL_BUFFER_USAGE_MAPPING |
+                 IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
+                 IREE_HAL_BUFFER_USAGE_SHARING_EXPORT;
 
   alignas(64) uint8_t imported_storage[16] = {0, 1, 2,  3,  4,  5,  6,  7,
                                               8, 9, 10, 11, 12, 13, 14, 15};

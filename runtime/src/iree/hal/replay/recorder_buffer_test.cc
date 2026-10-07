@@ -30,7 +30,9 @@ class ReplayRecorderBufferTest : public ::testing::Test {
 
     IREE_ASSERT_OK(iree_hal_heap_buffer_wrap(
         iree_hal_buffer_placement_undefined(), IREE_HAL_MEMORY_TYPE_HOST_LOCAL,
-        IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT,
+        IREE_HAL_MEMORY_ACCESS_ALL,
+        IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT |
+            IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED,
         sizeof(storage_), iree_make_byte_span(storage_, sizeof(storage_)),
         iree_hal_buffer_release_callback_null(), iree_allocator_system(),
         &native_buffer_));

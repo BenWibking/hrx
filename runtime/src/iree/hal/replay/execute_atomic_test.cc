@@ -876,7 +876,8 @@ class ReplayAtomicExecutionTest : public ::testing::Test {
 
     const iree_hal_buffer_params_t buffer_params = {
         /*.usage=*/IREE_HAL_BUFFER_USAGE_STORAGE |
-            IREE_HAL_BUFFER_USAGE_TRANSFER,
+            IREE_HAL_BUFFER_USAGE_TRANSFER |
+            IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED,
         /*.access=*/IREE_HAL_MEMORY_ACCESS_ALL,
         /*.type=*/IREE_HAL_MEMORY_TYPE_HOST_LOCAL |
             IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,

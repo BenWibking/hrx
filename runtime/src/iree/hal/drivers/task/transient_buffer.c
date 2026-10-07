@@ -30,6 +30,11 @@ struct iree_hal_task_transient_buffer_t {
   // Base HAL buffer resource exposed to callers.
   iree_hal_buffer_t base;
 
+  // Stable slot shared by subspans, including those created before commitment.
+  // The caller orders native reads after commit and before decommit; view
+  // construction only copies the immutable array address from base.memory.
+  iree_hal_buffer_native_binding_t native_binding;
+
   // Host allocator used for wrapper storage and teardown.
   iree_allocator_t host_allocator;
 
@@ -108,6 +113,8 @@ iree_status_t iree_hal_task_transient_buffer_create(
       placement, /*allocated_buffer=*/&buffer->base, allocation_size,
       /*byte_offset=*/0, byte_length, params.type, params.access, params.usage,
       &iree_hal_task_transient_buffer_vtable, &buffer->base);
+  buffer->base.memory.bindings = &buffer->native_binding;
+  buffer->base.host_binding_index = 0;
   buffer->host_allocator = host_allocator;
   buffer->profile_id = (uint64_t)iree_atomic_fetch_add(
       &iree_hal_task_transient_buffer_next_profile_id, 1,
@@ -173,6 +180,12 @@ void iree_hal_task_transient_buffer_commit(iree_hal_buffer_t* base_buffer) {
   IREE_ASSERT_TRUE(buffer->staged_backing != NULL);
   IREE_ASSERT_TRUE(buffer->committed_backing == NULL);
   buffer->committed_backing = buffer->staged_backing;
+  buffer->native_binding = iree_hal_buffer_native_binding(
+      buffer->committed_backing,
+      (iree_hal_buffer_native_binding_slot_t){
+          .index = buffer->committed_backing->host_binding_index,
+          .type = IREE_HAL_BUFFER_INTERFACE_HOST,
+      });
   iree_slim_mutex_unlock(&buffer->mutex);
 }
 
@@ -183,6 +196,7 @@ void iree_hal_task_transient_buffer_decommit(iree_hal_buffer_t* base_buffer) {
   iree_hal_buffer_t* staged_backing = buffer->staged_backing;
   buffer->staged_backing = NULL;
   buffer->committed_backing = NULL;
+  buffer->native_binding.host_pointer = NULL;
   iree_slim_mutex_unlock(&buffer->mutex);
   iree_hal_buffer_release(staged_backing);
 }
@@ -411,6 +425,8 @@ iree_hal_task_transient_buffer_query_memory(
   iree_slim_mutex_lock(&buffer->mutex);
   if (buffer->committed_backing) {
     view = iree_hal_buffer_memory_view(buffer->committed_backing);
+    view.bindings = buffer->base.memory.bindings;
+    view.binding_offset = 0;
   }
   iree_slim_mutex_unlock(&buffer->mutex);
   return view;

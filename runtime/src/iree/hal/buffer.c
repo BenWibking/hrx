@@ -183,6 +183,9 @@ IREE_API_EXPORT iree_status_t iree_hal_subspan_buffer_create_with_callback(
         &buffer->base);
     buffer->base.memory = source_buffer->memory;
     buffer->base.memory.offset += byte_offset - source_buffer->byte_offset;
+    buffer->base.memory.binding_offset +=
+        byte_offset - source_buffer->byte_offset;
+    buffer->base.host_binding_index = source_buffer->host_binding_index;
     buffer->host_allocator = host_allocator;
     buffer->release_callback = release_callback;
     buffer->lifetime_owner = lifetime_owner;
@@ -276,9 +279,64 @@ iree_hal_buffer_memory_view(const iree_hal_buffer_t* buffer) {
     view = vtable->query_memory ? vtable->query_memory(root) : root->memory;
     if (root != buffer) {
       view.offset += buffer->byte_offset;
+      view.binding_offset += buffer->byte_offset;
     }
   }
   return view;
+}
+
+IREE_API_EXPORT iree_hal_buffer_native_binding_t
+iree_hal_buffer_native_binding(const iree_hal_buffer_t* buffer,
+                               iree_hal_buffer_native_binding_slot_t slot) {
+  const iree_device_size_t offset = buffer->memory.binding_offset;
+  iree_hal_buffer_native_binding_t binding =
+      buffer->memory.bindings[slot.index];
+  switch ((iree_hal_buffer_interface_t)slot.type) {
+    case IREE_HAL_BUFFER_INTERFACE_HOST:
+      binding.host_pointer += offset;
+      break;
+    case IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS:
+    case IREE_HAL_BUFFER_INTERFACE_XDNA_SHIM_DMA:
+    case IREE_HAL_BUFFER_INTERFACE_XDNA_FIRMWARE:
+      binding.device_address += offset;
+      break;
+    case IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER:
+      binding.vulkan.offset += offset;
+      break;
+    case IREE_HAL_BUFFER_INTERFACE_RDMA:
+      binding.rdma.address += offset;
+      break;
+    case IREE_HAL_BUFFER_INTERFACE_REGISTERED_IO:
+      binding.registered_io.offset += offset;
+      break;
+    case IREE_HAL_BUFFER_INTERFACE_REMOTE:
+      binding.remote.offset += offset;
+      break;
+  }
+  return binding;
+}
+
+IREE_API_EXPORT iree_status_t iree_hal_buffer_native_host_span(
+    const iree_hal_buffer_t* buffer, iree_device_size_t offset,
+    iree_device_size_t length, iree_byte_span_t* out_span) {
+  *out_span = iree_byte_span_empty();
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_calculate_range(
+      0, buffer->byte_length, offset, length, &offset, &length));
+  if (IREE_UNLIKELY(buffer->host_binding_index ==
+                    IREE_HAL_BUFFER_NATIVE_BINDING_INDEX_NONE)) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "buffer has no prepared host execution binding");
+  }
+  uint8_t* host_pointer =
+      buffer->memory.bindings[buffer->host_binding_index].host_pointer;
+  if (IREE_UNLIKELY(!host_pointer)) {
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "buffer has no committed host execution storage");
+  }
+  *out_span =
+      iree_make_byte_span(host_pointer + buffer->memory.binding_offset + offset,
+                          (iree_host_size_t)length);
+  return iree_ok_status();
 }
 
 IREE_API_EXPORT void iree_hal_buffer_initialize(
@@ -300,6 +358,7 @@ IREE_API_EXPORT void iree_hal_buffer_initialize(
   buffer->memory_type = memory_type;
   buffer->allowed_access = allowed_access;
   buffer->allowed_usage = allowed_usage;
+  buffer->host_binding_index = IREE_HAL_BUFFER_NATIVE_BINDING_INDEX_NONE;
 
   // Retain the base allocated buffer if it's unique from the buffer we are
   // initializing.
@@ -1006,13 +1065,12 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_prepare_map_range(
                                       iree_hal_buffer_validate_memory_type(
                                           iree_hal_buffer_memory_type(buffer),
                                           IREE_HAL_MEMORY_TYPE_HOST_VISIBLE));
-    IREE_RETURN_AND_END_ZONE_IF_ERROR(
-        z0, iree_hal_buffer_validate_usage(
-                iree_hal_buffer_allowed_usage(buffer),
-                mapping_mode == IREE_HAL_MAPPING_MODE_PERSISTENT
-                    ? IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT
-                    : IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED));
   }
+  IREE_RETURN_AND_END_ZONE_IF_ERROR(
+      z0, iree_hal_buffer_validate_usage(
+              iree_hal_buffer_allowed_usage(buffer),
+              is_persistent ? IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT
+                            : IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED));
 
   iree_device_size_t local_byte_offset = 0;
   iree_device_size_t local_byte_length = 0;

@@ -311,8 +311,11 @@ TEST_P(BufferRangeTest, AlignsNativeCoordinatesWithinVisibleRange) {
     EXPECT_EQ(offset, iree_hal_buffer_memory_view(allocation).offset);
     std::array<uint8_t, 13> payload;
     payload.fill(static_cast<uint8_t>(offset));
-    IREE_ASSERT_OK(iree_hal_buffer_map_write(allocation, 0, payload.data(),
-                                             payload.size()));
+    iree_byte_span_t native_span;
+    IREE_ASSERT_OK(iree_hal_buffer_native_host_span(
+        allocation, 0, IREE_HAL_WHOLE_BUFFER, &native_span));
+    ASSERT_EQ(payload.size(), native_span.data_length);
+    std::copy(payload.begin(), payload.end(), native_span.data);
     std::copy(payload.begin(), payload.end(), expected.begin() + offset);
   }
   iree_hal_buffer_t* exhausted = nullptr;

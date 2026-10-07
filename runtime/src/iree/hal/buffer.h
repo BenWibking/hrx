@@ -828,6 +828,74 @@ typedef struct iree_async_notification_t iree_async_notification_t;
 typedef struct iree_async_frontier_tracker_t iree_async_frontier_tracker_t;
 typedef struct iree_hal_memory_maintenance_t iree_hal_memory_maintenance_t;
 
+// Native representation selected when an access contract is prepared. Ordinary
+// execution uses its backend's representation; storage usage alone does not
+// require a raw device address.
+typedef enum iree_hal_buffer_interface_e {
+  IREE_HAL_BUFFER_INTERFACE_HOST = 0,
+  IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS = 1,
+  IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER = 2,
+  IREE_HAL_BUFFER_INTERFACE_XDNA_SHIM_DMA = 3,
+  IREE_HAL_BUFFER_INTERFACE_XDNA_FIRMWARE = 4,
+  IREE_HAL_BUFFER_INTERFACE_RDMA = 5,
+  IREE_HAL_BUFFER_INTERFACE_REGISTERED_IO = 6,
+  IREE_HAL_BUFFER_INTERFACE_REMOTE = 7,
+} iree_hal_buffer_interface_t;
+
+// Prepared native identity. The access contract fixes the payload for each
+// slot. Storage and native registrations are borrowed for the allocation epoch;
+// copying this value neither retains them nor grants public host mapping.
+typedef union iree_hal_buffer_native_binding_t {
+  // Host execution address, independent of application mapping permissions.
+  uint8_t* host_pointer;
+  // Address for DEVICE_ADDRESS or the selected XDNA address interface.
+  uint64_t device_address;
+  // Vulkan resource identity and view position; buffer contains VkBuffer bits.
+  struct {
+    // Native VkBuffer handle.
+    uint64_t buffer;
+    // Byte offset within the native resource.
+    uint64_t offset;
+  } vulkan;
+  // Registration prepared for one exact endpoint.
+  struct {
+    // IOVA of the view's first byte.
+    uint64_t address;
+    // Local registration key.
+    uint32_t local_key;
+    // Remote key when remote access was established.
+    uint32_t remote_key;
+  } rdma;
+  // Registration owned by a native I/O adapter.
+  struct {
+    // Borrowed adapter registration table.
+    const void* table;
+    // Prepared registration index.
+    uint32_t index;
+    // Byte offset within the registered storage.
+    uint64_t offset;
+  } registered_io;
+  // Identity in an external transport's object namespace.
+  struct {
+    // Object identifier scoped to its endpoint/session.
+    uint64_t object_id;
+    // Byte offset within the remote object.
+    uint64_t offset;
+  } remote;
+} iree_hal_buffer_native_binding_t;
+
+// A slot prepared for one memory contract and native interface. Slots from
+// unrelated contracts are not interchangeable, even in the same device group.
+typedef struct iree_hal_buffer_native_binding_slot_t {
+  // Dense index in the contract's binding array.
+  uint16_t index;
+  // Payload representation and offset arithmetic for this slot.
+  uint16_t type;
+} iree_hal_buffer_native_binding_slot_t;
+
+// Sentinel for an interface with no prepared native binding.
+#define IREE_HAL_BUFFER_NATIVE_BINDING_INDEX_NONE UINT16_MAX
+
 // Native allocation lifecycle operations. Qualification happens when a child
 // allocator is constructed; accepted advice is infallible at caller-ordered
 // allocation and release execution boundaries.
@@ -870,6 +938,13 @@ typedef struct iree_hal_buffer_backing_facts_t {
 // Prepared storage facts carried by a buffer independently of its native handle
 // representation. The visible length remains iree_hal_buffer_byte_length().
 typedef struct iree_hal_buffer_memory_view_t {
+  // Borrowed native binding array, or NULL without prepared native access.
+  // The array address is immutable; queue-ordered allocations publish its
+  // entries at commitment, before any caller-ordered execution access.
+  const iree_hal_buffer_native_binding_t* bindings;
+  // Visible byte zero in the binding array's native coordinates. Independent
+  // of the advice origin: a native resource may cover only part of a slab.
+  iree_device_size_t binding_offset;
   // Borrowed immutable backing facts, or NULL before storage is prepared.
   const iree_hal_buffer_backing_facts_t* backing;
   // Visible byte zero in the backing's native advice/alignment coordinates.
@@ -885,6 +960,23 @@ typedef struct iree_hal_buffer_memory_view_t {
 // commitment.
 IREE_API_EXPORT iree_hal_buffer_memory_view_t
 iree_hal_buffer_memory_view(const iree_hal_buffer_t* buffer);
+
+// Loads a trusted contract-compatible slot and translates it to the buffer's
+// byte zero. Allocation commitment and retirement are caller-ordered. Prepared
+// views use direct fields, including views made before commitment. No mapping,
+// registration, retain, parent traversal or topology query occurs.
+IREE_API_EXPORT iree_hal_buffer_native_binding_t
+iree_hal_buffer_native_binding(const iree_hal_buffer_t* buffer,
+                               iree_hal_buffer_native_binding_slot_t slot);
+
+// Resolves a host execution span from an already-prepared native binding.
+// Used by CPU execution backends at the buffer-reference boundary. Fails if
+// the range is invalid or host execution access has not been prepared. This
+// does not establish a public mapping or perform cache maintenance. The caller
+// orders every access after allocation commitment and before retirement.
+IREE_API_EXPORT iree_status_t iree_hal_buffer_native_host_span(
+    const iree_hal_buffer_t* buffer, iree_device_size_t offset,
+    iree_device_size_t length, iree_byte_span_t* out_span);
 
 // Returns success iff the buffer was allocated with the given memory type.
 IREE_API_EXPORT iree_status_t iree_hal_buffer_validate_memory_type(
@@ -1438,9 +1530,9 @@ struct iree_hal_buffer_t {
   iree_hal_buffer_usage_t allowed_usage;
   iree_hal_memory_access_t allowed_access;
 
-  // Unused padding that more flags or identifiers can be placed in, such as
-  // which implementation pool owns the buffer.
-  uint16_t reserved;
+  // Prepared host execution slot, or NATIVE_BINDING_INDEX_NONE. Public mapping
+  // permission remains independent.
+  uint16_t host_binding_index;
 
   // Implementation-defined flags used for additional bookkeeping or routing
   // by the buffer implementation.

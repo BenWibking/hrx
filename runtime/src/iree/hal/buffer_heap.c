@@ -38,9 +38,8 @@ typedef struct iree_hal_heap_buffer_t {
   // different than the data allocator used for the buffer payload.
   iree_allocator_t host_allocator;
 
-  // TODO(benvanik): change to a raw pointer as the base.allocation_size is the
-  // same as the data_length.
-  iree_byte_span_t data;
+  // Prepared host execution binding, shared by all views of this allocation.
+  iree_hal_buffer_native_binding_t native_binding;
 
   union {
     // Used for IREE_HAL_HEAP_BUFFER_STORAGE_MODE_SPLIT.
@@ -145,7 +144,9 @@ iree_status_t iree_hal_heap_buffer_create(
         0, allocation_size, params->type, params->access, params->usage,
         &iree_hal_heap_buffer_vtable, &buffer->base);
     buffer->host_allocator = host_allocator;
-    buffer->data = data;
+    buffer->native_binding.host_pointer = data.data;
+    buffer->base.memory.bindings = &buffer->native_binding;
+    buffer->base.host_binding_index = 0;
 
     if (same_allocator) {
       buffer->base.flags = IREE_HAL_HEAP_BUFFER_STORAGE_MODE_SLAB;
@@ -190,7 +191,9 @@ iree_status_t iree_hal_heap_buffer_wrap(
                                allowed_usage, &iree_hal_heap_buffer_vtable,
                                &buffer->base);
     buffer->host_allocator = host_allocator;
-    buffer->data = data;
+    buffer->native_binding.host_pointer = data.data;
+    buffer->base.memory.bindings = &buffer->native_binding;
+    buffer->base.host_binding_index = 0;
 
     // Notify the provided callback when the external data is no longer needed.
     buffer->base.flags = IREE_HAL_HEAP_BUFFER_STORAGE_MODE_EXTERNAL;
@@ -224,7 +227,8 @@ static void iree_hal_heap_buffer_destroy(iree_hal_buffer_t* base_buffer) {
       break;
     }
     case IREE_HAL_HEAP_BUFFER_STORAGE_MODE_SPLIT: {
-      iree_allocator_free_aligned(buffer->data_allocator, buffer->data.data);
+      iree_allocator_free_aligned(buffer->data_allocator,
+                                  buffer->native_binding.host_pointer);
       iree_allocator_free(host_allocator, buffer);
       break;
     }
@@ -266,7 +270,7 @@ static iree_status_t iree_hal_heap_buffer_export_range(
       iree_hal_buffer_validate_usage(iree_hal_buffer_allowed_usage(base_buffer),
                                      IREE_HAL_BUFFER_USAGE_MAPPING_PERSISTENT));
 
-  void* pointer = buffer->data.data + local_byte_offset;
+  void* pointer = buffer->native_binding.host_pointer + local_byte_offset;
   out_external_buffer->type = requested_type;
   out_external_buffer->flags = requested_flags;
   out_external_buffer->size = local_byte_length;
@@ -285,8 +289,9 @@ static iree_status_t iree_hal_heap_buffer_map_range(
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   iree_hal_heap_buffer_t* buffer = (iree_hal_heap_buffer_t*)base_buffer;
-  mapping->contents = iree_make_byte_span(buffer->data.data + local_byte_offset,
-                                          local_byte_length);
+  mapping->contents = iree_make_byte_span(
+      buffer->native_binding.host_pointer + local_byte_offset,
+      local_byte_length);
 
   // If we mapped for discard scribble over the bytes. This is not a mandated
   // behavior but it will make debugging issues easier. Alternatively for

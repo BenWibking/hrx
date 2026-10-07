@@ -139,14 +139,6 @@ struct iree_hal_task_queue_op_t {
   // table buffers, etc.). Allocated from the small block pool.
   iree_hal_resource_set_t* resource_set;
 
-  // SCOPED buffer mappings referenced by a deferred block recording. The
-  // arena-owned array remains live through recording execution and is unmapped
-  // before user-visible completion is published.
-  iree_hal_buffer_mapping_t* recording_mappings;
-
-  // Number of entries in |recording_mappings|.
-  iree_host_size_t recording_mapping_count;
-
   // Frontier tracker advanced when the operation completes.
   iree_async_frontier_tracker_t* frontier_tracker;
 
