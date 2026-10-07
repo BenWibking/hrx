@@ -339,26 +339,6 @@ TEST_F(TargetPipelineTest, ZeroChecksStillMaterializesAuthoredAssertions) {
   EXPECT_EQ(counts.other_sanitizer_runs, 0);
 }
 
-TEST_F(TargetPipelineTest, ExpandedSourceStopsBeforeCallgraphSpecialization) {
-  ModulePtr module = AllocateModule(IREE_SV("pipeline"));
-
-  loom_op_t* pipeline_op = nullptr;
-  IREE_ASSERT_OK(loom_target_pipeline_build_to_expanded_source(
-      module.get(), IREE_SV("compile"), /*options=*/nullptr, &environment_,
-      loom_pass_environment_empty(), &pipeline_op));
-
-  const PipelineRunCounts counts = CountPipelineRuns(module.get(), pipeline_op);
-  EXPECT_EQ(counts.final_template_selection, 1);
-  EXPECT_TRUE(
-      iree_string_view_equal(counts.final_template_rewrite, IREE_SV("inline")));
-  EXPECT_EQ(counts.target_callgraph_specialization, 0);
-  EXPECT_EQ(counts.first_target_inlining_ordinal, 0);
-  EXPECT_EQ(counts.boundary_projection, 0);
-  EXPECT_EQ(counts.source_to_low, 0);
-  EXPECT_EQ(counts.symbol_dce, 0);
-  EXPECT_EQ(counts.sanitizer_materialize_assertions, 0);
-}
-
 TEST_F(TargetPipelineTest, DiagnosticArtifactsPreserveRawSourceBoundary) {
   ModulePtr module = AllocateModule(IREE_SV("pipeline"));
 

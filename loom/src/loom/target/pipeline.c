@@ -715,27 +715,6 @@ static iree_status_t loom_target_pipeline_build_prepared_low_body(
       builder, loom_target_pipeline_build_low_preparation, user_data, &for_op);
 }
 
-iree_status_t loom_target_pipeline_build_to_expanded_source(
-    loom_module_t* pipeline_module, iree_string_view_t name,
-    const loom_target_pipeline_options_t* options,
-    const loom_target_environment_t* target_environment,
-    loom_pass_environment_t pass_environment, loom_op_t** out_pipeline_op) {
-  IREE_ASSERT_ARGUMENT(pipeline_module);
-  IREE_ASSERT_ARGUMENT(target_environment);
-  IREE_ASSERT_ARGUMENT(out_pipeline_op);
-  *out_pipeline_op = NULL;
-
-  const loom_target_pipeline_build_context_t context = {
-      .target_environment = target_environment,
-      .pass_environment = pass_environment,
-      .options = options,
-  };
-  return loom_pass_ir_build_pipeline(
-      pipeline_module, name, LOOM_PASS_ANCHOR_MODULE,
-      loom_target_pipeline_build_expanded_source_body, (void*)&context,
-      out_pipeline_op);
-}
-
 iree_status_t loom_target_pipeline_build_to_source_low(
     loom_module_t* pipeline_module, iree_string_view_t name,
     const loom_target_pipeline_options_t* options,
