@@ -189,8 +189,9 @@ LOOMC_API_EXPORT void loomc_launch_config_program_release(
 ///
 /// @param program Program to search.
 /// @param export_name Exact public name of the matching executable entry.
-/// A leading `@` is not accepted because artifact export names are not Loom
-/// symbol references.
+/// This is an artifact name rather than a Loom symbol reference. Every
+/// non-empty byte spelling is matched exactly, including names whose first
+/// byte is `@`.
 /// @param out_function Receives a program-local token on success.
 /// @return OK when the function exists, `LOOMC_STATUS_NOT_FOUND` when the
 /// program has no matching function, or an argument status for malformed
