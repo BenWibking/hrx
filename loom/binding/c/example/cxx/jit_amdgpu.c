@@ -43,6 +43,8 @@ typedef struct jit_state_t {
   loomc_workspace_t* workspace;
   // Target facts obtained from the selected live device.
   loomc_target_profile_t* profile;
+  // Exact HAL executable target paired with the compiler profile.
+  const iree_hal_executable_target_t* executable_target;
   // Prepared compiler reusable across source submissions.
   loomc_compiler_t* compiler;
   // Prepared lowering pipeline reusable across source submissions.
@@ -150,14 +152,17 @@ static iree_status_t initialize(jit_state_t* state, const char* device_uri) {
       &context_options, loomc_allocator_system(), &state->context)));
   IREE_RETURN_IF_ERROR(iree_status_from_loomc(loomc_workspace_create(
       NULL, loomc_allocator_system(), &state->workspace)));
-  const loomc_amdgpu_iree_hal_profile_options_t profile_options = {
+  const loomc_amdgpu_iree_hal_target_options_t hal_target_options = {
       .device = state->device,
       .physical_device_affinity = state->physical_affinity,
   };
+  loomc_iree_hal_target_selection_t selection = {0};
   IREE_RETURN_IF_ERROR(
-      iree_status_from_loomc(loomc_target_profile_create_amdgpu_iree_hal(
-          state->target_environment, &profile_options, loomc_allocator_system(),
-          &state->profile, &state->result)));
+      iree_status_from_loomc(loomc_target_select_amdgpu_iree_hal(
+          state->target_environment, &hal_target_options,
+          loomc_allocator_system(), &selection, &state->result)));
+  state->profile = selection.target_profile;
+  state->executable_target = selection.executable_target;
   IREE_RETURN_IF_ERROR(check_result(state));
   reset_result(state);
   IREE_RETURN_IF_ERROR(iree_status_from_loomc(loomc_compiler_create(
@@ -279,19 +284,6 @@ static iree_status_t compile_source(jit_state_t* state,
   if (!hsaco) {
     return iree_make_status(IREE_STATUS_NOT_FOUND, "HSACO artifact is absent");
   }
-  const iree_hal_executable_target_selection_t selection = {
-      .family = IREE_SVL("amdgpu"),
-      .kind_flags = IREE_HAL_EXECUTABLE_TARGET_KIND_FLAG_EXACT,
-      .physical_device_affinity = state->physical_affinity,
-  };
-  const iree_hal_executable_target_selection_result_t selected =
-      iree_hal_device_spec_select_executable_target(
-          iree_hal_device_spec(state->device), &selection);
-  if (selected.outcome !=
-      IREE_HAL_EXECUTABLE_TARGET_SELECTION_OUTCOME_SELECTED) {
-    return iree_make_status(IREE_STATUS_UNAVAILABLE,
-                            "device needs one unambiguous AMDGPU load target");
-  }
   loomc_byte_span_t contents = loomc_byte_span_empty();
   IREE_RETURN_IF_ERROR(iree_status_from_loomc(loomc_byte_sequence_clone(
       hsaco->contents, loomc_allocator_system(), &contents)));
@@ -299,9 +291,9 @@ static iree_status_t compile_source(jit_state_t* state,
   iree_hal_executable_load_params_initialize(&load);
   load.executable_data =
       iree_make_const_byte_span(contents.data, contents.data_length);
-  status =
-      iree_hal_executable_load(iree_hal_queue_family(state->dispatch_queue),
-                               selected.target, &load, &state->executable);
+  status = iree_hal_executable_load(
+      iree_hal_queue_family(state->dispatch_queue), state->executable_target,
+      &load, &state->executable);
   if (iree_status_is_ok(status)) {
     printf("C++ -> Loom -> HSACO: %zu bytes; two kernels\n",
            contents.data_length);

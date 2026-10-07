@@ -18,20 +18,22 @@ loom_cc_library(
     "main.c"
   DEPS
     iree::base
+    iree::base::internal::arena
     iree::base::tooling::flags
-    iree::io::file_handle
     iree::tooling::device_util
     iree::tooling::value_io
-    loom::ir
+    loom::binding::c::loomc
+    loom::binding::c::target::iree_hal
     loom::sanitizer::options
     loom::tooling::cli::help
-    loom::tooling::compile::options
-    loom::tooling::compile::report_capture
-    loom::tooling::execution::execution_backend
-    loom::tooling::execution::one_shot
-    loom::tooling::execution::session
+    loom::tooling::cli::loomc_options
+    loom::tooling::config
+    loom::tooling::execution::hal::invocation
+    loom::tooling::execution::hal::runtime
+    loom::tooling::input
     loom::tooling::input::flags
     loom::tooling::io::file
+    loom::tooling::io::source_path
   PUBLIC
 )
 
@@ -39,15 +41,21 @@ set(_iree_run_loom_platform_copts "")
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
   list(APPEND _iree_run_loom_platform_copts "-DIREE_RUN_LOOM_HAVE_AMDGPU=1")
 endif()
+if(LOOM_IMPORT_CXX)
+  list(APPEND _iree_run_loom_platform_copts "-DIREE_RUN_LOOM_HAVE_IMPORT_CXX=1")
+endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
   list(APPEND _iree_run_loom_platform_copts "-DIREE_RUN_LOOM_HAVE_SPIRV=1")
 endif()
 set(_iree_run_loom_platform_deps "")
 if(LOOM_TARGET_ARCH_AMDGPU AND LOOM_EMIT_AMDGPU AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_AMDGPU)
-  list(APPEND _iree_run_loom_platform_deps loom::tooling::target::amdgpu::execution_provider)
+  list(APPEND _iree_run_loom_platform_deps loom::binding::c::target::amdgpu::iree_hal)
+endif()
+if(LOOM_IMPORT_CXX)
+  list(APPEND _iree_run_loom_platform_deps loom::import::cxx::tooling::loomc_input)
 endif()
 if(LOOM_TARGET_ARCH_SPIRV AND LOOM_EMIT_SPIRV AND LOOM_EXECUTE_IREE_HAL AND IREE_HAL_DRIVER_VULKAN)
-  list(APPEND _iree_run_loom_platform_deps loom::tooling::target::spirv::execution_provider)
+  list(APPEND _iree_run_loom_platform_deps loom::binding::c::target::spirv::iree_hal)
 endif()
 loom_cc_binary(
   NAME
@@ -59,9 +67,8 @@ loom_cc_binary(
   DEPS
     ::main
     iree::base
-    loom::tooling::execution::execution_provider
+    loom::binding::c::target::configured
     loom::tooling::input::configured
-    loom::transforms::cleanup::configured
     ${_iree_run_loom_platform_deps}
 )
 

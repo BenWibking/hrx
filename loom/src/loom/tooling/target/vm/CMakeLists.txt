@@ -45,12 +45,10 @@ loom_cc_library(
     loom::error::error_defs
     loom::error::source
     loom::target::arch::vm::provider
-    loom::target::emit::vm::module_compiler
     loom::target::entry_selection
     loom::target::provider
     loom::tooling::compile::pipeline
     loom::tooling::config
-    loom::tooling::execution::execution_provider
     loom::tooling::testbench::invocation
     loom::tooling::testbench::scenario::executor
   PUBLIC

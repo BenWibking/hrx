@@ -226,6 +226,12 @@ typedef struct loomc_compile_artifact_options_t {
   /// Optional target emission options. Its artifact format participates in
   /// compile request resolution so compilation and emission select one emitter.
   const loomc_emit_options_t* emit_options;
+
+  /// Additional compiler-side artifacts returned with the primary target
+  /// artifact. Currently only `LOOMC_COMPILE_ARTIFACT_FLAG_LAUNCH_CONFIG` is
+  /// accepted. Zero keeps launch-program construction and serialization off
+  /// the compilation path.
+  loomc_compile_artifact_flags_t artifact_flags;
 } loomc_compile_artifact_options_t;
 
 /// Creates a prepared immutable compiler.

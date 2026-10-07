@@ -767,6 +767,86 @@ kernel.def target(@gfx11_wave64) @target_specialized_launch(%expert_count: index
   }
 }
 
+TEST(AmdgpuTargetTest,
+     CompileArtifactReturnsExecutableAndRequestedLaunchConfig) {
+  TargetEnvironmentPtr target_environment = CreateAmdgpuTargetEnvironment();
+  ContextPtr context = CreateAmdgpuContext(target_environment.get());
+  WorkspacePtr workspace = CreateWorkspace();
+  CompilerPtr compiler = CreateCompiler(context.get());
+  SourcePtr source = CreateTextSource("complete_launch.loom", R"(
+amdgpu.target<gfx1151> @gfx1151
+
+kernel.def target(@gfx1151) @complete_launch(%group_count: index) {
+  %one = index.constant 1 : index
+  %wave_size = index.constant 64 : index
+  kernel.launch.config workgroups(%group_count, %one, %one) workgroup_size(%wave_size, %one, %one) : index
+} launch() {
+  kernel.return
+}
+)");
+  ModulePtr module =
+      DeserializeModule(context.get(), workspace.get(), source.get());
+  TargetProfilePtr profile =
+      CreateTargetProfile(target_environment.get(), "gfx1151");
+  const loomc_string_view_t root = loomc_make_cstring_view("complete_launch");
+  const loomc_emit_options_t emit_options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      /*.structure_size=*/sizeof(emit_options),
+      /*.next=*/nullptr,
+      /*.artifact_format=*/
+      loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_AMDGPU_HSACO),
+      /*.identifier=*/loomc_make_cstring_view("complete_launch.hsaco"),
+      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
+  };
+  const loomc_compile_artifact_options_t options = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_COMPILE_ARTIFACT_OPTIONS,
+      /*.structure_size=*/sizeof(options),
+      /*.next=*/nullptr,
+      /*.roots=*/&root,
+      /*.root_count=*/1,
+      /*.excluded_roots=*/nullptr,
+      /*.excluded_root_count=*/0,
+      /*.target_profile=*/profile.get(),
+      /*.config=*/nullptr,
+      /*.emit_options=*/&emit_options,
+      /*.artifact_flags=*/LOOMC_COMPILE_ARTIFACT_FLAG_LAUNCH_CONFIG,
+  };
+
+  loomc_result_t* result = nullptr;
+  LOOMC_ASSERT_OK(loomc_compile_artifact(
+      compiler.get(), workspace.get(), /*pass_program=*/nullptr, module.get(),
+      &options, loomc_allocator_system(), &result));
+  ResultPtr result_ptr(result);
+  ExpectSucceededResult(result_ptr.get());
+  ASSERT_NE(FindArtifact(result_ptr.get(), LOOMC_ARTIFACT_KIND_EXECUTABLE,
+                         LOOMC_ARTIFACT_FORMAT_AMDGPU_HSACO),
+            nullptr);
+  const loomc_artifact_t* launch_artifact =
+      FindArtifact(result_ptr.get(), LOOMC_ARTIFACT_KIND_LAUNCH_CONFIG,
+                   LOOMC_ARTIFACT_FORMAT_LOOM_BYTECODE);
+  ASSERT_NE(launch_artifact, nullptr);
+
+  loomc_launch_config_program_t* launch_program = nullptr;
+  LOOMC_ASSERT_OK(loomc_launch_config_program_load(
+      launch_artifact, loomc_allocator_system(), &launch_program));
+  LaunchConfigProgramPtr launch_program_ptr(launch_program);
+  loomc_launch_config_function_t launch_function =
+      loomc_launch_config_function_invalid();
+  LOOMC_ASSERT_OK(loomc_launch_config_program_lookup_function(
+      launch_program_ptr.get(), loomc_make_cstring_view("complete_launch"),
+      &launch_function));
+  const uint64_t workload_argument_bits[] = {17};
+  loomc_launch_config_t launch_config = {
+      /*.type=*/LOOMC_STRUCTURE_TYPE_LAUNCH_CONFIG,
+      /*.structure_size=*/sizeof(launch_config),
+  };
+  LOOMC_ASSERT_OK(loomc_launch_config_program_invoke(
+      launch_program_ptr.get(), launch_function, workload_argument_bits,
+      IREE_ARRAYSIZE(workload_argument_bits), &launch_config));
+  EXPECT_EQ(launch_config.workgroup_count.x, 17u);
+  EXPECT_EQ(launch_config.workgroup_size.x, 64u);
+}
+
 TEST(AmdgpuTargetTest, LaunchConfigArtifactContainsAllKernelExports) {
   TargetEnvironmentPtr target_environment = CreateAmdgpuTargetEnvironment();
   ContextPtr context = CreateAmdgpuContext(target_environment.get());

@@ -18,11 +18,6 @@
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/target/wasm/host.h"
 
-const loom_run_execution_provider_t loom_wasm_execution_provider = {
-    .name = IREE_SVL("wasm"),
-    .compiler_provider_set = &loom_wasm_compiler_provider_set,
-};
-
 enum {
   LOOM_WASM_TESTBENCH_ROOT_ALIGNMENT = 16,
   LOOM_WASM_TESTBENCH_NO_ROOT = UINT32_MAX,

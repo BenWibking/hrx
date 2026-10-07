@@ -4,12 +4,12 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// iree-benchmark-loom binary with build-selected execution providers.
+// iree-benchmark-loom binary with build-selected compiler and device providers.
 
 #include <stddef.h>
 #include <stdio.h>
 
-#include "loom/tooling/execution/execution_provider.h"
+#include "loom/target/configured/compiler_provider_set.h"
 #include "loom/tooling/execution/hal/device_provider.h"
 #include "loom/tooling/input/configured.h"
 #include "loom/tools/iree-benchmark-loom/main.h"
@@ -25,50 +25,20 @@
 #define IREE_BENCHMARK_LOOM_HAVE_VM 0
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM
 
-#define IREE_BENCHMARK_LOOM_HAVE_ANY_PROVIDER                           \
-  (IREE_BENCHMARK_LOOM_HAVE_AMDGPU || IREE_BENCHMARK_LOOM_HAVE_SPIRV || \
-   IREE_BENCHMARK_LOOM_HAVE_VM)
 #define IREE_BENCHMARK_LOOM_HAVE_ANY_DEVICE_PROVIDER \
   (IREE_BENCHMARK_LOOM_HAVE_AMDGPU || IREE_BENCHMARK_LOOM_HAVE_SPIRV)
 
 #if IREE_BENCHMARK_LOOM_HAVE_AMDGPU
 #include "loom/tooling/target/amdgpu/device_provider.h"
-#include "loom/tooling/target/amdgpu/execution_provider.h"
 #include "loom/tooling/target/amdgpu/testbench_requirements.h"
 #endif  // IREE_BENCHMARK_LOOM_HAVE_AMDGPU
 #if IREE_BENCHMARK_LOOM_HAVE_SPIRV
 #include "loom/tooling/target/spirv/device_provider.h"
-#include "loom/tooling/target/spirv/execution_provider.h"
 #include "loom/tooling/target/spirv/testbench_requirements.h"
 #endif  // IREE_BENCHMARK_LOOM_HAVE_SPIRV
 #if IREE_BENCHMARK_LOOM_HAVE_VM
 #include "loom/tooling/target/vm/testbench.h"
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM
-
-#if IREE_BENCHMARK_LOOM_HAVE_ANY_PROVIDER
-static const loom_run_execution_provider_t* const
-    kIreeBenchmarkLoomProviders[] = {
-#if IREE_BENCHMARK_LOOM_HAVE_VM
-        &loom_vm_execution_provider,
-#endif  // IREE_BENCHMARK_LOOM_HAVE_VM
-#if IREE_BENCHMARK_LOOM_HAVE_AMDGPU
-        &loom_amdgpu_execution_provider,
-#endif  // IREE_BENCHMARK_LOOM_HAVE_AMDGPU
-#if IREE_BENCHMARK_LOOM_HAVE_SPIRV
-        &loom_spirv_vulkan_execution_provider,
-#endif  // IREE_BENCHMARK_LOOM_HAVE_SPIRV
-};
-#endif  // IREE_BENCHMARK_LOOM_HAVE_ANY_PROVIDER
-
-static const loom_run_execution_provider_set_t kIreeBenchmarkLoomProviderSet = {
-#if IREE_BENCHMARK_LOOM_HAVE_ANY_PROVIDER
-    .providers = kIreeBenchmarkLoomProviders,
-    .provider_count = IREE_ARRAYSIZE(kIreeBenchmarkLoomProviders),
-#else
-    .providers = NULL,
-    .provider_count = 0,
-#endif  // IREE_BENCHMARK_LOOM_HAVE_ANY_PROVIDER
-};
 
 #if IREE_BENCHMARK_LOOM_HAVE_ANY_DEVICE_PROVIDER
 static const loom_device_provider_t* const kIreeBenchmarkLoomDeviceProviders[] =
@@ -146,9 +116,9 @@ static iree_status_t iree_benchmark_loom_populate_requirement_providers(
 }
 
 int main(int argc, char** argv) {
-  loom_run_execution_environment_t environment;
-  iree_status_t status = loom_run_execution_environment_initialize(
-      &kIreeBenchmarkLoomProviderSet, &environment);
+  loom_target_environment_t environment;
+  iree_status_t status = loom_target_environment_initialize(
+      loom_configured_compiler_provider_set(), &environment);
   if (!iree_status_is_ok(status)) {
     iree_status_fprint(stderr, status);
     iree_status_free(status);
@@ -158,8 +128,7 @@ int main(int argc, char** argv) {
   iree_benchmark_loom_configuration_t configuration = {
       .input_providers = loom_configured_input_providers(),
       .tool_name = "iree-benchmark-loom",
-      .target_environment =
-          loom_run_execution_environment_target_environment(&environment),
+      .target_environment = &environment,
       .cleanup_pattern_provider_set =
           loom_cleanup_configured_pattern_provider_set(),
       .device_provider_registry = &kIreeBenchmarkLoomDeviceProviderRegistry,
@@ -183,6 +152,6 @@ int main(int argc, char** argv) {
 #if IREE_BENCHMARK_LOOM_HAVE_VM
   loom_vm_testbench_deinitialize(&vm_testbench);
 #endif  // IREE_BENCHMARK_LOOM_HAVE_VM
-  loom_run_execution_environment_deinitialize(&environment);
+  loom_target_environment_deinitialize(&environment);
   return exit_code;
 }

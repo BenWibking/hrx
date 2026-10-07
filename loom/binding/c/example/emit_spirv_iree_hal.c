@@ -278,23 +278,24 @@ static loomc_status_t create_workspace_and_source(
   return status;
 }
 
-static loomc_status_t create_target_profile(
-    emit_spirv_iree_hal_state_t* state) {
-  const loomc_iree_hal_profile_provider_t* providers[] = {
-      loomc_spirv_iree_hal_profile_provider(),
+static loomc_status_t select_target(emit_spirv_iree_hal_state_t* state) {
+  const loomc_iree_hal_target_provider_t* providers[] = {
+      loomc_spirv_iree_hal_target_provider(),
   };
-  loomc_iree_hal_profile_options_t profile_options = {
-      .type = LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS,
-      .structure_size = sizeof(profile_options),
+  loomc_iree_hal_target_options_t target_options = {
+      .type = LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS,
+      .structure_size = sizeof(target_options),
       .identifier = loomc_make_cstring_view("iree-hal-device"),
       .device = state->device,
       .physical_device_affinity = 0,
       .providers = providers,
       .provider_count = 1,
   };
-  loomc_status_t status = loomc_target_profile_create_iree_hal(
-      state->target_environment, &profile_options, loomc_allocator_system(),
-      &state->target_profile, &state->result);
+  loomc_iree_hal_target_selection_t selection = {0};
+  loomc_status_t status = loomc_target_select_iree_hal(
+      state->target_environment, &target_options, loomc_allocator_system(),
+      &selection, &state->result);
+  state->target_profile = selection.target_profile;
   if (loomc_status_is_ok(status) && !loomc_result_succeeded(state->result)) {
     print_result_diagnostics(state->result);
     emit_spirv_iree_hal_state_skip(
@@ -400,7 +401,7 @@ static loomc_status_t create_resources(emit_spirv_iree_hal_state_t* state) {
     status = create_workspace_and_source(state);
   }
   if (loomc_status_is_ok(status)) {
-    status = create_target_profile(state);
+    status = select_target(state);
   }
   if (loomc_status_is_ok(status) && !state->skipped) {
     status = check_live_profile_support(state);

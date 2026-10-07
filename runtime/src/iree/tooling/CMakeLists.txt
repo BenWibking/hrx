@@ -60,6 +60,60 @@ iree_cc_library(
   PUBLIC
 )
 
+iree_cc_test(
+  NAME
+    device_util_default_device_test
+  SRCS
+    "device_util_test.cc"
+  DEPS
+    ::device_util
+    iree::async::util::proactor_pool
+    iree::base::threading
+    iree::hal
+    iree::hal::drivers::task::registration
+    iree::testing::gtest
+    iree::testing::gtest_main
+  ARGS
+    "--gtest_filter=DeviceUtilTest.CreatesDefaultDevice"
+)
+
+iree_cc_test(
+  NAME
+    device_util_flag_device_test
+  SRCS
+    "device_util_test.cc"
+  DEPS
+    ::device_util
+    iree::async::util::proactor_pool
+    iree::base::threading
+    iree::hal
+    iree::hal::drivers::task::registration
+    iree::testing::gtest
+    iree::testing::gtest_main
+  ARGS
+    "--device=task"
+    "--gtest_filter=DeviceUtilTest.CreatesFlagDevice"
+)
+
+iree_cc_test(
+  NAME
+    device_util_repeated_device_test
+  SRCS
+    "device_util_test.cc"
+  DEPS
+    ::device_util
+    iree::async::util::proactor_pool
+    iree::base::threading
+    iree::hal
+    iree::hal::drivers::task::registration
+    iree::testing::gtest
+    iree::testing::gtest_main
+  ARGS
+    "--device=task"
+    "--device=task"
+    "--gtest_filter=DeviceUtilTest.RejectsRepeatedDeviceFlags"
+)
+
 iree_cc_library(
   NAME
     value_io

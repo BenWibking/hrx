@@ -248,11 +248,11 @@ typedef enum loomc_structure_type_e {
   /// `loomc_spirv_vulkan_profile_options_t`.
   LOOMC_STRUCTURE_TYPE_SPIRV_VULKAN_PROFILE_OPTIONS = 23,
 
-  /// `loomc_iree_hal_profile_options_t`.
-  LOOMC_STRUCTURE_TYPE_IREE_HAL_PROFILE_OPTIONS = 24,
+  /// `loomc_iree_hal_target_options_t`.
+  LOOMC_STRUCTURE_TYPE_IREE_HAL_TARGET_OPTIONS = 24,
 
-  /// `loomc_spirv_iree_hal_profile_options_t`.
-  LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_PROFILE_OPTIONS = 25,
+  /// `loomc_spirv_iree_hal_target_options_t`.
+  LOOMC_STRUCTURE_TYPE_SPIRV_IREE_HAL_TARGET_OPTIONS = 25,
 
   /// `loomc_module_function_query_options_t`.
   LOOMC_STRUCTURE_TYPE_MODULE_FUNCTION_QUERY_OPTIONS = 26,
@@ -275,8 +275,8 @@ typedef enum loomc_structure_type_e {
   /// `loomc_launch_config_t`.
   LOOMC_STRUCTURE_TYPE_LAUNCH_CONFIG = 34,
 
-  /// `loomc_amdgpu_iree_hal_profile_options_t`.
-  LOOMC_STRUCTURE_TYPE_AMDGPU_IREE_HAL_PROFILE_OPTIONS = 35,
+  /// `loomc_amdgpu_iree_hal_target_options_t`.
+  LOOMC_STRUCTURE_TYPE_AMDGPU_IREE_HAL_TARGET_OPTIONS = 35,
 
   /// `loomc_link_dependency_analysis_options_t`.
   LOOMC_STRUCTURE_TYPE_LINK_DEPENDENCY_ANALYSIS_OPTIONS = 36,

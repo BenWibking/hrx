@@ -12,7 +12,6 @@
 #include "iree/base/api.h"
 #include "loom/error/source.h"
 #include "loom/target/provider.h"
-#include "loom/tooling/execution/execution_provider.h"
 #include "loom/tooling/testbench/scenario/executor.h"
 
 #ifdef __cplusplus
@@ -22,9 +21,6 @@ extern "C" {
 typedef struct loom_cleanup_pattern_provider_set_t
     loom_cleanup_pattern_provider_set_t;
 typedef struct loom_tooling_config_set_t loom_tooling_config_set_t;
-
-// Complete WebAssembly compiler capabilities contributed to execution tools.
-extern const loom_run_execution_provider_t loom_wasm_execution_provider;
 
 // Compiler inputs shared by independently prepared Wasm scenario products.
 //

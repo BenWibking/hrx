@@ -14,15 +14,9 @@
 #include "loom/error/error_defs.h"
 #include "loom/error/source.h"
 #include "loom/target/arch/vm/provider.h"
-#include "loom/target/emit/vm/module_compiler.h"
 #include "loom/target/entry_selection.h"
 #include "loom/tooling/compile/pipeline.h"
 #include "loom/tooling/config/config.h"
-
-const loom_run_execution_provider_t loom_vm_execution_provider = {
-    .name = IREE_SVL("vm"),
-    .compiler_provider_set = &loom_vm_compiler_provider_set,
-};
 
 void loom_vm_testbench_initialize(
     const loom_target_environment_t* target_environment,

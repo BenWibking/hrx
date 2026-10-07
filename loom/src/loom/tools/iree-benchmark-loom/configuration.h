@@ -45,7 +45,7 @@ typedef struct iree_benchmark_loom_configuration_t {
   loom_input_provider_list_t input_providers;
   // Null-terminated executable name used in help and diagnostics.
   const char* tool_name;
-  // Target environment linked into this runner.
+  // Target environment composed from linked compiler providers.
   const loom_target_environment_t* target_environment;
   // Cleanup rewrite providers linked into this runner.
   const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set;

@@ -26,7 +26,6 @@
 #include "loom/tooling/compile/pipeline.h"
 #include "loom/tooling/compile/report_capture.h"
 #include "loom/tooling/config/config.h"
-#include "loom/tooling/execution/execution_backend.h"
 #include "loom/tooling/execution/hal/artifact.h"
 #include "loom/tooling/execution/hal/testbench_staging.h"
 #include "loom/util/fact_table.h"
@@ -152,10 +151,22 @@ static iree_status_t loom_run_hal_testbench_context_select_device_provider(
     return iree_ok_status();
   }
 
-  iree_string_view_t device_uri = iree_string_view_empty();
+  const iree_string_view_list_t device_uris = iree_hal_device_flag_list();
+  if (device_uris.count != 1) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "Loom HAL execution requires exactly one --device= URI; got %" PRIhsz,
+        device_uris.count);
+  }
+
+  const iree_string_view_t device_uri = device_uris.values[0];
   iree_string_view_t device_driver_name = iree_string_view_empty();
-  IREE_RETURN_IF_ERROR(loom_run_execution_select_device_driver(
-      iree_hal_device_flag_list(), &device_uri, &device_driver_name));
+  iree_string_view_split(device_uri, ':', &device_driver_name, NULL);
+  if (iree_string_view_is_empty(device_driver_name)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "--device=%.*s has no HAL driver name",
+                            (int)device_uri.size, device_uri.data);
+  }
 
   const loom_device_provider_registry_t* registry =
       context->device_provider_registry;
@@ -783,7 +794,8 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
 
   const loom_device_artifact_t device_artifact = {
       .executable_target = provider->candidate.executable_target,
-      .artifact = &provider->candidate.artifact,
+      .contents = provider->candidate.artifact.contents,
+      .target_bundle = provider->candidate.artifact.target_bundle,
   };
   status = loom_run_hal_prepared_candidate_prepare(
       &provider->context->runtime, &device_artifact,
