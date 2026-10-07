@@ -172,6 +172,8 @@ loomc_status_t loomc_result_add_loom_diagnostic(
   iree_string_builder_initialize(allocator, &message_builder);
   iree_string_builder_t formatted_builder;
   iree_string_builder_initialize(allocator, &formatted_builder);
+  iree_string_builder_t parameter_values_builder;
+  iree_string_builder_initialize(allocator, &parameter_values_builder);
 
   loom_source_range_t primary_range = diagnostic->source_location;
   loomc_source_format_t primary_format = LOOMC_SOURCE_FORMAT_UNKNOWN;
@@ -187,6 +189,8 @@ loomc_status_t loomc_result_add_loom_diagnostic(
   loomc_diagnostic_related_location_t
       related_locations[LOOM_DIAGNOSTIC_MAX_RELATED_LOCATIONS] = {0};
   iree_host_size_t related_location_count = 0;
+  loomc_diagnostic_parameter_t* parameters = NULL;
+  iree_host_size_t parameter_count = 0;
   const loomc_source_retention_t source_retention =
       loomc_result_source_retention(result);
   loomc_status_t status =
@@ -198,6 +202,38 @@ loomc_status_t loomc_result_add_loom_diagnostic(
   if (loomc_status_is_ok(status)) {
     status = loomc_format_loom_diagnostic(diagnostic, type_printer,
                                           &formatted_builder);
+  }
+  if (loomc_status_is_ok(status) && diagnostic->params &&
+      diagnostic->param_count != 0 && diagnostic->error->param_count != 0) {
+    parameter_count =
+        iree_min(diagnostic->param_count, diagnostic->error->param_count);
+    status = loomc_status_from_iree(iree_allocator_malloc_array(
+        allocator, parameter_count, sizeof(*parameters), (void**)&parameters));
+  }
+  loom_output_stream_t parameter_values_stream;
+  loom_output_stream_for_builder(&parameter_values_builder,
+                                 &parameter_values_stream);
+  const loom_type_formatter_t type_formatter =
+      loomc_diagnostic_type_printer_formatter(type_printer);
+  for (iree_host_size_t i = 0;
+       loomc_status_is_ok(status) && i < parameter_count; ++i) {
+    parameters[i].name = loomc_make_cstring_view(
+        loom_error_def_param_name(diagnostic->error, i));
+    const iree_host_size_t value_start = parameter_values_builder.size;
+    status = loomc_status_from_iree(loom_diagnostic_render_param_value(
+        &diagnostic->params[i], type_formatter, &parameter_values_stream));
+    parameters[i].value = loomc_make_string_view(
+        NULL, parameter_values_builder.size - value_start);
+  }
+  if (loomc_status_is_ok(status)) {
+    const char* value_cursor =
+        iree_string_builder_view(&parameter_values_builder).data;
+    for (iree_host_size_t i = 0; i < parameter_count; ++i) {
+      parameters[i].value.data = value_cursor;
+      if (parameters[i].value.size != 0) {
+        value_cursor += parameters[i].value.size;
+      }
+    }
   }
   if (loomc_status_is_ok(status)) {
     status = loomc_source_from_loom_range(
@@ -252,6 +288,8 @@ loomc_status_t loomc_result_add_loom_diagnostic(
         .related_location_count = related_location_count,
         .related_location_omitted_count =
             diagnostic->related_location_omitted_count,
+        .parameters = parameters,
+        .parameter_count = parameter_count,
     };
     status = loomc_result_add_diagnostic(result, &public_diagnostic);
   }
@@ -260,6 +298,8 @@ loomc_status_t loomc_result_add_loom_diagnostic(
     loomc_source_release((loomc_source_t*)related_locations[i].range.source);
   }
   loomc_source_release(diagnostic_source);
+  iree_allocator_free(allocator, parameters);
+  iree_string_builder_deinitialize(&parameter_values_builder);
   iree_string_builder_deinitialize(&formatted_builder);
   iree_string_builder_deinitialize(&message_builder);
   iree_string_builder_deinitialize(&code_builder);

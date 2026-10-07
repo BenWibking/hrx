@@ -194,6 +194,13 @@ TEST(DiagnosticTest, RetainsCanonicalFormatting) {
 
   const auto* stored = loomc_result_diagnostic_at(result.get(), 0);
   ASSERT_NE(stored, nullptr);
+  ASSERT_EQ(stored->parameter_count, 1u);
+  EXPECT_EQ(std::string(stored->parameters[0].name.data,
+                        stored->parameters[0].name.size),
+            "value_name");
+  EXPECT_EQ(std::string(stored->parameters[0].value.data,
+                        stored->parameters[0].value.size),
+            "value");
   EXPECT_EQ(
       std::string(stored->formatted_text.data, stored->formatted_text.size),
       "source.loom:1:1: error [PARSE/002]: SSA value '%value' is already "
