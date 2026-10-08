@@ -7,6 +7,7 @@
 #include "loom/ops/buffer/ops.h"
 #include "loom/ops/channel/ops.h"
 #include "loom/ops/index/ops.h"
+#include "loom/ops/scf/ops.h"
 #include "loom/ops/type_registry.h"
 #include "loom/target/arch/amd/xdna/aie2p/pipeline/native.h"
 #include "loom/transforms/pipeline/channel_materialization.h"
@@ -16,16 +17,14 @@ typedef struct loom_aie2p_native_endpoint_t {
   const loom_aie2p_native_channel_access_t* access;
   // Initial physical slot address helper.
   loom_symbol_ref_t base;
-  // First slot's address, defined in the worker entry block.
-  loom_value_id_t initial;
-  // Successor slot helper, or null when this worker advances no cursor.
-  loom_symbol_ref_t next;
+  // Backing buffer address, defined in the worker entry block.
+  loom_value_id_t buffer;
   // Mutable state indices for directions owned by this worker. One-slot
-  // channels use initial directly and require no threaded state.
+  // channels use zero displacement and require no threaded state.
   struct {
-    // Current read address; used only by an owned multi-slot acquire.
+    // Current read byte offset; used only by an owned multi-slot acquire.
     iree_host_size_t reader;
-    // Current write address; used only by an owned multi-slot reserve.
+    // Current write byte offset; used only by an owned multi-slot reserve.
     iree_host_size_t writer;
   } cursor;
   // Native consuming-credit acquire helper, created on first use.
@@ -53,7 +52,7 @@ typedef struct loom_aie2p_native_channel_emitter_t {
   // Worker-owned source actions and completion deltas, retained before
   // rewriting.
   const loom_pipeline_worker_t* worker;
-  // Zero displacement for views borrowed from the current slot address.
+  // Initial byte displacement for every channel cursor.
   loom_value_id_t origin;
   // Final completion publication followed by a quiescent stream wait.
   loom_symbol_ref_t complete;
@@ -102,9 +101,7 @@ static iree_status_t loom_aie2p_native_endpoint(
     loom_aie2p_native_context_t* context,
     const loom_aie2p_native_channel_access_t* access,
     loom_aie2p_native_endpoint_t* endpoint) {
-  const loom_aie2p_native_channel_t* channel = access->channel;
   *endpoint = (loom_aie2p_native_endpoint_t){.access = access,
-                                             .next = loom_symbol_ref_null(),
                                              .acquire = loom_symbol_ref_null(),
                                              .reserve = loom_symbol_ref_null(),
                                              .publish = loom_symbol_ref_null(),
@@ -120,51 +117,7 @@ static iree_status_t loom_aie2p_native_endpoint(
   loom_value_id_t base;
   IREE_RETURN_IF_ERROR(
       loom_aie2p_native_address(code, &builder, address, &base));
-  IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&builder, &base, 1));
-  if (channel->source->capacity > 1 &&
-      (channel->cursor.reader == code->worker_index ||
-       channel->cursor.writer == code->worker_index)) {
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_helper(
-        code, &code->address_type, 1, &code->address_type, 1, &builder,
-        &endpoint->next, &function));
-    loom_region_t* body = loom_low_func_def_body(function);
-    const loom_value_id_t pointer = loom_region_entry_block(body)->arg_ids[0];
-    loom_value_id_t current, stride, next, limit, wrap;
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_op(
-        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_MOVE_LOCAL_ADDRESS_TO_SCALAR,
-        &pointer, 1, loom_named_attr_slice_empty(), &code->scalar_type,
-        &current));
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
-        code, &builder, channel->byte_stride, &stride));
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_ADD_I32, current, stride,
-        &next));
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_constant(
-        code, &builder,
-        address + channel->byte_stride * channel->source->capacity, &limit));
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_binary(
-        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_CMP_EQ_I32, next, limit,
-        &wrap));
-    loom_block_t *wrap_block, *next_block;
-    IREE_RETURN_IF_ERROR(
-        loom_region_append_block(code->module, body, &wrap_block));
-    IREE_RETURN_IF_ERROR(
-        loom_region_append_block(code->module, body, &next_block));
-    loom_op_t* branch;
-    IREE_RETURN_IF_ERROR(
-        loom_low_cond_br_build(&builder, wrap, wrap_block, next_block,
-                               LOOM_LOCATION_UNKNOWN, &branch));
-    loom_builder_set_block(&builder, wrap_block);
-    IREE_RETURN_IF_ERROR(
-        loom_aie2p_native_address(code, &builder, address, &base));
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&builder, &base, 1));
-    loom_builder_set_block(&builder, next_block);
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_op(
-        code, &builder, AIE2P_CORE_DESCRIPTOR_REF_MOVE_SCALAR_TO_LOCAL_ADDRESS,
-        &next, 1, loom_named_attr_slice_empty(), &code->address_type, &base));
-    IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&builder, &base, 1));
-  }
-  return iree_ok_status();
+  return loom_aie2p_worker_return(&builder, &base, 1);
 }
 
 static iree_status_t loom_aie2p_native_channel_action(
@@ -201,15 +154,55 @@ static iree_status_t loom_aie2p_native_channel_action(
       }
       IREE_RETURN_IF_ERROR(
           loom_aie2p_native_invoke(builder, *acquire, NULL, 0, NULL, NULL));
-      record = endpoint->initial;
-      if (loom_symbol_ref_is_valid(endpoint->next)) {
+      record = emitter->origin;
+      const loom_aie2p_native_channel_t* physical = endpoint->access->channel;
+      if (physical->source->capacity > 1) {
         const iree_host_size_t cursor =
             write ? endpoint->cursor.writer : endpoint->cursor.reader;
         record = state[cursor];
-        const loom_type_t buffer_type = loom_type_buffer();
-        IREE_RETURN_IF_ERROR(
-            loom_aie2p_native_invoke(builder, endpoint->next, &state[cursor], 1,
-                                     &buffer_type, &state[cursor]));
+        const loom_type_t offset_type =
+            loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET);
+        // Cursors start at zero and advance one record, wrapping at capacity.
+        // Retain that induction invariant at the borrow so source CFG widening
+        // cannot discard the selected address width and record alignment.
+        const loom_predicate_t predicates[] = {
+            {.kind = LOOM_PREDICATE_RANGE,
+             .arg_count = 3,
+             .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
+                          LOOM_PRED_ARG_CONST},
+             .args = {record, 0,
+                      physical->byte_stride *
+                          (physical->source->capacity - 1)}},
+            {.kind = LOOM_PREDICATE_MUL,
+             .arg_count = 2,
+             .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
+                          LOOM_PRED_ARG_NONE},
+             .args = {record, physical->byte_stride, 0}},
+        };
+        loom_op_t* bounded;
+        IREE_RETURN_IF_ERROR(loom_index_assume_build(
+            builder, &record, 1, predicates, IREE_ARRAYSIZE(predicates),
+            &offset_type, 1, action->op->location, &bounded));
+        record = loom_index_assume_results(bounded).values[0];
+        loom_op_t *stride, *limit, *next, *wrap, *selected;
+        IREE_RETURN_IF_ERROR(loom_index_constant_build(
+            builder, loom_attr_i64(physical->byte_stride), offset_type,
+            action->op->location, &stride));
+        IREE_RETURN_IF_ERROR(loom_index_constant_build(
+            builder,
+            loom_attr_i64(physical->byte_stride * physical->source->capacity),
+            offset_type, action->op->location, &limit));
+        IREE_RETURN_IF_ERROR(loom_index_add_build(
+            builder, record, loom_index_constant_result(stride), offset_type,
+            action->op->location, &next));
+        IREE_RETURN_IF_ERROR(loom_index_cmp_build(
+            builder, LOOM_INDEX_CMP_PREDICATE_EQ, loom_index_add_result(next),
+            loom_index_constant_result(limit), action->op->location, &wrap));
+        IREE_RETURN_IF_ERROR(loom_scf_select_build(
+            builder, loom_index_cmp_result(wrap), emitter->origin,
+            loom_index_add_result(next), offset_type, action->op->location,
+            &selected));
+        state[cursor] = loom_scf_select_result(selected);
       }
       results[0] = record;
       view_result = 1;
@@ -217,11 +210,11 @@ static iree_status_t loom_aie2p_native_channel_action(
     const loom_type_t buffer_type = loom_type_buffer();
     loom_op_t* aligned;
     IREE_RETURN_IF_ERROR(loom_buffer_assume_alignment_build(
-        builder, &record, 1, endpoint->alignment, &buffer_type, 1,
+        builder, &endpoint->buffer, 1, endpoint->alignment, &buffer_type, 1,
         action->op->location, &aligned));
     loom_op_t* view;
     IREE_RETURN_IF_ERROR(loom_buffer_view_build(
-        builder, loom_op_results(aligned)[0], emitter->origin,
+        builder, loom_op_results(aligned)[0], record,
         loom_module_value_type(rewriter->module,
                                loom_op_results(action->op)[view_result]),
         action->op->location, &view));
@@ -328,16 +321,16 @@ iree_status_t loom_aie2p_native_emit_worker(
     loom_aie2p_native_endpoint_t* endpoint = &emitter.endpoints[i];
     IREE_RETURN_IF_ERROR(
         loom_aie2p_native_invoke(&rewriter->builder, endpoint->base, NULL, 0,
-                                 &buffer_type, &endpoint->initial));
-    if (loom_symbol_ref_is_valid(endpoint->next)) {
-      const loom_aie2p_native_channel_t* channel = endpoint->access->channel;
+                                 &buffer_type, &endpoint->buffer));
+    const loom_aie2p_native_channel_t* channel = endpoint->access->channel;
+    if (channel->source->capacity > 1) {
       if (channel->cursor.reader == worker_index) {
         endpoint->cursor.reader = state_count;
-        state[state_count++] = endpoint->initial;
+        state[state_count++] = emitter.origin;
       }
       if (channel->cursor.writer == worker_index) {
         endpoint->cursor.writer = state_count;
-        state[state_count++] = endpoint->initial;
+        state[state_count++] = emitter.origin;
       }
     }
   }
@@ -350,7 +343,7 @@ iree_status_t loom_aie2p_native_emit_worker(
     const loom_type_t type =
         loom_module_value_type(code->module, source->value_domain.value_ids[i]);
     if (loom_read_type_isa(type) || loom_write_type_isa(type)) {
-      carriers[i] = buffer_type;
+      carriers[i] = loom_type_scalar(LOOM_SCALAR_TYPE_OFFSET);
     }
   }
   const loom_channel_materialization_options_t options = {

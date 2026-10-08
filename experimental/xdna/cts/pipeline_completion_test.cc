@@ -102,14 +102,14 @@ TEST_F(XdnaPipelineCompletionTest, RotatesOwnedReadsAcrossLoopIterations) {
 }
 
 TEST_F(XdnaPipelineCompletionTest, ProjectsFixedRecordAddresses) {
-  constexpr std::array<uint32_t, 10> results = {1,  0,  1,  11, 10,
-                                                11, 21, 20, 21, 21};
+  constexpr std::array<uint32_t, 16> results = {1,  0,  1,  11, 10, 11, 21, 20,
+                                                21, 31, 30, 31, 41, 40, 41, 41};
   CheckPipeline(IREE_SV("projected_single_slot"), results);
 }
 
 TEST_F(XdnaPipelineCompletionTest, ProjectsRotatingRecordAddresses) {
-  constexpr std::array<uint32_t, 10> results = {1,  0,  1,  11, 10,
-                                                11, 21, 20, 21, 21};
+  constexpr std::array<uint32_t, 16> results = {1,  0,  1,  11, 10, 11, 21, 20,
+                                                21, 31, 30, 31, 41, 40, 41, 41};
   CheckPipeline(IREE_SV("projected_ring"), results);
 }
 

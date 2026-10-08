@@ -8,7 +8,7 @@ aie2p.target<array> @npu
 
 // Read different projections from each retained record. The nonzero storage
 // origin separates the slot address from the memory owner's aperture. Capacity
-// one keeps that address fixed; capacity two rotates it while the dynamic
+// one keeps that address fixed; capacity three rotates it while the dynamic
 // projection and external output offset advance independently.
 
 pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffer) {
@@ -23,7 +23,7 @@ pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffe
   %slots = buffer.view %storage[%origin] : buffer -> view<[%capacity]x4xi32>
   %records = channel.bind<fifo> %slots, %capacity : view<[%capacity]x4xi32>, index -> channel<tile<4xi32>>
   %begin = index.constant 0 : index
-  %count = index.constant 3 : index
+  %count = index.constant 5 : index
   %step = index.constant 1 : index
 
   pipeline.strand workers([0, 2], [1, 1], [1, 1]) {
@@ -45,7 +45,7 @@ pipeline.def<kernel> @projected_records(%capacity: index) run(%output_arg: buffe
     %output_record_bytes = index.constant 12 : index
     %word_bytes = index.constant 4 : index
     %fields = index.constant 2 : index
-    %snapshot_offset = index.constant 36 : offset
+    %snapshot_offset = index.constant 60 : offset
     %snapshot = buffer.view %output[%snapshot_offset] : buffer -> view<1xi32>
     scf.for %record = [%begin to %count step %step] {
       %read, %payload = channel.acquire %records : channel<tile<4xi32>> -> (read<tile<4xi32>>, view<4xi32>)
@@ -83,7 +83,7 @@ pipeline.def<kernel> public retain target(@npu) @projected_single_slot() run(%ou
 }
 
 pipeline.def<kernel> public retain target(@npu) @projected_ring() run(%output: buffer) {
-  %capacity = index.constant 2 : index
+  %capacity = index.constant 3 : index
   pipeline.compose @projected_records[%capacity](%output) : [index](buffer)
 }
 

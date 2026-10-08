@@ -616,6 +616,7 @@ loom_cc_library(
     loom::ops::low
     loom::ops::pipeline
     loom::ops::scalar
+    loom::ops::scf
     loom::ops::type_registry
     loom::rewrite::rewriter
     loom::target::arch::amd::xdna::aie2p::ops

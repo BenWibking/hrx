@@ -357,11 +357,6 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
                                            .shim_engine = (*shim_engine)++,
                                            .ingress = ingress};
         worker->paths = queue->path;
-        IREE_RETURN_IF_ERROR(loom_xdna_array_form_load_address(
-            context->family, worker->tile->coordinate,
-            LOOM_XDNA_MEMORY_SPACE_DATA, local_tile->coordinate, 0,
-            local_tile->facts->memory.local_capacity,
-            &queue->path->local_window));
         queue->capacity = iree_min(local_tile->facts->dma.task_queue_depth,
                                    shim->facts->dma.task_queue_depth);
         IREE_RETURN_IF_ERROR(iree_arena_allocate_array(

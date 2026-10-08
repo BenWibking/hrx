@@ -95,8 +95,6 @@ typedef struct loom_aie2p_native_dma_path_t {
   loom_aie2p_native_tile_t* local;
   // External endpoint.
   loom_aie2p_native_tile_t* shim;
-  // Worker-visible address of the local endpoint's complete memory window.
-  uint32_t local_window;
   // Local direction-specific engine.
   uint8_t local_engine;
   // Shim direction-specific engine.
@@ -161,7 +159,7 @@ typedef struct loom_aie2p_native_transfer_t {
   const loom_view_region_t* local_view;
   // Admitted channel geometry owning the local record's physical slots.
   const loom_aie2p_native_channel_t* local_channel;
-  // Read/write capability carrying the local record address after realization.
+  // Read/write capability carrying the record's byte offset after realization.
   loom_value_id_t local_record;
   // Selected ordinary helper that submits both endpoint descriptors.
   loom_symbol_ref_t submit;
