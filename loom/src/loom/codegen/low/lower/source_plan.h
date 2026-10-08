@@ -18,6 +18,7 @@
 
 #include "loom/codegen/low/lower/rules.h"
 #include "loom/codegen/low/lower/source_memory.h"
+#include "loom/codegen/low/lower/structural_plan.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -122,6 +123,8 @@ typedef struct loom_low_lower_descriptor_matrix_plan_t {
 
 // Function-local retained plan and source-value materialization state.
 typedef struct loom_low_lower_source_plan_t {
+  // Shared structural type and branch decisions consumed without value facts.
+  loom_low_lower_structural_plan_t structural;
   // Required visibility on mutable global reads; thread scope keeps the
   // ordinary eager acquisition recipe. Fixed before per-operation selection.
   uint8_t read_visibility_scope;
@@ -183,11 +186,6 @@ bool loom_low_lower_source_plan_op_is_metadata(loom_op_kind_t kind);
 // Returns true when |source_value_id| needs a materialized target-Low result.
 bool loom_low_lower_source_plan_result_storage_required(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
-
-// Returns the exact condition value when facts prove a cfg.cond_br direction.
-bool loom_low_lower_source_plan_cfg_cond_br_exact_bool(
-    const loom_low_lower_context_t* context, const loom_op_t* source_op,
-    bool* out_condition);
 
 #ifdef __cplusplus
 }  // extern "C"

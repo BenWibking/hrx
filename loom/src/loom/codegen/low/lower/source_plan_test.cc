@@ -46,7 +46,7 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     iree_host_size_t plan_count = 0;
     bool overflow = false;
     SourcePlanObservation source_plan;
-    // Type mapping must finish before the selected arithmetic plan executes.
+    // Type mapping must finish before selected and structural plans execute.
     struct {
       // Original test-target mapper delegated to by the observer.
       loom_low_lower_map_type_callback_t callback = {};
@@ -319,7 +319,6 @@ TEST_F(LowLowerSourcePlanTest, PropagatesObserverEndFailureBeforeSelection) {
 TEST_F(LowLowerSourcePlanTest,
        LowersNonFuncDialectCallableBoundaryThroughInterfaces) {
   policy_.source_plan_observer = nullptr;
-  policy_.emit_preamble = {};
 
   loom_builder_t module_builder;
   loom_builder_initialize(module_, &module_->arena, loom_module_block(module_),
@@ -391,6 +390,8 @@ TEST_F(LowLowerSourcePlanTest,
       loom_low_lower_function(module_, function_, &options_, &result_));
   ASSERT_EQ(result_.error_count, 0u);
   ASSERT_NE(result_.low_func_op, nullptr);
+  EXPECT_GT(observer_.type_mapping.planning_queries, 0u);
+  EXPECT_EQ(observer_.type_mapping.emission_queries, 0u);
   loom_region_t* low_body =
       loom_func_like_body(loom_func_like_cast(module_, result_.low_func_op));
   ASSERT_NE(low_body, nullptr);

@@ -37,6 +37,7 @@ loom_cc_library(
     "source_memory.h"
     "source_plan.h"
     "source_query.h"
+    "structural_plan.h"
     "visibility.h"
   SRCS
     "call_predicates.c"
@@ -65,6 +66,7 @@ loom_cc_library(
     "source_memory.c"
     "source_plan.c"
     "source_query.c"
+    "structural_plan.c"
     "visibility.c"
   DEPS
     iree::base

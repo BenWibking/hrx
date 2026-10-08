@@ -41,20 +41,8 @@ iree_status_t loom_low_lower_source_call(loom_low_lower_context_t* context,
 
   const loom_value_slice_t source_results = loom_call_like_results(call);
   loom_type_t* result_types = NULL;
-  bool has_unmapped_result = false;
-  if (source_results.count != 0) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-        context, source_results.count, sizeof(*result_types),
-        (void**)&result_types));
-    for (uint16_t i = 0; i < source_results.count; ++i) {
-      IREE_RETURN_IF_ERROR(loom_low_lower_map_value(
-          context, source_op, source_results.values[i], &result_types[i]));
-      has_unmapped_result |= loom_type_kind(result_types[i]) == LOOM_TYPE_NONE;
-    }
-  }
-  if (has_unmapped_result) {
-    return iree_ok_status();
-  }
+  IREE_RETURN_IF_ERROR(loom_low_lower_structural_take_types(
+      context, source_op, &result_types, /*out_header_types=*/NULL));
 
   loom_low_func_call_build_flags_t build_flags = 0;
   const uint8_t purity = loom_call_like_purity(call);

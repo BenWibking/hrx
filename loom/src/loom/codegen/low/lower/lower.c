@@ -146,11 +146,9 @@ static iree_status_t loom_low_lower_map_blocks(
 
     for (uint16_t arg_index = 0; arg_index < source_block->arg_count;
          ++arg_index) {
-      loom_type_t low_type = loom_type_none();
-      IREE_RETURN_IF_ERROR(loom_low_lower_map_value(
-          context, context->source_function.op,
-          source_block->arg_ids[arg_index], &low_type));
-      IREE_ASSERT_NE(loom_type_kind(low_type), LOOM_TYPE_NONE);
+      const loom_type_t low_type =
+          loom_low_lower_structural_block_argument_type(context, block_index,
+                                                        arg_index);
       loom_value_id_t low_arg = LOOM_VALUE_ID_INVALID;
       IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
           &context->builder, low_block, low_type, &low_arg));
@@ -281,36 +279,6 @@ static iree_status_t loom_low_lower_emit_region_ops(
     loom_low_lower_context_t* context, loom_region_t* source_region,
     bool map_source_blocks);
 
-static iree_status_t loom_low_lower_map_value_types(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    const loom_value_id_t* source_values, uint16_t source_value_count,
-    loom_type_t** out_low_types) {
-  *out_low_types = NULL;
-  if (source_value_count == 0) {
-    return iree_ok_status();
-  }
-  loom_type_t* low_types = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_lower_allocate_emission_array(
-      context, source_value_count, sizeof(*low_types), (void**)&low_types));
-  for (uint16_t i = 0; i < source_value_count; ++i) {
-    IREE_RETURN_IF_ERROR(loom_low_lower_map_value(
-        context, source_op, source_values[i], &low_types[i]));
-    if (loom_type_kind(low_types[i]) == LOOM_TYPE_NONE) {
-      return iree_ok_status();
-    }
-  }
-  *out_low_types = low_types;
-  return iree_ok_status();
-}
-
-static iree_status_t loom_low_lower_map_op_result_types(
-    loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_type_t** out_result_types) {
-  return loom_low_lower_map_value_types(
-      context, source_op, loom_op_const_results(source_op),
-      source_op->result_count, out_result_types);
-}
-
 // Rebinds tuple-local SSA references retained by a target register type from
 // source identities to the Low identities that will own the type scheme.
 static iree_status_t loom_low_lower_remap_type_scheme(
@@ -382,11 +350,8 @@ static iree_status_t loom_low_lower_emit_scf_if(
       context, loom_scf_if_condition(source_op), &low_condition));
 
   loom_type_t* result_types = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_map_op_result_types(context, source_op, &result_types));
-  if (source_op->result_count != 0 && result_types == NULL) {
-    return iree_ok_status();
-  }
+  IREE_RETURN_IF_ERROR(loom_low_lower_structural_take_types(
+      context, source_op, &result_types, /*out_header_types=*/NULL));
 
   loom_low_scf_if_build_flags_t build_flags = 0;
   if (loom_scf_if_else_region(source_op) != NULL) {
@@ -436,17 +401,6 @@ static iree_status_t loom_low_lower_bind_region_entry_args(
 
 static iree_status_t loom_low_lower_emit_scf_for(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  if (loom_scf_for_pipeline_depth_is_present(source_op)) {
-    const loom_diagnostic_param_t params[] = {
-        loom_param_string(IREE_SV("pipeline")),
-        loom_param_i64(0),
-        loom_param_string(
-            IREE_SV("consumed by pipeline-scf-for before source-to-low")),
-    };
-    return loom_low_lower_emit_target_context_error(
-        context, source_op, LOOM_ERR_STRUCTURE_014, params,
-        IREE_ARRAYSIZE(params));
-  }
   loom_value_id_t low_lower_bound = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_low_lower_lookup_value(
       context, loom_scf_for_lower_bound(source_op), &low_lower_bound));
@@ -513,19 +467,9 @@ static iree_status_t loom_low_lower_emit_scf_while(
       loom_region_const_entry_block(loom_scf_while_before(source_op));
 
   loom_type_t* header_types = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_map_value_types(context, source_op, source_before->arg_ids,
-                                     source_before->arg_count, &header_types));
-  if (source_before->arg_count != 0 && header_types == NULL) {
-    return iree_ok_status();
-  }
-
   loom_type_t* result_types = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_map_op_result_types(context, source_op, &result_types));
-  if (source_op->result_count != 0 && result_types == NULL) {
-    return iree_ok_status();
-  }
+  IREE_RETURN_IF_ERROR(loom_low_lower_structural_take_types(
+      context, source_op, &result_types, &header_types));
 
   const iree_host_size_t identity_count =
       (iree_host_size_t)source_before->arg_count + source_op->result_count;
@@ -658,8 +602,8 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
       IREE_RETURN_IF_ERROR(loom_low_lower_lookup_successor_dest(
           context, source_op, 1, &low_false_dest));
       bool condition = false;
-      if (loom_low_lower_source_plan_cfg_cond_br_exact_bool(context, source_op,
-                                                            &condition)) {
+      if (loom_low_lower_structural_branch_exact_bool(context, source_op,
+                                                      &condition)) {
         loom_block_t* low_dest = condition ? low_true_dest : low_false_dest;
         loom_op_t* low_br_op = NULL;
         return loom_low_br_build(&context->builder, low_dest, NULL, 0,
@@ -1170,6 +1114,7 @@ static iree_status_t loom_low_lower_emit_body(loom_low_lower_context_t* context,
   if (iree_status_is_ok(status) && context->result->error_count == 0) {
     IREE_ASSERT_EQ(context->lowering.source_plan.selected_plan_emit_index,
                    context->lowering.source_plan.selected_plan_count);
+    IREE_ASSERT_EQ(context->lowering.source_plan.structural.cursor, NULL);
   }
   return status;
 }
