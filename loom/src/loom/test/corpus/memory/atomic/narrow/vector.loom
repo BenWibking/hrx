@@ -27,21 +27,43 @@ kernel.def @half_snapshot_and_duplicates() {
   kernel.return
 }
 
-check.case public @half_snapshot_and_duplicate_old_values {
-  %memory = check.generate.iota offset(2.0) step(1.0) : tensor<4xf16>
-  %output = check.generate.fill value(0.0) : tensor<2xf16>
-  kernel.launch @half_snapshot_and_duplicates(%memory, %output) : (tensor<4xf16>, tensor<2xf16>)
-  %cells = check.tensor.view %memory offset(2) : tensor<4xf16> -> tensor<2xf16>
-  %prefix = check.tensor.view %memory offset(0) : tensor<4xf16> -> tensor<1xf16>
-  %suffix = check.tensor.view %memory offset(6) : tensor<4xf16> -> tensor<1xf16>
-  %expected_cells = check.generate.iota offset(9.0) step(-2.0) : tensor<2xf16>
-  %expected_old = check.generate.iota offset(7.0) step(1.0) : tensor<2xf16>
-  %expected_prefix = check.generate.fill value(2.0) : tensor<1xf16>
-  %expected_suffix = check.generate.fill value(5.0) : tensor<1xf16>
-  check.expect.bitwise actual(%cells) expected(%expected_cells) : tensor<2xf16>
-  check.expect.bitwise actual(%output) expected(%expected_old) : tensor<2xf16>
-  check.expect.bitwise actual(%prefix) expected(%expected_prefix) : tensor<1xf16>
-  check.expect.bitwise actual(%suffix) expected(%expected_suffix) : tensor<1xf16>
+func.def @half_snapshot_and_duplicates_oracle(%memory: buffer, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %cells = buffer.view %memory[%origin] : buffer -> view<4xf16>
+  %results = buffer.view %output[%origin] : buffer -> view<2xf16>
+  %left = view.load %cells[1] : view<4xf16> -> f16
+  %right = view.load %cells[2] : view<4xf16> -> f16
+  %sum = scalar.addf %left, %right : f16
+  %increment = scalar.constant 1.0 : f16
+  %successor = scalar.addf %sum, %increment : f16
+  %final = scalar.addf %successor, %increment : f16
+  %lower = scalar.minnumf %sum, %successor : f16
+  %upper = scalar.maxnumf %sum, %successor : f16
+  view.store %final, %cells[1] : f16, view<4xf16>
+  view.store %sum, %cells[2] : f16, view<4xf16>
+  view.store %lower, %results[0] : f16, view<2xf16>
+  view.store %upper, %results[1] : f16, view<2xf16>
+  func.return
+}
+
+check.scenario @half_snapshot_and_duplicate_old_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %seed = check.entropy.read %entropy[%trial] : check.entropy -> i64
+    %memory = check.generate.random.uniform seed(%seed) range(-16.0 to 16.0) : tensor<4xf16>
+    %output = check.generate.fill value(0.0) : tensor<2xf16>
+    check.compare<@half_snapshot_and_duplicates, @half_snapshot_and_duplicates_oracle>(%memory, %output) : (tensor<4xf16>, tensor<2xf16>) -> () {
+      check.expect.bitwise actual(%memory) expected(%memory) : tensor<4xf16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xf16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %memory = check.generate.iota offset(2.0) step(1.0) : tensor<4xf16>
+    %output = check.generate.fill value(0.0) : tensor<2xf16>
+    check.compare<@half_snapshot_and_duplicates, @half_snapshot_and_duplicates_oracle>(%memory, %output) : (tensor<4xf16>, tensor<2xf16>) -> () {
+      check.expect.bitwise actual(%memory) expected(%memory) : tensor<4xf16>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<2xf16>
+    }
+  }
   check.return
 }
 
@@ -95,37 +117,43 @@ kernel.def @masked_brain_payloads() {
   kernel.return
 }
 
-check.case public @brain_mask_active {
-  %flag = check.literal value(1) : i32
-  %output = check.generate.fill value(0) : tensor<9xi16>
-  kernel.launch @masked_brain_payloads(%flag, %output) : (i32, tensor<9xi16>)
-  %old = check.tensor.view %output offset(0) : tensor<9xi16> -> tensor<1xi16>
-  %inactive = check.tensor.view %output offset(2) : tensor<9xi16> -> tensor<2xi16>
-  %observed = check.tensor.view %output offset(6) : tensor<9xi16> -> tensor<2xi16>
-  %after = check.tensor.view %output offset(10) : tensor<9xi16> -> tensor<4xi16>
-  %expected_old = check.generate.fill value(32641) : tensor<1xi16>
-  %expected_inactive = check.generate.fill value(32709) : tensor<2xi16>
-  %expected_observed = check.generate.iota offset(2) step(32639) : tensor<2xi16>
-  %expected_after = check.generate.fill value(-32768) : tensor<4xi16>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<1xi16>
-  check.expect.bitwise actual(%inactive) expected(%expected_inactive) : tensor<2xi16>
-  check.expect.bitwise actual(%observed) expected(%expected_observed) : tensor<2xi16>
-  check.expect.bitwise actual(%after) expected(%expected_after) : tensor<4xi16>
-  check.return
+func.def @masked_brain_payloads_oracle(%flag: i32, %output: buffer) {
+  %origin = index.constant 0 : offset
+  %results = buffer.view %output[%origin] : buffer -> view<9xi16>
+  %flag_clear = scalar.constant 0 : i32
+  %enabled = scalar.cmpi ne, %flag, %flag_clear : i32
+  %nan_bits = scalar.constant 32641 : i16
+  %passthrough_bits = scalar.constant 32709 : i16
+  %added_bits = scalar.constant 2 : i16
+  %replacement_bits = scalar.constant -32768 : i16
+  %old_first = scf.select %enabled, %nan_bits, %passthrough_bits : i16
+  %observed_first = scf.select %enabled, %added_bits, %nan_bits : i16
+  view.store %old_first, %results[0] : i16, view<9xi16>
+  view.store %passthrough_bits, %results[1] : i16, view<9xi16>
+  view.store %passthrough_bits, %results[2] : i16, view<9xi16>
+  view.store %observed_first, %results[3] : i16, view<9xi16>
+  view.store %nan_bits, %results[4] : i16, view<9xi16>
+  view.store %replacement_bits, %results[5] : i16, view<9xi16>
+  view.store %replacement_bits, %results[6] : i16, view<9xi16>
+  view.store %replacement_bits, %results[7] : i16, view<9xi16>
+  view.store %replacement_bits, %results[8] : i16, view<9xi16>
+  func.return
 }
 
-check.case public @brain_mask_inactive {
-  %flag = check.literal value(0) : i32
-  %output = check.generate.fill value(0) : tensor<9xi16>
-  kernel.launch @masked_brain_payloads(%flag, %output) : (i32, tensor<9xi16>)
-  %old = check.tensor.view %output offset(0) : tensor<9xi16> -> tensor<3xi16>
-  %observed = check.tensor.view %output offset(6) : tensor<9xi16> -> tensor<2xi16>
-  %after = check.tensor.view %output offset(10) : tensor<9xi16> -> tensor<4xi16>
-  %expected_old = check.generate.fill value(32709) : tensor<3xi16>
-  %expected_observed = check.generate.fill value(32641) : tensor<2xi16>
-  %expected_after = check.generate.fill value(-32768) : tensor<4xi16>
-  check.expect.bitwise actual(%old) expected(%expected_old) : tensor<3xi16>
-  check.expect.bitwise actual(%observed) expected(%expected_observed) : tensor<2xi16>
-  check.expect.bitwise actual(%after) expected(%expected_after) : tensor<4xi16>
+check.scenario @brain_mask_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %flag = check.literal value(1) : i32
+    %output = check.generate.fill value(0) : tensor<9xi16>
+    check.compare<@masked_brain_payloads, @masked_brain_payloads_oracle>(%flag, %output) : (i32, tensor<9xi16>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<9xi16>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %flag = check.literal value(0) : i32
+    %output = check.generate.fill value(0) : tensor<9xi16>
+    check.compare<@masked_brain_payloads, @masked_brain_payloads_oracle>(%flag, %output) : (i32, tensor<9xi16>) -> () {
+      check.expect.bitwise actual(%output) expected(%output) : tensor<9xi16>
+    }
+  }
   check.return
 }

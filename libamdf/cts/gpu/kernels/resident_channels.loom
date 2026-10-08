@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // One invocation owns both GPU request/response channels. Channel H completes
 // generation 1, the other channel completes generations 1 through K, then H
 // completes generation 2. Every request after the first uses the preceding

@@ -435,6 +435,9 @@ loom_corpus_test(
     "memory/atomic/narrow/cmpxchg.loom"
     "memory/atomic/narrow/contention.loom"
     "memory/atomic/narrow/float.loom"
+    "memory/atomic/narrow/vector.loom"
+    "memory/atomic/private.loom"
+    "memory/atomic/vector.loom"
     "memory/atomic/workgroup/cmpxchg.loom"
     "memory/atomic/workgroup/vector.loom"
     "memory/buffer/allocation_freshness.loom"
@@ -716,9 +719,6 @@ loom_corpus_test(
   SOURCES
     "memory/atomic/narrow/observations.loom"
     "memory/atomic/narrow/scopes.loom"
-    "memory/atomic/narrow/vector.loom"
-    "memory/atomic/private.loom"
-    "memory/atomic/vector.loom"
     "memory/atomic/workgroup/global.loom"
     "memory/atomic/workgroup/observations.loom"
   RUNNER_ARGS

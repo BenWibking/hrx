@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // A single publisher owns the SDMA v1 byte-indexed ring. Source, destination,
 // completion and the borrowed mapping stay live through queue retirement.
 // The previous copy is consumed before this call; no other publisher exists.

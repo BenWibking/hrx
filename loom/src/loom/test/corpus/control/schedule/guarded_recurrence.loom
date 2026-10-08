@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Serial, pipelined, and pipelined-unrolled schedules evaluate each guarded
 // recurrence in one checked program. Each iteration queues its predicate with
 // its guarded payload; a separate guarded recurrence consumes both later. The
