@@ -386,8 +386,12 @@ static iree_status_t loom_aie2p_native_config_bindings(
          transfer; transfer = transfer->next) {
       const loom_symbolic_expr_t* offset =
           &transfer->external_view->begin_byte_offset;
-      const bool external_dynamic = !loom_symbolic_expr_is_constant(offset);
-      const uint64_t begin = external_dynamic ? 0 : offset->constant;
+      const bool external_dynamic =
+          !worker->repetition.count && !loom_symbolic_expr_is_constant(offset);
+      const uint64_t begin = worker->repetition.count
+                                 ? worker->repetition.external_byte_offset
+                             : external_dynamic ? 0
+                                                : offset->constant;
       loom_value_id_t range[] = {bindings[transfer->binding],
                                  LOOM_VALUE_ID_INVALID, LOOM_VALUE_ID_INVALID};
       IREE_RETURN_IF_ERROR(
@@ -424,6 +428,21 @@ static iree_status_t loom_aie2p_native_config_bindings(
                [AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_ADDRESS],
           0, operands, 2, loom_named_attr_slice_empty(), NULL, 0, NULL, 0,
           LOOM_LOCATION_UNKNOWN, &op));
+      if (worker->repetition.count &&
+          worker->repetition.count %
+              transfer->local_channel->source->capacity) {
+        // The descriptor advances its iteration when loaded. All publications
+        // were consumed before the previous invocation returned, so its final
+        // advancement is complete. Restore slot zero when the bounded repeat
+        // does not wrap naturally; the consumer also starts at slot zero.
+        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_write(
+            config,
+            loom_xdna_register_field_address_admitted(
+                context->family,
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD4_ITERATION_CURRENT,
+                transfer->path->local->coordinate, &transfer->local_descriptor),
+            transfer->local_words[4]));
+      }
     }
   }
   return iree_ok_status();
@@ -431,7 +450,7 @@ static iree_status_t loom_aie2p_native_config_bindings(
 
 static iree_status_t loom_aie2p_native_config_submit(
     loom_aie2p_native_configuration_t* config,
-    const loom_aie2p_native_transfer_t* transfer) {
+    const loom_aie2p_native_transfer_t* transfer, uint32_t repetitions) {
   const loom_aie2p_native_dma_path_t* path = transfer->path;
   const loom_xdna_register_field_id_t local_queue =
       path->ingress
@@ -441,10 +460,18 @@ static iree_status_t loom_aie2p_native_config_submit(
       path->ingress
           ? LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_MM2S_TASK_QUEUE_START_BD_ID
           : LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_S2MM_TASK_QUEUE_START_BD_ID;
-  const uint32_t local_task = loom_xdna_register_field_encode_admitted(
+  uint32_t local_task = loom_xdna_register_field_encode_admitted(
       local_queue, transfer->local_descriptor);
   uint32_t shim_task = loom_xdna_register_field_encode_admitted(
       shim_queue, transfer->shim_descriptor);
+  if (repetitions > 1) {
+    local_task |= loom_xdna_register_field_encode_admitted(
+        LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_CHANNEL_S2MM_START_QUEUE_REPEAT_COUNT,
+        repetitions - 1);
+    shim_task |= loom_xdna_register_field_encode_admitted(
+        LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_MM2S_TASK_QUEUE_REPEAT_COUNT,
+        repetitions - 1);
+  }
   if (!path->ingress) {
     shim_task |= loom_xdna_register_field_encode_admitted(
         LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_CHANNEL_S2MM_TASK_QUEUE_ENABLE_TOKEN_ISSUE,
@@ -480,7 +507,7 @@ static iree_status_t loom_aie2p_native_config_communicate(
     const loom_pipeline_transport_step_t* step = &source->transport.steps[i];
     switch (step->kind) {
       case LOOM_PIPELINE_TRANSPORT_STEP_TRANSFER: {
-        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_submit(config, issue));
+        IREE_RETURN_IF_ERROR(loom_aie2p_native_config_submit(config, issue, 1));
         issue = issue->next;
         break;
       }
@@ -612,7 +639,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
                             loom_low_func_def_body(initialize));
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
-    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+    if (worker->execution != LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
       continue;
     }
     IREE_RETURN_IF_ERROR(
@@ -661,7 +688,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
     const loom_aie2p_native_channel_t* channel = &context->channels[i];
     const loom_xdna_tile_coordinate_t tile =
         context->pool_tiles[channel->pool_index]->coordinate;
-    // A communication-only writer reserves its sole record from the initial
+    // A configuration writer reserves its sole record from the initial
     // credit. Debit it here so a core reader's final release cannot overflow
     // the semaphore even when the channel starts at its maximum capacity.
     const bool reserve_initial =
@@ -682,7 +709,8 @@ iree_status_t loom_aie2p_native_emit_configuration(
     }
     for (const loom_aie2p_native_transfer_t* transfer = worker->transfers;
          transfer; transfer = transfer->next) {
-      if (!transfer->path->ingress) {
+      if (!transfer->path->ingress ||
+          worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_DMA) {
         continue;
       }
       IREE_RETURN_IF_ERROR(loom_aie2p_native_config_set_lock(
@@ -693,8 +721,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
   // Every semaphore is initialized before any worker can produce a credit.
   // Ingress completions can belong to a neighboring worker's memory tile.
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
-    if (context->workers[i].execution ==
-        LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+    if (context->workers[i].execution != LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
       continue;
     }
     const loom_xdna_tile_coordinate_t tile =
@@ -708,6 +735,13 @@ iree_status_t loom_aie2p_native_emit_configuration(
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
+    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_DMA) {
+      IREE_RETURN_IF_ERROR(loom_aie2p_native_config_submit(
+          &config, worker->transfers, worker->repetition.count));
+    }
+  }
+  for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
+    const loom_aie2p_native_worker_t* worker = &context->workers[i];
     if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
       IREE_RETURN_IF_ERROR(
           loom_aie2p_native_config_communicate(&config, realization, i));
@@ -715,7 +749,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
-    if (worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+    if (worker->execution != LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
       continue;
     }
     IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
@@ -725,8 +759,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
         AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WAIT_MASK32));
   }
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
-    if (context->workers[i].execution ==
-        LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+    if (context->workers[i].execution != LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
       continue;
     }
     const loom_xdna_tile_coordinate_t tile =
@@ -737,8 +770,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
 
   IREE_RETURN_IF_ERROR(loom_rewriter_erase(rewriter, realization->function.op));
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
-    if (context->workers[i].execution ==
-        LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION) {
+    if (context->workers[i].execution != LOOM_AIE2P_NATIVE_EXECUTION_CORE) {
       IREE_RETURN_IF_ERROR(
           loom_rewriter_erase(rewriter, realization->workers[i].function.op));
     }

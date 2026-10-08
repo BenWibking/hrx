@@ -11,6 +11,7 @@
 #include "loom/analysis/kernel_async_legality.h"
 #include "loom/analysis/pipeline_resources.h"
 #include "loom/util/cfg_graph.h"
+#include "loom/util/fact_cfg.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,6 +73,15 @@ typedef struct loom_pipeline_transport_t {
   const loom_kernel_async_stream_t* const* streams;
   // Number of movement-bearing blocks on the execution chain.
   iree_host_size_t stream_count;
+  // Number of executions of the complete ordered sequence. A straight-line
+  // invocation has one; a regular loop has its proven exact trip count.
+  uint64_t repetitions;
+  // Controlling recurrence for repeated execution, or NULL for straight-line
+  // execution. Borrowed from the worker's retained CFG snapshot.
+  const loom_value_fact_induction_t* induction;
+  // External source roots cannot change during this closed execution. This
+  // proof includes every strand's effects and scoped alias contracts.
+  bool sources_stable;
 } loom_pipeline_transport_t;
 
 typedef struct loom_pipeline_worker_t {
@@ -104,6 +114,9 @@ typedef struct loom_pipeline_worker_t {
   loom_pipeline_transport_t transport;
   // CFG topology retained for scheduling and handoff analysis.
   const loom_cfg_graph_t* graph;
+  // Exact invocation execution counts per CFG block, or NULL when conditional
+  // control or unknown recurrence prevents a complete count proof.
+  const uint64_t* block_execution_counts;
 } loom_pipeline_worker_t;
 
 // Binds every outlined strand in one construction occurrence. The construction

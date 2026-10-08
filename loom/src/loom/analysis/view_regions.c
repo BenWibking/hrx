@@ -14,6 +14,7 @@
 #include "loom/ir/attribute.h"
 #include "loom/ir/context.h"
 #include "loom/ops/buffer/ops.h"
+#include "loom/ops/channel/ops.h"
 #include "loom/ops/encoding/storage.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/view/ops.h"
@@ -948,6 +949,14 @@ static bool loom_view_region_ordering_acquires(loom_attribute_t attribute) {
 static void loom_view_region_analyze_interference(
     loom_view_region_table_t* table, const loom_op_t* op,
     const loom_op_vtable_t* vtable, loom_trait_flags_t traits) {
+  const bool communication =
+      loom_kernel_async_group_isa(op) || loom_kernel_async_wait_isa(op) ||
+      loom_op_dialect_id(op->kind) == LOOM_DIALECT_CHANNEL;
+  if (communication && iree_any_bit_set(traits, LOOM_TRAIT_UNKNOWN_EFFECTS |
+                                                    LOOM_TRAIT_MEMORY_FENCE)) {
+    table->communication_memory_spaces = UINT32_MAX;
+    return;
+  }
   if (iree_any_bit_set(traits, LOOM_TRAIT_UNKNOWN_EFFECTS)) {
     table->interference_memory_spaces = UINT32_MAX;
   }
@@ -1516,7 +1525,9 @@ bool loom_view_region_table_root_is_stable(
   }
   return memory_space == LOOM_VALUE_FACT_MEMORY_SPACE_CONSTANT ||
          (alias_scope_id != LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE &&
-          !(table->interference_memory_spaces & (1u << memory_space)) &&
+          !((table->interference_memory_spaces |
+             table->communication_memory_spaces) &
+            (1u << memory_space)) &&
           (ordinal >= table->value_domain->definition_count ||
            iree_any_bit_set(flags, LOOM_VIEW_STORAGE_INVARIANT) ||
            !(table->varying_root_write_memory_spaces & (1u << memory_space))));

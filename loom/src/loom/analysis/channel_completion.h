@@ -32,7 +32,8 @@ typedef struct loom_channel_completion_action_t {
   // Non-completions have zero.
   uint32_t credits;
   // Conservative bound on admissions by this endpoint during one invocation.
-  // A cyclic admission has UINT32_MAX; acyclic sites each contribute one.
+  // Exact block execution counts refine this bound when supplied. Otherwise
+  // a cyclic admission has UINT32_MAX; acyclic sites each contribute one.
   // Zero or one proves that this endpoint never advances beyond its first slot.
   uint32_t maximum_admissions;
 } loom_channel_completion_action_t;
@@ -72,9 +73,12 @@ typedef struct loom_channel_completion_t {
 // another realization. No target diagnostics or source mutations occur here.
 // No-action workers allocate nothing. Other state lives in arena through the
 // consuming rewrite; emission uses the direct action-indexed result table.
+// Optional block_execution_counts contains exact counts from the shared CFG
+// recurrence analysis; NULL retains conservative cyclic admission bounds.
 iree_status_t loom_channel_completion_analyze(
     const loom_channel_plan_t* plan, const loom_cfg_graph_t* graph,
-    iree_arena_allocator_t* arena, loom_channel_completion_t* out_completion);
+    const uint64_t* block_execution_counts, iree_arena_allocator_t* arena,
+    loom_channel_completion_t* out_completion);
 
 #ifdef __cplusplus
 }  // extern "C"

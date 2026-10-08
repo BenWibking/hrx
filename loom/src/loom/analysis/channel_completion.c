@@ -114,7 +114,8 @@ static bool loom_channel_completion_apply(
 
 iree_status_t loom_channel_completion_analyze(
     const loom_channel_plan_t* plan, const loom_cfg_graph_t* graph,
-    iree_arena_allocator_t* arena, loom_channel_completion_t* out_completion) {
+    const uint64_t* block_execution_counts, iree_arena_allocator_t* arena,
+    loom_channel_completion_t* out_completion) {
   *out_completion = (loom_channel_completion_t){0};
   if (!plan->action_count) {
     return iree_ok_status();
@@ -183,7 +184,11 @@ iree_status_t loom_channel_completion_analyze(
           (loom_channel_reserve_isa(op) || loom_channel_acquire_isa(op))) {
         uint32_t* bound =
             &endpoints[action_endpoints[action_index]].maximum_admissions;
-        if (graph->blocks[b].component_is_cyclic) {
+        if (block_execution_counts) {
+          const uint64_t count = block_execution_counts[b];
+          *bound = count >= UINT32_MAX - *bound ? UINT32_MAX
+                                                : *bound + (uint32_t)count;
+        } else if (graph->blocks[b].component_is_cyclic) {
           *bound = UINT32_MAX;
         } else if (*bound != UINT32_MAX) {
           ++*bound;

@@ -171,8 +171,8 @@ class ChannelCompletionTest : public ::testing::Test {
     loom_cfg_graph_t graph;
     IREE_ASSERT_OK(loom_cfg_graph_build(module_, region_, &arena_, &graph));
     loom_channel_completion_t completion;
-    IREE_ASSERT_OK(
-        loom_channel_completion_analyze(&plan, &graph, &arena_, &completion));
+    IREE_ASSERT_OK(loom_channel_completion_analyze(&plan, &graph, nullptr,
+                                                   &arena_, &completion));
     ASSERT_EQ(completion.requirement, LOOM_CHANNEL_COMPLETION_REQUIREMENT_NONE);
     ASSERT_EQ(plan.action_count, expected.size());
     if (expected.size() == 0) {

@@ -12,6 +12,7 @@
 #include "loom/ops/kernel/ops.h"
 #include "loom/ops/pipeline/ops.h"
 #include "loom/ops/type_registry.h"
+#include "loom/util/adaptive_sort.h"
 #include "loom/util/fact_cfg.h"
 #include "loom/util/fact_extensions.h"
 
@@ -76,13 +77,19 @@ typedef struct loom_pipeline_transport_block_t {
 
 static iree_status_t loom_pipeline_worker_transport(
     loom_module_t* module, iree_arena_allocator_t* arena,
+    const loom_value_fact_cfg_region_t* structure,
     loom_pipeline_worker_t* worker) {
   const loom_cfg_graph_t* graph = worker->graph;
-  if (graph->has_cycles || !worker->asynchronous.streams) {
+  if (!worker->asynchronous.streams ||
+      (graph->has_cycles &&
+       (!worker->block_execution_counts || structure->loops.loop_count != 1))) {
     return iree_ok_status();
   }
   for (iree_host_size_t i = 0; i < graph->reverse_postorder.count; ++i) {
-    if (graph->blocks[graph->reverse_postorder.values[i]].successor_count > 1) {
+    const uint16_t block = graph->reverse_postorder.values[i];
+    if (graph->blocks[block].successor_count > 1 &&
+        (!graph->has_cycles ||
+         structure->loops.loops[0].header_index != block)) {
       return iree_ok_status();
     }
   }
@@ -138,7 +145,8 @@ static iree_status_t loom_pipeline_worker_transport(
             .op = op, .kind = LOOM_PIPELINE_TRANSPORT_STEP_WAIT};
         ++wait;
       } else if (!loom_func_return_isa(op) &&
-                 !loom_kernel_async_group_isa(op) && !loom_cfg_br_isa(op)) {
+                 !loom_kernel_async_group_isa(op) && !loom_cfg_br_isa(op) &&
+                 !loom_cfg_cond_br_isa(op)) {
         const loom_trait_flags_t traits = loom_op_effective_traits(module, op);
         if (!iree_any_bit_set(traits, LOOM_TRAIT_PURE) ||
             loom_traits_may_read(traits) || loom_traits_may_write(traits) ||
@@ -152,10 +160,53 @@ static iree_status_t loom_pipeline_worker_transport(
   if (stream_count == 0) {
     return iree_ok_status();
   }
+  const loom_value_fact_induction_t* induction = NULL;
+  uint64_t repetitions = 1;
+  if (graph->has_cycles) {
+    induction = &structure->inductions[0];
+    for (iree_host_size_t i = 0; i < count; ++i) {
+      const uint16_t block = steps[i].op->parent_block->region_index;
+      if (!loom_cfg_loop_nest_contains(&structure->loops, 0, block) ||
+          block == structure->loops.loops[0].header_index) {
+        return iree_ok_status();
+      }
+    }
+    repetitions =
+        worker->block_execution_counts[steps[0].op->parent_block->region_index];
+  }
   worker->transport = (loom_pipeline_transport_t){.steps = steps,
                                                   .count = count,
                                                   .streams = streams,
-                                                  .stream_count = stream_count};
+                                                  .stream_count = stream_count,
+                                                  .repetitions = repetitions,
+                                                  .induction = induction};
+  return iree_ok_status();
+}
+
+static iree_status_t loom_pipeline_worker_execution_counts(
+    loom_module_t* module, iree_arena_allocator_t* arena,
+    const loom_value_fact_cfg_region_t* structure,
+    loom_pipeline_worker_t* worker) {
+  uint64_t* trip_counts = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate_array(arena, structure->loops.loop_count,
+                                sizeof(*trip_counts), (void**)&trip_counts));
+  for (iree_host_size_t i = 0; i < structure->loops.loop_count; ++i) {
+    const loom_loop_recurrence_facts_t recurrence =
+        loom_value_fact_induction_facts(&worker->facts, module,
+                                        &structure->inductions[i]);
+    if (!recurrence.trip_count_known) {
+      return iree_ok_status();
+    }
+    trip_counts[i] = recurrence.trip_count;
+  }
+  uint64_t* counts;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, structure->graph.block_count, sizeof(*counts), (void**)&counts));
+  if (loom_cfg_loop_nest_calculate_block_execution_counts(
+          &structure->loops, trip_counts, counts)) {
+    worker->block_execution_counts = counts;
+  }
   return iree_ok_status();
 }
 
@@ -279,7 +330,15 @@ static iree_status_t loom_pipeline_worker_build(
       arena, &worker->channels, &rejection);
   if (iree_status_is_ok(status) &&
       rejection.kind == LOOM_CHANNEL_PLAN_REJECTION_NONE) {
+    if (worker->channels.action_count) {
+      status = loom_pipeline_worker_execution_counts(module, arena, structure,
+                                                     worker);
+    }
+  }
+  if (iree_status_is_ok(status) &&
+      rejection.kind == LOOM_CHANNEL_PLAN_REJECTION_NONE) {
     status = loom_channel_completion_analyze(&worker->channels, worker->graph,
+                                             worker->block_execution_counts,
                                              arena, &worker->completion);
   }
   if (iree_status_is_ok(status) &&
@@ -293,7 +352,7 @@ static iree_status_t loom_pipeline_worker_build(
     status = loom_kernel_async_legality_analyze_function(
         module, worker->function, &options, arena, &worker->asynchronous);
     if (iree_status_is_ok(status) && worker->asynchronous.error_count == 0) {
-      status = loom_pipeline_worker_transport(module, arena, worker);
+      status = loom_pipeline_worker_transport(module, arena, structure, worker);
     }
   }
   loom_local_value_domain_release(&worker->value_domain);
@@ -307,6 +366,111 @@ static iree_status_t loom_pipeline_worker_build(
         diagnostic_emitter);
   }
   *out_valid = worker->asynchronous.error_count == 0;
+  return iree_ok_status();
+}
+
+static bool loom_pipeline_root_less(const loom_value_id_t* left,
+                                    const loom_value_id_t* right) {
+  return *left < *right;
+}
+
+LOOM_DEFINE_ADAPTIVE_SORT(loom_pipeline_sort_roots, loom_value_id_t,
+                          loom_pipeline_root_less)
+
+static bool loom_pipeline_root_written(const loom_value_id_t* roots,
+                                       iree_host_size_t count,
+                                       loom_value_id_t root) {
+  iree_host_size_t begin = 0, end = count;
+  while (begin < end) {
+    const iree_host_size_t middle = begin + (end - begin) / 2;
+    if (roots[middle] < root) {
+      begin = middle + 1;
+    } else {
+      end = middle;
+    }
+  }
+  return begin < count && roots[begin] == root;
+}
+
+static iree_status_t loom_pipeline_workers_prove_transport_sources(
+    const loom_pipeline_resources_t* resources, iree_host_size_t incoming_count,
+    iree_arena_allocator_t* arena, loom_pipeline_worker_t* workers) {
+  if (incoming_count || resources->composition_count) {
+    return iree_ok_status();
+  }
+  bool repeated_transport = false;
+  for (iree_host_size_t i = 0; i < resources->strand_count; ++i) {
+    repeated_transport |= workers[i].transport.induction != NULL;
+  }
+  if (!repeated_transport) {
+    return iree_ok_status();
+  }
+  // Closed channel membership and admitted local async streams account for
+  // communication acquisition through the complete execution's writes. Other
+  // synchronization and unknown effects still preclude early external reads.
+  uint32_t interference = 0;
+  iree_host_size_t capacity = 0;
+  for (iree_host_size_t i = 0; i < resources->strand_count; ++i) {
+    loom_pipeline_worker_t* worker = &workers[i];
+    loom_movement_analysis_t* movement = &worker->asynchronous.movement;
+    if (!movement->view_regions.value_domain) {
+      loom_local_value_domain_restore(&worker->value_domain);
+      iree_status_t status = loom_movement_analysis_initialize(
+          &worker->facts, &worker->value_domain, arena, movement);
+      if (iree_status_is_ok(status)) {
+        status = loom_movement_analysis_analyze(movement);
+      }
+      loom_local_value_domain_release(&worker->value_domain);
+      IREE_RETURN_IF_ERROR(status);
+    }
+    interference |= movement->view_regions.interference_memory_spaces;
+    capacity += worker->value_domain.value_count;
+  }
+  loom_value_id_t* written_roots;
+  IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
+      arena, capacity, sizeof(*written_roots), (void**)&written_roots));
+  iree_host_size_t written_count = 0;
+  for (iree_host_size_t i = 0; i < resources->strand_count; ++i) {
+    const loom_pipeline_worker_t* worker = &workers[i];
+    const uint8_t* access = worker->asynchronous.movement.view_regions
+                                .storage_flags_by_value_ordinal;
+    for (loom_value_ordinal_t j = 0; j < worker->value_domain.value_count;
+         ++j) {
+      if (iree_any_bit_set(access[j], LOOM_VIEW_ACCESS_WRITE)) {
+        written_roots[written_count++] = worker->value_domain.value_ids[j];
+      }
+    }
+  }
+  loom_pipeline_sort_roots(written_roots, written_count);
+  for (iree_host_size_t i = 0; i < resources->strand_count; ++i) {
+    loom_pipeline_worker_t* worker = &workers[i];
+    if (!worker->transport.induction) {
+      continue;
+    }
+    bool stable = true;
+    loom_local_value_domain_restore(&worker->value_domain);
+    for (iree_host_size_t j = 0; j < worker->transport.stream_count; ++j) {
+      const loom_kernel_async_stream_t* stream = worker->transport.streams[j];
+      for (iree_host_size_t k = 0; k < stream->transfer_count; ++k) {
+        const loom_movement_request_t* request = &stream->transfers[k].request;
+        const loom_view_region_t* source = NULL;
+        if (!loom_view_region_table_try_lookup(
+                &worker->asynchronous.movement.view_regions,
+                request->source.value_id, &source) ||
+            source->alias_scope_id == LOOM_VALUE_FACT_ALIAS_SCOPE_ID_NONE ||
+            loom_local_value_domain_ordinal(&worker->value_domain,
+                                            source->root_value_id) <
+                worker->value_domain.definition_count ||
+            (interference & (1u << source->memory_space)) ||
+            loom_pipeline_root_written(written_roots, written_count,
+                                       source->root_value_id)) {
+          stable = false;
+        }
+      }
+    }
+    loom_local_value_domain_release(&worker->value_domain);
+    worker->transport.sources_stable = stable;
+  }
   return iree_ok_status();
 }
 
@@ -333,6 +497,8 @@ iree_status_t loom_pipeline_workers_build(
       return iree_ok_status();
     }
   }
+  IREE_RETURN_IF_ERROR(loom_pipeline_workers_prove_transport_sources(
+      resources, incoming_count, arena, workers));
   *out_workers = workers;
   *out_valid = true;
   return iree_ok_status();

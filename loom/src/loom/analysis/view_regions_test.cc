@@ -477,6 +477,8 @@ TEST_F(ViewRegionsTest, UnmodeledFencePreventsStorageStability) {
 
 TEST_F(ViewRegionsTest, ChannelCapabilityAccessesRetainBackingRoot) {
   const loom_value_id_t buffer = DefineBufferArg();
+  const loom_value_id_t external =
+      BuildReadOnlyView(BuildNoAliasBuffer(DefineBufferArg()));
   const loom_value_id_t unique =
       BuildNoAliasBuffer(buffer, LOOM_VALUE_FACT_MEMORY_SPACE_WORKGROUP);
   const loom_value_id_t layout = BuildDenseLayout();
@@ -525,6 +527,9 @@ TEST_F(ViewRegionsTest, ChannelCapabilityAccessesRetainBackingRoot) {
                 &table, loom_channel_accept_read(accept)),
             0);
   EXPECT_FALSE(RootIsStable(&table, loom_buffer_view_result(storage)));
+  // A standalone region cannot account for the other channel participant's
+  // external writes. A disjoint payload allocation does not close that scope.
+  EXPECT_FALSE(RootIsStable(&table, external));
 }
 
 TEST_F(ViewRegionsTest, RawByteWriteSharesTypedViewRoot) {

@@ -239,6 +239,7 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
   loom_aie2p_native_worker_t* worker = &context->workers[i];
   const bool configuration =
       worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION;
+  const bool autonomous = worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_DMA;
   loom_aie2p_native_queue_t* queues;
   uint8_t* controls;
   loom_aie2p_native_borrow_t* borrows;
@@ -335,7 +336,8 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
       if (local_tile->next_descriptor ==
               local_tile->facts->dma.buffer_descriptor_count ||
           shim->next_descriptor == shim->facts->dma.buffer_descriptor_count ||
-          (ingress && local_tile->next_lock == local_tile->facts->lock_count) ||
+          (ingress && !autonomous &&
+           local_tile->next_lock == local_tile->facts->lock_count) ||
           loom_movement_endpoint_minimum_byte_alignment(external) <
               shim->facts->dma.address_alignment ||
           loom_movement_endpoint_minimum_byte_alignment(local) <
@@ -395,7 +397,9 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
         loom_aie2p_native_tile_t* destinations[] = {local_tile, shim};
         uint8_t* packets[] = {&queue->path->control.local,
                               &queue->path->control.shim};
-        for (unsigned k = 0; !configuration && k < 2; ++k) {
+        for (unsigned k = 0;
+             worker->execution == LOOM_AIE2P_NATIVE_EXECUTION_CORE && k < 2;
+             ++k) {
           const iree_host_size_t tile_index = destinations[k] - context->tiles;
           if (controls[tile_index] == UINT8_MAX) {
             if (next_control == 4 ||
@@ -477,7 +481,7 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
       }
       // Each transfer site owns its descriptors. A fixed slot and projection
       // need no per-issue address patch, even when the site repeats in a loop.
-      if (!borrow.record_dynamic &&
+      if ((autonomous || !borrow.record_dynamic) &&
           loom_symbolic_expr_is_constant(&local_view->projection_byte_offset)) {
         const uint32_t address =
             borrow.channel->byte_offset +
@@ -486,7 +490,44 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
             LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD0_BASE_ADDRESS,
             address >> local_tile->facts->dma.address_encoding_shift);
       }
-      if (ingress) {
+      if (autonomous) {
+        const uint32_t local_step =
+            borrow.channel->byte_stride /
+            local_tile->facts->dma.transfer_length_granularity;
+        const uint32_t external_step =
+            worker->repetition.external_byte_stride /
+            shim->facts->dma.transfer_length_granularity;
+        selected->local_words[4] =
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD4_ITERATION_WRAP,
+                borrow.channel->source->capacity - 1) |
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD4_ITERATION_STEP_SIZE,
+                local_step ? local_step - 1 : 0);
+        selected->shim_words[6] =
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_BD_WORD6_ITERATION_WRAP,
+                external_step ? worker->repetition.count - 1 : 0) |
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_SHIM_NOC_DMA_BD_WORD6_ITERATION_STEP_SIZE,
+                external_step ? external_step - 1 : 0);
+        selected->local_words[5] |=
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_ACQUIRE_ID,
+                borrow.channel->free_lock) |
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_ACQUIRE_VALUE,
+                -1) |
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_ACQUIRE_ENABLE,
+                1) |
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_RELEASE_ID,
+                borrow.channel->ready_lock) |
+            loom_xdna_register_field_encode_admitted(
+                LOOM_XDNA_REGISTER_FIELD_COMPUTE_MEMORY_DMA_BD_WORD5_LOCK_RELEASE_VALUE,
+                1);
+      } else if (ingress) {
         selected->completion_lock = local_tile->next_lock++;
         if (!configuration) {
           IREE_RETURN_IF_ERROR(loom_xdna_array_form_lock_selector(
@@ -525,7 +566,8 @@ static iree_status_t loom_aie2p_native_select_worker_transfers(
                   1);
         }
       }
-      if (!loom_symbolic_expr_is_constant(&external_view->begin_byte_offset)) {
+      if (!autonomous &&
+          !loom_symbolic_expr_is_constant(&external_view->begin_byte_offset)) {
         IREE_RETURN_IF_ERROR(loom_source_storage_packing_reserve(
             context->inventory.pools[worker->tile->pool_index].packing, 8, 8,
             NULL, 0, &selected->base_storage_offset));

@@ -141,9 +141,14 @@ typedef struct loom_view_region_table_t {
   // Populated by analyze, including raw buffers and nested execution scopes.
   uint8_t* storage_flags_by_value_ordinal;
 
-  // Memory spaces that may change through acquisition, unknown effects, or
-  // writes without comparable storage identities. Bit i names memory space i.
+  // Memory spaces that may change through external acquisition, unknown
+  // effects, or writes without comparable storage identities.
   uint32_t interference_memory_spaces;
+
+  // Memory spaces potentially changed through channel or async-group progress.
+  // Ordinary stability queries include this mask. A closed execution may
+  // account for it using all communicating participants' analyzed writes.
+  uint32_t communication_memory_spaces;
 
   // Memory spaces written through scoped roots that can vary across executions.
   // Such writes may interfere with other varying roots despite local noalias.

@@ -184,6 +184,7 @@ typedef struct loom_aie2p_native_transfer_t {
 typedef enum loom_aie2p_native_execution_e {
   LOOM_AIE2P_NATIVE_EXECUTION_CORE,
   LOOM_AIE2P_NATIVE_EXECUTION_CONFIGURATION,
+  LOOM_AIE2P_NATIVE_EXECUTION_DMA,
 } loom_aie2p_native_execution_t;
 
 typedef struct loom_aie2p_native_worker_t {
@@ -191,6 +192,15 @@ typedef struct loom_aie2p_native_worker_t {
   loom_aie2p_native_tile_t* tile;
   // Engine implementing the strand; only CORE occupies instruction memory.
   loom_aie2p_native_execution_t execution;
+  // Autonomous descriptor iteration for a regular ingress worker.
+  struct {
+    // Actual task execution count; zero for instruction/configuration engines.
+    uint32_t count;
+    // First external record's byte offset from its caller binding.
+    uint32_t external_byte_offset;
+    // Byte increment between consecutive external records; zero reuses input.
+    uint32_t external_byte_stride;
+  } repetition;
   // Semaphore released at the complete worker exit.
   uint16_t completion_lock;
   // Worker-visible selector of its completion semaphore.

@@ -927,6 +927,7 @@ loom_cc_library(
     ::channel_completion
     ::channel_plan
     ::kernel_async_legality
+    ::movement
     ::pipeline_resources
     iree::base
     iree::base::internal::arena
@@ -938,6 +939,7 @@ loom_cc_library(
     loom::ops::kernel
     loom::ops::pipeline
     loom::ops::type_registry
+    loom::util::adaptive_sort
     loom::util::cfg_graph
     loom::util::fact_table
   PUBLIC
@@ -1648,6 +1650,7 @@ loom_cc_library(
     loom::ir
     loom::ir::facts
     loom::ops::buffer
+    loom::ops::channel
     loom::ops::encoding
     loom::ops::kernel
     loom::ops::op_defs
