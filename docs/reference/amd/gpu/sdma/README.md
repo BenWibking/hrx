@@ -20,6 +20,7 @@ depend on the engine generation and native transport.
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED` / legacy `DMA_PACKET_WRITE`: direct versus minus-one counts, policy layouts, metadata/control callers, inline versus uploaded input and final storage use. |
 | [Ordering](ordering.md) | `NOP` / legacy `DMA_PACKET_NOP`: counted bodies, firmware burst selection, framing versus transfer drains, temporary-buffer reuse, overlap and NPD. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
+| [Interrupts](trap.md) | `TRAP` / `DUMMY_TRAP`: context widths, native callback forms, mailbox notification, ring-fence observation and resource lifetime. |
 | [Memory dependencies](poll.md) | `POLL_REGMEM` / `POLL_MEM_64B`: legacy/classic/wide layouts, policy and retry fields, dependency callers, signal lifetime, and progress versus terminal joins. |
 | [Conditional execution](conditional.md) | `COND_EXE`: guarded DWORD ranges, Boolean64 sampling, per-execution predicate state and driver-owned submission conditions. |
 | [Atomic operations and signaling](atomics.md) | `ATOMIC` (`ADD64`), `MEM_INCR`, `SEMAPHORE` / legacy `DMA_PACKET_SEMAPHORE`: complete source layouts, directed atomic reach, caller selection, tracker modes and fused signal ownership. |

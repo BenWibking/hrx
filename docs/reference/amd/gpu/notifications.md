@@ -108,6 +108,11 @@ the all-ones sentinel; this is not a 64-bit atomic signal update.
 [SDMA completion and notification][sdma-notify] · [TRAP builder][sdma-trap]
 · [Slot observation][event-lookup]
 
+The [SDMA interrupt packet](sdma/trap.md) chapter compares the source-selected
+context widths, older native command tails and kernel-ring observer. Packet
+representation, interrupt decoding and event-allocation limits have distinct
+owners.
+
 The gfx125 fused-copy caller also accounts for a separate mailbox/trap
 epilogue when its `fused_notify` and mailbox predicates select it. A fused
 copy's value update and its host notification retain different command
