@@ -16,13 +16,13 @@
 extern "C" {
 #endif
 
-// Selects a tree exchange strategy for a validated collective shape whose
-// participating lane count is in [1, wavefront_size].
+// Selects a tree exchange strategy for a validated collective shape. The
+// enclosing collective plan owns target lane reach and publication semantics.
 // Descriptor capabilities are borrowed from the enclosing collective plan;
 // this shape query performs no descriptor lookup or IR analysis.
 loom_amdgpu_subgroup_reduce_crosslane_kind_t
 loom_amdgpu_subgroup_reduce_choose_crosslane_kind(
-    uint32_t wavefront_size, uint32_t active_lane_count,
+    uint32_t active_lane_count,
     const loom_low_lower_resolved_descriptor_t* dpp_move,
     const loom_low_lower_resolved_descriptor_t* dpp_combine,
     const loom_low_lower_resolved_descriptor_t* permlanex16);
@@ -31,8 +31,8 @@ loom_amdgpu_subgroup_reduce_choose_crosslane_kind(
 // exchange strategy for a subgroup reduction. The resolved descriptors may be
 // reused to select another tree shape within the same collective.
 iree_status_t loom_amdgpu_select_subgroup_reduce_crosslane_kind(
-    loom_low_lower_context_t* context, uint32_t wavefront_size,
-    uint32_t active_lane_count, loom_combining_kind_t kind,
+    loom_low_lower_context_t* context, uint32_t active_lane_count,
+    loom_combining_kind_t kind,
     loom_amdgpu_subgroup_payload_kind_t payload_kind,
     loom_low_lower_resolved_descriptor_t* dpp_move,
     loom_low_lower_resolved_descriptor_t* dpp_combine,

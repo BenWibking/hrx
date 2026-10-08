@@ -456,6 +456,7 @@ loom_corpus_test(
     "memory/view/subview.loom"
     "memory/view/window_walk.loom"
     "kernel/subgroup/match.loom"
+    "kernel/subgroup/reduce.loom"
     "kernel/subgroup/shuffle_participation.loom"
     "kernel/subgroup/transport.loom"
     "kernel/subgroup/transport_carrier.loom"

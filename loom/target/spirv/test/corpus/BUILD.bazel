@@ -165,6 +165,8 @@ _SCENARIO_EXCLUDES = {
 _ALL_PROFILE_XFAILS = {
     "kernel/subgroup/active_predicate.loom:@subgroup_active_predicate": "TARGET/032",
     "kernel/subgroup/match.loom:@subgroup_match_any_i32": "TARGET/032",
+    "kernel/subgroup/reduce.loom:@subgroup_float_reductions": "TARGET/032",
+    "kernel/subgroup/reduce.loom:@subgroup_integer_reductions": "TARGET/032",
     "kernel/subgroup/shuffle_dynamic.loom:@subgroup_shuffle_dynamic_down": "TARGET/032",
     "kernel/subgroup/shuffle_dynamic.loom:@subgroup_shuffle_dynamic_index": "TARGET/032",
     "kernel/subgroup/shuffle_dynamic.loom:@subgroup_shuffle_dynamic_up": "TARGET/032",
@@ -362,6 +364,7 @@ _BDA_XFAILS = dict(list(_NO_EXTENDED_TYPES_XFAILS.items()) + list({
 _ALL_ROOTS_XFAIL = [
     "kernel/subgroup/active_predicate.loom",
     "kernel/subgroup/match.loom",
+    "kernel/subgroup/reduce.loom",
     "kernel/subgroup/shuffle_dynamic.loom",
     "kernel/subgroup/shuffle_participation.loom",
     "kernel/subgroup/transport.loom",
@@ -410,6 +413,8 @@ _SPIRV_EXECUTION_XFAILS = {
     "function/template/library.loom:@template_dead_library_values": "LOWERING/045",
     "kernel/subgroup/active_predicate.loom:@votes_ignore_inactive_lanes": "TARGET/032",
     "kernel/subgroup/match.loom:@subgroup_match_any_i32_values": "TARGET/032",
+    "kernel/subgroup/reduce.loom:@subgroup_float_reduction_values": "TARGET/032",
+    "kernel/subgroup/reduce.loom:@subgroup_integer_reduction_values": "TARGET/032",
     "kernel/subgroup/shuffle_dynamic.loom:@subgroup_shuffle_dynamic_down_case": "TARGET/032",
     "kernel/subgroup/shuffle_dynamic.loom:@subgroup_shuffle_dynamic_index_case": "TARGET/032",
     "kernel/subgroup/shuffle_dynamic.loom:@subgroup_shuffle_dynamic_up_case": "TARGET/032",
