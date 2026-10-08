@@ -609,9 +609,20 @@ iree_status_t loom_amdgpu_bind_low_register_range(
     return loom_low_lower_bind_value(context, source_result, low_registers[0]);
   }
 
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-      context, source_op, source_result, &result_type));
+  const loom_module_t* module = loom_low_lower_context_module(context);
+  const loom_type_t first_type =
+      loom_module_value_type(module, low_registers[0]);
+  uint32_t unit_count = 0;
+  for (uint32_t i = 0; i < register_count; ++i) {
+    const loom_type_t type = loom_module_value_type(module, low_registers[i]);
+    IREE_ASSERT(loom_low_register_type_same_class(first_type, type) &&
+                    !loom_type_register_has_value_type(type),
+                "register concatenation requires untyped same-bank pieces");
+    unit_count += loom_low_register_type_unit_count(type);
+  }
+  const loom_type_t result_type = loom_low_register_type(
+      loom_low_register_type_descriptor_set_stable_id(first_type),
+      loom_low_register_type_class_id(first_type), unit_count);
   loom_value_id_t low_result = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_build_low_register_range(
       context, source_op, low_registers, register_count, result_type,
