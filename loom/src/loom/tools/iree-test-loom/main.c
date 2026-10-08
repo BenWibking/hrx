@@ -17,21 +17,24 @@
 #include "iree/io/stdio_stream.h"
 #include "loom/sanitizer/options.h"
 #include "loom/tooling/cli/help.h"
+#include "loom/tooling/cli/loomc_result.h"
 #include "loom/tooling/config/config.h"
 #include "loom/tooling/execution/hal/scenario_profile.h"
 #include "loom/tooling/execution/hal/testbench_actual.h"
 #include "loom/tooling/input/flags.h"
+#include "loom/tooling/input/loomc.h"
 #include "loom/tooling/io/file.h"
 #include "loom/tooling/testbench/device_event.h"
 #include "loom/tooling/testbench/executor.h"
 #include "loom/tooling/testbench/issue_report.h"
 #include "loom/tooling/testbench/reference.h"
 #include "loom/tooling/testbench/requirements.h"
-#include "loom/tools/iree-test-loom/library_linker.h"
 #include "loom/tools/iree-test-loom/xfail.h"
 #include "loom/util/json.h"
 #include "loom/util/stream.h"
-#include "loom/verify/verify.h"
+#include "loomc/interop.h"
+#include "loomc/iree.h"
+#include "loomc/link.h"
 
 IREE_FLAG(string, case, "",
           "Optional check.case or check.scenario symbol to execute, such as "
@@ -162,21 +165,151 @@ static iree_status_t iree_test_loom_open_file_for_read(
   return status;
 }
 
-static iree_status_t iree_test_loom_verify_run_module(
-    loom_run_module_t* run_module) {
-  const loom_verify_options_t verify_options = {
-      .sink = {.fn = loom_diagnostic_stderr_sink},
-      .max_errors = 20,
-      .source_resolver = loom_run_module_source_resolver(run_module),
-  };
-  loom_verify_result_t verify_result = {0};
+static iree_status_t iree_test_loom_require_loomc_result(
+    const loomc_result_t* result, iree_string_view_t operation) {
+  bool succeeded = false;
   IREE_RETURN_IF_ERROR(
-      loom_verify_module(run_module->module, &verify_options, &verify_result));
-  if (verify_result.error_count != 0) {
-    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
-                            "input module failed verification");
+      loom_tooling_cli_print_loomc_result(stderr, result, &succeeded));
+  return succeeded
+             ? iree_ok_status()
+             : iree_make_status(IREE_STATUS_INVALID_ARGUMENT, "%.*s failed",
+                                (int)operation.size, operation.data);
+}
+
+static iree_status_t iree_test_loom_admit_module(
+    const iree_test_loom_configuration_t* configuration,
+    const loom_input_options_t* input_options, iree_string_view_t input_path,
+    loomc_context_t* context, loomc_workspace_t* workspace,
+    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
+    loomc_module_t** out_module) {
+  *out_module = NULL;
+  iree_io_file_contents_t* contents = NULL;
+  loomc_result_t* result = NULL;
+  iree_status_t status =
+      loom_tooling_read_input_file(input_path, host_allocator, &contents);
+  if (iree_status_is_ok(status)) {
+    const loom_tooling_loomc_input_options_t admission_options = {
+        .providers = configuration->input_providers,
+        .input = *input_options,
+        .path = input_path,
+        .source = loom_tooling_file_contents_string_view(contents),
+        .import = configuration->import,
+        .import_user_data = configuration->import_user_data,
+    };
+    status = loom_tooling_input_admit_loomc_module(
+        &admission_options, context, workspace, block_pool, out_module, &result,
+        host_allocator);
   }
-  return iree_ok_status();
+  if (iree_status_is_ok(status)) {
+    status = iree_test_loom_require_loomc_result(result,
+                                                 IREE_SV("source admission"));
+  }
+  loomc_result_release(result);
+  iree_io_file_contents_free(contents);
+  if (!iree_status_is_ok(status)) {
+    loomc_module_release(*out_module);
+    *out_module = NULL;
+  }
+  return status;
+}
+
+static iree_status_t iree_test_loom_link_libraries(
+    const iree_test_loom_configuration_t* configuration,
+    const loom_input_options_t* input_options, iree_string_view_t input_path,
+    iree_string_view_list_t library_paths, loomc_context_t* context,
+    loomc_workspace_t* workspace, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator, loomc_module_t** inout_module) {
+  if (library_paths.count == 0) {
+    return iree_ok_status();
+  }
+  if (library_paths.values == NULL) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "library path count is non-zero but values is NULL");
+  }
+
+  iree_host_size_t provider_count = 0;
+  if (!iree_host_size_checked_add(library_paths.count, 1, &provider_count)) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "library provider count overflow");
+  }
+  loomc_link_module_provider_t* providers = NULL;
+  IREE_RETURN_IF_ERROR(iree_allocator_malloc_array(
+      host_allocator, provider_count, sizeof(*providers), (void**)&providers));
+  memset(providers, 0, provider_count * sizeof(*providers));
+  providers[0] = (loomc_link_module_provider_t){
+      .module = *inout_module,
+      .provider_name = loomc_string_view_from_iree(input_path),
+      .role = LOOMC_LINK_PROVIDER_ROLE_INPUT,
+  };
+
+  iree_status_t status = iree_ok_status();
+  iree_host_size_t admitted_library_count = 0;
+  for (iree_host_size_t i = 0;
+       iree_status_is_ok(status) && i < library_paths.count; ++i) {
+    const iree_string_view_t library_path = library_paths.values[i];
+    if (loom_tooling_file_path_is_stdio(library_path)) {
+      status = iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                                "--library requires a filesystem path");
+      break;
+    }
+    loomc_module_t* library_module = NULL;
+    status = iree_test_loom_admit_module(
+        configuration, input_options, library_path, context, workspace,
+        block_pool, host_allocator, &library_module);
+    if (iree_status_is_ok(status)) {
+      providers[i + 1] = (loomc_link_module_provider_t){
+          .module = library_module,
+          .provider_name = loomc_string_view_from_iree(library_path),
+          .role = LOOMC_LINK_PROVIDER_ROLE_INPUT,
+      };
+      ++admitted_library_count;
+    }
+  }
+
+  loomc_linker_t* linker = NULL;
+  if (iree_status_is_ok(status)) {
+    const loomc_linker_options_t linker_options = {
+        .type = LOOMC_STRUCTURE_TYPE_LINKER_OPTIONS,
+        .structure_size = sizeof(linker_options),
+        .module_name = loomc_make_cstring_view("linked"),
+    };
+    status = iree_status_from_loomc(loomc_linker_create(
+        context, &linker_options, loomc_allocator_from_iree(host_allocator),
+        &linker));
+  }
+  loomc_module_t* linked_module = NULL;
+  loomc_result_t* result = NULL;
+  if (iree_status_is_ok(status)) {
+    const loomc_link_options_t link_options = {
+        .type = LOOMC_STRUCTURE_TYPE_LINK_OPTIONS,
+        .structure_size = sizeof(link_options),
+        .module_name = loomc_make_cstring_view("linked"),
+        .mode = LOOMC_LINK_MODE_MERGE,
+        .module_providers = providers,
+        .module_provider_count = provider_count,
+    };
+    status = iree_status_from_loomc(loomc_link_module(
+        linker, workspace, &link_options, &linked_module, &result));
+  }
+  if (iree_status_is_ok(status)) {
+    status =
+        iree_test_loom_require_loomc_result(result, IREE_SV("module linking"));
+  }
+  if (iree_status_is_ok(status)) {
+    loomc_module_release(*inout_module);
+    *inout_module = linked_module;
+    linked_module = NULL;
+  }
+
+  loomc_result_release(result);
+  loomc_module_release(linked_module);
+  loomc_linker_release(linker);
+  for (iree_host_size_t i = 0; i < admitted_library_count; ++i) {
+    loomc_module_release((loomc_module_t*)providers[i + 1].module);
+  }
+  iree_allocator_free(host_allocator, providers);
+  return status;
 }
 
 static iree_string_view_t iree_test_loom_normalize_case_name(
@@ -744,7 +877,10 @@ int iree_test_loom_main(int argc, char** argv,
   iree_allocator_t allocator = iree_allocator_system();
   loom_tooling_config_set_t config_set;
   loom_tooling_config_set_initialize(allocator, &config_set);
-  iree_io_file_contents_t* contents = NULL;
+  loomc_context_t* compiler_context = NULL;
+  loomc_workspace_t* compiler_workspace = NULL;
+  loomc_module_t* module = NULL;
+  loomc_module_interop_view_t module_view = {0};
   loom_run_session_t session = {0};
   loom_run_module_t run_module = {0};
   loom_sanitizer_options_t sanitizer_options = {0};
@@ -838,12 +974,35 @@ int iree_test_loom_main(int argc, char** argv,
         IREE_SV("--sanitizer-reporting"), &sanitizer_options.reporting_mode);
   }
 
+  const loom_target_environment_t* native_target_environment =
+      loomc_target_environment_get_interop_view(
+          configuration->target_environment);
+  if (iree_status_is_ok(status)) {
+    const loomc_context_target_options_t target_options = {
+        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
+        .structure_size = sizeof(target_options),
+        .target_environment = configuration->target_environment,
+    };
+    const loomc_context_options_t context_options = {
+        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
+        .structure_size = sizeof(context_options),
+        .next =
+            configuration->target_environment != NULL ? &target_options : NULL,
+    };
+    status = iree_status_from_loomc(loomc_context_create(
+        &context_options, loomc_allocator_from_iree(allocator),
+        &compiler_context));
+  }
+  if (iree_status_is_ok(status)) {
+    status = iree_status_from_loomc(loomc_workspace_create(
+        /*options=*/NULL, loomc_allocator_from_iree(allocator),
+        &compiler_workspace));
+  }
   if (iree_status_is_ok(status)) {
     loom_run_session_options_t session_options = {0};
     loom_run_session_options_initialize(&session_options);
     session_options.host_allocator = allocator;
-    session_options.input_providers = configuration->input_providers;
-    session_options.target_environment = configuration->target_environment;
+    session_options.target_environment = native_target_environment;
     session_options.cleanup_pattern_provider_set =
         configuration->cleanup_pattern_provider_set;
     status = loom_run_session_initialize(&session_options, &session);
@@ -869,33 +1028,42 @@ int iree_test_loom_main(int argc, char** argv,
                        ? iree_string_view_empty()
                        : iree_file_path_dirname(filename),
   };
-  iree_string_view_t source = iree_string_view_empty();
+  const loom_input_options_t input_options = loom_input_options_from_flags();
   if (iree_status_is_ok(status)) {
-    status = loom_tooling_read_input_file(input_path, allocator, &contents);
-    if (iree_status_is_ok(status)) {
-      source = loom_tooling_file_contents_string_view(contents);
-    }
-  }
-  if (iree_status_is_ok(status)) {
-    loom_run_module_parse_options_t parse_options = {0};
-    loom_run_module_parse_options_initialize(&parse_options);
-    parse_options.input = loom_input_options_from_flags();
-    parse_options.filename = filename;
-    parse_options.source = source;
-    status = loom_run_module_parse(&session, &parse_options, &run_module);
+    status = iree_test_loom_admit_module(
+        configuration, &input_options, input_path, compiler_context,
+        compiler_workspace, loom_run_session_block_pool(&session), allocator,
+        &module);
   }
   if (iree_status_is_ok(status)) {
     const iree_flag_string_list_t libraries = FLAG_library_list();
-    const loom_input_options_t input_options = loom_input_options_from_flags();
-    status = iree_test_loom_link_libraries(&session, &run_module,
-                                           (iree_string_view_list_t){
-                                               .count = libraries.count,
-                                               .values = libraries.values,
-                                           },
-                                           &input_options);
+    status = iree_test_loom_link_libraries(
+        configuration, &input_options, filename,
+        (iree_string_view_list_t){
+            .count = libraries.count,
+            .values = libraries.values,
+        },
+        compiler_context, compiler_workspace,
+        loom_run_session_block_pool(&session), allocator, &module);
   }
   if (iree_status_is_ok(status)) {
-    status = iree_test_loom_verify_run_module(&run_module);
+    loomc_result_t* result = NULL;
+    status = iree_status_from_loomc(loomc_module_get_interop_view(
+        module, loomc_allocator_from_iree(allocator), &module_view, &result));
+    if (iree_status_is_ok(status)) {
+      status = iree_test_loom_require_loomc_result(
+          result, IREE_SV("module verification"));
+    }
+    loomc_result_release(result);
+  }
+  if (iree_status_is_ok(status)) {
+    // Execution providers only inspect or independently clone this
+    // exact-version native view. The public module retains all borrowed state.
+    run_module = (loom_run_module_t){
+        .module = (loom_module_t*)module_view.module,
+        .filename = filename,
+        .sources = {.table = *module_view.source_table},
+    };
   }
   if (iree_status_is_ok(status)) {
     status = loom_run_hal_testbench_context_add_module_runtime_requirements(
@@ -1226,9 +1394,10 @@ int iree_test_loom_main(int argc, char** argv,
   if (device_event_capture_initialized) {
     loom_testbench_device_event_capture_deinitialize(&device_event_capture);
   }
-  loom_run_module_deinitialize(&run_module);
-  iree_io_file_contents_free(contents);
   loom_run_session_deinitialize(&session);
+  loomc_module_release(module);
+  loomc_workspace_release(compiler_workspace);
+  loomc_context_release(compiler_context);
   iree_test_loom_xfail_list_deinitialize(&xfails, allocator);
 
   IREE_TRACE_ZONE_END(z0);

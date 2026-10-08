@@ -11,7 +11,6 @@ load(
     "iree_select",
     "loom_cc_binary",
     "loom_cc_library",
-    "loom_cc_test",
     "loom_config_compatible_with",
 )
 
@@ -51,6 +50,20 @@ _SPIRV_VULKAN_TARGET_DEPS = iree_select({
     "//conditions:default": [],
 })
 
+_IMPORT_CXX_COPTS = iree_select({
+    "//loom/config/import:cxx": [
+        "-DIREE_TEST_LOOM_HAVE_IMPORT_CXX=1",
+    ],
+    "//conditions:default": [],
+})
+
+_IMPORT_CXX_DEPS = iree_select({
+    "//loom/config/import:cxx": [
+        "//loom/src/loom/import/cxx/tooling:loomc_input",
+    ],
+    "//conditions:default": [],
+})
+
 _VM_TARGET_COPTS = iree_select({
     "//loom/config/target/arch:vm": ["-DIREE_TEST_LOOM_HAVE_VM=1"],
     "//conditions:default": [],
@@ -78,6 +91,7 @@ _WASM_TARGET_DEPS = iree_select({
 _IREE_TEST_LOOM_TARGET_COPTS = (
     _AMDGPU_TARGET_COPTS +
     _SPIRV_VULKAN_TARGET_COPTS +
+    _IMPORT_CXX_COPTS +
     _VM_TARGET_COPTS +
     _WASM_TARGET_COPTS +
     iree_select({
@@ -89,42 +103,13 @@ _IREE_TEST_LOOM_TARGET_COPTS = (
 _IREE_TEST_LOOM_TARGET_DEPS = (
     _AMDGPU_TARGET_DEPS +
     _SPIRV_VULKAN_TARGET_DEPS +
+    _IMPORT_CXX_DEPS +
     _VM_TARGET_DEPS +
     _WASM_TARGET_DEPS +
     iree_select({
         "//loom/config/execute:task_hal": ["//loom/src/loom/tooling/target/cpu:task_device"],
         "//conditions:default": [],
     })
-)
-
-loom_cc_library(
-    name = "library_linker",
-    srcs = ["library_linker.c"],
-    hdrs = ["library_linker.h"],
-    deps = [
-        "//loom/src/loom/error:source",
-        "//loom/src/loom/link:linker",
-        "//loom/src/loom/tooling/execution:session",
-        "//loom/src/loom/tooling/io:file",
-        "//runtime/src/iree/base",
-    ],
-)
-
-loom_cc_test(
-    name = "library_linker_test",
-    srcs = ["library_linker_test.cc"],
-    tags = ["requires-filesystem"],
-    deps = [
-        ":library_linker",
-        "//loom/src/loom/error:source",
-        "//loom/src/loom/target:provider",
-        "//loom/src/loom/tooling/execution:session",
-        "//loom/src/loom/tooling/io:file",
-        "//runtime/src/iree/base",
-        "//runtime/src/iree/testing:gtest",
-        "//runtime/src/iree/testing:gtest_main",
-        "//runtime/src/iree/testing:temp_file",
-    ],
 )
 
 loom_cc_library(
@@ -151,17 +136,19 @@ loom_cc_library(
         "main.h",
     ],
     deps = [
-        ":library_linker",
         ":xfail",
+        "//loom/binding/c:interop",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/sanitizer:options",
-        "//loom/src/loom/target:provider",
         "//loom/src/loom/tooling/cli:help",
+        "//loom/src/loom/tooling/cli:loomc_result",
         "//loom/src/loom/tooling/config",
         "//loom/src/loom/tooling/execution:session",
         "//loom/src/loom/tooling/execution/hal:device_provider",
         "//loom/src/loom/tooling/execution/hal:scenario_profile",
         "//loom/src/loom/tooling/execution/hal:testbench_actual",
         "//loom/src/loom/tooling/input:flags",
+        "//loom/src/loom/tooling/input:loomc",
         "//loom/src/loom/tooling/io:file",
         "//loom/src/loom/tooling/testbench:device_event",
         "//loom/src/loom/tooling/testbench:executor",
@@ -174,7 +161,6 @@ loom_cc_library(
         "//loom/src/loom/tooling/testbench/scenario:values",
         "//loom/src/loom/util:json",
         "//loom/src/loom/util:stream",
-        "//loom/src/loom/verify",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:path",
         "//runtime/src/iree/base/tooling:flags",
@@ -188,8 +174,9 @@ loom_cc_binary(
     copts = _IREE_TEST_LOOM_TARGET_COPTS,
     deps = [
         ":main",
-        "//loom/src/loom/target:provider",
-        "//loom/src/loom/target/configured:compiler_provider_set",
+        "//loom/binding/c:interop",
+        "//loom/binding/c:loomc",
+        "//loom/binding/c/target/configured",
         "//loom/src/loom/tooling/input:configured",
         "//loom/src/loom/transforms/cleanup:configured",
         "//runtime/src/iree/base",
@@ -216,7 +203,6 @@ loom_cc_binary(
     deps = [
         ":main",
         "//loom/src/loom/ir",
-        "//loom/src/loom/target:provider",
         "//loom/src/loom/tooling/testbench/scenario:executor",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
