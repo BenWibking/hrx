@@ -150,6 +150,12 @@ alias(
 )
 
 alias(
+    name = "mimalloc",
+    actual = "@mimalloc",
+    visibility = [":runtime_users"],
+)
+
+alias(
     name = "zstd",
     actual = "//build_tools/third_party/zstd",
     visibility = [":libhrx_users"],
