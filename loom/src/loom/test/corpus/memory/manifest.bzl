@@ -39,7 +39,9 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "atomic/narrow/cmpxchg.loom",
         "atomic/narrow/contention.loom",
         "atomic/narrow/float.loom",
+        "atomic/narrow/vector.loom",
         "atomic/private.loom",
+        "atomic/vector.loom",
         "atomic/workgroup/cmpxchg.loom",
         "atomic/workgroup/vector.loom",
         "buffer/allocation_freshness.loom",
@@ -78,8 +80,6 @@ MEMORY_CORPUS = loom_corpus_manifest(
     legacy_case_srcs = [
         "atomic/narrow/observations.loom",
         "atomic/narrow/scopes.loom",
-        "atomic/narrow/vector.loom",
-        "atomic/vector.loom",
         "atomic/workgroup/global.loom",
         "atomic/workgroup/observations.loom",
     ],
