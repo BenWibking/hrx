@@ -2932,8 +2932,12 @@ static iree_status_t loom_amdgpu_select_memory_plan(
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, plan_byte_length, (void**)&retained_plan));
   retained_plan->packet_count = selection.packet_count;
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans = NULL;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &selection.packets[0].access.source, &dynamic_term_plans));
   for (uint32_t i = 0; i < selection.packet_count; ++i) {
     retained_plan->packets[i] = selection.packets[i];
+    retained_plan->packets[i].access.dynamic_term_plans = dynamic_term_plans;
     IREE_RETURN_IF_ERROR(loom_amdgpu_prepare_memory_address_realizations(
         context, source_op, &retained_plan->packets[i].access));
   }

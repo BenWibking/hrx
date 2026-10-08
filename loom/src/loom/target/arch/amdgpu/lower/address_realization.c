@@ -192,6 +192,7 @@ static iree_status_t loom_amdgpu_request_address_component(
         .value.identity = LOOM_OP_KERNEL_SUBGROUP_LANE_ID,
     };
   }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_term_sequence(context, &terms));
   loom_amdgpu_address_component_t* component = NULL;
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, sizeof(*component), (void**)&component));

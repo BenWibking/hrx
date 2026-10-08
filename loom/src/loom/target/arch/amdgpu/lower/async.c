@@ -404,6 +404,8 @@ static iree_status_t loom_amdgpu_async_gather_resolve_selection(
     out_plan->source_dynamic_term_kinds[i] =
         selection->source_dynamic_term_kinds[i];
   }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->source, &out_plan->dynamic_term_plans));
   return loom_amdgpu_resolve_descriptor_ref(context, selection->descriptor_ref,
                                             &out_plan->descriptor);
 }
@@ -620,6 +622,12 @@ iree_status_t loom_amdgpu_select_kernel_async_cluster_gather_plan(
   }
   out_plan->source_address = selection.source_address;
   out_plan->dest_address = selection.dest_address;
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->source_address.source,
+      &out_plan->source_address.dynamic_term_plans));
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->dest_address.source,
+      &out_plan->dest_address.dynamic_term_plans));
   out_plan->participant_mask = selection.participant_mask;
   out_plan->packet_byte_count = selection.packet_byte_count;
   IREE_RETURN_IF_ERROR(loom_amdgpu_resolve_descriptor_ref(
@@ -997,6 +1005,7 @@ iree_status_t loom_amdgpu_lower_kernel_async_gather(
   // the source-only offset in SADDR so M0 remains the exact destination base.
   loom_amdgpu_memory_access_t access = {
       .source = plan->source,
+      .dynamic_term_plans = plan->dynamic_term_plans,
       .address_form = LOOM_AMDGPU_MEMORY_ADDRESS_FORM_GLOBAL_SADDR,
       .scalar_base_byte_offset = (uint64_t)plan->source.static_byte_offset,
       .scalar_offset_placement =

@@ -1859,6 +1859,10 @@ static iree_status_t loom_amdgpu_fragment_memory_select(
         required_representation, (int)diagnostic.constraint_key.size,
         diagnostic.constraint_key.data);
   }
+  if (*out_selected && out_plan->scalar_base.dynamic_term_mask != 0) {
+    IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+        context, &out_plan->source, &out_plan->dynamic_term_plans));
+  }
   return iree_ok_status();
 }
 

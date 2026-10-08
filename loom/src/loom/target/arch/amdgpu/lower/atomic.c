@@ -1030,6 +1030,8 @@ static iree_status_t loom_amdgpu_atomic_resolve_selection(
        ++i) {
     out_plan->dynamic_term_kinds[i] = selection->dynamic_term_kinds[i];
   }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->source, &out_plan->dynamic_term_plans));
   IREE_RETURN_IF_ERROR(loom_amdgpu_resolve_descriptor_ref(
       context, selection->descriptor_ref, &out_plan->descriptor));
   if (!iree_string_view_is_empty(selection->coherence_attr.name)) {
@@ -1302,6 +1304,7 @@ iree_status_t loom_amdgpu_lower_atomic(loom_low_lower_context_t* context,
 
   loom_amdgpu_memory_access_t access = {
       .source = plan->source,
+      .dynamic_term_plans = plan->dynamic_term_plans,
       .address_form = plan->address_form,
       .immediate_offset = plan->immediate_offset,
       .scalar_byte_offset = plan->scalar_byte_offset,

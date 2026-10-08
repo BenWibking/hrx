@@ -50,6 +50,7 @@ iree_status_t loom_amdgpu_fragment_memory_packet_resource(
       if (iree_any_bit_set(plan->scalar_base.dynamic_term_mask, UINT32_C(1)
                                                                     << i)) {
         sequence.terms[sequence.count] = &plan->source.dynamic_terms[i];
+        sequence.plans[sequence.count] = &plan->dynamic_term_plans[i];
         sequence.kinds[sequence.count++] =
             LOOM_AMDGPU_MEMORY_DYNAMIC_INDEX_SOFFSET;
       }

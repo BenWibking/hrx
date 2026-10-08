@@ -394,6 +394,15 @@ typedef enum loom_amdgpu_address_i64_alu_kind_e {
   LOOM_AMDGPU_ADDRESS_I64_ALU_KIND_SGPR_MUL_LO = 7,
 } loom_amdgpu_address_i64_alu_kind_t;
 
+// Selected numeric transport for a one- or two-word integer operand. Pair
+// forms preserve an existing pair and extend a single word as specified.
+typedef uint8_t loom_amdgpu_integer_operand_form_t;
+enum loom_amdgpu_integer_operand_form_e {
+  LOOM_AMDGPU_INTEGER_OPERAND_UNSIGNED_PAIR = 0,
+  LOOM_AMDGPU_INTEGER_OPERAND_SIGNED_PAIR = 1,
+  LOOM_AMDGPU_INTEGER_OPERAND_UNSIGNED_WORD = 2,
+};
+
 typedef struct loom_amdgpu_address_i64_alu_plan_t {
   // Left-hand address-domain value.
   loom_value_id_t lhs;
@@ -405,6 +414,15 @@ typedef struct loom_amdgpu_address_i64_alu_plan_t {
   loom_value_id_t result;
   // Lowering strategy selected for the full-width address operation.
   loom_amdgpu_address_i64_alu_kind_t kind;
+  // Numeric transports selected before source facts retire.
+  struct {
+    // Left-hand operand transport.
+    loom_amdgpu_integer_operand_form_t lhs;
+    // Right-hand operand transport; unused for the shift count.
+    loom_amdgpu_integer_operand_form_t rhs;
+    // Multiply-add addend transport.
+    loom_amdgpu_integer_operand_form_t addend;
+  } operands;
 } loom_amdgpu_address_i64_alu_plan_t;
 
 typedef struct loom_amdgpu_i64_compare_plan_t {
@@ -452,6 +470,13 @@ typedef struct loom_amdgpu_scalar_i64_alu_plan_t {
   loom_amdgpu_scalar_i64_alu_kind_t kind;
   // Exact shift amount used by literal-shift lowering strategies.
   uint8_t shift_amount;
+  // Multiplication operand transports; other strategies use fixed pairs.
+  struct {
+    // Left-hand multiplicand transport.
+    loom_amdgpu_integer_operand_form_t lhs;
+    // Right-hand multiplicand transport.
+    loom_amdgpu_integer_operand_form_t rhs;
+  } operands;
 } loom_amdgpu_scalar_i64_alu_plan_t;
 
 typedef enum loom_amdgpu_scalar_i64_ctpop_kind_e {
@@ -1551,9 +1576,21 @@ typedef enum loom_amdgpu_memory_scalar_offset_placement_e {
   LOOM_AMDGPU_MEMORY_SCALAR_OFFSET_PLACEMENT_BASE = 1,
 } loom_amdgpu_memory_scalar_offset_placement_t;
 
+typedef struct loom_amdgpu_memory_dynamic_term_plan_t {
+  // Inclusive unscaled index lower bound used by affine address grouping.
+  int64_t index_minimum;
+  // Inclusive unscaled index upper bound used by affine address grouping.
+  int64_t index_maximum;
+  // Two-bit operand forms: index first, then dynamic stride operands.
+  uint64_t operand_forms;
+} loom_amdgpu_memory_dynamic_term_plan_t;
+
 typedef struct loom_amdgpu_memory_access_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
+  // Retained operand decisions in canonical-term, realization, then optional
+  // retained-component order. NULL when the source has no dynamic terms.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Selected target addressing form for the memory packet.
   loom_amdgpu_memory_address_form_t address_form;
   // Target operand path selected for each source dynamic address term.
@@ -1777,6 +1814,8 @@ typedef struct loom_amdgpu_fragment_memory_plan_t {
   loom_amdgpu_matrix_fragment_layout_kind_t layout_kind;
   // Target-independent source view access plan.
   loom_low_source_memory_access_plan_t source;
+  // Retained operand decisions for canonical scalar-base address terms.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Retained full-width origin partition; zero for narrow-only addressing.
   loom_amdgpu_fragment_memory_scalar_base_t scalar_base;
   // Whether every dynamic source-address term is subgroup-uniform.
@@ -2014,6 +2053,8 @@ typedef struct loom_amdgpu_atomic_ordering_plan_t {
 typedef struct loom_amdgpu_atomic_plan_t {
   // Target-independent source memory access plan being wrapped.
   loom_low_source_memory_access_plan_t source;
+  // Retained operand decisions for all dynamic address alternatives.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Source atomic operation form being lowered.
   loom_amdgpu_atomic_operation_kind_t operation_kind;
   // Selected target addressing form for the atomic packet.
@@ -2064,6 +2105,8 @@ typedef struct loom_amdgpu_prefetch_plan_t {
 typedef struct loom_amdgpu_async_gather_plan_t {
   // Source global-like view access transferred into LDS.
   loom_low_source_memory_access_plan_t source;
+  // Retained operand decisions for all source-address alternatives.
+  const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans;
   // Target operand path selected for each source dynamic address term.
   loom_amdgpu_memory_dynamic_index_kind_t
       source_dynamic_term_kinds[LOOM_LOW_SOURCE_MEMORY_DYNAMIC_TERM_CAPACITY];

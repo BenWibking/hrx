@@ -812,6 +812,9 @@ iree_status_t loom_amdgpu_select_sanitizer_assert_access_plan(
       return iree_ok_status();
     }
   }
+  IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(
+      context, &out_plan->address.source,
+      &out_plan->address.dynamic_term_plans));
   *out_selected = true;
   return iree_ok_status();
 }
