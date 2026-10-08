@@ -157,6 +157,7 @@ loom_cc_test(
     loom::ops::target
     loom::target::arch::x86::descriptors::avx10_2_descriptors
     loom::target::arch::x86::descriptors::avx2_descriptors
+    loom::target::arch::x86::descriptors::avx2_packed_dot_descriptors
     loom::target::arch::x86::descriptors::avx512_bf16_descriptors
     loom::target::arch::x86::descriptors::avx512_descriptors
     loom::target::arch::x86::descriptors::avx512_packed_dot_descriptors

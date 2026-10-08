@@ -7,6 +7,7 @@
 #include "loom/target/arch/x86/descriptors/entry.h"
 
 #include "loom/target/arch/x86/descriptors/avx2_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx2_packed_dot_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_packed_dot_descriptors.h"
 #include "loom/target/arch/x86/descriptors/scalar_descriptors.h"
@@ -29,6 +30,7 @@ static const loom_x86_entry_descriptors_t* const kEntryDescriptors[] = {
     LOOM_X86_ENTRY_DESCRIPTORS(X86_SCALAR_CORE),
     LOOM_X86_ENTRY_DESCRIPTORS(X86_SIMD128_CORE),
     LOOM_X86_ENTRY_DESCRIPTORS(X86_AVX2_CORE),
+    LOOM_X86_ENTRY_DESCRIPTORS(X86_AVX2_PACKED_DOT_CORE),
     LOOM_X86_ENTRY_DESCRIPTORS(X86_AVX512_CORE),
     LOOM_X86_ENTRY_DESCRIPTORS(X86_AVX512_PACKED_DOT_CORE),
 };

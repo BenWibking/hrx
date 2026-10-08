@@ -51,6 +51,19 @@ endif()
 if(LOOM_TARGET_ARCH_X86)
 loom_low_descriptor_cc_library(
   NAME
+    avx2_packed_dot_descriptors
+  DEPS
+    ::avx512_packed_dot_descriptors
+    loom::codegen::low::descriptors
+  IDS_DEPS
+    loom::codegen::low::descriptors
+  HEADER_ONLY
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_low_descriptor_cc_library(
+  NAME
     avx512_descriptors
   DEPS
     ::avx512_packed_dot_descriptors
@@ -162,6 +175,7 @@ loom_low_descriptor_cc_library(
     "--view-header=scalar"
     "--view-header=simd128"
     "--view-header=avx2"
+    "--view-header=avx2_packed_dot"
     "--view-header=avx512"
     "--view-header=packed_dot"
     "--view-header=avx512_vnni"
@@ -174,6 +188,7 @@ loom_low_descriptor_cc_library(
     "scalar_descriptors.h"
     "simd128_descriptors.h"
     "avx2_descriptors.h"
+    "avx2_packed_dot_descriptors.h"
     "avx512_descriptors.h"
     "packed_dot_descriptors.h"
     "avx512_vnni_descriptors.h"
@@ -199,6 +214,7 @@ loom_cc_library(
     "entry.c"
   DEPS
     ::avx2_descriptors_ids
+    ::avx2_packed_dot_descriptors_ids
     ::avx512_descriptors_ids
     ::avx512_packed_dot_descriptors_ids
     ::scalar_descriptors_ids
@@ -237,6 +253,7 @@ loom_cc_library(
   DEPS
     ::avx10_2_descriptors
     ::avx2_descriptors
+    ::avx2_packed_dot_descriptors
     ::avx512_bf16_descriptors
     ::avx512_descriptors
     ::avx512_packed_dot_descriptors
@@ -263,6 +280,7 @@ loom_cc_library(
   HDRS
     "avx10_2_descriptors.h"
     "avx2_descriptors.h"
+    "avx2_packed_dot_descriptors.h"
     "avx512_bf16_descriptors.h"
     "avx512_descriptors.h"
     "avx512_packed_dot_descriptors.h"
@@ -276,6 +294,7 @@ loom_cc_library(
   DEPS
     ::avx10_2_descriptors
     ::avx2_descriptors
+    ::avx2_packed_dot_descriptors
     ::avx512_bf16_descriptors
     ::avx512_descriptors
     ::avx512_packed_dot_descriptors

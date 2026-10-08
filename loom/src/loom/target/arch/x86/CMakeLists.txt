@@ -12,6 +12,22 @@ iree_add_all_subdirs()
 if(LOOM_TARGET_ARCH_X86)
 loom_cc_library(
   NAME
+    facts
+  HDRS
+    "facts.h"
+  SRCS
+    "facts.c"
+  DEPS
+    iree::base
+    iree::base::cpu_data
+    loom::target::facts
+  PUBLIC
+)
+endif()
+
+if(LOOM_TARGET_ARCH_X86)
+loom_cc_library(
+  NAME
     feature_bits
   HDRS
     "feature_bits.h"
@@ -114,6 +130,7 @@ loom_cc_library(
   SRCS
     "hal_materialization.c"
   DEPS
+    ::facts
     ::register_classes
     iree::base
     iree::base::internal::arena
@@ -159,6 +176,8 @@ loom_cc_library(
     "provider.c"
   DEPS
     ::call_abi
+    ::facts
+    ::feature_bits
     ::legalization
     ::math_policy
     ::pass_registry
@@ -182,8 +201,11 @@ loom_cc_test(
   SRCS
     "provider_test.cc"
   DEPS
+    ::facts
+    ::feature_bits
     ::provider
     iree::base::cpu_data
+    iree::base::internal::arena
     iree::testing::gtest
     iree::testing::gtest_main
     loom::target::arch::x86::ops
@@ -201,6 +223,7 @@ loom_cc_library(
   SRCS
     "compiler_provider.c"
   DEPS
+    ::facts
     ::provider
     loom::target::arch::x86::ops
     loom::target::emit::native::x86::module

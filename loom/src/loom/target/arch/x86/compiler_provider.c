@@ -6,6 +6,7 @@
 
 #include "loom/target/arch/x86/compiler_provider.h"
 
+#include "loom/target/arch/x86/facts.h"
 #include "loom/target/arch/x86/ops/ops.h"
 #include "loom/target/arch/x86/provider.h"
 #include "loom/target/emit/native/x86/module.h"

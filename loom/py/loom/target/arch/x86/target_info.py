@@ -97,6 +97,16 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         storage_generator_target="avx512_packed_dot",
     ),
     X86DescriptorSetInfo(
+        generator_target="avx2_packed_dot",
+        key="x86.avx2_packed_dot.core",
+        isa_tier=X86_ISA_TIER_AVX2,
+        register_classes=_with_base_registers(X86_REG_CLASS_XMM, X86_REG_CLASS_YMM),
+        storage_generator_target="avx512_packed_dot",
+        required_feature_bits=(
+            FEATURE_AVX_VNNI | FEATURE_AVX_VNNI_INT8 | FEATURE_AVX_VNNI_INT16
+        ),
+    ),
+    X86DescriptorSetInfo(
         generator_target="avx512",
         key="x86.avx512.core",
         isa_tier=X86_ISA_TIER_AVX512,

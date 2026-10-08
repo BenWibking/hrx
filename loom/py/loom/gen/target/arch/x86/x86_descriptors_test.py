@@ -200,6 +200,7 @@ def test_storage_generation_emits_current_public_views() -> None:
                     f"--source={tmp_path / 'avx512_packed_dot_descriptors.c'}",
                     f"--view-header=avx512={tmp_path / 'avx512_descriptors.h'}",
                     f"--view-header=avx2={tmp_path / 'avx2_descriptors.h'}",
+                    f"--view-header=avx2_packed_dot={tmp_path / 'avx2_packed_dot_descriptors.h'}",
                     f"--view-header=avx10_2={tmp_path / 'avx10_2_descriptors.h'}",
                     f"--view-header=avx512_bf16={tmp_path / 'avx512_bf16_descriptors.h'}",
                     f"--view-header=avx512_vnni={tmp_path / 'avx512_vnni_descriptors.h'}",
@@ -218,6 +219,7 @@ def test_storage_generation_emits_current_public_views() -> None:
         composite_header = (tmp_path / "avx512_packed_dot_descriptors.h").read_text(encoding="utf-8")
         avx512_header = (tmp_path / "avx512_descriptors.h").read_text(encoding="utf-8")
         avx2_header = (tmp_path / "avx2_descriptors.h").read_text(encoding="utf-8")
+        avx2_packed_dot_header = (tmp_path / "avx2_packed_dot_descriptors.h").read_text(encoding="utf-8")
         avx_vnni_header = (tmp_path / "avx_vnni_descriptors.h").read_text(encoding="utf-8")
         packed_dot_header = (tmp_path / "packed_dot_descriptors.h").read_text(encoding="utf-8")
         scalar_header = (tmp_path / "scalar_descriptors.h").read_text(encoding="utf-8")
@@ -225,6 +227,7 @@ def test_storage_generation_emits_current_public_views() -> None:
 
     assert "loom_x86_avx512_core_descriptor_set" in source
     assert "loom_x86_avx2_core_descriptor_set" in source
+    assert "loom_x86_avx2_packed_dot_core_descriptor_set" in source
     assert "loom_x86_packed_dot_core_descriptor_set" in source
     assert "loom_x86_avx_vnni_core_descriptor_set" in source
     assert "loom_x86_avx512_packed_dot_core_descriptor_set" in source
@@ -260,6 +263,7 @@ def test_storage_generation_emits_current_public_views() -> None:
     assert "vpdpbusd.ymm" in string_data
     assert "loom_x86_avx512_core_descriptor_set" in avx512_header
     assert "loom_x86_avx2_core_descriptor_set" in avx2_header
+    assert "loom_x86_avx2_packed_dot_core_descriptor_set" in avx2_packed_dot_header
     assert "loom_x86_avx_vnni_core_descriptor_set" in avx_vnni_header
     assert "loom_x86_packed_dot_core_descriptor_set" in packed_dot_header
     assert "loom_x86_scalar_core_descriptor_set" in scalar_header
@@ -268,6 +272,10 @@ def test_storage_generation_emits_current_public_views() -> None:
     assert f"#define X86_PACKED_DOT_CORE_DESCRIPTOR_SET_ORDINAL UINT16_C({x86_descriptor_set_ordinal('x86.packed_dot.core')})" in packed_dot_header
     _assert_descriptor_ref(avx512_header, "X86_AVX512_CORE_DESCRIPTOR_REF_AVX2_VADDPS_XMM")
     _assert_descriptor_ref(avx2_header, "X86_AVX2_CORE_DESCRIPTOR_REF_AVX2_VADDPS_XMM")
+    _assert_descriptor_ref(
+        avx2_packed_dot_header,
+        "X86_AVX2_PACKED_DOT_CORE_DESCRIPTOR_REF_AVX_VNNI_INT8_VPDPBSSD_YMM",
+    )
     _assert_descriptor_ref(
         avx_vnni_header,
         "X86_AVX_VNNI_CORE_DESCRIPTOR_REF_AVX_VNNI_VPDPBUSD_YMM",
@@ -285,6 +293,8 @@ def test_storage_generation_emits_current_public_views() -> None:
     _assert_reg_class_id(scalar_header, "X86_SCALAR_CORE_REG_CLASS_ID_GPR64")
     _assert_reg_class_id(simd128_header, "X86_SIMD128_CORE_REG_CLASS_ID_XMM")
     _assert_reg_class_id(avx2_header, "X86_AVX2_CORE_REG_CLASS_ID_YMM")
+    _assert_reg_class_id(avx2_packed_dot_header, "X86_AVX2_PACKED_DOT_CORE_REG_CLASS_ID_YMM")
+    assert "X86_AVX2_PACKED_DOT_CORE_REG_CLASS_ID_ZMM" not in avx2_packed_dot_header
     _assert_reg_class_id(avx_vnni_header, "X86_AVX_VNNI_CORE_REG_CLASS_ID_YMM")
     assert "X86_AVX_VNNI_CORE_REG_CLASS_ID_ZMM" not in avx_vnni_header
     assert "X86_AVX_VNNI_CORE_DESCRIPTOR_REF_AVX512_VADDPS_ZMM" not in avx_vnni_header

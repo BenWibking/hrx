@@ -564,6 +564,32 @@ static const loom_low_lower_policy_t kX86Avx2LowLowerPolicy = {
     .contract = LOOM_X86_AVX2_CONTRACT,
 };
 
+static const loom_low_lower_policy_t kX86Avx2PackedDotLowLowerPolicy = {
+    .name = IREE_SVL("x86-avx2-packed-dot-low-lower"),
+    .function_storage = {kX86FunctionStorage,
+                         IREE_ARRAYSIZE(kX86FunctionStorage)},
+    .error_catalog = &loom_error_catalog_core,
+    .map_abi_layout = {.fn = loom_x86_map_native_abi_layout},
+    .emit_preamble = {.fn = loom_low_task_emit_kernel_preamble},
+    .preselect_op = {.fn = loom_low_task_select_kernel_builtin},
+    .emit_op = {.fn = loom_low_task_emit_kernel_builtin},
+    .query_op_contract = {.fn = loom_low_task_query_kernel_builtin},
+    .map_type = {.fn = loom_x86_map_avx2_type, .user_data = NULL},
+    .map_value = {.fn = loom_x86_map_avx2_value, .user_data = NULL},
+    .map_contract_value = {.fn = loom_x86_map_avx2_contract_value,
+                           .user_data = NULL},
+    .map_argument = {.fn = loom_x86_map_avx2_argument, .user_data = NULL},
+    .source_type_supported = {.fn = loom_x86_source_type_supported,
+                              .user_data = NULL},
+    .descriptor_matrix =
+        {
+            .options = loom_x86_descriptor_matrix_options,
+            .query = loom_x86_descriptor_matrix_query,
+        },
+    .source_plan_observer = &loom_x86_avx2_predicate_representation_observer,
+    .contract = LOOM_X86_AVX512_PACKED_DOT_CONTRACT,
+};
+
 static const loom_low_lower_policy_t kX86ScalarLowLowerPolicy = {
     .name = IREE_SVL("x86-scalar-low-lower"),
     .function_storage = {kX86FunctionStorage,
@@ -650,6 +676,10 @@ void loom_x86_low_lower_policy_registry_initialize(
       {
           .contract_set_key = IREE_SVL("x86.avx2.core"),
           .policy = &kX86Avx2LowLowerPolicy,
+      },
+      {
+          .contract_set_key = IREE_SVL("x86.avx2_packed_dot.core"),
+          .policy = &kX86Avx2PackedDotLowLowerPolicy,
       },
       {
           .contract_set_key = IREE_SVL("x86.avx512.core"),

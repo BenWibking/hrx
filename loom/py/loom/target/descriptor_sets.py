@@ -77,6 +77,12 @@ DESCRIPTOR_SET_REGISTRATIONS = (
         aliases=("x86_avx2_core",),
     ),
     DescriptorSetRegistration(
+        key="x86.avx2_packed_dot.core",
+        module_name="loom.target.arch.x86.descriptors",
+        symbol_name="X86_AVX2_PACKED_DOT_DESCRIPTOR_SET",
+        aliases=("x86_avx2_packed_dot_core",),
+    ),
+    DescriptorSetRegistration(
         key="x86.avx512.core",
         module_name="loom.target.arch.x86.descriptors",
         symbol_name="X86_AVX512_CORE_DESCRIPTOR_SET",

@@ -86,6 +86,7 @@ def test_descriptor_storage_target_lookup_classifies_current_views() -> None:
     assert [info.generator_target for info in view_infos] == [
         "avx10_2",
         "avx2",
+        "avx2_packed_dot",
         "avx512",
         "avx512_bf16",
         "avx512_vnni",
@@ -122,6 +123,15 @@ def test_packed_dot_feature_rows_record_feature_and_width_requirements() -> None
     )
     assert rows_by_target["avx_vnni_int16"].required_feature_bits == (
         FEATURE_AVX_VNNI_INT16
+    )
+    assert rows_by_target["avx2_packed_dot"].required_feature_bits == (
+        FEATURE_AVX_VNNI | FEATURE_AVX_VNNI_INT8 | FEATURE_AVX_VNNI_INT16
+    )
+    assert rows_by_target["avx2_packed_dot"].register_classes == (
+        X86_REG_CLASS_GPR32,
+        X86_REG_CLASS_GPR64,
+        X86_REG_CLASS_XMM,
+        X86_REG_CLASS_YMM,
     )
     assert rows_by_target["avx10_2"].required_feature_bits == FEATURE_AVX10_2
 

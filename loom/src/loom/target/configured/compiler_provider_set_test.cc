@@ -94,12 +94,20 @@ TEST(ConfiguredCompilerProviderSetTest, NativeCpuSelectionUsesDeviceFacts) {
   IREE_ASSERT_OK(loom_target_environment_select_cpu_profile(
       &environment, &cpu_data, nullptr, nullptr, &selected,
       iree_allocator_system()));
-  EXPECT_EQ(selected.profile, scalar_profile);
+  ASSERT_NE(selected.profile, nullptr);
+  EXPECT_NE(selected.profile, scalar_profile);
+  EXPECT_NE(selected.destroy, nullptr);
+  const loom_target_bundle_t* selected_bundle =
+      loom_target_profile_bundle(selected.profile);
+  ASSERT_NE(selected_bundle, nullptr);
+  EXPECT_TRUE(iree_string_view_equal(selected_bundle->config->contract_set_key,
+                                     IREE_SV("x86.scalar.core")));
   loom_target_profile_selection_release(&selected, iree_allocator_system());
   IREE_ASSERT_OK(loom_target_environment_select_cpu_profile(
       &environment, &cpu_data, nullptr, scalar_profile, &selected,
       iree_allocator_system()));
   EXPECT_EQ(selected.profile, scalar_profile);
+  EXPECT_EQ(selected.destroy, nullptr);
   loom_target_profile_selection_release(&selected, iree_allocator_system());
 
   // A compiler running on x86 must still reject an x86 profile for ARM.
