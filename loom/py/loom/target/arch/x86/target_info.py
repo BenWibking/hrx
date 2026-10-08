@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from loom.target.arch.x86.feature_bits import (
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
+    FEATURE_AVX512_FP16,
     FEATURE_AVX512_VL,
     FEATURE_AVX512_VNNI,
     FEATURE_AVX_VNNI,
@@ -43,6 +44,7 @@ X86_ISA_TIER_PACKED_DOT = "packed_dot"
 X86_FEATURE_PROFILE_NONE = "none"
 X86_FEATURE_PROFILE_AVX512_VNNI = "avx512_vnni"
 X86_FEATURE_PROFILE_AVX512_BF16 = "avx512_bf16"
+X86_FEATURE_PROFILE_AVX512_FP16 = "avx512_fp16"
 X86_FEATURE_PROFILE_AVX_VNNI = "avx_vnni"
 X86_FEATURE_PROFILE_AVX_VNNI_INT8 = "avx_vnni_int8"
 X86_FEATURE_PROFILE_AVX_VNNI_INT16 = "avx_vnni_int16"
@@ -192,6 +194,20 @@ X86_DESCRIPTOR_SET_INFOS: tuple[X86DescriptorSetInfo, ...] = (
         storage_generator_target="avx512_features",
         feature_profile=X86_FEATURE_PROFILE_AVX10_2,
         required_feature_bits=FEATURE_AVX10_2,
+    ),
+    X86DescriptorSetInfo(
+        generator_target="avx512_fp16",
+        key="x86.avx512_fp16.core",
+        isa_tier=X86_ISA_TIER_AVX512,
+        register_classes=(
+            X86_REG_CLASS_XMM,
+            X86_REG_CLASS_YMM,
+            X86_REG_CLASS_ZMM,
+            X86_REG_CLASS_K,
+        ),
+        storage_generator_target="avx512_features",
+        feature_profile=X86_FEATURE_PROFILE_AVX512_FP16,
+        required_feature_bits=FEATURE_AVX512_FP16 | FEATURE_AVX512_VL,
     ),
 )
 

@@ -112,6 +112,12 @@ static uint8_t loom_x86_select_vector_register(
                    (selector == LOOM_X86_VECTOR_REGISTER_FIXED_6));
 }
 
+static bool loom_x86_vector_encoding_uses_evex(uint16_t encoding_id) {
+  const uint8_t encoded_map = (encoding_id >> 8) & 3;
+  const bool prefix_map_extension = (encoding_id >> 13) & 1;
+  return encoded_map == 0 || prefix_map_extension;
+}
+
 static void loom_x86_encode_vector_prefix(
     loom_x86_encoded_instruction_t* instruction, uint16_t encoding_id,
     uint8_t reg, uint8_t vvvv, uint8_t rm, uint8_t index, bool has_index,
@@ -125,7 +131,7 @@ static void loom_x86_encode_vector_prefix(
   // preserves all existing encoding IDs.
   const bool extended_map = encoded_map == 0;
   const uint8_t map = extended_map ? 5 + prefix_map_extension : encoded_map;
-  const bool evex = extended_map || prefix_map_extension;
+  const bool evex = loom_x86_vector_encoding_uses_evex(encoding_id);
   const uint8_t vector_length = encoding_id >> 14;
   if (evex) {
     const uint8_t x =
@@ -232,10 +238,11 @@ static void loom_x86_encode_vector_instruction(
     loom_x86_encode_byte(instruction, ((reg & 7) << 3) | 5);
     loom_x86_encode_integer(instruction, 0, 4);
   } else if (memory) {
-    loom_x86_encode_vector_memory(instruction, reg, rm, middle, has_index,
-                                  operands->scale, (int32_t)operands->immediate,
-                                  (encoding_id >> 13) & 1, full_vector_tuple,
-                                  encoding_id >> 14);
+    loom_x86_encode_vector_memory(
+        instruction, reg, rm, middle, has_index, operands->scale,
+        (int32_t)operands->immediate,
+        loom_x86_vector_encoding_uses_evex(encoding_id), full_vector_tuple,
+        encoding_id >> 14);
   } else {
     loom_x86_encode_byte(instruction, 0xc0 | ((reg & 7) << 3) | (rm & 7));
   }

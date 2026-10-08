@@ -12,6 +12,7 @@
 #include "loom/target/arch/x86/descriptors/avx512_bf16_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_features_descriptors.h"
+#include "loom/target/arch/x86/descriptors/avx512_fp16_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx512_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_descriptors.h"
 #include "loom/target/arch/x86/descriptors/avx_vnni_int16_descriptors.h"
@@ -30,6 +31,7 @@ static const loom_low_descriptor_set_provider_t kLowDescriptorSetProviders[] = {
     loom_x86_avx512_features_core_descriptor_set,
     loom_x86_avx512_vnni_core_descriptor_set,
     loom_x86_avx512_bf16_core_descriptor_set,
+    loom_x86_avx512_fp16_core_descriptor_set,
     loom_x86_avx_vnni_core_descriptor_set,
     loom_x86_avx_vnni_int8_core_descriptor_set,
     loom_x86_avx_vnni_int16_core_descriptor_set,

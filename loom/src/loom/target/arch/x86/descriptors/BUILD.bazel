@@ -110,6 +110,17 @@ loom_low_descriptor_cc_library(
 )
 
 loom_low_descriptor_cc_library(
+    name = "avx512_fp16_descriptors",
+    header_only = True,
+    ids_deps = ["//loom/src/loom/codegen/low:descriptors"],
+    visibility = _X86_NATIVE_VISIBILITY,
+    deps = [
+        ":avx512_features_descriptors",
+        "//loom/src/loom/codegen/low:descriptors",
+    ],
+)
+
+loom_low_descriptor_cc_library(
     name = "avx_vnni_descriptors",
     header_only = True,
     ids_deps = ["//loom/src/loom/codegen/low:descriptors"],
@@ -165,6 +176,7 @@ loom_low_descriptor_cc_library(
         "--view-header=packed_dot",
         "--view-header=avx512_vnni",
         "--view-header=avx512_bf16",
+        "--view-header=avx512_fp16",
         "--view-header=avx_vnni",
         "--view-header=avx_vnni_int8",
         "--view-header=avx_vnni_int16",
@@ -179,6 +191,7 @@ loom_low_descriptor_cc_library(
         "packed_dot_descriptors.h",
         "avx512_vnni_descriptors.h",
         "avx512_bf16_descriptors.h",
+        "avx512_fp16_descriptors.h",
         "avx_vnni_descriptors.h",
         "avx_vnni_int8_descriptors.h",
         "avx_vnni_int16_descriptors.h",
@@ -231,6 +244,7 @@ loom_cc_library(
         ":avx512_bf16_descriptors",
         ":avx512_descriptors",
         ":avx512_features_descriptors",
+        ":avx512_fp16_descriptors",
         ":avx512_vnni_descriptors",
         ":avx_vnni_descriptors",
         ":avx_vnni_int16_descriptors",
@@ -256,6 +270,7 @@ loom_cc_library(
         ":avx512_bf16_descriptors.h",
         ":avx512_descriptors.h",
         ":avx512_features_descriptors.h",
+        ":avx512_fp16_descriptors.h",
         ":avx512_vnni_descriptors.h",
         ":avx_vnni_descriptors.h",
         ":avx_vnni_int16_descriptors.h",
@@ -272,6 +287,7 @@ loom_cc_library(
         ":avx512_bf16_descriptors",
         ":avx512_descriptors",
         ":avx512_features_descriptors",
+        ":avx512_fp16_descriptors",
         ":avx512_vnni_descriptors",
         ":avx_vnni_descriptors",
         ":avx_vnni_int16_descriptors",

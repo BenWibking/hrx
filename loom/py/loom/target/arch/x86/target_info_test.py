@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from loom.target.arch.x86.feature_bits import (
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
+    FEATURE_AVX512_FP16,
     FEATURE_AVX512_VL,
     FEATURE_AVX512_VNNI,
     FEATURE_AVX_VNNI,
@@ -89,6 +90,7 @@ def test_descriptor_storage_target_lookup_classifies_current_views() -> None:
         "avx2_features",
         "avx512",
         "avx512_bf16",
+        "avx512_fp16",
         "avx512_vnni",
         "avx_vnni",
         "avx_vnni_int16",
@@ -117,6 +119,9 @@ def test_packed_dot_feature_rows_record_feature_and_width_requirements() -> None
     )
     assert rows_by_target["avx512_bf16"].required_feature_bits == (
         FEATURE_AVX512_BF16 | FEATURE_AVX512_VL
+    )
+    assert rows_by_target["avx512_fp16"].required_feature_bits == (
+        FEATURE_AVX512_FP16 | FEATURE_AVX512_VL
     )
     assert rows_by_target["avx_vnni_int8"].required_feature_bits == (
         FEATURE_AVX_VNNI_INT8

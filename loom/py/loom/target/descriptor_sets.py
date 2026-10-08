@@ -137,6 +137,12 @@ DESCRIPTOR_SET_REGISTRATIONS = (
         aliases=("x86_avx512_features_core",),
     ),
     DescriptorSetRegistration(
+        key="x86.avx512_fp16.core",
+        module_name="loom.target.arch.x86.descriptors",
+        symbol_name="X86_AVX512_FP16_DESCRIPTOR_SET",
+        aliases=("x86_avx512_fp16_core",),
+    ),
+    DescriptorSetRegistration(
         key="test.low.core",
         module_name="loom.target.test.descriptors",
         symbol_name="TEST_LOW_CORE_DESCRIPTOR_SET",

@@ -143,6 +143,11 @@ TEST(EncodingTest, VectorMemoryDisplacementsAndCanonicalSib) {
   ExpectVectorEncoding(0xc1c0, 0xa96f, operands,
                        {0x62, 0xf1, 0x7e, 0x48, 0x6f, 0x48, 0x01});
 
+  // Map-5 VCVTPS2PHX is also EVEX despite its clear prefix/map extension bit.
+  // Its ZMM source therefore compresses the same 64-byte displacement.
+  ExpectVectorEncoding(0xc1c0, 0x841d, operands,
+                       {0x62, 0xf5, 0x7d, 0x48, 0x1d, 0x48, 0x01});
+
   // R12 requires a SIB byte whose absent index has canonical scale zero.
   operands.inputs[0] = 12;
   operands.immediate = 0;

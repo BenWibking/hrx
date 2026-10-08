@@ -203,6 +203,7 @@ def test_storage_generation_emits_current_public_views() -> None:
                     f"--view-header=avx2_features={tmp_path / 'avx2_features_descriptors.h'}",
                     f"--view-header=avx10_2={tmp_path / 'avx10_2_descriptors.h'}",
                     f"--view-header=avx512_bf16={tmp_path / 'avx512_bf16_descriptors.h'}",
+                    f"--view-header=avx512_fp16={tmp_path / 'avx512_fp16_descriptors.h'}",
                     f"--view-header=avx512_vnni={tmp_path / 'avx512_vnni_descriptors.h'}",
                     f"--view-header=avx_vnni={tmp_path / 'avx_vnni_descriptors.h'}",
                     f"--view-header=avx_vnni_int8={tmp_path / 'avx_vnni_int8_descriptors.h'}",
@@ -220,6 +221,7 @@ def test_storage_generation_emits_current_public_views() -> None:
         avx512_header = (tmp_path / "avx512_descriptors.h").read_text(encoding="utf-8")
         avx2_header = (tmp_path / "avx2_descriptors.h").read_text(encoding="utf-8")
         avx2_features_header = (tmp_path / "avx2_features_descriptors.h").read_text(encoding="utf-8")
+        avx512_fp16_header = (tmp_path / "avx512_fp16_descriptors.h").read_text(encoding="utf-8")
         avx_vnni_header = (tmp_path / "avx_vnni_descriptors.h").read_text(encoding="utf-8")
         packed_dot_header = (tmp_path / "packed_dot_descriptors.h").read_text(encoding="utf-8")
         scalar_header = (tmp_path / "scalar_descriptors.h").read_text(encoding="utf-8")
@@ -228,6 +230,7 @@ def test_storage_generation_emits_current_public_views() -> None:
     assert "loom_x86_avx512_core_descriptor_set" in source
     assert "loom_x86_avx2_core_descriptor_set" in source
     assert "loom_x86_avx2_features_core_descriptor_set" in source
+    assert "loom_x86_avx512_fp16_core_descriptor_set" in source
     assert "loom_x86_packed_dot_core_descriptor_set" in source
     assert "loom_x86_avx_vnni_core_descriptor_set" in source
     assert "loom_x86_avx512_features_core_descriptor_set" in source
@@ -250,11 +253,11 @@ def test_storage_generation_emits_current_public_views() -> None:
         assert f"static const loom_low_descriptor_ref_t k{view_prefix}DescriptorRefs[]" not in source
         assert f"static const loom_low_asm_form_t k{view_prefix}AsmForms[]" not in source
     assert "static const loom_low_asm_form_t kX86AvxVnniCoreAsmForms[]" in source
-    assert source.count(".descriptors = kX86Avx512FeaturesCoreStorageDescriptors,") == 7
-    assert source.count(".descriptor_views = kX86Avx512FeaturesCoreStorageDescriptorViews,") == 7
+    assert source.count(".descriptors = kX86Avx512FeaturesCoreStorageDescriptors,") == 8
+    assert source.count(".descriptor_views = kX86Avx512FeaturesCoreStorageDescriptorViews,") == 8
     assert ".asm_forms = kX86AvxVnniCoreAsmForms," in source
-    assert source.count(".asm_forms = kX86Avx512FeaturesCoreStorageAsmForms,") == 7
-    assert source.count(".descriptor_refs = kX86Avx512FeaturesCoreStorageDescriptorRefs,") == 7
+    assert source.count(".asm_forms = kX86Avx512FeaturesCoreStorageAsmForms,") == 8
+    assert source.count(".descriptor_refs = kX86Avx512FeaturesCoreStorageDescriptorRefs,") == 8
     assert "kX86Avx2FeaturesCoreDescriptorMembershipWords" in source
     assert "kX86PackedDotCoreDescriptorMembershipWords" in source
     assert source.count(".descriptor_membership_words = kX86ScalarCoreDescriptorMembershipWords,") == 2
@@ -265,6 +268,7 @@ def test_storage_generation_emits_current_public_views() -> None:
     assert "loom_x86_avx512_core_descriptor_set" in avx512_header
     assert "loom_x86_avx2_core_descriptor_set" in avx2_header
     assert "loom_x86_avx2_features_core_descriptor_set" in avx2_features_header
+    assert "loom_x86_avx512_fp16_core_descriptor_set" in avx512_fp16_header
     assert "loom_x86_avx_vnni_core_descriptor_set" in avx_vnni_header
     assert "loom_x86_packed_dot_core_descriptor_set" in packed_dot_header
     assert "loom_x86_scalar_core_descriptor_set" in scalar_header
@@ -289,6 +293,10 @@ def test_storage_generation_emits_current_public_views() -> None:
     _assert_descriptor_ref(
         composite_header,
         "X86_AVX512_FEATURES_CORE_DESCRIPTOR_REF_AVX512_BF16_VDPBF16PS_ZMM",
+    )
+    _assert_descriptor_ref(
+        avx512_fp16_header,
+        "X86_AVX512_FP16_CORE_DESCRIPTOR_REF_AVX512_FP16_VADDPH_ZMM",
     )
     _assert_reg_class_id(scalar_header, "X86_SCALAR_CORE_REG_CLASS_ID_GPR32")
     _assert_reg_class_id(scalar_header, "X86_SCALAR_CORE_REG_CLASS_ID_GPR64")
