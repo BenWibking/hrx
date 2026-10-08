@@ -135,8 +135,17 @@ _AMDGPU_CONTRACT_DESCRIPTOR_OVERLAY_BUILDERS: dict[
                 _v_pk_add_f32_overlay(),
                 _v_pk_mul_f32_overlay(),
                 _v_pk_fma_f32_overlay(),
+                _v_pk_mul_f16_overlay(),
+                _v_pk_add_f16_overlay(),
+                _v_pk_minnum_f16_overlay(),
+                _v_pk_maxnum_f16_overlay(),
+                _v_pk_minimum_f16_overlay(),
+                _v_pk_maximum_f16_overlay(),
+                _v_pk_add_bf16_overlay(),
+                _v_pk_mul_bf16_overlay(),
+                *_v_pk_i16_binary_overlays(),
             )
-            for variant in _v_pk_f32_broadcast_overlays(overlay)
+            for variant in _v_pk_broadcast_overlays(overlay)
         )
     ),
     **_contract_overlay_builders_from_overlays(_v_fma_mix_f32_overlays()),

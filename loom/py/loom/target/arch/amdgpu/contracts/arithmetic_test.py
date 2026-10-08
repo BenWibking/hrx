@@ -443,7 +443,7 @@ def test_packed_i16_arithmetic_rules_try_native_pk_ops_before_word_ops() -> None
     )
     for source_op, packed_descriptor in shift_cases:
         positions = _descriptor_sequence_positions(compiled, source_op)
-        assert positions[(packed_descriptor,)] == 0
+        assert positions[(packed_descriptor,)] == 3
 
 
 def test_packed_bf16_arithmetic_rules_publish_native_pk_ops() -> None:
@@ -592,10 +592,12 @@ def test_packed_f16_arithmetic_rules_publish_native_pk_ops() -> None:
         assert positions[(packed_descriptor,)] < positions[(scalar_descriptor,)]
 
     minimum_positions = _descriptor_sequence_positions(compiled, vector.vector_minimumf)
-    assert minimum_positions[("amdgpu.v_pk_minimum_f16",)] == 0
+    assert minimum_positions[("amdgpu.v_pk_minimum_f16.broadcast_lhs_rhs",)] == 0
+    assert minimum_positions[("amdgpu.v_pk_minimum_f16",)] == 3
 
     maximum_positions = _descriptor_sequence_positions(compiled, vector.vector_maximumf)
-    assert maximum_positions[("amdgpu.v_pk_maximum_f16",)] == 0
+    assert maximum_positions[("amdgpu.v_pk_maximum_f16.broadcast_lhs_rhs",)] == 0
+    assert maximum_positions[("amdgpu.v_pk_maximum_f16",)] == 3
 
 
 def test_ieee_minmax_rules_publish_direct_scalar_and_vector_ops() -> None:
@@ -687,7 +689,7 @@ def test_packed_f32_broadcast_rules_materialize_before_packet_repetition() -> No
         rules = tuple(
             rule
             for rule in _rules_for_source_op(compiled, source_op)
-            if ".broadcast_" in _rule_descriptor_keys(compiled, rule)[0]
+            if "_f32.broadcast_" in _rule_descriptor_keys(compiled, rule)[0]
         )
         assert len(rules) == 3
         for rule in rules:
@@ -704,6 +706,114 @@ def test_packed_f32_broadcast_rules_materialize_before_packet_repetition() -> No
                     else SourceValueKind.OPERAND
                 )
                 assert bool(reference.materializer_index) == (operand_index == 1)
+
+
+def test_packed_narrow_binary_broadcasts_cover_operations_and_source_roles() -> None:
+    compiled = _compiled_arithmetic_rules()
+    families = (
+        (vector.vector_addf, "add_f16"),
+        (vector.vector_subf, "add_f16"),
+        (vector.vector_mulf, "mul_f16"),
+        (vector.vector_minnumf, "minnum_f16"),
+        (vector.vector_maxnumf, "maxnum_f16"),
+        (vector.vector_minimumf, "minimum_f16"),
+        (vector.vector_maximumf, "maximum_f16"),
+        (vector.vector_addf, "add_bf16"),
+        (vector.vector_subf, "add_bf16"),
+        (vector.vector_mulf, "mul_bf16"),
+        (vector.vector_addi, "add_u16"),
+        (vector.vector_subi, "sub_i16"),
+        (vector.vector_muli, "mul_lo_u16"),
+        (vector.vector_minsi, "min_i16"),
+        (vector.vector_maxsi, "max_i16"),
+        (vector.vector_minui, "min_u16"),
+        (vector.vector_maxui, "max_u16"),
+        (vector.vector_shli, "lshlrev_b16"),
+        (vector.vector_shrsi, "ashrrev_i16"),
+        (vector.vector_shrui, "lshrrev_b16"),
+    )
+    for source_op, descriptor_name in families:
+        masks = set()
+        for rule in _rules_for_source_op(compiled, source_op):
+            keys = _rule_descriptor_keys(compiled, rule)
+            if (
+                len(keys) != 1
+                or keys[0].split(".broadcast_")[0] != f"amdgpu.v_pk_{descriptor_name}"
+            ):
+                continue
+            emit = compiled.emits[rule.emit_start]
+            assert emit.kind is LowerEmitKind.DESCRIPTOR_OP_PER_LANE
+            attributes = {
+                attribute.target_name: attribute.literal_i64
+                for attribute in compiled.attr_copies[
+                    emit.attr_copy_start : emit.attr_copy_start + emit.attr_copy_count
+                ]
+            }
+            source_names = (
+                ("shift", "value") if "rev_" in descriptor_name else ("lhs", "rhs")
+            )
+            suffix = keys[0].partition(".broadcast_")[2].split("_")
+            mask = sum(
+                1 << bit for bit, name in enumerate(source_names) if name in suffix
+            )
+            masks.add(mask)
+            if source_op is vector.vector_subf:
+                assert attributes["neg_lo"] == attributes["neg_hi"] == 2
+            for position in range(2):
+                reference = compiled.value_refs[emit.operand_ref_start + position]
+                assert reference.kind is (
+                    SourceValueKind.UNIFORM_ELEMENT_ORIGIN_OPERAND
+                    if mask & (1 << position)
+                    else SourceValueKind.OPERAND
+                )
+                # Reverse shifts encode the authored count before the value.
+                assert reference.index == (
+                    1 - position if "rev_" in descriptor_name else position
+                )
+                assert bool(reference.materializer_index) == (
+                    bool(mask) and position == 1
+                )
+        assert masks == {0, 1, 2, 3}, descriptor_name
+
+
+def test_packed_narrow_clamp_broadcasts_compose_both_selectors() -> None:
+    compiled = _compiled_arithmetic_rules()
+    for maximum, minimum in (("maxnum", "minnum"), ("maximum", "minimum")):
+        masks = set()
+        for rule in _rules_for_source_op(compiled, vector.vector_clampf):
+            keys = _rule_descriptor_keys(compiled, rule)
+            if tuple(key.split(".broadcast_")[0] for key in keys) != (
+                f"amdgpu.v_pk_{maximum}_f16",
+                f"amdgpu.v_pk_{minimum}_f16",
+            ):
+                continue
+            first, second = compiled.emits[rule.emit_start : rule.emit_start + 2]
+            references = (
+                compiled.value_refs[first.operand_ref_start],
+                compiled.value_refs[first.operand_ref_start + 1],
+                compiled.value_refs[second.operand_ref_start + 1],
+            )
+            mask = sum(
+                1 << position
+                for position, reference in enumerate(references)
+                if reference.kind is SourceValueKind.UNIFORM_ELEMENT_ORIGIN_OPERAND
+            )
+            masks.add(mask)
+            for key, emit, operand_mask in (
+                (keys[0], first, mask & 3),
+                (keys[1], second, (mask & 4) >> 1),
+            ):
+                attributes = compiled.attr_copies[
+                    emit.attr_copy_start : emit.attr_copy_start + emit.attr_copy_count
+                ]
+                assert not attributes
+                suffix = "_".join(
+                    name
+                    for bit, name in enumerate(("lhs", "rhs"))
+                    if operand_mask & (1 << bit)
+                )
+                assert key.partition(".broadcast_")[2] == suffix
+        assert masks == set(range(8)), (maximum, minimum)
 
 
 def test_32bit_vector_shape_contracts_match_lane_semantics() -> None:

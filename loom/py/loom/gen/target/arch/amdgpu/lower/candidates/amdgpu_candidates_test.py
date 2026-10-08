@@ -83,6 +83,11 @@ def test_arithmetic_generator_covers_packed_ternary_descriptor_candidates() -> N
         "amdgpu.v_pk_mad_u16",
         "amdgpu.v_pk_mad_i16",
     ]
+    source = amdgpu_arithmetic_candidates._emit_source(public_header=_ARITHMETIC_HEADER)
+    for suffix in ("fma_f16", "fma_bf16", "fma_f32", "mad_i16", "mad_u16"):
+        for mask in range(1, 8):
+            operands = "_".join(name for bit, name in enumerate(("A", "B", "C")) if mask & (1 << bit))
+            assert f"LOOM_AMDGPU_DESCRIPTOR_REF_V_PK_{suffix.upper()}_BROADCAST_{operands}," in source
 
 
 def test_arithmetic_generator_rejects_missing_fma_mix_descriptor_ref() -> None:

@@ -94,7 +94,7 @@ loom_corpus_build(
     "AMDGPU/023,TARGET/003"
     "loom::target::amdgpu::test::corpus::without_bf16_fma"
     "numeric/vector/broadcast_arithmetic.loom"
-    "@broadcast_fma_bf16"
+    "@broadcast_arithmetic_bf16"
     "TARGET/003"
   ALL_ROOTS_XFAIL
     "loom::target::amdgpu::all"
@@ -713,7 +713,7 @@ loom_corpus_test(
     "@vector_address_conversion_values"
     "TARGET/001"
     "numeric/vector/broadcast_arithmetic.loom"
-    "@broadcast_fma_bf16_values"
+    "@broadcast_arithmetic_bf16_values"
     "TARGET/003"
     "numeric/vector/constants.loom"
     "@vector_predicate_constant_values"

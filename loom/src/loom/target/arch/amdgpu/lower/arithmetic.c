@@ -751,8 +751,8 @@ static bool loom_amdgpu_select_packed_ternary_candidate_plan(
                          LOOM_AMDGPU_PACKED_TERNARY_FLAG_TIED_ACCUMULATOR)) {
       continue;
     }
-    if (loom_amdgpu_descriptor_ref_is_present(context,
-                                              candidates[i].descriptor_ref)) {
+    if (loom_amdgpu_descriptor_ref_is_present(
+            context, candidates[i].descriptor_refs[0])) {
       candidate = &candidates[i];
       break;
     }
@@ -776,16 +776,11 @@ static bool loom_amdgpu_select_packed_ternary_candidate_plan(
     descriptor_sources[i] = selected_sources[source_index];
     broadcast_mask |= ((source_broadcast_mask >> source_index) & 1u) << i;
   }
-  loom_amdgpu_descriptor_ref_t descriptor_ref = candidate->descriptor_ref;
-  if (descriptor_ref == LOOM_AMDGPU_DESCRIPTOR_REF_V_PK_FMA_F32) {
-    descriptor_ref =
-        kLoomAmdgpuPackedFmafF32BroadcastDescriptorRefs[broadcast_mask];
-  }
   *out_plan = (loom_amdgpu_packed_ternary_plan_t){
       .sources = {descriptor_sources[0], descriptor_sources[1],
                   descriptor_sources[2]},
       .result = result,
-      .descriptor_ref = descriptor_ref,
+      .descriptor_ref = candidate->descriptor_refs[broadcast_mask],
       .flags = candidate->flags,
       .broadcast_mask = broadcast_mask,
       .register_count = register_count,
@@ -1368,13 +1363,6 @@ iree_status_t loom_amdgpu_lower_vector_packed_ternary(
   };
   const bool has_tied_accumulator = iree_any_bit_set(
       plan->flags, LOOM_AMDGPU_PACKED_TERNARY_FLAG_TIED_ACCUMULATOR);
-  loom_named_attr_t attrs[1];
-  iree_host_size_t attr_count = 0;
-  if (plan->packet_unit_count == 1 && plan->broadcast_mask != 0) {
-    IREE_RETURN_IF_ERROR(loom_amdgpu_append_i64_attr(
-        context, IREE_SV("op_sel_hi"), 7u ^ plan->broadcast_mask, attrs,
-        IREE_ARRAYSIZE(attrs), &attr_count));
-  }
 
   loom_value_id_t packet_results[LOOM_AMDGPU_MAX_PACKED_32BIT_REGISTERS];
   for (uint32_t packet_index = 0; packet_index < plan->packet_count;
@@ -1397,7 +1385,7 @@ iree_status_t loom_amdgpu_lower_vector_packed_ternary(
     loom_op_t* low_op = NULL;
     IREE_RETURN_IF_ERROR(loom_low_lower_emit_resolved_descriptor_op(
         context, &descriptor, operands, IREE_ARRAYSIZE(operands),
-        loom_make_named_attr_slice(attrs, attr_count), &packet_type, 1,
+        loom_named_attr_slice_empty(), &packet_type, 1,
         has_tied_accumulator ? tied_accumulator : NULL,
         has_tied_accumulator ? IREE_ARRAYSIZE(tied_accumulator) : 0,
         source_op->location, &low_op));
