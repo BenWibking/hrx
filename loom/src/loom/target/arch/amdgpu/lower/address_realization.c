@@ -87,9 +87,8 @@ static bool loom_amdgpu_address_alternating_bank(
     return false;
   }
   const loom_symbolic_projection_t* projection = summary.projection;
-  if (projection->value_id != loop->induction->value ||
-      projection->scale != 1 || projection->divisor != 1 ||
-      projection->modulus != 2) {
+  if (projection->value_id != loop->induction_value || projection->scale != 1 ||
+      projection->divisor != 1 || projection->modulus != 2) {
     return false;
   }
   *out_bank_bit = (uint32_t)term->byte_stride;

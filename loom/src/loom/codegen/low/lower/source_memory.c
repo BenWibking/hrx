@@ -424,8 +424,10 @@ iree_status_t loom_low_lower_source_memory_prepare(
   if (callback.fn == NULL) {
     return iree_ok_status();
   }
-  IREE_RETURN_IF_ERROR(loom_low_lower_realizations_create(context));
-  iree_status_t status = iree_ok_status();
+  iree_arena_allocator_t construction_arena;
+  iree_arena_initialize(context->module->arena.block_pool, &construction_arena);
+  iree_status_t status =
+      loom_low_lower_realizations_create(context, &construction_arena);
   for (loom_low_lower_source_memory_record_t* record =
            context->lowering.source_plan.memory.first;
        record && iree_status_is_ok(status) &&
@@ -447,6 +449,7 @@ iree_status_t loom_low_lower_source_memory_prepare(
       !loom_low_lower_context_should_stop(context)) {
     status = loom_low_lower_realizations_finalize(context);
   }
+  iree_arena_deinitialize(&construction_arena);
   return status;
 }
 

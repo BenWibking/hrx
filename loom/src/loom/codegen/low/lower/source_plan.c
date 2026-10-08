@@ -1734,22 +1734,21 @@ iree_status_t loom_low_lower_source_plan_build(
   if (source_body->block_count > 1) {
     const loom_value_fact_cfg_region_t* cfg =
         loom_low_lower_context_cfg(context);
-    source_plan->block_order = cfg->dominance.preorder.values;
-    if (cfg->dominance.preorder.count < source_body->block_count) {
-      uint16_t* block_order = NULL;
-      IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
-          context, source_body->block_count, sizeof(*block_order),
-          (void**)&block_order));
-      iree_host_size_t count = cfg->dominance.preorder.count;
-      memcpy(block_order, source_plan->block_order,
-             count * sizeof(*block_order));
+    uint16_t* block_order = NULL;
+    IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
+        context, source_body->block_count, sizeof(*block_order),
+        (void**)&block_order));
+    iree_host_size_t count = cfg->dominance.preorder.count;
+    memcpy(block_order, cfg->dominance.preorder.values,
+           count * sizeof(*block_order));
+    if (count < source_body->block_count) {
       for (uint16_t i = 0; i < source_body->block_count; ++i) {
         if (!cfg->graph.blocks[i].reachable) {
           block_order[count++] = i;
         }
       }
-      source_plan->block_order = block_order;
     }
+    source_plan->block_order = block_order;
   }
   const loom_value_ordinal_t value_count =
       context->lowering.value_domain.value_count;

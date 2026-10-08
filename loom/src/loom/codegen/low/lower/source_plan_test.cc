@@ -48,6 +48,8 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     iree_host_size_t plan_count = 0;
     bool overflow = false;
     SourcePlanObservation source_plan;
+    // Optional source fact/CFG arena retired at the start of emission.
+    iree_arena_allocator_t* retire_analysis_arena = nullptr;
     struct {
       // Planned blocks carrying the same tuple through two nested rewrites.
       loom_low_lower_block_ref_t first = 0;
@@ -177,6 +179,9 @@ class LowLowerSourcePlanTest : public ::testing::Test {
                                    loom_low_lower_context_t* context) {
     auto* observer = static_cast<PlanObserver*>(user_data);
     observer->type_mapping.emission_started = true;
+    if (observer->retire_analysis_arena) {
+      iree_arena_reset(observer->retire_analysis_arena);
+    }
     observer->plan_count = loom_low_lower_context_selected_plan_count(context);
     if (observer->plan_count > IREE_ARRAYSIZE(observer->plans)) {
       observer->overflow = true;
@@ -413,9 +418,9 @@ TEST_F(LowLowerSourcePlanTest, PropagatesObserverEndFailureBeforeSelection) {
   EXPECT_EQ(observer_.plan_count, 0u);
 }
 
-TEST_F(LowLowerSourcePlanTest,
-       PlansNestedBlockInterpositionsBeforeLowCreation) {
+TEST_F(LowLowerSourcePlanTest, ExecutesExpandedControlAfterFactStorageRetires) {
   AddForwardingBlock();
+  observer_.retire_analysis_arena = &analysis_arena_;
   IREE_ASSERT_OK(
       loom_low_lower_function(module_, function_, &options_, &result_));
   ASSERT_EQ(result_.error_count, 0u);

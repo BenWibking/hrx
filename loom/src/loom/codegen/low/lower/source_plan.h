@@ -134,9 +134,9 @@ typedef struct loom_low_lower_source_plan_t {
   // Required visibility on mutable global reads; thread scope keeps the
   // ordinary eager acquisition recipe. Fixed before per-operation selection.
   uint8_t read_visibility_scope;
-  // Source-body blocks in definition-before-use order, borrowed from retained
-  // dominance when all blocks are reachable. Unreachable blocks follow in
-  // storage order. NULL preserves the single-block structured path.
+  // Owned source-body permutation in definition-before-use order, copied from
+  // dominance. Unreachable blocks follow in storage order. NULL preserves the
+  // single-block structured path.
   const uint16_t* block_order;
   // Function-local physical-representation plan, or NULL when the target has
   // no representation observer or before that observer begins.
