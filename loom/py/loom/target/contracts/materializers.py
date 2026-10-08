@@ -13,13 +13,19 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class ValueMaterializer:
-    """Selection, carrier, and emission contracts for a materialized value."""
+    """Selection, carrier, and emission contracts for a materialized value.
+
+    A prepare callback retains source-dependent choices in the function plan.
+    Its materialize callback consumes that recipe after source analysis ends.
+    Without prepare, materialize consumes only the emitted Low carrier.
+    """
 
     name: str
     can_materialize: str
     result_type: str
     materialize: str
     header: str
+    prepare: str | None = None
 
     def __post_init__(self) -> None:
         if not self.name:

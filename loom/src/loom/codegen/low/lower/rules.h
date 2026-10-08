@@ -142,6 +142,20 @@ typedef iree_status_t (*loom_low_lower_materialize_value_fn_t)(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_value_id_t source_value_id, loom_value_id_t* out_low_value_id);
 
+// Retains a use's source-dependent choices after producer carriers are final.
+// The returned opaque recipe belongs to the function arena or immutable target
+// storage. NULL is a valid recipe; no source analysis survives into emission.
+typedef iree_status_t (*loom_low_lower_prepare_value_materialization_fn_t)(
+    loom_low_lower_context_t* context, loom_value_id_t source_value_id,
+    const void** out_plan);
+
+// Executes the retained recipe without consulting source analysis. The source
+// identity remains available for looking up its canonical emitted carrier.
+typedef iree_status_t (*loom_low_lower_emit_value_materialization_fn_t)(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value_id, const void* plan,
+    loom_value_id_t* out_low_value_id);
+
 // Returns the exact carrier produced by a selected materializer. Source
 // producers have published their bindings; this query does not emit or choose
 // a preferred source mapping.
@@ -154,8 +168,16 @@ typedef struct loom_low_lower_value_materializer_t {
   loom_low_lower_can_materialize_value_fn_t can_materialize;
   // Native operand type selected before materialization begins.
   loom_low_lower_materialized_value_type_fn_t result_type;
-  // Emission-time callback that returns the low value used by descriptor ops.
-  loom_low_lower_materialize_value_fn_t materialize;
+  // Optional preparation of source-dependent choices for this operand use.
+  // NULL selects direct emission, which needs no source analysis.
+  loom_low_lower_prepare_value_materialization_fn_t prepare;
+  // Emission consumes either a retained recipe or only the bound Low carrier.
+  union {
+    // Used when prepare is NULL; may inspect Low values and target descriptors.
+    loom_low_lower_materialize_value_fn_t direct;
+    // Used when prepare is present; receives its recipe, including NULL.
+    loom_low_lower_emit_value_materialization_fn_t planned;
+  } emit;
 } loom_low_lower_value_materializer_t;
 
 typedef struct loom_low_lower_rule_descriptor_ref_t {

@@ -931,17 +931,29 @@ static bool loom_low_lower_rule_value_ref_needs_facts(
              LOOM_LOW_LOWER_VALUE_REF_EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND;
 }
 
-static uint16_t loom_low_lower_rule_emit_source_value_mask(
+typedef struct loom_low_lower_rule_operand_masks_t {
+  // Operand ordinals whose source identities require fact projection.
+  uint8_t source_values;
+  // Operand ordinals with a source-dependent materializer recipe.
+  uint8_t materializers;
+} loom_low_lower_rule_operand_masks_t;
+
+static loom_low_lower_rule_operand_masks_t loom_low_lower_rule_operand_masks(
     const loom_low_lower_rule_set_t* rule_set,
     const loom_low_lower_emit_t* emit) {
-  uint16_t mask = 0;
+  loom_low_lower_rule_operand_masks_t masks = {0};
   for (uint16_t i = 0; i < emit->operand_ref_count; ++i) {
-    if (loom_low_lower_rule_value_ref_needs_facts(
-            &rule_set->value_refs[emit->operand_ref_start + i])) {
-      mask |= (uint16_t)(1u << i);
+    const loom_low_lower_value_ref_t* ref =
+        &rule_set->value_refs[emit->operand_ref_start + i];
+    if (loom_low_lower_rule_value_ref_needs_facts(ref)) {
+      masks.source_values |= (uint8_t)(1u << i);
+    }
+    if (ref->materializer_index &&
+        loom_low_lower_rule_value_materializer(rule_set, ref)->prepare) {
+      masks.materializers |= (uint8_t)(1u << i);
     }
   }
-  return mask;
+  return masks;
 }
 
 // Changes a carrier width only when doing so cannot silently invent or discard
@@ -1014,6 +1026,19 @@ static loom_type_t loom_low_lower_rule_type_pattern_exact_type(
                              0);
 }
 
+static loom_value_id_t loom_low_lower_rule_plan_operand_source(
+    const loom_low_lower_context_t* context,
+    const loom_low_lower_rule_set_t* rule_set,
+    const loom_low_lower_rule_source_t* source,
+    const loom_low_lower_resolved_emit_t* resolved, uint16_t ordinal) {
+  const uint16_t ref_index = resolved->emit->operand_ref_start + ordinal;
+  return resolved->source_value_mask & (1u << ordinal)
+             ? loom_low_lower_resolved_emit_source_value(resolved, ordinal)
+             : loom_low_lower_rule_source_value_from_nodes(
+                   context->module, rule_set, source->source_op,
+                   source->source_nodes, source->source_node_count, ref_index);
+}
+
 static loom_type_t loom_low_lower_rule_plan_operand_type(
     const loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set,
@@ -1026,12 +1051,8 @@ static loom_type_t loom_low_lower_rule_plan_operand_type(
     return loom_type_table_get(&context->module->types,
                                temporary_types[ref->index]);
   }
-  const loom_value_id_t value =
-      resolved->source_value_mask & (1u << ordinal)
-          ? loom_low_lower_resolved_emit_source_value(resolved, ordinal)
-          : loom_low_lower_rule_source_value_from_nodes(
-                context->module, rule_set, source->source_op,
-                source->source_nodes, source->source_node_count, ref_index);
+  const loom_value_id_t value = loom_low_lower_rule_plan_operand_source(
+      context, rule_set, source, resolved, ordinal);
   if (ref->materializer_index != 0) {
     return loom_low_lower_rule_value_materializer(rule_set, ref)
         ->result_type(context, value);
@@ -1273,15 +1294,16 @@ loom_low_lower_rule_emit_address_materializer(
 static uint32_t loom_low_lower_rule_emit_data_size(
     const loom_low_lower_rule_set_t* rule_set,
     const loom_low_lower_emit_t* emit, uint8_t result_type_mask,
-    uint16_t source_value_mask) {
+    loom_low_lower_rule_operand_masks_t operand_masks) {
   return (uint32_t)iree_host_align(
-      emit->attr_copy_count * sizeof(loom_named_attr_t) +
+      loom_low_lower_rule_materializer_data_size(operand_masks.materializers) +
+          emit->attr_copy_count * sizeof(loom_named_attr_t) +
           loom_low_lower_rule_read_only_attributes_size(emit) +
           iree_math_count_ones_u32(emit->copy_operand_mask) *
               sizeof(loom_type_id_t) +
           iree_math_count_ones_u32(result_type_mask) * sizeof(loom_type_id_t) +
           loom_low_lower_rule_lane_plan_size(emit) +
-          iree_math_count_ones_u32(source_value_mask) *
+          iree_math_count_ones_u32(operand_masks.source_values) *
               sizeof(loom_value_id_t) +
           (loom_low_lower_rule_emit_address_materializer(rule_set, emit)
                ? sizeof(loom_type_id_t)
@@ -1347,8 +1369,9 @@ iree_status_t loom_low_lower_rule_plan_finalize(
   }
   // Table counts bound a rule to 65535 emits with at most 31 attributes and
   // three result carriers, seven copied carriers, and seven source references
-  // each. Read-only attributes add at most 32 u32 words and lane plans add at
-  // most 12 u32 words per row. The allocation and row-relative offsets fit in
+  // each, plus seven optional materializer recipe pointers. Read-only
+  // attributes add at most 32 u32 words and lane plans add at most 12 u32
+  // words per row. The allocation and row-relative offsets fit in
   // u32. Payload alignment permits the next row to carry named attributes.
   const uint32_t rows_size = (uint32_t)iree_host_align(
       rule->emit_count * sizeof(loom_low_lower_resolved_emit_t),
@@ -1360,7 +1383,7 @@ iree_status_t loom_low_lower_rule_plan_finalize(
     if (!elided) {
       allocation_size += loom_low_lower_rule_emit_data_size(
           rule_set, emit, loom_low_lower_rule_emit_result_type_mask(emit),
-          loom_low_lower_rule_emit_source_value_mask(rule_set, emit));
+          loom_low_lower_rule_operand_masks(rule_set, emit));
     }
   }
   loom_low_lower_resolved_emit_t* resolved_emits = NULL;
@@ -1400,16 +1423,20 @@ iree_status_t loom_low_lower_rule_plan_finalize(
     }
     resolved->result_type_mask =
         loom_low_lower_rule_emit_result_type_mask(emit);
-    resolved->source_value_mask =
-        loom_low_lower_rule_emit_source_value_mask(rule_set, emit);
+    const loom_low_lower_rule_operand_masks_t operand_masks =
+        loom_low_lower_rule_operand_masks(rule_set, emit);
+    resolved->source_value_mask = operand_masks.source_values;
+    resolved->materializer_mask = operand_masks.materializers;
     const uint32_t data_size = loom_low_lower_rule_emit_data_size(
-        rule_set, emit, resolved->result_type_mask,
-        resolved->source_value_mask);
+        rule_set, emit, resolved->result_type_mask, operand_masks);
     if (data_size != 0) {
       resolved->data_offset = (uint32_t)(data - (uint8_t*)resolved);
     }
+    const void** materializations = (const void**)data;
+    uint8_t* attributes = data + loom_low_lower_rule_materializer_data_size(
+                                     resolved->materializer_mask);
     uint8_t* attribute_payload_end =
-        data + emit->attr_copy_count * sizeof(loom_named_attr_t);
+        attributes + emit->attr_copy_count * sizeof(loom_named_attr_t);
     loom_low_lower_read_only_attributes_t* read_only_attributes = NULL;
     if (emit->has_read_only_data_attributes) {
       read_only_attributes =
@@ -1420,7 +1447,7 @@ iree_status_t loom_low_lower_rule_plan_finalize(
       IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_attrs(
           context, rule_set, source_op, &source, emit,
           emit->source_memory_ordinal ? source_memory_access : NULL,
-          (loom_named_attr_t*)data, read_only_attributes));
+          (loom_named_attr_t*)attributes, read_only_attributes));
     }
     loom_type_id_t* copy_types =
         (loom_type_id_t*)(attribute_payload_end +
@@ -1445,6 +1472,21 @@ iree_status_t loom_low_lower_rule_plan_finalize(
       source_values[source_value_index++] =
           loom_low_lower_rule_plan_source_value(context, rule_set, &source,
                                                 ref_index);
+    }
+    uint16_t materializer_index = 0;
+    remaining_mask = resolved->materializer_mask;
+    while (remaining_mask != 0) {
+      const uint16_t ordinal =
+          (uint16_t)iree_math_count_trailing_zeros_u32(remaining_mask);
+      remaining_mask &= (uint16_t)(remaining_mask - 1u);
+      const loom_low_lower_value_materializer_t* materializer =
+          loom_low_lower_rule_value_materializer(
+              rule_set,
+              &rule_set->value_refs[emit->operand_ref_start + ordinal]);
+      const loom_value_id_t value = loom_low_lower_rule_plan_operand_source(
+          context, rule_set, &source, resolved, ordinal);
+      IREE_RETURN_IF_ERROR(materializer->prepare(
+          context, value, &materializations[materializer_index++]));
     }
     IREE_RETURN_IF_ERROR(loom_low_lower_rule_plan_carriers(
         context, rule_set, &source, resolved, temporary_types, copy_types,

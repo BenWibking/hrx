@@ -289,6 +289,11 @@ iree_status_t loom_amdgpu_emit_sgpr64_constant_u64(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     uint64_t value, loom_value_id_t* out_low_wide_value);
 
+// Compares one scalar register word against zero and returns its SCC truth.
+iree_status_t loom_amdgpu_emit_sgpr32_nonzero_scc(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_value, loom_value_id_t* out_low_scc);
+
 // Emits SCC true when any bit in an EXEC-width SGPRx2 lane mask is set.
 //
 // Wave64 compares the full SGPR pair. Wave32 VOPC producers define the low

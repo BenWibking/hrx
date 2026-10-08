@@ -149,9 +149,17 @@ static iree_status_t loom_low_lower_rule_low_value(
       if (value_ref->materializer_index != 0) {
         const loom_low_lower_value_materializer_t* materializer =
             loom_low_lower_rule_value_materializer(rule_set, value_ref);
-        return materializer->materialize(context,
-                                         loom_low_lower_rule_emit_source_op(
-                                             rule_set, state, value_ref_index),
+        const loom_op_t* materialized_source_op =
+            loom_low_lower_rule_emit_source_op(rule_set, state,
+                                               value_ref_index);
+        if (resolved_emit->materializer_mask & (1u << operand_ordinal)) {
+          return materializer->emit.planned(
+              context, materialized_source_op, source_value_id,
+              loom_low_lower_resolved_emit_materializer(resolved_emit,
+                                                        operand_ordinal),
+              out_low_value_id);
+        }
+        return materializer->emit.direct(context, materialized_source_op,
                                          source_value_id, out_low_value_id);
       }
       return loom_low_lower_lookup_value(context, source_value_id,

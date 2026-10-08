@@ -332,7 +332,8 @@ def _generate_source(
                 [
                     f".can_materialize = {materializer.can_materialize}",
                     f".result_type = {materializer.result_type}",
-                    f".materialize = {materializer.materialize}",
+                    *([f".prepare = {materializer.prepare}"] if materializer.prepare else []),
+                    f".emit.{'planned' if materializer.prepare else 'direct'} = {materializer.materialize}",
                 ]
                 for materializer in source_contract.materializers
             ],

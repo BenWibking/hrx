@@ -16,6 +16,36 @@
 extern "C" {
 #endif
 
+// Retains exact i32, f32, or address literals when a VGPR use cannot reuse the
+// actual producer carrier. NULL selects the ordinary register conversion.
+iree_status_t loom_amdgpu_prepare_vgpr_literal(
+    loom_low_lower_context_t* context, loom_value_id_t source_value,
+    const void** out_plan);
+
+// Emits retained literal bits or copies the bound register payload to VGPRs.
+iree_status_t loom_amdgpu_emit_prepared_vgpr_value(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value, const void* plan,
+    loom_value_id_t* out_low_value);
+
+// Emits a retained address literal or projects the bound low word to a VGPR.
+iree_status_t loom_amdgpu_emit_prepared_vgpr_address(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value, const void* plan,
+    loom_value_id_t* out_low_value);
+
+// Retains exact truth/falsehood as immutable recipes. NULL selects conversion
+// of the source's canonical Low predicate. Exact truth reads EXEC at the use.
+iree_status_t loom_amdgpu_prepare_native_i1_mask(
+    loom_low_lower_context_t* context, loom_value_id_t source_value,
+    const void** out_plan);
+
+// Executes a retained mask choice without consulting source facts.
+iree_status_t loom_amdgpu_emit_prepared_native_i1_mask(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value, const void* plan,
+    loom_value_id_t* out_low_value);
+
 // Preserves VGPR carriers and projects SGPR tuples into equally wide VGPRs.
 loom_type_t loom_amdgpu_materialized_vgpr_register_type(
     const loom_low_lower_context_t* context, loom_value_id_t source_value);

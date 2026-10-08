@@ -54,18 +54,45 @@ typedef struct loom_low_lower_resolved_emit_t {
   // Result carriers resolved from source values, type patterns, descriptors,
   // and rule-local transfers. Elided recipes have no result payload.
   uint8_t result_type_mask;
+  // Operand ordinals with retained materializer recipes in the row payload.
+  uint8_t materializer_mask;
   // Fact-derived source references retained in the row payload.
   // Bits address operand refs; set bits have packed value IDs.
-  uint16_t source_value_mask;
-  // Byte offset from this row to attributes, optional read-only attribute IDs,
-  // copied operand type IDs, canonical result type IDs, optional lane plan,
-  // fact-derived source values, and an optional complete-address coordinate
-  // type ID, in that order.
+  uint8_t source_value_mask;
+  // Byte offset from this row to materializer recipes, attributes, optional
+  // read-only attribute IDs, copied operand type IDs, canonical result type
+  // IDs, optional lane plan, fact-derived source values, and an optional
+  // complete-address coordinate type ID, in that order.
   // Zero for an empty payload. All rows and their aligned payloads share one
   // function-arena allocation. Elided recipes retain descriptor identity
   // without executable payloads.
   uint32_t data_offset;
 } loom_low_lower_resolved_emit_t;
+static_assert(sizeof(loom_low_lower_resolved_emit_t) == 2 * sizeof(void*) + 8,
+              "resolved emit rows must retain compact operand masks");
+
+// Aligns the following attributes even on hosts with smaller pointers.
+static inline uint32_t loom_low_lower_rule_materializer_data_size(
+    uint8_t mask) {
+  return (uint32_t)iree_host_align(
+      iree_math_count_ones_u32(mask) * sizeof(void*),
+      iree_alignof(loom_named_attr_t));
+}
+
+// Returns the packed opaque recipes for prepared operand materializers.
+static inline const void* const* loom_low_lower_resolved_emit_materializers(
+    const loom_low_lower_resolved_emit_t* resolved) {
+  return (const void* const*)((const uint8_t*)resolved + resolved->data_offset);
+}
+
+// Returns the recipe selected for an operand whose materializer bit is set.
+static inline const void* loom_low_lower_resolved_emit_materializer(
+    const loom_low_lower_resolved_emit_t* resolved, uint16_t ordinal) {
+  const uint32_t preceding_mask = (UINT32_C(1) << ordinal) - 1u;
+  return loom_low_lower_resolved_emit_materializers(
+      resolved)[iree_math_count_ones_u32(resolved->materializer_mask &
+                                         preceding_mask)];
+}
 
 // Returns the optional private resource payload size without growing ordinary
 // emit rows or their attribute storage.
@@ -100,7 +127,9 @@ static inline loom_named_attr_slice_t loom_low_lower_resolved_emit_attributes(
   return loom_make_named_attr_slice(
       resolved->data_offset
           ? (const loom_named_attr_t*)((const uint8_t*)resolved +
-                                       resolved->data_offset)
+                                       resolved->data_offset +
+                                       loom_low_lower_rule_materializer_data_size(
+                                           resolved->materializer_mask))
           : NULL,
       resolved->emit->attr_copy_count);
 }
@@ -112,6 +141,9 @@ loom_low_lower_resolved_emit_read_only_attributes(
   return (
       const loom_low_lower_read_only_attributes_t*)((const uint8_t*)resolved +
                                                     resolved->data_offset +
+                                                    loom_low_lower_rule_materializer_data_size(
+                                                        resolved
+                                                            ->materializer_mask) +
                                                     resolved->emit
                                                             ->attr_copy_count *
                                                         sizeof(
@@ -125,6 +157,8 @@ static inline const loom_type_id_t* loom_low_lower_resolved_emit_copy_types(
     const loom_low_lower_resolved_emit_t* resolved) {
   return (const loom_type_id_t*)((const uint8_t*)resolved +
                                  resolved->data_offset +
+                                 loom_low_lower_rule_materializer_data_size(
+                                     resolved->materializer_mask) +
                                  resolved->emit->attr_copy_count *
                                      sizeof(loom_named_attr_t) +
                                  loom_low_lower_rule_read_only_attributes_size(
