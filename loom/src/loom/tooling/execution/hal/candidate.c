@@ -76,7 +76,7 @@ static iree_status_t loom_run_hal_candidate_emit(
       loom_target_environment_low_descriptor_registry(
           session->target_environment);
   loom_target_emit_request_flags_t emit_flags =
-      LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE;
+      LOOM_TARGET_EMIT_REQUEST_FLAG_NONE;
   if (iree_any_bit_set(options->artifact_flags,
                        LOOM_COMPILE_ARTIFACT_FLAG_TARGET_LISTING)) {
     emit_flags |= LOOM_TARGET_EMIT_REQUEST_FLAG_TARGET_LISTING;
@@ -102,7 +102,6 @@ static iree_status_t loom_run_hal_candidate_emit(
   iree_status_t status =
       emitter->emit(&request, &candidate->compiled, &candidate->artifact);
   if (iree_status_is_ok(status) && candidate->compiled) {
-    IREE_ASSERT(candidate->artifact.target_bundle != NULL);
     IREE_ASSERT(candidate->artifact.target_artifact_format ==
                 emitter->target_artifact_format);
     IREE_ASSERT(candidate->artifact.contents != NULL);

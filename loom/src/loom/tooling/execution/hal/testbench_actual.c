@@ -795,7 +795,6 @@ iree_status_t loom_run_hal_testbench_actual_provider_compile(
   const loom_device_artifact_t device_artifact = {
       .executable_target = provider->candidate.executable_target,
       .contents = provider->candidate.artifact.contents,
-      .target_bundle = provider->candidate.artifact.target_bundle,
   };
   status = loom_run_hal_prepared_candidate_prepare(
       &provider->context->runtime, &device_artifact,
@@ -1093,8 +1092,8 @@ iree_status_t loom_run_hal_testbench_actual_provider_materialize_invocation(
             : NULL;
     status = loom_run_hal_testbench_input_append(
         out_bindings, &inputs[i], input_type,
-        provider->prepared_candidate.target_bundle->snapshot, parameter,
-        out_options);
+        provider->compile_device_target.target_profile->target_bundle->snapshot,
+        parameter, out_options);
     if (!iree_status_is_ok(status)) {
       status = iree_status_annotate_f(
           status, "preparing HAL actual input %" PRIhsz " for value ID %u", i,
@@ -1574,8 +1573,9 @@ static iree_status_t loom_run_hal_testbench_actual_sequence_prepare_sample(
         IREE_RETURN_IF_ERROR(
             loom_run_hal_testbench_invocation_options_push_constant(
                 input, input_type,
-                provider->prepared_candidate.target_bundle->snapshot, parameter,
-                &step->options));
+                provider->compile_device_target.target_profile->target_bundle
+                    ->snapshot,
+                parameter, &step->options));
       }
     }
   }
@@ -1839,8 +1839,9 @@ iree_status_t loom_run_hal_testbench_materialize_invocation_from_table(
               : NULL;
       status = loom_run_hal_testbench_input_append(
           out_bindings, &value, input_type,
-          provider->prepared_candidate.target_bundle->snapshot, parameter,
-          out_options);
+          provider->compile_device_target.target_profile->target_bundle
+              ->snapshot,
+          parameter, out_options);
     }
     loom_testbench_value_deinitialize(&value);
   }

@@ -12,7 +12,6 @@
 #include "iree/base/api.h"
 #include "iree/base/byte_sequence.h"
 #include "iree/hal/api.h"
-#include "loom/target/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,8 +24,6 @@ typedef struct loom_device_artifact_t {
   const iree_hal_executable_target_t* executable_target;
   // Immutable executable bytes accepted by the production HAL loader.
   const iree_byte_sequence_t* contents;
-  // Optional compiler target bundle used to validate dispatch limits.
-  const loom_target_bundle_t* target_bundle;
 } loom_device_artifact_t;
 
 #ifdef __cplusplus

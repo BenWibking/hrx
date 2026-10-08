@@ -1048,7 +1048,7 @@ func.def public pure @device_dynamic(%workgroup_count: index) -> (index, index, 
   loom_pass_value_fact_owner_initialize(loom_run_session_block_pool(&session_),
                                         &provider.launch_config_fact_owner);
   provider.workload_argument_bits = workload_argument_bits;
-  provider.prepared_candidate.target_bundle = &kFakeTargetBundle;
+  provider.compile_device_target.target_profile = &kFakeTargetProfile;
   provider.invocation_options.function_name = IREE_SV("device_dynamic");
 
   loom_testbench_value_materializer_options_t materializer_options = {};

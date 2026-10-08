@@ -104,7 +104,11 @@ iree_status_t FakeHalEmitArtifact(const loom_target_emit_request_t* request,
       request->allocator, &contents);
   if (iree_status_is_ok(status)) {
     *out_artifact = (loom_target_emit_artifact_t){
-        /*.target_bundle=*/&kFakeTargetBundle,
+        /*.target_bundle=*/
+        iree_any_bit_set(request->flags,
+                         LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE)
+            ? &kFakeTargetBundle
+            : nullptr,
         /*.target_artifact_format=*/LOOM_TARGET_ARTIFACT_FORMAT_ELF,
         /*.contents=*/contents,
         /*.target_listing_format=*/{},
@@ -231,13 +235,14 @@ TEST_F(HalCandidateTest, EmitHalExecutableCandidate) {
   EXPECT_EQ(g_fake_hal_emit_function_versions, &function_versions);
   EXPECT_EQ(g_fake_hal_emit_target_environment, &target_environment_);
   EXPECT_EQ(g_fake_hal_emit_max_errors, 73u);
-  EXPECT_TRUE(
-      iree_all_bits_set(g_fake_hal_emit_flags,
-                        LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE |
-                            LOOM_TARGET_EMIT_REQUEST_FLAG_TARGET_LISTING));
+  EXPECT_TRUE(iree_all_bits_set(g_fake_hal_emit_flags,
+                                LOOM_TARGET_EMIT_REQUEST_FLAG_TARGET_LISTING));
+  EXPECT_FALSE(
+      iree_any_bit_set(g_fake_hal_emit_flags,
+                       LOOM_TARGET_EMIT_REQUEST_FLAG_RETAIN_TARGET_BUNDLE));
   EXPECT_EQ(candidate.executable_target, &kFakeExecutableTarget);
   const loom_target_emit_artifact_t& artifact = candidate.artifact;
-  EXPECT_EQ(artifact.target_bundle, &kFakeTargetBundle);
+  EXPECT_EQ(artifact.target_bundle, nullptr);
   EXPECT_EQ(artifact.target_artifact_format, LOOM_TARGET_ARTIFACT_FORMAT_ELF);
   ASSERT_NE(artifact.contents, nullptr);
   testing::ByteSequenceClone executable(iree_allocator_system());

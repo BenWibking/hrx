@@ -161,7 +161,6 @@ loom_cc_library(
   DEPS
     iree::base
     iree::hal
-    loom::target::types
   PUBLIC
 )
 
@@ -232,8 +231,6 @@ loom_cc_library(
     iree::base
     iree::hal
     iree::tooling::value_io
-    loom::target::launch
-    loom::target::types
   PUBLIC
 )
 
@@ -419,7 +416,6 @@ loom_cc_test(
     iree::base
     iree::testing::gtest
     iree::testing::gtest_main
-    loom::target::types
 )
 
 loom_cc_test(

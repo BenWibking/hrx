@@ -86,7 +86,6 @@ loom_cc_library(
     name = "artifact",
     hdrs = ["artifact.h"],
     deps = [
-        "//loom/src/loom/target:types",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
     ],
@@ -144,8 +143,6 @@ loom_cc_library(
     deps = [
         ":artifact",
         ":runtime",
-        "//loom/src/loom/target:launch",
-        "//loom/src/loom/target:types",
         "//runtime/src/iree/base",
         "//runtime/src/iree/hal",
         "//runtime/src/iree/tooling:value_io",
@@ -312,7 +309,6 @@ loom_cc_test(
     deps = [
         ":invocation",
         ":runtime",
-        "//loom/src/loom/target:types",
         "//runtime/src/iree/base",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
