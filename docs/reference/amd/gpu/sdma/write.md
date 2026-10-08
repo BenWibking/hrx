@@ -237,6 +237,24 @@ This is a source-level continuation discrepancy, not a WRITE hardware limit.
 [GFX10 COPY cap][pal-copy-cap] [GFX12 COPY cap][pal12-copy-cap]
 [Allocator contract][pal-allocator-api] [Allocator validation][pal-allocator-validation]
 
+Concrete clients supply smaller bounds that prevent a second COPY within
+one embedded piece:
+
+| Client path | Bound and owner |
+| --- | --- |
+| XGL's `vkCmdUpdateBuffer` translation | Vulkan permits at most 65,536 bytes per call. XGL forwards that count to `CmdUpdateMemory`; the valid API bound holds even with larger configured embedded chunks. [Entry][xgl-update-entry] [Recording][xgl-update-recording] [PAL forwarding][xgl-update] [Vulkan contract][vulkan-update] |
+| CLR's PAL command allocator | Both compute and DMA queues share an allocator with 64 KiB ordinary embedded chunks. This limits each piece, independently of the complete host-update size. [Allocator and queues][clr-embedded] |
+| PAL's internal command-upload ring | Its DMA command buffers use the internal allocator, whose ordinary embedded chunks are 8 KiB. [DMA owner][pal-upload-owner] [Allocator construction][pal-internal-allocator] [Chunk size][pal-internal-chunk] |
+
+These are client-specific bounds, not a numeric maximum in PAL's public
+update API. The two SDMA update bodies also narrow the complete host byte
+count to 32 bits before dividing by four; `2^32` bytes becomes zero remaining
+DWORDs. XGL's per-call bound excludes that separate source-width discrepancy;
+a small embedded chunk alone does not bound the complete update. Packet
+capacity, embedded-piece size and host-API extent retain separate meanings.
+[Public contract][pal-update-api] [GFX10 update][pal-update]
+[GFX12 update][pal12-update]
+
 Embedded GPU data remains an input allocation after the host copy returns.
 PAL's public contract ends CPU recording access at `End` and GPU address
 validity at `Reset`/`Begin`, with references restricted to that command
@@ -375,3 +393,11 @@ and [command buffers](command-buffers.md) supply the input-retirement contract.
 [mesa-hiz-consumer]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_cmd_buffer.c#L6143-L6165
 [pal-tracking-policy]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/inc/core/palCmdAllocator.h#L52-L63
 [pal-tracking-selection]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/cmdAllocator.cpp#L110-L117
+[xgl-update]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_cmdbuffer_transfer.cpp#L79-L93
+[vulkan-update]: https://github.com/KhronosGroup/Vulkan-Docs/blob/01aaacd99480487bf63830959513c5ca8ceb996d/chapters/clears.adoc#L741-L819
+[clr-embedded]: https://github.com/ROCm/rocm-systems/blob/8d57824901ffa7d961c00a37d055a108723b93ca/projects/clr/rocclr/device/pal/palvirtual.cpp#L910-L990
+[pal-upload-owner]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/hw/gfxip/cmdUploadRing.cpp#L236-L255
+[pal-internal-allocator]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/device.cpp#L1541-L1579
+[pal-internal-chunk]: https://github.com/GPUOpen-Drivers/pal/blob/c5e800072a32f68b6ccc4422936d96167c6e0728/src/core/device.h#L1014-L1019
+[xgl-update-entry]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/entry.cpp#L520-L532
+[xgl-update-recording]: https://github.com/GPUOpen-Drivers/xgl/blob/e9782eb33ce5e5e4ed2e339542a28c1b933624b4/icd/api/vk_cmdbuffer_transfer.cpp#L648-L665

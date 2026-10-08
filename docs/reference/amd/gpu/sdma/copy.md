@@ -319,16 +319,31 @@ and length let firmware use a faster DWORD mode. [Caller][pal-loop],
 
 Mesa's common helper also attempts an aligned-prefix/tail split, but its
 pinned implementation applies a 32-bit alignment mask to the 64-bit remaining
-size before capping it. Its RADV caller forwards 64-bit region extents. That
-expression does not preserve the full input width and is not a general
-wide-length chunking contract. PAL's cap-first, wide-address loop above
-supplies that contract without inheriting this source discrepancy.
-[Helper][mesa-copy] [Copy caller][mesa-copy-route]
+size before capping it. A remaining extent of `2^32` bytes produces zero byte
+progress. That expression is not a general wide-length chunking contract;
+PAL's cap-first, wide-address loop above preserves the full extent.
+[Helper][mesa-copy]
+
+RADV's Vulkan caller has a separate input bound. It advertises
+`maxBufferSize = 0xFFFFFFFC`; Vulkan 1.3 / `VK_KHR_maintenance4` requires
+buffer creation to respect that maximum. Each buffer-copy region must fit
+its source and destination buffers, and a raw `VkDeviceAddressRangeKHR` must
+fit its originating buffer. For buffers subject to that contract, both
+`vkCmdCopyBuffer2` and `vkCmdCopyMemoryKHR` therefore remain below the
+helper's 4 GiB discrepancy. Allocation padding or adjacent allocations do
+not enlarge the buffer's valid range. These are API validity obligations;
+the copy caller forwards the supplied 64-bit region extent rather than
+clamping it. [Maximum][mesa-buffer-maximum] [Property][mesa-buffer-property]
+[Buffer creation][vulkan-buffer-size] [Buffer regions][vulkan-copy-regions]
+[Address ranges][vulkan-address-range] [Address-copy contract][vulkan-address-copy]
+[Copy caller][mesa-copy-route]
 
 RadeonSI's linear-image caller passes `src_pitch * copy_height * bpp` bytes,
 including row padding. The ordinary packet copies that entire contiguous
 extent; it does not know the image's logical width. Rectangles that preserve
 pitch gaps use the separate [subwindow representation](rectangular-copy.md).
+This image caller has its own allocation and pitch contract; RADV's buffer
+maximum does not bound it.
 [Pitched copy extent][mesa-si-linear]
 
 Linux's TTM caller separately rounds the maximum chunk down to 256 bytes where
@@ -496,3 +511,9 @@ stream](atomics.md#copy-completion-through-add64)
 [mesa-shader-consume]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_queue.c#L1605-L1670
 [mesa-shader-destroy]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_pipeline_cache.c#L40-L64
 [mesa-si-entry]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/gallium/drivers/radeonsi/si_sdma_copy_image.c#L388-L455
+[mesa-buffer-maximum]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_constants.h#L83-L86
+[mesa-buffer-property]: https://gitlab.freedesktop.org/mesa/mesa/-/blob/0ba4b08edc65075e9346d20d5310261939aaaf48/src/amd/vulkan/radv_physical_device.c#L2060-L2066
+[vulkan-buffer-size]: https://github.com/KhronosGroup/Vulkan-Docs/blob/01aaacd99480487bf63830959513c5ca8ceb996d/chapters/resources.adoc#L381-L386
+[vulkan-copy-regions]: https://github.com/KhronosGroup/Vulkan-Docs/blob/01aaacd99480487bf63830959513c5ca8ceb996d/chapters/commonvalidity/copy_buffer_common.adoc#L7-L36
+[vulkan-address-range]: https://github.com/KhronosGroup/Vulkan-Docs/blob/01aaacd99480487bf63830959513c5ca8ceb996d/chapters/commonvalidity/device_address_range_common.adoc#L7-L12
+[vulkan-address-copy]: https://github.com/KhronosGroup/Vulkan-Docs/blob/01aaacd99480487bf63830959513c5ca8ceb996d/chapters/copies.adoc#L91-L136
