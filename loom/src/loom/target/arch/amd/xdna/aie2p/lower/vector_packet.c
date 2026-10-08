@@ -271,3 +271,50 @@ iree_status_t loom_aie2p_vector_packet_write_native(
       IREE_BUILTIN_UNREACHABLE();
   }
 }
+
+iree_status_t loom_aie2p_vector_packet_bind_native_packets(
+    loom_aie2p_vector_packet_emitter_t* emitter,
+    loom_aie2p_vector_carrier_t carrier, uint8_t logical_packet_count,
+    loom_value_id_t* native_packets, loom_value_id_t result_value) {
+  const uint8_t units_per_packet =
+      loom_aie2p_vector_packet_carrier_unit_count(carrier.kind);
+  const uint8_t physical_packet_count =
+      (uint8_t)(carrier.unit_count / units_per_packet);
+  for (uint8_t packet = logical_packet_count; packet < physical_packet_count;
+       ++packet) {
+    native_packets[packet] = native_packets[logical_packet_count - 1];
+  }
+
+  loom_value_id_t low_result = native_packets[0];
+  if (physical_packet_count > 1) {
+    loom_type_t result_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
+        emitter, carrier.kind, carrier.unit_count, &result_type));
+    loom_op_t* concat_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_low_concat_build(
+        loom_low_lower_context_builder(emitter->context), native_packets,
+        physical_packet_count, result_type, emitter->source_op->location,
+        &concat_op));
+    low_result = loom_low_concat_result(concat_op);
+  }
+  return loom_low_lower_bind_value(emitter->context, result_value, low_result);
+}
+
+iree_status_t loom_aie2p_vector_packet_bind_vector_packets(
+    loom_aie2p_vector_packet_emitter_t* emitter,
+    loom_aie2p_vector_carrier_t carrier, uint8_t logical_packet_count,
+    const loom_value_id_t* vector_packets, loom_value_id_t result_value) {
+  loom_value_id_t native_packets[LOOM_AIE2P_VECTOR_PACKET_MAX_COUNT] = {
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+      LOOM_VALUE_ID_INVALID,
+  };
+  for (uint8_t packet = 0; packet < logical_packet_count; ++packet) {
+    IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_write_native(
+        emitter, carrier.kind, vector_packets[packet],
+        &native_packets[packet]));
+  }
+  return loom_aie2p_vector_packet_bind_native_packets(
+      emitter, carrier, logical_packet_count, native_packets, result_value);
+}
