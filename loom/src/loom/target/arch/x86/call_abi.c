@@ -202,3 +202,26 @@ bool loom_x86_call_abi_classify_source_type(
   return loom_x86_call_abi_classify_scalar(source_type, out_classification) ||
          loom_x86_call_abi_classify_vector(source_type, out_classification);
 }
+
+bool loom_x86_call_abi_classify_source_carrier(
+    loom_type_t source_type, uint16_t carrier_register_class,
+    loom_x86_call_abi_classification_t* out_classification) {
+  if (!loom_x86_call_abi_classify_source_type(source_type,
+                                              out_classification)) {
+    return false;
+  }
+  if (out_classification->carrier_register_class == carrier_register_class) {
+    return true;
+  }
+  if (carrier_register_class != LOOM_X86_REGISTER_CLASS_XMM ||
+      !loom_type_is_scalar(source_type)) {
+    return false;
+  }
+  const loom_scalar_type_t scalar_type = loom_type_element_type(source_type);
+  if (scalar_type != LOOM_SCALAR_TYPE_F16 &&
+      scalar_type != LOOM_SCALAR_TYPE_BF16) {
+    return false;
+  }
+  out_classification->carrier_register_class = carrier_register_class;
+  return true;
+}

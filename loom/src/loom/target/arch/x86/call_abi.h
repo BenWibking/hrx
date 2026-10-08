@@ -52,6 +52,14 @@ bool loom_x86_call_abi_classify_source_type(
     loom_type_t source_type,
     loom_x86_call_abi_classification_t* out_classification);
 
+// Classifies one source type using an exact Low carrier register class. Most
+// source types have one carrier. Narrow floating values additionally admit XMM
+// so feature profiles with native scalar arithmetic can retain the platform
+// representation inside the function body.
+bool loom_x86_call_abi_classify_source_carrier(
+    loom_type_t source_type, uint16_t carrier_register_class,
+    loom_x86_call_abi_classification_t* out_classification);
+
 // Returns the byte width of a general-purpose or SIMD call register class.
 uint16_t loom_x86_call_abi_register_byte_length(uint16_t register_class);
 
