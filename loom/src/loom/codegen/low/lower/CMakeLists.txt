@@ -323,6 +323,8 @@ loom_cc_test(
     loom::ops::scalar
     loom::ops::test
     loom::target::low_descriptor_registry
+    loom::target::registers
+    loom::target::test::descriptors
     loom::target::test::low_registry
     loom::target::test::lower
     loom::target::test::target_record_table

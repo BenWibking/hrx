@@ -18,13 +18,37 @@ iree_status_t loom_low_lower_plan_value_type(loom_low_lower_context_t* context,
   const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
       &context->lowering, source_value_id);
   context->lowering.value_bindings[ordinal].type = type_id;
+  context->lowering.source_plan.value_flags[ordinal] &=
+      ~LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
   return iree_ok_status();
+}
+
+void loom_low_lower_inherit_value_type(loom_low_lower_context_t* context,
+                                       loom_value_id_t source_value_id,
+                                       loom_value_id_t result_value_id) {
+  loom_value_ordinal_t source = loom_low_lowering_frame_value_ordinal(
+      &context->lowering, source_value_id);
+  const loom_value_ordinal_t result = loom_low_lowering_frame_value_ordinal(
+      &context->lowering, result_value_id);
+  if (iree_any_bit_set(context->lowering.source_plan.value_flags[source],
+                       LOOM_LOW_LOWER_VALUE_INHERITED_TYPE)) {
+    source = context->lowering.value_bindings[source].type_source;
+  }
+  context->lowering.value_bindings[result].type_source = source;
+  context->lowering.source_plan.value_flags[result] |=
+      LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
 }
 
 loom_type_t loom_low_lower_value_binding_type(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
+  loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
       &context->lowering, source_value_id);
+  const loom_low_lower_value_flags_t flags =
+      context->lowering.source_plan.value_flags[ordinal];
+  if (!iree_any_bit_set(flags, LOOM_LOW_LOWER_VALUE_MATERIALIZED) &&
+      iree_any_bit_set(flags, LOOM_LOW_LOWER_VALUE_INHERITED_TYPE)) {
+    ordinal = context->lowering.value_bindings[ordinal].type_source;
+  }
   const loom_low_lower_value_binding_t binding =
       context->lowering.value_bindings[ordinal];
   if (iree_any_bit_set(context->lowering.source_plan.value_flags[ordinal],

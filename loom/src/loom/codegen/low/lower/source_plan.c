@@ -800,7 +800,8 @@ static void loom_low_lower_prepare_plan_refinement(
   for (loom_value_ordinal_t i = 0; i < value_count; ++i) {
     source_plan->value_flags[i] &=
         LOOM_LOW_LOWER_VALUE_STORAGE_FACT_REFERENCE |
-        LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED;
+        LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED |
+        LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
     if (iree_any_bit_set(source_plan->value_flags[i],
                          LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED)) {
       source_plan->value_flags[i] |= LOOM_LOW_LOWER_VALUE_STORAGE_REQUIRED;

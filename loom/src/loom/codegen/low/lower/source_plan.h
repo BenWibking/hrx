@@ -45,6 +45,8 @@ enum loom_low_lower_value_flag_bits_e {
   LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED = (uint8_t)1u << 3,
   // The binding slot contains an emitted value instead of a selected type.
   LOOM_LOW_LOWER_VALUE_MATERIALIZED = (uint8_t)1u << 4,
+  // The planned binding inherits its carrier from one flattened source ordinal.
+  LOOM_LOW_LOWER_VALUE_INHERITED_TYPE = (uint8_t)1u << 5,
 };
 typedef uint8_t loom_low_lower_value_flags_t;
 

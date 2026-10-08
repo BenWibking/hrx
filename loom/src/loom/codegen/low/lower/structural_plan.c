@@ -13,6 +13,7 @@
 #include "loom/error/error_catalog.h"
 #include "loom/ir/facts.h"
 #include "loom/ir/module.h"
+#include "loom/ops/buffer/ops.h"
 #include "loom/ops/cfg/ops.h"
 #include "loom/ops/scf/ops.h"
 
@@ -98,6 +99,23 @@ loom_type_t loom_low_lower_structural_block_argument_type(
 
 iree_status_t loom_low_lower_structural_plan_op(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
+  const loom_trait_flags_t traits =
+      loom_op_effective_traits(context->module, source_op);
+  if (loom_traits_are_fact_identity(traits) ||
+      loom_traits_are_value_alias(traits)) {
+    for (uint16_t i = 0; i < source_op->result_count; ++i) {
+      loom_low_lower_inherit_value_type(context,
+                                        loom_op_const_operands(source_op)[i],
+                                        loom_op_const_results(source_op)[i]);
+    }
+    return iree_ok_status();
+  }
+  if (loom_buffer_assume_same_root_isa(source_op)) {
+    loom_low_lower_inherit_value_type(
+        context, loom_buffer_assume_same_root_buffer(source_op),
+        loom_buffer_assume_same_root_result(source_op));
+    return iree_ok_status();
+  }
   if (loom_scf_for_isa(source_op) &&
       loom_scf_for_pipeline_depth_is_present(source_op)) {
     const loom_diagnostic_param_t params[] = {
@@ -109,6 +127,20 @@ iree_status_t loom_low_lower_structural_plan_op(
     return loom_low_lower_emit_target_context_error(
         context, source_op, LOOM_ERR_STRUCTURE_014, params,
         IREE_ARRAYSIZE(params));
+  }
+  if (loom_scf_for_isa(source_op)) {
+    const loom_block_t* body =
+        loom_region_const_entry_block(loom_scf_for_body(source_op));
+    loom_low_lower_inherit_value_type(
+        context, loom_scf_for_lower_bound(source_op), body->arg_ids[0]);
+    const loom_value_slice_t iter_args = loom_scf_for_iter_args(source_op);
+    for (uint16_t i = 0; i < iter_args.count; ++i) {
+      loom_low_lower_inherit_value_type(context, iter_args.values[i],
+                                        body->arg_ids[i + 1]);
+      loom_low_lower_inherit_value_type(context, iter_args.values[i],
+                                        loom_op_const_results(source_op)[i]);
+    }
+    return iree_ok_status();
   }
   const loom_block_t* header =
       loom_scf_while_isa(source_op)
@@ -126,6 +158,12 @@ iree_status_t loom_low_lower_structural_plan_op(
     IREE_RETURN_IF_ERROR(loom_low_lower_structural_plan_types(
         context, source_op, header->arg_ids, header_count,
         /*retain_bindings=*/true));
+    const loom_block_t* after =
+        loom_region_const_entry_block(loom_scf_while_after(source_op));
+    for (uint16_t i = 0; i < after->arg_count; ++i) {
+      loom_low_lower_inherit_value_type(
+          context, loom_op_const_results(source_op)[i], after->arg_ids[i]);
+    }
   }
   return iree_ok_status();
 }

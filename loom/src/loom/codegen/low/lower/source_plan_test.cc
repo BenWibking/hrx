@@ -6,9 +6,12 @@
 
 #include "loom/codegen/low/lower/source_plan.h"
 
+#include <vector>
+
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 #include "loom/codegen/low/lower/bindings.h"
+#include "loom/codegen/low/lower/context.h"
 #include "loom/codegen/low/lower/control_plan.h"
 #include "loom/codegen/low/testing/source_workload.h"
 #include "loom/error/error_catalog.h"
@@ -19,6 +22,8 @@
 #include "loom/ops/low/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/test/ops.h"
+#include "loom/target/registers.h"
+#include "loom/target/test/descriptors.h"
 #include "loom/target/test/low_registry.h"
 #include "loom/target/test/lower.h"
 #include "loom/target/test/target_records.h"
@@ -528,6 +533,56 @@ TEST_F(LowLowerSourcePlanTest, RejectsControlPlanWithoutPublishingBlocks) {
   EXPECT_EQ(source_body->block_count, 2u);
   EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op,
             function_.op);
+}
+
+TEST_F(LowLowerSourcePlanTest, InheritedCarrierTracksLaterProducerSelection) {
+  const loom_op_t* dependency = observer_.expected_source_ops[1];
+  const loom_value_id_t producer = loom_scalar_addi_result(dependency);
+  const loom_op_t* consumer = observer_.expected_source_ops[2];
+  const loom_value_id_t first = loom_op_const_operands(consumer)[0];
+  const loom_type_t source_type = loom_module_value_type(module_, first);
+  loom_builder_t builder;
+  loom_builder_initialize(
+      module_, &module_->arena,
+      loom_region_entry_block(loom_func_like_body(function_)), &builder);
+  loom_builder_set_before(&builder, const_cast<loom_op_t*>(consumer));
+  loom_op_t* second_op = nullptr;
+  IREE_ASSERT_OK(loom_scalar_assume_build(&builder, &first, 1, nullptr, 0,
+                                          &source_type, 1,
+                                          LOOM_LOCATION_UNKNOWN, &second_op));
+  const loom_value_id_t second = loom_op_const_results(second_op)[0];
+
+  loom_low_lower_context_t lowering = {};
+  lowering.module = module_;
+  auto& frame = lowering.lowering;
+  IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region_tree(
+      module_, loom_func_like_body(function_), &analysis_arena_,
+      &frame.value_domain));
+  std::vector<loom_low_lower_value_binding_t> bindings(
+      frame.value_domain.value_count);
+  std::vector<loom_low_lower_value_flags_t> flags(bindings.size(), 0);
+  for (auto& binding : bindings) {
+    binding.type = LOOM_TYPE_ID_INVALID;
+  }
+  frame.value_bindings = bindings.data();
+  frame.source_plan.value_flags = flags.data();
+
+  // Structural planning runs before the producing rule finalizes its carrier.
+  loom_low_lower_inherit_value_type(&lowering, producer, first);
+  loom_low_lower_inherit_value_type(&lowering, first, second);
+  const loom_type_t native_type =
+      loom_low_register_type(loom_test_low_core_descriptor_set()->stable_id,
+                             TEST_LOW_CORE_REG_CLASS_ID_TEST_I32, 1);
+  IREE_EXPECT_OK(
+      loom_low_lower_plan_value_type(&lowering, producer, native_type));
+  EXPECT_TRUE(loom_type_equal(
+      loom_low_lower_value_binding_type(&lowering, second), native_type));
+  const auto second_ordinal =
+      loom_local_value_domain_ordinal(&frame.value_domain, second);
+  EXPECT_EQ(bindings[second_ordinal].type_source,
+            loom_local_value_domain_ordinal(&frame.value_domain, producer));
+  EXPECT_FALSE(loom_low_lower_source_value_has_low_mapping(&lowering, second));
+  loom_local_value_domain_release(&frame.value_domain);
 }
 
 TEST_F(LowLowerSourcePlanTest, PlansEntryResourcesAfterStorageDemand) {

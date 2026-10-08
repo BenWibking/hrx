@@ -6,9 +6,11 @@
 
 // Selected native types and emitted SSA bindings for source values.
 //
-// A source ordinal owns one four-byte slot. A producer may publish its
-// selected type before emission; emission replaces it with the Low value.
-// The monotonic materialized bit shares the source plan's per-value flags.
+// A source ordinal owns one four-byte slot. A producer publishes its selected
+// type before emission. Structural values can inherit that type through a
+// flattened producer ordinal recorded by definition-ordered planning. Emission
+// replaces each slot with its own Low value. The state bits share the source
+// plan's per-value flags.
 // Consumers never recover a producer's choice from a preferred type mapping.
 
 #ifndef LOOM_CODEGEN_LOW_LOWER_BINDINGS_H_
@@ -26,6 +28,8 @@ typedef struct loom_low_lower_context_t loom_low_lower_context_t;
 typedef union loom_low_lower_value_binding_t {
   // Canonical selected type, or INVALID before the producer publishes one.
   loom_type_id_t type;
+  // Flattened structural source of an inherited native carrier.
+  loom_value_ordinal_t type_source;
   // Low value identity after materialization, including the elided sentinel.
   loom_value_id_t value;
 } loom_low_lower_value_binding_t;
@@ -36,6 +40,14 @@ typedef union loom_low_lower_value_binding_t {
 iree_status_t loom_low_lower_plan_value_type(loom_low_lower_context_t* context,
                                              loom_value_id_t source_value_id,
                                              loom_type_t type);
+
+// Records structural carrier inheritance during definition-ordered planning.
+// Existing inherited sources are flattened here; the root producer publishes a
+// concrete type before consumers query it. Each value keeps its own SSA
+// binding.
+void loom_low_lower_inherit_value_type(loom_low_lower_context_t* context,
+                                       loom_value_id_t source_value_id,
+                                       loom_value_id_t result_value_id);
 
 // Returns the selected native type, or its equivalent emitted type after the
 // producer has materialized. The value must have a non-elided binding.
