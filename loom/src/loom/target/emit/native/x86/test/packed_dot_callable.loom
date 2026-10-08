@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Feature-only descriptor fragments omit GPR value classes. Their envelope
 // still owns the physical stack pointer without reserving an absent class.
 low.func.def public target<x86.packed_dot.core> abi(object_function) abi_layout({signature = (vector<8xi32>) -> (vector<8xi32>)}) @identity_packed_i32x8(%value: reg<x86.ymm>) -> (reg<x86.ymm>) asm {

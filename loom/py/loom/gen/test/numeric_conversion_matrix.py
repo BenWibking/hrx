@@ -350,13 +350,8 @@ def _signed_literal(raw_bits: int, bit_count: int) -> int:
     return raw_bits - (1 << bit_count) if raw_bits & sign_bit else raw_bits
 
 
-def _generated_header(direction: str) -> list[str]:
+def _generated_prelude(direction: str) -> list[str]:
     return [
-        "// Copyright 2026 The IREE Authors",
-        "//",
-        "// Licensed under the Apache License v2.0 with LLVM Exceptions.",
-        "// See https://llvm.org/LICENSE.txt for license information.",
-        "// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception",
         *line_comment_header(
             "//",
             generator=_GENERATOR,
@@ -695,7 +690,7 @@ def _fp8_format_family(row: Fp8Format) -> Literal["e4m3", "e5m2"]:
 def emit_fp8_encode_matrix(family: Literal["e4m3", "e5m2"]) -> str:
     return "\n".join(
         [
-            *_generated_header("encode"),
+            *_generated_prelude("encode"),
             *(_emit_encode_pair(row, source_format) for row in FP8_FORMATS if _fp8_format_family(row) == family for source_format in _BINARY_FORMATS),
         ]
     )
@@ -704,7 +699,7 @@ def emit_fp8_encode_matrix(family: Literal["e4m3", "e5m2"]) -> str:
 def emit_fp8_decode_matrix(family: Literal["e4m3", "e5m2"]) -> str:
     return "\n".join(
         [
-            *_generated_header("decode"),
+            *_generated_prelude("decode"),
             *(_emit_decode_pair(row, result_format) for row in FP8_FORMATS if _fp8_format_family(row) == family for result_format in _BINARY_FORMATS),
         ]
     )

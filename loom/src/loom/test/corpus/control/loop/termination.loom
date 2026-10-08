@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // The five outputs evaluate the same bounded table reduction with serial,
 // recurrence, pipelined recurrence, linear, and interleaved schedules. Bounds
 // near INT32_MAX exercise a narrow carrier without requiring large storage.

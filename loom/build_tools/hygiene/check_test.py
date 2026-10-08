@@ -125,6 +125,50 @@ class CheckTest(unittest.TestCase):
             self.assertIn("has only one consumer", result.stdout + result.stderr)
             self.assertFalse(output.exists())
 
+    def test_authoring_rejects_headers_only_on_loom_modules(self):
+        with tempfile.TemporaryDirectory(prefix="loom hygiene ") as temporary:
+            root = Path(temporary)
+            module = root / "source.loom"
+            container = root / "source.loom-test"
+            container.write_text(
+                "// Copyright 2026 The IREE Authors\nfunc.decl @container()\n",
+                encoding="utf-8",
+            )
+            manifest = root / "sources.json"
+            manifest.write_text(
+                json.dumps([module.name, container.name]), encoding="utf-8"
+            )
+            output = root / "passed"
+            command = [
+                self.runner,
+                "--check=authoring",
+                "--tool",
+                self.authoring,
+                "--sources",
+                str(manifest),
+                "--output",
+                str(output),
+            ]
+
+            for header in (
+                "// Copyright 2026 The IREE Authors\n",
+                "// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception\n",
+            ):
+                with self.subTest(header=header):
+                    module.write_text(
+                        header + "func.decl @module()\n", encoding="utf-8"
+                    )
+                    result = subprocess.run(command, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("source.loom:1:", result.stdout + result.stderr)
+                    self.assertNotIn("source.loom-test", result.stdout + result.stderr)
+                    self.assertFalse(output.exists())
+
+            module.write_text("func.decl @module()\n", encoding="utf-8")
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(output.read_text(encoding="utf-8"), "PASS\n")
+
     def test_formatter_and_authoring_use_real_tools_and_preserve_inputs(self):
         for check, tool in (("format", self.formatter), ("authoring", self.authoring)):
             with (

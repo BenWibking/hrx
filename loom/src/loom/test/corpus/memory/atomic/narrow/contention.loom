@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Two adjacent byte counters share one physical CAS word. Their independent
 // ticket streams cross byte wraparound under divergent, cross-wave contention.
 func.def inline @claim_byte_ticket(%cells: view<2xi8>, %cell: index) -> (i32) {

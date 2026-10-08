@@ -16,6 +16,34 @@ from pathlib import Path
 from build_tools.devtools.command_line import batch_path_commands
 
 
+def check_module_headers(paths: list[str], root: Path) -> bool:
+    """Rejects source-style license headers on authored Loom modules."""
+    ok = True
+    for path in paths:
+        if Path(path).suffix != ".loom":
+            continue
+        source = root / path
+        if not source.is_file():
+            continue
+        with source.open(encoding="utf-8") as source_file:
+            for line_number, line in enumerate(source_file, start=1):
+                stripped_line = line.strip()
+                if not stripped_line:
+                    continue
+                if not stripped_line.startswith("//"):
+                    break
+                if stripped_line.startswith(
+                    ("// Copyright ", "// SPDX-License-Identifier:")
+                ):
+                    print(
+                        f"{path}:{line_number}: .loom modules must not carry "
+                        "copyright or license headers"
+                    )
+                    ok = False
+                    break
+    return ok
+
+
 def check_template_ownership(paths: list[str], root: Path) -> bool:
     """Rejects template containers that do not actually share source."""
     consumers: dict[str, list[str]] = {}
@@ -65,6 +93,10 @@ def main() -> int:
     else:
         paths = json.loads(source_manifest.read_text(encoding="utf-8"))
         if arguments.check == "templates" and not check_template_ownership(
+            paths, source_manifest.parent
+        ):
+            return 1
+        if arguments.check == "authoring" and not check_module_headers(
             paths, source_manifest.parent
         ):
             return 1

@@ -1,9 +1,3 @@
-// Copyright 2026 The IREE Authors
-//
-// Licensed under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
 // Advisory CU cache hints cannot narrow the authored atomic coherence scope.
 // Misaligned and reversed half pairs consume the original loaded snapshot.
 // Duplicate destinations serialize independently of vector lane order.
