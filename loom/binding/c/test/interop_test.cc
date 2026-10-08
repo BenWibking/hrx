@@ -183,34 +183,25 @@ func.def public @identity(%value: i32) -> (i32) {
       IREE_SV("adapted")));
 }
 
-TEST(InteropTest, WrapsBorrowedNativeTargetEnvironment) {
+TEST(InteropTest, CreatesOwnedNativeTargetEnvironment) {
   const loom_target_provider_set_t provider_set = {};
-  loom_target_environment_t native_environment;
-  IREE_ASSERT_OK(
-      loom_target_environment_initialize(&provider_set, &native_environment));
 
   loomc_target_environment_t* target_environment = nullptr;
-  LOOMC_EXPECT_OK(loomc_target_environment_create_from_native(
-      &native_environment, loomc_allocator_system(), &target_environment));
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_provider_set(
+      &provider_set, loomc_allocator_system(), &target_environment));
   TargetEnvironmentPtr target_environment_ptr(target_environment);
-  EXPECT_EQ(
-      loomc_target_environment_get_interop_view(target_environment_ptr.get()),
-      &native_environment);
-
-  target_environment_ptr.reset();
-  EXPECT_EQ(native_environment.provider_set, &provider_set);
-  loom_target_environment_deinitialize(&native_environment);
+  const loom_target_environment_t* native_environment =
+      loomc_target_environment_get_interop_view(target_environment_ptr.get());
+  ASSERT_NE(native_environment, nullptr);
+  EXPECT_EQ(native_environment->provider_set, &provider_set);
 }
 
 TEST(InteropTest, BuildsNativeSourceLowPassProgram) {
   const loom_target_provider_set_t provider_set = {};
-  loom_target_environment_t native_environment;
-  IREE_ASSERT_OK(
-      loom_target_environment_initialize(&provider_set, &native_environment));
 
   loomc_target_environment_t* target_environment = nullptr;
-  LOOMC_EXPECT_OK(loomc_target_environment_create_from_native(
-      &native_environment, loomc_allocator_system(), &target_environment));
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_provider_set(
+      &provider_set, loomc_allocator_system(), &target_environment));
   TargetEnvironmentPtr target_environment_ptr(target_environment);
   ContextPtr context = CreateTargetContext(target_environment_ptr.get());
 
@@ -229,18 +220,14 @@ TEST(InteropTest, BuildsNativeSourceLowPassProgram) {
   pass_program_ptr.reset();
   context.reset();
   target_environment_ptr.reset();
-  loom_target_environment_deinitialize(&native_environment);
 }
 
 TEST(InteropTest, CompilesPublicModuleWithNativeReport) {
   const loom_target_provider_set_t provider_set = {};
-  loom_target_environment_t native_environment;
-  IREE_ASSERT_OK(
-      loom_target_environment_initialize(&provider_set, &native_environment));
 
   loomc_target_environment_t* target_environment = nullptr;
-  LOOMC_EXPECT_OK(loomc_target_environment_create_from_native(
-      &native_environment, loomc_allocator_system(), &target_environment));
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_provider_set(
+      &provider_set, loomc_allocator_system(), &target_environment));
   TargetEnvironmentPtr target_environment_ptr(target_environment);
   ContextPtr context = CreateTargetContext(target_environment_ptr.get());
   WorkspacePtr workspace = CreateWorkspace();
@@ -280,7 +267,6 @@ func.def public @identity(%value: i32) -> (i32) {
   workspace.reset();
   context.reset();
   target_environment_ptr.reset();
-  loom_target_environment_deinitialize(&native_environment);
 }
 
 }  // namespace

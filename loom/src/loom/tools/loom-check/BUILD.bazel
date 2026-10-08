@@ -290,6 +290,8 @@ loom_cc_test(
         ":execute",
         ":report",
         ":source_low",
+        "//loom/binding/c:interop",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/target:provider",
@@ -524,6 +526,8 @@ loom_cc_library(
     deps = [
         ":main",
         ":source_low",
+        "//loom/binding/c:interop",
+        "//loom/binding/c:loomc",
         "//loom/src/loom/target:provider",
         "//loom/src/loom/tooling/context",
         "//loom/src/loom/tooling/input",

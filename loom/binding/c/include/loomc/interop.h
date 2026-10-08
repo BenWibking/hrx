@@ -62,29 +62,28 @@ typedef struct loomc_module_mutable_interop_view_t {
   const loom_source_table_resolver_t* source_table;
 } loomc_module_mutable_interop_view_t;
 
-/// Creates a public target handle borrowing an exact-version native
-/// environment.
+/// Creates a public target environment from exact-version native providers.
 ///
-/// This avoids recomposing target providers when an embedding already owns the
-/// native environment used by adjacent compiler integrations. The returned
-/// handle prepares LoomC's immutable pass capability tables over that exact
-/// environment.
+/// This lets a final embedding binary compose its linked native target
+/// providers once while leaving environment construction and ownership with
+/// LoomC. Native consumers can borrow the resulting environment with
+/// `loomc_target_environment_get_interop_view`.
 ///
-/// @param environment Native target environment to borrow.
+/// @param provider_set Native target providers to compose.
 /// @param allocator Host allocator used for public handle storage.
 /// @param out_target_environment Receives one retained public target handle.
-/// @return OK when the public handle and pass capabilities were prepared.
+/// @return OK when the environment and pass capabilities were prepared.
 ///
 /// @ownership
-/// The caller owns the returned handle and releases it with
-/// `loomc_target_environment_release`. The handle does not own `environment`.
+/// The returned handle owns the composed target environment. The caller owns
+/// the handle and releases it with `loomc_target_environment_release`.
 ///
 /// @lifetime
-/// `environment` must remain initialized until the returned handle and every
-/// context, profile, compiler, pass program, or module derived from it have
-/// been released. Violating this exact-version lifetime contract is undefined.
-LOOMC_API_EXPORT loomc_status_t loomc_target_environment_create_from_native(
-    const loom_target_environment_t* environment, loomc_allocator_t allocator,
+/// `provider_set` and every provider it references must remain valid until the
+/// returned handle and every object derived from it have been released.
+LOOMC_API_EXPORT loomc_status_t
+loomc_target_environment_create_from_provider_set(
+    const loom_target_provider_set_t* provider_set, loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment);
 
 /// Creates a public pass program from a native source-Low pipeline builder.

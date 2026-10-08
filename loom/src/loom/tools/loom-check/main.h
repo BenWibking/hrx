@@ -16,6 +16,7 @@
 
 #include "iree/base/api.h"
 #include "loom/tools/loom-check/execute.h"
+#include "loomc/target.h"
 
 struct loom_check_compile_provider_t;
 
@@ -27,6 +28,7 @@ extern "C" {
 // integrations.
 int loom_check_main(
     int argc, char** argv, const loom_check_environment_t* environment,
+    loomc_target_environment_t* target_environment,
     const struct loom_check_compile_provider_t* compile_provider);
 
 #ifdef __cplusplus

@@ -36,34 +36,26 @@ static iree_status_t loom_check_compile_session_prepare(
   if (session->compiler != NULL) {
     return iree_ok_status();
   }
-  if (session->native_target_environment == NULL) {
+  if (session->target_environment == NULL) {
     return iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
         "loom-check runner has no compiler target environment");
   }
 
-  const loom_check_compile_provider_t* provider = session->provider;
-  const loom_target_environment_t* native_target_environment =
-      session->native_target_environment;
   const iree_allocator_t host_allocator = session->host_allocator;
   const loomc_allocator_t allocator = loomc_allocator_from_iree(host_allocator);
-  iree_status_t status =
-      iree_status_from_loomc(loomc_target_environment_create_from_native(
-          native_target_environment, allocator, &session->target_environment));
-  if (iree_status_is_ok(status)) {
-    const loomc_context_target_options_t target_options = {
-        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
-        .structure_size = sizeof(target_options),
-        .target_environment = session->target_environment,
-    };
-    const loomc_context_options_t context_options = {
-        .type = LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
-        .structure_size = sizeof(context_options),
-        .next = &target_options,
-    };
-    status = iree_status_from_loomc(
-        loomc_context_create(&context_options, allocator, &session->context));
-  }
+  const loomc_context_target_options_t target_options = {
+      .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
+      .structure_size = sizeof(target_options),
+      .target_environment = session->target_environment,
+  };
+  const loomc_context_options_t context_options = {
+      .type = LOOMC_STRUCTURE_TYPE_CONTEXT_OPTIONS,
+      .structure_size = sizeof(context_options),
+      .next = &target_options,
+  };
+  iree_status_t status = iree_status_from_loomc(
+      loomc_context_create(&context_options, allocator, &session->context));
   if (iree_status_is_ok(status)) {
     status = iree_status_from_loomc(loomc_workspace_create(
         /*options=*/NULL, allocator, &session->workspace));
@@ -73,10 +65,12 @@ static iree_status_t loom_check_compile_session_prepare(
         session->context, /*options=*/NULL, allocator, &session->compiler));
   }
   if (!iree_status_is_ok(status)) {
-    loom_check_compile_session_deinitialize(session);
-    session->provider = provider;
-    session->native_target_environment = native_target_environment;
-    session->host_allocator = host_allocator;
+    loomc_compiler_release(session->compiler);
+    loomc_workspace_release(session->workspace);
+    loomc_context_release(session->context);
+    session->compiler = NULL;
+    session->workspace = NULL;
+    session->context = NULL;
   }
   return status;
 }

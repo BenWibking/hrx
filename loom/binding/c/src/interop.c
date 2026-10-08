@@ -11,11 +11,11 @@
 #include "result.h"
 #include "target.h"
 
-loomc_status_t loomc_target_environment_create_from_native(
-    const loom_target_environment_t* environment, loomc_allocator_t allocator,
+loomc_status_t loomc_target_environment_create_from_provider_set(
+    const loom_target_provider_set_t* provider_set, loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment) {
-  return loomc_target_environment_create_borrowed(environment, allocator,
-                                                  out_target_environment);
+  return loomc_target_environment_create_from_provider_set_internal(
+      provider_set, allocator, out_target_environment);
 }
 
 loomc_status_t loomc_module_get_interop_view(

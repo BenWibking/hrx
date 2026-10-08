@@ -230,8 +230,9 @@ static void loom_check_print_agents_markdown(FILE* stream) {
 
 int loom_check_main(
     int argc, char** argv, const loom_check_environment_t* base_environment,
+    loomc_target_environment_t* target_environment,
     const struct loom_check_compile_provider_t* compile_provider) {
-  if (!base_environment) {
+  if (!base_environment || !target_environment) {
     fprintf(stderr, "loom-check environment is required\n");
     return 1;
   }
@@ -425,9 +426,10 @@ int loom_check_main(
   loomc_sanitizer_options_t loomc_sanitizer = {0};
   loom_check_compile_session_t compile_session = {
       .provider = compile_provider,
-      .native_target_environment = base_environment->target_environment,
       .host_allocator = host_allocator,
+      .target_environment = target_environment,
   };
+  loomc_target_environment_retain(compile_session.target_environment);
   loomc_target_profile_t* target_profile = NULL;
   const iree_string_view_t target =
       iree_string_view_trim(iree_make_cstring_view(FLAG_target));

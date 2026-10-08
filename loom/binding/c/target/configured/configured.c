@@ -12,7 +12,7 @@
 loomc_status_t loomc_target_environment_create_configured(
     loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment) {
-  return loomc_target_environment_create_from_provider_set(
+  return loomc_target_environment_create_from_provider_set_internal(
       loom_configured_compiler_provider_set(), allocator,
       out_target_environment);
 }

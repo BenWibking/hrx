@@ -47,11 +47,9 @@ typedef struct loom_check_compile_provider_t {
 typedef struct loom_check_compile_session_t {
   // Binary-owned compiler integrations used when the session is prepared.
   const loom_check_compile_provider_t* provider;
-  // Exact native target environment composed by the checker runner.
-  const loom_target_environment_t* native_target_environment;
   // Host allocator used for every session-owned public handle.
   iree_allocator_t host_allocator;
-  // Public target environment, or NULL before the first compile operation.
+  // Retained public target environment composed by the checker runner.
   loomc_target_environment_t* target_environment;
   // Public context, or NULL before the first compile operation.
   loomc_context_t* context;

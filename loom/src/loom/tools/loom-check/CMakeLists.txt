@@ -172,6 +172,8 @@ loom_cc_test(
     iree::base::internal::json
     iree::testing::gtest
     iree::testing::gtest_main
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::error::error_defs
     loom::ir
     loom::target::provider
@@ -431,6 +433,8 @@ loom_cc_library(
     ::main
     ::source_low
     iree::base
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::target::provider
     loom::tooling::context
     loom::tooling::input
