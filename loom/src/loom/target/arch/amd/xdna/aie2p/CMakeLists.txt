@@ -651,7 +651,6 @@ loom_cc_library(
     ::array_plan
     ::array_program
     ::array_resident
-    ::artifact
     ::core_descriptors
     ::leaf_compile
     ::machine
@@ -669,7 +668,6 @@ loom_cc_library(
     loom::ir
     loom::ops::low
     loom::ops::op_defs
-    loom::target::reporting::format
     loom::target::reporting::report
     loom::tools::loom-check::execute
     loom::tools::loom-check::provider
@@ -687,6 +685,8 @@ loom_cc_binary(
     ::artifact
     ::check_provider
     iree::base
+    loom::binding::c::target::amd::xdna
+    loom::tools::loom-check::compile
     loom::tools::loom-check::provider
     loom::tools::loom-check::test_provider
   TESTONLY

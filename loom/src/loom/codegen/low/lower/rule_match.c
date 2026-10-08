@@ -1109,8 +1109,9 @@ static iree_status_t loom_low_lower_rule_guard_matches(
           loom_op_vtable(match_context->module, source_op);
       const loom_value_slice_t segment = loom_op_operand_field_span(
           vtable, source_op, guard->selector.attribute.attr_index);
-      *out_matches = segment.count ==
-                     loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
+      *out_matches =
+          segment.count ==
+          loom_low_lower_rule_set_guard_payload(rule_set, guard)->u64;
       return iree_ok_status();
     }
     case LOOM_LOW_LOWER_GUARD_VALUE_SIGNED_BIT_COUNT:

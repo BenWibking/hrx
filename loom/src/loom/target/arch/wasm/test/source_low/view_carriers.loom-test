@@ -59,8 +59,8 @@ low.func.def public target<wasm.core.simd128> abi(wasm_function) @copy_selected_
 
 // Complete addresses survive rotation between distinct storage roots.
 func.def public @rotate_distinct_views(%first: buffer, %second: buffer, %first_origin_input: offset, %second_origin_input: offset, %count_input: index, %seed: i32) -> (i32) {
-  %first_origin = index.assume %first_origin_input [range(%first_origin_input, 0, 128), mul(%first_origin_input, 4)] : offset
-  %second_origin = index.assume %second_origin_input [range(%second_origin_input, 0, 128), mul(%second_origin_input, 4)] : offset
+  %first_origin = index.assume %first_origin_input [range(%first_origin_input, 0, 128), multiple_of(%first_origin_input, 4)] : offset
+  %second_origin = index.assume %second_origin_input [range(%second_origin_input, 0, 128), multiple_of(%second_origin_input, 4)] : offset
   %count = index.assume %count_input [range(%count_input, 0, 257)] : index
   %first_storage = buffer.assume.alignment %first {minimum_alignment = 4} : buffer
   %second_storage = buffer.assume.alignment %second {minimum_alignment = 4} : buffer
@@ -99,7 +99,7 @@ low.func.def public target<wasm.core.simd128> abi(wasm_function) @rotate_distinc
 
 // A returned view carries its complete origin, including nested subviews.
 func.def public @return_subview(%input: buffer, %origin_input: offset, %position_input: index) -> (view<3xi32>) {
-  %origin = index.assume %origin_input [range(%origin_input, 0, 4096), mul(%origin_input, 4)] : offset
+  %origin = index.assume %origin_input [range(%origin_input, 0, 4096), multiple_of(%origin_input, 4)] : offset
   %position = index.assume %position_input [range(%position_input, 0, 3)] : index
   %storage = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %whole = buffer.view %storage[%origin] : buffer -> view<8xi32>
@@ -135,7 +135,7 @@ low.func.def public target<wasm.core.simd128> abi(wasm_function) @load_view_argu
 // ====
 
 func.def noinline @make_record_window(%input: buffer, %origin_input: offset) -> (view<3xi32>) {
-  %origin = index.assume %origin_input [range(%origin_input, 0, 4096), mul(%origin_input, 4)] : offset
+  %origin = index.assume %origin_input [range(%origin_input, 0, 4096), multiple_of(%origin_input, 4)] : offset
   %storage = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %whole = buffer.view %storage[%origin] : buffer -> view<8xi32>
   %record = view.subview %whole[2] : view<8xi32> -> view<3xi32>

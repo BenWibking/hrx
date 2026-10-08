@@ -25,7 +25,7 @@ func.def @selected_packet_facts(%slot: index) -> (i1, i64, i64, i64, i64, i64) {
   %origin = index.constant 64 : offset
   %storage = buffer.alloca<workgroup> align(64) %length : buffer
   %slots = buffer.view %storage[%origin] : buffer -> view<128xi32>
-  %position = index.assume %slot [range(%slot, 0, 64), mul(%slot, 64)] : index
+  %position = index.assume %slot [range(%slot, 0, 64), multiple_of(%slot, 64)] : index
   %packet = view.subview %slots[%position] : view<128xi32> -> view<64xi32>
   %bytes = view.bitcast %packet : view<64xi32> -> view<256xi8>
   %tail = view.subview %bytes[3] : view<256xi8> -> view<13xi8>

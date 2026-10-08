@@ -603,8 +603,11 @@ static iree_status_t loom_check_compile_get_artifact_pass_program(
 iree_status_t loom_check_compile_artifact(
     const loom_check_emit_provider_request_t* request,
     const loom_check_compile_artifact_options_t* options,
-    loomc_source_t** out_artifact_source) {
+    loomc_source_t** out_artifact_source, loomc_source_t** out_report_source) {
   *out_artifact_source = NULL;
+  if (out_report_source != NULL) {
+    *out_report_source = NULL;
+  }
   loom_check_compile_session_t* session = request->environment->compile_session;
   loomc_module_t* module = request->public_module;
   iree_status_t status = iree_ok_status();
@@ -625,6 +628,7 @@ iree_status_t loom_check_compile_artifact(
   const loomc_emit_options_t emit_options = {
       .type = LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
       .structure_size = sizeof(emit_options),
+      .next = options->report,
       .artifact_format = loomc_string_view_from_iree(options->artifact_format),
   };
   const loomc_string_view_t root = loomc_string_view_from_iree(options->root);
@@ -648,6 +652,20 @@ iree_status_t loom_check_compile_artifact(
         artifact, LOOMC_SOURCE_FORMAT_UNKNOWN,
         loomc_allocator_from_iree(request->host_allocator),
         out_artifact_source));
+  }
+  if (iree_status_is_ok(status) && result != NULL &&
+      out_report_source != NULL) {
+    for (loomc_host_size_t i = 1;
+         iree_status_is_ok(status) && i < loomc_result_artifact_count(result);
+         ++i) {
+      const loomc_artifact_t* artifact = loomc_result_artifact_at(result, i);
+      if (artifact->kind == LOOMC_ARTIFACT_KIND_REPORT) {
+        status = iree_status_from_loomc(loomc_artifact_create_source(
+            artifact, LOOMC_SOURCE_FORMAT_UNKNOWN,
+            loomc_allocator_from_iree(request->host_allocator),
+            out_report_source));
+      }
+    }
   }
 
   loomc_result_release(result);

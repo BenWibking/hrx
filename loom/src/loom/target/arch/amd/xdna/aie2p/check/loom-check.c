@@ -10,8 +10,10 @@
 
 #include "loom/target/arch/amd/xdna/aie2p/check/provider.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/artifact.h"
+#include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/provider.h"
 #include "loom/tools/loom-check/test_provider.h"
+#include "loomc/target/amd/xdna.h"
 
 static const loom_check_provider_t* const kAie2pCheckProviders[] = {
     &loom_check_test_provider,
@@ -27,10 +29,15 @@ static const loom_target_provider_set_t kAie2pEmitterProviderSet = {
     .provider_count = IREE_ARRAYSIZE(kAie2pEmitterProviders),
 };
 
+static const loom_check_compile_provider_t kAie2pCompileProvider = {
+    .create_target_environment = loomc_target_environment_create_xdna,
+};
+
 static const loom_check_provider_set_t kAie2pCheckProviderSet = {
     .providers = kAie2pCheckProviders,
     .provider_count = IREE_ARRAYSIZE(kAie2pCheckProviders),
     .target_provider_set = &kAie2pEmitterProviderSet,
+    .compile_provider = &kAie2pCompileProvider,
 };
 
 int main(int argc, char** argv) {

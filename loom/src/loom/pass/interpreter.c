@@ -932,18 +932,19 @@ static iree_status_t loom_pass_interpreter_execute_where(
   const loom_pass_program_where_t* where = &instruction->where;
   bool match = false;
   if (iree_string_view_equal(where->predicate, IREE_SV("source"))) {
-    match =
-        loom_func_like_repr_contract(frame->function) == LOOM_STRING_ID_INVALID;
+    match = loom_func_like_repr_contract(loom_pass_interpreter_frame_function(
+                state, frame)) == LOOM_STRING_ID_INVALID;
   } else if (iree_string_view_equal(where->predicate, IREE_SV("low"))) {
-    match =
-        loom_func_like_repr_contract(frame->function) != LOOM_STRING_ID_INVALID;
+    match = loom_func_like_repr_contract(loom_pass_interpreter_frame_function(
+                state, frame)) != LOOM_STRING_ID_INVALID;
   } else if (iree_string_view_equal(where->predicate, IREE_SV("op"))) {
     const loom_pass_program_attr_t* name_attr = NULL;
     IREE_RETURN_IF_ERROR(loom_pass_interpreter_find_attr(
         where->attrs, IREE_SV("name"), &name_attr));
-    match =
-        iree_string_view_equal(loom_op_name(state->module, frame->function.op),
-                               name_attr->value.string_value);
+    match = iree_string_view_equal(
+        loom_op_name(state->module,
+                     loom_pass_interpreter_frame_function(state, frame).op),
+        name_attr->value.string_value);
   } else if (iree_string_view_equal(where->predicate, IREE_SV("name"))) {
     IREE_RETURN_IF_ERROR(loom_pass_interpreter_evaluate_name_predicate(
         state, frame, where, &match));

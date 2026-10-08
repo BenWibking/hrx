@@ -174,7 +174,7 @@ static iree_status_t loom_aie2p_native_channel_action(
              .args = {record, 0,
                       physical->byte_stride *
                           (physical->source->capacity - 1)}},
-            {.kind = LOOM_PREDICATE_MUL,
+            {.kind = LOOM_PREDICATE_MULTIPLE_OF,
              .arg_count = 2,
              .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
                           LOOM_PRED_ARG_NONE},
