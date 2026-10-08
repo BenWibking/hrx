@@ -902,6 +902,8 @@ loom_corpus_test(
     "Wasm has no kernel execution model."
     "control/loop/rotation/views.loom"
     "Wasm has no kernel execution model."
+    "control/loop/sequential_slices.loom"
+    "Wasm has no kernel execution model."
     "control/loop/termination.loom"
     "Wasm has no kernel execution model."
     "control/loop/wide_index_recurrence.loom"

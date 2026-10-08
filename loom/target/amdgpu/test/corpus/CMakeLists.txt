@@ -399,6 +399,7 @@ loom_corpus_test(
     "control/loop/rotation/values.loom"
     "control/loop/rotation/views.loom"
     "control/loop/scalar_state.loom"
+    "control/loop/sequential_slices.loom"
     "control/loop/termination.loom"
     "control/loop/vector_recurrence.loom"
     "control/loop/wide_index_recurrence.loom"
@@ -695,7 +696,6 @@ loom_corpus_test(
     "function"
   SOURCES
     "control/loop/carried_lane_liveness.loom"
-    "control/loop/sequential_slices.loom"
     "control/schedule/ordered_read_ahead.loom"
     "memory/atomic/add_f32_subnormals.loom"
     "memory/atomic/float_bitwise.loom"

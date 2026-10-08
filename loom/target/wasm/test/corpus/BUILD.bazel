@@ -122,6 +122,7 @@ _SCENARIO_KERNEL_SOURCES = [
     "control/loop/rotation/offsets.loom",
     "control/loop/rotation/values.loom",
     "control/loop/rotation/views.loom",
+    "control/loop/sequential_slices.loom",
     "control/loop/termination.loom",
     "control/loop/wide_index_recurrence.loom",
     "control/schedule/guarded_recurrence.loom",

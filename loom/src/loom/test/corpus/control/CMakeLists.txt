@@ -30,6 +30,7 @@ loom_corpus_sources(
     "loop/rotation/values.loom"
     "loop/rotation/views.loom"
     "loop/scalar_state.loom"
+    "loop/sequential_slices.loom"
     "loop/termination.loom"
     "loop/vector_recurrence.loom"
     "loop/wide_index_recurrence.loom"
@@ -37,7 +38,6 @@ loom_corpus_sources(
     "schedule/guarded_recurrence.loom"
     "schedule/unroll_scope.loom"
     "loop/carried_lane_liveness.loom"
-    "loop/sequential_slices.loom"
     "schedule/ordered_read_ahead.loom"
 )
 

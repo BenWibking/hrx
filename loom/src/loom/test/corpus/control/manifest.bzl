@@ -27,6 +27,7 @@ CONTROL_CORPUS = loom_corpus_manifest(
         "loop/rotation/values.loom",
         "loop/rotation/views.loom",
         "loop/scalar_state.loom",
+        "loop/sequential_slices.loom",
         "loop/termination.loom",
         "loop/vector_recurrence.loom",
         "loop/wide_index_recurrence.loom",
@@ -36,7 +37,6 @@ CONTROL_CORPUS = loom_corpus_manifest(
     ],
     legacy_case_srcs = [
         "loop/carried_lane_liveness.loom",
-        "loop/sequential_slices.loom",
         "schedule/ordered_read_ahead.loom",
     ],
 )
