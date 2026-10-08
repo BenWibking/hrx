@@ -46,7 +46,8 @@ static iree_status_t iree_hal_replay_file_record_metadata_validate(
                             "replay record metadata is required");
   }
   const iree_hal_replay_file_record_flags_t valid_flags =
-      IREE_HAL_REPLAY_FILE_RECORD_FLAG_OPTIONAL;
+      IREE_HAL_REPLAY_FILE_RECORD_FLAG_OPTIONAL |
+      IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
   if (IREE_UNLIKELY((metadata->record_flags & ~valid_flags) != 0)) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "replay record reserved flags must be zero");

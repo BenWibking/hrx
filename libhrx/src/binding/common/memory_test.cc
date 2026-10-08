@@ -64,10 +64,11 @@ iree_status_t InjectedFlushQueueBarrier(
     iree_hal_queue_t* base_queue,
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_queue_barrier_flags_t flags) {
   return iree_hal_queue_barrier(CastInjectedFlushQueue(base_queue)->target,
                                 wait_semaphore_list, signal_semaphore_list,
-                                flags);
+                                barriers, flags);
 }
 
 iree_status_t InjectedFlushQueueExecute(

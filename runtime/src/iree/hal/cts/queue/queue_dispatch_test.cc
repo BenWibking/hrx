@@ -67,10 +67,10 @@ TEST_P(QueueDispatchTest, DispatchWithConstantsAndBindings) {
   IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
       device_allocator_, params, sizeof(input_data), input_buffer.out()));
   SemaphoreList upload_signal(device_, {0}, {1});
-  IREE_ASSERT_OK(
-      iree_hal_queue_update(transfer_queue_, iree_hal_semaphore_list_empty(),
-                            upload_signal, input_data, 0, input_buffer, 0,
-                            sizeof(input_data), IREE_HAL_UPDATE_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_queue_update(
+      transfer_queue_, iree_hal_semaphore_list_empty(), upload_signal,
+      input_data, 0, input_buffer, 0, sizeof(input_data), /*barriers=*/NULL,
+      IREE_HAL_UPDATE_FLAG_NONE));
 
   params.usage = IREE_HAL_BUFFER_USAGE_STORAGE_WRITE |
                  IREE_HAL_BUFFER_USAGE_TRANSFER_SOURCE;
@@ -94,7 +94,7 @@ TEST_P(QueueDispatchTest, DispatchWithConstantsAndBindings) {
       dispatch_queue_, upload_signal, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -149,7 +149,7 @@ TEST_P(QueueDispatchTest,
         queue, iree_hal_semaphore_list_empty(), signal, executable_,
         iree_hal_executable_function_from_index(0),
         iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-        IREE_HAL_DISPATCH_FLAG_NONE));
+        /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                                 IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -192,7 +192,7 @@ TEST_P(QueueDispatchTest, DispatchWithBorrowedResourceLifetimes) {
       dispatch_queue_, empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_BORROW_RESOURCE_LIFETIMES));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_BORROW_RESOURCE_LIFETIMES));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -244,7 +244,7 @@ TEST_P(QueueDispatchTest, DispatchWithConstantsAndBindingsWhileProfiling) {
       dispatch_queue_, empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -311,7 +311,7 @@ TEST_P(QueueDispatchTest, DispatchHostQueueEventProfiling) {
       dispatch_queue_, empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -397,7 +397,7 @@ TEST_P(QueueDispatchTest, DispatchDeviceQueueEventProfiling) {
       dispatch_queue_, empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -478,7 +478,7 @@ TEST_P(QueueDispatchTest, DispatchProfileFilterCanSkipDirectDispatchEvents) {
       dispatch_queue_, empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -526,7 +526,7 @@ TEST_P(QueueDispatchTest, NoopDispatchSignalsAndDoesNotTouchBuffers) {
       dispatch_queue_, empty_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(0, 0, 0), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -566,7 +566,7 @@ TEST_P(QueueDispatchTest, DeferredNoopDispatch) {
       dispatch_queue_, dispatch_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(0, 0, 0), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
 
   uint64_t dispatch_value = 0;
   IREE_ASSERT_OK(
@@ -614,7 +614,7 @@ TEST_P(QueueDispatchTest, DeferredWaitBeforeSignalDispatch) {
       dispatch_queue_, dispatch_wait, dispatch_signal, executable_,
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
 
   uint64_t dispatch_value = 0;
   IREE_ASSERT_OK(
@@ -723,7 +723,7 @@ class QueueDispatchIndirectParametersTest : public CtsTestBase<> {
     IREE_ASSERT_OK(iree_hal_queue_update(
         transfer_queue_, empty_wait, update_signal, parameter_data,
         /*source_offset=*/0, parameter_buffer, /*target_offset=*/0,
-        sizeof(parameter_data), IREE_HAL_UPDATE_FLAG_NONE));
+        sizeof(parameter_data), /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
 
     iree_hal_buffer_ref_t binding_refs[1] = {
         iree_hal_make_buffer_ref(output_buffer, /*offset=*/0,
@@ -744,7 +744,7 @@ class QueueDispatchIndirectParametersTest : public CtsTestBase<> {
     IREE_ASSERT_OK(iree_hal_queue_dispatch(
         dispatch_queue_, update_signal, dispatch_signal, executable_,
         iree_hal_executable_function_from_index(0), config,
-        iree_const_byte_span_empty(), bindings, flags));
+        iree_const_byte_span_empty(), bindings, /*barriers=*/NULL, flags));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
         dispatch_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 

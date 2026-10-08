@@ -129,10 +129,10 @@ class HostQueueHostMemoryTest : public ::testing::Test {
         iree_hal_device_allocator(device), params, buffer_size, &buffer);
     SemaphoreList signal_list(device, {0}, {1});
     if (iree_status_is_ok(status)) {
-      status = iree_hal_queue_fill(queue, iree_hal_semaphore_list_empty(),
-                                   signal_list, buffer,
-                                   /*target_offset=*/0, buffer_size, &pattern,
-                                   sizeof(pattern), IREE_HAL_FILL_FLAG_NONE);
+      status = iree_hal_queue_fill(
+          queue, iree_hal_semaphore_list_empty(), signal_list, buffer,
+          /*target_offset=*/0, buffer_size, &pattern, sizeof(pattern),
+          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
     }
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(
@@ -212,20 +212,22 @@ TEST_F(HostQueueHostMemoryTest, ImportedHostCopyPublishesWritesAndOffsets) {
   IREE_ASSERT_OK(iree_hal_queue_copy(
       test_device.queue(), iree_hal_semaphore_list_empty(), read_semaphore,
       source_host_buffer, kSourceHostOffset, read_device_subspan,
-      kReadBufferOffset, kTransferLength, IREE_HAL_COPY_FLAG_NONE));
+      kReadBufferOffset, kTransferLength, /*barriers=*/NULL,
+      IREE_HAL_COPY_FLAG_NONE));
 
   SemaphoreList copy_semaphore(test_device.device(), {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_copy(
       test_device.queue(), read_semaphore, copy_semaphore,
       read_device_allocation, kReadSubspanOffset + kReadBufferOffset,
       write_device_allocation, kWriteSubspanOffset + kWriteBufferOffset,
-      kTransferLength, IREE_HAL_COPY_FLAG_NONE));
+      kTransferLength, /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE));
 
   SemaphoreList write_semaphore(test_device.device(), {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_copy(
       test_device.queue(), copy_semaphore, write_semaphore,
       write_device_subspan, kWriteBufferOffset, target_host_buffer,
-      kTargetHostOffset, kTransferLength, IREE_HAL_COPY_FLAG_NONE));
+      kTargetHostOffset, kTransferLength, /*barriers=*/NULL,
+      IREE_HAL_COPY_FLAG_NONE));
 
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       write_semaphore, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));

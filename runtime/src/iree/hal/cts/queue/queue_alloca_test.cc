@@ -260,7 +260,7 @@ class QueueAllocaTest : public CtsTestBase<> {
     IREE_ASSERT_OK(iree_hal_queue_fill(
         queue, empty_wait, fill_signal, buffer, /*target_offset=*/0,
         iree_hal_buffer_byte_length(buffer), &pattern, sizeof(pattern),
-        IREE_HAL_FILL_FLAG_NONE));
+        /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     Wait(fill_signal);
   }
 

@@ -1804,4 +1804,55 @@ TEST(ReplayDumpTest, RejectsMalformedAtomicPayloadLayouts) {
                          &options, &output));
 }
 
+TEST(ReplayDumpTest, QueueBarriersDistinguishDefaultAndExplicitEmpty) {
+  ReplayFileBuilder builder(4096);
+  iree_hal_replay_file_record_metadata_t metadata = {};
+  metadata.record_type = IREE_HAL_REPLAY_FILE_RECORD_TYPE_OPERATION;
+  metadata.object_type = IREE_HAL_REPLAY_OBJECT_TYPE_QUEUE;
+  metadata.operation_code = IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_BARRIER;
+  metadata.payload_type = IREE_HAL_REPLAY_PAYLOAD_TYPE_QUEUE_BARRIER;
+  metadata.record_flags = IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
+  const iree_hal_replay_queue_barrier_payload_t operation = {};
+  iree_hal_replay_queue_barriers_footer_t footer = {0, UINT64_MAX, 0};
+  iree_const_byte_span_t spans[] = {
+      iree_make_const_byte_span(&operation, sizeof(operation)),
+      iree_make_const_byte_span(&footer, sizeof(footer)),
+  };
+  builder.Append(metadata, IREE_ARRAYSIZE(spans), spans);
+  ++metadata.sequence_ordinal;
+  iree_hal_replay_command_buffer_execution_barrier_payload_t action = {};
+  action.source_stage_mask = IREE_HAL_EXECUTION_STAGE_TRANSFER;
+  action.flags = IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+  action.buffer_barrier_count = 1;
+  iree_hal_replay_buffer_barrier_payload_t range = {};
+  range.source_scope = IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE;
+  range.target_scope = IREE_HAL_ACCESS_SCOPE_HOST_READ;
+  range.buffer_ref.buffer_id = 7;
+  range.buffer_ref.offset = 6;
+  range.buffer_ref.length = 4;
+  footer = {sizeof(action) + sizeof(range), 1, UINT64_MAX};
+  iree_const_byte_span_t explicit_spans[] = {
+      iree_make_const_byte_span(&operation, sizeof(operation)),
+      iree_make_const_byte_span(&action, sizeof(action)),
+      iree_make_const_byte_span(&range, sizeof(range)),
+      iree_make_const_byte_span(&footer, sizeof(footer)),
+  };
+  builder.Append(metadata, IREE_ARRAYSIZE(explicit_spans), explicit_spans);
+  auto storage = builder.Finish();
+  iree_hal_replay_dump_options_t options =
+      iree_hal_replay_dump_options_default();
+  std::string output;
+  IREE_ASSERT_OK(
+      DumpReplayToString(MakeReplayFileContents(storage), &options, &output));
+  EXPECT_THAT(output, HasSubstr("before=default after=[]"));
+  EXPECT_THAT(output, HasSubstr("buffer_ref={buffer_id=7 offset=6 length=4"));
+  options.format = IREE_HAL_REPLAY_DUMP_FORMAT_JSONL;
+  output.clear();
+  IREE_ASSERT_OK(
+      DumpReplayToString(MakeReplayFileContents(storage), &options, &output));
+  EXPECT_THAT(output, HasSubstr("\"before\":null,\"after\":[]"));
+  EXPECT_THAT(output, HasSubstr("\"buffer_ref\":{\"buffer_id\":7,"));
+  EXPECT_THAT(output, HasSubstr("\"offset\":6,\"length\":4"));
+}
+
 }  // namespace

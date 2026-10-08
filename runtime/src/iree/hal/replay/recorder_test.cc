@@ -647,7 +647,7 @@ TEST(ReplayRecorderTest, RecordsExactQueueTransferTransaction) {
   operations[4].download.length = sizeof(download_data);
   IREE_ASSERT_OK(iree_hal_queue_transfer(
       queue, iree_hal_semaphore_list_empty(), signal_list,
-      IREE_ARRAYSIZE(operations), operations));
+      IREE_ARRAYSIZE(operations), operations, /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -736,7 +736,7 @@ TEST(ReplayRecorderTest, WaitfulUploadRemainsLiveAndIsMarkedUnsupported) {
   uint8_t upload_data[] = {0x10, 0x11, 0x12, 0x13};
   IREE_ASSERT_OK(iree_hal_queue_upload(
       queue, wait_list, signal_list, upload_data, target_buffer,
-      /*target_offset=*/0, sizeof(upload_data)));
+      /*target_offset=*/0, sizeof(upload_data), /*barriers=*/NULL));
   const uint8_t expected_data[] = {0x20, 0x21, 0x22, 0x23};
   memcpy(upload_data, expected_data, sizeof(upload_data));
   IREE_ASSERT_OK(iree_hal_semaphore_signal(wait_semaphore, wait_value,
@@ -1461,17 +1461,17 @@ TEST(ReplayRecorderTest, RecordsAndReplaysVersion2ExactQueueAtomicOperations) {
 
   IREE_ASSERT_OK(iree_hal_queue_atomic_wait(queue, wait_list, wait_signal_list,
                                             buffer, /*target_offset=*/8,
-                                            wait_params));
+                                            wait_params, /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       wait_signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
-  IREE_ASSERT_OK(
-      iree_hal_queue_atomic_store(queue, wait_list, store_signal_list, buffer,
-                                  /*target_offset=*/16, store_params));
+  IREE_ASSERT_OK(iree_hal_queue_atomic_store(
+      queue, wait_list, store_signal_list, buffer,
+      /*target_offset=*/16, store_params, /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       store_signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_queue_atomic_rmw(queue, wait_list, rmw_signal_list,
                                            buffer, /*target_offset=*/24,
-                                           rmw_params));
+                                           rmw_params, /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       rmw_signal_list, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 

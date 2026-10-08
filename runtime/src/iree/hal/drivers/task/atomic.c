@@ -78,6 +78,13 @@ static bool iree_hal_task_atomic_wait_condition_matches(
   }
 }
 
+void iree_hal_task_atomic_fence(iree_hal_atomic_flags_t flags) {
+  if (iree_any_bit_set(
+          flags, IREE_HAL_ATOMIC_FLAG_ACQUIRE | IREE_HAL_ATOMIC_FLAG_RELEASE)) {
+    iree_atomic_thread_fence(iree_hal_task_atomic_memory_order(flags));
+  }
+}
+
 void iree_hal_task_atomic_wait(void* target,
                                iree_hal_atomic_wait_params_t params) {
   IREE_ASSERT(iree_hal_task_atomic_width_is_lock_free(params.width),

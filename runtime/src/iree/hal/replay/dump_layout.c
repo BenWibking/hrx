@@ -27,8 +27,8 @@ iree_hal_replay_file_range_t iree_hal_replay_dump_record_payload_range(
     iree_host_size_t record_offset) {
   iree_hal_replay_file_range_t range = iree_hal_replay_file_range_empty();
   range.offset = (uint64_t)record_offset + record->header.header_length;
-  range.length = record->header.payload_length;
-  range.uncompressed_length = record->header.payload_length;
+  range.length = record->payload.data_length;
+  range.uncompressed_length = record->payload.data_length;
   range.compression_type = IREE_HAL_REPLAY_COMPRESSION_TYPE_NONE;
   range.digest_type = IREE_HAL_REPLAY_DIGEST_TYPE_NONE;
   return range;

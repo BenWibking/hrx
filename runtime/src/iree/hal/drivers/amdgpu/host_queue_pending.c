@@ -990,6 +990,7 @@ static void iree_hal_amdgpu_pending_op_issue(iree_hal_amdgpu_pending_op_t* op) {
     // barriers.
     iree_hal_amdgpu_wait_resolution_t resolution;
     resolution.barrier_count = 0;
+    resolution.payload_barriers = op->payload_barriers;
     resolution.needs_deferral = false;
     memset(resolution.reserved, 0, sizeof(resolution.reserved));
     resolution.wait_count = op->wait_semaphore_list.count > UINT32_MAX

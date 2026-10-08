@@ -721,7 +721,7 @@ hrx_status_t hrx_graph_exec_launch(hrx_graph_exec_t exec, hrx_stream_t stream) {
     switch (block->type) {
       case HRX_GRAPH_BLOCK_TYPE_QUEUE_BARRIER:
         status = iree_hal_queue_barrier(stream->hal_queue, wait_semaphores,
-                                        signal_semaphores,
+                                        signal_semaphores, /*barriers=*/NULL,
                                         ptrs.attrs->barrier.flags);
         break;
       case HRX_GRAPH_BLOCK_TYPE_QUEUE_FILL:
@@ -729,14 +729,15 @@ hrx_status_t hrx_graph_exec_launch(hrx_graph_exec_t exec, hrx_stream_t stream) {
             exec->device->transfer_queue, wait_semaphores, signal_semaphores,
             ptrs.attrs->fill.target_buffer, ptrs.attrs->fill.target_offset,
             ptrs.attrs->fill.length, &ptrs.attrs->fill.pattern,
-            ptrs.attrs->fill.pattern_length, ptrs.attrs->fill.flags);
+            ptrs.attrs->fill.pattern_length, /*barriers=*/NULL,
+            ptrs.attrs->fill.flags);
         break;
       case HRX_GRAPH_BLOCK_TYPE_QUEUE_COPY:
         status = iree_hal_queue_copy(
             exec->device->transfer_queue, wait_semaphores, signal_semaphores,
             ptrs.attrs->copy.source_buffer, ptrs.attrs->copy.source_offset,
             ptrs.attrs->copy.target_buffer, ptrs.attrs->copy.target_offset,
-            ptrs.attrs->copy.length, ptrs.attrs->copy.flags);
+            ptrs.attrs->copy.length, /*barriers=*/NULL, ptrs.attrs->copy.flags);
         break;
       case HRX_GRAPH_BLOCK_TYPE_QUEUE_DISPATCH: {
         iree_hal_buffer_ref_list_t bindings_list = {
@@ -749,7 +750,7 @@ hrx_status_t hrx_graph_exec_launch(hrx_graph_exec_t exec, hrx_stream_t stream) {
             iree_hal_executable_function_from_index(
                 (uint32_t)ptrs.attrs->dispatch.entry_point),
             ptrs.attrs->dispatch.config, ptrs.attrs->dispatch.constants,
-            bindings_list, ptrs.attrs->dispatch.flags);
+            bindings_list, /*barriers=*/NULL, ptrs.attrs->dispatch.flags);
         break;
       }
       case HRX_GRAPH_BLOCK_TYPE_QUEUE_EXECUTE:

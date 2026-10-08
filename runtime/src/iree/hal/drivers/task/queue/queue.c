@@ -29,6 +29,75 @@
 #include "iree/hal/pool_wait.h"
 #include "iree/hal/utils/resource_set.h"
 
+// CPU accesses share one coherent domain. Capture only ordering requirements;
+// barriers never require retaining the caller's descriptors or buffer ranges.
+static iree_hal_atomic_flags_t iree_hal_task_queue_resolve_barriers(
+    const iree_hal_barrier_list_t* barriers) {
+  if (!barriers) {
+    return IREE_HAL_ATOMIC_FLAG_ACQUIRE | IREE_HAL_ATOMIC_FLAG_RELEASE;
+  }
+  iree_hal_atomic_flags_t flags = IREE_HAL_ATOMIC_FLAG_NONE;
+  for (iree_host_size_t i = 0; i < barriers->count; ++i) {
+    const iree_hal_barrier_t* barrier = &barriers->values[i];
+    iree_hal_barrier_flags_t barrier_flags =
+        iree_hal_barrier_resolve_flags(barrier);
+    if (iree_any_bit_set(barrier->source_stage_mask,
+                         IREE_HAL_EXECUTION_STAGE_HOST)) {
+      barrier_flags |= IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
+    }
+    if (iree_any_bit_set(barrier->target_stage_mask,
+                         IREE_HAL_EXECUTION_STAGE_HOST)) {
+      barrier_flags |= IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+    }
+    if (iree_any_bit_set(barrier_flags,
+                         IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE)) {
+      flags |= IREE_HAL_ATOMIC_FLAG_ACQUIRE;
+    }
+    if (iree_any_bit_set(barrier_flags,
+                         IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE)) {
+      flags |= IREE_HAL_ATOMIC_FLAG_RELEASE;
+    }
+    for (iree_host_size_t j = 0; j < barrier->memory_barrier_count; ++j) {
+      if (barrier->memory_barriers[j].source_scope) {
+        flags |= IREE_HAL_ATOMIC_FLAG_RELEASE;
+      }
+      if (barrier->memory_barriers[j].target_scope) {
+        flags |= IREE_HAL_ATOMIC_FLAG_ACQUIRE;
+      }
+    }
+    for (iree_host_size_t j = 0; j < barrier->buffer_barrier_count; ++j) {
+      if (barrier->buffer_barriers[j].source_scope) {
+        flags |= IREE_HAL_ATOMIC_FLAG_RELEASE;
+      }
+      if (barrier->buffer_barriers[j].target_scope) {
+        flags |= IREE_HAL_ATOMIC_FLAG_ACQUIRE;
+      }
+    }
+  }
+  return flags;
+}
+
+static void iree_hal_task_queue_capture_barriers(
+    iree_hal_task_queue_op_t* operation,
+    const iree_hal_queue_barriers_t* barriers) {
+  const iree_hal_atomic_flags_t before =
+      iree_hal_task_queue_resolve_barriers(barriers ? barriers->before : NULL);
+  const iree_hal_atomic_flags_t after =
+      iree_hal_task_queue_resolve_barriers(barriers ? barriers->after : NULL);
+  if (iree_any_bit_set(before, IREE_HAL_ATOMIC_FLAG_ACQUIRE)) {
+    operation->flags |= IREE_HAL_TASK_QUEUE_OP_FLAG_BEFORE_ACQUIRE;
+  }
+  if (iree_any_bit_set(before, IREE_HAL_ATOMIC_FLAG_RELEASE)) {
+    operation->flags |= IREE_HAL_TASK_QUEUE_OP_FLAG_BEFORE_RELEASE;
+  }
+  if (iree_any_bit_set(after, IREE_HAL_ATOMIC_FLAG_ACQUIRE)) {
+    operation->flags |= IREE_HAL_TASK_QUEUE_OP_FLAG_AFTER_ACQUIRE;
+  }
+  if (iree_any_bit_set(after, IREE_HAL_ATOMIC_FLAG_RELEASE)) {
+    operation->flags |= IREE_HAL_TASK_QUEUE_OP_FLAG_AFTER_RELEASE;
+  }
+}
+
 #if !defined(NDEBUG)
 static void iree_hal_task_queue_debug_record_submit(
     iree_hal_task_queue_t* queue, iree_hal_task_queue_op_t* operation) {
@@ -798,6 +867,15 @@ static void iree_hal_task_queue_op_advance_frontier(
 // semaphores, advances the frontier, and destroys the operation.
 static void iree_hal_task_queue_op_complete(
     iree_hal_task_queue_op_t* operation) {
+  iree_hal_task_atomic_fence(
+      (iree_any_bit_set(operation->flags,
+                        IREE_HAL_TASK_QUEUE_OP_FLAG_AFTER_ACQUIRE)
+           ? IREE_HAL_ATOMIC_FLAG_ACQUIRE
+           : 0) |
+      (iree_any_bit_set(operation->flags,
+                        IREE_HAL_TASK_QUEUE_OP_FLAG_AFTER_RELEASE)
+           ? IREE_HAL_ATOMIC_FLAG_RELEASE
+           : 0));
   // Publish profiling before user-visible completion. Waiters may flush and
   // end profiling immediately after signal semaphores are reached.
   iree_hal_task_queue_profile_finish_host_execution(operation, IREE_STATUS_OK);
@@ -3236,6 +3314,16 @@ static iree_status_t iree_hal_task_queue_process_drain(
     return iree_ok_status();
   }
 
+  iree_hal_task_atomic_fence(
+      (iree_any_bit_set(operation->flags,
+                        IREE_HAL_TASK_QUEUE_OP_FLAG_BEFORE_ACQUIRE)
+           ? IREE_HAL_ATOMIC_FLAG_ACQUIRE
+           : 0) |
+      (iree_any_bit_set(operation->flags,
+                        IREE_HAL_TASK_QUEUE_OP_FLAG_BEFORE_RELEASE)
+           ? IREE_HAL_ATOMIC_FLAG_RELEASE
+           : 0));
+
   iree_status_t status = iree_ok_status();
   switch (operation->type) {
     case IREE_HAL_TASK_QUEUE_OP_COMMANDS:
@@ -3686,12 +3774,18 @@ void iree_hal_task_queue_set_profile_recorder(
 
 iree_status_t iree_hal_task_queue_submit_barrier(
     iree_hal_task_queue_t* queue, iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_TRACE_ZONE_BEGIN(z0);
 
-  iree_status_t status = iree_hal_task_queue_submit_op(
-      queue, IREE_HAL_TASK_QUEUE_OP_BARRIER, wait_semaphores,
-      &signal_semaphores, 0, NULL);
+  iree_hal_task_queue_op_t* operation = NULL;
+  iree_status_t status = iree_hal_task_queue_submit_op_begin(
+      queue, IREE_HAL_TASK_QUEUE_OP_BARRIER, &signal_semaphores, &operation);
+  if (iree_status_is_ok(status)) {
+    iree_hal_task_queue_capture_barriers(operation, barriers);
+    status = iree_hal_task_queue_submit_op_finish(operation, wait_semaphores, 0,
+                                                  NULL);
+  }
 
   IREE_TRACE_ZONE_END(z0);
   return status;
@@ -4011,7 +4105,8 @@ iree_status_t iree_hal_task_queue_submit_read(
     uint64_t source_offset, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_device_size_t length,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_TRACE_ZONE_BEGIN(z0);
 
   iree_hal_task_queue_op_t* operation = NULL;
@@ -4022,6 +4117,7 @@ iree_status_t iree_hal_task_queue_submit_read(
     return status;
   }
 
+  iree_hal_task_queue_capture_barriers(operation, barriers);
   iree_task_scope_begin(&queue->operation_scope);
 
   operation->read.hal_file = source_file;
@@ -4056,7 +4152,8 @@ iree_status_t iree_hal_task_queue_submit_write(
     iree_device_size_t source_offset, iree_hal_file_t* target_file,
     uint64_t target_offset, iree_device_size_t length,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_TRACE_ZONE_BEGIN(z0);
 
   iree_hal_task_queue_op_t* operation = NULL;
@@ -4067,6 +4164,7 @@ iree_status_t iree_hal_task_queue_submit_write(
     return status;
   }
 
+  iree_hal_task_queue_capture_barriers(operation, barriers);
   iree_task_scope_begin(&queue->operation_scope);
 
   operation->write.hal_file = target_file;
@@ -4189,10 +4287,12 @@ static iree_status_t iree_hal_task_queue_submit_transfer(
     const iree_hal_semaphore_list_t wait_semaphores,
     const iree_hal_semaphore_list_t signal_semaphores,
     iree_host_size_t operation_count,
-    const iree_hal_transfer_operation_t* transfer_operations) {
+    const iree_hal_transfer_operation_t* transfer_operations,
+    const iree_hal_queue_barriers_t* barriers) {
   iree_hal_task_queue_op_t* operation = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_submit_op_begin(
       queue, IREE_HAL_TASK_QUEUE_OP_TRANSFER, &signal_semaphores, &operation));
+  iree_hal_task_queue_capture_barriers(operation, barriers);
 
   iree_status_t status = iree_ok_status();
   iree_host_size_t operations_length = 0;
@@ -4258,7 +4358,8 @@ iree_status_t iree_hal_task_queue_submit_fill(
     iree_hal_semaphore_list_t signal_semaphores) {
   return iree_hal_queue_fill(&queue->base, wait_semaphores, signal_semaphores,
                              target_buffer, target_offset, length, pattern,
-                             pattern_length, IREE_HAL_FILL_FLAG_NONE);
+                             pattern_length, /*barriers=*/NULL,
+                             IREE_HAL_FILL_FLAG_NONE);
 }
 
 iree_status_t iree_hal_task_queue_submit_copy(
@@ -4269,7 +4370,8 @@ iree_status_t iree_hal_task_queue_submit_copy(
     iree_hal_semaphore_list_t signal_semaphores) {
   return iree_hal_queue_copy(&queue->base, wait_semaphores, signal_semaphores,
                              source_buffer, source_offset, target_buffer,
-                             target_offset, length, IREE_HAL_COPY_FLAG_NONE);
+                             target_offset, length, /*barriers=*/NULL,
+                             IREE_HAL_COPY_FLAG_NONE);
 }
 
 iree_status_t iree_hal_task_queue_submit_update(
@@ -4280,7 +4382,7 @@ iree_status_t iree_hal_task_queue_submit_update(
     iree_hal_semaphore_list_t signal_semaphores) {
   return iree_hal_queue_update(&queue->base, wait_semaphores, signal_semaphores,
                                source_buffer, source_offset, target_buffer,
-                               target_offset, length,
+                               target_offset, length, /*barriers=*/NULL,
                                IREE_HAL_UPDATE_FLAG_NONE);
 }
 
@@ -4288,11 +4390,14 @@ iree_status_t iree_hal_task_queue_submit_atomic_wait(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_hal_atomic_wait_params_t params,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   iree_hal_task_queue_op_t* operation = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_submit_op_begin(
       queue, IREE_HAL_TASK_QUEUE_OP_ATOMIC_WAIT, &signal_semaphores,
       &operation));
+  iree_hal_task_queue_capture_barriers(operation, barriers);
+
   operation->atomic_wait.target_buffer = target_buffer;
   operation->atomic_wait.target_offset = target_offset;
   operation->atomic_wait.params = params;
@@ -4307,11 +4412,14 @@ iree_status_t iree_hal_task_queue_submit_atomic_store(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_hal_atomic_store_params_t params,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   iree_hal_task_queue_op_t* operation = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_submit_op_begin(
       queue, IREE_HAL_TASK_QUEUE_OP_ATOMIC_STORE, &signal_semaphores,
       &operation));
+  iree_hal_task_queue_capture_barriers(operation, barriers);
+
   operation->atomic_store.target_buffer = target_buffer;
   operation->atomic_store.target_offset = target_offset;
   operation->atomic_store.params = params;
@@ -4326,11 +4434,14 @@ iree_status_t iree_hal_task_queue_submit_atomic_rmw(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_hal_atomic_rmw_params_t params,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   iree_hal_task_queue_op_t* operation = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_submit_op_begin(
       queue, IREE_HAL_TASK_QUEUE_OP_ATOMIC_RMW, &signal_semaphores,
       &operation));
+  iree_hal_task_queue_capture_barriers(operation, barriers);
+
   operation->atomic_rmw.target_buffer = target_buffer;
   operation->atomic_rmw.target_offset = target_offset;
   operation->atomic_rmw.params = params;
@@ -4347,7 +4458,8 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
     iree_hal_dispatch_config_t config, iree_const_byte_span_t constants,
     const iree_hal_buffer_ref_t* bindings, iree_host_size_t binding_count,
     iree_hal_dispatch_flags_t flags, iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores) {
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers) {
   const bool uses_indirect_parameters =
       iree_hal_dispatch_uses_indirect_parameters(flags);
   if (uses_indirect_parameters && !config.workgroup_count_ref.buffer) {
@@ -4398,6 +4510,7 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
   iree_hal_task_queue_op_t* operation = NULL;
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_submit_op_begin(
       queue, IREE_HAL_TASK_QUEUE_OP_DISPATCH, &signal_semaphores, &operation));
+  iree_hal_task_queue_capture_barriers(operation, barriers);
 
   operation->dispatch.executable = executable;
   operation->dispatch.export_ordinal = export_ordinal;
@@ -4553,11 +4666,12 @@ static iree_status_t iree_hal_task_queue_transfer(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_host_size_t operation_count,
-    const iree_hal_transfer_operation_t* operations) {
+    const iree_hal_transfer_operation_t* operations,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   return iree_hal_task_queue_submit_transfer(
       (iree_hal_task_queue_t*)base_queue, wait_semaphore_list,
-      signal_semaphore_list, operation_count, operations);
+      signal_semaphore_list, operation_count, operations, barriers);
 }
 
 static bool iree_hal_task_pool_supports_queue_families(
@@ -4715,12 +4829,13 @@ static iree_status_t iree_hal_task_queue_barrier(
     iree_hal_queue_t* base_queue,
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_queue_barrier_flags_t flags) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   (void)flags;
   return iree_hal_task_queue_submit_barrier((iree_hal_task_queue_t*)base_queue,
                                             wait_semaphore_list,
-                                            signal_semaphore_list);
+                                            signal_semaphore_list, barriers);
 }
 
 static iree_status_t iree_hal_task_queue_execute(
@@ -4801,12 +4916,13 @@ static iree_status_t iree_hal_task_queue_dispatch(
     iree_hal_executable_t* executable, iree_hal_executable_function_t function,
     const iree_hal_dispatch_config_t config, iree_const_byte_span_t constants,
     const iree_hal_buffer_ref_list_t bindings,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_dispatch_flags_t flags) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   return iree_hal_task_queue_submit_dispatch(
       (iree_hal_task_queue_t*)base_queue, executable, function, config,
       constants, bindings.values, bindings.count, flags, wait_semaphore_list,
-      signal_semaphore_list);
+      signal_semaphore_list, barriers);
 }
 
 static iree_status_t iree_hal_task_queue_check_atomic_width(
@@ -4825,12 +4941,13 @@ static iree_status_t iree_hal_task_queue_atomic_wait(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_wait_params_t params) {
+    iree_hal_atomic_wait_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_check_atomic_width(params.width));
   return iree_hal_task_queue_submit_atomic_wait(
       (iree_hal_task_queue_t*)base_queue, target_buffer, target_offset, params,
-      wait_semaphore_list, signal_semaphore_list);
+      wait_semaphore_list, signal_semaphore_list, barriers);
 }
 
 static iree_status_t iree_hal_task_queue_atomic_store(
@@ -4838,12 +4955,13 @@ static iree_status_t iree_hal_task_queue_atomic_store(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_store_params_t params) {
+    iree_hal_atomic_store_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_check_atomic_width(params.width));
   return iree_hal_task_queue_submit_atomic_store(
       (iree_hal_task_queue_t*)base_queue, target_buffer, target_offset, params,
-      wait_semaphore_list, signal_semaphore_list);
+      wait_semaphore_list, signal_semaphore_list, barriers);
 }
 
 static iree_status_t iree_hal_task_queue_atomic_rmw(
@@ -4851,12 +4969,13 @@ static iree_status_t iree_hal_task_queue_atomic_rmw(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_hal_atomic_rmw_params_t params) {
+    iree_hal_atomic_rmw_params_t params,
+    const iree_hal_queue_barriers_t* barriers) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   IREE_RETURN_IF_ERROR(iree_hal_task_queue_check_atomic_width(params.width));
   return iree_hal_task_queue_submit_atomic_rmw(
       (iree_hal_task_queue_t*)base_queue, target_buffer, target_offset, params,
-      wait_semaphore_list, signal_semaphore_list);
+      wait_semaphore_list, signal_semaphore_list, barriers);
 }
 
 static iree_status_t iree_hal_task_queue_timestamp(
@@ -4864,6 +4983,7 @@ static iree_status_t iree_hal_task_queue_timestamp(
     const iree_hal_semaphore_list_t wait_semaphore_list,
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
+    const iree_hal_queue_barriers_t* barriers,
     iree_hal_timestamp_flags_t flags) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   (void)wait_semaphore_list;
@@ -4886,7 +5006,8 @@ static iree_status_t iree_hal_task_queue_read(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_file_t* source_file, uint64_t source_offset,
     iree_hal_buffer_t* target_buffer, iree_device_size_t target_offset,
-    iree_device_size_t length, iree_hal_read_flags_t flags) {
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers,
+    iree_hal_read_flags_t flags) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   (void)flags;
   if (!iree_hal_file_async_handle(source_file) &&
@@ -4899,7 +5020,7 @@ static iree_status_t iree_hal_task_queue_read(
   return iree_hal_task_queue_submit_read(
       (iree_hal_task_queue_t*)base_queue, source_file, source_offset,
       target_buffer, target_offset, length, wait_semaphore_list,
-      signal_semaphore_list);
+      signal_semaphore_list, barriers);
 }
 
 static iree_status_t iree_hal_task_queue_write(
@@ -4908,7 +5029,8 @@ static iree_status_t iree_hal_task_queue_write(
     const iree_hal_semaphore_list_t signal_semaphore_list,
     iree_hal_buffer_t* source_buffer, iree_device_size_t source_offset,
     iree_hal_file_t* target_file, uint64_t target_offset,
-    iree_device_size_t length, iree_hal_write_flags_t flags) {
+    iree_device_size_t length, const iree_hal_queue_barriers_t* barriers,
+    iree_hal_write_flags_t flags) {
   IREE_HAL_ASSERT_TYPE(base_queue, &iree_hal_task_queue_vtable);
   (void)flags;
   if (!iree_hal_file_async_handle(target_file) &&
@@ -4921,7 +5043,7 @@ static iree_status_t iree_hal_task_queue_write(
   return iree_hal_task_queue_submit_write(
       (iree_hal_task_queue_t*)base_queue, source_buffer, source_offset,
       target_file, target_offset, length, wait_semaphore_list,
-      signal_semaphore_list);
+      signal_semaphore_list, barriers);
 }
 
 static const iree_hal_queue_vtable_t iree_hal_task_queue_vtable = {

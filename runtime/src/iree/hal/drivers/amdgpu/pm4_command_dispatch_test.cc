@@ -318,9 +318,9 @@ TEST_F(PM4CommandDispatchTest, WritesInteriorOfNestedQueuedArena) {
   IREE_ASSERT_OK(iree_hal_buffer_subspan(root, 32, kOutputByteLength,
                                          host_allocator_, view.out()));
   SemaphoreList filled(test_device_.base_device(), {0}, {1});
-  IREE_ASSERT_OK(iree_hal_queue_fill(queue, allocated, filled, root, 0, 256,
-                                     &kSentinelValue, sizeof(kSentinelValue),
-                                     IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      queue, allocated, filled, root, 0, 256, &kSentinelValue,
+      sizeof(kSentinelValue), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
                                               IREE_ASYNC_WAIT_FLAG_NONE));
   Ref<iree_hal_buffer_t> parameters;
@@ -336,7 +336,7 @@ TEST_F(PM4CommandDispatchTest, WritesInteriorOfNestedQueuedArena) {
   SemaphoreList downloaded(test_device_.base_device(), {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_download(queue, iree_hal_semaphore_list_empty(),
                                          downloaded, root, 0, result.data(),
-                                         sizeof(result)));
+                                         sizeof(result), /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   for (size_t i = 0; i < result.size(); ++i) {

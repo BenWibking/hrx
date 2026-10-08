@@ -270,14 +270,14 @@ IREE_API_EXPORT iree_status_t iree_hal_command_buffer_end_debug_group(
 }
 
 IREE_API_EXPORT iree_status_t
-iree_hal_command_buffer_barrier(iree_hal_command_buffer_t* command_buffer,
-                                const iree_hal_barrier_t* barrier) {
-  IREE_ASSERT_ARGUMENT(command_buffer);
-  IREE_ASSERT_ARGUMENT(barrier);
-  IREE_ASSERT_ARGUMENT(!barrier->memory_barrier_count ||
-                       barrier->memory_barriers);
-  IREE_ASSERT_ARGUMENT(!barrier->buffer_barrier_count ||
-                       barrier->buffer_barriers);
+iree_hal_barrier_validate(const iree_hal_barrier_t* barrier) {
+  if (IREE_UNLIKELY(
+          !barrier ||
+          (barrier->memory_barrier_count && !barrier->memory_barriers) ||
+          (barrier->buffer_barrier_count && !barrier->buffer_barriers))) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "barrier descriptor storage is null");
+  }
   if (IREE_UNLIKELY(!iree_hal_memory_effects_is_supported(barrier->effects))) {
     return iree_make_status(IREE_STATUS_UNAVAILABLE,
                             "memory transition is not qualified");
@@ -298,6 +298,48 @@ iree_hal_command_buffer_barrier(iree_hal_command_buffer_t* command_buffer,
                             "unsupported barrier flags: 0x%016" PRIx64,
                             barrier->flags & ~supported_flags);
   }
+  const iree_hal_execution_stage_t supported_stages =
+      IREE_HAL_EXECUTION_STAGE_COMMAND_ISSUE |
+      IREE_HAL_EXECUTION_STAGE_COMMAND_PROCESS |
+      IREE_HAL_EXECUTION_STAGE_DISPATCH | IREE_HAL_EXECUTION_STAGE_TRANSFER |
+      IREE_HAL_EXECUTION_STAGE_COMMAND_RETIRE | IREE_HAL_EXECUTION_STAGE_HOST |
+      IREE_HAL_EXECUTION_STAGE_ATOMIC;
+  if (IREE_UNLIKELY((barrier->source_stage_mask | barrier->target_stage_mask) &
+                    ~supported_stages)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "unsupported barrier execution stage");
+  }
+  const iree_hal_access_scope_t supported_scopes =
+      IREE_HAL_ACCESS_SCOPE_INDIRECT_COMMAND_READ |
+      IREE_HAL_ACCESS_SCOPE_CONSTANT_READ |
+      IREE_HAL_ACCESS_SCOPE_DISPATCH_READ |
+      IREE_HAL_ACCESS_SCOPE_DISPATCH_WRITE |
+      IREE_HAL_ACCESS_SCOPE_TRANSFER_READ |
+      IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE | IREE_HAL_ACCESS_SCOPE_HOST_READ |
+      IREE_HAL_ACCESS_SCOPE_HOST_WRITE | IREE_HAL_ACCESS_SCOPE_MEMORY_READ |
+      IREE_HAL_ACCESS_SCOPE_MEMORY_WRITE | IREE_HAL_ACCESS_SCOPE_ATOMIC_READ |
+      IREE_HAL_ACCESS_SCOPE_ATOMIC_WRITE;
+  iree_hal_access_scope_t scopes = 0;
+  for (iree_host_size_t i = 0; i < barrier->memory_barrier_count; ++i) {
+    scopes |= barrier->memory_barriers[i].source_scope |
+              barrier->memory_barriers[i].target_scope;
+  }
+  for (iree_host_size_t i = 0; i < barrier->buffer_barrier_count; ++i) {
+    scopes |= barrier->buffer_barriers[i].source_scope |
+              barrier->buffer_barriers[i].target_scope;
+  }
+  if (IREE_UNLIKELY(scopes & ~supported_scopes)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "unsupported barrier access scope");
+  }
+  return iree_ok_status();
+}
+
+IREE_API_EXPORT iree_status_t
+iree_hal_command_buffer_barrier(iree_hal_command_buffer_t* command_buffer,
+                                const iree_hal_barrier_t* barrier) {
+  IREE_ASSERT_ARGUMENT(command_buffer);
+  IREE_RETURN_IF_ERROR(iree_hal_barrier_validate(barrier));
   IREE_TRACE_ZONE_BEGIN(z0);
   IF_VALIDATING(command_buffer, {
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
@@ -309,14 +351,7 @@ iree_hal_command_buffer_barrier(iree_hal_command_buffer_t* command_buffer,
   // semantics. Resolve once at recording so native programs and replay retain
   // only the chosen actions, with no contract dependency at submission.
   iree_hal_barrier_t resolved = *barrier;
-  if (iree_any_bit_set(barrier->effects.bits,
-                       IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM)) {
-    resolved.flags |= IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
-  }
-  if (iree_any_bit_set(barrier->effects.bits,
-                       IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM)) {
-    resolved.flags |= IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
-  }
+  resolved.flags = iree_hal_barrier_resolve_flags(barrier);
   resolved.effects.bits = 0;
   iree_status_t status = iree_ok_status();
   if (resolved.source_stage_mask || resolved.target_stage_mask ||

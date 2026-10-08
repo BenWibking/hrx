@@ -276,6 +276,27 @@ typedef struct iree_hal_barrier_t {
   const iree_hal_buffer_barrier_t* buffer_barriers;
 } iree_hal_barrier_t;
 
+// Validates the descriptor and its local queue effects. This does not validate
+// buffer binding slots or the receiving queue's native resource compatibility.
+IREE_API_EXPORT iree_status_t
+iree_hal_barrier_validate(const iree_hal_barrier_t* barrier);
+
+// Resolves validated global effects into their equivalent explicit flags.
+// This is a value transform; it queries no buffers, contracts or native driver.
+static inline iree_hal_barrier_flags_t iree_hal_barrier_resolve_flags(
+    const iree_hal_barrier_t* barrier) {
+  iree_hal_barrier_flags_t flags = barrier->flags;
+  if (iree_any_bit_set(barrier->effects.bits,
+                       IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM)) {
+    flags |= IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+  }
+  if (iree_any_bit_set(barrier->effects.bits,
+                       IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM)) {
+    flags |= IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
+  }
+  return flags;
+}
+
 // Bitfield indicating advice for implementations managing a buffer.
 typedef uint64_t iree_hal_memory_advise_flags_t;
 enum iree_hal_memory_advise_flag_bits_t {

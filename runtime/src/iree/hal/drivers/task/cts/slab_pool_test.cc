@@ -273,9 +273,10 @@ TEST_P(TaskSlabPoolTest, PublicHostGrantsRemainIndependentOfExecution) {
       source, {}, sizeof(uint32_t), iree_infinite_timeout(), buffer.out()));
   SemaphoreList filled(devices_[0], {0}, {1});
   const uint32_t value = 0xAABBCCDD;
-  IREE_ASSERT_OK(iree_hal_queue_fill(
-      queues_[0], iree_hal_semaphore_list_empty(), filled, buffer, 0,
-      sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(
+      iree_hal_queue_fill(queues_[0], iree_hal_semaphore_list_empty(), filled,
+                          buffer, 0, sizeof(value), &value, sizeof(value),
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   Wait(filled);
   iree_hal_buffer_mapping_t mapping = {};
   IREE_EXPECT_STATUS_IS(
@@ -306,7 +307,8 @@ TEST_P(TaskSlabPoolTest, NativeOnlyScopeDoesNotInventSemanticPermissions) {
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_queue_update(queues_[0], iree_hal_semaphore_list_empty(),
                             iree_hal_semaphore_list_empty(), &value, 0, buffer,
-                            0, sizeof(value), IREE_HAL_UPDATE_FLAG_NONE));
+                            0, sizeof(value), /*barriers=*/NULL,
+                            IREE_HAL_UPDATE_FLAG_NONE));
   buffer.reset();
   JoinMaintenance(source);
 }
@@ -381,15 +383,16 @@ TEST_P(TaskSlabPoolTest, InteriorArenasInheritTheCompleteScope) {
   const uint32_t value = 0x01234567;
   IREE_ASSERT_OK(iree_hal_queue_update(
       queues_[0], iree_hal_semaphore_list_empty(), filled, &value, 0, buffer, 0,
-      sizeof(value), IREE_HAL_UPDATE_FLAG_NONE));
+      sizeof(value), /*barriers=*/NULL, IREE_HAL_UPDATE_FLAG_NONE));
   uint32_t result = 0;
   SemaphoreList downloaded(devices_[1], {0}, {1});
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_queue_download(queues_[2], filled, downloaded, buffer, 0,
-                              &result, sizeof(result)));
+                              &result, sizeof(result), /*barriers=*/NULL));
   IREE_ASSERT_OK(iree_hal_queue_download(queues_[1], filled, downloaded, buffer,
-                                         0, &result, sizeof(result)));
+                                         0, &result, sizeof(result),
+                                         /*barriers=*/NULL));
   Wait(downloaded);
   EXPECT_EQ(result, value);
   EXPECT_EQ(iree_atomic_ref_count_load(&buffer.get()->resource.ref_count), 1);
@@ -532,16 +535,16 @@ TEST_P(TaskSlabPoolTest, SharedBackingAcrossDevicesAndAllocationPolicies) {
       for (size_t i = 0; i < views.size(); ++i) {
         const iree_hal_semaphore_list_t done = {1, &uploaded.semaphores[i],
                                                 &uploaded.payload_values[i]};
-        IREE_ASSERT_OK(iree_hal_queue_upload(queues_[0], allocated, done,
-                                             inputs[i].data(), roots[i], 0,
-                                             sizeof(inputs[i])));
+        IREE_ASSERT_OK(iree_hal_queue_upload(
+            queues_[0], allocated, done, inputs[i].data(), roots[i], 0,
+            sizeof(inputs[i]), /*barriers=*/NULL));
       }
       const std::array<uint32_t, 3> workgroups = {1, 1, 1};
       const iree_hal_semaphore_list_t parameters_uploaded = {
           1, &uploaded.semaphores[3], &uploaded.payload_values[3]};
       IREE_ASSERT_OK(iree_hal_queue_upload(
           queues_[0], allocated, parameters_uploaded, workgroups.data(),
-          roots[3], 0, sizeof(workgroups)));
+          roots[3], 0, sizeof(workgroups), /*barriers=*/NULL));
       const bool indirect = mode == DispatchMode::kIndirectRecording;
       iree_hal_buffer_ref_t refs[3] = {};
       iree_hal_buffer_binding_t entries[3] = {};
@@ -586,24 +589,26 @@ TEST_P(TaskSlabPoolTest, SharedBackingAcrossDevicesAndAllocationPolicies) {
         }
         IREE_EXPECT_STATUS_IS(
             IREE_STATUS_PERMISSION_DENIED,
-            iree_hal_queue_dispatch(
-                queues_[0], uploaded, executed, executables_[0],
-                iree_hal_executable_function_from_index(0), config,
-                iree_const_byte_span_empty(), bindings, flags));
+            iree_hal_queue_dispatch(queues_[0], uploaded, executed,
+                                    executables_[0],
+                                    iree_hal_executable_function_from_index(0),
+                                    config, iree_const_byte_span_empty(),
+                                    bindings, /*barriers=*/NULL, flags));
         IREE_ASSERT_OK(iree_hal_queue_dispatch(
             queues_[1], uploaded, executed, executables_[1],
             iree_hal_executable_function_from_index(0), config,
-            iree_const_byte_span_empty(), bindings, flags));
+            iree_const_byte_span_empty(), bindings, /*barriers=*/NULL, flags));
       }
       std::array<float, 8> result = {};
       SemaphoreList downloaded(devices_[0], {0}, {1});
       IREE_EXPECT_STATUS_IS(
           IREE_STATUS_PERMISSION_DENIED,
           iree_hal_queue_download(queues_[2], executed, downloaded, roots[2], 0,
-                                  result.data(), sizeof(result)));
-      IREE_ASSERT_OK(iree_hal_queue_download(queues_[0], executed, downloaded,
-                                             roots[2], 0, result.data(),
-                                             sizeof(result)));
+                                  result.data(), sizeof(result),
+                                  /*barriers=*/NULL));
+      IREE_ASSERT_OK(iree_hal_queue_download(
+          queues_[0], executed, downloaded, roots[2], 0, result.data(),
+          sizeof(result), /*barriers=*/NULL));
       Wait(downloaded);
       EXPECT_THAT(result,
                   ::testing::ElementsAre(11, 22, 100, 400, 900, 1600, 77, 88));

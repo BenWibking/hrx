@@ -1919,7 +1919,7 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   uint64_t command_buffer_signal_value = 1;
   iree_hal_semaphore_t* command_buffer_signal_ptr = command_buffer_signal.get();
@@ -2062,7 +2062,7 @@ TEST_F(HostQueueCommandBufferProfilingTest,
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   uint64_t command_buffer_signal_value = 1;
   iree_hal_semaphore_t* command_buffer_signal_ptr = command_buffer_signal.get();

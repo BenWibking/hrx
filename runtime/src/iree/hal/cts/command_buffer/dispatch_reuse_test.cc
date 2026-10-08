@@ -378,7 +378,8 @@ TEST_P(DispatchReuseTest, DirectionalStorageBindings) {
     SemaphoreList signal(device_, {0}, {1});
     IREE_ASSERT_OK(iree_hal_queue_fill(
         transfer_queue_, iree_hal_semaphore_list_empty(), signal, buffers[i], 0,
-        kByteLength, &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+        kByteLength, &value, sizeof(value), /*barriers=*/NULL,
+        IREE_HAL_FILL_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                                 IREE_ASYNC_WAIT_FLAG_NONE));
   }

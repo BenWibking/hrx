@@ -101,5 +101,41 @@ TEST(BarrierTest, AtomicOrderingSelectsHandoffScope) {
             IREE_HSA_FENCE_SCOPE_SYSTEM);
 }
 
+TEST(BarrierTest, QueueBoundaryDefaultsCanBeReplacedIndependently) {
+  auto native = iree_hal_amdgpu_queue_barriers_resolve(nullptr);
+  EXPECT_EQ(native.before.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(native.before.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(native.after.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(native.after.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
+
+  const iree_hal_barrier_list_t empty = {};
+  iree_hal_queue_barriers_t barriers = {&empty, nullptr};
+  native = iree_hal_amdgpu_queue_barriers_resolve(&barriers);
+  EXPECT_EQ(native.before.acquire, IREE_HSA_FENCE_SCOPE_NONE);
+  EXPECT_EQ(native.before.release, IREE_HSA_FENCE_SCOPE_NONE);
+  EXPECT_EQ(native.after.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(native.after.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
+
+  iree_hal_barrier_t release = {};
+  release.effects.bits = IREE_HAL_MEMORY_EFFECT_RELEASE_TO_SYSTEM;
+  const iree_hal_barrier_list_t release_list = {1, &release};
+  barriers = {&release_list, &empty};
+  native = iree_hal_amdgpu_queue_barriers_resolve(&barriers);
+  EXPECT_EQ(native.before.acquire, IREE_HSA_FENCE_SCOPE_NONE);
+  EXPECT_EQ(native.before.release, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(native.after.acquire, IREE_HSA_FENCE_SCOPE_NONE);
+  EXPECT_EQ(native.after.release, IREE_HSA_FENCE_SCOPE_NONE);
+
+  iree_hal_barrier_t acquire = {};
+  acquire.flags = IREE_HAL_BARRIER_FLAG_ACQUIRE_SYSTEM_SCOPE;
+  const iree_hal_barrier_list_t acquire_list = {1, &acquire};
+  barriers = {&empty, &acquire_list};
+  native = iree_hal_amdgpu_queue_barriers_resolve(&barriers);
+  EXPECT_EQ(native.before.acquire, IREE_HSA_FENCE_SCOPE_NONE);
+  EXPECT_EQ(native.before.release, IREE_HSA_FENCE_SCOPE_NONE);
+  EXPECT_EQ(native.after.acquire, IREE_HSA_FENCE_SCOPE_SYSTEM);
+  EXPECT_EQ(native.after.release, IREE_HSA_FENCE_SCOPE_NONE);
+}
+
 }  // namespace
 }  // namespace iree::hal::amdgpu

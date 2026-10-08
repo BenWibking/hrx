@@ -22,6 +22,11 @@ bool iree_hal_task_atomic_width_is_lock_free(iree_hal_atomic_width_t width);
 iree_hal_atomic_capabilities_t iree_hal_task_atomic_capabilities(
     iree_hal_atomic_operation_flags_t allowed_operations);
 
+// Applies acquire/release ordering at a coherent CPU execution boundary.
+// Empty flags require no fence. System and device scope share the CPU's
+// coherent memory domain; non-coherent mappings require their own maintenance.
+void iree_hal_task_atomic_fence(iree_hal_atomic_flags_t flags);
+
 // Waits until |params| is satisfied by the naturally aligned |target|.
 //
 // The parameters must have passed iree_hal_atomic_wait_params_validate() and

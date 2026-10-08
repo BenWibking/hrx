@@ -50,7 +50,7 @@ TEST_P(SemaphoreSubmissionTest, SubmitWithNoCommandBuffers) {
 
   IREE_ASSERT_OK(iree_hal_queue_barrier(
       QueueAtFlatIndex(0), iree_hal_semaphore_list_empty(), signal_semaphores,
-      IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(
       signal_semaphore, 1, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 
@@ -199,18 +199,19 @@ TEST_P(SemaphoreSubmissionTest,
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queue, iree_hal_semaphore_list_empty(), poison_done, source_buffer,
           /*target_offset=*/0, kBufferSize, &poison_pattern,
-          sizeof(poison_pattern), IREE_HAL_FILL_FLAG_NONE));
+          sizeof(poison_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
       const uint8_t zero_pattern = 0;
       SemaphoreList reset_done(device_, {0}, {1});
-      IREE_ASSERT_OK(
-          iree_hal_queue_fill(queue, poison_done, reset_done, target_buffer,
-                              /*target_offset=*/0, kBufferSize, &zero_pattern,
-                              sizeof(zero_pattern), IREE_HAL_FILL_FLAG_NONE));
+      IREE_ASSERT_OK(iree_hal_queue_fill(
+          queue, poison_done, reset_done, target_buffer,
+          /*target_offset=*/0, kBufferSize, &zero_pattern, sizeof(zero_pattern),
+          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
       SemaphoreList direct_fill_done(device_, {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queue, reset_done, direct_fill_done, direct_fill_target,
           /*target_offset=*/0, kDirectFillLength, direct_fill_pattern,
-          IREE_ARRAYSIZE(direct_fill_pattern), IREE_HAL_FILL_FLAG_NONE));
+          IREE_ARRAYSIZE(direct_fill_pattern), /*barriers=*/NULL,
+          IREE_HAL_FILL_FLAG_NONE));
       SemaphoreList execute_done(device_, {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_execute(
           queue, direct_fill_done, execute_done, command_buffer,
@@ -218,9 +219,10 @@ TEST_P(SemaphoreSubmissionTest,
           IREE_HAL_QUEUE_EXECUTE_FLAG_NONE));
       std::vector<uint8_t> actual(kBufferSize, 0);
       SemaphoreList download_done(device_, {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_download(
-          queue, execute_done, download_done, target_buffer,
-          /*source_offset=*/0, actual.data(), actual.size()));
+      IREE_ASSERT_OK(iree_hal_queue_download(queue, execute_done, download_done,
+                                             target_buffer,
+                                             /*source_offset=*/0, actual.data(),
+                                             actual.size(), /*barriers=*/NULL));
       IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
           download_done, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
       EXPECT_EQ(expected, actual);
@@ -280,12 +282,12 @@ TEST_P(SemaphoreSubmissionTest, CrossQueueWaitBeforeSignal) {
   SemaphoreList empty_wait;
 
   IREE_ASSERT_OK(iree_hal_queue_barrier(QueueAtFlatIndex(1), producer_signal,
-                                        consumer_signal,
+                                        consumer_signal, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   EXPECT_FALSE(iree_hal_semaphore_list_poll(consumer_signal));
 
   IREE_ASSERT_OK(iree_hal_queue_barrier(QueueAtFlatIndex(0), empty_wait,
-                                        producer_signal,
+                                        producer_signal, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       consumer_signal, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
@@ -316,10 +318,10 @@ TEST_P(SemaphoreSubmissionTest, MultiQueueFanOutDifferentValuesBeforeSignal) {
                                            &queue1_done_value};
 
   IREE_ASSERT_OK(iree_hal_queue_barrier(QueueAtFlatIndex(1), queue1_wait,
-                                        queue1_done,
+                                        queue1_done, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_queue_barrier(QueueAtFlatIndex(0), queue0_wait,
-                                        queue0_done,
+                                        queue0_done, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   EXPECT_FALSE(iree_hal_semaphore_list_poll(queue0_done));
   EXPECT_FALSE(iree_hal_semaphore_list_poll(queue1_done));
@@ -329,7 +331,7 @@ TEST_P(SemaphoreSubmissionTest, MultiQueueFanOutDifferentValuesBeforeSignal) {
                                                &producer_signal_value};
   IREE_ASSERT_OK(iree_hal_queue_barrier(
       QueueAtFlatIndex(0), iree_hal_semaphore_list_empty(), producer_signal,
-      IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
 
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       queue0_done, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
@@ -468,7 +470,8 @@ TEST_P(SemaphoreSubmissionTest, HostSignalsRaceDependencyRegistration) {
     std::thread second(signal, 1);
     start.store(true, std::memory_order_release);
     iree_status_t status = iree_hal_queue_barrier(
-        QueueAtFlatIndex(0), waits, signals, IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+        QueueAtFlatIndex(0), waits, signals, /*barriers=*/NULL,
+        IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
     // Both signal calls return before their captured state leaves this scope,
     // including when queue admission fails.
     first.join();

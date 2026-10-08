@@ -612,7 +612,7 @@ class QueueBenchmark : public benchmark::Fixture {
     iree_hal_amdgpu_host_queue_t* host_queue = nullptr;
     IREE_RETURN_IF_ERROR(LookupHostQueue(queue_ordinal, &host_queue));
     return iree_hal_queue_barrier(&host_queue->base, wait_semaphore_list,
-                                  signal_semaphore_list,
+                                  signal_semaphore_list, /*barriers=*/NULL,
                                   IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
   }
 
@@ -623,10 +623,11 @@ class QueueBenchmark : public benchmark::Fixture {
     if (payload_kind == PayloadKind::kCopy) {
       iree_hal_amdgpu_host_queue_t* host_queue = nullptr;
       IREE_RETURN_IF_ERROR(LookupHostQueue(queue_ordinal, &host_queue));
-      return iree_hal_queue_copy(
-          &host_queue->base, wait_semaphore_list, signal_semaphore_list,
-          source_buffer_, /*source_offset=*/0, target_buffer_,
-          /*target_offset=*/0, kPayloadLength, IREE_HAL_COPY_FLAG_NONE);
+      return iree_hal_queue_copy(&host_queue->base, wait_semaphore_list,
+                                 signal_semaphore_list, source_buffer_,
+                                 /*source_offset=*/0, target_buffer_,
+                                 /*target_offset=*/0, kPayloadLength,
+                                 /*barriers=*/NULL, IREE_HAL_COPY_FLAG_NONE);
     }
     if (payload_kind == PayloadKind::kDispatch) {
       iree_hal_amdgpu_host_queue_t* host_queue = nullptr;
@@ -648,7 +649,7 @@ class QueueBenchmark : public benchmark::Fixture {
           &host_queue->base, wait_semaphore_list, signal_semaphore_list,
           dispatch_executable_, iree_hal_executable_function_from_index(0),
           iree_hal_make_static_dispatch_config(1, 1, 1), constants, bindings,
-          IREE_HAL_DISPATCH_FLAG_NONE);
+          /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE);
     }
     if (payload_kind == PayloadKind::kNoopDispatch) {
       iree_hal_amdgpu_host_queue_t* host_queue = nullptr;
@@ -658,7 +659,7 @@ class QueueBenchmark : public benchmark::Fixture {
           dispatch_executable_, iree_hal_executable_function_from_index(0),
           iree_hal_make_static_dispatch_config(0, 0, 0),
           iree_const_byte_span_empty(), iree_hal_buffer_ref_list_empty(),
-          IREE_HAL_DISPATCH_FLAG_NONE);
+          /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE);
     }
     if (payload_kind == PayloadKind::kPreResolvedDispatch) {
       return SubmitPreResolvedDispatchWithLists(
@@ -669,7 +670,7 @@ class QueueBenchmark : public benchmark::Fixture {
     return iree_hal_queue_fill(
         &host_queue->base, wait_semaphore_list, signal_semaphore_list,
         target_buffer_, /*target_offset=*/0, kPayloadLength, &fill_pattern_,
-        sizeof(fill_pattern_), IREE_HAL_FILL_FLAG_NONE);
+        sizeof(fill_pattern_), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
   }
 
   iree_status_t SubmitBarrier(iree_hal_queue_ordinal_t queue_ordinal,
@@ -844,7 +845,7 @@ class QueueBenchmark : public benchmark::Fixture {
     IREE_RETURN_IF_ERROR(iree_hal_queue_fill(
         queue0_, iree_hal_semaphore_list_empty(), signal_semaphore_list,
         target_buffer, /*target_offset=*/0, kPayloadBufferAlignment, pattern,
-        pattern_length, IREE_HAL_FILL_FLAG_NONE));
+        pattern_length, /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     return Wait(completion_semaphore_, payload_value);
   }
 
@@ -1890,7 +1891,7 @@ class QueueBenchmark : public benchmark::Fixture {
         &host_queue->base, wait_semaphore_list, signal_semaphore_list,
         binding_count_executable_, export_ordinal, dispatch_config,
         iree_const_byte_span_empty(),
-        BindingCountDispatchBindings(binding_count),
+        BindingCountDispatchBindings(binding_count), /*barriers=*/NULL,
         IREE_HAL_DISPATCH_FLAG_NONE);
   }
 

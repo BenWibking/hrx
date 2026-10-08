@@ -59,6 +59,41 @@ iree_hal_amdgpu_barrier_scopes_t iree_hal_amdgpu_barrier_resolve_scopes(
   return scopes;
 }
 
+static iree_hal_amdgpu_queue_barrier_t iree_hal_amdgpu_barrier_list_resolve(
+    const iree_hal_barrier_list_t* barriers) {
+  if (!barriers) {
+    return (iree_hal_amdgpu_queue_barrier_t){
+        .acquire = IREE_HSA_FENCE_SCOPE_SYSTEM,
+        .release = IREE_HSA_FENCE_SCOPE_SYSTEM,
+    };
+  }
+  iree_hal_amdgpu_queue_barrier_t result = {0};
+  for (iree_host_size_t i = 0; i < barriers->count; ++i) {
+    const iree_hal_barrier_t* barrier = &barriers->values[i];
+    const iree_hal_amdgpu_barrier_scopes_t scopes =
+        iree_hal_amdgpu_barrier_resolve_scopes(
+            barrier->source_stage_mask, barrier->target_stage_mask,
+            iree_hal_barrier_resolve_flags(barrier),
+            barrier->memory_barrier_count, barrier->memory_barriers,
+            barrier->buffer_barrier_count, barrier->buffer_barriers);
+    result.acquire = (uint8_t)iree_hal_amdgpu_barrier_max_scope(result.acquire,
+                                                                scopes.acquire);
+    result.release = (uint8_t)iree_hal_amdgpu_barrier_max_scope(result.release,
+                                                                scopes.release);
+  }
+  return result;
+}
+
+iree_hal_amdgpu_queue_barriers_t iree_hal_amdgpu_queue_barriers_resolve(
+    const iree_hal_queue_barriers_t* barriers) {
+  return (iree_hal_amdgpu_queue_barriers_t){
+      .before = iree_hal_amdgpu_barrier_list_resolve(barriers ? barriers->before
+                                                              : NULL),
+      .after = iree_hal_amdgpu_barrier_list_resolve(barriers ? barriers->after
+                                                             : NULL),
+  };
+}
+
 iree_hsa_fence_scope_t iree_hal_amdgpu_barrier_resolve_atomic_handoff_scope(
     iree_hal_execution_stage_t stage_mask, iree_hal_atomic_flags_t atomic_flags,
     iree_hal_atomic_flags_t ordering_flag) {

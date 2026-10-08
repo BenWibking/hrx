@@ -215,8 +215,24 @@ TEST_P(TaskQueueTest, TransfersReleaseBuffersBeforeTerminalSignal) {
       uint64_t value = 1;
       const iree_hal_semaphore_list_t waits = {1, &ready, &value};
       const iree_hal_semaphore_list_t signals = {1, &completion, &value};
-      IREE_ASSERT_OK(iree_hal_queue_upload(queue, waits, signals, source.data(),
-                                           buffer, 0, length));
+      {
+        iree_hal_buffer_barrier_t range = {};
+        range.source_scope = IREE_HAL_ACCESS_SCOPE_TRANSFER_WRITE;
+        range.target_scope = IREE_HAL_ACCESS_SCOPE_HOST_READ;
+        range.buffer_ref = iree_hal_make_buffer_ref(buffer, 0, length);
+        iree_hal_barrier_t after = {};
+        after.source_stage_mask = IREE_HAL_EXECUTION_STAGE_TRANSFER;
+        after.target_stage_mask = IREE_HAL_EXECUTION_STAGE_HOST;
+        after.buffer_barrier_count = 1;
+        after.buffer_barriers = &range;
+        const iree_hal_barrier_list_t list = {1, &after};
+        const iree_hal_queue_barriers_t barriers = {nullptr, &list};
+        IREE_ASSERT_OK(iree_hal_queue_upload(queue, waits, signals,
+                                             source.data(), buffer, 0, length,
+                                             &barriers));
+      }
+      // Descriptor storage has expired while the wait is unresolved. The
+      // backend owns captured actions, not references to the caller's arrays.
       // The accepted operation owns the final buffer reference. Its explicit
       // dependency keeps that ownership alive until the caller drops its copy.
       iree_hal_buffer_release(buffer);
@@ -364,7 +380,7 @@ TEST_P(TaskQueueTest, ConcurrentQueueAcquisitionWithQueueProgress) {
               ((iree_hal_task_queue_t*)queue)->axis;
           status = iree_hal_queue_barrier(
               queue, iree_hal_semaphore_list_empty(), signal_list,
-              IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+              /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
         }
         if (iree_status_is_ok(status)) {
           status = iree_hal_semaphore_list_wait(
@@ -393,7 +409,7 @@ TEST_P(TaskQueueTest, ConcurrentQueueAcquisitionWithQueueProgress) {
     if (iree_status_is_ok(status)) {
       status = iree_hal_queue_barrier(
           provisioned_queue, iree_hal_semaphore_list_empty(), signal_list,
-          IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+          /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
     }
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_list_wait(

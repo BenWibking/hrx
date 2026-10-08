@@ -15,6 +15,7 @@
 #include <thread>
 #include <vector>
 
+#include "iree/async/semaphore.h"
 #include "iree/hal/api.h"
 #include "iree/hal/cts/util/test_base.h"
 #include "iree/hal/drivers/amdgpu/host_queue.h"
@@ -387,9 +388,10 @@ class HostQueueStagingTest : public ::testing::Test {
     iree_hal_semaphore_t* signal_semaphore_ptr = signal_semaphore.get();
     iree_hal_semaphore_list_t signal_list =
         MakeSemaphoreList(&signal_semaphore_ptr, &signal_value);
-    IREE_RETURN_IF_ERROR(iree_hal_queue_fill(
-        queue, iree_hal_semaphore_list_empty(), signal_list, buffer, offset,
-        length, &pattern, sizeof(pattern), IREE_HAL_FILL_FLAG_NONE));
+    IREE_RETURN_IF_ERROR(
+        iree_hal_queue_fill(queue, iree_hal_semaphore_list_empty(), signal_list,
+                            buffer, offset, length, &pattern, sizeof(pattern),
+                            /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
     return iree_hal_semaphore_wait(signal_semaphore, signal_value,
                                    iree_infinite_timeout(),
                                    IREE_ASYNC_WAIT_FLAG_NONE);
@@ -408,10 +410,10 @@ class HostQueueStagingTest : public ::testing::Test {
     iree_hal_semaphore_t* signal_semaphore_ptr = signal_semaphore.get();
     iree_hal_semaphore_list_t signal_list =
         MakeSemaphoreList(&signal_semaphore_ptr, &signal_value);
-    IREE_RETURN_IF_ERROR(
-        iree_hal_queue_read(queue, iree_hal_semaphore_list_empty(), signal_list,
-                            source_file, source_offset, target_buffer,
-                            target_offset, length, IREE_HAL_READ_FLAG_NONE));
+    IREE_RETURN_IF_ERROR(iree_hal_queue_read(
+        queue, iree_hal_semaphore_list_empty(), signal_list, source_file,
+        source_offset, target_buffer, target_offset, length, /*barriers=*/NULL,
+        IREE_HAL_READ_FLAG_NONE));
     return iree_hal_semaphore_wait(signal_semaphore, signal_value,
                                    iree_infinite_timeout(),
                                    IREE_ASYNC_WAIT_FLAG_NONE);
@@ -432,7 +434,7 @@ class HostQueueStagingTest : public ::testing::Test {
         MakeSemaphoreList(&signal_semaphore_ptr, &signal_value);
     IREE_RETURN_IF_ERROR(iree_hal_queue_write(
         queue, iree_hal_semaphore_list_empty(), signal_list, source_buffer,
-        source_offset, target_file, target_offset, length,
+        source_offset, target_file, target_offset, length, /*barriers=*/NULL,
         IREE_HAL_WRITE_FLAG_NONE));
     return iree_hal_semaphore_wait(signal_semaphore, signal_value,
                                    iree_infinite_timeout(),
@@ -598,7 +600,7 @@ TEST_F(HostQueueStagingTest, ConcurrentMultiChunkHostTransfersReuseSlots) {
           auto signals = MakeSemaphoreList(&semaphore, &completion_value);
           IREE_RETURN_IF_ERROR(iree_hal_queue_transfer(
               test_device.queue(), iree_hal_semaphore_list_empty(), signals,
-              /*operation_count=*/1, &operation));
+              /*operation_count=*/1, &operation, /*barriers=*/NULL));
           return iree_hal_semaphore_wait(completion, completion_value,
                                          iree_infinite_timeout(),
                                          IREE_ASYNC_WAIT_FLAG_NONE);
@@ -730,7 +732,7 @@ TEST_F(HostQueueStagingTest,
   IREE_ASSERT_OK(iree_hal_queue_read(
       &queue->base, read_wait_list, read_signal_list, source_file,
       /*source_offset=*/0, transient_buffer, /*target_offset=*/0,
-      kMultiSlotTransferSize, IREE_HAL_READ_FLAG_NONE));
+      kMultiSlotTransferSize, /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
 
   Ref<iree_hal_semaphore_t> write_signal;
   IREE_ASSERT_OK(
@@ -744,7 +746,7 @@ TEST_F(HostQueueStagingTest,
   IREE_ASSERT_OK(iree_hal_queue_write(
       &queue->base, write_wait_list, write_signal_list, transient_buffer,
       /*source_offset=*/0, output_file, /*target_offset=*/0,
-      kMultiSlotTransferSize, IREE_HAL_WRITE_FLAG_NONE));
+      kMultiSlotTransferSize, /*barriers=*/NULL, IREE_HAL_WRITE_FLAG_NONE));
 
   Ref<iree_hal_semaphore_t> dealloca_signal;
   IREE_ASSERT_OK(
@@ -855,7 +857,7 @@ TEST_F(HostQueueStagingTest, CapacityParkedStagedWriteRetriesAfterPostDrain) {
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   Ref<iree_hal_semaphore_t> write_signal;
   if (iree_status_is_ok(status)) {
@@ -869,7 +871,7 @@ TEST_F(HostQueueStagingTest, CapacityParkedStagedWriteRetriesAfterPostDrain) {
     status = iree_hal_queue_write(
         &queue->base, iree_hal_semaphore_list_empty(), write_signal_list,
         source_buffer, /*source_offset=*/0, file, /*target_offset=*/0,
-        kMultiSlotTransferSize, IREE_HAL_WRITE_FLAG_NONE);
+        kMultiSlotTransferSize, /*barriers=*/NULL, IREE_HAL_WRITE_FLAG_NONE);
   }
   const bool write_parked =
       iree_status_is_ok(status) && HostQueueHasPendingOperation(queue);
@@ -893,7 +895,7 @@ TEST_F(HostQueueStagingTest, CapacityParkedStagedWriteRetriesAfterPostDrain) {
   ExpectByteRangeRepeated(contents, 0x3C);
 }
 
-TEST_F(HostQueueStagingTest, ShortReadFailsTerminalSignal) {
+TEST_F(HostQueueStagingTest, ShortReadReleasesBuffersBeforeFailure) {
   iree_hal_amdgpu_logical_device_options_t options;
   iree_hal_amdgpu_logical_device_options_initialize(&options);
   options.preallocate_pools = 0;
@@ -901,46 +903,89 @@ TEST_F(HostQueueStagingTest, ShortReadFailsTerminalSignal) {
   TestLogicalDevice test_device;
   IREE_ASSERT_OK(CreateTestDevice(&options, &test_device));
 
-  std::vector<uint8_t> file_data = MakePatternData(kStagingSlotSize);
-  iree::testing::TempFilePath path;
-  IREE_ASSERT_OK(CreateTempFileWithContents(file_data, &path));
+  // Exercise both staged GPU-only storage and directly mapped host storage.
+  const iree_hal_memory_type_t memory_types[] = {
+      IREE_HAL_MEMORY_TYPE_OPTIMAL_FOR_DEVICE,
+      IREE_HAL_MEMORY_TYPE_HOST_LOCAL | IREE_HAL_MEMORY_TYPE_HOST_VISIBLE |
+          IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
+  };
+  for (iree_hal_memory_type_t memory_type : memory_types) {
+    SCOPED_TRACE(memory_type);
+    std::vector<uint8_t> file_data = MakePatternData(kStagingSlotSize);
+    iree::testing::TempFilePath path;
+    IREE_ASSERT_OK(CreateTempFileWithContents(file_data, &path));
 
-  Ref<iree_hal_file_t> file;
-  IREE_ASSERT_OK(ImportNativeFile(test_device.base_device(), path,
-                                  IREE_HAL_MEMORY_ACCESS_READ, file.out()));
-  Ref<iree_hal_buffer_t> buffer;
-  IREE_ASSERT_OK(CreatePatternedDeviceBuffer(
-      test_device.allocator(), test_device.base_device(), test_device.queue(),
-      kStagingSlotSize, 0x00, buffer.out()));
+    Ref<iree_hal_file_t> file;
+    IREE_ASSERT_OK(ImportNativeFile(test_device.base_device(), path,
+                                    IREE_HAL_MEMORY_ACCESS_READ, file.out()));
+    iree_hal_buffer_params_t params = {};
+    params.type = memory_type;
+    params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+    params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER;
+    if (iree_all_bits_set(memory_type, IREE_HAL_MEMORY_TYPE_HOST_VISIBLE)) {
+      params.usage |= IREE_HAL_BUFFER_USAGE_MAPPING_SCOPED;
+    }
+    Ref<iree_hal_buffer_t> buffer;
+    IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(
+        test_device.allocator(), params, kStagingSlotSize, buffer.out()));
 
-  Ref<iree_hal_semaphore_t> wait_semaphore;
-  IREE_ASSERT_OK(
-      CreateSemaphore(test_device.base_device(), wait_semaphore.out()));
-  uint64_t wait_value = 1;
-  iree_hal_semaphore_t* wait_semaphore_ptr = wait_semaphore.get();
-  iree_hal_semaphore_list_t wait_list =
-      MakeSemaphoreList(&wait_semaphore_ptr, &wait_value);
+    Ref<iree_hal_semaphore_t> wait_semaphore;
+    IREE_ASSERT_OK(
+        CreateSemaphore(test_device.base_device(), wait_semaphore.out()));
+    uint64_t wait_value = 1;
+    iree_hal_semaphore_t* wait_semaphore_ptr = wait_semaphore.get();
+    iree_hal_semaphore_list_t wait_list =
+        MakeSemaphoreList(&wait_semaphore_ptr, &wait_value);
 
-  Ref<iree_hal_semaphore_t> signal_semaphore;
-  IREE_ASSERT_OK(
-      CreateSemaphore(test_device.base_device(), signal_semaphore.out()));
-  uint64_t signal_value = 1;
-  iree_hal_semaphore_t* signal_semaphore_ptr = signal_semaphore.get();
-  iree_hal_semaphore_list_t signal_list =
-      MakeSemaphoreList(&signal_semaphore_ptr, &signal_value);
+    Ref<iree_hal_semaphore_t> signal_semaphore;
+    IREE_ASSERT_OK(
+        CreateSemaphore(test_device.base_device(), signal_semaphore.out()));
+    uint64_t signal_value = 1;
+    iree_hal_semaphore_t* signal_semaphore_ptr = signal_semaphore.get();
+    iree_hal_semaphore_list_t signal_list =
+        MakeSemaphoreList(&signal_semaphore_ptr, &signal_value);
 
-  IREE_ASSERT_OK(iree_hal_queue_read(
-      &test_device.first_host_queue()->base, wait_list, signal_list, file,
-      /*source_offset=*/0, buffer, /*target_offset=*/0, kStagingSlotSize,
-      IREE_HAL_READ_FLAG_NONE));
-  IREE_ASSERT_OK(TruncateTempFile(path));
-  IREE_ASSERT_OK(
-      iree_hal_semaphore_signal(wait_semaphore, wait_value, /*frontier=*/NULL));
+    iree_hal_barrier_t after_barrier = {};
+    after_barrier.flags = IREE_HAL_BARRIER_FLAG_RELEASE_SYSTEM_SCOPE;
+    const iree_hal_barrier_list_t after = {1, &after_barrier};
+    const iree_hal_queue_barriers_t barriers = {nullptr, &after};
+    IREE_ASSERT_OK(iree_hal_queue_read(
+        &test_device.first_host_queue()->base, wait_list, signal_list, file,
+        /*source_offset=*/0, buffer, /*target_offset=*/0, kStagingSlotSize,
+        &barriers, IREE_HAL_READ_FLAG_NONE));
+    IREE_ASSERT_OK(TruncateTempFile(path));
 
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_OUT_OF_RANGE,
-                        iree_hal_semaphore_wait(signal_semaphore, signal_value,
-                                                iree_infinite_timeout(),
-                                                IREE_ASYNC_WAIT_FLAG_NONE));
+    struct Completion {
+      // Caller-owned buffer observed inside terminal failure publication.
+      iree_hal_buffer_t* buffer;
+      // Publishes ownership at notification, before the failing thread resumes.
+      std::promise<int32_t> reference_count;
+    } completion = {buffer};
+    auto result = completion.reference_count.get_future();
+    iree_async_semaphore_timepoint_t timepoint = {};
+    timepoint.callback = [](void* user_data,
+                            iree_async_semaphore_timepoint_t* timepoint,
+                            iree_status_t status) {
+      IREE_EXPECT_STATUS_IS(IREE_STATUS_OUT_OF_RANGE, status);
+      auto* completion = static_cast<Completion*>(user_data);
+      completion->reference_count.set_value(
+          iree_atomic_ref_count_load(&completion->buffer->resource.ref_count));
+    };
+    timepoint.user_data = &completion;
+    IREE_ASSERT_OK(iree_async_semaphore_acquire_timepoint(
+        reinterpret_cast<iree_async_semaphore_t*>(signal_semaphore.get()),
+        signal_value, &timepoint));
+    IREE_EXPECT_OK(iree_hal_semaphore_signal(wait_semaphore, wait_value,
+                                             /*frontier=*/NULL));
+    // Notification must expose only the caller's reference, even when the
+    // failed transaction remains alive until its callback returns.
+    EXPECT_EQ(result.get(), 1);
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_OUT_OF_RANGE,
+        iree_hal_semaphore_wait(signal_semaphore, signal_value,
+                                iree_infinite_timeout(),
+                                IREE_ASYNC_WAIT_FLAG_NONE));
+  }
 }
 
 #else

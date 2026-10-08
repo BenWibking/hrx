@@ -441,13 +441,23 @@ iree_status_t iree_hal_streaming_event_enqueue_record(
         &context->timestamp_pool, &slot));
   }
 
+  // An untimed event publishes only its semaphore timepoint. Explicitly empty
+  // boundaries keep this on the queue's empty-barrier path; NULL would request
+  // conservative payload visibility and may serialize otherwise independent
+  // streams sharing one native queue.
+  const iree_hal_barrier_list_t empty_barrier_list = {0};
+  const iree_hal_queue_barriers_t empty_barriers = {
+      &empty_barrier_list,
+      &empty_barrier_list,
+  };
   const iree_status_t status =
       slot ? iree_hal_queue_timestamp(
                  queue, wait_semaphores, signal_semaphores,
                  iree_hal_streaming_event_timestamp_slot_buffer(slot),
                  iree_hal_streaming_event_timestamp_slot_offset(slot),
-                 IREE_HAL_TIMESTAMP_FLAG_NONE)
+                 /*barriers=*/NULL, IREE_HAL_TIMESTAMP_FLAG_NONE)
            : iree_hal_queue_barrier(queue, wait_semaphores, signal_semaphores,
+                                    &empty_barriers,
                                     IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
   if (!iree_status_is_ok(status)) {
     // A rejected enqueue leaves no write outstanding against the slot, which

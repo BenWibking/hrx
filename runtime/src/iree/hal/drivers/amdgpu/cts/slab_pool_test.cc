@@ -173,18 +173,20 @@ TEST_P(AmdgpuSlabPoolTest, CapturesExactFamiliesWithoutPayload) {
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_queue_fill(queues_[2], iree_hal_semaphore_list_empty(), filled,
                           buffer, 0, sizeof(value), &value, sizeof(value),
-                          IREE_HAL_FILL_FLAG_NONE));
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_buffer_validate_family_usage(buffer, families_[0].family,
                                             IREE_HAL_BUFFER_USAGE_STORAGE));
-  IREE_ASSERT_OK(iree_hal_queue_fill(
-      queues_[0], iree_hal_semaphore_list_empty(), filled, buffer, 0,
-      sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(
+      iree_hal_queue_fill(queues_[0], iree_hal_semaphore_list_empty(), filled,
+                          buffer, 0, sizeof(value), &value, sizeof(value),
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   uint32_t output = 0;
   SemaphoreList downloaded(devices_[1], {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_download(queues_[1], filled, downloaded, buffer,
-                                         0, &output, sizeof(output)));
+                                         0, &output, sizeof(output),
+                                         /*barriers=*/NULL));
   Wait(downloaded);
   EXPECT_EQ(output, value);
   buffer.reset();
@@ -208,9 +210,10 @@ TEST_P(AmdgpuSlabPoolTest, NativeOnlyQueueAllocationKeepsZeroUsage) {
   const uint32_t value = 42;
   IREE_EXPECT_STATUS_IS(
       IREE_STATUS_PERMISSION_DENIED,
-      iree_hal_queue_fill(
-          queues_[1], allocated, iree_hal_semaphore_list_empty(), buffer, 0,
-          sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+      iree_hal_queue_fill(queues_[1], allocated,
+                          iree_hal_semaphore_list_empty(), buffer, 0,
+                          sizeof(value), &value, sizeof(value),
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   SemaphoreList deallocated(devices_[1], {0}, {1});
   auto* raw_buffer = buffer.get();
   IREE_ASSERT_OK(iree_hal_queue_dealloca(queues_[1], allocated, deallocated, 1,
@@ -242,7 +245,8 @@ TEST_P(AmdgpuSlabPoolTest, PublicHostGrantsAndNativeClassRequirements) {
       SemaphoreList filled(devices_[0], {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queues_[0], iree_hal_semaphore_list_empty(), filled, buffer, 0,
-          sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+          sizeof(value), &value, sizeof(value), /*barriers=*/NULL,
+          IREE_HAL_FILL_FLAG_NONE));
       Wait(filled);
       iree_hal_buffer_mapping_t mapping = {};
       for (auto denied :
@@ -270,8 +274,9 @@ TEST_P(AmdgpuSlabPoolTest, PublicHostGrantsAndNativeClassRequirements) {
       IREE_ASSERT_OK(iree_hal_buffer_unmap_range(&mapping));
       uint32_t actual = 0;
       SemaphoreList downloaded(devices_[1], {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_download(
-          queues_[1], filled, downloaded, buffer, 0, &actual, sizeof(actual)));
+      IREE_ASSERT_OK(iree_hal_queue_download(queues_[1], filled, downloaded,
+                                             buffer, 0, &actual, sizeof(actual),
+                                             /*barriers=*/NULL));
       Wait(downloaded);
       EXPECT_EQ(actual,
                 value + (iree_any_bit_set(access, IREE_HAL_MEMORY_ACCESS_WRITE)
@@ -331,9 +336,9 @@ TEST_P(AmdgpuSlabPoolTest, PrivateHostBindingsSurviveQueuedCommitment) {
       buffer, 8, sizeof(uint32_t), iree_allocator_system(), subspan.out()));
   const uint32_t value = 0x1234ABCD;
   SemaphoreList filled(devices_[0], {0}, {1});
-  IREE_ASSERT_OK(iree_hal_queue_fill(queues_[0], allocated, filled, subspan, 0,
-                                     sizeof(value), &value, sizeof(value),
-                                     IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_queue_fill(
+      queues_[0], allocated, filled, subspan, 0, sizeof(value), &value,
+      sizeof(value), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   Wait(filled);
   uint8_t* address = iree_hal_buffer_native_binding(subspan, slot).host_pointer;
   ASSERT_NE(address, nullptr);
@@ -344,7 +349,8 @@ TEST_P(AmdgpuSlabPoolTest, PrivateHostBindingsSurviveQueuedCommitment) {
   std::memcpy(address, &updated, sizeof(updated));
   SemaphoreList downloaded(devices_[1], {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_download(queues_[1], filled, downloaded,
-                                         subspan, 0, &actual, sizeof(actual)));
+                                         subspan, 0, &actual, sizeof(actual),
+                                         /*barriers=*/NULL));
   Wait(downloaded);
   EXPECT_EQ(actual, updated);
   iree_hal_buffer_mapping_t mapping = {};
@@ -396,7 +402,7 @@ TEST_P(AmdgpuSlabPoolTest, HostOnlySourceDoesNotGrantQueueAccess) {
       iree_hal_queue_fill(queues_[0], iree_hal_semaphore_list_empty(),
                           iree_hal_semaphore_list_empty(), buffer, 0,
                           sizeof(value), &value, sizeof(value),
-                          IREE_HAL_FILL_FLAG_NONE));
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   iree_hal_pool_reservation_request_t request = {};
   request.allocation_size = sizeof(value);
   Ref<iree_hal_buffer_t> queued;
@@ -485,7 +491,7 @@ TEST_P(AmdgpuSlabPoolTest, SharedCacheFeedsBothPoliciesAcrossNativeOwners) {
       SemaphoreList uploaded(devices_[0], {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_upload(queues_[0], allocated, uploaded,
                                            input.data(), buffer, 0,
-                                           sizeof(input)));
+                                           sizeof(input), /*barriers=*/NULL));
       const iree_hal_buffer_ref_t refs[] = {
           iree_hal_make_buffer_ref(buffer, 8, 16),
           iree_hal_make_buffer_ref(buffer, 40, 16),
@@ -497,12 +503,13 @@ TEST_P(AmdgpuSlabPoolTest, SharedCacheFeedsBothPoliciesAcrossNativeOwners) {
           iree_hal_executable_function_from_index(0),
           iree_hal_make_static_dispatch_config(1, 1, 1),
           iree_make_const_byte_span(constants, sizeof(constants)),
-          {IREE_ARRAYSIZE(refs), refs}, IREE_HAL_DISPATCH_FLAG_NONE));
+          {IREE_ARRAYSIZE(refs), refs}, /*barriers=*/NULL,
+          IREE_HAL_DISPATCH_FLAG_NONE));
       std::array<uint32_t, 16> output = {};
       SemaphoreList downloaded(devices_[0], {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_download(queues_[0], executed, downloaded,
-                                             buffer, 0, output.data(),
-                                             sizeof(output)));
+      IREE_ASSERT_OK(iree_hal_queue_download(
+          queues_[0], executed, downloaded, buffer, 0, output.data(),
+          sizeof(output), /*barriers=*/NULL));
       Wait(downloaded);
       auto expected = input;
       for (size_t i = 0; i < 4; ++i) {

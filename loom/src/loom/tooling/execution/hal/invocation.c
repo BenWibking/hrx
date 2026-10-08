@@ -646,7 +646,7 @@ static iree_status_t loom_run_hal_queue_dispatch_execute_on_queue(
   iree_status_t status = iree_hal_queue_dispatch(
       queue, wait_semaphores, signal_semaphores, dispatch->executable,
       dispatch->function, dispatch->config, constants, bindings,
-      IREE_HAL_DISPATCH_FLAG_BORROW_RESOURCE_LIFETIMES);
+      /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_BORROW_RESOURCE_LIFETIMES);
   if (iree_status_is_ok(status)) {
     status = loom_run_hal_semaphore_wait(dispatch->semaphore, signal_value,
                                          iree_infinite_timeout(),
@@ -796,9 +796,9 @@ static iree_status_t loom_run_hal_transfer_bindings(
         .semaphores = &completion_semaphore,
         .payload_values = &completion_value,
     };
-    status = iree_hal_queue_transfer(runtime->transfer_queue,
-                                     wait_semaphore_list, signal_semaphore_list,
-                                     binding_list->count, transfer_operations);
+    status = iree_hal_queue_transfer(
+        runtime->transfer_queue, wait_semaphore_list, signal_semaphore_list,
+        binding_list->count, transfer_operations, /*barriers=*/NULL);
   }
   if (iree_status_is_ok(status)) {
     status = loom_run_hal_semaphore_wait(completion_semaphore, completion_value,

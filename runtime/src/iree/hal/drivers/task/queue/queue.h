@@ -93,6 +93,14 @@ typedef uint32_t iree_hal_task_queue_op_flags_t;
 enum iree_hal_task_queue_op_flag_bits_e {
   IREE_HAL_TASK_QUEUE_OP_FLAG_NONE = 0u,
   IREE_HAL_TASK_QUEUE_OP_FLAG_HAS_PROFILE_OPERATION = 1u << 0,
+  // Payload acquisition after the operation's semaphore waits.
+  IREE_HAL_TASK_QUEUE_OP_FLAG_BEFORE_ACQUIRE = 1u << 1,
+  // Payload publication before the operation (including atomic flag stores).
+  IREE_HAL_TASK_QUEUE_OP_FLAG_BEFORE_RELEASE = 1u << 2,
+  // Payload acquisition after the operation (including atomic flag waits).
+  IREE_HAL_TASK_QUEUE_OP_FLAG_AFTER_ACQUIRE = 1u << 3,
+  // Payload publication before terminal completion signals.
+  IREE_HAL_TASK_QUEUE_OP_FLAG_AFTER_RELEASE = 1u << 4,
 };
 
 typedef struct iree_hal_task_queue_op_t iree_hal_task_queue_op_t;
@@ -706,7 +714,8 @@ void iree_hal_task_queue_set_profile_recorder(
 
 iree_status_t iree_hal_task_queue_submit_barrier(
     iree_hal_task_queue_t* queue, iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 iree_status_t iree_hal_task_queue_submit_commands(
     iree_hal_task_queue_t* queue, iree_host_size_t batch_count,
@@ -736,14 +745,16 @@ iree_status_t iree_hal_task_queue_submit_read(
     uint64_t source_offset, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_device_size_t length,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 iree_status_t iree_hal_task_queue_submit_write(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* source_buffer,
     iree_device_size_t source_offset, iree_hal_file_t* target_file,
     uint64_t target_offset, iree_device_size_t length,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 iree_status_t iree_hal_task_queue_submit_fill(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
@@ -770,19 +781,22 @@ iree_status_t iree_hal_task_queue_submit_atomic_wait(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_hal_atomic_wait_params_t params,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 iree_status_t iree_hal_task_queue_submit_atomic_store(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_hal_atomic_store_params_t params,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 iree_status_t iree_hal_task_queue_submit_atomic_rmw(
     iree_hal_task_queue_t* queue, iree_hal_buffer_t* target_buffer,
     iree_device_size_t target_offset, iree_hal_atomic_rmw_params_t params,
     iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 iree_status_t iree_hal_task_queue_submit_dispatch(
     iree_hal_task_queue_t* queue, iree_hal_executable_t* executable,
@@ -790,7 +804,8 @@ iree_status_t iree_hal_task_queue_submit_dispatch(
     iree_hal_dispatch_config_t config, iree_const_byte_span_t constants,
     const iree_hal_buffer_ref_t* bindings, iree_host_size_t binding_count,
     iree_hal_dispatch_flags_t flags, iree_hal_semaphore_list_t wait_semaphores,
-    iree_hal_semaphore_list_t signal_semaphores);
+    iree_hal_semaphore_list_t signal_semaphores,
+    const iree_hal_queue_barriers_t* barriers);
 
 #ifdef __cplusplus
 }  // extern "C"

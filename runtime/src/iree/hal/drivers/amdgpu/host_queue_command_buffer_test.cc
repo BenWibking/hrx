@@ -139,7 +139,7 @@ static iree_status_t DispatchHostcallBufferDirect(
       iree_hal_executable_function_from_index(0),
       iree_hal_make_static_dispatch_config(1, 1, 1),
       iree_const_byte_span_empty(),
-      MakeHostcallBufferBindingList(output_buffer, &binding),
+      MakeHostcallBufferBindingList(output_buffer, &binding), /*barriers=*/NULL,
       IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_RETURN_IF_ERROR(iree_hal_semaphore_wait(signal, signal_value,
                                                iree_infinite_timeout(),
@@ -877,7 +877,7 @@ TEST_F(HostQueueCommandBufferTest,
       normal_signal_semaphores, executable, normal_function,
       iree_hal_make_static_dispatch_config(1, 1, 1),
       iree_make_const_byte_span(normal_constants, sizeof(normal_constants)),
-      normal_bindings, IREE_HAL_DISPATCH_FLAG_NONE));
+      normal_bindings, /*barriers=*/NULL, IREE_HAL_DISPATCH_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_wait(dispatch_signal, normal_signal_value,
                                          iree_infinite_timeout(),
                                          IREE_ASYNC_WAIT_FLAG_NONE));
@@ -911,7 +911,7 @@ TEST_F(HostQueueCommandBufferTest,
         executable, function, iree_hal_make_static_dispatch_config(1, 1, 1),
         iree_make_const_byte_span(native_arguments.data(),
                                   native_arguments.size()),
-        iree_hal_buffer_ref_list_empty(),
+        iree_hal_buffer_ref_list_empty(), /*barriers=*/NULL,
         IREE_HAL_DISPATCH_FLAG_CUSTOM_DIRECT_ARGUMENTS);
   };
 
@@ -2219,7 +2219,7 @@ TEST_F(HostQueueCommandBufferTest,
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   uint64_t command_buffer_signal_value = 1;
   iree_hal_semaphore_t* command_buffer_signal_ptr = command_buffer_signal.get();
@@ -2363,7 +2363,7 @@ TEST_F(HostQueueCommandBufferTest,
       test_device.queue(), iree_hal_semaphore_list_empty(),
       pressure_signal_list, pressure_buffer,
       /*target_offset=*/0, sizeof(pressure_pattern), &pressure_pattern,
-      sizeof(pressure_pattern), IREE_HAL_FILL_FLAG_NONE);
+      sizeof(pressure_pattern), /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE);
 
   uint64_t command_buffer_signal_value = 1;
   iree_hal_semaphore_t* command_buffer_signal_ptr = command_buffer_signal.get();
@@ -2537,7 +2537,7 @@ TEST_F(HostQueueCommandBufferTest,
   IREE_ASSERT_OK(iree_hal_queue_read(
       queue, read_wait_list, read_signal_list, source_file, /*source_offset=*/0,
       transient_buffer, kDispatchInputOffset, sizeof(input_values),
-      IREE_HAL_READ_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_READ_FLAG_NONE));
 
   Ref<iree_hal_semaphore_t> dispatch_signal;
   IREE_ASSERT_OK(

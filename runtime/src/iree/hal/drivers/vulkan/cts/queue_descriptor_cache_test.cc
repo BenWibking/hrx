@@ -36,7 +36,8 @@ TEST_P(VulkanQueueDescriptorCacheTest, DeferredUnalignedFillsExceedOneBlock) {
     };
     IREE_ASSERT_OK(iree_hal_queue_fill(
         transfer_queue_, gate, signal_list, target_buffer.get(), i,
-        /*length=*/1, &kPattern, sizeof(kPattern), IREE_HAL_FILL_FLAG_NONE));
+        /*length=*/1, &kPattern, sizeof(kPattern), /*barriers=*/NULL,
+        IREE_HAL_FILL_FLAG_NONE));
   }
 
   IREE_ASSERT_OK(

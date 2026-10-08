@@ -85,7 +85,7 @@ TEST_P(TaskBufferAccessTest, DirectionalStorageBindings) {
           queue, iree_hal_semaphore_list_empty(), signal, executable_,
           iree_hal_executable_function_from_index(0),
           iree_hal_make_static_dispatch_config(1, 1, 1),
-          iree_const_byte_span_empty(), bindings,
+          iree_const_byte_span_empty(), bindings, /*barriers=*/NULL,
           mode == DispatchMode::kInlineQueue
               ? IREE_HAL_DISPATCH_FLAG_ALLOW_INLINE_EXECUTION
               : IREE_HAL_DISPATCH_FLAG_NONE));
@@ -254,7 +254,7 @@ TEST_P(TaskBufferAccessTest, ExecutionOnlyNestedViews) {
             1, &uploaded.semaphores[i], &uploaded.payload_values[i]};
         IREE_ASSERT_OK(iree_hal_queue_upload(
             queue, transient ? allocated : gate, upload_done, inputs[i].data(),
-            roots[i], 0, sizeof(inputs[i])));
+            roots[i], 0, sizeof(inputs[i]), /*barriers=*/NULL));
       }
 
       const bool indirect = mode == DispatchMode::kIndirect;
@@ -273,7 +273,7 @@ TEST_P(TaskBufferAccessTest, ExecutionOnlyNestedViews) {
             queue, uploaded, executed, executable_,
             iree_hal_executable_function_from_index(0),
             iree_hal_make_static_dispatch_config(1, 1, 1),
-            iree_const_byte_span_empty(), bindings,
+            iree_const_byte_span_empty(), bindings, /*barriers=*/NULL,
             mode == DispatchMode::kInlineQueue
                 ? IREE_HAL_DISPATCH_FLAG_ALLOW_INLINE_EXECUTION
                 : IREE_HAL_DISPATCH_FLAG_NONE));
@@ -303,9 +303,9 @@ TEST_P(TaskBufferAccessTest, ExecutionOnlyNestedViews) {
       }
       IREE_ASSERT_OK(release_gate.Signal());
       std::array<float, 8> result = {};
-      IREE_ASSERT_OK(iree_hal_queue_download(queue, executed, downloaded,
-                                             roots[2], 0, result.data(),
-                                             sizeof(result)));
+      IREE_ASSERT_OK(iree_hal_queue_download(
+          queue, executed, downloaded, roots[2], 0, result.data(),
+          sizeof(result), /*barriers=*/NULL));
       IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
           downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
       EXPECT_THAT(result,

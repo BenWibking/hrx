@@ -866,7 +866,7 @@ iree_status_t iree_hal_streaming_stream_wait_streams(
           .payload_values = &signal_value,
       };
       status = iree_hal_queue_barrier(stream->queue, wait_semaphores,
-                                      signal_semaphores,
+                                      signal_semaphores, /*barriers=*/NULL,
                                       IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         // The accepted barrier owns the value it signals, so the timeline
@@ -1066,6 +1066,7 @@ iree_status_t iree_hal_streaming_stream_wait_semaphores(
           .payload_values = &stream_signal_value,
       };
       status = iree_hal_queue_barrier(stream->queue, combined_waits, signal,
+                                      /*barriers=*/NULL,
                                       IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         stream->pending_value = stream_signal_value;
@@ -1476,7 +1477,7 @@ iree_status_t iree_hal_streaming_stream_wait_event(
       };
 
       status = iree_hal_queue_barrier(stream->queue, wait_semaphores,
-                                      signal_semaphores,
+                                      signal_semaphores, /*barriers=*/NULL,
                                       IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
       if (iree_status_is_ok(status)) {
         // The accepted barrier owns the value it signals, so the timeline
@@ -1965,7 +1966,7 @@ iree_status_t iree_hal_streaming_launch_kernel(
               config,
               iree_make_const_byte_span(arguments.constants,
                                         arguments.constants_size),
-              arguments.bindings, flags);
+              arguments.bindings, /*barriers=*/NULL, flags);
         }
         if (iree_status_is_ok(status)) {
           // The accepted dispatch owns the value it signals, so the timeline

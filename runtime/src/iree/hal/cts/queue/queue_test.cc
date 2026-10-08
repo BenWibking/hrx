@@ -197,7 +197,7 @@ TEST_P(QueueTest, DynamicallyAcquiredQueueExecutesBarrier) {
 
   SemaphoreList signal(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_barrier(queue, iree_hal_semaphore_list_empty(),
-                                        signal,
+                                        signal, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                               IREE_ASYNC_WAIT_FLAG_NONE));
@@ -283,7 +283,7 @@ TEST_P(QueueTest, QueueAcquisitionPreservesResourceSubset) {
 
   SemaphoreList signal(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_barrier(queue, iree_hal_semaphore_list_empty(),
-                                        signal,
+                                        signal, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(signal, iree_infinite_timeout(),
                                               IREE_ASYNC_WAIT_FLAG_NONE));
@@ -308,12 +308,12 @@ TEST_P(QueueTest, DynamicallyAcquiredQueueOrdersProvisionedQueue) {
   SemaphoreList completion_signal(device_, {0}, {1});
   IREE_ASSERT_OK(iree_hal_queue_barrier(
       dynamic_queue, iree_hal_semaphore_list_empty(), producer_signal,
-      IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+      /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
   iree_hal_queue_t* provisioned_queue =
       iree_hal_device_queue(device_, family.ordinal, 0);
   ASSERT_NE(nullptr, provisioned_queue);
   IREE_ASSERT_OK(iree_hal_queue_barrier(provisioned_queue, producer_signal,
-                                        completion_signal,
+                                        completion_signal, /*barriers=*/NULL,
                                         IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
 
   // Releasing the producing queue must not invalidate the dependency edge

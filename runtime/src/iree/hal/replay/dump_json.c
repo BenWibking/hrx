@@ -1301,6 +1301,61 @@ static iree_status_t iree_hal_replay_dump_append_json_payload(
   }
 }
 
+static iree_status_t iree_hal_replay_dump_append_json_barrier_list(
+    iree_string_builder_t* builder, const char* label,
+    const iree_hal_replay_barrier_list_view_t* list) {
+  IREE_RETURN_IF_ERROR(
+      iree_string_builder_append_format(builder, ",\"%s\":", label));
+  if (list->count == UINT64_MAX) {
+    return iree_string_builder_append_cstring(builder, "null");
+  }
+  IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "["));
+  const uint8_t* wire = list->payload.data;
+  for (uint64_t i = 0; i < list->count; ++i) {
+    if (i) {
+      IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, ","));
+    }
+    iree_hal_replay_command_buffer_execution_barrier_payload_t header;
+    memcpy(&header, wire, sizeof(header));
+    wire += sizeof(header);
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+        builder,
+        "{\"source_stage_mask\":%" PRIu64 ",\"target_stage_mask\":%" PRIu64
+        ",\"flags\":%" PRIu64 ",\"memory\":[",
+        header.source_stage_mask, header.target_stage_mask, header.flags));
+    for (uint64_t j = 0; j < header.memory_barrier_count; ++j) {
+      if (j) {
+        IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, ","));
+      }
+      iree_hal_replay_memory_barrier_payload_t memory;
+      memcpy(&memory, wire, sizeof(memory));
+      wire += sizeof(memory);
+      IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+          builder,
+          "{\"source_scope\":%" PRIu32 ",\"target_scope\":%" PRIu32 "}",
+          memory.source_scope, memory.target_scope));
+    }
+    IREE_RETURN_IF_ERROR(
+        iree_string_builder_append_cstring(builder, "],\"buffers\":["));
+    for (uint64_t j = 0; j < header.buffer_barrier_count; ++j) {
+      if (j) {
+        IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, ","));
+      }
+      iree_hal_replay_buffer_barrier_payload_t buffer;
+      memcpy(&buffer, wire, sizeof(buffer));
+      wire += sizeof(buffer);
+      IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
+          builder, "{\"source_scope\":%" PRIu32 ",\"target_scope\":%" PRIu32,
+          buffer.source_scope, buffer.target_scope));
+      IREE_RETURN_IF_ERROR(iree_hal_replay_dump_append_json_buffer_ref(
+          builder, "buffer_ref", &buffer.buffer_ref));
+      IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "}"));
+    }
+    IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "]}"));
+  }
+  return iree_string_builder_append_cstring(builder, "]");
+}
+
 iree_status_t iree_hal_replay_dump_emit_json_record(
     iree_hal_replay_dump_context_t* context, iree_string_builder_t* builder,
     const iree_hal_replay_file_record_t* record,
@@ -1348,6 +1403,13 @@ iree_status_t iree_hal_replay_dump_emit_json_record(
       builder, "payload_range", payload_range));
   IREE_RETURN_IF_ERROR(iree_hal_replay_dump_append_json_payload(
       context, builder, record, payload_range));
+  if (iree_any_bit_set(header->record_flags,
+                       IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS)) {
+    IREE_RETURN_IF_ERROR(iree_hal_replay_dump_append_json_barrier_list(
+        builder, "before", &record->barriers.before));
+    IREE_RETURN_IF_ERROR(iree_hal_replay_dump_append_json_barrier_list(
+        builder, "after", &record->barriers.after));
+  }
   IREE_RETURN_IF_ERROR(iree_string_builder_append_cstring(builder, "}\n"));
   return iree_hal_replay_dump_emit(context, builder);
 }

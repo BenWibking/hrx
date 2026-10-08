@@ -1345,7 +1345,7 @@ static iree_status_t loom_testbench_copy_buffer_view_to_params(
         options->transfer_queue, iree_hal_semaphore_list_empty(),
         signal_semaphore_list, iree_hal_buffer_view_buffer(source_buffer_view),
         0, iree_hal_buffer_view_buffer(target_buffer_view), 0,
-        iree_hal_buffer_view_byte_length(source_buffer_view),
+        iree_hal_buffer_view_byte_length(source_buffer_view), /*barriers=*/NULL,
         IREE_HAL_COPY_FLAG_NONE);
     if (iree_status_is_ok(status)) {
       status = iree_hal_semaphore_wait(completion_semaphore, completion_value,

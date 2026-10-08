@@ -137,17 +137,19 @@ TEST_P(VulkanSlabPoolTest, CapturesExactFamiliesWithoutAllocatingBacking) {
         IREE_STATUS_PERMISSION_DENIED,
         iree_hal_queue_fill(queues_[i], iree_hal_semaphore_list_empty(), filled,
                             buffer, 0, sizeof(value), &value, sizeof(value),
-                            IREE_HAL_FILL_FLAG_NONE));
+                            /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   }
-  IREE_ASSERT_OK(iree_hal_queue_fill(
-      queues_[0], iree_hal_semaphore_list_empty(), filled, buffer, 0,
-      sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(
+      iree_hal_queue_fill(queues_[0], iree_hal_semaphore_list_empty(), filled,
+                          buffer, 0, sizeof(value), &value, sizeof(value),
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   Wait(filled);
   uint32_t result = 0;
-  IREE_EXPECT_STATUS_IS(IREE_STATUS_PERMISSION_DENIED,
-                        iree_hal_queue_download(
-                            queues_[0], filled, iree_hal_semaphore_list_empty(),
-                            buffer, 0, &result, sizeof(result)));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_PERMISSION_DENIED,
+      iree_hal_queue_download(queues_[0], filled,
+                              iree_hal_semaphore_list_empty(), buffer, 0,
+                              &result, sizeof(result), /*barriers=*/NULL));
   buffer.reset();
   JoinMaintenance(source);
 }
@@ -174,7 +176,8 @@ TEST_P(VulkanSlabPoolTest, RequiredAndPreferredHostGrants) {
       SemaphoreList filled(device_, {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queues_[0], iree_hal_semaphore_list_empty(), filled, buffer, 0,
-          sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+          sizeof(value), &value, sizeof(value), /*barriers=*/NULL,
+          IREE_HAL_FILL_FLAG_NONE));
       Wait(filled);
       iree_hal_buffer_mapping_t mapping = {};
       for (auto denied :
@@ -250,9 +253,10 @@ TEST_P(VulkanSlabPoolTest, CachedHostAccessIsAnExactNativeClass) {
       required, {}, sizeof(uint32_t), iree_infinite_timeout(), buffer.out()));
   const uint32_t value = 0xABCD1234;
   SemaphoreList filled(device_, {0}, {1});
-  IREE_ASSERT_OK(iree_hal_queue_fill(
-      queues_[0], iree_hal_semaphore_list_empty(), filled, buffer, 0,
-      sizeof(value), &value, sizeof(value), IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(
+      iree_hal_queue_fill(queues_[0], iree_hal_semaphore_list_empty(), filled,
+                          buffer, 0, sizeof(value), &value, sizeof(value),
+                          /*barriers=*/NULL, IREE_HAL_FILL_FLAG_NONE));
   Wait(filled);
   iree_hal_buffer_mapping_t mapping = {};
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
@@ -297,7 +301,8 @@ TEST_P(VulkanSlabPoolTest, NativeOnlyAndHostOnlyDoNotGrantQueueOperations) {
       IREE_STATUS_PERMISSION_DENIED,
       iree_hal_queue_update(queues_[0], iree_hal_semaphore_list_empty(),
                             iree_hal_semaphore_list_empty(), &value, 0, buffer,
-                            0, sizeof(value), IREE_HAL_UPDATE_FLAG_NONE));
+                            0, sizeof(value), /*barriers=*/NULL,
+                            IREE_HAL_UPDATE_FLAG_NONE));
   buffer.reset();
   JoinMaintenance(source);
 
@@ -449,18 +454,18 @@ TEST_P(VulkanSlabPoolTest, SharedBackingAcrossFamiliesAndAllocationPolicies) {
       SemaphoreList uploaded(device_, {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_upload(queues_.front(), allocated, uploaded,
                                            input.data(), buffer, 0,
-                                           sizeof(input)));
+                                           sizeof(input), /*barriers=*/NULL));
       const uint32_t pattern = cycle + 42;
       SemaphoreList filled(device_, {0}, {1});
       IREE_ASSERT_OK(iree_hal_queue_fill(
           queues_.front(), uploaded, filled, buffer, 2 * sizeof(uint32_t),
-          4 * sizeof(uint32_t), &pattern, sizeof(pattern),
+          4 * sizeof(uint32_t), &pattern, sizeof(pattern), /*barriers=*/NULL,
           IREE_HAL_FILL_FLAG_NONE));
       std::array<uint32_t, 8> output = {};
       SemaphoreList downloaded(device_, {0}, {1});
-      IREE_ASSERT_OK(iree_hal_queue_download(queues_.back(), filled, downloaded,
-                                             buffer, 0, output.data(),
-                                             sizeof(output)));
+      IREE_ASSERT_OK(iree_hal_queue_download(
+          queues_.back(), filled, downloaded, buffer, 0, output.data(),
+          sizeof(output), /*barriers=*/NULL));
       Wait(downloaded);
       EXPECT_THAT(output, ::testing::ElementsAre(11, 22, pattern, pattern,
                                                  pattern, pattern, 77, 88));

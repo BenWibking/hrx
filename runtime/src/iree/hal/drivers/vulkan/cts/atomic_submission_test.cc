@@ -112,7 +112,8 @@ TEST_P(VulkanAtomicSubmissionTest,
                   /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
                   /*.condition=*/IREE_HAL_ATOMIC_WAIT_CONDITION_EQUAL,
                   /*.target_error_mode=*/mode,
-              });
+              },
+              /*barriers=*/NULL);
           break;
         case AtomicKind::kStore:
           status = iree_hal_queue_atomic_store(
@@ -123,7 +124,8 @@ TEST_P(VulkanAtomicSubmissionTest,
                   /*.flags=*/IREE_HAL_ATOMIC_FLAG_RELEASE,
                   /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
                   /*.target_error_mode=*/mode,
-              });
+              },
+              /*barriers=*/NULL);
           break;
         case AtomicKind::kRmw:
           status = iree_hal_queue_atomic_rmw(
@@ -136,7 +138,8 @@ TEST_P(VulkanAtomicSubmissionTest,
                   /*.width=*/IREE_HAL_ATOMIC_WIDTH_32,
                   /*.operation=*/IREE_HAL_ATOMIC_RMW_OPERATION_ADD,
                   /*.target_error_mode=*/mode,
-              });
+              },
+              /*barriers=*/NULL);
           break;
       }
       EXPECT_THAT(Status(std::move(status)), StatusIs(expected_status));

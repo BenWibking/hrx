@@ -13,6 +13,7 @@
 #include <string>
 
 #include "iree/base/internal/arena.h"
+#include "iree/hal/drivers/vulkan/barrier.h"
 #include "iree/hal/testing/mock_device.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
@@ -33,6 +34,29 @@ static const iree_hal_queue_family_spec_t kQueueFamilySpec = [] {
                     IREE_HAL_QUEUE_FAMILY_ROLE_FLAG_ATOMIC;
   return spec;
 }();
+
+TEST(QueueBarrierTest, ExplicitEmptyReplacesDefaultDependency) {
+  auto native = iree_hal_vulkan_queue_barriers_resolve(nullptr);
+  EXPECT_FALSE(iree_hal_vulkan_barrier_is_empty(&native.before));
+  EXPECT_FALSE(iree_hal_vulkan_barrier_is_empty(&native.after));
+  const iree_hal_barrier_list_t empty = {};
+  iree_hal_queue_barriers_t barriers = {&empty, nullptr};
+  native = iree_hal_vulkan_queue_barriers_resolve(&barriers);
+  EXPECT_TRUE(iree_hal_vulkan_barrier_is_empty(&native.before));
+  EXPECT_FALSE(iree_hal_vulkan_barrier_is_empty(&native.after));
+  barriers.after = &empty;
+  native = iree_hal_vulkan_queue_barriers_resolve(&barriers);
+  EXPECT_TRUE(iree_hal_vulkan_barrier_is_empty(&native.before));
+  EXPECT_TRUE(iree_hal_vulkan_barrier_is_empty(&native.after));
+
+  iree_hal_barrier_t acquire = {};
+  acquire.effects.bits = IREE_HAL_MEMORY_EFFECT_ACQUIRE_FROM_SYSTEM;
+  iree_hal_barrier_list_t list = {1, &acquire};
+  barriers.after = &list;
+  native = iree_hal_vulkan_queue_barriers_resolve(&barriers);
+  EXPECT_TRUE(iree_hal_vulkan_barrier_is_empty(&native.before));
+  EXPECT_TRUE(native.after.target_access_mask & VK_ACCESS_2_MEMORY_READ_BIT);
+}
 
 #if !IREE_HAL_VULKAN_LIBVULKAN_STATIC
 

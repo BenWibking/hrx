@@ -362,4 +362,56 @@ TEST(ReplayFileRangeTest, RejectsDigestBytesWithoutDigestType) {
           iree_make_const_byte_span(storage.data(), storage.size()), &range));
 }
 
+TEST(ReplayFileReaderTest, QueueBarriersPreserveDefaultAndEmptyLists) {
+  const iree_hal_replay_queue_barrier_payload_t operation = {};
+  const iree_hal_replay_queue_barriers_footer_t footer = {
+      /*.payload_length=*/0, /*.before_count=*/UINT64_MAX, /*.after_count=*/0};
+  iree_hal_replay_file_record_header_t header = {};
+  header.header_length = sizeof(header);
+  header.payload_length = sizeof(operation) + sizeof(footer);
+  header.record_length = header.header_length + header.payload_length;
+  header.record_type = IREE_HAL_REPLAY_FILE_RECORD_TYPE_OPERATION;
+  header.operation_code = IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_BARRIER;
+  header.payload_type = IREE_HAL_REPLAY_PAYLOAD_TYPE_QUEUE_BARRIER;
+  header.record_flags = IREE_HAL_REPLAY_FILE_RECORD_FLAG_QUEUE_BARRIERS;
+  std::vector<uint8_t> bytes(header.record_length);
+  memcpy(bytes.data(), &header, sizeof(header));
+  memcpy(bytes.data() + sizeof(header), &operation, sizeof(operation));
+  memcpy(bytes.data() + sizeof(header) + sizeof(operation), &footer,
+         sizeof(footer));
+  iree_hal_replay_file_record_t record;
+  iree_host_size_t offset = 0;
+  IREE_ASSERT_OK(iree_hal_replay_file_parse_record(
+      iree_make_const_byte_span(bytes.data(), bytes.size()), 0, &record,
+      &offset));
+  EXPECT_EQ(record.payload.data_length, sizeof(operation));
+  EXPECT_EQ(record.barriers.before.count, UINT64_MAX);
+  EXPECT_EQ(record.barriers.after.count, 0u);
+  EXPECT_EQ(offset, bytes.size());
+
+  // A count cannot consume bytes belonging to the operation, and a footer
+  // cannot claim an extent outside this record.
+  for (auto invalid :
+       {iree_hal_replay_queue_barriers_footer_t{0, 1, 0},
+        iree_hal_replay_queue_barriers_footer_t{UINT64_MAX, 0, 0},
+        iree_hal_replay_queue_barriers_footer_t{sizeof(operation), 0, 0}}) {
+    memcpy(bytes.data() + sizeof(header) + sizeof(operation), &invalid,
+           sizeof(invalid));
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_DATA_LOSS,
+        iree_hal_replay_file_parse_record(
+            iree_make_const_byte_span(bytes.data(), bytes.size()), 0, &record,
+            &offset));
+  }
+  memcpy(bytes.data() + sizeof(header) + sizeof(operation), &footer,
+         sizeof(footer));
+  header.operation_code = IREE_HAL_REPLAY_OPERATION_CODE_QUEUE_EXECUTE;
+  memcpy(bytes.data(), &header, sizeof(header));
+  IREE_EXPECT_STATUS_IS(
+      IREE_STATUS_DATA_LOSS,
+      iree_hal_replay_file_parse_record(
+          iree_make_const_byte_span(bytes.data(), bytes.size()), 0, &record,
+          &offset));
+}
+
 }  // namespace

@@ -170,9 +170,9 @@ IREE_API_EXPORT iree_status_t iree_io_parameter_provider_gather(
   if (count == 0) {
     // Preserve the timeline when there's no work to do.
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
-        z0, iree_hal_queue_transfer(queue, wait_semaphore_list,
-                                    signal_semaphore_list,
-                                    /*operation_count=*/0, NULL));
+        z0, iree_hal_queue_transfer(
+                queue, wait_semaphore_list, signal_semaphore_list,
+                /*operation_count=*/0, NULL, /*barriers=*/NULL));
   } else {
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
         z0,
@@ -219,9 +219,9 @@ IREE_API_EXPORT iree_status_t iree_io_parameter_provider_scatter(
   if (count == 0) {
     // Preserve the timeline when there's no work to do.
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
-        z0, iree_hal_queue_transfer(queue, wait_semaphore_list,
-                                    signal_semaphore_list,
-                                    /*operation_count=*/0, NULL));
+        z0, iree_hal_queue_transfer(
+                queue, wait_semaphore_list, signal_semaphore_list,
+                /*operation_count=*/0, NULL, /*barriers=*/NULL));
   } else {
     IREE_RETURN_AND_END_ZONE_IF_ERROR(
         z0,

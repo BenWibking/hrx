@@ -258,7 +258,7 @@ TEST_F(ReplayDispatchTest, FamilyConstructorsReplayNativeOutput) {
   // The capture records the output buffer reference, not the computed bytes.
   IREE_ASSERT_OK(iree_hal_queue_write(
       queue_, dispatch_complete, write_complete, buffers_[2], 0, file_, 0,
-      sizeof(initial_data[2]), IREE_HAL_WRITE_FLAG_NONE));
+      sizeof(initial_data[2]), /*barriers=*/NULL, IREE_HAL_WRITE_FLAG_NONE));
   IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
       write_complete, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
   ASSERT_NO_FATAL_FAILURE(ExpectOutput(output_path.path_view()));

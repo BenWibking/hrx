@@ -289,9 +289,9 @@ hrx_status_t hrx_stream_wait_on(hrx_stream_t stream,
       .payload_values = &signal_value,
   };
 
-  iree_status_t iree_status =
-      iree_hal_queue_barrier(stream->hal_queue, wait_list, signal_list,
-                             IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
+  iree_status_t iree_status = iree_hal_queue_barrier(
+      stream->hal_queue, wait_list, signal_list, /*barriers=*/NULL,
+      IREE_HAL_QUEUE_BARRIER_FLAG_NONE);
   if (!iree_status_is_ok(iree_status)) {
     HRX_RETURN_AND_END_ZONE(z0, hrx_status_from_iree(iree_status));
   }

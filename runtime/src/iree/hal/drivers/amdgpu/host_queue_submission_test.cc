@@ -7,6 +7,7 @@
 #include "iree/hal/drivers/amdgpu/host_queue_submission.h"
 
 #include <cstdint>
+#include <initializer_list>
 
 #include "iree/hal/api.h"
 #include "iree/hal/cts/util/test_base.h"
@@ -259,10 +260,11 @@ TEST_F(HostQueueSubmissionTest, DeferredSignalsRetireAfterHostAssembly) {
     // The consumer is issued from the producer's completion callback. It
     // transfers its signal retain to another queue's completion owner.
     IREE_ASSERT_OK(iree_hal_queue_barrier(consumer_queue, produced, consumed,
+                                          /*barriers=*/NULL,
                                           IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
-    IREE_ASSERT_OK(
-        iree_hal_queue_barrier(producer_queue, iree_hal_semaphore_list_empty(),
-                               produced, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_queue_barrier(
+        producer_queue, iree_hal_semaphore_list_empty(), produced,
+        /*barriers=*/NULL, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
     IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
         consumed, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
     // Releasing the caller's references after completion must also join all
@@ -412,6 +414,40 @@ TEST(HostQueueSubmissionUnitTest, CommitsSignalBarrierPacket) {
   EXPECT_EQ(packet.barrier_and.completion_signal.handle, 0u);
 }
 
+TEST(HostQueueSubmissionUnitTest, PayloadFencesSurroundWorkAndOwnCompletion) {
+  iree_hal_amdgpu_aql_packet_t packets[8] = {};
+  iree_hal_amdgpu_host_queue_t queue = {};
+  queue.aql_ring.base = packets;
+  queue.aql_ring.mask = 7;
+  queue.notification_ring.epoch.signal.handle = 0x1234;
+  iree_hal_amdgpu_wait_resolution_t resolution = {};
+  resolution.barrier_count = 2;
+  resolution.inline_acquire_scope = IREE_HSA_FENCE_SCOPE_AGENT;
+  resolution.payload_barriers.before.release = IREE_HSA_FENCE_SCOPE_SYSTEM;
+  resolution.payload_barriers.after.acquire = IREE_HSA_FENCE_SCOPE_SYSTEM;
+
+  // Two wait packets, a payload release, work, and a payload acquire. The
+  // terminal epoch belongs to the acquire after work, never the release.
+  iree_hal_amdgpu_host_queue_emit_payload_prefix(&queue, &resolution, 0);
+  iree_hal_amdgpu_host_queue_emit_payload_suffix(
+      &queue, &resolution, iree_hal_semaphore_list_empty(), 4);
+  EXPECT_EQ(packets[2].barrier_and.header,
+            iree_hal_amdgpu_aql_make_header(
+                IREE_HSA_PACKET_TYPE_BARRIER_AND,
+                iree_hal_amdgpu_aql_packet_control_barrier(
+                    IREE_HSA_FENCE_SCOPE_AGENT, IREE_HSA_FENCE_SCOPE_SYSTEM)));
+  EXPECT_EQ(packets[2].barrier_and.completion_signal.handle, 0u);
+  EXPECT_EQ(packets[4].barrier_and.header,
+            iree_hal_amdgpu_aql_make_header(
+                IREE_HSA_PACKET_TYPE_BARRIER_AND,
+                iree_hal_amdgpu_aql_packet_control_barrier(
+                    IREE_HSA_FENCE_SCOPE_SYSTEM, IREE_HSA_FENCE_SCOPE_AGENT)));
+  EXPECT_EQ(packets[4].barrier_and.completion_signal.handle, 0x1234u);
+  for (int i : {0, 1, 3, 5, 6, 7}) {
+    EXPECT_EQ(packets[i].barrier_and.header, 0u);
+  }
+}
+
 typedef struct DispatchSubmissionPlanCase {
   // Number of wait-barrier packets preceding the dispatch payload.
   uint8_t barrier_count;
@@ -434,9 +470,11 @@ typedef struct DispatchSubmissionPlanCase {
 
 static void ExpectDispatchSubmissionPlan(
     iree_hal_amdgpu_host_queue_t* queue,
-    const DispatchSubmissionPlanCase& plan_case) {
+    const DispatchSubmissionPlanCase& plan_case,
+    iree_hal_amdgpu_queue_barriers_t payload_barriers = {}) {
   iree_hal_amdgpu_wait_resolution_t resolution = {0};
   resolution.barrier_count = plan_case.barrier_count;
+  resolution.payload_barriers = payload_barriers;
   const iree_hal_semaphore_list_t empty_signal_list =
       iree_hal_semaphore_list_empty();
   iree_hal_amdgpu_profile_dispatch_event_reservation_t profile_events = {0};
@@ -505,6 +543,10 @@ static void ExpectDispatchSubmissionPlan(
         submission.dispatch_completion_signal.handle != 0;
     EXPECT_EQ(plan_case.expect_dispatch_completion_signal,
               has_dispatch_completion_signal);
+    if (payload_barriers.after.acquire != IREE_HSA_FENCE_SCOPE_NONE) {
+      EXPECT_NE(submission.dispatch_completion_signal.handle,
+                queue->notification_ring.epoch.signal.handle);
+    }
 
     iree_hal_amdgpu_host_queue_cancel_profile_queue_device_events(
         queue, submission.profile_queue_device_events);
@@ -538,9 +580,11 @@ typedef struct Pm4IbSubmissionPlanCase {
 
 static void ExpectPm4IbSubmissionPlan(
     iree_hal_amdgpu_host_queue_t* queue,
-    const Pm4IbSubmissionPlanCase& plan_case) {
+    const Pm4IbSubmissionPlanCase& plan_case,
+    iree_hal_amdgpu_queue_barriers_t payload_barriers = {}) {
   iree_hal_amdgpu_wait_resolution_t resolution = {0};
   resolution.barrier_count = plan_case.barrier_count;
+  resolution.payload_barriers = payload_barriers;
   const iree_hal_semaphore_list_t empty_signal_list =
       iree_hal_semaphore_list_empty();
   iree_hal_amdgpu_host_queue_profile_event_info_t profile_queue_event_info = {
@@ -699,7 +743,32 @@ TEST_F(HostQueueSubmissionTest, DispatchPacketAccountingCombinations) {
         !HostQueueSupportsQueueDeviceProfiling(queue)) {
       GTEST_SKIP() << "queue device profiling is not supported";
     }
-    ExpectDispatchSubmissionPlan(queue, plan_case);
+    for (uint32_t boundaries = 0; boundaries < 4; ++boundaries) {
+      const uint32_t prefix_count = boundaries & 1;
+      const uint32_t suffix_count = (boundaries >> 1) & 1;
+      auto expected = plan_case;
+      expected.expected_packet_count += prefix_count + suffix_count;
+      expected.expected_dispatch_packet_offset += prefix_count;
+      if (expected.expected_completion_barrier_packet_offset !=
+          kNoCompletionBarrierPacketOffset) {
+        expected.expected_completion_barrier_packet_offset += prefix_count;
+      }
+      if (expected.expected_harvest_packet_offset != kNoHarvestPacketOffset) {
+        expected.expected_harvest_packet_offset += prefix_count;
+      }
+      // Profiling retains its own dispatch timestamp signal. Only the queue
+      // epoch moves to the payload suffix.
+      expected.expect_dispatch_completion_signal &=
+          suffix_count == 0 || plan_case.reserve_dispatch_event;
+      iree_hal_amdgpu_queue_barriers_t payload_barriers = {};
+      if (prefix_count) {
+        payload_barriers.before.release = IREE_HSA_FENCE_SCOPE_SYSTEM;
+      }
+      if (suffix_count) {
+        payload_barriers.after.acquire = IREE_HSA_FENCE_SCOPE_SYSTEM;
+      }
+      ExpectDispatchSubmissionPlan(queue, expected, payload_barriers);
+    }
   }
 }
 
@@ -817,7 +886,25 @@ TEST_F(HostQueueSubmissionTest, Pm4IbPacketAccountingCombinations) {
         !HostQueueSupportsQueueDeviceProfiling(queue)) {
       GTEST_SKIP() << "queue device profiling is not supported";
     }
-    ExpectPm4IbSubmissionPlan(queue, plan_case);
+    for (uint32_t boundaries = 0; boundaries < 4; ++boundaries) {
+      const uint32_t prefix_count = boundaries & 1;
+      const uint32_t suffix_count = (boundaries >> 1) & 1;
+      auto expected = plan_case;
+      expected.expected_packet_count += prefix_count + suffix_count;
+      expected.expected_pm4_ib_packet_offset += prefix_count;
+      if (expected.expected_publication_packet_offset !=
+          kNoPublicationPacketOffset) {
+        expected.expected_publication_packet_offset += prefix_count;
+      }
+      iree_hal_amdgpu_queue_barriers_t payload_barriers = {};
+      if (prefix_count) {
+        payload_barriers.before.release = IREE_HSA_FENCE_SCOPE_SYSTEM;
+      }
+      if (suffix_count) {
+        payload_barriers.after.acquire = IREE_HSA_FENCE_SCOPE_SYSTEM;
+      }
+      ExpectPm4IbSubmissionPlan(queue, expected, payload_barriers);
+    }
   }
 }
 
