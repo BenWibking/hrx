@@ -22,6 +22,7 @@ iree_py_library(
     "core_contract.py"
     "data_path.py"
     "f32.py"
+    "f32_accumulator.py"
     "f32_compare.py"
     "floating.py"
     "floating_sign.py"

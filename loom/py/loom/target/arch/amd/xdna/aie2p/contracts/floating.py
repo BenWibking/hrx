@@ -23,6 +23,10 @@ from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
     vector_data_path_control,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.f32 import emit_f32_multiply
+from loom.target.arch.amd.xdna.aie2p.contracts.f32_accumulator import (
+    emit_f32_scalar_accumulator_binary,
+    emit_f32_vector_accumulator_binary,
+)
 from loom.target.arch.amd.xdna.aie2p.contracts.scalar_program import ScalarProgram
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
@@ -1256,148 +1260,6 @@ def _float_matrix_accumulator_add_rule() -> DescriptorRule:
     )
 
 
-def _float_accumulator_binary_emits(
-    lhs: ValueRef,
-    rhs: ValueRef,
-    result: ValueRef,
-    operation_descriptor_key: str,
-    *,
-    extract_scalar_result: bool,
-    temporary_prefix: str = "",
-) -> tuple[ContractEmit, ...]:
-    clear = _descriptor("amd.xdna.aie2p.accumulator.clear.f32x64")
-    move_to_accumulator = _descriptor("amd.xdna.aie2p.move.vector512.to.accumulator512")
-    move_from_accumulator = _descriptor(
-        "amd.xdna.aie2p.move.accumulator512.to.vector512"
-    )
-    config_constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    operation = _descriptor(operation_descriptor_key)
-    extract = _descriptor("amd.xdna.aie2p.extract.i32.immediate")
-
-    def temporary(name: str) -> ValueRef:
-        return ValueRef.temporary(f"{temporary_prefix}{name}")
-
-    final_vector = temporary("result_vector") if extract_scalar_result else result
-    final_vector_result_types = (
-        {"dst": DescriptorResultType()} if extract_scalar_result else None
-    )
-    emits: list[ContractEmit] = [
-        _op_emit(
-            clear,
-            results={"dst": temporary("zero_accumulator")},
-            result_types={"dst": DescriptorResultType()},
-        ),
-        EmitRegisterSlice(
-            source=temporary("zero_accumulator"),
-            result=temporary("zero_accumulator_unit"),
-            unit_count=1,
-        ),
-    ]
-    for operand_name, operand in (("lhs", lhs), ("rhs", rhs)):
-        accumulator_unit = temporary(f"{operand_name}_accumulator_unit")
-        emits.extend(
-            (
-                _op_emit(
-                    move_to_accumulator,
-                    operands={"src": operand},
-                    results={"dst": accumulator_unit},
-                    result_types={"dst": DescriptorResultType()},
-                ),
-                EmitRegisterConcat(
-                    sources=(
-                        accumulator_unit,
-                        temporary("zero_accumulator_unit"),
-                        temporary("zero_accumulator_unit"),
-                        temporary("zero_accumulator_unit"),
-                    ),
-                    result=temporary(f"{operand_name}_accumulator"),
-                    result_type=_F32X64_ACCUMULATOR,
-                ),
-            )
-        )
-    emits.extend(
-        (
-            _constant_emit(
-                config_constant,
-                temporary("arithmetic_control"),
-                F32_ACCUMULATOR_ADD_CONTROL,
-            ),
-            _op_emit(
-                operation,
-                operands={
-                    "acc1": temporary("lhs_accumulator"),
-                    "acc2": temporary("rhs_accumulator"),
-                    "acc": temporary("arithmetic_control"),
-                },
-                results={"dst": temporary("result_accumulator")},
-                result_types={"dst": DescriptorResultType()},
-            ),
-            EmitRegisterSlice(
-                source=temporary("result_accumulator"),
-                result=temporary("result_accumulator_unit"),
-                unit_count=1,
-            ),
-            _op_emit(
-                move_from_accumulator,
-                operands={"src": temporary("result_accumulator_unit")},
-                results={"dst": final_vector},
-                result_types=final_vector_result_types,
-            ),
-        )
-    )
-    if extract_scalar_result:
-        emits.append(
-            EmitDescriptorOp(
-                descriptor=extract,
-                operands={"s1": final_vector},
-                results={"dst": result},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"idx": 0},
-                form=DescriptorEmitForm.OP,
-            )
-        )
-    return tuple(emits)
-
-
-def emit_f32_scalar_accumulator_binary(
-    lhs: ValueRef,
-    rhs: ValueRef,
-    result: ValueRef,
-    operation_descriptor_key: str,
-    *,
-    temporary_prefix: str = "",
-) -> tuple[ContractEmit, ...]:
-    """Builds one scalar binary32 add/sub through the native accumulator."""
-
-    broadcast = _descriptor("amd.xdna.aie2p.splat.i32x16")
-
-    def temporary(name: str) -> ValueRef:
-        return ValueRef.temporary(f"{temporary_prefix}{name}")
-
-    return (
-        _op_emit(
-            broadcast,
-            operands={"src": lhs},
-            results={"dst": temporary("lhs_vector")},
-            result_types={"dst": DescriptorResultType()},
-        ),
-        _op_emit(
-            broadcast,
-            operands={"src": rhs},
-            results={"dst": temporary("rhs_vector")},
-            result_types={"dst": DescriptorResultType()},
-        ),
-        *_float_accumulator_binary_emits(
-            temporary("lhs_vector"),
-            temporary("rhs_vector"),
-            result,
-            operation_descriptor_key,
-            extract_scalar_result=True,
-            temporary_prefix=temporary_prefix,
-        ),
-    )
-
-
 def _float_vector_accumulator_binary_rule(
     source_op: Op,
     operation_descriptor_key: str,
@@ -1407,7 +1269,7 @@ def _float_vector_accumulator_binary_rule(
         source_op=source_op,
         descriptor=operation,
         guards=_typed_guards(("lhs", "rhs", "result"), _F32_VECTOR),
-        emit=_float_accumulator_binary_emits(
+        emit=emit_f32_vector_accumulator_binary(
             ValueRef.operand("lhs"),
             ValueRef.operand("rhs"),
             ValueRef.result("result"),

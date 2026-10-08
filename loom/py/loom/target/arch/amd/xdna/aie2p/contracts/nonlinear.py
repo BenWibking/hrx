@@ -22,7 +22,7 @@ from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
     BF16_CONVERSION_ROUNDING,
     vector_data_path_control,
 )
-from loom.target.arch.amd.xdna.aie2p.contracts.floating import (
+from loom.target.arch.amd.xdna.aie2p.contracts.f32_accumulator import (
     emit_f32_scalar_accumulator_binary,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.scalar_program import ScalarProgram
