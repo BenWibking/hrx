@@ -71,7 +71,7 @@ struct loom_boundary_projection_loop_t {
 };
 
 // Retains one structurally eligible LoopLike operation and provisional
-// endpoint slots. Calls are expected in operation postorder.
+// endpoint slots. Calls are expected in dominance preorder.
 iree_status_t loom_boundary_projection_collect_loop(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function, loom_loop_like_t loop);
@@ -96,7 +96,8 @@ iree_status_t loom_boundary_projection_finalize_loops(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function);
 
-// Rebuilds retained selected loops in operation postorder.
+// Rebuilds retained selected loops through dominance-ordered shells followed
+// by reverse-order terminator closure.
 iree_status_t loom_boundary_projection_apply_loops(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function);

@@ -703,10 +703,13 @@ static iree_status_t loom_view_boundary_materialize_source(
     loom_value_id_t* out_component_values) {
   IREE_ASSERT(rule == source->rule);
   IREE_ASSERT(source->rule_plan != NULL);
-  return loom_view_boundary_materialize_coordinate(
+  const loom_builder_ip_t saved_ip = loom_builder_save(&plan->rewriter.builder);
+  iree_status_t status = loom_view_boundary_materialize_coordinate(
       rule, plan, function,
       (const loom_view_boundary_coordinate_t*)source->rule_plan,
       out_component_values);
+  loom_builder_restore(&plan->rewriter.builder, saved_ip);
+  return status;
 }
 
 static iree_status_t loom_view_boundary_reconstruct(

@@ -237,15 +237,17 @@ static iree_status_t MaterializeTestSource(
   if (!out_component_values) {
     return iree_ok_status();
   }
+  const loom_value_id_t source_value_id =
+      loom_boundary_projection_resolve_value(function, source_plan->value_id);
   // Give each synthetic component its own SSA identity. This models real
   // projections whose physical components may carry separate ownership ties.
   const loom_type_t type =
-      loom_module_value_type(plan->module, source_plan->value_id);
-  out_component_values[0] = source_plan->value_id;
+      loom_module_value_type(plan->module, source_value_id);
+  out_component_values[0] = source_value_id;
   loom_op_t* convert = nullptr;
   IREE_RETURN_IF_ERROR(
-      loom_test_convert_build(&plan->rewriter.builder, source_plan->value_id,
-                              type, source->boundary_op->location, &convert));
+      loom_test_convert_build(&plan->rewriter.builder, source_value_id, type,
+                              source->boundary_op->location, &convert));
   out_component_values[1] = loom_test_convert_result(convert);
   return iree_ok_status();
 }
@@ -895,7 +897,7 @@ TEST_F(LoopBoundaryProjectionTest, RejectsMismatchedOwnershipTieAtomically) {
   Verify();
 }
 
-TEST_F(LoopBoundaryProjectionTest, RebuildsNestedLoopsInPostorder) {
+TEST_F(LoopBoundaryProjectionTest, RebuildsNestedLoopsInDominanceOrder) {
   const loom_type_t f32 = loom_type_scalar(LOOM_SCALAR_TYPE_F32);
   loom_func_like_t function = BuildFunction(IREE_SV("nested"), &f32, 1);
   loom_builder_t builder = FunctionBuilder(function);
