@@ -60,6 +60,10 @@ loom_corpus_sources(
     "view/scalar_exchange.loom"
     "view/selected_crops.loom"
     "view/selection.loom"
+    "view/shrinking.loom"
+    "view/strided_recurrence.loom"
+    "view/subview.loom"
+    "view/window_walk.loom"
     "atomic/add_f32_subnormals.loom"
     "atomic/float_bitwise.loom"
     "atomic/float_extrema.loom"
@@ -78,10 +82,6 @@ loom_corpus_sources(
     "atomic/workgroup/global.loom"
     "atomic/workgroup/observations.loom"
     "atomic/workgroup/vector.loom"
-    "view/shrinking.loom"
-    "view/strided_recurrence.loom"
-    "view/subview.loom"
-    "view/window_walk.loom"
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

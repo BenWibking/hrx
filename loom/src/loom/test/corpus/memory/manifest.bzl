@@ -57,6 +57,10 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "view/scalar_exchange.loom",
         "view/selected_crops.loom",
         "view/selection.loom",
+        "view/shrinking.loom",
+        "view/strided_recurrence.loom",
+        "view/subview.loom",
+        "view/window_walk.loom",
     ],
     legacy_case_srcs = [
         "atomic/add_f32_subnormals.loom",
@@ -77,9 +81,5 @@ MEMORY_CORPUS = loom_corpus_manifest(
         "atomic/workgroup/global.loom",
         "atomic/workgroup/observations.loom",
         "atomic/workgroup/vector.loom",
-        "view/shrinking.loom",
-        "view/strided_recurrence.loom",
-        "view/subview.loom",
-        "view/window_walk.loom",
     ],
 )
