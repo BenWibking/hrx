@@ -7,6 +7,7 @@ load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 load("@rules_cc//cc/toolchains:artifacts.bzl", "cc_artifact_name_pattern")
+load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
 load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
 load("@rules_cc//cc/toolchains:tool_map.bzl", "cc_tool_map")
 load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
@@ -180,18 +181,34 @@ def wasi_cc_toolchain(
         extension = ".wasm",
         prefix = "",
     )
+    cc_args(
+        name = "speed_optimization",
+        actions = [_ACTIONS + "compile_actions"],
+        args = ["-O3"],
+        requires_any_of = [":optimize_for_speed"],
+    )
+    cc_feature(name = "optimize_for_speed", feature_name = "optimize_for_speed")
+    cc_args(
+        name = "thin_lto_compile_link",
+        actions = [_ACTIONS + "compile_actions", _ACTIONS + "link_actions"],
+        args = ["-flto=thin"],
+        requires_any_of = [":thin_lto_link"],
+    )
+    cc_feature(name = "thin_lto_link", feature_name = "thin_lto_link")
     cc_toolchain(
         name = "cc",
         args = [
             ":target",
             ":compile",
+            ":speed_optimization",
+            ":thin_lto_compile_link",
             ":cxx",
             ":link",
         ],
         artifact_name_patterns = [":wasm_executable"],
         compiler = "clang",
         enabled_features = [_STANDARD_FEATURES],
-        known_features = [_STANDARD_FEATURES],
+        known_features = [_STANDARD_FEATURES, ":optimize_for_speed", ":thin_lto_link"],
         supports_param_files = True,
         tool_map = ":tools",
     )

@@ -101,10 +101,18 @@ profile when producing release artifacts or performance measurements:
 iree-bazel-build --config=opt //loom/src/loom/tools/loom-compile
 ```
 
-`--config=opt` selects Bazel's optimized compilation mode, `-O3` for target and
-host tools, and ThinLTO for target links as one reproducible configuration. Use
-this profile instead of spelling those options independently so builds share
-action and test cache entries across worktrees and agents.
+`--config=opt` selects Bazel's optimized compilation mode, speed optimization
+for target and host tools, and ThinLTO for target links as one reproducible
+configuration. Toolchains own the driver spellings: Clang uses `-O3`, while
+clang-cl uses `/clang:-O3`. ELF toolchains distribute ThinLTO indexing and
+backend actions through Bazel; COFF, Mach-O, and WebAssembly toolchains perform
+ThinLTO within their link actions. Hosted WASI executables retain this profile
+while removing native sanitizer and driver-specific options.
+
+Use this profile instead of spelling those options independently so builds
+share action and test cache entries across worktrees and agents. Windows
+ThinLTO requires clang-cl. Native MSVC users can select ordinary `-c opt`
+without ThinLTO; it is a different optimization profile.
 
 The profile deliberately excludes `-march=native`. A binary compiled that way
 describes the CPU of the selected compiler worker, which need not be the CPU

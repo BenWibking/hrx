@@ -32,6 +32,7 @@ single_version_override(
         "//build_tools/third_party/rules_cc:sanitizer_debug_info.patch",
         "//build_tools/third_party/rules_cc:static_library_linking.patch",
         "//build_tools/third_party/rules_cc:windows_toolchain.patch",
+        "//build_tools/third_party/rules_cc:optimized_profile.patch",
     ],
     version = "0.2.21",
 )
