@@ -45,6 +45,7 @@ loom_cc_test(
     loom::codegen::low::allocation::assignment
     loom::codegen::low::frame
     loom::codegen::low::placement
+    loom::target::test::descriptors
 )
 
 loom_cc_library(
