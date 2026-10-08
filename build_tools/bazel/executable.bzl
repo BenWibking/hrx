@@ -6,6 +6,7 @@
 
 """Rules for exposing existing executables as binaries or tests."""
 
+load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(
     "//build_tools/wasm:build_defs.bzl",
@@ -81,7 +82,7 @@ IreeExecutableInfo = provider(
     fields = {
         "data": "depset of additional runtime data files.",
         "env": "Environment variables expanded against the wrapper runfiles.",
-        "output": "Executable symlink produced by the wrapper.",
+        "output": "Executable produced by the wrapper.",
         "src": "Wrapped executable label.",
     },
 )
@@ -126,8 +127,8 @@ def _runfile_path(ctx, file):
 
 # The Windows loader resolves implicit imports beside the path used to launch
 # the image. A cross-package wrapper changes that path and can therefore strand
-# source-adjacent DLLs. Use a trampoline only for that exact case; ordinary
-# wrappers remain direct symlinks.
+# source-adjacent DLLs. Windows wrappers without these DLLs remain direct
+# symlinks.
 def _needs_windows_launcher(ctx, output):
     if not _is_windows_target(ctx):
         return False
@@ -147,6 +148,29 @@ def _native_executable_output(ctx):
     if not output_name:
         output_name = ctx.label.name
     output = ctx.actions.declare_file(output_name)
+    if not _is_windows_target(ctx) and ctx.executable.src.dirname != output.dirname:
+        # A declared file symlink can become ordinary file content remotely.
+        # Launch the source at its declared runfile path so loader-relative
+        # library paths retain the source package's directory depth.
+        ctx.actions.write(
+            output = output,
+            content = (
+                "#!/bin/sh\n" +
+                'RUNFILES_DIR="${RUNFILES_DIR:-${TEST_SRCDIR:-$0.runfiles}}"\n' +
+                "export RUNFILES_DIR\n" +
+                'exec "$RUNFILES_DIR"/%s "$@"\n' %
+                shell.quote(_runfile_path(ctx, ctx.executable.src))
+            ),
+            is_executable = True,
+        )
+        return struct(
+            # The script embeds its source runfile; no private environment.
+            launch_environment = {},
+            # Public executable retaining the wrapper target's identity.
+            output = output,
+            # The source must exist even if its own runfiles omit itself.
+            runfiles = ctx.runfiles(files = [ctx.executable.src]),
+        )
     needs_launcher = _needs_windows_launcher(ctx, output)
     ctx.actions.symlink(
         is_executable = True,
