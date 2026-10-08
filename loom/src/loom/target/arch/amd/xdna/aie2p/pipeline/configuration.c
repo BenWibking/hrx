@@ -113,6 +113,24 @@ static iree_status_t loom_aie2p_native_config_write(
       operands, 2, loom_named_attr_slice_empty());
 }
 
+static iree_status_t loom_aie2p_native_config_reset_core(
+    loom_aie2p_native_configuration_t* config,
+    loom_xdna_tile_coordinate_t tile) {
+  // Disable and reset are bits in the same control register. Set the reset
+  // state atomically while preserving the register's other fields.
+  const uint32_t enable = loom_xdna_register_field_encode_admitted(
+      LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_ENABLE, 1);
+  const uint32_t reset = loom_xdna_register_field_encode_admitted(
+      LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_RESET, 1);
+  const uint64_t address = loom_xdna_register_field_address_admitted(
+      config->context->family, LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_RESET,
+      tile, NULL);
+  const uint64_t operands[] = {address, enable | reset, reset};
+  return loom_aie2p_native_config_op(
+      config, AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32,
+      operands, IREE_ARRAYSIZE(operands), loom_named_attr_slice_empty());
+}
+
 static iree_status_t loom_aie2p_native_config_routes(
     loom_aie2p_native_configuration_t* config) {
   const loom_aie2p_native_context_t* context = config->context;
@@ -426,14 +444,8 @@ iree_status_t loom_aie2p_native_emit_configuration(
                             loom_low_func_def_body(initialize));
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_aie2p_native_worker_t* worker = &context->workers[i];
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, worker->tile->coordinate,
-        LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_ENABLE, NULL, 0, 0,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, worker->tile->coordinate,
-        LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_RESET, NULL, 0, 1,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+    IREE_RETURN_IF_ERROR(
+        loom_aie2p_native_config_reset_core(&config, worker->tile->coordinate));
     const uint64_t position[] = {worker->tile->coordinate.column,
                                  worker->tile->coordinate.row};
     loom_string_id_t program_name;
@@ -529,12 +541,7 @@ iree_status_t loom_aie2p_native_emit_configuration(
   for (iree_host_size_t i = 0; i < realization->resources.strand_count; ++i) {
     const loom_xdna_tile_coordinate_t tile =
         context->workers[i].tile->coordinate;
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, tile, LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_ENABLE, NULL, 0, 0,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
-    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_register(
-        &config, tile, LOOM_XDNA_REGISTER_FIELD_CORE_CONTROL_RESET, NULL, 0, 1,
-        AIE2P_CONFIGURATION_DESCRIPTOR_REF_CONFIGURATION_WRITE_MASK32));
+    IREE_RETURN_IF_ERROR(loom_aie2p_native_config_reset_core(&config, tile));
   }
   IREE_RETURN_IF_ERROR(loom_aie2p_worker_return(&config.builder, NULL, 0));
 
