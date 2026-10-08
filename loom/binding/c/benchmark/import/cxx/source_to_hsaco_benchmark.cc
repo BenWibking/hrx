@@ -312,6 +312,12 @@ constexpr CxxKernel kMxfp4 = {"mxfp_group_dot.cxx", "mxfp4_decode_dot",
                               "gfx1250"};
 constexpr CxxKernel kMxfp8 = {"mxfp_group_dot.cxx", "mxfp8_decode_dot",
                               "gfx1250"};
+constexpr CxxKernel kQ4KQ8SwiGlu = {
+    "q4k_q8_swiglu.cxx",
+    "ffn_routed_gate_up_swiglu_q4k_q8",
+    "gfx1250",
+    "config.def @ffn_routed_gate_up.input_size = 4096 : i32\n",
+};
 constexpr CxxKernel kConfiguredWorkgroupStorage = {
     "configured_workgroup_storage.cxx",
     "configured_workgroup_storage",
@@ -354,6 +360,7 @@ void RegisterCxxJitPhaseBenchmarks(const char* kernel_name,
 [[maybe_unused]] const bool kCxxJitPhasesRegistered = [] {
   RegisterCxxJitPhaseBenchmarks("RmsNorm", &kRmsNorm);
   RegisterCxxJitPhaseBenchmarks("Mxfp8Gfx1250", &kMxfp8);
+  RegisterCxxJitPhaseBenchmarks("Q4KQ8SwiGluGfx1250", &kQ4KQ8SwiGlu);
   RegisterCxxJitPhaseBenchmarks("ConfiguredWorkgroupStorage",
                                 &kConfiguredWorkgroupStorage);
   return true;
@@ -369,6 +376,8 @@ BENCHMARK_CAPTURE(SourceToHsaco, Mxfp4Gfx1250, &kMxfp4)
     ->Unit(::benchmark::kMicrosecond);
 BENCHMARK_CAPTURE(SourceToHsaco, Mxfp8Gfx1250, &kMxfp8)
     ->Unit(::benchmark::kMicrosecond);
+BENCHMARK_CAPTURE(SourceToHsaco, Q4KQ8SwiGluGfx1250, &kQ4KQ8SwiGlu)
+    ->Unit(::benchmark::kMicrosecond);
 BENCHMARK_CAPTURE(SourceToHsaco, ConfiguredWorkgroupStorage,
                   &kConfiguredWorkgroupStorage)
     ->Unit(::benchmark::kMicrosecond);
@@ -377,6 +386,9 @@ BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, RmsNorm, &kRmsNorm)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, Mxfp8Gfx1250, &kMxfp8)
+    ->Unit(::benchmark::kMicrosecond)
+    ->Iterations(1);
+BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, Q4KQ8SwiGluGfx1250, &kQ4KQ8SwiGlu)
     ->Unit(::benchmark::kMicrosecond)
     ->Iterations(1);
 BENCHMARK_CAPTURE(SourceToHsacoColdWorkspace, ConfiguredWorkgroupStorage,

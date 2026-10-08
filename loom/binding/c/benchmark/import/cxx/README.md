@@ -101,10 +101,10 @@ done
 ## Source to HSACO
 
 This Google Benchmark measures the public C++ importer through final HSACO
-emission for the maintained attention, llama.cpp RMSNorm, and aiter FP16 SwiGLU
-sources. It targets `gfx1151` without opening a GPU device. Numerical execution
-coverage and source provenance live with the kernels under
-`loom/src/loom/import/cxx/test/`.
+emission for maintained attention, normalization, activation, storage-encoding,
+and packed-quantized projection sources. Cases select `gfx1151` or `gfx1250`
+without opening a GPU device. Numerical execution coverage and source
+provenance live with each kernel's optional CXX test package.
 Compilation permits approximate mathematical functions and supplies three
 workgroups, matching that corpus's numerical configuration.
 
@@ -115,10 +115,12 @@ compiler, prepared pipeline, target profile, config module, source handle, and
 workspace are reused. Process startup and setup are outside timing. One warmup
 compilation precedes measurement; parsed C++ ASTs are not cached.
 
-The `CxxJitPhase` rows attribute this endpoint with two maintained sources:
-llama.cpp RMSNorm provides a small ordinary kernel, while the MXFP8 group dot
-exercises storage encodings, narrow-float conversion, vectors, reductions, and
-target-specific lowering. Each row invokes a complete public compiler boundary:
+The `CxxJitPhase` rows attribute this endpoint with maintained sources. llama.cpp
+RMSNorm provides a small ordinary kernel; the MXFP8 group dot exercises storage
+encodings, narrow-float conversion, vectors, reductions, and target-specific
+lowering; and the routed Q4_K/Q8_1 SwiGLU combines packed records, configuration,
+template application, integer dots, subgroup reductions, and nontrivial address
+arithmetic. Each row invokes a complete public compiler boundary:
 
 | Phase | Timed operation |
 | --- | --- |
@@ -135,6 +137,29 @@ cumulative compilations, while `EmitPreparedLow` starts from retained prepared
 IR, so phase times are not additive reconstructions of `SourceToHsaco`.
 Validation, result construction, teardown, and arena reuse remain owned by the
 public operation that performs them.
+
+The routed Q4_K/Q8_1 source supplies input size 4096 through an ordinary
+`config.def` and compiles its complete 768-channel kernel for `gfx1250`. An
+optimized run on an AMD Ryzen Threadripper 3970X on 2026-10-08 measured these
+median wall times over seven 100-iteration repetitions:
+
+| Public boundary | Routed Q4_K/Q8_1 SwiGLU |
+| --- | ---: |
+| Import to verified High IR | 6.085 ms |
+| Clone High IR | 95.8 us |
+| Through source-low | 5.108 ms |
+| Through prepared-low | 5.036 ms |
+| Clone prepared Low IR | 98.4 us |
+| Emit prepared Low IR to HSACO | 3.638 ms |
+| Complete source to HSACO | 16.241 ms |
+
+The benchmark lease was held, CPU scaling and ASLR were disabled, and process
+startup was outside timing. The complete row's repetition coefficient of
+variation was 2.8%. Warmed iterations allocated no new workspace blocks. Seven
+one-iteration cold-workspace repetitions allocated fifteen 128 KiB blocks, or
+1.875 MiB. Their 14.821 ms median had 5.8% variation, so the row is retained as
+first-growth allocation evidence rather than a latency comparison. The input
+source is 11,350 bytes and the emitted HSACO is 9,216 bytes.
 
 `ConfiguredWorkgroupStorage` measures a specialization-first kernel whose C++
 source declares a constrained stage count, uses that value to size aligned
