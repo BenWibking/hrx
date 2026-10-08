@@ -15,19 +15,10 @@
 extern "C" {
 #endif
 
-typedef struct loom_low_lower_structural_types_t
-    loom_low_lower_structural_types_t;
-typedef struct loom_low_lower_structural_block_t
-    loom_low_lower_structural_block_t;
-
 typedef struct loom_low_lower_structural_plan_t {
-  // CFG signatures and branch choices indexed by source block ordinal. NULL
-  // when neither non-entry arguments nor conditional edges require a plan.
-  loom_low_lower_structural_block_t* blocks;
-  // Last typed operation, used only while constructing the plan.
-  loom_low_lower_structural_types_t* last;
-  // Next typed operation consumed by emission.
-  const loom_low_lower_structural_types_t* cursor;
+  // Per-block exact branch choices: zero for dynamic, one for false, and two
+  // for true. NULL when all edges are dynamic or unconditional.
+  uint8_t* branch_conditions;
 } loom_low_lower_structural_plan_t;
 
 // Retains an exact conditional edge before structural storage demand is marked.
@@ -58,9 +49,9 @@ loom_type_t loom_low_lower_structural_block_argument_type(
 iree_status_t loom_low_lower_structural_plan_op(
     loom_low_lower_context_t* context, const loom_op_t* source_op);
 
-// Consumes the next typed structural operation and expands its canonical type
-// IDs into emission scratch. Zero-sized tuples produce NULL. The header output
-// is used only for scf.while; other callers pass NULL.
+// Expands the operation's selected result bindings into emission scratch.
+// Zero-sized tuples produce NULL. The header output is used only for scf.while;
+// other callers pass NULL.
 iree_status_t loom_low_lower_structural_take_types(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_type_t** out_result_types, loom_type_t** out_header_types);

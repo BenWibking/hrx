@@ -13,6 +13,7 @@ loom_cc_library(
   NAME
     lower
   HDRS
+    "bindings.h"
     "call_predicates.h"
     "context.h"
     "contract_query.h"
@@ -42,6 +43,7 @@ loom_cc_library(
     "structural_plan.h"
     "visibility.h"
   SRCS
+    "bindings.c"
     "call_predicates.c"
     "context.c"
     "contract_query.c"

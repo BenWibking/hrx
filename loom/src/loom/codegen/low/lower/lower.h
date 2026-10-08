@@ -23,6 +23,7 @@
 #include "loom/analysis/native_layout.h"
 #include "loom/analysis/symbolic_expr.h"
 #include "loom/codegen/low/descriptors.h"
+#include "loom/codegen/low/lower/bindings.h"
 #include "loom/codegen/low/lower/function_storage.h"
 #include "loom/codegen/low/lower/memory_effects.h"
 #include "loom/codegen/low/lower/module_state.h"
@@ -1239,12 +1240,6 @@ loom_low_lower_selected_plan_view_t loom_low_lower_context_selected_plan_view(
 void loom_low_lower_require_source_value_storage(
     loom_low_lower_context_t* context, loom_value_id_t source_value_id);
 
-// Returns true when |source_value_id| already has a non-elided low SSA mapping.
-// Emission callbacks may use this to select an optional equivalent source
-// realization. Required operands must use loom_low_lower_lookup_value.
-bool loom_low_lower_source_value_has_low_mapping(
-    const loom_low_lower_context_t* context, loom_value_id_t source_value_id);
-
 // Requires low SSA storage for every operand of |source_op|. This is the
 // conservative callback-plan fallback used when a target does not provide exact
 // storage demands for a selected plan.
@@ -1405,36 +1400,11 @@ iree_status_t loom_low_lower_map_value(loom_low_lower_context_t* context,
                                        loom_value_id_t source_value_id,
                                        loom_type_t* out_low_type);
 
-// Looks up the low SSA value already bound to |source_value_id|.
-iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
-                                          loom_value_id_t source_value_id,
-                                          loom_value_id_t* out_low_value_id);
-
 // Looks up the emitted low block corresponding to |source_block| in the source
 // function currently being lowered.
 iree_status_t loom_low_lower_lookup_block(loom_low_lower_context_t* context,
                                           const loom_block_t* source_block,
                                           loom_block_t** out_low_block);
-
-// Binds one source SSA value to the corresponding low SSA value. The source
-// value's display name is copied when available.
-iree_status_t loom_low_lower_bind_value(loom_low_lower_context_t* context,
-                                        loom_value_id_t source_value_id,
-                                        loom_value_id_t low_value_id);
-
-// Binds |result_value_id| to the low SSA value already selected for
-// |source_value_id|. This is for target callbacks that preserve a source-level
-// alias while relying on facts to carry view or offset semantics separately.
-iree_status_t loom_low_lower_bind_value_alias(loom_low_lower_context_t* context,
-                                              loom_value_id_t source_value_id,
-                                              loom_value_id_t result_value_id);
-
-// Marks one source SSA value as intentionally erased by the selected lowering
-// rule. This is only for source-level sequencing/control values whose users are
-// also lowered away, such as async tokens and groups. Elided values must never
-// be consumed as target-low operands.
-iree_status_t loom_low_lower_elide_value(loom_low_lower_context_t* context,
-                                         loom_value_id_t source_value_id);
 
 // Creates a target-low register type from a descriptor-set register-class ID.
 iree_status_t loom_low_lower_make_register_type(

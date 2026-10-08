@@ -587,19 +587,6 @@ iree_status_t loom_low_lower_get_or_allocate_module_target_state(
                                                      data_length, out_data);
 }
 
-static iree_status_t loom_low_lower_replace_value_binding(
-    loom_low_lower_context_t* context, loom_value_id_t source_value_id,
-    loom_value_id_t low_value_id) {
-  IREE_ASSERT_LT(low_value_id, context->module->values.count);
-  const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
-  IREE_ASSERT_NE(context->lowering.value_map[source_ordinal],
-                 LOOM_VALUE_ID_INVALID);
-  context->lowering.value_map[source_ordinal] = low_value_id;
-  return loom_low_lower_copy_value_name(context, source_value_id, low_value_id);
-}
-
 static loom_region_t* loom_low_lower_context_low_body(
     const loom_low_lower_context_t* context) {
   if (loom_low_func_def_isa(context->low_func_op)) {
@@ -910,73 +897,9 @@ iree_status_t loom_low_lower_map_value(loom_low_lower_context_t* context,
   return iree_ok_status();
 }
 
-iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
-                                          loom_value_id_t source_value_id,
-                                          loom_value_id_t* out_low_value_id) {
-  *out_low_value_id = LOOM_VALUE_ID_INVALID;
-  IREE_ASSERT(source_value_id != LOOM_VALUE_ID_INVALID &&
-                  source_value_id < context->module->values.count,
-              "source-to-low lookup for invalid source value");
-  const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
-  loom_value_id_t low_value_id = context->lowering.value_map[source_ordinal];
-  IREE_ASSERT(low_value_id != LOOM_VALUE_ID_INVALID,
-              "source-to-low missing target value binding");
-  IREE_ASSERT(low_value_id != LOOM_LOW_LOWER_VALUE_ID_ELIDED,
-              "source-to-low requested elided source value");
-  *out_low_value_id = low_value_id;
-  return iree_ok_status();
-}
-
-bool loom_low_lower_source_value_has_low_mapping(
-    const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
-  const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
-  const loom_value_id_t low_value_id =
-      context->lowering.value_map[source_ordinal];
-  return low_value_id != LOOM_VALUE_ID_INVALID &&
-         low_value_id != LOOM_LOW_LOWER_VALUE_ID_ELIDED;
-}
-
 iree_status_t loom_low_lower_copy_value_name(loom_low_lower_context_t* context,
                                              loom_value_id_t source_value_id,
                                              loom_value_id_t low_value_id) {
   return loom_module_overwrite_value_name(context->module, source_value_id,
                                           low_value_id);
-}
-
-iree_status_t loom_low_lower_bind_value(loom_low_lower_context_t* context,
-                                        loom_value_id_t source_value_id,
-                                        loom_value_id_t low_value_id) {
-  IREE_ASSERT_LT(low_value_id, context->module->values.count);
-  const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
-  loom_value_id_t existing = context->lowering.value_map[source_ordinal];
-  IREE_ASSERT(existing == LOOM_VALUE_ID_INVALID || existing == low_value_id);
-  context->lowering.value_map[source_ordinal] = low_value_id;
-  return loom_low_lower_copy_value_name(context, source_value_id, low_value_id);
-}
-
-iree_status_t loom_low_lower_bind_value_alias(loom_low_lower_context_t* context,
-                                              loom_value_id_t source_value_id,
-                                              loom_value_id_t result_value_id) {
-  loom_value_id_t low_value_id = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value_id, &low_value_id));
-  return loom_low_lower_bind_value(context, result_value_id, low_value_id);
-}
-
-iree_status_t loom_low_lower_elide_value(loom_low_lower_context_t* context,
-                                         loom_value_id_t source_value_id) {
-  const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
-  loom_value_id_t existing = context->lowering.value_map[source_ordinal];
-  IREE_ASSERT(existing == LOOM_VALUE_ID_INVALID ||
-              existing == LOOM_LOW_LOWER_VALUE_ID_ELIDED);
-  context->lowering.value_map[source_ordinal] = LOOM_LOW_LOWER_VALUE_ID_ELIDED;
-  return iree_ok_status();
 }

@@ -28,6 +28,7 @@ _LOWER_VISIBILITY = [
 loom_cc_library(
     name = "lower",
     srcs = [
+        "bindings.c",
         "call_predicates.c",
         "context.c",
         "contract_query.c",
@@ -59,6 +60,7 @@ loom_cc_library(
         "visibility.c",
     ],
     hdrs = [
+        "bindings.h",
         "call_predicates.h",
         "context.h",
         "contract_query.h",

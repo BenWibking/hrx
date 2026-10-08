@@ -30,7 +30,7 @@ typedef struct loom_low_lower_realizations_t loom_low_lower_realizations_t;
 typedef struct loom_low_lower_source_invoke_plan_t
     loom_low_lower_source_invoke_plan_t;
 
-enum loom_low_lower_value_storage_flag_bits_e {
+enum loom_low_lower_value_flag_bits_e {
   // The source value must be materialized as a target-Low SSA value.
   LOOM_LOW_LOWER_VALUE_STORAGE_REQUIRED = (uint8_t)1u << 0,
   // One selected memory plan can reuse this source realization. A second plan
@@ -43,8 +43,10 @@ enum loom_low_lower_value_storage_flag_bits_e {
   // Storage was required before backward selected-plan demand analysis.
   // Refinement retains these structural and function-boundary requirements.
   LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED = (uint8_t)1u << 3,
+  // The binding slot contains an emitted value instead of a selected type.
+  LOOM_LOW_LOWER_VALUE_MATERIALIZED = (uint8_t)1u << 4,
 };
-typedef uint8_t loom_low_lower_value_storage_flags_t;
+typedef uint8_t loom_low_lower_value_flags_t;
 
 enum loom_low_lower_selected_plan_flag_bits_e {
   // The selected source op is intentionally skipped because none of its
@@ -145,8 +147,8 @@ typedef struct loom_low_lower_source_plan_t {
   loom_low_representation_plan_t* representation_plan;
   // Shared pure-value placement, initialization and supplemental CFG payloads.
   loom_low_lower_realizations_t* realizations;
-  // Per-source-value storage demand flags indexed by source value ordinal.
-  loom_low_lower_value_storage_flags_t* value_storage_flags;
+  // Storage demands and binding states indexed by source value ordinal.
+  loom_low_lower_value_flags_t* value_flags;
   // Number of values addressed through selected fact-derived references.
   // Zero keeps ordinary rule selection and demand analysis on the direct path.
   loom_value_ordinal_t fact_storage_demand_count;

@@ -86,8 +86,8 @@ typedef struct loom_low_lowering_frame_t {
   loom_op_kind_t source_callable_exit_kind;
   // Retained source lowering decisions and value materialization demands.
   loom_low_lower_source_plan_t source_plan;
-  // Source local value ordinal to emitted low value ID map.
-  loom_value_id_t* value_map;
+  // Source ordinal to selected type, replaced in place by the emitted value.
+  loom_low_lower_value_binding_t* value_bindings;
   // Planned block bindings, with authored blocks first in source order.
   loom_block_t** block_map;
   // Planned block topology and branch expansions, before Low construction.

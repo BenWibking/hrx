@@ -1069,7 +1069,6 @@ static iree_status_t loom_low_lower_emit_body(loom_low_lower_context_t* context,
   if (iree_status_is_ok(status) && context->result->error_count == 0) {
     IREE_ASSERT_EQ(context->lowering.source_plan.selected_plan_emit_index,
                    context->lowering.source_plan.selected_plan_count);
-    IREE_ASSERT_EQ(context->lowering.source_plan.structural.cursor, NULL);
   }
   return status;
 }
@@ -1358,13 +1357,13 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
       context.lowering.value_domain.value_count != 0) {
     status = iree_arena_allocate_array(
         &context.function_arena, context.lowering.value_domain.value_count,
-        sizeof(*context.lowering.value_map),
-        (void**)&context.lowering.value_map);
+        sizeof(*context.lowering.value_bindings),
+        (void**)&context.lowering.value_bindings);
   }
   if (iree_status_is_ok(status)) {
     for (loom_value_ordinal_t i = 0;
          i < context.lowering.value_domain.value_count; ++i) {
-      context.lowering.value_map[i] = LOOM_VALUE_ID_INVALID;
+      context.lowering.value_bindings[i].type = LOOM_TYPE_ID_INVALID;
     }
   }
   if (iree_status_is_ok(status)) {

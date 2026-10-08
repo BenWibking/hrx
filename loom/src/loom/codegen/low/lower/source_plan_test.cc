@@ -8,6 +8,7 @@
 
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
+#include "loom/codegen/low/lower/bindings.h"
 #include "loom/codegen/low/lower/control_plan.h"
 #include "loom/codegen/low/testing/source_workload.h"
 #include "loom/error/error_catalog.h"
@@ -57,6 +58,8 @@ class LowLowerSourcePlanTest : public ::testing::Test {
       unsigned emission_count = 0;
       // Injects a resource-budget rejection at the target planning boundary.
       bool reject = false;
+      // First argument's native carrier before any Low SSA value exists.
+      loom_type_t argument_type = {};
     } entry;
     // Optional source fact/CFG arena retired at the start of emission.
     iree_arena_allocator_t* retire_analysis_arena = nullptr;
@@ -232,6 +235,15 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     ++entry.planning_count;
     EXPECT_EQ(loom_low_lower_context_low_function(context), nullptr);
     EXPECT_GT(loom_low_lower_context_selected_plan_count(context), 0u);
+    uint16_t argument_count = 0;
+    const loom_value_id_t* arguments = loom_func_like_arg_ids(
+        loom_low_lower_context_source_function(context), &argument_count);
+    EXPECT_EQ(argument_count, 2u);
+    entry.argument_type =
+        loom_low_lower_value_binding_type(context, arguments[0]);
+    EXPECT_TRUE(loom_type_is_register(entry.argument_type));
+    EXPECT_FALSE(
+        loom_low_lower_source_value_has_low_mapping(context, arguments[0]));
     // The unused add is already elided, so the target can account only for
     // resources that the selected program will actually emit.
     EXPECT_TRUE(loom_low_lower_context_selected_plan_view(context, 0).elided);
@@ -254,6 +266,18 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     auto& entry = static_cast<PlanObserver*>(user_data)->entry;
     EXPECT_EQ(entry.planning_count, 1u);
     EXPECT_NE(loom_low_lower_context_low_function(context), nullptr);
+    uint16_t argument_count = 0;
+    const loom_value_id_t* arguments = loom_func_like_arg_ids(
+        loom_low_lower_context_source_function(context), &argument_count);
+    EXPECT_TRUE(
+        loom_low_lower_source_value_has_low_mapping(context, arguments[0]));
+    loom_value_id_t low_argument = LOOM_VALUE_ID_INVALID;
+    IREE_RETURN_IF_ERROR(
+        loom_low_lower_lookup_value(context, arguments[0], &low_argument));
+    EXPECT_TRUE(loom_type_equal(
+        entry.argument_type,
+        loom_module_value_type(loom_low_lower_context_module(context),
+                               low_argument)));
     ++entry.emission_count;
     return iree_ok_status();
   }
