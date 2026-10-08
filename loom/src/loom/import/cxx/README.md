@@ -1118,12 +1118,13 @@ error because it would bypass late template selection.
 
 Providers can depend on a normalized target fact without naming a backend or
 processor. A trailing `loom::where` comparison against
-`loom::target::subgroup_size()` becomes the template's parameterized target
+`loom::target::subgroup::size()` becomes the template's parameterized target
 condition, while ordinary value clauses remain value predicates:
 
 ```cpp
 #include <loomcxx/kernel.h>
 #include <loomcxx/predicate.h>
+#include <loomcxx/target.h>
 
 LOOM_TEMPLATE_DECL("guide.scale")
 unsigned scale(unsigned value)
@@ -1131,13 +1132,13 @@ unsigned scale(unsigned value)
 
 LOOM_TEMPLATE_DEF(scale)
 [[loom::priority(20)]] unsigned scale_wave64(unsigned value)
-    [[loom::where(loom::target::subgroup_size() == 64u && value > 0u)]] {
+    [[loom::where(loom::target::subgroup::size() == 64u && value > 0u)]] {
   return value + value;
 }
 
 LOOM_TEMPLATE_DEF(scale)
 [[loom::priority(20)]] unsigned scale_wave32(unsigned value)
-    [[loom::where(32u == loom::target::subgroup_size() && value > 0u)]] {
+    [[loom::where(32u == loom::target::subgroup::size() && value > 0u)]] {
   return value << 1u;
 }
 

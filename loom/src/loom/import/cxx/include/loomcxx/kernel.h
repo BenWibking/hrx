@@ -48,16 +48,6 @@
 
 namespace loom {
 
-namespace target {
-
-// Reads the selected target's subgroup width in launch configuration code or
-// a trailing loom::where template applicability contract. This is a
-// compilation input, unlike loom::kernel::subgroup::size(), which queries the
-// executing kernel topology.
-[[loom::op("target.subgroup.size")]] unsigned subgroup_size();
-
-}  // namespace target
-
 // Declares integer truth, comparison, and conjunction contracts. Conditions
 // are retained as Loom facts without runtime evaluation. Calls, mutation,
 // volatile reads, and expressions without a retained scalar identity diagnose

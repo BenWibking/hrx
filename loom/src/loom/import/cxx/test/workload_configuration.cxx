@@ -6,9 +6,10 @@
 
 #include <loomcxx/check.h>
 #include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
 
 static loom::kernel::configuration configure_copy(unsigned item_count) {
-  unsigned width = loom::target::subgroup_size();
+  unsigned width = loom::target::subgroup::size();
   return {{(item_count + width - 1) / width, 1, 1}, {width, 1, 1}};
 }
 
