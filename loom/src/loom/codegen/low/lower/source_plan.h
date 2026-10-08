@@ -119,6 +119,8 @@ typedef struct loom_low_lower_descriptor_matrix_plan_t {
   loom_target_contract_descriptor_matrix_transform_flags_t transform_flags;
   // Descriptor row selected by the target matrix projection.
   loom_low_lower_resolved_descriptor_t descriptor;
+  // Canonical output carrier fixed by the selected matrix realization.
+  loom_type_id_t result_type;
   // Target-independent request facts used to materialize descriptor operands.
   loom_contract_request_t contract_request;
   // Target-owned immediate attributes materialized from request facts.

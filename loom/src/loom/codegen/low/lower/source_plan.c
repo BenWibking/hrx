@@ -1118,6 +1118,22 @@ static iree_status_t loom_low_lower_finalize_selected_plans(
       if (context->result->error_count != 0) {
         return iree_ok_status();
       }
+    } else if (selected_plan->kind ==
+                   LOOM_LOW_LOWER_SELECTED_PLAN_DESCRIPTOR_MATRIX &&
+               !iree_any_bit_set(selected_plan->flags,
+                                 LOOM_LOW_LOWER_SELECTED_PLAN_ELIDED)) {
+      loom_low_lower_descriptor_matrix_plan_t* matrix_plan =
+          (loom_low_lower_descriptor_matrix_plan_t*)
+              selected_plan->data.target_plan.target_data;
+      loom_type_t result_type = loom_type_none();
+      IREE_RETURN_IF_ERROR(loom_low_lower_map_value(
+          context, selected_plan->source_op,
+          loom_op_const_results(selected_plan->source_op)[0], &result_type));
+      if (context->result->error_count != 0) {
+        return iree_ok_status();
+      }
+      IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
+          context->module, result_type, &matrix_plan->result_type));
     }
     if (!loom_low_lower_selected_plan_preserves_volatile_memory(
             context->module, selected_plan)) {
@@ -1240,6 +1256,7 @@ static iree_status_t loom_low_lower_record_descriptor_matrix_plan(
     IREE_BUILTIN_UNREACHABLE();
   }
   plan_data->descriptor.descriptor = query_result->selected_descriptor;
+  plan_data->result_type = LOOM_TYPE_ID_INVALID;
   plan_data->contract_request = *contract_request;
   if (iree_any_bit_set(
           plan_data->transform_flags,
@@ -1803,6 +1820,13 @@ iree_status_t loom_low_lower_source_plan_build(
   if (iree_status_is_ok(status) && context->result->error_count == 0) {
     status = loom_low_lower_function_boundary_plan(context,
                                                    &context->planning_arena);
+  }
+  if (iree_status_is_ok(status) && context->result->error_count == 0 &&
+      context->policy->entry_setup.plan != NULL) {
+    loom_low_lower_planning_scope_begin(context);
+    status = context->policy->entry_setup.plan(
+        context->policy->entry_setup.user_data, context);
+    loom_low_lower_planning_scope_end(context);
   }
   iree_arena_deinitialize(&context->planning_arena);
   return status;

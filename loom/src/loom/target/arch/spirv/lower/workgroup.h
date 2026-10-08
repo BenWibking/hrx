@@ -26,8 +26,9 @@ void loom_spirv_mark_workgroup_plan_storage_demands(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_plan_t plan);
 
-// Validates final Workgroup storage use and emits packed entry storage roots.
-iree_status_t loom_spirv_emit_workgroup_entry_setup(
+// Validates final Workgroup storage use from retained allocation plans before
+// any Low values or symbols are created.
+iree_status_t loom_spirv_plan_workgroup_entry_setup(
     loom_low_lower_context_t* context);
 
 // Emits a previously selected Workgroup storage plan.

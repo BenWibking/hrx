@@ -250,16 +250,22 @@ typedef struct loom_low_lower_emit_preamble_callback_t {
   void* user_data;
 } loom_low_lower_emit_preamble_callback_t;
 
-typedef iree_status_t (*loom_low_lower_emit_entry_setup_fn_t)(
+typedef iree_status_t (*loom_low_lower_entry_setup_fn_t)(
     void* user_data, loom_low_lower_context_t* context);
 
-typedef struct loom_low_lower_emit_entry_setup_callback_t {
-  // Optional callback invoked after ABI live-ins and resources are emitted,
-  // before source body packets are emitted.
-  loom_low_lower_emit_entry_setup_fn_t fn;
-  // Caller-owned payload passed to |fn|.
+typedef struct loom_low_lower_entry_setup_t {
+  // Optional planning callback after operation selection, storage demand, and
+  // ABI planning. It consumes retained plans to validate entry resources and
+  // retain setup decisions before any Low construction. Source rejection
+  // emits diagnostics; status carries infrastructure failures only.
+  loom_low_lower_entry_setup_fn_t plan;
+  // Optional executor after ABI live-ins and resources are emitted, before
+  // source body packets. It consumes validated decisions without inspecting
+  // source facts or introducing new authored-input rejection.
+  loom_low_lower_entry_setup_fn_t emit;
+  // Caller-owned payload passed to both callbacks.
   void* user_data;
-} loom_low_lower_emit_entry_setup_callback_t;
+} loom_low_lower_entry_setup_t;
 
 typedef iree_status_t (*loom_low_lower_prepare_branch_fn_t)(
     void* user_data, loom_low_lower_context_t* context,
@@ -876,8 +882,9 @@ typedef struct loom_low_lower_policy_t {
                                   loom_type_t rhs);
   // Optionally emits target live-ins or other structural preamble packets.
   loom_low_lower_emit_preamble_callback_t emit_preamble;
-  // Optionally emits target entry-block setup packets after ABI imports.
-  loom_low_lower_emit_entry_setup_callback_t emit_entry_setup;
+  // Target entry resources planned before Low construction and emitted after
+  // ABI imports.
+  loom_low_lower_entry_setup_t entry_setup;
   // Optionally materializes target-owned low boundary attrs/layout from the
   // source function signature and mapped low signature.
   loom_low_lower_map_abi_layout_callback_t map_abi_layout;
@@ -1096,7 +1103,7 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
 loom_module_t* loom_low_lower_context_module(loom_low_lower_context_t* context);
 
 // Returns the builder positioned in the current low block. Only valid while
-// emit_preamble, emit_entry_setup, or emit_op callback code is emitting;
+// emit_preamble, entry_setup.emit, or emit_op callback code is emitting;
 // select_op callbacks must not mutate IR.
 loom_builder_t* loom_low_lower_context_builder(
     loom_low_lower_context_t* context);
@@ -1337,7 +1344,7 @@ typedef struct loom_low_lower_entry_interposition_t {
 
 // Interposes a low-only setup block before the mapped source entry block.
 //
-// This may only be called from an emit_entry_setup callback while the builder
+// This may only be called from an entry_setup.emit callback while the builder
 // is positioned at the end of the current physical entry block. The physical
 // entry block remains the function entry and must be terminated by the caller.
 // Source body emission will continue in the returned body_block, which receives

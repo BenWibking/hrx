@@ -243,7 +243,7 @@ static iree_status_t loom_spirv_workgroup_measure_storage(
   return iree_ok_status();
 }
 
-iree_status_t loom_spirv_emit_workgroup_entry_setup(
+iree_status_t loom_spirv_plan_workgroup_entry_setup(
     loom_low_lower_context_t* context) {
   uint64_t byte_extent = 0;
   IREE_RETURN_IF_ERROR(
@@ -261,7 +261,7 @@ iree_status_t loom_spirv_emit_workgroup_entry_setup(
         context, loom_low_lower_context_source_function(context).op,
         LOOM_ERR_TARGET_051_REF, params, IREE_ARRAYSIZE(params));
   }
-  return loom_spirv_workgroup_layout_emit_storage_roots(context);
+  return iree_ok_status();
 }
 
 static iree_status_t loom_spirv_lower_workgroup_alloca(

@@ -26,7 +26,11 @@ iree_status_t loom_amdgpu_select_preamble_plan(
 iree_status_t loom_amdgpu_emit_preamble(void* user_data,
                                         loom_low_lower_context_t* context);
 
-// Emits entry-block setup packets that depend on structural ABI imports.
+// Validates selected entry resources before constructing Low IR.
+iree_status_t loom_amdgpu_plan_entry_setup(void* user_data,
+                                           loom_low_lower_context_t* context);
+
+// Emits planned entry-block setup after structural ABI imports.
 iree_status_t loom_amdgpu_emit_entry_setup(void* user_data,
                                            loom_low_lower_context_t* context);
 

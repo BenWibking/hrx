@@ -10,6 +10,7 @@
 #include "iree/testing/status_matchers.h"
 #include "loom/codegen/low/lower/control_plan.h"
 #include "loom/codegen/low/testing/source_workload.h"
+#include "loom/error/error_catalog.h"
 #include "loom/ir/context.h"
 #include "loom/ir/module.h"
 #include "loom/ops/cfg/ops.h"
@@ -48,6 +49,15 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     iree_host_size_t plan_count = 0;
     bool overflow = false;
     SourcePlanObservation source_plan;
+    // Entry resources are validated before any definition is published.
+    struct {
+      // Number of planning callbacks after storage demand has settled.
+      unsigned planning_count = 0;
+      // Number of executors reached after successful planning.
+      unsigned emission_count = 0;
+      // Injects a resource-budget rejection at the target planning boundary.
+      bool reject = false;
+    } entry;
     // Optional source fact/CFG arena retired at the start of emission.
     iree_arena_allocator_t* retire_analysis_arena = nullptr;
     struct {
@@ -213,6 +223,38 @@ class LowLowerSourcePlanTest : public ::testing::Test {
       loom_builder_restore(builder, saved_ip);
       return status;
     }
+    return iree_ok_status();
+  }
+
+  static iree_status_t PlanEntry(void* user_data,
+                                 loom_low_lower_context_t* context) {
+    auto& entry = static_cast<PlanObserver*>(user_data)->entry;
+    ++entry.planning_count;
+    EXPECT_EQ(loom_low_lower_context_low_function(context), nullptr);
+    EXPECT_GT(loom_low_lower_context_selected_plan_count(context), 0u);
+    // The unused add is already elided, so the target can account only for
+    // resources that the selected program will actually emit.
+    EXPECT_TRUE(loom_low_lower_context_selected_plan_view(context, 0).elided);
+    if (!entry.reject) {
+      return iree_ok_status();
+    }
+    const loom_diagnostic_param_t params[] = {
+        loom_param_string(IREE_SV("plan")),
+        loom_param_string(IREE_SV("test")),
+        loom_param_u64(192),
+        loom_param_u64(128),
+    };
+    return loom_low_lower_emit_error_ref(
+        context, loom_low_lower_context_source_function(context).op,
+        LOOM_ERR_TARGET_051_REF, params, IREE_ARRAYSIZE(params));
+  }
+
+  static iree_status_t EmitEntry(void* user_data,
+                                 loom_low_lower_context_t* context) {
+    auto& entry = static_cast<PlanObserver*>(user_data)->entry;
+    EXPECT_EQ(entry.planning_count, 1u);
+    EXPECT_NE(loom_low_lower_context_low_function(context), nullptr);
+    ++entry.emission_count;
     return iree_ok_status();
   }
 
@@ -460,6 +502,34 @@ TEST_F(LowLowerSourcePlanTest, RejectsControlPlanWithoutPublishingBlocks) {
   EXPECT_FALSE(observer_.type_mapping.emission_started);
   EXPECT_EQ(module_->values.count, initial_value_count);
   EXPECT_EQ(source_body->block_count, 2u);
+  EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op,
+            function_.op);
+}
+
+TEST_F(LowLowerSourcePlanTest, PlansEntryResourcesAfterStorageDemand) {
+  policy_.entry_setup = {PlanEntry, EmitEntry, &observer_};
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_EQ(result_.error_count, 0u);
+  EXPECT_EQ(observer_.entry.planning_count, 1u);
+  EXPECT_EQ(observer_.entry.emission_count, 1u);
+}
+
+TEST_F(LowLowerSourcePlanTest, RejectsEntryResourcesBeforeLowConstruction) {
+  policy_.entry_setup = {PlanEntry, EmitEntry, &observer_};
+  observer_.entry.reject = true;
+  const iree_host_size_t initial_value_count = module_->values.count;
+  const loom_region_t* source_body = loom_func_like_body(function_);
+  const loom_symbol_ref_t symbol = loom_func_like_callee(function_);
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_EQ(result_.error_count, 1u);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+  EXPECT_EQ(observer_.entry.planning_count, 1u);
+  EXPECT_EQ(observer_.entry.emission_count, 0u);
+  EXPECT_FALSE(observer_.type_mapping.emission_started);
+  EXPECT_EQ(module_->values.count, initial_value_count);
+  EXPECT_EQ(loom_func_like_body(function_), source_body);
   EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op,
             function_.op);
 }

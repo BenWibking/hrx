@@ -1606,10 +1606,15 @@ iree_status_t loom_amdgpu_emit_current_workgroup_linear_id(
       scaled_z, result_type, out_linear_id);
 }
 
+iree_status_t loom_amdgpu_plan_entry_setup(void* user_data,
+                                           loom_low_lower_context_t* context) {
+  (void)user_data;
+  return loom_amdgpu_validate_workgroup_storage(context);
+}
+
 iree_status_t loom_amdgpu_emit_entry_setup(void* user_data,
                                            loom_low_lower_context_t* context) {
   (void)user_data;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_validate_workgroup_storage(context));
   IREE_RETURN_IF_ERROR(loom_amdgpu_cluster_preamble_emit_entry_setup(context));
   IREE_RETURN_IF_ERROR(
       loom_amdgpu_source_alloca_layout_emit_low_storage_roots(context));

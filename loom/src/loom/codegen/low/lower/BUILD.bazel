@@ -319,6 +319,7 @@ loom_cc_test(
     deps = [
         ":lower",
         "//loom/src/loom/codegen/low/testing:source_workload",
+        "//loom/src/loom/error:error_defs",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops/cfg",
         "//loom/src/loom/ops/func",

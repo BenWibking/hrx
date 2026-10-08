@@ -313,6 +313,7 @@ loom_cc_test(
     iree::testing::gtest
     iree::testing::gtest_main
     loom::codegen::low::testing::source_workload
+    loom::error::error_defs
     loom::ir
     loom::ops::cfg
     loom::ops::func

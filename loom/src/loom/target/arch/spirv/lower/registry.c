@@ -360,7 +360,13 @@ static iree_status_t loom_spirv_emit_op(void* user_data,
 static iree_status_t loom_spirv_emit_entry_setup(
     void* user_data, loom_low_lower_context_t* context) {
   (void)user_data;
-  return loom_spirv_emit_workgroup_entry_setup(context);
+  return loom_spirv_workgroup_layout_emit_storage_roots(context);
+}
+
+static iree_status_t loom_spirv_plan_entry_setup(
+    void* user_data, loom_low_lower_context_t* context) {
+  (void)user_data;
+  return loom_spirv_plan_workgroup_entry_setup(context);
 }
 
 static void loom_spirv_mark_plan_storage_demands(
@@ -380,7 +386,9 @@ static const loom_low_lower_policy_t kSpirvLowLowerPolicy = {
     .map_argument = {.fn = loom_spirv_map_argument, .user_data = NULL},
     .source_type_supported = {.fn = loom_spirv_source_type_supported,
                               .user_data = NULL},
-    .emit_entry_setup = {.fn = loom_spirv_emit_entry_setup, .user_data = NULL},
+    .entry_setup = {.plan = loom_spirv_plan_entry_setup,
+                    .emit = loom_spirv_emit_entry_setup,
+                    .user_data = NULL},
     .contract = LOOM_SPIRV_LOGICAL_CONTRACT,
     .source_memory_root_byte_offset =
         {

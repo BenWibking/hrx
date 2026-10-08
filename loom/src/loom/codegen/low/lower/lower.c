@@ -165,7 +165,7 @@ static iree_status_t loom_low_lower_emit_preamble(
 
 static iree_status_t loom_low_lower_emit_entry_setup(
     loom_low_lower_context_t* context) {
-  if (context->policy->emit_entry_setup.fn == NULL) {
+  if (context->policy->entry_setup.emit == NULL) {
     return iree_ok_status();
   }
 
@@ -173,8 +173,8 @@ static iree_status_t loom_low_lower_emit_entry_setup(
   loom_builder_ip_t saved_ip = loom_builder_enter_region(
       &context->builder, context->low_func_op, low_body);
   loom_builder_set_block(&context->builder, loom_region_entry_block(low_body));
-  iree_status_t status = context->policy->emit_entry_setup.fn(
-      context->policy->emit_entry_setup.user_data, context);
+  iree_status_t status = context->policy->entry_setup.emit(
+      context->policy->entry_setup.user_data, context);
   loom_builder_restore(&context->builder, saved_ip);
   return status;
 }
@@ -885,10 +885,8 @@ static iree_status_t loom_low_lower_emit_descriptor_matrix_vector_mma(
       context, loom_vector_mma_init(source_op), &low_init));
 
   const loom_value_id_t result = loom_vector_mma_result(source_op);
-  loom_type_t result_low_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_map_value(context, source_op, result, &result_low_type));
-  IREE_ASSERT(loom_low_type_is_register(result_low_type));
+  const loom_type_t result_low_type =
+      loom_type_table_get(&context->module->types, plan->result_type);
 
   loom_value_id_t* operands = NULL;
   iree_host_size_t operand_count = 0;
