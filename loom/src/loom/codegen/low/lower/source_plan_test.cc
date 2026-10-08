@@ -641,7 +641,8 @@ TEST_F(LowLowerSourcePlanTest, InheritedCarrierTracksLaterProducerSelection) {
 
   loom_low_lower_context_t lowering = {};
   lowering.module = module_;
-  auto& frame = lowering.lowering;
+  loom_low_lowering_frame_t frame = {};
+  lowering.lowering = &frame;
   IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region_tree(
       module_, loom_func_like_body(function_), &analysis_arena_,
       &frame.value_domain));
@@ -670,6 +671,55 @@ TEST_F(LowLowerSourcePlanTest, InheritedCarrierTracksLaterProducerSelection) {
             loom_local_value_domain_ordinal(&frame.value_domain, producer));
   EXPECT_FALSE(loom_low_lower_source_value_has_low_mapping(&lowering, second));
   loom_local_value_domain_release(&frame.value_domain);
+}
+
+TEST_F(LowLowerSourcePlanTest,
+       PlansSurviveOtherFunctionsAndAnalysisRetirement) {
+  // Two independent plans share the module's single ordinal scratch borrow.
+  // Execute in reverse order after both fact scopes have been released.
+  policy_.emit_preamble = {};
+  const loom_func_like_t first_function = function_;
+  const loom_symbol_ref_t first_symbol = loom_func_like_callee(first_function);
+  iree_arena_allocator_t plan_arena;
+  iree_arena_initialize(&block_pool_, &plan_arena);
+  loom_low_lower_function_plan_t* first_plan = nullptr;
+  IREE_ASSERT_OK(loom_low_lower_plan_function(
+      module_, first_function, &options_, &plan_arena, &result_, &first_plan));
+  ASSERT_NE(first_plan, nullptr);
+  EXPECT_EQ(module_->symbols.entries[first_symbol.symbol_id].defining_op,
+            first_function.op);
+
+  BuildFunction(IREE_SV("second"));
+  iree_arena_reset(&analysis_arena_);
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(
+      &fact_table_, &analysis_arena_, module_->values.count));
+  fact_table_.context.target_facts = &target_facts_;
+  IREE_ASSERT_OK(
+      loom_value_fact_table_compute(&fact_table_, module_, function_));
+  const loom_symbol_ref_t second_symbol = loom_func_like_callee(function_);
+  const iree_host_size_t value_count = module_->values.count;
+  loom_low_lower_result_t second_result = {};
+  loom_low_lower_function_plan_t* second_plan = nullptr;
+  IREE_ASSERT_OK(loom_low_lower_plan_function(module_, function_, &options_,
+                                              &plan_arena, &second_result,
+                                              &second_plan));
+  ASSERT_NE(second_plan, nullptr);
+  EXPECT_EQ(module_->values.count, value_count);
+  EXPECT_EQ(module_->symbols.entries[second_symbol.symbol_id].defining_op,
+            function_.op);
+  iree_arena_reset(&analysis_arena_);
+
+  IREE_ASSERT_OK(loom_low_lower_emit_function(second_plan, &second_result));
+  IREE_ASSERT_OK(loom_low_lower_emit_function(first_plan, &result_));
+  EXPECT_TRUE(loom_low_func_def_isa(
+      module_->symbols.entries[first_symbol.symbol_id].defining_op));
+  EXPECT_TRUE(loom_low_func_def_isa(
+      module_->symbols.entries[second_symbol.symbol_id].defining_op));
+  EXPECT_EQ(result_.error_count + second_result.error_count, 0u);
+  loom_low_lower_function_plan_deinitialize(second_plan);
+  loom_low_lower_function_plan_deinitialize(first_plan);
+  loom_low_lower_result_deinitialize(&second_result);
+  iree_arena_deinitialize(&plan_arena);
 }
 
 TEST_F(LowLowerSourcePlanTest, PlansEntryResourcesAfterStorageDemand) {

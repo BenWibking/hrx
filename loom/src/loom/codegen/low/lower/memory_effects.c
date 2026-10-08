@@ -175,7 +175,7 @@ iree_status_t loom_low_lower_record_memory_packet(
     const loom_low_source_memory_access_plan_t* source_plan,
     loom_value_facts_t additional_offset) {
   const loom_low_lower_memory_origin_t* origin =
-      context->lowering.source_plan.memory.current->origin;
+      context->lowering->source_plan.memory.current->origin;
   loom_low_memory_relative_interval_t relative;
   int64_t lane_byte_count = 0;
   const bool has_interval = loom_low_lower_memory_packet_interval(

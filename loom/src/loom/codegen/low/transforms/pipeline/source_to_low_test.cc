@@ -798,15 +798,24 @@ TEST_F(LowLowerPassTest, InvokeNormalizesToDirectLowCallWithPolicyPreserved) {
   EXPECT_TRUE(HasSymbol(module.get(), IREE_SV("helper")));
 }
 
-TEST_F(LowLowerPassTest, DeclarationRejectionPreservesEarlierSourceSymbols) {
-  ModulePtr module =
-      Parse(IREE_SV("test.target<low_core> @target\n"
-                    "func.decl target(@target) @valid(%input: i32) -> (i32)\n"
-                    "func.decl target(@target) @unsupported(%input: f64)\n"));
+TEST_F(LowLowerPassTest, DefinitionRejectionPreservesEarlierSourceSymbols) {
+  ModulePtr module = Parse(
+      IREE_SV("test.target<low_core> @target\n"
+              "func.decl target(@target) @valid(%input: i32) -> (i32)\n"
+              "func.def target(@target) @identity(%input: i32) -> (i32) {\n"
+              "  func.return %input : i32\n"
+              "}\n"
+              "func.def target(@target) @unsupported(%input: f64) {\n"
+              "  func.return\n"
+              "}\n"));
   const loom_symbol_ref_t valid_ref =
       FindSymbolRef(module.get(), IREE_SV("valid"));
   const loom_symbol_ref_t unsupported_ref =
       FindSymbolRef(module.get(), IREE_SV("unsupported"));
+  const loom_symbol_ref_t identity_ref =
+      FindSymbolRef(module.get(), IREE_SV("identity"));
+  const loom_op_t* identity =
+      module->symbols.entries[identity_ref.symbol_id].defining_op;
   const loom_op_t* valid =
       module->symbols.entries[valid_ref.symbol_id].defining_op;
   const loom_op_t* unsupported =
@@ -820,6 +829,9 @@ TEST_F(LowLowerPassTest, DeclarationRejectionPreservesEarlierSourceSymbols) {
   EXPECT_EQ(module->values.count, initial_value_count);
   EXPECT_EQ(loom_module_block(module.get())->op_count, op_count);
   EXPECT_EQ(module->symbols.entries[valid_ref.symbol_id].defining_op, valid);
+  EXPECT_EQ(module->symbols.entries[identity_ref.symbol_id].defining_op,
+            identity);
+  EXPECT_FALSE(iree_any_bit_set(identity->flags, LOOM_OP_FLAG_DEAD));
   EXPECT_EQ(module->symbols.entries[unsupported_ref.symbol_id].defining_op,
             unsupported);
   EXPECT_FALSE(iree_any_bit_set(valid->flags, LOOM_OP_FLAG_DEAD));

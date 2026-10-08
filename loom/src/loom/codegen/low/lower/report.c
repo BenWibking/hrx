@@ -56,11 +56,11 @@ static iree_status_t loom_low_lower_report_op_finalized(void* user_data,
 
 void loom_low_lower_report_initialize(loom_low_lower_context_t* context) {
   if (!iree_allocator_is_null(context->options->report_allocator)) {
-    context->lowering.report.selection_cursor =
+    context->lowering->report.selection_cursor =
         context->result->report_rows.head;
     context->builder.on_op_finalized = (loom_builder_callback_t){
         .fn = loom_low_lower_report_op_finalized,
-        .user_data = &context->lowering.report,
+        .user_data = &context->lowering->report,
     };
   }
 }
@@ -242,7 +242,7 @@ iree_status_t loom_low_lower_report_prepare(loom_low_lower_context_t* context) {
   if (!loom_low_lower_context_wants_report_rows(context)) {
     return iree_ok_status();
   }
-  const loom_low_lower_source_plan_t* plan = &context->lowering.source_plan;
+  const loom_low_lower_source_plan_t* plan = &context->lowering->source_plan;
   iree_status_t status = iree_ok_status();
   for (iree_host_size_t i = 0;
        i < plan->selected_plan_count && iree_status_is_ok(status); ++i) {
@@ -257,7 +257,7 @@ iree_status_t loom_low_lower_report_prepare(loom_low_lower_context_t* context) {
 
 void loom_low_lower_report_record_emission(loom_low_lower_context_t* context,
                                            uint32_t emitted_low_op_count) {
-  loom_low_lower_report_state_t* report = &context->lowering.report;
+  loom_low_lower_report_state_t* report = &context->lowering->report;
   loom_low_lower_report_row_t* row = &loom_low_lower_report_row_vec_rows(
       report->selection_cursor)[report->selection_index++];
   row->emitted_low_op_count = emitted_low_op_count;
@@ -376,17 +376,17 @@ static bool loom_low_lower_memory_expression_key_from_source_plan(
 static iree_status_t loom_low_lower_memory_expression_ensure_capacity(
     loom_low_lower_context_t* context, iree_host_size_t minimum_capacity) {
   if (minimum_capacity <=
-      context->lowering.report.memory_expression_entry_capacity) {
+      context->lowering->report.memory_expression_entry_capacity) {
     return iree_ok_status();
   }
-  void* entries = context->lowering.report.memory_expression_entries;
+  void* entries = context->lowering->report.memory_expression_entries;
   IREE_RETURN_IF_ERROR(iree_arena_grow_array(
-      &context->function_arena,
-      context->lowering.report.memory_expression_entry_capacity,
+      &context->analysis_arena,
+      context->lowering->report.memory_expression_entry_capacity,
       minimum_capacity,
-      sizeof(*context->lowering.report.memory_expression_entries),
-      &context->lowering.report.memory_expression_entry_capacity, &entries));
-  context->lowering.report.memory_expression_entries =
+      sizeof(*context->lowering->report.memory_expression_entries),
+      &context->lowering->report.memory_expression_entry_capacity, &entries));
+  context->lowering->report.memory_expression_entries =
       (loom_low_lower_memory_expression_entry_t*)entries;
   return iree_ok_status();
 }
@@ -397,23 +397,23 @@ static iree_status_t loom_low_lower_memory_expression_intern(
     loom_low_memory_expr_id_t* out_expression_id) {
   *out_expression_id = LOOM_LOW_MEMORY_EXPR_ID_NONE;
   for (iree_host_size_t i = 0;
-       i < context->lowering.report.memory_expression_entry_count; ++i) {
+       i < context->lowering->report.memory_expression_entry_count; ++i) {
     if (loom_low_lower_memory_expression_keys_equal(
-            &context->lowering.report.memory_expression_entries[i].key, key)) {
+            &context->lowering->report.memory_expression_entries[i].key, key)) {
       *out_expression_id = (loom_low_memory_expr_id_t)i;
       return iree_ok_status();
     }
   }
-  if (context->lowering.report.memory_expression_entry_count >=
+  if (context->lowering->report.memory_expression_entry_count >=
       (iree_host_size_t)LOOM_LOW_MEMORY_EXPR_ID_NONE) {
     return iree_make_status(IREE_STATUS_RESOURCE_EXHAUSTED,
                             "too many source-memory report expressions");
   }
   IREE_RETURN_IF_ERROR(loom_low_lower_memory_expression_ensure_capacity(
-      context, context->lowering.report.memory_expression_entry_count + 1));
+      context, context->lowering->report.memory_expression_entry_count + 1));
   const iree_host_size_t entry_index =
-      context->lowering.report.memory_expression_entry_count++;
-  context->lowering.report.memory_expression_entries[entry_index] =
+      context->lowering->report.memory_expression_entry_count++;
+  context->lowering->report.memory_expression_entries[entry_index] =
       (loom_low_lower_memory_expression_entry_t){.key = *key};
   *out_expression_id = (loom_low_memory_expr_id_t)entry_index;
   return iree_ok_status();
@@ -465,7 +465,7 @@ static bool loom_low_lower_report_loop_region_execution_count(
     const loom_low_lower_context_t* context, loom_loop_like_t loop,
     const loom_region_t* executed_region, uint64_t* out_trip_count) {
   *out_trip_count = 0;
-  const loom_value_fact_table_t* fact_table = context->lowering.fact_table;
+  const loom_value_fact_table_t* fact_table = context->fact_table;
   if (fact_table == NULL || !loom_loop_like_isa(loop)) {
     return false;
   }

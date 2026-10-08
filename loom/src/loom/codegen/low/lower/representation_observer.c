@@ -267,9 +267,9 @@ iree_status_t loom_low_lower_representation_observer_begin(
   loom_low_representation_plan_initialize(
       value_domain->value_count, loom_low_lower_context_function_arena(context),
       &state->plan);
-  IREE_ASSERT(context->lowering.source_plan.representation_plan == NULL,
+  IREE_ASSERT(context->lowering->source_plan.representation_plan == NULL,
               "source representation plan must begin exactly once");
-  context->lowering.source_plan.representation_plan = &state->plan;
+  context->lowering->source_plan.representation_plan = &state->plan;
   *out_observer_state = state;
   loom_low_lower_representation_observer_observe(
       state, context, loom_low_lower_context_source_function(context).op);
@@ -421,7 +421,7 @@ void loom_low_lower_representation_lookup(
   IREE_ASSERT_ARGUMENT(out_representation);
   *out_representation = LOOM_LOW_REPRESENTATION_ID_NONE;
   loom_low_lower_representation_plan_lookup(
-      context->lowering.source_plan.representation_plan,
+      context->lowering->source_plan.representation_plan,
       loom_low_lower_context_value_domain(context), source_value_id,
       out_representation);
 }
@@ -432,7 +432,7 @@ void loom_low_lower_representation_lookup_if_ready(
   IREE_ASSERT_ARGUMENT(out_representation);
   *out_representation = LOOM_LOW_REPRESENTATION_ID_NONE;
   loom_low_representation_plan_t* plan =
-      context->lowering.source_plan.representation_plan;
+      context->lowering->source_plan.representation_plan;
   if (plan == NULL || !plan->solved) {
     return;
   }

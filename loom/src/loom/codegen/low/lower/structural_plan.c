@@ -20,7 +20,7 @@
 static iree_status_t loom_low_lower_structural_require_blocks(
     loom_low_lower_context_t* context) {
   loom_low_lower_structural_plan_t* plan =
-      &context->lowering.source_plan.structural;
+      &context->lowering->source_plan.structural;
   if (plan->branch_conditions != NULL) {
     return iree_ok_status();
   }
@@ -36,11 +36,11 @@ static iree_status_t loom_low_lower_structural_require_blocks(
 iree_status_t loom_low_lower_structural_plan_branch(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
   const loom_value_facts_t facts = loom_value_fact_table_lookup(
-      context->lowering.fact_table, loom_cfg_cond_br_condition(source_op));
+      context->fact_table, loom_cfg_cond_br_condition(source_op));
   bool condition = false;
   if (loom_value_facts_as_exact_bool(facts, &condition)) {
     IREE_RETURN_IF_ERROR(loom_low_lower_structural_require_blocks(context));
-    context->lowering.source_plan.structural
+    context->lowering->source_plan.structural
         .branch_conditions[source_op->parent_block->region_index] =
         condition ? 2 : 1;
   }
@@ -51,7 +51,7 @@ bool loom_low_lower_structural_branch_exact_bool(
     const loom_low_lower_context_t* context, const loom_op_t* source_op,
     bool* out_condition) {
   const uint8_t* conditions =
-      context->lowering.source_plan.structural.branch_conditions;
+      context->lowering->source_plan.structural.branch_conditions;
   const uint8_t condition =
       conditions ? conditions[source_op->parent_block->region_index] : 0;
   if (out_condition != NULL) {

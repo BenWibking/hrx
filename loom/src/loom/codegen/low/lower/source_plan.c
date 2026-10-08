@@ -129,7 +129,7 @@ static void loom_low_lower_mark_value_storage_required(
     loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
   const loom_low_lower_value_flags_t required_flags =
       LOOM_LOW_LOWER_VALUE_STORAGE_REQUIRED |
-      (context->lowering.source_plan.is_analyzing_storage_demands
+      (context->lowering->source_plan.is_analyzing_storage_demands
            ? 0
            : LOOM_LOW_LOWER_VALUE_STORAGE_BASELINE_REQUIRED);
   // Storage demand flows backward through structural identities. The required
@@ -137,10 +137,10 @@ static void loom_low_lower_mark_value_storage_required(
   // are traversed at most once across the whole function plan.
   while (true) {
     const loom_value_ordinal_t source_ordinal =
-        loom_low_lowering_frame_value_ordinal(&context->lowering,
+        loom_low_lowering_frame_value_ordinal(context->lowering,
                                               source_value_id);
     loom_low_lower_value_flags_t* storage_flags =
-        &context->lowering.source_plan.value_flags[source_ordinal];
+        &context->lowering->source_plan.value_flags[source_ordinal];
     if (iree_all_bits_set(*storage_flags, required_flags)) {
       return;
     }
@@ -194,10 +194,9 @@ void loom_low_lower_require_source_operands_storage(
 static bool loom_low_lower_value_storage_required(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
   const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   return iree_any_bit_set(
-      context->lowering.source_plan.value_flags[source_ordinal],
+      context->lowering->source_plan.value_flags[source_ordinal],
       LOOM_LOW_LOWER_VALUE_STORAGE_REQUIRED);
 }
 
@@ -213,7 +212,7 @@ static bool loom_low_lower_rule_value_ref_source_value(
     uint16_t value_ref_index, loom_value_id_t* out_source_value_id) {
   const loom_low_lower_rule_set_t* rule_set = selected_plan->rule_set;
   return loom_low_lower_rule_resolve_source_value_from_nodes(
-      context->module, context->lowering.fact_table,
+      context->module, context->fact_table,
       (loom_target_contract_vector_lane_projection_t){0}, rule_set,
       selected_plan->source_op, selected_plan->data.source_nodes,
       selected_plan->source_node_count, value_ref_index, out_source_value_id);
@@ -222,10 +221,9 @@ static bool loom_low_lower_rule_value_ref_source_value(
 static bool loom_low_lower_value_has_fact_storage_demand(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
   const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   return iree_any_bit_set(
-      context->lowering.source_plan.value_flags[source_ordinal],
+      context->lowering->source_plan.value_flags[source_ordinal],
       LOOM_LOW_LOWER_VALUE_STORAGE_FACT_REFERENCE);
 }
 
@@ -298,7 +296,7 @@ static bool loom_low_lower_rule_preserves_fact_storage_demands(
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,
     const loom_op_t* const* source_nodes, uint8_t source_node_count,
     const loom_low_lower_rule_t* rule) {
-  if (context->lowering.source_plan.fact_storage_demand_count == 0) {
+  if (context->lowering->source_plan.fact_storage_demand_count == 0) {
     return true;
   }
   for (uint8_t source_node_index = 0; source_node_index < source_node_count;
@@ -340,14 +338,14 @@ static void loom_low_lower_mark_rule_value_ref_storage_demand(
       value_ref->kind ==
           LOOM_LOW_LOWER_VALUE_REF_EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND) {
     const loom_value_ordinal_t source_ordinal =
-        loom_low_lowering_frame_value_ordinal(&context->lowering,
+        loom_low_lowering_frame_value_ordinal(context->lowering,
                                               source_value_id);
     loom_low_lower_value_flags_t* storage_flags =
-        &context->lowering.source_plan.value_flags[source_ordinal];
+        &context->lowering->source_plan.value_flags[source_ordinal];
     if (!iree_any_bit_set(*storage_flags,
                           LOOM_LOW_LOWER_VALUE_STORAGE_FACT_REFERENCE)) {
       *storage_flags |= LOOM_LOW_LOWER_VALUE_STORAGE_FACT_REFERENCE;
-      ++context->lowering.source_plan.fact_storage_demand_count;
+      ++context->lowering->source_plan.fact_storage_demand_count;
     }
   }
   loom_low_lower_mark_value_storage_required(context, source_value_id);
@@ -402,10 +400,9 @@ static bool loom_low_lower_emit_materializes_source_memory_address(
 static void loom_low_lower_mark_source_memory_realization_seen(
     loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
   const loom_value_ordinal_t source_ordinal =
-      loom_low_lowering_frame_value_ordinal(&context->lowering,
-                                            source_value_id);
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   loom_low_lower_value_flags_t* storage_flags =
-      &context->lowering.source_plan.value_flags[source_ordinal];
+      &context->lowering->source_plan.value_flags[source_ordinal];
   if (iree_any_bit_set(*storage_flags,
                        LOOM_LOW_LOWER_VALUE_STORAGE_MEMORY_REALIZATION_SEEN)) {
     loom_low_lower_mark_value_storage_required(context, source_value_id);
@@ -586,7 +583,7 @@ static void loom_low_lower_mark_rule_storage_demands(
 
   // Other variadic aliases can erase projection ops whose non-exact operands
   // remain referenced by facts consumed by later plans.
-  const loom_value_fact_table_t* fact_table = context->lowering.fact_table;
+  const loom_value_fact_table_t* fact_table = context->fact_table;
   const loom_op_vtable_t* vtable = loom_op_vtable(context->module, source_op);
   if (vtable == NULL || !iree_any_bit_set(vtable->vtable_flags,
                                           LOOM_OP_VTABLE_VARIADIC_OPERANDS)) {
@@ -746,7 +743,7 @@ static void loom_low_lower_mark_selected_plan_storage_demands(
 
 static void loom_low_lower_analyze_storage_demands(
     loom_low_lower_context_t* context) {
-  loom_low_lower_source_plan_t* source_plan = &context->lowering.source_plan;
+  loom_low_lower_source_plan_t* source_plan = &context->lowering->source_plan;
   source_plan->is_analyzing_storage_demands = true;
   for (iree_host_size_t i = source_plan->selected_plan_count; i > 0; --i) {
     loom_low_lower_selected_plan_t* selected_plan =
@@ -774,7 +771,7 @@ static void loom_low_lower_analyze_storage_demands(
 static bool loom_low_lower_selected_plans_preserve_fact_storage_demands(
     const loom_low_lower_context_t* context) {
   const loom_low_lower_source_plan_t* source_plan =
-      &context->lowering.source_plan;
+      &context->lowering->source_plan;
   for (iree_host_size_t i = 0; i < source_plan->selected_plan_count; ++i) {
     const loom_low_lower_selected_plan_t* selected_plan =
         &source_plan->selected_plans[i];
@@ -794,9 +791,9 @@ static bool loom_low_lower_selected_plans_preserve_fact_storage_demands(
 
 static void loom_low_lower_prepare_plan_refinement(
     loom_low_lower_context_t* context) {
-  loom_low_lower_source_plan_t* source_plan = &context->lowering.source_plan;
+  loom_low_lower_source_plan_t* source_plan = &context->lowering->source_plan;
   const loom_value_ordinal_t value_count =
-      context->lowering.value_domain.value_count;
+      context->lowering->value_domain.value_count;
   for (loom_value_ordinal_t i = 0; i < value_count; ++i) {
     source_plan->value_flags[i] &=
         LOOM_LOW_LOWER_VALUE_STORAGE_FACT_REFERENCE |
@@ -821,7 +818,7 @@ static iree_status_t loom_low_lower_visit_region_plan_ops(
     iree_host_size_t* inout_plan_capacity) {
   const uint16_t* block_order =
       source_region == loom_func_like_body(context->source_function)
-          ? context->lowering.source_plan.block_order
+          ? context->lowering->source_plan.block_order
           : NULL;
   for (uint16_t position = 0; position < source_region->block_count;
        ++position) {
@@ -896,12 +893,12 @@ static iree_status_t loom_low_lower_prepare_plan(
   IREE_RETURN_IF_ERROR(loom_low_lower_visit_region_plan_ops(
       context, source_body, observer, observer_state, &visibility,
       memory_builder, &plan_capacity));
-  context->lowering.source_plan.memory.current = NULL;
-  context->lowering.source_plan.memory.cursor =
-      context->lowering.source_plan.memory.first;
+  context->lowering->source_plan.memory.current = NULL;
+  context->lowering->source_plan.memory.cursor =
+      context->lowering->source_plan.memory.first;
   IREE_RETURN_IF_ERROR(loom_low_lower_visibility_select(
       context, &visibility,
-      &context->lowering.source_plan.read_visibility_scope));
+      &context->lowering->source_plan.read_visibility_scope));
   if (observer != NULL) {
     IREE_RETURN_IF_ERROR(observer->end(observer_state, context));
   }
@@ -911,26 +908,26 @@ static iree_status_t loom_low_lower_prepare_plan(
   if (context->result->error_count == 0) {
     IREE_RETURN_IF_ERROR(loom_low_lower_function_boundary_finalize(context));
   }
-  context->lowering.source_plan.selected_plan_capacity = plan_capacity;
-  context->lowering.source_plan.selected_plan_count = 0;
-  context->lowering.source_plan.selected_plan_emit_index = 0;
+  context->lowering->source_plan.selected_plan_capacity = plan_capacity;
+  context->lowering->source_plan.selected_plan_count = 0;
+  context->lowering->source_plan.selected_plan_emit_index = 0;
   if (plan_capacity == 0) {
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
       context, plan_capacity,
-      sizeof(*context->lowering.source_plan.selected_plans),
-      (void**)&context->lowering.source_plan.selected_plans));
+      sizeof(*context->lowering->source_plan.selected_plans),
+      (void**)&context->lowering->source_plan.selected_plans));
   return iree_ok_status();
 }
 
 static void loom_low_lower_record_selected_plan(
     loom_low_lower_context_t* context,
     loom_low_lower_selected_plan_t selected_plan) {
-  IREE_ASSERT_LT(context->lowering.source_plan.selected_plan_count,
-                 context->lowering.source_plan.selected_plan_capacity);
-  context->lowering.source_plan
-      .selected_plans[context->lowering.source_plan.selected_plan_count++] =
+  IREE_ASSERT_LT(context->lowering->source_plan.selected_plan_count,
+                 context->lowering->source_plan.selected_plan_capacity);
+  context->lowering->source_plan
+      .selected_plans[context->lowering->source_plan.selected_plan_count++] =
       selected_plan;
 }
 
@@ -960,7 +957,7 @@ static bool loom_low_lower_selected_plan_owns_related_source_op(
 
 static loom_low_lower_selected_plan_t* loom_low_lower_find_recent_selected_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  loom_low_lower_source_plan_t* source_plan = &context->lowering.source_plan;
+  loom_low_lower_source_plan_t* source_plan = &context->lowering->source_plan;
   const iree_host_size_t first_plan =
       source_plan->selected_plan_count > LOOM_LOW_LOWER_MAX_SOURCE_NODES
           ? source_plan->selected_plan_count - LOOM_LOW_LOWER_MAX_SOURCE_NODES
@@ -978,7 +975,7 @@ static loom_low_lower_selected_plan_t* loom_low_lower_find_recent_selected_plan(
 
 static bool loom_low_lower_source_op_is_reserved(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  loom_low_lower_source_plan_t* source_plan = &context->lowering.source_plan;
+  loom_low_lower_source_plan_t* source_plan = &context->lowering->source_plan;
   const iree_host_size_t first_plan =
       source_plan->selected_plan_count > LOOM_LOW_LOWER_MAX_SOURCE_NODES
           ? source_plan->selected_plan_count - LOOM_LOW_LOWER_MAX_SOURCE_NODES
@@ -1119,7 +1116,7 @@ static void loom_low_lower_planning_scope_end(
 static iree_status_t loom_low_lower_finalize_selected_plans(
     loom_low_lower_context_t* context) {
   const loom_low_lower_source_plan_t* source_plan =
-      &context->lowering.source_plan;
+      &context->lowering->source_plan;
   for (iree_host_size_t i = 0; i < source_plan->selected_plan_count; ++i) {
     loom_low_lower_selected_plan_t* selected_plan =
         &source_plan->selected_plans[i];
@@ -1505,7 +1502,7 @@ static iree_status_t loom_low_lower_plan_op(
   }
 
   const loom_low_lower_source_memory_record_t* prepared_memory =
-      context->lowering.source_plan.memory.current;
+      context->lowering->source_plan.memory.current;
   if (prepared_memory &&
       !loom_low_lower_plan_is_empty(prepared_memory->prepared_plan)) {
     loom_low_lower_record_selected_plan(
@@ -1532,7 +1529,7 @@ static iree_status_t loom_low_lower_plan_op(
   loom_low_lower_rule_source_memory_state_initialize(
       source_op, &source_memory_access, &source_memory_state);
   const loom_low_lower_source_memory_record_t* memory_record =
-      context->lowering.source_plan.memory.current;
+      context->lowering->source_plan.memory.current;
   if (memory_record != NULL) {
     if (memory_record->available) {
       source_memory_state.retained_access = &memory_record->access;
@@ -1574,11 +1571,11 @@ static iree_status_t loom_low_lower_plan_region(
     const loom_op_t* block_arg_context_op, bool skip_entry_block_args) {
   loom_consumption_region_query_t consumption_query;
   loom_consumption_region_query_initialize(context->module, source_region,
-                                           &context->function_arena,
+                                           &context->analysis_arena,
                                            &consumption_query);
   const uint16_t* block_order =
       source_region == loom_func_like_body(context->source_function)
-          ? context->lowering.source_plan.block_order
+          ? context->lowering->source_plan.block_order
           : NULL;
   for (uint16_t position = 0; position < source_region->block_count;
        ++position) {
@@ -1604,7 +1601,7 @@ static iree_status_t loom_low_lower_plan_region(
       if (loom_low_lower_context_should_stop(context)) {
         return iree_ok_status();
       }
-      if (context->lowering.source_plan.representation_plan != NULL &&
+      if (context->lowering->source_plan.representation_plan != NULL &&
           is_callable_exit) {
         IREE_RETURN_IF_ERROR(
             loom_low_lower_function_boundary_observe_exit(context, op));
@@ -1700,7 +1697,7 @@ static iree_status_t loom_low_lower_refine_plan_region(
     loom_low_lower_context_t* context, loom_region_t* source_region,
     iree_host_size_t previous_plan_count,
     iree_host_size_t* inout_previous_plan_index) {
-  loom_low_lower_source_plan_t* source_plan = &context->lowering.source_plan;
+  loom_low_lower_source_plan_t* source_plan = &context->lowering->source_plan;
   const uint16_t* block_order =
       source_region == loom_func_like_body(context->source_function)
           ? source_plan->block_order
@@ -1755,8 +1752,8 @@ static iree_status_t loom_low_lower_refine_plan_region(
 
 iree_status_t loom_low_lower_source_plan_build(
     loom_low_lower_context_t* context, loom_region_t* source_body) {
-  loom_low_lower_source_plan_t* source_plan = &context->lowering.source_plan;
-  IREE_ASSERT(context->lowering.source_callable_exit_kind !=
+  loom_low_lower_source_plan_t* source_plan = &context->lowering->source_plan;
+  IREE_ASSERT(context->lowering->source_callable_exit_kind !=
               LOOM_OP_KIND_UNKNOWN);
   *source_plan = (loom_low_lower_source_plan_t){0};
   if (source_body->block_count > 1) {
@@ -1779,7 +1776,7 @@ iree_status_t loom_low_lower_source_plan_build(
     source_plan->block_order = block_order;
   }
   const loom_value_ordinal_t value_count =
-      context->lowering.value_domain.value_count;
+      context->lowering->value_domain.value_count;
   if (value_count != 0) {
     IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
         context, value_count, sizeof(*source_plan->value_flags),
@@ -1794,7 +1791,7 @@ iree_status_t loom_low_lower_source_plan_build(
   for (uint16_t i = 0; i < argument_count; ++i) {
     IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
         context, arguments[i],
-        context->lowering.boundary.argument_map[i].abi_type));
+        context->lowering->boundary.argument_map[i].abi_type));
   }
 
   iree_arena_initialize(context->module->arena.block_pool,

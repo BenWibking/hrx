@@ -12,10 +12,10 @@
 void loom_low_lower_plan_value_type_id(loom_low_lower_context_t* context,
                                        loom_value_id_t source_value_id,
                                        loom_type_id_t type_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
-  context->lowering.value_bindings[ordinal].type = type_id;
-  context->lowering.source_plan.value_flags[ordinal] &=
+  const loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
+  context->lowering->value_bindings[ordinal].type = type_id;
+  context->lowering->source_plan.value_flags[ordinal] &=
       ~LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
 }
 
@@ -32,32 +32,32 @@ iree_status_t loom_low_lower_plan_value_type(loom_low_lower_context_t* context,
 void loom_low_lower_inherit_value_type(loom_low_lower_context_t* context,
                                        loom_value_id_t source_value_id,
                                        loom_value_id_t result_value_id) {
-  loom_value_ordinal_t source = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
-  const loom_value_ordinal_t result = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, result_value_id);
-  if (iree_any_bit_set(context->lowering.source_plan.value_flags[source],
+  loom_value_ordinal_t source =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
+  const loom_value_ordinal_t result =
+      loom_low_lowering_frame_value_ordinal(context->lowering, result_value_id);
+  if (iree_any_bit_set(context->lowering->source_plan.value_flags[source],
                        LOOM_LOW_LOWER_VALUE_INHERITED_TYPE)) {
-    source = context->lowering.value_bindings[source].type_source;
+    source = context->lowering->value_bindings[source].type_source;
   }
-  context->lowering.value_bindings[result].type_source = source;
-  context->lowering.source_plan.value_flags[result] |=
+  context->lowering->value_bindings[result].type_source = source;
+  context->lowering->source_plan.value_flags[result] |=
       LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
 }
 
 loom_type_t loom_low_lower_value_binding_type(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
-  loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
+  loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   const loom_low_lower_value_flags_t flags =
-      context->lowering.source_plan.value_flags[ordinal];
+      context->lowering->source_plan.value_flags[ordinal];
   if (!iree_any_bit_set(flags, LOOM_LOW_LOWER_VALUE_MATERIALIZED) &&
       iree_any_bit_set(flags, LOOM_LOW_LOWER_VALUE_INHERITED_TYPE)) {
-    ordinal = context->lowering.value_bindings[ordinal].type_source;
+    ordinal = context->lowering->value_bindings[ordinal].type_source;
   }
   const loom_low_lower_value_binding_t binding =
-      context->lowering.value_bindings[ordinal];
-  if (iree_any_bit_set(context->lowering.source_plan.value_flags[ordinal],
+      context->lowering->value_bindings[ordinal];
+  if (iree_any_bit_set(context->lowering->source_plan.value_flags[ordinal],
                        LOOM_LOW_LOWER_VALUE_MATERIALIZED)) {
     return loom_module_value_type(context->module, binding.value);
   }
@@ -69,14 +69,14 @@ loom_type_t loom_low_lower_value_binding_type(
 iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
                                           loom_value_id_t source_value_id,
                                           loom_value_id_t* out_low_value_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
+  const loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   IREE_ASSERT(
-      iree_any_bit_set(context->lowering.source_plan.value_flags[ordinal],
+      iree_any_bit_set(context->lowering->source_plan.value_flags[ordinal],
                        LOOM_LOW_LOWER_VALUE_MATERIALIZED),
       "SSA lookup must follow producer materialization");
   const loom_value_id_t low_value =
-      context->lowering.value_bindings[ordinal].value;
+      context->lowering->value_bindings[ordinal].value;
   IREE_ASSERT_NE(low_value, LOOM_LOW_LOWER_VALUE_ID_ELIDED,
                  "source-to-low requested elided source value");
   *out_low_value_id = low_value;
@@ -85,22 +85,22 @@ iree_status_t loom_low_lower_lookup_value(loom_low_lower_context_t* context,
 
 bool loom_low_lower_source_value_has_low_mapping(
     const loom_low_lower_context_t* context, loom_value_id_t source_value_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
-  return iree_any_bit_set(context->lowering.source_plan.value_flags[ordinal],
+  const loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
+  return iree_any_bit_set(context->lowering->source_plan.value_flags[ordinal],
                           LOOM_LOW_LOWER_VALUE_MATERIALIZED) &&
-         context->lowering.value_bindings[ordinal].value !=
+         context->lowering->value_bindings[ordinal].value !=
              LOOM_LOW_LOWER_VALUE_ID_ELIDED;
 }
 
 iree_status_t loom_low_lower_bind_value(loom_low_lower_context_t* context,
                                         loom_value_id_t source_value_id,
                                         loom_value_id_t low_value_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
+  const loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   loom_low_lower_value_binding_t* binding =
-      &context->lowering.value_bindings[ordinal];
-  if (iree_any_bit_set(context->lowering.source_plan.value_flags[ordinal],
+      &context->lowering->value_bindings[ordinal];
+  if (iree_any_bit_set(context->lowering->source_plan.value_flags[ordinal],
                        LOOM_LOW_LOWER_VALUE_MATERIALIZED)) {
     IREE_ASSERT_EQ(binding->value, low_value_id);
   } else if (binding->type != LOOM_TYPE_ID_INVALID) {
@@ -110,7 +110,7 @@ iree_status_t loom_low_lower_bind_value(loom_low_lower_context_t* context,
                 "materialization must preserve the selected producer carrier");
   }
   binding->value = low_value_id;
-  context->lowering.source_plan.value_flags[ordinal] |=
+  context->lowering->source_plan.value_flags[ordinal] |=
       LOOM_LOW_LOWER_VALUE_MATERIALIZED;
   return loom_low_lower_copy_value_name(context, source_value_id, low_value_id);
 }
@@ -118,11 +118,11 @@ iree_status_t loom_low_lower_bind_value(loom_low_lower_context_t* context,
 iree_status_t loom_low_lower_replace_value_binding(
     loom_low_lower_context_t* context, loom_value_id_t source_value_id,
     loom_value_id_t low_value_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
+  const loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
   IREE_ASSERT(
       loom_low_lower_source_value_has_low_mapping(context, source_value_id));
-  context->lowering.value_bindings[ordinal].value = low_value_id;
+  context->lowering->value_bindings[ordinal].value = low_value_id;
   return loom_low_lower_copy_value_name(context, source_value_id, low_value_id);
 }
 
@@ -137,11 +137,11 @@ iree_status_t loom_low_lower_bind_value_alias(loom_low_lower_context_t* context,
 
 iree_status_t loom_low_lower_elide_value(loom_low_lower_context_t* context,
                                          loom_value_id_t source_value_id) {
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
-  context->lowering.value_bindings[ordinal].value =
+  const loom_value_ordinal_t ordinal =
+      loom_low_lowering_frame_value_ordinal(context->lowering, source_value_id);
+  context->lowering->value_bindings[ordinal].value =
       LOOM_LOW_LOWER_VALUE_ID_ELIDED;
-  context->lowering.source_plan.value_flags[ordinal] |=
+  context->lowering->source_plan.value_flags[ordinal] |=
       LOOM_LOW_LOWER_VALUE_MATERIALIZED;
   return iree_ok_status();
 }

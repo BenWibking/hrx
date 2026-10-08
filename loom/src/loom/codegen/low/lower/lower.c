@@ -75,13 +75,8 @@ static iree_status_t loom_low_lowering_frame_initialize_value_ordinals(
   // conversion, so nested source-region values must be ordinal-addressable even
   // when the final source-to-low boundary expects CFG.
   return loom_local_value_domain_acquire_for_region_tree(
-      context->module, source_body, &context->function_arena,
-      &context->lowering.value_domain);
-}
-
-static void loom_low_lowering_frame_deinitialize(
-    loom_low_lower_context_t* context) {
-  loom_local_value_domain_release(&context->lowering.value_domain);
+      context->module, source_body, context->function_arena,
+      &context->lowering->value_domain);
 }
 
 static loom_region_t* loom_low_lower_low_body(
@@ -101,11 +96,11 @@ static iree_status_t loom_low_lower_map_blocks(
   const iree_host_size_t block_count =
       loom_low_lower_control_block_count(context);
   IREE_RETURN_IF_ERROR(
-      iree_arena_allocate_array(&context->function_arena, block_count,
-                                sizeof(*context->lowering.block_map),
-                                (void**)&context->lowering.block_map));
-  memset(context->lowering.block_map, 0,
-         block_count * sizeof(*context->lowering.block_map));
+      iree_arena_allocate_array(context->function_arena, block_count,
+                                sizeof(*context->lowering->block_map),
+                                (void**)&context->lowering->block_map));
+  memset(context->lowering->block_map, 0,
+         block_count * sizeof(*context->lowering->block_map));
 
   for (uint16_t i = 0; i < source_body->block_count; ++i) {
     loom_block_t* source_block = loom_region_block(source_body, i);
@@ -117,13 +112,13 @@ static iree_status_t loom_low_lower_map_blocks(
           loom_region_append_block(context->module, low_body, &low_block));
     }
     low_block->label_id = source_block->label_id;
-    context->lowering.block_map[i] = low_block;
+    context->lowering->block_map[i] = low_block;
   }
 
   for (uint16_t block_index = 0; block_index < source_body->block_count;
        ++block_index) {
     loom_block_t* source_block = loom_region_block(source_body, block_index);
-    loom_block_t* low_block = context->lowering.block_map[block_index];
+    loom_block_t* low_block = context->lowering->block_map[block_index];
     if (block_index == 0) {
       IREE_RETURN_IF_ERROR(
           loom_low_lower_function_boundary_bind_entry_arguments(
@@ -522,7 +517,7 @@ IREE_ATTRIBUTE_NOINLINE static iree_status_t loom_low_lower_structural_op(
     loom_value_id_t* low_values = NULL;
     IREE_RETURN_IF_ERROR(loom_low_lower_remap_values(
         context, source_op, values, source_op->operand_count,
-        context->lowering.boundary.result_types, &low_values));
+        context->lowering->boundary.result_types, &low_values));
     loom_op_t* low_return_op = NULL;
     return loom_low_return_build(&context->builder, low_values,
                                  source_op->operand_count, source_op->location,
@@ -931,11 +926,11 @@ static iree_status_t loom_low_lower_emit_descriptor_matrix_plan(
 
 static iree_status_t loom_low_lower_emit_selected_plan(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
-  IREE_ASSERT_LT(context->lowering.source_plan.selected_plan_emit_index,
-                 context->lowering.source_plan.selected_plan_count);
+  IREE_ASSERT_LT(context->lowering->source_plan.selected_plan_emit_index,
+                 context->lowering->source_plan.selected_plan_count);
   const loom_low_lower_selected_plan_t selected_plan =
-      context->lowering.source_plan.selected_plans
-          [context->lowering.source_plan.selected_plan_emit_index++];
+      context->lowering->source_plan.selected_plans
+          [context->lowering->source_plan.selected_plan_emit_index++];
   IREE_ASSERT_EQ(selected_plan.source_op, source_op);
   if (iree_any_bit_set(selected_plan.flags,
                        LOOM_LOW_LOWER_SELECTED_PLAN_CLAIMED)) {
@@ -947,7 +942,7 @@ static iree_status_t loom_low_lower_emit_selected_plan(
   }
   const bool report_allocator_provided =
       !iree_allocator_is_null(context->options->report_allocator);
-  const uint64_t before_op_count = context->lowering.report.emitted_op_count;
+  const uint64_t before_op_count = context->lowering->report.emitted_op_count;
   if (selected_plan.kind == LOOM_LOW_LOWER_SELECTED_PLAN_RULE) {
     IREE_ASSERT(selected_plan.rule_set != NULL);
     IREE_ASSERT(selected_plan.rule != NULL);
@@ -980,7 +975,7 @@ static iree_status_t loom_low_lower_emit_selected_plan(
   }
   if (report_allocator_provided) {
     const uint64_t emitted_op_count =
-        context->lowering.report.emitted_op_count - before_op_count;
+        context->lowering->report.emitted_op_count - before_op_count;
     IREE_ASSERT_LE(emitted_op_count, UINT32_MAX);
     loom_low_lower_report_record_emission(context, (uint32_t)emitted_op_count);
   }
@@ -990,10 +985,10 @@ static iree_status_t loom_low_lower_emit_selected_plan(
 static iree_status_t loom_low_lower_emit_source_op(
     loom_low_lower_context_t* context, const loom_op_t* source_op) {
   loom_low_lower_source_memory_enter_op(context, source_op);
-  if (context->lowering.source_plan.selected_plan_emit_index <
-          context->lowering.source_plan.selected_plan_count &&
-      context->lowering.source_plan
-              .selected_plans[context->lowering.source_plan
+  if (context->lowering->source_plan.selected_plan_emit_index <
+          context->lowering->source_plan.selected_plan_count &&
+      context->lowering->source_plan
+              .selected_plans[context->lowering->source_plan
                                   .selected_plan_emit_index]
               .source_op == source_op) {
     return loom_low_lower_emit_selected_plan(context, source_op);
@@ -1012,10 +1007,8 @@ static iree_status_t loom_low_lower_emit_source_op(
 static iree_status_t loom_low_lower_emit_region_ops(
     loom_low_lower_context_t* context, loom_region_t* source_region,
     bool map_source_blocks) {
-  // A rejected plan leaves its low results unbound, so emission cannot resume
-  // elsewhere in the region after any diagnostic error.
   const uint16_t* block_order =
-      map_source_blocks ? context->lowering.source_plan.block_order : NULL;
+      map_source_blocks ? context->lowering->source_plan.block_order : NULL;
   iree_status_t status = iree_ok_status();
   for (uint16_t position = 0;
        position < source_region->block_count && iree_status_is_ok(status);
@@ -1024,7 +1017,7 @@ static iree_status_t loom_low_lower_emit_region_ops(
     loom_block_t* source_block = loom_region_block(source_region, block_index);
     if (map_source_blocks) {
       loom_builder_set_block(&context->builder,
-                             context->lowering.block_map[block_index]);
+                             context->lowering->block_map[block_index]);
     } else if (block_index != 0) {
       IREE_ASSERT_UNREACHABLE(
           "structured source region with multiple blocks reached target-low "
@@ -1039,11 +1032,9 @@ static iree_status_t loom_low_lower_emit_region_ops(
     }
     loom_op_t* source_op = NULL;
     loom_block_for_each_op(source_block, source_op) {
-      const uint32_t before_error_count = context->result->error_count;
       loom_low_lower_emission_scope_begin(context);
       status = loom_low_lower_emit_source_op(context, source_op);
-      if (iree_status_is_ok(status) &&
-          context->result->error_count == before_error_count) {
+      if (iree_status_is_ok(status)) {
         status = loom_low_lower_realizations_emit_after(context, source_op);
       }
       // Builders copy all caller-provided arrays and attribute payloads into
@@ -1054,9 +1045,6 @@ static iree_status_t loom_low_lower_emit_region_ops(
       if (!iree_status_is_ok(status)) {
         break;
       }
-      if (context->result->error_count != before_error_count) {
-        return iree_ok_status();
-      }
     }
   }
   return status;
@@ -1064,17 +1052,17 @@ static iree_status_t loom_low_lower_emit_region_ops(
 
 static iree_status_t loom_low_lower_emit_body(loom_low_lower_context_t* context,
                                               loom_region_t* source_body) {
-  context->lowering.source_plan.memory.cursor =
-      context->lowering.source_plan.memory.first;
+  context->lowering->source_plan.memory.cursor =
+      context->lowering->source_plan.memory.first;
   loom_region_t* low_body = loom_low_lower_low_body(context);
   loom_builder_ip_t saved_ip = loom_builder_enter_region(
       &context->builder, context->low_func_op, low_body);
   iree_status_t status = loom_low_lower_emit_region_ops(
       context, source_body, /*map_source_blocks=*/true);
   loom_builder_restore(&context->builder, saved_ip);
-  if (iree_status_is_ok(status) && context->result->error_count == 0) {
-    IREE_ASSERT_EQ(context->lowering.source_plan.selected_plan_emit_index,
-                   context->lowering.source_plan.selected_plan_count);
+  if (iree_status_is_ok(status)) {
+    IREE_ASSERT_EQ(context->lowering->source_plan.selected_plan_emit_index,
+                   context->lowering->source_plan.selected_plan_count);
   }
   return status;
 }
@@ -1192,68 +1180,57 @@ static iree_status_t loom_low_lower_record_static_launch_config(
   return iree_ok_status();
 }
 
-iree_status_t loom_low_lower_function(loom_module_t* module,
-                                      loom_func_like_t source_function,
-                                      const loom_low_lower_options_t* options,
-                                      loom_low_lower_result_t* out_result) {
-  IREE_ASSERT(out_result != NULL);
-  loom_low_lower_assert_options(module, source_function, options);
-  *out_result = (loom_low_lower_result_t){
-      .low_func_ref = loom_symbol_ref_null(),
-  };
-  if (!iree_allocator_is_null(options->report_allocator)) {
-    out_result->report_allocator = options->report_allocator;
-    out_result->memory_report_row_allocator = module->allocator;
-  }
+// Plans own stable storage addresses used by selected target payloads. The
+// context and every construction analysis remain phase-local stack state.
+struct loom_low_lower_function_plan_t {
+  // Source module; same-function source IR stays alive until this plan
+  // executes.
+  loom_module_t* module;
+  // Source definition replaced by execution, preserving its symbol identity.
+  loom_func_like_t source_function;
+  // Target and reporting policy, with construction-only analysis pointers
+  // erased.
+  loom_low_lower_options_t options;
+  // Selected instruction descriptors shared by planning and emission.
+  const loom_low_descriptor_set_t* descriptor_set;
+  // Retained selected decisions, source ordinals, and emission bindings.
+  loom_low_lowering_frame_t frame;
+  // Stable arena backing plans and target payloads until this plan is released.
+  iree_arena_allocator_t arena;
+};
+
+static iree_status_t loom_low_lower_function_plan_build(
+    loom_low_lower_context_t* context) {
+  loom_module_t* module = context->module;
+  const loom_func_like_t source_function = context->source_function;
+  const loom_low_lower_options_t* options = context->options;
+  loom_low_lower_result_t* out_result = context->result;
   loom_region_t* source_body = loom_func_like_body(source_function);
-  IREE_ASSERT(source_body != NULL);
-  const loom_region_descriptor_t* source_body_descriptor =
-      loom_func_like_body_region_descriptor(module, source_function);
-  IREE_ASSERT(source_body_descriptor != NULL &&
-                  source_body_descriptor->terminator != LOOM_OP_KIND_UNKNOWN,
-              "source callable body must declare an exit terminator");
-
-  loom_low_lower_context_t context = {
-      .module = module,
-      .source_function = source_function,
-      .options = options,
-      .policy = options->policy,
-      .result = out_result,
-      .module_state = options->module_state,
-  };
-  context.lowering.fact_table = options->fact_table;
-  context.lowering.source_callable_exit_kind =
-      source_body_descriptor->terminator;
-  iree_arena_initialize(module->arena.block_pool, &context.function_arena);
-
   iree_status_t status =
-      loom_low_lowering_frame_initialize_value_ordinals(&context, source_body);
+      loom_low_lowering_frame_initialize_value_ordinals(context, source_body);
   if (iree_status_is_ok(status)) {
-    loom_condition_query_initialize(module, &context.lowering.value_domain,
-                                    &context.function_arena,
-                                    &context.lowering.condition_query);
+    loom_condition_query_initialize(module, &context->lowering->value_domain,
+                                    &context->analysis_arena,
+                                    &context->condition_query);
   }
   if (iree_status_is_ok(status)) {
-    status = loom_low_lower_record_static_launch_config(&context);
+    status = loom_low_lower_record_static_launch_config(context);
   }
   if (iree_status_is_ok(status) && out_result->error_count != 0) {
-    loom_low_lowering_frame_deinitialize(&context);
-    iree_arena_deinitialize(&context.function_arena);
     return iree_ok_status();
   }
 
   loom_vector_memory_footprint_result_t footprint_result = {0};
   if (iree_status_is_ok(status)) {
     status = loom_cfg_value_identity_table_initialize(
-        &context.lowering.value_domain, &context.function_arena,
-        &context.lowering.function_analysis.value_identities);
+        &context->lowering->value_domain, &context->analysis_arena,
+        &context->function_analysis.value_identities);
   }
   if (iree_status_is_ok(status)) {
     const loom_vector_memory_footprint_options_t footprint_options = {
-        .fact_table = context.lowering.fact_table,
-        .value_domain = &context.lowering.value_domain,
-        .value_identities =
-            &context.lowering.function_analysis.value_identities,
+        .fact_table = context->fact_table,
+        .value_domain = &context->lowering->value_domain,
+        .value_identities = &context->function_analysis.value_identities,
         .emitter = options->emitter,
         .max_errors = options->max_errors,
     };
@@ -1264,37 +1241,33 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     out_result->error_count += footprint_result.error_count;
   }
   if (iree_status_is_ok(status) && out_result->error_count != 0) {
-    loom_low_lowering_frame_deinitialize(&context);
-    iree_arena_deinitialize(&context.function_arena);
     return iree_ok_status();
   }
 
   loom_kernel_async_legality_result_t async_legality_result = {0};
   if (iree_status_is_ok(status)) {
     loom_kernel_async_legality_options_t async_legality_options = {
-        .fact_table = context.lowering.fact_table,
-        .value_domain = &context.lowering.value_domain,
+        .fact_table = context->fact_table,
+        .value_domain = &context->lowering->value_domain,
         .emitter = options->emitter,
         .phase_name = IREE_SV("source-low"),
     };
     status = loom_kernel_async_legality_analyze_function(
         module, source_function, &async_legality_options,
-        &context.function_arena, &async_legality_result);
+        &context->analysis_arena, &async_legality_result);
   }
   if (iree_status_is_ok(status)) {
     out_result->error_count += async_legality_result.error_count;
   }
   if (iree_status_is_ok(status) && out_result->error_count != 0) {
-    loom_low_lowering_frame_deinitialize(&context);
-    iree_arena_deinitialize(&context.function_arena);
     return iree_ok_status();
   }
 
   loom_kernel_barrier_lifetime_result_t barrier_lifetime_result = {0};
   if (iree_status_is_ok(status)) {
     const loom_kernel_barrier_lifetime_options_t barrier_lifetime_options = {
-        .value_domain = &context.lowering.value_domain,
-        .fact_table = context.lowering.fact_table,
+        .value_domain = &context->lowering->value_domain,
+        .fact_table = context->fact_table,
         .emitter = options->emitter,
         .phase_name = IREE_SV("source-low"),
     };
@@ -1306,8 +1279,6 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     out_result->error_count += barrier_lifetime_result.error_count;
   }
   if (iree_status_is_ok(status) && out_result->error_count != 0) {
-    loom_low_lowering_frame_deinitialize(&context);
-    iree_arena_deinitialize(&context.function_arena);
     return iree_ok_status();
   }
 
@@ -1316,11 +1287,11 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     status = loom_target_low_descriptor_set_select_for_source_lowering(
         options->descriptor_registry,
         loom_target_facts_bundle(options->target_facts),
-        &context.descriptor_set);
+        &context->descriptor_set);
   }
   if (iree_status_is_ok(status)) {
     status = loom_low_lower_source_query_environment_initialize(
-        &context, context.descriptor_set, &legality_environment);
+        context, context->descriptor_set, &legality_environment);
   }
   loom_target_low_legality_result_t legality_result = {};
   if (iree_status_is_ok(status)) {
@@ -1328,14 +1299,14 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
         .environment = &legality_environment,
         .error_catalog = options->policy->error_catalog,
         .provider_list = options->legality_provider_list,
-        .contract_query = loom_low_lower_source_query_callback(&context),
-        .type_supported = context.policy->source_type_supported,
+        .contract_query = loom_low_lower_source_query_callback(context),
+        .type_supported = context->policy->source_type_supported,
         .source_vector_carrier_supported =
-            context.policy->source_vector_carrier_supported,
+            context->policy->source_vector_carrier_supported,
         .source_function_vector_carrier_supported =
-            context.policy->source_function_vector_carrier_supported,
+            context->policy->source_function_vector_carrier_supported,
         .structural_legality_flags =
-            loom_low_lower_source_plan_uses_structured_control_flow(&context)
+            loom_low_lower_source_plan_uses_structured_control_flow(context)
                 ? LOOM_TARGET_LOW_STRUCTURAL_LEGALITY_ALLOW_SOURCE_SCF
                 : 0,
         .diagnostic_flags = options->legality_diagnostic_flags,
@@ -1349,95 +1320,190 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     out_result->error_count = legality_result.error_count;
     out_result->remark_count = legality_result.remark_count;
     out_result->descriptor_set = legality_result.descriptor_set;
-    context.descriptor_set = legality_result.descriptor_set;
+    context->descriptor_set = legality_result.descriptor_set;
   }
   if (iree_status_is_ok(status) && out_result->error_count != 0) {
-    loom_low_lowering_frame_deinitialize(&context);
-    iree_arena_deinitialize(&context.function_arena);
     return iree_ok_status();
   }
 
-  iree_arena_initialize(module->arena.block_pool, &context.emission_arena);
-
   if (iree_status_is_ok(status) &&
-      context.lowering.value_domain.value_count != 0) {
+      context->lowering->value_domain.value_count != 0) {
     status = iree_arena_allocate_array(
-        &context.function_arena, context.lowering.value_domain.value_count,
-        sizeof(*context.lowering.value_bindings),
-        (void**)&context.lowering.value_bindings);
+        context->function_arena, context->lowering->value_domain.value_count,
+        sizeof(*context->lowering->value_bindings),
+        (void**)&context->lowering->value_bindings);
   }
   if (iree_status_is_ok(status)) {
     for (loom_value_ordinal_t i = 0;
-         i < context.lowering.value_domain.value_count; ++i) {
-      context.lowering.value_bindings[i].type = LOOM_TYPE_ID_INVALID;
+         i < context->lowering->value_domain.value_count; ++i) {
+      context->lowering->value_bindings[i].type = LOOM_TYPE_ID_INVALID;
     }
   }
   if (iree_status_is_ok(status)) {
-    status = loom_low_lower_function_boundary_validate(&context);
+    status = loom_low_lower_function_boundary_validate(context);
   }
   if (iree_status_is_ok(status) &&
-      !loom_low_lower_context_should_stop(&context)) {
-    status = loom_low_lower_source_plan_build(&context, source_body);
+      !loom_low_lower_context_should_stop(context)) {
+    status = loom_low_lower_source_plan_build(context, source_body);
   }
-  if (iree_status_is_ok(status) && context.result->error_count == 0) {
-    status = loom_low_lower_control_plan_build(&context);
+  if (iree_status_is_ok(status) && context->result->error_count == 0) {
+    status = loom_low_lower_control_plan_build(context);
   }
-  if (iree_status_is_ok(status) && context.result->error_count == 0) {
-    status = loom_low_lower_report_prepare(&context);
+  if (iree_status_is_ok(status) && context->result->error_count == 0) {
+    status = loom_low_lower_report_prepare(context);
   }
-  if (iree_status_is_ok(status) && context.result->error_count == 0) {
-    loom_symbol_ref_t low_func_ref = loom_func_like_callee(source_function);
-    loom_low_lower_emission_scope_begin(&context);
-    status = loom_low_lower_function_boundary_create(&context, source_body,
-                                                     low_func_ref);
-    loom_low_lower_emission_scope_end(&context);
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      loom_low_lower_report_initialize(&context);
-      status = loom_low_lower_map_blocks(&context, source_body);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      status = loom_low_lower_function_boundary_remap_predicates(&context);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      loom_low_lower_emission_scope_begin(&context);
-      status = loom_low_lower_emit_preamble(&context);
-      loom_low_lower_emission_scope_end(&context);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      loom_low_lower_emission_scope_begin(&context);
-      status = loom_low_lower_function_boundary_emit_resource_imports(&context);
-      loom_low_lower_emission_scope_end(&context);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      loom_low_lower_emission_scope_begin(&context);
-      status = loom_low_lower_emit_entry_setup(&context);
-      loom_low_lower_emission_scope_end(&context);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      status = loom_low_lower_emit_body(&context, source_body);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count != 0 &&
-        context.low_func_op != NULL) {
-      status = loom_op_erase(module, context.low_func_op);
-      context.low_func_op = NULL;
-      out_result->low_func_op = NULL;
-      out_result->low_func_ref = loom_symbol_ref_null();
-    }
-    // The replacement low op carries the source symbol while the source op
-    // still owns the symbol table entry. Erase clears that entry; relink it to
-    // the replacement so callers keep the same symbol identity.
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      status = loom_op_erase(module, source_function.op);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      loom_module_link_symbol_defining_op(
-          module, context.low_func_op,
-          loom_op_vtable(module, context.low_func_op));
-    }
+  return status;
+}
+
+iree_status_t loom_low_lower_plan_function(
+    loom_module_t* module, loom_func_like_t source_function,
+    const loom_low_lower_options_t* options, iree_arena_allocator_t* arena,
+    loom_low_lower_result_t* out_result,
+    loom_low_lower_function_plan_t** out_plan) {
+  loom_low_lower_assert_options(module, source_function, options);
+  *out_plan = NULL;
+  *out_result = (loom_low_lower_result_t){
+      .low_func_ref = loom_symbol_ref_null(),
+  };
+  if (!iree_allocator_is_null(options->report_allocator)) {
+    out_result->report_allocator = options->report_allocator;
+    out_result->memory_report_row_allocator = module->allocator;
+  }
+  loom_low_lower_function_plan_t* plan = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_arena_allocate(arena, sizeof(*plan), (void**)&plan));
+  *plan = (loom_low_lower_function_plan_t){
+      .module = module,
+      .source_function = source_function,
+      .options = *options,
+  };
+  iree_arena_initialize(module->arena.block_pool, &plan->arena);
+  const loom_region_descriptor_t* source_body_descriptor =
+      loom_func_like_body_region_descriptor(module, source_function);
+  plan->frame.source_callable_exit_kind = source_body_descriptor->terminator;
+  loom_low_lower_context_t context = {
+      .module = module,
+      .source_function = source_function,
+      .options = options,
+      .policy = options->policy,
+      .result = out_result,
+      .function_arena = &plan->arena,
+      .fact_table = options->fact_table,
+      .module_state = options->module_state,
+      .lowering = &plan->frame,
+  };
+  iree_arena_initialize(module->arena.block_pool, &context.analysis_arena);
+  iree_status_t status = loom_low_lower_function_plan_build(&context);
+  loom_local_value_domain_release(&plan->frame.value_domain);
+  iree_arena_deinitialize(&context.analysis_arena);
+  if (iree_status_is_ok(status) && out_result->error_count == 0) {
+    plan->descriptor_set = context.descriptor_set;
+    plan->options.fact_table = NULL;
+    plan->options.call_effects = NULL;
+    plan->options.representation_projections = NULL;
+    // Report construction may borrow source facts. Emission initializes only
+    // its accounting cursor from the completed output rows.
+    plan->frame.report = (loom_low_lower_report_state_t){0};
+    *out_plan = plan;
+  } else {
+    iree_arena_deinitialize(&plan->arena);
+  }
+  return status;
+}
+
+static iree_status_t loom_low_lower_function_plan_execute(
+    loom_low_lower_context_t* context) {
+  loom_module_t* module = context->module;
+  const loom_func_like_t source_function = context->source_function;
+  loom_region_t* source_body = loom_func_like_body(source_function);
+  const loom_symbol_ref_t low_func_ref = loom_func_like_callee(source_function);
+  iree_arena_initialize(module->arena.block_pool, &context->emission_arena);
+
+  loom_low_lower_emission_scope_begin(context);
+  iree_status_t status = loom_low_lower_function_boundary_create(
+      context, source_body, low_func_ref);
+  loom_low_lower_emission_scope_end(context);
+  if (iree_status_is_ok(status)) {
+    loom_low_lower_report_initialize(context);
+    status = loom_low_lower_map_blocks(context, source_body);
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_low_lower_function_boundary_remap_predicates(context);
+  }
+  if (iree_status_is_ok(status)) {
+    loom_low_lower_emission_scope_begin(context);
+    status = loom_low_lower_emit_preamble(context);
+    loom_low_lower_emission_scope_end(context);
+  }
+  if (iree_status_is_ok(status)) {
+    loom_low_lower_emission_scope_begin(context);
+    status = loom_low_lower_function_boundary_emit_resource_imports(context);
+    loom_low_lower_emission_scope_end(context);
+  }
+  if (iree_status_is_ok(status)) {
+    loom_low_lower_emission_scope_begin(context);
+    status = loom_low_lower_emit_entry_setup(context);
+    loom_low_lower_emission_scope_end(context);
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_low_lower_emit_body(context, source_body);
+  }
+  // The replacement low op carries the source symbol while the source op
+  // still owns the symbol table entry. Erase clears that entry; relink it to
+  // the replacement so callers keep the same symbol identity.
+  if (iree_status_is_ok(status)) {
+    status = loom_op_erase(module, source_function.op);
+  }
+  if (iree_status_is_ok(status)) {
+    loom_module_link_symbol_defining_op(
+        module, context->low_func_op,
+        loom_op_vtable(module, context->low_func_op));
   }
 
-  loom_low_lowering_frame_deinitialize(&context);
-  iree_arena_deinitialize(&context.emission_arena);
-  iree_arena_deinitialize(&context.function_arena);
+  iree_arena_deinitialize(&context->emission_arena);
+  return status;
+}
+
+iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
+                                           loom_low_lower_result_t* result) {
+  loom_low_lower_context_t context = {
+      .module = plan->module,
+      .source_function = plan->source_function,
+      .options = &plan->options,
+      .policy = plan->options.policy,
+      .descriptor_set = plan->descriptor_set,
+      .result = result,
+      .function_arena = &plan->arena,
+      .module_state = plan->options.module_state,
+      .lowering = &plan->frame,
+  };
+  loom_local_value_domain_restore(&plan->frame.value_domain);
+  iree_status_t status = loom_low_lower_function_plan_execute(&context);
+  loom_local_value_domain_release(&plan->frame.value_domain);
+  return status;
+}
+
+void loom_low_lower_function_plan_deinitialize(
+    loom_low_lower_function_plan_t* plan) {
+  if (plan == NULL) {
+    return;
+  }
+  iree_arena_deinitialize(&plan->arena);
+}
+
+iree_status_t loom_low_lower_function(loom_module_t* module,
+                                      loom_func_like_t source_function,
+                                      const loom_low_lower_options_t* options,
+                                      loom_low_lower_result_t* out_result) {
+  iree_arena_allocator_t arena;
+  iree_arena_initialize(module->arena.block_pool, &arena);
+  loom_low_lower_function_plan_t* plan = NULL;
+  iree_status_t status = loom_low_lower_plan_function(
+      module, source_function, options, &arena, out_result, &plan);
+  if (iree_status_is_ok(status) && plan != NULL) {
+    status = loom_low_lower_emit_function(plan, out_result);
+  }
+  loom_low_lower_function_plan_deinitialize(plan);
+  iree_arena_deinitialize(&arena);
   return status;
 }

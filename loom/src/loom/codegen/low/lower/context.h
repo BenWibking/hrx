@@ -8,8 +8,8 @@
 //
 // Public target callbacks use the opaque context accessors declared in
 // lower.h. This header owns the stack-local context representation and the
-// function-lifetime state shared by the lowering orchestrator, planning,
-// callable-boundary, reporting, and rule-interpreter components.
+// phase-local analysis and the retained frame shared by source planning,
+// callable boundaries, reporting, and rule interpretation.
 
 #ifndef LOOM_CODEGEN_LOW_LOWER_CONTEXT_H_
 #define LOOM_CODEGEN_LOW_LOWER_CONTEXT_H_
@@ -73,14 +73,9 @@ typedef struct loom_low_lower_function_analysis_t {
 } loom_low_lower_function_analysis_t;
 
 typedef struct loom_low_lowering_frame_t {
-  // Active source-function value domain for dense per-value lowering state.
+  // Stable source IDs and ordinals; borrows module scratch only while this
+  // plan is being built or executed.
   loom_local_value_domain_t value_domain;
-  // Borrowed source value facts computed before planning.
-  loom_value_fact_table_t* fact_table;
-  // Reusable traversal state for condition-fact queries.
-  loom_condition_query_t condition_query;
-  // Stable function analyses advanced monotonically on demand.
-  loom_low_lower_function_analysis_t function_analysis;
   // Declared terminator kind for direct exits from the source callable body,
   // or unknown while querying a bodyless callable.
   loom_op_kind_t source_callable_exit_kind;
@@ -128,8 +123,16 @@ struct loom_low_lower_context_t {
   const loom_low_descriptor_set_t* descriptor_set;
   // Result object receiving counters and emitted low function metadata.
   loom_low_lower_result_t* result;
-  // Arena retaining function plans, maps, analyses, and target state.
-  iree_arena_allocator_t function_arena;
+  // Stable owner of retained function plans and target payloads.
+  iree_arena_allocator_t* function_arena;
+  // Function-local analysis storage retired before any plan executes.
+  iree_arena_allocator_t analysis_arena;
+  // Borrowed source value facts computed before planning.
+  loom_value_fact_table_t* fact_table;
+  // Reusable traversal state for condition-fact queries.
+  loom_condition_query_t condition_query;
+  // Stable function analyses advanced monotonically on demand.
+  loom_low_lower_function_analysis_t function_analysis;
   // Arena reset after each source-op planning callback.
   iree_arena_allocator_t planning_arena;
   // True only while a source-op planning callback may request scratch storage.
@@ -141,8 +144,8 @@ struct loom_low_lower_context_t {
   // Module-scope state shared by source-to-low calls in the current module
   // pass, or NULL when the caller is lowering a standalone function.
   loom_low_lower_module_state_t* module_state;
-  // Function-local state for this source-to-low lowering run.
-  loom_low_lowering_frame_t lowering;
+  // Plan-owned frame; its address remains stable between planning and emission.
+  loom_low_lowering_frame_t* lowering;
   // Builder used while emitting the low function.
   loom_builder_t builder;
   // Emitted target-low function operation, or NULL before emission starts.

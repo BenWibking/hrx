@@ -48,7 +48,7 @@ loom_low_lower_block_ref_t loom_low_lower_control_source_block(
 
 iree_host_size_t loom_low_lower_control_block_count(
     const loom_low_lower_context_t* context) {
-  const loom_low_lower_control_plan_t* plan = context->lowering.control_plan;
+  const loom_low_lower_control_plan_t* plan = context->lowering->control_plan;
   return loom_func_like_body(context->source_function)->block_count +
          (plan ? plan->block_count : 0);
 }
@@ -58,7 +58,7 @@ static loom_low_lower_block_ref_t loom_low_lower_control_signature(
   const uint16_t source_count =
       loom_func_like_body(context->source_function)->block_count;
   return block > source_count
-             ? context->lowering.control_plan->blocks[block - source_count - 1]
+             ? context->lowering->control_plan->blocks[block - source_count - 1]
                    .signature
              : block;
 }
@@ -74,7 +74,7 @@ uint16_t loom_low_lower_control_argument_count(
   const loom_block_t* source =
       loom_region_block(loom_func_like_body(context->source_function), index);
   const uint16_t authored_count =
-      index == 0 ? context->lowering.boundary.argument_count
+      index == 0 ? context->lowering->boundary.argument_count
                  : source->arg_count;
   return authored_count +
          loom_low_lower_realization_block_argument_count(context, source);
@@ -88,13 +88,13 @@ loom_type_t loom_low_lower_control_argument_type(
   const loom_block_t* source =
       loom_region_block(loom_func_like_body(context->source_function), index);
   const uint16_t authored_count =
-      index == 0 ? context->lowering.boundary.argument_count
+      index == 0 ? context->lowering->boundary.argument_count
                  : source->arg_count;
   if (argument_index >= authored_count) {
     return loom_low_lower_realization_block_argument_type(
         context, source, argument_index - authored_count);
   }
-  return index == 0 ? context->lowering.boundary.argument_types[argument_index]
+  return index == 0 ? context->lowering->boundary.argument_types[argument_index]
                     : loom_low_lower_structural_block_argument_type(
                           context, index, argument_index);
 }
@@ -103,9 +103,9 @@ iree_status_t loom_low_lower_control_add_block(
     loom_low_lower_context_t* context, loom_low_lower_block_ref_t before,
     loom_low_lower_block_ref_t signature,
     loom_low_lower_block_ref_t* out_block) {
-  loom_low_lower_control_plan_t* plan = context->lowering.control_plan;
+  loom_low_lower_control_plan_t* plan = context->lowering->control_plan;
   IREE_RETURN_IF_ERROR(iree_arena_grow_array(
-      &context->function_arena, plan->block_count, plan->block_count + 1,
+      context->function_arena, plan->block_count, plan->block_count + 1,
       sizeof(*plan->blocks), &plan->block_capacity, (void**)&plan->blocks));
   plan->blocks[plan->block_count++] = (loom_low_lower_control_block_t){
       .before = before,
@@ -119,7 +119,7 @@ iree_status_t loom_low_lower_control_add_block(
 loom_low_lower_block_ref_t loom_low_lower_control_successor(
     const loom_low_lower_context_t* context, const loom_op_t* source_terminator,
     uint8_t successor_index) {
-  const loom_low_lower_control_plan_t* plan = context->lowering.control_plan;
+  const loom_low_lower_control_plan_t* plan = context->lowering->control_plan;
   if (plan) {
     const loom_low_lower_control_source_t* source =
         &plan->sources[source_terminator->parent_block->region_index];
@@ -136,7 +136,7 @@ iree_status_t loom_low_lower_control_interpose_successor(
     uint8_t successor_index, loom_low_lower_block_ref_t block,
     loom_low_lower_block_ref_t* out_previous) {
   loom_low_lower_control_source_t* source =
-      &context->lowering.control_plan
+      &context->lowering->control_plan
            ->sources[source_terminator->parent_block->region_index];
   if (source->successors == NULL) {
     IREE_RETURN_IF_ERROR(loom_low_lower_allocate_function_array(
@@ -158,7 +158,7 @@ void loom_low_lower_set_branch_plan(loom_low_lower_context_t* context,
                                     const loom_op_t* source_terminator,
                                     loom_low_lower_plan_t plan) {
   loom_low_lower_plan_t* destination =
-      &context->lowering.control_plan
+      &context->lowering->control_plan
            ->sources[source_terminator->parent_block->region_index]
            .branch;
   IREE_ASSERT(loom_low_lower_plan_is_empty(*destination));
@@ -168,7 +168,7 @@ void loom_low_lower_set_branch_plan(loom_low_lower_context_t* context,
 bool loom_low_lower_lookup_branch_plan(loom_low_lower_context_t* context,
                                        const loom_op_t* source_terminator,
                                        loom_low_lower_plan_t* out_plan) {
-  const loom_low_lower_control_plan_t* plan = context->lowering.control_plan;
+  const loom_low_lower_control_plan_t* plan = context->lowering->control_plan;
   *out_plan =
       plan ? plan->sources[source_terminator->parent_block->region_index].branch
            : loom_low_lower_plan_empty();
@@ -188,7 +188,7 @@ static iree_status_t loom_low_lower_control_plan_initialize(
         .branch = loom_low_lower_plan_empty(),
     };
   }
-  context->lowering.control_plan = plan;
+  context->lowering->control_plan = plan;
   return iree_ok_status();
 }
 
@@ -210,7 +210,7 @@ static iree_status_t loom_low_lower_control_plan_operands(
     const loom_type_t required_type =
         is_branch
             ? loom_low_lower_control_argument_type(context, destination, i)
-            : context->lowering.boundary.result_types[i];
+            : context->lowering->boundary.result_types[i];
     if (loom_type_equal(loom_low_lower_value_binding_type(context, operands[i]),
                         required_type)) {
       continue;
@@ -223,13 +223,13 @@ static iree_status_t loom_low_lower_control_plan_operands(
         loom_low_lower_context_should_stop(context) || recipe == NULL) {
       continue;
     }
-    if (context->lowering.control_plan == NULL) {
+    if (context->lowering->control_plan == NULL) {
       status = loom_low_lower_control_plan_initialize(
           context, loom_func_like_body(context->source_function)->block_count);
     }
     if (iree_status_is_ok(status)) {
       loom_low_lower_control_source_t* source =
-          &context->lowering.control_plan
+          &context->lowering->control_plan
                ->sources[terminator->parent_block->region_index];
       if (source->operands == NULL) {
         status = loom_low_lower_allocate_function_array(
@@ -268,7 +268,7 @@ iree_status_t loom_low_lower_control_plan_build(
     }
     if (terminator->successor_count != 0 &&
         context->policy->prepare_branch.fn != NULL) {
-      if (context->lowering.control_plan == NULL) {
+      if (context->lowering->control_plan == NULL) {
         status =
             loom_low_lower_control_plan_initialize(context, body->block_count);
       }
@@ -302,7 +302,7 @@ iree_status_t loom_low_lower_control_materialize_operand(
                       required_type)) {
     return iree_ok_status();
   }
-  const loom_low_lower_control_plan_t* plan = context->lowering.control_plan;
+  const loom_low_lower_control_plan_t* plan = context->lowering->control_plan;
   const void* const* operands =
       plan ? plan->sources[source_terminator->parent_block->region_index]
                  .operands
@@ -320,12 +320,12 @@ iree_status_t loom_low_lower_control_materialize_operand(
 
 loom_block_t* loom_low_lower_control_block(
     const loom_low_lower_context_t* context, loom_low_lower_block_ref_t block) {
-  return block ? context->lowering.block_map[block - 1] : NULL;
+  return block ? context->lowering->block_map[block - 1] : NULL;
 }
 
 iree_status_t loom_low_lower_control_create_blocks(
     loom_low_lower_context_t* context) {
-  const loom_low_lower_control_plan_t* plan = context->lowering.control_plan;
+  const loom_low_lower_control_plan_t* plan = context->lowering->control_plan;
   if (plan == NULL) {
     return iree_ok_status();
   }
@@ -346,7 +346,7 @@ iree_status_t loom_low_lower_control_create_blocks(
     if (!iree_status_is_ok(status)) {
       break;
     }
-    context->lowering.block_map[source_count + i] = block;
+    context->lowering->block_map[source_count + i] = block;
     const loom_block_t* signature =
         loom_low_lower_control_block(context, recipe->signature);
     const uint16_t argument_count = signature ? signature->arg_count : 0;

@@ -52,17 +52,21 @@ class LowLowerFunctionBoundaryTest : public ::testing::Test {
     mapping_context_.options = &options_;
     mapping_context_.policy = &policy_;
     mapping_context_.result = &result_;
-    mapping_context_.lowering.fact_table = &fact_table_;
+    mapping_context_.fact_table = &fact_table_;
     IREE_ASSERT_OK(loom_target_low_descriptor_set_select_for_source_lowering(
         options_.descriptor_registry, loom_target_facts_bundle(&target_facts_),
         &mapping_context_.descriptor_set));
-    iree_arena_initialize(&block_pool_, &mapping_context_.function_arena);
+    mapping_context_.function_arena = &function_arena_;
+    mapping_context_.lowering = &frame_;
+    iree_arena_initialize(&block_pool_, &function_arena_);
+    iree_arena_initialize(&block_pool_, &mapping_context_.analysis_arena);
     iree_arena_initialize(&block_pool_, &mapping_context_.emission_arena);
   }
 
   void TearDown() override {
     iree_arena_deinitialize(&mapping_context_.emission_arena);
-    iree_arena_deinitialize(&mapping_context_.function_arena);
+    iree_arena_deinitialize(&mapping_context_.analysis_arena);
+    iree_arena_deinitialize(&function_arena_);
     loom_low_lower_result_deinitialize(&result_);
     loom_module_free(module_);
     loom_context_deinitialize(&context_);
@@ -134,6 +138,10 @@ class LowLowerFunctionBoundaryTest : public ::testing::Test {
   loom_low_lower_policy_t policy_ = {};
   loom_low_lower_options_t options_ = {};
   loom_low_lower_result_t result_ = {};
+  // Stable storage for retained function decisions.
+  iree_arena_allocator_t function_arena_;
+  // Prepared signature and value bindings shared by the mapping context.
+  loom_low_lowering_frame_t frame_ = {};
   loom_low_lower_context_t mapping_context_ = {};
 };
 
@@ -430,7 +438,7 @@ TEST_P(LowLowerResultMappingTest, DefinitionConsumesPreparedBoundary) {
   IREE_ASSERT_OK(loom_low_lower_function_boundary_finalize(&mapping_context_));
   ASSERT_EQ(result_.error_count, 0u);
   EXPECT_EQ(result_query_state.query_count, result_count);
-  EXPECT_EQ(mapping_context_.lowering.boundary.result_types != nullptr,
+  EXPECT_EQ(mapping_context_.lowering->boundary.result_types != nullptr,
             GetParam());
 
   struct LayoutQueryState {
@@ -490,7 +498,7 @@ TEST_P(LowLowerResultMappingTest, DefinitionConsumesPreparedBoundary) {
   ASSERT_EQ(result_.low_func_op->result_count, result_count);
   for (uint16_t i = 0; i < result_count; ++i) {
     EXPECT_TRUE(loom_type_equal(
-        mapping_context_.lowering.boundary.result_types[i],
+        mapping_context_.lowering->boundary.result_types[i],
         loom_module_value_type(module_,
                                loom_op_const_results(result_.low_func_op)[i])));
   }
@@ -546,15 +554,15 @@ TEST_P(LowLowerArgumentQueryTest, OnlyRequiredArgumentsEmitDiagnostics) {
                                                arguments[1], &absent_argument));
   EXPECT_EQ(loom_type_kind(absent_argument.abi_type), LOOM_TYPE_NONE);
   EXPECT_EQ(result_.error_count, 0u);
-  EXPECT_EQ(mapping_context_.lowering.boundary.argument_map, nullptr);
+  EXPECT_EQ(mapping_context_.lowering->boundary.argument_map, nullptr);
 
   IREE_ASSERT_OK(loom_low_lower_function_boundary_validate(&mapping_context_));
   EXPECT_EQ(result_.error_count, 1u);
   EXPECT_TRUE(loom_type_equal(
       native_argument.abi_type,
-      mapping_context_.lowering.boundary.argument_map[0].abi_type));
+      mapping_context_.lowering->boundary.argument_map[0].abi_type));
   EXPECT_EQ(loom_type_kind(
-                mapping_context_.lowering.boundary.argument_map[1].abi_type),
+                mapping_context_.lowering->boundary.argument_map[1].abi_type),
             LOOM_TYPE_NONE);
 }
 

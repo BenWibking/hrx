@@ -1098,6 +1098,35 @@ typedef struct loom_low_lower_resolved_descriptor_t {
   const loom_low_descriptor_t* descriptor;
 } loom_low_lower_resolved_descriptor_t;
 
+typedef struct loom_low_lower_function_plan_t loom_low_lower_function_plan_t;
+
+// Plans one source definition without publishing Low IR. Source facts and
+// function analysis are construction inputs; the returned plan retains only
+// decisions and same-function source references needed by execution. Callers
+// may release source facts and plan other functions after this returns.
+//
+// User rejection emits diagnostics and returns a NULL plan. |arena| owns the
+// plan record; its retained storage must be released with plan_deinitialize.
+// A successful plan and its report rows in |out_result| have the same lifetime.
+iree_status_t loom_low_lower_plan_function(
+    loom_module_t* module, loom_func_like_t source_function,
+    const loom_low_lower_options_t* options, iree_arena_allocator_t* arena,
+    loom_low_lower_result_t* out_result,
+    loom_low_lower_function_plan_t** out_plan);
+
+// Executes a retained plan once, replacing its source definition. The result
+// must be the one initialized by plan_function; execution adds emitted output
+// and instruction counts. Other function plans can execute in between planning
+// and execution without retaining their source facts or ordinal scratch. All
+// authored-input rejection is complete; execution returns only infrastructure
+// failures and never changes the diagnostic error count.
+iree_status_t loom_low_lower_emit_function(loom_low_lower_function_plan_t* plan,
+                                           loom_low_lower_result_t* result);
+
+// Releases retained plan storage after execution or cancellation. Accepts NULL.
+void loom_low_lower_function_plan_deinitialize(
+    loom_low_lower_function_plan_t* plan);
+
 // Lowers one body-backed FuncLike source callable into a target-low function in
 // place. Kernel definitions retain their target-low kernel ABI; other FuncLike
 // operations lower to low.func.def.
@@ -1106,9 +1135,8 @@ typedef struct loom_low_lower_resolved_descriptor_t {
 // |out_result|. The function returns OK in that case and does not emit a low
 // function. On success the emitted target-low function preserves the source
 // function symbol and replaces the source op at the same module position.
-// Infrastructure failures such as malformed options, invalid target symbols,
-// or a policy that violates the lowering contract are returned as status
-// failures.
+// Status carries infrastructure failures such as allocation failure. Verified
+// options, target symbols, and policy-produced plans are compiler-owned state.
 iree_status_t loom_low_lower_function(loom_module_t* module,
                                       loom_func_like_t source_function,
                                       const loom_low_lower_options_t* options,
@@ -1210,23 +1238,23 @@ iree_string_view_t loom_low_lower_context_config_key(
 const loom_low_descriptor_set_t* loom_low_lower_context_descriptor_set(
     const loom_low_lower_context_t* context);
 
-// Returns source value facts computed before planning. The table describes
-// the source function being lowered and remains valid only during callbacks.
+// Returns source value facts computed before planning. Valid only during
+// planning callbacks; emission consumes retained decisions instead.
 const loom_value_fact_table_t* loom_low_lower_context_fact_table(
     const loom_low_lower_context_t* context);
 
 // Returns the source function's retained CFG snapshot: adjacency, dominance,
-// region continuations, natural loops and control dependencies. The fact scope
-// owns this structure throughout immutable source-function lowering. Target
-// callbacks consume its indexed facts without rediscovering graph structure.
+// region continuations, natural loops, and control dependencies. The fact scope
+// owns this structure during planning only. Target planning callbacks consume
+// its indexed facts without rediscovering graph structure.
 const loom_value_fact_cfg_region_t* loom_low_lower_context_cfg(
     const loom_low_lower_context_t* context);
 
-// Returns reusable traversal state for condition-fact queries.
+// Returns reusable traversal state for planning-only condition-fact queries.
 loom_condition_query_t* loom_low_lower_context_condition_query(
     loom_low_lower_context_t* context);
 
-// Returns the function-local symbolic expression context.
+// Returns the function-local symbolic expression context during planning.
 loom_symbolic_expr_context_t* loom_low_lower_context_symbolic_expr_context(
     loom_low_lower_context_t* context);
 
@@ -1235,7 +1263,7 @@ loom_sanitizer_reporting_mode_t loom_low_lower_context_sanitizer_reporting_mode(
     const loom_low_lower_context_t* context);
 
 // Returns a lazily analyzed view-region table for the source function being
-// lowered. The table remains valid only during the current lowering callback.
+// lowered. The table remains valid only during planning.
 iree_status_t loom_low_lower_context_view_regions(
     loom_low_lower_context_t* context,
     const loom_view_region_table_t** out_view_regions);
@@ -1243,7 +1271,8 @@ iree_status_t loom_low_lower_context_view_regions(
 typedef struct loom_storage_interference_t loom_storage_interference_t;
 
 // Returns function-owned source storage analysis, constructing it once on
-// demand. Static allocation selection and physical packing share this result.
+// demand during planning. Static allocation selection and physical packing
+// share this result; emission does not retain its provenance or liveness state.
 iree_status_t loom_low_lower_context_storage_interference(
     loom_low_lower_context_t* context,
     loom_storage_interference_t** out_interference);

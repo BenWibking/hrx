@@ -172,7 +172,7 @@ static bool loom_low_lower_realization_loop_domain(
       exit->source_block_index != loop->header_index ||
       exit->selector_value_id == LOOM_VALUE_ID_INVALID ||
       !loom_value_facts_is_subgroup_uniform(loom_value_fact_table_lookup(
-          context->lowering.fact_table, exit->selector_value_id)) ||
+          context->fact_table, exit->selector_value_id)) ||
       !loom_value_facts_is_subgroup_uniform(loom_value_fact_control_execution(
           cfg->control, entry->source_block_index)) ||
       !loom_value_facts_is_subgroup_uniform(loom_value_fact_control_execution(
@@ -180,22 +180,21 @@ static bool loom_low_lower_realization_loop_domain(
     return false;
   }
   const loom_loop_recurrence_facts_t recurrence =
-      loom_value_fact_induction_facts(context->lowering.fact_table,
-                                      context->module, induction);
+      loom_value_fact_induction_facts(context->fact_table, context->module,
+                                      induction);
   int64_t initial_value = 0;
   int64_t step = 0;
   int64_t exit_value = 0;
   if (!recurrence.trip_count_known ||
       !loom_value_facts_as_exact_i64(recurrence.exit_value, &exit_value) ||
       !loom_value_facts_as_exact_i64(
-          loom_value_fact_recurrence_operand_facts(context->lowering.fact_table,
+          loom_value_fact_recurrence_operand_facts(context->fact_table,
                                                    induction->initial_value),
           &initial_value) ||
       induction->step.value == LOOM_VALUE_ID_INVALID ||
-      !loom_value_facts_as_exact_i64(
-          loom_value_fact_recurrence_operand_facts(context->lowering.fact_table,
-                                                   induction->step),
-          &step) ||
+      !loom_value_facts_as_exact_i64(loom_value_fact_recurrence_operand_facts(
+                                         context->fact_table, induction->step),
+                                     &step) ||
       step <= 0) {
     return false;
   }
@@ -239,14 +238,14 @@ iree_status_t loom_low_lower_realizations_create(
     loom_low_lower_realization_loop_domain(context, cfg, i,
                                            &construction->loops[i]);
   }
-  context->lowering.source_plan.realizations = state;
+  context->lowering->source_plan.realizations = state;
   return iree_ok_status();
 }
 
 const loom_low_lower_realization_loop_t* loom_low_lower_realization_loop(
     const loom_low_lower_context_t* context, const loom_op_t* source_op) {
   const loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   if (state == NULL ||
       source_op->parent_block->parent_region != state->region) {
     return NULL;
@@ -272,7 +271,7 @@ iree_status_t loom_low_lower_realization_offer(
     return iree_ok_status();
   }
   loom_low_lower_realization_construction_t* construction =
-      context->lowering.source_plan.realizations->construction;
+      context->lowering->source_plan.realizations->construction;
   loom_low_lower_realization_offer_record_t* record = NULL;
   IREE_RETURN_IF_ERROR(iree_arena_allocate(construction->arena, sizeof(*record),
                                            (void**)&record));
@@ -550,7 +549,7 @@ iree_status_t loom_low_lower_realization_request(
     const loom_low_lower_realization_t** out_realization) {
   *out_realization = NULL;
   loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   if (state == NULL ||
       source_op->parent_block->parent_region != state->region) {
     return iree_ok_status();
@@ -717,7 +716,7 @@ static iree_status_t loom_low_lower_realizations_order_events(
 iree_status_t loom_low_lower_realizations_finalize(
     loom_low_lower_context_t* context) {
   loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   if (state == NULL) {
     return iree_ok_status();
   }
@@ -819,7 +818,7 @@ iree_status_t loom_low_lower_realizations_finalize(
 uint16_t loom_low_lower_realization_block_argument_count(
     const loom_low_lower_context_t* context, const loom_block_t* source_block) {
   const loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   return state && state->blocks
              ? (uint16_t)state->blocks[source_block->region_index].header.count
              : 0;
@@ -829,7 +828,7 @@ loom_type_t loom_low_lower_realization_block_argument_type(
     const loom_low_lower_context_t* context, const loom_block_t* source_block,
     uint16_t argument_index) {
   const loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   return state->blocks[source_block->region_index]
       .header.values[argument_index]
       ->type;
@@ -838,7 +837,7 @@ loom_type_t loom_low_lower_realization_block_argument_type(
 iree_status_t loom_low_lower_realizations_map_blocks(
     loom_low_lower_context_t* context) {
   loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   if (state == NULL) {
     return iree_ok_status();
   }
@@ -847,7 +846,7 @@ iree_status_t loom_low_lower_realizations_map_blocks(
     if (value->loop) {
       IREE_RETURN_IF_ERROR(loom_builder_define_block_arg(
           &context->builder,
-          context->lowering.block_map[value->loop->header->region_index],
+          context->lowering->block_map[value->loop->header->region_index],
           value->type, &value->state.values.header));
     }
   }
@@ -858,7 +857,7 @@ static iree_status_t loom_low_lower_realizations_emit_position(
     loom_low_lower_context_t* context, const loom_block_t* source_block,
     uint64_t position, bool before) {
   loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   if (state == NULL || state->blocks == NULL ||
       source_block->parent_region != state->region) {
     return iree_ok_status();
@@ -913,7 +912,7 @@ uint16_t loom_low_lower_realization_edge_count(
     const loom_low_lower_context_t* context,
     const loom_op_t* source_terminator) {
   const loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   if (state == NULL || state->blocks == NULL ||
       source_terminator->parent_block->parent_region != state->region) {
     return 0;
@@ -928,7 +927,7 @@ void loom_low_lower_realization_edge_values(
     const loom_low_lower_context_t* context, const loom_op_t* source_terminator,
     loom_value_id_t* values) {
   const loom_low_lower_realizations_t* state =
-      context->lowering.source_plan.realizations;
+      context->lowering->source_plan.realizations;
   const loom_low_lower_realization_block_t* destination =
       state->blocks[source_terminator->parent_block->region_index]
           .edge_destination;

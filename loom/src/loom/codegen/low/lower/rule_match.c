@@ -1710,9 +1710,9 @@ static loom_low_lower_rule_descriptor_map_t*
 loom_low_lower_rule_descriptor_map_find(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set) {
-  for (uint16_t i = 0; i < context->lowering.rule_descriptor_map_count; ++i) {
+  for (uint16_t i = 0; i < context->lowering->rule_descriptor_map_count; ++i) {
     loom_low_lower_rule_descriptor_map_t* map =
-        &context->lowering.rule_descriptor_maps[i];
+        &context->lowering->rule_descriptor_maps[i];
     if (map->rule_set == rule_set) {
       return map;
     }
@@ -1724,13 +1724,13 @@ static iree_status_t loom_low_lower_rule_descriptor_maps_initialize(
     loom_low_lower_context_t* context,
     const loom_low_descriptor_set_t* descriptor_set) {
   IREE_ASSERT(descriptor_set != NULL);
-  if (context->lowering.rule_descriptor_map_set == descriptor_set) {
+  if (context->lowering->rule_descriptor_map_set == descriptor_set) {
     return iree_ok_status();
   }
 
-  context->lowering.rule_descriptor_map_set = descriptor_set;
-  context->lowering.rule_descriptor_maps = NULL;
-  context->lowering.rule_descriptor_map_count = 0;
+  context->lowering->rule_descriptor_map_set = descriptor_set;
+  context->lowering->rule_descriptor_maps = NULL;
+  context->lowering->rule_descriptor_map_count = 0;
 
   const loom_low_lower_rule_set_list_t rule_sets =
       context->policy->contract.rule_sets;
@@ -1739,15 +1739,15 @@ static iree_status_t loom_low_lower_rule_descriptor_maps_initialize(
   }
 
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      &context->function_arena, rule_sets.count,
-      sizeof(*context->lowering.rule_descriptor_maps),
-      (void**)&context->lowering.rule_descriptor_maps));
-  context->lowering.rule_descriptor_map_count = rule_sets.count;
+      context->function_arena, rule_sets.count,
+      sizeof(*context->lowering->rule_descriptor_maps),
+      (void**)&context->lowering->rule_descriptor_maps));
+  context->lowering->rule_descriptor_map_count = rule_sets.count;
 
   for (uint16_t i = 0; i < rule_sets.count; ++i) {
     const loom_low_lower_rule_set_t* rule_set = rule_sets.values[i];
     loom_low_lower_rule_descriptor_map_t* map =
-        &context->lowering.rule_descriptor_maps[i];
+        &context->lowering->rule_descriptor_maps[i];
     *map = (loom_low_lower_rule_descriptor_map_t){
         .rule_set = rule_set,
         .descriptor_ordinals = NULL,
@@ -1759,7 +1759,7 @@ static iree_status_t loom_low_lower_rule_descriptor_maps_initialize(
     IREE_ASSERT(rule_set->descriptor_refs != NULL);
     uint32_t* descriptor_ordinals = NULL;
     IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-        &context->function_arena, rule_set->descriptor_ref_count,
+        context->function_arena, rule_set->descriptor_ref_count,
         sizeof(*descriptor_ordinals), (void**)&descriptor_ordinals));
     memset(descriptor_ordinals, 0,
            rule_set->descriptor_ref_count * sizeof(*descriptor_ordinals));
@@ -1783,8 +1783,9 @@ iree_status_t loom_low_lower_rule_match_descriptor_ref_from_lowering(
   } else {
     const uint16_t rule_set_index =
         (uint16_t)(match_context->policy_rule_set_ordinal - 1u);
-    IREE_ASSERT_LT(rule_set_index, context->lowering.rule_descriptor_map_count);
-    map = &context->lowering.rule_descriptor_maps[rule_set_index];
+    IREE_ASSERT_LT(rule_set_index,
+                   context->lowering->rule_descriptor_map_count);
+    map = &context->lowering->rule_descriptor_maps[rule_set_index];
   }
   IREE_ASSERT(map != NULL);
   IREE_ASSERT_EQ(map->rule_set, rule_set);

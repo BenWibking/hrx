@@ -19,12 +19,12 @@ struct loom_low_lower_participation_state_t {
 static iree_status_t loom_low_lower_participation_initialize(
     loom_low_lower_context_t* context,
     loom_low_lower_participation_state_t* state) {
-  loom_control_uniformity_info_initialize(
-      context->module, context->lowering.fact_table, &context->function_arena,
-      &state->control_uniformity);
+  loom_control_uniformity_info_initialize(context->module, context->fact_table,
+                                          &context->analysis_arena,
+                                          &state->control_uniformity);
   loom_region_t* body = loom_func_like_body(context->source_function);
   IREE_RETURN_IF_ERROR(iree_arena_allocate_array(
-      &context->function_arena, body->block_count, sizeof(*state->blocks),
+      &context->analysis_arena, body->block_count, sizeof(*state->blocks),
       (void**)&state->blocks));
   loom_block_t* block = NULL;
   loom_region_for_each_block(body, block) {
@@ -55,7 +55,7 @@ static iree_status_t loom_low_lower_participation_initialize(
         loom_low_lower_context_symbolic_expr_context(context);
     loom_low_lower_participation_condition_t* retained = NULL;
     IREE_RETURN_IF_ERROR(iree_arena_allocate(
-        &context->function_arena, sizeof(*retained), (void**)&retained));
+        &context->analysis_arena, sizeof(*retained), (void**)&retained));
     *retained = (loom_low_lower_participation_condition_t){
         .comparison = comparison,
         .assumed_truth = condition.assumed_truth,
@@ -78,13 +78,13 @@ iree_status_t loom_low_lower_source_subgroup_participation(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     loom_low_lower_participation_t* out_participation) {
   loom_low_lower_participation_state_t* state =
-      context->lowering.report.participation;
+      context->lowering->report.participation;
   if (!state) {
-    IREE_RETURN_IF_ERROR(iree_arena_allocate(&context->function_arena,
+    IREE_RETURN_IF_ERROR(iree_arena_allocate(&context->analysis_arena,
                                              sizeof(*state), (void**)&state));
     IREE_RETURN_IF_ERROR(
         loom_low_lower_participation_initialize(context, state));
-    context->lowering.report.participation = state;
+    context->lowering->report.participation = state;
   }
   if (source_op->parent_block->parent_region ==
       loom_func_like_body(context->source_function)) {

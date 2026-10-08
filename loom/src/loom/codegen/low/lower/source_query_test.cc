@@ -63,17 +63,21 @@ class LowLowerSourceQueryTest : public ::testing::Test {
     mapping_context_.options = &options_;
     mapping_context_.policy = options_.policy;
     mapping_context_.result = &mapping_result_;
-    mapping_context_.lowering.fact_table = &fact_table_;
+    mapping_context_.fact_table = &fact_table_;
     IREE_ASSERT_OK(loom_target_low_descriptor_set_select_for_source_lowering(
         options_.descriptor_registry, loom_target_facts_bundle(&target_facts_),
         &mapping_context_.descriptor_set));
-    iree_arena_initialize(&block_pool_, &mapping_context_.function_arena);
+    mapping_context_.function_arena = &function_arena_;
+    mapping_context_.lowering = &frame_;
+    iree_arena_initialize(&block_pool_, &function_arena_);
+    iree_arena_initialize(&block_pool_, &mapping_context_.analysis_arena);
   }
 
   void TearDown() override {
-    loom_local_value_domain_release(&mapping_context_.lowering.value_domain);
+    loom_local_value_domain_release(&mapping_context_.lowering->value_domain);
     loom_low_lower_result_deinitialize(&mapping_result_);
-    iree_arena_deinitialize(&mapping_context_.function_arena);
+    iree_arena_deinitialize(&mapping_context_.analysis_arena);
+    iree_arena_deinitialize(&function_arena_);
     loom_low_lower_source_query_scope_deinitialize(query_scope_);
     iree_arena_deinitialize(&query_scope_arena_);
     loom_module_free(module_);
@@ -196,6 +200,10 @@ class LowLowerSourceQueryTest : public ::testing::Test {
   loom_value_fact_table_t fact_table_ = {};
   loom_low_lower_options_t options_ = {};
   loom_low_lower_source_query_scope_t* query_scope_ = nullptr;
+  // Stable storage for the mapping context's retained decisions.
+  iree_arena_allocator_t function_arena_;
+  // Selected decisions owned independently of the active context.
+  loom_low_lowering_frame_t frame_ = {};
   // Native mapping context sharing the fixture's selected target contract.
   loom_low_lower_context_t mapping_context_ = {};
   // Diagnostics emitted only when lowering requires a native mapping.
@@ -298,8 +306,8 @@ TEST_F(LowLowerSourceQueryTest, AbsentNativeMappingDoesNotEmitDiagnostic) {
 
 TEST_F(LowLowerSourceQueryTest, RejectedNativeCandidateAllowsFollowingRule) {
   IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region_tree(
-      module_, loom_func_like_body(function_), &mapping_context_.function_arena,
-      &mapping_context_.lowering.value_domain));
+      module_, loom_func_like_body(function_), mapping_context_.function_arena,
+      &mapping_context_.lowering->value_domain));
   const loom_op_t* constant =
       loom_value_def_op(loom_module_value(module_, unsupported_value_id_));
   loom_low_lower_value_ref_t value_ref = {};
@@ -360,13 +368,12 @@ TEST_F(LowLowerSourceQueryTest, OwnsFunctionAnalysesForScopeLifetime) {
 
 TEST_F(LowLowerSourceQueryTest, RestoresIdentitiesAfterAlternateFactsQuery) {
   IREE_ASSERT_OK(loom_local_value_domain_acquire_for_region_tree(
-      module_, loom_func_like_body(function_), &mapping_context_.function_arena,
-      &mapping_context_.lowering.value_domain));
-  auto& identities =
-      mapping_context_.lowering.function_analysis.value_identities;
+      module_, loom_func_like_body(function_), mapping_context_.function_arena,
+      &mapping_context_.lowering->value_domain));
+  auto& identities = mapping_context_.function_analysis.value_identities;
   IREE_ASSERT_OK(loom_cfg_value_identity_table_initialize(
-      &mapping_context_.lowering.value_domain, &mapping_context_.function_arena,
-      &identities));
+      &mapping_context_.lowering->value_domain,
+      &mapping_context_.analysis_arena, &identities));
   const auto* representatives = identities.representatives;
 
   loom_value_fact_table_t alternate_facts = {};
