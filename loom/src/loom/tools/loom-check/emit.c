@@ -1505,10 +1505,9 @@ static iree_status_t loom_check_emit_invoke_provider(
       request->result->actual_output.size != 0 &&
       iree_any_bit_set(provider->flags,
                        LOOM_CHECK_EMIT_PROVIDER_FLAG_COMPARE_ERROR_OUTPUT);
-  request->result->has_actual_output = iree_status_is_ok(status) &&
-                                       request->result->has_actual_output &&
-                                       (!has_error ||
-                                        has_comparable_error_output);
+  request->result->has_actual_output =
+      iree_status_is_ok(status) && request->result->has_actual_output &&
+      (!has_error || has_comparable_error_output);
   return status;
 }
 
