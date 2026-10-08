@@ -16,8 +16,11 @@ loom_cc_binary(
     "loom-opt.c"
   DEPS
     iree::base
+    iree::base::internal::arena
     iree::base::tooling::flags
     iree::io::file_handle
+    loom::binding::c::interop
+    loom::binding::c::loomc
     loom::codegen::low::pipeline::legalizer_registry
     loom::codegen::low::text_asm
     loom::codegen::low::verify
@@ -33,14 +36,15 @@ loom_cc_binary(
     loom::pass::report
     loom::pass::tooling
     loom::pass::trace
-    loom::target::configured::provider
+    loom::target::configured::provider_set
     loom::target::math_policy
     loom::target::pipeline
     loom::target::predicate
     loom::target::provider
     loom::tooling::cli::help
+    loom::tooling::cli::loomc_diagnostic_json
+    loom::tooling::cli::loomc_result
     loom::tooling::config
-    loom::tooling::execution::session
     loom::tooling::io::file
     loom::tooling::pass::trace_cli
     loom::transforms::cleanup::configured
@@ -56,6 +60,7 @@ iree_execution_test_suite(
   MANIFESTS
     "loom-opt.test.json"
   TOOLS
+    "loom-format=loom::tools::loom-format"
     "loom-opt=::loom-opt"
   LABELS
     "hostonly"
