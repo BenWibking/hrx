@@ -906,6 +906,8 @@ loom_corpus_test(
     "Wasm has no kernel execution model."
     "control/loop/wide_index_recurrence.loom"
     "Wasm has no kernel execution model."
+    "control/schedule/guarded_recurrence.loom"
+    "Wasm has no kernel execution model."
     "control/schedule/unroll_scope.loom"
     "Wasm has no kernel execution model."
     "kernel/subgroup/match.loom"

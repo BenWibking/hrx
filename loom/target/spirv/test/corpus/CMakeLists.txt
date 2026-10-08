@@ -1492,6 +1492,7 @@ loom_corpus_test(
     "control/loop/termination.loom"
     "control/loop/vector_recurrence.loom"
     "control/schedule/address_domains.loom"
+    "control/schedule/guarded_recurrence.loom"
     "control/schedule/unroll_scope.loom"
     "memory/address/address.loom"
     "memory/address/biased_offsets.loom"
@@ -2055,7 +2056,6 @@ loom_corpus_test(
   SOURCES
     "control/loop/carried_lane_liveness.loom"
     "control/loop/sequential_slices.loom"
-    "control/schedule/guarded_recurrence.loom"
     "control/schedule/ordered_read_ahead.loom"
     "memory/atomic/add_f32_subnormals.loom"
     "memory/atomic/float_bitwise.loom"
