@@ -98,13 +98,12 @@ typedef struct loom_check_emit_low_allocation_summary_row_t {
 } loom_check_emit_low_allocation_summary_row_t;
 
 static const iree_string_view_t kLoomCheckEmitCoreTargetNames[] = {
-    IREE_SVL("liveness-json"),        IREE_SVL("liveness"),
-    IREE_SVL("low-schedule-json"),    IREE_SVL("low-schedule"),
-    IREE_SVL("low-allocation-json"),  IREE_SVL("low-allocation-summary"),
-    IREE_SVL("low-allocation"),       IREE_SVL("low-packet-json"),
-    IREE_SVL("low-packet"),           IREE_SVL("target-low-registry-manifest"),
-    IREE_SVL("low-compile-report"),
-    IREE_SVL("storage-interference"),
+    IREE_SVL("liveness-json"),       IREE_SVL("liveness"),
+    IREE_SVL("low-schedule-json"),   IREE_SVL("low-schedule"),
+    IREE_SVL("low-allocation-json"), IREE_SVL("low-allocation-summary"),
+    IREE_SVL("low-allocation"),      IREE_SVL("low-packet-json"),
+    IREE_SVL("low-packet"),          IREE_SVL("target-low-registry-manifest"),
+    IREE_SVL("low-compile-report"),  IREE_SVL("storage-interference"),
 };
 
 typedef struct loom_check_emit_request_t {
