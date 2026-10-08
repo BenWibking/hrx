@@ -17,6 +17,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/lower/matrix.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/rodata.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/shuffle.h"
+#include "loom/target/arch/amd/xdna/aie2p/lower/transpose.h"
 #include "loom/target/arch/amd/xdna/aie2p/vector_carrier.h"
 #include "loom/target/arch/amd/xdna/error_catalog.h"
 #include "loom/target/contract.h"
@@ -27,6 +28,11 @@ static iree_status_t loom_aie2p_query_op_contract(
     const loom_op_t* source_op,
     loom_target_contract_query_result_t* out_result) {
   IREE_RETURN_IF_ERROR(loom_aie2p_query_interleave_contract(
+      user_data, environment, source_op, out_result));
+  if (out_result->outcome != LOOM_TARGET_CONTRACT_QUERY_UNHANDLED) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_aie2p_query_transpose_contract(
       user_data, environment, source_op, out_result));
   if (out_result->outcome != LOOM_TARGET_CONTRACT_QUERY_UNHANDLED) {
     return iree_ok_status();
@@ -201,6 +207,11 @@ static iree_status_t loom_aie2p_preselect_op(void* user_data,
     return iree_ok_status();
   }
   IREE_RETURN_IF_ERROR(
+      loom_aie2p_select_transpose_plan(context, source_op, out_plan));
+  if (!loom_low_lower_plan_is_empty(*out_plan)) {
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(
       loom_aie2p_select_shuffle_plan(context, source_op, out_plan));
   if (!loom_low_lower_plan_is_empty(*out_plan)) {
     return iree_ok_status();
@@ -226,6 +237,8 @@ static void loom_aie2p_mark_plan_storage_demands(
     loom_aie2p_mark_matrix_plan_demands(context, source_op, plan);
   } else if (loom_aie2p_interleave_plan_isa(plan)) {
     loom_aie2p_mark_interleave_plan_demands(context, source_op, plan);
+  } else if (loom_aie2p_transpose_plan_isa(plan)) {
+    loom_aie2p_mark_transpose_plan_demands(context, source_op, plan);
   } else if (loom_aie2p_shuffle_plan_isa(plan)) {
     loom_aie2p_mark_shuffle_plan_demands(context, source_op, plan);
   } else if (loom_aie2p_gather_plan_isa(plan)) {
@@ -247,6 +260,8 @@ static void loom_aie2p_describe_plan(void* user_data,
     loom_aie2p_describe_matrix_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_interleave_plan_isa(plan)) {
     loom_aie2p_describe_interleave_plan(context, source_op, plan, out_report);
+  } else if (loom_aie2p_transpose_plan_isa(plan)) {
+    loom_aie2p_describe_transpose_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_shuffle_plan_isa(plan)) {
     loom_aie2p_describe_shuffle_plan(context, source_op, plan, out_report);
   } else if (loom_aie2p_gather_plan_isa(plan)) {
@@ -268,6 +283,9 @@ static iree_status_t loom_aie2p_emit_op(void* user_data,
   }
   if (loom_aie2p_interleave_plan_isa(plan)) {
     return loom_aie2p_emit_interleave_plan(context, source_op, plan);
+  }
+  if (loom_aie2p_transpose_plan_isa(plan)) {
+    return loom_aie2p_emit_transpose_plan(context, source_op, plan);
   }
   if (loom_aie2p_shuffle_plan_isa(plan)) {
     return loom_aie2p_emit_shuffle_plan(context, source_op, plan);

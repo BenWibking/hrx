@@ -16,7 +16,6 @@ from loom.target.arch.amd.xdna.aie2p.contracts.accumulator_structural import (
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.carrier import (
     concat_x_carriers_emits,
-    concat_x_carriers_with_controls_emits,
 )
 from loom.target.arch.amd.xdna.aie2p.contracts.predicate_concat import (
     AIE2P_PREDICATE_CONCAT_RULES,
@@ -44,12 +43,9 @@ from loom.target.contracts import (
 )
 from loom.target.low_descriptors import Descriptor
 
-_I8_4X4_VECTOR = Vector("i8", dims=(4, 4))
 _I1_VECTOR = Vector("i1", minimum_lanes=1, maximum_lanes=64)
 _WIDE_PREDICATE_VECTOR = Vector("i1", minimum_lanes=65, maximum_lanes=128)
 _PREDICATE_VECTOR = Vector("i1", minimum_static_elements=1, maximum_static_elements=128)
-_I32_F32_4X4_VECTOR = Vector(("i32", "f32"), dims=(4, 4))
-_I16_F16_BF16_8X8_VECTOR = Vector(("i16", "f16", "bf16"), dims=(8, 8))
 _I32 = Scalar("i32")
 _INDEX = Scalar("index")
 
@@ -186,14 +182,6 @@ _WIDE_VECTOR_EXTRACT_SPECS = (
 # 512-bit source. Each logical 32-byte result retains the target's 512-bit X
 # carrier, with the remaining lanes outside the source vector's value domain.
 _I8_DEINTERLEAVE_CONTROLS = (0, 1)
-
-# AIE2P's T32_4x4 VSHUFFLE mode transposes the sixteen 32-bit lanes carried
-# by one X register.
-_I32_F32_TRANSPOSE_4X4_CONTROL = 34
-
-# T16_8x8_lo and T16_8x8_hi return the low and high 512-bit halves of
-# the transposed 1024-bit value. Both read the same ordered pair of X registers.
-_I16_TRANSPOSE_8X8_CONTROLS = (52, 53)
 
 # Ordinary payloads share byte-addressable X carriers regardless of element
 # interpretation. A partial packet occupies the low bytes of its carrier.
@@ -429,217 +417,6 @@ def _wide_vector_extract_dynamic_rule(
                 element=0,
                 minimum=-(2**63),
                 maximum=-(2**63),
-            ),
-        ),
-        emit=tuple(emits),
-    )
-
-
-def _vector_transpose_i32_f32_4x4_rule() -> DescriptorRule:
-    constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-    control = ValueRef.temporary("control")
-    return DescriptorRule(
-        source_op=vector.vector_transpose,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", _I32_F32_4X4_VECTOR),
-            Guard.value_type("result", _I32_F32_4X4_VECTOR),
-            Guard.i64_array_count("permutation", 2),
-            Guard.i64_array_element_range(
-                "permutation", element=0, minimum=1, maximum=1
-            ),
-            Guard.i64_array_element_range(
-                "permutation", element=1, minimum=0, maximum=0
-            ),
-        ),
-        emit=(
-            EmitDescriptorOp(
-                descriptor=constant,
-                results={"dst": control},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"i": _I32_F32_TRANSPOSE_4X4_CONTROL},
-                form=DescriptorEmitForm.CONST,
-            ),
-            EmitDescriptorOp(
-                descriptor=shuffle,
-                operands={
-                    "s1": ValueRef.operand("source"),
-                    "s2": ValueRef.operand("source"),
-                    "mod": control,
-                },
-                results={"dst": ValueRef.result("result")},
-                form=DescriptorEmitForm.OP,
-            ),
-        ),
-    )
-
-
-def _vector_transpose_i8_4x4_rule() -> DescriptorRule:
-    constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-
-    shuffle_controls = tuple(
-        ValueRef.temporary(f"deinterleave_{name}_control") for name in ("even", "odd")
-    )
-    emits: list[ContractEmit] = [
-        EmitDescriptorOp(
-            descriptor=constant,
-            results={"dst": control},
-            result_types={"dst": DescriptorResultType()},
-            immediates={"i": mode},
-            form=DescriptorEmitForm.CONST,
-        )
-        for control, mode in zip(
-            shuffle_controls, _I8_DEINTERLEAVE_CONTROLS, strict=True
-        )
-    ]
-
-    source = ValueRef.operand("source")
-    even = ValueRef.temporary("even")
-    odd = ValueRef.temporary("odd")
-    for result, control in zip((even, odd), shuffle_controls, strict=True):
-        emits.append(
-            EmitDescriptorOp(
-                descriptor=shuffle,
-                operands={"s1": source, "s2": source, "mod": control},
-                results={"dst": result},
-                result_types={"dst": DescriptorResultType()},
-                form=DescriptorEmitForm.OP,
-            )
-        )
-
-    columns = tuple(ValueRef.temporary(f"column{index}") for index in range(4))
-    for result, packed, control in (
-        (columns[0], even, shuffle_controls[0]),
-        (columns[2], even, shuffle_controls[1]),
-        (columns[1], odd, shuffle_controls[0]),
-        (columns[3], odd, shuffle_controls[1]),
-    ):
-        emits.append(
-            EmitDescriptorOp(
-                descriptor=shuffle,
-                operands={"s1": packed, "s2": packed, "mod": control},
-                results={"dst": result},
-                result_types={"dst": DescriptorResultType()},
-                form=DescriptorEmitForm.OP,
-            )
-        )
-
-    shift_controls = {
-        byte_count: ValueRef.temporary(f"shift_{byte_count}")
-        for byte_count in (4, 60, 8, 56)
-    }
-    for byte_count, control in shift_controls.items():
-        emits.append(
-            EmitDescriptorOp(
-                descriptor=constant,
-                results={"dst": control},
-                result_types={"dst": DescriptorResultType()},
-                immediates={"i": byte_count},
-                form=DescriptorEmitForm.CONST,
-            )
-        )
-
-    column_pairs = tuple(
-        ValueRef.temporary(f"columns{first}{first + 1}") for first in (0, 2)
-    )
-    for first, result in zip((0, 2), column_pairs, strict=True):
-        emits.extend(
-            concat_x_carriers_with_controls_emits(
-                columns[first],
-                columns[first + 1],
-                result,
-                left_bytes=shift_controls[4],
-                remaining_bytes=shift_controls[60],
-                temporary_prefix=f"column{first}_",
-                result_type=DescriptorResultType(),
-            )
-        )
-
-    emits.extend(
-        concat_x_carriers_with_controls_emits(
-            column_pairs[0],
-            column_pairs[1],
-            ValueRef.result("result"),
-            left_bytes=shift_controls[8],
-            remaining_bytes=shift_controls[56],
-            temporary_prefix="pair_",
-        )
-    )
-
-    return DescriptorRule(
-        source_op=vector.vector_transpose,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", _I8_4X4_VECTOR),
-            Guard.value_type("result", _I8_4X4_VECTOR),
-            Guard.i64_array_count("permutation", 2),
-            Guard.i64_array_element_range(
-                "permutation", element=0, minimum=1, maximum=1
-            ),
-            Guard.i64_array_element_range(
-                "permutation", element=1, minimum=0, maximum=0
-            ),
-        ),
-        emit=tuple(emits),
-    )
-
-
-def _vector_transpose_16bit_8x8_rule() -> DescriptorRule:
-    constant = _descriptor("amd.xdna.aie2p.constant.i32.mova")
-    shuffle = _descriptor("amd.xdna.aie2p.shuffle.x.configured")
-    low = ValueRef.temporary("low")
-    high = ValueRef.temporary("high")
-    emits: list[ContractEmit] = [
-        EmitRegisterSlice(
-            source=ValueRef.operand("source"),
-            result=low,
-            unit_count=2,
-        ),
-        EmitRegisterSlice(
-            source=ValueRef.operand("source"),
-            result=high,
-            unit_offset=2,
-            unit_count=2,
-        ),
-    ]
-    halves = []
-    for name, mode in zip(("low", "high"), _I16_TRANSPOSE_8X8_CONTROLS, strict=True):
-        control = ValueRef.temporary(f"{name}_control")
-        result = ValueRef.temporary(f"{name}_transposed")
-        emits.extend(
-            (
-                EmitDescriptorOp(
-                    descriptor=constant,
-                    results={"dst": control},
-                    result_types={"dst": DescriptorResultType()},
-                    immediates={"i": mode},
-                    form=DescriptorEmitForm.CONST,
-                ),
-                EmitDescriptorOp(
-                    descriptor=shuffle,
-                    operands={"s1": low, "s2": high, "mod": control},
-                    results={"dst": result},
-                    result_types={"dst": DescriptorResultType()},
-                    form=DescriptorEmitForm.OP,
-                ),
-            )
-        )
-        halves.append(result)
-    emits.append(EmitRegisterConcat(sources=halves, result=ValueRef.result("result")))
-    return DescriptorRule(
-        source_op=vector.vector_transpose,
-        descriptor=shuffle,
-        guards=(
-            Guard.value_type("source", _I16_F16_BF16_8X8_VECTOR),
-            Guard.value_type("result", _I16_F16_BF16_8X8_VECTOR),
-            Guard.i64_array_count("permutation", 2),
-            Guard.i64_array_element_range(
-                "permutation", element=0, minimum=1, maximum=1
-            ),
-            Guard.i64_array_element_range(
-                "permutation", element=1, minimum=0, maximum=0
             ),
         ),
         emit=tuple(emits),
@@ -1548,9 +1325,6 @@ AIE2P_STRUCTURAL_RULES = (
             wide_lane_maximum,
         )
     ),
-    _vector_transpose_i8_4x4_rule(),
-    _vector_transpose_i32_f32_4x4_rule(),
-    _vector_transpose_16bit_8x8_rule(),
     *(
         _accumulator_to_vector_bitcast_rule(result_type)
         for result_type in _ORDINARY_1024_BITCAST_TYPES
