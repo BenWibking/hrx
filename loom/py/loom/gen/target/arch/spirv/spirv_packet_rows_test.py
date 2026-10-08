@@ -56,6 +56,7 @@ from loom.target.arch.spirv.ordinary_vector_conversion import (
 )
 from loom.target.arch.spirv.ordinary_vector_float import (
     ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS,
+    ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS,
 )
 from loom.target.arch.spirv.ordinary_vector_integer import (
     ORDINARY_VECTOR_INTEGER_INSTRUCTIONS,
@@ -758,8 +759,10 @@ def test_generation_emits_complete_ordinary_vector_integer_matrix() -> None:
 
 def test_floating_packets_preserve_operation_rounding() -> None:
     _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS)
+    _assert_generated_ordinary_vector_instructions(ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS)
     rows = {row.descriptor_key: row for row in _packet_rows()}
     expected_keys = {f"spirv.op_{operation}.{prefix}{scalar}" for operation in ("fadd", "fsub", "fmul", "fdiv", "frem") for prefix in ("", "v2", "v3", "v4") for scalar in ("f16", "f32", "f64")}
+    expected_keys.update(f"spirv.op_vector_times_scalar.v{lanes}{element}" for lanes in (2, 3, 4) for element in ("f16", "f32", "f64"))
     for prefix in ("", "v2", "v3", "v4"):
         expected_keys.update(f"spirv.op_f_convert.{prefix}{source}.{prefix}{result}" for source in ("f16", "f32", "f64") for result in ("f16", "f32", "f64") if source != result)
         for width in (8, 16, 32, 64):
@@ -774,6 +777,16 @@ def test_floating_packets_preserve_operation_rounding() -> None:
                 )
     expected_keys.update(("spirv.op_f_convert.bf16.f32", "spirv.op_f_convert.f32.bf16"))
     assert {key for key, row in rows.items() if row.no_contraction} == expected_keys
+
+
+def test_vector_scale_rows_keep_the_scalar_operand_type() -> None:
+    instructions = ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS
+    assert {(row.result_type.component_type.suffix, row.result_type.lane_count) for row in instructions} == {(element, lanes) for element in ("f16", "f32", "f64") for lanes in (2, 3, 4)}
+    for row in instructions:
+        assert row.operand_types == (row.result_type, row.result_type.component_type)
+        assert row.operand_names == ("vector", "scalar")
+        assert row.packet_form == "LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE"
+        assert row.opcode == "LOOM_SPIRV_OP_VECTOR_TIMES_SCALAR"
 
 
 def test_generation_emits_complete_ordinary_vector_conversions() -> None:

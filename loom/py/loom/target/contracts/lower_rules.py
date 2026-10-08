@@ -1943,6 +1943,7 @@ class _LowerRuleSetCompiler:
                 SourceValueKind.OPERAND,
                 SourceValueKind.EXACT_LANE_ORIGIN_OPERAND,
                 SourceValueKind.EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND,
+                SourceValueKind.UNIFORM_ELEMENT_ORIGIN_OPERAND,
             )
             and not allow_variadic_span
         ):

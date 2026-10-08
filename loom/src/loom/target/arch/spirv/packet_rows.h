@@ -28,7 +28,9 @@ extern "C" {
 enum loom_spirv_packet_form_e {
   LOOM_SPIRV_PACKET_FORM_UNSUPPORTED = 0,
   LOOM_SPIRV_PACKET_FORM_SCALAR_CONSTANT = 1,
-  LOOM_SPIRV_PACKET_FORM_BINARY_SAME_TYPE = 2,
+  // Binary instruction whose result has the first operand's type. The row
+  // owns both operand types, which need not match (OpVectorTimesScalar).
+  LOOM_SPIRV_PACKET_FORM_BINARY_LHS_TYPE = 2,
   LOOM_SPIRV_PACKET_FORM_PHYSICAL_STORAGE_BUFFER_BYTE_OFFSET = 3,
   LOOM_SPIRV_PACKET_FORM_LOAD_ALIGNED = 4,
   LOOM_SPIRV_PACKET_FORM_STORE_ALIGNED = 5,

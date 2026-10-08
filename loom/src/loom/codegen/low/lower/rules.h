@@ -114,8 +114,13 @@ enum loom_low_lower_value_ref_kind_e {
   LOOM_LOW_LOWER_VALUE_REF_EXACT_LANE_ORIGIN_OPERAND = 9,
   // Exact scalar origin shared by every element of source operand field
   // |index|, element |element_index|. Selection proves the indexed uniform
-  // origin is available before emission consumes it.
+  // origin is available before emission consumes it. The origin may precede
+  // an exact widening conversion and have a narrower element type.
   LOOM_LOW_LOWER_VALUE_REF_EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND = 10,
+  // Scalar of the operand's element type shared by every element of source
+  // operand field |index|, element |element_index|. This retains widening
+  // conversions when the consumer requires the current arithmetic precision.
+  LOOM_LOW_LOWER_VALUE_REF_UNIFORM_ELEMENT_ORIGIN_OPERAND = 11,
   // Maximum value-ref kind plus one.
   LOOM_LOW_LOWER_VALUE_REF_COUNT_,
 };

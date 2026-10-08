@@ -43,6 +43,7 @@ from loom.target.arch.spirv.ordinary_vector_conversion import (
 )
 from loom.target.arch.spirv.ordinary_vector_float import (
     ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS,
+    ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS,
 )
 from loom.target.arch.spirv.ordinary_vector_integer import (
     ORDINARY_VECTOR_INTEGER_INSTRUCTIONS,
@@ -318,6 +319,7 @@ def test_result_asm_recipes_cover_every_spirv_descriptor_family() -> None:
     for row in (
         *ORDINARY_VECTOR_INSTRUCTIONS,
         *ORDINARY_VECTOR_FLOAT_BINARY_INSTRUCTIONS,
+        *ORDINARY_VECTOR_FLOAT_SCALE_INSTRUCTIONS,
         *ORDINARY_VECTOR_INTEGER_INSTRUCTIONS,
         *ORDINARY_VECTOR_CONVERSION_INSTRUCTIONS,
         *ORDINARY_VECTOR_BIT_LAYOUT_INSTRUCTIONS,

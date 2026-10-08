@@ -132,6 +132,9 @@ loom_corpus_build(
             "memory/atomic/float64.loom:@atomic_f64_values": "TARGET/003",
             "numeric/conversion/float8_schema_conversion.loom:@float8_schema_conversion": "TARGET/001",
             "numeric/float/activations.loom:@activation_observations": "LOWERING/036",
+            "numeric/vector/floating.loom:@vector_scale_f16": "TARGET/001",
+            "numeric/vector/floating.loom:@vector_scale_f32": "TARGET/001",
+            "numeric/vector/floating.loom:@vector_scale_f64": "TARGET/001",
         },
     },
 )

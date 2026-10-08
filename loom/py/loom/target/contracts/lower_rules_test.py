@@ -314,7 +314,18 @@ def test_compile_exact_lane_origin_operand_reference() -> None:
     assert origin_operand_ref.kind is SourceValueKind.EXACT_LANE_ORIGIN_OPERAND
 
 
-def test_compile_exact_uniform_element_origin_operand_reference() -> None:
+@pytest.mark.parametrize("exact", [False, True])
+def test_compile_uniform_element_origin_operand_reference(exact: bool) -> None:
+    origin_guard = (
+        Guard.exact_uniform_element_origin_type("rhs", Scalar("bf16"))
+        if exact
+        else Guard.uniform_element_origin_type("rhs", Scalar("f32"))
+    )
+    origin_ref = (
+        ValueRef.exact_uniform_element_origin_operand("rhs")
+        if exact
+        else ValueRef.uniform_element_origin_operand("rhs")
+    )
     fragment = ContractFragment(
         name="test.exact-uniform-element-origin",
         descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
@@ -324,10 +335,7 @@ def test_compile_exact_uniform_element_origin_operand_reference() -> None:
                 descriptor=TEST_LOW_ADD_F32_DESCRIPTOR,
                 guards=(
                     Guard.value_type("lhs", Vector("f32", lanes=16)),
-                    Guard.exact_uniform_element_origin_type(
-                        "rhs",
-                        Scalar("bf16"),
-                    ),
+                    origin_guard,
                     Guard.value_type("result", Vector("f32", lanes=16)),
                 ),
                 emit=(
@@ -335,7 +343,7 @@ def test_compile_exact_uniform_element_origin_operand_reference() -> None:
                         descriptor=TEST_LOW_ADD_F32_DESCRIPTOR,
                         operands={
                             "lhs": ValueRef.operand("lhs"),
-                            "rhs": ValueRef.exact_uniform_element_origin_operand("rhs"),
+                            "rhs": origin_ref,
                         },
                         results={"dst": ValueRef.result("result")},
                     ),
@@ -350,12 +358,10 @@ def test_compile_exact_uniform_element_origin_operand_reference() -> None:
     )
 
     origin_guard_ref = compiled.value_refs[compiled.guards[1].value_ref_index]
-    assert origin_guard_ref.kind is SourceValueKind.EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND
+    assert origin_guard_ref.kind is origin_ref.kind
     emit = compiled.emits[compiled.rules[0].emit_start]
     origin_operand_ref = compiled.value_refs[emit.operand_ref_start + 1]
-    assert (
-        origin_operand_ref.kind is SourceValueKind.EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND
-    )
+    assert origin_operand_ref.kind is origin_ref.kind
 
 
 def test_compile_variadic_result_element_refs() -> None:
