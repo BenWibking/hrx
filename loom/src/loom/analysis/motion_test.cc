@@ -152,6 +152,11 @@ TEST_F(MotionTest, LocalClassificationSeparatesEraseRelocateAndSpeculate) {
                                       LOOM_LOCATION_UNKNOWN, &add_op));
   loom_value_id_t add_result = loom_test_addi_result(add_op);
 
+  loom_op_t* callable_op = nullptr;
+  IREE_ASSERT_OK(loom_test_addi_build(&builder_, lhs, rhs, i32_type,
+                                      LOOM_LOCATION_UNKNOWN, &callable_op));
+  callable_op->traits |= LOOM_TRAIT_CALLABLE_BOUNDARY;
+
   loom_op_t* use_op = nullptr;
   IREE_ASSERT_OK(loom_test_use_build(&builder_, &add_result, 1,
                                      LOOM_LOCATION_UNKNOWN, &use_op));
@@ -210,6 +215,8 @@ TEST_F(MotionTest, LocalClassificationSeparatesEraseRelocateAndSpeculate) {
   EXPECT_FALSE(loom_motion_op_can_relocate_effect_free(module_, convergent_op));
   EXPECT_FALSE(loom_motion_op_can_relocate_effect_free(module_, update_op));
   EXPECT_TRUE(loom_motion_op_can_rematerialize_effect_free(module_, add_op));
+  EXPECT_FALSE(
+      loom_motion_op_can_rematerialize_effect_free(module_, callable_op));
   EXPECT_FALSE(
       loom_motion_op_can_rematerialize_effect_free(module_, convergent_op));
   EXPECT_FALSE(loom_motion_op_can_rematerialize_effect_free(module_, alloc_op));
