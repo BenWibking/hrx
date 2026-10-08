@@ -19,6 +19,7 @@ depend on the engine generation and native transport.
 | [Image transfers](images.md) | `COPY_TILED_SUBWIN` / `COPY_T2T_SUBWIN`: native surface and mip operands, metadata layouts, compression admission, staged transfers and temporary-storage reuse. |
 | [Constant fill](fill.md) | `CONST_FILL` / `CONSTANT_FILL`: legacy and DWORD count forms, chunk limits, cache/compression fields, caller selection and completion. |
 | [Inline data writes](write.md) | `WRITE_LINEAR` / `WRITE_UNTILED` / legacy `DMA_PACKET_WRITE`: direct versus minus-one counts, policy layouts, metadata/control callers, inline versus uploaded input and final storage use. |
+| [Page-table updates](page-tables.md) | `PTEPDE_GEN` / `GENERATE_PTE_PDE`, ordinary COPY/WRITE, dedicated PTEPDE COPY/RMW layouts, native entry construction, IB data ownership and translation readiness. |
 | [Ordering](ordering.md) | `NOP` / legacy `DMA_PACKET_NOP`: counted bodies, firmware burst selection, framing versus transfer drains, temporary-buffer reuse, overlap and NPD. |
 | [Completion stores](fence.md) | `FENCE` / `FENCE_64B` / `FENCE_CONDITIONAL_INTERRUPT`: generation layouts, split stores, native ring versus user completion, event/marker observers and final storage use. |
 | [Interrupts](trap.md) | `TRAP` / `DUMMY_TRAP`: context widths, native callback forms, mailbox notification, ring-fence observation and resource lifetime. |

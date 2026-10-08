@@ -310,10 +310,16 @@ These register-level choices remain distinct from the three-bit packet field.
 
 ## Page-table publication and final storage use
 
+The [SDMA page-table update chapter](../sdma/page-tables.md) describes entry
+generation, ordinary COPY/WRITE selection, packet counts and the lifetime of
+entry data retained inside native IB allocations.
+
 A scheduled Linux compute job illustrates the full ownership flow:
 
-1. The VM update backend writes PTEs/PDEs. The CPU backend commits with
-   `mb()` and an HDP flush. The SDMA backend returns an update-job fence;
+1. The VM update backend writes PTEs/PDEs. The CPU backend executes `mb()`
+   and flushes HDP when it acquires the reset-domain read lock; the reset
+   branch returns success without issuing a new flush. The SDMA backend
+   returns an update-job fence;
    when an output fence is requested and the update is not immediate, it sets
    `DRM_SCHED_FENCE_DONT_PIPELINE` on that fence. Neither action is a
    completion fence for the future shader.
