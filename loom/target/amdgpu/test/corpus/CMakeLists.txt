@@ -455,6 +455,7 @@ loom_corpus_test(
     "memory/atomic/private.loom"
     "memory/atomic/vector.loom"
     "memory/atomic/workgroup/cmpxchg.loom"
+    "memory/atomic/workgroup/panel_stream.loom"
     "memory/atomic/workgroup/vector.loom"
     "memory/buffer/allocation_freshness.loom"
     "memory/buffer/boundaries.loom"

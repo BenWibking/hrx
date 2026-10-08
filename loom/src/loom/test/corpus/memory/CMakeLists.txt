@@ -46,6 +46,7 @@ loom_corpus_sources(
     "atomic/private.loom"
     "atomic/vector.loom"
     "atomic/workgroup/cmpxchg.loom"
+    "atomic/workgroup/panel_stream.loom"
     "atomic/workgroup/vector.loom"
     "buffer/allocation_freshness.loom"
     "buffer/boundaries.loom"
