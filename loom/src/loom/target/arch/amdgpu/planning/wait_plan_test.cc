@@ -18,6 +18,7 @@
 #include "loom/ops/cache.h"
 #include "loom/target/arch/amdgpu/descriptors/low_registry.h"
 #include "loom/target/arch/amdgpu/facts.h"
+#include "loom/target/arch/amdgpu/planning/storage_lease.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/util/cfg_graph_test_util.h"
 
@@ -299,6 +300,12 @@ class AmdgpuWaitPlanTest : public ::testing::Test {
   }
 
   iree_status_t BuildPlan() {
+    if (allocation_.storage_leases.schedule == nullptr) {
+      loom_low_storage_lease_provider_t provider = {};
+      loom_amdgpu_storage_lease_provider(&provider);
+      IREE_RETURN_IF_ERROR(loom_low_storage_lease_build(
+          &schedule_, &provider, &module_->arena, &allocation_.storage_leases));
+    }
     const loom_amdgpu_address_state_plan_t address_state = {};
     return loom_amdgpu_wait_plan_build(&schedule_, &allocation_, &address_state,
                                        &arena_, &transient_arena_, &plan_);

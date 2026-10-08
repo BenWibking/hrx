@@ -32,6 +32,7 @@ from loom.target.arch.amdgpu.target_info import (
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_DUAL_MOV_SRC2_CACHE,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_VOPD_NUMERIC_MINMAX_MNEMONICS,
     AMDGPU_DESCRIPTOR_SET_INFO_FLAG_WAITS_BEFORE_SYSTEM_SCOPE_STORES,
+    AMDGPU_DESCRIPTOR_SET_INFO_FLAG_XCNT_SOURCE_RETENTION,
     AMDGPU_DESCRIPTOR_SET_INFOS,
     AMDGPU_GENERIC_MATRIX_FEATURE_EXCLUSIONS,
     AMDGPU_INSTRUCTION_CONSTRAINT_DS_PAIRED_ADDRESS_ALIGNMENT,
@@ -125,6 +126,20 @@ def test_system_scope_store_waits_are_scoped_to_gfx120x() -> None:
         if info.flags & AMDGPU_DESCRIPTOR_SET_INFO_FLAG_WAITS_BEFORE_SYSTEM_SCOPE_STORES
     }
     assert flagged_generator_targets == {"rdna4", "gfx12_generic"}
+
+
+def test_xcnt_source_retention_is_scoped_to_gfx125x() -> None:
+    flagged_generator_targets = {
+        info.generator_target
+        for info in AMDGPU_DESCRIPTOR_SET_INFOS
+        if info.flags & AMDGPU_DESCRIPTOR_SET_INFO_FLAG_XCNT_SOURCE_RETENTION
+    }
+    assert flagged_generator_targets == {
+        "rdna4_gfx1250_a0",
+        "rdna4_gfx1251",
+        "rdna4_gfx125x",
+        "gfx12_5_generic",
+    }
 
 
 def test_native_scalar_float_arithmetic_is_scoped_to_rdna35_and_newer() -> None:

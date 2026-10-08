@@ -13,6 +13,7 @@
 #include "loom/codegen/low/packet.h"
 #include "loom/ops/cache.h"
 #include "loom/ops/low/ops.h"
+#include "loom/target/arch/amdgpu/planning/storage_lease.h"
 #include "loom/target/arch/amdgpu/planning/structural_packet.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
 #include "loom/target/arch/amdgpu/target_info.h"
@@ -283,87 +284,61 @@ static void loom_amdgpu_wait_classification_classify_effects(
   }
 }
 
-static bool loom_amdgpu_wait_classification_descriptor_has_xcnt_source_lease(
-    const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_descriptor_t* descriptor) {
-  if (descriptor == NULL || descriptor->storage_lease_count == 0) {
-    return false;
-  }
-  IREE_ASSERT_LE(descriptor->storage_lease_start,
-                 descriptor_set->storage_lease_count);
-  IREE_ASSERT_LE(
-      descriptor->storage_lease_count,
-      descriptor_set->storage_lease_count - descriptor->storage_lease_start);
-  for (uint16_t i = 0; i < descriptor->storage_lease_count; ++i) {
-    const loom_low_descriptor_storage_lease_t* lease =
-        &descriptor_set->storage_leases[descriptor->storage_lease_start + i];
-    if (lease->kind == LOOM_LOW_STORAGE_LEASE_SOURCE_READ &&
-        lease->release_class_id == LOOM_AMDGPU_WAIT_COUNTER_X) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static bool loom_amdgpu_wait_classification_descriptor_writes_exec(
-    const loom_low_descriptor_set_t* descriptor_set,
-    const loom_low_descriptor_t* descriptor) {
-  if (descriptor == NULL) {
-    return false;
-  }
-  IREE_ASSERT_LE(descriptor->operand_start, descriptor_set->operand_count);
-  IREE_ASSERT_LE(descriptor->operand_count,
-                 descriptor_set->operand_count - descriptor->operand_start);
-  for (uint16_t i = 0; i < descriptor->operand_count; ++i) {
-    const loom_low_operand_t* operand =
-        &descriptor_set->operands[descriptor->operand_start + i];
-    if (!iree_any_bit_set(operand->flags, LOOM_LOW_OPERAND_FLAG_STATE_WRITE)) {
+static void loom_amdgpu_wait_classification_classify_storage_progress(
+    const loom_low_schedule_table_t* schedule,
+    const loom_low_allocation_table_t* allocation,
+    loom_amdgpu_wait_classification_t* classification) {
+  const loom_low_storage_lease_table_t* storage_leases =
+      &allocation->storage_leases;
+  for (iree_host_size_t i = 0; i < storage_leases->record_count; ++i) {
+    const loom_low_storage_lease_record_t* lease = &storage_leases->records[i];
+    if (lease->kind != LOOM_LOW_STORAGE_LEASE_SOURCE_READ ||
+        lease->release_class_id != LOOM_AMDGPU_WAIT_COUNTER_X) {
       continue;
     }
-    IREE_ASSERT_LE(operand->reg_class_alt_start,
-                   descriptor_set->reg_class_alt_count);
-    IREE_ASSERT_LE(
-        operand->reg_class_alt_count,
-        descriptor_set->reg_class_alt_count - operand->reg_class_alt_start);
-    for (uint16_t j = 0; j < operand->reg_class_alt_count; ++j) {
-      const uint16_t reg_class_id =
-          descriptor_set->reg_class_alts[operand->reg_class_alt_start + j]
-              .reg_class_id;
-      if (reg_class_id == LOOM_AMDGPU_REG_CLASS_ID_EXEC) {
-        return true;
-      }
+    IREE_ASSERT_LT(lease->node_index, schedule->node_count);
+    loom_amdgpu_wait_node_state_t* node_state =
+        &classification->node_states[lease->node_index];
+    loom_amdgpu_wait_frontier_node_t* frontier_node =
+        &classification->frontier_nodes[lease->node_index];
+    loom_amdgpu_wait_completion_node_t* completion_node =
+        &classification->completion_nodes[lease->node_index];
+    completion_node->producer_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
+    if (lease->release_group_id == LOOM_AMDGPU_XCNT_RELEASE_GROUP_VMEM) {
+      node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_PRODUCER;
+      frontier_node->xcnt_group_flags |= LOOM_AMDGPU_WAIT_XCNT_GROUP_FLAG_VMEM;
+    } else {
+      IREE_ASSERT_EQ(lease->release_group_id,
+                     LOOM_AMDGPU_XCNT_RELEASE_GROUP_SMEM);
+      node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_SMEM_PRODUCER;
+      frontier_node->xcnt_group_flags |= LOOM_AMDGPU_WAIT_XCNT_GROUP_FLAG_SMEM;
     }
   }
-  return false;
-}
 
-static bool
-loom_amdgpu_wait_classification_structural_node_implicitly_drains_xcnt(
-    const loom_low_schedule_table_t* schedule,
-    const loom_low_schedule_node_t* node) {
-  const loom_op_t* op = node->op;
-  if (op == NULL) {
-    return false;
-  }
-  if (loom_low_return_isa(op)) {
-    return true;
-  }
-  if (loom_low_br_isa(op)) {
-    const uint32_t destination_block_index =
-        loom_low_packet_block_index(schedule, loom_low_br_dest(op));
-    return destination_block_index != node->block_index + 1;
-  }
-  if (loom_low_cond_br_isa(op)) {
-    const loom_block_t* true_dest = loom_low_cond_br_true_dest(op);
-    const loom_block_t* false_dest = loom_low_cond_br_false_dest(op);
-    if (true_dest != false_dest) {
-      return true;
+  for (iree_host_size_t i = 0; i < storage_leases->progress_bound_count; ++i) {
+    const loom_low_storage_progress_bound_record_t* bound =
+        &storage_leases->progress_bounds[i];
+    if (bound->release_class_id != LOOM_AMDGPU_WAIT_COUNTER_X ||
+        bound->remaining_count != 0) {
+      continue;
     }
-    const uint32_t destination_block_index =
-        loom_low_packet_block_index(schedule, true_dest);
-    return destination_block_index != node->block_index + 1;
+    IREE_ASSERT_LT(bound->packet_index, schedule->scheduled_node_count);
+    const uint32_t node_index =
+        schedule->scheduled_node_indices[bound->packet_index];
+    loom_amdgpu_wait_node_state_t* node_state =
+        &classification->node_states[node_index];
+    if (bound->kind == LOOM_LOW_STORAGE_PROGRESS_BOUND_PACKET) {
+      IREE_ASSERT_EQ(bound->release_group_id,
+                     LOOM_LOW_STORAGE_LEASE_RELEASE_GROUP_ALL);
+      node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_IMPLICIT_DRAIN;
+      node_state->implicit_wait_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
+    } else {
+      IREE_ASSERT_EQ(bound->kind, LOOM_LOW_STORAGE_PROGRESS_BOUND_REQUIRED);
+      IREE_ASSERT_EQ(bound->release_group_id,
+                     LOOM_AMDGPU_XCNT_RELEASE_GROUP_VMEM);
+      node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_DRAIN_REQUIRED;
+    }
   }
-  return false;
 }
 
 static void loom_amdgpu_wait_classification_finish_nodes(
@@ -444,32 +419,6 @@ static void loom_amdgpu_wait_classification_finish_nodes(
         // consumes their progress before deciding whether XCNT needs a wait.
         node_state->barrier_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
       }
-    }
-    if (loom_amdgpu_wait_classification_descriptor_has_xcnt_source_lease(
-            descriptor_set, node->descriptor)) {
-      completion_node->producer_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
-      node_state->flags |=
-          iree_any_bit_set(completion_node->hazard_counter_mask,
-                           LOOM_AMDGPU_WAIT_COUNTER_MASK_SMEM)
-              ? LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_SMEM_PRODUCER
-              : LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_PRODUCER;
-      frontier_node->xcnt_group_flags =
-          iree_any_bit_set(node_state->flags,
-                           LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_SMEM_PRODUCER)
-              ? LOOM_AMDGPU_WAIT_XCNT_GROUP_FLAG_SMEM
-              : LOOM_AMDGPU_WAIT_XCNT_GROUP_FLAG_VMEM;
-    }
-    if (supports_xcnt && loom_amdgpu_wait_classification_descriptor_writes_exec(
-                             descriptor_set, node->descriptor)) {
-      node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_WRITES_EXEC;
-    }
-    if (supports_xcnt &&
-        (iree_any_bit_set(descriptor_traits,
-                          LOOM_AMDGPU_DESCRIPTOR_TRAIT_XCNT_IMPLICIT_DRAIN) ||
-         loom_amdgpu_wait_classification_structural_node_implicitly_drains_xcnt(
-             schedule, node))) {
-      node_state->flags |= LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_IMPLICIT_DRAIN;
-      node_state->implicit_wait_counter_mask |= LOOM_AMDGPU_WAIT_COUNTER_MASK_X;
     }
     frontier_node->vmem_result_order_class =
         loom_amdgpu_descriptor_vmem_result_order_class(descriptor_set,
@@ -637,6 +586,8 @@ loom_amdgpu_wait_classification_build(
                                                    out_classification);
   loom_amdgpu_wait_classification_classify_effects(schedule,
                                                    out_classification);
+  loom_amdgpu_wait_classification_classify_storage_progress(
+      schedule, allocation, out_classification);
   if (out_classification->wait_bounds_count != 0) {
     IREE_RETURN_IF_ERROR(
         iree_arena_allocate_array(arena, out_classification->wait_bounds_count,

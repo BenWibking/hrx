@@ -1078,6 +1078,107 @@ INSTANTIATE_TEST_SUITE_P(
                       // when its packet precedes the source liveness point.
                       ReleasePoint{9, 3, 2, 0, 3, 5}));
 
+TEST_F(LowAllocationStorageLeaseTest,
+       UsesExactProgressBoundAsPhysicalLeaseEndpoint) {
+  const loom_low_reg_class_t reg_classes[] = {
+      RegClass(/*alias_set_id=*/1),
+  };
+  const loom_low_descriptor_set_t descriptor_set =
+      DescriptorSet(reg_classes, IREE_ARRAYSIZE(reg_classes));
+
+  loom_module_t* module = AllocateModule();
+  const loom_op_t* function_op =
+      reinterpret_cast<const loom_op_t*>(static_cast<uintptr_t>(2));
+  const loom_value_id_t value_ids[] = {
+      DefineValue(module),
+      DefineValue(module),
+  };
+  loom_local_value_domain_t value_domain = {};
+  AcquireValueDomain(module, value_ids, IREE_ARRAYSIZE(value_ids),
+                     &value_domain);
+
+  const loom_liveness_block_info_t blocks[] = {
+      LivenessBlock(/*start_point=*/0, /*end_point=*/5),
+  };
+  const loom_liveness_analysis_t liveness =
+      Liveness(blocks, IREE_ARRAYSIZE(blocks), value_domain.value_ids,
+               value_domain.value_count);
+  const loom_low_schedule_block_t schedule_blocks[] = {
+      ScheduleBlock(/*scheduled_node_start=*/0,
+                    /*scheduled_node_count=*/5),
+  };
+  const loom_low_schedule_node_t nodes[] = {
+      ScheduleOperandNode(/*block_index=*/0, /*scheduled_ordinal=*/0,
+                          /*operand=*/0),
+      ScheduleOperandNode(/*block_index=*/0, /*scheduled_ordinal=*/1,
+                          /*operand=*/0),
+      ScheduleOperandNode(/*block_index=*/0, /*scheduled_ordinal=*/2,
+                          /*operand=*/0),
+      ScheduleOperandNode(/*block_index=*/0, /*scheduled_ordinal=*/3,
+                          /*operand=*/0),
+      ScheduleOperandNode(/*block_index=*/0, /*scheduled_ordinal=*/4,
+                          /*operand=*/0),
+  };
+  const uint32_t scheduled_node_indices[] = {0, 1, 2, 3, 4};
+  const uint32_t value_producer_nodes[] = {
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+      LOOM_LOW_SCHEDULE_NODE_NONE,
+  };
+  loom_low_schedule_table_t schedule =
+      Schedule(module, function_op, liveness, schedule_blocks,
+               IREE_ARRAYSIZE(schedule_blocks), nodes, IREE_ARRAYSIZE(nodes),
+               scheduled_node_indices, IREE_ARRAYSIZE(scheduled_node_indices),
+               value_producer_nodes);
+  schedule.target.descriptor_set = &descriptor_set;
+  loom_low_storage_lease_record_t records[] = {StorageLeaseRecord()};
+  records[0].release_before_scheduled_ordinal_plus_one = 4;
+  const loom_low_storage_lease_table_t lease_table =
+      StorageLeaseTable(&schedule, records, IREE_ARRAYSIZE(records));
+  const loom_low_allocation_storage_identity_t storage_identity = {};
+  loom_low_allocation_unit_liveness_t unit_liveness = {};
+  unit_liveness.storage_segments.entries = liveness.segments;
+
+  loom_low_allocation_storage_lease_state_t state = {};
+  IREE_ASSERT_OK(loom_low_allocation_storage_lease_state_initialize(
+      &lease_table, module, function_op, &value_domain, &liveness,
+      &storage_identity, &unit_liveness, &arena_, &state));
+  const loom_low_allocation_assignment_t leased_assignment = Assignment(
+      /*value_id=*/value_ids[0], /*descriptor_reg_class_id=*/0,
+      /*start_point=*/0, /*end_point=*/1, /*location_base=*/10,
+      /*location_count=*/3);
+  loom_low_allocation_storage_lease_state_record_assignment(
+      &state, &descriptor_set, &liveness, &leased_assignment,
+      /*assignment_index=*/0, /*value_ordinal=*/0);
+  ASSERT_EQ(state.instance_count, 1u);
+  EXPECT_EQ(state.instances[0].start_point, 0u);
+  EXPECT_EQ(state.instances[0].end_point, 4u);
+
+  // A result written by the packet before the bound begins at point 3 and
+  // must still conflict with the lease.
+  const loom_low_allocation_assignment_t before_bound = Assignment(
+      /*value_id=*/value_ids[1], /*descriptor_reg_class_id=*/0,
+      /*start_point=*/3, /*end_point=*/4, /*location_base=*/11,
+      /*location_count=*/1);
+  EXPECT_TRUE(loom_low_allocation_storage_lease_state_conflicts(
+      &state, &descriptor_set, &liveness, &before_bound,
+      /*ignored_value_ids=*/nullptr, /*ignored_value_count=*/0,
+      LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FORBIDDEN));
+  // A result written by the bound packet begins at point 4 and may reuse the
+  // released unit.
+  const loom_low_allocation_assignment_t at_bound = Assignment(
+      /*value_id=*/value_ids[1], /*descriptor_reg_class_id=*/0,
+      /*start_point=*/4, /*end_point=*/5, /*location_base=*/11,
+      /*location_count=*/1);
+  EXPECT_FALSE(loom_low_allocation_storage_lease_state_conflicts(
+      &state, &descriptor_set, &liveness, &at_bound,
+      /*ignored_value_ids=*/nullptr, /*ignored_value_count=*/0,
+      LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FORBIDDEN));
+  IREE_ASSERT_OK(loom_low_allocation_storage_lease_state_finalize(&state));
+
+  loom_local_value_domain_release(&value_domain);
+  loom_module_free(module);
+}
+
 TEST_F(LowAllocationStorageLeaseTest, RejectsLeaseOutsideAllocationLiveness) {
   loom_module_t* module = AllocateModule();
   const loom_op_t* function_op =

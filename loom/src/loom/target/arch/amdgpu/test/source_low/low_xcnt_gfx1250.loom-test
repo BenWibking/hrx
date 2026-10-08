@@ -244,7 +244,33 @@ low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @vmem_exec_reuse_require
   s_wait_xcnt xcnt(0)
   s_mov_b64 exec, s[2:3]
   s_wait_loadcnt loadcnt(0)
-  v_add_u32 v1, v1, v0
+  v_add_u32 v0, v1, v0
+  s_endpgm
+
+// ====
+// RUN: emit amdgpu-assembly @exec_drain_preserves_smem_source strategy=source fixed=%kernarg:physical_register:0:2 fixed=%saved_exec:physical_register:2:2 fixed=%loaded:physical_register:4:1 fixed=%keep:physical_register:5:1 fixed=%reuse:physical_register:0:1
+
+amdgpu.target<gfx1250> @target
+
+low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @exec_drain_preserves_smem_source(%kernarg: reg<amdgpu.sgpr x2>, %saved_exec: reg<amdgpu.sgpr x2>, %keep: reg<amdgpu.sgpr>) asm {
+  %loaded = s_load_dword_offset_only %kernarg
+  s_mov_b64_exec %saved_exec
+  %reuse = s_mov_b32 7
+  %sum0 = s_add_u32 %loaded, %keep
+  %sum1 = s_add_u32 %sum0, %reuse
+  return
+}
+
+// EXEC changes require VMEM XCNT completion. They do not complete the scalar
+// load's source read, so reusing its base still requires an XCNT wait.
+// ----
+  s_load_dword s4, s[0:1] offset:0
+  s_mov_b64 exec, s[2:3]
+  s_wait_xcnt xcnt(0)
+  s_mov_b32 s0, 7
+  s_wait_kmcnt kmcnt(0)
+  s_add_u32 s1, s4, s5
+  s_add_u32 s0, s1, s0
   s_endpgm
 
 // ====
@@ -269,6 +295,73 @@ low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @cross_block_vmem_exec_r
   s_wait_xcnt xcnt(0)
   s_mov_b64 exec, s[2:3]
   s_wait_storecnt storecnt(0)
+  s_endpgm
+
+// ====
+// RUN: emit amdgpu-assembly @native_branch_releases_xcnt_source strategy=source
+
+amdgpu.target<gfx1250> @target
+
+low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @native_branch_releases_xcnt_source(%address: reg<amdgpu.vgpr>, %keep: reg<amdgpu.vgpr>, %base: reg<amdgpu.sgpr x2>, %condition: reg<amdgpu.scc>) -> (reg<amdgpu.vgpr>) asm {
+  %loaded = global_load_b32_saddr %address, %base
+  low.cond_br %condition, ^left, ^right : reg<amdgpu.scc>
+^left:
+  %left_value = v_mov_b32 7
+  %left_sum = v_add_u32 %loaded, %keep
+  %left_result = v_add_u32 %left_sum, %left_value
+  return %left_result
+^right:
+  %right_value = v_mov_b32 9
+  %right_sum = v_add_u32 %loaded, %keep
+  %right_result = v_add_u32 %right_sum, %right_value
+  return %right_result
+}
+
+// The conditional branch drains XCNT on both paths, so each successor can
+// reuse the dead address register without an explicit wait or a fourth VGPR.
+// ----
+  global_load_b32 v2, v0, s[0:1] offset:0
+  s_cbranch_scc0 .Lbb2
+.Lbb1:
+  v_mov_b32 v0, 7
+  s_wait_loadcnt loadcnt(0)
+  v_add_u32 v1, v2, v1
+  s_delay_alu instid0(VALU_DEP_1) | instid1(VALU_DEP_2)
+  v_add_u32 v0, v1, v0
+  s_endpgm
+.Lbb2:
+  v_mov_b32 v0, 9
+  s_wait_loadcnt loadcnt(0)
+  v_add_u32 v1, v2, v1
+  s_delay_alu instid0(VALU_DEP_1) | instid1(VALU_DEP_2)
+  v_add_u32 v0, v1, v0
+  s_endpgm
+
+// ====
+// RUN: emit amdgpu-assembly @fallthrough_preserves_xcnt_source strategy=source
+
+amdgpu.target<gfx1250> @target
+
+low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @fallthrough_preserves_xcnt_source(%address: reg<amdgpu.vgpr>, %keep: reg<amdgpu.vgpr>, %base: reg<amdgpu.sgpr x2>) -> (reg<amdgpu.vgpr>) asm {
+  %loaded = global_load_b32_saddr %address, %base
+  low.br ^next
+^next:
+  %next_value = v_mov_b32 7
+  %next_sum = v_add_u32 %loaded, %keep
+  %result = v_add_u32 %next_sum, %next_value
+  return %result
+}
+
+// A fallthrough emits no native branch and cannot release the source lease.
+// The new value therefore uses v3 while XCNT still owns address register v0.
+// ----
+  global_load_b32 v2, v0, s[0:1] offset:0
+.Lbb1:
+  v_mov_b32 v3, 7
+  s_wait_loadcnt loadcnt(0)
+  v_add_u32 v2, v2, v1
+  s_delay_alu instid0(VALU_DEP_1) | instid1(VALU_DEP_2)
+  v_add_u32 v1, v2, v3
   s_endpgm
 
 // ====
@@ -299,12 +392,12 @@ low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @cross_block_smem_result
   s_cbranch_scc0 .Lbb2
 .Lbb1:
   s_wait_kmcnt kmcnt(0)
-  s_add_u32 s2, s8, s12
+  s_add_u32 s0, s8, s12
   s_branch .Lbb3
 .Lbb2:
   s_wait_kmcnt kmcnt(0)
   s_mov_b32 s8, 7
-  s_add_u32 s2, s8, s12
+  s_add_u32 s0, s8, s12
 .Lbb3:
   s_endpgm
 
