@@ -23,6 +23,13 @@
 extern "C" {
 #endif
 
+// Builds one target lowering pipeline in |pipeline_module|.
+typedef iree_status_t (*loom_target_pipeline_build_fn_t)(
+    loom_module_t* pipeline_module, iree_string_view_t name,
+    const loom_target_pipeline_options_t* options,
+    const loom_target_environment_t* target_environment,
+    loom_pass_environment_t pass_environment, loom_op_t** out_pipeline_op);
+
 // Builds a module-root pipeline that lowers source/kernel IR to target-low IR.
 //
 // The produced pipeline stops before target ABI/resource materialization and

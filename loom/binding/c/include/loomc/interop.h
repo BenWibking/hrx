@@ -9,8 +9,12 @@
 
 #include "loom/error/source.h"
 #include "loom/ir/module.h"
+#include "loom/target/pipeline.h"
 #include "loom/target/provider.h"
+#include "loom/target/reporting/report.h"
+#include "loomc/compile.h"
 #include "loomc/module.h"
+#include "loomc/pass.h"
 #include "loomc/result.h"
 #include "loomc/target.h"
 
@@ -82,6 +86,67 @@ typedef struct loomc_module_mutable_interop_view_t {
 LOOMC_API_EXPORT loomc_status_t loomc_target_environment_create_from_native(
     const loom_target_environment_t* environment, loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment);
+
+/// Creates a public pass program from a native source-Low pipeline builder.
+///
+/// This bridge lets an exact-version embedding select a native source-Low
+/// inspection boundary without serializing pass IR or adding presentation-only
+/// pipeline variants to the stable LoomC target-pipeline enum. The builder is
+/// invoked once while preparing the immutable pass program.
+///
+/// @param context Public context whose target environment supplies native
+/// target and pass capabilities.
+/// @param build_pipeline Native source-Low pipeline builder to invoke.
+/// @param identifier Stable pipeline symbol and diagnostic identifier.
+/// @param options Native target pipeline options borrowed during preparation.
+/// May be `NULL` for builder defaults.
+/// @param allocator Host allocator used for pass-program and result storage.
+/// @param out_pass_program Receives one retained pass program when the result
+/// succeeds. Receives `NULL` when preparation fails.
+/// @param out_result Receives one retained preparation result.
+/// @return OK when preparation ran to a result. Non-OK statuses represent API
+/// misuse or infrastructure failure.
+///
+/// @ownership
+/// The caller owns both returned handles and releases them with
+/// `loomc_pass_program_release` and `loomc_result_release`.
+LOOMC_API_EXPORT loomc_status_t
+loomc_pass_program_create_from_native_source_low_pipeline(
+    loomc_context_t* context, loom_target_pipeline_build_fn_t build_pipeline,
+    loomc_string_view_t identifier,
+    const loom_target_pipeline_options_t* options, loomc_allocator_t allocator,
+    loomc_pass_program_t** out_pass_program, loomc_result_t** out_result);
+
+/// Compiles a public module while populating a caller-owned native report.
+///
+/// This has the same validation, specialization, mutation, diagnostic, and
+/// artifact semantics as `loomc_compile_module`. The native report is threaded
+/// through the pass environment for exact-version consumers that need report
+/// rows not represented by stable LoomC artifacts.
+///
+/// @param compiler Prepared compiler.
+/// @param workspace Invocation-local scratch workspace.
+/// @param pass_program Prepared pass program selected for this invocation.
+/// @param module Mutable input module.
+/// @param options Compile invocation options, or `NULL` for defaults.
+/// @param report Native compile report to populate. May be zero-initialized or
+/// preinitialized with caller-selected detail flags and storage.
+/// @param allocator Host allocator used for result artifacts and to initialize
+/// a zero-valued report.
+/// @param out_result Receives one retained compile result.
+/// @return OK when compilation ran to a result. Non-OK statuses represent API
+/// misuse or infrastructure failure.
+///
+/// @ownership
+/// The caller retains `module` and `report` and owns `out_result`. Report rows
+/// remain owned by `report` and are released with
+/// `loom_target_compile_report_deinitialize` when its allocator requires it.
+LOOMC_API_EXPORT loomc_status_t loomc_compile_module_with_native_report(
+    loomc_compiler_t* compiler, loomc_workspace_t* workspace,
+    const loomc_pass_program_t* pass_program, loomc_module_t* module,
+    const loomc_compile_options_t* options,
+    loom_target_compile_report_t* report, loomc_allocator_t allocator,
+    loomc_result_t** out_result);
 
 /// Structurally verifies a public module and projects its native read-only
 /// view.
