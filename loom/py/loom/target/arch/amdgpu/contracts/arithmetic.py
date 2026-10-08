@@ -2247,6 +2247,7 @@ def _sqrtf_exact_f64_rule() -> DescriptorRule:
     descriptors = {
         name: _descriptor(f"amdgpu.{name}")
         for name in (
+            "s_mov_b32",
             "v_mov_b32",
             "v_cmp_olt_f64",
             "v_cndmask_b32",
@@ -2276,11 +2277,11 @@ def _sqrtf_exact_f64_rule() -> DescriptorRule:
         )
         return value
 
-    def constant(name: str, bits: int) -> ValueRef:
+    def constant(name: str, bits: int, *, move: str = "v_mov_b32") -> ValueRef:
         value = temp(name)
         emit.append(
             EmitDescriptorOp(
-                descriptor=descriptors["v_mov_b32"],
+                descriptor=descriptors[move],
                 immediates={"imm32": bits},
                 results={"dst": value},
                 result_types={"dst": DescriptorResultType()},
@@ -2326,7 +2327,7 @@ def _sqrtf_exact_f64_rule() -> DescriptorRule:
         mask=scaling,
     )
     root = instruction("v_ldexp_f64", "root", input=rounded, exponent=down_exponent)
-    classes = constant("classes", 0x260)  # -0, +0, +infinity
+    classes = constant("classes", 0x260, move="s_mov_b32")  # -0, +0, +infinity
     special = instruction(
         "v_cmp_class_f64", "special", role="mask", input=x, classes=classes
     )

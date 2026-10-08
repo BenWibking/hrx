@@ -33,7 +33,7 @@ low.func.def target<amdgpu.cdna3.core> abi(hal_kernel) @native_f64(%lhs: reg<amd
   %34 = v_mov_b32 4294967168
   %35 = v_cndmask_b32 %15, %34, %20
   %36 = v_ldexp_f64 %33, %35
-  %37 = v_mov_b32 608
+  %37 = s_mov_b32 608
   %38 = v_cmp_class_f64 %23, %37
   %39 = slice %36[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>
   %40 = slice %23[0] : reg<amdgpu.vgpr x2> -> reg<amdgpu.vgpr>

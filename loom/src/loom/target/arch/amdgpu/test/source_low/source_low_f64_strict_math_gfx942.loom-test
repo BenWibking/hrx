@@ -26,6 +26,28 @@ CHECK: global_store_dwordx2*
 // ====
 
 // RUN: with-checks emit source-low target=amdgpu:gfx942 output=low
+// The strict sqrt classification mask is uniform and uses an SGPR.
+
+kernel.def @f64_sqrtf() {
+  %one = index.constant 1 : index
+  kernel.launch.config workgroups(%one, %one, %one) workgroup_size(%one, %one, %one) : index
+} launch(%input: f64, %output_buffer: buffer) {
+  %result = scalar.sqrtf %input : f64
+  %zero = index.constant 0 : offset
+  %output_view = buffer.view %output_buffer[%zero] : buffer -> view<1xf64>
+  view.store %result, %output_view[0] : f64, view<1xf64>
+  kernel.return
+}
+
+// ----
+CHECK: low.kernel.def* @f64_sqrtf*
+CHECK: *s_mov_b32 608
+CHECK: *v_cmp_class_f64*
+CHECK: global_store_dwordx2*
+
+// ====
+
+// RUN: with-checks emit source-low target=amdgpu:gfx942 output=low
 // Strict f64 log normalizes its exponent and evaluates a polynomial.
 
 kernel.def @f64_logf() {
