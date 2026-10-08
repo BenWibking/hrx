@@ -395,12 +395,18 @@ condition nor host-visible completion. [Chain continuation][pal-generated-chain]
 The GFX12 compute implementation selects a different mechanism:
 `CmdExecuteIndirectCmds` calls `ExecuteIndirectPacket`, which packages borrowed
 argument/count addresses, maximum count and byte stride, prepares metadata
-and global spill backing, then calls `BuildExecuteIndirectV2Ace` to emit the
-MEC form of EXECUTE_INDIRECT_V2. That path does not invoke the preceding
+and marks the queue-global spill requirement, then calls
+`BuildExecuteIndirectV2Ace` to emit the MEC form of EXECUTE_INDIRECT_V2.
+That path does not invoke the preceding
 shader-generation/REWIND sequence. A GFX12
 `BuildRewind` definition therefore cannot establish that this caller uses it.
 [GFX12 selection][pal12-generation] [Packet caller][pal12-generation-packet]
 [MEC packet builder][pal12-generation-builder]
+
+The [execute-indirect chapter](execute-indirect.md) supplies the complete
+base and variable metadata, distinct MEC/PFP packing, dispatch tail, and the
+submission-owned allocation/SET_BASE path for global spill. Embedded initial
+spill and queue-global spill retain different final readers and owners.
 
 ### RADV generated compute continuations
 

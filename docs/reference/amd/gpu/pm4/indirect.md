@@ -6,6 +6,10 @@ input. Any grid-size values consumed by the shader are a separate compiler ABI
 obligation. The producer-to-fetch dependency and the tuple's last consumer
 must both be known before its storage can be changed.
 
+[EXECUTE_INDIRECT_V2](execute-indirect.md) is a separate mechanism: it consumes
+a sequence of records with user-data updates and a dispatch tail. Its count,
+packed metadata and queue-global spill state have additional owners.
+
 ## Packet and count representation
 
 The ordinary MEC form is opcode `0x16`, four DWORDs: type-3 header, absolute
