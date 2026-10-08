@@ -95,11 +95,13 @@ lifecycle. [Profiling update][enable] · [KFD PMC admission][pmc-admission]
 
 ## Clock domains and partitions
 
-`GpuAgent::TranslateTime` translates the end first so a resampling step does
-not change scale midway through an interval. It rejects invalid raw values,
-limits extrapolation, updates correlated samples, and handles drift. GPU
-wallclock frequency comes separately from topology `WallClockKHz` or a driver
-query; it is not the instantaneous shader operating frequency.
+`GpuAgent::TranslateTime` translates the end first to reduce clock-measurement
+jitter. Each scalar conversion locks the correlated clock state separately;
+the pair has no shared calibration snapshot. The pair wrapper rejects invalid
+raw values, while the scalar converter limits extrapolation, updates samples,
+and handles drift. GPU wallclock frequency comes separately from topology
+`WallClockKHz` or a driver query; it is not the instantaneous shader operating
+frequency.
 [Translation][translate] · [Frequency initialization][frequency]
 
 The Windows path also retains an offset when a converted AQL timestamp appears
