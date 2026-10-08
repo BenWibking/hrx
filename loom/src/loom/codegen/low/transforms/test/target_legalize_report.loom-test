@@ -162,6 +162,54 @@ CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=1 scalarized=1 targ
 CHECK: COMPILE-REPORT: target_legalization[*] * source_op=vector.mma mode=final policy=reference-only action=rewritten outcome=reference-fallback contract=legal legalizer=vector strategy=reference * descriptor_key=test.mma.i32.2x2x2 source_rejections=0x00000000 source_rejection_detail=0 target_rejections=0x00000000 missing_features=0x00000000 missing_facts=0x00000000 *
 
 // ====
+// RUN: with-checks compile-report target-legalize{policy=reference-only}
+
+test.target<low_core> @test_target
+
+// The combining vocabulary is one reference family. This report surface
+// records selection without checking in the lane-by-lane reference IR.
+func.def target(@test_target) @integer_combining_reference_family(%lhs: vector<2xi64>, %rhs: vector<2xi64>) -> (vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>) {
+  %sum = vector.addi %lhs, %rhs : vector<2xi64>
+  %product = vector.muli %lhs, %rhs : vector<2xi64>
+  %signed_minimum = vector.minsi %lhs, %rhs : vector<2xi64>
+  %signed_maximum = vector.maxsi %lhs, %rhs : vector<2xi64>
+  %unsigned_minimum = vector.minui %lhs, %rhs : vector<2xi64>
+  %unsigned_maximum = vector.maxui %lhs, %rhs : vector<2xi64>
+  %bitwise_and = vector.andi %lhs, %rhs : vector<2xi64>
+  %bitwise_or = vector.ori %lhs, %rhs : vector<2xi64>
+  %bitwise_xor = vector.xori %lhs, %rhs : vector<2xi64>
+  func.return %sum, %product, %signed_minimum, %signed_maximum, %unsigned_minimum, %unsigned_maximum, %bitwise_and, %bitwise_or, %bitwise_xor : vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>, vector<2xi64>
+}
+
+func.def target(@test_target) @float_combining_reference_family(%lhs: vector<2xf64>, %rhs: vector<2xf64>) -> (vector<2xf64>, vector<2xf64>, vector<2xf64>, vector<2xf64>, vector<2xf64>, vector<2xf64>) {
+  %sum = vector.addf %lhs, %rhs : vector<2xf64>
+  %product = vector.mulf %lhs, %rhs : vector<2xf64>
+  %minimum = vector.minimumf %lhs, %rhs : vector<2xf64>
+  %maximum = vector.maximumf %lhs, %rhs : vector<2xf64>
+  %min_number = vector.minnumf %lhs, %rhs : vector<2xf64>
+  %max_number = vector.maxnumf %lhs, %rhs : vector<2xf64>
+  func.return %sum, %product, %minimum, %maximum, %min_number, %max_number : vector<2xf64>, vector<2xf64>, vector<2xf64>, vector<2xf64>, vector<2xf64>, vector<2xf64>
+}
+
+// ----
+CHECK: COMPILE-REPORT: target_legalization legal=0 rewritten=15 scalarized=15 target_rewritten=0 reference_rewritten=15 deferred=0 invalid_ir=0 unsupported=0 unhandled=0 rows=15 *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.addi * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.muli * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.minsi * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.maxsi * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.minui * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.maxui * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.andi * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.ori * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=integer_combining_reference_family source_op=vector.xori * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=float_combining_reference_family source_op=vector.addf * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=float_combining_reference_family source_op=vector.mulf * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=float_combining_reference_family source_op=vector.minimumf * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=float_combining_reference_family source_op=vector.maximumf * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=float_combining_reference_family source_op=vector.minnumf * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+CHECK: COMPILE-REPORT: target_legalization[*] function=float_combining_reference_family source_op=vector.maxnumf * action=rewritten * legalizer=vector strategy=reference * scalarized=true *
+
+// ====
 // RUN: with-checks compile-report target-legalize{policy=prefer-native}
 
 test.target<low_core> @test_target

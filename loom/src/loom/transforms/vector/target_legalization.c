@@ -622,6 +622,84 @@ static const loom_target_legalizer_rule_t kVectorLegalizerRules[] = {
         .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
         .legalize = loom_vector_legalize_ieee_extrema,
     },
+    // Combining operations share one complete reference family. Native target
+    // contracts retain precedence; explicit rejection selects the ordinary
+    // scalar lane recipe. Keep this list aligned with loom_combining_kind_t.
+    {
+        .root_kind = LOOM_OP_VECTOR_ADDI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_ADDF,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MULI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MULF,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MINSI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MAXSI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MINUI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MAXUI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_ANDI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_ORI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_XORI,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MINIMUMF,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MAXIMUMF,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MINNUMF,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
+    {
+        .root_kind = LOOM_OP_VECTOR_MAXNUMF,
+        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
+        .legalize = loom_vector_legalize_descriptor,
+    },
     {
         .root_kind = LOOM_OP_VECTOR_ISNANF,
         .first_operand_element_types = LOOM_SCALAR_TYPE_SET_FLOAT,
@@ -708,26 +786,6 @@ static const loom_target_legalizer_rule_t kVectorLegalizerRules[] = {
         .legalize = loom_vector_legalize_descriptor,
     },
     {
-        .root_kind = LOOM_OP_VECTOR_MINNUMF,
-        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
-        .legalize = loom_vector_legalize_descriptor,
-    },
-    {
-        .root_kind = LOOM_OP_VECTOR_MAXNUMF,
-        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
-        .legalize = loom_vector_legalize_descriptor,
-    },
-    {
-        .root_kind = LOOM_OP_VECTOR_MINIMUMF,
-        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
-        .legalize = loom_vector_legalize_descriptor,
-    },
-    {
-        .root_kind = LOOM_OP_VECTOR_MAXIMUMF,
-        .flags = LOOM_TARGET_LEGALIZER_ENTRY_FLAG_REQUIRE_CONTRACT_REJECTION,
-        .legalize = loom_vector_legalize_descriptor,
-    },
-    {
         .root_kind = LOOM_OP_VECTOR_REDUCE,
         .legalize = loom_vector_legalize_reduce,
     },
@@ -768,10 +826,6 @@ static const loom_target_legalizer_rule_t kVectorLegalizerRules[] = {
         .legalize = loom_vector_legalize_descriptor,
     },
     {
-        .root_kind = LOOM_OP_VECTOR_MULI,
-        .legalize = loom_vector_legalize_descriptor,
-    },
-    {
         .root_kind = LOOM_OP_VECTOR_DIVSI,
         .legalize = loom_vector_legalize_descriptor,
     },
@@ -797,10 +851,6 @@ static const loom_target_legalizer_rule_t kVectorLegalizerRules[] = {
     },
     {
         .root_kind = LOOM_OP_VECTOR_FLOORDIVSI,
-        .legalize = loom_vector_legalize_descriptor,
-    },
-    {
-        .root_kind = LOOM_OP_VECTOR_MULF,
         .legalize = loom_vector_legalize_descriptor,
     },
     {
