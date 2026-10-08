@@ -353,7 +353,9 @@ typedef struct loom_amdgpu_vector_16bit_float_conversion_plan_t {
 static_assert(sizeof(loom_amdgpu_vector_16bit_float_conversion_plan_t) == 136,
               "vector float conversion plans must stay cache dense");
 
-typedef enum loom_amdgpu_index_cast_kind_e {
+typedef uint8_t loom_amdgpu_index_cast_kind_t;
+
+enum loom_amdgpu_index_cast_kind_e {
   LOOM_AMDGPU_INDEX_CAST_KIND_NONE = 0,
   LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS = 1,
   LOOM_AMDGPU_INDEX_CAST_KIND_ZERO_EXTENDING_LOW_32 = 2,
@@ -364,17 +366,19 @@ typedef enum loom_amdgpu_index_cast_kind_e {
   LOOM_AMDGPU_INDEX_CAST_KIND_NARROWING_INTEGER = 7,
   LOOM_AMDGPU_INDEX_CAST_KIND_INTEGER_TO_PREDICATE = 8,
   LOOM_AMDGPU_INDEX_CAST_KIND_PRESERVING_LOW_BITS_TO_VGPR = 9,
-} loom_amdgpu_index_cast_kind_t;
+};
 
 typedef struct loom_amdgpu_index_cast_plan_t {
-  // Lowering strategy selected for the index cast.
-  loom_amdgpu_index_cast_kind_t kind;
   // Source value being cast.
   loom_value_id_t source;
   // Result value receiving the cast payload.
   loom_value_id_t result;
   // Descriptor materializing a zero high lane.
   loom_amdgpu_descriptor_ref_t conversion_descriptor_ref;
+  // Register bank selected for the result independently of source aliases.
+  uint16_t result_register_class;
+  // Lowering strategy selected for the index cast.
+  loom_amdgpu_index_cast_kind_t kind;
   // Selected result width, independent of storage retained by source aliases.
   uint8_t result_unit_count;
   // Source or result payload width for narrow integer conversions.
@@ -546,6 +550,8 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   loom_value_id_t source;
   // Result value receiving the converted payload.
   loom_value_id_t result;
+  // Selected native destination carrier, independent of source fact lifetime.
+  loom_type_id_t result_type;
   // Lowering strategy selected for the source/result type pair.
   loom_amdgpu_scalar_conversion_kind_t kind;
   // Static source integer payload bit count, or zero for non-integer sources.
@@ -748,6 +754,8 @@ typedef struct loom_amdgpu_vector_bitcast_plan_t {
   loom_value_id_t source;
   // Result vector value receiving the same register payload.
   loom_value_id_t result;
+  // Selected native destination carrier, independent of source fact lifetime.
+  loom_type_id_t result_type;
 } loom_amdgpu_vector_bitcast_plan_t;
 
 typedef struct loom_amdgpu_vector_concat_plan_t {
@@ -845,6 +853,8 @@ typedef struct loom_amdgpu_vector_extract_plan_t {
   loom_value_id_t dynamic_index;
   // Result scalar or vector value receiving the extracted payload.
   loom_value_id_t result;
+  // Selected native destination carrier, independent of source fact lifetime.
+  loom_type_id_t result_type;
   // Static flattened logical source lane offset.
   uint32_t lane_offset;
   // Static source lane count for dynamic scalar extraction.

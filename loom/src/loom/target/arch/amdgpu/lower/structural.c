@@ -634,7 +634,14 @@ iree_status_t loom_amdgpu_select_vector_bitcast_plan(
     loom_amdgpu_vector_bitcast_plan_t* out_plan, bool* out_selected) {
   *out_selected = loom_amdgpu_vector_bitcast_plan_from_op(
       loom_low_lower_context_module(context), source_op, out_plan);
-  return iree_ok_status();
+  if (!*out_selected) {
+    return iree_ok_status();
+  }
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
+      context, source_op, out_plan->result, &result_type));
+  return loom_module_intern_type_id(loom_low_lower_context_module(context),
+                                    result_type, &out_plan->result_type);
 }
 
 iree_status_t loom_amdgpu_lower_vector_bitcast(
@@ -644,9 +651,8 @@ iree_status_t loom_amdgpu_lower_vector_bitcast(
   IREE_RETURN_IF_ERROR(
       loom_low_lower_lookup_value(context, plan->source, &low_input));
 
-  loom_type_t result_low_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
-      context, source_op, plan->result, &result_low_type));
+  const loom_type_t result_low_type = loom_type_table_get(
+      &loom_low_lower_context_module(context)->types, plan->result_type);
   const loom_type_t input_low_type =
       loom_module_value_type(loom_low_lower_context_module(context), low_input);
   if (!loom_type_equal(input_low_type, result_low_type)) {
@@ -689,15 +695,8 @@ iree_status_t loom_amdgpu_lower_vector_concat(
                                                      &low_sources[i]));
   }
 
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(context, source_op,
-                                                   plan->result, &result_type));
-  loom_op_t* concat_op = NULL;
-  IREE_RETURN_IF_ERROR(loom_low_concat_build(
-      loom_low_lower_context_builder(context), low_sources, sources.count,
-      result_type, source_op->location, &concat_op));
-  return loom_low_lower_bind_value(context, plan->result,
-                                   loom_low_concat_result(concat_op));
+  return loom_amdgpu_bind_low_register_range(context, source_op, plan->result,
+                                             low_sources, sources.count);
 }
 
 static bool loom_amdgpu_vector_register_map_is_source_alias(

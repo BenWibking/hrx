@@ -156,6 +156,14 @@ iree_status_t loom_amdgpu_select_vector_extract_plan(
   if (*out_selected) {
     loom_amdgpu_vector_extract_plan_from_accepted_op(
         loom_low_lower_context_module(context), source_op, out_plan);
+    if (out_plan->dynamic_index == LOOM_VALUE_ID_INVALID) {
+      loom_type_t result_type = loom_type_none();
+      IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
+          context, source_op, out_plan->result, &result_type));
+      IREE_RETURN_IF_ERROR(
+          loom_module_intern_type_id(loom_low_lower_context_module(context),
+                                     result_type, &out_plan->result_type));
+    }
   }
   return iree_ok_status();
 }
@@ -861,9 +869,8 @@ static iree_status_t loom_amdgpu_lower_static_vector_extract(
   loom_value_id_t low_source = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(
       loom_low_lower_lookup_value(context, plan->source, &low_source));
-  loom_type_t result_type = loom_type_none();
-  IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(context, source_op,
-                                                   plan->result, &result_type));
+  const loom_type_t result_type = loom_type_table_get(
+      &loom_low_lower_context_module(context)->types, plan->result_type);
   const loom_type_t source_type = loom_module_value_type(
       loom_low_lower_context_module(context), low_source);
   if (plan->lane_offset == 0 &&

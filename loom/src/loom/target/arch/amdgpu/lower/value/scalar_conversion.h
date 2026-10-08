@@ -44,7 +44,7 @@ iree_status_t loom_amdgpu_select_scalar_conversion_plan(
 // Shared by scalar truncation and numeric index casts.
 iree_status_t loom_amdgpu_lower_integer_to_predicate(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source, loom_value_id_t result);
+    loom_value_id_t source, loom_value_id_t result, loom_type_t result_type);
 
 // Lowers an AMDGPU scalar conversion plan.
 iree_status_t loom_amdgpu_lower_scalar_conversion(
