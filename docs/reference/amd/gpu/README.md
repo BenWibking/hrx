@@ -8,6 +8,7 @@ resource-lifetime protocol.
 | Area | Topics |
 | --- | --- |
 | [Architecture and transport](architectures.md) | Physical IP, compiler targets, wave32/wave64 availability, native queues, and submission ownership. |
+| [Native compute queue contexts](queue-context.md) | MQD/HQD layouts, ring and pointer units, direct loading versus CP/MES scheduling, per-XCC images, metadata and storage lifetime. |
 | [Compute affinity and queue priority](scheduling.md) | CU/WGP mask units, harvested SE/SH/XCC placement, `COMPUTE_STATIC_THREAD_MGMT_SE*`, native priority encodings and update ownership. |
 | [Cooperative execution and grid synchronization](cooperative.md) | Shared cooperative queues, `ALLOC_QUEUE_GWS`, firmware admission, occupancy, hidden grid state and GWS/atomic barrier scopes. |
 | [Compute context save and restore](context-save.md) | CWSR, `ctx_save_restore_size`, per-XCC storage, control-stack inspection, suspension and final ownership. |

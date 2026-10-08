@@ -245,6 +245,10 @@ currently running waves. [V9 initializer][mqd9-init] · [V10 initializer][mqd10-
 · [V11 initializer][mqd11-init] · [V12 initializer][mqd12-init] ·
 [V12.1 initializer][mqd121-init] · [Frontier interpretation][mqd12-snapshot]
 
+The [compute queue-context chapter](queue-context.md) describes the surrounding
+MQD image, its native allocation and per-XCC representation. MQD slice stride
+and user context-region stride have separate owners and sizes.
+
 ## Inspecting saved state
 
 `hsaKmtGetQueueInfoCtx` invokes `AMDKFD_IOC_GET_QUEUE_WAVE_STATE`. KFD
@@ -301,8 +305,11 @@ The KFD update path first removes the queue from hardware, then changes its
 MQD and remaps queues that remain active. CP hardware scheduling uses its
 unmap/remap path; MES uses native remove/add. In the non-HWS path, the driver
 explicitly requests `KFD_PREEMPT_TYPE_WAVEFRONT_SAVE` when CWSR is enabled
-and `KFD_PREEMPT_TYPE_WAVEFRONT_DRAIN` otherwise. Save therefore allows an
-unfinished dispatch to survive removal from hardware. [Native update][queue-update]
+and `KFD_PREEMPT_TYPE_WAVEFRONT_DRAIN` otherwise. The selected direct loader
+still determines the hardware request: GFX9/GFX10 explicitly select SAVE_WAVES,
+while GFX7/GFX8/GFX11 map that SAVE request to their default DRAIN_PIPE case.
+The [direct-consumer comparison](queue-context.md#reconfiguration-checkpoint-and-final-ownership)
+keeps those branches separate from HWS/MES save and resume. [Native update][queue-update]
 
 [Affinity and priority updates](scheduling.md#updating-a-live-queue) use this
 same transition. A successful configuration change does not imply that saved

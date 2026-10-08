@@ -298,9 +298,13 @@ unmapped before changing its MQD:
 | --- | --- |
 | CP hardware scheduling without MES | Unmap dynamic queues, update the MQD, then remap the runlist. The unmap scope can exceed the one queue being changed. |
 | MES | Remove an active queue, update the MQD, then add it again if active. |
-| Non-HWS, active queue | Unload with wavefront save when CWSR is enabled, otherwise wavefront drain; update the MQD, then load it if active. |
+| Non-HWS, active queue | Request wavefront save when CWSR is enabled, otherwise drain; the selected direct callback determines the native dequeue action. Update the MQD, then load it if active. |
 
 [Native transition][kfd-update]
+
+The [direct-consumer comparison](queue-context.md#reconfiguration-checkpoint-and-final-ownership)
+distinguishes callbacks that select SAVE_WAVES from those that map the SAVE
+request to DRAIN_PIPE.
 
 This mechanism makes the operation a configuration transition with possible
 preemption and scheduler work. It supplies no constant-time hot-path bound.

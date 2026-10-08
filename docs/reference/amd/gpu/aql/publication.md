@@ -45,12 +45,14 @@ do not make direct index access part of the portable HSA descriptor contract.
 [Native attachment][queue-attach]
 
 The native KFD interface uses a byte length for ring creation, while these AQL
-indices count packets. Its GFX9/GFX11 MQD paths explicitly distinguish AQL
-packet counts from PM4 DWORD counts, including a four-bit shift when handing
-an AQL write pointer to the hardware loader. The same builders select
-slot-based write-pointer mode and queue-full handling; the GFX9 builder also
-sets `WPP_CLAMP_EN`, which the GFX11 source identifies as removed in GC10.
-These are native queue-context settings, not packet-header fields.
+indices count packets. Its GFX9/GFX11 MQD wrappers pass a four-bit AQL shift,
+but their selected direct loaders do not apply it: they seed saved HQD pointer
+state and ask the CP to poll the process's pointer in memory. Legacy GFX7/GFX8
+loaders do perform a CPU read/shift; scheduled queues have another native
+consumer. The [queue-context chapter](../queue-context.md#installing-live-state)
+traces those paths. The builders also select slot-based write-pointer mode and
+queue-full handling; GFX9 sets PQ `WPP_CLAMP_EN`, which moves out of that
+register in GC10. These controls belong to native queue state.
 [Creation units][thunk-create] [GFX9 load][mqd9-load] [GFX11 load][mqd11-load]
 [GFX9 context][mqd9] [GFX11 context][mqd11]
 

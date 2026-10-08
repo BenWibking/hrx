@@ -67,6 +67,10 @@ The [KFD queue-storage contract](../architectures.md#kfd-queue-storage) also
 requires the ring and control words to resolve through native BO mappings.
 The separate SVM context-save path does not extend to the ring.
 
+The [compute queue context](../queue-context.md) supplies the native MQD/HQD
+representation, ring-base encoding, direct pointer restoration and scheduled
+CP/MES consumers. Those native settings surround the producer protocol below.
+
 `BaseQueue::PlacePacket` separates construction from publication. Let `C` be
 ring capacity in DWORDs, `R` the reported modulo RPTR, `W` the producer's
 pending modulo position, and `N` the packet size. It leaves one DWORD unused:
