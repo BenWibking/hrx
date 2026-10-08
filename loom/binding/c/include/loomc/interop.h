@@ -58,6 +58,31 @@ typedef struct loomc_module_mutable_interop_view_t {
   const loom_source_table_resolver_t* source_table;
 } loomc_module_mutable_interop_view_t;
 
+/// Creates a public target handle borrowing an exact-version native
+/// environment.
+///
+/// This avoids recomposing target providers when an embedding already owns the
+/// native environment used by adjacent compiler integrations. The returned
+/// handle prepares LoomC's immutable pass capability tables over that exact
+/// environment.
+///
+/// @param environment Native target environment to borrow.
+/// @param allocator Host allocator used for public handle storage.
+/// @param out_target_environment Receives one retained public target handle.
+/// @return OK when the public handle and pass capabilities were prepared.
+///
+/// @ownership
+/// The caller owns the returned handle and releases it with
+/// `loomc_target_environment_release`. The handle does not own `environment`.
+///
+/// @lifetime
+/// `environment` must remain initialized until the returned handle and every
+/// context, profile, compiler, pass program, or module derived from it have
+/// been released. Violating this exact-version lifetime contract is undefined.
+LOOMC_API_EXPORT loomc_status_t loomc_target_environment_create_from_native(
+    const loom_target_environment_t* environment, loomc_allocator_t allocator,
+    loomc_target_environment_t** out_target_environment);
+
 /// Structurally verifies a public module and projects its native read-only
 /// view.
 ///

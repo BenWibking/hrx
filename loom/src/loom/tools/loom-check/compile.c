@@ -11,6 +11,7 @@
 #include "loom/tools/loom-check/compile_diagnostics.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loomc/artifact.h"
+#include "loomc/interop.h"
 #include "loomc/iree.h"
 
 void loom_check_compile_session_deinitialize(
@@ -31,19 +32,20 @@ static iree_status_t loom_check_compile_session_prepare(
   if (session->compiler != NULL) {
     return iree_ok_status();
   }
-  if (session->provider == NULL ||
-      session->provider->create_target_environment == NULL) {
+  if (session->native_target_environment == NULL) {
     return iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
         "loom-check runner has no compiler target environment");
   }
 
   const loom_check_compile_provider_t* provider = session->provider;
+  const loom_target_environment_t* native_target_environment =
+      session->native_target_environment;
   const iree_allocator_t host_allocator = session->host_allocator;
   const loomc_allocator_t allocator = loomc_allocator_from_iree(host_allocator);
   iree_status_t status =
-      iree_status_from_loomc(provider->create_target_environment(
-          allocator, &session->target_environment));
+      iree_status_from_loomc(loomc_target_environment_create_from_native(
+          native_target_environment, allocator, &session->target_environment));
   if (iree_status_is_ok(status)) {
     const loomc_context_target_options_t target_options = {
         .type = LOOMC_STRUCTURE_TYPE_CONTEXT_TARGET_OPTIONS,
@@ -69,6 +71,7 @@ static iree_status_t loom_check_compile_session_prepare(
   if (!iree_status_is_ok(status)) {
     loom_check_compile_session_deinitialize(session);
     session->provider = provider;
+    session->native_target_environment = native_target_environment;
     session->host_allocator = host_allocator;
   }
   return status;

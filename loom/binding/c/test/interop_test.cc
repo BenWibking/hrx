@@ -25,6 +25,8 @@ using ContextPtr = HandlePtr<loomc_context_t, loomc_context_release>;
 using ModulePtr = HandlePtr<loomc_module_t, loomc_module_release>;
 using ResultPtr = HandlePtr<loomc_result_t, loomc_result_release>;
 using SourcePtr = HandlePtr<loomc_source_t, loomc_source_release>;
+using TargetEnvironmentPtr =
+    HandlePtr<loomc_target_environment_t, loomc_target_environment_release>;
 using WorkspacePtr = HandlePtr<loomc_workspace_t, loomc_workspace_release>;
 
 ContextPtr CreateContext() {
@@ -158,6 +160,25 @@ func.def public @identity(%value: i32) -> (i32) {
       loom_string_table_get(&verified_view.module->strings,
                             verified_view.module->name_id),
       IREE_SV("adapted")));
+}
+
+TEST(InteropTest, WrapsBorrowedNativeTargetEnvironment) {
+  const loom_target_provider_set_t provider_set = {};
+  loom_target_environment_t native_environment;
+  IREE_ASSERT_OK(
+      loom_target_environment_initialize(&provider_set, &native_environment));
+
+  loomc_target_environment_t* target_environment = nullptr;
+  LOOMC_EXPECT_OK(loomc_target_environment_create_from_native(
+      &native_environment, loomc_allocator_system(), &target_environment));
+  TargetEnvironmentPtr target_environment_ptr(target_environment);
+  EXPECT_EQ(
+      loomc_target_environment_get_interop_view(target_environment_ptr.get()),
+      &native_environment);
+
+  target_environment_ptr.reset();
+  EXPECT_EQ(native_environment.provider_set, &provider_set);
+  loom_target_environment_deinitialize(&native_environment);
 }
 
 }  // namespace

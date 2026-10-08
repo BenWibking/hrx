@@ -425,6 +425,7 @@ int loom_check_main(
   loomc_sanitizer_options_t loomc_sanitizer = {0};
   loom_check_compile_session_t compile_session = {
       .provider = compile_provider,
+      .native_target_environment = base_environment->target_environment,
       .host_allocator = host_allocator,
   };
   loomc_target_profile_t* target_profile = NULL;

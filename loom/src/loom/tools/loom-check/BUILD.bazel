@@ -406,6 +406,7 @@ loom_cc_library(
     ],
     deps = [
         ":execute",
+        "//loom/binding/c:interop",
         "//loom/binding/c:loomc",
         "//loom/src/loom/error:error_defs",
         "//loom/src/loom/testing:test_file",
@@ -525,7 +526,6 @@ loom_cc_library(
     deps = [
         ":execute",
         ":provider",
-        "//loom/binding/c:loomc",
         "//loom/src/loom/codegen/low:allocation",
         "//loom/src/loom/codegen/low:descriptors",
         "//loom/src/loom/codegen/low:function_model",
@@ -537,10 +537,8 @@ loom_cc_library(
         "//loom/src/loom/codegen/low/schedule",
         "//loom/src/loom/codegen/low/schedule:dependencies",
         "//loom/src/loom/ir",
-        "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/target/test:provider",
         "//runtime/src/iree/base",
-        "//runtime/src/iree/base/threading",
     ],
 )
 
@@ -568,7 +566,6 @@ loom_cc_binary(
     deps = [
         ":compile",
         ":provider",
-        "//loom/binding/c/target/configured",
         "//loom/src/loom/target/arch/cmd/check:check_provider",
         "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",
@@ -586,7 +583,6 @@ loom_cc_binary(
         ":compile",
         ":provider",
         ":test_provider",
-        "//loom/binding/c/target/configured",
         "//loom/src/loom/target/arch/cmd/check:check_provider",
         "//loom/src/loom/target/configured:compiler_provider_set",
         "//loom/src/loom/tooling/input:configured",

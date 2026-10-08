@@ -296,6 +296,7 @@ loom_cc_library(
   DEPS
     ::execute
     iree::base
+    loom::binding::c::interop
     loom::binding::c::loomc
     loom::error::error_defs
     loom::testing::test_file
@@ -420,8 +421,6 @@ loom_cc_library(
     ::execute
     ::provider
     iree::base
-    iree::base::threading
-    loom::binding::c::loomc
     loom::codegen::low::allocation
     loom::codegen::low::descriptors
     loom::codegen::low::function_model
@@ -433,7 +432,6 @@ loom_cc_library(
     loom::codegen::low::storage_layout
     loom::codegen::low::storage_transport
     loom::ir
-    loom::target::configured::compiler_provider_set
     loom::target::test::provider
   TESTONLY
   PUBLIC
@@ -518,7 +516,6 @@ loom_cc_binary(
     ::compile
     ::provider
     iree::base
-    loom::binding::c::target::configured
     loom::target::arch::cmd::check::check_provider
     loom::target::configured::compiler_provider_set
     loom::tooling::input::configured
@@ -589,7 +586,6 @@ loom_cc_binary(
     ::provider
     ::test_provider
     iree::base
-    loom::binding::c::target::configured
     loom::target::arch::cmd::check::check_provider
     loom::target::configured::compiler_provider_set
     loom::tooling::input::configured

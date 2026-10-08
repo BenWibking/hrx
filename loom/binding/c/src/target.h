@@ -61,6 +61,13 @@ loomc_target_environment_create_from_provider_set(
     const loom_target_provider_set_t* provider_set, loomc_allocator_t allocator,
     loomc_target_environment_t** out_target_environment);
 
+// Creates a public target handle borrowing an already-composed native target
+// environment. The native environment must outlive every retained public handle
+// and all objects created from it.
+LOOMC_API_PRIVATE loomc_status_t loomc_target_environment_create_borrowed(
+    const loom_target_environment_t* environment, loomc_allocator_t allocator,
+    loomc_target_environment_t** out_target_environment);
+
 // Returns the internal target environment owned by the public handle.
 LOOMC_API_PRIVATE const loom_target_environment_t*
 loomc_target_environment_loom_target_environment(

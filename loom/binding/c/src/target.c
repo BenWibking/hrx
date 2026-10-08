@@ -23,12 +23,23 @@ struct loomc_target_environment_t {
   // Allocator used to release target-environment storage.
   loomc_allocator_t allocator;
 
-  // Prepared target provider composition.
-  loom_target_environment_t environment;
+  // Prepared target provider composition, either owned or borrowed.
+  const loom_target_environment_t* environment;
+
+  // True when storage following this public handle owns |environment|.
+  bool owns_environment;
 
   // Prepared immutable pass capability tables over environment.
   loomc_target_pass_environment_t pass_environment;
 };
+
+typedef struct loomc_owned_target_environment_t {
+  // Public handle returned to callers.
+  loomc_target_environment_t base;
+
+  // Target provider composition owned by |base|.
+  loom_target_environment_t environment;
+} loomc_owned_target_environment_t;
 
 struct loomc_target_profile_t {
   // Atomic reference count for shared immutable ownership.
@@ -149,8 +160,8 @@ static bool loomc_target_environment_is_compatible(
   if (target_environment == profile_environment) {
     return true;
   }
-  return target_environment->environment.provider_set ==
-         profile_environment->environment.provider_set;
+  return target_environment->environment->provider_set ==
+         profile_environment->environment->provider_set;
 }
 
 static loomc_status_t loomc_target_specialization_validate_profile_environment(
@@ -192,7 +203,7 @@ static loomc_status_t loomc_target_pass_environment_initialize(
   }
   *out_environment = (loomc_target_pass_environment_t){0};
   const loom_target_environment_t* internal_environment =
-      &target_environment->environment;
+      target_environment->environment;
   out_environment->target_environment = internal_environment;
   out_environment->low_descriptor_registry =
       loom_target_environment_low_descriptor_registry(internal_environment);
@@ -248,16 +259,21 @@ loomc_status_t loomc_target_environment_create_from_provider_set(
                              "provider_set must not be NULL");
   }
 
-  loomc_target_environment_t* target_environment = NULL;
-  LOOMC_RETURN_IF_ERROR(loomc_allocator_malloc(
-      allocator, sizeof(*target_environment), (void**)&target_environment));
-  memset(target_environment, 0, sizeof(*target_environment));
+  loomc_owned_target_environment_t* owned_target_environment = NULL;
+  LOOMC_RETURN_IF_ERROR(
+      loomc_allocator_malloc(allocator, sizeof(*owned_target_environment),
+                             (void**)&owned_target_environment));
+  memset(owned_target_environment, 0, sizeof(*owned_target_environment));
+  loomc_target_environment_t* target_environment =
+      &owned_target_environment->base;
   iree_atomic_ref_count_init(&target_environment->ref_count);
   target_environment->allocator = allocator;
+  target_environment->environment = &owned_target_environment->environment;
+  target_environment->owns_environment = true;
 
   loomc_status_t status =
       loomc_status_from_iree(loom_target_environment_initialize(
-          provider_set, &target_environment->environment));
+          provider_set, &owned_target_environment->environment));
   if (loomc_status_is_ok(status)) {
     status = loomc_target_pass_environment_initialize(
         target_environment, &target_environment->pass_environment);
@@ -267,7 +283,41 @@ loomc_status_t loomc_target_environment_create_from_provider_set(
   } else {
     loomc_target_pass_environment_deinitialize(
         &target_environment->pass_environment);
-    loom_target_environment_deinitialize(&target_environment->environment);
+    loom_target_environment_deinitialize(
+        &owned_target_environment->environment);
+    loomc_allocator_free(allocator, owned_target_environment);
+  }
+  return status;
+}
+
+loomc_status_t loomc_target_environment_create_borrowed(
+    const loom_target_environment_t* environment, loomc_allocator_t allocator,
+    loomc_target_environment_t** out_target_environment) {
+  if (out_target_environment == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "out_target_environment must not be NULL");
+  }
+  *out_target_environment = NULL;
+  if (environment == NULL) {
+    return loomc_make_status(LOOMC_STATUS_INVALID_ARGUMENT,
+                             "environment must not be NULL");
+  }
+
+  loomc_target_environment_t* target_environment = NULL;
+  LOOMC_RETURN_IF_ERROR(loomc_allocator_malloc(
+      allocator, sizeof(*target_environment), (void**)&target_environment));
+  memset(target_environment, 0, sizeof(*target_environment));
+  iree_atomic_ref_count_init(&target_environment->ref_count);
+  target_environment->allocator = allocator;
+  target_environment->environment = environment;
+
+  loomc_status_t status = loomc_target_pass_environment_initialize(
+      target_environment, &target_environment->pass_environment);
+  if (loomc_status_is_ok(status)) {
+    *out_target_environment = target_environment;
+  } else {
+    loomc_target_pass_environment_deinitialize(
+        &target_environment->pass_environment);
     loomc_allocator_free(allocator, target_environment);
   }
   return status;
@@ -276,7 +326,7 @@ loomc_status_t loomc_target_environment_create_from_provider_set(
 const loom_target_environment_t*
 loomc_target_environment_loom_target_environment(
     const loomc_target_environment_t* target_environment) {
-  return target_environment ? &target_environment->environment : NULL;
+  return target_environment ? target_environment->environment : NULL;
 }
 
 const loomc_target_pass_environment_t*
@@ -293,7 +343,7 @@ loomc_status_t loomc_target_environment_register_context(
                              "target_environment and context must not be NULL");
   }
   return loomc_status_from_iree(loom_target_environment_register_context(
-      &target_environment->environment, context));
+      target_environment->environment, context));
 }
 
 loomc_status_t loomc_context_target_options_resolve(
@@ -506,7 +556,12 @@ void loomc_target_environment_release(
   loomc_allocator_t allocator = target_environment->allocator;
   loomc_target_pass_environment_deinitialize(
       &target_environment->pass_environment);
-  loom_target_environment_deinitialize(&target_environment->environment);
+  if (target_environment->owns_environment) {
+    loomc_owned_target_environment_t* owned_target_environment =
+        (loomc_owned_target_environment_t*)target_environment;
+    loom_target_environment_deinitialize(
+        &owned_target_environment->environment);
+  }
   loomc_allocator_free(allocator, target_environment);
 }
 
@@ -541,7 +596,7 @@ loomc_status_t loomc_target_profile_create(
   if (loomc_status_is_ok(status) &&
       (target_environment == NULL ||
        loom_target_environment_lookup_profile_provider(
-           &target_environment->environment, pending_target_profile->type) ==
+           target_environment->environment, pending_target_profile->type) ==
            NULL)) {
     status = loomc_status_from_iree(iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,

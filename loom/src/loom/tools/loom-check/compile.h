@@ -18,11 +18,6 @@
 extern "C" {
 #endif
 
-// Creates the compiler target environment linked into the final runner.
-typedef loomc_status_t (*loom_check_create_target_environment_fn_t)(
-    loomc_allocator_t allocator,
-    loomc_target_environment_t** out_target_environment);
-
 // Imports one optional foreign source format through LoomC. Builtin Loom text
 // and bytecode admission do not use this callback.
 typedef iree_status_t (*loom_check_compile_import_fn_t)(
@@ -37,8 +32,6 @@ typedef iree_status_t (*loom_check_compile_import_fn_t)(
 // Compiler integrations supplied by the final loom-check binary. The generic
 // runner does not choose a configured target set or optional source frontend.
 typedef struct loom_check_compile_provider_t {
-  // Factory for the runner's artifact-capable target environment.
-  loom_check_create_target_environment_fn_t create_target_environment;
   // Optional foreign-source importer dispatch.
   loom_check_compile_import_fn_t import;
   // Opaque state forwarded to |import|.
@@ -51,6 +44,8 @@ typedef struct loom_check_compile_provider_t {
 typedef struct loom_check_compile_session_t {
   // Binary-owned compiler integrations used when the session is prepared.
   const loom_check_compile_provider_t* provider;
+  // Exact native target environment composed by the checker runner.
+  const loom_target_environment_t* native_target_environment;
   // Host allocator used for every session-owned public handle.
   iree_allocator_t host_allocator;
   // Public target environment, or NULL before the first compile operation.
