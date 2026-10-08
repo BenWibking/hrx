@@ -8,6 +8,7 @@
 
 #include <inttypes.h>
 #include <limits.h>
+#include <string.h>
 
 typedef struct loom_amdgpu_branch_layout_path_node_t {
   // Original edge whose trampoline path owns this island.
@@ -91,40 +92,31 @@ static bool loom_amdgpu_branch_layout_node_precedes(
   return lhs_node_index < rhs_node_index;
 }
 
-static void loom_amdgpu_branch_layout_sort_nodes(
-    loom_amdgpu_branch_layout_build_state_t* state) {
-  for (uint32_t i = 0; i < state->node_count; ++i) {
-    state->sorted_node_indices[i] = i;
-  }
-  for (uint32_t i = 1; i < state->node_count; ++i) {
-    const uint32_t key = state->sorted_node_indices[i];
-    uint32_t position = i;
-    while (position != 0 &&
-           loom_amdgpu_branch_layout_node_precedes(
-               state, key, state->sorted_node_indices[position - 1])) {
-      state->sorted_node_indices[position] =
-          state->sorted_node_indices[position - 1];
-      --position;
-    }
-    state->sorted_node_indices[position] = key;
-  }
-}
-
 static uint64_t loom_amdgpu_branch_layout_translate_offset(
     const loom_amdgpu_branch_layout_build_state_t* state, uint64_t byte_offset,
     bool include_equal_groups) {
-  uint64_t translated_offset = byte_offset;
-  for (uint32_t i = 0; i < state->group_count; ++i) {
-    const loom_amdgpu_branch_layout_scratch_group_t* group = &state->groups[i];
+  uint32_t first = 0;
+  uint32_t last = state->group_count;
+  while (first < last) {
+    const uint32_t mid = first + (last - first) / 2u;
     const uint64_t group_base_offset =
-        state->input->anchors[group->anchor_index].byte_offset;
-    if (group_base_offset > byte_offset ||
-        (!include_equal_groups && group_base_offset == byte_offset)) {
-      break;
+        state->input->anchors[state->groups[mid].anchor_index].byte_offset;
+    if (group_base_offset < byte_offset ||
+        (include_equal_groups && group_base_offset == byte_offset)) {
+      first = mid + 1u;
+    } else {
+      last = mid;
     }
-    translated_offset += group->byte_length;
   }
-  return translated_offset;
+  if (first == 0) {
+    return byte_offset;
+  }
+  const loom_amdgpu_branch_layout_scratch_group_t* group =
+      &state->groups[first - 1u];
+  const uint64_t group_base_offset =
+      state->input->anchors[group->anchor_index].byte_offset;
+  return byte_offset + (group->final_byte_offset - group_base_offset) +
+         group->byte_length;
 }
 
 static iree_status_t loom_amdgpu_branch_layout_rebuild_physical_layout(
@@ -133,8 +125,7 @@ static iree_status_t loom_amdgpu_branch_layout_rebuild_physical_layout(
   if (state->node_count == 0) {
     return iree_ok_status();
   }
-  loom_amdgpu_branch_layout_sort_nodes(state);
-
+  // insert_island maintains sorted_node_indices in anchor order.
   uint64_t inserted_byte_count = 0;
   uint32_t sorted_node_index = 0;
   while (sorted_node_index < state->node_count) {
@@ -214,26 +205,75 @@ static uint32_t loom_amdgpu_branch_layout_select_midpoint_anchor(
                              ? target_base_byte_offset
                              : source_base_byte_offset;
   const uint64_t midpoint = lower + (upper - lower) / 2u;
-  uint32_t selected_anchor_index = LOOM_AMDGPU_BRANCH_ISLAND_NONE;
-  uint64_t selected_distance = UINT64_MAX;
-  for (iree_host_size_t i = 0; i < state->input->anchor_count; ++i) {
-    const uint64_t anchor_byte_offset = state->input->anchors[i].byte_offset;
-    if (anchor_byte_offset <= lower || anchor_byte_offset >= upper) {
-      continue;
-    }
-    if (loom_amdgpu_branch_layout_path_uses_anchor(state, edge_index,
-                                                   (uint32_t)i)) {
-      continue;
-    }
-    const uint64_t distance = anchor_byte_offset < midpoint
-                                  ? midpoint - anchor_byte_offset
-                                  : anchor_byte_offset - midpoint;
-    if (distance < selected_distance) {
-      selected_anchor_index = (uint32_t)i;
-      selected_distance = distance;
+  // Anchors are sorted by measured byte offset. Restrict the search to the
+  // open segment, then visit offsets in increasing distance from its midpoint.
+  iree_host_size_t first = 0;
+  iree_host_size_t last = state->input->anchor_count;
+  while (first < last) {
+    const iree_host_size_t mid = first + (last - first) / 2u;
+    if (state->input->anchors[mid].byte_offset <= lower) {
+      first = mid + 1u;
+    } else {
+      last = mid;
     }
   }
-  return selected_anchor_index;
+  const iree_host_size_t begin = first;
+  last = state->input->anchor_count;
+  while (first < last) {
+    const iree_host_size_t mid = first + (last - first) / 2u;
+    if (state->input->anchors[mid].byte_offset < upper) {
+      first = mid + 1u;
+    } else {
+      last = mid;
+    }
+  }
+  const iree_host_size_t end = first;
+  first = begin;
+  last = end;
+  while (first < last) {
+    const iree_host_size_t mid = first + (last - first) / 2u;
+    if (state->input->anchors[mid].byte_offset < midpoint) {
+      first = mid + 1u;
+    } else {
+      last = mid;
+    }
+  }
+  iree_host_size_t left_end = first;
+  iree_host_size_t right = first;
+  while (left_end > begin || right < end) {
+    const bool choose_left =
+        right == end ||
+        (left_end > begin &&
+         midpoint - state->input->anchors[left_end - 1u].byte_offset <=
+             state->input->anchors[right].byte_offset - midpoint);
+    const uint64_t offset = choose_left
+                                ? state->input->anchors[left_end - 1u].byte_offset
+                                : state->input->anchors[right].byte_offset;
+    // Equal offsets are visited in their original order, including on the
+    // left side of the midpoint. This preserves the former tie selection.
+    iree_host_size_t group_begin = choose_left ? left_end - 1u : right;
+    while (group_begin > begin &&
+           state->input->anchors[group_begin - 1u].byte_offset == offset) {
+      --group_begin;
+    }
+    iree_host_size_t group_end = choose_left ? left_end : right + 1u;
+    while (group_end < end &&
+           state->input->anchors[group_end].byte_offset == offset) {
+      ++group_end;
+    }
+    for (iree_host_size_t i = group_begin; i < group_end; ++i) {
+      if (!loom_amdgpu_branch_layout_path_uses_anchor(state, edge_index,
+                                                      (uint32_t)i)) {
+        return (uint32_t)i;
+      }
+    }
+    if (choose_left) {
+      left_end = group_begin;
+    } else {
+      right = group_end;
+    }
+  }
+  return LOOM_AMDGPU_BRANCH_ISLAND_NONE;
 }
 
 static iree_status_t loom_amdgpu_branch_layout_grow_nodes(
@@ -280,6 +320,23 @@ static iree_status_t loom_amdgpu_branch_layout_insert_island(
       .next_node_index = target_node_index,
       .final_island_index = LOOM_AMDGPU_BRANCH_ISLAND_NONE,
   };
+  // Keep the physical order current so a large kernel does not re-sort every
+  // island after each relaxation step.
+  uint32_t first = 0;
+  uint32_t last = new_node_index;
+  while (first < last) {
+    const uint32_t mid = first + (last - first) / 2u;
+    if (loom_amdgpu_branch_layout_node_precedes(
+            state, new_node_index, state->sorted_node_indices[mid])) {
+      last = mid;
+    } else {
+      first = mid + 1u;
+    }
+  }
+  memmove(&state->sorted_node_indices[first + 1u],
+          &state->sorted_node_indices[first],
+          (new_node_index - first) * sizeof(state->sorted_node_indices[0]));
+  state->sorted_node_indices[first] = new_node_index;
   if (source_node_index == LOOM_AMDGPU_BRANCH_ISLAND_NONE) {
     state->edge_head_node_indices[edge_index] = new_node_index;
   } else {
