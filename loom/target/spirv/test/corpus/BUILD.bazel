@@ -261,6 +261,7 @@ _ALL_PROFILE_XFAILS = {
     "numeric/float/extrema.loom:@float_extrema_f32": "TARGET/003",
     "numeric/predicate/extract.loom:@predicate_extract": "TARGET/032",
     "numeric/predicate/extract.loom:@predicate_logic_across_divergence": "TARGET/001",
+    "numeric/vector/broadcast_arithmetic.loom:@broadcast_fma": "TARGET/001",
 }
 
 _EXTENDED_TYPES_XFAILS = {
@@ -386,6 +387,7 @@ _ALL_ROOTS_XFAIL = [
     "numeric/conversion/quantization.loom",
     "numeric/float/extrema.loom",
     "numeric/predicate/extract.loom",
+    "numeric/vector/broadcast_arithmetic.loom",
 ]
 
 _SPIRV_EXECUTION_XFAILS = {
@@ -514,6 +516,7 @@ _SPIRV_EXECUTION_XFAILS = {
     "numeric/predicate/lanes.loom:@predicate_lane_values": "TARGET/001",
     "numeric/predicate/vector_logic.loom:@predicate_bitwise_values": "TARGET/001",
     "numeric/predicate/vector_logic.loom:@predicate_select_values": "TARGET/001",
+    "numeric/vector/broadcast_arithmetic.loom:@broadcast_fma_values": "TARGET/001",
     "numeric/vector/f32.loom:@numeric_vector_f32_values": "LOWERING/036",
     "numeric/vector/float_comparison.loom:@vector_float_comparison_bf16_values": "TARGET/001",
     "numeric/vector/float_comparison.loom:@vector_float_comparison_f16_values": "TARGET/001",

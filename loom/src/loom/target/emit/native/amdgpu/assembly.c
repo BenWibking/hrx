@@ -236,6 +236,17 @@ static iree_status_t loom_amdgpu_append_descriptor_assignment(
   const loom_low_allocation_assignment_t* assignment =
       loom_low_packet_descriptor_operand_assignment(
           context->allocation, context->packet, descriptor_operand_index);
+  if (descriptor_operand_index >= descriptor->result_count &&
+      iree_any_bit_set(
+          loom_amdgpu_descriptor_traits(descriptor_set, descriptor),
+          LOOM_AMDGPU_DESCRIPTOR_TRAIT_PACKED_F32)) {
+    if (assignment->descriptor_reg_class_id == LOOM_AMDGPU_REG_CLASS_ID_SGPR) {
+      return loom_amdgpu_append_sgpr_range_units(context,
+                                                 assignment->location_base, 2);
+    }
+    return loom_amdgpu_append_register_range_units(
+        context, "v", assignment->location_base, 2);
+  }
   if (assignment->descriptor_reg_class_id != LOOM_AMDGPU_REG_CLASS_ID_VGPR ||
       operand->address_map_kind != LOOM_LOW_OPERAND_ADDRESS_MAP_TARGET_STATE) {
     return loom_amdgpu_append_assignment(context, assignment);

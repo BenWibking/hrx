@@ -375,6 +375,7 @@ loom_corpus_test(
     "numeric/predicate/truncation.loom"
     "numeric/predicate/vector_logic.loom"
     "numeric/vector/address_conversion.loom"
+    "numeric/vector/broadcast_arithmetic.loom"
     "numeric/vector/conversion.loom"
     "numeric/vector/constants.loom"
     "numeric/vector/f32.loom"

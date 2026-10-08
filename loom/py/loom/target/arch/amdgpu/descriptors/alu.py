@@ -5016,6 +5016,59 @@ def _v_pk_add_f32_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
+def _v_pk_fma_f32_broadcast_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
+    overlay = _v_pk_fma_f32_overlay()
+    overlays = []
+    for mask in range(1, 8):
+        operands = [overlay.operands[0]]
+        native_values = [_native_result("dst")]
+        for source_index, source in enumerate(overlay.operands[1:]):
+            name = source.descriptor_operand.field_name
+            if mask & (1 << source_index):
+                operand = _sgpr_vgpr_operand(name)
+                operand = replace(
+                    operand,
+                    reg_alts=tuple(
+                        replace(alternative, unit_alignment=2)
+                        for alternative in operand.reg_alts
+                    ),
+                )
+                source = replace(
+                    source,
+                    descriptor_operand=operand,
+                    size_exception_reason="packed lanes both select the first dword",
+                )
+            native_values.append(_native_operand(name))
+            operands.append(source)
+        selector = 7 ^ mask
+        native_values.append(
+            _native_modifier_literal(
+                "op_sel_hi:["
+                + ",".join(str((selector >> bit) & 1) for bit in range(3))
+                + "]"
+            )
+        )
+        suffix = "_".join(
+            name for bit, name in enumerate(("a", "b", "c")) if mask & (1 << bit)
+        )
+        overlays.append(
+            replace(
+                overlay,
+                descriptor_key=f"{overlay.descriptor_key}.broadcast_{suffix}",
+                operands=tuple(operands),
+                fixed_encoding_fields=(("OP_SEL_HI", selector),),
+                asm_forms=_asm(
+                    mnemonic=f"{overlay.mnemonic}.broadcast_{suffix}",
+                    native_assembly_mnemonic=overlay.mnemonic,
+                    results=("dst",),
+                    operands=("a", "b", "c"),
+                    native_assembly_values=tuple(native_values),
+                ),
+            )
+        )
+    return tuple(overlays)
+
+
 def _v_pk_mul_f32_overlay() -> AmdgpuDescriptorOverlay:
     return _v_pk_binary_overlay(
         descriptor_key="amdgpu.v_pk_mul_f32",
@@ -7653,6 +7706,7 @@ __all__ = (
     "_v_pk_mul_lo_u16_overlay",
     "_v_pk_i16_binary_overlays",
     "_v_pk_fma_f32_overlay",
+    "_v_pk_fma_f32_broadcast_overlays",
     "_v_pk_fmac_f16_overlay",
     "_v_pk_mad_i16_overlay",
     "_v_pk_mad_i16_literal_overlays",

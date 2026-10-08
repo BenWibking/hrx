@@ -95,6 +95,10 @@ enum {
   kLoomAmdgpuPackedFmafF32DescriptorCandidateCount = 1u,
 };
 
+// Packed F32 FMA descriptors indexed by scalar-broadcast source bits a, b, c.
+extern const loom_amdgpu_descriptor_ref_t
+    kLoomAmdgpuPackedFmafF32BroadcastDescriptorRefs[8];
+
 // Descriptor candidates for packed i16 vector.fmai with signed preference.
 extern const loom_amdgpu_packed_ternary_descriptor_candidate_t
     kLoomAmdgpuPackedFmaiSignedPreferenceDescriptorCandidates[];

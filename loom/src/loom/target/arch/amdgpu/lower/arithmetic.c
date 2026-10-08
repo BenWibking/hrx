@@ -752,12 +752,30 @@ static bool loom_amdgpu_select_packed_ternary_candidate_plan(
                    LOOM_AMDGPU_PACKED_TERNARY_SOURCE_COUNT);
     descriptor_sources[i] = sources[candidate->source_permutation[i]];
   }
+  uint32_t broadcast_mask = 0;
+  loom_amdgpu_descriptor_ref_t descriptor_ref = candidate->descriptor_ref;
+  if (descriptor_ref == LOOM_AMDGPU_DESCRIPTOR_REF_V_PK_FMA_F32) {
+    const loom_value_fact_table_t* facts =
+        loom_low_lower_context_fact_table(context);
+    const loom_module_t* module = loom_low_lower_context_module(context);
+    for (uint32_t i = 0; i < IREE_ARRAYSIZE(descriptor_sources); ++i) {
+      loom_value_id_t scalar = LOOM_VALUE_ID_INVALID;
+      if (loom_value_fact_table_query_uniform_element_origin(
+              facts, module, descriptor_sources[i], &scalar)) {
+        descriptor_sources[i] = scalar;
+        broadcast_mask |= 1u << i;
+      }
+    }
+    descriptor_ref =
+        kLoomAmdgpuPackedFmafF32BroadcastDescriptorRefs[broadcast_mask];
+  }
   *out_plan = (loom_amdgpu_packed_ternary_plan_t){
       .sources = {descriptor_sources[0], descriptor_sources[1],
                   descriptor_sources[2]},
       .result = result,
-      .descriptor_ref = candidate->descriptor_ref,
+      .descriptor_ref = descriptor_ref,
       .flags = candidate->flags,
+      .broadcast_mask = broadcast_mask,
       .register_count = register_count,
       .packet_unit_count = candidate->packet_unit_count,
       .packet_count = register_count / candidate->packet_unit_count,
@@ -1374,6 +1392,10 @@ iree_status_t loom_amdgpu_lower_vector_packed_ternary(
     };
     const uint32_t register_offset = packet_index * plan->packet_unit_count;
     for (uint32_t i = 0; i < IREE_ARRAYSIZE(operands); ++i) {
+      if (plan->broadcast_mask & (1u << i)) {
+        operands[i] = low_sources[i];
+        continue;
+      }
       IREE_RETURN_IF_ERROR(loom_amdgpu_packed_ternary_packet_source(
           context, source_op, low_sources[i], register_offset, packet_type,
           &operands[i]));

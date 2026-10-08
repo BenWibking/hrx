@@ -430,6 +430,7 @@ def _cdna_core_overlays(
         _v_pk_add_f32_overlay(),
         _v_pk_mul_f32_overlay(),
         _v_pk_fma_f32_overlay(),
+        *_v_pk_fma_f32_broadcast_overlays(),
         *_v_mad_mix_f32_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_mad_mixlo_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),
         *_v_mad_mixhi_f16_overlays(op_sel_field="OP_SEL", op_sel_hi_field="OP_SEL_HI"),

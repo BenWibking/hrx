@@ -302,6 +302,19 @@ def _emit_packed_ternary_candidate_array(
 def _emit_source(*, public_header: str) -> str:
     descriptor_ref_key_set = set(amdgpu_descriptor_ref_keys())
     data_lines: list[str] = []
+    data_lines.extend(
+        (
+            "const loom_amdgpu_descriptor_ref_t",
+            "    kLoomAmdgpuPackedFmafF32BroadcastDescriptorRefs[8] = {",
+        )
+    )
+    for mask in range(8):
+        key = "amdgpu.v_pk_fma_f32"
+        if mask:
+            key += ".broadcast_" + "_".join(name for bit, name in enumerate(("a", "b", "c")) if mask & (1 << bit))
+        descriptor_ref = required_descriptor_ref_constant_name("packed F32 FMA broadcast", key, descriptor_ref_key_set)
+        data_lines.append(f"        {descriptor_ref},")
+    data_lines.extend(("};", ""))
     for cube in _FMA_MIX_DESCRIPTOR_CUBES:
         data_lines.extend(_emit_fma_mix_cube(cube, descriptor_ref_key_set))
         data_lines.append("")
