@@ -87,8 +87,11 @@ has this realization.
 The command stream is one sequential engine, so the compiler assigns at most
 one strand to it. This realization requires an acyclic unconditional sequence,
 fixed transfer endpoints, and at most one admission at each channel endpoint.
-Repeating or dynamic communication currently executes on its selected core;
-those cases need a different realization to become autonomous DMA streams.
+Bounded ingress loops have a separate realization: the DMA engine itself can
+reserve a free channel slot, copy the next record, and publish it. Independent
+DMA streams keep separate engines and routes rather than sharing the command
+sequencer's execution order. Communication that needs instruction execution
+still runs on its selected core.
 
 `pipeline.memory<workgroup>[0, 3]` selects the invocation's tile-local pool.
 It allocates nothing and introduces no synchronization. The three `buffer.alloca`
@@ -148,6 +151,45 @@ an input while the compute worker blocks on a full output can deadlock. Buffer
 capacity and control flow are part of the author's schedule in this native
 cut; channel ownership alone is not a proof that every authored network makes
 progress.
+
+## Repeating ingress without a feeder core
+
+A regular input stream can move its entire reserve/copy/wait/publish loop into
+DMA descriptors. For example, eight external records can cycle through two
+tile-local slots while the compute strand retains its weights. Each DMA
+iteration acquires a free credit and publishes a ready credit only after the
+local write completes. The consumer returns free credit through its ordinary
+`channel.release`. A full input channel stalls that DMA stream without making a
+compute core poll for space.
+
+This realization preserves supported strided record layouts. Descriptor
+iteration advances the external record address and rotates the local slot;
+it does not gather each record into another transient buffer. On the current
+profiles, one task supports up to 256 executions, with up to 64 distinct external
+record offsets and 64 local slots. A repeatedly read fixed external record can
+use all 256 executions. Memory, descriptor, route, and lock limits still apply.
+
+Read-ahead needs an ownership proof. An external DMA can fetch bytes before the
+corresponding local slot becomes free. The compiler therefore requires disjoint
+caller-buffer facts and verifies that the complete pipeline cannot write the
+source while those reads are in flight. Distinct buffer arguments alone do not
+establish disjointness; an author's `buffer.assume.noalias` is a caller contract.
+Imported channels or opaque effects that prevent this proof keep instruction
+execution. The compiler also requires the consumer to drain the complete
+produced prefix before invocation completion, so no task still owns its backing
+storage when the caller reuses it.
+
+Output lifetime remains separate. A compute strand can drain each result with
+the output helper above, holding its read until the external write completes.
+Ingress offload does not authorize releasing that output after only a local
+source read. Configuration starts autonomous input streams before potentially
+blocking command-stream work, and resets the local iteration cursor between
+invocations when the record count ends partway around the slot ring.
+
+The resulting compile report counts instruction images and channel storage
+separately, so eliminating a feeder image cannot hide its storage cost.
+Successful lowering proves that the program fits this realization; device
+execution and timing remain separate qualification steps.
 
 ## Inspect the real compilation boundaries
 

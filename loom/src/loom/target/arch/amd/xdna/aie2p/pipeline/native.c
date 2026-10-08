@@ -325,14 +325,15 @@ static bool loom_aie2p_native_can_repeat(
   if (begin < 0 || begin > UINT32_MAX || stride < 0 || stride > UINT32_MAX ||
       transport->repetitions > local_dma->maximum_task_repeat_count ||
       transport->repetitions > shim_dma->maximum_task_repeat_count ||
-      binding->capacity > (1u << local_dma->iteration_bits) ||
-      (stride && transport->repetitions > (1u << shim_dma->iteration_bits)) ||
+      binding->capacity > (UINT64_C(1) << local_dma->iteration_bits) ||
+      (stride &&
+       transport->repetitions > (UINT64_C(1) << shim_dma->iteration_bits)) ||
       (channel->byte_stride % local_dma->transfer_length_granularity) ||
       (stride % shim_dma->transfer_length_granularity) ||
       channel->byte_stride / local_dma->transfer_length_granularity >
-          (1u << local_dma->step_size_bits) ||
+          (UINT64_C(1) << local_dma->step_size_bits) ||
       (uint64_t)stride / shim_dma->transfer_length_granularity >
-          (1u << shim_dma->step_size_bits)) {
+          (UINT64_C(1) << shim_dma->step_size_bits)) {
     return false;
   }
   worker->repetition.count = (uint32_t)transport->repetitions;
