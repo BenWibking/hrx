@@ -342,6 +342,8 @@ typedef struct loom_amdgpu_vector_16bit_float_conversion_plan_t {
   loom_amdgpu_vector_scale_materialization_kind_t scale_materialization_kind;
   // Strategy-specific data selected before emission.
   union {
+    // NaN-handling facts for standard F32-to-BF16 packing.
+    loom_value_fact_flags_t bf16_source_flags;
     // Packed FP4 decode strategy when strategy_kind is FP4_DECODE.
     loom_amdgpu_fp4_decode_plan_t fp4_decode;
     // Packed FP8 encode strategy when strategy_kind is FP8_ENCODE.
@@ -577,6 +579,13 @@ typedef struct loom_amdgpu_scalar_conversion_plan_t {
   // Planned physical representation of a narrow source or result.
   loom_low_representation_id_t narrow_representation;
   union {
+    // Exact format and exceptional-value handling for scalar FP8 decoding.
+    struct {
+      // Exact source format accepted by the selected decoder.
+      loom_value_fact_numeric_format_flags_t source_format;
+      // Selected simplifications for the decoded value.
+      loom_amdgpu_fp8_decode_value_flags_t value_flags;
+    } fp8_decode;
     // Native packed FP8 encode strategy for an FP8-result truncation.
     loom_amdgpu_fp8_encode_plan_t fp8_encode;
     // Exact split-word strategy for narrowing an F64 source.
