@@ -21,6 +21,7 @@
 #include "loom/ir/ir.h"
 #include "loom/ir/scalar_type.h"
 #include "loom/ops/kernel/ops.h"
+#include "loom/target/arch/amdgpu/lower/compare.h"
 #include "loom/target/arch/amdgpu/lower/kinds.h"
 #include "loom/target/arch/amdgpu/lower/mask.h"
 #include "loom/target/arch/amdgpu/matrix/contract.h"
@@ -961,84 +962,6 @@ typedef struct loom_amdgpu_table_lookup_plan_t {
   // Selected table lane for each F32 result, or UINT8_MAX for a dynamic index.
   uint8_t table_lane_indices[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
 } loom_amdgpu_table_lookup_plan_t;
-
-typedef struct loom_amdgpu_vector_compare_plan_t {
-  // Left-hand payload vector value.
-  loom_value_id_t lhs;
-  // Right-hand payload vector value.
-  loom_value_id_t rhs;
-  // Descriptor row selected for the compare predicate.
-  loom_low_lower_resolved_descriptor_t descriptor;
-  // Optional descriptor row selected when the left-hand lane is inline.
-  loom_low_lower_resolved_descriptor_t src0_inline_descriptor;
-  // Optional descriptor row selected when the right-hand lane is inline.
-  loom_low_lower_resolved_descriptor_t src1_inline_descriptor;
-  // Result mask vector value.
-  loom_value_id_t result;
-  // Static number of payload and mask lanes compared.
-  uint32_t lane_count;
-} loom_amdgpu_vector_compare_plan_t;
-
-typedef enum loom_amdgpu_float_classification_form_e {
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_NONE = 0,
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_INLINE = 1,
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_LITERAL = 2,
-  LOOM_AMDGPU_FLOAT_CLASSIFICATION_FORM_REGISTER = 3,
-} loom_amdgpu_float_classification_form_t;
-
-typedef struct loom_amdgpu_vector_float_classification_plan_t {
-  // Floating-point payload vector being classified.
-  loom_value_id_t input;
-  // Descriptor selected for low halves or whole-width lanes.
-  loom_low_lower_resolved_descriptor_t low_descriptor;
-  // Descriptor selected for packed F16 high halves.
-  loom_low_lower_resolved_descriptor_t high_descriptor;
-  // Result mask vector receiving one native lane mask per input lane.
-  loom_value_id_t result;
-  // Exact ten-bit hardware class mask for the source operation.
-  uint32_t class_mask;
-  // Static number of logical input and result lanes.
-  uint32_t lane_count;
-  // Floating-point type carried by each logical input lane.
-  loom_scalar_type_t element_type;
-  // Selected class-mask operand representation.
-  loom_amdgpu_float_classification_form_t form;
-} loom_amdgpu_vector_float_classification_plan_t;
-
-typedef enum loom_amdgpu_clampf_mode_e {
-  LOOM_AMDGPU_CLAMPF_MODE_NONE = 0,
-  LOOM_AMDGPU_CLAMPF_MODE_ORDERED = 1,
-  LOOM_AMDGPU_CLAMPF_MODE_NUMBER = 2,
-} loom_amdgpu_clampf_mode_t;
-
-typedef struct loom_amdgpu_clampf_plan_t {
-  // Source payload being clamped.
-  loom_value_id_t value;
-  // Source lower bound.
-  loom_value_id_t lower;
-  // Source upper bound.
-  loom_value_id_t upper;
-  // Selected clamp semantics with native AMDGPU packet support.
-  loom_amdgpu_clampf_mode_t mode;
-  // Descriptor row selected for the ordered lower-bound comparison.
-  loom_low_lower_resolved_descriptor_t lower_compare_descriptor;
-  // Descriptor row selected for the ordered upper-bound comparison.
-  loom_low_lower_resolved_descriptor_t upper_compare_descriptor;
-  // Descriptor rows selected for ordered-mode v_cndmask_b32 lane selects.
-  loom_amdgpu_cndmask_b32_descriptors_t select_descriptors;
-  // Descriptor row selected for register-register lower-bound maxnum.
-  loom_low_lower_resolved_descriptor_t lower_bound_register_descriptor;
-  // Optional descriptor row selected for literal lower-bound maxnum.
-  loom_low_lower_resolved_descriptor_t lower_bound_literal_descriptor;
-  // Descriptor row selected for register-register upper-bound minnum.
-  loom_low_lower_resolved_descriptor_t upper_bound_register_descriptor;
-  // Optional descriptor row selected for literal upper-bound minnum.
-  loom_low_lower_resolved_descriptor_t upper_bound_literal_descriptor;
-  // Result value.
-  loom_value_id_t result;
-  // Static number of f32 lanes lowered.
-  uint32_t lane_count;
-} loom_amdgpu_clampf_plan_t;
 
 typedef enum loom_amdgpu_subgroup_payload_kind_e {
   LOOM_AMDGPU_SUBGROUP_PAYLOAD_NONE = 0,
