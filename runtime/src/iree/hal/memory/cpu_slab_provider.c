@@ -16,14 +16,24 @@ typedef struct iree_hal_cpu_slab_provider_t {
 
   // Host allocator used for provider metadata and slab memory.
   iree_allocator_t host_allocator;
+
+  // Minimum absolute byte alignment of every slab allocation.
+  iree_host_size_t allocation_alignment;
 } iree_hal_cpu_slab_provider_t;
 
 static const iree_hal_slab_provider_vtable_t iree_hal_cpu_slab_provider_vtable;
 
 iree_status_t iree_hal_cpu_slab_provider_create(
-    iree_allocator_t host_allocator, iree_hal_slab_provider_t** out_provider) {
+    iree_host_size_t min_alignment, iree_allocator_t host_allocator,
+    iree_hal_slab_provider_t** out_provider) {
   IREE_ASSERT_ARGUMENT(out_provider);
   *out_provider = NULL;
+  if (!iree_host_size_is_valid_alignment(min_alignment)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "slab alignment must be a power of two (got %" PRIhsz ")",
+        min_alignment);
+  }
 
   iree_hal_cpu_slab_provider_t* provider = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc(host_allocator, sizeof(*provider),
@@ -31,6 +41,8 @@ iree_status_t iree_hal_cpu_slab_provider_create(
   iree_hal_slab_provider_initialize(&iree_hal_cpu_slab_provider_vtable,
                                     &provider->base);
   provider->host_allocator = host_allocator;
+  provider->allocation_alignment =
+      iree_max(min_alignment, IREE_HAL_HEAP_BUFFER_ALIGNMENT);
   *out_provider = &provider->base;
   return iree_ok_status();
 }
@@ -45,13 +57,18 @@ static void iree_hal_cpu_slab_provider_destroy(
 
 static iree_status_t iree_hal_cpu_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t min_alignment, iree_hal_slab_t* out_slab) {
   iree_hal_cpu_slab_provider_t* provider =
       (iree_hal_cpu_slab_provider_t*)base_provider;
   memset(out_slab, 0, sizeof(*out_slab));
+  if (min_length > IREE_HOST_SIZE_MAX) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "CPU slab length exceeds host address space");
+  }
   void* ptr = NULL;
   IREE_RETURN_IF_ERROR(iree_allocator_malloc_aligned(
-      provider->host_allocator, min_length, IREE_HAL_HEAP_BUFFER_ALIGNMENT,
+      provider->host_allocator, min_length,
+      iree_max(min_alignment, provider->allocation_alignment),
       /*offset=*/0, &ptr));
   out_slab->base_ptr = (uint8_t*)ptr;
   out_slab->length = min_length;
@@ -78,10 +95,16 @@ static iree_status_t iree_hal_cpu_slab_provider_wrap_buffer(
       .data = slab->base_ptr + slab_offset,
       .data_length = (iree_host_size_t)allocation_size,
   };
-  return iree_hal_heap_buffer_wrap(iree_hal_buffer_placement_undefined(),
-                                   params.type, params.access, params.usage,
-                                   allocation_size, data, release_callback,
-                                   provider->host_allocator, out_buffer);
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
+      IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE,
+      params.type & ~IREE_HAL_MEMORY_TYPE_OPTIMAL));
+  const iree_hal_buffer_placement_t placement = {
+      .queue_family_affinity = params.queue_family_affinity,
+  };
+  return iree_hal_heap_buffer_wrap(
+      placement, IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE, params.access,
+      params.usage, allocation_size, data, release_callback,
+      provider->host_allocator, out_buffer);
 }
 
 static iree_status_t iree_hal_cpu_slab_provider_validate_asan_options(
@@ -107,49 +130,37 @@ static void iree_hal_cpu_slab_provider_advise_asan_range(
   IREE_ASSERT(false, "CPU slab provider cannot advise ASAN ranges");
 }
 
-// Forces the OS to back all virtual pages in the slab with physical memory
-// and zero them. Without this, each page faults on first write: 65,536
-// faults for a 256MB slab, scattered across whichever thread touches the
-// memory first. Running this on the slab cache's background thread (which is
-// NUMA-pinned) ensures pages are allocated on the correct NUMA node via
-// first-touch policy.
+// First touch runs on the captured native owner. Only the owned range may be
+// written: neighboring bytes can belong to independently active pools.
 static void iree_hal_cpu_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {
   IREE_TRACE_ZONE_BEGIN(z0);
-  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)slab->length);
-
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)length);
+  uint8_t* data = slab->base_ptr + offset;
   bool populated = false;
-
 #if defined(IREE_PLATFORM_LINUX)
 #ifdef MADV_HUGEPAGE
-  // Hint to the kernel that this region is a good candidate for transparent
-  // huge pages. Best-effort; errors are ignored.
-  if (slab->length >= 2 * 1024 * 1024) {
-    madvise(slab->base_ptr, (size_t)slab->length, MADV_HUGEPAGE);
+  if (length >= 2 * 1024 * 1024) {
+    madvise(data, (size_t)length, MADV_HUGEPAGE);
   }
 #endif  // MADV_HUGEPAGE
-
 #ifdef MADV_POPULATE_WRITE
-  // MADV_POPULATE_WRITE (kernel 5.14+) faults and zeroes all pages in a
-  // single syscall. Much faster than touching each page from userspace.
-  populated =
-      madvise(slab->base_ptr, (size_t)slab->length, MADV_POPULATE_WRITE) == 0;
+  // This hint may fail for an interior range that is not page aligned. The
+  // bounded write below still provides first touch without widening ownership.
+  populated = madvise(data, (size_t)length, MADV_POPULATE_WRITE) == 0;
 #endif  // MADV_POPULATE_WRITE
 #endif  // IREE_PLATFORM_LINUX
-
   if (!populated) {
-    // Fallback: touch every page to force allocation and zero-fill.
-    // Sequential access pattern for TLB and prefetcher friendliness.
-    memset(slab->base_ptr, 0, (size_t)slab->length);
+    memset(data, 0, (size_t)length);
   }
-
   IREE_TRACE_ZONE_END(z0);
 }
 
 // The CPU provider has no cache or freelist; nothing to trim.
 static void iree_hal_cpu_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {}
+    iree_hal_slab_provider_t* base_provider, iree_hal_pool_trim_flags_t flags) {
+}
 
 // The CPU provider tracks no statistics beyond what the allocator itself
 // provides. Leaf provider; no inner provider to recurse into.
@@ -165,7 +176,13 @@ static void iree_hal_cpu_slab_provider_query_stats(
 static void iree_hal_cpu_slab_provider_query_properties(
     const iree_hal_slab_provider_t* base_provider,
     iree_hal_slab_provider_properties_t* out_properties) {
+  const iree_hal_cpu_slab_provider_t* provider =
+      (const iree_hal_cpu_slab_provider_t*)base_provider;
   out_properties->memory_type = IREE_HAL_CPU_SLAB_PROVIDER_MEMORY_TYPE;
+  out_properties->allocation_alignment = provider->allocation_alignment;
+  out_properties->max_allocation_alignment =
+      iree_min(IREE_HOST_SIZE_MAX, IREE_DEVICE_SIZE_MAX) / 2 + 1;
+  out_properties->maintenance_alignment = 1;
   out_properties->supported_usage = IREE_HAL_CPU_SLAB_PROVIDER_BUFFER_USAGE;
   out_properties->queue_family_affinity = IREE_HAL_QUEUE_FAMILY_AFFINITY_ANY;
   out_properties->atomic_operations =

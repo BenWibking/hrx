@@ -165,6 +165,9 @@ iree_status_t iree_async_proactor_create_posix_with_backend(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_allocator_malloc(allocator, total_size, (void**)&proactor));
   memset(proactor, 0, total_size);
+  // Teardown can run before wake initialization when an earlier setup fails.
+  proactor->wake.read_fd = -1;
+  proactor->wake.write_fd = -1;
 
   // Initialize base proactor.
   iree_async_proactor_initialize(&iree_async_proactor_posix_vtable,
@@ -251,16 +254,14 @@ iree_status_t iree_async_proactor_create_posix_with_backend(
                                             proactor->wake.read_fd, POLLIN);
   }
 
-  // Initialize workers. Each worker creates its own thread.
-  if (iree_status_is_ok(status)) {
-    for (iree_host_size_t i = 0; i < worker_count; ++i) {
-      status = iree_async_posix_worker_initialize(proactor, i, allocator,
-                                                  &proactor->workers[i]);
-      if (!iree_status_is_ok(status)) {
-        break;
-      }
-      ++proactor->initialized_workers;
-    }
+  // Include each attempted worker in cleanup, including a worker whose thread
+  // failed to start after its synchronization resources were initialized.
+  for (; iree_status_is_ok(status) &&
+         proactor->initialized_workers < worker_count;
+       ++proactor->initialized_workers) {
+    status = iree_async_posix_worker_initialize(
+        proactor, proactor->initialized_workers, options.worker_affinity,
+        allocator, &proactor->workers[proactor->initialized_workers]);
   }
 
   // Single exit point: assign output on success, release on failure.

@@ -1588,9 +1588,9 @@ TEST(ReplayExecuteTest, ExecutesRecordedMappedBufferWrite) {
       iree_hal_allocator_allocate_buffer(allocator, params, 16, &buffer));
 
   iree_hal_buffer_mapping_t mapping;
-  IREE_ASSERT_OK(iree_hal_buffer_map_range(buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-                                           IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE,
-                                           0, 16, &mapping));
+  IREE_ASSERT_OK(iree_hal_buffer_map_range(
+      buffer, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_WRITE,
+      IREE_HAL_BUFFER_MAP_FLAG_DISCARD, 0, 16, &mapping));
   iree_byte_span_t span;
   IREE_ASSERT_OK(iree_hal_buffer_mapping_subspan(
       &mapping, IREE_HAL_MEMORY_ACCESS_WRITE, 0, 16, &span));
@@ -2209,7 +2209,8 @@ TEST(ReplayExecuteTest, ExecutesRecordedQueueAlloca) {
   iree_hal_pool_t* pool = nullptr;
   IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
       pool_options, backend.slab_provider, backend.notification,
-      iree_allocator_system(), &pool));
+      backend.frontier_tracker, backend.maintenance, iree_allocator_system(),
+      &pool));
 
   iree_hal_semaphore_t* signal_semaphore = nullptr;
   IREE_ASSERT_OK(iree_hal_semaphore_create(

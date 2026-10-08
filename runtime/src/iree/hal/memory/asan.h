@@ -43,7 +43,7 @@ typedef struct iree_hal_asan_pool_options_t {
   // Additional provider-required alignment for hidden backing ranges.
   iree_device_size_t backing_alignment;
 
-  // Target backing bytes a pool may keep poisoned before returning them.
+  // Target returned backing bytes a pool may withhold before reuse.
   iree_device_size_t quarantine_size;
 } iree_hal_asan_pool_options_t;
 

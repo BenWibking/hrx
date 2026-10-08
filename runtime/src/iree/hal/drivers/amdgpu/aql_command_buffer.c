@@ -775,8 +775,8 @@ iree_hal_amdgpu_aql_command_buffer_materialize_prepublished_kernargs(
   if (iree_status_is_ok(status)) {
     status = iree_hal_buffer_map_range(
         template_buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_DISCARD_WRITE, /*byte_offset=*/0,
-        (iree_device_size_t)allocation_length, &mapping);
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_DISCARD,
+        /*byte_offset=*/0, (iree_device_size_t)allocation_length, &mapping);
   }
   if (iree_status_is_ok(status)) {
     memset(mapping.contents.data, 0, allocation_length);
@@ -1234,8 +1234,9 @@ iree_hal_amdgpu_aql_command_buffer_resolve_static_buffer_ref(
           iree_hal_amdgpu_transient_buffer_resolve_committed_backing(
               allocated_buffer, &backing_buffer));
     }
-    allocated_buffer = iree_hal_buffer_allocated_buffer(backing_buffer);
   }
+  // Preserve the transient allocation's origin. Its backing may be an interior
+  // pool range; unwrapping that range would discard part of the native offset.
   void* device_ptr = iree_hal_amdgpu_buffer_device_pointer(allocated_buffer);
   if (IREE_UNLIKELY(!device_ptr)) {
     return iree_make_status(

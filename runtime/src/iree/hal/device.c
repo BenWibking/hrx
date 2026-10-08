@@ -255,9 +255,17 @@ IREE_API_EXPORT iree_status_t iree_hal_device_query_queue_pool_backend(
   iree_status_t status = _VTABLE_DISPATCH(device, query_queue_pool_backend)(
       device, queue_family, &backend);
   if (iree_status_is_ok(status)) {
+    backend.frontier_tracker = topology_info->frontier.tracker;
     *out_backend = backend;
   }
   return status;
+}
+
+IREE_API_EXPORT const iree_hal_memory_backend_t* iree_hal_device_memory_backend(
+    iree_hal_device_t* device) {
+  return _VTABLE_DISPATCH(device, memory_backend)
+             ? _VTABLE_DISPATCH(device, memory_backend)(device)
+             : NULL;
 }
 
 IREE_API_EXPORT iree_status_t iree_hal_device_wait_semaphores(

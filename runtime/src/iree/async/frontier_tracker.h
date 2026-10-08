@@ -223,6 +223,18 @@ bool iree_async_frontier_tracker_query_epoch(
     const iree_async_frontier_tracker_t* tracker, iree_async_axis_t axis,
     uint64_t epoch);
 
+// Queries whether every entry in |frontier| has reached its epoch without
+// registering a waiter. An empty frontier is satisfied. Pending work returns
+// OK with |out_satisfied| false; any failed axis propagates its terminal error
+// even if another axis is pending. Unknown axes return NOT_FOUND. On error
+// |out_satisfied| is unchanged.
+//
+// Takes the tracker's metadata lock to observe axis failures consistently.
+// No callback storage, notification, or completion wait is created.
+iree_status_t iree_async_frontier_tracker_query(
+    iree_async_frontier_tracker_t* tracker,
+    const iree_async_frontier_t* frontier, bool* out_satisfied);
+
 // Advances an axis to a new epoch value. Thread-safe.
 //
 // If |epoch| is greater than the axis's current epoch, the axis is updated

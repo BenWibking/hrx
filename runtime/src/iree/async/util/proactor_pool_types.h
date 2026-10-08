@@ -40,6 +40,8 @@ typedef struct iree_async_proactor_pool_runner_factory_t {
 
   // Creates a poll runner for |proactor|.
   // |node_id| is the NUMA node for the proactor (UINT32_MAX if unspecified).
+  // A specified node must be established before polling starts; return an
+  // error if the runner cannot provide that locality.
   // Stores an opaque runner handle in |out_runner| (may be NULL if the runner
   // is self-managing). Called under pool mutex — must not call back into the
   // pool.

@@ -84,6 +84,51 @@ TEST(FixedBlockAllocator, AllocateFree) {
   iree_hal_memory_fixed_block_allocator_free(pool);
 }
 
+TEST(FixedBlockAllocator, CandidateTracksAvailableHistoryWithoutClaiming) {
+  auto options = DefaultOptions();
+  options.block_count = 65;
+  iree_hal_memory_fixed_block_allocator_t* pool = nullptr;
+  IREE_ASSERT_OK(iree_hal_memory_fixed_block_allocator_allocate(
+      options, iree_allocator_system(), &pool));
+  iree_hal_memory_fixed_block_allocator_allocation_t candidate;
+  ASSERT_TRUE(iree_hal_memory_fixed_block_allocator_query_candidate(
+      pool, 64, &candidate));
+  EXPECT_EQ(candidate.block_index, 64u);
+  EXPECT_EQ(candidate.offset, 64 * options.block_size);
+  EXPECT_EQ(candidate.death_frontier, nullptr);
+  EXPECT_TRUE(iree_hal_memory_fixed_block_allocator_candidate_is_current(
+      pool, &candidate));
+  iree_hal_memory_fixed_block_allocator_stats_t stats;
+  iree_hal_memory_fixed_block_allocator_query_stats(pool, &stats);
+  EXPECT_EQ(stats.allocation_count, 0u);
+
+  iree_hal_memory_fixed_block_allocator_allocation_t allocation;
+  iree_hal_memory_fixed_block_allocator_acquire_candidate(
+      pool, candidate.block_index, &allocation);
+  EXPECT_FALSE(iree_hal_memory_fixed_block_allocator_candidate_is_current(
+      pool, &candidate));
+  EXPECT_FALSE(iree_hal_memory_fixed_block_allocator_query_candidate(
+      pool, 64, &candidate));
+  MAKE_FRONTIER(death, 1, E(TestQueueAxis(0), 10));
+  iree_hal_memory_fixed_block_allocator_release(pool, 64, death);
+  ASSERT_TRUE(iree_hal_memory_fixed_block_allocator_query_candidate(
+      pool, 64, &candidate));
+  // Own the snapshot before allowing a subsequent acquire/release to change it.
+  candidate.death_frontier = death;
+  EXPECT_TRUE(iree_hal_memory_fixed_block_allocator_candidate_is_current(
+      pool, &candidate));
+  iree_hal_memory_fixed_block_allocator_acquire_candidate(pool, 64,
+                                                          &allocation);
+  MAKE_FRONTIER(later_death, 1, E(TestQueueAxis(0), 20));
+  iree_hal_memory_fixed_block_allocator_release(pool, 64, later_death);
+  EXPECT_FALSE(iree_hal_memory_fixed_block_allocator_candidate_is_current(
+      pool, &candidate));
+  EXPECT_EQ(death->entries[0].epoch, 10u);
+  EXPECT_FALSE(iree_hal_memory_fixed_block_allocator_query_candidate(
+      pool, 65, &candidate));
+  iree_hal_memory_fixed_block_allocator_free(pool);
+}
+
 TEST(FixedBlockAllocator, InvalidOptionsZeroBlockSize) {
   iree_hal_memory_fixed_block_allocator_options_t options = DefaultOptions();
   options.block_size = 0;

@@ -293,6 +293,8 @@ typedef struct iree_hal_amdgpu_physical_device_t {
 
   // Default queue-allocation pool notification for this physical device.
   iree_async_notification_t* default_pool_notification;
+  // Shared cold memory worker independent of execution queue failure/lifetime.
+  iree_hal_memory_maintenance_t* memory_maintenance;
   // Slab provider backing default and caller-created pools for this domain.
   iree_hal_slab_provider_t* default_slab_provider;
   // Host-local slab provider for mappable queue allocation transients.
@@ -301,14 +303,14 @@ typedef struct iree_hal_amdgpu_physical_device_t {
   iree_hal_tlsf_pool_options_t default_pool_options;
   // Routes default queue allocations to the best compatible memory pool.
   iree_hal_pool_set_t default_pool_set;
-  // Frontier-aware suballocating pool used up to the TLSF slab length.
+  // Frontier-aware allocator for suballocated and dedicated device ranges.
   iree_hal_pool_t* default_pool;
-  // Direct per-allocation pool used for requests larger than one TLSF slab.
-  iree_hal_pool_t* default_oversized_pool;
+  // Explicit retention cache for device-local TLSF backing.
+  iree_hal_pool_t* default_backing_cache;
   // Frontier-aware suballocating pool for host-visible queue allocations.
   iree_hal_pool_t* default_host_pool;
-  // Direct host-visible pool used for requests larger than one host TLSF slab.
-  iree_hal_pool_t* default_host_oversized_pool;
+  // Explicit retention cache for host-visible TLSF backing.
+  iree_hal_pool_t* default_host_backing_cache;
 
   // Fixed-size staging pool for non-mappable queue_read/queue_write transfers.
   iree_hal_amdgpu_staging_pool_t file_staging_pool;
@@ -461,7 +463,7 @@ void iree_hal_amdgpu_physical_device_deinitialize(
     iree_hal_amdgpu_physical_device_t* physical_device);
 
 // Releases any unused pooled resources.
-iree_status_t iree_hal_amdgpu_physical_device_trim(
+void iree_hal_amdgpu_physical_device_trim(
     iree_hal_amdgpu_physical_device_t* physical_device);
 
 #ifdef __cplusplus

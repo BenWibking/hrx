@@ -32,6 +32,21 @@ iree_hal_memory_fixed_block_allocator_block_frontier_at(
   return (iree_async_frontier_t*)((uint8_t*)block + pool->frontier_offset);
 }
 
+static void iree_hal_memory_fixed_block_allocator_read_block(
+    const iree_hal_memory_fixed_block_allocator_t* pool, uint32_t block_index,
+    iree_hal_memory_fixed_block_allocator_allocation_t* out_allocation) {
+  iree_hal_memory_fixed_block_allocator_block_t* block =
+      iree_hal_memory_fixed_block_allocator_block_at(pool, block_index);
+  const iree_async_frontier_t* frontier =
+      iree_hal_memory_fixed_block_allocator_block_frontier_at(pool, block);
+  *out_allocation = (iree_hal_memory_fixed_block_allocator_allocation_t){
+      .offset = (iree_device_size_t)block_index * pool->block_size,
+      .block_index = block_index,
+      .death_frontier = frontier->entry_count ? frontier : NULL,
+      .block_flags = block->flags,
+  };
+}
+
 static inline void iree_hal_memory_fixed_block_allocator_release_bit(
     iree_hal_memory_fixed_block_allocator_t* pool, uint32_t block_index) {
   uint16_t word_index = (uint16_t)(block_index / 64);
@@ -81,6 +96,12 @@ iree_status_t iree_hal_memory_fixed_block_allocator_allocate(
   if (options.frontier_capacity == 0) {
     options.frontier_capacity =
         IREE_HAL_MEMORY_FIXED_BLOCK_ALLOCATOR_DEFAULT_FRONTIER_CAPACITY;
+  }
+
+  if (options.initial_frontier &&
+      options.initial_frontier->entry_count > options.frontier_capacity) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "initial frontier exceeds allocator capacity");
   }
 
   IREE_TRACE_ZONE_BEGIN(z0);
@@ -146,14 +167,20 @@ iree_status_t iree_hal_memory_fixed_block_allocator_allocate(
                       iree_memory_order_relaxed);
   }
 
-  // Initialize per-block metadata: flags = NONE, frontier = empty.
+  // Initialize every block with the same exact inherited prerequisite.
   for (uint32_t i = 0; i < options.block_count; ++i) {
     iree_hal_memory_fixed_block_allocator_block_t* block =
         iree_hal_memory_fixed_block_allocator_block_at(pool, i);
     block->flags = IREE_HAL_MEMORY_FIXED_BLOCK_ALLOCATOR_BLOCK_FLAG_NONE;
     iree_async_frontier_t* frontier =
         iree_hal_memory_fixed_block_allocator_block_frontier_at(pool, block);
-    iree_async_frontier_initialize(frontier, 0);
+    if (options.initial_frontier) {
+      memcpy(frontier, options.initial_frontier,
+             sizeof(*frontier) + options.initial_frontier->entry_count *
+                                     sizeof(iree_async_frontier_entry_t));
+    } else {
+      iree_async_frontier_initialize(frontier, 0);
+    }
   }
 
   *out_pool = pool;
@@ -178,6 +205,66 @@ void iree_hal_memory_fixed_block_allocator_free(
   iree_allocator_t host_allocator = pool->host_allocator;
   iree_allocator_free_aligned(host_allocator, pool);
   IREE_TRACE_ZONE_END(z0);
+}
+
+bool iree_hal_memory_fixed_block_allocator_query_candidate(
+    const iree_hal_memory_fixed_block_allocator_t* pool,
+    uint32_t start_block_index,
+    iree_hal_memory_fixed_block_allocator_allocation_t* out_candidate) {
+  uint32_t word_index = start_block_index / 64;
+  uint64_t candidate_mask = ~UINT64_C(0) << (start_block_index % 64);
+  for (; word_index < pool->word_count; ++word_index) {
+    const uint64_t available = ~iree_atomic_load(&pool->bitmap[word_index],
+                                                 iree_memory_order_acquire) &
+                               candidate_mask;
+    if (available) {
+      iree_hal_memory_fixed_block_allocator_read_block(
+          pool, word_index * 64 + iree_math_count_trailing_zeros_u64(available),
+          out_candidate);
+      return true;
+    }
+    candidate_mask = ~UINT64_C(0);
+  }
+  return false;
+}
+
+bool iree_hal_memory_fixed_block_allocator_candidate_is_current(
+    const iree_hal_memory_fixed_block_allocator_t* pool,
+    const iree_hal_memory_fixed_block_allocator_allocation_t* candidate) {
+  const uint32_t block_index = candidate->block_index;
+  const uint64_t bitmap = iree_atomic_load(&pool->bitmap[block_index / 64],
+                                           iree_memory_order_acquire);
+  if (bitmap & (UINT64_C(1) << (block_index % 64))) {
+    return false;
+  }
+  iree_hal_memory_fixed_block_allocator_allocation_t current;
+  iree_hal_memory_fixed_block_allocator_read_block(pool, block_index, &current);
+  if (current.block_flags != candidate->block_flags) {
+    return false;
+  }
+  const iree_async_frontier_t* current_frontier = current.death_frontier;
+  const iree_async_frontier_t* snapshot = candidate->death_frontier;
+  if (!current_frontier || !snapshot) {
+    return current_frontier == snapshot;
+  }
+  return current_frontier->entry_count == snapshot->entry_count &&
+         memcmp(current_frontier->entries, snapshot->entries,
+                snapshot->entry_count * sizeof(snapshot->entries[0])) == 0;
+}
+
+void iree_hal_memory_fixed_block_allocator_acquire_candidate(
+    iree_hal_memory_fixed_block_allocator_t* pool, uint32_t block_index,
+    iree_hal_memory_fixed_block_allocator_allocation_t* out_allocation) {
+  const uint32_t word_index = block_index / 64;
+  const uint64_t bit_mask = UINT64_C(1) << (block_index % 64);
+  const uint64_t previous IREE_ATTRIBUTE_UNUSED = iree_atomic_fetch_or(
+      &pool->bitmap[word_index], bit_mask, iree_memory_order_acq_rel);
+  IREE_ASSERT(!(previous & bit_mask), "candidate was acquired concurrently");
+  iree_atomic_store(&pool->alloc_hint_word, word_index,
+                    iree_memory_order_relaxed);
+  iree_atomic_fetch_add(&pool->allocation_count, 1, iree_memory_order_relaxed);
+  iree_hal_memory_fixed_block_allocator_read_block(pool, block_index,
+                                                   out_allocation);
 }
 
 iree_status_t iree_hal_memory_fixed_block_allocator_try_acquire(
@@ -223,21 +310,9 @@ iree_status_t iree_hal_memory_fixed_block_allocator_try_acquire(
         iree_atomic_store(&pool->alloc_hint_word, word_index,
                           iree_memory_order_relaxed);
 
-        // Read block metadata. The acquire semantics on the bitmap OR ensure
-        // that the previous owner's frontier writes (done before the bitmap
-        // AND with release) are visible to us.
-        iree_hal_memory_fixed_block_allocator_block_t* block =
-            iree_hal_memory_fixed_block_allocator_block_at(pool, block_index);
-        iree_async_frontier_t* frontier =
-            iree_hal_memory_fixed_block_allocator_block_frontier_at(pool,
-                                                                    block);
-
-        out_allocation->offset =
-            (iree_device_size_t)block_index * pool->block_size;
-        out_allocation->block_index = block_index;
-        out_allocation->death_frontier =
-            (frontier->entry_count > 0) ? frontier : NULL;
-        out_allocation->block_flags = block->flags;
+        // The bitmap acquire makes the previous release's frontier visible.
+        iree_hal_memory_fixed_block_allocator_read_block(pool, block_index,
+                                                         out_allocation);
 
         iree_atomic_fetch_add(&pool->allocation_count, 1,
                               iree_memory_order_relaxed);

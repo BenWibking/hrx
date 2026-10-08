@@ -2,18 +2,20 @@
 
 #include "hrx_internal.h"
 #include "iree/async/notification.h"
-#include "iree/async/util/proactor_pool.h"
 #include "iree/base/alignment.h"
 #include "iree/hal/api.h"
 
 enum { HRX_IREE_EXACT_POOL_INLINE_TRANSACTION_CAPACITY = 8 };
 
 typedef struct hrx_iree_exact_pool_t {
+  // Common pool resource and captured wait sources.
   iree_hal_pool_t base;
+  // Allocator for pool metadata.
   iree_allocator_t host_allocator;
+  // Retained allocator for each exact backing allocation.
   iree_hal_allocator_t* allocator;
+  // Memory contract shared by all reservations.
   iree_hal_buffer_params_t params;
-  iree_async_notification_t* notification;
 } hrx_iree_exact_pool_t;
 
 static const iree_hal_pool_vtable_t hrx_iree_exact_pool_vtable;
@@ -39,50 +41,34 @@ static bool hrx_iree_buffer_params_are_compatible(
              request_params.queue_family_affinity;
 }
 
-iree_status_t hrx_iree_exact_pool_create(iree_hal_allocator_t* allocator,
-                                         iree_hal_buffer_params_t params,
-                                         iree_hal_pool_t** out_pool) {
-  IREE_ASSERT_ARGUMENT(allocator);
-  IREE_ASSERT_ARGUMENT(out_pool);
-
-  hrx_shared_state_t* shared = hrx_get_shared_state();
-  if (!shared || !shared->proactor_pool) {
-    return iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "shared proactor pool must be initialized before creating hrx pools");
-  }
-
-  iree_async_proactor_t* proactor = NULL;
-  IREE_RETURN_IF_ERROR(iree_async_proactor_pool_get(shared->proactor_pool,
-                                                    /*index=*/0, &proactor),
-                       "acquiring proactor for hrx allocation pool");
-
+iree_status_t hrx_iree_exact_pool_create(
+    iree_hal_allocator_t* allocator, iree_hal_buffer_params_t params,
+    iree_async_notification_t* notification,
+    iree_async_frontier_tracker_t* frontier_tracker,
+    iree_allocator_t host_allocator, iree_hal_pool_t** out_pool) {
   hrx_iree_exact_pool_t* pool = NULL;
-  IREE_RETURN_IF_ERROR(iree_allocator_malloc(shared->host_allocator,
-                                             sizeof(*pool), (void**)&pool));
-  memset(pool, 0, sizeof(*pool));
-  iree_hal_pool_initialize(&hrx_iree_exact_pool_vtable, &pool->base);
-  pool->host_allocator = shared->host_allocator;
+  IREE_RETURN_IF_ERROR(
+      iree_allocator_malloc(host_allocator, sizeof(*pool), (void**)&pool));
+  iree_status_t status =
+      iree_hal_pool_initialize(&hrx_iree_exact_pool_vtable, NULL, notification,
+                               (iree_hal_pool_wait_source_list_t){0},
+                               frontier_tracker, host_allocator, &pool->base);
+  if (!iree_status_is_ok(status)) {
+    iree_allocator_free(host_allocator, pool);
+    return status;
+  }
+  pool->host_allocator = host_allocator;
   pool->allocator = allocator;
   iree_hal_buffer_params_canonicalize(&params);
   pool->params = params;
   iree_hal_allocator_retain(pool->allocator);
-
-  iree_status_t status = iree_async_notification_create(
-      proactor, IREE_ASYNC_NOTIFICATION_FLAG_NONE, &pool->notification);
-  if (!iree_status_is_ok(status)) {
-    iree_hal_allocator_release(pool->allocator);
-    iree_allocator_free(pool->host_allocator, pool);
-    return status;
-  }
-
-  *out_pool = (iree_hal_pool_t*)pool;
+  *out_pool = &pool->base;
   return iree_ok_status();
 }
 
 static void hrx_iree_exact_pool_destroy(iree_hal_pool_t* base_pool) {
   hrx_iree_exact_pool_t* pool = hrx_iree_exact_pool_cast(base_pool);
-  iree_async_notification_release(pool->notification);
+  iree_hal_pool_deinitialize(base_pool);
   iree_hal_allocator_release(pool->allocator);
   iree_allocator_free(pool->host_allocator, pool);
 }
@@ -128,10 +114,21 @@ static iree_status_t hrx_iree_exact_pool_acquire_reservations(
     iree_hal_pool_acquire_result_t* out_result) {
   hrx_iree_exact_pool_t* pool = hrx_iree_exact_pool_cast(base_pool);
   (void)requester_frontier;
-  (void)flags;
   for (iree_host_size_t i = 0; i < request_count; ++i) {
     IREE_RETURN_IF_ERROR(
         hrx_iree_exact_pool_validate_request(pool, &requests[i]));
+  }
+  // Exact pools have no reusable backing. Let the queue retry on its allocation
+  // path instead of calling the native allocator inside its submission lock.
+  if (iree_any_bit_set(flags, IREE_HAL_POOL_RESERVE_FLAG_DISALLOW_GROWTH)) {
+    for (iree_host_size_t i = 0; i < request_count; ++i) {
+      out_infos[i] = (iree_hal_pool_acquire_info_t){
+          .result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED,
+          .flags = IREE_HAL_POOL_ACQUIRE_FLAG_GROWTH_REQUIRED,
+      };
+    }
+    *out_result = IREE_HAL_POOL_ACQUIRE_EXHAUSTED;
+    return iree_ok_status();
   }
 
   iree_hal_buffer_t*
@@ -193,7 +190,8 @@ static void hrx_iree_exact_pool_release_reservations(
         (iree_hal_buffer_t*)(uintptr_t)reservations[i].block_handle;
     iree_hal_buffer_release(buffer);
   }
-  iree_async_notification_signal(pool->notification, /*wake_count=*/INT32_MAX);
+  iree_async_notification_signal(pool->base.notification,
+                                 /*wake_count=*/INT32_MAX);
   for (iree_host_size_t i = 0; i < reservation_count; ++i) {
     iree_hal_pool_release(base_pool);
   }
@@ -247,10 +245,14 @@ static void hrx_iree_exact_pool_query_capabilities(
     iree_hal_pool_capabilities_t* out_capabilities) {
   const hrx_iree_exact_pool_t* pool = hrx_iree_exact_pool_const_cast(base_pool);
   out_capabilities->memory_type = pool->params.type;
+  out_capabilities->allowed_access = pool->params.access;
   out_capabilities->supported_usage = pool->params.usage;
   out_capabilities->queue_family_affinity = pool->params.queue_family_affinity;
   out_capabilities->min_allocation_size = 0;
   out_capabilities->max_allocation_size = 0;
+  out_capabilities->max_allocation_alignment =
+      pool->params.min_alignment ? pool->params.min_alignment : 1;
+  out_capabilities->maintenance_alignment = 1;
 }
 
 static void hrx_iree_exact_pool_query_stats(const iree_hal_pool_t* base_pool,
@@ -259,14 +261,12 @@ static void hrx_iree_exact_pool_query_stats(const iree_hal_pool_t* base_pool,
   memset(out_stats, 0, sizeof(*out_stats));
 }
 
-static iree_status_t hrx_iree_exact_pool_trim(iree_hal_pool_t* base_pool) {
+static void hrx_iree_exact_pool_trim(iree_hal_pool_t* base_pool,
+                                     iree_hal_pool_trim_flags_t flags,
+                                     iree_device_size_t min_bytes_to_keep) {
   (void)base_pool;
-  return iree_ok_status();
-}
-
-static iree_async_notification_t* hrx_iree_exact_pool_notification(
-    iree_hal_pool_t* base_pool) {
-  return hrx_iree_exact_pool_cast(base_pool)->notification;
+  (void)flags;
+  (void)min_bytes_to_keep;
 }
 
 static const iree_hal_pool_vtable_t hrx_iree_exact_pool_vtable = {
@@ -277,5 +277,4 @@ static const iree_hal_pool_vtable_t hrx_iree_exact_pool_vtable = {
     .query_capabilities = hrx_iree_exact_pool_query_capabilities,
     .query_stats = hrx_iree_exact_pool_query_stats,
     .trim = hrx_iree_exact_pool_trim,
-    .notification = hrx_iree_exact_pool_notification,
 };

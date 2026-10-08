@@ -303,8 +303,8 @@ static iree_status_t iree_hal_executable_library_run(
       iree_hal_buffer_mapping_t buffer_mapping = {{0}};
       status = iree_hal_buffer_map_range(
           buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-          IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE, 0,
-          buffer_length, &buffer_mapping);
+          IREE_HAL_MEMORY_ACCESS_READ | IREE_HAL_MEMORY_ACCESS_WRITE,
+          IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, buffer_length, &buffer_mapping);
       binding_ptrs[i] = buffer_mapping.contents.data;
       binding_lengths[i] = (size_t)buffer_mapping.contents.data_length;
     }

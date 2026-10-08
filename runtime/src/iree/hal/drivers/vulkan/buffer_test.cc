@@ -190,5 +190,40 @@ TEST_F(VulkanBufferTest, SparseRangeAlignmentIncludesSubspanOffset) {
             IREE_HAL_VULKAN_BUFFER_RANGE_ALIGNMENT_UNALIGNED);
 }
 
+TEST_F(VulkanBufferTest, NativeBindingsPreserveNestedDenseAndSparseOffsets) {
+  for (bool sparse : {false, true}) {
+    SCOPED_TRACE(sparse);
+    IREE_ASSERT_OK(sparse ? CreateSparseSubspan(4, 0x10000)
+                          : CreateDenseBuffer(4, 0x10000));
+    iree_hal_buffer_t* outer = nullptr;
+    IREE_ASSERT_OK(iree_hal_buffer_subspan(buffer_, 4, 12,
+                                           iree_allocator_system(), &outer));
+    iree_hal_buffer_t* inner = nullptr;
+    IREE_ASSERT_OK(
+        iree_hal_buffer_subspan(outer, 4, 8, iree_allocator_system(), &inner));
+    iree_hal_buffer_release(outer);
+
+    const auto resource = iree_hal_buffer_native_binding(
+        inner, {IREE_HAL_VULKAN_BUFFER_BINDING_RESOURCE,
+                IREE_HAL_BUFFER_INTERFACE_VULKAN_BUFFER});
+    EXPECT_EQ(resource.vulkan.buffer, sparse ? 0x3000u : 0x2000u);
+    EXPECT_EQ(resource.vulkan.offset, 12u);
+    const auto address = iree_hal_buffer_native_binding(
+        inner, {IREE_HAL_VULKAN_BUFFER_BINDING_DEVICE_ADDRESS,
+                IREE_HAL_BUFFER_INTERFACE_DEVICE_ADDRESS});
+    EXPECT_EQ(address.device_address, 0x1000cu);
+    VkDeviceAddress packet_address = 0;
+    IREE_ASSERT_OK(
+        iree_hal_vulkan_buffer_device_address(inner, &packet_address));
+    EXPECT_EQ(packet_address, address.device_address);
+    EXPECT_EQ(inner->memory.bindings, buffer_->memory.bindings);
+    iree_hal_buffer_release(inner);
+    iree_hal_buffer_release(buffer_);
+    buffer_ = nullptr;
+    iree_hal_buffer_release(allocated_buffer_);
+    allocated_buffer_ = nullptr;
+  }
+}
+
 }  // namespace
 }  // namespace iree::hal::vulkan

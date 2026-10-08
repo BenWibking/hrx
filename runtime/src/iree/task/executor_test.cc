@@ -23,6 +23,10 @@
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
+#if defined(IREE_PLATFORM_LINUX)
+#include <sched.h>
+#endif  // IREE_PLATFORM_LINUX
+
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -187,6 +191,69 @@ TEST(ExecutorTest, RejectsEmptyTopology) {
 //===----------------------------------------------------------------------===//
 // Basic scheduling tests
 //===----------------------------------------------------------------------===//
+
+#if defined(IREE_PLATFORM_LINUX) || defined(IREE_PLATFORM_WINDOWS) || \
+    defined(IREE_PLATFORM_APPLE)
+TEST(ExecutorProcessTest, ReportsPhysicalNumaNodeFromWorkerAffinity) {
+  iree_thread_affinity_t affinity = {};
+#if defined(IREE_PLATFORM_LINUX)
+  int cpu = sched_getcpu();
+  ASSERT_GE(cpu, 0);
+  affinity.id_assigned = 1;
+  affinity.id = cpu;
+#elif defined(IREE_PLATFORM_WINDOWS)
+  PROCESSOR_NUMBER processor;
+  GetCurrentProcessorNumberEx(&processor);
+  affinity.id_assigned = 1;
+  affinity.group = processor.Group;
+  affinity.id = processor.Number;
+#else
+  iree_thread_affinity_set_group_any(iree_numa_node_for_current_thread(),
+                                     &affinity);
+#endif
+  iree_task_topology_t topology;
+  IREE_ASSERT_OK(iree_task_topology_initialize_from_thread_affinities(
+      1, &affinity, &topology));
+  iree_task_executor_options_t options;
+  iree_task_executor_options_initialize(&options);
+  iree_task_executor_t* executor = nullptr;
+  IREE_ASSERT_OK(iree_task_executor_create(options, &topology,
+                                           iree_allocator_system(), &executor));
+  iree_task_topology_deinitialize(&topology);
+
+  struct LocalityContext : TestWaiter {
+    // Physical node observed by the actual worker while draining.
+    uint32_t observed_node = IREE_NUMA_NODE_ANY;
+    // Publishes the worker observation to the test thread.
+    std::atomic<bool> completed{false};
+  } context;
+  iree_task_process_t process;
+  iree_task_process_initialize(
+      +[](iree_task_process_t* process,
+          const iree_task_worker_context_t* worker_context,
+          iree_task_process_drain_result_t* result) -> iree_status_t {
+        auto* context = static_cast<LocalityContext*>(process->user_data);
+        context->observed_node = iree_numa_node_for_current_thread();
+        result->did_work = true;
+        result->completed = true;
+        return iree_ok_status();
+      },
+      0, 1, &process);
+  process.user_data = &context;
+  process.completion_fn =
+      +[](iree_task_process_t* process, iree_status_t status) {
+        IREE_EXPECT_OK(status);
+        auto* context = static_cast<LocalityContext*>(process->user_data);
+        context->completed.store(true, std::memory_order_release);
+        context->Notify();
+      };
+  iree_task_executor_schedule_process(executor, &process);
+  context.WaitUntil(
+      [&] { return context.completed.load(std::memory_order_acquire); });
+  EXPECT_EQ(context.observed_node, iree_task_executor_numa_node(executor));
+  iree_task_executor_release(executor);
+}
+#endif  // Native thread affinity platforms.
 
 TEST(ExecutorProcessTest, SingleProcessCompletesImmediately) {
   iree_task_executor_t* executor = CreateExecutor(1);

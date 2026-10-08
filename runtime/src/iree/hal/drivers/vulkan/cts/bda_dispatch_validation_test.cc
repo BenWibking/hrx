@@ -118,6 +118,65 @@ class BdaDispatchValidationTest : public CtsTestBase<> {
   iree_hal_executable_t* requirement_executable_ = nullptr;
 };
 
+TEST_P(BdaDispatchValidationTest, QueueDispatchRejectsGrantsFromAnotherGroup) {
+  DeviceCreateContext context;
+  IREE_ASSERT_OK(context.Initialize(iree_allocator_system()));
+  Ref<iree_hal_device_t> other_device;
+  IREE_ASSERT_OK(iree_hal_driver_create_default_device(
+      driver_, context.params(), iree_allocator_system(), other_device.out()));
+  Ref<iree_hal_device_group_t> other_group;
+  IREE_ASSERT_OK(iree_hal_device_group_create_from_device(
+      other_device, context.frontier_tracker(), iree_allocator_system(),
+      other_group.out()));
+  iree_hal_pool_family_access_t access = {};
+  access.family = iree_hal_device_queue_family(
+      other_device, iree_hal_queue_family(dispatch_queue_)->ordinal);
+  access.usage = IREE_HAL_BUFFER_USAGE_STORAGE |
+                 IREE_HAL_BUFFER_USAGE_DISPATCH_INDIRECT_PARAMETERS;
+  const iree_hal_pool_scope_t scope = {1, &access, {}};
+  iree_hal_slab_pool_options_t options;
+  iree_hal_slab_pool_options_initialize(&options);
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(iree_hal_slab_pool_create(
+      other_group, scope, &options, iree_allocator_system(), source.out()));
+  iree_hal_pool_capabilities_t capabilities;
+  iree_hal_pool_query_capabilities(source, &capabilities);
+  iree_hal_buffer_params_t params = {};
+  params.min_alignment = capabilities.max_allocation_alignment;
+  Ref<iree_hal_buffer_t> foreign_buffer;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      source, params, 32, iree_infinite_timeout(), foreign_buffer.out()));
+  params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
+  params.usage = IREE_HAL_BUFFER_USAGE_STORAGE;
+  Ref<iree_hal_buffer_t> local_buffer;
+  IREE_ASSERT_OK(iree_hal_allocator_allocate_buffer(device_allocator_, params,
+                                                    32, local_buffer.out()));
+  for (auto flags : {IREE_HAL_DISPATCH_FLAG_NONE,
+                     IREE_HAL_DISPATCH_FLAG_STATIC_INDIRECT_PARAMETERS,
+                     IREE_HAL_DISPATCH_FLAG_DYNAMIC_INDIRECT_PARAMETERS}) {
+    SCOPED_TRACE(flags);
+    const bool indirect = iree_hal_dispatch_uses_indirect_parameters(flags);
+    auto* binding_buffer = indirect ? local_buffer.get() : foreign_buffer.get();
+    const iree_hal_buffer_ref_t refs[] = {
+        iree_hal_make_buffer_ref(binding_buffer, 0, 16),
+        iree_hal_make_buffer_ref(binding_buffer, 16, 16),
+    };
+    auto config = iree_hal_make_static_dispatch_config(1, 1, 1);
+    if (indirect) {
+      config.workgroup_count_ref =
+          iree_hal_make_buffer_ref(foreign_buffer, 0, sizeof(uint32_t[3]));
+    }
+    IREE_EXPECT_STATUS_IS(
+        IREE_STATUS_PERMISSION_DENIED,
+        iree_hal_queue_dispatch(
+            dispatch_queue_, iree_hal_semaphore_list_empty(),
+            iree_hal_semaphore_list_empty(), executable_,
+            iree_hal_executable_function_from_index(0), config, constants(),
+            {IREE_ARRAYSIZE(refs), refs}, flags));
+  }
+}
+
 TEST_P(BdaDispatchValidationTest, QueueDispatchRejectsBindingCountMismatch) {
   iree_hal_buffer_t* input_buffer = nullptr;
   iree_hal_buffer_t* output_buffer = nullptr;

@@ -509,14 +509,15 @@ static iree_status_t loom_testbench_compare_buffer_close(
   bool expected_mapped = false;
   iree_status_t status = iree_hal_buffer_map_range(
       iree_hal_buffer_view_buffer(actual_buffer_view),
-      IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-      IREE_HAL_WHOLE_BUFFER, &actual_mapping);
+      IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+      IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, IREE_HAL_WHOLE_BUFFER, &actual_mapping);
   if (iree_status_is_ok(status)) {
     actual_mapped = true;
     status = iree_hal_buffer_map_range(
         iree_hal_buffer_view_buffer(expected_buffer_view),
-        IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ, 0,
-        IREE_HAL_WHOLE_BUFFER, &expected_mapping);
+        IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, 0, IREE_HAL_WHOLE_BUFFER,
+        &expected_mapping);
   }
   if (iree_status_is_ok(status)) {
     expected_mapped = true;

@@ -47,17 +47,26 @@ typedef struct hrx_buffer_s {
   // True when |mapping| currently owns an active mapping.
   bool is_mapped;
 
-  // Cached host pointer for the active mapping.
-  void* mapped_ptr;
+  // Optional caller-supplied whole-buffer device address, independent of
+  // mapping.
+  void* device_ptr;
 } hrx_buffer_s;
+
+// Resolves allocation usage for HRX's native pointer contract. CPU storage
+// permits persistent host addressing so pointer queries never create or alter
+// a scoped mapping. Other devices provide their own native address interface.
+iree_hal_buffer_usage_t hrx_buffer_usage_for_device(hrx_device_t device,
+                                                    hrx_buffer_usage_t usage);
 
 // Creates an HRX buffer wrapping |hal_buffer| for in-tree interop. The buffer
 // retains both |hal_buffer| and |device|; the caller owns the returned handle.
 // |hal_buffer| may be NULL for host-only allocations.
+// |device_ptr| is an optional whole-buffer device address whose validity the
+// caller guarantees for the lifetime of the wrapper. It is never a scoped map.
 iree_status_t hrx_buffer_create_from_hal(iree_hal_buffer_t* hal_buffer,
                                          hrx_device_t device,
                                          hrx_memory_type_t mem_type,
-                                         size_t size, void* mapped_ptr,
+                                         size_t size, void* device_ptr,
                                          hrx_buffer_t* out_buffer);
 
 #ifdef __cplusplus

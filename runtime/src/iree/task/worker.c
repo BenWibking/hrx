@@ -1186,10 +1186,6 @@ static int iree_task_worker_main(iree_task_worker_t* worker) {
   // Be explicit here on what we need.
   iree_fpu_state_push(IREE_FPU_STATE_FLAG_FLUSH_DENORMALS_TO_ZERO);
 
-  // Reset affinity (as it can change over time).
-  // TODO(benvanik): call this after waking in case CPU hotplugging happens.
-  iree_thread_request_affinity(worker->thread, worker->ideal_thread_affinity);
-
   // Enter the running state immediately. Note that we could have been requested
   // to exit while suspended/still starting up, so check that here before we
   // mess with any data structures.

@@ -206,8 +206,7 @@ typedef uint16_t hrx_memory_access_t;
 #define HRX_MEMORY_ACCESS_NONE 0x00
 #define HRX_MEMORY_ACCESS_READ 0x01
 #define HRX_MEMORY_ACCESS_WRITE 0x02
-#define HRX_MEMORY_ACCESS_DISCARD 0x04
-#define HRX_MEMORY_ACCESS_ALL 0x07
+#define HRX_MEMORY_ACCESS_ALL 0x03
 
 // Buffer usage bitfield. Values match iree_hal_buffer_usage_t.
 typedef uint32_t hrx_buffer_usage_t;
@@ -222,11 +221,15 @@ typedef uint32_t hrx_buffer_usage_t;
 #define HRX_BUFFER_USAGE_MAPPING_PERSISTENT 0x02000000u
 #define HRX_BUFFER_USAGE_DEFAULT 0x00000C03u
 
-// Map flags for hrx_buffer_map. Values match iree_hal_memory_access_t.
+// Operation flags for hrx_buffer_map. READ/WRITE are permissions; DISCARD
+// and MAY_ALIAS apply only to the requested mapping.
 typedef uint16_t hrx_map_flags_t;
 #define HRX_MAP_READ HRX_MEMORY_ACCESS_READ
 #define HRX_MAP_WRITE HRX_MEMORY_ACCESS_WRITE
-#define HRX_MAP_DISCARD HRX_MEMORY_ACCESS_DISCARD
+// Prior contents of the mapped range may be discarded. Implies WRITE.
+#define HRX_MAP_DISCARD 0x04
+// Mapped accesses may alias other concurrent accesses; supplies no ordering.
+#define HRX_MAP_MAY_ALIAS 0x08
 
 // Dispatch flags (hrx-specific, no IREE equivalent).
 typedef enum hrx_dispatch_flags_t {
@@ -621,6 +624,12 @@ HRX_API hrx_status_t hrx_buffer_map(hrx_buffer_t buffer, hrx_map_flags_t flags,
 
 HRX_API hrx_status_t hrx_buffer_unmap(hrx_buffer_t buffer);
 
+// Returns the whole-buffer native device address. This does not map the buffer
+// or alter an active scoped mapping. HRX allocates and imports CPU storage with
+// persistent mapping permission to expose its address. A buffer wrapped from an
+// external HAL caller must already permit persistent mapping on CPU storage.
+// The caller retains the buffer while using the address. On failure the output
+// is NULL and the native export error is returned.
 HRX_API hrx_status_t hrx_buffer_get_device_ptr(hrx_buffer_t buffer,
                                                void** device_ptr);
 
@@ -951,8 +960,14 @@ typedef enum hrx_mem_pool_attr_t {
   HRX_MEM_POOL_ATTR_REUSE_FOLLOW_EVENT_DEPENDENCIES = 0,
   HRX_MEM_POOL_ATTR_REUSE_ALLOW_INTERNAL_DEPENDENCIES = 1,
   HRX_MEM_POOL_ATTR_REUSE_ALLOW_OPPORTUNISTIC = 2,
+  // Retained-byte floor contributed to the device's shared backing cache.
+  // Compatible pools share storage, so their floors combine by maximum.
   HRX_MEM_POOL_ATTR_RELEASE_THRESHOLD = 3,
+  // Bytes borrowed by this pool, including padding and fragmentation. Empty
+  // slabs return to the device cache and cease to be charged to this pool;
+  // shared idle storage is not counted again for every potential borrower.
   HRX_MEM_POOL_ATTR_RESERVED_MEM_CURRENT = 4,
+  // Peak bytes borrowed by this pool. Writing zero resets the watermark.
   HRX_MEM_POOL_ATTR_RESERVED_MEM_HIGH = 5,
   HRX_MEM_POOL_ATTR_USED_MEM_CURRENT = 6,
   HRX_MEM_POOL_ATTR_USED_MEM_HIGH = 7,
@@ -980,11 +995,18 @@ HRX_API hrx_status_t hrx_mem_pool_get_attribute(hrx_mem_pool_t pool,
 HRX_API hrx_status_t hrx_mem_pool_set_attribute(hrx_mem_pool_t pool,
                                                 hrx_mem_pool_attr_t attr,
                                                 uint64_t value);
+// Returns unused child backing and trims the shared device cache, preserving
+// |min_bytes_to_keep| and every other pool's current retention request. This
+// replaces this pool's floor until an attribute update or automatic release
+// applies its configured threshold again. It does not allocate missing bytes.
 HRX_API hrx_status_t hrx_mem_pool_trim(hrx_mem_pool_t pool,
                                        size_t min_bytes_to_keep);
 
-// Trims unused backing storage toward the pool's configured release threshold.
-// This is intended for stream-ordered free completion paths.
+// Returns unused child backing and applies the configured release threshold to
+// the device's shared cache, preserving other pools' retention requests. This
+// is intended for stream-ordered free completion paths. Reclamation runs on
+// the memory owner without waiting here; statistics converge after queued
+// whole-slab returns and the ordered cache sweep complete.
 HRX_API hrx_status_t hrx_mem_pool_release_unused(hrx_mem_pool_t pool);
 
 // Records a logical allocation backed by |pool|. Logical usage is distinct
@@ -998,11 +1020,10 @@ HRX_API void hrx_mem_pool_record_logical_allocation(hrx_mem_pool_t pool,
 // reused.
 HRX_API void hrx_mem_pool_record_logical_free(hrx_mem_pool_t pool, size_t size);
 
-// Allocates a buffer from |pool| using the same parameter contract as
-// hrx_allocator_allocate_buffer. The returned buffer owns the allocation and
+// Allocates a buffer with at least 256-byte alignment and the device access
+// permissions captured by |pool|. The returned buffer owns the allocation and
 // remains valid independently of the public |pool| handle.
 HRX_API hrx_status_t hrx_mem_pool_allocate_buffer(hrx_mem_pool_t pool,
-                                                  hrx_buffer_params_t params,
                                                   size_t size,
                                                   hrx_buffer_t* buffer);
 

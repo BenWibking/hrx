@@ -51,6 +51,19 @@ iree_runtime_cc_library(
     name = "tracy",
     srcs = ["tracy.cc"],
     hdrs = ["tracy.h"],
+    copts = select({
+        "//build_tools/bazel:cc_compiler_clang": [
+            "-Wno-implicit-fallthrough",
+            "-Wno-unused-result",
+            "-Wno-unused-variable",
+        ],
+        "//build_tools/bazel:cc_compiler_gcc": [
+            "-Wno-implicit-fallthrough",
+            "-Wno-unused-result",
+            "-Wno-unused-variable",
+        ],
+        "//conditions:default": [],
+    }),
     defines = [
         "IREE_TRACING_PROVIDER_H=\\\"iree/base/tracing/tracy.h\\\"",
         "IREE_TRACING_MODE=2",

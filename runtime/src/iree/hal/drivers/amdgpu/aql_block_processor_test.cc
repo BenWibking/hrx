@@ -679,7 +679,7 @@ class AqlBlockProcessorRecordedTest : public ::testing::Test {
         IREE_HAL_MEMORY_ACCESS_ALL,
         IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_DISPATCH |
             IREE_HAL_BUFFER_USAGE_STORAGE,
-        atomic_memory_cells, length, length, storage, release_callback,
+        atomic_memory_cells, length, length, storage, storage, release_callback,
         iree_allocator_system(), &buffer));
     return BufferPtr(buffer);
   }

@@ -500,25 +500,20 @@ static bool iree_hal_replay_recorder_file_supports_synchronous_io(
 }
 
 static iree_status_t iree_hal_replay_recorder_file_read(
-    iree_hal_file_t* base_file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+    iree_hal_file_t* base_file, uint64_t file_offset, iree_byte_span_t target) {
   (void)base_file;
   (void)file_offset;
-  (void)buffer;
-  (void)buffer_offset;
-  (void)length;
+  (void)target;
   return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
                           "direct replay file reads are not recorded");
 }
 
 static iree_status_t iree_hal_replay_recorder_file_write(
-    iree_hal_file_t* base_file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+    iree_hal_file_t* base_file, uint64_t file_offset,
+    iree_const_byte_span_t source) {
   (void)base_file;
   (void)file_offset;
-  (void)buffer;
-  (void)buffer_offset;
-  (void)length;
+  (void)source;
   return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
                           "direct replay file writes are not recorded");
 }

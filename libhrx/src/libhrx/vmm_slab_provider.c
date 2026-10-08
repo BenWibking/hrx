@@ -179,7 +179,8 @@ static iree_status_t hrx_vmm_slab_provider_retry_failed_releases(
 
 static iree_status_t hrx_vmm_slab_provider_acquire_slab(
     iree_hal_slab_provider_t* base_provider, iree_device_size_t min_length,
-    iree_hal_slab_t* out_slab) {
+    iree_device_size_t alignment, iree_hal_slab_t* out_slab) {
+  (void)alignment;
   IREE_ASSERT_ARGUMENT(out_slab);
   *out_slab = (iree_hal_slab_t){0};
   if (IREE_UNLIKELY(min_length == 0)) {
@@ -338,14 +339,14 @@ static void hrx_vmm_slab_provider_advise_asan_range(
 }
 
 static void hrx_vmm_slab_provider_prefault(
-    iree_hal_slab_provider_t* base_provider, iree_hal_slab_t* slab) {
+    iree_hal_slab_provider_t* base_provider, const iree_hal_slab_t* slab,
+    iree_device_size_t offset, iree_device_size_t length) {
   (void)base_provider;
   (void)slab;
 }
 
-static void hrx_vmm_slab_provider_trim(
-    iree_hal_slab_provider_t* base_provider,
-    iree_hal_slab_provider_trim_flags_t flags) {
+static void hrx_vmm_slab_provider_trim(iree_hal_slab_provider_t* base_provider,
+                                       iree_hal_pool_trim_flags_t flags) {
   (void)flags;
   hrx_vmm_slab_provider_t* provider = hrx_vmm_slab_provider_cast(base_provider);
   iree_status_t status = hrx_vmm_slab_provider_retry_failed_releases(provider);
@@ -381,6 +382,9 @@ static void hrx_vmm_slab_provider_query_properties(
   out_properties->supported_usage = provider->buffer_params.usage;
   out_properties->queue_family_affinity =
       provider->buffer_params.queue_family_affinity;
+  out_properties->allocation_alignment = provider->page_size;
+  out_properties->max_allocation_alignment = provider->page_size;
+  out_properties->maintenance_alignment = 1;
 }
 
 iree_status_t hrx_vmm_slab_provider_create(

@@ -115,6 +115,12 @@ static const iree_hal_resource_vtable_t
 static iree_status_t iree_hal_amdgpu_transfer_validate_buffer(
     iree_hal_amdgpu_host_queue_t* queue, iree_hal_buffer_t* buffer,
     iree_hal_semaphore_list_t wait_semaphore_list) {
+  if (buffer->memory.contract) {
+    // The public queue boundary qualified this family's native access. The
+    // allocating backend publishes its table before the transfer's waits
+    // complete; capture must not read bindings from an uncommitted allocation.
+    return iree_ok_status();
+  }
   const iree_hal_buffer_placement_t placement =
       iree_hal_buffer_allocation_placement(buffer);
   if (!iree_hal_buffer_placement_is_undefined(placement) &&
@@ -336,7 +342,18 @@ static void iree_hal_amdgpu_transfer_publish_signals(
     iree_hal_amdgpu_transfer_transaction_t* transaction) {
   iree_status_t status = transaction->failure_status;
   transaction->failure_status = iree_ok_status();
+  // Child completion means native and host staging accesses have retired.
+  // The transaction may outlive the signal while a continuation unwinds, but
+  // its captured buffers must already be available for application reuse.
+  iree_hal_resource_set_free(transaction->resource_set);
+  transaction->resource_set = NULL;
   if (!iree_status_is_ok(status)) {
+    // A failed wait can terminate the transaction before staging starts.
+    for (iree_host_size_t i = 0; i < transaction->operation_count; ++i) {
+      iree_hal_amdgpu_staging_transfer_release(
+          transaction->children[i].staging_transfer);
+      transaction->children[i].staging_transfer = NULL;
+    }
     iree_hal_amdgpu_transfer_fail_signals(transaction, status);
     return;
   }

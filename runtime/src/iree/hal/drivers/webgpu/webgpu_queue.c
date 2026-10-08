@@ -936,8 +936,8 @@ static void iree_hal_webgpu_queue_op_wait_completion(
         iree_hal_buffer_mapping_t mapping = {{0}};
         work_status = iree_hal_buffer_map_range(
             state->read.storage, IREE_HAL_MAPPING_MODE_SCOPED,
-            IREE_HAL_MEMORY_ACCESS_READ, state->read.source_offset,
-            state->read.length, &mapping);
+            IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+            state->read.source_offset, state->read.length, &mapping);
         if (iree_status_is_ok(work_status)) {
           iree_hal_webgpu_import_queue_write_buffer(
               queue->queue_handle, gpu_handle, gpu_offset,
@@ -1387,9 +1387,9 @@ static iree_status_t iree_hal_webgpu_queue_read_inline(
   if (storage) {
     // HOST_LOCAL: map the storage buffer and upload from host pointer.
     iree_hal_buffer_mapping_t mapping = {{0}};
-    status = iree_hal_buffer_map_range(storage, IREE_HAL_MAPPING_MODE_SCOPED,
-                                       IREE_HAL_MEMORY_ACCESS_READ,
-                                       source_offset, length, &mapping);
+    status = iree_hal_buffer_map_range(
+        storage, IREE_HAL_MAPPING_MODE_SCOPED, IREE_HAL_MEMORY_ACCESS_READ,
+        IREE_HAL_BUFFER_MAP_FLAG_NONE, source_offset, length, &mapping);
     if (iree_status_is_ok(status)) {
       iree_hal_webgpu_import_queue_write_buffer(
           queue->queue_handle, gpu_handle, gpu_offset,
@@ -1657,8 +1657,8 @@ static void iree_hal_webgpu_queue_write_phase3(
     iree_hal_buffer_mapping_t mapping = {{0}};
     status = iree_hal_buffer_map_range(
         state->target_storage, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_WRITE, state->target_offset, state->length,
-        &mapping);
+        IREE_HAL_MEMORY_ACCESS_WRITE, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+        state->target_offset, state->length, &mapping);
     if (iree_status_is_ok(status)) {
       iree_hal_webgpu_import_buffer_get_mapped_range(
           state->staging_handle, /*offset=*/0, state->length,

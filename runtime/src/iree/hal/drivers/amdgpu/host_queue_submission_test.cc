@@ -238,6 +238,38 @@ TEST_F(HostQueueSubmissionTest, GroupedLogicalDeviceQueueFrontiersAreDistinct) {
       IREE_HSA_FENCE_SCOPE_SYSTEM);
 }
 
+TEST_F(HostQueueSubmissionTest, DeferredSignalsRetireAfterHostAssembly) {
+  iree_hal_amdgpu_logical_device_options_t options;
+  iree_hal_amdgpu_logical_device_options_initialize(&options);
+  TestLogicalDeviceGroup test_group;
+  IREE_ASSERT_OK(
+      test_group.Initialize(&options, &libhsa_, &topology_, host_allocator_));
+  auto* producer_device =
+      iree_hal_device_group_device_at(test_group.device_group(), 0);
+  auto* consumer_device =
+      iree_hal_device_group_device_at(test_group.device_group(), 1);
+  auto* producer_queue = iree_hal_device_queue(producer_device, 0, 0);
+  auto* consumer_queue = iree_hal_device_queue(consumer_device, 0, 0);
+  ASSERT_NE(producer_queue, nullptr);
+  ASSERT_NE(consumer_queue, nullptr);
+
+  for (uint32_t i = 0; i < 64; ++i) {
+    iree::hal::cts::SemaphoreList produced(producer_device, {0}, {1});
+    iree::hal::cts::SemaphoreList consumed(consumer_device, {0}, {1});
+    // The consumer is issued from the producer's completion callback. It
+    // transfers its signal retain to another queue's completion owner.
+    IREE_ASSERT_OK(iree_hal_queue_barrier(consumer_queue, produced, consumed,
+                                          IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+    IREE_ASSERT_OK(
+        iree_hal_queue_barrier(producer_queue, iree_hal_semaphore_list_empty(),
+                               produced, IREE_HAL_QUEUE_BARRIER_FLAG_NONE));
+    IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+        consumed, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+    // Releasing the caller's references after completion must also join all
+    // submission-side semaphore reads, independent of which thread frees it.
+  }
+}
+
 class HostQueueHsaProfilingScope {
  public:
   explicit HostQueueHsaProfilingScope(iree_hal_amdgpu_host_queue_t* queue)

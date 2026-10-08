@@ -77,6 +77,8 @@ IREE_API_EXPORT iree_status_t iree_hal_device_group_create_from_device(
 // |replacement_callback| is invoked once for each source device in topology
 // order. The new group retains all replacement devices and assigns topology
 // information derived from the copied source topology.
+// The source group is retained and its memory namespace is shared. Replacement
+// devices preserve canonical queue-family ordinals and their access semantics.
 //
 // This is intended for instrumentation and policy wrappers that must preserve a
 // precomputed topology while changing the device objects exposed to consumers.
@@ -107,6 +109,16 @@ IREE_API_EXPORT iree_hal_device_t* iree_hal_device_group_device_at(
 // Valid for the lifetime of the group.
 IREE_API_EXPORT const iree_hal_topology_t* iree_hal_device_group_topology(
     const iree_hal_device_group_t* group);
+
+// Borrowed memory namespace identity. Instrumentation replacements preserve
+// the source namespace; independently constructed groups have distinct tokens.
+IREE_API_EXPORT const void* iree_hal_device_group_memory_domain(
+    const iree_hal_device_group_t* group);
+
+// Dense memory sites, including wildcard zero, host, and queue/program sites
+// for every canonical family. Used to size immutable construction tables.
+IREE_API_EXPORT uint32_t
+iree_hal_device_group_memory_scope_count(const iree_hal_device_group_t* group);
 
 //===----------------------------------------------------------------------===//
 // iree_hal_device_group_builder_t

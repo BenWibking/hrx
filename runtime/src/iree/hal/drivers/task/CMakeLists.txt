@@ -182,8 +182,9 @@ iree_cc_library(
     iree::hal::drivers::task::executable::loader
     iree::hal::drivers::task::queue
     iree::hal::memory::cpu_slab_provider
-    iree::hal::memory::passthrough_pool
-    iree::hal::memory::tlsf_pool
+    iree::hal::memory::host_memory_backend
+    iree::hal::memory::maintenance
+    iree::hal::memory::maintenance_thread
     iree::hal::utils::files
     iree::task
   PUBLIC
@@ -204,6 +205,24 @@ iree_cc_library(
     iree::hal::drivers::task::executable::loader
     iree::task
   PUBLIC
+)
+
+iree_cc_test(
+  NAME
+    device_test
+  SRCS
+    "device_test.cc"
+  DEPS
+    ::device
+    iree::async
+    iree::async::util::proactor_pool
+    iree::base
+    iree::base::threading
+    iree::hal
+    iree::hal::drivers::task::queue
+    iree::task
+    iree::testing::gtest
+    iree::testing::gtest_main
 )
 
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

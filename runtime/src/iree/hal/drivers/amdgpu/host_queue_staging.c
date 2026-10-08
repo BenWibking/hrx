@@ -205,7 +205,10 @@ iree_hal_amdgpu_staging_pool_queue_waiter(
   if (iree_any_bit_set(waiter->flags,
                        IREE_HAL_AMDGPU_STAGING_POOL_WAITER_FLAG_QUEUED)) {
     result = IREE_HAL_AMDGPU_STAGING_POOL_WAIT_ALREADY_QUEUED;
-  } else if (pool->available_count > 0) {
+  } else if (pool->available_count > 0 || waiter->slot.buffer) {
+    // A release may assign this waiter's slot between the pump's failed
+    // acquire and this call. Consume it before admitting another wait that
+    // could overwrite the assigned slot.
     result = IREE_HAL_AMDGPU_STAGING_POOL_WAIT_RETRY;
   } else {
     waiter->next = NULL;
@@ -429,7 +432,7 @@ iree_status_t iree_hal_amdgpu_staging_pool_initialize(
         IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_USAGE_TRANSFER,
         IREE_HAL_AMDGPU_ATOMIC_MEMORY_CELL_FLAG_NONE,
         (iree_device_size_t)total_size, (iree_device_size_t)total_size,
-        host_ptr,
+        host_ptr, host_ptr,
         (iree_hal_buffer_release_callback_t){
             .fn = iree_hal_amdgpu_staging_allocation_release,
             .user_data = release_state,
@@ -743,6 +746,13 @@ static void iree_hal_amdgpu_staging_transfer_fail_signals_with_borrowed_status(
 
 static void iree_hal_amdgpu_staging_transfer_complete(
     iree_hal_amdgpu_staging_transfer_t* transfer, iree_status_t status) {
+  // All byte accesses have retired. Return captured storage before publishing
+  // completion so a waiter can release its buffers and immediately reuse their
+  // backing, even while a post-drain continuation still retains this transfer.
+  iree_hal_buffer_release(transfer->buffer);
+  transfer->buffer = NULL;
+  iree_hal_file_release(transfer->file);
+  transfer->file = NULL;
   if (transfer->completion_action.fn) {
     transfer->completion_action.fn(
         /*entry=*/NULL, transfer->completion_action.user_data, status);
@@ -795,14 +805,6 @@ static void iree_hal_amdgpu_staging_transfer_try_finish(
   }
 }
 
-static void iree_hal_amdgpu_staging_chunk_return_slot(
-    iree_hal_amdgpu_staging_chunk_t* chunk) {
-  iree_hal_amdgpu_staging_pool_t* pool = chunk->transfer->pool;
-  const uint32_t slot_ordinal = chunk->slot.ordinal;
-  memset(&chunk->slot, 0, sizeof(chunk->slot));
-  iree_hal_amdgpu_staging_pool_release(pool, slot_ordinal);
-}
-
 static void iree_hal_amdgpu_staging_chunk_finish(
     iree_hal_amdgpu_staging_chunk_t* chunk, bool did_transfer_bytes) {
   iree_hal_amdgpu_staging_transfer_t* transfer = chunk->transfer;
@@ -810,12 +812,16 @@ static void iree_hal_amdgpu_staging_chunk_finish(
   if (did_transfer_bytes) {
     transfer->completed_length += chunk->length;
   }
+  // A concurrent pump may claim this chunk as soon as it becomes idle.
+  // Detach the completed slot before publishing that reusable state.
+  const uint32_t slot_ordinal = chunk->slot.ordinal;
+  memset(&chunk->slot, 0, sizeof(chunk->slot));
   chunk->state = IREE_HAL_AMDGPU_STAGING_CHUNK_IDLE;
   chunk->length = 0;
   chunk->file_progress = 0;
   --transfer->active_chunk_count;
   iree_slim_mutex_unlock(&transfer->mutex);
-  iree_hal_amdgpu_staging_chunk_return_slot(chunk);
+  iree_hal_amdgpu_staging_pool_release(transfer->pool, slot_ordinal);
   iree_hal_amdgpu_staging_transfer_pump(transfer);
   iree_hal_amdgpu_staging_transfer_try_finish(transfer);
 }
@@ -1101,12 +1107,15 @@ static void iree_hal_amdgpu_staging_transfer_pump(
 
     if (!has_waiter_slot &&
         !iree_hal_amdgpu_staging_pool_try_acquire(transfer->pool, &slot)) {
+      // A slot release or cancellation may consume waiter ownership as soon
+      // as it is published. Acquire that reference before making it visible.
+      iree_hal_resource_retain(&transfer->resource);
       iree_hal_amdgpu_staging_pool_wait_result_t wait_result =
           iree_hal_amdgpu_staging_pool_queue_waiter(
               transfer->pool, &transfer->slot_waiter,
               iree_hal_amdgpu_staging_transfer_slot_available, transfer);
-      if (wait_result == IREE_HAL_AMDGPU_STAGING_POOL_WAIT_QUEUED) {
-        iree_hal_resource_retain(&transfer->resource);
+      if (wait_result != IREE_HAL_AMDGPU_STAGING_POOL_WAIT_QUEUED) {
+        iree_hal_resource_release(&transfer->resource);
       }
       if (wait_result != IREE_HAL_AMDGPU_STAGING_POOL_WAIT_RETRY) {
         return;

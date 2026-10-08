@@ -245,7 +245,8 @@ struct HalAllocation {
     iree_hal_buffer_mapping_t mapping = {};
     IREE_ASSERT_OK(iree_hal_buffer_map_range(
         iree_hal_buffer_view_buffer(returned), IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_READ, 0, IREE_HAL_WHOLE_BUFFER, &mapping));
+        IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE, 0,
+        IREE_HAL_WHOLE_BUFFER, &mapping));
     EXPECT_EQ(mapping.contents.data, reinterpret_cast<uint8_t*>(&data[2]));
     EXPECT_EQ(mapping.contents.data_length, 16u);
     EXPECT_EQ(reinterpret_cast<const int32_t*>(mapping.contents.data)[0], 37);

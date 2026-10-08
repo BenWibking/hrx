@@ -196,6 +196,8 @@ iree_hal_buffer_t* iree_hal_replay_recorder_buffer_initialize_proxy(
       iree_hal_buffer_allowed_access(base_buffer),
       iree_hal_buffer_allowed_usage(base_buffer),
       &iree_hal_replay_recorder_buffer_vtable, &buffer->base);
+  buffer->base.memory = base_buffer->memory;
+  buffer->base.host_binding_index = base_buffer->host_binding_index;
   buffer->host_allocator = host_allocator;
   buffer->recorder = recorder;
   iree_hal_replay_recorder_retain(buffer->recorder);
@@ -389,6 +391,7 @@ static iree_status_t iree_hal_replay_recorder_buffer_make_range_data_payload(
   out_payload->byte_length = local_byte_length;
   out_payload->data_length = local_byte_length;
   out_payload->memory_access = mapping->impl.allowed_access;
+  out_payload->map_flags = mapping->impl.flags;
   *out_data = iree_make_const_byte_span(
       mapping->contents.data + (iree_host_size_t)mapped_data_offset,
       (iree_host_size_t)local_byte_length);
@@ -514,7 +517,7 @@ static iree_status_t iree_hal_replay_recorder_buffer_export_range(
 
 static iree_status_t iree_hal_replay_recorder_buffer_map_range(
     iree_hal_buffer_t* base_buffer, iree_hal_mapping_mode_t mapping_mode,
-    iree_hal_memory_access_t memory_access,
+    iree_hal_memory_access_t memory_access, iree_hal_buffer_map_flags_t flags,
     iree_device_size_t local_byte_offset, iree_device_size_t local_byte_length,
     iree_hal_buffer_mapping_t* mapping) {
   iree_hal_replay_recorder_buffer_t* buffer =
@@ -524,6 +527,7 @@ static iree_status_t iree_hal_replay_recorder_buffer_map_range(
       .byte_length = local_byte_length,
       .mapping_mode = mapping_mode,
       .memory_access = memory_access,
+      .map_flags = flags,
   };
   iree_const_byte_span_t iovec =
       iree_make_const_byte_span((const uint8_t*)&payload, sizeof(payload));
@@ -548,8 +552,8 @@ static iree_status_t iree_hal_replay_recorder_buffer_map_range(
   if (iree_status_is_ok(status)) {
     status = IREE_HAL_REPLAY_VTABLE_DISPATCH(buffer->base_buffer,
                                              iree_hal_buffer, map_range)(
-        buffer->base_buffer, mapping_mode, memory_access, local_byte_offset,
-        local_byte_length, mapping);
+        buffer->base_buffer, mapping_mode, memory_access, flags,
+        local_byte_offset, local_byte_length, mapping);
   }
   if (iree_status_is_ok(status) && mapping_entry) {
     mapping_entry->mapping = mapping;
@@ -576,6 +580,7 @@ static iree_status_t iree_hal_replay_recorder_buffer_unmap_range(
       .byte_offset = local_byte_offset,
       .byte_length = local_byte_length,
       .memory_access = mapping->impl.allowed_access,
+      .map_flags = mapping->impl.flags,
   };
   iree_hal_replay_buffer_range_data_payload_t data_payload;
   iree_const_byte_span_t data_span = iree_make_const_byte_span(NULL, 0);

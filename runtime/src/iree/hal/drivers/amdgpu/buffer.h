@@ -25,6 +25,34 @@ extern "C" {
 
 typedef struct iree_hal_amdgpu_buffer_t iree_hal_amdgpu_buffer_t;
 
+// Native slots shared by direct and queue-ordered ROCr storage. Registered host
+// storage can have different host and agent addresses. Public mapping grants
+// are independent of both execution bindings.
+enum iree_hal_amdgpu_buffer_binding_index_e {
+  IREE_HAL_AMDGPU_BUFFER_BINDING_DEVICE_ADDRESS = 0,
+  IREE_HAL_AMDGPU_BUFFER_BINDING_HOST = 1,
+  IREE_HAL_AMDGPU_BUFFER_BINDING_COUNT = 2,
+};
+
+// Inline native facts borrowed by prepared views for their allocation epoch.
+typedef struct iree_hal_amdgpu_buffer_native_t {
+  // Generic native slots at offset zero, referenced by buffer->memory.bindings.
+  iree_hal_buffer_native_binding_t
+      bindings[IREE_HAL_AMDGPU_BUFFER_BINDING_COUNT];
+  // Immutable width and scope cells supported by the backing allocation.
+  iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells;
+} iree_hal_amdgpu_buffer_native_t;
+
+// Complete ROCr native format, including private atomic capability cells.
+const iree_hal_buffer_binding_layout_t* iree_hal_amdgpu_buffer_binding_layout(
+    void);
+
+// Returns captured facts from a qualified, prepared AMDGPU buffer.
+static inline const iree_hal_amdgpu_buffer_native_t*
+iree_hal_amdgpu_buffer_native(const iree_hal_buffer_t* buffer) {
+  return (const iree_hal_amdgpu_buffer_native_t*)buffer->memory.bindings;
+}
+
 // Per-physical-device pool of materialized AMDGPU HAL buffer wrappers.
 //
 // The pool only owns the host-side iree_hal_amdgpu_buffer_t storage. Backing
@@ -78,6 +106,8 @@ void iree_hal_amdgpu_buffer_pool_deinitialize(
 //
 // |allocation_size| is the full size of the HSA allocation and may be larger
 // than the logical |byte_length| exposed through the HAL buffer.
+// |device_pointer| is the agent address. |host_pointer| is the independent
+// host address, or NULL when host access is not prepared.
 iree_status_t iree_hal_amdgpu_buffer_create(
     const iree_hal_amdgpu_libhsa_t* libhsa,
     iree_hal_buffer_placement_t placement, iree_hal_memory_type_t memory_type,
@@ -85,7 +115,8 @@ iree_status_t iree_hal_amdgpu_buffer_create(
     iree_hal_buffer_usage_t allowed_usage,
     iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells,
     iree_device_size_t allocation_size, iree_device_size_t byte_length,
-    void* host_ptr, iree_hal_buffer_release_callback_t release_callback,
+    void* device_pointer, void* host_pointer,
+    iree_hal_buffer_release_callback_t release_callback,
     iree_allocator_t host_allocator, iree_hal_buffer_t** out_buffer);
 
 // Wraps an HSA memory pool allocation in a pooled iree_hal_buffer_t wrapper.
@@ -101,7 +132,8 @@ iree_status_t iree_hal_amdgpu_buffer_create_pooled(
     iree_hal_buffer_usage_t allowed_usage,
     iree_hal_amdgpu_atomic_memory_cell_flags_t atomic_memory_cells,
     iree_device_size_t allocation_size, iree_device_size_t byte_length,
-    void* host_ptr, iree_hal_buffer_release_callback_t release_callback,
+    void* device_pointer, void* host_pointer,
+    iree_hal_buffer_release_callback_t release_callback,
     iree_hal_amdgpu_buffer_pool_t* pool, iree_allocator_t host_allocator,
     iree_hal_buffer_t** out_buffer);
 
@@ -115,9 +147,14 @@ void iree_hal_amdgpu_buffer_set_profile_allocation(
     uint64_t pool_id, uint32_t physical_device_ordinal,
     iree_device_size_t alignment);
 
-// Returns the HSA-allocated base pointer for the given |buffer|, or NULL if
-// |buffer| is not an AMDGPU buffer. HSA uses unified virtual addressing so
-// the returned pointer is valid for both host and GPU access.
+// Returns true if |buffer| directly wraps ROCr storage.
+bool iree_hal_amdgpu_buffer_isa(const iree_hal_buffer_t* buffer);
+
+// Returns the agent base pointer for a buffer qualified for ROCr execution, or
+// NULL if an unscoped buffer is not ROCr-owned or has no staged storage. Scoped
+// buffers have already passed the queue/recording family boundary. Their
+// wrapper owner may be another backend. Host accessibility is independent of
+// this address.
 //
 // This is the entire allocated_buffer and must be offset by
 // iree_hal_buffer_byte_offset and the binding offset when computing kernarg
@@ -127,8 +164,9 @@ void* iree_hal_amdgpu_buffer_device_pointer(iree_hal_buffer_t* buffer);
 
 // Returns the immutable atomic memory cells supported by |buffer|.
 //
-// Transient buffers resolve to their materialized backing buffer. Other buffer
-// implementations and unmaterialized transient buffers support no cells.
+// Transient buffers resolve their staged backing once; nested views carry
+// prepared facts. Other implementations and unmaterialized transient buffers
+// support no cells.
 iree_hal_amdgpu_atomic_memory_cell_flags_t
 iree_hal_amdgpu_buffer_atomic_memory_cells(iree_hal_buffer_t* buffer);
 

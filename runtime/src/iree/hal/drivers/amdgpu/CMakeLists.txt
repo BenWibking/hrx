@@ -309,6 +309,8 @@ iree_cc_library(
     "hsa_queue.h"
     "logical_device.c"
     "logical_device.h"
+    "memory_backend.c"
+    "memory_backend.h"
     "physical_device.c"
     "physical_device.h"
     "physical_device_capabilities.c"
@@ -410,7 +412,10 @@ iree_cc_library(
     iree::hal::drivers::amdgpu::util::shadow_map
     iree::hal::drivers::amdgpu::util::topology
     iree::hal::drivers::amdgpu::util::vmem
+    iree::hal::memory::maintenance
+    iree::hal::memory::maintenance_thread
     iree::hal::memory::passthrough_pool
+    iree::hal::memory::slab_cache
     iree::hal::memory::slab_provider
     iree::hal::memory::tlsf_pool
     iree::hal::memory::tracing
@@ -464,6 +469,7 @@ iree_cc_library(
     "host_queue_waits.h"
     "hostcall_provider.h"
     "logical_device.h"
+    "memory_backend.h"
     "physical_device.h"
     "physical_device_capabilities.h"
     "pm4_command_buffer.h"
@@ -659,6 +665,7 @@ iree_cc_test(
     iree::hal::drivers::amdgpu::util::info
     iree::hal::drivers::amdgpu::util::topology
     iree::hal::drivers::amdgpu::util::vmem
+    iree::hal::memory::maintenance
     iree::testing::gtest
     iree::testing::gtest_main
   LABELS
@@ -1048,6 +1055,8 @@ iree_cc_test(
     iree::hal::drivers::amdgpu::cts::testdata_amdgpu
     iree::hal::drivers::amdgpu::target::selection
     iree::hal::drivers::amdgpu::util::packet
+    iree::hal::memory::passthrough_pool
+    iree::hal::memory::tlsf_pool
     iree::testing::gtest
     iree::testing::gtest_main
   LABELS
@@ -1213,6 +1222,7 @@ iree_cc_test(
     iree::hal::cts::util::test_base
     iree::hal::drivers::amdgpu::util::packet
     iree::hal::memory::fixed_block_pool
+    iree::hal::memory::passthrough_pool
     iree::hal::memory::tlsf_pool
     iree::testing::gtest
     iree::testing::gtest_main
@@ -1282,6 +1292,7 @@ iree_cc_test(
     ::headers
     iree::base
     iree::hal
+    iree::hal::cts::util::pool_test_util
     iree::hal::cts::util::test_base
     iree::hal::drivers::amdgpu::util::libhsa
     iree::hal::drivers::amdgpu::util::packet
@@ -1514,7 +1525,9 @@ iree_cc_test(
   SRCS
     "slab_provider_test.cc"
   DEPS
+    ::access_policy
     ::amdgpu
+    ::atomic_memory
     ::headers
     iree::async
     iree::base

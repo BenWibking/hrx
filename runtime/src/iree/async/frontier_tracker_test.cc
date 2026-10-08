@@ -132,6 +132,84 @@ TEST(InitializeTest, ZeroCapacity) {
                         fixture.RegisterAxis(Axis(0)));
 }
 
+TEST(QueryTest, EmptyFrontierIsSatisfied) {
+  TrackerFixture fixture;
+  MAKE_FRONTIER(frontier, 0);
+  bool satisfied = false;
+  IREE_ASSERT_OK(iree_async_frontier_tracker_query(fixture.tracker(), frontier,
+                                                   &satisfied));
+  EXPECT_TRUE(satisfied);
+}
+
+TEST(QueryTest, PendingAndCompletedWithoutRegisteringWaiters) {
+  TrackerFixture fixture;
+  fixture.AddAxis(Axis(0));
+  fixture.AddAxis(Axis(1));
+  MAKE_FRONTIER(frontier, 2, E(Axis(0), 1), E(Axis(1), 2));
+  bool satisfied = true;
+  IREE_ASSERT_OK(iree_async_frontier_tracker_query(fixture.tracker(), frontier,
+                                                   &satisfied));
+  EXPECT_FALSE(satisfied);
+  EXPECT_EQ(iree_async_frontier_tracker_advance(fixture.tracker(), Axis(0), 1),
+            0u);
+  IREE_ASSERT_OK(iree_async_frontier_tracker_query(fixture.tracker(), frontier,
+                                                   &satisfied));
+  EXPECT_FALSE(satisfied);
+  EXPECT_EQ(iree_async_frontier_tracker_advance(fixture.tracker(), Axis(1), 2),
+            0u);
+  IREE_ASSERT_OK(iree_async_frontier_tracker_query(fixture.tracker(), frontier,
+                                                   &satisfied));
+  EXPECT_TRUE(satisfied);
+}
+
+TEST(QueryTest, UnknownAxisPreservesOutput) {
+  TrackerFixture fixture;
+  MAKE_FRONTIER(frontier, 1, E(Axis(0), 1));
+  bool satisfied = true;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_NOT_FOUND,
+                        iree_async_frontier_tracker_query(
+                            fixture.tracker(), frontier, &satisfied));
+  EXPECT_TRUE(satisfied);
+}
+
+TEST(QueryTest, FailedAxisIsNotHiddenByPendingAxis) {
+  TrackerFixture fixture;
+  fixture.AddAxis(Axis(0));
+  fixture.AddAxis(Axis(1));
+  iree_async_frontier_tracker_fail_axis(
+      fixture.tracker(), Axis(1), iree_status_from_code(IREE_STATUS_DATA_LOSS));
+  MAKE_FRONTIER(frontier, 2, E(Axis(0), 1), E(Axis(1), 2));
+  bool satisfied = true;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_DATA_LOSS,
+                        iree_async_frontier_tracker_query(
+                            fixture.tracker(), frontier, &satisfied));
+  EXPECT_TRUE(satisfied);
+
+  // Registration uses the same completion/failure contract. No advance of the
+  // first axis is required to report a failure already present on the second.
+  CallbackState state;
+  iree_async_frontier_waiter_t waiter;
+  IREE_ASSERT_OK(iree_async_frontier_tracker_wait(
+      fixture.tracker(), frontier, TrackingCallback, &state, &waiter));
+  EXPECT_EQ(state.call_count.load(), 1);
+  EXPECT_EQ(state.last_status_code, IREE_STATUS_DATA_LOSS);
+  EXPECT_FALSE(
+      iree_async_frontier_tracker_cancel_wait(fixture.tracker(), &waiter));
+}
+
+TEST(QueryTest, RetiredAxisPropagatesCancellation) {
+  TrackerFixture fixture;
+  fixture.AddAxis(Axis(0));
+  iree_async_frontier_tracker_retire_axis(
+      fixture.tracker(), Axis(0), iree_status_from_code(IREE_STATUS_CANCELLED));
+  MAKE_FRONTIER(frontier, 1, E(Axis(0), 1));
+  bool satisfied = false;
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_CANCELLED,
+                        iree_async_frontier_tracker_query(
+                            fixture.tracker(), frontier, &satisfied));
+  EXPECT_FALSE(satisfied);
+}
+
 TEST(RegisterAxisTest, DuplicateAxisFails) {
   TrackerFixture fixture(4);
   fixture.AddAxis(Axis(0));
@@ -851,6 +929,45 @@ TEST(ConcurrencyTest, ConcurrentAdvanceSameAxis) {
   // Waiter should have fired exactly once.
   EXPECT_EQ(state.call_count, 1);
   EXPECT_EQ(state.last_status_code, IREE_STATUS_OK);
+}
+
+TEST(ConcurrencyTest, WaitPublicationRacingAdvanceDispatchesExactlyOnce) {
+  TrackerFixture fixture;
+  fixture.AddAxis(Axis(0));
+  constexpr int kRoundCount = 10000;
+  std::atomic<int> prepared_round{0};
+  std::atomic<int> advanced_round{0};
+  std::thread advancing([&] {
+    for (int round = 1; round <= kRoundCount; ++round) {
+      while (prepared_round.load(std::memory_order_acquire) != round) {
+        std::this_thread::yield();
+      }
+      iree_async_frontier_tracker_advance(fixture.tracker(), Axis(0), round);
+      advanced_round.store(round, std::memory_order_release);
+    }
+  });
+
+  for (int round = 1; round <= kRoundCount; ++round) {
+    MAKE_FRONTIER(frontier, 1, E(Axis(0), round));
+    iree_async_frontier_waiter_t waiter;
+    CallbackState state;
+    prepared_round.store(round, std::memory_order_release);
+    IREE_EXPECT_OK(iree_async_frontier_tracker_wait(
+        fixture.tracker(), frontier, TrackingCallback, &state, &waiter));
+    while (advanced_round.load(std::memory_order_acquire) != round) {
+      std::this_thread::yield();
+    }
+
+    // Both calls have returned: either registration observed completion and
+    // dispatched inline, or advance observed the waiter and dispatched it.
+    // No asynchronous operation remains that could deliver another callback.
+    EXPECT_EQ(state.call_count.load(std::memory_order_relaxed), 1)
+        << "round " << round;
+    EXPECT_EQ(state.last_status_code, IREE_STATUS_OK);
+    EXPECT_FALSE(
+        iree_async_frontier_tracker_cancel_wait(fixture.tracker(), &waiter));
+  }
+  advancing.join();
 }
 
 //===----------------------------------------------------------------------===//

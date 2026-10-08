@@ -149,15 +149,17 @@ IREE_API_EXPORT bool iree_hal_file_supports_synchronous_io(
   return _VTABLE_DISPATCH(file, supports_synchronous_io)(file);
 }
 
-IREE_API_EXPORT iree_status_t iree_hal_file_read(
-    iree_hal_file_t* file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+IREE_API_EXPORT iree_status_t iree_hal_file_read(iree_hal_file_t* file,
+                                                 uint64_t file_offset,
+                                                 iree_byte_span_t target) {
   IREE_ASSERT_ARGUMENT(file);
-  IREE_ASSERT_ARGUMENT(buffer);
+  if (target.data_length && !target.data) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "nonempty file read target requires storage");
+  }
   IREE_TRACE_ZONE_BEGIN(z0);
   IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, file_offset);
-  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)buffer_offset);
-  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)length);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)target.data_length);
   if (IREE_UNLIKELY(!iree_hal_file_supports_synchronous_io(file))) {
     IREE_TRACE_ZONE_END(z0);
     return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
@@ -166,28 +168,25 @@ IREE_API_EXPORT iree_status_t iree_hal_file_read(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_hal_file_validate_access(file, IREE_HAL_MEMORY_ACCESS_READ));
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_hal_file_validate_range(file, file_offset, length));
-  IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_hal_buffer_validate_range(buffer, buffer_offset, length));
-  IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0,
-      iree_hal_buffer_validate_access(iree_hal_buffer_allowed_access(buffer),
-                                      IREE_HAL_MEMORY_ACCESS_WRITE));
-  iree_status_t status = _VTABLE_DISPATCH(file, read)(file, file_offset, buffer,
-                                                      buffer_offset, length);
+      z0, iree_hal_file_validate_range(file, file_offset, target.data_length));
+  iree_status_t status = target.data_length ? _VTABLE_DISPATCH(file, read)(
+                                                  file, file_offset, target)
+                                            : iree_ok_status();
   IREE_TRACE_ZONE_END(z0);
   return status;
 }
 
-IREE_API_EXPORT iree_status_t iree_hal_file_write(
-    iree_hal_file_t* file, uint64_t file_offset, iree_hal_buffer_t* buffer,
-    iree_device_size_t buffer_offset, iree_device_size_t length) {
+IREE_API_EXPORT iree_status_t
+iree_hal_file_write(iree_hal_file_t* file, uint64_t file_offset,
+                    iree_const_byte_span_t source) {
   IREE_ASSERT_ARGUMENT(file);
-  IREE_ASSERT_ARGUMENT(buffer);
+  if (source.data_length && !source.data) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "nonempty file write source requires storage");
+  }
   IREE_TRACE_ZONE_BEGIN(z0);
   IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, file_offset);
-  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)buffer_offset);
-  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)length);
+  IREE_TRACE_ZONE_APPEND_VALUE_I64(z0, (int64_t)source.data_length);
   if (IREE_UNLIKELY(!iree_hal_file_supports_synchronous_io(file))) {
     IREE_TRACE_ZONE_END(z0);
     return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
@@ -196,15 +195,10 @@ IREE_API_EXPORT iree_status_t iree_hal_file_write(
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
       z0, iree_hal_file_validate_access(file, IREE_HAL_MEMORY_ACCESS_WRITE));
   IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_hal_file_validate_range(file, file_offset, length));
-  IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0, iree_hal_buffer_validate_range(buffer, buffer_offset, length));
-  IREE_RETURN_AND_END_ZONE_IF_ERROR(
-      z0,
-      iree_hal_buffer_validate_access(iree_hal_buffer_allowed_access(buffer),
-                                      IREE_HAL_MEMORY_ACCESS_READ));
-  iree_status_t status = _VTABLE_DISPATCH(file, write)(
-      file, file_offset, buffer, buffer_offset, length);
+      z0, iree_hal_file_validate_range(file, file_offset, source.data_length));
+  iree_status_t status = source.data_length ? _VTABLE_DISPATCH(file, write)(
+                                                  file, file_offset, source)
+                                            : iree_ok_status();
   IREE_TRACE_ZONE_END(z0);
   return status;
 }

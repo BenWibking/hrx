@@ -15,6 +15,8 @@
 #include "iree/hal/drivers/amdgpu/physical_device.h"
 #include "iree/hal/drivers/amdgpu/pm4_command_buffer.h"
 #include "iree/hal/drivers/amdgpu/util/pm4_emitter.h"
+#include "iree/hal/memory/passthrough_pool.h"
+#include "iree/hal/memory/tlsf_pool.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -265,6 +267,97 @@ TEST_F(PM4CommandDispatchTest, StaticParametersUseNativePacketAndRetainBuffer) {
   iree_hal_buffer_release(parameter_buffer.release());
   IREE_ASSERT_OK(Execute(command_buffer));
   ExpectOutput(output_buffer, /*dispatched_workgroup_count=*/4);
+}
+
+TEST_F(PM4CommandDispatchTest, WritesInteriorOfNestedQueuedArena) {
+  using iree::hal::cts::SemaphoreList;
+  iree_hal_queue_t* queue = test_device_.queue();
+  iree_hal_queue_pool_backend_t backend = {};
+  IREE_ASSERT_OK(iree_hal_device_query_queue_pool_backend(
+      test_device_.base_device(), iree_hal_queue_family(queue), &backend));
+  iree_hal_passthrough_pool_options_t source_options = {};
+  source_options.epoch_query = backend.epoch_query;
+  Ref<iree_hal_pool_t> source;
+  IREE_ASSERT_OK(iree_hal_passthrough_pool_create(
+      source_options, backend.slab_provider, backend.notification,
+      backend.frontier_tracker, backend.maintenance, host_allocator_,
+      source.out()));
+  iree_hal_buffer_params_t params = {};
+  params.type = IREE_HAL_MEMORY_TYPE_DEVICE_LOCAL;
+  params.usage = IREE_HAL_BUFFER_USAGE_TRANSFER | IREE_HAL_BUFFER_USAGE_STORAGE;
+  params.access = IREE_HAL_MEMORY_ACCESS_ALL;
+  params.queue_family_affinity = iree_hal_make_queue_family_affinity(0);
+  Ref<iree_hal_buffer_t> backing;
+  IREE_ASSERT_OK(iree_hal_pool_allocate_buffer(
+      source, params, 8192, iree_infinite_timeout(), backing.out()));
+  iree_hal_tlsf_pool_options_t options = {};
+  options.tlsf_options.frontier_capacity = 4;
+  Ref<iree_hal_pool_t> arena_pool;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+      backing, 256, 7168, &options, host_allocator_, arena_pool.out()));
+  const iree_hal_pool_reservation_request_t arena_request = {params, 4096};
+  Ref<iree_hal_buffer_t> arena;
+  SemaphoreList arena_ready(test_device_.base_device(), {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_alloca(queue, iree_hal_semaphore_list_empty(),
+                                       arena_ready, arena_pool, 1,
+                                       &arena_request, arena.out()));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+      arena_ready, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  Ref<iree_hal_pool_t> pool;
+  IREE_ASSERT_OK(iree_hal_tlsf_pool_create_from_buffer(
+      arena, 256, 3584, &options, host_allocator_, pool.out()));
+  const iree_hal_pool_reservation_request_t request = {params, 256};
+  Ref<iree_hal_buffer_t> root;
+  SemaphoreList allocated(test_device_.base_device(), {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_alloca(queue, iree_hal_semaphore_list_empty(),
+                                       allocated, pool, 1, &request,
+                                       root.out()));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+      allocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  Ref<iree_hal_buffer_t> view;
+  IREE_ASSERT_OK(iree_hal_buffer_subspan(root, 32, kOutputByteLength,
+                                         host_allocator_, view.out()));
+  SemaphoreList filled(test_device_.base_device(), {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_fill(queue, allocated, filled, root, 0, 256,
+                                     &kSentinelValue, sizeof(kSentinelValue),
+                                     IREE_HAL_FILL_FLAG_NONE));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(filled, iree_infinite_timeout(),
+                                              IREE_ASYNC_WAIT_FLAG_NONE));
+  Ref<iree_hal_buffer_t> parameters;
+  IREE_ASSERT_OK(CreateParameterBuffer(4, parameters.out()));
+  Ref<iree_hal_command_buffer_t> commands;
+  IREE_ASSERT_OK(CreateIndirectCommandBuffer(
+      view,
+      iree_hal_make_buffer_ref(parameters, kParameterOffset,
+                               kParameterByteLength),
+      IREE_HAL_DISPATCH_FLAG_STATIC_INDIRECT_PARAMETERS, 0, commands.out()));
+  IREE_ASSERT_OK(Execute(commands));
+  std::array<uint32_t, 64> result = {};
+  SemaphoreList downloaded(test_device_.base_device(), {0}, {1});
+  IREE_ASSERT_OK(iree_hal_queue_download(queue, iree_hal_semaphore_list_empty(),
+                                         downloaded, root, 0, result.data(),
+                                         sizeof(result)));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+      downloaded, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  for (size_t i = 0; i < result.size(); ++i) {
+    EXPECT_EQ(result[i], i >= 8 && i < 12 ? i - 8 : kSentinelValue) << i;
+  }
+  commands.reset();
+  view.reset();
+  iree_hal_buffer_t* buffers[] = {root};
+  SemaphoreList deallocated(test_device_.base_device(), {0}, {1});
+  IREE_ASSERT_OK(
+      iree_hal_queue_dealloca(queue, downloaded, deallocated, 1, buffers));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+      deallocated, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
+  root.reset();
+  pool.reset();
+  buffers[0] = arena;
+  SemaphoreList arena_released(test_device_.base_device(), {0}, {1});
+  IREE_ASSERT_OK(
+      iree_hal_queue_dealloca(queue, deallocated, arena_released, 1, buffers));
+  IREE_ASSERT_OK(iree_hal_semaphore_list_wait(
+      arena_released, iree_infinite_timeout(), IREE_ASYNC_WAIT_FLAG_NONE));
 }
 
 TEST_F(PM4CommandDispatchTest, DynamicBindingFixupSupportsReusableExecution) {

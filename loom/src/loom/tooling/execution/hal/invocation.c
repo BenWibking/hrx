@@ -949,14 +949,14 @@ static iree_status_t loom_run_hal_compare_binding_bytes(
   bool actual_mapping_active = false;
   iree_status_t status = iree_hal_buffer_map_range(
       expected->buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-      IREE_HAL_MEMORY_ACCESS_READ, expected->byte_offset, expected->byte_length,
-      &expected_mapping);
+      IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      expected->byte_offset, expected->byte_length, &expected_mapping);
   if (iree_status_is_ok(status)) {
     expected_mapping_active = true;
     status = iree_hal_buffer_map_range(
         actual->buffer, IREE_HAL_MAPPING_MODE_SCOPED,
-        IREE_HAL_MEMORY_ACCESS_READ, actual->byte_offset, actual->byte_length,
-        &actual_mapping);
+        IREE_HAL_MEMORY_ACCESS_READ, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+        actual->byte_offset, actual->byte_length, &actual_mapping);
     actual_mapping_active = iree_status_is_ok(status);
   }
   if (iree_status_is_ok(status) &&

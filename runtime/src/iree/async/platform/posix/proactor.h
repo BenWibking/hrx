@@ -161,9 +161,8 @@ typedef struct iree_async_proactor_posix_t {
   // the LINK path is used instead (no emulator involvement).
   iree_async_sequence_emulator_t sequence_emulator;
 
-  // Configuration.
+  // Capabilities selected during construction.
   iree_async_proactor_capabilities_t capabilities;
-  uint32_t numa_node;
 } iree_async_proactor_posix_t;
 
 static inline iree_async_proactor_posix_t* iree_async_proactor_posix_cast(

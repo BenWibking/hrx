@@ -839,9 +839,8 @@ uint64_t iree_hal_amdgpu_logical_device_allocate_profile_memory_allocation_id(
     return 0;
   }
 
-  return iree_hal_amdgpu_profile_event_streams_allocate_memory_allocation_id(
-      &logical_device->profiling.event_streams,
-      logical_device->profiling.session_id, out_session_id);
+  *out_session_id = logical_device->profiling.session_id;
+  return iree_hal_buffer_allocation_next_id();
 }
 
 bool iree_hal_amdgpu_logical_device_record_profile_memory_event_for_session(
@@ -2247,8 +2246,7 @@ static iree_status_t iree_hal_amdgpu_logical_device_trim(
   // Release pooled resources from each physical device. These may return items
   // back to the parent logical device pools.
   for (iree_host_size_t i = 0; i < logical_device->physical_device_count; ++i) {
-    IREE_RETURN_IF_ERROR(iree_hal_amdgpu_physical_device_trim(
-        logical_device->physical_devices[i]));
+    iree_hal_amdgpu_physical_device_trim(logical_device->physical_devices[i]);
   }
 
   // Trim the allocator pools, if any.
@@ -2439,6 +2437,25 @@ static iree_status_t iree_hal_amdgpu_logical_device_sample_observation(
     iree_hal_amdgpu_asan_state_statistics_t statistics;
     iree_hal_amdgpu_asan_state_query_statistics(&logical_device->asan,
                                                 &statistics);
+    // Logical ranges remain quarantined in their allocating pool before any
+    // retired native mapping reaches the device-wide quarantine.
+    for (iree_host_size_t i = 0; i < logical_device->physical_device_count;
+         ++i) {
+      const iree_hal_amdgpu_physical_device_t* physical_device =
+          logical_device->physical_devices[i];
+      iree_hal_pool_t* pools[] = {physical_device->default_pool,
+                                  physical_device->default_host_pool};
+      for (iree_host_size_t j = 0; j < IREE_ARRAYSIZE(pools); ++j) {
+        if (!pools[j]) {
+          continue;
+        }
+        iree_hal_pool_stats_t pool_stats;
+        iree_hal_pool_query_stats(pools[j], &pool_stats);
+        statistics.quarantine_size += pool_stats.bytes_quarantined;
+        statistics.quarantine_eviction_count +=
+            pool_stats.quarantine_eviction_count;
+      }
+    }
     out_observation->provided_flags |=
         IREE_HAL_DEVICE_OBSERVATION_FLAG_SANITIZER;
     out_observation->sanitizer.asan.flags =
@@ -2460,6 +2477,11 @@ iree_hal_amdgpu_logical_device_topology_info(iree_hal_device_t* base_device) {
   iree_hal_amdgpu_logical_device_t* logical_device =
       iree_hal_amdgpu_logical_device_cast(base_device);
   return &logical_device->topology_info;
+}
+
+static const iree_hal_memory_backend_t*
+iree_hal_amdgpu_logical_device_memory_backend(iree_hal_device_t* base_device) {
+  return &iree_hal_amdgpu_logical_device_cast(base_device)->memory_backend.base;
 }
 
 // Maximum number of HSA memory-pool link hops we will stack-allocate.
@@ -2813,6 +2835,19 @@ static iree_status_t iree_hal_amdgpu_logical_device_assign_topology_info(
     logical_device->frontier_tracker = topology_info->frontier.tracker;
     logical_device->axis = topology_info->frontier.base_axis;
     iree_async_frontier_tracker_retain(logical_device->frontier_tracker);
+    logical_device->memory_backend = (iree_hal_amdgpu_memory_backend_t){
+        .device = base_device,
+        .libhsa = &system->libhsa,
+        .topology = &system->topology,
+        .physical_devices = logical_device->physical_devices,
+        .asan_state = &logical_device->asan,
+        .epoch_query =
+            {
+                .fn = iree_hal_amdgpu_logical_device_query_pool_epoch,
+                .user_data = logical_device,
+            },
+    };
+    iree_hal_amdgpu_memory_backend_initialize(&logical_device->memory_backend);
   } else {
     iree_hal_amdgpu_logical_device_deassign_frontier(logical_device);
   }
@@ -3090,6 +3125,7 @@ static iree_status_t iree_hal_amdgpu_logical_device_query_queue_pool_backend(
       logical_device->physical_devices[queue_family_ordinal];
   out_backend->slab_provider = physical_device->default_slab_provider;
   out_backend->notification = physical_device->default_pool_notification;
+  out_backend->maintenance = physical_device->memory_maintenance;
   out_backend->epoch_query = (iree_hal_pool_epoch_query_t){
       .fn = iree_hal_amdgpu_logical_device_query_pool_epoch,
       .user_data = logical_device,
@@ -3455,6 +3491,7 @@ static const iree_hal_device_vtable_t iree_hal_amdgpu_logical_device_vtable = {
     .acquire_queue = iree_hal_amdgpu_logical_device_acquire_queue,
     .sample_observation = iree_hal_amdgpu_logical_device_sample_observation,
     .topology_info = iree_hal_amdgpu_logical_device_topology_info,
+    .memory_backend = iree_hal_amdgpu_logical_device_memory_backend,
     .refine_topology_edge = iree_hal_amdgpu_logical_device_refine_topology_edge,
     .assign_topology_info = iree_hal_amdgpu_logical_device_assign_topology_info,
     .create_channel = iree_hal_amdgpu_logical_device_create_channel,

@@ -15,6 +15,7 @@
 #include "iree/hal/buffer.h"
 #include "iree/hal/detail.h"
 #include "iree/hal/executable.h"
+#include "iree/hal/memory_scope.h"
 #include "iree/hal/resource.h"
 
 // Returns success iff the command buffer was created for the given categories.
@@ -58,6 +59,10 @@ static iree_status_t iree_hal_command_buffer_validate_buffer_compatibility(
     iree_hal_buffer_t* buffer,
     iree_hal_buffer_compatibility_t required_compatibility,
     iree_hal_buffer_usage_t intended_usage) {
+  if (buffer->memory.contract) {
+    return iree_hal_buffer_validate_family_usage(
+        buffer, command_buffer->queue_family, IREE_HAL_BUFFER_USAGE_NONE);
+  }
   iree_hal_buffer_compatibility_t allowed_compatibility =
       iree_hal_allocator_query_buffer_compatibility(
           validation_state->device_allocator,
@@ -101,7 +106,9 @@ static iree_status_t iree_hal_command_buffer_validate_binding_requirements(
     iree_hal_buffer_binding_t binding,
     iree_hal_buffer_binding_requirements_t requirements) {
   // Check for binding presence.
-  if (requirements.usage == IREE_HAL_BUFFER_USAGE_NONE) {
+  if (requirements.type == IREE_HAL_MEMORY_TYPE_NONE &&
+      !requirements.requires_storage &&
+      requirements.usage == IREE_HAL_BUFFER_USAGE_NONE) {
     // Binding slot is unused and its value in the table is ignored.
     return iree_ok_status();
   } else if (!binding.buffer) {
@@ -116,13 +123,23 @@ static iree_status_t iree_hal_command_buffer_validate_binding_requirements(
   // mode or try to fast path it if the buffer is known-good.
   IREE_RETURN_IF_ERROR(iree_hal_command_buffer_validate_buffer_compatibility(
       command_buffer, validation_state, binding.buffer,
-      requirements.required_compatibility, requirements.usage));
+      requirements.required_compatibility,
+      requirements.usage |
+          (requirements.requires_storage ? IREE_HAL_BUFFER_USAGE_STORAGE : 0)));
 
   // Verify buffer compatibility.
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage(
-      iree_hal_buffer_allowed_usage(binding.buffer), requirements.usage));
-  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
-      iree_hal_buffer_allowed_access(binding.buffer), requirements.access));
+  if (requirements.requires_storage) {
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_usage_any(
+        iree_hal_buffer_family_usage(binding.buffer,
+                                     command_buffer->queue_family),
+        IREE_HAL_BUFFER_USAGE_STORAGE));
+  }
+  IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_family_usage(
+      binding.buffer, command_buffer->queue_family, requirements.usage));
+  if (requirements.access != IREE_HAL_MEMORY_ACCESS_NONE) {
+    IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_access(
+        iree_hal_buffer_allowed_access(binding.buffer), requirements.access));
+  }
   IREE_RETURN_IF_ERROR(iree_hal_buffer_validate_memory_type(
       iree_hal_buffer_memory_type(binding.buffer), requirements.type));
 
@@ -205,6 +222,7 @@ static iree_status_t iree_hal_command_buffer_validate_buffer_requirements(
   table_requirements->required_compatibility |=
       requirements.required_compatibility;
   table_requirements->usage |= requirements.usage;
+  table_requirements->requires_storage |= requirements.requires_storage;
   table_requirements->access |= requirements.access;
   table_requirements->type |= requirements.type;
   table_requirements->max_byte_offset = iree_max(
@@ -629,12 +647,14 @@ iree_status_t iree_hal_command_buffer_dispatch_validation(
     IREE_RETURN_IF_ERROR(iree_hal_command_buffer_validate_buffer_requirements(
         command_buffer, validation_state, bindings.values[0], arguments_reqs));
   } else {
-    // For now we conservatively say _any_ access may be performed (read/write)
-    // for buffer bindings.
+    // The dispatch ABI does not carry per-binding access requirements. Usage
+    // and range can be checked here; permissions remain the caller's contract
+    // with the executable. Known accesses by other commands still contribute
+    // to the combined binding requirements.
     iree_hal_buffer_binding_requirements_t binding_requirements = {
         .required_compatibility = IREE_HAL_BUFFER_COMPATIBILITY_QUEUE_DISPATCH,
-        .usage = IREE_HAL_BUFFER_USAGE_STORAGE,
-        .access = IREE_HAL_MEMORY_ACCESS_ANY,
+        .access = IREE_HAL_MEMORY_ACCESS_NONE,
+        .requires_storage = true,
         .type = IREE_HAL_MEMORY_TYPE_DEVICE_VISIBLE,
     };
     for (iree_host_size_t i = 0; i < bindings.count; ++i) {

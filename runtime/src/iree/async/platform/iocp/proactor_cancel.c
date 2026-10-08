@@ -73,6 +73,22 @@ iree_status_t iree_async_proactor_iocp_drain_cancel_requests(
     iree_async_cancel_request_t* request =
         (iree_async_cancel_request_t*)proactor->base.cancellations.list.head;
     iree_async_operation_t* target = request->target;
+    if (target->type == IREE_ASYNC_OPERATION_TYPE_TIMER) {
+      iree_async_timer_operation_t* timer =
+          (iree_async_timer_operation_t*)target;
+      if (!iree_async_iocp_timer_list_contains(&proactor->timers, timer)) {
+        // A newly submitted timer remains in the pending registration queue.
+        break;
+      }
+      iree_async_iocp_timer_list_remove(&proactor->timers, timer);
+      iree_async_proactor_issue_cancel_request(&proactor->base, request);
+      ++*completed_count;
+      iree_async_cancel_request_complete(request);
+      iree_async_proactor_iocp_dispatch_completion(
+          proactor, target, iree_status_from_code(IREE_STATUS_CANCELLED),
+          IREE_ASYNC_COMPLETION_FLAG_NONE, completed_count);
+      continue;
+    }
     bool is_wait = target->type == IREE_ASYNC_OPERATION_TYPE_HANDLE_POLL;
     if (is_wait &&
         !iree_any_bit_set(iree_async_operation_load_internal_flags(target),

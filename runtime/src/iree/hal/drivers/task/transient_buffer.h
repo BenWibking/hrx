@@ -47,12 +47,6 @@ iree_status_t iree_hal_task_transient_buffer_create(
 // Returns true if |buffer| is a task-driver transient buffer wrapper.
 bool iree_hal_task_transient_buffer_isa(const iree_hal_buffer_t* buffer);
 
-// Returns the stable profiling id assigned to this transient buffer wrapper.
-//
-// The id is nonzero and unique across wrappers owned by this driver. Producers
-// use it as a session-local allocation id during an active profile capture.
-uint64_t iree_hal_task_transient_buffer_profile_id(iree_hal_buffer_t* buffer);
-
 // Attaches a pool reservation to the transient buffer. |pool| must be the
 // source pool captured at creation. The wrapper takes ownership until
 // iree_hal_task_transient_buffer_release_reservation() or wrapper destroy.
@@ -70,36 +64,11 @@ void iree_hal_task_transient_buffer_stage_backing(iree_hal_buffer_t* buffer,
 // wrapper is uncommitted and has a staged backing view.
 void iree_hal_task_transient_buffer_commit(iree_hal_buffer_t* buffer);
 
-// Decommits the backing buffer and returns the wrapper to the uncommitted
-// state. Any staged-but-uncommitted backing view is also released. Queue
-// implementations use this in the dealloca wait-satisfied/signal-before window
-// so target-visible release effects occur before user-visible completion. Safe
-// to call on an already-uncommitted wrapper.
-void iree_hal_task_transient_buffer_decommit(iree_hal_buffer_t* buffer);
-
 // Returns the attached pool reservation without transferring ownership.
 //
 // This is a cold diagnostic/profiling helper. Returns false when the wrapper
 // has no live reservation or the reservation has already been released.
 bool iree_hal_task_transient_buffer_query_reservation(
-    iree_hal_buffer_t* buffer, iree_hal_pool_t** out_pool,
-    iree_hal_pool_reservation_t* out_reservation);
-
-// Marks the logical allocation epoch as captured by a queue deallocation.
-// This may occur before the queue allocation has acquired a reservation.
-// Returns the borrowed source pool without transferring reservation ownership.
-// The mark excludes duplicate deallocations until it is either aborted or
-// consumed by iree_hal_task_transient_buffer_take_dealloca_reservation().
-iree_status_t iree_hal_task_transient_buffer_begin_dealloca(
-    iree_hal_buffer_t* buffer, iree_hal_pool_t** out_pool);
-
-// Restores an allocation epoch marked by begin_dealloca after queue capture
-// fails. Has no effect if the epoch has already been consumed.
-void iree_hal_task_transient_buffer_abort_dealloca(iree_hal_buffer_t* buffer);
-
-// Consumes a deallocation mark and transfers its reservation to the caller.
-// The source pool is borrowed and must outlive the reservation transaction.
-void iree_hal_task_transient_buffer_take_dealloca_reservation(
     iree_hal_buffer_t* buffer, iree_hal_pool_t** out_pool,
     iree_hal_pool_reservation_t* out_reservation);
 

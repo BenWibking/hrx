@@ -678,8 +678,8 @@ TEST(StreamValueWaitLaneTest,
       &target_buffer));
   IREE_ASSERT_OK(iree_hal_buffer_map_range(
       target_buffer, IREE_HAL_MAPPING_MODE_PERSISTENT,
-      IREE_HAL_MEMORY_ACCESS_ALL, /*local_byte_offset=*/0, sizeof(uint32_t),
-      &target_mapping));
+      IREE_HAL_MEMORY_ACCESS_ALL, IREE_HAL_BUFFER_MAP_FLAG_NONE,
+      /*local_byte_offset=*/0, sizeof(uint32_t), &target_mapping));
   ASSERT_NE(nullptr, target_mapping.contents.data);
   iree_atomic_store(
       reinterpret_cast<iree_atomic_int32_t*>(target_mapping.contents.data), 0,

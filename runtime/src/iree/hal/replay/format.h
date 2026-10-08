@@ -20,11 +20,10 @@ extern "C" {
 #define IREE_HAL_REPLAY_FILE_MAGIC 0x50525249u
 
 // Major version of the IREE HAL replay file format.
-#define IREE_HAL_REPLAY_FILE_VERSION_MAJOR 8u
+#define IREE_HAL_REPLAY_FILE_VERSION_MAJOR 9u
 
-// Minor version of the IREE HAL replay file format. Version 7.3 consumes one
-// required-zero byte in each atomic parameter payload for target error mode.
-// Valid 7.2 payloads therefore decode as the default target error mode.
+// Minor version of the IREE HAL replay file format. Minor version 3 assigns
+// one required-zero byte in each atomic parameter payload to target error mode.
 #define IREE_HAL_REPLAY_FILE_VERSION_MINOR 3u
 
 // Minor version that first assigns atomic target-error mode payload bytes.
@@ -428,8 +427,9 @@ typedef struct iree_hal_replay_buffer_range_payload_t {
   uint32_t mapping_mode;
   // Memory access bits for map operations, or zero otherwise.
   uint16_t memory_access;
-  // Reserved for future buffer range metadata; must be zero.
-  uint16_t reserved0;
+  // Operation-specific flags of the original mapping. Captured data writes
+  // preserve bytes outside their range regardless of the original DISCARD.
+  uint16_t map_flags;
   // Reserved for future buffer range metadata; must be zero.
   uint32_t reserved1;
 } iree_hal_replay_buffer_range_payload_t;
@@ -446,8 +446,9 @@ typedef struct iree_hal_replay_buffer_range_data_payload_t {
   uint32_t mapping_mode;
   // Memory access bits for map operations, or zero otherwise.
   uint16_t memory_access;
-  // Reserved for future buffer range metadata; must be zero.
-  uint16_t reserved0;
+  // Operation-specific flags of the original mapping. Captured data writes
+  // preserve bytes outside their range regardless of the original DISCARD.
+  uint16_t map_flags;
   // Reserved for future buffer range metadata; must be zero.
   uint32_t reserved1;
 } iree_hal_replay_buffer_range_data_payload_t;
