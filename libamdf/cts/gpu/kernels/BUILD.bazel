@@ -358,12 +358,14 @@ amdf_cc_library(
 
 amdf_cts_gpu_kernel_set(
     name = "resident_npu_sdma_kernels",
-    srcs = _COMPLETED_TICK_SRCS + [
+    srcs = [
+        "completed_tick.loom",
         "resident_npu_sdma.loom",
         "sdma_copy.loom",
     ],
     entry_point = "resident_npu_sdma",
     namespace = "kernels::resident_npu_sdma",
+    target_compatible_with = _COMPLETED_TICK_COMPATIBILITY,
     targets = _RDNA_KERNEL_TARGETS,
 )
 
