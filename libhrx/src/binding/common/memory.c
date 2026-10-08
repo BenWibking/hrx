@@ -3055,10 +3055,9 @@ static iree_status_t iree_hal_streaming_resolve_device_rows(
   for (iree_host_size_t row = 0; row < height; ++row) {
     iree_device_size_t row_offset = 0;
     iree_hal_streaming_deviceptr_t row_ptr = 0;
-    if (IREE_UNLIKELY(
-            !iree_device_size_checked_mul((iree_device_size_t)row, pitch,
-                                          &row_offset) ||
-            !iree_device_size_checked_add(base, row_offset, &row_ptr))) {
+    if (IREE_UNLIKELY(!iree_device_size_checked_mul((iree_device_size_t)row,
+                                                    pitch, &row_offset) ||
+                      !iree_checked_add_u64(base, row_offset, &row_ptr))) {
       return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                               "%s row address overflows", endpoint_name);
     }
@@ -3157,8 +3156,8 @@ iree_status_t iree_hal_streaming_memcpy_host_to_device_2d(
       if (IREE_UNLIKELY(
               !iree_device_size_checked_mul((iree_device_size_t)row, src_pitch,
                                             &source_offset) ||
-              !iree_device_size_checked_add((iree_hal_streaming_deviceptr_t)src,
-                                            source_offset, &row_source))) {
+              !iree_checked_add_u64((iree_hal_streaming_deviceptr_t)src,
+                                    source_offset, &row_source))) {
         status = iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                                   "H2D source row address overflows");
         break;
@@ -3566,10 +3565,9 @@ iree_status_t iree_hal_streaming_memcpy_device_to_host_2d(
        ++row) {
     iree_device_size_t source_offset = 0;
     iree_hal_streaming_deviceptr_t row_src = 0;
-    if (IREE_UNLIKELY(
-            !iree_device_size_checked_mul((iree_device_size_t)row, src_pitch,
-                                          &source_offset) ||
-            !iree_device_size_checked_add(src, source_offset, &row_src))) {
+    if (IREE_UNLIKELY(!iree_device_size_checked_mul(
+                          (iree_device_size_t)row, src_pitch, &source_offset) ||
+                      !iree_checked_add_u64(src, source_offset, &row_src))) {
       status = iree_make_status(IREE_STATUS_OUT_OF_RANGE,
                                 "D2H source row address overflows");
       break;
