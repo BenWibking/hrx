@@ -244,7 +244,33 @@ low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @vmem_exec_reuse_require
   s_wait_xcnt xcnt(0)
   s_mov_b64 exec, s[2:3]
   s_wait_loadcnt loadcnt(0)
-  v_add_u32 v1, v1, v0
+  v_add_u32 v0, v1, v0
+  s_endpgm
+
+// ====
+// RUN: emit amdgpu-assembly @exec_drain_preserves_smem_source strategy=source fixed=%kernarg:physical_register:0:2 fixed=%saved_exec:physical_register:2:2 fixed=%loaded:physical_register:4:1 fixed=%keep:physical_register:5:1 fixed=%reuse:physical_register:0:1
+
+amdgpu.target<gfx1250> @target
+
+low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @exec_drain_preserves_smem_source(%kernarg: reg<amdgpu.sgpr x2>, %saved_exec: reg<amdgpu.sgpr x2>, %keep: reg<amdgpu.sgpr>) asm {
+  %loaded = s_load_dword_offset_only %kernarg
+  s_mov_b64_exec %saved_exec
+  %reuse = s_mov_b32 7
+  %sum0 = s_add_u32 %loaded, %keep
+  %sum1 = s_add_u32 %sum0, %reuse
+  return
+}
+
+// EXEC changes require VMEM XCNT completion. They do not complete the scalar
+// load's source read, so reusing its base still requires an XCNT wait.
+// ----
+  s_load_dword s4, s[0:1] offset:0
+  s_mov_b64 exec, s[2:3]
+  s_wait_xcnt xcnt(0)
+  s_mov_b32 s0, 7
+  s_wait_kmcnt kmcnt(0)
+  s_add_u32 s1, s4, s5
+  s_add_u32 s0, s1, s0
   s_endpgm
 
 // ====

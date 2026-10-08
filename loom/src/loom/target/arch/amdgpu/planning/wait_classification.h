@@ -47,8 +47,8 @@ typedef enum loom_amdgpu_wait_node_state_flag_bits_e {
   LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_PRODUCER = 1u << 10,
   // Node produces one gfx125x SMEM XCNT event.
   LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_SMEM_PRODUCER = 1u << 11,
-  // Node writes architectural EXEC state.
-  LOOM_AMDGPU_WAIT_NODE_STATE_WRITES_EXEC = 1u << 12,
+  // Node requires the gfx125x VMEM XCNT group drained before execution.
+  LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_DRAIN_REQUIRED = 1u << 12,
   // The emitted packet implicitly drains gfx125x XCNT before it executes.
   LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_IMPLICIT_DRAIN = 1u << 13,
   // Counter-only packet whose payload indexes immutable decoded bounds.

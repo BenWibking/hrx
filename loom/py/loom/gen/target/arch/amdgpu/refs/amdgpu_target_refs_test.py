@@ -40,6 +40,7 @@ from loom.target.low_descriptors import (
     Operand,
     OperandFlag,
     OperandRole,
+    RegClassAlt,
     Resource,
     ResourceFlag,
     ResourceKind,
@@ -492,6 +493,51 @@ def test_descriptor_trait_names_include_memory_and_ref_facts() -> None:
         "LOOM_AMDGPU_DESCRIPTOR_TRAIT_VECTOR_ISSUE",
         "LOOM_AMDGPU_DESCRIPTOR_TRAIT_MATRIX_COEXECUTION_SOURCE",
     )
+
+
+def test_descriptor_trait_names_retain_exec_writes() -> None:
+    exec_alt = (RegClassAlt("amdgpu.exec"),)
+    scc_alt = (RegClassAlt("amdgpu.scc"),)
+    descriptor_set = _descriptor_set(
+        _descriptor(
+            "amdgpu.s_mov_b64_exec",
+            operands=(
+                Operand(
+                    "exec",
+                    OperandRole.IMPLICIT,
+                    exec_alt,
+                    flags=(OperandFlag.STATE_WRITE,),
+                ),
+            ),
+        ),
+        _descriptor(
+            "amdgpu.exec_read",
+            operands=(
+                Operand(
+                    "exec",
+                    OperandRole.IMPLICIT,
+                    exec_alt,
+                    flags=(OperandFlag.STATE_READ,),
+                ),
+            ),
+        ),
+        _descriptor(
+            "amdgpu.scc_write",
+            operands=(
+                Operand(
+                    "scc",
+                    OperandRole.IMPLICIT,
+                    scc_alt,
+                    flags=(OperandFlag.STATE_WRITE,),
+                ),
+            ),
+        ),
+    )
+    trait_context = amdgpu_target_refs._descriptor_trait_context(descriptor_set)
+
+    assert "LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC" in (amdgpu_target_refs._descriptor_trait_names(trait_context, descriptor_set.descriptors[0]))
+    assert "LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC" not in (amdgpu_target_refs._descriptor_trait_names(trait_context, descriptor_set.descriptors[1]))
+    assert "LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC" not in (amdgpu_target_refs._descriptor_trait_names(trait_context, descriptor_set.descriptors[2]))
 
 
 def test_vector_issue_traits_follow_issue_resource_contracts() -> None:

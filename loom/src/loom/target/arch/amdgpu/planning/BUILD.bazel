@@ -311,6 +311,7 @@ loom_cc_library(
     srcs = ["wait_classification.c"],
     hdrs = ["wait_classification.h"],
     deps = [
+        ":storage_lease",
         ":structural_packet",
         ":wait_completion",
         ":wait_frontier",
@@ -461,9 +462,11 @@ loom_cc_test(
     srcs = ["wait_plan_test.cc"],
     target_compatible_with = loom_amdgpu_descriptor_set_compatible_with(_DESCRIPTOR_SET_GFX125X),
     deps = [
+        ":storage_lease",
         ":wait_plan",
         "//loom/src/loom/codegen/low:builder",
         "//loom/src/loom/codegen/low:immediates",
+        "//loom/src/loom/codegen/low:storage_lease",
         "//loom/src/loom/codegen/low/schedule",
         "//loom/src/loom/ir",
         "//loom/src/loom/ops:cache",
@@ -599,7 +602,9 @@ loom_cc_library(
         ":structural_packet",
         ":wait_counters",
         "//loom/src/loom/codegen/low:storage_lease",
+        "//loom/src/loom/target/arch/amdgpu:target_info",
         "//loom/src/loom/target/arch/amdgpu:target_info_defs",
+        "//loom/src/loom/target/arch/amdgpu/refs:target_refs",
         "//runtime/src/iree/base",
     ],
 )

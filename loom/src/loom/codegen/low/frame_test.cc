@@ -151,12 +151,11 @@ TEST_F(LowEmissionFrameTest, StorageLeaseFrameRetainsValueProducers) {
       /*.query=*/
       [](void* user_data, const loom_low_schedule_table_t* schedule,
          const loom_low_schedule_node_t* node,
-         loom_low_storage_lease_emit_fn_t emit, void* emit_user_data) {
+         const loom_low_storage_lease_query_sink_t* sink) {
         (void)user_data;
         (void)schedule;
         (void)node;
-        (void)emit;
-        (void)emit_user_data;
+        (void)sink;
         return iree_ok_status();
       },
   };

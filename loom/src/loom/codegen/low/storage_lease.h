@@ -26,6 +26,12 @@ extern "C" {
 
 // Sentinel for absent target storage release classes.
 #define LOOM_LOW_STORAGE_LEASE_RELEASE_CLASS_NONE UINT16_MAX
+// Default group for release classes without independently tracked partitions.
+#define LOOM_LOW_STORAGE_LEASE_RELEASE_GROUP_DEFAULT 0
+// Wildcard selecting every group in a release class.
+#define LOOM_LOW_STORAGE_LEASE_RELEASE_GROUP_ALL UINT16_MAX
+// Sentinel for absent target storage release groups.
+#define LOOM_LOW_STORAGE_LEASE_RELEASE_GROUP_NONE (UINT16_MAX - 1u)
 // Sentinel for absent target storage release reason identifiers.
 #define LOOM_LOW_STORAGE_RELEASE_REASON_NONE UINT16_MAX
 // Sentinel for absent target storage release action identifiers.
@@ -38,6 +44,15 @@ extern "C" {
 #define LOOM_LOW_STORAGE_LEASE_NODE_NONE UINT32_MAX
 // Sentinel for absent storage-lease scheduled ordinals.
 #define LOOM_LOW_STORAGE_LEASE_ORDINAL_NONE UINT32_MAX
+
+typedef enum loom_low_storage_progress_bound_kind_e {
+  // Unknown or uninitialized progress bound.
+  LOOM_LOW_STORAGE_PROGRESS_BOUND_UNKNOWN = 0,
+  // The packet itself establishes the bound before its storage effects.
+  LOOM_LOW_STORAGE_PROGRESS_BOUND_PACKET = 1,
+  // Final planning must establish the bound before the packet executes.
+  LOOM_LOW_STORAGE_PROGRESS_BOUND_REQUIRED = 2,
+} loom_low_storage_progress_bound_kind_t;
 
 // Storage-lease fact emitted by a target provider for the current scheduled
 // node.
@@ -56,6 +71,8 @@ typedef struct loom_low_storage_lease_event_t {
   loom_low_storage_lease_release_scope_t release_scope;
   // Target-owned release class identifier.
   uint16_t release_class_id;
+  // Target-owned partition within |release_class_id|.
+  uint16_t release_group_id;
   // Borrowed stable release-class name for diagnostics.
   iree_string_view_t release_class_name;
   // Target-owned residual action identifier used when allocation requests a
@@ -75,6 +92,34 @@ typedef struct loom_low_storage_lease_event_t {
 typedef iree_status_t (*loom_low_storage_lease_emit_fn_t)(
     void* user_data, const loom_low_storage_lease_event_t* event);
 
+// Target progress bound attached before the scheduled node being queried.
+typedef struct loom_low_storage_progress_bound_event_t {
+  // Whether the packet establishes or requires the bound.
+  loom_low_storage_progress_bound_kind_t kind;
+  // Target-owned release class identifier.
+  uint16_t release_class_id;
+  // Target-owned partition within |release_class_id|, or ALL.
+  uint16_t release_group_id;
+  // Maximum work remaining in the selected class and group. Zero proves full
+  // completion; nonzero bounds remain available to target planning but do not
+  // release an individual storage lease during generic allocation.
+  uint32_t remaining_count;
+} loom_low_storage_progress_bound_event_t;
+
+// Emits one target progress bound for the scheduled node currently queried.
+typedef iree_status_t (*loom_low_storage_progress_bound_emit_fn_t)(
+    void* user_data, const loom_low_storage_progress_bound_event_t* event);
+
+// Fact sink supplied to a target storage-lease query.
+typedef struct loom_low_storage_lease_query_sink_t {
+  // Opaque context passed to both emitters.
+  void* user_data;
+  // Emits one storage lease.
+  loom_low_storage_lease_emit_fn_t emit_lease;
+  // Emits one progress bound.
+  loom_low_storage_progress_bound_emit_fn_t emit_progress_bound;
+} loom_low_storage_lease_query_sink_t;
+
 // Queries target storage leases for one scheduled node.
 //
 // The builder may call this function more than once for the same node while
@@ -82,8 +127,8 @@ typedef iree_status_t (*loom_low_storage_lease_emit_fn_t)(
 // given schedule and node.
 typedef iree_status_t (*loom_low_storage_lease_query_fn_t)(
     void* user_data, const loom_low_schedule_table_t* schedule,
-    const loom_low_schedule_node_t* node, loom_low_storage_lease_emit_fn_t emit,
-    void* emit_user_data);
+    const loom_low_schedule_node_t* node,
+    const loom_low_storage_lease_query_sink_t* sink);
 
 // Target storage-lease provider used to populate a lease table.
 typedef struct loom_low_storage_lease_provider_t {
@@ -98,8 +143,8 @@ typedef struct loom_low_storage_lease_provider_t {
 // identity check before consuming descriptor rows.
 iree_status_t loom_low_storage_lease_query_descriptor_rows(
     void* user_data, const loom_low_schedule_table_t* schedule,
-    const loom_low_schedule_node_t* node, loom_low_storage_lease_emit_fn_t emit,
-    void* emit_user_data);
+    const loom_low_schedule_node_t* node,
+    const loom_low_storage_lease_query_sink_t* sink);
 
 // One target storage lease attached to a scheduled packet.
 typedef struct loom_low_storage_lease_record_t {
@@ -125,6 +170,8 @@ typedef struct loom_low_storage_lease_record_t {
   loom_low_storage_lease_release_scope_t release_scope;
   // Target-owned release class identifier.
   uint16_t release_class_id;
+  // Target-owned partition within |release_class_id|.
+  uint16_t release_group_id;
   // Borrowed stable release-class name for diagnostics.
   iree_string_view_t release_class_name;
   // Target-owned residual action identifier used when allocation requests a
@@ -138,7 +185,27 @@ typedef struct loom_low_storage_lease_record_t {
   iree_string_view_t release_reason_name;
   // Lease flags.
   loom_low_storage_lease_flags_t flags;
+  // One-based first later scheduled ordinal in |block_index| that fully
+  // releases this class and group, or zero when no exact local bound is known.
+  uint32_t release_before_scheduled_ordinal_plus_one;
 } loom_low_storage_lease_record_t;
+
+// One retained target progress bound attached before a scheduled packet.
+typedef struct loom_low_storage_progress_bound_record_t {
+  // Packet ordinal in final scheduled order.
+  uint32_t packet_index;
+  // Whether the packet establishes or requires the bound.
+  loom_low_storage_progress_bound_kind_t kind;
+  // Target-owned release class identifier.
+  uint16_t release_class_id;
+  // Target-owned partition within |release_class_id|, or ALL.
+  uint16_t release_group_id;
+  // Maximum work remaining in the selected class and group.
+  uint32_t remaining_count;
+} loom_low_storage_progress_bound_record_t;
+
+static_assert(sizeof(loom_low_storage_progress_bound_record_t) == 16,
+              "storage progress bounds retain only packet and bound facts");
 
 // Allocator-requested release action over target storage leases.
 typedef struct loom_low_storage_release_action_t {
@@ -180,6 +247,10 @@ typedef struct loom_low_storage_lease_table_t {
   const loom_low_storage_lease_record_t* records;
   // Number of entries in |records|.
   iree_host_size_t record_count;
+  // Progress bounds in scheduled packet order.
+  const loom_low_storage_progress_bound_record_t* progress_bounds;
+  // Number of entries in |progress_bounds|.
+  iree_host_size_t progress_bound_count;
 } loom_low_storage_lease_table_t;
 
 // Builds target storage-lease records for |schedule| using |provider|.

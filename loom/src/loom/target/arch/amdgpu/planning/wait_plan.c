@@ -2059,7 +2059,7 @@ static iree_status_t loom_amdgpu_wait_plan_handle_xcnt_pre_dependencies(
   }
 
   if (iree_any_bit_set(node_state->flags,
-                       LOOM_AMDGPU_WAIT_NODE_STATE_WRITES_EXEC) &&
+                       LOOM_AMDGPU_WAIT_NODE_STATE_XCNT_VMEM_DRAIN_REQUIRED) &&
       ((builder->xcnt_group == LOOM_AMDGPU_WAIT_XCNT_GROUP_VMEM &&
         builder->outstanding_counts[x_slot] != 0) ||
        iree_any_bit_set(

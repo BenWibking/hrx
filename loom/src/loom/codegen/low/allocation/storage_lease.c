@@ -1309,8 +1309,11 @@ void loom_low_allocation_storage_lease_state_record_assignment(
     const loom_liveness_block_info_t* block_info =
         &liveness->blocks[record->block_index];
     const uint32_t end_point =
-        iree_any_bit_set(record->flags,
-                         LOOM_LOW_STORAGE_LEASE_FLAG_RELEASE_BEFORE_BOUNDARY)
+        record->release_before_scheduled_ordinal_plus_one != 0
+            ? block_info->start_point +
+                  record->release_before_scheduled_ordinal_plus_one
+        : iree_any_bit_set(record->flags,
+                           LOOM_LOW_STORAGE_LEASE_FLAG_RELEASE_BEFORE_BOUNDARY)
             ? block_info->end_point
             : liveness->blocks[liveness->block_count - 1u].end_point;
     // The temporal index reserves nodes for exactly one insertion per lease.

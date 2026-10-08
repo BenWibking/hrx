@@ -37,6 +37,7 @@ from loom.target.arch.amdgpu.descriptors import (  # noqa: E402
     build_amdgpu_core_descriptor_sets_from_specs,
 )
 from loom.target.arch.amdgpu.descriptors.common import (  # noqa: E402
+    _REG_EXEC,
     _SCHEDULE_VMEM_CACHE_INVALIDATE,
 )
 from loom.target.arch.amdgpu.descriptors.memory import (  # noqa: E402
@@ -505,6 +506,10 @@ def _descriptor_address_source_is_retained(descriptor: Descriptor) -> bool:
     )
 
 
+def _descriptor_writes_exec(descriptor: Descriptor) -> bool:
+    return any(OperandFlag.STATE_WRITE in operand.flags and any(reg_alt.reg_class == _REG_EXEC for reg_alt in operand.reg_alts) for operand in descriptor.operands)
+
+
 def _descriptor_trait_names(
     context: _DescriptorTraitContext,
     descriptor: Descriptor,
@@ -559,6 +564,8 @@ def _descriptor_trait_names(
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_DESTINATION_SELECTION_FORWARDING")
     if _descriptor_address_source_is_retained(descriptor):
         trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_ADDRESS_SOURCE_RETAINED")
+    if _descriptor_writes_exec(descriptor):
+        trait_names.append("LOOM_AMDGPU_DESCRIPTOR_TRAIT_WRITES_EXEC")
     return tuple(trait_names)
 
 
