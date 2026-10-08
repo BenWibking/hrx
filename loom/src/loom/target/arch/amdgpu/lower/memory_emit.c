@@ -1202,8 +1202,8 @@ iree_status_t loom_amdgpu_lower_memory_load(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_memory_access_plan_t* plan) {
   IREE_ASSERT_GT(plan->packet_count, 0);
-  const loom_type_t result_type = loom_type_table_get(
-      &loom_low_lower_context_module(context)->types, plan->result_type);
+  const loom_type_t result_type = loom_low_lower_value_binding_type(
+      context, loom_amdgpu_memory_load_result(source_op));
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_memory_ordering_prefix(
       context, source_op, &plan->packets[0].access.source));
   if (plan->packet_count == 1) {

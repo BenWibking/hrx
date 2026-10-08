@@ -640,8 +640,7 @@ iree_status_t loom_amdgpu_select_vector_bitcast_plan(
   loom_type_t result_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
       context, source_op, out_plan->result, &result_type));
-  return loom_module_intern_type_id(loom_low_lower_context_module(context),
-                                    result_type, &out_plan->result_type);
+  return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
 }
 
 iree_status_t loom_amdgpu_lower_vector_bitcast(
@@ -651,8 +650,8 @@ iree_status_t loom_amdgpu_lower_vector_bitcast(
   IREE_RETURN_IF_ERROR(
       loom_low_lower_lookup_value(context, plan->source, &low_input));
 
-  const loom_type_t result_low_type = loom_type_table_get(
-      &loom_low_lower_context_module(context)->types, plan->result_type);
+  const loom_type_t result_low_type =
+      loom_low_lower_value_binding_type(context, plan->result);
   const loom_type_t input_low_type =
       loom_module_value_type(loom_low_lower_context_module(context), low_input);
   if (!loom_type_equal(input_low_type, result_low_type)) {

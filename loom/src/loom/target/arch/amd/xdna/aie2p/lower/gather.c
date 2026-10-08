@@ -222,6 +222,11 @@ iree_status_t loom_aie2p_select_gather_plan(loom_low_lower_context_t* context,
       .table = table,
       .element_bit_count = match.element_bit_count,
   };
+  loom_type_t result_type = loom_type_none();
+  IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
+      context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 2, &result_type));
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, loom_vector_gather_result(source_op), result_type));
   *out_plan = loom_low_lower_plan_make(LOOM_AIE2P_GATHER_PLAN_IMMUTABLE, plan);
   return iree_ok_status();
 }
@@ -393,15 +398,14 @@ iree_status_t loom_aie2p_emit_gather_plan(loom_low_lower_context_t* context,
   loom_type_t scalar_type = loom_type_none();
   loom_type_t select_type = loom_type_none();
   loom_type_t vector_half_type = loom_type_none();
-  loom_type_t vector_type = loom_type_none();
+  const loom_type_t vector_type = loom_low_lower_value_binding_type(
+      context, loom_vector_gather_result(source_op));
   IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ER, 1, &scalar_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_ERS16, 1, &select_type));
   IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
       context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 1, &vector_half_type));
-  IREE_RETURN_IF_ERROR(loom_aie2p_gather_make_register_type(
-      context, AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256, 2, &vector_type));
 
   loom_value_id_t ab_pointer = LOOM_VALUE_ID_INVALID;
   loom_value_id_t cd_pointer = LOOM_VALUE_ID_INVALID;

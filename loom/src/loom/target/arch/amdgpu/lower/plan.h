@@ -58,8 +58,6 @@ typedef struct loom_amdgpu_constant_plan_t {
   uint32_t register_count;
   // Immediate bit patterns emitted into selected result registers.
   uint32_t bit_patterns[LOOM_AMDGPU_MAX_SCALARIZED_32BIT_LANES];
-  // Interned Low result carrier selected before source analysis retires.
-  loom_type_id_t result_type;
   // Boolean payload for i1 constants.
   bool i1_value;
 } loom_amdgpu_constant_plan_t;
@@ -779,8 +777,6 @@ typedef struct loom_amdgpu_vector_bitcast_plan_t {
   loom_value_id_t source;
   // Result vector value receiving the same register payload.
   loom_value_id_t result;
-  // Selected native destination carrier, independent of source fact lifetime.
-  loom_type_id_t result_type;
 } loom_amdgpu_vector_bitcast_plan_t;
 
 typedef struct loom_amdgpu_vector_concat_plan_t {
@@ -878,8 +874,6 @@ typedef struct loom_amdgpu_vector_extract_plan_t {
   loom_value_id_t dynamic_index;
   // Result scalar or vector value receiving the extracted payload.
   loom_value_id_t result;
-  // Selected native destination carrier, independent of source fact lifetime.
-  loom_type_id_t result_type;
   // Static flattened logical source lane offset.
   uint32_t lane_offset;
   // Static source lane count for dynamic scalar extraction.
@@ -1453,8 +1447,6 @@ typedef struct loom_amdgpu_memory_packet_plan_t {
 
 // Immutable function-retained direct-memory packet plan.
 typedef struct loom_amdgpu_memory_access_plan_t {
-  // Selected complete load carrier, or invalid for stores.
-  loom_type_id_t result_type;
   // Number of populated packet plans.
   uint32_t packet_count;
   // Direct memory packets emitted in increasing payload-byte order. The

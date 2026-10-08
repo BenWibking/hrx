@@ -67,6 +67,12 @@ static iree_status_t loom_vm_select_op(void* user_data,
   const loom_op_t* definition =
       module->symbols.entries[symbol.symbol_id].defining_op;
   if (loom_global_rodata_def_isa(definition)) {
+    loom_type_t result_type;
+    IREE_RETURN_IF_ERROR(loom_low_lower_make_typed_register_type(
+        context, VM_CORE_REG_CLASS_ID_REF, 1, loom_type_buffer(),
+        &result_type));
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_global_load_result(source_op).values[0], result_type));
     *out_plan = loom_low_lower_plan_make(
         VM_CORE_DESCRIPTOR_REF_BUFFER_RODATA_LOAD, NULL);
   }
@@ -85,9 +91,8 @@ static iree_status_t loom_vm_emit_op(void* user_data,
       .name_id = name,
       .value = loom_attr_symbol(loom_global_load_global(source_op)),
   };
-  loom_type_t result_type;
-  IREE_RETURN_IF_ERROR(loom_low_lower_make_typed_register_type(
-      context, VM_CORE_REG_CLASS_ID_REF, 1, loom_type_buffer(), &result_type));
+  const loom_type_t result_type = loom_low_lower_value_binding_type(
+      context, loom_global_load_result(source_op).values[0]);
   const loom_low_lower_resolved_descriptor_t descriptor = {
       .descriptor =
           &loom_low_lower_context_descriptor_set(context)->descriptors[plan.id],

@@ -124,7 +124,6 @@ static iree_status_t loom_amdgpu_select_memory_plan(
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, plan_byte_length, (void**)&retained_plan));
   retained_plan->packet_count = selection.packet_count;
-  retained_plan->result_type = LOOM_TYPE_ID_INVALID;
   loom_module_t* module = loom_low_lower_context_module(context);
   const loom_memory_access_t memory_access =
       loom_memory_access_cast(module, source_op);
@@ -133,8 +132,8 @@ static iree_status_t loom_amdgpu_select_memory_plan(
     loom_type_t result_type = loom_type_none();
     IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
         context, source_op, loom_op_const_results(source_op)[0], &result_type));
-    IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
-        module, result_type, &retained_plan->result_type));
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_op_const_results(source_op)[0], result_type));
   }
   const loom_amdgpu_memory_dynamic_term_plan_t* dynamic_term_plans = NULL;
   IREE_RETURN_IF_ERROR(loom_amdgpu_plan_memory_dynamic_terms(

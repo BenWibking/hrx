@@ -851,8 +851,7 @@ iree_status_t loom_amdgpu_select_constant_plan(
   loom_type_t result_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_low_result_type(
       context, source_op, out_plan->result, &result_type));
-  return loom_module_intern_type_id(loom_low_lower_context_module(context),
-                                    result_type, &out_plan->result_type);
+  return loom_low_lower_plan_value_type(context, out_plan->result, result_type);
 }
 
 iree_status_t loom_amdgpu_bind_register_u32_lane_constants(
@@ -900,8 +899,8 @@ static iree_status_t loom_amdgpu_lower_i1_scc_constant(
     const loom_amdgpu_constant_plan_t* plan) {
   loom_type_t sgpr_type = loom_type_none();
   IREE_RETURN_IF_ERROR(loom_amdgpu_make_sgpr_type(context, &sgpr_type));
-  const loom_type_t result_type = loom_type_table_get(
-      &loom_low_lower_context_module(context)->types, plan->result_type);
+  const loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->result);
 
   loom_value_id_t zero = LOOM_VALUE_ID_INVALID;
   IREE_RETURN_IF_ERROR(loom_amdgpu_emit_resolved_const_u32(
@@ -922,8 +921,8 @@ static iree_status_t loom_amdgpu_lower_i1_scc_constant(
 static iree_status_t loom_amdgpu_lower_i1_mask_constant(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_constant_plan_t* plan) {
-  const loom_type_t result_type = loom_type_table_get(
-      &loom_low_lower_context_module(context)->types, plan->result_type);
+  const loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->result);
   if (plan->i1_value) {
     loom_op_t* exec_read_op = NULL;
     IREE_RETURN_IF_ERROR(loom_low_lower_emit_resolved_descriptor_op(
@@ -956,8 +955,8 @@ iree_status_t loom_amdgpu_lower_constant_plan(
       IREE_ASSERT_UNREACHABLE("invalid AMDGPU constant plan kind");
       return iree_ok_status();
   }
-  const loom_type_t result_type = loom_type_table_get(
-      &loom_low_lower_context_module(context)->types, plan->result_type);
+  const loom_type_t result_type =
+      loom_low_lower_value_binding_type(context, plan->result);
   if (plan->register_count == 1) {
     return loom_amdgpu_lower_u32_constant(
         context, source_op, &plan->descriptor, plan->imm32_attr_name_id,

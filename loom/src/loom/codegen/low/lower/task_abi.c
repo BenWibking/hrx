@@ -63,6 +63,8 @@ iree_status_t loom_low_task_select_kernel_builtin(
   if (!imports->sources[id]) {
     imports->sources[id] = source_op;
   }
+  IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+      context, loom_op_const_results(source_op)[0], imports->index_type));
   *out_plan = loom_low_lower_plan_make(id, imports);
   return iree_ok_status();
 }
@@ -89,10 +91,12 @@ iree_status_t loom_low_task_emit_kernel_preamble(
         loom_module_intern_string(module, loom_task_builtins[i].name, &name);
     loom_op_t* live_in = NULL;
     if (iree_status_is_ok(status)) {
-      status = loom_low_live_in_build(loom_low_lower_context_builder(context),
-                                      0, name, loom_named_attr_slice_empty(),
-                                      imports->index_type, source->location,
-                                      &live_in);
+      status =
+          loom_low_live_in_build(loom_low_lower_context_builder(context), 0,
+                                 name, loom_named_attr_slice_empty(),
+                                 loom_low_lower_value_binding_type(
+                                     context, loom_op_const_results(source)[0]),
+                                 source->location, &live_in);
     }
     if (iree_status_is_ok(status)) {
       status =

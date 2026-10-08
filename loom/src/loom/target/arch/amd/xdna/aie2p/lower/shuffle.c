@@ -16,6 +16,7 @@
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/core_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/lower/vector_packet.h"
 #include "loom/target/arch/amd/xdna/aie2p/vector_carrier.h"
+#include "loom/target/registers.h"
 
 enum {
   LOOM_AIE2P_SHUFFLE_PLAN_FIXED = 0x400,
@@ -142,6 +143,16 @@ static bool loom_aie2p_shuffle_plan_from_op(
   return true;
 }
 
+static bool loom_aie2p_shuffle_is_identity(
+    const loom_aie2p_shuffle_plan_t* plan) {
+  for (uint8_t packet = 0; packet < plan->logical_packet_count; ++packet) {
+    if (loom_aie2p_shuffle_packet_source_alias(plan, packet) != packet) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool loom_aie2p_shuffle_plan_isa(loom_low_lower_plan_t plan) {
   return plan.id == LOOM_AIE2P_SHUFFLE_PLAN_FIXED;
 }
@@ -160,6 +171,30 @@ iree_status_t loom_aie2p_select_shuffle_plan(loom_low_lower_context_t* context,
   IREE_RETURN_IF_ERROR(loom_low_lower_allocate_plan_data(
       context, sizeof(*retained_plan), (void**)&retained_plan));
   *retained_plan = matched_plan;
+  if (!loom_aie2p_shuffle_is_identity(retained_plan)) {
+    uint16_t result_register_class = 0;
+    switch (retained_plan->carrier_kind) {
+      case LOOM_AIE2P_VECTOR_CARRIER_ORDINARY:
+        result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_VEC256;
+        break;
+      case LOOM_AIE2P_VECTOR_CARRIER_PREDICATE:
+        result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_ELPREDICATE;
+        break;
+      case LOOM_AIE2P_VECTOR_CARRIER_ACCUMULATOR:
+        result_register_class = AIE2P_CORE_REG_CLASS_ID_AIE2P_MBMS;
+        break;
+      case LOOM_AIE2P_VECTOR_CARRIER_NONE:
+      default:
+        IREE_ASSERT_UNREACHABLE("selected AIE2P shuffle carrier");
+        IREE_BUILTIN_UNREACHABLE();
+    }
+    loom_type_t result_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(loom_low_lower_make_register_type(
+        context, result_register_class, retained_plan->carrier_unit_count,
+        &result_type));
+    IREE_RETURN_IF_ERROR(loom_low_lower_plan_value_type(
+        context, loom_vector_shuffle_result(source_op), result_type));
+  }
   *out_plan =
       loom_low_lower_plan_make(LOOM_AIE2P_SHUFFLE_PLAN_FIXED, retained_plan);
   return iree_ok_status();
@@ -421,16 +456,6 @@ static iree_status_t loom_aie2p_shuffle_vector_to_native_packet(
                                                vector_packet, out_packet);
 }
 
-static bool loom_aie2p_shuffle_is_identity(
-    const loom_aie2p_shuffle_plan_t* plan) {
-  for (uint8_t packet = 0; packet < plan->logical_packet_count; ++packet) {
-    if (loom_aie2p_shuffle_packet_source_alias(plan, packet) != packet) {
-      return false;
-    }
-  }
-  return true;
-}
-
 static iree_status_t loom_aie2p_shuffle_emit_state_initialize(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_aie2p_shuffle_plan_t* plan,
@@ -454,18 +479,13 @@ static iree_status_t loom_aie2p_shuffle_emit_state_initialize(
   IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_emitter_initialize(
       context, source_op, &out_state->packet_emitter));
 
+  out_state->result_type = loom_low_lower_value_binding_type(
+      context, loom_vector_shuffle_result(source_op));
   const uint8_t units_per_packet =
       loom_aie2p_vector_packet_carrier_unit_count(plan->carrier_kind);
-  IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-      &out_state->packet_emitter, plan->carrier_kind, units_per_packet,
-      &out_state->native_packet_type));
-  if (plan->carrier_unit_count == units_per_packet) {
-    out_state->result_type = out_state->native_packet_type;
-  } else {
-    IREE_RETURN_IF_ERROR(loom_aie2p_vector_packet_make_carrier_type(
-        &out_state->packet_emitter, plan->carrier_kind,
-        plan->carrier_unit_count, &out_state->result_type));
-  }
+  out_state->native_packet_type =
+      loom_low_register_carrier_type_with_unit_count(out_state->result_type,
+                                                     units_per_packet);
   if (!loom_aie2p_shuffle_plan_uses_broadcast_select(plan)) {
     return iree_ok_status();
   }
