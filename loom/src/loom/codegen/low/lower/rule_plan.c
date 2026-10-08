@@ -288,7 +288,8 @@ static loom_memory_access_flags_t loom_low_lower_resolve_emit_access_flags(
 static iree_status_t loom_low_lower_rule_project_read_only_data(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_attribute_t* source_attrs,
-    const loom_low_lower_attr_copy_t* attr_copy, loom_attribute_t* out_attr) {
+    const loom_low_lower_attr_copy_t* attr_copy,
+    loom_low_lower_read_only_data_id_t* out_id) {
   IREE_ASSERT_LT(attr_copy->source_attr_index, source_op->attribute_count);
   const loom_attribute_t source_attr =
       source_attrs[attr_copy->source_attr_index];
@@ -372,14 +373,10 @@ static iree_status_t loom_low_lower_rule_project_read_only_data(
   const uint64_t natural_alignment =
       iree_min(UINT64_C(64),
                UINT64_C(1) << iree_math_count_trailing_zeros_u64(byte_length));
-  loom_symbol_ref_t symbol = loom_symbol_ref_null();
-  IREE_RETURN_IF_ERROR(loom_low_lower_module_state_intern_read_only_data(
+  return loom_low_lower_module_state_intern_read_only_data(
       loom_low_lower_context_module_state(context),
-      loom_low_lower_context_module(context),
       iree_make_const_byte_span(bytes, byte_length), natural_alignment,
-      source_op->location, &symbol));
-  *out_attr = loom_attr_symbol(symbol);
-  return iree_ok_status();
+      source_op->location, out_id);
 }
 
 static iree_status_t loom_low_lower_rule_build_attrs(
@@ -388,7 +385,8 @@ static iree_status_t loom_low_lower_rule_build_attrs(
     const loom_low_lower_rule_source_t* state,
     const loom_low_lower_emit_t* emit,
     const loom_low_source_memory_access_plan_t* source_memory_access,
-    loom_named_attr_t* attrs) {
+    loom_named_attr_t* attrs,
+    loom_low_lower_read_only_attributes_t* read_only_attributes) {
   const loom_attribute_t* source_attrs = loom_op_const_attrs(source_op);
   for (uint16_t i = 0; i < emit->attr_copy_count; ++i) {
     uint16_t attr_copy_index =
@@ -404,8 +402,12 @@ static iree_status_t loom_low_lower_rule_build_attrs(
       case LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_ELEMENTS:
       case LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_BYTE_SEGMENT:
       case LOOM_LOW_LOWER_ATTR_COPY_I64_ARRAY_READ_ONLY_BYTE_WORDS: {
+        loom_low_lower_read_only_data_id_t* ids =
+            (loom_low_lower_read_only_data_id_t*)(read_only_attributes + 1);
         IREE_RETURN_IF_ERROR(loom_low_lower_rule_project_read_only_data(
-            context, source_op, source_attrs, attr_copy, &attrs[i].value));
+            context, source_op, source_attrs, attr_copy, &ids[i]));
+        read_only_attributes->attribute_mask |= UINT32_C(1) << i;
+        attrs[i].value = loom_attr_symbol(loom_symbol_ref_null());
         break;
       }
       case LOOM_LOW_LOWER_ATTR_COPY_I64_LOG2:
@@ -1205,6 +1207,7 @@ static uint32_t loom_low_lower_rule_emit_data_size(
     uint16_t source_value_mask) {
   return (uint32_t)iree_host_align(
       emit->attr_copy_count * sizeof(loom_named_attr_t) +
+          loom_low_lower_rule_read_only_attributes_size(emit) +
           iree_math_count_ones_u32(result_type_mask) * sizeof(loom_type_id_t) +
           iree_math_count_ones_u32(source_value_mask) *
               sizeof(loom_value_id_t) +
@@ -1271,7 +1274,8 @@ iree_status_t loom_low_lower_rule_plan_finalize(
         (void**)&temporary_types));
   }
   // Table counts bound a rule to 65535 emits with at most 31 attributes and
-  // three result carriers and seven source references each. The allocation and
+  // three result carriers and seven source references each. Read-only
+  // attributes add at most 32 u32 words per row. The allocation and
   // row-relative offsets fit in u32. Payload alignment permits the next row to
   // carry named attributes.
   const uint32_t rows_size = (uint32_t)iree_host_align(
@@ -1331,15 +1335,23 @@ iree_status_t loom_low_lower_rule_plan_finalize(
     if (data_size != 0) {
       resolved->data_offset = (uint32_t)(data - (uint8_t*)resolved);
     }
+    uint8_t* attribute_payload_end =
+        data + emit->attr_copy_count * sizeof(loom_named_attr_t);
+    loom_low_lower_read_only_attributes_t* read_only_attributes = NULL;
+    if (emit->has_read_only_data_attributes) {
+      read_only_attributes =
+          (loom_low_lower_read_only_attributes_t*)attribute_payload_end;
+      read_only_attributes->attribute_mask = 0;
+    }
     if (emit->attr_copy_count != 0) {
       IREE_RETURN_IF_ERROR(loom_low_lower_rule_build_attrs(
           context, rule_set, source_op, &source, emit,
           emit->source_memory_ordinal ? source_memory_access : NULL,
-          (loom_named_attr_t*)data));
+          (loom_named_attr_t*)data, read_only_attributes));
     }
     loom_type_id_t* result_types =
-        (loom_type_id_t*)(data +
-                          emit->attr_copy_count * sizeof(loom_named_attr_t));
+        (loom_type_id_t*)(attribute_payload_end +
+                          loom_low_lower_rule_read_only_attributes_size(emit));
     loom_value_id_t* source_values =
         (loom_value_id_t*)(result_types + iree_math_count_ones_u32(
                                               resolved->result_type_mask));

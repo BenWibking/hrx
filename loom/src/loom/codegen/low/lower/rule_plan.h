@@ -14,6 +14,7 @@
 #define LOOM_CODEGEN_LOW_LOWER_RULE_PLAN_H_
 
 #include "iree/base/internal/math.h"
+#include "loom/codegen/low/lower/module_state.h"
 #include "loom/codegen/low/lower/rules.h"
 
 #ifdef __cplusplus
@@ -21,6 +22,14 @@ extern "C" {
 #endif
 
 typedef struct loom_low_lower_selected_plan_t loom_low_lower_selected_plan_t;
+
+// Present only for rows whose static emit has read-only data attributes.
+// Followed by attr_copy_count private data IDs, indexed by attribute ordinal.
+// Only IDs selected by attribute_mask are initialized or consumed.
+typedef struct loom_low_lower_read_only_attributes_t {
+  // Attribute ordinals whose planned null symbols are filled during execution.
+  uint32_t attribute_mask;
+} loom_low_lower_read_only_attributes_t;
 
 typedef struct loom_low_lower_resolved_emit_t {
   // Static emit-program row selected by planning.
@@ -35,13 +44,25 @@ typedef struct loom_low_lower_resolved_emit_t {
   // Fact-derived source references retained after attributes and result types.
   // Bits address operand refs; set bits have packed value IDs.
   uint16_t source_value_mask;
-  // Byte offset from this row to attributes, canonical result type IDs,
-  // fact-derived source values, and an optional complete-address coordinate
-  // type ID, in that order. Zero for an empty payload. All rows and their
-  // aligned payloads share one function-arena allocation. Elided recipes retain
-  // descriptor identity without executable payloads.
+  // Byte offset from this row to attributes, optional read-only attribute IDs,
+  // canonical result type IDs, fact-derived source values, and an optional
+  // complete-address coordinate type ID, in that order. Zero for an empty
+  // payload. All rows and their aligned payloads share one function-arena
+  // allocation. Elided recipes retain descriptor identity without executable
+  // payloads.
   uint32_t data_offset;
 } loom_low_lower_resolved_emit_t;
+
+// Returns the optional private resource payload size without growing ordinary
+// emit rows or their attribute storage.
+static inline uint32_t loom_low_lower_rule_read_only_attributes_size(
+    const loom_low_lower_emit_t* emit) {
+  return emit->has_read_only_data_attributes
+             ? sizeof(loom_low_lower_read_only_attributes_t) +
+                   emit->attr_copy_count *
+                       sizeof(loom_low_lower_read_only_data_id_t)
+             : 0;
+}
 
 // Preserves semantic register types at unchanged widths. A carrier-only type
 // can change width; a semantic width conversion requires a target relation.
@@ -59,14 +80,35 @@ static inline loom_named_attr_slice_t loom_low_lower_resolved_emit_attributes(
       resolved->emit->attr_copy_count);
 }
 
+// Returns the resource IDs following the attributes of a row carrying them.
+static inline const loom_low_lower_read_only_attributes_t*
+loom_low_lower_resolved_emit_read_only_attributes(
+    const loom_low_lower_resolved_emit_t* resolved) {
+  return (
+      const loom_low_lower_read_only_attributes_t*)((const uint8_t*)resolved +
+                                                    resolved->data_offset +
+                                                    resolved->emit
+                                                            ->attr_copy_count *
+                                                        sizeof(
+                                                            loom_named_attr_t));
+}
+
+// Returns the packed canonical result carriers following attribute payloads.
+static inline const loom_type_id_t* loom_low_lower_resolved_emit_result_types(
+    const loom_low_lower_resolved_emit_t* resolved) {
+  return (const loom_type_id_t*)((const uint8_t*)resolved +
+                                 resolved->data_offset +
+                                 resolved->emit->attr_copy_count *
+                                     sizeof(loom_named_attr_t) +
+                                 loom_low_lower_rule_read_only_attributes_size(
+                                     resolved->emit));
+}
+
 // Returns the canonical carrier ID for a result fixed by planning.
 static inline loom_type_id_t loom_low_lower_resolved_emit_result_type_id(
     const loom_low_lower_resolved_emit_t* resolved, uint16_t result_ordinal) {
-  const loom_named_attr_t* attributes =
-      (const loom_named_attr_t*)((const uint8_t*)resolved +
-                                 resolved->data_offset);
   const loom_type_id_t* result_types =
-      (const loom_type_id_t*)(attributes + resolved->emit->attr_copy_count);
+      loom_low_lower_resolved_emit_result_types(resolved);
   const uint32_t preceding_mask = (UINT32_C(1) << result_ordinal) - 1u;
   return result_types[iree_math_count_ones_u32(resolved->result_type_mask &
                                                preceding_mask)];
@@ -77,11 +119,8 @@ static inline loom_type_id_t loom_low_lower_resolved_emit_result_type_id(
 static inline loom_value_id_t loom_low_lower_resolved_emit_source_value(
     const loom_low_lower_resolved_emit_t* resolved,
     uint16_t reference_ordinal) {
-  const loom_named_attr_t* attributes =
-      (const loom_named_attr_t*)((const uint8_t*)resolved +
-                                 resolved->data_offset);
   const loom_type_id_t* result_types =
-      (const loom_type_id_t*)(attributes + resolved->emit->attr_copy_count);
+      loom_low_lower_resolved_emit_result_types(resolved);
   const loom_value_id_t* source_values =
       (const loom_value_id_t*)(result_types + iree_math_count_ones_u32(
                                                   resolved->result_type_mask));
@@ -95,11 +134,8 @@ static inline loom_value_id_t loom_low_lower_resolved_emit_source_value(
 static inline loom_type_id_t
 loom_low_lower_resolved_emit_address_coordinate_type_id(
     const loom_low_lower_resolved_emit_t* resolved) {
-  const loom_named_attr_t* attributes =
-      (const loom_named_attr_t*)((const uint8_t*)resolved +
-                                 resolved->data_offset);
   const loom_type_id_t* result_types =
-      (const loom_type_id_t*)(attributes + resolved->emit->attr_copy_count);
+      loom_low_lower_resolved_emit_result_types(resolved);
   const loom_value_id_t* source_values =
       (const loom_value_id_t*)(result_types + iree_math_count_ones_u32(
                                                   resolved->result_type_mask));

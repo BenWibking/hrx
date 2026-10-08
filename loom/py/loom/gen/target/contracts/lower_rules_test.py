@@ -635,6 +635,34 @@ def test_validate_c_table_shape_rejects_oversized_emit_count_fields() -> None:
         )
 
 
+def test_validate_c_table_shape_checks_deferred_resource_storage() -> None:
+    for kind, needs_storage in (
+        (LowerAttrCopyKind.I64_LITERAL, False),
+        (LowerAttrCopyKind.I64_ARRAY_READ_ONLY_ELEMENTS, True),
+        (LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_SEGMENT, True),
+        (LowerAttrCopyKind.I64_ARRAY_READ_ONLY_BYTE_WORDS, True),
+    ):
+        emit = LowerEmit(
+            kind=LowerEmitKind.DESCRIPTOR_CONST,
+            descriptor=TEST_LOW_CONST_I32_DESCRIPTOR,
+            attr_copy_count=1,
+            has_read_only_data_attributes=needs_storage,
+        )
+        table = _compiled_lower_rule_set(
+            attr_copies=(LowerAttrCopy(kind=kind, target_name="value"),),
+            emits=(emit,),
+        )
+        _validate_c_table_shape(table, _c_shape_contract(), ())
+        inconsistent_table = replace(
+            table,
+            emits=(replace(emit, has_read_only_data_attributes=not needs_storage),),
+        )
+        _expect_value_error(
+            lambda table=inconsistent_table: _validate_c_table_shape(table, _c_shape_contract(), ()),
+            "read-only data flag does not match its attribute projections",
+        )
+
+
 def test_validate_c_table_shape_rejects_structural_descriptor_payload() -> None:
     table = _compiled_lower_rule_set(
         emits=(

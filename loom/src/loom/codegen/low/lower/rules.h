@@ -1043,8 +1043,11 @@ typedef struct loom_low_lower_emit_t {
   uint16_t accumulator_operand_index : 2;
   // Operand-group materialization applied before descriptor emission.
   uint16_t operand_materialization : 1;
+  // At least one attribute projects a private immutable payload. Planning
+  // retains its data ID; execution publishes the symbol used by the packet.
+  uint16_t has_read_only_data_attributes : 1;
   // Reserved storage available to future emit parameters.
-  uint16_t reserved_count_bits : 2;
+  uint16_t reserved_count_bits : 1;
 } loom_low_lower_emit_t;
 static_assert(sizeof(loom_low_lower_emit_t) == 20,
               "loom_low_lower_emit_t must be 20 bytes");

@@ -205,6 +205,8 @@ loom_cc_test(
     srcs = ["module_state_test.cc"],
     deps = [
         ":lower",
+        "//loom/src/loom/ir",
+        "//loom/src/loom/ops/global",
         "//runtime/src/iree/base/internal:arena",
         "//runtime/src/iree/testing:gtest",
         "//runtime/src/iree/testing:gtest_main",
