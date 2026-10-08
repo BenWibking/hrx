@@ -768,7 +768,7 @@ kernel.def target(@gfx11_wave64) @target_specialized_launch(%expert_count: index
 }
 
 TEST(AmdgpuTargetTest,
-     CompileArtifactReturnsExecutableAndRequestedLaunchConfig) {
+     CompileArtifactReturnsExecutableLaunchConfigAndTargetListing) {
   TargetEnvironmentPtr target_environment = CreateAmdgpuTargetEnvironment();
   ContextPtr context = CreateAmdgpuContext(target_environment.get());
   WorkspacePtr workspace = CreateWorkspace();
@@ -796,7 +796,8 @@ kernel.def target(@gfx1151) @complete_launch(%group_count: index) {
       /*.artifact_format=*/
       loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_AMDGPU_HSACO),
       /*.identifier=*/loomc_make_cstring_view("complete_launch.hsaco"),
-      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY,
+      /*.artifact_flags=*/LOOMC_EMIT_ARTIFACT_FLAG_PRIMARY |
+          LOOMC_EMIT_ARTIFACT_FLAG_TARGET_LISTING,
   };
   const loomc_compile_artifact_options_t options = {
       /*.type=*/LOOMC_STRUCTURE_TYPE_COMPILE_ARTIFACT_OPTIONS,
@@ -821,6 +822,13 @@ kernel.def target(@gfx1151) @complete_launch(%group_count: index) {
   ASSERT_NE(FindArtifact(result_ptr.get(), LOOMC_ARTIFACT_KIND_EXECUTABLE,
                          LOOMC_ARTIFACT_FORMAT_AMDGPU_HSACO),
             nullptr);
+  const loomc_artifact_t* target_listing = FindArtifact(
+      result_ptr.get(), LOOMC_ARTIFACT_KIND_TEXT, "amdgpu-assembly");
+  ASSERT_NE(target_listing, nullptr);
+  EXPECT_EQ(ToString(target_listing->identifier),
+            "complete_launch.hsaco.listing");
+  EXPECT_NE(ToString(target_listing->contents).find("complete_launch"),
+            std::string::npos);
   const loomc_artifact_t* launch_artifact =
       FindArtifact(result_ptr.get(), LOOMC_ARTIFACT_KIND_LAUNCH_CONFIG,
                    LOOMC_ARTIFACT_FORMAT_LOOM_BYTECODE);
