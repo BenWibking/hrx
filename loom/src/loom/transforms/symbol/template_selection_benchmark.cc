@@ -106,7 +106,7 @@ std::string BuildSource(const TemplateSelectionSourceOptions& options) {
     source.append(std::to_string(i));
     source.append("(%value: index) -> (index)");
     if (options.constrained) {
-      source.append(" where [ge(%value, 0), mul(%value, 16)]");
+      source.append(" where [ge(%value, 0), multiple_of(%value, 16)]");
     }
     source.append(" {\n");
     if (options.deferred_exact_call) {

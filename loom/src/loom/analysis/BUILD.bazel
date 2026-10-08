@@ -238,6 +238,7 @@ loom_cc_library(
     hdrs = ["symbol_value_constraints.h"],
     deps = [
         "//loom/src/loom/ir",
+        "//loom/src/loom/ir:facts",
         "//runtime/src/iree/base",
     ],
 )

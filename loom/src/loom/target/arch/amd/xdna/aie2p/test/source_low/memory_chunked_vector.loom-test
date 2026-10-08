@@ -269,7 +269,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @exchange_bf16_mat
 // ====
 
 func.def @exchange_bf16_dynamic(%input: buffer, %output: buffer, %byte_offset: offset, %replacement: vector<64xbf16>) -> (vector<64xbf16>) {
-  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), mul(%byte_offset, 64)] : offset
+  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), multiple_of(%byte_offset, 64)] : offset
   %source_aligned, %destination_aligned = buffer.assume.alignment %input, %output {minimum_alignment = 64} : buffer, buffer
   %source = buffer.view %source_aligned[%base] : buffer -> view<64xbf16>
   %destination = buffer.view %destination_aligned[%base] : buffer -> view<64xbf16>
@@ -297,7 +297,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @exchange_bf16_dyn
 // ====
 
 func.def @exchange_bf16_dynamic_subtracted_origin(%input: buffer, %output: buffer, %byte_offset: offset, %replacement: vector<64xbf16>) -> (vector<64xbf16>) {
-  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), mul(%byte_offset, 64)] : offset
+  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), multiple_of(%byte_offset, 64)] : offset
   %prefix = index.constant 64 : offset
   %origin = index.sub %base, %prefix : offset
   %source_aligned, %destination_aligned = buffer.assume.alignment %input, %output {minimum_alignment = 64} : buffer, buffer
@@ -329,7 +329,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @exchange_bf16_dyn
 // ====
 
 func.def @exchange_bf16_dynamic_full_static(%input: buffer, %output: buffer, %byte_offset: offset, %replacement: vector<64xbf16>) -> (vector<64xbf16>) {
-  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), mul(%byte_offset, 64)] : offset
+  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), multiple_of(%byte_offset, 64)] : offset
   %prefix = index.constant 448 : offset
   %origin = index.add %base, %prefix : offset
   %source_aligned, %destination_aligned = buffer.assume.alignment %input, %output {minimum_alignment = 64} : buffer, buffer
@@ -475,7 +475,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @exchange_f64_1024
 
 // The two ordinary-vector chunks have effective byte biases 64 and 128.
 func.def @exchange_bf16_biased_chunks(%input: buffer, %output: buffer, %byte_offset: offset, %replacement: vector<64xbf16>) -> (vector<64xbf16>) {
-  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), mul(%byte_offset, 64)] : offset
+  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), multiple_of(%byte_offset, 64)] : offset
   %payload_prefix = index.constant 64 : offset
   %origin = index.add %base, %payload_prefix : offset
   %source_aligned, %destination_aligned = buffer.assume.alignment %input, %output {minimum_alignment = 64} : buffer, buffer
@@ -507,7 +507,7 @@ low.func.def target<amd.xdna.aie2p.core> abi(object_function) @exchange_bf16_bia
 
 // Zero authored bias still needs additions for the later accumulator chunks.
 func.def @exchange_f32_zero_bias_chunks(%input: buffer, %output: buffer, %byte_offset: offset, %replacement: vector<64xf32>) -> (vector<64xf32>) {
-  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), mul(%byte_offset, 64)] : offset
+  %base = index.assume %byte_offset [range(%byte_offset, 64, 4096), multiple_of(%byte_offset, 64)] : offset
   %source_aligned, %destination_aligned = buffer.assume.alignment %input, %output {minimum_alignment = 64} : buffer, buffer
   %source = buffer.view %source_aligned[%base] : buffer -> view<64xf32>
   %destination = buffer.view %destination_aligned[%base] : buffer -> view<64xf32>

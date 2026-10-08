@@ -2,7 +2,7 @@
 
 // Wrapping can cross the sign boundary and destroys odd divisor factors.
 func.def @wrapping_range(%x: i8) -> (i64, i64, i64) {
-  %bounded = scalar.assume %x [range(%x, 30, 60), mul(%x, 6)] : i8
+  %bounded = scalar.assume %x [range(%x, 30, 60), multiple_of(%x, 6)] : i8
   %factor = scalar.constant 3 : i8
   %product = scalar.muli %bounded, %factor : i8
   %lo = test.fact_range_lo %product : i8 -> i64
@@ -72,7 +72,7 @@ func.def @constant_exact(%x: i32) -> (i64, i64) {
 
 // scalar.assume applies predicate facts to integer payload results.
 func.def @assume_divisibility(%x: i64) -> (i64) {
-  %x2 = scalar.assume %x [mul(%x, 32)] : i64
+  %x2 = scalar.assume %x [multiple_of(%x, 32)] : i64
   %div = test.fact_divisor %x2 : i64 -> i64
   func.return %div : i64
 }

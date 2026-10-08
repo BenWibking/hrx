@@ -321,16 +321,10 @@ loom_decision_predicate_evaluate(
     case LOOM_PREDICATE_UGE:
       return loom_decision_predicate_evaluate_unsigned_relation(
           predicate_kind, &operands[0], &operands[1]);
-    case LOOM_PREDICATE_MUL:
+    case LOOM_PREDICATE_MULTIPLE_OF:
       return loom_decision_predicate_evaluate_multiple(&operands[0],
                                                        &operands[1]);
-    case LOOM_PREDICATE_MIN:
-      return loom_decision_predicate_evaluate_relation(
-          LOOM_PREDICATE_GE, &operands[0], &operands[1]);
-    case LOOM_PREDICATE_MAX:
-      return loom_decision_predicate_evaluate_relation(
-          LOOM_PREDICATE_LE, &operands[0], &operands[1]);
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_POWER_OF_TWO:
       return loom_decision_predicate_evaluate_power_of_two(&operands[0]);
     case LOOM_PREDICATE_RANGE:
       return loom_decision_predicate_evaluate_range(&operands[0], &operands[1],

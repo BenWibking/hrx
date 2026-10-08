@@ -93,7 +93,7 @@ func.def @attribute_observer(%left: i32, %right: i64) -> (i32) {
   %wide = scalar.extsi %left : i32 to i64
   %difference = scalar.subi %wide, %right : i64
   %result = scalar.trunci %difference : i64 to i32
-  %aligned = scalar.assume %result [mul(%result, 8)] : i32
+  %aligned = scalar.assume %result [multiple_of(%result, 8)] : i32
   func.return %aligned : i32
 }
 
@@ -101,7 +101,7 @@ func.def @attribute_observer(%left: i32, %right: i64) -> (i32) {
 func.def @attribute_observer(%left: i32, %right: i64) -> (i32) {
   %7 = scalar.trunci %right : i64 to i32
   %result = scalar.subi %left, %7 : i32
-  %aligned = scalar.assume %result [mul(%result, 8)] : i32
+  %aligned = scalar.assume %result [multiple_of(%result, 8)] : i32
   func.return %aligned : i32
 }
 
@@ -139,7 +139,7 @@ func.def @shared_wide(%left: i32, %right: i64) -> (i64, i32) {
 func.def @wide_attribute(%left: i32, %right: i64, %other: i64) -> (i32, i64) {
   %wide = scalar.extsi %left : i32 to i64
   %sum = scalar.addi %wide, %right : i64
-  %bounded = scalar.assume %other [mul(%sum, 8)] : i64
+  %bounded = scalar.assume %other [multiple_of(%sum, 8)] : i64
   %result = scalar.trunci %sum : i64 to i32
   func.return %result, %bounded : i32, i64
 }
@@ -266,7 +266,7 @@ func.def @offset_word(%origin: offset) -> (i32) {
 
 // Preserve the operand refinement needed by downstream numeric consumers.
 func.def @bounded_operand(%input: i64) -> (i32) {
-  %bounded = scalar.assume %input [range(%input, 0, 128), mul(%input, 8)] : i64
+  %bounded = scalar.assume %input [range(%input, 0, 128), multiple_of(%input, 8)] : i64
   %prefix = scalar.constant 16 : i64
   %sum = scalar.addi %bounded, %prefix : i64
   %result = scalar.trunci %sum : i64 to i32
@@ -275,7 +275,7 @@ func.def @bounded_operand(%input: i64) -> (i32) {
 
 // ----
 func.def @bounded_operand(%input: i64) -> (i32) {
-  %bounded = scalar.assume %input [range(%input, 0, 128), mul(%input, 8)] : i64
+  %bounded = scalar.assume %input [range(%input, 0, 128), multiple_of(%input, 8)] : i64
   %6 = scalar.constant 16 : i32
   %5 = scalar.trunci %bounded : i64 to i32
   %result = scalar.addi %5, %6 : i32

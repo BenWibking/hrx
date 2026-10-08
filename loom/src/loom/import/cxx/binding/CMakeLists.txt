@@ -26,6 +26,25 @@ endif()
 if(LOOM_IMPORT_CXX)
 loom_cc_library(
   NAME
+    combining
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "combining.h"
+  SRCS
+    "combining.cc"
+  DEPS
+    loom::ops::combining
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
     assembly
   CXX_STANDARD
     23
@@ -92,11 +111,85 @@ loom_cc_library(
   SRCS
     "assumptions.cc"
   DEPS
+    ::predicates
+    iree::third_party::cxx_parser
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    predicates
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "predicates.h"
+  SRCS
+    "predicates.cc"
+  DEPS
     iree::third_party::cxx_parser
     loom::import::cxx::source
+    loom::import::cxx::source::attributes
     loom::import::cxx::source::constants
     loom::import::cxx::source::expressions
     loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    function_contracts
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "function_contracts.h"
+  SRCS
+    "function_contracts.cc"
+  DEPS
+    ::predicates
+    ::target_requirements
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::error
+    loom::import::cxx::source::expressions
+    loom::import::cxx::value::types
+    loom::ir
+  PUBLIC
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_library(
+  NAME
+    target_requirements
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  HDRS
+    "target_requirements.h"
+  SRCS
+    "target_requirements.cc"
+  DEPS
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::constants
+    loom::import::cxx::source::error
+    loom::import::cxx::source::expressions
+    loom::ir
+    loom::ops::target
   PUBLIC
 )
 endif()
@@ -115,7 +208,9 @@ loom_cc_library(
   SRCS
     "config.cc"
   DEPS
+    ::predicates
     iree::third_party::cxx_parser
+    loom::analysis::symbol_value_constraints
     loom::import::cxx::source::attributes
     loom::import::cxx::source::error
     loom::import::cxx::source::locations
@@ -241,6 +336,7 @@ loom_cc_library(
   SRCS
     "shaped.cc"
   DEPS
+    ::combining
     ::scalar_bindings
     iree::third_party::cxx_parser
     loom::import::cxx::source::error
@@ -265,6 +361,7 @@ loom_cc_library(
   SRCS
     "template_apply.cc"
   DEPS
+    ::function_contracts
     iree::third_party::cxx_parser
     loom::import::cxx::source::attributes
     loom::import::cxx::source::error
@@ -368,11 +465,13 @@ loom_cc_library(
   SRCS
     "kernel.cc"
   DEPS
+    ::combining
     iree::third_party::cxx_parser
     loom::import::cxx::source::error
     loom::import::cxx::value::types
     loom::ir::facts
     loom::ops::atomic
+    loom::ops::combining
     loom::ops::index
     loom::ops::kernel
   PUBLIC
@@ -421,6 +520,7 @@ loom_cc_library(
     ::check
     ::decode
     ::encoding
+    ::function_contracts
     ::kernel
     ::launch
     ::scalar_bindings
@@ -562,6 +662,54 @@ loom_cc_test(
     iree::testing::gtest_main
     iree::third_party::cxx_parser
     loom::import::cxx::source
+  LABELS
+    "iree-build-requirement=loom.import.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_test(
+  NAME
+    predicates_test
+  SRCS
+    "predicates_test.cc"
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  DEPS
+    ::predicates
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::error
+  LABELS
+    "iree-build-requirement=loom.import.cxx"
+)
+endif()
+
+if(LOOM_IMPORT_CXX)
+loom_cc_test(
+  NAME
+    target_requirements_test
+  SRCS
+    "target_requirements_test.cc"
+  CXX_STANDARD
+    23
+  CXX_FEATURES
+    "exceptions"
+    "rtti"
+  DEPS
+    ::target_requirements
+    iree::testing::gtest
+    iree::testing::gtest_main
+    iree::third_party::cxx_parser
+    loom::import::cxx::source
+    loom::import::cxx::source::attributes
+    loom::import::cxx::source::error
   LABELS
     "iree-build-requirement=loom.import.cxx"
 )

@@ -1,5 +1,5 @@
 func.def @wide_subview_selection(%input: buffer, %byte_base0: offset, %condition: i1) -> (i32) {
-  %byte_base = index.assume %byte_base0 [range(%byte_base0, 2147483648, 4294967296), mul(%byte_base0, 4)] : offset
+  %byte_base = index.assume %byte_base0 [range(%byte_base0, 2147483648, 4294967296), multiple_of(%byte_base0, 4)] : offset
   %aligned = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %root = buffer.view %aligned[%byte_base] : buffer -> view<4xi32>
   %first = view.subview %root[1] : view<4xi32> -> view<1xi32>
@@ -69,8 +69,8 @@ func.def public @rotate_buffer_views(%input: buffer, %count_input: index, %seed:
 
 func.def @correlated_duplicate_rotation(%input: buffer, %count_input: index, %first_offset_input: offset, %second_offset_input: offset) -> (i32) {
   %count = index.assume %count_input [range(%count_input, 0, 257)] : index
-  %first_offset = index.assume %first_offset_input [range(%first_offset_input, 0, 4092), mul(%first_offset_input, 4)] : offset
-  %second_offset = index.assume %second_offset_input [range(%second_offset_input, 0, 4092), mul(%second_offset_input, 4)] : offset
+  %first_offset = index.assume %first_offset_input [range(%first_offset_input, 0, 4092), multiple_of(%first_offset_input, 4)] : offset
+  %second_offset = index.assume %second_offset_input [range(%second_offset_input, 0, 4092), multiple_of(%second_offset_input, 4)] : offset
   %storage = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   %begin = index.constant 0 : index
   %step = index.constant 1 : index
@@ -97,8 +97,8 @@ func.def @correlated_duplicate_rotation(%input: buffer, %count_input: index, %fi
 // ====
 
 func.def @correlated_cfg_rotation(%input: buffer, %select: i1, %again: i1, %left_offset_input: offset, %right_offset_input: offset) -> (i32) {
-  %left_offset = index.assume %left_offset_input [range(%left_offset_input, 0, 4092), mul(%left_offset_input, 4)] : offset
-  %right_offset = index.assume %right_offset_input [range(%right_offset_input, 0, 4092), mul(%right_offset_input, 4)] : offset
+  %left_offset = index.assume %left_offset_input [range(%left_offset_input, 0, 4092), multiple_of(%left_offset_input, 4)] : offset
+  %right_offset = index.assume %right_offset_input [range(%right_offset_input, 0, 4092), multiple_of(%right_offset_input, 4)] : offset
   %storage = buffer.assume.alignment %input {minimum_alignment = 4} : buffer
   cfg.cond_br %select, ^left, ^right
 ^left:

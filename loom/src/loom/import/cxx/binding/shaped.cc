@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "loom/import/cxx/binding/combining.h"
 #include "loom/import/cxx/binding/scalar_bindings.h"
 #include "loom/import/cxx/source/error.h"
 #include "loom/ops/combining.h"
@@ -33,33 +34,6 @@ uint8_t math_permissions(cxx::TranslationUnit& unit, Diagnostics& diagnostics,
     flags |= flag;
   }
   return flags;
-}
-
-std::optional<loom_combining_kind_t> reduction_kind(std::string_view name) {
-  static constexpr std::pair<std::string_view, loom_combining_kind_t> kinds[] =
-      {
-          {"addi", LOOM_COMBINING_KIND_ADDI},
-          {"addf", LOOM_COMBINING_KIND_ADDF},
-          {"muli", LOOM_COMBINING_KIND_MULI},
-          {"mulf", LOOM_COMBINING_KIND_MULF},
-          {"minsi", LOOM_COMBINING_KIND_MINSI},
-          {"maxsi", LOOM_COMBINING_KIND_MAXSI},
-          {"minui", LOOM_COMBINING_KIND_MINUI},
-          {"maxui", LOOM_COMBINING_KIND_MAXUI},
-          {"andi", LOOM_COMBINING_KIND_ANDI},
-          {"ori", LOOM_COMBINING_KIND_ORI},
-          {"xori", LOOM_COMBINING_KIND_XORI},
-          {"minimumf", LOOM_COMBINING_KIND_MINIMUMF},
-          {"maximumf", LOOM_COMBINING_KIND_MAXIMUMF},
-          {"minnumf", LOOM_COMBINING_KIND_MINNUMF},
-          {"maxnumf", LOOM_COMBINING_KIND_MAXNUMF},
-      };
-  for (auto [candidate, kind] : kinds) {
-    if (candidate == name) {
-      return kind;
-    }
-  }
-  return std::nullopt;
 }
 
 }  // namespace
@@ -110,7 +84,7 @@ std::optional<ShapedIntrinsic::Operation> ShapedIntrinsic::admit(
       diagnostics.reject(unit, owner,
                          "vector reduction requires a combining kind");
     }
-    auto kind = reduction_kind(attribute.arguments[1]->name());
+    auto kind = parse_combining_kind(attribute.arguments[1]->name());
     if (!kind) {
       diagnostics.reject(unit, owner,
                          "unsupported vector reduction combining kind");

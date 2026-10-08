@@ -2,7 +2,7 @@
 
 // Runtime positive divisors retain a strictly smaller dividend unchanged.
 func.def @remainder_below_runtime_divisor(%numerator: index, %divisor: index) -> (index) {
-  %bounded = index.assume %numerator [range(%numerator, 12, 60), mul(%numerator, 6)] : index
+  %bounded = index.assume %numerator [range(%numerator, 12, 60), multiple_of(%numerator, 6)] : index
   %larger = index.assume %divisor [range(%divisor, 61, 100)] : index
   %result = index.rem %bounded, %larger : index
   func.return %result : index
@@ -10,7 +10,7 @@ func.def @remainder_below_runtime_divisor(%numerator: index, %divisor: index) ->
 
 // ----
 func.def @remainder_below_runtime_divisor(%numerator: index, %divisor: index) -> (index) {
-  %bounded = index.assume %numerator [range(%numerator, 12, 60), mul(%numerator, 6)] : index
+  %bounded = index.assume %numerator [range(%numerator, 12, 60), multiple_of(%numerator, 6)] : index
   func.return %bounded : index
 }
 
@@ -54,7 +54,7 @@ func.def @offset_add_sub_exact() -> (i64, i64) {
 
 // index.assume applies predicate facts to matching index and offset results.
 func.def @assume_refines_address_facts(%n: index, %base: offset) -> (i64, i64) {
-  %n2, %base2 = index.assume %n, %base [mul(%n, 16), range(%base, 64, 4096)] : index, offset
+  %n2, %base2 = index.assume %n, %base [multiple_of(%n, 16), range(%base, 64, 4096)] : index, offset
   %n_div = test.fact_divisor %n2 : index -> i64
   %base_lo = test.fact_range_lo %base2 : offset -> i64
   func.return %n_div, %base_lo : i64, i64
@@ -364,7 +364,7 @@ func.def @rem_dynamic_divisor_uses_dividend_bound(%x0: index, %d0: index) -> (i6
 // assumptions on every intermediate address expression.
 func.def @matvec_block_lane_linear_range(%lane0: index, %block_base0: index) -> (i64, i64, i1) {
   %lane = index.assume %lane0 [range(%lane0, 0, 63)] : index
-  %block_base = index.assume %block_base0 [range(%block_base0, 0, 8), mul(%block_base0, 4)] : index
+  %block_base = index.assume %block_base0 [range(%block_base0, 0, 8), multiple_of(%block_base0, 4)] : index
   %lanes_per_group = index.constant 16 : index
   %block_stride = index.constant 105 : index
   %lane_group = index.div %lane, %lanes_per_group : index
@@ -951,7 +951,7 @@ func.def @div_power_of_two_nonnegative(%x: index) -> (index) {
 
 // index.rem materializes zero when divisibility facts prove it.
 func.def @rem_divisible_coordinate(%x: index) -> (index) {
-  %x2 = index.assume %x [range(%x, 0, 4096), mul(%x, 64)] : index
+  %x2 = index.assume %x [range(%x, 0, 4096), multiple_of(%x, 64)] : index
   %c8 = index.constant 8 : index
   %r = index.rem %x2, %c8 : index
   func.return %r : index
@@ -1129,8 +1129,8 @@ func.def @rem_maybe_negative_is_preserved(%x: index) -> (index) {
 // index.min/max propagate signed range and common-divisor facts in the index
 // domain.
 func.def @minmax_facts(%x: index, %y: index) -> (i64, i64, i64, i64, i64, i64) {
-  %lo = index.assume %x [range(%x, 4, 20), mul(%x, 4)] : index
-  %hi = index.assume %y [range(%y, 8, 16), mul(%y, 8)] : index
+  %lo = index.assume %x [range(%x, 4, 20), multiple_of(%x, 4)] : index
+  %hi = index.assume %y [range(%y, 8, 16), multiple_of(%y, 8)] : index
   %min = index.min %lo, %hi : index
   %max = index.max %lo, %hi : index
   %min_lo = test.fact_range_lo %min : index -> i64
@@ -1200,7 +1200,7 @@ func.def @bitwise_facts(%x: index) -> (i64, i64, i1, i64, i64) {
   %c1 = index.constant 1 : index
   %shift4 = index.constant 4 : index
   %shift3 = index.constant 3 : index
-  %aligned = index.assume %x [range(%x, 0, 4096), mul(%x, 64)] : index
+  %aligned = index.assume %x [range(%x, 0, 4096), multiple_of(%x, 64)] : index
   %and_aligned = index.andi %x, %mask_aligned : index
   %and_small = index.andi %x, %mask_small : index
   %or_one = index.ori %x, %c1 : index

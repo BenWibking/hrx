@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "loom/import/cxx/binding/function_contracts.h"
 #include "loom/import/cxx/source/attributes.h"
 #include "loom/import/cxx/source/error.h"
 #include "loom/import/cxx/symbol/names.h"
@@ -40,7 +41,7 @@ std::optional<std::string_view> TemplateApplyIntrinsic::admit(
 
 TemplateApplyIntrinsic TemplateApplyIntrinsic::resolve(
     cxx::TranslationUnit& unit, Diagnostics& diagnostics, Types& types,
-    cxx::FunctionSymbol* function, Family* family,
+    FunctionContracts& contracts, cxx::FunctionSymbol* function, Family* family,
     loom_location_id_t declaration_location, cxx::AST* owner) {
   auto* signature = cxx::type_cast<cxx::FunctionType>(function->type());
   if (signature->isVariadic()) {
@@ -61,12 +62,12 @@ TemplateApplyIntrinsic TemplateApplyIntrinsic::resolve(
   }
   const auto* result = types.unqualified(signature->returnType());
   if (result->kind() == cxx::TypeKind::kVoid) {
-    return TemplateApplyIntrinsic(family, std::move(parameters), nullptr,
-                                  declaration_location);
+    return TemplateApplyIntrinsic(family, contracts, std::move(parameters),
+                                  nullptr, declaration_location);
   }
   types.partition(result, owner);
-  return TemplateApplyIntrinsic(family, std::move(parameters), result,
-                                declaration_location);
+  return TemplateApplyIntrinsic(family, contracts, std::move(parameters),
+                                result, declaration_location);
 }
 
 loom_symbol_ref_t TemplateApplyIntrinsic::materialize(
@@ -81,8 +82,11 @@ loom_symbol_ref_t TemplateApplyIntrinsic::materialize(
     if (result_type_) {
       sources.push_back(result_type_);
     }
-    auto signature =
-        bind_signature(types, sources, owner, &declaration_builder);
+    const bool has_predicates = contracts_->has_predicates(family_->function);
+    auto signature = bind_signature(
+        types, sources, owner, &declaration_builder,
+        has_predicates ? SignatureIdentityRequirement::Required
+                       : SignatureIdentityRequirement::DependentTypes);
     size_t argument_count = 0;
     for (const auto* parameter : parameter_types_) {
       argument_count += types.partition(parameter, owner).component_count;
@@ -95,16 +99,29 @@ loom_symbol_ref_t TemplateApplyIntrinsic::materialize(
     auto build_flags = annotated(family_->function, "device")
                            ? LOOM_TEMPLATE_DECL_BUILD_FLAG_HAS_CC
                            : 0;
+    auto predicates =
+        contracts_->bind(family_->function, types, signature.identities,
+                         FunctionContractSignature::Flattened, owner);
+    auto requirements =
+        contracts_->bind_requirements(family_->function, builder->module);
+    if (!predicates.empty()) {
+      build_flags |= LOOM_TEMPLATE_DECL_BUILD_FLAG_HAS_PREDICATES;
+    }
+    if (!requirements.empty()) {
+      build_flags |= LOOM_TEMPLATE_DECL_BUILD_FLAG_HAS_REQUIRES;
+    }
     check(loom_template_decl_build(
         &declaration_builder, build_flags, /*visibility=*/0,
         /*retain=*/0,
         annotated(family_->function, "device") ? LOOM_TEMPLATE_CC_DEVICE : 0,
         /*purity=*/0, /*temperature=*/0, loom_symbol_ref_null(),
-        loom_parameterized_attr_array_empty(), family_->reference,
-        argument_types, argument_count, result_types, result_count,
+        loom_make_parameterized_attr_array(requirements.data(),
+                                           requirements.size()),
+        family_->reference, argument_types, argument_count, result_types,
+        result_count,
         /*tied_results=*/nullptr,
-        /*tied_result_count=*/0, /*predicates=*/nullptr,
-        /*predicates_count=*/0, declaration_location_, &family_->declaration));
+        /*tied_result_count=*/0, predicates.data(), predicates.size(),
+        declaration_location_, &family_->declaration));
   }
   return family_->reference;
 }

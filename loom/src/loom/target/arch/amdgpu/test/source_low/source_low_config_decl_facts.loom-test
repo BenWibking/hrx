@@ -2,7 +2,7 @@
 
 amdgpu.target<gfx11-generic> @target
 
-config.decl @runtime.column_count : %value: index where [range(%value, 4, 64), mul(%value, 4)]
+config.decl @runtime.column_count : %value: index where [range(%value, 4, 64), multiple_of(%value, 4)]
 
 kernel.def target(@target) @config_decl_facts_bound_dynamic_view() {
   %unit = index.constant 1 : index
@@ -34,7 +34,7 @@ low.kernel.def target<amdgpu.gfx11.generic.core>(@target) abi_layout({constant_c
 
 amdgpu.target<gfx11-generic> @target
 
-config.decl @runtime.column_count : %value: index where [range(%value, 3072, 8192), mul(%value, 4)]
+config.decl @runtime.column_count : %value: index where [range(%value, 3072, 8192), multiple_of(%value, 4)]
 
 kernel.def target(@target) @config_decl_matvec_block_lane_vec4_dynamic_view() {
   %unit = index.constant 1 : index
@@ -152,7 +152,7 @@ kernel.def target(@target) @config_decl_missing_bounds_for_matvec_vec4_dynamic_v
 
 amdgpu.target<gfx11-generic> @target
 
-config.decl @runtime.scalar_count : %value: index where [range(%value, 4, 64), mul(%value, 4)]
+config.decl @runtime.scalar_count : %value: index where [range(%value, 4, 64), multiple_of(%value, 4)]
 
 kernel.def target(@target) @config_decl_runtime_use_stays_illegal() {
   %unit = index.constant 1 : index

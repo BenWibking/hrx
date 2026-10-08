@@ -301,7 +301,7 @@ TEST_F(TemplateProviderCatalogTest,
 test.target<low_core> @source.gfx11
 template.decl @source.family(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>)
 
-template.def<@source.family> target(@source.gfx11) requires [#target.subgroup.size<32>] priority(7) @source.provider(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [mul(%m, 16)] {
+template.def<@source.family> target(@source.gfx11) requires [#target.subgroup.size<32>] priority(7) @source.provider(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [multiple_of(%m, 16)] {
   template.return %arg : tensor<[%m]xf32>
 }
 )");
@@ -363,7 +363,7 @@ template.decl @target.family(%n: index, %arg: tensor<[%n]xf32>) -> (tensor<[%n]x
 
   ASSERT_EQ(bound.predicate_count, 1u);
   ASSERT_NE(bound.predicates, nullptr);
-  EXPECT_EQ(bound.predicates[0].kind, LOOM_PREDICATE_MUL);
+  EXPECT_EQ(bound.predicates[0].kind, LOOM_PREDICATE_MULTIPLE_OF);
   EXPECT_EQ(bound.predicates[0].arg_tags[0], LOOM_PRED_ARG_VALUE);
   EXPECT_EQ((loom_value_id_t)bound.predicates[0].args[0],
             bound.argument_ids[0]);

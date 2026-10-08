@@ -550,7 +550,7 @@ static uint16_t loom_scf_to_cfg_for_iv_predicates_from_facts(
   if (count < LOOM_SCF_TO_CFG_FOR_IV_PREDICATE_CAPACITY &&
       facts.known_divisor > 1 && !loom_value_facts_is_exact(facts)) {
     predicates[count++] = (loom_predicate_t){
-        .kind = LOOM_PREDICATE_MUL,
+        .kind = LOOM_PREDICATE_MULTIPLE_OF,
         .arg_count = 2,
         .arg_tags = {LOOM_PRED_ARG_VALUE, LOOM_PRED_ARG_CONST,
                      LOOM_PRED_ARG_NONE},

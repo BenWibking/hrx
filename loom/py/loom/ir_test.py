@@ -1533,6 +1533,10 @@ class TestPredicateEvaluation:
             self._pred("le", ("value", 7), ("const", 1024)),
             {7: 1024},
         )
+        assert not evaluate_predicate(
+            self._pred("le", ("value", 7), ("const", 1024)),
+            {7: 1025},
+        )
 
     def test_gt(self) -> None:
         assert evaluate_predicate(
@@ -1544,6 +1548,10 @@ class TestPredicateEvaluation:
         assert evaluate_predicate(
             self._pred("ge", ("value", 3), ("const", 16)),
             {3: 16},
+        )
+        assert not evaluate_predicate(
+            self._pred("ge", ("value", 3), ("const", 16)),
+            {3: 15},
         )
 
     @pytest.mark.parametrize(
@@ -1563,61 +1571,42 @@ class TestPredicateEvaluation:
             {3: 8.0},
         )
 
-    def test_mul_true(self) -> None:
+    def test_multiple_of_true(self) -> None:
         assert evaluate_predicate(
-            self._pred("mul", ("value", 3), ("const", 16)),
+            self._pred("multiple_of", ("value", 3), ("const", 16)),
             {3: 64},
         )
 
-    def test_mul_false(self) -> None:
+    def test_multiple_of_false(self) -> None:
         assert not evaluate_predicate(
-            self._pred("mul", ("value", 3), ("const", 16)),
+            self._pred("multiple_of", ("value", 3), ("const", 16)),
             {3: 17},
         )
 
-    def test_mul_zero_modulus(self) -> None:
+    @pytest.mark.parametrize("divisor", [-16, 0])
+    def test_multiple_of_requires_positive_divisor(self, divisor: int) -> None:
         assert not evaluate_predicate(
-            self._pred("mul", ("value", 3), ("const", 0)),
+            self._pred("multiple_of", ("value", 3), ("const", divisor)),
             {3: 42},
         )
 
-    def test_min(self) -> None:
-        assert evaluate_predicate(
-            self._pred("min", ("value", 3), ("const", 32)),
-            {3: 32},
-        )
-        assert not evaluate_predicate(
-            self._pred("min", ("value", 3), ("const", 32)),
-            {3: 31},
-        )
-
-    def test_max(self) -> None:
-        assert evaluate_predicate(
-            self._pred("max", ("value", 3), ("const", 512)),
-            {3: 512},
-        )
-        assert not evaluate_predicate(
-            self._pred("max", ("value", 3), ("const", 512)),
-            {3: 513},
-        )
-
-    def test_pow2_true(self) -> None:
+    def test_power_of_two_true(self) -> None:
         for n in [1, 2, 4, 8, 16, 32, 64, 128, 256, 1024]:
             assert evaluate_predicate(
-                self._pred("pow2", ("value", 11)),
+                self._pred("power_of_two", ("value", 11)),
                 {11: n},
-            ), f"pow2({n}) should be true"
+            ), f"power_of_two({n}) should be true"
 
-    def test_pow2_false(self) -> None:
+    def test_power_of_two_false(self) -> None:
         for n in [0, 3, 5, 6, 7, 9, 10, 15, 17, 100]:
             assert not evaluate_predicate(
-                self._pred("pow2", ("value", 11)),
+                self._pred("power_of_two", ("value", 11)),
                 {11: n},
-            ), f"pow2({n}) should be false"
+            ), f"power_of_two({n}) should be false"
 
-    def test_pow2_rejects_float(self) -> None:
+    def test_power_of_two_rejects_float(self) -> None:
         assert not evaluate_predicate(
-            self._pred("pow2", ("value", 11)),
+            self._pred("power_of_two", ("value", 11)),
             {11: 8.0},
         )
 
@@ -1674,20 +1663,20 @@ class TestPredicateEvaluation:
     def test_missing_value_always_true(self) -> None:
         """Missing values can't be evaluated — defer judgment."""
         assert evaluate_predicate(
-            self._pred("mul", ("value", 19), ("const", 16)),
+            self._pred("multiple_of", ("value", 19), ("const", 16)),
             {3: 42},
         )
 
     def test_evaluate_predicates_all_true(self) -> None:
         preds = [
-            self._pred("mul", ("value", 3), ("const", 16)),
+            self._pred("multiple_of", ("value", 3), ("const", 16)),
             self._pred("lt", ("value", 7), ("const", 1024)),
         ]
         assert evaluate_predicates(preds, {3: 64, 7: 512})
 
     def test_evaluate_predicates_one_false(self) -> None:
         preds = [
-            self._pred("mul", ("value", 3), ("const", 16)),
+            self._pred("multiple_of", ("value", 3), ("const", 16)),
             self._pred("lt", ("value", 7), ("const", 1024)),
         ]
         assert not evaluate_predicates(preds, {3: 64, 7: 2048})

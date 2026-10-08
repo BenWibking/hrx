@@ -143,7 +143,7 @@ kernel.def target(@v4_gfx950) @v4_lds_shared_qk() {
   %token3 = index.constant 48 : index
   %channel_count = index.constant 512 : index
   %query_row_raw = index.mul %subgroup, %tile_extent : index
-  %query_row = index.assume %query_row_raw [range(%query_row_raw, 0, 112), mul(%query_row_raw, 16)] : index
+  %query_row = index.assume %query_row_raw [range(%query_row_raw, 0, 112), multiple_of(%query_row_raw, 16)] : index
   %score_seed = vector.constant 0.0 : vector<4xf32>
   %score0, %score1, %score2, %score3 = scf.for %channel = [%begin to %channel_count step %tile_extent](%carried0 = %score_seed : vector<4xf32>, %carried1 = %score_seed : vector<4xf32>, %carried2 = %score_seed : vector<4xf32>, %carried3 = %score_seed : vector<4xf32>) -> (vector<4xf32>, vector<4xf32>, vector<4xf32>, vector<4xf32>) {
     %lhs = vector.fragment.load<lhs> %query_view[%query_row, %channel] shape [%tile_extent, %tile_extent] : view<128x512xbf16> -> vector<4xbf16>

@@ -17,13 +17,15 @@
 #include "loom/import/cxx/value/types.h"
 #include "loom/ir/facts.h"
 #include "loom/ops/atomic.h"
+#include "loom/ops/combining.h"
 
 namespace loom::cxx_import {
 
-// Typed source projection of subgroup topology, votes, and broadcasts. Calls
-// require a kernel or required-inline helper; the translation driver owns that
-// placement check. Collective participation and convergence remain High
-// semantics, independent of the source spelling or target wave width.
+// Typed source projection of subgroup topology, votes, broadcasts, and
+// reductions. Calls require a kernel or required-inline helper; the translation
+// driver owns that placement check. Collective participation and convergence
+// remain High semantics, independent of the source spelling or target wave
+// width.
 class SubgroupIntrinsic {
  public:
   static bool supports(std::string_view name);
@@ -55,17 +57,33 @@ class SubgroupIntrinsic {
     ActiveMask,
     Broadcast,
     BroadcastFirst,
+    Reduce,
+  };
+
+  struct Reduction {
+    // Combining operation applied across the selected lanes.
+    loom_combining_kind_t combining_kind;
+    // Static clustered reduction width, or zero when absent.
+    uint32_t cluster_size;
+    // Static clustered reduction lane stride, or zero when absent.
+    uint32_t cluster_stride;
   };
 
   static std::optional<Operation> find(std::string_view name);
 
   SubgroupIntrinsic(Operation operation, loom_type_t result_type)
       : operation_(operation), result_type_(result_type) {}
+  SubgroupIntrinsic(loom_type_t result_type, Reduction reduction)
+      : operation_(Operation::Reduce),
+        result_type_(result_type),
+        reduction_(reduction) {}
 
   // Operation selected once at declaration or template-instance admission.
   Operation operation_;
   // Source-selected scalar or rank-one vector representation.
   loom_type_t result_type_;
+  // Reduction semantics; present exactly when operation_ is Reduce.
+  std::optional<Reduction> reduction_;
 };
 
 // An execution rendezvous with explicit memory effects. Unlike subgroup

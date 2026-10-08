@@ -5,7 +5,7 @@ kernel.def @masked_multiple_remainder() {
   %width = index.constant 32 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%width, %unit, %unit) : index
 } launch(%input: index, %output: buffer) {
-  %value = index.assume %input [range(%input, 3, 9), mul(%input, 3)] : index
+  %value = index.assume %input [range(%input, 3, 9), multiple_of(%input, 3)] : index
   %mask = index.constant 6 : index
   %masked = index.andi %value, %mask : index
   %remainder = index.rem %masked, %mask : index

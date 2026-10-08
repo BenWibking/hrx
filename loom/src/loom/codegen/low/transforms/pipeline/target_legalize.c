@@ -527,7 +527,6 @@ static bool loom_low_target_legalize_predicate_const_range(
       *out_maximum = predicate->args[1] - 1;
       return true;
     case LOOM_PREDICATE_LE:
-    case LOOM_PREDICATE_MAX:
       if (predicate->arg_count < 2 ||
           predicate->arg_tags[1] != LOOM_PRED_ARG_CONST) {
         return false;
@@ -543,7 +542,6 @@ static bool loom_low_target_legalize_predicate_const_range(
       *out_minimum = predicate->args[1] + 1;
       return true;
     case LOOM_PREDICATE_GE:
-    case LOOM_PREDICATE_MIN:
       if (predicate->arg_count < 2 ||
           predicate->arg_tags[1] != LOOM_PRED_ARG_CONST) {
         return false;

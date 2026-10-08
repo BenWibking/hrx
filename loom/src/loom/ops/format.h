@@ -63,7 +63,7 @@ enum loom_format_kind_e {
   // LOOM_FORMAT_FUNC_ARGS_DATA. The boundaries project a contiguous slice
   // from a body-backed function signature.
   LOOM_FORMAT_KIND_FUNC_ARGS = 13,
-  // Where-clause predicates: [mul(%M, 16), ...].
+  // Where-clause predicates: [multiple_of(%M, 16), ...].
   LOOM_FORMAT_KIND_PREDICATE_LIST = 14,
   // Optional group marker. field_index = anchor field index.
   // data = LOOM_FORMAT_OPTIONAL_GROUP_DATA. The walker skips |skip_count|

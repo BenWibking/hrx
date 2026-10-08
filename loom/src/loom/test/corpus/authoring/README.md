@@ -241,10 +241,13 @@ priority fallback, failed before selection, or left unresolved applies because
 more predicate facts are needed.
 
 The same report includes one `template-selection` detail row per analyzed
-`template.apply` site when pass reporting is enabled. The row records the enclosing
-function, contract key, selected provider when present, effective target when
-known, candidate counts, and an outcome such as `selected`,
-`fallback_selected`, `target_mismatch`, `missing_facts`, or `ambiguous`.
+`template.apply` site when pass reporting is enabled. The row records the
+enclosing function, contract key, selected provider when present, effective
+target when known, candidate counts, and an outcome such as `selected`,
+`fallback_selected`, `target_mismatch`, `missing_facts`, or `ambiguous`. One
+`template-provider` row per ranked candidate records whether it was accepted,
+rejected, or unresolved, whether it won, and the decisive target condition or
+value predicate when applicable.
 
 ```bash
 loom-opt --pass=select-templates --pass-report=json input.loom \
@@ -259,7 +262,8 @@ jq '.invocations[]
 jq '.invocations[]
   | select(.pass == "select-templates")
   | .details[]
-  | select(.outcome != "selected")' /tmp/pass-report.json
+  | select(.category == "template-provider" and .selected == false)'
+  /tmp/pass-report.json
 ```
 
 Full artifact runs should still use `loom-compile --dump-ir-*`, artifact

@@ -395,7 +395,7 @@ low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @descriptor_b128_
 
 func.def @descriptor_dynamic_base_static_extent_load_i32(%input: buffer, %base_i32: i32) -> (i32) {
   %base0 = index.cast %base_i32 : i32 to offset
-  %base = index.assume %base0 [range(%base0, 0, 4092), mul(%base0, 4)] : offset
+  %base = index.assume %base0 [range(%base0, 0, 4092), multiple_of(%base0, 4)] : offset
   %input_descriptor = buffer.assume.memory_space<descriptor> %input : buffer
   %input_view = buffer.view %input_descriptor[%base] : buffer -> view<4xi32>
   %loaded = view.load %input_view[2] : view<4xi32> -> i32
@@ -423,7 +423,7 @@ low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @descriptor_dynam
 
 func.def @descriptor_dynamic_projected_base_static_extent_load_i32(%input: buffer, %base_i32: i32) -> (i32) {
   %base0 = index.cast %base_i32 : i32 to offset
-  %base = index.assume %base0 [range(%base0, 0, 4092), mul(%base0, 4)] : offset
+  %base = index.assume %base0 [range(%base0, 0, 4092), multiple_of(%base0, 4)] : offset
   %input_descriptor = buffer.assume.memory_space<descriptor> %input : buffer
   %input_view = buffer.view %input_descriptor[%base] : buffer -> view<8xi32>
   %input_subview = view.subview %input_view[1] : view<8xi32> -> view<4xi32>
@@ -544,7 +544,7 @@ low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @descriptor_dynam
 
 func.def @descriptor_dynamic_base_extent_load_f32(%input: buffer, %base_i32: i32, %element_count_i32: i32, %element_i32: i32) -> (f32) {
   %base0 = index.cast %base_i32 : i32 to offset
-  %base = index.assume %base0 [range(%base0, 0, 4096), mul(%base0, 4)] : offset
+  %base = index.assume %base0 [range(%base0, 0, 4096), multiple_of(%base0, 4)] : offset
   %input_descriptor = buffer.assume.memory_space<descriptor> %input : buffer
   %element_count0 = index.cast %element_count_i32 : i32 to index
   %element_count = index.assume %element_count0 [range(%element_count0, 1, 1024)] : index
@@ -610,7 +610,7 @@ low.func.def target<amdgpu.gfx11.generic.core> abi(hal_kernel) @descriptor_dynam
 
 func.def @descriptor_dynamic_base_extent_store_f32x4(%output: buffer, %value: vector<4xf32>, %base_i32: i32, %row_count_i32: i32, %row_i32: i32) {
   %base0 = index.cast %base_i32 : i32 to offset
-  %base = index.assume %base0 [range(%base0, 0, 8192), mul(%base0, 16)] : offset
+  %base = index.assume %base0 [range(%base0, 0, 8192), multiple_of(%base0, 16)] : offset
   %first_column = index.constant 0 : index
   %output_descriptor = buffer.assume.memory_space<descriptor> %output : buffer
   %row_count0 = index.cast %row_count_i32 : i32 to index
@@ -694,7 +694,7 @@ kernel.def @f32x4_readonly_uniform_smem_copy() {
   %base = index.constant 0 : offset
   %vector_width = index.constant 4 : index
   %source_base0 = index.mul %workgroup, %vector_width : index
-  %source_base = index.assume %source_base0 [range(%source_base0, 0, 60), mul(%source_base0, 4)] : index
+  %source_base = index.assume %source_base0 [range(%source_base0, 0, 60), multiple_of(%source_base0, 4)] : index
   %output_prefix = index.constant 6 : index
   %output_base0 = index.add %source_base, %output_prefix : index
   %output_base = index.assume %output_base0 [range(%output_base0, 6, 66)] : index
@@ -747,7 +747,7 @@ kernel.def @f32x8_readonly_uniform_smem_copy() {
   %base = index.constant 0 : offset
   %vector_width = index.constant 8 : index
   %source_base0 = index.mul %workgroup, %vector_width : index
-  %source_base = index.assume %source_base0 [range(%source_base0, 0, 120), mul(%source_base0, 8)] : index
+  %source_base = index.assume %source_base0 [range(%source_base0, 0, 120), multiple_of(%source_base0, 8)] : index
   %output_prefix = index.constant 8 : index
   %output_base0 = index.add %source_base, %output_prefix : index
   %output_base = index.assume %output_base0 [range(%output_base0, 8, 128)] : index
@@ -1475,7 +1475,7 @@ kernel.def @i32_dynamic_view_base() {
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%control: buffer, %output: buffer, %offset_i32: i32) {
   %base0 = index.cast %offset_i32 : i32 to offset
-  %base = index.assume %base0 [range(%base0, 0, 4092), mul(%base0, 4)] : offset
+  %base = index.assume %base0 [range(%base0, 0, 4092), multiple_of(%base0, 4)] : offset
   %output_base = index.constant 0 : offset
   %control_view = buffer.view %control[%base] : buffer -> view<4xi32>
   %output_view = buffer.view %output[%output_base] : buffer -> view<1xi32>
@@ -1536,7 +1536,7 @@ kernel.def @i32x4_dynamic_view_base_b128() {
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%unit, %unit, %unit) : index
 } launch(%input: buffer, %output: buffer, %offset_i32: i32) {
   %base0 = index.cast %offset_i32 : i32 to offset
-  %base = index.assume %base0 [range(%base0, 0, 4096), mul(%base0, 16)] : offset
+  %base = index.assume %base0 [range(%base0, 0, 4096), multiple_of(%base0, 16)] : offset
   %output_base = index.constant 0 : offset
   %input_view = buffer.view %input[%base] : buffer -> view<4xi32>
   %output_view = buffer.view %output[%output_base] : buffer -> view<4xi32>

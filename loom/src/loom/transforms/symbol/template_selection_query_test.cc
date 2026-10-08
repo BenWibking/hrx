@@ -223,7 +223,7 @@ TEST_F(TemplateSelectionQueryTest,
   ModulePtr source = ParseModule(R"(
 template.decl @source.family(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>)
 
-template.def<@source.family> @source.provider(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [mul(%m, 16)] {
+template.def<@source.family> @source.provider(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [multiple_of(%m, 16)] {
   template.return %arg : tensor<[%m]xf32>
 }
 )");
@@ -264,7 +264,7 @@ func.def public @entry(%m: index, %arg: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) 
 TEST_F(TemplateSelectionQueryTest,
        FamilyPredicateGatesExternalProviderSelection) {
   ModulePtr rejected_module = ParseModule(R"(
-template.decl @demo.family(%m: index) -> (index) where [mul(%m, 16)]
+template.decl @demo.family(%m: index) -> (index) where [multiple_of(%m, 16)]
 
 func.def public @entry(%m: index) -> (index) where [range(%m, 15, 15)] {
   %result = template.apply<@demo.family>(%m) : (index) -> (index)
@@ -287,7 +287,7 @@ template.def<@demo.family> @external(%m: index) -> (index) {
   EXPECT_EQ(rejected_result.unresolved_site_count, 1u);
 
   ModulePtr matched_module = ParseModule(R"(
-template.decl @demo.family(%m: index) -> (index) where [mul(%m, 16)]
+template.decl @demo.family(%m: index) -> (index) where [multiple_of(%m, 16)]
 
 func.def public @entry(%m: index) -> (index) where [range(%m, 32, 32)] {
   %result = template.apply<@demo.family>(%m) : (index) -> (index)
@@ -312,7 +312,7 @@ template.def<@demo.family> @external(%m: index) -> (index) {
 
 TEST_F(TemplateSelectionQueryTest, ExactCallChecksFamilyAndProviderContracts) {
   ModulePtr family_rejected_module = ParseModule(R"(
-template.decl @demo.family(%m: index) -> (index) where [mul(%m, 16)]
+template.decl @demo.family(%m: index) -> (index) where [multiple_of(%m, 16)]
 
 template.def<@demo.family> @implementation(%m: index) -> (index) {
   template.return %m : index
@@ -330,7 +330,7 @@ func.def public @entry(%m: index) -> (index) where [range(%m, 15, 15)] {
   ModulePtr provider_rejected_module = ParseModule(R"(
 template.decl @demo.family(%m: index) -> (index)
 
-template.def<@demo.family> @implementation(%m: index) -> (index) where [mul(%m, 16)] {
+template.def<@demo.family> @implementation(%m: index) -> (index) where [multiple_of(%m, 16)] {
   template.return %m : index
 }
 
@@ -344,7 +344,7 @@ func.def public @entry(%m: index) -> (index) where [range(%m, 15, 15)] {
   EXPECT_EQ(provider_rejected_result.unresolved_site_count, 1u);
 
   ModulePtr matched_module = ParseModule(R"(
-template.decl @demo.family(%m: index) -> (index) where [mul(%m, 16)]
+template.decl @demo.family(%m: index) -> (index) where [multiple_of(%m, 16)]
 
 template.def<@demo.family> @implementation(%m: index) -> (index) where [range(%m, 32, 32)] {
   template.return %m : index

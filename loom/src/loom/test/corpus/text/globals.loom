@@ -1,10 +1,10 @@
-global.constant @weights : tile<[%m]x[%k]xi8, #encoding.i8<payload_elements=32>> where [mul(%m, 16)]
+global.constant @weights : tile<[%m]x[%k]xi8, #encoding.i8<payload_elements=32>> where [multiple_of(%m, 16)]
 
 global.variable @state : f32 = 0.0
 
 global.variable @kv_cache : tile<[%s]x[%d]xf32>
 
-global.variable @scratch_view : view<[%n]xf32, %layout> where [mul(%n, 16)]
+global.variable @scratch_view : view<[%n]xf32, %layout> where [multiple_of(%n, 16)]
 
 func.def initializer @init_state(%value: f32) {
   global.store %value, @state : f32

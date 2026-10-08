@@ -999,7 +999,7 @@ TEST(LinkTest, LinkModuleMaterializesInvocationConfigOnLinkedOutput) {
   ContextPtr context = CreateContext();
   BuilderPtr builder = CreateBuilder(context.get());
   SourcePtr source = CreateTextSource("config.loom", R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 
 func.def public @entry() -> (index) {
   %hidden = config.get @model36.model.hidden_size : index
@@ -1754,7 +1754,7 @@ check.benchmark<@kernel_case> @kernel_bench
 
 TEST(LinkTest, LinkModuleMaterializesConfigFromBytecodeIndex) {
   std::vector<uint8_t> bytecode = WriteBytecodeModule(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 
 func.def public @from_bytecode() -> (index) {
   %hidden = config.get @model36.model.hidden_size : index
@@ -2000,7 +2000,7 @@ TEST(LinkTest, LinkModuleReportsUnresolvedConfigAsResultDiagnostic) {
   ContextPtr context = CreateContext();
   BuilderPtr builder = CreateBuilder(context.get());
   SourcePtr source = CreateTextSource("config.loom", R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 
 func.def public @entry() -> (index) {
   %hidden = config.get @model36.model.hidden_size : index

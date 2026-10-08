@@ -397,18 +397,10 @@ static iree_status_t loom_sanitizer_materialize_predicate(
       return loom_sanitizer_materialize_numeric_relation(
           materializer, predicate, type, (loom_predicate_kind_t)predicate->kind,
           0, 1, out_condition);
-    case LOOM_PREDICATE_MUL:
+    case LOOM_PREDICATE_MULTIPLE_OF:
       return loom_sanitizer_materialize_multiple_predicate(
           materializer, predicate, type, out_condition);
-    case LOOM_PREDICATE_MIN:
-      return loom_sanitizer_materialize_numeric_relation(
-          materializer, predicate, type, LOOM_PREDICATE_GE, 0, 1,
-          out_condition);
-    case LOOM_PREDICATE_MAX:
-      return loom_sanitizer_materialize_numeric_relation(
-          materializer, predicate, type, LOOM_PREDICATE_LE, 0, 1,
-          out_condition);
-    case LOOM_PREDICATE_POW2:
+    case LOOM_PREDICATE_POWER_OF_TWO:
       return loom_sanitizer_materialize_power_of_two_predicate(
           materializer, predicate, type, out_condition);
     case LOOM_PREDICATE_RANGE: {

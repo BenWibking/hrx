@@ -38,7 +38,7 @@ kernel.def target(@target) @fragment_base_residues() {
   %threads = index.constant 32 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%threads, %unit, %unit) : index
 } launch(%offset0: offset) {
-  %offset = index.assume %offset0 [range(%offset0, 0, 2), mul(%offset0, 2)] : offset
+  %offset = index.assume %offset0 [range(%offset0, 0, 2), multiple_of(%offset0, 2)] : offset
   %base0 = index.constant 0 : offset
   %base2 = index.constant 2 : offset
   %origin = index.constant 0 : index

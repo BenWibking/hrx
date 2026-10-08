@@ -233,7 +233,7 @@ the same storage contract. Use scalar loads when each word is independent; use
 the vector load when the source pattern expects one wide load. Alignment,
 address-range, and alias facts still live next to the view root. Kernel ABI
 buffers already carry global memory-space facts; spell `buffer.assume.noalias`,
-`buffer.view`, and `index.assume ... [mul(...)]` for dynamic aligned offsets
+`buffer.view`, and `index.assume ... [multiple_of(...)]` for dynamic aligned offsets
 when those facts are part of the source contract.
 
 Proof command:

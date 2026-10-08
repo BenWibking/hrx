@@ -137,7 +137,7 @@ func.def @symbolic_difference_preserves_assumptions(%raw: index, %other: index, 
 // AND preserves trailing zero bits, not arbitrary divisibility. For input
 // three the masked value and remainder are both two, so the remainder is live.
 func.def @masked_multiple_remainder(%input: index) -> (index) {
-  %value = index.assume %input [range(%input, 3, 9), mul(%input, 3)] : index
+  %value = index.assume %input [range(%input, 3, 9), multiple_of(%input, 3)] : index
   %mask = index.constant 6 : index
   %masked = index.andi %value, %mask : index
   %remainder = index.rem %masked, %mask : index
@@ -156,7 +156,7 @@ func.def @negative_mask_alignment(%input: index) -> (index) {
 
 // ----
 func.def @masked_multiple_remainder(%input: index) -> (index) {
-  %value = index.assume %input [range(%input, 3, 9), mul(%input, 3)] : index
+  %value = index.assume %input [range(%input, 3, 9), multiple_of(%input, 3)] : index
   %mask = index.constant 6 : index
   %masked = index.andi %value, %mask : index
   %remainder = index.rem %masked, %mask : index
@@ -591,7 +591,7 @@ func.def @loaded_boolean_retains_logical_domain(%input: view<1xi1>) -> (i64, i64
 
 // Intersecting the type domain retains narrower ranges and divisibility.
 func.def @inferred_domain_retains_refinements(%input: i8) -> (i64, i64, i64) {
-  %bounded = scalar.assume %input [range(%input, -12, 12), mul(%input, 4)] : i8
+  %bounded = scalar.assume %input [range(%input, -12, 12), multiple_of(%input, 4)] : i8
   %wide = scalar.extsi %bounded : i8 to i64
   %lower = test.fact_range_lo %wide : i64 -> i64
   %upper = test.fact_range_hi %wide : i64 -> i64

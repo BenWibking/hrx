@@ -25,7 +25,7 @@ kernel.def target(@target) @dense_projection_tiled_u8_128() {
   %out_tile_index = index.madd %workgroup_m, %n_tiles, %workgroup_n : index
   %out_byte_index = index.mul %out_tile_index, %acc_tile_bytes : index
   %out_byte_offset = index.cast %out_byte_index : index to offset
-  %out_byte_offset_aligned = index.assume %out_byte_offset [mul(%out_byte_offset, 16)] : offset
+  %out_byte_offset_aligned = index.assume %out_byte_offset [multiple_of(%out_byte_offset, 16)] : offset
   %lhs_aligned = buffer.assume.alignment %lhs_buffer {minimum_alignment = 16} : buffer
   %rhs_aligned = buffer.assume.alignment %rhs_buffer {minimum_alignment = 16} : buffer
   %init_aligned = buffer.assume.alignment %init_buffer {minimum_alignment = 16} : buffer
@@ -40,8 +40,8 @@ kernel.def target(@target) @dense_projection_tiled_u8_128() {
     %rhs_byte_index = index.mul %rhs_tile_index, %rhs_tile_bytes : index
     %lhs_byte_offset = index.cast %lhs_byte_index : index to offset
     %rhs_byte_offset = index.cast %rhs_byte_index : index to offset
-    %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [mul(%lhs_byte_offset, 16)] : offset
-    %rhs_byte_offset_aligned = index.assume %rhs_byte_offset [mul(%rhs_byte_offset, 16)] : offset
+    %lhs_byte_offset_aligned = index.assume %lhs_byte_offset [multiple_of(%lhs_byte_offset, 16)] : offset
+    %rhs_byte_offset_aligned = index.assume %rhs_byte_offset [multiple_of(%rhs_byte_offset, 16)] : offset
     %lhs_view = buffer.view %lhs_aligned[%lhs_byte_offset_aligned] : buffer -> view<16x32xi8, %lhs_storage>
     %rhs_view = buffer.view %rhs_aligned[%rhs_byte_offset_aligned] : buffer -> view<32x16xi8, %rhs_storage>
     %lhs = vector.fragment.load<lhs> %lhs_view[0, 0] shape [%m, %k] : view<16x32xi8, %lhs_storage> -> vector<32xi8>

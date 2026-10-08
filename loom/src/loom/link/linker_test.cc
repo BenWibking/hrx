@@ -797,7 +797,7 @@ TEST_F(LinkerTest, MergesDeclarationPredicatesIntoDefinition) {
   loom_module_t* harness = Parse(IREE_SV(R"(
 test.target<low_core> @test_target
 
-func.decl target(@test_target) @bounded(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [mul(%m, 16)]
+func.decl target(@test_target) @bounded(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [multiple_of(%m, 16)]
 )"));
   loom_module_t* corpus = Parse(IREE_SV(R"(
 func.def @bounded(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) {
@@ -812,7 +812,7 @@ func.def @bounded(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) {
   EXPECT_EQ(text.find("func.decl @bounded"), std::string::npos);
   EXPECT_NE(text.find("func.def target(@test_target) @bounded"),
             std::string::npos);
-  EXPECT_NE(text.find("where [mul(%m, 16)]"), std::string::npos);
+  EXPECT_NE(text.find("where [multiple_of(%m, 16)]"), std::string::npos);
 }
 
 TEST_F(LinkerTest, RejectsDeclarationDefinitionTargetConflict) {
@@ -963,7 +963,7 @@ kernel.def @fill(%element_count: index) {
 
 TEST_F(LinkerTest, KeepsDeclarationWhenNoDefinitionExists) {
   loom_module_t* harness = Parse(IREE_SV(R"(
-func.decl @external_identity(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [mul(%m, 16)]
+func.decl @external_identity(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf32>) where [multiple_of(%m, 16)]
 )"));
 
   loom_module_t* linked = Link({harness});
@@ -972,7 +972,7 @@ func.decl @external_identity(%m: index, %x: tensor<[%m]xf32>) -> (tensor<[%m]xf3
   std::string text = Print(linked);
   EXPECT_NE(text.find("func.decl @external_identity"), std::string::npos);
   EXPECT_NE(text.find("tensor<[%m]xf32"), std::string::npos);
-  EXPECT_NE(text.find("where [mul(%m, 16)]"), std::string::npos);
+  EXPECT_NE(text.find("where [multiple_of(%m, 16)]"), std::string::npos);
 }
 
 TEST_F(LinkerTest, UsesConfigDefinitionOverDeclaration) {
@@ -980,7 +980,7 @@ TEST_F(LinkerTest, UsesConfigDefinitionOverDeclaration) {
 config.def @model36.model.hidden_size = 4096 : index
 )"));
   loom_module_t* library = Parse(IREE_SV(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 1, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 1, 8192), multiple_of(%value, 16)]
 )"));
 
   loom_module_t* linked = Link({root, library});
@@ -1031,7 +1031,7 @@ TEST_F(LinkerTest, RejectsConfigDefinitionViolatingDeclaration) {
 config.def @model36.model.hidden_size = 4103 : index
 )"));
   loom_module_t* library = Parse(IREE_SV(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 1, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 1, 8192), multiple_of(%value, 16)]
 )"));
 
   loom_module_t* linked = nullptr;
@@ -1045,7 +1045,7 @@ TEST_F(LinkerTest, MergesConfigDeclarations) {
 config.decl @model36.model.hidden_size : %value: index where [range(%value, 1, 8192)]
 )"));
   loom_module_t* second = Parse(IREE_SV(R"(
-config.decl @model36.model.hidden_size : %value: index where [mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [multiple_of(%value, 16)]
 )"));
 
   loom_module_t* linked = Link({first, second});
@@ -1055,7 +1055,7 @@ config.decl @model36.model.hidden_size : %value: index where [mul(%value, 16)]
   EXPECT_NE(text.find("config.decl @model36.model.hidden_size"),
             std::string::npos);
   EXPECT_NE(text.find("range(%value, 1, 8192)"), std::string::npos);
-  EXPECT_NE(text.find("mul(%value, 16)"), std::string::npos);
+  EXPECT_NE(text.find("multiple_of(%value, 16)"), std::string::npos);
 }
 
 TEST_F(LinkerTest, RenamesPrivateDefinitionConflictsAndRewritesCalls) {

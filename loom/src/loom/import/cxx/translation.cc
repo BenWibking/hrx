@@ -29,6 +29,7 @@
 #include "iree/base/api.h"
 #include "loom/import/cxx/binding/assumptions.h"
 #include "loom/import/cxx/binding/config.h"
+#include "loom/import/cxx/binding/function_contracts.h"
 #include "loom/import/cxx/binding/intrinsics.h"
 #include "loom/import/cxx/binding/launch.h"
 #include "loom/import/cxx/binding/loop_schedule.h"
@@ -73,6 +74,7 @@ class Translator final : private Initialization::Evaluation {
         types_(unit, diagnostics),
         scalars_(unit, diagnostics, types_, locations_, builder_),
         names_(unit, diagnostics),
+        function_contracts_(unit, diagnostics),
         configs_(unit, diagnostics, types_, scalars_, locations_, names_),
         target_definitions_(unit, diagnostics, locations_, names_, module),
         template_definitions_(unit, diagnostics),
@@ -83,9 +85,10 @@ class Translator final : private Initialization::Evaluation {
                         objects_, value_arena_, locations_, builder_, *this),
         launches_(unit, diagnostics),
         intrinsics_(unit, diagnostics, types_, locations_, names_, launches_,
-                    module),
+                    function_contracts_, module),
         functions_(unit, diagnostics, module, intrinsics_, launches_, configs_,
-                   target_definitions_, template_definitions_, names_),
+                   function_contracts_, target_definitions_,
+                   template_definitions_, names_),
         options_(options),
         math_flags_(iree_any_bit_set(options.flags,
                                      LOOM_CXX_IMPORT_FLAG_APPROXIMATE_FUNCTIONS)
@@ -1921,25 +1924,32 @@ class Translator final : private Initialization::Evaluation {
         auto predicates = assumption_predicates(unit_, diagnostics_, call);
         for (const auto& predicate : predicates) {
           for (size_t i = 0; i < predicate.value_count; ++i) {
-            auto* symbol = predicate.values[i].binding->symbol;
+            const auto& source_value = predicate.values[i];
+            if (source_value.origin != PredicateValueOrigin::Binding ||
+                !source_value.members.empty()) {
+              fail(source_value.source,
+                   "assume can refine only direct automatic scalar bindings");
+            }
+            auto* symbol = source_value.binding;
             if (locals_.contains(symbol)) {
-              fail(predicate.values[i].binding,
+              fail(source_value.source,
                    "assume cannot retain facts for an addressable binding "
                    "whose storage may change through an alias");
             }
             if (!values_.contains(symbol)) {
-              fail(predicate.values[i].binding,
+              fail(source_value.source,
                    "assume can retain facts only for an owned automatic "
                    "scalar binding");
             }
           }
         }
         for (const auto& admitted : predicates) {
-          std::array<loom_value_id_t, 2> values;
-          std::array<loom_type_t, 2> value_types;
+          std::array<loom_value_id_t, 3> values;
+          std::array<loom_type_t, 3> value_types;
           for (size_t i = 0; i < admitted.value_count; ++i) {
-            values[i] = expression(admitted.values[i].value).ssa();
-            value_types[i] = types_.get(admitted.values[i].value->type, ast);
+            values[i] = expression(admitted.values[i].converted).ssa();
+            value_types[i] =
+                types_.get(admitted.values[i].converted->type, ast);
           }
           loom_predicate_t predicate = admitted.predicate;
           for (uint8_t i = 0; i < predicate.arg_count; ++i) {
@@ -1954,11 +1964,11 @@ class Translator final : private Initialization::Evaluation {
               &op));
           for (size_t i = 0; i < admitted.value_count; ++i) {
             const auto& source_value = admitted.values[i];
-            values_[source_value.binding->symbol] =
+            values_[source_value.binding] =
                 name(numeric_convert(loom_op_results(op)[i],
-                                     source_value.value->type,
-                                     source_value.binding->type, ast),
-                     cxx::to_string(source_value.binding->symbol->name()));
+                                     source_value.converted->type,
+                                     source_value.source->type, ast),
+                     cxx::to_string(source_value.binding->name()));
           }
         }
         return;
@@ -2055,6 +2065,8 @@ class Translator final : private Initialization::Evaluation {
   Scalars scalars_;
   // Shared output namespace for callables and configuration symbols.
   SymbolNames names_;
+  // Callable predicates shared by definitions and template declarations.
+  FunctionContracts function_contracts_;
   // Namespace-scope scalar configs retain key identity across source aliases.
   Configs configs_;
   // Source target definitions bind function-like operations without

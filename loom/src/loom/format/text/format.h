@@ -447,7 +447,7 @@
 //   FuncArgs(field)       Function argument defs: (%a: type, %b: type).
 //                           Always glues to preceding symbol.
 //   PredicateList(field)  Where-clause predicates:
-//                           [mul(%M, 16), lt(%K, 1024)].
+//                           [multiple_of(%M, 16), lt(%K, 1024)].
 //   OptionalGroup(elems)  Elements that appear only when an anchor
 //                           field is present.
 //   Glue                  Suppress space before the next element.
@@ -655,12 +655,12 @@
 //
 //   // Template: visible implementation of tile.contract, matched by
 //   // where-clause constraints. Compiler can inline and optimize.
-//   template.def<@tile.contract> public device @vnni_q8_matvec(%weights: tensor<[%M]x[%K]xi8, #encoding.operand<element_format=i8, payload_elements=32, payload_packing=dense_lanes>>, %input: tensor<[%K]xf32>) -> (tensor<[%M]xf32>) where [mul(%M, 16), mul(%K, 32)] {
+//   template.def<@tile.contract> public device @vnni_q8_matvec(%weights: tensor<[%M]x[%K]xi8, #encoding.operand<element_format=i8, payload_elements=32, payload_packing=dense_lanes>>, %input: tensor<[%K]xf32>) -> (tensor<[%M]xf32>) where [multiple_of(%M, 16), multiple_of(%K, 32)] {
 //     ...
 //   }
 //
 //   // Ukernel: opaque implementation, matched by same constraints.
-//   template.ukernel<@tile.contract> device @vnni_q8_asm(%weights: tensor<[%M]x[%K]xi8, #encoding.operand<element_format=i8, payload_elements=32, payload_packing=dense_lanes>>, %input: tensor<[%K]xf32>) -> (tensor<[%M]xf32>) where [mul(%M, 16), mul(%K, 32)]
+//   template.ukernel<@tile.contract> device @vnni_q8_asm(%weights: tensor<[%M]x[%K]xi8, #encoding.operand<element_format=i8, payload_elements=32, payload_packing=dense_lanes>>, %input: tensor<[%K]xf32>) -> (tensor<[%M]xf32>) where [multiple_of(%M, 16), multiple_of(%K, 32)]
 //
 //   // Call: runtime function call.
 //   %r = func.call @negate(%input) : (tensor<4x4xf32>) -> (tensor<4x4xf32>)
@@ -814,22 +814,22 @@
 // predicate ::= two-arg-pred '(' pred-arg ',' pred-arg ')'
 //             | unary-pred '(' pred-arg ')'
 //             | 'range' '(' pred-arg ',' pred-arg ',' pred-arg ')'
-// unary-pred ::= 'pow2' | 'not_nan' | 'not_inf' | 'finite'
+// unary-pred ::= 'power_of_two' | 'not_nan' | 'not_inf' | 'finite'
 // two-arg-pred ::= 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
 //                | 'ult' | 'ule' | 'ugt' | 'uge'
-//                | 'min' | 'max' | 'mul'
+//                | 'multiple_of'
 // pred-arg  ::= SSA-VALUE | INTEGER
 //
 // Predicates constrain scalar values in where clauses and assume ops.
 //
 // Examples:
-//   mul(%M, 16)          %M is a multiple of 16.
-//   lt(%M, 1024)         %M < 1024.
-//   range(%K, 32, 512)   32 <= %K <= 512.
-//   pow2(%N)             %N is a power of 2.
-//   not_nan(%X)          %X is not NaN.
-//   not_inf(%X)          %X is not positive or negative infinity.
-//   finite(%X)           %X is not NaN or infinity.
+//   multiple_of(%M, 16)   %M is a multiple of 16.
+//   lt(%M, 1024)          %M < 1024.
+//   range(%K, 32, 512)    32 <= %K <= 512.
+//   power_of_two(%N)      %N is a power of 2.
+//   not_nan(%X)           %X is not NaN.
+//   not_inf(%X)           %X is not positive or negative infinity.
+//   finite(%X)            %X is not NaN or infinity.
 //   eq(%M, %K)           %M == %K.
 //   ne(%M, 0)            %M != 0.
 //   ule(%M, %K)          sign-extended 64-bit carrier of %M is unsigned <= %K.

@@ -886,67 +886,6 @@ iree_status_t loom_parse_symbol_ref_attr(loom_parser_t* parser,
 // Predicate parsing
 //===----------------------------------------------------------------------===//
 
-// Predicate kind names for lookup.
-static const struct {
-  loom_bstring_t name;
-  uint8_t kind;
-} loom_predicate_names[] = {
-    {(const uint8_t*)"\x02"
-                     "eq",
-     LOOM_PREDICATE_EQ},
-    {(const uint8_t*)"\x02"
-                     "ne",
-     LOOM_PREDICATE_NE},
-    {(const uint8_t*)"\x02"
-                     "lt",
-     LOOM_PREDICATE_LT},
-    {(const uint8_t*)"\x02"
-                     "le",
-     LOOM_PREDICATE_LE},
-    {(const uint8_t*)"\x02"
-                     "gt",
-     LOOM_PREDICATE_GT},
-    {(const uint8_t*)"\x02"
-                     "ge",
-     LOOM_PREDICATE_GE},
-    {(const uint8_t*)"\x03"
-                     "mul",
-     LOOM_PREDICATE_MUL},
-    {(const uint8_t*)"\x03"
-                     "min",
-     LOOM_PREDICATE_MIN},
-    {(const uint8_t*)"\x03"
-                     "max",
-     LOOM_PREDICATE_MAX},
-    {(const uint8_t*)"\x04"
-                     "pow2",
-     LOOM_PREDICATE_POW2},
-    {(const uint8_t*)"\x05"
-                     "range",
-     LOOM_PREDICATE_RANGE},
-    {(const uint8_t*)"\x07"
-                     "not_nan",
-     LOOM_PREDICATE_NOT_NAN},
-    {(const uint8_t*)"\x07"
-                     "not_inf",
-     LOOM_PREDICATE_NOT_INF},
-    {(const uint8_t*)"\x06"
-                     "finite",
-     LOOM_PREDICATE_FINITE},
-    {(const uint8_t*)"\x03"
-                     "ult",
-     LOOM_PREDICATE_ULT},
-    {(const uint8_t*)"\x03"
-                     "ule",
-     LOOM_PREDICATE_ULE},
-    {(const uint8_t*)"\x03"
-                     "ugt",
-     LOOM_PREDICATE_UGT},
-    {(const uint8_t*)"\x03"
-                     "uge",
-     LOOM_PREDICATE_UGE},
-};
-
 static iree_status_t loom_parse_predicate(loom_parser_t* parser,
                                           loom_type_parse_mode_t type_mode,
                                           loom_predicate_t* out_predicate) {
@@ -954,14 +893,8 @@ static iree_status_t loom_parse_predicate(loom_parser_t* parser,
   loom_token_t name_token = loom_token_none();
   LOOM_PARSE_EXPECT(parser, LOOM_TOKEN_BARE_IDENT, &name_token);
 
-  uint8_t pred_kind = UINT8_MAX;
-  for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(loom_predicate_names); ++i) {
-    if (loom_bstring_equal(loom_predicate_names[i].name, name_token.text)) {
-      pred_kind = loom_predicate_names[i].kind;
-      break;
-    }
-  }
-  if (pred_kind == UINT8_MAX) {
+  loom_predicate_kind_t pred_kind = 0;
+  if (!loom_predicate_kind_parse(name_token.text, &pred_kind)) {
     loom_diagnostic_param_t params[] = {
         loom_param_string(name_token.text),
     };

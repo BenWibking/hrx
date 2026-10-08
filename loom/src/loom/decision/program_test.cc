@@ -42,7 +42,7 @@ TEST(DecisionProgramTest, SelectsScalarPredicateChoiceFromSsaFacts) {
           },
       },
       {
-          /*.kind=*/LOOM_PREDICATE_MUL,
+          /*.kind=*/LOOM_PREDICATE_MULTIPLE_OF,
           /*.operand_count=*/2,
           /*.reserved=*/{}, /*.operands=*/
           {
@@ -313,6 +313,19 @@ TEST(DecisionProgramTest, FullEvaluationCapturesLowerChoiceEvidence) {
       LOOM_DECISION_TRUTH_FALSE,
       LOOM_DECISION_TRUTH_UNKNOWN,
   };
+  const int64_t constants[] = {1, 2};
+  const loom_decision_program_predicate_t predicates[] = {
+      {
+          /*.kind=*/LOOM_PREDICATE_EQ,
+          /*.operand_count=*/2,
+          /*.reserved=*/{},
+          /*.operands=*/
+          {
+              loom_decision_program_constant_ref(0),
+              loom_decision_program_constant_ref(1),
+          },
+      },
+  };
   const loom_decision_program_choice_t choices[] = {
       {
           /*.conjunction=*/{/*.first_predicate=*/{}, /*.first_feature=*/0,
@@ -329,39 +342,55 @@ TEST(DecisionProgramTest, FullEvaluationCapturesLowerChoiceEvidence) {
                             /*.predicate_count=*/{}, /*.feature_count=*/1},
           /*.action_ordinal=*/2,
       },
+      {
+          /*.conjunction=*/{/*.first_predicate=*/0, /*.first_feature=*/2,
+                            /*.predicate_count=*/1, /*.feature_count=*/1},
+          /*.action_ordinal=*/3,
+      },
   };
   const loom_decision_program_priority_group_t groups[] = {
       {/*.choice_count=*/1},
       {/*.choice_count=*/1},
       {/*.choice_count=*/1},
+      {/*.choice_count=*/1},
   };
   const loom_decision_program_t program = {
-      /*.predicates=*/{},          /*.choices=*/choices,
+      /*.predicates=*/predicates,  /*.choices=*/choices,
       /*.priority_groups=*/groups,
-      /*.constants=*/{},           /*.hard_requirements=*/{},
-      /*.predicate_count=*/{},     /*.feature_count=*/3,
-      /*.constant_count=*/{},      /*.choice_count=*/3,
-      /*.priority_group_count=*/3,
+      /*.constants=*/constants,    /*.hard_requirements=*/{},
+      /*.predicate_count=*/1,      /*.feature_count=*/3,
+      /*.constant_count=*/2,       /*.choice_count=*/4,
+      /*.priority_group_count=*/4,
   };
+  const loom_decision_program_binding_t binding = {};
   const loom_decision_program_feature_evaluator_t feature_evaluator = {
       /*.fn=*/EvaluateFeature,
       /*.user_data=*/feature_truths,
   };
 
-  loom_decision_program_choice_evidence_t evidence[3] = {};
-  uint32_t live_actions[3] = {};
+  loom_decision_program_choice_evidence_t evidence[4] = {};
+  uint32_t live_actions[4] = {};
   uint32_t live_action_count = 0;
   loom_decision_program_result_t result = {};
   loom_decision_program_evaluate_all(
-      &program, /*binding=*/nullptr, feature_evaluator,
+      &program, &binding, feature_evaluator,
       loom_decision_program_predicate_refiner_empty(),
       LOOM_DECISION_PROGRAM_DEFER_UNRESOLVED, evidence, live_actions,
       &live_action_count, &result);
   EXPECT_EQ(result.kind, LOOM_DECISION_PROGRAM_RESULT_SELECTED);
   EXPECT_EQ(result.action_ordinal, 0u);
   EXPECT_EQ(evidence[0].feasibility, LOOM_DECISION_TRUTH_TRUE);
+  EXPECT_EQ(evidence[0].decisive_constraint,
+            LOOM_DECISION_PROGRAM_CONSTRAINT_INVALID);
   EXPECT_EQ(evidence[1].feasibility, LOOM_DECISION_TRUTH_FALSE);
+  EXPECT_EQ(evidence[1].decisive_constraint,
+            loom_decision_program_feature_constraint_ref(1));
   EXPECT_EQ(evidence[2].feasibility, LOOM_DECISION_TRUTH_UNKNOWN);
+  EXPECT_EQ(evidence[2].decisive_constraint,
+            loom_decision_program_feature_constraint_ref(2));
+  EXPECT_EQ(evidence[3].feasibility, LOOM_DECISION_TRUTH_FALSE);
+  EXPECT_EQ(evidence[3].decisive_constraint,
+            loom_decision_program_predicate_constraint_ref(0));
 }
 
 struct ReferenceChoice {

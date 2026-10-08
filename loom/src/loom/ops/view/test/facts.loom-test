@@ -593,7 +593,7 @@ func.def @subview_composes_base_and_root(%buffer: buffer) -> (i1, i64, i64, i64)
 
 // Offset predicates survive into view facts, preserving range and divisibility.
 func.def @dynamic_offset_facts(%buffer: buffer, %base: offset) -> (i64, i64, i64) {
-  %base2 = index.assume %base [range(%base, 0, 4096), mul(%base, 64)] : offset
+  %base2 = index.assume %base [range(%base, 0, 4096), multiple_of(%base, 64)] : offset
   %layout = encoding.layout.dense : encoding<layout>
   %view = buffer.view %buffer[%base2] : buffer -> view<4xf32, %layout>
   %offset_lo = test.fact_view_byte_offset_lo %view : view<4xf32, %layout> -> i64

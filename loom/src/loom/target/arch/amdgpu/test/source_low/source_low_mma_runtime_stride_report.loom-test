@@ -7,7 +7,7 @@ kernel.def target(@target) @report_dynamic_result_row_stride() {
   %workgroup_size = index.constant 64 : index
   kernel.launch.config workgroups(%unit, %unit, %unit) workgroup_size(%workgroup_size, %unit, %unit) : index
 } launch(%row_size0: index, %output: buffer) {
-  %row_size = index.assume %row_size0 [range(%row_size0, 64, 32768), mul(%row_size0, 64)] : index
+  %row_size = index.assume %row_size0 [range(%row_size0, 64, 32768), multiple_of(%row_size0, 64)] : index
   %base = index.constant 0 : offset
   %m = index.constant 16 : index
   %n = index.constant 16 : index

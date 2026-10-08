@@ -2,7 +2,7 @@
 
 // The proof uses both runtime ranges and preserves the dividend identity.
 func.def @bounded_unsigned_remainder(%input: i32, %divisor: i32) -> (i32) {
-  %bounded = scalar.assume %input [range(%input, 12, 60), mul(%input, 6)] : i32
+  %bounded = scalar.assume %input [range(%input, 12, 60), multiple_of(%input, 6)] : i32
   %positive = scalar.assume %divisor [range(%divisor, 61, 100)] : i32
   %result = scalar.remui %bounded, %positive : i32
   func.return %result : i32
@@ -10,7 +10,7 @@ func.def @bounded_unsigned_remainder(%input: i32, %divisor: i32) -> (i32) {
 
 // ----
 func.def @bounded_unsigned_remainder(%input: i32, %divisor: i32) -> (i32) {
-  %bounded = scalar.assume %input [range(%input, 12, 60), mul(%input, 6)] : i32
+  %bounded = scalar.assume %input [range(%input, 12, 60), multiple_of(%input, 6)] : i32
   func.return %bounded : i32
 }
 

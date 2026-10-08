@@ -287,7 +287,7 @@ func.def @no_config(%x: i32) -> (i32) {
 
 TEST_F(ConfigMaterializeTest, MaterializesConstrainedDecl) {
   ModulePtr module = Parse(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 
 func.def @read_config() -> (index) {
   %hidden = config.get @model36.model.hidden_size : index
@@ -314,7 +314,7 @@ func.def @read_config() -> (index) {
 
 TEST_F(ConfigMaterializeTest, RejectsConstraintViolation) {
   ModulePtr module = Parse(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 )");
 
   loom_tooling_config_binding_t binding = {
@@ -323,6 +323,18 @@ config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8
   };
   IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
                         Materialize(module.get(), &binding, 1, nullptr));
+}
+
+TEST_F(ConfigMaterializeTest, RejectsNonFiniteDefinition) {
+  ModulePtr module = Parse(R"(
+config.decl @model.scale : %value: f32 where [finite(%value)]
+)");
+  ModulePtr config = Parse(R"(
+config.def @model.scale = inf : f32
+)");
+
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        Overlay(module.get(), config.get(), nullptr));
 }
 
 TEST_F(ConfigMaterializeTest, MaterializesEncodingValue) {
@@ -360,7 +372,7 @@ config.decl @model36.layout : encoding<layout>
 
 TEST_F(ConfigMaterializeTest, OverlaysExactDefinitionsFromConfigModule) {
   ModulePtr module = Parse(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 config.decl @model36.layout : encoding<layout>
 )");
   ModulePtr config_module = Parse(R"(
@@ -392,7 +404,7 @@ config.def @model36.unused = true : i1
 
 TEST_F(ConfigMaterializeTest, ConfigModuleMustSatisfyTargetContract) {
   ModulePtr module = Parse(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 )");
   ModulePtr config_module = Parse(R"(
 config.def @model36.model.hidden_size = 4103 : index
@@ -453,7 +465,7 @@ config.def @model36.model.hidden_size = 4096 : index
 
 TEST_F(ConfigMaterializeTest, FormatsConfigSchemaJson) {
   ModulePtr module = Parse(R"(
-config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), mul(%value, 16)]
+config.decl @model36.model.hidden_size : %value: index where [range(%value, 0, 8192), multiple_of(%value, 16)]
 config.def @model36.features.enable_mtp = true : i1
 )");
 
@@ -465,7 +477,7 @@ config.def @model36.features.enable_mtp = true : i1
   EXPECT_NE(schema.find("\"required\":true"), std::string::npos);
   EXPECT_NE(schema.find("\"type\":\"index\""), std::string::npos);
   EXPECT_NE(schema.find("\"kind\":\"range\""), std::string::npos);
-  EXPECT_NE(schema.find("\"kind\":\"mul\""), std::string::npos);
+  EXPECT_NE(schema.find("\"kind\":\"multiple_of\""), std::string::npos);
   EXPECT_NE(schema.find("\"value\":8192"), std::string::npos);
   EXPECT_NE(schema.find("\"name\":\"model36.features.enable_mtp\""),
             std::string::npos);

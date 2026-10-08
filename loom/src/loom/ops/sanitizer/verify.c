@@ -274,7 +274,7 @@ static iree_status_t loom_sanitizer_verify_predicate_schemas(
     // Runtime multiplication assertions lower to a remainder-by-immediate
     // check. Other predicate schema, type, and operand-origin invariants are
     // established by the generic predicate verifier.
-    if (predicate->kind == LOOM_PREDICATE_MUL &&
+    if (predicate->kind == LOOM_PREDICATE_MULTIPLE_OF &&
         predicate->arg_tags[1] != LOOM_PRED_ARG_CONST) {
       return loom_sanitizer_emit_predicate_argument_constraint(
           module, emitter, op, predicate_index, 1,

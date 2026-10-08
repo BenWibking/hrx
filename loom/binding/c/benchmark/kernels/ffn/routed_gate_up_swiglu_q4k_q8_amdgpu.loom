@@ -5,7 +5,7 @@
 // gate/up accumulation. Varying input_size changes the loop bound while keeping
 // the compiled body bounded.
 
-config.decl @ffn_routed_gate_up.input_size : %value: index where [range(%value, 512, 32768), mul(%value, 512)]
+config.decl @ffn_routed_gate_up.input_size : %value: index where [range(%value, 512, 32768), multiple_of(%value, 512)]
 
 config.def @ffn_routed_gate_up.expert_count = 128 : index
 

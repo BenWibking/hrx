@@ -2,7 +2,7 @@
 // A statically false leaf rejects the complete conjunction.
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume condition is statically false; Loom has no unreachable-path assumption representation"
+  // ERROR@+1: LOWERING/059 "predicate condition is statically false; Loom has no unreachable-path contract representation"
   assume(other < 32u && value < 0u);
 }
 
@@ -11,7 +11,7 @@ void entry(unsigned value, unsigned other) {
 // A false relation between the same binding is diagnosed before IR emission.
 [[loom::assume]] void assume(bool);
 void entry(int value) {
-  // ERROR@+1: LOWERING/059 "assume condition is statically false; Loom has no unreachable-path assumption representation"
+  // ERROR@+1: LOWERING/059 "predicate condition is statically false; Loom has no unreachable-path contract representation"
   assume(value < value);
 }
 
@@ -20,7 +20,7 @@ void entry(int value) {
 // Disjunction does not establish simultaneous facts on either arm.
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume requires integer comparisons optionally joined by &&"
+  // ERROR@+1: LOWERING/059 "predicate expressions require comparisons, predicate helpers, or conjunctions joined by &&"
   assume(other < 32u && (value < 16u || other < 16u));
 }
 
@@ -30,7 +30,7 @@ void entry(unsigned value, unsigned other) {
 [[loom::assume]] void assume(bool);
 unsigned opaque();
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && value < opaque());
 }
 
@@ -40,7 +40,7 @@ void entry(unsigned value, unsigned other) {
 [[loom::assume]] void assume(bool);
 unsigned opaque();
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && value < (opaque(), 16u));
 }
 
@@ -49,7 +49,7 @@ void entry(unsigned value, unsigned other) {
 // Mutating the constrained operand cannot produce an identity refinement.
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && value++ < 16u);
 }
 
@@ -58,7 +58,7 @@ void entry(unsigned value, unsigned other) {
 // Mutation in the other operand is equally outside the metadata contract.
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && value < (other = 16u));
 }
 
@@ -67,16 +67,16 @@ void entry(unsigned value, unsigned other) {
 // Derived runtime expressions have no source binding to rebind.
 [[loom::assume]] void assume(bool);
 void entry(int value, int limit) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(value + 1 < limit);
 }
 
 // ====
 // RUN: verify
-// Floating comparisons are outside the integer predicate contract.
+// Mixed floating and integer ordering has no predicate contract.
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparisons require integer operands"
+  // ERROR@+1: LOWERING/059 "floating predicate comparisons support only == and !=; use classification helpers for other facts"
   assume(other < 32u && value < 16.5f);
 }
 
@@ -85,7 +85,7 @@ void entry(unsigned value, unsigned other) {
 // A value-changing cast does not constrain the original binding.
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && (unsigned char)value < 16u);
 }
 
@@ -95,7 +95,7 @@ void entry(unsigned value, unsigned other) {
 [[loom::assume]] void assume(bool);
 unsigned opaque();
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && value < (false ? opaque() : 16u));
 }
 
@@ -105,7 +105,7 @@ void entry(unsigned value, unsigned other) {
 [[loom::assume]] void assume(bool);
 extern volatile unsigned bound;
 void entry(unsigned value, unsigned other) {
-  // ERROR@+1: LOWERING/059 "assume conditions cannot read volatile bindings because no runtime comparison is emitted"
+  // ERROR@+1: LOWERING/059 "predicate expressions cannot read volatile values because no runtime comparison is emitted"
   assume(other < 32u && value < bound);
 }
 
@@ -138,7 +138,7 @@ struct Bound {};
 bool operator<(unsigned, Bound);
 extern Bound bound;
 void entry(unsigned value) {
-  // ERROR@+1: LOWERING/059 "assume comparisons require builtin integer operators"
+  // ERROR@+1: LOWERING/059 "predicate comparisons require builtin operators"
   assume(value < bound);
 }
 
@@ -150,7 +150,7 @@ struct Bound {};
 unsigned operator+(Bound, unsigned);
 extern Bound bound;
 void entry(unsigned value) {
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(value < (bound + 1u));
 }
 
@@ -160,6 +160,6 @@ void entry(unsigned value) {
 [[loom::assume]] void assume(bool);
 void entry(unsigned value, unsigned other) {
   // WARNING@+2: PARSE/036 "invalid binary expression"
-  // ERROR@+1: LOWERING/059 "assume comparison operands must be unmodified scalar bindings or pure integer constants without calls, mutation, or value-changing casts"
+  // ERROR@+1: LOWERING/059 "predicate operands must be retained scalar values or pure constants without calls, mutation, or value-changing casts"
   assume(other < 32u && value < (1u / 0u));
 }

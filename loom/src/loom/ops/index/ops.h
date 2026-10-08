@@ -98,7 +98,7 @@ iree_status_t loom_index_cast_verify(
     iree_diagnostic_emitter_t emitter);
 
 // LOOM_OP_INDEX_ASSUME: Identity with predicate constraints on index or offset results.
-// %n2 = index.assume %n [mul(%n, 16)] : index
+// %n2 = index.assume %n [multiple_of(%n, 16)] : index
 LOOM_DEFINE_ISA(loom_index_assume_isa, LOOM_OP_INDEX_ASSUME)
 LOOM_DEFINE_VARIADIC_OPERANDS(loom_index_assume_values, 0)
 LOOM_DEFINE_VARIADIC_RESULTS(loom_index_assume_results, 0)

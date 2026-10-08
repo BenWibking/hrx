@@ -3,14 +3,14 @@
 // A sanitizer assertion is removed only when incoming facts already prove every
 // predicate. The checked result is replaced with the original value.
 func.def @proven_assertion_folds(%n: index) -> (index) {
-  %known = index.assume %n [range(%n, 0, 4096), mul(%n, 16)] : index
-  %checked = sanitizer.assert.value %known [range(%known, 0, 4096), mul(%known, 8)] : index
+  %known = index.assume %n [range(%n, 0, 4096), multiple_of(%n, 16)] : index
+  %checked = sanitizer.assert.value %known [range(%known, 0, 4096), multiple_of(%known, 8)] : index
   func.return %checked : index
 }
 
 // ----
 func.def @proven_assertion_folds(%n: index) -> (index) {
-  %known = index.assume %n [range(%n, 0, 4096), mul(%n, 16)] : index
+  %known = index.assume %n [range(%n, 0, 4096), multiple_of(%n, 16)] : index
   func.return %known : index
 }
 
@@ -19,14 +19,14 @@ func.def @proven_assertion_folds(%n: index) -> (index) {
 // A stronger checked alias proves a later weaker assertion, so only the first
 // executable boundary remains.
 func.def @weaker_dominated_assertion_folds(%n: index) -> (index) {
-  %strong = sanitizer.assert.value %n [range(%n, 1, 1024), ne(%n, 0), pow2(%n), mul(%n, 64)] : index
-  %weak = sanitizer.assert.value %strong [range(%strong, 0, 2048), ne(%strong, 0), mul(%strong, 8)] : index
+  %strong = sanitizer.assert.value %n [range(%n, 1, 1024), ne(%n, 0), power_of_two(%n), multiple_of(%n, 64)] : index
+  %weak = sanitizer.assert.value %strong [range(%strong, 0, 2048), ne(%strong, 0), multiple_of(%strong, 8)] : index
   func.return %weak : index
 }
 
 // ----
 func.def @weaker_dominated_assertion_folds(%n: index) -> (index) {
-  %strong = sanitizer.assert.value %n [range(%n, 1, 1024), ne(%n, 0), pow2(%n), mul(%n, 64)] : index
+  %strong = sanitizer.assert.value %n [range(%n, 1, 1024), ne(%n, 0), power_of_two(%n), multiple_of(%n, 64)] : index
   func.return %strong : index
 }
 
@@ -35,15 +35,15 @@ func.def @weaker_dominated_assertion_folds(%n: index) -> (index) {
 // A stronger dominated assertion is still a runtime assertion. It cannot be
 // folded into a weaker checked alias.
 func.def @stronger_dominated_assertion_survives(%n: index) -> (index) {
-  %weak = sanitizer.assert.value %n [range(%n, 0, 2048), mul(%n, 8)] : index
-  %strong = sanitizer.assert.value %weak [range(%weak, 1, 1024), ne(%weak, 0), pow2(%weak), mul(%weak, 64)] : index
+  %weak = sanitizer.assert.value %n [range(%n, 0, 2048), multiple_of(%n, 8)] : index
+  %strong = sanitizer.assert.value %weak [range(%weak, 1, 1024), ne(%weak, 0), power_of_two(%weak), multiple_of(%weak, 64)] : index
   func.return %strong : index
 }
 
 // ----
 func.def @stronger_dominated_assertion_survives(%n: index) -> (index) {
-  %weak = sanitizer.assert.value %n [range(%n, 0, 2048), mul(%n, 8)] : index
-  %strong = sanitizer.assert.value %weak [range(%weak, 1, 1024), ne(%weak, 0), pow2(%weak), mul(%weak, 64)] : index
+  %weak = sanitizer.assert.value %n [range(%n, 0, 2048), multiple_of(%n, 8)] : index
+  %strong = sanitizer.assert.value %weak [range(%weak, 1, 1024), ne(%weak, 0), power_of_two(%weak), multiple_of(%weak, 64)] : index
   func.return %strong : index
 }
 
@@ -152,14 +152,14 @@ func.def @unproven_exact_assertion_survives(%n: index) -> (index, index) {
 // Operation assertions have no checked aliases, so proven predicates erase the
 // trap/report site directly.
 func.def @proven_op_assertion_folds(%n: index) -> (index) {
-  %known = index.assume %n [range(%n, 0, 4096), mul(%n, 16)] : index
-  sanitizer.assert.op %known [range(%known, 0, 4096), mul(%known, 8)] : index
+  %known = index.assume %n [range(%n, 0, 4096), multiple_of(%n, 16)] : index
+  sanitizer.assert.op %known [range(%known, 0, 4096), multiple_of(%known, 8)] : index
   func.return %known : index
 }
 
 // ----
 func.def @proven_op_assertion_folds(%n: index) -> (index) {
-  %known = index.assume %n [range(%n, 0, 4096), mul(%n, 16)] : index
+  %known = index.assume %n [range(%n, 0, 4096), multiple_of(%n, 16)] : index
   func.return %known : index
 }
 

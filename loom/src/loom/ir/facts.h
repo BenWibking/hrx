@@ -66,7 +66,7 @@ enum loom_value_fact_flag_bits_e {
   // The signed range lower bound is > 0. Implies NON_NEGATIVE and
   // NON_ZERO.
   LOOM_VALUE_FACT_POSITIVE = 1u << 2,
-  // The value is known to be a power of two. Set by pow2() predicates
+  // The value is known to be a power of two. Set by power_of_two() predicates
   // or when an exact value is a power of two. Preserved across
   // recompute_flags since it may come from predicates rather than
   // range analysis.

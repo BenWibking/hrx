@@ -19,9 +19,30 @@ namespace loom::cxx_import {
 
 class Diagnostics;
 
+// Returns a semantic Loom annotation attached to a resolved source symbol, or
+// null when the canonical declaration has no annotation with this spelling.
+inline const cxx::Attribute* annotation(cxx::Symbol* symbol,
+                                        std::string_view spelling) {
+  if (!symbol) {
+    return nullptr;
+  }
+  const auto* attributes = symbol->canonical()->attributes();
+  if (!attributes) {
+    return nullptr;
+  }
+  for (const auto& attribute : *attributes) {
+    if (attribute.attributeNamespace && attribute.name &&
+        attribute.attributeNamespace->name() == "loom" &&
+        attribute.name->name() == spelling) {
+      return &attribute;
+    }
+  }
+  return nullptr;
+}
+
 // Source positions with distinct binding owners. Declaration bindings own
 // namespace-scope symbols/configs; parameter bindings own entry preconditions.
-enum class BindingAttributeScope { Declaration, Parameter, Local };
+enum class BindingAttributeScope { Declaration, Function, Parameter, Local };
 
 // Rejects binding annotations outside their owning source positions.
 void reject_misplaced_binding_attributes(
@@ -43,21 +64,7 @@ void reject_misplaced_binding_statement(cxx::TranslationUnit& unit,
 
 // Queries a semantic Loom annotation attached to a resolved source symbol.
 inline bool annotated(cxx::Symbol* symbol, std::string_view spelling) {
-  if (!symbol) {
-    return false;
-  }
-  const auto* attributes = symbol->canonical()->attributes();
-  if (!attributes) {
-    return false;
-  }
-  for (const auto& attribute : *attributes) {
-    if (attribute.attributeNamespace && attribute.name &&
-        attribute.attributeNamespace->name() == "loom" &&
-        attribute.name->name() == spelling) {
-      return true;
-    }
-  }
-  return false;
+  return annotation(symbol, spelling) != nullptr;
 }
 
 // Visits raw C++ Loom attributes, including duplicates and numeric arguments

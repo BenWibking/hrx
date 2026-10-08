@@ -14,7 +14,7 @@ func.def @scalar_exchange_observations(%ordinal: index, %word_bits_input: i64, %
   %origin_slot = index.rem %bounded_ordinal, %c3 : index
   %origin_bytes = index.mul %origin_slot, %c8 : index
   %dynamic_origin0 = index.cast %origin_bytes : index to offset
-  %dynamic_origin = index.assume %dynamic_origin0 [range(%dynamic_origin0, 0, 16), mul(%dynamic_origin0, 8)] : offset
+  %dynamic_origin = index.assume %dynamic_origin0 [range(%dynamic_origin0, 0, 16), multiple_of(%dynamic_origin0, 8)] : offset
   %origin = index.add %dynamic_origin, %prefix : offset
   %word_bits = scalar.trunci %word_bits_input : i64 to i32
   %float_value = scalar.bitcast %word_bits : i32 to f32

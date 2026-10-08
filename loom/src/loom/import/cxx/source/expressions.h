@@ -8,11 +8,20 @@
 #define LOOM_IMPORT_CXX_SOURCE_EXPRESSIONS_H_
 
 #include <cxx/ast_fwd.h>
+#include <cxx/symbols_fwd.h>
 
 namespace loom::cxx_import {
 
 // Returns the source expression beneath any implicit conversion sequence.
 cxx::ExpressionAST* strip_implicit_casts(cxx::ExpressionAST* expression);
+
+// Returns the semantic expression beneath implicit conversions and redundant
+// parenthesized nesting.
+cxx::ExpressionAST* unwrap_expression(cxx::ExpressionAST* expression);
+
+// Returns the directly named function called by |call|, or null for indirect
+// calls and other callable expressions.
+cxx::FunctionSymbol* direct_callee(cxx::CallExpressionAST* call);
 
 // Returns the declaration syntax beneath a condition's contextual conversion,
 // or null when the condition is an ordinary expression.

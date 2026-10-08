@@ -16,6 +16,7 @@
 #include <utility>
 #include <variant>
 
+#include "loom/import/cxx/binding/combining.h"
 #include "loom/import/cxx/source/error.h"
 #include "loom/ops/index/ops.h"
 #include "loom/ops/kernel/ops.h"
@@ -35,6 +36,7 @@ std::optional<SubgroupIntrinsic::Operation> SubgroupIntrinsic::find(
       {"kernel.subgroup.active.mask", Operation::ActiveMask},
       {"kernel.subgroup.broadcast", Operation::Broadcast},
       {"kernel.subgroup.broadcast.first", Operation::BroadcastFirst},
+      {"kernel.subgroup.reduce", Operation::Reduce},
   };
   for (auto [candidate, operation] : operations) {
     if (candidate == name) {
@@ -59,10 +61,15 @@ std::optional<SubgroupIntrinsic> SubgroupIntrinsic::resolve(
   auto* signature = cxx::type_cast<cxx::FunctionType>(function->type());
   auto parameters = signature->parameterTypes();
   auto* result = types.unqualified(signature->returnType());
-  if (attribute.arguments.size() != 1 || signature->isVariadic()) {
+  const size_t attribute_count = *operation == Operation::Reduce ? 2u : 1u;
+  if (attribute.arguments.size() != attribute_count ||
+      signature->isVariadic()) {
     diagnostics.reject(unit, owner,
-                       "subgroup binding requires one operation name and a "
-                       "non-variadic signature");
+                       *operation == Operation::Reduce
+                           ? "subgroup reduction requires one combining kind "
+                             "and a non-variadic signature"
+                           : "subgroup binding requires one operation name "
+                             "and a non-variadic signature");
   }
 
   size_t operand_count = 0;
@@ -71,6 +78,7 @@ std::optional<SubgroupIntrinsic> SubgroupIntrinsic::resolve(
     case Operation::All:
     case Operation::Ballot:
     case Operation::BroadcastFirst:
+    case Operation::Reduce:
       operand_count = 1;
       break;
     case Operation::Broadcast:
@@ -88,6 +96,7 @@ std::optional<SubgroupIntrinsic> SubgroupIntrinsic::resolve(
   auto i32 = loom_type_scalar(LOOM_SCALAR_TYPE_I32);
   auto i64 = loom_type_scalar(LOOM_SCALAR_TYPE_I64);
   auto i1 = loom_type_scalar(LOOM_SCALAR_TYPE_I1);
+  std::optional<Reduction> reduction;
   switch (*operation) {
     case Operation::Id:
     case Operation::Count:
@@ -136,6 +145,83 @@ std::optional<SubgroupIntrinsic> SubgroupIntrinsic::resolve(
                            "rank-one vector value and result types");
       }
       break;
+    case Operation::Reduce: {
+      auto parsed_kind = parse_combining_kind(attribute.arguments[1]->name());
+      if (!parsed_kind) {
+        diagnostics.reject(unit, owner,
+                           "unsupported subgroup reduction combining kind");
+      }
+      Reduction semantics = {
+          .combining_kind = *parsed_kind,
+          .cluster_size = 0,
+          .cluster_stride = 0,
+      };
+      if (types.unqualified(parameters[0]) != result ||
+          (!loom_type_is_scalar(result_type) &&
+           !(loom_type_is_vector(result_type) &&
+             loom_type_rank(result_type) == 1))) {
+        diagnostics.reject(unit, owner,
+                           "subgroup reduction requires matching scalar or "
+                           "rank-one vector value and result types");
+      }
+      const auto* element = result;
+      if (const auto* vector = types.vector(result)) {
+        element = types.unqualified(vector->elementType());
+      }
+      const bool floating = types.is_float(element);
+      const bool integer = unit.typeTraits().is_integral(element) &&
+                           element->kind() != cxx::TypeKind::kBool;
+      if ((floating &&
+           !loom_combining_kind_accepts_float(semantics.combining_kind)) ||
+          (integer &&
+           !loom_combining_kind_accepts_integer(semantics.combining_kind)) ||
+          (!floating && !integer)) {
+        diagnostics.reject(
+            unit, owner,
+            "subgroup reduction combining kind does not match the value type");
+      }
+      if (((semantics.combining_kind == LOOM_COMBINING_KIND_MINSI ||
+            semantics.combining_kind == LOOM_COMBINING_KIND_MAXSI) &&
+           types.is_unsigned(element)) ||
+          ((semantics.combining_kind == LOOM_COMBINING_KIND_MINUI ||
+            semantics.combining_kind == LOOM_COMBINING_KIND_MAXUI) &&
+           !types.is_unsigned(element))) {
+        diagnostics.reject(
+            unit, owner,
+            "subgroup reduction signedness does not match the combining kind");
+      }
+      auto template_arguments = function->templateArguments();
+      if (!template_arguments.empty()) {
+        if (template_arguments.size() < 2) {
+          diagnostics.reject(unit, owner,
+                             "subgroup reduction templates require leading "
+                             "cluster size and stride arguments");
+        }
+        uint32_t* destinations[] = {&semantics.cluster_size,
+                                    &semantics.cluster_stride};
+        for (size_t index = 0; index < 2; ++index) {
+          auto value = cxx::template_argument_value(template_arguments[index]);
+          auto* number = value ? std::get_if<cxx::ConstInt>(&*value) : nullptr;
+          if (!number || number->isNegative() ||
+              number->toUWide() > UINT32_MAX) {
+            diagnostics.reject(unit, owner,
+                               "subgroup reduction cluster arguments must be "
+                               "unsigned 32-bit constants");
+          }
+          *destinations[index] = static_cast<uint32_t>(number->toUIntMax());
+        }
+      }
+      if (semantics.cluster_stride != 0 && semantics.cluster_size == 0) {
+        diagnostics.reject(
+            unit, owner,
+            "subgroup reduction cluster stride requires a cluster size");
+      }
+      reduction = semantics;
+      break;
+    }
+  }
+  if (reduction) {
+    return SubgroupIntrinsic(result_type, *reduction);
   }
   return SubgroupIntrinsic(*operation, result_type);
 }
@@ -192,13 +278,36 @@ loom_value_id_t SubgroupIntrinsic::call(std::span<const Value> arguments,
       check(loom_kernel_subgroup_broadcast_first_build(
           builder, arguments[0].ssa(), result_type_, location, &op));
       break;
+    case Operation::Reduce: {
+      const auto& reduction = *reduction_;
+      loom_kernel_subgroup_reduce_build_flags_t flags = 0;
+      if (reduction.cluster_size != 0) {
+        flags |= LOOM_KERNEL_SUBGROUP_REDUCE_BUILD_FLAG_HAS_CLUSTER_SIZE;
+      }
+      if (reduction.cluster_stride != 0) {
+        flags |= LOOM_KERNEL_SUBGROUP_REDUCE_BUILD_FLAG_HAS_CLUSTER_STRIDE;
+      }
+      check(loom_kernel_subgroup_reduce_build(
+          builder, flags, reduction.combining_kind, arguments[0].ssa(),
+          reduction.cluster_size, reduction.cluster_stride, result_type_,
+          location, &op));
+      break;
+    }
   }
   return loom_op_results(op)[0];
 }
 
 bool SubgroupIntrinsic::equivalent(const SubgroupIntrinsic& other) const {
-  return operation_ == other.operation_ &&
-         loom_type_equal(result_type_, other.result_type_);
+  if (operation_ != other.operation_ ||
+      !loom_type_equal(result_type_, other.result_type_)) {
+    return false;
+  }
+  if (!reduction_) {
+    return true;
+  }
+  return reduction_->combining_kind == other.reduction_->combining_kind &&
+         reduction_->cluster_size == other.reduction_->cluster_size &&
+         reduction_->cluster_stride == other.reduction_->cluster_stride;
 }
 
 bool BarrierIntrinsic::supports(std::string_view name) {

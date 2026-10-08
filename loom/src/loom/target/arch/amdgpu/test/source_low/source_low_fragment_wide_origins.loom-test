@@ -7,7 +7,7 @@ kernel.def @fragment_dynamic_origin() {
   %threads = index.constant 32 : index
   kernel.launch.config workgroups(%unit_extent, %unit_extent, %unit_extent) workgroup_size(%threads, %unit_extent, %unit_extent) : index
 } launch(%input: buffer, %output: buffer, %origin_input: offset) {
-  %origin = index.assume %origin_input [mul(%origin_input, 16)] : offset
+  %origin = index.assume %origin_input [multiple_of(%origin_input, 16)] : offset
   %padding = index.constant 256 : offset
   %base = index.add %origin, %padding : offset
   %extent = index.constant 16 : index
@@ -65,7 +65,7 @@ kernel.def @fragment_table_origin() {
   %row = kernel.workgroup.id<x> : index
   %origins = buffer.view %table_unique[%table_origin] : buffer -> view<4xi64>
   %word = view.load %origins[%row] : view<4xi64> -> i64
-  %nonnegative = scalar.assume %word [range(%word, 0, 9223372036854775807), mul(%word, 16)] : i64
+  %nonnegative = scalar.assume %word [range(%word, 0, 9223372036854775807), multiple_of(%word, 16)] : i64
   %origin = index.cast %nonnegative : i64 to offset
   %base = index.add %origin, %layer_origin : offset
   %extent = index.constant 16 : index

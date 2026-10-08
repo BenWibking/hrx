@@ -137,8 +137,8 @@ test.target<low_core> @test_target
 
 func.def target(@test_target) @rejects_assume_divisibility_contradicting_exact_facts() -> (index) {
   %exact = index.constant 66 : index
-  // ERROR@+1: TARGET/060 {predicate_name="mul", value_name="exact", known_value="66"}
-  %assumed = index.assume %exact [mul(%exact, 64)] : index
+  // ERROR@+1: TARGET/060 {predicate_name="multiple_of", value_name="exact", known_value="66"}
+  %assumed = index.assume %exact [multiple_of(%exact, 64)] : index
   func.return %assumed : index
 }
 

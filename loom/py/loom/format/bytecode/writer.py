@@ -35,6 +35,7 @@ from loom.format.bytecode.op_decls import (
 from loom.format.bytecode.symbol_references import SymbolReferenceProjectionBuilder
 from loom.ir import (
     ATTR_AGGREGATE_MAX_NESTING_DEPTH,
+    PREDICATE_KINDS,
     REGION_SOURCE_FLAG_MASK,
     Block,
     BufferType,
@@ -183,7 +184,7 @@ BYTECODE_IR_KIND_BY_TYPE_KIND: dict[int, TypeKind] = {
 
 # File magic and version.
 MAGIC = b"LOOM"
-FORMAT_VERSION = 39
+FORMAT_VERSION = 40
 PRODUCER = "loom-py"
 
 SYMBOL_INTERFACE_FLAG_MASK = (1 << 14) - 1
@@ -1868,24 +1869,7 @@ class BytecodeWriter:
 
     # Predicate kind name → byte mapping.
     _PRED_KIND_BYTES: ClassVar[dict[str, int]] = {
-        "eq": 0,
-        "ne": 1,
-        "lt": 2,
-        "le": 3,
-        "gt": 4,
-        "ge": 5,
-        "mul": 6,
-        "min": 7,
-        "max": 8,
-        "pow2": 9,
-        "range": 10,
-        "not_nan": 11,
-        "not_inf": 12,
-        "finite": 13,
-        "ult": 14,
-        "ule": 15,
-        "ugt": 16,
-        "uge": 17,
+        name: kind for kind, name in enumerate(PREDICATE_KINDS)
     }
 
     def _write_predicate_list(
