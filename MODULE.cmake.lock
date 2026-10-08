@@ -16,6 +16,7 @@ set(IREE_DEPENDENCY_IDS
   "libbacktrace"
   "zstd"
   "catch2"
+  "tracy_client"
   "cxx"
   "rdma_core_headers"
   "libdrm_headers"
@@ -122,6 +123,22 @@ set(IREE_DEP_CATCH2_STRIP_PREFIX "Catch2-3.13.0")
 set(IREE_DEP_CATCH2_BUILD_FILE "")
 set(IREE_DEP_CATCH2_PATCHES "")
 set(IREE_DEP_CATCH2_PATCH_ARGS "")
+
+set(IREE_DEP_TRACY_CLIENT_KIND "http_archive")
+set(IREE_DEP_TRACY_CLIENT_OWNER "shared")
+set(IREE_DEP_TRACY_CLIENT_MODULE_NAME "tracy_client")
+set(IREE_DEP_TRACY_CLIENT_REPO_NAME "tracy_client")
+set(IREE_DEP_TRACY_CLIENT_VERSION "")
+set(IREE_DEP_TRACY_CLIENT_DEV_DEPENDENCY "FALSE")
+set(IREE_DEP_TRACY_CLIENT_SOURCE_URL "")
+set(IREE_DEP_TRACY_CLIENT_URLS
+  "https://github.com/wolfpld/tracy/archive/5479a42ef9346b64e6d1b860ae58aa8abdb0c7f6.tar.gz"
+)
+set(IREE_DEP_TRACY_CLIENT_SHA256 "0b8a3929ffd53217b4183064ed0585f6179e7c5f9ae5b832d4153c3ba8ce37d3")
+set(IREE_DEP_TRACY_CLIENT_STRIP_PREFIX "tracy-5479a42ef9346b64e6d1b860ae58aa8abdb0c7f6")
+set(IREE_DEP_TRACY_CLIENT_BUILD_FILE "//build_tools/third_party/tracy_client:tracy_client.BUILD.bazel")
+set(IREE_DEP_TRACY_CLIENT_PATCHES "")
+set(IREE_DEP_TRACY_CLIENT_PATCH_ARGS "")
 
 set(IREE_DEP_CXX_KIND "http_archive")
 set(IREE_DEP_CXX_OWNER "shared")
