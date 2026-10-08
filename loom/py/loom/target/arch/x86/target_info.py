@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from loom.target.arch.x86.packed_dot_data import (
+from loom.target.arch.x86.feature_bits import (
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
     FEATURE_AVX512_VL,

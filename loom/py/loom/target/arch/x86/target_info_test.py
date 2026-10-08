@@ -10,7 +10,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from loom.target.arch.x86.packed_dot_data import (
+from loom.target.arch.x86.feature_bits import (
     FEATURE_AVX10_2,
     FEATURE_AVX512_BF16,
     FEATURE_AVX512_VL,

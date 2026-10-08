@@ -22,6 +22,7 @@ iree_py_library(
   NAME
     target_info
   SRCS
+    "feature_bits.py"
     "packed_dot_data.py"
     "target_info.py"
   DEPS

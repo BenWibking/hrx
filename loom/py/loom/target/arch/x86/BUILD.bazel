@@ -20,6 +20,7 @@ iree_py_library(
 iree_py_library(
     name = "target_info",
     srcs = [
+        "feature_bits.py",
         "packed_dot_data.py",
         "target_info.py",
     ],
