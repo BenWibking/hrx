@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import product
+from typing import Literal
 
 from loom.dialect.encoding import defs as encoding
 from loom.dialect.vector import defs as vector
@@ -17,6 +18,9 @@ from loom.dsl import EncodingOperandSummaryDef, Op
 from loom.target.arch.amd.xdna.aie2p.contracts.data_path import (
     BF16_CONVERSION_ROUNDING,
     I8_INTERLEAVE_CONTROL,
+)
+from loom.target.arch.amd.xdna.aie2p.contracts.f32_accumulator import (
+    F32AccumulatorProgram,
 )
 from loom.target.arch.amd.xdna.aie2p.core_descriptors import (
     AIE2P_CORE_DESCRIPTOR_SET,
@@ -45,6 +49,8 @@ FLOAT_PACKET_LANE_COUNTS = (16, 32)
 # Packed i4 byte counts consumed by native VUNPACK forms. Each input byte
 # produces two sign- or zero-extended i8 lanes.
 I4_UNPACK_SOURCE_LANE_COUNTS = (32, 64)
+
+_IntegerSignedness = Literal["signed", "unsigned"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1163,6 +1169,8 @@ def _shift_i32_packet(
     name: str,
     source: ValueRef,
     amount: int,
+    *,
+    signedness: _IntegerSignedness = "unsigned",
 ) -> ValueRef:
     """Shifts one i32 packet by a fixed signed amount without scalar lanes."""
 
@@ -1174,14 +1182,14 @@ def _shift_i32_packet(
     program.state("rounding", 0)
     wide = program.operation(
         f"{name}_wide",
-        "widen.2x.x-to-c.unsigned.configured",
+        f"widen.2x.x-to-c.{signedness}.configured",
         "dst",
         src=source,
         su=program.shift(max(amount, 0)),
     )
     return program.operation(
         name,
-        "narrow.2x.c-to-x.unsigned.configured",
+        f"narrow.2x.c-to-x.{signedness}.configured",
         "dst",
         src=wide,
         su=program.shift(max(-amount, 0)),
@@ -1219,6 +1227,8 @@ def integer_widen_result_emits(
     instruction: IntegerWidenInstruction,
     result: ValueRef,
     result_accumulator_unit_count: int | None = None,
+    *,
+    bind_result_type: bool = False,
 ) -> tuple[ValueRef, tuple[ContractEmit, ...]]:
     """Bridges a native accumulator result to its source-visible carrier."""
 
@@ -1260,7 +1270,7 @@ def integer_widen_result_emits(
                 results={"dst": vector_unit},
                 result_types=(
                     {"dst": DescriptorResultType()}
-                    if result_accumulator_unit_count > 1
+                    if result_accumulator_unit_count > 1 or bind_result_type
                     else None
                 ),
                 form=DescriptorEmitForm.OP,
@@ -1500,6 +1510,161 @@ def _integer_shift_rule(
         report_key="native_"
         + source_op.name.removeprefix("vector.")
         + f"_i32x{rule_shape.report_lane_range}_uniform",
+    )
+
+
+def _widen_integer_packet_to_i32(
+    input_element: str,
+    signedness: _IntegerSignedness,
+    source: ValueRef,
+) -> tuple[ValueRef, tuple[ContractEmit, ...]]:
+    """Widens one partial X-carried integer packet to sixteen i32 lanes."""
+
+    instruction = {
+        "i8": _I8_TO_I32_W,
+        "i16": _I16_TO_I32_W,
+    }[input_element]
+    input_emits: list[ContractEmit] = []
+    if instruction.slice_input:
+        sliced_source = ValueRef.temporary("integer_to_f32_source_w")
+        input_emits.append(
+            EmitRegisterSlice(
+                source=source,
+                result=sliced_source,
+                unit_count=1,
+            )
+        )
+        source = sliced_source
+
+    shift, state_emits = integer_widen_state_emits(instruction.ups_mode)
+    result = ValueRef.temporary("integer_to_f32_widened")
+    native_result, output_emits = integer_widen_result_emits(
+        instruction,
+        result,
+        result_accumulator_unit_count=1,
+        bind_result_type=True,
+    )
+    widen = _descriptor(
+        f"amd.xdna.aie2p.widen.{instruction.physical_shape}.{signedness}.configured"
+    )
+    return result, (
+        *input_emits,
+        *state_emits,
+        EmitDescriptorOp(
+            descriptor=widen,
+            operands={"src": source, "su": shift},
+            results={"dst": native_result},
+            result_types={"dst": DescriptorResultType()},
+            form=DescriptorEmitForm.OP,
+        ),
+        *output_emits,
+    )
+
+
+def _integer_to_f32_packet_rule(
+    source_op: Op,
+    input_element: str,
+    signedness: _IntegerSignedness,
+) -> DescriptorRule:
+    """Converts one integer packet to correctly rounded binary32 lanes."""
+
+    input_value = ValueRef.operand("input")
+    input_emits: tuple[ContractEmit, ...] = ()
+    if input_element != "i32":
+        input_value, input_emits = _widen_integer_packet_to_i32(
+            input_element, signedness, input_value
+        )
+
+    packet = _PacketProgram(32, temporary_prefix="integer_to_f32_")
+    accumulator = F32AccumulatorProgram(temporary_prefix="integer_to_f32_")
+    if input_element != "i32":
+        # The interior mantissa leaves the complete signed or unsigned i8/i16
+        # domain in one unit-spaced F32 binade. Integer addition to the bit
+        # pattern and floating subtraction therefore recover every lane
+        # exactly.
+        bias = packet.splat("bias", 0x4B010000)
+        biased = packet.binary("biased", "add.i32x16", input_value, bias)
+        biased_accumulator = accumulator.vector_to_accumulator("biased", biased)
+        bias_accumulator = accumulator.vector_to_accumulator("bias", bias)
+        result_accumulator = accumulator.binary(
+            "result",
+            biased_accumulator,
+            bias_accumulator,
+            "amd.xdna.aie2p.sub.f32x64.configured",
+        )
+        primary_descriptor = _descriptor("amd.xdna.aie2p.sub.f32x64.configured")
+    else:
+        # The high and low components are exact integers in F32. Their single
+        # final addition performs exactly the rounding required by the source
+        # i32-to-F32 conversion, including signed cancellation and midpoint
+        # ties across the full input domain.
+        high = _shift_i32_packet(
+            packet,
+            "high",
+            input_value,
+            -16,
+            signedness=signedness,
+        )
+        low_mask = packet.splat("low_mask", 0xFFFF)
+        low = packet.binary("low", "and.bits512", input_value, low_mask)
+
+        high_bias = packet.splat("high_bias", 0x53010000)
+        high_biased = packet.binary("high_biased", "add.i32x16", high, high_bias)
+        low_bias = packet.splat("low_bias", 0x4B010000)
+        low_biased = packet.binary("low_biased", "add.i32x16", low, low_bias)
+
+        high_biased_accumulator = accumulator.vector_to_accumulator(
+            "high_biased", high_biased
+        )
+        high_bias_accumulator = accumulator.vector_to_accumulator(
+            "high_bias", high_bias
+        )
+        high_float_accumulator = accumulator.binary(
+            "high_float",
+            high_biased_accumulator,
+            high_bias_accumulator,
+            "amd.xdna.aie2p.sub.f32x64.configured",
+        )
+        low_biased_accumulator = accumulator.vector_to_accumulator(
+            "low_biased", low_biased
+        )
+        low_bias_accumulator = accumulator.vector_to_accumulator("low_bias", low_bias)
+        low_float_accumulator = accumulator.binary(
+            "low_float",
+            low_biased_accumulator,
+            low_bias_accumulator,
+            "amd.xdna.aie2p.sub.f32x64.configured",
+        )
+        result_accumulator = accumulator.binary(
+            "result",
+            high_float_accumulator,
+            low_float_accumulator,
+            "amd.xdna.aie2p.add.f32x64.configured",
+        )
+        primary_descriptor = _descriptor("amd.xdna.aie2p.add.f32x64.configured")
+
+    accumulator.accumulator_to_vector(
+        "result", result_accumulator, ValueRef.result("result")
+    )
+    packet_type = Vector(
+        input_element,
+        minimum_static_elements=1,
+        maximum_static_elements=16,
+    )
+    result_type = Vector(
+        "f32",
+        minimum_static_elements=1,
+        maximum_static_elements=16,
+    )
+    return DescriptorRule(
+        source_op=source_op,
+        descriptor=primary_descriptor,
+        guards=(
+            Guard.value_type("input", packet_type),
+            Guard.value_type("result", result_type),
+        ),
+        emit=(*input_emits, *packet.emits, *accumulator.emits),
+        report_key=f"exact_{signedness}_{input_element}_to_binary32",
     )
 
 
@@ -3802,6 +3967,14 @@ AIE2P_PACKET_CONVERSION_RULES = (
             (vector.vector_extsi, "signed"),
         )
         for rule_shape in INTEGER_WIDEN_RULE_SHAPES
+    ),
+    *(
+        _integer_to_f32_packet_rule(source_op, input_element, signedness)
+        for source_op, signedness in (
+            (vector.vector_sitofp, "signed"),
+            (vector.vector_uitofp, "unsigned"),
+        )
+        for input_element in ("i8", "i16", "i32")
     ),
     *(
         integer_truncation_rule(rule_shape)
