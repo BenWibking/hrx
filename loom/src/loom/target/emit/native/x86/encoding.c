@@ -116,10 +116,16 @@ static void loom_x86_encode_vector_prefix(
     loom_x86_encoded_instruction_t* instruction, uint16_t encoding_id,
     uint8_t reg, uint8_t vvvv, uint8_t rm, uint8_t index, bool has_index,
     bool memory, uint8_t mask) {
-  const uint8_t map = (encoding_id >> 8) & 3;
+  const uint8_t encoded_map = (encoding_id >> 8) & 3;
   const uint8_t mandatory_prefix = (encoding_id >> 10) & 3;
   const uint8_t w = (encoding_id >> 12) & 1;
-  const bool evex = (encoding_id >> 13) & 1;
+  const uint8_t prefix_map_extension = (encoding_id >> 13) & 1;
+  // EVEX maps 5 and 6 occupy the two map-zero states unused by legacy VEX
+  // and EVEX encodings. This keeps every instruction record at 16 bits and
+  // preserves all existing encoding IDs.
+  const bool extended_map = encoded_map == 0;
+  const uint8_t map = extended_map ? 5 + prefix_map_extension : encoded_map;
+  const bool evex = extended_map || prefix_map_extension;
   const uint8_t vector_length = encoding_id >> 14;
   if (evex) {
     const uint8_t x =

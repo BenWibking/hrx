@@ -73,6 +73,19 @@ TEST(EncodingTest, VectorRegisterPrefixesAndBehaviors) {
   operands.inputs[2] = 4;
   ExpectVectorEncoding(0xb230, 0x2664, operands,
                        {0x62, 0xf2, 0x5d, 0x0a, 0x64, 0xcb});
+
+  // AVX512-FP16 uses the extended EVEX opcode maps without widening the
+  // 16-bit instruction record. VADDPH uses map 5 and VFMADD231PH uses map 6.
+  operands = {};
+  operands.result = 1;
+  operands.inputs[0] = 2;
+  operands.inputs[1] = 3;
+  ExpectVectorEncoding(0x8210, 0x8058, operands,
+                       {0x62, 0xf5, 0x6c, 0x48, 0x58, 0xcb});
+  operands.inputs[1] = 2;
+  operands.inputs[2] = 3;
+  ExpectVectorEncoding(0x8320, 0xa4b8, operands,
+                       {0x62, 0xf6, 0x6d, 0x48, 0xb8, 0xcb});
 }
 
 TEST(EncodingTest, AvxVnniInt8FamilyHasExactReferenceBytes) {

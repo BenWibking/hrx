@@ -23,6 +23,8 @@ class VectorOpcodeMap(IntEnum):
     MAP_0F = 1
     MAP_0F38 = 2
     MAP_0F3A = 3
+    MAP_5 = 5
+    MAP_6 = 6
 
 
 class VectorRegisterSelector(IntEnum):
@@ -138,6 +140,14 @@ class VectorEncoding:
             raise ValueError("invalid VEX/EVEX prefix field")
         if not 0 <= self.opcode <= 0xFF:
             raise ValueError("invalid VEX/EVEX opcode")
+        if self.opcode_map in (VectorOpcodeMap.MAP_5, VectorOpcodeMap.MAP_6):
+            if self.prefix != VectorEncodingPrefix.EVEX:
+                raise ValueError("opcode maps 5 and 6 require EVEX")
+            encoded_map = 0
+            prefix_map_extension = self.opcode_map == VectorOpcodeMap.MAP_6
+        else:
+            encoded_map = int(self.opcode_map)
+            prefix_map_extension = self.prefix == VectorEncodingPrefix.EVEX
         if self.fixed_vector_length is not None:
             if vector_bit_width is not None or not 0 <= self.fixed_vector_length <= 2:
                 raise ValueError("fixed vector length conflicts with descriptor width")
@@ -158,10 +168,10 @@ class VectorEncoding:
             vector_length = vector_lengths[vector_bit_width]
         return (
             self.opcode
-            | (int(self.opcode_map) << 8)
+            | (encoded_map << 8)
             | (self.mandatory_prefix << 10)
             | (self.w << 12)
-            | ((self.prefix == VectorEncodingPrefix.EVEX) << 13)
+            | (prefix_map_extension << 13)
             | (vector_length << 14)
         )
 
