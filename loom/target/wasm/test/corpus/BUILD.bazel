@@ -131,6 +131,8 @@ _SCENARIO_KERNEL_SOURCES = [
     "kernel/subgroup/transport.loom",
     "kernel/subgroup/transport_carrier.loom",
     "kernel/workgroup/predicate_insertion.loom",
+    "kernel/workgroup/reduce_partial.loom",
+    "kernel/workgroup/reduce_tree.loom",
     "memory/address/carrier_casts.loom",
     "memory/address/carrier_loops.loom",
     "memory/address/generic.loom",
