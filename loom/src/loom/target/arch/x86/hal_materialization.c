@@ -11,6 +11,7 @@
 #include "loom/ir/module.h"
 #include "loom/ops/low/ops.h"
 #include "loom/target/arch/x86/descriptors/entry.h"
+#include "loom/target/arch/x86/facts.h"
 #include "loom/target/arch/x86/ops/ops.h"
 #include "loom/target/arch/x86/register_classes.h"
 #include "loom/target/registers.h"

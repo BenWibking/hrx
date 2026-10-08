@@ -18,7 +18,9 @@ constexpr uint64_t kSseFeatures =
 constexpr uint64_t kAvxFeatures =
     IREE_CPU_DATA0_X86_64_AVX | IREE_CPU_DATA0_X86_64_FMA |
     IREE_CPU_DATA0_X86_64_FMA4 | IREE_CPU_DATA0_X86_64_XOP |
-    IREE_CPU_DATA0_X86_64_F16C | IREE_CPU_DATA0_X86_64_AVX2;
+    IREE_CPU_DATA0_X86_64_F16C | IREE_CPU_DATA0_X86_64_AVX2 |
+    IREE_CPU_DATA0_X86_64_AVXVNNI | IREE_CPU_DATA0_X86_64_AVXVNNIINT8 |
+    IREE_CPU_DATA0_X86_64_AVXVNNIINT16;
 constexpr uint64_t kAvx512Features =
     IREE_CPU_DATA0_X86_64_AVX512F | IREE_CPU_DATA0_X86_64_AVX512CD |
     IREE_CPU_DATA0_X86_64_AVX512VL | IREE_CPU_DATA0_X86_64_AVX512DQ |
@@ -42,7 +44,8 @@ iree_cpu_x86_64_capabilities_t InstructionCapabilities() {
   capabilities.leaf7_0.ecx =
       (1u << 1) | (1u << 6) | (1u << 11) | (1u << 12) | (1u << 14);
   capabilities.leaf7_0.edx = (1u << 22) | (1u << 23) | (1u << 24) | (1u << 25);
-  capabilities.leaf7_1.eax = 1u << 5;
+  capabilities.leaf7_1.eax = (1u << 4) | (1u << 5);
+  capabilities.leaf7_1.edx = (1u << 4) | (1u << 10);
   capabilities.extended_leaf1.ecx = (1u << 6) | (1u << 11) | (1u << 16);
   return capabilities;
 }
@@ -111,6 +114,7 @@ TEST(CpuX86_64Test, InstructionFeaturesRemainIndependent) {
   capabilities.leaf7_0.ebx &= ~(1u << 5);
   capabilities.extended_leaf1.ecx &= ~((1u << 11) | (1u << 16));
   capabilities.leaf7_1.eax = 0;
+  capabilities.leaf7_1.edx = 0;
   capabilities.leaf7_0.edx &= ~(1u << 23);
   EXPECT_EQ(iree_cpu_x86_64_decode_features(&capabilities),
             kSseFeatures | IREE_CPU_DATA0_X86_64_AVX |

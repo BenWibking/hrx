@@ -309,8 +309,8 @@ static const loom_target_provider_set_t kTestTargetProviderSet = {
 };
 
 static void DeinitializeTestTargetProfile(loom_target_profile_t* base_profile,
-                                          loomc_allocator_t allocator) {
-  loomc_allocator_free(allocator, base_profile);
+                                          iree_allocator_t allocator) {
+  iree_allocator_free(allocator, base_profile);
 }
 
 static const loom_target_provider_t kFakeElfProvider = {

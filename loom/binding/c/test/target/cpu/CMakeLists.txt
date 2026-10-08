@@ -16,6 +16,7 @@ loom_cc_test(
   SRCS
     "iree_hal_test.cc"
   DEPS
+    iree::base::internal::arena
     iree::hal
     iree::hal::drivers::task::device_spec
     iree::hal::utils::device_spec_builder
@@ -27,6 +28,8 @@ loom_cc_test(
     loom::binding::c::target::cpu::iree_hal
     loom::binding::c::target::iree_hal
     loom::binding::c::test::test_util
+    loom::target::arch::x86::facts
+    loom::target::profile
 )
 endif()
 

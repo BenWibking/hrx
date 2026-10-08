@@ -55,6 +55,17 @@ loom_low_descriptor_cc_library(
 )
 
 loom_low_descriptor_cc_library(
+    name = "avx2_packed_dot_descriptors",
+    header_only = True,
+    ids_deps = ["//loom/src/loom/codegen/low:descriptors"],
+    visibility = _X86_NATIVE_VISIBILITY,
+    deps = [
+        ":avx512_packed_dot_descriptors",
+        "//loom/src/loom/codegen/low:descriptors",
+    ],
+)
+
+loom_low_descriptor_cc_library(
     name = "avx512_descriptors",
     header_only = True,
     ids_deps = ["//loom/src/loom/codegen/low:descriptors"],
@@ -149,6 +160,7 @@ loom_low_descriptor_cc_library(
         "--view-header=scalar",
         "--view-header=simd128",
         "--view-header=avx2",
+        "--view-header=avx2_packed_dot",
         "--view-header=avx512",
         "--view-header=packed_dot",
         "--view-header=avx512_vnni",
@@ -162,6 +174,7 @@ loom_low_descriptor_cc_library(
         "scalar_descriptors.h",
         "simd128_descriptors.h",
         "avx2_descriptors.h",
+        "avx2_packed_dot_descriptors.h",
         "avx512_descriptors.h",
         "packed_dot_descriptors.h",
         "avx512_vnni_descriptors.h",
@@ -184,6 +197,7 @@ loom_cc_library(
     visibility = _X86_ROOT_VISIBILITY,
     deps = [
         ":avx2_descriptors_ids",
+        ":avx2_packed_dot_descriptors_ids",
         ":avx512_descriptors_ids",
         ":avx512_packed_dot_descriptors_ids",
         ":scalar_descriptors_ids",
@@ -213,6 +227,7 @@ loom_cc_library(
     deps = [
         ":avx10_2_descriptors",
         ":avx2_descriptors",
+        ":avx2_packed_dot_descriptors",
         ":avx512_bf16_descriptors",
         ":avx512_descriptors",
         ":avx512_packed_dot_descriptors",
@@ -237,6 +252,7 @@ loom_cc_library(
     hdrs = [
         ":avx10_2_descriptors.h",
         ":avx2_descriptors.h",
+        ":avx2_packed_dot_descriptors.h",
         ":avx512_bf16_descriptors.h",
         ":avx512_descriptors.h",
         ":avx512_packed_dot_descriptors.h",
@@ -252,6 +268,7 @@ loom_cc_library(
     deps = [
         ":avx10_2_descriptors",
         ":avx2_descriptors",
+        ":avx2_packed_dot_descriptors",
         ":avx512_bf16_descriptors",
         ":avx512_descriptors",
         ":avx512_packed_dot_descriptors",

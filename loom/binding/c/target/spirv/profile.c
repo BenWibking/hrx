@@ -596,7 +596,8 @@ static void loomc_spirv_profile_deinitialize_numeric_states(
 }
 
 static void loomc_spirv_target_profile_destroy(
-    loom_target_profile_t* target_profile, loomc_allocator_t allocator) {
+    loom_target_profile_t* target_profile, iree_allocator_t iree_allocator) {
+  const loomc_allocator_t allocator = loomc_allocator_from_iree(iree_allocator);
   loomc_spirv_target_profile_storage_t* profile_storage =
       (loomc_spirv_target_profile_storage_t*)target_profile;
   loomc_spirv_cooperative_row_fact_set_deinitialize(
@@ -813,7 +814,7 @@ static loomc_status_t loomc_spirv_target_profile_create_from_states(
   }
   if (profile_storage != NULL) {
     loomc_spirv_target_profile_destroy(&profile_storage->profile.base,
-                                       allocator);
+                                       iree_allocator_from_loomc(allocator));
   }
   return status;
 }

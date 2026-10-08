@@ -6,11 +6,15 @@
 
 #include "loom/target/arch/x86/provider.h"
 
+#include <string.h>
+
 #include "iree/base/cpu_data.h"
 #include "loom/ir/module.h"
 #include "loom/pass/builder.h"
 #include "loom/target/arch/x86/call_abi.h"
 #include "loom/target/arch/x86/descriptors/low_registry.h"
+#include "loom/target/arch/x86/facts.h"
+#include "loom/target/arch/x86/feature_bits.h"
 #include "loom/target/arch/x86/legalization.h"
 #include "loom/target/arch/x86/lower/lower.h"
 #include "loom/target/arch/x86/math_policy.h"
@@ -26,7 +30,18 @@ typedef struct loom_x86_target_profile_t {
   iree_string_view_t name;
   // Native target catalog row projected into family facts.
   uint8_t selector;
+  // Complete device CPU facts retained by an owned profile, or NULL.
+  const iree_cpu_data_t* cpu_data;
 } loom_x86_target_profile_t;
+
+typedef struct loom_x86_owned_target_profile_t {
+  // Family profile exposed through the target-neutral selection result.
+  loom_x86_target_profile_t profile;
+  // Owned common bundle selected for the CPU's core and feature overlays.
+  loom_target_bundle_storage_t bundle_storage;
+  // Complete immutable CPU record retained for target analysis.
+  iree_cpu_data_t cpu_data;
+} loom_x86_owned_target_profile_t;
 
 typedef struct loom_x86_cpu_profile_policy_t {
   // Required named instruction features from iree_cpu_data_t::fields[0].
@@ -70,12 +85,23 @@ static loom_x86_cpu_profile_policy_t loom_x86_cpu_profile_policy(
   return policy;
 }
 
+static bool loom_x86_cpu_data_equal(const iree_cpu_data_t* lhs,
+                                    const iree_cpu_data_t* rhs) {
+  return lhs->architecture == rhs->architecture &&
+         memcmp(lhs->fields, rhs->fields, sizeof(lhs->fields)) == 0;
+}
+
 static iree_status_t loom_x86_profile_project_facts(
     const loom_target_profile_t* base_profile, iree_arena_allocator_t* arena,
     loom_target_facts_t* out_facts) {
+  (void)arena;
   const loom_x86_target_profile_t* profile =
       (const loom_x86_target_profile_t*)base_profile;
-  out_facts->selector = profile->selector;
+  loom_x86_target_facts_t* facts = (loom_x86_target_facts_t*)out_facts;
+  facts->base.selector = profile->selector;
+  if (profile->cpu_data != NULL) {
+    facts->cpu_data = *profile->cpu_data;
+  }
   return iree_ok_status();
 }
 
@@ -91,7 +117,8 @@ static const loom_x86_target_profile_t kProfiles[] = {
     snapshot_name, descriptor_set_key, feature_bits)              \
   {{&kProfileType, &kX86LowTargetBundle##symbol_suffix, 0},       \
    IREE_SVL(selector_name),                                       \
-   target_kind},
+   target_kind,                                                   \
+   NULL},
 #include "loom/target/arch/x86/records/target_profiles.inl"
 #undef LOOM_X86_NATIVE_TARGET_PROFILE
 };
@@ -110,22 +137,183 @@ static iree_status_t loom_x86_select_profile(
                           (int)selector.size, selector.data);
 }
 
-static const loom_target_profile_t* loom_x86_select_cpu_profile(
+static loom_x86_feature_bits_t loom_x86_cpu_contract_feature_bits(
+    const iree_cpu_data_t* cpu_data, uint8_t selector) {
+  loom_x86_feature_bits_t features = 0;
+  if (selector != LOOM_X86_TARGET_KIND_AVX2 &&
+      selector != LOOM_X86_TARGET_KIND_AVX512) {
+    return features;
+  }
+  if (iree_any_bit_set(cpu_data->fields[0], IREE_CPU_DATA0_X86_64_AVXVNNI)) {
+    features |= LOOM_X86_FEATURE_AVX_VNNI;
+  }
+  if (iree_any_bit_set(cpu_data->fields[0],
+                       IREE_CPU_DATA0_X86_64_AVXVNNIINT8)) {
+    features |= LOOM_X86_FEATURE_AVX_VNNI_INT8;
+  }
+  if (iree_any_bit_set(cpu_data->fields[0],
+                       IREE_CPU_DATA0_X86_64_AVXVNNIINT16)) {
+    features |= LOOM_X86_FEATURE_AVX_VNNI_INT16;
+  }
+  if (selector == LOOM_X86_TARGET_KIND_AVX512) {
+    if (iree_any_bit_set(cpu_data->fields[0],
+                         IREE_CPU_DATA0_X86_64_AVX512VNNI)) {
+      features |= LOOM_X86_FEATURE_AVX512_VNNI;
+    }
+    if (iree_any_bit_set(cpu_data->fields[0], IREE_CPU_DATA0_X86_64_AVX512VL)) {
+      features |= LOOM_X86_FEATURE_AVX512_VL;
+    }
+    if (iree_any_bit_set(cpu_data->fields[0],
+                         IREE_CPU_DATA0_X86_64_AVX512BF16)) {
+      features |= LOOM_X86_FEATURE_AVX512_BF16;
+    }
+  }
+  return features;
+}
+
+static iree_string_view_t loom_x86_composite_contract_set_key(
+    uint8_t selector) {
+  switch (selector) {
+    case LOOM_X86_TARGET_KIND_AVX2:
+      return IREE_SV("x86.avx2_packed_dot.core");
+    case LOOM_X86_TARGET_KIND_AVX512:
+      return IREE_SV("x86.avx512_packed_dot.core");
+    default:
+      return iree_string_view_empty();
+  }
+}
+
+static void loom_x86_owned_target_profile_destroy(
+    loom_target_profile_t* base_profile, iree_allocator_t allocator) {
+  iree_allocator_free(allocator,
+                      (loom_x86_owned_target_profile_t*)base_profile);
+}
+
+static bool loom_x86_owned_target_profile_satisfies_requirement(
+    const loom_x86_owned_target_profile_t* owned,
+    const loom_target_facts_t* requirement) {
+  if (requirement == NULL) {
+    return true;
+  }
+  loom_x86_target_facts_t effective = {
+      .base =
+          {
+              .fact_type = &loom_x86_target_fact_type,
+              .selector = owned->profile.selector,
+              .storage = owned->bundle_storage,
+          },
+      .cpu_data = owned->cpu_data,
+  };
+  loom_target_bundle_storage_rebind(&effective.base.storage);
+  return loom_target_facts_satisfy_specialization_requirement(&effective.base,
+                                                              requirement);
+}
+
+static iree_status_t loom_x86_create_owned_cpu_profile(
+    const iree_cpu_data_t* cpu_data,
+    const loom_x86_target_profile_t* core_profile,
+    const loom_target_facts_t* requirement,
+    loom_target_profile_selection_t* out_selection,
+    iree_allocator_t allocator) {
+  loom_x86_owned_target_profile_t* owned = NULL;
+  IREE_RETURN_IF_ERROR(
+      iree_allocator_malloc(allocator, sizeof(*owned), (void**)&owned));
+  memset(owned, 0, sizeof(*owned));
+
+  const loom_target_bundle_t* core_bundle = core_profile->base.target_bundle;
+  owned->bundle_storage = (loom_target_bundle_storage_t){
+      .snapshot = *core_bundle->snapshot,
+      .export_plan = *core_bundle->export_plan,
+      .config = *core_bundle->config,
+      .bundle = *core_bundle,
+  };
+  loom_target_bundle_storage_rebind(&owned->bundle_storage);
+
+  const iree_string_view_t composite_contract_set_key =
+      loom_x86_composite_contract_set_key(core_profile->selector);
+  const bool requirement_selects_core_contract =
+      requirement != NULL &&
+      loom_target_facts_field_is_explicit(
+          requirement, LOOM_TARGET_FACT_FIELD_CONTRACT_SET_KEY) &&
+      iree_string_view_equal(requirement->storage.config.contract_set_key,
+                             core_bundle->config->contract_set_key);
+  const bool use_composite_contract =
+      !iree_string_view_is_empty(composite_contract_set_key) &&
+      !requirement_selects_core_contract;
+  if (use_composite_contract) {
+    owned->bundle_storage.config.name = composite_contract_set_key;
+    owned->bundle_storage.config.contract_set_key = composite_contract_set_key;
+    owned->bundle_storage.config.contract_feature_bits =
+        loom_x86_cpu_contract_feature_bits(cpu_data, core_profile->selector);
+  }
+
+  owned->cpu_data = *cpu_data;
+  loom_target_fact_field_set_t explicit_fields = 0;
+  if (use_composite_contract) {
+    loom_target_fact_field_set_insert(&explicit_fields,
+                                      LOOM_TARGET_FACT_FIELD_CONTRACT_SET_KEY);
+    loom_target_fact_field_set_insert(
+        &explicit_fields, LOOM_TARGET_FACT_FIELD_CONTRACT_FEATURE_BITS);
+  }
+  owned->profile = (loom_x86_target_profile_t){
+      .base =
+          {
+              .type = &kProfileType,
+              .target_bundle = &owned->bundle_storage.bundle,
+              .explicit_fields = explicit_fields,
+          },
+      .name = core_profile->name,
+      .selector = core_profile->selector,
+      .cpu_data = &owned->cpu_data,
+  };
+  if (!loom_x86_owned_target_profile_satisfies_requirement(owned,
+                                                           requirement)) {
+    iree_allocator_free(allocator, owned);
+    return iree_ok_status();
+  }
+  *out_selection = (loom_target_profile_selection_t){
+      .profile = &owned->profile.base,
+      .destroy = loom_x86_owned_target_profile_destroy,
+  };
+  return iree_ok_status();
+}
+
+static iree_status_t loom_x86_select_cpu_profile(
     const iree_cpu_data_t* cpu_data, const loom_target_facts_t* requirement,
-    const loom_target_profile_t* profile) {
+    const loom_target_profile_t* profile,
+    loom_target_profile_selection_t* out_selection,
+    iree_allocator_t allocator) {
+  *out_selection = (loom_target_profile_selection_t){0};
   if (cpu_data->architecture != IREE_CPU_ARCHITECTURE_X86_64) {
-    return NULL;
+    return iree_ok_status();
   }
   if (requirement && requirement->fact_type != &loom_x86_target_fact_type) {
-    return NULL;
+    return iree_ok_status();
+  }
+  if (profile != NULL && profile->type != &kProfileType) {
+    return iree_ok_status();
+  }
+
+  if (profile != NULL) {
+    const loom_x86_target_profile_t* requested =
+        (const loom_x86_target_profile_t*)profile;
+    const loom_x86_cpu_profile_policy_t policy =
+        loom_x86_cpu_profile_policy(requested->selector);
+    if (policy.automatic_priority == 0 ||
+        !iree_all_bits_set(cpu_data->fields[0], policy.required_field0_bits) ||
+        (requested->cpu_data != NULL &&
+         !loom_x86_cpu_data_equal(cpu_data, requested->cpu_data))) {
+      return iree_ok_status();
+    }
+    out_selection->profile = (loom_target_profile_t*)profile;
+    return iree_ok_status();
   }
 
   const loom_x86_target_profile_t* selected = NULL;
   uint8_t selected_priority = 0;
   for (iree_host_size_t i = 0; i < IREE_ARRAYSIZE(kProfiles); ++i) {
     const loom_x86_target_profile_t* candidate = &kProfiles[i];
-    if ((profile && profile != &candidate->base) ||
-        (requirement && requirement->selector != candidate->selector)) {
+    if (requirement && requirement->selector != candidate->selector) {
       continue;
     }
     const loom_x86_cpu_profile_policy_t policy =
@@ -134,15 +322,18 @@ static const loom_target_profile_t* loom_x86_select_cpu_profile(
         !iree_all_bits_set(cpu_data->fields[0], policy.required_field0_bits)) {
       continue;
     }
-    if (profile || requirement) {
-      return &kProfiles[i].base;
-    }
-    if (policy.automatic_priority > selected_priority) {
+    if (requirement || policy.automatic_priority > selected_priority) {
       selected = candidate;
       selected_priority = policy.automatic_priority;
+      if (requirement) {
+        break;
+      }
     }
   }
-  return selected ? &selected->base : NULL;
+  return selected != NULL
+             ? loom_x86_create_owned_cpu_profile(
+                   cpu_data, selected, requirement, out_selection, allocator)
+             : iree_ok_status();
 }
 
 static iree_status_t loom_x86_materialize_definition(
