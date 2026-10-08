@@ -4,6 +4,7 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include <loomcxx/target.h>
 #include <loomcxx/vector.h>
 
 #include "q8s32_specialization.h"
@@ -54,7 +55,7 @@ LOOM_TEMPLATE_DEF(q8s32_project)
     unsigned input_capacity, Q8S32Codes16 weights_low,
     Q8S32Codes16 weights_high, Q8S32BFloat16 activations_low,
     Q8S32BFloat16 activations_high, std::bfloat16_t scale)
-    [[loom::where(loom::target::subgroup_size() == 32u &&
+    [[loom::where(loom::target::subgroup::size() == 32u &&
                   loom::predicate::multiple_of(input_capacity, 512u))]] {
   return loom::kernel::subgroup::reduce::addf<32>(q8s32_lane_dot_combined(
       weights_low, weights_high, activations_low, activations_high, scale));
@@ -65,7 +66,7 @@ LOOM_TEMPLATE_DEF(q8s32_project)
     unsigned input_capacity, Q8S32Codes16 weights_low,
     Q8S32Codes16 weights_high, Q8S32BFloat16 activations_low,
     Q8S32BFloat16 activations_high, std::bfloat16_t scale)
-    [[loom::where(loom::target::subgroup_size() == 32u &&
+    [[loom::where(loom::target::subgroup::size() == 32u &&
                   loom::predicate::multiple_of(input_capacity, 768u))]] {
   return loom::kernel::subgroup::reduce::addf<16>(q8s32_lane_dot_combined(
       weights_low, weights_high, activations_low, activations_high, scale));
@@ -76,7 +77,7 @@ LOOM_TEMPLATE_DEF(q8s32_project)
     unsigned input_capacity, Q8S32Codes16 weights_low,
     Q8S32Codes16 weights_high, Q8S32BFloat16 activations_low,
     Q8S32BFloat16 activations_high, std::bfloat16_t scale)
-    [[loom::where(loom::target::subgroup_size() == 64u &&
+    [[loom::where(loom::target::subgroup::size() == 64u &&
                   loom::predicate::multiple_of(input_capacity, 512u))]] {
   return loom::kernel::subgroup::reduce::addf<32>(q8s32_lane_dot_split(
       weights_low, weights_high, activations_low, activations_high, scale));
@@ -87,7 +88,7 @@ LOOM_TEMPLATE_DEF(q8s32_project)
     unsigned input_capacity, Q8S32Codes16 weights_low,
     Q8S32Codes16 weights_high, Q8S32BFloat16 activations_low,
     Q8S32BFloat16 activations_high, std::bfloat16_t scale)
-    [[loom::where(loom::target::subgroup_size() == 64u &&
+    [[loom::where(loom::target::subgroup::size() == 64u &&
                   loom::predicate::multiple_of(input_capacity, 768u))]] {
   return loom::kernel::subgroup::reduce::addf<16>(q8s32_lane_dot_split(
       weights_low, weights_high, activations_low, activations_high, scale));

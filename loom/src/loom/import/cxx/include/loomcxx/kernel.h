@@ -48,6 +48,15 @@
 
 namespace loom {
 
+// Declares integer truth, comparison, and conjunction contracts. Conditions
+// are retained as Loom facts without runtime evaluation. Calls, mutation,
+// volatile reads, and expressions without a retained scalar identity diagnose
+// at import.
+[[loom::assume]] void assume(bool condition);
+
+namespace kernel {
+
+// Three-dimensional unsigned coordinate used by launch and topology APIs.
 struct uint3 {
   // Coordinate along the x axis.
   unsigned x;
@@ -56,8 +65,6 @@ struct uint3 {
   // Coordinate along the z axis.
   unsigned z;
 };
-
-namespace kernel {
 
 // Complete launch geometry computed from explicit workload values and target
 // properties. A function returning this aggregate may be referenced by
@@ -136,73 +143,76 @@ template <unsigned long long ClusterSize = 0,
 
 }  // namespace subgroup::reduce
 
-}  // namespace kernel
-
-namespace target {
-
-// Reads the selected target's subgroup width in launch configuration code or
-// a trailing loom::where template applicability contract. This is a
-// compilation input, unlike loom::subgroup_size(), which queries the executing
-// kernel topology.
-[[loom::op("target.subgroup.size")]] unsigned subgroup_size();
-
-}  // namespace target
-
 // Topology queries and subgroup intrinsics require a kernel body or a
 // force-inline helper. Other helpers receive topology values as arguments.
-[[loom::workitem_id]] extern const uint3 workitem_id;
-[[loom::workgroup_id]] extern const uint3 workgroup_id;
-[[loom::workgroup_size]] extern const uint3 workgroup_size;
-[[loom::workgroup_count]] extern const uint3 workgroup_count;
+namespace workitem {
+
+// Zero-based invocation coordinate within the current workgroup.
+[[loom::workitem_id]] extern const uint3 id;
+
+}  // namespace workitem
+
+namespace workgroup {
+
+// Zero-based workgroup coordinate within the current launch.
+[[loom::workgroup_id]] extern const uint3 id;
+// Number of invocations in the current workgroup.
+[[loom::workgroup_size]] extern const uint3 size;
+// Number of workgroups in the current launch.
+[[loom::workgroup_count]] extern const uint3 count;
 
 // Synchronizes workgroup invocations and their global/workgroup-memory
 // accesses.
-[[loom::barrier]] void workgroup_barrier();
+[[loom::barrier]] void barrier();
 
-// Declares integer truth, comparison, and conjunction contracts. Conditions
-// are retained as Loom facts without runtime evaluation. Calls, mutation,
-// volatile reads, and expressions without a retained scalar identity diagnose
-// at import.
-[[loom::assume]] void assume(bool condition);
+}  // namespace workgroup
+
+namespace subgroup {
 
 // Reads this subgroup's zero-based coordinate within the workgroup.
-[[loom::op("kernel.subgroup.id")]] unsigned subgroup_id();
+[[loom::op("kernel.subgroup.id")]] unsigned id();
 
 // Counts subgroups in the workgroup, including a partially occupied subgroup.
-[[loom::op("kernel.subgroup.count")]] unsigned subgroup_count();
+[[loom::op("kernel.subgroup.count")]] unsigned count();
 
 // Reads this invocation's physical lane, without compacting inactive lanes.
-[[loom::op("kernel.subgroup.lane.id")]] unsigned subgroup_lane_id();
+[[loom::op("kernel.subgroup.lane.id")]] unsigned lane_id();
 
 // Reads the target-selected execution width, including inactive lanes. It may
 // exceed the workgroup size; no fixed wave size is implied.
-[[loom::op("kernel.subgroup.size")]] unsigned subgroup_size();
+[[loom::op("kernel.subgroup.size")]] unsigned size();
 
 // Votes over the active invocations at this convergent call. These operations
 // do not synchronize memory or rendezvous with other subgroups.
-[[loom::op("kernel.subgroup.vote.any")]] bool subgroup_any(bool predicate);
-[[loom::op("kernel.subgroup.vote.all")]] bool subgroup_all(bool predicate);
+namespace vote {
+
+[[loom::op("kernel.subgroup.vote.any")]] bool any(bool predicate);
+[[loom::op("kernel.subgroup.vote.all")]] bool all(bool predicate);
 
 // Bit i describes physical lane i. Mask must be a 32- or 64-bit integer whose
 // width covers the target subgroup; the default also covers 64-lane waves.
 template <class Mask = unsigned long long>
-[[loom::op("kernel.subgroup.vote.ballot")]] Mask subgroup_ballot(
-    bool predicate);
+[[loom::op("kernel.subgroup.vote.ballot")]] Mask ballot(bool predicate);
+
+}  // namespace vote
 
 // Returns the participating lanes with the same explicit mask-width contract.
 template <class Mask = unsigned long long>
-[[loom::op("kernel.subgroup.active.mask")]] Mask subgroup_active_mask();
+[[loom::op("kernel.subgroup.active.mask")]] Mask active_mask();
 
 // Broadcasts a scalar or explicit vector from the named active lane. Native
 // lane-range and uniformity requirements follow the selected High target.
 template <class T>
-[[loom::op("kernel.subgroup.broadcast")]] T subgroup_broadcast(T value,
-                                                               unsigned lane);
+[[loom::op("kernel.subgroup.broadcast")]] T broadcast(T value, unsigned lane);
 
 // Broadcasts from the first active lane, which need not be lane zero.
 template <class T>
-[[loom::op("kernel.subgroup.broadcast.first")]] T subgroup_broadcast_first(
-    T value);
+[[loom::op("kernel.subgroup.broadcast.first")]] T broadcast_first(T value);
+
+// Exchanges values across lanes selected by XOR within the given width.
+[[loom::shuffle_xor]] float shuffle_xor(float value, int mask, int width);
+
+}  // namespace subgroup
 
 // Rendezvous of all invocations in Scope (subgroup or workgroup) with memory
 // ordering in Space. Global memory accepts acquire, release, or acq_rel;
@@ -213,8 +223,7 @@ template <class T>
 template <memory_space Space, atomic::scope Scope, atomic::ordering Ordering>
 [[loom::op("kernel.barrier")]] void barrier();
 
-// Exchanges values across lanes selected by XOR within the given width.
-[[loom::shuffle_xor]] float shuffle_xor(float value, int mask, int width);
+}  // namespace kernel
 
 }  // namespace loom
 

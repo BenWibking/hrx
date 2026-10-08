@@ -1,16 +1,17 @@
 // RUN: roundtrip
 // Workload values and target properties compute a kernel launch configuration.
 #include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
 
 static loom::kernel::configuration configure(unsigned item_count,
                                              unsigned row_count) {
-  unsigned width = loom::target::subgroup_size();
+  unsigned width = loom::target::subgroup::size();
   unsigned group_count = (item_count + width - 1) / width;
   return {{group_count, row_count, 1}, {width, 1, 1}};
 }
 
 [[loom::kernel(configure)]] void transform(float* output) {
-  output[loom::workitem_id.x] = 1.0f;
+  output[loom::kernel::workitem::id.x] = 1.0f;
 }
 
 // ----
@@ -114,10 +115,11 @@ check.case public @fixed_configuration_case {
 // ====
 // Cluster dimensions retain the complete source-computed launch geometry.
 #include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
 
 static loom::kernel::clustered_configuration configure_clustered(
     unsigned cluster_count, unsigned cluster_size) {
-  unsigned width = loom::target::subgroup_size();
+  unsigned width = loom::target::subgroup::size();
   return {{cluster_count * cluster_size, 1, 1},
           {width, 1, 1},
           {cluster_size, 1, 1}};
@@ -188,9 +190,10 @@ kernel.def @typed_workload(%row_count: i16, %item_count: i64) {
 // Check launches keep configuration workloads separate from device arguments.
 #include <loomcxx/check.h>
 #include <loomcxx/kernel.h>
+#include <loomcxx/target.h>
 
 static loom::kernel::configuration configure_copy(unsigned item_count) {
-  unsigned width = loom::target::subgroup_size();
+  unsigned width = loom::target::subgroup::size();
   return {{(item_count + width - 1) / width, 1, 1}, {width, 1, 1}};
 }
 
@@ -198,7 +201,8 @@ static loom::kernel::configuration configure_copy(unsigned item_count) {
                                                       const float* input,
                                                       float* output) {
   unsigned item =
-      loom::workgroup_id.x * loom::workgroup_size.x + loom::workitem_id.x;
+      loom::kernel::workgroup::id.x * loom::kernel::workgroup::size.x +
+      loom::kernel::workitem::id.x;
   if (item < item_count) {
     output[item] = input[item];
   }
