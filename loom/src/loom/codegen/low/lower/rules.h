@@ -897,8 +897,10 @@ enum loom_low_lower_emit_kind_e {
   // Slices register-range operands at lane 0 and emits one descriptor-backed
   // low.op.
   LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_FIRST_LANE = 3,
-  // Slices register-range operands by descriptor packet operand widths, emits
-  // one descriptor-backed low.op per source lane, and concatenates each result.
+  // Materializes operands once, slices register ranges by descriptor packet
+  // widths, emits one low.op per packet, and concatenates each result. A
+  // one-packet input is reused; aggregate inputs and results define the packet
+  // count. A one-packet result type inherits the aggregate input packet count.
   LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_PER_LANE = 4,
   // Executes the final contiguous emit-program tail once per source lane,
   // slicing operands and typing lane-local temporaries by descriptor packet

@@ -30,6 +30,7 @@ from loom.target.contracts import (
     DescriptorOperandMaterialization,
     GuardKind,
     LowerAttrCopyKind,
+    LowerEmitKind,
     LowerRule,
     Scalar,
     SourceValueKind,
@@ -672,7 +673,37 @@ def test_packed_f32_arithmetic_rules_publish_native_pk_ops() -> None:
         (vector.vector_mulf, "amdgpu.v_pk_mul_f32", "amdgpu.v_mul_f32"),
     ):
         positions = _descriptor_sequence_positions(compiled, source_op)
+        for suffix in ("lhs", "rhs", "lhs_rhs"):
+            assert (
+                positions[(f"{packed_descriptor}.broadcast_{suffix}",)]
+                < positions[(packed_descriptor,)]
+            )
         assert positions[(packed_descriptor,)] < positions[(scalar_descriptor,)]
+
+
+def test_packed_f32_broadcast_rules_materialize_before_packet_repetition() -> None:
+    compiled = _compiled_arithmetic_rules()
+    for source_op in (vector.vector_addf, vector.vector_mulf):
+        rules = tuple(
+            rule
+            for rule in _rules_for_source_op(compiled, source_op)
+            if ".broadcast_" in _rule_descriptor_keys(compiled, rule)[0]
+        )
+        assert len(rules) == 3
+        for rule in rules:
+            emit = compiled.emits[rule.emit_start]
+            assert emit.kind is LowerEmitKind.DESCRIPTOR_OP_PER_LANE
+            assert rule.emit_count == 1
+            assert emit.operand_ref_count == 2
+            for operand_index, name in enumerate(("lhs", "rhs")):
+                reference = compiled.value_refs[emit.operand_ref_start + operand_index]
+                broadcast = name in emit.descriptor.key.split(".broadcast_")[1]
+                assert reference.kind is (
+                    SourceValueKind.UNIFORM_ELEMENT_ORIGIN_OPERAND
+                    if broadcast
+                    else SourceValueKind.OPERAND
+                )
+                assert bool(reference.materializer_index) == (operand_index == 1)
 
 
 def test_32bit_vector_shape_contracts_match_lane_semantics() -> None:
@@ -709,6 +740,11 @@ def test_32bit_vector_shape_contracts_match_lane_semantics() -> None:
         "amdgpu.v_pk_add_f32",
         "amdgpu.v_pk_fma_f32",
         "amdgpu.v_pk_mul_f32",
+        *(
+            f"amdgpu.v_pk_{operation}_f32.broadcast_{sources}"
+            for operation in ("add", "mul")
+            for sources in ("lhs", "rhs", "lhs_rhs")
+        ),
     }
     assert {
         vector.vector_addi,

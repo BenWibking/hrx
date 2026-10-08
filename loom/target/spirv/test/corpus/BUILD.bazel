@@ -619,7 +619,6 @@ loom_corpus_build(
     all_roots_xfail = {
         "//loom/target/spirv:all": _ALL_ROOTS_XFAIL,
         "//loom/target/spirv:vulkan1.3+bda": [
-            "numeric/vector/broadcast_arithmetic.loom",
             "kernel/subgroup/ballot.loom",
             "memory/address/table_index.loom",
             "memory/atomic/add_f32_subnormals.loom",
@@ -642,7 +641,6 @@ loom_corpus_build(
             "numeric/conversion/float8_dequantization.loom",
         ],
         "//loom/target/spirv:vulkan1.3+bda+subgroup32+ballot+hal": [
-            "numeric/vector/broadcast_arithmetic.loom",
             "memory/address/table_index.loom",
             "memory/atomic/add_f32_subnormals.loom",
             "memory/packed/alignment.loom",

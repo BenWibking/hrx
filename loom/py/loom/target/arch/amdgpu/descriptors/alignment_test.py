@@ -82,23 +82,30 @@ def test_alignment_belongs_to_selected_register_alternative() -> None:
 
 
 @pytest.mark.parametrize("target", ["cdna3", "cdna4", "gfx9_4_generic"])
-def test_packed_f32_broadcast_alignment_preserves_single_register_reads(target) -> None:
+@pytest.mark.parametrize(
+    ("operation", "names"),
+    [("add", ("lhs", "rhs")), ("mul", ("lhs", "rhs")), ("fma", ("a", "b", "c"))],
+)
+def test_packed_f32_broadcast_alignment_preserves_single_register_reads(
+    target, operation, names
+) -> None:
     builder = _AMDGPU_CORE_DESCRIPTOR_SET_BUILDERS[target]
+    key = f"amdgpu.v_pk_{operation}_f32"
     overlays = {
         row.descriptor_key: row
         for row in builder.overlay_rows()
-        if row.descriptor_key.startswith("amdgpu.v_pk_fma_f32.broadcast_")
+        if row.descriptor_key.startswith(f"{key}.broadcast_")
     }
-    assert len(overlays) == 7
-    for mask in range(1, 8):
+    assert len(overlays) == (1 << len(names)) - 1
+    for mask in range(1, 1 << len(names)):
         suffix = "_".join(
-            name for index, name in enumerate(("a", "b", "c")) if mask & (1 << index)
+            name for index, name in enumerate(names) if mask & (1 << index)
         )
-        overlay = overlays[f"amdgpu.v_pk_fma_f32.broadcast_{suffix}"]
+        overlay = overlays[f"{key}.broadcast_{suffix}"]
         assert overlay.fixed_encoding_fields == (("OP_SEL_HI", 7 ^ mask),)
         descriptor = _amdgpu_contract_descriptor_from_overlay(overlay)
         assert descriptor.operands[0].unit_count == 2
-        for index, name in enumerate(("a", "b", "c")):
+        for index, name in enumerate(names):
             operand = next(
                 operand for operand in descriptor.operands if operand.field_name == name
             )

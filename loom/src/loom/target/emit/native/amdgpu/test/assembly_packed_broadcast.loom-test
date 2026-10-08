@@ -98,3 +98,21 @@ low.func.def target<amdgpu.rdna4.gfx125x.core>(@target) @brain_fma(%factor: reg<
 0xCC110000
 0x14120500
 0xBFB00000
+
+// ====
+
+// Binary forms retain pair spelling with independently selected scalar inputs.
+// RUN: emit amdgpu-assembly @binary strategy=source waits=none fixed=%offset:physical_register:0:1 fixed=%factor:physical_register:2:1 fixed=%values:physical_register:4:2
+
+amdgpu.target<gfx942> @target
+
+low.func.def target<amdgpu.cdna3.core>(@target) @binary(%offset: reg<amdgpu.sgpr>, %factor: reg<amdgpu.vgpr>, %values: reg<amdgpu.vgpr x2>) -> (reg<amdgpu.vgpr x2>, reg<amdgpu.vgpr x2>) asm {
+  %sum = v_pk_add_f32.broadcast_lhs_rhs %offset, %factor
+  %product = v_pk_mul_f32.broadcast_rhs %values, %factor
+  return %sum, %product
+}
+
+// ----
+  v_pk_add_f32 v[0:1], s[0:1], v[2:3] op_sel_hi:[0,0]
+  v_pk_mul_f32 v[2:3], v[4:5], v[2:3] op_sel_hi:[1,0]
+  s_endpgm

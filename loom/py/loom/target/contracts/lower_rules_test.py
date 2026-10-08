@@ -272,10 +272,21 @@ def test_compile_structural_register_emits() -> None:
     assert copy_emit.result_ref_count == 1
 
 
-def test_compile_exact_lane_origin_operand_reference() -> None:
+@pytest.mark.parametrize("materialize", [False, True])
+def test_compile_exact_lane_origin_operand_reference(materialize: bool) -> None:
+    materializer = ValueMaterializer(
+        name="test_origin",
+        can_materialize="test_origin_can_materialize",
+        materialize="test_origin_materialize",
+        header="test/origin.h",
+    )
+    origin_ref = ValueRef.exact_lane_origin_operand("lhs")
+    if materialize:
+        origin_ref = replace(origin_ref, materializer=materializer.name)
     fragment = ContractFragment(
         name="test.exact-lane-origin",
         descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        materializers=(materializer,) if materialize else (),
         cases=(
             DescriptorRule(
                 source_op=vector.vector_mulf,
@@ -292,7 +303,7 @@ def test_compile_exact_lane_origin_operand_reference() -> None:
                     EmitDescriptorOp(
                         descriptor=TEST_LOW_ADD_F32_DESCRIPTOR,
                         operands={
-                            "lhs": ValueRef.exact_lane_origin_operand("lhs"),
+                            "lhs": origin_ref,
                             "rhs": ValueRef.operand("rhs"),
                         },
                         results={"dst": ValueRef.result("result")},
@@ -312,10 +323,20 @@ def test_compile_exact_lane_origin_operand_reference() -> None:
     emit = compiled.emits[compiled.rules[0].emit_start]
     origin_operand_ref = compiled.value_refs[emit.operand_ref_start]
     assert origin_operand_ref.kind is SourceValueKind.EXACT_LANE_ORIGIN_OPERAND
+    assert origin_operand_ref.materializer_index == (1 if materialize else 0)
 
 
 @pytest.mark.parametrize("exact", [False, True])
-def test_compile_uniform_element_origin_operand_reference(exact: bool) -> None:
+@pytest.mark.parametrize("materialize", [False, True])
+def test_compile_uniform_element_origin_operand_reference(
+    exact: bool, materialize: bool
+) -> None:
+    materializer = ValueMaterializer(
+        name="test_origin",
+        can_materialize="test_origin_can_materialize",
+        materialize="test_origin_materialize",
+        header="test/origin.h",
+    )
     origin_guard = (
         Guard.exact_uniform_element_origin_type("rhs", Scalar("bf16"))
         if exact
@@ -326,9 +347,12 @@ def test_compile_uniform_element_origin_operand_reference(exact: bool) -> None:
         if exact
         else ValueRef.uniform_element_origin_operand("rhs")
     )
+    if materialize:
+        origin_ref = replace(origin_ref, materializer=materializer.name)
     fragment = ContractFragment(
         name="test.exact-uniform-element-origin",
         descriptor_set=TEST_LOW_CORE_DESCRIPTOR_SET,
+        materializers=(materializer,) if materialize else (),
         cases=(
             DescriptorRule(
                 source_op=vector.vector_mulf,
@@ -362,6 +386,7 @@ def test_compile_uniform_element_origin_operand_reference(exact: bool) -> None:
     emit = compiled.emits[compiled.rules[0].emit_start]
     origin_operand_ref = compiled.value_refs[emit.operand_ref_start + 1]
     assert origin_operand_ref.kind is origin_ref.kind
+    assert origin_operand_ref.materializer_index == (1 if materialize else 0)
 
 
 def test_compile_variadic_result_element_refs() -> None:

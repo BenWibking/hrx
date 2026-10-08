@@ -5061,10 +5061,14 @@ def _v_pk_add_f32_overlay() -> AmdgpuDescriptorOverlay:
     )
 
 
-def _v_pk_fma_f32_broadcast_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
-    overlay = _v_pk_fma_f32_overlay()
+def _v_pk_f32_broadcast_overlays(
+    overlay: AmdgpuDescriptorOverlay,
+) -> tuple[AmdgpuDescriptorOverlay, ...]:
+    source_names = tuple(
+        source.descriptor_operand.field_name for source in overlay.operands[1:]
+    )
     overlays = []
-    for mask in range(1, 8):
+    for mask in range(1, 1 << len(source_names)):
         operands = [overlay.operands[0]]
         native_values = [_native_result("dst")]
         for source_index, source in enumerate(overlay.operands[1:]):
@@ -5089,12 +5093,14 @@ def _v_pk_fma_f32_broadcast_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
         native_values.append(
             _native_modifier_literal(
                 "op_sel_hi:["
-                + ",".join(str((selector >> bit) & 1) for bit in range(3))
+                + ",".join(
+                    str((selector >> bit) & 1) for bit in range(len(source_names))
+                )
                 + "]"
             )
         )
         suffix = "_".join(
-            name for bit, name in enumerate(("a", "b", "c")) if mask & (1 << bit)
+            name for bit, name in enumerate(source_names) if mask & (1 << bit)
         )
         overlays.append(
             replace(
@@ -5106,7 +5112,7 @@ def _v_pk_fma_f32_broadcast_overlays() -> tuple[AmdgpuDescriptorOverlay, ...]:
                     mnemonic=f"{overlay.mnemonic}.broadcast_{suffix}",
                     native_assembly_mnemonic=overlay.mnemonic,
                     results=("dst",),
-                    operands=("a", "b", "c"),
+                    operands=source_names,
                     native_assembly_values=tuple(native_values),
                 ),
             )
@@ -7751,7 +7757,7 @@ __all__ = (
     "_v_pk_mul_lo_u16_overlay",
     "_v_pk_i16_binary_overlays",
     "_v_pk_fma_f32_overlay",
-    "_v_pk_fma_f32_broadcast_overlays",
+    "_v_pk_f32_broadcast_overlays",
     "_v_pk_fmac_f16_overlay",
     "_v_pk_mad_i16_overlay",
     "_v_pk_mad_i16_literal_overlays",

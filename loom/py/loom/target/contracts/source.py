@@ -171,7 +171,12 @@ class ValueRef:
                 raise ValueError(
                     f"{source_op.name}: {subject} materializer must be non-empty"
                 )
-            if self.kind != SourceValueKind.OPERAND:
+            if self.kind not in (
+                SourceValueKind.OPERAND,
+                SourceValueKind.EXACT_LANE_ORIGIN_OPERAND,
+                SourceValueKind.EXACT_UNIFORM_ELEMENT_ORIGIN_OPERAND,
+                SourceValueKind.UNIFORM_ELEMENT_ORIGIN_OPERAND,
+            ):
                 raise ValueError(
                     f"{source_op.name}: {subject} materializer requires an operand"
                 )

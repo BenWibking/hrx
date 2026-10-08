@@ -1095,8 +1095,6 @@ loom_corpus_build(
     "loom::target::spirv::vulkan1.3+bda"
     "numeric/integer/narrow_consumers.loom"
     "loom::target::spirv::vulkan1.3+bda"
-    "numeric/vector/broadcast_arithmetic.loom"
-    "loom::target::spirv::vulkan1.3+bda"
     "numeric/vector/conversion.loom"
     "loom::target::spirv::vulkan1.3+bda+extended-types"
     "kernel/subgroup/ballot.loom"
@@ -1130,8 +1128,6 @@ loom_corpus_build(
     "numeric/float/narrow_reduction.loom"
     "loom::target::spirv::vulkan1.3+bda+subgroup32+ballot+hal"
     "numeric/integer/narrow_consumers.loom"
-    "loom::target::spirv::vulkan1.3+bda+subgroup32+ballot+hal"
-    "numeric/vector/broadcast_arithmetic.loom"
     "loom::target::spirv::vulkan1.3+bda+subgroup32+ballot+hal"
     "numeric/vector/conversion.loom"
   EXCLUDES

@@ -1,3 +1,126 @@
+// Both binary operand positions can consume varying or uniform scalar inputs.
+// The four masks span multiple packets and include the ordinary vector control.
+func.def inline @binary_pair(%left: vector<8xf32>, %right: vector<8xf32>, %output: view<64x128xf32>, %lane: index, %column: index) {
+  %product_offset = index.constant 32 : index
+  %product_column = index.add %column, %product_offset : index
+  %sum = vector.addf %left, %right : vector<8xf32>
+  %product = vector.mulf %left, %right : vector<8xf32>
+  vector.store %sum, %output[%lane, %column] : vector<8xf32>, view<64x128xf32>
+  vector.store %product, %output[%lane, %product_column] : vector<8xf32>, view<64x128xf32>
+  func.return
+}
+
+func.def inline @binary_masks(%left: vector<8xf32>, %right: vector<8xf32>, %scalar_left: f32, %scalar_right: f32, %output: view<64x128xf32>, %lane: index, %column: index) {
+  %left_lanes = vector.splat %scalar_left : vector<8xf32>
+  %right_lanes = vector.splat %scalar_right : vector<8xf32>
+  %c8 = index.constant 8 : index
+  %c16 = index.constant 16 : index
+  %c24 = index.constant 24 : index
+  %left_column = index.add %column, %c8 : index
+  %right_column = index.add %column, %c16 : index
+  %both_column = index.add %column, %c24 : index
+  func.call @binary_pair(%left, %right, %output, %lane, %column) : (vector<8xf32>, vector<8xf32>, view<64x128xf32>, index, index)
+  func.call @binary_pair(%left_lanes, %right, %output, %lane, %left_column) : (vector<8xf32>, vector<8xf32>, view<64x128xf32>, index, index)
+  func.call @binary_pair(%left, %right_lanes, %output, %lane, %right_column) : (vector<8xf32>, vector<8xf32>, view<64x128xf32>, index, index)
+  func.call @binary_pair(%left_lanes, %right_lanes, %output, %lane, %both_column) : (vector<8xf32>, vector<8xf32>, view<64x128xf32>, index, index)
+  func.return
+}
+
+kernel.def @broadcast_binary() {
+  %c1 = index.constant 1 : index
+  %width = index.constant 64 : index
+  kernel.launch.config workgroups(%c1, %c1, %c1) workgroup_size(%width, %c1, %c1) : index
+} launch(%input: buffer, %parameters: buffer, %output: buffer) {
+  %source, %uniform_source, %destination = buffer.assume.noalias %input, %parameters, %output : buffer, buffer, buffer
+  %base = index.constant 0 : offset
+  %lane = kernel.workitem.id<x> : index
+  %values = buffer.view %source[%base] : buffer -> view<64x18xf32>
+  %scalars = buffer.view %uniform_source[%base] : buffer -> view<2xf32>
+  %results = buffer.view %destination[%base] : buffer -> view<64x128xf32>
+  %left = vector.load %values[%lane, 0] : view<64x18xf32> -> vector<8xf32>
+  %right = vector.load %values[%lane, 8] : view<64x18xf32> -> vector<8xf32>
+  %scalar_left = view.load %values[%lane, 16] : view<64x18xf32> -> f32
+  %scalar_right = view.load %values[%lane, 17] : view<64x18xf32> -> f32
+  %uniform_left = view.load %scalars[0] : view<2xf32> -> f32
+  %uniform_right = view.load %scalars[1] : view<2xf32> -> f32
+  %varying_column = index.constant 0 : index
+  %uniform_column = index.constant 64 : index
+  func.call @binary_masks(%left, %right, %scalar_left, %scalar_right, %results, %lane, %varying_column) : (vector<8xf32>, vector<8xf32>, f32, f32, view<64x128xf32>, index, index)
+  func.call @binary_masks(%left, %right, %uniform_left, %uniform_right, %results, %lane, %uniform_column) : (vector<8xf32>, vector<8xf32>, f32, f32, view<64x128xf32>, index, index)
+  kernel.return
+}
+
+func.def @broadcast_binary_oracle(%input: buffer, %parameters: buffer, %output: buffer) {
+  %base = index.constant 0 : offset
+  %values = buffer.view %input[%base] : buffer -> view<64x18xf32>
+  %scalars = buffer.view %parameters[%base] : buffer -> view<2xf32>
+  %results = buffer.view %output[%base] : buffer -> view<64x128xf32>
+  %uniform_left = view.load %scalars[0] : view<2xf32> -> f32
+  %uniform_right = view.load %scalars[1] : view<2xf32> -> f32
+  %c0 = index.constant 0 : index
+  %c1 = index.constant 1 : index
+  %c2 = index.constant 2 : index
+  %c4 = index.constant 4 : index
+  %c8 = index.constant 8 : index
+  %c32 = index.constant 32 : index
+  %c64 = index.constant 64 : index
+  %c0_i32 = scalar.constant 0 : i32
+  %first_bit = scalar.constant 1 : i32
+  %second_bit = scalar.constant 2 : i32
+  scf.for %lane = [%c0 to %c64 step %c1] {
+    %varying_left = view.load %values[%lane, 16] : view<64x18xf32> -> f32
+    %varying_right = view.load %values[%lane, 17] : view<64x18xf32> -> f32
+    scf.for %uniform = [%c0 to %c2 step %c1] {
+      %is_uniform = index.cmp ne, %uniform, %c0 : index
+      %scalar_left = scf.select %is_uniform, %uniform_left, %varying_left : f32
+      %scalar_right = scf.select %is_uniform, %uniform_right, %varying_right : f32
+      %group_base = index.mul %uniform, %c64 : index
+      scf.for %mask = [%c0 to %c4 step %c1] {
+        %mask_word = index.cast %mask : index to i32
+        %left_bit = scalar.andi %mask_word, %first_bit : i32
+        %right_bit = scalar.andi %mask_word, %second_bit : i32
+        %broadcast_left = scalar.cmpi ne, %left_bit, %c0_i32 : i32
+        %broadcast_right = scalar.cmpi ne, %right_bit, %c0_i32 : i32
+        %mask_base = index.mul %mask, %c8 : index
+        %result_base = index.add %group_base, %mask_base : index
+        scf.for %component = [%c0 to %c8 step %c1] {
+          %right_index = index.add %component, %c8 : index
+          %vector_left = view.load %values[%lane, %component] : view<64x18xf32> -> f32
+          %vector_right = view.load %values[%lane, %right_index] : view<64x18xf32> -> f32
+          %left = scf.select %broadcast_left, %scalar_left, %vector_left : f32
+          %right = scf.select %broadcast_right, %scalar_right, %vector_right : f32
+          %sum = scalar.addf %left, %right : f32
+          %product = scalar.mulf %left, %right : f32
+          %column = index.add %result_base, %component : index
+          %product_column = index.add %column, %c32 : index
+          view.store %sum, %results[%lane, %column] : f32, view<64x128xf32>
+          view.store %product, %results[%lane, %product_column] : f32, view<64x128xf32>
+        }
+      }
+    }
+  }
+  func.return
+}
+
+check.scenario @broadcast_binary_values {
+  check.trial[16](%trial: index, %entropy: check.entropy) {
+    %input_entropy = check.entropy.fork %entropy name("input") : check.entropy
+    %parameter_entropy = check.entropy.fork %entropy name("parameters") : check.entropy
+    %input_seed = check.entropy.read %input_entropy[%trial] : check.entropy -> i64
+    %parameter_seed = check.entropy.read %parameter_entropy[%trial] : check.entropy -> i64
+    %input = check.generate.random.uniform seed(%input_seed) range(-4.0 to 4.0) : tensor<64x18xf32>
+    %parameters = check.generate.random.uniform seed(%parameter_seed) range(-2.0 to 2.0) : tensor<2xf32>
+    %storage = check.generate.fill value(-123.5) : tensor<8196xf32>
+    %output = check.tensor.view %storage offset(8) : tensor<8196xf32> -> tensor<64x128xf32>
+    check.compare<@broadcast_binary, @broadcast_binary_oracle>(%input, %parameters, %output) : (tensor<64x18xf32>, tensor<2xf32>, tensor<64x128xf32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64x18xf32>
+      check.expect.bitwise actual(%parameters) expected(%parameters) : tensor<2xf32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<8196xf32>
+    }
+  }
+  check.return
+}
+
 // Every subset of FMA sources is broadcast independently. Eight-lane values
 // span several native packets; both lane-varying and uniform scalars participate.
 func.def inline @fma_masks(%a: vector<8xf32>, %b: vector<8xf32>, %c: vector<8xf32>, %x: f32, %y: f32, %z: f32, %output: view<64x128xf32>, %lane: index, %column: index) {

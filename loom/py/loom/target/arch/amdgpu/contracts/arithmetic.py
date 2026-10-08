@@ -227,7 +227,14 @@ _DESCRIPTOR_KEYS = (
 
 _DESCRIPTOR_SET = build_amdgpu_contract_descriptor_set(
     key="amdgpu.arithmetic",
-    descriptor_keys=_DESCRIPTOR_KEYS,
+    descriptor_keys=(
+        *_DESCRIPTOR_KEYS,
+        *(
+            f"amdgpu.v_pk_{operation}_f32.broadcast_{sources}"
+            for operation in ("add", "mul")
+            for sources in ("lhs", "rhs", "lhs_rhs")
+        ),
+    ),
 )
 
 _VEC_I32_RANK1 = Vector(
@@ -835,11 +842,6 @@ def _f32_copysign_rules(
     register_insert = _descriptor("amdgpu.v_bfi_b32")
     typed_guards = _typed_guards(("lhs", "rhs", "result"), type_pattern)
     emit_form = _emit_form(type_pattern)
-    register_emit_form = (
-        DescriptorEmitForm.PER_LANE_SEQUENCE
-        if type_pattern.kind == "vector"
-        else DescriptorEmitForm.OP
-    )
     register_insert_operand = (
         ValueRef.operand("lhs")
         if type_pattern.kind == "vector"
@@ -891,7 +893,7 @@ def _f32_copysign_rules(
                         "base": register_base_operand,
                     },
                     results={"dst": ValueRef.result("result")},
-                    form=register_emit_form,
+                    form=emit_form,
                 ),
             ),
         ),
@@ -3268,6 +3270,54 @@ def _packed_bf16_vector_fma_rule() -> DescriptorRule:
     )
 
 
+def _packed_f32_broadcast_binary_rules(
+    source_op: Op, descriptor_key: str
+) -> tuple[DescriptorRule, ...]:
+    rules = []
+    for mask in (3, 1, 2):
+        source_names = ("lhs", "rhs")
+        suffix = "_".join(
+            name for bit, name in enumerate(source_names) if mask & (1 << bit)
+        )
+        descriptor = _descriptor(f"{descriptor_key}.broadcast_{suffix}")
+        operands = {
+            name: (
+                ValueRef.uniform_element_origin_operand(name)
+                if mask & (1 << bit)
+                else ValueRef.operand(name)
+            )
+            for bit, name in enumerate(source_names)
+        }
+        operands["rhs"] = replace(
+            operands["rhs"], materializer=VOP3_BINARY_RHS_MATERIALIZER.name
+        )
+        rules.append(
+            DescriptorRule(
+                source_op=source_op,
+                descriptor=descriptor,
+                guards=(
+                    _value_type("result", _VEC_F32_RANK1),
+                    Guard.descriptor_available(descriptor),
+                    Guard.value_static_dim0_multiple("result", 2),
+                    *(
+                        Guard.uniform_element_origin_type(name, _F32)
+                        for bit, name in enumerate(source_names)
+                        if mask & (1 << bit)
+                    ),
+                ),
+                emit=(
+                    EmitDescriptorOp(
+                        descriptor=descriptor,
+                        operands=operands,
+                        results={"dst": ValueRef.result("result")},
+                        form=DescriptorEmitForm.PER_LANE,
+                    ),
+                ),
+            )
+        )
+    return tuple(rules)
+
+
 def _packed_float_binary_rule(
     source_op: Op,
     descriptor_key: str,
@@ -3819,11 +3869,17 @@ def _rules() -> tuple[ContractCase, ...]:
                 _VEC_F16_PACKED,
                 _VEC_F16_PACKED_DIAGNOSTIC,
             ),
+            *_packed_f32_broadcast_binary_rules(
+                vector.vector_addf, "amdgpu.v_pk_add_f32"
+            ),
             _packed_float_binary_rule(
                 vector.vector_addf,
                 "amdgpu.v_pk_add_f32",
                 _VEC_F32_RANK1,
                 _VEC_F32_PACKED_EVEN_LANES_DIAGNOSTIC,
+            ),
+            *_packed_f32_broadcast_binary_rules(
+                vector.vector_mulf, "amdgpu.v_pk_mul_f32"
             ),
             _packed_float_binary_rule(
                 vector.vector_mulf,
