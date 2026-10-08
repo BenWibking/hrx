@@ -319,12 +319,12 @@ static iree_status_t iree_run_loom_clone_string(iree_string_view_t value,
   return iree_ok_status();
 }
 
-static iree_status_t iree_run_loom_select_kernel(
-    const loomc_module_t* module,
-    const loom_tooling_source_path_options_t* source_path_options,
-    iree_allocator_t allocator, iree_string_view_t* out_root,
-    char** out_root_storage, iree_string_view_t* out_export,
-    char** out_export_storage) {
+static iree_status_t iree_run_loom_select_kernel(const loomc_module_t* module,
+                                                 iree_allocator_t allocator,
+                                                 iree_string_view_t* out_root,
+                                                 char** out_root_storage,
+                                                 iree_string_view_t* out_export,
+                                                 char** out_export_storage) {
   *out_root = iree_string_view_empty();
   *out_root_storage = NULL;
   *out_export = iree_string_view_empty();
@@ -353,7 +353,7 @@ static iree_status_t iree_run_loom_select_kernel(
         &function_count, &query_result)));
     bool query_succeeded = false;
     iree_status_t status = loom_tooling_cli_print_loomc_result(
-        stderr, query_result, source_path_options, &query_succeeded, allocator);
+        stderr, query_result, &query_succeeded);
     loomc_result_release(query_result);
     if (!iree_status_is_ok(status)) {
       return status;
@@ -375,8 +375,7 @@ static iree_status_t iree_run_loom_select_kernel(
     query_succeeded = false;
     if (iree_status_is_ok(status)) {
       status = loom_tooling_cli_print_loomc_result(stderr, query_result,
-                                                   source_path_options,
-                                                   &query_succeeded, allocator);
+                                                   &query_succeeded);
     }
     loomc_result_release(query_result);
     iree_host_size_t kernel_count = 0;
@@ -810,9 +809,7 @@ int iree_run_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status)) {
     bool admitted = false;
-    status = loom_tooling_cli_print_loomc_result(
-        stderr, result, &input_options.source_path_options, &admitted,
-        allocator);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &admitted);
     if (iree_status_is_ok(status) && !admitted) {
       exit_code = 1;
     }
@@ -821,8 +818,7 @@ int iree_run_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status) && exit_code == 0) {
     status = iree_run_loom_select_kernel(
-        module, &input_options.source_path_options, allocator, &root,
-        &root_storage, &export_name, &export_storage);
+        module, allocator, &root, &root_storage, &export_name, &export_storage);
   }
   if (iree_status_is_ok(status) && exit_code == 0) {
     status = iree_run_loom_prepare_pass_program(context, module, allocator,
@@ -830,9 +826,7 @@ int iree_run_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status) && result != NULL) {
     bool prepared = false;
-    status = loom_tooling_cli_print_loomc_result(
-        stderr, result, &input_options.source_path_options, &prepared,
-        allocator);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &prepared);
     if (iree_status_is_ok(status) && !prepared) {
       exit_code = 1;
     }
@@ -887,9 +881,7 @@ int iree_run_loom_main(int argc, char** argv,
   }
   if (iree_status_is_ok(status) && result != NULL) {
     bool selected = false;
-    status = loom_tooling_cli_print_loomc_result(
-        stderr, result, &input_options.source_path_options, &selected,
-        allocator);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &selected);
     if (iree_status_is_ok(status) && !selected) {
       exit_code = 1;
     }
@@ -930,9 +922,7 @@ int iree_run_loom_main(int argc, char** argv,
   iree_run_loom_artifacts_t artifacts = {0};
   if (iree_status_is_ok(status) && exit_code == 0) {
     bool compiled = false;
-    status = loom_tooling_cli_print_loomc_result(
-        stderr, result, &input_options.source_path_options, &compiled,
-        allocator);
+    status = loom_tooling_cli_print_loomc_result(stderr, result, &compiled);
     if (iree_status_is_ok(status)) {
       status = iree_run_loom_select_artifacts(result, &artifacts);
     }

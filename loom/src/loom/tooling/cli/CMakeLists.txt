@@ -47,7 +47,6 @@ loom_cc_library(
   DEPS
     iree::base
     loom::binding::c::loomc
-    loom::tooling::io::source_path
   PUBLIC
 )
 

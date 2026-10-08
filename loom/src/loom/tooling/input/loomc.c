@@ -76,8 +76,9 @@ iree_status_t loom_tooling_input_admit_loomc_module(
     iree_allocator_free(host_allocator, logical_identifier_storage);
   } else if (options->import != NULL) {
     status = options->import(
-        options->import_user_data, provider->name, provider_options, context,
-        workspace, source, block_pool, host_allocator, out_module, out_result);
+        options->import_user_data, provider->name, provider_options,
+        &options->input.source_path_options, context, workspace, source,
+        block_pool, host_allocator, out_module, out_result);
   } else {
     status = iree_make_status(
         IREE_STATUS_UNIMPLEMENTED,

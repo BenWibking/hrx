@@ -27,10 +27,12 @@ typedef loomc_status_t (*loom_check_create_target_environment_fn_t)(
 // and bytecode admission do not use this callback.
 typedef iree_status_t (*loom_check_compile_import_fn_t)(
     void* user_data, iree_string_view_t format,
-    iree_string_view_t input_options, loomc_context_t* context,
-    loomc_workspace_t* workspace, const loomc_source_t* source,
-    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
-    loomc_module_t** out_module, loomc_result_t** out_result);
+    iree_string_view_t input_options,
+    const loom_tooling_source_path_options_t* source_path_options,
+    loomc_context_t* context, loomc_workspace_t* workspace,
+    const loomc_source_t* source, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator, loomc_module_t** out_module,
+    loomc_result_t** out_result);
 
 // Compiler integrations supplied by the final loom-check binary. The generic
 // runner does not choose a configured target set or optional source frontend.

@@ -77,6 +77,7 @@ loom_cc_library(
         ":input",
         "//loom/binding/c:loomc",
         "//loom/binding/c/import/cxx",
+        "//loom/src/loom/tooling/io:source_path",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:arena",
     ],

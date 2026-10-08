@@ -113,15 +113,17 @@ static const loom_check_provider_t* const kLoomCheckProviders[] = {
 #if LOOM_CHECK_HAVE_IMPORT_CXX
 static iree_status_t loom_check_import_source(
     void* user_data, iree_string_view_t format,
-    iree_string_view_t input_options, loomc_context_t* context,
-    loomc_workspace_t* workspace, const loomc_source_t* source,
-    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
-    loomc_module_t** out_module, loomc_result_t** out_result) {
+    iree_string_view_t input_options,
+    const loom_tooling_source_path_options_t* source_path_options,
+    loomc_context_t* context, loomc_workspace_t* workspace,
+    const loomc_source_t* source, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator, loomc_module_t** out_module,
+    loomc_result_t** out_result) {
   (void)user_data;
   if (iree_string_view_equal(format, IREE_SV("cxx"))) {
-    return loom_cxx_input_import_loomc(context, workspace, source,
-                                       input_options, block_pool,
-                                       host_allocator, out_module, out_result);
+    return loom_cxx_input_import_loomc(
+        context, workspace, source, input_options, source_path_options,
+        block_pool, host_allocator, out_module, out_result);
   }
   return iree_make_status(
       IREE_STATUS_UNIMPLEMENTED,

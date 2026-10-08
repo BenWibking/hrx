@@ -707,9 +707,8 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status)) {
     bool parse_succeeded = false;
-    status = loom_tooling_cli_print_loomc_result(stderr, result,
-                                                 /*source_path_options=*/NULL,
-                                                 &parse_succeeded, allocator);
+    status =
+        loom_tooling_cli_print_loomc_result(stderr, result, &parse_succeeded);
     if (iree_status_is_ok(status) && !parse_succeeded) {
       exit_code = 1;
     }
@@ -730,9 +729,8 @@ int main(int argc, char** argv) {
   }
   if (iree_status_is_ok(status) && result) {
     bool preparation_succeeded = false;
-    status = loom_tooling_cli_print_loomc_result(
-        stderr, result, /*source_path_options=*/NULL, &preparation_succeeded,
-        allocator);
+    status = loom_tooling_cli_print_loomc_result(stderr, result,
+                                                 &preparation_succeeded);
     if (iree_status_is_ok(status) && !preparation_succeeded) {
       exit_code = 1;
     }
@@ -808,9 +806,8 @@ int main(int argc, char** argv) {
 
   if (iree_status_is_ok(status) && exit_code == 0) {
     bool compile_succeeded = false;
-    status = loom_tooling_cli_print_loomc_result(stderr, result,
-                                                 /*source_path_options=*/NULL,
-                                                 &compile_succeeded, allocator);
+    status =
+        loom_tooling_cli_print_loomc_result(stderr, result, &compile_succeeded);
     loom_compile_artifacts_t artifacts = {0};
     if (iree_status_is_ok(status)) {
       status = loom_compile_select_artifacts(result, &artifacts);

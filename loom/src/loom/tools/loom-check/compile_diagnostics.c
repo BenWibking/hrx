@@ -65,25 +65,15 @@ static const loom_error_def_t* loom_check_compile_diagnostic_error(
 }
 
 static iree_status_t loom_check_compile_source_filename(
-    const loomc_source_range_t* range,
-    const loom_tooling_source_path_options_t* source_path_options,
-    iree_arena_allocator_t* arena, iree_string_view_t* out_filename) {
+    const loomc_source_range_t* range, iree_arena_allocator_t* arena,
+    iree_string_view_t* out_filename) {
   *out_filename = iree_string_view_empty();
   if (range->source == NULL) {
     return iree_ok_status();
   }
   const iree_string_view_t identifier =
       iree_string_view_from_loomc(loomc_source_identifier(range->source));
-  iree_string_view_t remapped = iree_string_view_empty();
-  char* remapped_storage = NULL;
-  IREE_RETURN_IF_ERROR(loom_tooling_source_path_remap(
-      identifier, source_path_options, iree_arena_allocator(arena), &remapped,
-      &remapped_storage));
-  if (remapped_storage != NULL) {
-    *out_filename = remapped;
-    return iree_ok_status();
-  }
-  return loom_check_compile_copy_string(arena, remapped, out_filename);
+  return loom_check_compile_copy_string(arena, identifier, out_filename);
 }
 
 static iree_status_t loom_check_compile_json_write_source_range(
@@ -116,8 +106,7 @@ static iree_status_t loom_check_compile_json_write_source_range(
 static iree_status_t loom_check_compile_append_diagnostic_json(
     loom_check_diagnostic_collector_t* collector,
     const loomc_diagnostic_t* diagnostic, const loom_error_def_t* error,
-    loom_error_domain_t domain, uint16_t code, iree_string_view_t filename,
-    const loom_tooling_source_path_options_t* source_path_options) {
+    loom_error_domain_t domain, uint16_t code, iree_string_view_t filename) {
   loom_output_stream_t stream;
   IREE_RETURN_IF_ERROR(loom_json_value_list_begin_value(
       &collector->result->diagnostics, &stream));
@@ -182,8 +171,8 @@ static iree_status_t loom_check_compile_append_diagnostic_json(
           iree_string_view_from_loomc(diagnostic->related_locations[i].label)));
       iree_string_view_t related_filename = iree_string_view_empty();
       IREE_RETURN_IF_ERROR(loom_check_compile_source_filename(
-          &diagnostic->related_locations[i].range, source_path_options,
-          collector->arena, &related_filename));
+          &diagnostic->related_locations[i].range, collector->arena,
+          &related_filename));
       IREE_RETURN_IF_ERROR(loom_check_compile_json_write_source_range(
           &related_object, IREE_SV("source_location"),
           &diagnostic->related_locations[i].range, related_filename));
@@ -201,8 +190,7 @@ static iree_status_t loom_check_compile_append_diagnostic_json(
 
 iree_status_t loom_check_compile_append_result_diagnostics(
     loom_check_diagnostic_collector_t* collector,
-    const loomc_result_t* source_result,
-    const loom_tooling_source_path_options_t* source_path_options) {
+    const loomc_result_t* source_result) {
   const loomc_host_size_t diagnostic_count =
       loomc_result_diagnostic_count(source_result);
   for (loomc_host_size_t i = 0; i < diagnostic_count; ++i) {
@@ -213,8 +201,7 @@ iree_status_t loom_check_compile_append_result_diagnostics(
     const loom_error_def_t* error = loom_check_compile_diagnostic_error(
         source->code, &target.domain, &target.code);
     IREE_RETURN_IF_ERROR(loom_check_compile_source_filename(
-        &source->range, source_path_options, collector->arena,
-        &target.origin.filename));
+        &source->range, collector->arena, &target.origin.filename));
     target.origin.line = source->range.start_line;
     IREE_RETURN_IF_ERROR(loom_check_compile_copy_string(
         collector->arena, iree_string_view_from_loomc(source->message),
@@ -243,7 +230,7 @@ iree_status_t loom_check_compile_append_result_diagnostics(
         collector->arena, formatted, &target.formatted_diagnostic));
     IREE_RETURN_IF_ERROR(loom_check_compile_append_diagnostic_json(
         collector, source, error, target.domain, target.code,
-        target.origin.filename, source_path_options));
+        target.origin.filename));
     IREE_RETURN_IF_ERROR(
         loom_check_diagnostic_collector_append(collector, &target));
   }

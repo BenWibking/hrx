@@ -22,10 +22,12 @@ extern "C" {
 // and bytecode admission do not use this callback.
 typedef iree_status_t (*loom_tooling_input_import_loomc_fn_t)(
     void* user_data, iree_string_view_t format,
-    iree_string_view_t input_options, loomc_context_t* context,
-    loomc_workspace_t* workspace, const loomc_source_t* source,
-    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
-    loomc_module_t** out_module, loomc_result_t** out_result);
+    iree_string_view_t input_options,
+    const loom_tooling_source_path_options_t* source_path_options,
+    loomc_context_t* context, loomc_workspace_t* workspace,
+    const loomc_source_t* source, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator, loomc_module_t** out_module,
+    loomc_result_t** out_result);
 
 // One command-line source admission request. All views and providers are
 // borrowed until admission returns.
@@ -49,7 +51,9 @@ typedef struct loom_tooling_loomc_input_options_t {
 // Builtin Loom text and bytecode are deserialized directly. Other selected
 // providers are dispatched through |options->import|. Source handles are
 // invocation-local: returned modules and diagnostics own every retained source
-// identity and byte snapshot required after this call returns.
+// identity and byte snapshot required after this call returns. Physical paths
+// are converted to their final logical identities during admission; later
+// compiler operations and result printers must not apply the mapping again.
 iree_status_t loom_tooling_input_admit_loomc_module(
     const loom_tooling_loomc_input_options_t* options, loomc_context_t* context,
     loomc_workspace_t* workspace, iree_arena_block_pool_t* block_pool,

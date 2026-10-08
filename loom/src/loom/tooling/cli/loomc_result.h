@@ -12,7 +12,6 @@
 #include <stdio.h>
 
 #include "iree/base/api.h"
-#include "loom/tooling/io/source_path.h"
 #include "loomc/result.h"
 
 #ifdef __cplusplus
@@ -20,13 +19,11 @@ extern "C" {
 #endif
 
 // Prints every diagnostic in |result| and returns its operation outcome.
-// Source path options may be NULL when identifiers were remapped before source
-// admission. When remapping is requested, structured locations are rendered
-// instead of the result's preformatted diagnostic text.
-iree_status_t loom_tooling_cli_print_loomc_result(
-    FILE* file, const loomc_result_t* result,
-    const loom_tooling_source_path_options_t* source_path_options,
-    bool* out_succeeded, iree_allocator_t host_allocator);
+// Source identifiers are expected to carry their final logical identity from
+// admission through every later compiler operation.
+iree_status_t loom_tooling_cli_print_loomc_result(FILE* file,
+                                                  const loomc_result_t* result,
+                                                  bool* out_succeeded);
 
 #ifdef __cplusplus
 }  // extern "C"
