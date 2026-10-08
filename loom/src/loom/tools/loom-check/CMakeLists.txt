@@ -447,26 +447,14 @@ loom_cc_library(
     test_provider
   HDRS
     "test_provider.h"
-    "test_schedule_provider.h"
   SRCS
     "test_provider.c"
-    "test_schedule_provider.c"
   DEPS
     ::execute
     ::provider
     iree::base
-    loom::codegen::low::allocation
-    loom::codegen::low::descriptors
-    loom::codegen::low::function_model
-    loom::codegen::low::packet_hazard_plan
-    loom::codegen::low::packet_hazard_plan_json
-    loom::codegen::low::packet_progress
-    loom::codegen::low::schedule
-    loom::codegen::low::schedule::dependencies
-    loom::codegen::low::storage_layout
-    loom::codegen::low::storage_transport
-    loom::ir
     loom::target::test::provider
+    loom::tools::loom-check::test::low::providers
   TESTONLY
   PUBLIC
 )
@@ -528,7 +516,8 @@ if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _loom_check_platform_deps loom::target::arch::wasm::check::check_provider)
 endif()
 if(LOOM_TARGET_ARCH_VM)
-  list(APPEND _loom_check_platform_deps loom::tooling::target::vm::check)
+  list(APPEND _loom_check_platform_deps loom::target::arch::vm::check::check_provider)
+  list(APPEND _loom_check_platform_deps loom::tooling::target::vm::check_provider)
 endif()
 if(LOOM_EMIT_WASM)
   list(APPEND _loom_check_platform_deps loom::tooling::target::wasm::check_provider)
@@ -596,7 +585,8 @@ if(LOOM_TARGET_ARCH_WASM)
   list(APPEND _loom_check_test_platform_deps loom::target::arch::wasm::check::check_provider)
 endif()
 if(LOOM_TARGET_ARCH_VM)
-  list(APPEND _loom_check_test_platform_deps loom::tooling::target::vm::check)
+  list(APPEND _loom_check_test_platform_deps loom::target::arch::vm::check::check_provider)
+  list(APPEND _loom_check_test_platform_deps loom::tooling::target::vm::check_provider)
 endif()
 if(LOOM_EMIT_WASM)
   list(APPEND _loom_check_test_platform_deps loom::tooling::target::wasm::check_provider)

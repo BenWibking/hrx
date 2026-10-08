@@ -1496,10 +1496,18 @@ static iree_status_t loom_check_emit_invoke_provider(
   request->result->has_actual_output = true;
   iree_status_t status = provider->execute(provider, request);
   iree_arena_deinitialize(&case_arena);
-  if (!iree_status_is_ok(status) || loom_check_diagnostic_collector_has_error(
-                                        request->diagnostic_collector)) {
-    request->result->has_actual_output = false;
-  }
+  // Successful emission owns a comparable output even when it is empty.
+  // Providers must opt in when they produce complete output after a compiler
+  // error; partial output remains incomparable by default.
+  const bool has_error =
+      loom_check_diagnostic_collector_has_error(request->diagnostic_collector);
+  const bool has_comparable_error_output =
+      request->result->actual_output.size != 0 &&
+      iree_any_bit_set(provider->flags,
+                       LOOM_CHECK_EMIT_PROVIDER_FLAG_COMPARE_ERROR_OUTPUT);
+  request->result->has_actual_output =
+      iree_status_is_ok(status) && request->result->has_actual_output &&
+      (!has_error || has_comparable_error_output);
   return status;
 }
 
@@ -1617,7 +1625,9 @@ iree_status_t loom_check_execute_emit(
       .host_allocator = allocator,
       .result = result,
   };
-  if (provider != NULL && provider->consumes_source) {
+  if (provider != NULL &&
+      iree_any_bit_set(provider->flags,
+                       LOOM_CHECK_EMIT_PROVIDER_FLAG_CONSUMES_SOURCE)) {
     status = loom_check_emit_invoke_provider(provider, &provider_request);
     status = loom_check_emit_finish_provider(status, &provider_request,
                                              case_index, report);

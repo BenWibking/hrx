@@ -141,6 +141,15 @@ typedef struct loom_check_emit_provider_t loom_check_emit_provider_t;
 typedef struct loom_check_requirement_provider_t
     loom_check_requirement_provider_t;
 
+enum loom_check_emit_provider_flag_bits_e {
+  // The provider consumes source before common module admission.
+  LOOM_CHECK_EMIT_PROVIDER_FLAG_CONSUMES_SOURCE = 1u << 0,
+  // Provider output is complete and comparable alongside expected compiler
+  // errors.
+  LOOM_CHECK_EMIT_PROVIDER_FLAG_COMPARE_ERROR_OUTPUT = 1u << 1,
+};
+typedef uint32_t loom_check_emit_provider_flags_t;
+
 // Prepared module state passed to a linked emit provider.
 typedef struct loom_check_emit_provider_request_t {
   // Full RUN: emit target payload, after the "emit" verb.
@@ -203,8 +212,8 @@ typedef iree_status_t (*loom_check_emit_provider_append_names_fn_t)(
 struct loom_check_emit_provider_t {
   // Human-readable provider name used for debugging and ownership comments.
   iree_string_view_t name;
-  // True when the provider consumes source before common module admission.
-  bool consumes_source;
+  // Provider execution and output-comparison capabilities.
+  loom_check_emit_provider_flags_t flags;
   // Returns true when this provider owns an emit target name.
   loom_check_emit_provider_match_fn_t match;
   // Checks provider-specific REQUIRES declarations for an emit case.

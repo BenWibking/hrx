@@ -58,7 +58,8 @@
 #include "loom/target/arch/wasm/check/provider.h"
 #endif  // LOOM_CHECK_HAVE_TARGET_WASM
 #if LOOM_CHECK_HAVE_TARGET_VM
-#include "loom/tooling/target/vm/check.h"
+#include "loom/target/arch/vm/check/provider.h"
+#include "loom/tooling/target/vm/check/provider.h"
 #endif  // LOOM_CHECK_HAVE_TARGET_VM
 #if LOOM_CHECK_HAVE_EMIT_WASM
 #include "loom/tooling/target/wasm/check/provider.h"
@@ -88,7 +89,10 @@ static const loom_check_provider_t* const kLoomCheckProviders[] = {
     &loom_wasm_check_provider,
 #endif  // LOOM_CHECK_HAVE_TARGET_WASM
 #if LOOM_CHECK_HAVE_TARGET_VM
+    // VM target records and descriptors.
     &loom_vm_check_provider,
+    // VM artifact emission and disassembly.
+    &loom_vm_emit_check_provider,
 #endif  // LOOM_CHECK_HAVE_TARGET_VM
 #if LOOM_CHECK_HAVE_EMIT_WASM
     &loom_wasm_emit_check_provider,

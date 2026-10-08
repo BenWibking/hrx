@@ -439,7 +439,7 @@ static iree_status_t loom_check_source_low_emit_provider_append_names(
 
 const loom_check_emit_provider_t loom_check_source_low_emit_provider = {
     .name = IREE_SVL("source-low"),
-    .consumes_source = true,
+    .flags = LOOM_CHECK_EMIT_PROVIDER_FLAG_CONSUMES_SOURCE,
     .match = loom_check_source_low_emit_provider_matches,
     .execute = loom_check_source_low_emit_provider_execute,
     .append_names = loom_check_source_low_emit_provider_append_names,

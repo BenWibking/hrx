@@ -4,10 +4,9 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "loom/tooling/target/vm/check.h"
+#include "loom/tooling/target/vm/check/loom_check.h"
 
 #include "iree/vm/bytecode/disassembler.h"
-#include "loom/target/arch/vm/provider.h"
 #include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/execute.h"
 
@@ -112,22 +111,10 @@ static iree_status_t loom_vm_check_append_names(
   return iree_string_builder_append_cstring(builder, "vm-dis");
 }
 
-static const loom_check_emit_provider_t loom_vm_check_emit_provider = {
+const loom_check_emit_provider_t loom_vm_loom_check_emit_provider = {
     .name = IREE_SVL("vm"),
-    .consumes_source = true,
+    .flags = LOOM_CHECK_EMIT_PROVIDER_FLAG_CONSUMES_SOURCE,
     .match = loom_vm_check_match,
     .execute = loom_vm_check_emit,
     .append_names = loom_vm_check_append_names,
-};
-
-static const loom_check_emit_provider_t* const loom_vm_check_emit_providers[] =
-    {
-        &loom_vm_check_emit_provider,
-};
-
-const loom_check_provider_t loom_vm_check_provider = {
-    .name = IREE_SVL("vm"),
-    .target_provider = &loom_vm_target_provider,
-    .emit_providers = loom_vm_check_emit_providers,
-    .emit_provider_count = IREE_ARRAYSIZE(loom_vm_check_emit_providers),
 };
