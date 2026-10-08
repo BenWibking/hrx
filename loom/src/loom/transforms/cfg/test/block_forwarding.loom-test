@@ -158,9 +158,9 @@ func.def @multiple_entry_odd_cycle(%first_entry: i1, %second_entry: i1) {
 }
 
 // ====
-// RUN: with-checks pass-report cfg-simplify
+// RUN: pass cfg-simplify
 
-func.def @shared_tail_iteration_count(%first: i1, %second: i1, %third: i1, %value: i32) -> (i32) {
+func.def @shared_tail(%first: i1, %second: i1, %third: i1, %value: i32) -> (i32) {
   cfg.cond_br %first, ^shortcut_first, ^dispatch_second
 ^dispatch_second:
   test.use %value : i32
@@ -183,7 +183,18 @@ func.def @shared_tail_iteration_count(%first: i1, %second: i1, %third: i1, %valu
 }
 
 // ----
-CHECK: *"changed":true,*
-CHECK: *"iterations":3,*
-CHECK: *"edges-forwarded":5,*
-CHECK: *"blocks-removed":3,*
+func.def @shared_tail(%first: i1, %second: i1, %third: i1, %value: i32) -> (i32) {
+  cfg.cond_br %first, ^join, ^dispatch_second
+^dispatch_second:
+  test.use %value : i32
+  cfg.cond_br %second, ^join, ^dispatch_third
+^dispatch_third:
+  test.use %value : i32
+  cfg.cond_br %third, ^join, ^other
+^other:
+  test.use %value : i32
+  cfg.br ^join
+^join:
+  test.use %value : i32
+  func.return %value : i32
+}

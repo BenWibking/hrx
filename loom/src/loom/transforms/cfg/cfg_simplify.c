@@ -1648,6 +1648,28 @@ static iree_status_t loom_cfg_simplify_process_cfg_region(
   if (*out_changed) {
     return iree_ok_status();
   }
+  // Collapse structural forwarding before computing path relations that would
+  // be invalidated by those same edits.
+  uint16_t fused_count = 0;
+  IREE_RETURN_IF_ERROR(loom_cfg_fuse_single_predecessor_blocks(
+      state->rewriter, graph, state->dominance, state->analysis_arena,
+      &fused_count));
+  if (fused_count != 0) {
+    state->statistics->blocks_fused += fused_count;
+    *out_changed = true;
+    return iree_ok_status();
+  }
+
+  iree_host_size_t forwarded_count = 0;
+  IREE_RETURN_IF_ERROR(
+      loom_cfg_forward_empty_blocks(state->rewriter, graph, state->dominance,
+                                    state->analysis_arena, &forwarded_count));
+  if (forwarded_count != 0) {
+    state->statistics->edges_forwarded += forwarded_count;
+    *out_changed = true;
+    return iree_ok_status();
+  }
+
   IREE_RETURN_IF_ERROR(loom_cfg_value_identity_table_update(
       &state->value_identities, structure, state->dominance,
       state->analysis_arena));
@@ -1675,26 +1697,6 @@ static iree_status_t loom_cfg_simplify_process_cfg_region(
   if (*out_changed) {
     return iree_ok_status();
   }
-  uint16_t fused_count = 0;
-  IREE_RETURN_IF_ERROR(loom_cfg_fuse_single_predecessor_blocks(
-      state->rewriter, graph, state->dominance, state->analysis_arena,
-      &fused_count));
-  if (fused_count != 0) {
-    state->statistics->blocks_fused += fused_count;
-    *out_changed = true;
-    return iree_ok_status();
-  }
-
-  iree_host_size_t forwarded_count = 0;
-  IREE_RETURN_IF_ERROR(
-      loom_cfg_forward_empty_blocks(state->rewriter, graph, state->dominance,
-                                    state->analysis_arena, &forwarded_count));
-  if (forwarded_count != 0) {
-    state->statistics->edges_forwarded += forwarded_count;
-    *out_changed = true;
-    return iree_ok_status();
-  }
-
   IREE_RETURN_IF_ERROR(
       loom_cfg_simplify_merge_equivalent_blocks(state, graph, out_changed));
   if (*out_changed) {
