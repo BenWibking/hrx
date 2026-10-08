@@ -28,11 +28,14 @@ A complete compute operation has several owners:
    consumption and the last dependent consumer separately determine which
    storage can be reused.
 
-PAL's compute postamble illustrates why the distinctions matter: it separately
-drains CP DMA, waits for shaders that may access command memory, then increments
-its command-storage tracker. That tracker relies on a subsequent KMD cache-
-flushing EOP in PAL's scheduled submission path. A raw user ring has no implicit
-right to that trailer. [Compute postamble][postamble]
+PAL's compute postamble illustrates why the distinctions matter: it drains
+outstanding CP DMA and, when command-storage busy tracking is enabled, waits
+for shaders that may access command memory before incrementing the tracker.
+That tracker relies on a subsequent KMD cache-flushing EOP in PAL's scheduled
+submission path. With tracking disabled, the client owns completion before
+returning storage. A raw user ring has no implicit right to PAL's native
+trailer. [Compute postamble][postamble]
+[Allocator modes and reuse](command-buffers.md#cpu-rebuild-after-completed-use)
 
 ## Topics
 
@@ -52,7 +55,7 @@ right to that trailer. [Compute postamble][postamble]
 | [Group memory](lds.md) | Static and dynamic LDS allocation, workgroup synchronization and resource rebinding. |
 | [Indirect dispatch](indirect.md) | DISPATCH_INDIRECT engine forms, memory-resident workgroup/workitem dimensions, compiler inputs, interleaved packet views and producer-to-fetch dependencies. |
 | [Conditional execution](conditional.md) | COND_EXEC ranges, COND_INDIRECT_BUFFER branches and [reference masking](conditional.md#reference-masking-and-portability), Boolean sampling and reuse, and PRED_EXEC virtual-XCC selection. |
-| [Command buffers](command-buffers.md) | First-level INDIRECT_BUFFER entry/return, CHAIN postambles and continuations, publication, WDDM native retirement and completed-use rebuild. |
+| [Command buffers](command-buffers.md) | INDIRECT_BUFFER engine fields, PASID/constant forms, CHAIN continuations, REWIND, generated-command publication, WDDM native retirement and completed-use rebuild. |
 | [Cross-queue handoff](handoff.md) | Release, control signaling, wait, consumer acquire and last-use ownership. |
 | [Command-processor DMA](dma.md) | CP_DMA, DMA_DATA and DMA_DATA_FILL_MULTI fields; engine and count revisions, actual copy/fill/prefetch selection, completion, cache routing and source/destination lifetimes. |
 | [Timing](timing.md) | Sampling stage, timestamp visibility, clock domains and profiling ownership. |
