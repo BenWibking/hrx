@@ -92,7 +92,7 @@ func.def @flat_multiple_scalar_factors(%input: buffer, %coordinates: vector<2xi3
   %columns_wide = scalar.assume %columns_input [range(%columns_input, 1, 16)] : i64
   %columns = index.cast %columns_wide : i64 to index
   %raw_origin = vector.extract %origins[0] : vector<2xi64> -> i64
-  %origin = scalar.assume %raw_origin [range(%raw_origin, 4294967296, 8589934592), mul(%raw_origin, 4)] : i64
+  %origin = scalar.assume %raw_origin [range(%raw_origin, 4294967296, 8589934592), multiple_of(%raw_origin, 4)] : i64
   %base = index.cast %origin : i64 to offset
   %view = buffer.view %input[%base] : buffer -> view<8x[%rows]x[%columns]xi32>
   %value = view.load %view[%coordinate, 0, 0] : view<8x[%rows]x[%columns]xi32> -> i32

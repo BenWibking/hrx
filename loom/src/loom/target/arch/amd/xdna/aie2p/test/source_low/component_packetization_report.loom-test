@@ -39,7 +39,7 @@ CHECK: COMPILE-REPORT: target_legalization[0] function=address_cast_packet_repor
 // packetizes. The report retains the authored load, not its helpers.
 func.def @generated_splat_packet_report(%input: buffer, %byte_offset: offset) -> (vector<64xbf16>) {
   %aligned_input = buffer.assume.alignment %input {minimum_alignment = 2} : buffer
-  %aligned_offset = index.assume %byte_offset [mul(%byte_offset, 2)] : offset
+  %aligned_offset = index.assume %byte_offset [multiple_of(%byte_offset, 2)] : offset
   %view = buffer.view %aligned_input[%aligned_offset] : buffer -> view<64xbf16>
   %result = vector.load %view[0] : view<64xbf16> -> vector<64xbf16>
   func.return %result : vector<64xbf16>
