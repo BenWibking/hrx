@@ -48,8 +48,12 @@ struct loom_boundary_projection_loop_t {
   loom_loop_like_t loop;
   // Original condition-region terminator, or NULL for counted loops.
   loom_op_t* condition_terminator;
+  // Condition terminator operands retained before its construction use ends.
+  loom_value_id_t* condition_operands;
   // Original body-region terminator.
   loom_op_t* body_terminator;
+  // Body terminator operands retained before its construction use ends.
+  loom_value_id_t* body_operands;
   // Original body/result columns in source order.
   loom_boundary_projection_loop_result_state_t* result_states;
   // Prefix offsets from source result columns to final physical ordinals.
@@ -71,7 +75,7 @@ struct loom_boundary_projection_loop_t {
 };
 
 // Retains one structurally eligible LoopLike operation and provisional
-// endpoint slots. Calls are expected in operation postorder.
+// endpoint slots. Calls are expected in dominance preorder.
 iree_status_t loom_boundary_projection_collect_loop(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function, loom_loop_like_t loop);
@@ -96,7 +100,8 @@ iree_status_t loom_boundary_projection_finalize_loops(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function);
 
-// Rebuilds retained selected loops in operation postorder.
+// Rebuilds retained selected loops through dominance-ordered shells followed
+// by reverse-order terminator closure.
 iree_status_t loom_boundary_projection_apply_loops(
     loom_boundary_projection_plan_t* plan,
     loom_boundary_projection_function_t* function);

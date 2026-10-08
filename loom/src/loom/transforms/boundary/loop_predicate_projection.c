@@ -247,20 +247,22 @@ static iree_status_t loom_loop_predicate_projection_materialize_source(
   }
 
   loom_builder_ip_t saved_ip = loom_builder_save(&plan->rewriter.builder);
-  loom_builder_set_before(&plan->rewriter.builder, source->boundary_op);
+  const loom_value_id_t logical_value_id =
+      loom_boundary_projection_resolve_value(function,
+                                             source_plan->logical_value_id);
   const loom_type_t logical_type =
-      loom_module_value_type(plan->module, source_plan->logical_value_id);
+      loom_module_value_type(plan->module, logical_value_id);
   const loom_type_t component_type =
       loom_loop_predicate_component_type(logical_type);
   iree_status_t status = iree_ok_status();
   if (loom_type_is_scalar(logical_type)) {
     status = loom_loop_predicate_projection_materialize_scalar(
-        plan, source_plan->logical_value_id, component_type,
-        source->boundary_op->location, &out_component_values[0]);
+        plan, logical_value_id, component_type, source->boundary_op->location,
+        &out_component_values[0]);
   } else {
     status = loom_loop_predicate_projection_materialize_vector(
-        plan, source_plan->logical_value_id, component_type,
-        source->boundary_op->location, &out_component_values[0]);
+        plan, logical_value_id, component_type, source->boundary_op->location,
+        &out_component_values[0]);
   }
   loom_builder_restore(&plan->rewriter.builder, saved_ip);
   return status;

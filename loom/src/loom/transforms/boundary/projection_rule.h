@@ -130,7 +130,10 @@ typedef iree_status_t (*loom_boundary_projection_plan_source_fn_t)(
     loom_boundary_projection_source_t* out_source, bool* out_planned);
 
 // Materializes physical components planned for one outgoing boundary. The
-// output is NULL when the selected schema has no components.
+// caller establishes the active boundary insertion point and the rule preserves
+// it across the call. A rule may temporarily use an earlier dominating anchor
+// retained by its plan. The output is NULL when the selected schema has no
+// components.
 typedef iree_status_t (*loom_boundary_projection_materialize_source_fn_t)(
     const loom_boundary_projection_rule_t* rule,
     loom_boundary_projection_plan_t* plan,
@@ -245,7 +248,7 @@ struct loom_boundary_projection_source_t {
   const loom_boundary_projection_rule_t* rule;
   // Arena-owned semantic recipe interpreted by rule.
   void* rule_plan;
-  // Outgoing boundary operation anchoring any required materialization.
+  // Original outgoing boundary operation supplying materialization location.
   loom_op_t* boundary_op;
 };
 
