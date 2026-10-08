@@ -121,6 +121,13 @@ iree_status_t loom_amdgpu_lookup_or_materialize_i1_integer(
     loom_value_id_t source_value, uint32_t register_class_id,
     loom_value_id_t* out_low_value);
 
+// Converts a lowered SCC or durable SGPR Boolean to an EXEC-width SGPR mask.
+// An existing SGPR-pair mask is reused. Source constant choices belong to the
+// caller's selected operand plan; this conversion consumes only Low carriers.
+iree_status_t loom_amdgpu_materialize_low_native_i1_mask(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t low_value, loom_value_id_t* out_low_value);
+
 // Looks up a lowered i1 value and materializes subgroup-uniform SCC predicates
 // as EXEC-width SGPR masks for divergent predicate arithmetic.
 // Exact source truth materializes the active EXEC mask at the use; exact false

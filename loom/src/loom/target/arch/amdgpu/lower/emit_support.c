@@ -2143,34 +2143,10 @@ iree_status_t loom_amdgpu_lookup_or_materialize_sgpr_address(
                                     /*offset=*/0, lane_type, out_low_value);
 }
 
-iree_status_t loom_amdgpu_lookup_or_materialize_native_i1_mask(
+iree_status_t loom_amdgpu_materialize_low_native_i1_mask(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
-    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
+    loom_value_id_t low_value, loom_value_id_t* out_low_value) {
   *out_low_value = LOOM_VALUE_ID_INVALID;
-  bool constant = false;
-  if (loom_amdgpu_value_as_i1_constant(context, source_value, &constant)) {
-    if (!constant) {
-      return loom_amdgpu_emit_sgpr64_constant_u64(context, source_op, 0,
-                                                  out_low_value);
-    }
-    // A true predicate covers the lanes active at this use, including when
-    // its canonical lowering was produced before a divergent branch.
-    loom_type_t mask_type = loom_type_none();
-    IREE_RETURN_IF_ERROR(
-        loom_amdgpu_make_sgpr_range_type(context, 2, &mask_type));
-    loom_op_t* exec_read_op = NULL;
-    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_op(
-        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_MOV_B64_EXEC_READ,
-        /*operands=*/NULL, /*operand_count=*/0, loom_named_attr_slice_empty(),
-        &mask_type, 1, &exec_read_op));
-    *out_low_value = loom_value_slice_get(loom_low_op_results(exec_read_op), 0);
-    return iree_ok_status();
-  }
-
-  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
-  IREE_RETURN_IF_ERROR(
-      loom_low_lower_lookup_value(context, source_value, &low_value));
-
   const loom_module_t* module = loom_low_lower_context_module(context);
   const loom_type_t low_type = loom_module_value_type(module, low_value);
   const bool is_sgpr = loom_amdgpu_low_type_is_register_class(
@@ -2245,6 +2221,38 @@ iree_status_t loom_amdgpu_lookup_or_materialize_native_i1_mask(
       IREE_ARRAYSIZE(mask_lanes), mask_type, source_op->location, &concat_op));
   *out_low_value = loom_low_concat_result(concat_op);
   return iree_ok_status();
+}
+
+iree_status_t loom_amdgpu_lookup_or_materialize_native_i1_mask(
+    loom_low_lower_context_t* context, const loom_op_t* source_op,
+    loom_value_id_t source_value, loom_value_id_t* out_low_value) {
+  *out_low_value = LOOM_VALUE_ID_INVALID;
+  bool constant = false;
+  if (loom_amdgpu_value_as_i1_constant(context, source_value, &constant)) {
+    if (!constant) {
+      return loom_amdgpu_emit_sgpr64_constant_u64(context, source_op, 0,
+                                                  out_low_value);
+    }
+    // A true predicate covers the lanes active at this use, including when
+    // its canonical lowering was produced before a divergent branch.
+    loom_type_t mask_type = loom_type_none();
+    IREE_RETURN_IF_ERROR(
+        loom_amdgpu_make_sgpr_range_type(context, 2, &mask_type));
+    loom_op_t* exec_read_op = NULL;
+    IREE_RETURN_IF_ERROR(loom_amdgpu_emit_low_op(
+        context, source_op, LOOM_AMDGPU_DESCRIPTOR_REF_S_MOV_B64_EXEC_READ,
+        /*operands=*/NULL, /*operand_count=*/0, loom_named_attr_slice_empty(),
+        &mask_type, 1, &exec_read_op));
+    *out_low_value = loom_value_slice_get(loom_low_op_results(exec_read_op), 0);
+    return iree_ok_status();
+  }
+
+  loom_value_id_t low_value = LOOM_VALUE_ID_INVALID;
+  IREE_RETURN_IF_ERROR(
+      loom_low_lower_lookup_value(context, source_value, &low_value));
+
+  return loom_amdgpu_materialize_low_native_i1_mask(context, source_op,
+                                                    low_value, out_low_value);
 }
 
 iree_status_t loom_amdgpu_emit_low_slice(loom_low_lower_context_t* context,

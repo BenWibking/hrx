@@ -22,6 +22,7 @@
 #include "loom/ir/scalar_type.h"
 #include "loom/ops/kernel/ops.h"
 #include "loom/target/arch/amdgpu/lower/kinds.h"
+#include "loom/target/arch/amdgpu/lower/mask.h"
 #include "loom/target/arch/amdgpu/matrix/contract.h"
 #include "loom/target/arch/amdgpu/planning/wait_counters.h"
 #include "loom/target/arch/amdgpu/refs/target_refs.h"
@@ -994,113 +995,6 @@ typedef struct loom_amdgpu_vector_float_classification_plan_t {
   // Selected class-mask operand representation.
   loom_amdgpu_float_classification_form_t form;
 } loom_amdgpu_vector_float_classification_plan_t;
-
-typedef uint32_t loom_amdgpu_cndmask_b32_descriptor_flags_t;
-
-enum {
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_REGISTER = 1u << 0,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_INLINE = 1u << 1,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_INLINE = 1u << 2,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL = 1u << 3,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL = 1u << 4,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL_SRC1_INLINE = 1u << 5,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL_SRC0_INLINE = 1u << 6,
-  LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_ALL =
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_REGISTER |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_INLINE |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_INLINE |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC0_LITERAL_SRC1_INLINE |
-      LOOM_AMDGPU_CNDMASK_B32_DESCRIPTOR_SRC1_LITERAL_SRC0_INLINE,
-};
-
-typedef struct loom_amdgpu_cndmask_b32_descriptors_t {
-  // Descriptor row selected for register-register lane selects.
-  loom_low_lower_resolved_descriptor_t register_descriptor;
-  // Optional descriptor row selected when the false lane is an inline source.
-  loom_low_lower_resolved_descriptor_t src0_inline_descriptor;
-  // Optional descriptor row selected when the true lane is an inline source.
-  loom_low_lower_resolved_descriptor_t src1_inline_descriptor;
-  // Optional descriptor row selected when the false lane is a literal source.
-  loom_low_lower_resolved_descriptor_t src0_literal_descriptor;
-  // Optional descriptor row selected when the true lane is a literal source.
-  loom_low_lower_resolved_descriptor_t src1_literal_descriptor;
-  // Optional descriptor row selected when false is literal and true is inline.
-  loom_low_lower_resolved_descriptor_t src0_literal_src1_inline_descriptor;
-  // Optional descriptor row selected when true is literal and false is inline.
-  loom_low_lower_resolved_descriptor_t src1_literal_src0_inline_descriptor;
-} loom_amdgpu_cndmask_b32_descriptors_t;
-
-typedef enum loom_amdgpu_select_condition_kind_e {
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_NONE = 0,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_SCC = 1,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_SCALAR_MASK = 2,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_VECTOR_MASK = 3,
-  LOOM_AMDGPU_SELECT_CONDITION_KIND_SGPR_BOOL = 4,
-} loom_amdgpu_select_condition_kind_t;
-
-typedef enum loom_amdgpu_select_payload_kind_e {
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_NONE = 0,
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_DATA = 1,
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_I1_MASK = 2,
-  LOOM_AMDGPU_SELECT_PAYLOAD_KIND_PACKED_DATA = 3,
-} loom_amdgpu_select_payload_kind_t;
-
-typedef struct loom_amdgpu_vector_select_plan_t {
-  // Source condition selecting true lanes.
-  loom_value_id_t condition;
-  // Source vector used when the corresponding condition lane is true.
-  loom_value_id_t true_value;
-  // Source vector used when the corresponding condition lane is false.
-  loom_value_id_t false_value;
-  // Selected representation of the true/false/result payload.
-  loom_amdgpu_select_payload_kind_t payload_kind;
-  // Selected representation of the scalar or vector condition.
-  loom_amdgpu_select_condition_kind_t condition_kind;
-  // Descriptor row selected for SCC-controlled scalar selects.
-  loom_low_lower_resolved_descriptor_t scc_descriptor;
-  // Descriptor row rematerializing SCC from an SGPR boolean condition.
-  loom_low_lower_resolved_descriptor_t sgpr_bool_compare_descriptor;
-  // Descriptor rows selected for scalar-mask v_cndmask_b32 lane selects.
-  loom_amdgpu_cndmask_b32_descriptors_t cndmask_descriptors;
-  // Additional emission state selected by payload_kind.
-  union {
-    // Boolean payloads combine native per-workitem masks.
-    struct {
-      // Descriptor row selected to read EXEC for i1 mask selection.
-      loom_low_lower_resolved_descriptor_t exec_read_descriptor;
-      // Descriptor row selected to AND i1 mask payloads.
-      loom_low_lower_resolved_descriptor_t and_descriptor;
-      // Descriptor row selected to OR i1 mask payloads.
-      loom_low_lower_resolved_descriptor_t or_descriptor;
-      // Descriptor row selected to XOR i1 mask payloads.
-      loom_low_lower_resolved_descriptor_t xor_descriptor;
-    } mask;
-    // Independent element choices are merged into their packed payload words.
-    struct {
-      // Bitfield insertion with a literal mask when the target supports it.
-      loom_low_lower_resolved_descriptor_t merge_descriptor;
-      // Materializes an SGPR mask for a register-form merge; empty for
-      // literals.
-      loom_low_lower_resolved_descriptor_t mask_constant_descriptor;
-      // Interned immediate name used by mask constants.
-      loom_string_id_t imm32_attr_name_id;
-      // Number of logical payload elements, excluding physical tail padding.
-      uint32_t element_count;
-      // Number of bits selected by each independent predicate.
-      uint32_t element_bit_count;
-    } packed;
-  } payload;
-  // Result vector value.
-  loom_value_id_t result;
-  // Static number of selected 32-bit register units.
-  uint32_t lane_count;
-  // Number of selected register units controlled by one vector mask lane.
-  uint32_t registers_per_condition_lane;
-  // True when cndmask literal/inline operand forms can be selected per lane.
-  bool allow_lane_immediates;
-} loom_amdgpu_vector_select_plan_t;
 
 typedef enum loom_amdgpu_clampf_mode_e {
   LOOM_AMDGPU_CLAMPF_MODE_NONE = 0,
