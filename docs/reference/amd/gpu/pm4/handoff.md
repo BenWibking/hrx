@@ -55,8 +55,10 @@ compatible properties, not contradictory labels.
 These source predicates identify the mapping mechanism. They do not replace
 producer stage completion, expand to arbitrary imported/local memory, or
 establish an atomic multiwriter protocol. The event and payload still require
-the cache operations selected for their actual clients. PAL's barrier model
-separates GL2 clients from CPU/memory actors that bypass GL2.
+the cache operations selected for their actual clients. PAL's GFX10/GFX11
+planner separates GL2 clients from CPU/memory actors that bypass GL2. Its
+GFX12 planner also places CP accesses in the bypass-GL2 class, changing the
+[CP-to-shader and shader-to-CP cache transitions](cache.md#gfx12-cp-and-shader-handoffs).
 [Access classes][pal-actors] [Cross-client cache operations][pal-cache]
 
 ## Owners and a complete sequence

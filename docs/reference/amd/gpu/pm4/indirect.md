@@ -94,12 +94,15 @@ using it completes. A scalar load through an ABI-provided pointer may extend
 its lifetime beyond command parsing. Code, arguments and payload allocations
 have their own last-use obligations.
 
-PAL classifies indirect arguments as GL2 clients. A CPU producer is a
-GL2-bypassing actor in its barrier model, so publication toward a GL2 consumer
-requests GL2 writeback/invalidation. A shader that also reads the tuple can
+PAL's GFX10/GFX11 planner classifies indirect arguments as GL2 clients. A CPU
+producer bypasses GL2 in that model, so publication toward a GL2 consumer
+requests GL2 writeback/invalidation. Its GFX12 planner instead classifies
+indirect-argument fetches as bypassing GL2; a shader producer's GL2 data must
+be written back for that CP reader. A shader that also reads the tuple can
 require its scalar/vector cache acquire in addition to the CP fetch edge.
 [Access classes][pal-cache] [CPU-to-GL2 mapping][pal-cpu]
 [Indirect acquire stage][pal-indirect-acquire]
+[GFX12 client and transition rules](cache.md#gfx12-cp-and-shader-handoffs)
 
 For GPU-produced counts, the ordinary sequence is:
 

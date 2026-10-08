@@ -255,12 +255,15 @@ extend to every RMW operation, dGPU PCIe route, imported mapping, or peer GPU.
 
 ## Ordering, completion, and last use
 
-PAL identifies queue atomics as GL2 clients and CPU/memory accesses as clients
-that bypass GL2. Its buffer-barrier planner requests GL2 writeback for a
+PAL's GFX10/GFX11 planner identifies queue atomics as GL2 clients and CPU/memory
+accesses as clients that bypass GL2. It requests GL2 writeback for a
 queue-atomic-to-CPU transition, and GL2 writeback/invalidation for the reverse
-direction. Other shader consumers can require their own cache invalidation.
-The atomic opcode and cache-policy field do not encode these surrounding
-memory dependencies. [Access classes][pal-clients]
+direction. Its GFX12 planner places queue atomics in the bypass-GL2 class;
+transitions involving shader GL2 therefore follow the
+[GFX12 CP and shader rules](cache.md#gfx12-cp-and-shader-handoffs).
+Other shader consumers can require their own cache invalidation. The atomic
+opcode and cache-policy field do not encode these surrounding memory
+dependencies. [Access classes][pal-clients]
 [Cache transition][pal-cache]
 
 The operation's PAL stage is `PostPrefetch`. That stage alone does not request
