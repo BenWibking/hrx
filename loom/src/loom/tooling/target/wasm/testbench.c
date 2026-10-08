@@ -10,13 +10,10 @@
 #include <string.h>
 
 #include "iree/hal/buffer.h"
-#include "loom/compile/request.h"
-#include "loom/target/emit/wasm/module_compiler.h"
-#include "loom/target/entry_selection.h"
-#include "loom/target/selection.h"
-#include "loom/tooling/compile/pipeline.h"
-#include "loom/tooling/config/config.h"
 #include "loom/tooling/target/wasm/host.h"
+#include "loomc/artifact.h"
+#include "loomc/iree.h"
+#include "loomc/target/wasm.h"
 
 enum {
   LOOM_WASM_TESTBENCH_ROOT_ALIGNMENT = 16,
@@ -27,9 +24,9 @@ typedef struct loom_wasm_testbench_product_t {
   // Host-owned ordinary Wasm module instance.
   loom_wasm_host_module_t host_module;
   // Copied physical parameter types in call order.
-  loom_wasm_value_type_t* parameter_types;
+  loom_wasm_host_value_type_t* parameter_types;
   // Copied physical result types in return order.
-  loom_wasm_value_type_t* result_types;
+  loom_wasm_host_value_type_t* result_types;
   // Source scalar type for each result, or NONE for buffer references.
   loom_scalar_type_t* result_scalar_types;
   // Reused raw argument payloads in physical signature order.
@@ -56,16 +53,21 @@ typedef struct loom_wasm_testbench_product_t {
   iree_allocator_t host_allocator;
 } loom_wasm_testbench_product_t;
 
-void loom_wasm_testbench_initialize(
-    const loom_target_environment_t* target_environment,
-    const loom_cleanup_pattern_provider_set_t* cleanup_pattern_provider_set,
+iree_status_t loom_wasm_testbench_initialize(
+    loomc_target_environment_t* target_environment,
     iree_allocator_t host_allocator, loom_wasm_testbench_t* out_testbench) {
   *out_testbench = (loom_wasm_testbench_t){
-      .target_environment = target_environment,
-      .cleanup_pattern_provider_set = cleanup_pattern_provider_set,
-      .diagnostic_sink = {.fn = loom_diagnostic_stderr_sink},
       .host_allocator = host_allocator,
   };
+  return iree_status_from_loomc(loomc_target_profile_select(
+      target_environment, loomc_make_cstring_view("wasm:simd128"),
+      loomc_allocator_from_iree(host_allocator),
+      &out_testbench->target_profile));
+}
+
+void loom_wasm_testbench_deinitialize(loom_wasm_testbench_t* testbench) {
+  loomc_target_profile_release(testbench->target_profile);
+  memset(testbench, 0, sizeof(*testbench));
 }
 
 static iree_status_t loom_wasm_testbench_resolve_source_function(
@@ -108,12 +110,10 @@ static iree_status_t loom_wasm_testbench_resolve_source_function(
 }
 
 static iree_status_t loom_wasm_testbench_allocate_product(
-    const loom_wasm_function_type_t* function_type,
+    uint32_t parameter_count, uint32_t result_count,
     const loom_module_t* source_module, loom_func_like_t source_function,
     iree_allocator_t allocator, loom_wasm_testbench_product_t** out_product) {
   *out_product = NULL;
-  const uint32_t parameter_count = function_type->parameter_count;
-  const uint32_t result_count = function_type->result_count;
   iree_host_size_t total_size = 0;
   iree_host_size_t parameter_types_offset = 0;
   iree_host_size_t result_types_offset = 0;
@@ -126,9 +126,9 @@ static iree_status_t loom_wasm_testbench_allocate_product(
   iree_host_size_t root_regions_offset = 0;
   IREE_RETURN_IF_ERROR(IREE_STRUCT_LAYOUT(
       sizeof(loom_wasm_testbench_product_t), &total_size,
-      IREE_STRUCT_FIELD(parameter_count, loom_wasm_value_type_t,
+      IREE_STRUCT_FIELD(parameter_count, loom_wasm_host_value_type_t,
                         &parameter_types_offset),
-      IREE_STRUCT_FIELD(result_count, loom_wasm_value_type_t,
+      IREE_STRUCT_FIELD(result_count, loom_wasm_host_value_type_t,
                         &result_types_offset),
       IREE_STRUCT_FIELD(result_count, loom_scalar_type_t,
                         &result_scalar_types_offset),
@@ -148,8 +148,9 @@ static iree_status_t loom_wasm_testbench_allocate_product(
   uint8_t* storage = (uint8_t*)product;
   *product = (loom_wasm_testbench_product_t){
       .parameter_types =
-          (loom_wasm_value_type_t*)(storage + parameter_types_offset),
-      .result_types = (loom_wasm_value_type_t*)(storage + result_types_offset),
+          (loom_wasm_host_value_type_t*)(storage + parameter_types_offset),
+      .result_types =
+          (loom_wasm_host_value_type_t*)(storage + result_types_offset),
       .result_scalar_types =
           (loom_scalar_type_t*)(storage + result_scalar_types_offset),
       .argument_bits = (uint64_t*)(storage + argument_bits_offset),
@@ -165,13 +166,7 @@ static iree_status_t loom_wasm_testbench_allocate_product(
       .result_count = result_count,
       .host_allocator = allocator,
   };
-  if (parameter_count != 0) {
-    memcpy(product->parameter_types, function_type->parameters,
-           parameter_count * sizeof(*product->parameter_types));
-  }
   if (result_count != 0) {
-    memcpy(product->result_types, function_type->results,
-           result_count * sizeof(*product->result_types));
     const loom_value_id_t* result_ids = loom_op_results(source_function.op);
     for (uint32_t i = 0; i < result_count; ++i) {
       const loom_type_t type =
@@ -185,6 +180,56 @@ static iree_status_t loom_wasm_testbench_allocate_product(
   return iree_ok_status();
 }
 
+static iree_status_t loom_wasm_testbench_resolve_export_name(
+    const loom_wasm_testbench_t* testbench, iree_string_view_t function_name,
+    iree_string_view_t* out_export_name) {
+  loomc_module_function_t function;
+  IREE_RETURN_IF_ERROR(iree_status_from_loomc(loomc_module_lookup_function(
+      testbench->compilation.module, loomc_string_view_from_iree(function_name),
+      &function)));
+  *out_export_name = function_name;
+  if (!iree_any_bit_set(function.flags,
+                        LOOMC_MODULE_FUNCTION_FLAG_HAS_EXPORT_INFO)) {
+    return iree_ok_status();
+  }
+
+  loomc_module_function_export_info_t export_info;
+  IREE_RETURN_IF_ERROR(
+      iree_status_from_loomc(loomc_module_function_get_export_info(
+          testbench->compilation.module, &function, &export_info)));
+  if (iree_any_bit_set(export_info.flags,
+                       LOOMC_MODULE_FUNCTION_EXPORT_FLAG_HAS_SYMBOL) &&
+      !loomc_string_view_is_empty(export_info.export_symbol)) {
+    *out_export_name = iree_string_view_from_loomc(export_info.export_symbol);
+  }
+  return iree_ok_status();
+}
+
+static iree_status_t loom_wasm_testbench_select_artifact(
+    const loomc_result_t* result, const loomc_artifact_t** out_artifact) {
+  *out_artifact = NULL;
+  for (loomc_host_size_t i = 0; i < loomc_result_artifact_count(result); ++i) {
+    const loomc_artifact_t* artifact = loomc_result_artifact_at(result, i);
+    if (artifact->kind != LOOMC_ARTIFACT_KIND_EXECUTABLE ||
+        !loomc_string_view_equal(
+            artifact->format,
+            loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_WASM_BINARY))) {
+      continue;
+    }
+    if (*out_artifact != NULL) {
+      return iree_make_status(
+          IREE_STATUS_INTERNAL,
+          "Wasm compilation returned more than one executable artifact");
+    }
+    *out_artifact = artifact;
+  }
+  return *out_artifact != NULL
+             ? iree_ok_status()
+             : iree_make_status(
+                   IREE_STATUS_INTERNAL,
+                   "Wasm compilation returned no executable artifact");
+}
+
 static iree_status_t loom_wasm_testbench_compile_product(
     loom_wasm_testbench_t* testbench,
     const loom_testbench_invocation_plan_t* invocation,
@@ -192,181 +237,92 @@ static iree_status_t loom_wasm_testbench_compile_product(
     iree_allocator_t product_allocator,
     loom_wasm_testbench_product_t** out_product) {
   *out_product = NULL;
-  iree_arena_block_pool_t block_pool;
-  iree_arena_block_pool_initialize(32 * 1024, testbench->host_allocator,
-                                   &block_pool);
-  iree_arena_allocator_t arena;
-  iree_arena_initialize(&block_pool, &arena);
-  loom_source_table_projection_t sources = {
-      .table = *testbench->sources,
-      .arena = &arena,
-  };
-  const iree_string_view_t roots[] = {function_name};
-  const loom_target_profile_t* target_profile = NULL;
-  iree_status_t status =
-      loom_target_environment_select_profile(testbench->target_environment,
-                                             &(loom_target_specification_t){
-                                                 .family = IREE_SV("wasm"),
-                                                 .selector = IREE_SV("simd128"),
-                                             },
-                                             &target_profile);
-  loom_compile_request_t compile_request = {0};
-  if (iree_status_is_ok(status)) {
-    status = loom_compile_request_resolve(
-        invocation->module,
-        &(loom_compile_request_options_t){
-            .roots = {.count = IREE_ARRAYSIZE(roots), .values = roots},
-            .target_profile = target_profile,
-        },
-        testbench->target_environment, &arena, &compile_request);
-  }
-  loom_module_t* module = NULL;
-  loom_target_specialization_request_list_t target_specializations = {0};
-  if (iree_status_is_ok(status)) {
-    status = loom_compile_request_materialize(
-        &compile_request, testbench->target_environment, NULL,
-        invocation->module, LOOM_COMPILE_REQUEST_SOURCE_BORROWED, &sources,
-        &arena, &block_pool, &module, &target_specializations, &(uint32_t){0});
-  }
-  if (iree_status_is_ok(status)) {
-    loom_tooling_config_materialize_options_t config_options;
-    loom_tooling_config_materialize_options_initialize(&config_options);
-    config_options.config_set = testbench->config_set;
-    status = loom_tooling_config_materialize_module(module, &config_options,
-                                                    &block_pool, NULL);
-  }
-  if (iree_status_is_ok(status)) {
-    status = loom_tooling_config_require_resolved_module(module, NULL);
-  }
-  loom_target_low_descriptor_registry_t low_registry = {0};
-  if (iree_status_is_ok(status)) {
-    low_registry = loom_target_environment_low_descriptor_registry(
-        testbench->target_environment);
-  }
-  loom_compile_pipeline_options_t pipeline_options;
-  loom_compile_pipeline_options_initialize(&pipeline_options);
-  pipeline_options.diagnostic_sink = testbench->diagnostic_sink;
-  if (compile_request.target_emitter != NULL) {
-    pipeline_options.target_pipeline_options =
-        compile_request.target_emitter->default_pipeline_options;
-  }
-  pipeline_options.target_environment = testbench->target_environment;
-  pipeline_options.target_specializations = target_specializations;
-  pipeline_options.cleanup_pattern_provider_set =
-      testbench->cleanup_pattern_provider_set;
-  pipeline_options.source_resolver = (loom_source_resolver_t){
-      .fn = loom_source_table_resolve,
-      .user_data = &sources.table,
-  };
-  loom_compile_pipeline_result_t pipeline = {0};
-  if (iree_status_is_ok(status)) {
-    status = loom_compile_run_pipeline(module, &pipeline_options, &block_pool,
-                                       &pipeline);
-  }
-  if (iree_status_is_ok(status) && pipeline.pass.error_count != 0) {
-    status = iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "Wasm scenario compilation rejected '%.*s' with %u diagnostic%s",
-        (int)function_name.size, function_name.data,
-        (unsigned)pipeline.pass.error_count,
-        pipeline.pass.error_count == 1 ? "" : "s");
+  if (invocation->input_count > UINT32_MAX ||
+      invocation->result_count > UINT32_MAX) {
+    return iree_make_status(IREE_STATUS_OUT_OF_RANGE,
+                            "Wasm scenario signature exceeds u32");
   }
 
-  loom_wasm_program_plan_t program = {0};
-  bool program_accepted = false;
+  iree_string_view_t export_name = iree_string_view_empty();
+  iree_status_t status = loom_wasm_testbench_resolve_export_name(
+      testbench, function_name, &export_name);
+  loomc_module_t* module = NULL;
   if (iree_status_is_ok(status)) {
-    const loom_target_entry_options_t entry_options = {
-        .function_versions = &pipeline.function_versions.list,
-        .diagnostic_sink = pipeline_options.diagnostic_sink,
-        .source_resolver = pipeline_options.source_resolver,
-        .max_errors = pipeline_options.max_errors,
-    };
-    loom_target_entry_diagnostic_emitter_t entry_emitter;
-    loom_target_entry_diagnostic_emitter_initialize(
-        module, &entry_options, LOOM_EMITTER_VERIFIER, &entry_emitter);
-    status =
-        loom_wasm_program_plan_build(module, &low_registry.registry,
-                                     loom_target_entry_emitter(&entry_emitter),
-                                     &arena, &program_accepted, &program);
+    status = iree_status_from_loomc(loomc_module_clone(
+        testbench->compilation.module, testbench->compilation.workspace,
+        loomc_allocator_from_iree(testbench->host_allocator), &module));
   }
-  if (iree_status_is_ok(status) && !program_accepted) {
+
+  const loomc_string_view_t root = loomc_string_view_from_iree(function_name);
+  const loomc_emit_options_t emit_options = {
+      .type = LOOMC_STRUCTURE_TYPE_EMIT_OPTIONS,
+      .structure_size = sizeof(emit_options),
+      .artifact_format =
+          loomc_make_cstring_view(LOOMC_ARTIFACT_FORMAT_WASM_BINARY),
+  };
+  const loomc_compile_artifact_options_t compile_options = {
+      .type = LOOMC_STRUCTURE_TYPE_COMPILE_ARTIFACT_OPTIONS,
+      .structure_size = sizeof(compile_options),
+      .roots = &root,
+      .root_count = 1,
+      .target_profile = testbench->target_profile,
+      .config = testbench->compilation.config,
+      .emit_options = &emit_options,
+  };
+  loomc_result_t* result = NULL;
+  if (iree_status_is_ok(status)) {
+    status = iree_status_from_loomc(loomc_compile_artifact(
+        testbench->compilation.compiler, testbench->compilation.workspace,
+        /*pass_program=*/NULL, module, &compile_options,
+        loomc_allocator_from_iree(testbench->host_allocator), &result));
+  }
+  if (iree_status_is_ok(status)) {
+    status = loom_testbench_observe_compile_result(testbench->result_callback,
+                                                   result);
+  }
+  if (iree_status_is_ok(status) && !loomc_result_succeeded(result)) {
     status = iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                              "Wasm scenario emission rejected '%.*s'",
+                              "Wasm scenario compilation rejected '%.*s'",
                               (int)function_name.size, function_name.data);
   }
 
-  const loom_wasm_function_plan_t* function = NULL;
+  const loomc_artifact_t* artifact = NULL;
   if (iree_status_is_ok(status)) {
-    const loom_string_id_t name_id =
-        loom_module_lookup_string(module, function_name);
-    const loom_symbol_id_t symbol_id =
-        name_id == LOOM_STRING_ID_INVALID
-            ? LOOM_SYMBOL_ID_INVALID
-            : loom_module_find_symbol(module, name_id);
-    const uint32_t function_index =
-        symbol_id == LOOM_SYMBOL_ID_INVALID
-            ? LOOM_WASM_PROGRAM_INDEX_NONE
-            : program.function_indices_by_symbol[symbol_id];
-    if (function_index == LOOM_WASM_PROGRAM_INDEX_NONE) {
-      status = iree_make_status(IREE_STATUS_NOT_FOUND,
-                                "Wasm scenario subject '%.*s' was not planned",
-                                (int)function_name.size, function_name.data);
-    } else {
-      function = &program.functions[function_index];
-    }
+    status = loom_wasm_testbench_select_artifact(result, &artifact);
   }
-  if (iree_status_is_ok(status) &&
-      iree_string_view_is_empty(function->export_name)) {
-    status =
-        iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
-                         "Wasm scenario subject '%.*s' has no emitted export",
-                         (int)function_name.size, function_name.data);
-  }
-  if (iree_status_is_ok(status) &&
-      (function->type.parameter_count != invocation->input_count ||
-       function->type.result_count != invocation->result_count)) {
-    status = iree_make_status(
-        IREE_STATUS_UNIMPLEMENTED,
-        "Wasm scenario subject '%.*s' changes its source signature from "
-        "%zu/%zu values to %u/%u physical values",
-        (int)function_name.size, function_name.data, invocation->input_count,
-        invocation->result_count, function->type.parameter_count,
-        function->type.result_count);
+  loomc_byte_span_t cloned_contents = loomc_byte_span_empty();
+  loomc_byte_span_t contents = loomc_byte_span_empty();
+  if (iree_status_is_ok(status) && !loomc_byte_sequence_try_get_contiguous_span(
+                                       artifact->contents, &contents)) {
+    status = iree_status_from_loomc(loomc_byte_sequence_clone(
+        artifact->contents,
+        loomc_allocator_from_iree(testbench->host_allocator),
+        &cloned_contents));
+    contents = cloned_contents;
   }
 
-  loom_wasm_module_binary_t binary = {0};
-  if (iree_status_is_ok(status)) {
-    status = loom_wasm_program_emit_binary(&program, testbench->host_allocator,
-                                           &binary);
-  }
   loom_wasm_testbench_product_t* product = NULL;
   if (iree_status_is_ok(status)) {
     status = loom_wasm_testbench_allocate_product(
-        &function->type, invocation->module, source_function, product_allocator,
-        &product);
+        (uint32_t)invocation->input_count, (uint32_t)invocation->result_count,
+        invocation->module, source_function, product_allocator, &product);
   }
   if (iree_status_is_ok(status)) {
-    const iree_string_view_t memory_export_name =
-        iree_any_bit_set(binary.flags,
-                         LOOM_WASM_MODULE_BINARY_FLAG_DEFINES_MEMORY)
-            ? IREE_SV("memory")
-            : iree_string_view_empty();
     status = loom_wasm_host_module_load(
-        iree_make_const_byte_span(binary.data, binary.data_length),
-        function->export_name, memory_export_name, &function->type,
-        &product->host_module);
+        iree_make_const_byte_span(contents.data, contents.data_length),
+        export_name, product->parameter_count, product->parameter_types,
+        product->result_count, product->result_types, &product->host_module);
   }
-  loom_wasm_module_binary_deinitialize(&binary, testbench->host_allocator);
   if (iree_status_is_ok(status)) {
     *out_product = product;
   } else if (product != NULL) {
     loom_wasm_host_module_release(&product->host_module);
     iree_allocator_free(product_allocator, product);
   }
-  loom_compile_pipeline_result_deinitialize(&pipeline);
-  loom_module_free(module);
-  iree_arena_deinitialize(&arena);
-  iree_arena_block_pool_deinitialize(&block_pool);
+  iree_allocator_free(testbench->host_allocator, (void*)cloned_contents.data);
+  loomc_result_release(result);
+  loomc_module_release(module);
+  loomc_workspace_trim(testbench->compilation.workspace);
   return status;
 }
 
@@ -400,8 +356,8 @@ static void loom_wasm_testbench_initialize_topology(
 }
 
 static iree_status_t loom_wasm_testbench_scalar_to_bits(
-    const loom_testbench_value_t* value, loom_wasm_value_type_t physical_type,
-    uint64_t* out_bits) {
+    const loom_testbench_value_t* value,
+    loom_wasm_host_value_type_t physical_type, uint64_t* out_bits) {
   if (value->kind != LOOM_TESTBENCH_VALUE_KIND_SCALAR) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
@@ -409,7 +365,7 @@ static iree_status_t loom_wasm_testbench_scalar_to_bits(
   }
   *out_bits = 0;
   switch (physical_type) {
-    case LOOM_WASM_VALUE_TYPE_I32:
+    case LOOM_WASM_HOST_VALUE_TYPE_I32:
       switch (value->scalar.kind) {
         case IREE_TOOLING_VALUE_KIND_I32:
           *out_bits = (uint32_t)value->scalar.storage.i32;
@@ -428,7 +384,7 @@ static iree_status_t loom_wasm_testbench_scalar_to_bits(
           break;
       }
       break;
-    case LOOM_WASM_VALUE_TYPE_I64:
+    case LOOM_WASM_HOST_VALUE_TYPE_I64:
       switch (value->scalar.kind) {
         case IREE_TOOLING_VALUE_KIND_I32:
           *out_bits = (uint64_t)(int64_t)value->scalar.storage.i32;
@@ -447,7 +403,7 @@ static iree_status_t loom_wasm_testbench_scalar_to_bits(
           break;
       }
       break;
-    case LOOM_WASM_VALUE_TYPE_F32:
+    case LOOM_WASM_HOST_VALUE_TYPE_F32:
       if (value->scalar.kind == IREE_TOOLING_VALUE_KIND_F32) {
         uint32_t bits = 0;
         memcpy(&bits, &value->scalar.storage.f32, sizeof(bits));
@@ -455,7 +411,7 @@ static iree_status_t loom_wasm_testbench_scalar_to_bits(
         return iree_ok_status();
       }
       break;
-    case LOOM_WASM_VALUE_TYPE_F64:
+    case LOOM_WASM_HOST_VALUE_TYPE_F64:
       if (value->scalar.kind == IREE_TOOLING_VALUE_KIND_F64) {
         memcpy(out_bits, &value->scalar.storage.f64, sizeof(*out_bits));
         return iree_ok_status();
@@ -471,7 +427,7 @@ static iree_status_t loom_wasm_testbench_scalar_to_bits(
 }
 
 static iree_status_t loom_wasm_testbench_scalar_from_bits(
-    loom_scalar_type_t scalar_type, loom_wasm_value_type_t physical_type,
+    loom_scalar_type_t scalar_type, loom_wasm_host_value_type_t physical_type,
     uint64_t bits, loom_testbench_value_t* out_value) {
   *out_value = (loom_testbench_value_t){
       .kind = LOOM_TESTBENCH_VALUE_KIND_SCALAR,
@@ -495,15 +451,15 @@ static iree_status_t loom_wasm_testbench_scalar_from_bits(
       return iree_ok_status();
     case LOOM_SCALAR_TYPE_INDEX:
       out_value->scalar.kind = IREE_TOOLING_VALUE_KIND_I64;
-      out_value->scalar.storage.i64 = physical_type == LOOM_WASM_VALUE_TYPE_I32
-                                          ? (int32_t)bits
-                                          : (int64_t)bits;
+      out_value->scalar.storage.i64 =
+          physical_type == LOOM_WASM_HOST_VALUE_TYPE_I32 ? (int32_t)bits
+                                                         : (int64_t)bits;
       return iree_ok_status();
     case LOOM_SCALAR_TYPE_OFFSET:
       out_value->scalar.kind = IREE_TOOLING_VALUE_KIND_I64;
-      out_value->scalar.storage.i64 = physical_type == LOOM_WASM_VALUE_TYPE_I32
-                                          ? (uint32_t)bits
-                                          : (int64_t)bits;
+      out_value->scalar.storage.i64 =
+          physical_type == LOOM_WASM_HOST_VALUE_TYPE_I32 ? (uint32_t)bits
+                                                         : (int64_t)bits;
       return iree_ok_status();
     case LOOM_SCALAR_TYPE_I64:
       out_value->scalar.kind = IREE_TOOLING_VALUE_KIND_I64;
@@ -546,13 +502,13 @@ static bool loom_wasm_testbench_buffer_references_equal(
 static iree_status_t loom_wasm_testbench_buffer_from_bits(
     const loom_wasm_testbench_product_t* product,
     const loom_testbench_product_call_t* call,
-    loom_wasm_value_type_t physical_type, uint64_t bits,
+    loom_wasm_host_value_type_t physical_type, uint64_t bits,
     loom_testbench_value_t* out_value) {
   *out_value = (loom_testbench_value_t){0};
   uint64_t address = 0;
-  if (physical_type == LOOM_WASM_VALUE_TYPE_I32) {
+  if (physical_type == LOOM_WASM_HOST_VALUE_TYPE_I32) {
     address = (uint32_t)bits;
-  } else if (physical_type == LOOM_WASM_VALUE_TYPE_I64) {
+  } else if (physical_type == LOOM_WASM_HOST_VALUE_TYPE_I64) {
     address = bits;
   } else {
     return iree_make_status(
@@ -768,12 +724,12 @@ loom_testbench_execution_profile_t loom_wasm_testbench_execution_profile(
     const loom_tooling_config_set_t* config_set,
     loom_diagnostic_sink_t diagnostic_sink,
     loom_testbench_compile_result_callback_t result_callback) {
-  (void)compilation;
-  (void)result_callback;
+  (void)sources;
+  (void)config_set;
+  (void)diagnostic_sink;
   loom_wasm_testbench_t* testbench = user_data;
-  testbench->sources = sources;
-  testbench->config_set = config_set;
-  testbench->diagnostic_sink = diagnostic_sink;
+  testbench->compilation = *compilation;
+  testbench->result_callback = result_callback;
   return (loom_testbench_execution_profile_t){
       .name = IREE_SV("wasm:simd128"),
       .prepare = loom_wasm_testbench_product_prepare,

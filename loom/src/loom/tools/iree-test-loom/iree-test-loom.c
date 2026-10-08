@@ -118,10 +118,9 @@ int main(int argc, char** argv) {
     iree_status_free(status);
     return 1;
   }
+#if IREE_TEST_LOOM_HAVE_TASK
   const loom_target_environment_t* native_target_environment =
       loomc_target_environment_get_interop_view(target_environment);
-
-#if IREE_TEST_LOOM_HAVE_TASK
   loom_task_device_provider_t task_provider;
   loom_task_device_provider_initialize(native_target_environment,
                                        &task_provider);
@@ -184,9 +183,18 @@ int main(int argc, char** argv) {
 #endif  // IREE_TEST_LOOM_HAVE_VM
 #if IREE_TEST_LOOM_HAVE_WASM && defined(IREE_PLATFORM_WASM)
   loom_wasm_testbench_t wasm_testbench;
-  loom_wasm_testbench_initialize(native_target_environment,
-                                 configuration.cleanup_pattern_provider_set,
-                                 iree_allocator_system(), &wasm_testbench);
+  status = loom_wasm_testbench_initialize(
+      target_environment, iree_allocator_system(), &wasm_testbench);
+  if (!iree_status_is_ok(status)) {
+    iree_status_fprint(stderr, status);
+    iree_status_free(status);
+    loom_wasm_testbench_deinitialize(&wasm_testbench);
+#if IREE_TEST_LOOM_HAVE_VM
+    loom_vm_testbench_deinitialize(&vm_testbench);
+#endif  // IREE_TEST_LOOM_HAVE_VM
+    loomc_target_environment_release(target_environment);
+    return 1;
+  }
   configuration.scenario_target_profile.fn =
       loom_wasm_testbench_execution_profile;
   configuration.scenario_target_profile.user_data = &wasm_testbench;
@@ -195,6 +203,9 @@ int main(int argc, char** argv) {
 #if IREE_TEST_LOOM_HAVE_VM
   loom_vm_testbench_deinitialize(&vm_testbench);
 #endif  // IREE_TEST_LOOM_HAVE_VM
+#if IREE_TEST_LOOM_HAVE_WASM && defined(IREE_PLATFORM_WASM)
+  loom_wasm_testbench_deinitialize(&wasm_testbench);
+#endif  // IREE_TEST_LOOM_HAVE_WASM && IREE_PLATFORM_WASM
   loomc_target_environment_release(target_environment);
   return exit_code;
 }

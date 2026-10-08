@@ -30,7 +30,6 @@ loom_cc_library(
   DEPS
     ::host_js
     iree::base
-    loom::target::emit::wasm::program
   PUBLIC
 )
 endif()
@@ -46,16 +45,9 @@ loom_cc_library(
   DEPS
     ::host
     iree::base
-    iree::base::internal::arena
     iree::hal
-    loom::compile::request
-    loom::error::source
-    loom::target::emit::wasm::module_compiler
-    loom::target::entry_selection
-    loom::target::provider
-    loom::target::selection
-    loom::tooling::compile::pipeline
-    loom::tooling::config
+    loom::binding::c::loomc
+    loom::binding::c::target::wasm
     loom::tooling::testbench::compiled_provider
     loom::tooling::testbench::scenario::executor
   PUBLIC
