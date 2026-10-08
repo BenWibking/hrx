@@ -10,6 +10,7 @@
 
 #include "loom/tooling/context/context.h"
 #include "loom/tools/loom-check/main.h"
+#include "loom/tools/loom-check/source_low.h"
 #include "loom/transforms/cleanup/configured.h"
 
 enum {
@@ -71,6 +72,8 @@ static iree_status_t loom_check_provider_environment_state_initialize(
   *out_state = (loom_check_provider_environment_state_t){0};
   loom_target_provider_set_storage_initialize(
       &out_state->target_provider_storage);
+  out_state->emit_providers[out_state->emit_provider_count++] =
+      &loom_check_source_low_emit_provider;
 
   for (iree_host_size_t i = 0; i < provider_set->provider_count; ++i) {
     const loom_check_provider_t* provider = provider_set->providers[i];

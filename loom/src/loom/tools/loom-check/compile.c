@@ -6,6 +6,10 @@
 
 #include "loom/tools/loom-check/compile.h"
 
+#include <inttypes.h>
+
+#include "loom/ops/op_defs.h"
+#include "loom/target/pipeline.h"
 #include "loom/testing/test_file.h"
 #include "loom/tooling/io/source_path.h"
 #include "loom/tools/loom-check/compile_diagnostics.h"
@@ -198,6 +202,321 @@ static iree_status_t loom_check_compile_admit_module(
   loomc_source_release(source);
   iree_allocator_free(host_allocator, source_identifier_storage);
   iree_string_builder_deinitialize(&stripped_source);
+  return status;
+}
+
+iree_status_t loom_check_compile_admit_source_module(
+    const loom_check_emit_provider_request_t* request,
+    loomc_module_t** out_module) {
+  *out_module = NULL;
+  loom_check_compile_session_t* session = request->environment->compile_session;
+  IREE_RETURN_IF_ERROR(loom_check_compile_session_prepare(session));
+  iree_status_t status = loom_check_compile_admit_module(
+      request->test_case, request->filename, request->input_request, session,
+      request->environment, request->diagnostic_collector, request->block_pool,
+      request->host_allocator, out_module);
+  if (*out_module == NULL) {
+    loomc_workspace_trim(session->workspace);
+  }
+  return status;
+}
+
+static iree_status_t loom_check_compile_source_low_diagnostic_pipeline(
+    const loom_check_compile_source_low_options_t* options,
+    iree_string_view_t* out_pipeline) {
+  bool structured = false;
+  switch (options->control_flow_lowering) {
+    case LOOM_TARGET_CONTROL_FLOW_LOWERING_CFG:
+      break;
+    case LOOM_TARGET_CONTROL_FLOW_LOWERING_STRUCTURED_LOW:
+      structured = true;
+      break;
+    default:
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "unknown source-to-Low control-flow mode %d",
+                              (int)options->control_flow_lowering);
+  }
+  switch (options->diagnostic_flags) {
+    case 0:
+    case LOOM_TARGET_LOW_LEGALITY_DIAGNOSTIC_MEMORY_ACCESS:
+    case LOOM_TARGET_LOW_LEGALITY_DIAGNOSTIC_OPERAND_FORM:
+    case LOOM_TARGET_LOW_LEGALITY_DIAGNOSTIC_ALL:
+      break;
+    default:
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "unknown source-to-Low diagnostic flags 0x%08X",
+                              options->diagnostic_flags);
+  }
+  static const iree_string_view_t kPipelines[2][4] = {
+      {
+          IREE_SVL("source-to-low{diagnostics=none}"),
+          IREE_SVL("source-to-low{diagnostics=memory}"),
+          IREE_SVL("source-to-low{diagnostics=operand-forms}"),
+          IREE_SVL("source-to-low{diagnostics=all}"),
+      },
+      {
+          IREE_SVL(
+              "source-to-low{control-flow=structured-low,diagnostics=none}"),
+          IREE_SVL(
+              "source-to-low{control-flow=structured-low,diagnostics=memory}"),
+          IREE_SVL("source-to-low{control-flow=structured-low,"
+                   "diagnostics=operand-forms}"),
+          IREE_SVL(
+              "source-to-low{control-flow=structured-low,diagnostics=all}"),
+      },
+  };
+  *out_pipeline = kPipelines[structured][options->diagnostic_flags];
+  return iree_ok_status();
+}
+
+static iree_status_t loom_check_compile_prepare_source_low_program(
+    loom_check_compile_session_t* session,
+    const loom_check_compile_source_low_options_t* options,
+    loom_check_diagnostic_collector_t* collector,
+    loomc_pass_program_t** out_pass_program) {
+  *out_pass_program = NULL;
+  const loomc_allocator_t allocator =
+      loomc_allocator_from_iree(session->host_allocator);
+  const loom_target_pipeline_options_t native_options = {
+      .control_flow_lowering = options->control_flow_lowering,
+      .source_to_low_legality_diagnostic_flags = options->diagnostic_flags,
+      .source_to_low_max_errors = 20,
+      .sanitizer = options->sanitizer,
+  };
+  const bool has_sanitizer = options->sanitizer.checks != 0 ||
+                             options->sanitizer.flags != 0 ||
+                             options->sanitizer.reporting_mode !=
+                                 LOOM_SANITIZER_REPORTING_MODE_DEFAULT;
+  const loomc_sanitizer_options_t sanitizer_options = {
+      .type = LOOMC_STRUCTURE_TYPE_SANITIZER_OPTIONS,
+      .structure_size = sizeof(sanitizer_options),
+      .checks = (loomc_sanitizer_checks_t)options->sanitizer.checks,
+      .flags = (loomc_sanitizer_flags_t)options->sanitizer.flags,
+      .reporting_mode =
+          (loomc_sanitizer_reporting_mode_t)options->sanitizer.reporting_mode,
+  };
+  const loomc_target_pipeline_options_t public_options = {
+      .type = LOOMC_STRUCTURE_TYPE_TARGET_PIPELINE_OPTIONS,
+      .structure_size = sizeof(public_options),
+      .next = has_sanitizer ? &sanitizer_options : NULL,
+      .identifier = loomc_make_cstring_view("__loom_check_source_low"),
+      .kind = LOOMC_TARGET_PIPELINE_KIND_SOURCE_LOW,
+      .control_flow_lowering =
+          (loomc_target_control_flow_lowering_t)options->control_flow_lowering,
+      .source_to_low_max_errors = 20,
+  };
+
+  loomc_result_t* result = NULL;
+  loomc_status_t operation_status = loomc_ok_status();
+  switch (options->pipeline) {
+    case LOOM_CHECK_COMPILE_SOURCE_LOW_PIPELINE_DEFAULT:
+      operation_status = loomc_pass_program_create_from_target_pipeline(
+          session->context, &public_options, allocator, out_pass_program,
+          &result);
+      break;
+    case LOOM_CHECK_COMPILE_SOURCE_LOW_PIPELINE_ARTIFACT:
+      operation_status =
+          loomc_pass_program_create_from_native_source_low_pipeline(
+              session->context,
+              loom_target_pipeline_build_to_source_low_artifacts,
+              public_options.identifier, &native_options, allocator,
+              out_pass_program, &result);
+      break;
+    case LOOM_CHECK_COMPILE_SOURCE_LOW_PIPELINE_DIAGNOSTIC_ARTIFACT:
+      operation_status =
+          loomc_pass_program_create_from_native_source_low_pipeline(
+              session->context,
+              loom_target_pipeline_build_to_source_low_diagnostic_artifacts,
+              public_options.identifier, &native_options, allocator,
+              out_pass_program, &result);
+      break;
+    case LOOM_CHECK_COMPILE_SOURCE_LOW_PIPELINE_DIAGNOSTIC: {
+      iree_string_view_t pipeline = iree_string_view_empty();
+      IREE_RETURN_IF_ERROR(loom_check_compile_source_low_diagnostic_pipeline(
+          options, &pipeline));
+      operation_status = loomc_pass_program_create_from_pipeline_text(
+          session->context, loomc_string_view_from_iree(pipeline), NULL,
+          allocator, out_pass_program, &result);
+      break;
+    }
+    default:
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "unknown source-Low pipeline kind %d",
+                              (int)options->pipeline);
+  }
+
+  iree_status_t status = iree_status_from_loomc(operation_status);
+  bool prepared = false;
+  if (iree_status_is_ok(status)) {
+    status = loom_check_compile_append_result(collector, result, &prepared);
+  }
+  loomc_result_release(result);
+  if (!prepared) {
+    loomc_pass_program_release(*out_pass_program);
+    *out_pass_program = NULL;
+  }
+  return status;
+}
+
+static iree_status_t loom_check_compile_select_source_function(
+    const loom_module_t* module, iree_string_view_t function_name,
+    iree_string_view_t* out_function_name) {
+  if (!iree_string_view_is_empty(function_name)) {
+    *out_function_name = function_name;
+    return iree_ok_status();
+  }
+
+  iree_host_size_t definition_count = 0;
+  iree_host_size_t public_count = 0;
+  for (iree_host_size_t i = 0; i < module->symbols.count; ++i) {
+    const loom_symbol_t* symbol = &module->symbols.entries[i];
+    const loom_func_like_t function =
+        loom_func_like_const_cast(module, symbol->defining_op);
+    if (loom_func_like_body(function) == NULL) {
+      continue;
+    }
+    ++definition_count;
+    const bool is_public =
+        iree_any_bit_set(symbol->flags, LOOM_SYMBOL_FLAG_PUBLIC);
+    public_count += is_public;
+    if (definition_count == 1 || is_public) {
+      function_name = loom_string_table_get(&module->strings, symbol->name_id);
+    }
+  }
+  if (definition_count == 0 || (definition_count > 1 && public_count != 1)) {
+    return iree_make_status(
+        IREE_STATUS_INVALID_ARGUMENT,
+        "target compile option requires one function definition or one public "
+        "entry with private helpers; specify @function for an ambiguous "
+        "module (got %" PRIhsz " definitions and %" PRIhsz " public entries)",
+        definition_count, public_count);
+  }
+  *out_function_name = function_name;
+  return iree_ok_status();
+}
+
+static iree_status_t loom_check_compile_project_source_low_module(
+    loomc_module_t* module, loom_check_diagnostic_collector_t* collector,
+    iree_allocator_t allocator, loomc_module_interop_view_t* out_view,
+    bool* out_succeeded) {
+  loomc_result_t* result = NULL;
+  iree_status_t status = iree_status_from_loomc(loomc_module_get_interop_view(
+      module, loomc_allocator_from_iree(allocator), out_view, &result));
+  if (iree_status_is_ok(status)) {
+    status = loom_check_compile_append_result(collector, result, out_succeeded);
+  }
+  loomc_result_release(result);
+  return status;
+}
+
+iree_status_t loom_check_compile_source_low(
+    const loom_check_emit_provider_request_t* request,
+    const loom_check_compile_source_low_options_t* options,
+    loom_check_compile_source_low_consumer_fn_t consumer, void* user_data) {
+  loom_check_compile_session_t* session = request->environment->compile_session;
+  IREE_RETURN_IF_ERROR(loom_check_compile_session_prepare(session));
+
+  loomc_module_t* module = NULL;
+  iree_status_t status = loom_check_compile_admit_module(
+      request->test_case, request->filename, request->input_request, session,
+      request->environment, request->diagnostic_collector, request->block_pool,
+      request->host_allocator, &module);
+
+  loomc_pass_program_t* pass_program = NULL;
+  if (iree_status_is_ok(status) && module != NULL) {
+    status = loom_check_compile_prepare_source_low_program(
+        session, options, request->diagnostic_collector, &pass_program);
+  }
+
+  loomc_target_profile_t* target_profile = NULL;
+  iree_string_view_t function_name = options->function_name;
+  if (iree_status_is_ok(status) && pass_program != NULL &&
+      !iree_string_view_is_empty(options->target)) {
+    loomc_module_interop_view_t native_view = {0};
+    bool projected = false;
+    if (iree_string_view_is_empty(function_name)) {
+      status = loom_check_compile_project_source_low_module(
+          module, request->diagnostic_collector, request->host_allocator,
+          &native_view, &projected);
+    }
+    if (iree_status_is_ok(status) && iree_string_view_is_empty(function_name) &&
+        projected) {
+      status = loom_check_compile_select_source_function(
+          native_view.module, function_name, &function_name);
+    }
+    if (iree_status_is_ok(status) && iree_string_view_is_empty(function_name) &&
+        !projected) {
+      loomc_pass_program_release(pass_program);
+      pass_program = NULL;
+    }
+    if (iree_status_is_ok(status) && pass_program != NULL) {
+      status = loom_check_compile_session_select_target_profile(
+          session, options->target, &target_profile);
+    }
+  }
+
+  const loomc_target_specialization_t specialization = {
+      .function_symbol = loomc_string_view_from_iree(function_name),
+      .target_profile = target_profile,
+  };
+  const loomc_target_specialization_options_t target_options = {
+      .type = LOOMC_STRUCTURE_TYPE_TARGET_SPECIALIZATION_OPTIONS,
+      .structure_size = sizeof(target_options),
+      .specializations = target_profile != NULL ? &specialization : NULL,
+      .specialization_count = target_profile != NULL ? 1 : 0,
+  };
+  const loomc_compile_options_t compile_options = {
+      .type = LOOMC_STRUCTURE_TYPE_COMPILE_OPTIONS,
+      .structure_size = sizeof(compile_options),
+      .next = target_profile != NULL ? &target_options : NULL,
+  };
+  loomc_result_t* result = NULL;
+  if (iree_status_is_ok(status) && pass_program != NULL) {
+    const loomc_allocator_t allocator =
+        loomc_allocator_from_iree(request->host_allocator);
+    const loomc_status_t operation_status =
+        options->report != NULL
+            ? loomc_compile_module_with_native_report(
+                  session->compiler, session->workspace, pass_program, module,
+                  &compile_options, options->report, allocator, &result)
+            : loomc_compile_module(session->compiler, session->workspace,
+                                   pass_program, module, &compile_options,
+                                   allocator, &result);
+    status = iree_status_from_loomc(operation_status);
+  }
+  bool compiled = false;
+  if (iree_status_is_ok(status) && result != NULL) {
+    status = loom_check_compile_append_result(request->diagnostic_collector,
+                                              result, &compiled);
+  }
+
+  loomc_module_interop_view_t native_view = {0};
+  bool projected = false;
+  if (iree_status_is_ok(status) && compiled) {
+    status = loom_check_compile_project_source_low_module(
+        module, request->diagnostic_collector, request->host_allocator,
+        &native_view, &projected);
+  }
+  if (iree_status_is_ok(status) && projected && consumer != NULL) {
+    request->diagnostic_collector->module = native_view.module;
+    const loom_check_compile_source_low_view_t view = {
+        .public_module = module,
+        .module = native_view.module,
+        .source_resolver =
+            {
+                .fn = loom_source_table_resolve,
+                .user_data = (void*)native_view.source_table,
+            },
+    };
+    status = consumer(user_data, &view);
+    request->diagnostic_collector->module = NULL;
+  }
+
+  loomc_result_release(result);
+  loomc_target_profile_release(target_profile);
+  loomc_pass_program_release(pass_program);
+  loomc_module_release(module);
+  loomc_workspace_trim(session->workspace);
   return status;
 }
 

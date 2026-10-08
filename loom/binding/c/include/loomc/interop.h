@@ -148,12 +148,12 @@ LOOMC_API_EXPORT loomc_status_t loomc_compile_module_with_native_report(
     loom_target_compile_report_t* report, loomc_allocator_t allocator,
     loomc_result_t** out_result);
 
-/// Structurally verifies a public module and projects its native read-only
-/// view.
+/// Verifies a public module and projects its native read-only view.
 ///
-/// This establishes only target-independent Loom IR invariants. Target-Low
-/// legality remains owned by the compile or emit operation using the selected
-/// target environment.
+/// Structural invariants are always verified. When the module's context owns a
+/// target environment, target-Low legality is also verified against that
+/// environment. This makes the projected view safe for exact-version native
+/// consumers without duplicating the compiler's target verification contract.
 ///
 /// @param module Module to verify and inspect.
 /// @param allocator Host allocator used for the returned result.

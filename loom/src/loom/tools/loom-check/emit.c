@@ -43,7 +43,6 @@
 #include "loom/tools/loom-check/input.h"
 #include "loom/tools/loom-check/low_emit.h"
 #include "loom/tools/loom-check/low_report.h"
-#include "loom/tools/loom-check/source_low.h"
 #include "loom/tools/loom-check/target_low_registry_manifest.h"
 #include "loom/util/fact_table.h"
 #include "loom/util/stream.h"
@@ -56,10 +55,9 @@ typedef enum loom_check_emit_format_e {
   LOOM_CHECK_EMIT_LOW_ALLOCATION_JSON = 3,
   LOOM_CHECK_EMIT_LOW_ALLOCATION_SUMMARY = 4,
   LOOM_CHECK_EMIT_LOW_PACKET_JSON = 5,
-  LOOM_CHECK_EMIT_SOURCE_LOW_TEXT = 6,
-  LOOM_CHECK_EMIT_LOW_COMPILE_REPORT = 7,
-  LOOM_CHECK_EMIT_PIPELINE_PLAN = 8,
-  LOOM_CHECK_EMIT_STORAGE_INTERFERENCE = 9,
+  LOOM_CHECK_EMIT_LOW_COMPILE_REPORT = 6,
+  LOOM_CHECK_EMIT_PIPELINE_PLAN = 7,
+  LOOM_CHECK_EMIT_STORAGE_INTERFERENCE = 8,
 } loom_check_emit_format_t;
 
 enum {
@@ -114,7 +112,6 @@ static const iree_string_view_t kLoomCheckEmitCoreTargetNames[] = {
     IREE_SVL("low-allocation-json"),  IREE_SVL("low-allocation-summary"),
     IREE_SVL("low-allocation"),       IREE_SVL("low-packet-json"),
     IREE_SVL("low-packet"),           IREE_SVL("target-low-registry-manifest"),
-    IREE_SVL("source-low"),           IREE_SVL("source-to-low"),
     IREE_SVL("low-compile-report"),   IREE_SVL("pipeline-plan"),
     IREE_SVL("storage-interference"),
 };
@@ -162,8 +159,6 @@ typedef struct loom_check_emit_request_t {
   bool suppress_actual_output;
   // True once an output option has been parsed.
   bool has_output_option;
-  // Source lowering request and optional function target specialization.
-  loom_check_source_low_request_t source_low;
 } loom_check_emit_request_t;
 
 static iree_status_t loom_check_emit_parse_json_output_option(
@@ -712,15 +707,6 @@ static iree_status_t loom_check_emit_parse_request(
           "target-low registry manifest does not accept target options");
     }
     out_request->format = LOOM_CHECK_EMIT_TARGET_LOW_REGISTRY_MANIFEST;
-    return iree_ok_status();
-  } else if (iree_string_view_equal(target_name, IREE_SV("source-low")) ||
-             iree_string_view_equal(target_name, IREE_SV("source-to-low"))) {
-    IREE_RETURN_IF_ERROR(
-        loom_check_source_low_parse(target_options, &out_request->source_low));
-    out_request->suppress_actual_output =
-        out_request->source_low.output ==
-        LOOM_CHECK_EMIT_SOURCE_LOW_OUTPUT_NONE;
-    out_request->format = LOOM_CHECK_EMIT_SOURCE_LOW_TEXT;
     return iree_ok_status();
   } else {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
@@ -1505,13 +1491,15 @@ static iree_status_t loom_check_emit_invoke_provider(
   iree_arena_allocator_t case_arena;
   iree_arena_initialize(request->block_pool, &case_arena);
   request->case_arena = &case_arena;
+  // Providers own comparable output by default and may explicitly suppress it
+  // for diagnostics-only modes.
+  request->result->has_actual_output = true;
   iree_status_t status = provider->execute(provider, request);
   iree_arena_deinitialize(&case_arena);
-  // Successful emission owns a comparable output even when it is empty.
-  // Remarks do not suppress that comparison; compilation errors do.
-  request->result->has_actual_output =
-      iree_status_is_ok(status) &&
-      !loom_check_diagnostic_collector_has_error(request->diagnostic_collector);
+  if (!iree_status_is_ok(status) || loom_check_diagnostic_collector_has_error(
+                                        request->diagnostic_collector)) {
+    request->result->has_actual_output = false;
+  }
   return status;
 }
 
@@ -1522,14 +1510,9 @@ static iree_status_t loom_check_emit_finish_provider(
     return loom_check_emit_finish_status_failure(status, request->target_name,
                                                  request->result);
   }
-  if (request->test_case->annotation_count > 0 ||
-      request->diagnostic_collector->count > 0) {
-    return loom_check_emit_finish_diagnostics_and_compare_output(
-        request->diagnostic_collector, request->test_case, case_index, report,
-        request->host_allocator, request->result);
-  }
-  return loom_check_compare_output(request->test_case, request->host_allocator,
-                                   request->result);
+  return loom_check_emit_finish_diagnostics_and_compare_output(
+      request->diagnostic_collector, request->test_case, case_index, report,
+      request->host_allocator, request->result);
 }
 
 iree_status_t loom_check_execute_emit(
@@ -1626,6 +1609,7 @@ iree_status_t loom_check_execute_emit(
       .filename = filename,
       .test_case = test_case,
       .input_request = input_request,
+      .context = context,
       .environment = environment,
       .low_registry = &low_registry,
       .diagnostic_collector = &diagnostic_collector,
@@ -1716,49 +1700,6 @@ iree_status_t loom_check_execute_emit(
     diagnostic_collector.module = NULL;
     status = loom_check_emit_finish_provider(status, &provider_request,
                                              case_index, report);
-    iree_arena_deinitialize(&diagnostic_arena);
-    return status;
-  }
-
-  if (request.format == LOOM_CHECK_EMIT_SOURCE_LOW_TEXT) {
-    iree_host_size_t actual_output_size = result->actual_output.size;
-    if (iree_status_is_ok(status)) {
-      status = loom_check_source_low_emit(
-          module, &request.source_low, environment, source_resolver,
-          &diagnostic_collector, block_pool, result);
-    }
-    if (iree_status_is_ok(status)) {
-      if (request.suppress_actual_output) {
-        result->actual_output.size = actual_output_size;
-        if (result->actual_output.buffer &&
-            result->actual_output.capacity > actual_output_size) {
-          result->actual_output.buffer[actual_output_size] = 0;
-        }
-      } else if (result->actual_output.size != actual_output_size) {
-        result->has_actual_output = true;
-      }
-    }
-    loom_input_module_deinitialize(&input);
-    diagnostic_collector.module = NULL;
-    if (!iree_status_is_ok(status)) {
-      status = loom_check_emit_finish_status_failure(
-          status, request.emit_target_name, result);
-      iree_arena_deinitialize(&diagnostic_arena);
-      return status;
-    }
-    if (test_case->annotation_count > 0 || diagnostic_collector.count > 0) {
-      status = loom_check_emit_finish_diagnostics_and_compare_output(
-          &diagnostic_collector, test_case, case_index, report, allocator,
-          result);
-      iree_arena_deinitialize(&diagnostic_arena);
-      return status;
-    }
-    if (request.suppress_actual_output) {
-      result->raw_outcome = LOOM_CHECK_PASS;
-      status = iree_ok_status();
-    } else {
-      status = loom_check_compare_output(test_case, allocator, result);
-    }
     iree_arena_deinitialize(&diagnostic_arena);
     return status;
   }

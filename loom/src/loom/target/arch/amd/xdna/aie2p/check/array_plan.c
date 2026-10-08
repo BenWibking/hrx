@@ -23,9 +23,18 @@
 #include "loom/target/arch/amd/xdna/aie2p/array/program.h"
 #include "loom/target/arch/amd/xdna/aie2p/array/resident.h"
 #include "loom/target/arch/amd/xdna/aie2p/emit/leaf_compile.h"
+#include "loom/tools/loom-check/compile.h"
 #include "loom/tools/loom-check/diagnostics.h"
 #include "loom/tools/loom-check/low_emit.h"
-#include "loom/tools/loom-check/source_low.h"
+
+typedef struct loom_aie2p_array_plan_check_context_t {
+  // Provider invocation receiving diagnostics and comparable output.
+  const loom_check_emit_provider_request_t* request;
+  // Successfully compiled source-Low module.
+  const loom_module_t* module;
+  // Exact source snapshots for diagnostics against |module|.
+  loom_source_resolver_t source_resolver;
+} loom_aie2p_array_plan_check_context_t;
 
 static bool loom_aie2p_array_plan_check_matches(
     const loom_check_emit_provider_t* provider,
@@ -71,18 +80,19 @@ static bool loom_aie2p_array_plan_check_has_contract(
 }
 
 static iree_status_t loom_aie2p_array_plan_check_collect_leaves(
-    const loom_check_emit_provider_request_t* request,
+    const loom_aie2p_array_plan_check_context_t* context,
     iree_diagnostic_emitter_t diagnostic_emitter,
     loom_aie2p_array_leaf_t** out_leaves, iree_host_size_t* out_leaf_count) {
+  const loom_check_emit_provider_request_t* request = context->request;
+  const loom_module_t* module = context->module;
   *out_leaves = NULL;
   *out_leaf_count = 0;
   iree_host_size_t leaf_count = 0;
-  loom_symbol_t* symbol = NULL;
-  loom_module_for_each_symbol(request->module, symbol) {
+  const loom_symbol_t* symbol = NULL;
+  loom_module_for_each_symbol(module, symbol) {
     if (symbol->defining_op && loom_low_func_def_isa(symbol->defining_op) &&
         loom_aie2p_array_plan_check_has_contract(
-            request->module, symbol->defining_op,
-            IREE_SV("amd.xdna.aie2p.core"))) {
+            module, symbol->defining_op, IREE_SV("amd.xdna.aie2p.core"))) {
       ++leaf_count;
     }
   }
@@ -92,16 +102,15 @@ static iree_status_t loom_aie2p_array_plan_check_collect_leaves(
   loom_symbol_fact_table_t symbol_facts = {0};
   loom_symbol_fact_table_initialize(&symbol_facts, request->case_arena);
   iree_host_size_t leaf_index = 0;
-  loom_module_for_each_symbol(request->module, symbol) {
+  loom_module_for_each_symbol(module, symbol) {
     if (!symbol->defining_op || !loom_low_func_def_isa(symbol->defining_op) ||
         !loom_aie2p_array_plan_check_has_contract(
-            request->module, symbol->defining_op,
-            IREE_SV("amd.xdna.aie2p.core"))) {
+            module, symbol->defining_op, IREE_SV("amd.xdna.aie2p.core"))) {
       continue;
     }
     loom_low_resolved_target_t target = {0};
     IREE_RETURN_IF_ERROR(loom_low_resolve_function_target(
-        request->module, &symbol_facts, symbol->defining_op,
+        module, &symbol_facts, symbol->defining_op,
         /*function_target_facts=*/NULL, &request->low_registry->registry,
         diagnostic_emitter, &target));
     if (target.descriptor_set == NULL) {
@@ -110,13 +119,12 @@ static iree_status_t loom_aie2p_array_plan_check_collect_leaves(
     leaves[leaf_index] = (loom_aie2p_array_leaf_t){
         .entry = {.module_id = 0,
                   .symbol_id =
-                      (loom_symbol_id_t)(symbol -
-                                         request->module->symbols.entries)},
+                      (loom_symbol_id_t)(symbol - module->symbols.entries)},
         .function_op = symbol->defining_op,
         .function_target_facts = target.target_facts,
     };
     IREE_RETURN_IF_ERROR(loom_low_function_requirements_build(
-        request->module, loom_low_func_def_body(symbol->defining_op),
+        module, loom_low_func_def_body(symbol->defining_op),
         request->case_arena, &leaves[leaf_index].requirements));
     ++leaf_index;
   }
@@ -652,12 +660,13 @@ static iree_status_t loom_aie2p_array_program_check_format(
 }
 
 static iree_status_t loom_aie2p_array_plan_check_resident_program_in_module(
-    const loom_check_emit_provider_request_t* request,
+    const loom_aie2p_array_plan_check_context_t* context,
     loom_module_t* resident_module, const loom_aie2p_array_plan_t* plan,
     bool low_only, iree_diagnostic_emitter_t diagnostic_emitter) {
+  const loom_check_emit_provider_request_t* request = context->request;
   loom_aie2p_array_resident_program_t program = {0};
   IREE_RETURN_IF_ERROR(loom_aie2p_array_materialize_resident_programs(
-      request->module, resident_module, plan, /*plan_count=*/1,
+      context->module, resident_module, plan, /*plan_count=*/1,
       request->case_arena, &program));
   if (!low_only) {
     IREE_RETURN_IF_ERROR(iree_string_builder_append_format(
@@ -724,47 +733,50 @@ static iree_status_t loom_aie2p_array_plan_check_resident_program_in_module(
 }
 
 static iree_status_t loom_aie2p_array_plan_check_resident_program(
-    const loom_check_emit_provider_request_t* request,
+    const loom_aie2p_array_plan_check_context_t* context,
     const loom_aie2p_array_plan_t* plan, bool low_only,
     iree_diagnostic_emitter_t diagnostic_emitter) {
+  const loom_check_emit_provider_request_t* request = context->request;
   loom_module_t* resident_module = NULL;
   iree_status_t status = loom_module_allocate(
-      request->module->context, IREE_SV("aie2p.array-plan.resident"),
+      context->module->context, IREE_SV("aie2p.array-plan.resident"),
       request->block_pool, /*hints=*/NULL, request->host_allocator,
       &resident_module);
   if (iree_status_is_ok(status)) {
     status = loom_aie2p_array_plan_check_resident_program_in_module(
-        request, resident_module, plan, low_only, diagnostic_emitter);
+        context, resident_module, plan, low_only, diagnostic_emitter);
   }
   loom_module_free(resident_module);
   return status;
 }
 
-static iree_status_t loom_aie2p_array_plan_check_execute(
-    const loom_check_emit_provider_t* provider,
-    const loom_check_emit_provider_request_t* request) {
-  (void)provider;
-  iree_string_view_t function_symbol_name = iree_string_view_empty();
-  bool low_only = false;
-  IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_check_parse_options(
-      request->target_options, &function_symbol_name, &low_only));
+typedef struct loom_aie2p_array_plan_check_consumer_t {
+  // Provider invocation receiving diagnostics and comparable output.
+  const loom_check_emit_provider_request_t* request;
+  // Array function selected by the RUN line.
+  iree_string_view_t function_symbol_name;
+  // Whether to print only the materialized resident Low functions.
+  bool low_only;
+} loom_aie2p_array_plan_check_consumer_t;
 
-  loom_check_prepare_source_low_options_t prepare_options = {0};
-  prepare_options.control_flow_lowering =
-      LOOM_TARGET_CONTROL_FLOW_LOWERING_STRUCTURED_LOW;
-  iree_status_t status = loom_check_prepare_source_low_module(
-      request->module, &prepare_options, request->environment,
-      request->source_resolver, request->diagnostic_collector,
-      request->block_pool);
-  IREE_RETURN_IF_ERROR(status);
-  if (request->diagnostic_collector->count != 0) {
-    return iree_ok_status();
-  }
+static iree_status_t loom_aie2p_array_plan_check_consume(
+    void* user_data, const loom_check_compile_source_low_view_t* view) {
+  const loom_aie2p_array_plan_check_consumer_t* consumer =
+      (const loom_aie2p_array_plan_check_consumer_t*)user_data;
+  const loom_check_emit_provider_request_t* request = consumer->request;
+  const iree_string_view_t function_symbol_name =
+      consumer->function_symbol_name;
+  const bool low_only = consumer->low_only;
+  const loom_aie2p_array_plan_check_context_t context = {
+      .request = request,
+      .module = view->module,
+      .source_resolver = view->source_resolver,
+  };
 
   loom_check_diagnostic_emitter_capture_t diagnostic_capture = {
       .diagnostic_collector = request->diagnostic_collector,
-      .module = request->module,
-      .source_resolver = request->source_resolver,
+      .module = context.module,
+      .source_resolver = context.source_resolver,
       .emitter = LOOM_EMITTER_PASS,
   };
   const iree_diagnostic_emitter_t diagnostic_emitter = {
@@ -773,16 +785,16 @@ static iree_status_t loom_aie2p_array_plan_check_execute(
   };
   loom_op_t* array_function = NULL;
   IREE_RETURN_IF_ERROR(loom_check_low_emit_find_low_function_def(
-      request->module, function_symbol_name, request->test_case,
+      context.module, function_symbol_name, request->test_case,
       request->filename, request->diagnostic_collector, diagnostic_emitter,
       &array_function));
   if (array_function == NULL) {
     return iree_ok_status();
   }
   const loom_func_like_t function =
-      loom_func_like_cast(request->module, array_function);
+      loom_func_like_const_cast(context.module, array_function);
   const iree_string_view_t contract = loom_string_table_get(
-      &request->module->strings, loom_func_like_repr_contract(function));
+      &context.module->strings, loom_func_like_repr_contract(function));
   if (!iree_string_view_equal(contract, IREE_SV("amd.xdna.aie2p.array"))) {
     const loom_diagnostic_param_t params[] = {
         loom_param_string(function_symbol_name),
@@ -802,7 +814,7 @@ static iree_status_t loom_aie2p_array_plan_check_execute(
   loom_aie2p_array_leaf_t* leaves = NULL;
   iree_host_size_t leaf_count = 0;
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_check_collect_leaves(
-      request, diagnostic_emitter, &leaves, &leaf_count));
+      &context, diagnostic_emitter, &leaves, &leaf_count));
   if (request->diagnostic_collector->count != 0) {
     return iree_ok_status();
   }
@@ -810,14 +822,14 @@ static iree_status_t loom_aie2p_array_plan_check_execute(
   loom_aie2p_array_plan_t plan = {0};
   bool valid = false;
   IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_build(
-      request->module, array_function, leaves, leaf_count, diagnostic_emitter,
+      context.module, array_function, leaves, leaf_count, diagnostic_emitter,
       request->case_arena, &plan, &valid));
   if (!valid) {
     return iree_ok_status();
   }
   if (!low_only) {
     IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_check_format(
-        request->module, &plan, &request->result->actual_output));
+        context.module, &plan, &request->result->actual_output));
   }
   loom_aie2p_array_program_t array_program = {0};
   IREE_RETURN_IF_ERROR(loom_aie2p_array_program_build(
@@ -826,8 +838,30 @@ static iree_status_t loom_aie2p_array_plan_check_execute(
     IREE_RETURN_IF_ERROR(loom_aie2p_array_program_check_format(
         &array_program, &request->result->actual_output));
   }
-  return loom_aie2p_array_plan_check_resident_program(request, &plan, low_only,
+  return loom_aie2p_array_plan_check_resident_program(&context, &plan, low_only,
                                                       diagnostic_emitter);
+}
+
+static iree_status_t loom_aie2p_array_plan_check_execute(
+    const loom_check_emit_provider_t* provider,
+    const loom_check_emit_provider_request_t* request) {
+  (void)provider;
+  iree_string_view_t function_symbol_name = iree_string_view_empty();
+  bool low_only = false;
+  IREE_RETURN_IF_ERROR(loom_aie2p_array_plan_check_parse_options(
+      request->target_options, &function_symbol_name, &low_only));
+  const loom_check_compile_source_low_options_t compile_options = {
+      .pipeline = LOOM_CHECK_COMPILE_SOURCE_LOW_PIPELINE_DEFAULT,
+      .control_flow_lowering = LOOM_TARGET_CONTROL_FLOW_LOWERING_STRUCTURED_LOW,
+  };
+  const loom_aie2p_array_plan_check_consumer_t consumer = {
+      .request = request,
+      .function_symbol_name = function_symbol_name,
+      .low_only = low_only,
+  };
+  return loom_check_compile_source_low(request, &compile_options,
+                                       loom_aie2p_array_plan_check_consume,
+                                       (void*)&consumer);
 }
 
 static iree_status_t loom_aie2p_array_plan_check_append_names(
@@ -839,6 +873,7 @@ static iree_status_t loom_aie2p_array_plan_check_append_names(
 
 const loom_check_emit_provider_t loom_aie2p_array_plan_check_emit_provider = {
     .name = IREE_SVL("aie2p-array-plan"),
+    .consumes_source = true,
     .match = loom_aie2p_array_plan_check_matches,
     .execute = loom_aie2p_array_plan_check_execute,
     .append_names = loom_aie2p_array_plan_check_append_names,

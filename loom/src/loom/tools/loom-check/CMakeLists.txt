@@ -37,7 +37,6 @@ loom_cc_library(
     "low_emit.h"
     "low_report.h"
     "requirements.h"
-    "source_low.h"
   SRCS
     "analysis.c"
     "comparison.c"
@@ -49,7 +48,6 @@ loom_cc_library(
     "low_report.c"
     "requirements.c"
     "roundtrip.c"
-    "source_low.c"
     "verify.c"
   DEPS
     ::report
@@ -100,16 +98,13 @@ loom_cc_library(
     loom::pass::registry
     loom::pass::report
     loom::pass::tooling
-    loom::sanitizer::options
     loom::target::entry_selection
-    loom::target::function_version_projection
     loom::target::legalization
     loom::target::low_asm_diagnostics
     loom::target::low_descriptor_registry
     loom::target::low_legality
     loom::target::low_packet_diagnostics
     loom::target::math_policy
-    loom::target::pipeline
     loom::target::predicate
     loom::target::provider
     loom::target::reporting::format
@@ -119,7 +114,6 @@ loom_cc_library(
     loom::target::types
     loom::testing::test_diagnostic
     loom::testing::test_file
-    loom::tooling::compile::pipeline
     loom::tooling::input
     loom::tools::loom-format::convert
     loom::transforms::cleanup::patterns
@@ -169,8 +163,10 @@ loom_cc_test(
   SRCS
     "execute_test.cc"
   DEPS
+    ::compile
     ::execute
     ::report
+    ::source_low
     iree::base
     iree::base::internal::arena
     iree::base::internal::json
@@ -178,9 +174,8 @@ loom_cc_test(
     iree::testing::gtest_main
     loom::error::error_defs
     loom::ir
-    loom::target::low_descriptor_registry_core_test
     loom::target::provider
-    loom::target::test::lower
+    loom::target::test::provider
     loom::testing::context
     loom::testing::test_file
     loom::transforms::cleanup::configured
@@ -299,12 +294,46 @@ loom_cc_library(
     loom::binding::c::interop
     loom::binding::c::loomc
     loom::error::error_defs
+    loom::error::source
+    loom::ops::op_defs
+    loom::sanitizer::options
+    loom::target::pipeline
+    loom::target::pipeline_options
+    loom::target::reporting::report
     loom::testing::test_file
     loom::tooling::cli::loomc_diagnostic_json
     loom::tooling::input
     loom::tooling::io::source_path
     loom::util::json
     loom::util::stream
+  PUBLIC
+)
+
+loom_cc_library(
+  NAME
+    source_low
+  HDRS
+    "source_low.h"
+  SRCS
+    "source_low.c"
+  DEPS
+    ::compile
+    ::execute
+    iree::base
+    loom::binding::c::interop
+    loom::binding::c::loomc
+    loom::codegen::low::text_asm
+    loom::error::error_defs
+    loom::error::source
+    loom::format::text::printer
+    loom::ir
+    loom::ops::low
+    loom::ops::op_defs
+    loom::sanitizer::options
+    loom::target::entry_selection
+    loom::target::pipeline
+    loom::target::pipeline_options
+    loom::target::provider
   PUBLIC
 )
 
@@ -400,6 +429,7 @@ loom_cc_library(
     "provider.c"
   DEPS
     ::main
+    ::source_low
     iree::base
     loom::target::provider
     loom::tooling::context
