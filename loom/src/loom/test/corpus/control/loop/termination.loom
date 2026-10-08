@@ -106,102 +106,6 @@ kernel.def @loop_boundary_table_sum() {
   kernel.return
 }
 
-check.case public @loop_boundary_partial_tile {
-  %begin = check.literal value(2147483642) : index
-  %end = check.literal value(2147483647) : index
-  %repeat = check.literal value(1) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(124) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_single_iteration {
-  %begin = check.literal value(2147483646) : index
-  %end = check.literal value(2147483647) : index
-  %repeat = check.literal value(3) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(130) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_empty_equal {
-  %begin = check.literal value(2147483647) : index
-  %end = check.literal value(2147483647) : index
-  %repeat = check.literal value(2) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(37) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_empty_reversed {
-  %begin = check.literal value(2147483647) : index
-  %end = check.literal value(2147483640) : index
-  %repeat = check.literal value(2) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(37) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_several_tiles {
-  %begin = check.literal value(2147483626) : index
-  %end = check.literal value(2147483647) : index
-  %repeat = check.literal value(1) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(268) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_full_tile_past_maximum {
-  %begin = check.literal value(2147483640) : index
-  %end = check.literal value(2147483647) : index
-  %repeat = check.literal value(3) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(373) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_exact_terminal_bound {
-  %begin = check.literal value(2147483626) : index
-  %end = check.literal value(2147483646) : index
-  %repeat = check.literal value(2) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(437) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
-check.case public @loop_boundary_empty_nested_loop {
-  %begin = check.literal value(2147483642) : index
-  %end = check.literal value(2147483647) : index
-  %repeat = check.literal value(0) : index
-  %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
-  %output = check.generate.fill value(-1) : tensor<5xi32>
-  %expected = check.generate.fill value(37) : tensor<5xi32>
-  kernel.launch @loop_boundary_table_sum(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<5xi32>
-  check.return
-}
-
 // Full signed-carrier distances need all 32 unsigned bits. A large positive
 // step keeps execution short while exercising serial and three unroll schedules
 // across zero. The independent expected values apply hash = hash * 33 + counter
@@ -257,66 +161,6 @@ kernel.def @loop_boundary_full_span_hash() {
   view.store %hash_recurrence, %results[%position_recurrence] : i32, view<4xi32>
 
   kernel.return
-}
-
-check.case public @loop_boundary_full_span_signed_extrema {
-  %begin = check.literal value(-2147483648) : index
-  %end = check.literal value(2147483647) : index
-  %output = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.fill value(134608673) : tensor<4xi32>
-  kernel.launch @loop_boundary_full_span_hash(%begin, %end, %output) : (index, index, tensor<4xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
-  check.return
-}
-
-check.case public @loop_boundary_full_span_negative_single_iteration {
-  %begin = check.literal value(-2147483648) : index
-  %end = check.literal value(-2147483647) : index
-  %output = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.fill value(-2147482427) : tensor<4xi32>
-  kernel.launch @loop_boundary_full_span_hash(%begin, %end, %output) : (index, index, tensor<4xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
-  check.return
-}
-
-check.case public @loop_boundary_full_span_crosses_zero {
-  %begin = check.literal value(-100) : index
-  %end = check.literal value(2147483647) : index
-  %output = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.fill value(-1895552249) : tensor<4xi32>
-  kernel.launch @loop_boundary_full_span_hash(%begin, %end, %output) : (index, index, tensor<4xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
-  check.return
-}
-
-check.case public @loop_boundary_full_span_crosses_zero_tail {
-  %begin = check.literal value(-2147483648) : index
-  %end = check.literal value(1) : index
-  %output = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.fill value(374229499) : tensor<4xi32>
-  kernel.launch @loop_boundary_full_span_hash(%begin, %end, %output) : (index, index, tensor<4xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
-  check.return
-}
-
-check.case public @loop_boundary_full_span_positive_single_iteration {
-  %begin = check.literal value(2147483646) : index
-  %end = check.literal value(2147483647) : index
-  %output = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.fill value(-2147482429) : tensor<4xi32>
-  kernel.launch @loop_boundary_full_span_hash(%begin, %end, %output) : (index, index, tensor<4xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
-  check.return
-}
-
-check.case public @loop_boundary_full_span_reversed_extrema {
-  %begin = check.literal value(2147483647) : index
-  %end = check.literal value(-2147483648) : index
-  %output = check.generate.fill value(-1) : tensor<4xi32>
-  %expected = check.generate.fill value(37) : tensor<4xi32>
-  kernel.launch @loop_boundary_full_span_hash(%begin, %end, %output) : (index, index, tensor<4xi32>)
-  check.expect.equal actual(%output) expected(%expected) : tensor<4xi32>
-  check.return
 }
 
 // Four lane groups take 10, 9, 1, and 0 iterations through the same pipelined
@@ -375,39 +219,262 @@ kernel.def @loop_boundary_varying_start() {
   kernel.return
 }
 
-check.case public @loop_boundary_varying_length_starts {
-  %input = check.generate.iota offset(1) step(1) period(20) : tensor<64x20xi32>
-  %output = check.generate.fill value(-77) : tensor<140xi32>
-  kernel.launch @loop_boundary_varying_start(%input, %output) : (tensor<64x20xi32>, tensor<140xi32>)
+// Compute one serial result for all schedule variants. The target remains
+// responsible for preserving this order through pipeline and unroll lowering.
+func.def @loop_boundary_table_sum_oracle(%begin_input: index, %end_input: index, %repeat_input: index, %input: buffer, %output: buffer) {
+  %begin = index.assume %begin_input [range(%begin_input, 2147483626, 2147483647)] : index
+  %end = index.assume %end_input [range(%end_input, 2147483626, 2147483647)] : index
+  %repeat = index.assume %repeat_input [range(%repeat_input, 0, 3)] : index
+  %base = index.constant 0 : offset
+  %source = buffer.view %input[%base] : buffer -> view<32xi32>
+  %results = buffer.view %output[%base] : buffer -> view<5xi32>
+  %step = index.constant 2 : index
+  %unit = index.constant 1 : index
+  %table_size = index.constant 32 : index
+  %repeat_begin = index.constant 0 : index
+  %initial = scalar.constant 37 : i32
+  %result = scf.for %counter = [%begin to %end step %step](%sum = %initial : i32) -> (i32) {
+    %position = index.rem %counter, %table_size : index
+    %value = view.load %source[%position] : view<32xi32> -> i32
+    %updated = scf.for %round = [%repeat_begin to %repeat step %unit](%partial = %sum : i32) -> (i32) {
+      %next = scalar.addi %partial, %value : i32
+      scf.yield %next : i32
+    }
+    scf.yield %updated : i32
+  }
+  view.store %result, %results[0] : i32, view<5xi32>
+  view.store %result, %results[1] : i32, view<5xi32>
+  view.store %result, %results[2] : i32, view<5xi32>
+  view.store %result, %results[3] : i32, view<5xi32>
+  view.store %result, %results[4] : i32, view<5xi32>
+  func.return
+}
 
-  %expected0 = check.generate.fill value(100) : tensor<16xi32>
-  %expected1 = check.generate.fill value(99) : tensor<16xi32>
-  %expected2 = check.generate.fill value(19) : tensor<16xi32>
-  %expected3 = check.generate.fill value(0) : tensor<16xi32>
-  %expected_guard = check.generate.fill value(-77) : tensor<4xi32>
+// Compute the serial recurrence once and compare it with every scheduled target
+// variant across the complete signed index range.
+func.def @loop_boundary_full_span_hash_oracle(%begin: index, %end: index, %output: buffer) {
+  %step = index.constant 536870911 : index
+  %seed = scalar.constant 37 : i32
+  %multiplier = scalar.constant 33 : i32
+  %hash = scf.for %counter = [%begin to %end step %step](%carry = %seed : i32) -> (i32) {
+    %bits = index.cast %counter : index to i32
+    %scaled = scalar.muli %carry, %multiplier : i32
+    %next = scalar.addi %scaled, %bits : i32
+    scf.yield %next : i32
+  }
+  %base = index.constant 0 : offset
+  %results = buffer.view %output[%base] : buffer -> view<4xi32>
+  view.store %hash, %results[0] : i32, view<4xi32>
+  view.store %hash, %results[1] : i32, view<4xi32>
+  view.store %hash, %results[2] : i32, view<4xi32>
+  view.store %hash, %results[3] : i32, view<4xi32>
+  func.return
+}
 
-  %prefix = check.tensor.view %output offset(0) : tensor<140xi32> -> tensor<4xi32>
-  %factor1_group0 = check.tensor.view %output offset(16) : tensor<140xi32> -> tensor<16xi32>
-  %factor1_group1 = check.tensor.view %output offset(80) : tensor<140xi32> -> tensor<16xi32>
-  %factor1_group2 = check.tensor.view %output offset(144) : tensor<140xi32> -> tensor<16xi32>
-  %factor1_group3 = check.tensor.view %output offset(208) : tensor<140xi32> -> tensor<16xi32>
-  %middle = check.tensor.view %output offset(272) : tensor<140xi32> -> tensor<4xi32>
-  %factor3_group0 = check.tensor.view %output offset(288) : tensor<140xi32> -> tensor<16xi32>
-  %factor3_group1 = check.tensor.view %output offset(352) : tensor<140xi32> -> tensor<16xi32>
-  %factor3_group2 = check.tensor.view %output offset(416) : tensor<140xi32> -> tensor<16xi32>
-  %factor3_group3 = check.tensor.view %output offset(480) : tensor<140xi32> -> tensor<16xi32>
-  %suffix = check.tensor.view %output offset(544) : tensor<140xi32> -> tensor<4xi32>
+// Enumerate the launch domain serially and compute the mathematical recurrence
+// without the target's pipeline or unroll schedules.
+func.def @loop_boundary_varying_start_oracle(%input: buffer, %output: buffer) {
+  %input_base = index.constant 0 : offset
+  %output_base = index.constant 16 : offset
+  %values = buffer.view %input[%input_base] : buffer -> view<64x20xi32>
+  %results = buffer.view %output[%output_base] : buffer -> view<2x68xi32>
+  %lane_begin = index.constant 0 : index
+  %lane_end = index.constant 64 : index
+  %unit = index.constant 1 : index
+  %threshold0 = index.constant 16 : index
+  %threshold1 = index.constant 32 : index
+  %threshold2 = index.constant 48 : index
+  %start0 = index.constant 0 : index
+  %start1 = index.constant 2 : index
+  %start2 = index.constant 18 : index
+  %start3 = index.constant 20 : index
+  %counter_end = index.constant 20 : index
+  %counter_step = index.constant 2 : index
+  %initial = scalar.constant 0 : i32
+  scf.for %lane = [%lane_begin to %lane_end step %unit] {
+    %in_group0 = index.cmp slt, %lane, %threshold0 : index
+    %in_group1 = index.cmp slt, %lane, %threshold1 : index
+    %in_group2 = index.cmp slt, %lane, %threshold2 : index
+    %late_start = scf.select %in_group2, %start2, %start3 : index
+    %nonzero_start = scf.select %in_group1, %start1, %late_start : index
+    %begin = scf.select %in_group0, %start0, %nonzero_start : index
+    %sum = scf.for %counter = [%begin to %counter_end step %counter_step](%partial = %initial : i32) -> (i32) {
+      %value = view.load %values[%lane, %counter] : view<64x20xi32> -> i32
+      %next = scalar.addi %partial, %value : i32
+      scf.yield %next : i32
+    }
+    view.store %sum, %results[0, %lane] : i32, view<2x68xi32>
+    view.store %sum, %results[1, %lane] : i32, view<2x68xi32>
+  }
+  func.return
+}
 
-  check.expect.equal actual(%prefix) expected(%expected_guard) : tensor<4xi32>
-  check.expect.equal actual(%factor1_group0) expected(%expected0) : tensor<16xi32>
-  check.expect.equal actual(%factor1_group1) expected(%expected1) : tensor<16xi32>
-  check.expect.equal actual(%factor1_group2) expected(%expected2) : tensor<16xi32>
-  check.expect.equal actual(%factor1_group3) expected(%expected3) : tensor<16xi32>
-  check.expect.equal actual(%middle) expected(%expected_guard) : tensor<4xi32>
-  check.expect.equal actual(%factor3_group0) expected(%expected0) : tensor<16xi32>
-  check.expect.equal actual(%factor3_group1) expected(%expected1) : tensor<16xi32>
-  check.expect.equal actual(%factor3_group2) expected(%expected2) : tensor<16xi32>
-  check.expect.equal actual(%factor3_group3) expected(%expected3) : tensor<16xi32>
-  check.expect.equal actual(%suffix) expected(%expected_guard) : tensor<4xi32>
+check.scenario @loop_boundary_table_sum_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483642) : index
+    %end = check.literal value(2147483647) : index
+    %repeat = check.literal value(1) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483646) : index
+    %end = check.literal value(2147483647) : index
+    %repeat = check.literal value(3) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483647) : index
+    %end = check.literal value(2147483647) : index
+    %repeat = check.literal value(2) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483647) : index
+    %end = check.literal value(2147483640) : index
+    %repeat = check.literal value(2) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483626) : index
+    %end = check.literal value(2147483647) : index
+    %repeat = check.literal value(1) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483640) : index
+    %end = check.literal value(2147483647) : index
+    %repeat = check.literal value(3) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483626) : index
+    %end = check.literal value(2147483646) : index
+    %repeat = check.literal value(2) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483642) : index
+    %end = check.literal value(2147483647) : index
+    %repeat = check.literal value(0) : index
+    %input = check.generate.iota offset(1) step(1) : tensor<32xi32>
+    %storage = check.generate.fill value(-1) : tensor<13xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<13xi32> -> tensor<5xi32>
+    check.compare<@loop_boundary_table_sum, @loop_boundary_table_sum_oracle>(%begin, %end, %repeat, %input, %output) : (index, index, index, tensor<32xi32>, tensor<5xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<32xi32>
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<13xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @loop_boundary_full_span_hash_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(-2147483648) : index
+    %end = check.literal value(2147483647) : index
+    %storage = check.generate.fill value(-1) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@loop_boundary_full_span_hash, @loop_boundary_full_span_hash_oracle>(%begin, %end, %output) : (index, index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(-2147483648) : index
+    %end = check.literal value(-2147483647) : index
+    %storage = check.generate.fill value(-1) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@loop_boundary_full_span_hash, @loop_boundary_full_span_hash_oracle>(%begin, %end, %output) : (index, index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(-100) : index
+    %end = check.literal value(2147483647) : index
+    %storage = check.generate.fill value(-1) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@loop_boundary_full_span_hash, @loop_boundary_full_span_hash_oracle>(%begin, %end, %output) : (index, index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(-2147483648) : index
+    %end = check.literal value(1) : index
+    %storage = check.generate.fill value(-1) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@loop_boundary_full_span_hash, @loop_boundary_full_span_hash_oracle>(%begin, %end, %output) : (index, index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483646) : index
+    %end = check.literal value(2147483647) : index
+    %storage = check.generate.fill value(-1) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@loop_boundary_full_span_hash, @loop_boundary_full_span_hash_oracle>(%begin, %end, %output) : (index, index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %begin = check.literal value(2147483647) : index
+    %end = check.literal value(-2147483648) : index
+    %storage = check.generate.fill value(-1) : tensor<12xi32>
+    %output = check.tensor.view %storage offset(16) : tensor<12xi32> -> tensor<4xi32>
+    check.compare<@loop_boundary_full_span_hash, @loop_boundary_full_span_hash_oracle>(%begin, %end, %output) : (index, index, tensor<4xi32>) -> () {
+      check.expect.bitwise actual(%storage) expected(%storage) : tensor<12xi32>
+    }
+  }
+  check.return
+}
+
+check.scenario @loop_boundary_varying_start_values {
+  check.trial[1](%trial: index, %entropy: check.entropy) {
+    %input = check.generate.iota offset(1) step(1) period(20) : tensor<64x20xi32>
+    %output = check.generate.fill value(-77) : tensor<140xi32>
+    check.compare<@loop_boundary_varying_start, @loop_boundary_varying_start_oracle>(%input, %output) : (tensor<64x20xi32>, tensor<140xi32>) -> () {
+      check.expect.bitwise actual(%input) expected(%input) : tensor<64x20xi32>
+      check.expect.bitwise actual(%output) expected(%output) : tensor<140xi32>
+    }
+  }
   check.return
 }
