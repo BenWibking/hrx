@@ -40,10 +40,10 @@ struct RegisterWrite {
 
 // AIE2P port ordering is provided by Aie2P{Tile,MemTile,Shim}StrmSw. The
 // ordinary native circuit/packet APIs emit complete per-port configuration
-// words. ID7 retains its control header; ID9 drops its data header at shim
-// South3/S2MM1. Arbiter1 is distinct from the compiler's TileControl->South0
-// completion path.
-constexpr std::array<RegisterWrite, 18> kPrefixWrites = {{
+// words. ID7 retains its control header; ID9 selects the response payload
+// output. The response path assigns the DMA outputs independently below.
+// Arbiter1 is distinct from the compiler's TileControl->South0 completion path.
+constexpr std::array<RegisterWrite, 17> kPrefixWrites = {{
     {0x0003f034, 0x80000009},  // Shim North1 master <- South7.
     {0x0003f124, 0x80000000},  // Shim South7 slave.
     {0x001b0030, 0x80000008},  // Memory North1 master <- South1.
@@ -56,7 +56,6 @@ constexpr std::array<RegisterWrite, 18> kPrefixWrites = {{
     {0x001b0138, 0x80000000},  // Memory North1 slave.
     {0x0003f13c, 0xc0000000},  // Shim North1 packet slave.
     {0x0003f000, 0xc0000009},  // TileControl: arbiter1/select0, keep header.
-    {0x0003f014, 0xc0000091},  // South3: arbiter1/select1, drop header.
     {0x0003f2f0, 0x071f0101},  // North1 slot0: ID7, mask31, arbiter1/select0.
     {0x0003f2f4, 0x091f0111},  // North1 slot1: ID9, mask31, arbiter1/select1.
     {0x0001d208, 0x00000000},  // S2MM1: in order, FoT/pause/controller off.
@@ -86,7 +85,8 @@ constexpr uint32_t kShimAcquireMinusOne = 0x7fu << 5;
 
 // _XAieMl_DmaWaitForDone uses task-queue, running and four stall fields. The
 // terminal token bounds issuance before these idle observations are reached.
-constexpr uint32_t kShimStreamToMemoryStatus = 0x0001d224;
+constexpr uint32_t kShimStreamToMemoryStatus0 = 0x0001d220;
+constexpr uint32_t kShimStreamToMemoryStatus1 = 0x0001d224;
 constexpr uint32_t kShimMemoryToStreamStatus = 0x0001d22c;
 constexpr uint32_t kShimIdleMask = 0x0078003c;
 
@@ -166,6 +166,24 @@ void AppendDescriptor(std::vector<uint8_t>& bytes, uint32_t column,
   }
 }
 
+// Packet arbiter1/select1 carries payload. Split responses additionally use
+// select2 for ready, leaving control traffic on select0. South2 and South3
+// connect to S2MM0 and S2MM1 respectively; each output drops its packet header.
+void AppendResponseRouting(std::vector<uint8_t>& bytes, uint32_t origin,
+                           ResidentResponsePath response_path) {
+  const uint32_t payload_channel =
+      response_path == ResidentResponsePath::kPayload0Ready1 ? 0u : 1u;
+  AppendWrite(bytes, origin + 0x0003f010 + payload_channel * 4, 0xc0000091);
+  if (response_path != ResidentResponsePath::kChained) {
+    const uint32_t ready_channel = 1 - payload_channel;
+    AppendWrite(bytes, origin + 0x0003f010 + ready_channel * 4, 0xc00000a1);
+    AppendWrite(bytes, origin + 0x0003f2f8, 0x0b1f0121);
+    AppendWrite(bytes, origin + 0x0001d200, 0);
+    AppendMaskedOperation(bytes, NativeOperation::kMaskedWrite,
+                          origin + 0x0001f004, 0x00000030, 0x00000010);
+  }
+}
+
 bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
   return (address & 3) == 0 && address < kNpuAddressLimit &&
          byte_length <= kNpuAddressLimit - address;
@@ -176,7 +194,9 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
 ::testing::AssertionResult BuildResidentTransaction(
     std::span<const uint8_t> invocation,
     std::span<const ResidentNpuAddresses> services,
-    uint32_t payload_byte_length, std::vector<uint8_t>* output) {
+    uint32_t payload_byte_length, ResidentResponsePath response_path,
+    std::vector<uint8_t>* output) {
+  const bool split_response = response_path != ResidentResponsePath::kChained;
   if (invocation.size() < kTransactionHeaderByteLength || invocation[0] != 0 ||
       invocation[1] != 1 || invocation[2] != 4 || invocation[3] != 6 ||
       invocation[4] == 0 || invocation[4] > 8 || services.empty() ||
@@ -196,13 +216,20 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
     const uint32_t descriptor_count =
         2 +
         kSlotDescriptorCount * static_cast<uint32_t>(addresses.slots.size());
-    added_operation_count +=
-        3 + static_cast<uint32_t>(kPrefixWrites.size()) + descriptor_count + 2;
+    added_operation_count += 3 + static_cast<uint32_t>(kPrefixWrites.size()) +
+                             1 + descriptor_count + 2;
     added_byte_length +=
         5 * kMaskedRecordByteLength +
-        static_cast<uint32_t>(kPrefixWrites.size()) * kWriteRecordByteLength +
+        (static_cast<uint32_t>(kPrefixWrites.size()) + 1) *
+            kWriteRecordByteLength +
         descriptor_count * (kBlockHeaderByteLength +
                             kShimDescriptorWordCount * kWordByteLength);
+    if (split_response) {
+      // Ready output, slot2 and S2MM0 control plus its shared mux and drain.
+      added_operation_count += 5;
+      added_byte_length +=
+          3 * kWriteRecordByteLength + 2 * kMaskedRecordByteLength;
+    }
     if (payload_byte_length == 0 ||
         payload_byte_length % kWordByteLength != 0 ||
         !IsAddressRangeValid(addresses.startup_address, sizeof(uint32_t)) ||
@@ -243,7 +270,8 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
   for (uint32_t column = 0; column < services.size(); ++column) {
     const uint32_t origin = column << kColumnShift;
     const auto& addresses = services[column];
-    // These fields share registers with the compiler's DMA0 mux selections.
+    // DMA1 owns these fields even when the compiler also uses DMA0 in this
+    // column. Split responses additionally own the S2MM0 field below.
     AppendMaskedOperation(bytes, NativeOperation::kMaskedWrite,
                           origin + 0x0001f000, 0x0000c000, 0x00004000);
     AppendMaskedOperation(bytes, NativeOperation::kMaskedWrite,
@@ -251,6 +279,7 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
     for (const auto& write : kPrefixWrites) {
       AppendWrite(bytes, origin + write.address, write.value);
     }
+    AppendResponseRouting(bytes, origin, response_path);
     AppendDescriptor(bytes, column, kStartupDescriptor,
                      addresses.startup_address, 4, 0);
     for (uint32_t i = 0; i < addresses.slots.size(); ++i) {
@@ -261,10 +290,14 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
                        slot.request_generation_address, 4, 0);
       AppendDescriptor(bytes, column, descriptor + 1,
                        slot.request_payload_address, payload_byte_length, 0);
-      AppendDescriptor(bytes, column, descriptor + 2,
-                       slot.response_payload_address, payload_byte_length,
-                       kShimReleaseOne | kShimUseNextDescriptor |
-                           ((descriptor + 3) << kShimNextDescriptorShift));
+      AppendDescriptor(
+          bytes, column, descriptor + 2, slot.response_payload_address,
+          payload_byte_length,
+          kShimReleaseOne |
+              (split_response
+                   ? 0u
+                   : kShimUseNextDescriptor |
+                         ((descriptor + 3) << kShimNextDescriptorShift)));
       AppendDescriptor(bytes, column, descriptor + 3,
                        slot.response_generation_address, 4,
                        kShimAcquireEnable | kShimAcquireMinusOne);
@@ -277,8 +310,14 @@ bool IsAddressRangeValid(uint64_t address, uint64_t byte_length) {
                invocation.end());
   for (uint32_t column = 0; column < services.size(); ++column) {
     const uint32_t origin = column << kColumnShift;
+    if (split_response) {
+      AppendMaskedOperation(bytes, NativeOperation::kMaskedPoll,
+                            origin + kShimStreamToMemoryStatus0, kShimIdleMask,
+                            0);
+    }
     AppendMaskedOperation(bytes, NativeOperation::kMaskedPoll,
-                          origin + kShimStreamToMemoryStatus, kShimIdleMask, 0);
+                          origin + kShimStreamToMemoryStatus1, kShimIdleMask,
+                          0);
     AppendMaskedOperation(bytes, NativeOperation::kMaskedPoll,
                           origin + kShimMemoryToStreamStatus, kShimIdleMask, 0);
   }

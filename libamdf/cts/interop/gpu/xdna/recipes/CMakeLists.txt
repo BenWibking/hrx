@@ -100,6 +100,7 @@ iree_cc_library(
     libamdf::cts::xdna::programs::resident_channels
     libamdf::cts::xdna::programs::resident_exchange
     libamdf::cts::xdna::programs::resident_npu_initiated
+    libamdf::cts::xdna::programs::resident_split_response
     libamdf::cts::xdna::programs::resident_terminal_relay
     libamdf::cts::xdna::util::executable
     libamdf::cts::xdna::util::execution

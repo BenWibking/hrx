@@ -32,6 +32,7 @@
 #include "libamdf/cts/xdna/programs/resident_channels.h"
 #include "libamdf/cts/xdna/programs/resident_exchange.h"
 #include "libamdf/cts/xdna/programs/resident_npu_initiated.h"
+#include "libamdf/cts/xdna/programs/resident_split_response.h"
 #include "libamdf/cts/xdna/programs/resident_terminal_relay.h"
 #include "libamdf/cts/xdna/util/executable.h"
 #include "libamdf/cts/xdna/util/execution.h"
@@ -50,14 +51,18 @@ constexpr uint32_t kSlotSeedStep = 0x9E3779B9u;
 enum class LaunchOrder { kGpuFirst, kNpuFirst };
 enum class Participants { kBoth, kGpu, kNpu };
 // Window and NPU-initiated schedules use one service; held schedules use two.
-// The relayed window adds a worker that owns only the terminal output.
+// Relayed and split windows add a worker that owns only the terminal output.
 enum class ServiceSchedule {
   kWindow,
   kRelayedWindow,
   kHoldFirst,
   kHoldSecond,
   kNpuInitiated,
-  kNpuSdma
+  kNpuSdma,
+  kSplitPayload0PayloadFirst,
+  kSplitPayload0ReadyFirst,
+  kSplitPayload1PayloadFirst,
+  kSplitPayload1ReadyFirst,
 };
 enum BufferOrdinal : size_t {
   kStartup,
@@ -91,7 +96,7 @@ struct ExchangePlan {
   uint32_t round_count;
   // Initial cause, provided to the participant producing the first payload.
   uint32_t seed;
-  // Selects one complete protocol and its worker placement.
+  // Selects one complete protocol, response route and worker placement.
   ServiceSchedule schedule;
 
   uint32_t service_count() const {
@@ -100,8 +105,29 @@ struct ExchangePlan {
                ? 2u
                : 1u;
   }
+  bool split_response() const {
+    return schedule == ServiceSchedule::kSplitPayload0PayloadFirst ||
+           schedule == ServiceSchedule::kSplitPayload0ReadyFirst ||
+           schedule == ServiceSchedule::kSplitPayload1PayloadFirst ||
+           schedule == ServiceSchedule::kSplitPayload1ReadyFirst;
+  }
+  bool ready_first() const {
+    return schedule == ServiceSchedule::kSplitPayload0ReadyFirst ||
+           schedule == ServiceSchedule::kSplitPayload1ReadyFirst;
+  }
+  ResidentResponsePath response_path() const {
+    if (!split_response()) {
+      return ResidentResponsePath::kChained;
+    }
+    return schedule == ServiceSchedule::kSplitPayload0PayloadFirst ||
+                   schedule == ServiceSchedule::kSplitPayload0ReadyFirst
+               ? ResidentResponsePath::kPayload0Ready1
+               : ResidentResponsePath::kPayload1Ready0;
+  }
   uint32_t logical_column_count() const {
-    return schedule == ServiceSchedule::kRelayedWindow ? 2u : service_count();
+    return schedule == ServiceSchedule::kRelayedWindow || split_response()
+               ? 2u
+               : service_count();
   }
   bool npu_initiated() const {
     return schedule == ServiceSchedule::kNpuInitiated || npu_sdma();
@@ -522,6 +548,23 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
         StoreU32(buffers_[kConfiguration].expected, configuration_offset + 12,
                  plan.seed);
       }
+      if (plan.split_response()) {
+        // These immutable values match the cold routes and never contain a
+        // memory address. Both complete tasks precede all response data.
+        const bool payload_zero =
+            plan.response_path() == ResidentResponsePath::kPayload0Ready1;
+        const uint32_t payload_header =
+            payload_zero ? 0x8001d204u : 0x0001d20cu;
+        const uint32_t ready_header = payload_zero ? 0x0001d20cu : 0x8001d204u;
+        StoreU32(buffers_[kConfiguration].expected, configuration_offset + 12,
+                 plan.ready_first() ? ready_header : payload_header);
+        StoreU32(buffers_[kConfiguration].expected, configuration_offset + 16,
+                 plan.ready_first() ? 3u : 2u);
+        StoreU32(buffers_[kConfiguration].expected, configuration_offset + 20,
+                 plan.ready_first() ? payload_header : ready_header);
+        StoreU32(buffers_[kConfiguration].expected, configuration_offset + 24,
+                 plan.ready_first() ? 2u : 3u);
+      }
     }
     for (auto& buffer : buffers_) {
       std::copy(buffer.expected.begin(), buffer.expected.end(),
@@ -539,7 +582,8 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     const auto shape = plan.shape;
     const iree_file_toc_t* image = nullptr;
     const auto* images =
-        plan.schedule == ServiceSchedule::kRelayedWindow
+        plan.split_response() ? amdf_cts_xdna_resident_split_response_create()
+        : plan.schedule == ServiceSchedule::kRelayedWindow
             ? amdf_cts_xdna_resident_terminal_relay_create()
         : plan.npu_initiated() ? amdf_cts_xdna_resident_npu_initiated_create()
         : plan.service_count() == 2 ? amdf_cts_xdna_resident_channels_create()
@@ -591,7 +635,7 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     ASSERT_TRUE(BuildResidentTransaction(
         executable.ResolveInvocation(storage),
         std::span(services).first(plan.service_count()), shape.byte_length(),
-        &commands));
+        plan.response_path(), &commands));
     ASSERT_LE(commands.size(),
               xdna_device_info_.instruction.maximum_byte_length);
     ASSERT_NO_FATAL_FAILURE(
@@ -928,12 +972,21 @@ class ResidentGpuXdnaTest : public GpuXdnaDeviceFixture {
     if (HasFailure()) {
       return;
     }
+    if (plan.split_response()) {
+      RecordProperty(
+          "resident_split_payload_channel",
+          plan.response_path() == ResidentResponsePath::kPayload0Ready1 ? 0
+                                                                        : 1);
+      RecordProperty("resident_split_arming",
+                     plan.ready_first() ? "ready-first" : "payload-first");
+    }
     RecordProperty("resident_round_count", plan.record_count());
     RecordProperty("resident_service_count", plan.service_count());
     RecordProperty("resident_logical_column_count",
                    plan.logical_column_count());
     RecordProperty("resident_schedule",
-                   plan.npu_sdma()        ? "npu-sdma"
+                   plan.split_response()  ? "split-response"
+                   : plan.npu_sdma()      ? "npu-sdma"
                    : plan.npu_initiated() ? "npu-initiated"
                    : schedule == ServiceSchedule::kRelayedWindow
                        ? "relayed-credit-window"
@@ -1387,6 +1440,18 @@ uint32_t SeedForPeerCause(uint32_t peer_cause) {
 }
 
 const char* ScheduleCaseSuffix(ServiceSchedule schedule) {
+  switch (schedule) {
+    case ServiceSchedule::kSplitPayload0PayloadFirst:
+      return "Payload0PayloadFirst";
+    case ServiceSchedule::kSplitPayload0ReadyFirst:
+      return "Payload0ReadyFirst";
+    case ServiceSchedule::kSplitPayload1PayloadFirst:
+      return "Payload1PayloadFirst";
+    case ServiceSchedule::kSplitPayload1ReadyFirst:
+      return "Payload1ReadyFirst";
+    default:
+      break;
+  }
   return schedule == ServiceSchedule::kWindow ||
                  schedule == ServiceSchedule::kRelayedWindow
              ? ""
@@ -1663,5 +1728,46 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(PayloadCases(2, std::array{1u, 16u, 1024u},
                                      ServiceSchedule::kRelayedWindow)),
     PayloadCaseName);
+
+template <typename Case>
+std::vector<Case> SplitResponseCases(std::vector<Case> baseline) {
+  std::vector<Case> cases;
+  for (auto parameters : baseline) {
+    for (auto schedule : {ServiceSchedule::kSplitPayload0PayloadFirst,
+                          ServiceSchedule::kSplitPayload0ReadyFirst,
+                          ServiceSchedule::kSplitPayload1PayloadFirst,
+                          ServiceSchedule::kSplitPayload1ReadyFirst}) {
+      parameters.schedule = schedule;
+      cases.push_back(parameters);
+    }
+  }
+  return cases;
+}
+
+INSTANTIATE_TEST_SUITE_P(SplitResponse, ResidentExchangeTest,
+                         ::testing::ValuesIn(SplitResponseCases(
+                             ExchangeCases(1, std::array{0u, 1u, 257u}))),
+                         ExchangeCaseName);
+INSTANTIATE_TEST_SUITE_P(SplitResponseTwoCredits, ResidentExchangeTest,
+                         ::testing::ValuesIn(SplitResponseCases(ExchangeCases(
+                             2, std::array{0u, 1u, 2u, 3u, 17u, 257u, 258u}))),
+                         ExchangeCaseName);
+INSTANTIATE_TEST_SUITE_P(
+    SplitResponse, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(SplitResponseCases(PrestartAbortCases(1))),
+    PrestartAbortCaseName);
+INSTANTIATE_TEST_SUITE_P(
+    SplitResponseTwoCredits, ResidentPrestartAbortTest,
+    ::testing::ValuesIn(SplitResponseCases(PrestartAbortCases(2))),
+    PrestartAbortCaseName);
+INSTANTIATE_TEST_SUITE_P(SplitResponse, ResidentPayloadTest,
+                         ::testing::ValuesIn(SplitResponseCases(
+                             PayloadCases(1, std::array{1u, 4u, 15u, 16u, 17u,
+                                                        64u, 1024u}))),
+                         PayloadCaseName);
+INSTANTIATE_TEST_SUITE_P(SplitResponseTwoCredits, ResidentPayloadTest,
+                         ::testing::ValuesIn(SplitResponseCases(
+                             PayloadCases(2, std::array{1u, 16u, 1024u}))),
+                         PayloadCaseName);
 
 }  // namespace

@@ -66,6 +66,25 @@ remain in column zero. The array retains two 64-byte host bindings and needs
 a two-column context. Normal completion, zero work and prestart ABORT use the
 same terminal route; no host action relays the record between workers.
 
+`resident_split_response_array` uses that same relay with a service whose
+response payload and ready word use different shim S2MM channels. The caller
+assigns the two channel roles and queues both descriptors independently.
+Payload completion releases one unit to shim lock zero; the ready descriptor
+acquires and consumes one unit. Both channels operate in order. The same
+worker image supports either channel assignment and either task-arming order.
+Configuration words 3 through 6 contain the first task's control header and
+slot-relative descriptor offset, followed by the second task's header and
+offset. These values agree with the caller's cold descriptor/routing setup;
+the image contains no external allocation address. Packet ID 9 carries the
+payload and ID 11 carries ready. Each output drops its packet header.
+
+The split worker keeps the chained service's arithmetic, credit reuse,
+startup decision, full terminal record and final GPU acknowledgement. Its
+terminal relay leaves both output channels on the service column available
+for the response. Native retirement also joins both output DMA channels.
+The [split-response matrix](../../interop/gpu/xdna/recipes/README.md#split-response-publication)
+checks the complete GPU-observed payload for every role/arming combination.
+
 [resident_npu_initiated.loom](resident_npu_initiated.loom) starts from an
 NPU-produced payload and transforms each actual GPU return into the next NPU
 payload. Its one worker has the same two 64-byte configuration/terminal

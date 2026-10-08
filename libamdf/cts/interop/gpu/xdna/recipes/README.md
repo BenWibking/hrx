@@ -176,6 +176,46 @@ transcript, terminal-record, guard and immutable-storage oracle. The host
 still performs one startup decision and final joins without participating in
 the repeated exchanges or the terminal relay.
 
+### Split-response publication
+
+`SplitResponse` and `SplitResponseTwoCredits` send one response's payload and
+ready word through different S2MM channels on the service's shim. They retain
+the ordinary terminal relay in column one, leaving both service-column output
+channels available. The GPU program, causal payload sequence, complete-word
+transcript oracle and host participation are the same as the chained baseline.
+
+The payload descriptor releases one unit to shim lock zero. The independent
+ready descriptor acquires and consumes one unit before accepting ready data.
+Neither descriptor chains to the other. Both channels run in order, so ready
+acquisition consumes the ordered prefix of payload releases. One or two
+outstanding response slots fit within each four-entry task queue; complete GPU
+reads return a slot's credit before its next use. Immutable descriptors remain
+valid throughout the service firing.
+
+Every startup, payload and abort shape covers these four combinations:
+
+| Payload channel | Ready channel | First task armed |
+| --- | --- | --- |
+| S2MM0 | S2MM1 | Payload |
+| S2MM0 | S2MM1 | Ready |
+| S2MM1 | S2MM0 | Payload |
+| S2MM1 | S2MM0 | Ready |
+
+One compiled NPU worker serves the complete matrix. Immutable configuration
+selects the two queue-control headers and their slot-relative descriptor
+offsets. Both tasks are armed before any response data. Payload and ready
+travel in separate packets, with their own destination rules and `TLAST`.
+Arming ready first does not put ready data ahead of payload on the shared
+stream: that data is emitted only after the complete payload packet.
+
+Final GPU acknowledgement ends custom issuance. The compiler's relayed
+terminal completion then precedes idle observations for both S2MM channels
+and the request MM2S channel. Zero work and either sole-participant prestart
+ABORT retain the same native ownership and full-storage checks. Passing cases
+establish the GPU-observed result for the recorded endpoint, backing and
+release/acquire tuple; they do not supply a universal external-memory ordering
+guarantee for every array/fabric integration.
+
 ### Independent workers
 
 `ResidentGpuXdnaTest.RegisteredIndependentChannels` gives two NPU workers
