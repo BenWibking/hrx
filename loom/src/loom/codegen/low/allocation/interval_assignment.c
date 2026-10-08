@@ -630,7 +630,8 @@ static uint32_t loom_low_allocation_interval_assignment_publish_assignment(
       assignment->location_count);
   loom_low_allocation_storage_lease_state_record_assignment(
       state->context->storage_leases, state->context->target->descriptor_set,
-      state->context->liveness, assignment, assignment_index, value_ordinal);
+      state->context->liveness, state->result.assignments, assignment_index,
+      value_ordinal);
   // Spill slots are unique, monotonically assigned storage. They cannot
   // conflict with register candidates and need no active-set membership.
   if (loom_low_allocation_assignment_is_register_like(assignment)) {

@@ -24,6 +24,30 @@
 extern "C" {
 #endif
 
+typedef struct loom_low_allocation_unit_liveness_t
+    loom_low_allocation_unit_liveness_t;
+typedef struct loom_low_placement_table_t loom_low_placement_table_t;
+
+// Decision-lifetime structural content identity shared by every interval
+// assignment attempt for one function. Empty lease tables and placement graphs
+// without structural aliases leave this table inert.
+typedef struct loom_low_allocation_storage_identity_t {
+  // Borrowed per-value unit ranges used to address |origins|.
+  const struct loom_low_allocation_unit_liveness_value_t* unit_values;
+  // Canonical content origins indexed by allocation unit.
+  const uint32_t* origins;
+} loom_low_allocation_storage_identity_t;
+
+// Resolves final structural aliases once, after destructive-reuse refinement.
+// The result belongs to |arena| and can be shared by first-fit and repair
+// assignment attempts.
+iree_status_t loom_low_allocation_storage_identity_initialize(
+    const loom_low_storage_lease_table_t* lease_table,
+    const loom_low_placement_table_t* placement,
+    const loom_low_allocation_unit_liveness_t* unit_liveness,
+    iree_arena_allocator_t* arena,
+    loom_low_allocation_storage_identity_t* out_identity);
+
 typedef enum loom_low_allocation_storage_release_policy_e {
   // Active storage leases are hard conflicts.
   LOOM_LOW_ALLOCATION_STORAGE_RELEASE_FORBIDDEN = 0,
@@ -41,6 +65,14 @@ typedef struct loom_low_allocation_storage_lease_state_t {
   const loom_local_value_domain_t* value_domain;
   // Borrowed allocation-owned physical reservations for candidate ranges.
   const loom_liveness_segment_t* storage_segments;
+  // Borrowed per-value unit ranges used to address |identity_origins|.
+  const struct loom_low_allocation_unit_liveness_value_t* unit_liveness_values;
+  // Borrowed canonical content origins indexed by allocation unit.
+  // NULL when this function has no structural aliases to compare with leases.
+  const uint32_t* identity_origins;
+  // Borrowed stable assignment array after the first leased assignment is
+  // published. Every materialized lease indexes this array.
+  const loom_low_allocation_assignment_t* assignments;
   // Mutable assignment-backed storage-lease records being built.
   loom_low_allocation_storage_lease_t* instances;
   // Mutable allocator-requested storage release actions being built.
@@ -77,6 +109,7 @@ iree_status_t loom_low_allocation_storage_lease_state_initialize(
     const loom_module_t* module, const loom_op_t* function_op,
     const loom_local_value_domain_t* value_domain,
     const loom_liveness_analysis_t* liveness,
+    const loom_low_allocation_storage_identity_t* storage_identity,
     const loom_liveness_segment_t* storage_segments,
     iree_arena_allocator_t* arena,
     loom_low_allocation_storage_lease_state_t* out_state);
@@ -95,8 +128,9 @@ bool loom_low_allocation_storage_lease_state_conflicts(
 // Returns true when ordered lease availability can prove definite conflicts
 // for |candidate| under |policy|. The allowed policy remains candidate-specific
 // and is never summarized. An explicit segment equal to the candidate's full
-// interval is continuous; candidates with lifetime holes, refined units,
-// tuples, or explicit registers retain the exact conflict path.
+// interval is continuous. Self-root scalar candidates can use the summary;
+// forwarded identities, lifetime holes, refined units, tuples, and explicit
+// registers retain the exact conflict path.
 bool loom_low_allocation_storage_lease_state_can_order_candidate(
     const loom_low_allocation_storage_lease_state_t* state,
     const loom_low_descriptor_set_t* descriptor_set,
@@ -141,13 +175,15 @@ iree_status_t loom_low_allocation_storage_lease_state_record_release_actions(
 // instances and the temporal unit index using |assignment_index|'s concrete
 // register-like storage. Initialization established each record's value, and
 // the lease producer established its unit subrange and issue-time start. The
-// assignment covers that subrange and |liveness| describes the lease schedule.
-// Each value's assignment is published exactly once, including inherited ties.
+// |assignments| is the stable preallocated interval-assignment array and the
+// indexed assignment covers that subrange. |liveness| describes the lease
+// schedule. Each value's assignment is published exactly once, including
+// inherited ties.
 void loom_low_allocation_storage_lease_state_record_assignment(
     loom_low_allocation_storage_lease_state_t* state,
     const loom_low_descriptor_set_t* descriptor_set,
     const loom_liveness_analysis_t* liveness,
-    const loom_low_allocation_assignment_t* assignment,
+    const loom_low_allocation_assignment_t* assignments,
     uint32_t assignment_index, loom_value_ordinal_t value_ordinal);
 
 // Verifies that every input storage-lease record was materialized exactly once.
