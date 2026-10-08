@@ -22,6 +22,7 @@
 #include "loom/ops/low/ops.h"
 #include "loom/ops/scalar/ops.h"
 #include "loom/ops/test/ops.h"
+#include "loom/ops/vector/ops.h"
 #include "loom/target/registers.h"
 #include "loom/target/test/descriptors.h"
 #include "loom/target/test/low_registry.h"
@@ -619,6 +620,68 @@ TEST_F(LowLowerSourcePlanTest, RejectsEntryResourcesBeforeLowConstruction) {
   EXPECT_EQ(loom_func_like_body(function_), source_body);
   EXPECT_EQ(module_->symbols.entries[symbol.symbol_id].defining_op,
             function_.op);
+}
+
+TEST_F(LowLowerSourcePlanTest, RejectsLaneWidthBeforeLowConstruction) {
+  // A semantic aggregate can keep its width, but the selected per-lane recipe
+  // has no relation for projecting that semantic type onto a scalar carrier.
+  policy_.map_type.fn = [](void* user_data, loom_low_lower_context_t* context,
+                           const loom_op_t* source_op, loom_type_t source_type,
+                           loom_type_t* out_low_type) {
+    IREE_RETURN_IF_ERROR(ObserveTypeMapping(user_data, context, source_op,
+                                            source_type, out_low_type));
+    if (!loom_type_is_vector(source_type)) {
+      return iree_ok_status();
+    }
+    return loom_low_lower_make_typed_register_type(
+        context, loom_low_register_type_class_id(*out_low_type),
+        loom_low_register_type_unit_count(*out_low_type), source_type,
+        out_low_type);
+  };
+  policy_.source_plan_observer = nullptr;
+  const loom_type_t vector_type = loom_type_shaped_1d(
+      LOOM_TYPE_VECTOR, LOOM_SCALAR_TYPE_I32, loom_dim_pack_static(4), 0);
+  loom_builder_t builder;
+  loom_builder_initialize(module_, &module_->arena, loom_module_block(module_),
+                          &builder);
+  loom_string_id_t name = LOOM_STRING_ID_INVALID;
+  IREE_ASSERT_OK(loom_builder_intern_string(&builder, IREE_SV("lane"), &name));
+  uint16_t symbol_id = LOOM_SYMBOL_ID_INVALID;
+  IREE_ASSERT_OK(loom_module_add_symbol(module_, name, &symbol_id));
+  const loom_symbol_ref_t symbol = {/*.module_id=*/0, /*.symbol_id=*/symbol_id};
+  loom_op_t* function_op = nullptr;
+  IREE_ASSERT_OK(loom_test_func_build(
+      &builder, /*build_flags=*/0, /*visibility=*/0, /*cc=*/0, symbol,
+      &vector_type, 1, &vector_type, 1, /*tied_results=*/nullptr,
+      /*tied_result_count=*/0, /*predicates=*/nullptr,
+      /*predicates_count=*/0, LOOM_LOCATION_UNKNOWN, &function_op));
+  function_ = loom_func_like_cast(module_, function_op);
+  loom_block_t* entry = loom_region_entry_block(loom_func_like_body(function_));
+  loom_builder_set_block(&builder, entry);
+  const loom_value_id_t input = loom_block_arg_id(entry, 0);
+  loom_op_t* add_op = nullptr;
+  IREE_ASSERT_OK(loom_vector_addi_build(&builder, 0, input, input, vector_type,
+                                        LOOM_LOCATION_UNKNOWN, &add_op));
+  const loom_value_id_t sum = loom_vector_addi_result(add_op);
+  loom_op_t* yield_op = nullptr;
+  IREE_ASSERT_OK(loom_test_yield_build(&builder, &sum, 1, LOOM_LOCATION_UNKNOWN,
+                                       &yield_op));
+  IREE_ASSERT_OK(loom_value_fact_table_initialize(
+      &fact_table_, &analysis_arena_, module_->values.count));
+  fact_table_.context.target_facts = &target_facts_;
+  IREE_ASSERT_OK(
+      loom_value_fact_table_compute(&fact_table_, module_, function_));
+
+  const iree_host_size_t value_count = module_->values.count;
+  const uint32_t op_count = entry->op_count;
+  IREE_ASSERT_OK(
+      loom_low_lower_function(module_, function_, &options_, &result_));
+  EXPECT_EQ(result_.error_count, 1u);
+  EXPECT_EQ(result_.low_func_op, nullptr);
+  EXPECT_FALSE(observer_.type_mapping.emission_started);
+  EXPECT_EQ(module_->values.count, value_count);
+  EXPECT_EQ(entry->op_count, op_count);
+  EXPECT_EQ(module_->symbols.entries[symbol_id].defining_op, function_op);
 }
 
 enum class HelperConstraint { kPredicate, kOperandCarrier };

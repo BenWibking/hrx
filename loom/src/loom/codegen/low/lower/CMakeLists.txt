@@ -324,6 +324,7 @@ loom_cc_test(
     loom::ops::low
     loom::ops::scalar
     loom::ops::test
+    loom::ops::vector
     loom::target::low_descriptor_registry
     loom::target::registers
     loom::target::test::descriptors
