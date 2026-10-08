@@ -1052,8 +1052,33 @@ static iree_status_t loom_low_lower_rule_plan_result_types(
       return iree_ok_status();
     }
     IREE_ASSERT(loom_low_type_is_register(result_type));
-    IREE_RETURN_IF_ERROR(loom_module_intern_type_id(
-        context->module, result_type, &result_type_ids[result_index++]));
+    loom_type_id_t type_id;
+    IREE_RETURN_IF_ERROR(
+        loom_module_intern_type_id(context->module, result_type, &type_id));
+    result_type_ids[result_index++] = type_id;
+    // Lane expansion determines an aggregate width from its actual operands.
+    // A reduction that can execute zero packets may preserve the accumulator's
+    // actual carrier instead of constructing the requested result type.
+    const bool constructs_result_type =
+        emit->kind != LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_PER_LANE &&
+        !(emit->kind == LOOM_LOW_LOWER_EMIT_DESCRIPTOR_OP_ACCUMULATE_LANES &&
+          iree_any_bit_set(
+              emit->flags,
+              LOOM_LOW_LOWER_EMIT_FLAG_ACCUMULATE_SEED_FIRST_LANE |
+                  LOOM_LOW_LOWER_EMIT_FLAG_ACCUMULATE_SKIP_FIRST_LANE));
+    if (constructs_result_type) {
+      const uint16_t bind_ref_index =
+          loom_low_lower_rule_emit_result_bind_ref_index(emit, ordinal);
+      if (rule_set->value_refs[bind_ref_index].kind ==
+          LOOM_LOW_LOWER_VALUE_REF_RESULT) {
+        const loom_value_id_t result =
+            loom_low_lower_rule_source_value_from_nodes(
+                context->module, rule_set, source->source_op,
+                source->source_nodes, source->source_node_count,
+                bind_ref_index);
+        loom_low_lower_plan_value_type_id(context, result, type_id);
+      }
+    }
   }
   return iree_ok_status();
 }

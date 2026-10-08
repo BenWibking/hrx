@@ -988,9 +988,10 @@ typedef struct loom_low_lower_emit_t {
   uint16_t copy_operand_mask;
   // Result-type table range selected by RESULT_TYPE_PATTERN.
   union {
-    // First value-ref table row mapped as a low result. Result type refs must
-    // address source results. When BIND_RESULTS_TO_REFS is set,
-    // result_bind_ref_start controls where the emitted low results are bound.
+    // First value-ref table row mapped as a low result. Descriptor result
+    // types reference source results; structural emits can also inherit an
+    // earlier temporary's carrier. BIND_RESULTS_TO_REFS makes
+    // result_bind_ref_start control where emitted results are bound.
     uint16_t value_ref_start;
     // First exact type-pattern table row mapped as a low result type.
     uint16_t type_pattern_start;
@@ -1039,6 +1040,18 @@ typedef struct loom_low_lower_emit_t {
 } loom_low_lower_emit_t;
 static_assert(sizeof(loom_low_lower_emit_t) == 20,
               "loom_low_lower_emit_t must be 20 bytes");
+
+// Returns the table reference receiving one emitted result. Type selection
+// and SSA materialization share this exact result-to-source correspondence.
+static inline uint16_t loom_low_lower_rule_emit_result_bind_ref_index(
+    const loom_low_lower_emit_t* emit, uint16_t result_ordinal) {
+  const uint16_t start =
+      iree_any_bit_set(emit->flags,
+                       LOOM_LOW_LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS)
+          ? emit->result_bind_ref_start
+          : emit->result_type.value_ref_start;
+  return (uint16_t)(start + result_ordinal);
+}
 
 // Ordinal into a rule set's interned emit table.
 typedef uint16_t loom_low_lower_emit_ref_t;

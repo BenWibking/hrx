@@ -322,17 +322,6 @@ static iree_status_t loom_low_lower_rule_build_result_types(
   return iree_ok_status();
 }
 
-static uint16_t loom_low_lower_rule_emit_result_bind_ref_index(
-    const loom_low_lower_emit_t* emit, uint16_t result_ordinal) {
-  IREE_ASSERT_LT(result_ordinal, emit->result_ref_count);
-  const uint16_t result_bind_ref_start =
-      iree_any_bit_set(emit->flags,
-                       LOOM_LOW_LOWER_EMIT_FLAG_BIND_RESULTS_TO_REFS)
-          ? emit->result_bind_ref_start
-          : emit->result_type.value_ref_start;
-  return (uint16_t)(result_bind_ref_start + result_ordinal);
-}
-
 static iree_status_t loom_low_lower_rule_bind_results(
     loom_low_lower_context_t* context,
     const loom_low_lower_rule_set_t* rule_set, const loom_op_t* source_op,

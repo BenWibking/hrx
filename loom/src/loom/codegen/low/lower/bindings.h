@@ -34,6 +34,11 @@ typedef union loom_low_lower_value_binding_t {
   loom_value_id_t value;
 } loom_low_lower_value_binding_t;
 
+// Publishes an already interned native type selected by a source producer.
+void loom_low_lower_plan_value_type_id(loom_low_lower_context_t* context,
+                                       loom_value_id_t source_value_id,
+                                       loom_type_id_t type_id);
+
 // Publishes the exact native carrier selected by a source value's producer.
 // Canonical type interning is the only failure. This records a producer
 // decision; it does not choose a preferred representation for another value.

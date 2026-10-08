@@ -9,17 +9,23 @@
 #include "loom/codegen/low/lower/context.h"
 #include "loom/ir/module.h"
 
+void loom_low_lower_plan_value_type_id(loom_low_lower_context_t* context,
+                                       loom_value_id_t source_value_id,
+                                       loom_type_id_t type_id) {
+  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
+      &context->lowering, source_value_id);
+  context->lowering.value_bindings[ordinal].type = type_id;
+  context->lowering.source_plan.value_flags[ordinal] &=
+      ~LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
+}
+
 iree_status_t loom_low_lower_plan_value_type(loom_low_lower_context_t* context,
                                              loom_value_id_t source_value_id,
                                              loom_type_t type) {
   loom_type_id_t type_id;
   IREE_RETURN_IF_ERROR(
       loom_module_intern_type_id(context->module, type, &type_id));
-  const loom_value_ordinal_t ordinal = loom_low_lowering_frame_value_ordinal(
-      &context->lowering, source_value_id);
-  context->lowering.value_bindings[ordinal].type = type_id;
-  context->lowering.source_plan.value_flags[ordinal] &=
-      ~LOOM_LOW_LOWER_VALUE_INHERITED_TYPE;
+  loom_low_lower_plan_value_type_id(context, source_value_id, type_id);
   return iree_ok_status();
 }
 

@@ -236,7 +236,8 @@ class LowLowerSourcePlanTest : public ::testing::Test {
 
   static iree_status_t PlanEntry(void* user_data,
                                  loom_low_lower_context_t* context) {
-    auto& entry = static_cast<PlanObserver*>(user_data)->entry;
+    auto* observer = static_cast<PlanObserver*>(user_data);
+    auto& entry = observer->entry;
     ++entry.planning_count;
     EXPECT_EQ(loom_low_lower_context_low_function(context), nullptr);
     EXPECT_GT(loom_low_lower_context_selected_plan_count(context), 0u);
@@ -249,6 +250,13 @@ class LowLowerSourcePlanTest : public ::testing::Test {
     EXPECT_TRUE(loom_type_is_register(entry.argument_type));
     EXPECT_FALSE(
         loom_low_lower_source_value_has_low_mapping(context, arguments[0]));
+    const loom_value_id_t refined_dependency =
+        loom_op_const_operands(observer->expected_source_ops[2])[0];
+    EXPECT_TRUE(loom_type_equal(
+        loom_low_lower_value_binding_type(context, refined_dependency),
+        entry.argument_type));
+    EXPECT_FALSE(loom_low_lower_source_value_has_low_mapping(
+        context, refined_dependency));
     // The unused add is already elided, so the target can account only for
     // resources that the selected program will actually emit.
     EXPECT_TRUE(loom_low_lower_context_selected_plan_view(context, 0).elided);
