@@ -4,6 +4,8 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include "loom/ir/intern_table.h"
+#include "loom/ir/structural_hash.h"
 #include "loom/target/arch/amd/xdna/aie2p/descriptors/configuration_descriptors.h"
 #include "loom/target/arch/amd/xdna/aie2p/ops/target.h"
 #include "loom/target/arch/amd/xdna/aie2p/pipeline/native.h"
@@ -19,6 +21,9 @@ typedef struct loom_aie2p_native_configuration_t {
   const loom_low_descriptor_set_t* descriptors;
   // Builder in the currently emitted configuration function.
   loom_builder_t builder;
+  // Scalar constant results in the current straight-line function. Cleared at
+  // each function boundary so every reused result dominates its consumers.
+  loom_intern_table_t constants;
   // Configuration scalar type, independent of the core's machine word width.
   loom_type_t scalar_type;
   // Native invocation buffer identity.
@@ -33,9 +38,36 @@ typedef struct loom_aie2p_native_configuration_t {
   loom_symbol_ref_t target;
 } loom_aie2p_native_configuration_t;
 
+typedef struct loom_aie2p_native_constant_key_t {
+  // Module owning the canonical constant result IDs.
+  const loom_module_t* module;
+  // Exact scalar bit pattern being materialized.
+  uint64_t value;
+} loom_aie2p_native_constant_key_t;
+
+static bool loom_aie2p_native_constant_equal(const void* user_data,
+                                             uint32_t index) {
+  const loom_aie2p_native_constant_key_t* key = user_data;
+  const loom_op_t* op =
+      loom_value_def_op(loom_module_value(key->module, index));
+  return (uint64_t)loom_low_const_attrs(op).entries[0].value.i64 == key->value;
+}
+
 static iree_status_t loom_aie2p_native_config_constant(
     loom_aie2p_native_configuration_t* config, uint64_t value,
     loom_value_id_t* out_value) {
+  const uint32_t hash = loom_structural_hash_finalize(
+      loom_structural_hash_mix_u64(loom_structural_hash_initialize(), value));
+  const loom_aie2p_native_constant_key_t key = {
+      .module = config->context->code.module, .value = value};
+  loom_intern_probe_t probe = loom_intern_table_probe(
+      &config->constants, hash, loom_aie2p_native_constant_equal, &key);
+  if (probe.index != UINT32_MAX) {
+    *out_value = probe.index;
+    return iree_ok_status();
+  }
+  IREE_RETURN_IF_ERROR(loom_intern_table_reserve_insert(
+      config->context->pass->arena, &config->constants, hash, 1, &probe.slot));
   const loom_named_attr_t attr = {.name_id = config->value_name,
                                   .value = loom_attr_i64((int64_t)value)};
   loom_op_t* op;
@@ -46,6 +78,7 @@ static iree_status_t loom_aie2p_native_config_constant(
       loom_make_named_attr_slice(&attr, 1), config->scalar_type,
       LOOM_LOCATION_UNKNOWN, &op));
   *out_value = loom_low_const_result(op);
+  loom_intern_table_insert(&config->constants, probe.slot, hash, *out_value);
   return iree_ok_status();
 }
 
@@ -71,6 +104,7 @@ static iree_status_t loom_aie2p_native_config_op(
 static iree_status_t loom_aie2p_native_config_function(
     loom_aie2p_native_configuration_t* config, loom_symbol_ref_t symbol,
     uint8_t visibility, uint8_t retain, loom_op_t** out_function) {
+  loom_intern_table_clear(&config->constants);
   loom_builder_set_block(&config->builder,
                          loom_module_block(config->context->code.module));
   return loom_low_func_def_build(
@@ -387,6 +421,8 @@ iree_status_t loom_aie2p_native_emit_configuration(
   loom_aie2p_native_configuration_t config = {
       .context = context,
       .descriptors = loom_aie2p_configuration_descriptor_set()};
+  IREE_RETURN_IF_ERROR(
+      loom_intern_table_initialize(context->pass->arena, 0, &config.constants));
   loom_builder_initialize(module, &module->arena, loom_module_block(module),
                           &config.builder);
   IREE_RETURN_IF_ERROR(loom_module_intern_string(
