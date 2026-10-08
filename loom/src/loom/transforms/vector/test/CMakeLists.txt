@@ -15,6 +15,7 @@ loom_check_test_suite(
   SRCS
     "bank_sroa.loom-test"
     "dynamic_extract.loom-test"
+    "mask_range_relations.loom-test"
     "memory_footprint.loom-test"
     "memory_footprint_blocked.loom-test"
     "memory_footprint_cfg_identities.loom-test"

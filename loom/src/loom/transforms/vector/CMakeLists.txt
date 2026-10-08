@@ -35,11 +35,15 @@ loom_cc_library(
     "combine_patterns.c"
   DEPS
     iree::base
+    iree::base::internal
+    loom::analysis::symbolic_expr
     loom::ir
+    loom::ops::index::comparison
     loom::ops::scalar
     loom::ops::vector
     loom::rewrite::pattern_registry
     loom::rewrite::rewriter
+    loom::transforms::cleanup::patterns
     loom::transforms::conversion::chain
   PUBLIC
 )

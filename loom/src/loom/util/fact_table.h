@@ -189,6 +189,9 @@ struct loom_value_fact_table_t {
   // At least one structured region entry has Boolean branch semantics.
   bool has_boolean_branch_regions;
 
+  // This fact scope has published at least one counted-loop domain.
+  bool has_counted_loop_domains;
+
   // Structured region entries with visible projected integer relations.
   uint32_t condition_integer_projection_count;
 

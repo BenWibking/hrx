@@ -13,10 +13,18 @@
 #include "loom/ir/module.h"
 #include "loom/ops/op_defs.h"
 #include "loom/util/fact_cfg.h"
+#include "loom/util/fact_loop.h"
 
 //===----------------------------------------------------------------------===//
 // Capacity management
 //===----------------------------------------------------------------------===//
+
+typedef struct loom_value_fact_counted_loop_domain_t {
+  // Body argument whose legal uses lie in this counted domain.
+  loom_value_id_t induction_value;
+  // Current SSA bounds supplied by the counted-loop fact owner.
+  loom_loop_domain_t domain;
+} loom_value_fact_counted_loop_domain_t;
 
 struct loom_value_fact_region_entry_t {
   // Region whose execution context and optional CFG structure are retained.
@@ -33,6 +41,8 @@ struct loom_value_fact_region_entry_t {
   // Condition-loop equation retained for the populated fact scope, when
   // present.
   loom_value_fact_induction_t* induction;
+  // Counted induction domain retained for this body, when present.
+  loom_value_fact_counted_loop_domain_t* counted_domain;
   // Condition facts projected onto this region's entry arguments, when any.
   loom_condition_edge_projection_t* condition_projection;
   // Next entry in the region-address hash collision chain.
@@ -41,7 +51,7 @@ struct loom_value_fact_region_entry_t {
   loom_value_fact_region_entry_t* next_entry;
 };
 
-static_assert(sizeof(loom_value_fact_region_entry_t) <= 56,
+static_assert(sizeof(loom_value_fact_region_entry_t) <= 64,
               "region execution facts must retain a compact cache footprint");
 
 struct loom_value_fact_exact_lane_origin_entry_t {
@@ -347,6 +357,7 @@ iree_status_t loom_value_fact_table_reserve(loom_value_fact_table_t* table,
 void loom_value_fact_table_clear_scope(loom_value_fact_table_t* table) {
   table->has_conditioned_results = false;
   table->has_boolean_branch_regions = false;
+  table->has_counted_loop_domains = false;
   table->condition_integer_projection_count = 0;
   if (table->identities.capacity) {
     for (iree_host_size_t i = 0; i < table->touched_count; ++i) {
@@ -680,6 +691,41 @@ loom_value_fact_table_lookup_condition_induction(
   const loom_value_fact_region_entry_t* entry =
       loom_value_fact_table_lookup_region_entry(table, condition_region);
   return entry ? entry->induction : NULL;
+}
+
+iree_status_t loom_value_fact_table_set_counted_loop_domain(
+    loom_value_fact_table_t* table, const loom_region_t* body,
+    loom_value_id_t induction_value, loom_loop_domain_t domain) {
+  loom_value_fact_region_entry_t* entry = NULL;
+  IREE_RETURN_IF_ERROR(
+      loom_value_fact_table_ensure_region_entry(table, body, &entry));
+  if (!entry->counted_domain) {
+    IREE_RETURN_IF_ERROR(iree_arena_allocate(table->transient_arena,
+                                             sizeof(*entry->counted_domain),
+                                             (void**)&entry->counted_domain));
+  }
+  *entry->counted_domain = (loom_value_fact_counted_loop_domain_t){
+      .induction_value = induction_value,
+      .domain = domain,
+  };
+  table->has_counted_loop_domains = true;
+  return iree_ok_status();
+}
+
+const loom_loop_domain_t* loom_value_fact_table_lookup_counted_loop_domain(
+    const loom_value_fact_table_t* table, const loom_module_t* module,
+    loom_value_id_t value_id) {
+  const loom_value_t* value = loom_module_value(module, value_id);
+  if (!loom_value_is_block_arg(value)) {
+    return NULL;
+  }
+  const loom_value_fact_region_entry_t* entry =
+      loom_value_fact_table_lookup_region_entry(
+          table, loom_value_def_block(value)->parent_region);
+  return entry && entry->counted_domain &&
+                 entry->counted_domain->induction_value == value_id
+             ? &entry->counted_domain->domain
+             : NULL;
 }
 
 iree_status_t loom_value_fact_table_set_cfg_region(

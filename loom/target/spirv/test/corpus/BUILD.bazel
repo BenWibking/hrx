@@ -488,7 +488,7 @@ _SPIRV_EXECUTION_XFAILS = {
     "memory/storage/word.loom:@copy_word_tail_guards": "TARGET/050",
     "memory/storage/word.loom:@copy_word_unaligned_guards": "TARGET/050",
     "memory/storage/workgroup.loom:@workgroup_packet_exchange_bits": "TARGET/003",
-    "memory/view/access.loom:@view_address_values": "SUBRANGE/024",
+    "memory/view/access.loom:@view_address_values": "TARGET/003",
     "memory/view/access.loom:@view_payload_values": "TARGET/002,TARGET/003",
     "memory/view/boundary_transport.loom:@boundary_transport_values": "LOWERING/044",
     "memory/view/nested_selection.loom:@nested_selection_values": "LOWERING/044",

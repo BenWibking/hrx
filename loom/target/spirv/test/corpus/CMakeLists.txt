@@ -1756,7 +1756,7 @@ loom_corpus_test(
     "TARGET/003"
     "memory/view/access.loom"
     "@view_address_values"
-    "SUBRANGE/024"
+    "TARGET/003"
     "memory/view/access.loom"
     "@view_payload_values"
     "TARGET/002,TARGET/003"

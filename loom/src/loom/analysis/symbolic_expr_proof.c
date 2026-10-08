@@ -14,6 +14,7 @@
 #include "loom/analysis/symbolic_value.h"
 #include "loom/ir/attribute.h"
 #include "loom/util/adaptive_sort.h"
+#include "loom/util/fact_loop.h"
 
 #define LOOM_SYMBOLIC_EXPR_SELECT_CURSOR_INLINE_CAPACITY 4
 #define LOOM_SYMBOLIC_EXPR_SELECT_ASSUMPTION_INLINE_CAPACITY 8
@@ -874,14 +875,52 @@ static bool loom_symbolic_expr_visit_condition_relation(
   return true;
 }
 
+static bool loom_symbolic_expr_visit_counted_domain(
+    loom_symbolic_expr_condition_relation_proof_t* proof,
+    loom_value_id_t value) {
+  const loom_value_fact_table_t* table = proof->context->fact_table;
+  const loom_loop_domain_t* domain =
+      loom_value_fact_table_lookup_counted_loop_domain(
+          table, proof->context->module, value);
+  if (!domain || !loom_value_facts_is_positive(
+                     loom_value_fact_table_lookup(table, domain->step))) {
+    return true;
+  }
+  if (loom_type_element_type(loom_module_value_type(
+          proof->context->module, value)) == LOOM_SCALAR_TYPE_OFFSET &&
+      (!loom_value_facts_is_non_negative(
+           loom_value_fact_table_lookup(table, domain->lower_bound)) ||
+       !loom_value_facts_is_non_negative(
+           loom_value_fact_table_lookup(table, domain->upper_bound)))) {
+    return true;
+  }
+  const loom_condition_integer_relation_t lower = {
+      .relation = LOOM_SYMBOLIC_INTEGER_RELATION_LE,
+      .left = {.kind = LOOM_CONDITION_INTEGER_OPERAND_VALUE,
+               .value_id = domain->lower_bound},
+      .right = {.kind = LOOM_CONDITION_INTEGER_OPERAND_VALUE,
+                .value_id = value},
+  };
+  const loom_condition_integer_relation_t upper = {
+      .relation = LOOM_SYMBOLIC_INTEGER_RELATION_LT,
+      .left = {.kind = LOOM_CONDITION_INTEGER_OPERAND_VALUE, .value_id = value},
+      .right = {.kind = LOOM_CONDITION_INTEGER_OPERAND_VALUE,
+                .value_id = domain->upper_bound},
+  };
+  return loom_symbolic_expr_visit_condition_relation(proof, &lower) &&
+         loom_symbolic_expr_visit_condition_relation(proof, &upper);
+}
+
 static iree_status_t loom_symbolic_expr_prove_le_by_condition_relations(
     loom_symbolic_expr_context_t* context,
     const loom_symbolic_expr_t* left_expression,
     const loom_symbolic_expr_t* right_expression,
     loom_symbolic_proof_result_t* out_result) {
   *out_result = LOOM_SYMBOLIC_PROOF_UNKNOWN;
-  if (!loom_condition_fact_scope_has_integer_relations(
-          context->condition_scope)) {
+  const bool has_counted_domains =
+      context->fact_table && context->fact_table->has_counted_loop_domains;
+  if (!has_counted_domains && !loom_condition_fact_scope_has_integer_relations(
+                                  context->condition_scope)) {
     return iree_ok_status();
   }
 
@@ -954,6 +993,17 @@ static iree_status_t loom_symbolic_expr_prove_le_by_condition_relations(
   (void)loom_condition_fact_scope_for_each_anchored_while(
       context->condition_scope, context->fact_table, anchors, anchor_count,
       loom_symbolic_expr_visit_condition_relation, &proof);
+  if (has_counted_domains) {
+    for (iree_host_size_t i = 0;
+         i < anchor_count && iree_status_is_ok(proof.status) &&
+         proof.result == LOOM_SYMBOLIC_PROOF_UNKNOWN;
+         ++i) {
+      if (anchors[i].kind == LOOM_CONDITION_INTEGER_OPERAND_VALUE) {
+        (void)loom_symbolic_expr_visit_counted_domain(&proof,
+                                                      anchors[i].value_id);
+      }
+    }
+  }
   if (iree_status_is_ok(proof.status)) {
     *out_result = proof.result;
   }
@@ -1745,6 +1795,16 @@ iree_status_t loom_symbolic_expr_prove_le(
   return loom_symbolic_expr_prove_le_with_scope(
       context, left_expression, right_expression,
       LOOM_SYMBOLIC_EXPR_PROOF_SCOPE_SELECT_CASES, out_result);
+}
+
+iree_status_t loom_symbolic_expr_prove_le_with_active_facts(
+    loom_symbolic_expr_context_t* context,
+    const loom_symbolic_expr_t* left_expression,
+    const loom_symbolic_expr_t* right_expression,
+    loom_symbolic_proof_result_t* out_result) {
+  return loom_symbolic_expr_prove_le_with_scope(
+      context, left_expression, right_expression,
+      LOOM_SYMBOLIC_EXPR_PROOF_SCOPE_ACTIVE_FACTS, out_result);
 }
 
 static iree_status_t loom_symbolic_expr_prove_equal(
