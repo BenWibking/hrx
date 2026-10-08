@@ -1,8 +1,8 @@
 # Resident pipelines on XDNA
 
-A resident pipeline keeps data moving between tile programs inside one device
-invocation. A transfer worker can fill the next input while a compute worker
-uses the current input. Channels govern when each record becomes readable and
+A resident pipeline keeps data moving between independently progressing strands
+inside one device invocation. DMA can fill an input while a compute worker
+processes another record. Channels govern when each record becomes readable and
 when its storage can be reused; the host does not dispatch every stage.
 
 This walkthrough follows a BF16 gate/up projection from authored Loom to a
@@ -11,11 +11,11 @@ It exercises ordinary functions, owned channels, adjacent tile memory, DMA,
 and specialization. It computes one projection pair and a quadratic gate,
 not a complete FFN or an optimized matrix multiplication.
 
-The current native realization requires explicit singleton workers, specialized
-storage sizes, and channel protocols supported by the target. Each worker image
-must fit its tile's instruction budget. GPU and CPU strand realization require
-their own execution and progress mechanisms; selecting a different target does
-not yet turn this example into a GPU or CPU executable.
+The current native realization requires explicit singleton worker selections,
+specialized storage sizes, and channel protocols supported by the target.
+Each worker image must fit its tile's instruction budget. GPU and CPU strands
+need their own execution and progress mechanisms; selecting a different target
+does not yet turn this example into a GPU or CPU executable.
 
 ## Compile a complete program
 
@@ -77,12 +77,25 @@ The three coordinate lists are origins, counts, and strides. On this target,
 `workers([0, 3], [1, 1], [1, 1])` selects its adjacent compute tile. Coordinate
 `i` within a dimension maps to `origin + i * stride`.
 
+A strand need not consume a compute core. After specialization, this example's
+transfer strand consists entirely of fixed DMA transfers and channel actions.
+The device invocation command stream issues its copies and preserves its waits
+and publications. Only the arithmetic strand needs tile instructions. A transfer
+strand and a compute strand can also select the same tile when communication
+has this realization.
+
+The command stream is one sequential engine, so the compiler assigns at most
+one strand to it. This realization requires an acyclic unconditional sequence,
+fixed transfer endpoints, and at most one admission at each channel endpoint.
+Repeating or dynamic communication currently executes on its selected core;
+those cases need a different realization to become autonomous DMA streams.
+
 `pipeline.memory<workgroup>[0, 3]` selects the invocation's tile-local pool.
 It allocates nothing and introduces no synchronization. The three `buffer.alloca`
 operations create distinct allocation roots in that pool. Their `buffer.view`
 operations describe how slots and payload elements occupy those allocations.
-Both workers must have a legal mapping to that memory; adjacency makes the
-selected shared-memory access possible here.
+Compute accesses and DMA routes must have legal mappings to that memory.
+Adjacency permits direct shared-memory access between these selected tiles.
 
 The leading view dimension is the number of storage slots. For example,
 `view<2x[%input_size]xbf16>` supplies two K-element records to
@@ -179,10 +192,18 @@ their definitions before worker realization.
 ### Tile code and configuration code
 
 The [native realization module](../generated/examples/targets/xdna-pipelines/aie2p-lower-pipeline.loom)
-contains complete worker functions and configuration functions. Worker code
-implements channel cursors, ownership credits, arithmetic, and DMA actions.
-Configuration code establishes routes, storage and bindings, loads the worker
-images, starts execution, and joins the completion obligations.
+contains the arithmetic worker and configuration functions. The worker implements
+its channel credits and arithmetic. Configuration code establishes routes,
+storage and bindings, loads the worker image, and starts execution. It also
+implements the finite transfer strand's ordered DMA and channel actions before
+joining the final completion obligations. No transfer image is loaded.
+
+An input publication still follows its DMA completion. An output acquisition
+can become a descriptor's credit acquire when its copy and wait immediately
+follow it; otherwise it remains an explicit ordered wait. The final command
+waits for the external output write before returning. Channel storage remains
+allocated even when communication requires no tile instructions, and the
+compile report accounts for storage and worker images separately.
 
 Both are ordinary target IR. In particular, `program.load` is an AIE2P
 **configuration instruction**, inside a Low function targeting
@@ -194,7 +215,7 @@ operation, a host callback between records, or a separate executable category.
 | --- | --- |
 | Role | The logical transfer or projection computation authored by functions and control flow. |
 | Strand | One independently progressing source body, entered once per selected worker instance. |
-| Worker program | The complete tile control flow implementing that strand and its communication. |
+| Worker program | Tile instructions for the computation and communication assigned to a core. A DMA-realized strand needs no worker program. |
 | Tile image | Linked instructions and data admitted against one tile's physical budgets. |
 | Exported entry | The named invocation ABI in the containing ELF. |
 
