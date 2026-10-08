@@ -279,11 +279,13 @@ static bool loom_amdgpu_source_alloca_layout_storage_space(
 
 iree_status_t loom_amdgpu_source_alloca_layout_emit_low_storage_roots(
     loom_low_lower_context_t* context) {
-  const loom_amdgpu_source_alloca_layout_t* const_layout = NULL;
-  IREE_RETURN_IF_ERROR(loom_amdgpu_source_alloca_layout_for_lower_context(
-      context, &const_layout));
   loom_amdgpu_source_alloca_layout_t* layout =
-      (loom_amdgpu_source_alloca_layout_t*)const_layout;
+      (loom_amdgpu_source_alloca_layout_t*)loom_low_lower_lookup_target_state(
+          context, &loom_amdgpu_source_alloca_layout_state_key,
+          sizeof(*layout));
+  if (layout == NULL) {
+    return iree_ok_status();
+  }
   loom_builder_t* builder = loom_low_lower_context_builder(context);
   for (uint32_t i = 0; i < IREE_ARRAYSIZE(layout->segments); ++i) {
     loom_amdgpu_source_alloca_layout_segment_t* segment = &layout->segments[i];
@@ -410,11 +412,16 @@ bool loom_amdgpu_source_alloca_layout_lookup_byte_offset(
 }
 
 void loom_amdgpu_source_alloca_layout_lookup_low_storage(
-    const loom_amdgpu_source_alloca_layout_t* layout,
+    const loom_low_lower_context_t* context,
     loom_value_fact_memory_space_t memory_space, loom_value_id_t root_value_id,
     loom_value_id_t* out_storage_value_id, int64_t* out_byte_offset) {
   IREE_ASSERT_ARGUMENT(out_storage_value_id);
   IREE_ASSERT_ARGUMENT(out_byte_offset);
+  const loom_amdgpu_source_alloca_layout_t* layout =
+      (const loom_amdgpu_source_alloca_layout_t*)
+          loom_low_lower_lookup_target_state(
+              context, &loom_amdgpu_source_alloca_layout_state_key,
+              sizeof(*layout));
   IREE_ASSERT((uint32_t)memory_space < IREE_ARRAYSIZE(layout->segments));
   const loom_value_ordinal_t value_ordinal =
       loom_local_value_domain_ordinal(layout->value_domain, root_value_id);

@@ -1813,12 +1813,6 @@ static iree_status_t loom_amdgpu_emit_op(void* user_data,
   return row->emit(context, source_op, row, plan);
 }
 
-static iree_status_t loom_amdgpu_finalize_function(
-    void* user_data, loom_low_lower_context_t* context) {
-  (void)user_data;
-  return loom_amdgpu_finalize_sanitizer_function(context);
-}
-
 static iree_status_t loom_amdgpu_finalize_module(
     void* user_data, loom_module_t* module,
     loom_low_lower_module_state_t* module_state,
@@ -1903,8 +1897,6 @@ static const loom_low_lower_policy_t kAmdgpuLowLowerPolicy = {
                                   .user_data = NULL},
     .describe_plan = {.fn = loom_amdgpu_describe_plan, .user_data = NULL},
     .emit_op = {.fn = loom_amdgpu_emit_op, .user_data = NULL},
-    .finalize_function = {.fn = loom_amdgpu_finalize_function,
-                          .user_data = NULL},
     .finalize_module = {.fn = loom_amdgpu_finalize_module, .user_data = NULL},
 };
 

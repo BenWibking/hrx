@@ -91,7 +91,7 @@ bool loom_amdgpu_source_alloca_layout_lookup_byte_offset(
 // source allocation. Entry setup must have emitted the arena before this is
 // called during body lowering.
 void loom_amdgpu_source_alloca_layout_lookup_low_storage(
-    const loom_amdgpu_source_alloca_layout_t* layout,
+    const loom_low_lower_context_t* context,
     loom_value_fact_memory_space_t memory_space, loom_value_id_t root_value_id,
     loom_value_id_t* out_storage_value_id, int64_t* out_byte_offset);
 

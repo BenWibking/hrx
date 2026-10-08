@@ -580,9 +580,8 @@ iree_status_t loom_spirv_workgroup_layout_emit_storage_roots(
   if (existing_layout == NULL || !existing_layout->layout_initialized) {
     return iree_ok_status();
   }
-  loom_spirv_workgroup_layout_t* layout = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_spirv_workgroup_layout_for_context(context, &layout));
+  loom_spirv_workgroup_layout_t* layout =
+      (loom_spirv_workgroup_layout_t*)existing_layout;
   loom_builder_t* builder = loom_low_lower_context_builder(context);
   const loom_op_t* source_function_op =
       loom_low_lower_context_source_function(context).op;

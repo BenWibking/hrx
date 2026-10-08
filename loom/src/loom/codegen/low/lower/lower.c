@@ -1074,15 +1074,6 @@ static iree_status_t loom_low_lower_emit_body(loom_low_lower_context_t* context,
   return status;
 }
 
-static iree_status_t loom_low_lower_finalize_function(
-    loom_low_lower_context_t* context) {
-  if (context->policy->finalize_function.fn == NULL) {
-    return iree_ok_status();
-  }
-  return context->policy->finalize_function.fn(
-      context->policy->finalize_function.user_data, context);
-}
-
 static bool loom_low_lower_cluster_size_product_fits_u32(
     loom_target_workgroup_cluster_size_t cluster_size) {
   const uint64_t cluster_size_xy =
@@ -1419,11 +1410,6 @@ iree_status_t loom_low_lower_function(loom_module_t* module,
     }
     if (iree_status_is_ok(status) && context.result->error_count == 0) {
       status = loom_low_lower_emit_body(&context, source_body);
-    }
-    if (iree_status_is_ok(status) && context.result->error_count == 0) {
-      loom_low_lower_emission_scope_begin(&context);
-      status = loom_low_lower_finalize_function(&context);
-      loom_low_lower_emission_scope_end(&context);
     }
     if (iree_status_is_ok(status) && context.result->error_count != 0 &&
         context.low_func_op != NULL) {

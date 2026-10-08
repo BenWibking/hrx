@@ -796,18 +796,6 @@ typedef struct loom_low_lower_describe_plan_callback_t {
   void* user_data;
 } loom_low_lower_describe_plan_callback_t;
 
-typedef iree_status_t (*loom_low_lower_finalize_function_fn_t)(
-    void* user_data, loom_low_lower_context_t* context);
-
-typedef struct loom_low_lower_finalize_function_callback_t {
-  // Optional callback invoked after a low function body emits successfully and
-  // before the source function is erased. Targets use this to commit
-  // function-local lowering discoveries into module-scope state.
-  loom_low_lower_finalize_function_fn_t fn;
-  // Caller-owned payload passed to |fn|.
-  void* user_data;
-} loom_low_lower_finalize_function_callback_t;
-
 typedef iree_status_t (*loom_low_lower_finalize_module_fn_t)(
     void* user_data, loom_module_t* module,
     loom_low_lower_module_state_t* module_state,
@@ -948,8 +936,6 @@ typedef struct loom_low_lower_policy_t {
   loom_low_lower_describe_plan_callback_t describe_plan;
   // Optional target-owned emitter for plans selected by |select_op|.
   loom_low_lower_emit_op_callback_t emit_op;
-  // Optional target-owned function finalizer.
-  loom_low_lower_finalize_function_callback_t finalize_function;
   // Optional target-owned module finalizer.
   loom_low_lower_finalize_module_callback_t finalize_module;
 } loom_low_lower_policy_t;

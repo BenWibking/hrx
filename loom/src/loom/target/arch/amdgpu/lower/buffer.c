@@ -114,13 +114,10 @@ static iree_status_t loom_amdgpu_lower_buffer_alloca(
     loom_low_lower_context_t* context, const loom_op_t* source_op,
     const loom_amdgpu_buffer_alloca_plan_t* plan) {
   loom_builder_t* builder = loom_low_lower_context_builder(context);
-  const loom_amdgpu_source_alloca_layout_t* layout = NULL;
-  IREE_RETURN_IF_ERROR(
-      loom_amdgpu_source_alloca_layout_for_lower_context(context, &layout));
   loom_value_id_t storage_root = LOOM_VALUE_ID_INVALID;
   int64_t storage_byte_offset = 0;
   loom_amdgpu_source_alloca_layout_lookup_low_storage(
-      layout, loom_buffer_alloca_memory_space(source_op),
+      context, loom_buffer_alloca_memory_space(source_op),
       loom_buffer_alloca_result(source_op), &storage_root,
       &storage_byte_offset);
 
