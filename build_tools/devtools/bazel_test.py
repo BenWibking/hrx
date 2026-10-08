@@ -137,7 +137,14 @@ class BazelTest(unittest.TestCase):
 
     def test_try_dependency_failure_reports_status_and_cleans_scratch(self):
         with tempfile.TemporaryDirectory() as temporary:
-            scratch = Path(temporary) / "try"
+            root = Path(temporary)
+            package = root / "runtime/src/iree/base"
+            package.mkdir(parents=True)
+            (package / "BUILD.bazel").write_text(
+                'cc_library(name="base", hdrs=["api.h"])\n'
+            )
+            (package / "api.h").write_text("// Dependency inference fixture.\n")
+            scratch = root / "try"
             scratch.mkdir()
             command = bazel_dev.BazelTryCommand(
                 inline_sources=[
@@ -147,6 +154,10 @@ class BazelTest(unittest.TestCase):
             step = bazel_dev.BazelTryStep(bazel="bazel", command=command)
             output = io.StringIO()
             with (
+                mock.patch.object(bazel_dev, "REPO_ROOT", root),
+                mock.patch.object(
+                    bazel_dev, "HEADER_ROOTS", (("iree/", root / "runtime/src"),)
+                ),
                 mock.patch.object(bazel_dev, "BAZEL_TRY_ROOT", scratch),
                 mock.patch.object(
                     bazel_dev,
@@ -154,13 +165,15 @@ class BazelTest(unittest.TestCase):
                     return_value=subprocess.CompletedProcess(
                         [], 7, stdout="", stderr="package loading failed"
                     ),
-                ),
+                ) as query,
                 contextlib.redirect_stderr(output),
             ):
                 result = step.run()
             self.assertEqual(result, 7)
             self.assertIn("Bazel dependency query failed", output.getvalue())
             self.assertIn("package loading failed", output.getvalue())
+            self.assertEqual(query.call_count, 1)
+            self.assertEqual(query.call_args.args[0][1], "query")
             self.assertEqual(list(scratch.iterdir()), [])
 
     def test_try_cleanup_removes_all_configurations_but_preserves_other_packages(self):
