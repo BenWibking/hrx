@@ -256,8 +256,7 @@ static iree_status_t loom_wasm_program_build_function_allocation(
         "Wasm program planning requires structured allocation without CFG edge "
         "copies");
   }
-  if (iree_status_is_ok(status) &&
-      out_allocation->packet_move_group_count != 0) {
+  if (iree_status_is_ok(status) && out_allocation->packet_move_count != 0) {
     status = iree_make_status(
         IREE_STATUS_FAILED_PRECONDITION,
         "Wasm program planning requires allocation without packet-local moves");

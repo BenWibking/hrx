@@ -446,6 +446,9 @@ TEST_P(CompileReportLowTest, RecordsPressureSpillAndAllocationFailureRows) {
       {
           /*.source_ordinal=*/0,
           /*.cause=*/LOOM_LOW_PLACEMENT_CAUSE_LOW_COPY,
+          /*.transfer_start=*/0,
+          /*.forwarded_transfer_count=*/0,
+          /*.materialized_transfer_count=*/1,
           /*.move_group=*/
           {
               /*.moves=*/

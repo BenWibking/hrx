@@ -171,13 +171,37 @@ typedef struct loom_low_allocation_edge_copy_group_t {
   loom_low_move_group_t move_group;
 } loom_low_allocation_edge_copy_group_t;
 
-// Final move group for one materialized packet-local parallel move operation.
+// One maximal live run within a packet-local structural transfer.
+//
+// The referenced placement relation owns the source/result value ordinals and
+// base unit offsets. This row retains the liveness and final-location split
+// established by allocation after those relations were constructed.
+typedef struct loom_low_allocation_packet_transfer_t {
+  // Index into the allocation's retained placement relation table.
+  uint32_t relation_index;
+  // Unit offset within the placement relation.
+  uint32_t relation_unit_offset;
+  // Number of consecutive live units with the same transfer kind.
+  uint32_t unit_count;
+} loom_low_allocation_packet_transfer_t;
+
+static_assert(
+    sizeof(loom_low_allocation_packet_transfer_t) == 12,
+    "packet transfer runs must retain their compact allocation shape");
+
+// Final transfer facts for one packet-local parallel move operation.
 typedef struct loom_low_allocation_packet_move_group_t {
   // Source-order ordinal of the owning low.copy, low.move, low.slice, or
   // low.concat.
   uint32_t source_ordinal;
   // Structural placement cause that produced the move group.
   loom_low_placement_cause_t cause;
+  // First row in the allocation's packet-transfer table.
+  uint32_t transfer_start;
+  // Forwarded rows at the beginning of the group's transfer range.
+  uint32_t forwarded_transfer_count;
+  // Materialized rows following the forwarded transfer rows.
+  uint32_t materialized_transfer_count;
   // Final sequential physical moves emitted by the owning operation.
   loom_low_move_group_t move_group;
 } loom_low_allocation_packet_move_group_t;
@@ -309,7 +333,11 @@ typedef struct loom_low_allocation_table_t {
   const loom_low_allocation_edge_copy_group_t* edge_copy_groups;
   // Number of records in |edge_copy_groups|.
   iree_host_size_t edge_copy_group_count;
-  // Packet-local move groups in source order.
+  // Exact live packet-local transfer runs grouped by |packet_move_groups|.
+  const loom_low_allocation_packet_transfer_t* packet_transfers;
+  // Number of records in |packet_transfers|.
+  iree_host_size_t packet_transfer_count;
+  // Packet-local transfer groups in source order.
   const loom_low_allocation_packet_move_group_t* packet_move_groups;
   // Number of records in |packet_move_groups|.
   iree_host_size_t packet_move_group_count;
@@ -415,8 +443,8 @@ const loom_low_allocation_edge_copy_group_t*
 loom_low_allocation_find_edge_copy_group_by_source_ordinal(
     const loom_low_allocation_table_t* table, uint32_t source_ordinal);
 
-// Finds the materialized packet-local move group for the source-order node, or
-// NULL when the node emits no final moves.
+// Finds the packet-local transfer group for the source-order node, or NULL when
+// the node has no packet-local structural transfer relations.
 const loom_low_allocation_packet_move_group_t*
 loom_low_allocation_find_packet_move_group_by_source_ordinal(
     const loom_low_allocation_table_t* table, uint32_t source_ordinal);

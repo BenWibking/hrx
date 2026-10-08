@@ -1119,8 +1119,10 @@ loom_cc_library(
     hdrs = ["packet_move.h"],
     deps = [
         ":assignment_map",
+        ":live_range",
         ":move_plan",
         ":move_topology",
+        ":storage",
         ":table",
         "//loom/src/loom/analysis:liveness",
         "//loom/src/loom/codegen/low:placement",

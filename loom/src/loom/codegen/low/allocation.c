@@ -702,6 +702,8 @@ iree_status_t loom_low_allocate_function(
             state.edge_copy_plan.first_coalesced_incoming_copy_by_value_ordinal,
         .edge_copy_groups = state.edge_copy_plan.groups,
         .edge_copy_group_count = state.edge_copy_plan.group_count,
+        .packet_transfers = state.packet_move_plan.transfers,
+        .packet_transfer_count = state.packet_move_plan.transfer_count,
         .packet_move_groups = state.packet_move_plan.groups,
         .packet_move_group_count = state.packet_move_plan.group_count,
         .call_moves = state.call_moves,

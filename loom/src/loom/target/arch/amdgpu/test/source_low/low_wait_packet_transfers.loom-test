@@ -1,0 +1,67 @@
+// RUN: emit amdgpu-assembly @partial_lds_concat strategy=source fixed=%address:physical_register:0:1 fixed=%ready:physical_register:12:4 fixed=%first:physical_register:4:4 fixed=%joined:physical_register:4:8 fixed=%later:physical_register:16:4
+
+amdgpu.target<gfx1151> @target
+
+low.func.def target<amdgpu.rdna3_5.core>(@target) @partial_lds_concat(%address: reg<amdgpu.vgpr>, %ready: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x8>, reg<amdgpu.vgpr x4>) asm {
+  %first = ds_read_b128 %address
+  %joined = concat(%first, %ready) : (reg<amdgpu.vgpr x4>, reg<amdgpu.vgpr x4>) -> reg<amdgpu.vgpr x8>
+  %later = ds_read_b128 %address {offset = 1024}
+  return %joined, %later
+}
+
+// ----
+  ds_read_b128 v[4:7], v0 offset:0
+  v_mov_b32 v8, v12
+  v_mov_b32 v9, v13
+  v_mov_b32 v10, v14
+  v_mov_b32 v11, v15
+  ds_read_b128 v[16:19], v0 offset:1024
+  s_waitcnt vmcnt(63) lgkmcnt(0)
+  s_endpgm
+
+// ====
+
+// RUN: emit amdgpu-assembly @coalesced_lds_concat strategy=source fixed=%address:physical_register:0:1 fixed=%ready:physical_register:8:4 fixed=%first:physical_register:4:4 fixed=%joined:physical_register:4:8 fixed=%later:physical_register:16:4
+
+amdgpu.target<gfx1151> @target
+
+low.func.def target<amdgpu.rdna3_5.core>(@target) @coalesced_lds_concat(%address: reg<amdgpu.vgpr>, %ready: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x8>, reg<amdgpu.vgpr x4>) asm {
+  %first = ds_read_b128 %address
+  %joined = concat(%first, %ready) : (reg<amdgpu.vgpr x4>, reg<amdgpu.vgpr x4>) -> reg<amdgpu.vgpr x8>
+  %later = ds_read_b128 %address {offset = 1024}
+  return %joined, %later
+}
+
+// ----
+  ds_read_b128 v[4:7], v0 offset:0
+  ds_read_b128 v[16:19], v0 offset:1024
+  s_waitcnt vmcnt(63) lgkmcnt(0)
+  s_endpgm
+
+// ====
+
+// RUN: emit amdgpu-assembly @copied_lds_concat strategy=source fixed=%address:physical_register:0:1 fixed=%ready:physical_register:12:4 fixed=%first:physical_register:4:4 fixed=%joined:physical_register:20:8 fixed=%later:physical_register:16:4
+
+amdgpu.target<gfx1151> @target
+
+low.func.def target<amdgpu.rdna3_5.core>(@target) @copied_lds_concat(%address: reg<amdgpu.vgpr>, %ready: reg<amdgpu.vgpr x4>) -> (reg<amdgpu.vgpr x8>, reg<amdgpu.vgpr x4>) asm {
+  %first = ds_read_b128 %address
+  %joined = concat(%first, %ready) : (reg<amdgpu.vgpr x4>, reg<amdgpu.vgpr x4>) -> reg<amdgpu.vgpr x8>
+  %later = ds_read_b128 %address {offset = 1024}
+  return %joined, %later
+}
+
+// ----
+  ds_read_b128 v[4:7], v0 offset:0
+  s_waitcnt vmcnt(63) lgkmcnt(0)
+  v_mov_b32 v20, v4
+  v_mov_b32 v21, v5
+  v_mov_b32 v22, v6
+  v_mov_b32 v23, v7
+  v_mov_b32 v24, v12
+  v_mov_b32 v25, v13
+  v_mov_b32 v26, v14
+  v_mov_b32 v27, v15
+  ds_read_b128 v[16:19], v0 offset:1024
+  s_waitcnt vmcnt(63) lgkmcnt(0)
+  s_endpgm

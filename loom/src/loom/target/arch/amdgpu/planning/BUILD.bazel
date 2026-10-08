@@ -367,6 +367,28 @@ loom_cc_library(
     ],
 )
 
+loom_cc_library(
+    name = "wait_dependency_visit",
+    srcs = ["wait_dependency_visit.c"],
+    hdrs = ["wait_dependency_visit.h"],
+    deps = [
+        "//loom/src/loom/ir",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/internal:arena",
+    ],
+)
+
+loom_cc_test(
+    name = "wait_dependency_visit_test",
+    srcs = ["wait_dependency_visit_test.cc"],
+    deps = [
+        ":wait_dependency_visit",
+        "//runtime/src/iree/base/internal:arena",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 loom_cc_test(
     name = "trans_result_window_test",
     srcs = ["trans_result_window_test.cc"],
@@ -398,6 +420,7 @@ loom_cc_library(
         ":wait_classification",
         ":wait_completion",
         ":wait_counters",
+        ":wait_dependency_visit",
         ":wait_frontier",
         ":wait_loop",
         ":wait_packet_tables",
